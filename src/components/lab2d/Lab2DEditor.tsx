@@ -347,17 +347,28 @@ export function Lab2DEditor() {
         const arc = arcFrom3(a, b, c, activeLayer);
         if (arc) commit((e) => [...e, arc]);
         setPending([]);
+        setDraft(null);
       } else setPending(q);
       return;
     }
     if (tool === "measure") {
       const q = [...pending, p];
       if (q.length === 2) {
-        setMeasures((m) => [...m, { a: q[0]!, b: q[1]! }]);
+        const m = { a: q[0]!, b: q[1]! };
+        setMeasures((list) => [...list, m]);
         setPending([]);
+        setLiveMeasure(null);
+        toast(`${dist(m.a, m.b).toFixed(2)} mm`, {
+          description: "Medição adicionada.",
+          action: {
+            label: "Descartar",
+            onClick: () => setMeasures((list) => list.filter((x) => x !== m)),
+          },
+        });
       } else setPending(q);
       return;
     }
+
     if (tool === "offset") {
       const hit = hitTest(raw);
       if (hit) {
