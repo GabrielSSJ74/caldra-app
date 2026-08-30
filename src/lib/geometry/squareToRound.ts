@@ -143,8 +143,8 @@ export function buildModel(i: SquareToRoundInput): SquareToRoundModel {
 function polygonArea(points: Vec2[]): number {
   let s = 0;
   for (let i = 0; i < points.length; i++) {
-    const p = points[i];
-    const q = points[(i + 1) % points.length];
+    const p = points[i]!;
+    const q = points[(i + 1) % points.length]!;
     s += p.x * q.y - q.x * p.y;
   }
   return Math.abs(s) / 2;
@@ -152,7 +152,7 @@ function polygonArea(points: Vec2[]): number {
 
 export function calculateSquareToRound(input: SquareToRoundInput): GeometryResult {
   const issues = validateSquareToRound(input);
-  if (issues.length) throw new Error(issues[0].message);
+  if (issues.length) throw new Error(issues[0]!.message);
 
   const model = buildModel(input);
   const { corners, arcPoints } = model;
@@ -166,8 +166,8 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
 
   // Costura no vértice 0. Primeiro ponto da base na origem.
   let cornerPos: Vec2 = { x: 0, y: 0 };
-  const firstArc = arcPoints[0][0];
-  const l0 = dist3(corners[0], firstArc);
+  const firstArc = arcPoints[0]![0]!;
+  const l0 = dist3(corners[0]!, firstArc);
   let arcPos: Vec2 = { x: 0, y: l0 };
   outlineBottom.push(cornerPos);
   outlineTop.push(arcPos);
@@ -175,12 +175,12 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
   foldLines.push({ a: cornerPos, b: arcPos });
 
   for (let k = 0; k < 4; k++) {
-    const corner3 = corners[k];
-    const quad = arcPoints[k];
+    const corner3 = corners[k]!;
+    const quad = arcPoints[k]!;
     // setor cônico: leque em torno do vértice k
     for (let j = 0; j < n; j++) {
-      const chord = dist3(quad[j], quad[j + 1]);
-      const nextLen = dist3(corner3, quad[j + 1]);
+      const chord = dist3(quad[j]!, quad[j + 1]!);
+      const nextLen = dist3(corner3, quad[j + 1]!);
       const next = triangulatePoint(arcPos, cornerPos, chord, nextLen, 1);
       outlineTop.push(next);
       foldLines.push({ a: cornerPos, b: next });
@@ -188,9 +188,9 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
       arcPos = next;
     }
     // triângulo plano até o próximo vértice da base
-    const nextCorner3 = corners[(k + 1) % 4];
+    const nextCorner3 = corners[(k + 1) % 4]!;
     const baseEdge = dist3(corner3, nextCorner3);
-    const diag = dist3(nextCorner3, quad[n]);
+    const diag = dist3(nextCorner3, quad[n]!);
     const nextCorner = triangulatePoint(cornerPos, arcPos, baseEdge, diag, -1);
     outlineBottom.push(nextCorner);
     foldLines.push({ a: nextCorner, b: arcPos });
@@ -218,7 +218,7 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
   const topPerimeter = Math.PI * input.topDiameter;
   const basePerimeter = 2 * (input.baseA + input.baseB);
   const developedPerimeter = outline.reduce(
-    (acc, p, idx) => acc + dist2(p, outline[(idx + 1) % outline.length]),
+    (acc, p, idx) => acc + dist2(p, outline[(idx + 1) % outline.length]!),
     0,
   );
 

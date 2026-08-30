@@ -28,7 +28,7 @@ const NAV: NavItem[] = [
   { to: "/biblioteca", label: "Biblioteca", shortLabel: "Biblio.", icon: BookOpen },
 ];
 
-const MOBILE_NAV = [NAV[0], NAV[1], NAV[2], NAV[3], NAV[4]];
+const MOBILE_NAV = NAV.slice(0, 5);
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [masterOpen, setMasterOpen] = useState(false);

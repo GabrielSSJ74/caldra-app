@@ -102,9 +102,9 @@ function tokenize(text: string): Pair[] {
   const lines = text.split(/\r\n|\r|\n/);
   const pairs: Pair[] = [];
   for (let i = 0; i + 1 < lines.length; i += 2) {
-    const code = Number(lines[i].trim());
+    const code = Number((lines[i] ?? "").trim());
     if (Number.isNaN(code)) continue;
-    pairs.push({ code, value: lines[i + 1] });
+    pairs.push({ code, value: lines[i + 1] ?? "" });
   }
   return pairs;
 }
@@ -178,7 +178,7 @@ export function importDxf(text: string): DxfDocument {
   const SUPPORTED = ["LINE", "CIRCLE", "ARC", "LWPOLYLINE", "POLYLINE"];
 
   for (let i = 0; i < pairs.length; i++) {
-    const { code, value } = pairs[i];
+    const { code, value } = pairs[i]!;
     const v = value.trim();
     if (code === 0 && v === "SECTION") {
       const next = pairs[i + 1];
