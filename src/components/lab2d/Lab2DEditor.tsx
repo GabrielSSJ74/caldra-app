@@ -702,7 +702,39 @@ export function Lab2DEditor() {
             />
           )}
 
-          {measures.map((m, i) => (
+          {/* cotas de conferência */}
+          {showDims &&
+            autoDimensions(visible).map((d, i) => {
+              const mx = (d.a.x + d.b.x) / 2;
+              const my = (d.a.y + d.b.y) / 2;
+              const ang = (Math.atan2(d.b.y - d.a.y, d.b.x - d.a.x) * 180) / Math.PI;
+              const flip = ang > 90 || ang < -90 ? 180 : 0;
+              return (
+                <g key={`dim-${i}`} stroke="var(--warn)" fill="var(--warn)">
+                  <line
+                    x1={d.a.x}
+                    y1={d.a.y}
+                    x2={d.b.x}
+                    y2={d.b.y}
+                    strokeWidth={1 / view.k}
+                    strokeDasharray={d.kind === "radial" ? `${4 / view.k} ${3 / view.k}` : undefined}
+                  />
+                  <text
+                    x={mx}
+                    y={my - 3 / view.k}
+                    transform={`rotate(${ang + flip} ${mx} ${my})`}
+                    fontSize={10 / view.k}
+                    textAnchor="middle"
+                    stroke="none"
+                    className="font-mono"
+                  >
+                    {d.label}
+                  </text>
+                </g>
+              );
+            })}
+
+          {[...measures, ...(liveMeasure ? [liveMeasure] : [])].map((m, i) => (
             <g key={i} className="text-accent">
               <line
                 x1={m.a.x}
@@ -711,6 +743,9 @@ export function Lab2DEditor() {
                 y2={m.b.y}
                 stroke="currentColor"
                 strokeWidth={1 / view.k}
+                strokeDasharray={
+                  liveMeasure && i === measures.length ? `${5 / view.k} ${4 / view.k}` : undefined
+                }
               />
               <text
                 x={(m.a.x + m.b.x) / 2}
@@ -720,10 +755,15 @@ export function Lab2DEditor() {
                 fill="currentColor"
                 className="font-mono"
               >
-                {dist(m.a, m.b).toFixed(2)}
+                {dist(m.a, m.b).toFixed(2)} mm ·{" "}
+                {(((Math.atan2(-(m.b.y - m.a.y), m.b.x - m.a.x) * 180) / Math.PI + 360) % 360).toFixed(
+                  1,
+                )}
+                °
               </text>
             </g>
           ))}
+
 
           {issues?.map((is, i) => (
             <circle
