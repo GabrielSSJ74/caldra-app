@@ -1095,7 +1095,78 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         )}
         <span className="ml-auto glass rounded-full px-2.5 py-1">{Math.round(view.k * 100)}%</span>
       </div>
+
+      {/* PLANOS */}
+      {project && !focus && (
+        <div className="glass absolute bottom-11 left-2 z-10 flex items-center gap-1 rounded-2xl p-1 font-mono text-[10px]">
+          {project.plans.map((pl) => (
+            <button
+              key={pl.id}
+              onClick={() => {
+                if (pl.id === planId) return;
+                setProject((prev) =>
+                  prev
+                    ? { ...prev, plans: prev.plans.map((x) => (x.id === planId ? { ...x, entities } : x)) }
+                    : prev,
+                );
+                setPlanId(pl.id);
+                setEntities(pl.entities);
+                setSelection([]);
+                past.current = [];
+                future.current = [];
+              }}
+              className={cn(
+                "rounded-xl px-2 py-1 tracking-widest transition-colors",
+                pl.id === planId ? "bg-accent/15 text-accent" : "text-muted-foreground",
+              )}
+            >
+              {pl.name}
+            </button>
+          ))}
+          <button
+            aria-label="Novo plano"
+            onClick={() => {
+              const plan = emptyPlan(project.plans.length);
+              plan.name = planLabel(project.plans.length);
+              const next: Project = {
+                ...project,
+                plans: [...project.plans.map((x) => (x.id === planId ? { ...x, entities } : x)), plan],
+                lastPlanId: plan.id,
+              };
+              saveProject(next);
+              setProject(next);
+              setPlanId(plan.id);
+              setEntities([]);
+              setSelection([]);
+              toast.success(`${plan.name} criado.`);
+            }}
+            className="rounded-xl px-2 py-1 text-muted-foreground transition-colors hover:text-accent"
+          >
+            +
+          </button>
+        </div>
+      )}
+
+      <ExportDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        layers={layers}
+        projectName={project?.name ?? "Chameleon"}
+        planName={project?.plans.find((p) => p.id === planId)?.name ?? "P01"}
+        scopes={{
+          selection: selected,
+          plan: entities,
+          project: project ? project.plans.flatMap((p) => (p.id === planId ? entities : p.entities)) : entities,
+        }}
+      />
+      <ImportDialog
+        source={importSrc}
+        layers={layers}
+        onClose={() => setImportSrc(null)}
+        onConfirm={onImportConfirm}
+      />
     </div>
+
   );
 }
 
