@@ -30,8 +30,7 @@ export const Route = createFileRoute("/escola/$slug")({
 });
 
 function LessonPage() {
-  const data = Route.useLoaderData();
-  const { lesson, module } = data as { lesson: ReturnType<typeof findLesson> extends null ? never : NonNullable<ReturnType<typeof findLesson>>["lesson"]; module: NonNullable<ReturnType<typeof findLesson>>["module"] };
+  const { lesson, module } = Route.useLoaderData();
   const { can } = useFeatureAccess();
   const locked = !lesson.free && !can("school.full");
 
