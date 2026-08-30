@@ -808,54 +808,29 @@ export function Lab2DEditor() {
               icon={Spline}
             />
             <IconBtn label="Layers" onClick={() => setShowLayers((s) => !s)} icon={LayersIcon} />
+            <IconBtn
+              label={showDims ? "Ocultar medidas" : "Mostrar medidas"}
+              onClick={() => setShowDims((s) => !s)}
+              icon={Ruler}
+            />
             <label
-              title="Importar DXF"
+              title="Importar DXF/SVG"
               className="glass grid size-8 cursor-pointer place-items-center rounded-xl text-muted-foreground hover:text-foreground"
             >
               <Upload className="size-[15px]" />
               <input
                 type="file"
-                accept=".dxf"
+                accept=".dxf,.svg"
                 className="hidden"
-                onChange={(e) => e.target.files?.[0] && onImport(e.target.files[0])}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) setImportSrc({ file, layer: activeLayer });
+                  e.target.value = "";
+                }}
               />
             </label>
-            <IconBtn
-              label="Exportar DXF"
-              onClick={() => {
-                if (!entities.length) {
-                  toast.error("Prancheta vazia.");
-                  return;
-                }
+            <IconBtn label="Exportar" onClick={() => setExportOpen(true)} icon={Download} />
 
-                downloadDxf(toDxf(entities, layers), "chameleon-lab2d");
-                toast.success("DXF exportado.");
-              }}
-              icon={Download}
-            />
-            <IconBtn
-              label="Exportar PNG"
-              onClick={() => svgRef.current && exportSvgAsPng(svgRef.current, "chameleon-lab2d", 4)}
-              icon={CircleIcon}
-            />
-            <IconBtn
-              label="Folha técnica (PDF)"
-              onClick={() =>
-                svgRef.current &&
-                exportSvgAsPdf(
-                  svgRef.current,
-                  {
-                    pieceName: "Desenho 2D",
-                    project: "CHAMELEON",
-                    material: "—",
-                    thickness: "—",
-                    quantity: "1",
-                  },
-                  entities.map((e) => [e.type, e.layer]),
-                )
-              }
-              icon={PenLine}
-            />
           </>
         )}
         <IconBtn label="Foco" onClick={() => setFocus((f) => !f)} icon={focus ? X : Maximize} />
