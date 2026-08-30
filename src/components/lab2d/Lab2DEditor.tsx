@@ -116,11 +116,13 @@ const SNAP_GLYPH: Record<Snap["kind"], string> = {
   grid: "+",
 };
 
-export function Lab2DEditor() {
+export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const { isMestre } = useFeatureAccess();
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
+  const [project, setProject] = useState<Project | null>(null);
+  const [planId, setPlanId] = useState<string>("");
   const [entities, setEntities] = useState<Entity[]>([]);
   const [layers, setLayers] = useState<Layer[]>(DEFAULT_LAYERS);
   const [activeLayer, setActiveLayer] = useState("corte");
@@ -132,12 +134,16 @@ export function Lab2DEditor() {
   const [grid, setGrid] = useState(10);
   const [snapOn, setSnapOn] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
+  const [showDims, setShowDims] = useState(false);
   const [focus, setFocus] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
   const [pending, setPending] = useState<Vec2[]>([]);
   const [draft, setDraft] = useState<Entity | null>(null);
   const [marquee, setMarquee] = useState<{ a: Vec2; b: Vec2 } | null>(null);
   const [measures, setMeasures] = useState<Measure[]>([]);
+  const [liveMeasure, setLiveMeasure] = useState<Measure | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importSrc, setImportSrc] = useState<ImportSource | null>(null);
   const [issues, setIssues] = useState<{ message: string; p: Vec2 }[] | null>(null);
   const [offsetDist, setOffsetDist] = useState(5);
   const [filletR, setFilletR] = useState(10);
@@ -146,6 +152,52 @@ export function Lab2DEditor() {
   const future = useRef<Entity[][]>([]);
   const panRef = useRef<{ x: number; y: number } | null>(null);
   const moveRef = useRef<{ from: Vec2; ids: string[]; base: Entity[] } | null>(null);
+
+  /* ------------------------------------------- projeto, planos e autosave */
+  useEffect(() => {
+    if (!projectId) return;
+    const p = getProject(projectId);
+    if (!p) return;
+    setProject(p);
+    setLayers(p.layers ?? DEFAULT_LAYERS);
+    const plan = p.plans.find((x) => x.id === p.lastPlanId) ?? p.plans[0]!;
+    setPlanId(plan.id);
+    setEntities(plan.entities);
+    past.current = [];
+    future.current = [];
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!project || !planId) return;
+    const t = setTimeout(() => {
+      const next: Project = {
+        ...project,
+        layers,
+        lastPlanId: planId,
+        plans: project.plans.map((pl) => (pl.id === planId ? { ...pl, entities } : pl)),
+      };
+      saveProject(next);
+      setProject(next);
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entities, layers, planId]);
+
+  /* --------------------------------- paisagem automática no celular */
+  useEffect(() => {
+    const so = window.screen?.orientation as
+      | (ScreenOrientation & { lock?: (o: string) => Promise<void>; unlock?: () => void })
+      | undefined;
+    void so?.lock?.("landscape").catch(() => undefined);
+    return () => {
+      try {
+        so?.unlock?.();
+      } catch {
+        /* não suportado */
+      }
+    };
+  }, []);
+
 
   const layerOf = useCallback((id: string) => layers.find((l) => l.id === id), [layers]);
 
