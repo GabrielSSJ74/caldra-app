@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as Desenho2dRouteImport } from './routes/desenho-2d'
 import { Route as PlanificacaoRouteImport } from './routes/planificacao'
 import { Route as ProjetosRouteImport } from './routes/projetos'
+import { Route as EscolaIndexRouteImport } from './routes/escola.index'
 import { Route as TracagemIndexRouteImport } from './routes/tracagem.index'
 import { Route as TracagemSlugRouteImport } from './routes/tracagem.$slug'
 
@@ -36,6 +37,11 @@ const ProjetosRoute = ProjetosRouteImport.update({
   path: '/projetos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EscolaIndexRoute = EscolaIndexRouteImport.update({
+  id: '/escola/',
+  path: '/escola/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TracagemIndexRoute = TracagemIndexRouteImport.update({
   id: '/tracagem/',
   path: '/tracagem/',
@@ -53,6 +59,7 @@ export interface FileRoutesByFullPath {
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
+  '/escola/': typeof EscolaIndexRoute
   '/tracagem/': typeof TracagemIndexRoute
 }
 export interface FileRoutesByTo {
@@ -61,6 +68,7 @@ export interface FileRoutesByTo {
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
+  '/escola': typeof EscolaIndexRoute
   '/tracagem': typeof TracagemIndexRoute
 }
 export interface FileRoutesById {
@@ -70,6 +78,7 @@ export interface FileRoutesById {
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
+  '/escola/': typeof EscolaIndexRoute
   '/tracagem/': typeof TracagemIndexRoute
 }
 export interface FileRouteTypes {
@@ -80,6 +89,7 @@ export interface FileRouteTypes {
     | '/planificacao'
     | '/projetos'
     | '/tracagem/$slug'
+    | '/escola/'
     | '/tracagem/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -88,6 +98,7 @@ export interface FileRouteTypes {
     | '/planificacao'
     | '/projetos'
     | '/tracagem/$slug'
+    | '/escola'
     | '/tracagem'
   id:
     | '__root__'
@@ -96,6 +107,7 @@ export interface FileRouteTypes {
     | '/planificacao'
     | '/projetos'
     | '/tracagem/$slug'
+    | '/escola/'
     | '/tracagem/'
   fileRoutesById: FileRoutesById
 }
@@ -105,6 +117,7 @@ export interface RootRouteChildren {
   PlanificacaoRoute: typeof PlanificacaoRoute
   ProjetosRoute: typeof ProjetosRoute
   TracagemSlugRoute: typeof TracagemSlugRoute
+  EscolaIndexRoute: typeof EscolaIndexRoute
   TracagemIndexRoute: typeof TracagemIndexRoute
 }
 
@@ -138,6 +151,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProjetosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/escola/': {
+      id: '/escola/'
+      path: '/escola'
+      fullPath: '/escola/'
+      preLoaderRoute: typeof EscolaIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tracagem/': {
       id: '/tracagem/'
       path: '/tracagem'
@@ -161,6 +181,7 @@ const rootRouteChildren: RootRouteChildren = {
   PlanificacaoRoute: PlanificacaoRoute,
   ProjetosRoute: ProjetosRoute,
   TracagemSlugRoute: TracagemSlugRoute,
+  EscolaIndexRoute: EscolaIndexRoute,
   TracagemIndexRoute: TracagemIndexRoute,
 }
 export const routeTree = rootRouteImport
