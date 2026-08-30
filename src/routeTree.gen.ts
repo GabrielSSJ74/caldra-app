@@ -15,6 +15,7 @@ import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as PlanificacaoRouteImport } from './routes/planificacao'
 import { Route as ProjetosRouteImport } from './routes/projetos'
 import { Route as Desenho2dIndexRouteImport } from './routes/desenho-2d.index'
+import { Route as Desenho2dProjectIdRouteImport } from './routes/desenho-2d.$projectId'
 import { Route as EscolaIndexRouteImport } from './routes/escola.index'
 import { Route as EscolaSlugRouteImport } from './routes/escola.$slug'
 import { Route as TracagemIndexRouteImport } from './routes/tracagem.index'
@@ -50,6 +51,11 @@ const Desenho2dIndexRoute = Desenho2dIndexRouteImport.update({
   path: '/desenho-2d/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const Desenho2dProjectIdRoute = Desenho2dProjectIdRouteImport.update({
+  id: '/desenho-2d/$projectId',
+  path: '/desenho-2d/$projectId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EscolaIndexRoute = EscolaIndexRouteImport.update({
   id: '/escola/',
   path: '/escola/',
@@ -77,6 +83,7 @@ export interface FileRoutesByFullPath {
   '/configuracoes': typeof ConfiguracoesRoute
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
+  '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/desenho-2d/': typeof Desenho2dIndexRoute
@@ -89,6 +96,7 @@ export interface FileRoutesByTo {
   '/configuracoes': typeof ConfiguracoesRoute
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
+  '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/desenho-2d': typeof Desenho2dIndexRoute
@@ -102,6 +110,7 @@ export interface FileRoutesById {
   '/configuracoes': typeof ConfiguracoesRoute
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
+  '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/desenho-2d/': typeof Desenho2dIndexRoute
@@ -116,6 +125,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/planificacao'
     | '/projetos'
+    | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/tracagem/$slug'
     | '/desenho-2d/'
@@ -128,6 +138,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/planificacao'
     | '/projetos'
+    | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/tracagem/$slug'
     | '/desenho-2d'
@@ -140,6 +151,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/planificacao'
     | '/projetos'
+    | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/tracagem/$slug'
     | '/desenho-2d/'
@@ -153,6 +165,7 @@ export interface RootRouteChildren {
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   PlanificacaoRoute: typeof PlanificacaoRoute
   ProjetosRoute: typeof ProjetosRoute
+  Desenho2dProjectIdRoute: typeof Desenho2dProjectIdRoute
   EscolaSlugRoute: typeof EscolaSlugRoute
   TracagemSlugRoute: typeof TracagemSlugRoute
   Desenho2dIndexRoute: typeof Desenho2dIndexRoute
@@ -204,6 +217,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof Desenho2dIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/desenho-2d/$projectId': {
+      id: '/desenho-2d/$projectId'
+      path: '/desenho-2d/$projectId'
+      fullPath: '/desenho-2d/$projectId'
+      preLoaderRoute: typeof Desenho2dProjectIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/escola/': {
       id: '/escola/'
       path: '/escola'
@@ -241,6 +261,7 @@ const rootRouteChildren: RootRouteChildren = {
   ConfiguracoesRoute: ConfiguracoesRoute,
   PlanificacaoRoute: PlanificacaoRoute,
   ProjetosRoute: ProjetosRoute,
+  Desenho2dProjectIdRoute: Desenho2dProjectIdRoute,
   EscolaSlugRoute: EscolaSlugRoute,
   TracagemSlugRoute: TracagemSlugRoute,
   Desenho2dIndexRoute: Desenho2dIndexRoute,
