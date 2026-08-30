@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as Desenho2dRouteImport } from './routes/desenho-2d'
 import { Route as PlanificacaoRouteImport } from './routes/planificacao'
 import { Route as TracagemIndexRouteImport } from './routes/tracagem.index'
 import { Route as TracagemSlugRouteImport } from './routes/tracagem.$slug'
@@ -17,6 +18,11 @@ import { Route as TracagemSlugRouteImport } from './routes/tracagem.$slug'
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Desenho2dRoute = Desenho2dRouteImport.update({
+  id: '/desenho-2d',
+  path: '/desenho-2d',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlanificacaoRoute = PlanificacaoRouteImport.update({
@@ -37,12 +43,14 @@ const TracagemSlugRoute = TracagemSlugRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/desenho-2d': typeof Desenho2dRoute
   '/planificacao': typeof PlanificacaoRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/tracagem/': typeof TracagemIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/desenho-2d': typeof Desenho2dRoute
   '/planificacao': typeof PlanificacaoRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/tracagem': typeof TracagemIndexRoute
@@ -50,20 +58,29 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/desenho-2d': typeof Desenho2dRoute
   '/planificacao': typeof PlanificacaoRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/tracagem/': typeof TracagemIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/planificacao' | '/tracagem/$slug' | '/tracagem/'
+  fullPaths:
+    '/' | '/desenho-2d' | '/planificacao' | '/tracagem/$slug' | '/tracagem/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/planificacao' | '/tracagem/$slug' | '/tracagem'
-  id: '__root__' | '/' | '/planificacao' | '/tracagem/$slug' | '/tracagem/'
+  to: '/' | '/desenho-2d' | '/planificacao' | '/tracagem/$slug' | '/tracagem'
+  id:
+    | '__root__'
+    | '/'
+    | '/desenho-2d'
+    | '/planificacao'
+    | '/tracagem/$slug'
+    | '/tracagem/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  Desenho2dRoute: typeof Desenho2dRoute
   PlanificacaoRoute: typeof PlanificacaoRoute
   TracagemSlugRoute: typeof TracagemSlugRoute
   TracagemIndexRoute: typeof TracagemIndexRoute
@@ -76,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/desenho-2d': {
+      id: '/desenho-2d'
+      path: '/desenho-2d'
+      fullPath: '/desenho-2d'
+      preLoaderRoute: typeof Desenho2dRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/planificacao': {
@@ -104,6 +128,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  Desenho2dRoute: Desenho2dRoute,
   PlanificacaoRoute: PlanificacaoRoute,
   TracagemSlugRoute: TracagemSlugRoute,
   TracagemIndexRoute: TracagemIndexRoute,
