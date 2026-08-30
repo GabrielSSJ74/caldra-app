@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as TracagemIndexRouteImport } from './routes/tracagem.index'
+import { Route as TracagemSlugRouteImport } from './routes/tracagem.$slug'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -22,30 +23,39 @@ const TracagemIndexRoute = TracagemIndexRouteImport.update({
   path: '/tracagem/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TracagemSlugRoute = TracagemSlugRouteImport.update({
+  id: '/tracagem/$slug',
+  path: '/tracagem/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/tracagem/$slug': typeof TracagemSlugRoute
   '/tracagem/': typeof TracagemIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/tracagem/$slug': typeof TracagemSlugRoute
   '/tracagem': typeof TracagemIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/tracagem/$slug': typeof TracagemSlugRoute
   '/tracagem/': typeof TracagemIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/tracagem/'
+  fullPaths: '/' | '/tracagem/$slug' | '/tracagem/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/tracagem'
-  id: '__root__' | '/' | '/tracagem/'
+  to: '/' | '/tracagem/$slug' | '/tracagem'
+  id: '__root__' | '/' | '/tracagem/$slug' | '/tracagem/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  TracagemSlugRoute: typeof TracagemSlugRoute
   TracagemIndexRoute: typeof TracagemIndexRoute
 }
 
@@ -65,11 +75,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TracagemIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tracagem/$slug': {
+      id: '/tracagem/$slug'
+      path: '/tracagem/$slug'
+      fullPath: '/tracagem/$slug'
+      preLoaderRoute: typeof TracagemSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  TracagemSlugRoute: TracagemSlugRoute,
   TracagemIndexRoute: TracagemIndexRoute,
 }
 export const routeTree = rootRouteImport
