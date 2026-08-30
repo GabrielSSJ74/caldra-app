@@ -1,0 +1,41 @@
+export type Vec3 = { x: number; y: number; z: number };
+export type Vec2 = { x: number; y: number };
+
+export type Segment2 = { a: Vec2; b: Vec2 };
+
+/** Passo pedagógico do "Entender o cálculo". */
+export type CalcStep = {
+  title: string;
+  given: string;
+  formula: string;
+  substitution: string;
+  result: string;
+  meaning: string;
+};
+
+export type DevelopmentPattern = {
+  /** Contorno externo fechado do desenvolvimento (mm). */
+  outline: Vec2[];
+  /** Linhas de dobra / geratrizes (mm). */
+  foldLines: Segment2[];
+  /** Pontos notáveis com rótulo. */
+  points: { id: string; p: Vec2 }[];
+  /** Extensão do padrão em mm. */
+  bounds: { minX: number; minY: number; maxX: number; maxY: number };
+};
+
+export type MetricRow = { label: string; value: number; unitMm?: boolean; suffix?: string };
+
+export type GeometryResult = {
+  metrics: MetricRow[];
+  /** Comprimentos verdadeiros das geratrizes (mm). */
+  trueLengths: { id: string; length: number }[];
+  development: DevelopmentPattern;
+  steps: CalcStep[];
+  /** Área desenvolvida em mm². */
+  areaMm2: number;
+  method: string;
+  warnings: string[];
+};
+
+export type ValidationIssue = { field: string; message: string };
