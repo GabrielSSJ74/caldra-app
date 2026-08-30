@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Check, ChevronRight, Download, FileText, Image as ImageIcon, Lightbulb } from "lucide-react";
+import { Check, ChevronRight, Download, FileText, Image as ImageIcon, Lightbulb, PenTool } from "lucide-react";
 import {
   SQUARE_TO_ROUND_DEFAULTS,
   calculateSquareToRound,
@@ -12,10 +13,14 @@ import { exportSvgAsPdf, exportSvgAsPng } from "@/lib/export/exporters";
 import { MATERIALS } from "@/lib/projects/demo-data";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
+import { buildWire } from "@/lib/viz3d/wire";
+import { developmentToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
 import { cn } from "@/lib/utils";
+import { Wire3D } from "./Wire3D";
 import { DevelopmentView } from "./DevelopmentView";
 import { SchematicSquareToRound } from "./SchematicSquareToRound";
 import { Metric, Panel, SectionLabel } from "./ui";
+
 
 type FieldKey = keyof SquareToRoundInput;
 
@@ -29,6 +34,7 @@ const FIELDS: { key: FieldKey; label: string; tag: string; step?: number }[] = [
 ];
 
 const TABS = [
+  "3D",
   "Dimensões",
   "Cálculos",
   "Traçado",
@@ -38,6 +44,7 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number];
 
+
 export function SquareToRoundStudio() {
   const { can } = useFeatureAccess();
   const { precision } = useSettings();
@@ -46,9 +53,12 @@ export function SquareToRoundStudio() {
   const [focused, setFocused] = useState<FieldKey | null>(null);
   const [calculated, setCalculated] = useState(false);
   const [calculating, setCalculating] = useState(false);
-  const [tab, setTab] = useState<Tab>("Dimensões");
+  const [tab, setTab] = useState<Tab>("3D");
   const [explain, setExplain] = useState(false);
+  const [unfold, setUnfold] = useState(0);
+  const navigate = useNavigate();
   const svgRef = useRef<SVGSVGElement>(null);
+
 
   const issues = useMemo(() => validateSquareToRound(input), [input]);
   const result = useMemo(() => {
@@ -257,7 +267,46 @@ export function SquareToRoundStudio() {
           </div>
 
           <div key={tab} className="fade-up">
+            {tab === "3D" && (
+              <div className="grid-bg-fine relative rounded-2xl border border-line bg-background/40">
+                <Wire3D
+                  interactive
+                  unfold={unfold}
+                  model={buildWire("quadrado-redondo", {
+                    d1: Math.max(input.baseA, input.baseB),
+                    d2: input.topDiameter,
+                    h: input.height,
+                    e: input.offsetX,
+                    seg: 24,
+                  })}
+                  className="h-[300px] w-full text-foreground/80 lg:h-[420px]"
+                />
+                <div className="absolute inset-x-4 bottom-3 flex items-center gap-3">
+                  <span className="font-mono text-[9px] text-muted-foreground uppercase">3D</span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={unfold * 100}
+                    onChange={(e) => setUnfold(Number(e.target.value) / 100)}
+                    aria-label="Abrir peça"
+                    className="h-1 flex-1 accent-[var(--accent)]"
+                  />
+                  <button
+                    onClick={() => {
+                      setUnfold(1);
+                      setTimeout(() => setTab("Desenvolvimento"), 420);
+                    }}
+                    className="font-mono text-[9px] text-accent uppercase"
+                  >
+                    Planificar
+                  </button>
+                </div>
+              </div>
+            )}
+
             {tab === "Dimensões" && (
+
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                 {result.metrics.map((m) => (
                   <Metric
@@ -405,9 +454,27 @@ export function SquareToRoundStudio() {
                     <Download className="size-3.5" /> DXF
                   </button>
                 </div>
+                <button
+                  onClick={() => {
+                    if (!can("lab2d")) {
+                      toast.error("Laboratório 2D disponível no Modo Mestre.");
+                      return;
+                    }
+
+                    sendToLab2D({
+                      name: "Quadrado → Redondo",
+                      entities: developmentToEntities(result.development),
+                    });
+                    navigate({ to: "/desenho-2d" });
+                  }}
+                  className="brand-gradient flex w-full items-center justify-center gap-2 rounded-xl py-2.5 font-display text-[13px] font-semibold text-background"
+                >
+                  <PenTool className="size-4" /> Abrir no Laboratório 2D
+                </button>
                 <div className="hidden">
                   <DevelopmentView ref={svgRef} pattern={result.development} />
                 </div>
+
                 <p className="text-[11px] text-muted-foreground">
                   PNG em alta resolução · PDF com folha técnica · DXF em milímetros com camadas
                   CORTE e DOBRA.

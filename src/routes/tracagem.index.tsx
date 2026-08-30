@@ -1,8 +1,10 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Search } from "lucide-react";
+import { Lock, Search } from "lucide-react";
 import { GEOMETRIES, type GeometryLevel } from "@/lib/geometry/catalog";
-import { StatusBadge } from "@/components/chameleon/ui";
+import { buildWire, DEFAULT_PARAMS } from "@/lib/viz3d/wire";
+import { Wire3D } from "@/components/chameleon/Wire3D";
+import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/tracagem/")({
@@ -12,99 +14,94 @@ export const Route = createFileRoute("/tracagem/")({
       {
         name: "description",
         content:
-          "Catálogo de geometrias de caldeiraria: transições, cones, curvas de gomos, tês e bocas de lobo.",
+          "Galeria vetorial 3D de geometrias de caldeiraria: transições, cones, curvas de gomos, tês e bocas de lobo.",
       },
       { property: "og:title", content: "Traçagem — CHAMELEON Caldeireiro" },
       {
         property: "og:description",
-        content: "Escolha a geometria e gere o desenvolvimento com matemática de traçagem real.",
+        content: "Escolha a peça pelo modelo 3D e gere o desenvolvimento com matemática real.",
       },
     ],
   }),
   component: TracagemIndex,
 });
 
-const LEVELS: (GeometryLevel | "Todos")[] = ["Todos", "Básico", "Intermediário", "Avançado"];
+const LEVELS: (GeometryLevel | "•")[] = ["•", "Básico", "Intermediário", "Avançado"];
 
 function TracagemIndex() {
   const [query, setQuery] = useState("");
-  const [level, setLevel] = useState<(typeof LEVELS)[number]>("Todos");
+  const [level, setLevel] = useState<(typeof LEVELS)[number]>("•");
+  const { can } = useFeatureAccess();
 
   const list = useMemo(
     () =>
       GEOMETRIES.filter(
         (g) =>
-          (level === "Todos" || g.level === level) &&
-          (g.name + g.short).toLowerCase().includes(query.toLowerCase()),
+          (level === "•" || g.level === level) &&
+          g.name.toLowerCase().includes(query.toLowerCase()),
       ),
     [query, level],
   );
 
   return (
-    <div className="space-y-4">
-      <header>
-        <h1 className="font-display text-2xl font-semibold">Traçagem</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {GEOMETRIES.length} geometrias catalogadas. Comece pela transição quadrado → redondo,
-          totalmente calculada.
-        </p>
-      </header>
-
-      <div className="flex flex-col gap-2 sm:flex-row">
-        <label className="glass flex min-w-0 flex-1 items-center gap-2 rounded-xl px-3">
-          <Search className="size-4 shrink-0 text-muted-foreground" />
+    <div className="space-y-6">
+      <div className="flex items-center gap-2">
+        <label className="glass flex min-w-0 flex-1 items-center gap-2 rounded-full px-4 sm:max-w-xs">
+          <Search className="size-3.5 shrink-0 text-muted-foreground" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Buscar geometria…"
-            className="w-full bg-transparent py-2.5 text-sm outline-none"
+            aria-label="Buscar geometria"
+            className="w-full bg-transparent py-2.5 text-[13px] outline-none"
           />
         </label>
-        <div className="flex gap-1 overflow-x-auto">
+        <div className="flex gap-1">
           {LEVELS.map((l) => (
             <button
               key={l}
               onClick={() => setLevel(l)}
+              aria-label={l === "•" ? "Todos os níveis" : l}
+              title={l === "•" ? "Todos" : l}
               className={cn(
-                "shrink-0 rounded-xl px-3 py-2 font-mono text-[10px] tracking-wider uppercase transition-colors",
+                "size-8 rounded-full font-mono text-[10px] uppercase transition-all",
                 level === l
-                  ? "bg-accent/12 text-accent ring-1 ring-accent/20"
+                  ? "bg-accent/12 text-accent ring-1 ring-accent/25"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {l}
+              {l === "•" ? "•" : l.charAt(0)}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
-        {list.map((g) => (
-          <Link
-            key={g.slug}
-            to="/tracagem/$slug"
-            params={{ slug: g.slug }}
-            className="glass group rounded-2xl p-4 transition-colors hover:border-accent/30"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <svg viewBox="0 0 48 48" className="size-11 text-accent">
-                <path
-                  d={g.icon}
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinejoin="round"
-                />
-              </svg>
-              <StatusBadge status={g.status} />
-            </div>
-            <p className="mt-3 font-display text-sm font-medium">{g.name}</p>
-            <p className="mt-1 text-[11px] text-muted-foreground">{g.short}</p>
-            <p className="mt-2 font-mono text-[10px] text-muted-foreground">
-              {g.level} · {g.method}
-            </p>
-          </Link>
-        ))}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {list.map((g, i) => {
+          const locked = !can(g.feature);
+          return (
+            <Link
+              key={g.slug}
+              to="/tracagem/$slug"
+              params={{ slug: g.slug }}
+              style={{ animationDelay: `${i * 24}ms` }}
+              className="glass pop-in group relative aspect-square overflow-hidden rounded-3xl transition-all duration-500 hover:scale-[1.03] hover:glow-ring"
+            >
+              <Wire3D
+                model={buildWire(g.slug, DEFAULT_PARAMS)}
+                className="absolute inset-0 size-full p-3 text-foreground/70 transition-transform duration-700 group-hover:scale-110"
+              />
+              <span className="absolute top-2.5 right-3 font-mono text-[8px] tracking-[0.2em] text-muted-foreground/70 uppercase">
+                {g.level.charAt(0)}
+              </span>
+              {locked && (
+                <Lock className="absolute top-2.5 left-3 size-3 text-accent/70" aria-label="Mestre" />
+              )}
+              <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-background/80 to-transparent px-3 pt-6 pb-2.5 text-center font-mono text-[9px] tracking-[0.16em] uppercase">
+                {g.name}
+              </span>
+            </Link>
+          );
+        })}
       </div>
     </div>
   );
