@@ -33,7 +33,7 @@ const STATUS_STYLE = {
 
 function Projetos() {
   const { isMestre } = useFeatureAccess();
-  const [open, setOpen] = useState(DEMO_PROJECTS[0].id);
+  const [open, setOpen] = useState(DEMO_PROJECTS[0]!.id);
 
   return (
     <div className="space-y-4">

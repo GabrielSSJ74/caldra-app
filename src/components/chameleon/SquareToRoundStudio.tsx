@@ -42,7 +42,7 @@ export function SquareToRoundStudio() {
   const { can } = useFeatureAccess();
   const { precision } = useSettings();
   const [input, setInput] = useState<SquareToRoundInput>(SQUARE_TO_ROUND_DEFAULTS);
-  const [material, setMaterial] = useState(MATERIALS[0].name);
+  const [material, setMaterial] = useState(MATERIALS[0]!.name);
   const [focused, setFocused] = useState<FieldKey | null>(null);
   const [calculated, setCalculated] = useState(false);
   const [calculating, setCalculating] = useState(false);
@@ -68,7 +68,7 @@ export function SquareToRoundStudio() {
 
   const run = () => {
     if (issues.length) {
-      toast.error(issues[0].message);
+      toast.error(issues[0]!.message);
       return;
     }
     setCalculating(true);

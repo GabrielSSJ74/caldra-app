@@ -162,8 +162,8 @@ function Editor() {
           next.push({ id: uid(), type: "circle", cx: e.center.x, cy: -e.center.y, r: e.radius });
         if (e.type === "LWPOLYLINE")
           for (let i = 0; i < e.points.length - (e.closed ? 0 : 1); i++) {
-            const a = e.points[i];
-            const b = e.points[(i + 1) % e.points.length];
+            const a = e.points[i]!;
+            const b = e.points[(i + 1) % e.points.length]!;
             next.push({ id: uid(), type: "line", x1: a.x, y1: -a.y, x2: b.x, y2: -b.y });
           }
       }
@@ -229,7 +229,10 @@ function Editor() {
           </label>
           <button
             onClick={() => {
-              if (!shapes.length) return toast.error("Desenhe algo antes de exportar.");
+              if (!shapes.length) {
+                toast.error("Desenhe algo antes de exportar.");
+                return;
+              }
               downloadDxf(
                 { layers: [{ name: "DESENHO", color: 3 }], entities: toEntities() },
                 "chameleon-desenho-2d",

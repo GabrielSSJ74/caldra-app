@@ -33,13 +33,13 @@ const SHEETS = [
 
 function Planificacao() {
   const { precision } = useSettings();
-  const [sheet, setSheet] = useState(SHEETS[2]);
+  const [sheet, setSheet] = useState(SHEETS[2]!);
   const [pieceW, setPieceW] = useState(620);
   const [pieceH, setPieceH] = useState(430);
   const [quantity, setQuantity] = useState(12);
   const [kerf, setKerf] = useState(3);
   const [thickness, setThickness] = useState(3);
-  const [material, setMaterial] = useState(MATERIALS[0]);
+  const [material, setMaterial] = useState(MATERIALS[0]!);
 
   const plan = useMemo(() => {
     const w = pieceW + kerf;
