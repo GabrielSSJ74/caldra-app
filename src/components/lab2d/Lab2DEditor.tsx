@@ -604,18 +604,11 @@ export function Lab2DEditor() {
     ? { x: (selBox.minX + selBox.maxX) / 2, y: (selBox.minY + selBox.maxY) / 2 }
     : { x: 0, y: 0 };
 
-  const onImport = async (file: File) => {
-    try {
-      const doc = importDxf(await file.text());
-      const next = fromDxf(doc, activeLayer);
-      commit((e) => [...e, ...next]);
-      const found = verify(next);
-      toast.success(`${next.length} elementos · ${doc.layers.length} layers · ${found.length} avisos`);
-      requestAnimationFrame(() => fitTo([...entities, ...next]));
-    } catch {
-      toast.error("Arquivo DXF inválido.");
-    }
+  const onImportConfirm = (next: Entity[]) => {
+    commit((e) => [...e, ...next]);
+    requestAnimationFrame(() => fitTo([...entities, ...next]));
   };
+
 
   const gridStep = grid * view.k < 6 ? grid * 10 : grid;
 
