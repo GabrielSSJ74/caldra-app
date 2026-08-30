@@ -518,6 +518,20 @@ export function fromDxf(doc: DxfDocument, layer: LayerId): Entity[] {
         closed: !!e.closed,
         pts: e.points.map((p) => ({ x: p.x, y: -p.y })),
       });
+    if (e.type === "ARC") {
+      const rad = (d: number) => (-d * Math.PI) / 180;
+      out.push({
+        id: uid(),
+        layer,
+        type: "arc",
+        cx: e.center.x,
+        cy: -e.center.y,
+        r: e.radius,
+        a0: rad(e.endAngle),
+        a1: rad(e.startAngle),
+      });
+    }
   }
+
   return out;
 }
