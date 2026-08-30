@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as PlanificacaoRouteImport } from './routes/planificacao'
 import { Route as TracagemIndexRouteImport } from './routes/tracagem.index'
 import { Route as TracagemSlugRouteImport } from './routes/tracagem.$slug'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlanificacaoRoute = PlanificacaoRouteImport.update({
+  id: '/planificacao',
+  path: '/planificacao',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TracagemIndexRoute = TracagemIndexRouteImport.update({
@@ -31,30 +37,34 @@ const TracagemSlugRoute = TracagemSlugRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/planificacao': typeof PlanificacaoRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/tracagem/': typeof TracagemIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/planificacao': typeof PlanificacaoRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/tracagem': typeof TracagemIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/planificacao': typeof PlanificacaoRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/tracagem/': typeof TracagemIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/tracagem/$slug' | '/tracagem/'
+  fullPaths: '/' | '/planificacao' | '/tracagem/$slug' | '/tracagem/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/tracagem/$slug' | '/tracagem'
-  id: '__root__' | '/' | '/tracagem/$slug' | '/tracagem/'
+  to: '/' | '/planificacao' | '/tracagem/$slug' | '/tracagem'
+  id: '__root__' | '/' | '/planificacao' | '/tracagem/$slug' | '/tracagem/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  PlanificacaoRoute: typeof PlanificacaoRoute
   TracagemSlugRoute: typeof TracagemSlugRoute
   TracagemIndexRoute: typeof TracagemIndexRoute
 }
@@ -66,6 +76,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/planificacao': {
+      id: '/planificacao'
+      path: '/planificacao'
+      fullPath: '/planificacao'
+      preLoaderRoute: typeof PlanificacaoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/tracagem/': {
@@ -87,6 +104,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  PlanificacaoRoute: PlanificacaoRoute,
   TracagemSlugRoute: TracagemSlugRoute,
   TracagemIndexRoute: TracagemIndexRoute,
 }
