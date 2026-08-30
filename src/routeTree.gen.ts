@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BibliotecaRouteImport } from './routes/biblioteca'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
-import { Route as Desenho2dRouteImport } from './routes/desenho-2d'
 import { Route as PlanificacaoRouteImport } from './routes/planificacao'
 import { Route as ProjetosRouteImport } from './routes/projetos'
 import { Route as EscolaIndexRouteImport } from './routes/escola.index'
@@ -33,11 +32,6 @@ const BibliotecaRoute = BibliotecaRouteImport.update({
 const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
   id: '/configuracoes',
   path: '/configuracoes',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const Desenho2dRoute = Desenho2dRouteImport.update({
-  id: '/desenho-2d',
-  path: '/desenho-2d',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlanificacaoRoute = PlanificacaoRouteImport.update({
@@ -75,7 +69,6 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
-  '/desenho-2d': typeof Desenho2dRoute
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
   '/escola/$slug': typeof EscolaSlugRoute
@@ -87,7 +80,6 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
-  '/desenho-2d': typeof Desenho2dRoute
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
   '/escola/$slug': typeof EscolaSlugRoute
@@ -100,7 +92,6 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
-  '/desenho-2d': typeof Desenho2dRoute
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
   '/escola/$slug': typeof EscolaSlugRoute
@@ -114,7 +105,6 @@ export interface FileRouteTypes {
     | '/'
     | '/biblioteca'
     | '/configuracoes'
-    | '/desenho-2d'
     | '/planificacao'
     | '/projetos'
     | '/escola/$slug'
@@ -126,7 +116,6 @@ export interface FileRouteTypes {
     | '/'
     | '/biblioteca'
     | '/configuracoes'
-    | '/desenho-2d'
     | '/planificacao'
     | '/projetos'
     | '/escola/$slug'
@@ -138,7 +127,6 @@ export interface FileRouteTypes {
     | '/'
     | '/biblioteca'
     | '/configuracoes'
-    | '/desenho-2d'
     | '/planificacao'
     | '/projetos'
     | '/escola/$slug'
@@ -151,7 +139,6 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BibliotecaRoute: typeof BibliotecaRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
-  Desenho2dRoute: typeof Desenho2dRoute
   PlanificacaoRoute: typeof PlanificacaoRoute
   ProjetosRoute: typeof ProjetosRoute
   EscolaSlugRoute: typeof EscolaSlugRoute
@@ -181,13 +168,6 @@ declare module '@tanstack/react-router' {
       path: '/configuracoes'
       fullPath: '/configuracoes'
       preLoaderRoute: typeof ConfiguracoesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/desenho-2d': {
-      id: '/desenho-2d'
-      path: '/desenho-2d'
-      fullPath: '/desenho-2d'
-      preLoaderRoute: typeof Desenho2dRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/planificacao': {
@@ -239,7 +219,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BibliotecaRoute: BibliotecaRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
-  Desenho2dRoute: Desenho2dRoute,
   PlanificacaoRoute: PlanificacaoRoute,
   ProjetosRoute: ProjetosRoute,
   EscolaSlugRoute: EscolaSlugRoute,
