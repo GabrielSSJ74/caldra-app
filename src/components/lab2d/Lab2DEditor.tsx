@@ -32,8 +32,8 @@ import {
   X,
 } from "lucide-react";
 import type { Vec2 } from "@/lib/geometry/types";
-import { downloadDxf, importDxf } from "@/lib/dxf/dxfService";
-import { exportSvgAsPdf, exportSvgAsPng } from "@/lib/export/exporters";
+import { ExportDialog } from "@/components/lab2d/ExportDialog";
+import { ImportDialog, type ImportSource } from "@/components/lab2d/ImportDialog";
 import {
   DEFAULT_LAYERS,
   bbox,
@@ -45,7 +45,6 @@ import {
   extendLine,
   filletLines,
   findSnap,
-  fromDxf,
   inside,
   mirror,
   offsetEntity,
@@ -56,7 +55,6 @@ import {
   rotate,
   scaleEntity,
   segmentsOf,
-  toDxf,
   translate,
   trimLine,
   uid,
@@ -65,8 +63,17 @@ import {
   type Layer,
   type Snap,
 } from "@/lib/lab2d/core";
+import { autoDimensions } from "@/lib/lab2d/render";
+import {
+  emptyPlan,
+  getProject,
+  planLabel,
+  saveProject,
+  type Project,
+} from "@/lib/lab2d/projects";
 import { takeHandoff } from "@/lib/lab2d/handoff";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
+
 import { cn } from "@/lib/utils";
 
 type Tool =
