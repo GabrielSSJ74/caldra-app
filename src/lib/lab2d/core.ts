@@ -479,13 +479,18 @@ export function toDxf(entities: Entity[], layers: Layer[]): DxfDocument {
     if (e.type === "circle")
       out.push({ type: "CIRCLE", layer, center: { x: e.cx, y: -e.cy }, radius: e.r });
     if (e.type === "arc") {
-      const steps = 24;
-      const pts = Array.from({ length: steps + 1 }, (_, i) => {
-        const t = e.a0 + ((e.a1 - e.a0) * i) / steps;
-        return { x: e.cx + e.r * Math.cos(t), y: -(e.cy + e.r * Math.sin(t)) };
+      // espelho em Y inverte o sentido: os ângulos trocam de ordem e de sinal
+      const deg = (r: number) => ((-r * 180) / Math.PI + 360) % 360;
+      out.push({
+        type: "ARC",
+        layer,
+        center: { x: e.cx, y: -e.cy },
+        radius: e.r,
+        startAngle: deg(e.a1),
+        endAngle: deg(e.a0),
       });
-      out.push({ type: "LWPOLYLINE", layer, closed: false, points: pts });
     }
+
   }
   return { layers: layers.map((l, i) => ({ name: l.name.toUpperCase(), color: i + 1 })), entities: out };
 }
@@ -513,6 +518,20 @@ export function fromDxf(doc: DxfDocument, layer: LayerId): Entity[] {
         closed: !!e.closed,
         pts: e.points.map((p) => ({ x: p.x, y: -p.y })),
       });
+    if (e.type === "ARC") {
+      const rad = (d: number) => (-d * Math.PI) / 180;
+      out.push({
+        id: uid(),
+        layer,
+        type: "arc",
+        cx: e.center.x,
+        cy: -e.center.y,
+        r: e.radius,
+        a0: rad(e.endAngle),
+        a1: rad(e.startAngle),
+      });
+    }
   }
+
   return out;
 }

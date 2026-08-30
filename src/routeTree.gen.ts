@@ -12,9 +12,10 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BibliotecaRouteImport } from './routes/biblioteca'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
-import { Route as Desenho2dRouteImport } from './routes/desenho-2d'
 import { Route as PlanificacaoRouteImport } from './routes/planificacao'
 import { Route as ProjetosRouteImport } from './routes/projetos'
+import { Route as Desenho2dIndexRouteImport } from './routes/desenho-2d.index'
+import { Route as Desenho2dProjectIdRouteImport } from './routes/desenho-2d.$projectId'
 import { Route as EscolaIndexRouteImport } from './routes/escola.index'
 import { Route as EscolaSlugRouteImport } from './routes/escola.$slug'
 import { Route as TracagemIndexRouteImport } from './routes/tracagem.index'
@@ -35,11 +36,6 @@ const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
   path: '/configuracoes',
   getParentRoute: () => rootRouteImport,
 } as any)
-const Desenho2dRoute = Desenho2dRouteImport.update({
-  id: '/desenho-2d',
-  path: '/desenho-2d',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PlanificacaoRoute = PlanificacaoRouteImport.update({
   id: '/planificacao',
   path: '/planificacao',
@@ -48,6 +44,16 @@ const PlanificacaoRoute = PlanificacaoRouteImport.update({
 const ProjetosRoute = ProjetosRouteImport.update({
   id: '/projetos',
   path: '/projetos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Desenho2dIndexRoute = Desenho2dIndexRouteImport.update({
+  id: '/desenho-2d/',
+  path: '/desenho-2d/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const Desenho2dProjectIdRoute = Desenho2dProjectIdRouteImport.update({
+  id: '/desenho-2d/$projectId',
+  path: '/desenho-2d/$projectId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EscolaIndexRoute = EscolaIndexRouteImport.update({
@@ -75,11 +81,12 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
-  '/desenho-2d': typeof Desenho2dRoute
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
+  '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
+  '/desenho-2d/': typeof Desenho2dIndexRoute
   '/escola/': typeof EscolaIndexRoute
   '/tracagem/': typeof TracagemIndexRoute
 }
@@ -87,11 +94,12 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
-  '/desenho-2d': typeof Desenho2dRoute
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
+  '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
+  '/desenho-2d': typeof Desenho2dIndexRoute
   '/escola': typeof EscolaIndexRoute
   '/tracagem': typeof TracagemIndexRoute
 }
@@ -100,11 +108,12 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
-  '/desenho-2d': typeof Desenho2dRoute
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
+  '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
+  '/desenho-2d/': typeof Desenho2dIndexRoute
   '/escola/': typeof EscolaIndexRoute
   '/tracagem/': typeof TracagemIndexRoute
 }
@@ -114,11 +123,12 @@ export interface FileRouteTypes {
     | '/'
     | '/biblioteca'
     | '/configuracoes'
-    | '/desenho-2d'
     | '/planificacao'
     | '/projetos'
+    | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/tracagem/$slug'
+    | '/desenho-2d/'
     | '/escola/'
     | '/tracagem/'
   fileRoutesByTo: FileRoutesByTo
@@ -126,11 +136,12 @@ export interface FileRouteTypes {
     | '/'
     | '/biblioteca'
     | '/configuracoes'
-    | '/desenho-2d'
     | '/planificacao'
     | '/projetos'
+    | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/tracagem/$slug'
+    | '/desenho-2d'
     | '/escola'
     | '/tracagem'
   id:
@@ -138,11 +149,12 @@ export interface FileRouteTypes {
     | '/'
     | '/biblioteca'
     | '/configuracoes'
-    | '/desenho-2d'
     | '/planificacao'
     | '/projetos'
+    | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/tracagem/$slug'
+    | '/desenho-2d/'
     | '/escola/'
     | '/tracagem/'
   fileRoutesById: FileRoutesById
@@ -151,11 +163,12 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BibliotecaRoute: typeof BibliotecaRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
-  Desenho2dRoute: typeof Desenho2dRoute
   PlanificacaoRoute: typeof PlanificacaoRoute
   ProjetosRoute: typeof ProjetosRoute
+  Desenho2dProjectIdRoute: typeof Desenho2dProjectIdRoute
   EscolaSlugRoute: typeof EscolaSlugRoute
   TracagemSlugRoute: typeof TracagemSlugRoute
+  Desenho2dIndexRoute: typeof Desenho2dIndexRoute
   EscolaIndexRoute: typeof EscolaIndexRoute
   TracagemIndexRoute: typeof TracagemIndexRoute
 }
@@ -183,13 +196,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfiguracoesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/desenho-2d': {
-      id: '/desenho-2d'
-      path: '/desenho-2d'
-      fullPath: '/desenho-2d'
-      preLoaderRoute: typeof Desenho2dRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/planificacao': {
       id: '/planificacao'
       path: '/planificacao'
@@ -202,6 +208,20 @@ declare module '@tanstack/react-router' {
       path: '/projetos'
       fullPath: '/projetos'
       preLoaderRoute: typeof ProjetosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/desenho-2d/': {
+      id: '/desenho-2d/'
+      path: '/desenho-2d'
+      fullPath: '/desenho-2d/'
+      preLoaderRoute: typeof Desenho2dIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/desenho-2d/$projectId': {
+      id: '/desenho-2d/$projectId'
+      path: '/desenho-2d/$projectId'
+      fullPath: '/desenho-2d/$projectId'
+      preLoaderRoute: typeof Desenho2dProjectIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/escola/': {
@@ -239,11 +259,12 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BibliotecaRoute: BibliotecaRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
-  Desenho2dRoute: Desenho2dRoute,
   PlanificacaoRoute: PlanificacaoRoute,
   ProjetosRoute: ProjetosRoute,
+  Desenho2dProjectIdRoute: Desenho2dProjectIdRoute,
   EscolaSlugRoute: EscolaSlugRoute,
   TracagemSlugRoute: TracagemSlugRoute,
+  Desenho2dIndexRoute: Desenho2dIndexRoute,
   EscolaIndexRoute: EscolaIndexRoute,
   TracagemIndexRoute: TracagemIndexRoute,
 }

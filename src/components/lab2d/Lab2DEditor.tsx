@@ -32,8 +32,8 @@ import {
   X,
 } from "lucide-react";
 import type { Vec2 } from "@/lib/geometry/types";
-import { downloadDxf, importDxf } from "@/lib/dxf/dxfService";
-import { exportSvgAsPdf, exportSvgAsPng } from "@/lib/export/exporters";
+import { ExportDialog } from "@/components/lab2d/ExportDialog";
+import { ImportDialog, type ImportSource } from "@/components/lab2d/ImportDialog";
 import {
   DEFAULT_LAYERS,
   bbox,
@@ -45,7 +45,6 @@ import {
   extendLine,
   filletLines,
   findSnap,
-  fromDxf,
   inside,
   mirror,
   offsetEntity,
@@ -56,7 +55,6 @@ import {
   rotate,
   scaleEntity,
   segmentsOf,
-  toDxf,
   translate,
   trimLine,
   uid,
@@ -65,8 +63,17 @@ import {
   type Layer,
   type Snap,
 } from "@/lib/lab2d/core";
+import { autoDimensions } from "@/lib/lab2d/render";
+import {
+  emptyPlan,
+  getProject,
+  planLabel,
+  saveProject,
+  type Project,
+} from "@/lib/lab2d/projects";
 import { takeHandoff } from "@/lib/lab2d/handoff";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
+
 import { cn } from "@/lib/utils";
 
 type Tool =
@@ -116,11 +123,13 @@ const SNAP_GLYPH: Record<Snap["kind"], string> = {
   grid: "+",
 };
 
-export function Lab2DEditor() {
+export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const { isMestre } = useFeatureAccess();
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
+  const [project, setProject] = useState<Project | null>(null);
+  const [planId, setPlanId] = useState<string>("");
   const [entities, setEntities] = useState<Entity[]>([]);
   const [layers, setLayers] = useState<Layer[]>(DEFAULT_LAYERS);
   const [activeLayer, setActiveLayer] = useState("corte");
@@ -132,12 +141,16 @@ export function Lab2DEditor() {
   const [grid, setGrid] = useState(10);
   const [snapOn, setSnapOn] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
+  const [showDims, setShowDims] = useState(false);
   const [focus, setFocus] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
   const [pending, setPending] = useState<Vec2[]>([]);
   const [draft, setDraft] = useState<Entity | null>(null);
   const [marquee, setMarquee] = useState<{ a: Vec2; b: Vec2 } | null>(null);
   const [measures, setMeasures] = useState<Measure[]>([]);
+  const [liveMeasure, setLiveMeasure] = useState<Measure | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [importSrc, setImportSrc] = useState<ImportSource | null>(null);
   const [issues, setIssues] = useState<{ message: string; p: Vec2 }[] | null>(null);
   const [offsetDist, setOffsetDist] = useState(5);
   const [filletR, setFilletR] = useState(10);
@@ -146,6 +159,52 @@ export function Lab2DEditor() {
   const future = useRef<Entity[][]>([]);
   const panRef = useRef<{ x: number; y: number } | null>(null);
   const moveRef = useRef<{ from: Vec2; ids: string[]; base: Entity[] } | null>(null);
+
+  /* ------------------------------------------- projeto, planos e autosave */
+  useEffect(() => {
+    if (!projectId) return;
+    const p = getProject(projectId);
+    if (!p) return;
+    setProject(p);
+    setLayers(p.layers ?? DEFAULT_LAYERS);
+    const plan = p.plans.find((x) => x.id === p.lastPlanId) ?? p.plans[0]!;
+    setPlanId(plan.id);
+    setEntities(plan.entities);
+    past.current = [];
+    future.current = [];
+  }, [projectId]);
+
+  useEffect(() => {
+    if (!project || !planId) return;
+    const t = setTimeout(() => {
+      const next: Project = {
+        ...project,
+        layers,
+        lastPlanId: planId,
+        plans: project.plans.map((pl) => (pl.id === planId ? { ...pl, entities } : pl)),
+      };
+      saveProject(next);
+      setProject(next);
+    }, 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entities, layers, planId]);
+
+  /* --------------------------------- paisagem automática no celular */
+  useEffect(() => {
+    const so = window.screen?.orientation as
+      | (ScreenOrientation & { lock?: (o: string) => Promise<void>; unlock?: () => void })
+      | undefined;
+    void so?.lock?.("landscape").catch(() => undefined);
+    return () => {
+      try {
+        so?.unlock?.();
+      } catch {
+        /* não suportado */
+      }
+    };
+  }, []);
+
 
   const layerOf = useCallback((id: string) => layers.find((l) => l.id === id), [layers]);
 
@@ -347,17 +406,28 @@ export function Lab2DEditor() {
         const arc = arcFrom3(a, b, c, activeLayer);
         if (arc) commit((e) => [...e, arc]);
         setPending([]);
+        setDraft(null);
       } else setPending(q);
       return;
     }
     if (tool === "measure") {
       const q = [...pending, p];
       if (q.length === 2) {
-        setMeasures((m) => [...m, { a: q[0]!, b: q[1]! }]);
+        const m = { a: q[0]!, b: q[1]! };
+        setMeasures((list) => [...list, m]);
         setPending([]);
+        setLiveMeasure(null);
+        toast(`${dist(m.a, m.b).toFixed(2)} mm`, {
+          description: "Medição adicionada.",
+          action: {
+            label: "Descartar",
+            onClick: () => setMeasures((list) => list.filter((x) => x !== m)),
+          },
+        });
       } else setPending(q);
       return;
     }
+
     if (tool === "offset") {
       const hit = hitTest(raw);
       if (hit) {
@@ -466,9 +536,23 @@ export function Lab2DEditor() {
       setMarquee({ a: marquee.a, b: raw });
       return;
     }
+    // prévia contínua: arco por 3 pontos e régua
+    if (tool === "arc" && pending.length) {
+      const p = snapPoint(raw);
+      const [a, b] = pending;
+      if (pending.length === 1 && a)
+        setDraft({ id: "draft", layer: activeLayer, type: "line", x1: a.x, y1: a.y, x2: p.x, y2: p.y });
+      else if (a && b) setDraft(arcFrom3(a, b, p, activeLayer));
+      return;
+    }
+    if (tool === "measure" && pending.length === 1) {
+      setLiveMeasure({ a: pending[0]!, b: snapPoint(raw) });
+      return;
+    }
     if (pending.length === 1 && draft) {
       setDraft(buildDraft(tool, pending[0]!, snapPoint(raw), activeLayer, filletR));
     }
+
   };
 
   const onPointerUp = () => {
@@ -579,18 +663,11 @@ export function Lab2DEditor() {
     ? { x: (selBox.minX + selBox.maxX) / 2, y: (selBox.minY + selBox.maxY) / 2 }
     : { x: 0, y: 0 };
 
-  const onImport = async (file: File) => {
-    try {
-      const doc = importDxf(await file.text());
-      const next = fromDxf(doc, activeLayer);
-      commit((e) => [...e, ...next]);
-      const found = verify(next);
-      toast.success(`${next.length} elementos · ${doc.layers.length} layers · ${found.length} avisos`);
-      requestAnimationFrame(() => fitTo([...entities, ...next]));
-    } catch {
-      toast.error("Arquivo DXF inválido.");
-    }
+  const onImportConfirm = (next: Entity[]) => {
+    commit((e) => [...e, ...next]);
+    requestAnimationFrame(() => fitTo([...entities, ...next]));
   };
+
 
   const gridStep = grid * view.k < 6 ? grid * 10 : grid;
 
@@ -702,7 +779,39 @@ export function Lab2DEditor() {
             />
           )}
 
-          {measures.map((m, i) => (
+          {/* cotas de conferência */}
+          {showDims &&
+            autoDimensions(visible).map((d, i) => {
+              const mx = (d.a.x + d.b.x) / 2;
+              const my = (d.a.y + d.b.y) / 2;
+              const ang = (Math.atan2(d.b.y - d.a.y, d.b.x - d.a.x) * 180) / Math.PI;
+              const flip = ang > 90 || ang < -90 ? 180 : 0;
+              return (
+                <g key={`dim-${i}`} stroke="var(--warn)" fill="var(--warn)">
+                  <line
+                    x1={d.a.x}
+                    y1={d.a.y}
+                    x2={d.b.x}
+                    y2={d.b.y}
+                    strokeWidth={1 / view.k}
+                    strokeDasharray={d.kind === "radial" ? `${4 / view.k} ${3 / view.k}` : undefined}
+                  />
+                  <text
+                    x={mx}
+                    y={my - 3 / view.k}
+                    transform={`rotate(${ang + flip} ${mx} ${my})`}
+                    fontSize={10 / view.k}
+                    textAnchor="middle"
+                    stroke="none"
+                    className="font-mono"
+                  >
+                    {d.label}
+                  </text>
+                </g>
+              );
+            })}
+
+          {[...measures, ...(liveMeasure ? [liveMeasure] : [])].map((m, i) => (
             <g key={i} className="text-accent">
               <line
                 x1={m.a.x}
@@ -711,6 +820,9 @@ export function Lab2DEditor() {
                 y2={m.b.y}
                 stroke="currentColor"
                 strokeWidth={1 / view.k}
+                strokeDasharray={
+                  liveMeasure && i === measures.length ? `${5 / view.k} ${4 / view.k}` : undefined
+                }
               />
               <text
                 x={(m.a.x + m.b.x) / 2}
@@ -720,10 +832,15 @@ export function Lab2DEditor() {
                 fill="currentColor"
                 className="font-mono"
               >
-                {dist(m.a, m.b).toFixed(2)}
+                {dist(m.a, m.b).toFixed(2)} mm ·{" "}
+                {(((Math.atan2(-(m.b.y - m.a.y), m.b.x - m.a.x) * 180) / Math.PI + 360) % 360).toFixed(
+                  1,
+                )}
+                °
               </text>
             </g>
           ))}
+
 
           {issues?.map((is, i) => (
             <circle
@@ -808,54 +925,29 @@ export function Lab2DEditor() {
               icon={Spline}
             />
             <IconBtn label="Layers" onClick={() => setShowLayers((s) => !s)} icon={LayersIcon} />
+            <IconBtn
+              label={showDims ? "Ocultar medidas" : "Mostrar medidas"}
+              onClick={() => setShowDims((s) => !s)}
+              icon={Ruler}
+            />
             <label
-              title="Importar DXF"
+              title="Importar DXF/SVG"
               className="glass grid size-8 cursor-pointer place-items-center rounded-xl text-muted-foreground hover:text-foreground"
             >
               <Upload className="size-[15px]" />
               <input
                 type="file"
-                accept=".dxf"
+                accept=".dxf,.svg"
                 className="hidden"
-                onChange={(e) => e.target.files?.[0] && onImport(e.target.files[0])}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) setImportSrc({ file, layer: activeLayer });
+                  e.target.value = "";
+                }}
               />
             </label>
-            <IconBtn
-              label="Exportar DXF"
-              onClick={() => {
-                if (!entities.length) {
-                  toast.error("Prancheta vazia.");
-                  return;
-                }
+            <IconBtn label="Exportar" onClick={() => setExportOpen(true)} icon={Download} />
 
-                downloadDxf(toDxf(entities, layers), "chameleon-lab2d");
-                toast.success("DXF exportado.");
-              }}
-              icon={Download}
-            />
-            <IconBtn
-              label="Exportar PNG"
-              onClick={() => svgRef.current && exportSvgAsPng(svgRef.current, "chameleon-lab2d", 4)}
-              icon={CircleIcon}
-            />
-            <IconBtn
-              label="Folha técnica (PDF)"
-              onClick={() =>
-                svgRef.current &&
-                exportSvgAsPdf(
-                  svgRef.current,
-                  {
-                    pieceName: "Desenho 2D",
-                    project: "CHAMELEON",
-                    material: "—",
-                    thickness: "—",
-                    quantity: "1",
-                  },
-                  entities.map((e) => [e.type, e.layer]),
-                )
-              }
-              icon={PenLine}
-            />
           </>
         )}
         <IconBtn label="Foco" onClick={() => setFocus((f) => !f)} icon={focus ? X : Maximize} />
@@ -1003,7 +1095,78 @@ export function Lab2DEditor() {
         )}
         <span className="ml-auto glass rounded-full px-2.5 py-1">{Math.round(view.k * 100)}%</span>
       </div>
+
+      {/* PLANOS */}
+      {project && !focus && (
+        <div className="glass absolute bottom-11 left-2 z-10 flex items-center gap-1 rounded-2xl p-1 font-mono text-[10px]">
+          {project.plans.map((pl) => (
+            <button
+              key={pl.id}
+              onClick={() => {
+                if (pl.id === planId) return;
+                setProject((prev) =>
+                  prev
+                    ? { ...prev, plans: prev.plans.map((x) => (x.id === planId ? { ...x, entities } : x)) }
+                    : prev,
+                );
+                setPlanId(pl.id);
+                setEntities(pl.entities);
+                setSelection([]);
+                past.current = [];
+                future.current = [];
+              }}
+              className={cn(
+                "rounded-xl px-2 py-1 tracking-widest transition-colors",
+                pl.id === planId ? "bg-accent/15 text-accent" : "text-muted-foreground",
+              )}
+            >
+              {pl.name}
+            </button>
+          ))}
+          <button
+            aria-label="Novo plano"
+            onClick={() => {
+              const plan = emptyPlan(project.plans.length);
+              plan.name = planLabel(project.plans.length);
+              const next: Project = {
+                ...project,
+                plans: [...project.plans.map((x) => (x.id === planId ? { ...x, entities } : x)), plan],
+                lastPlanId: plan.id,
+              };
+              saveProject(next);
+              setProject(next);
+              setPlanId(plan.id);
+              setEntities([]);
+              setSelection([]);
+              toast.success(`${plan.name} criado.`);
+            }}
+            className="rounded-xl px-2 py-1 text-muted-foreground transition-colors hover:text-accent"
+          >
+            +
+          </button>
+        </div>
+      )}
+
+      <ExportDialog
+        open={exportOpen}
+        onOpenChange={setExportOpen}
+        layers={layers}
+        projectName={project?.name ?? "Chameleon"}
+        planName={project?.plans.find((p) => p.id === planId)?.name ?? "P01"}
+        scopes={{
+          selection: selected,
+          plan: entities,
+          project: project ? project.plans.flatMap((p) => (p.id === planId ? entities : p.entities)) : entities,
+        }}
+      />
+      <ImportDialog
+        source={importSrc}
+        layers={layers}
+        onClose={() => setImportSrc(null)}
+        onConfirm={onImportConfirm}
+      />
     </div>
+
   );
 }
 
