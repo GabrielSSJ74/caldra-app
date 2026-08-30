@@ -466,9 +466,23 @@ export function Lab2DEditor() {
       setMarquee({ a: marquee.a, b: raw });
       return;
     }
+    // prévia contínua: arco por 3 pontos e régua
+    if (tool === "arc" && pending.length) {
+      const p = snapPoint(raw);
+      const [a, b] = pending;
+      if (pending.length === 1 && a)
+        setDraft({ id: "draft", layer: activeLayer, type: "line", x1: a.x, y1: a.y, x2: p.x, y2: p.y });
+      else if (a && b) setDraft(arcFrom3(a, b, p, activeLayer));
+      return;
+    }
+    if (tool === "measure" && pending.length === 1) {
+      setLiveMeasure({ a: pending[0]!, b: snapPoint(raw) });
+      return;
+    }
     if (pending.length === 1 && draft) {
       setDraft(buildDraft(tool, pending[0]!, snapPoint(raw), activeLayer, filletR));
     }
+
   };
 
   const onPointerUp = () => {
