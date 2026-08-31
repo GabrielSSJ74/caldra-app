@@ -93,7 +93,7 @@ function Explorer() {
         </button>
       </header>
 
-      <label className="glass flex items-center gap-2 rounded-2xl px-3 py-2.5">
+      <label className="metal flex items-center gap-2 rounded-2xl px-3 py-2.5">
         <Search className="size-4 text-muted-foreground" />
         <input
           value={query}
@@ -110,7 +110,7 @@ function Explorer() {
       ) : (
         <ul className="grid gap-2 sm:grid-cols-2">
           {filtered.map((p) => (
-            <li key={p.id} className="glass group rounded-2xl p-3 transition-all hover:glow-ring">
+            <li key={p.id} className="metal group rounded-2xl p-3 transition-all hover:amber-ring">
               <button
                 onClick={() => navigate({ to: "/desenho-2d/$projectId", params: { projectId: p.id } })}
                 className="flex w-full items-center gap-3 text-left"

@@ -27,7 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         aria-label={isMestre ? "Modo Mestre ativo" : "Ativar Modo Mestre"}
         className={cn(
           "fixed top-4 right-4 z-40 grid size-9 place-items-center rounded-full transition-all duration-300",
-          "glass backdrop-blur-xl hover:scale-110",
+          "metal backdrop-blur-xl hover:scale-110",
           isMestre ? "text-accent glow-ring" : "text-muted-foreground hover:text-foreground",
         )}
       >
