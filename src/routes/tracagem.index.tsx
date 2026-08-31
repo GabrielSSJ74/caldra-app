@@ -44,15 +44,21 @@ function TracagemIndex() {
   );
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      <header className="pt-1">
+        <span className="tick-label">Biblioteca de peças</span>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">TRAÇAR</h1>
+      </header>
+
       <div className="flex items-center gap-2">
-        <label className="glass flex min-w-0 flex-1 items-center gap-2 rounded-full px-4 sm:max-w-xs">
+        <label className="metal flex min-w-0 flex-1 items-center gap-2 rounded-full px-4 sm:max-w-xs">
           <Search className="size-3.5 shrink-0 text-muted-foreground" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             aria-label="Buscar geometria"
-            className="w-full bg-transparent py-2.5 text-[13px] outline-none"
+            placeholder="Buscar"
+            className="w-full bg-transparent py-2.5 text-[13px] outline-none placeholder:text-muted-foreground/60"
           />
         </label>
         <div className="flex gap-1">
@@ -63,9 +69,9 @@ function TracagemIndex() {
               aria-label={l === "•" ? "Todos os níveis" : l}
               title={l === "•" ? "Todos" : l}
               className={cn(
-                "size-8 rounded-full font-mono text-[10px] uppercase transition-all",
+                "size-9 rounded-full font-mono text-[10px] uppercase transition-all duration-300",
                 level === l
-                  ? "bg-accent/12 text-accent ring-1 ring-accent/25"
+                  ? "bg-accent/12 text-accent amber-ring"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
@@ -84,19 +90,21 @@ function TracagemIndex() {
               to="/tracagem/$slug"
               params={{ slug: g.slug }}
               style={{ animationDelay: `${i * 24}ms` }}
-              className="glass pop-in group relative aspect-square overflow-hidden rounded-3xl transition-all duration-500 hover:scale-[1.03] hover:glow-ring"
+              className="metal pop-in group relative aspect-square overflow-hidden rounded-3xl transition-all duration-500 hover:scale-[1.02] hover:amber-ring"
             >
+              <span
+                aria-hidden
+                className="grid-bg-fine pointer-events-none absolute inset-0 opacity-40"
+              />
               <Wire3D
                 model={buildWire(g.slug, DEFAULT_PARAMS)}
-                className="absolute inset-0 size-full p-3 text-foreground/70 transition-transform duration-700 group-hover:scale-110"
+                className="absolute inset-0 size-full p-3 text-foreground/85 transition-transform duration-700 group-hover:scale-110"
               />
-              <span className="absolute top-2.5 right-3 font-mono text-[8px] tracking-[0.2em] text-muted-foreground/70 uppercase">
-                {g.level.charAt(0)}
-              </span>
+              <span className="absolute top-2.5 right-3 tick-label">{g.level.charAt(0)}</span>
               {locked && (
                 <Lock className="absolute top-2.5 left-3 size-3 text-accent/70" aria-label="Mestre" />
               )}
-              <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-background/80 to-transparent px-3 pt-6 pb-2.5 text-center font-mono text-[9px] tracking-[0.16em] uppercase">
+              <span className="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-background/90 to-transparent px-3 pt-6 pb-2.5 text-center font-mono text-[9px] tracking-[0.16em] uppercase">
                 {g.name}
               </span>
             </Link>

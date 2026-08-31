@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { ArrowUpRight, Compass, PenTool } from "lucide-react";
+import { ArrowUpRight, FolderKanban, PenTool, Sigma } from "lucide-react";
 import { DEMO_HISTORY, DEMO_PROJECTS } from "@/lib/projects/demo-data";
 import { buildWire, DEFAULT_PARAMS } from "@/lib/viz3d/wire";
 import { Wire3D } from "@/components/chameleon/Wire3D";
@@ -23,63 +23,169 @@ export const Route = createFileRoute("/")({
   component: Inicio,
 });
 
+/* miniaturas vetoriais — cada módulo tem identidade própria */
+
+function MiniPlan() {
+  return (
+    <svg viewBox="0 0 120 80" className="size-full" aria-hidden>
+      <g fill="none" stroke="currentColor" strokeWidth="1">
+        <rect x="14" y="14" width="92" height="52" rx="4" opacity=".5" />
+        <circle cx="60" cy="40" r="17" />
+        <circle cx="60" cy="40" r="8" opacity=".7" />
+        {[0, 90, 180, 270].map((a) => {
+          const r = (a * Math.PI) / 180;
+          return (
+            <circle key={a} cx={60 + 24 * Math.cos(r)} cy={40 + 24 * Math.sin(r)} r="3.2" />
+          );
+        })}
+      </g>
+      <g stroke="var(--accent)" strokeWidth=".9" opacity=".9">
+        <path d="M14 72 H106" />
+        <path d="M14 69 V75 M106 69 V75" />
+      </g>
+    </svg>
+  );
+}
+
+function MiniMath() {
+  return (
+    <svg viewBox="0 0 120 80" className="size-full" aria-hidden>
+      <g fill="none" stroke="currentColor" strokeWidth="1">
+        <path d="M18 62 H92 L18 18 Z" />
+        <path d="M18 52 H28 V62" opacity=".7" />
+        <path d="M40 62 a22 22 0 0 0 -3 -12" stroke="var(--accent)" />
+      </g>
+      <text
+        x="66"
+        y="34"
+        fill="var(--accent)"
+        fontFamily="ui-monospace, monospace"
+        fontSize="11"
+        opacity=".95"
+      >
+        α
+      </text>
+    </svg>
+  );
+}
+
+function MiniFolders() {
+  return (
+    <svg viewBox="0 0 120 80" className="size-full" aria-hidden>
+      <g fill="none" stroke="currentColor" strokeWidth="1">
+        <path d="M22 26 h20 l5 6 h30 v34 H22 Z" opacity=".45" />
+        <path d="M32 34 h20 l5 6 h30 v34 H32 Z" opacity=".7" />
+        <path d="M42 42 h20 l5 6 h30 v26 H42 Z" />
+        <path d="M52 56 h34 M52 62 h22" stroke="var(--accent)" opacity=".9" />
+      </g>
+    </svg>
+  );
+}
+
 function Inicio() {
   const project = DEMO_PROJECTS[0];
   const last = DEMO_HISTORY[0];
   const model = buildWire("quadrado-redondo", DEFAULT_PARAMS);
 
   return (
-    <div className="relative flex min-h-[70vh] flex-col justify-center gap-12">
-      <div className="pointer-events-none absolute -top-10 right-0 hidden text-accent/50 lg:block">
-        <Wire3D model={model} autoSpin className="size-72 opacity-40" />
-      </div>
-
-      <header className="relative">
-        <h1 className="text-brand-gradient font-display text-5xl leading-none font-semibold tracking-tight lg:text-7xl">
+    <div className="space-y-6">
+      <header className="relative pt-2">
+        <span className="tick-label">Laboratório Caldeireiro</span>
+        <h1 className="text-brand-gradient mt-1 font-display text-[clamp(2.4rem,13vw,4.5rem)] leading-[0.9] font-semibold tracking-tight">
           CHAMELEON
         </h1>
-        <p className="mt-3 font-mono text-[11px] tracking-[0.4em] text-muted-foreground uppercase">
-          Laboratório Caldeireiro
-        </p>
+        <div className="mt-3 flex items-center gap-3">
+          <span className="h-px flex-1 bg-gradient-to-r from-accent/60 to-transparent" />
+          <span className="tick-label">Laboratório</span>
+        </div>
       </header>
 
-      <div className="relative grid gap-3 sm:grid-cols-3">
+      {/* composição assimétrica */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:grid-rows-2">
         <Link
           to="/tracagem"
-          className="glass group flex items-center gap-3 rounded-2xl p-4 transition-all hover:scale-[1.02] hover:glow-ring"
+          className="metal group relative col-span-2 row-span-2 flex min-h-[240px] flex-col justify-between overflow-hidden rounded-3xl p-5 transition-all duration-500 hover:amber-ring lg:min-h-[340px]"
         >
-          <Compass className="size-5 text-accent" />
-          <span className="font-mono text-[10px] tracking-[0.2em] uppercase">Traçar</span>
-          <ArrowUpRight className="ml-auto size-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5" />
+          <div className="relative z-10">
+            <span className="tick-label text-accent">01 · Módulo principal</span>
+            <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight lg:text-3xl">
+              TRAÇAGEM
+            </h2>
+          </div>
+          <Wire3D
+            model={model}
+            autoSpin
+            className="pointer-events-none absolute -right-10 -bottom-8 size-[86%] text-foreground/80 transition-transform duration-700 group-hover:scale-105"
+          />
+          <div className="relative z-10 flex items-center gap-2 text-accent">
+            <span className="tick-label text-accent">Abrir biblioteca</span>
+            <ArrowUpRight className="size-4 transition-transform group-hover:-translate-y-0.5" />
+          </div>
         </Link>
 
         <Link
           to="/desenho-2d"
-          className="glass group flex items-center gap-3 rounded-2xl p-4 transition-all hover:scale-[1.02] hover:glow-ring"
+          className="metal group relative flex min-h-[130px] flex-col justify-between overflow-hidden rounded-3xl p-4 transition-all duration-500 hover:amber-ring"
         >
-          <PenTool className="size-5 text-accent" />
-          <span className="font-mono text-[10px] tracking-[0.2em] uppercase">Lab 2D</span>
-          <ArrowUpRight className="ml-auto size-4 text-muted-foreground transition-transform group-hover:-translate-y-0.5" />
+          <div className="flex items-center justify-between">
+            <PenTool className="size-4 text-accent" strokeWidth={1.4} />
+            <span className="tick-label">02</span>
+          </div>
+          <div className="pointer-events-none absolute inset-x-2 top-6 h-20 text-accent2/70 opacity-70">
+            <MiniPlan />
+          </div>
+          <span className="relative font-display text-sm font-medium tracking-wide">LAB 2D</span>
         </Link>
 
-        {project && (
-          <Link
-            to="/projetos"
-            className="glass group flex items-center gap-3 rounded-2xl p-4 transition-all hover:scale-[1.02] hover:glow-ring"
-          >
-            <span className="grid size-8 place-items-center rounded-full bg-accent/10 font-mono text-[10px] text-accent">
-              {project.progress}%
+        <Link
+          to="/escola"
+          className="metal group relative flex min-h-[130px] flex-col justify-between overflow-hidden rounded-3xl p-4 transition-all duration-500 hover:amber-ring"
+        >
+          <div className="flex items-center justify-between">
+            <Sigma className="size-4 text-accent" strokeWidth={1.4} />
+            <span className="tick-label">03</span>
+          </div>
+          <div className="pointer-events-none absolute inset-x-2 top-6 h-20 text-muted-foreground/70">
+            <MiniMath />
+          </div>
+          <span className="relative font-display text-sm font-medium tracking-wide">ESTUDOS</span>
+        </Link>
+
+        <Link
+          to="/projetos"
+          className="metal group relative col-span-2 flex min-h-[110px] items-center justify-between overflow-hidden rounded-3xl p-4 transition-all duration-500 hover:amber-ring lg:col-span-1 lg:col-start-3 lg:row-start-2"
+        >
+          <div className="relative z-10 flex min-w-0 flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <FolderKanban className="size-4 text-accent" strokeWidth={1.4} />
+              <span className="tick-label">04</span>
+            </div>
+            <span className="font-display text-sm font-medium tracking-wide">PROJETOS</span>
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {DEMO_PROJECTS.length} ativos
             </span>
-            <span className="min-w-0 truncate text-[12px]">{project.name}</span>
-          </Link>
-        )}
+          </div>
+          <div className="pointer-events-none h-20 w-28 shrink-0 text-muted-foreground/60">
+            <MiniFolders />
+          </div>
+        </Link>
       </div>
 
-      {last && (
-        <p className="relative font-mono text-[10px] tracking-[0.2em] text-muted-foreground/70 uppercase">
-          {last.label} · {last.when}
-        </p>
-      )}
+      {/* informação recente — indicadores compactos */}
+      <div className="grid grid-cols-3 gap-px overflow-hidden rounded-2xl bg-border/60">
+        <div className="bg-background/70 p-3">
+          <p className="tick-label">Último projeto</p>
+          <p className="mt-1 truncate text-[12px]">{project?.name ?? "—"}</p>
+        </div>
+        <div className="bg-background/70 p-3">
+          <p className="tick-label">Última peça</p>
+          <p className="mt-1 truncate text-[12px]">{last?.label ?? "—"}</p>
+        </div>
+        <div className="bg-background/70 p-3">
+          <p className="tick-label">Progresso</p>
+          <p className="mt-1 font-mono text-[13px] text-accent">{project?.progress ?? 0}%</p>
+        </div>
+      </div>
     </div>
   );
 }

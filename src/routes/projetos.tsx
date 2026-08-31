@@ -31,44 +31,67 @@ const STATUS_STYLE = {
   exportada: "bg-accent2/10 text-accent2",
 } as const;
 
+function Thumb({ seed }: { seed: number }) {
+  const r = 12 + (seed % 3) * 4;
+  return (
+    <svg viewBox="0 0 56 56" className="size-full text-muted-foreground" aria-hidden>
+      <g fill="none" stroke="currentColor" strokeWidth="1">
+        <rect x="6" y="6" width="44" height="44" rx="3" opacity=".35" />
+        <circle cx="28" cy="28" r={r} />
+        <circle cx="28" cy="28" r={r / 2.4} opacity=".6" />
+        <path d="M6 28 H50 M28 6 V50" stroke="var(--accent)" strokeWidth=".5" opacity=".5" />
+      </g>
+    </svg>
+  );
+}
+
 function Projetos() {
   const { isMestre } = useFeatureAccess();
   const [open, setOpen] = useState(DEMO_PROJECTS[0]!.id);
 
   return (
-    <div className="space-y-4">
-      <header className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3">
+    <div className="space-y-5">
+      <header className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 pt-1">
         <div className="min-w-0">
-          <h1 className="font-display text-2xl font-semibold">Projetos</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {isMestre
-              ? "Projetos ilimitados no Modo Mestre."
-              : `Plano Free: até ${FREE_PROJECT_LIMIT} projetos.`}
-          </p>
+          <span className="tick-label">
+            {isMestre ? "Mestre · ilimitado" : `Free · até ${FREE_PROJECT_LIMIT}`}
+          </span>
+          <h1 className="font-display text-3xl font-semibold tracking-tight">PROJETOS</h1>
         </div>
         <DemoTag />
       </header>
 
-      <div className="space-y-3">
-        {DEMO_PROJECTS.map((p) => {
+      <div className="space-y-2">
+        {DEMO_PROJECTS.map((p, i) => {
           const expanded = open === p.id;
           return (
-            <Panel key={p.id} className="overflow-hidden">
+            <Panel key={p.id} className="metal overflow-hidden rounded-2xl">
               <button
                 onClick={() => setOpen(expanded ? "" : p.id)}
-                className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 p-4 text-left"
+                className="grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-3 text-left"
               >
+                <span
+                  className={cn(
+                    "size-12 shrink-0 rounded-xl p-1 transition-all duration-500",
+                    expanded ? "bg-accent/8 amber-ring" : "hairline",
+                  )}
+                >
+                  <Thumb seed={i} />
+                </span>
                 <div className="min-w-0">
-                  <p className="truncate font-display text-sm font-medium">{p.name}</p>
+                  <span className="tick-label">Projeto {String(i + 1).padStart(2, "0")}</span>
+                  <p className="truncate font-display text-[15px] font-medium">{p.name}</p>
                   <p className="font-mono text-[10px] text-muted-foreground">
-                    {p.client} · {p.pieces.length} peças ·{" "}
-                    {new Date(p.date).toLocaleDateString("pt-BR")}
+                    {p.pieces.length} planos · {new Date(p.date).toLocaleDateString("pt-BR")}
                   </p>
-                  <div className="mt-2 h-1 w-full max-w-xs overflow-hidden rounded-full bg-secondary">
-                    <div className="brand-gradient h-full" style={{ width: `${p.progress}%` }} />
+                  <div className="mt-2 h-px w-full max-w-xs overflow-hidden bg-border">
+                    <div className="h-full bg-accent" style={{ width: `${p.progress}%` }} />
                   </div>
                 </div>
-                <FolderKanban className="size-5 shrink-0 text-accent" />
+                <span className="flex shrink-0 flex-col items-end gap-1">
+                  <span className="font-mono text-[11px] text-accent">{p.progress}%</span>
+                  <FolderKanban className="size-4 text-muted-foreground" strokeWidth={1.4} />
+                </span>
               </button>
               {expanded && (
                 <div className="fade-up border-t border-line p-4 pt-3">

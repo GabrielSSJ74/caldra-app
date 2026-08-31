@@ -40,48 +40,66 @@ function EstudosIndex() {
   const { isMestre } = useFeatureAccess();
 
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+    <div className="space-y-5">
+      <header className="pt-1">
+        <span className="tick-label">Aprendizagem visual</span>
+        <h1 className="font-display text-3xl font-semibold tracking-tight">ESTUDOS</h1>
+      </header>
+
+      <div className="divide-y divide-border overflow-hidden rounded-3xl metal">
         {MODULES.map((m, i) => {
           const Icon = ICONS[i % ICONS.length]!;
           const active = open === m.slug;
           return (
-            <button
-              key={m.slug}
-              onClick={() => setOpen(active ? null : m.slug)}
-              style={{ animationDelay: `${i * 30}ms` }}
-              className={cn(
-                "glass pop-in flex aspect-square flex-col items-center justify-center gap-3 rounded-3xl transition-all duration-500 hover:scale-[1.03]",
-                active ? "text-accent glow-ring" : "text-muted-foreground hover:text-foreground",
+            <div key={m.slug}>
+              <button
+                onClick={() => setOpen(active ? null : m.slug)}
+                className={cn(
+                  "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 px-4 py-4 text-left transition-colors duration-300",
+                  active ? "bg-accent/6 text-accent" : "hover:bg-foreground/3",
+                )}
+              >
+                <span
+                  className={cn(
+                    "grid size-11 shrink-0 place-items-center rounded-2xl transition-all duration-500",
+                    active ? "bg-accent/12 amber-ring text-accent" : "hairline text-muted-foreground",
+                  )}
+                >
+                  <Icon className="size-5" strokeWidth={1.2} />
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate font-display text-[15px] font-medium tracking-tight">
+                    {m.title}
+                  </span>
+                  <span className="tick-label">{m.lessons.length} aulas</span>
+                </span>
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+              </button>
+
+              {active && (
+                <div className="fade-up grid gap-px bg-border/60 sm:grid-cols-2">
+                  {m.lessons.map((l) => (
+                    <Link
+                      key={l.slug}
+                      to="/escola/$slug"
+                      params={{ slug: l.slug }}
+                      className="flex items-center gap-3 bg-background/70 px-4 py-3 transition-colors hover:text-accent"
+                    >
+                      <span className="font-mono text-[10px] text-accent">{l.minutes}′</span>
+                      <span className="min-w-0 truncate text-[12px]">{l.title}</span>
+                      {!l.free && !isMestre && (
+                        <span className="ml-auto size-1.5 shrink-0 rounded-full bg-accent" />
+                      )}
+                    </Link>
+                  ))}
+                </div>
               )}
-            >
-              <Icon className="size-8" strokeWidth={1.2} />
-              <span className="px-2 text-center font-mono text-[9px] tracking-[0.16em] uppercase">
-                {m.title}
-              </span>
-            </button>
+            </div>
           );
         })}
       </div>
-
-      {MODULES.filter((m) => m.slug === open).map((m) => (
-        <div key={m.slug} className="fade-up grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {m.lessons.map((l) => (
-            <Link
-              key={l.slug}
-              to="/escola/$slug"
-              params={{ slug: l.slug }}
-              className="glass flex items-center gap-3 rounded-2xl px-4 py-3 transition-colors hover:text-accent"
-            >
-              <span className="font-mono text-[10px] text-muted-foreground">{l.minutes}′</span>
-              <span className="min-w-0 truncate text-[12px]">{l.title}</span>
-              {!l.free && !isMestre && (
-                <span className="ml-auto size-1.5 shrink-0 rounded-full bg-accent" />
-              )}
-            </Link>
-          ))}
-        </div>
-      ))}
     </div>
   );
 }
