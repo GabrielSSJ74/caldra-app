@@ -98,7 +98,7 @@ function TracagemIndex() {
               />
               <Wire3D
                 model={buildWire(g.slug, DEFAULT_PARAMS)}
-                className="absolute inset-0 size-full p-3 text-foreground/70 transition-transform duration-700 group-hover:scale-110"
+                className="absolute inset-0 size-full p-3 text-foreground/85 transition-transform duration-700 group-hover:scale-110"
               />
               <span className="absolute top-2.5 right-3 tick-label">{g.level.charAt(0)}</span>
               {locked && (

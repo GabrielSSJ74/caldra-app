@@ -104,7 +104,7 @@ export function Wire3D({
         <polygon
           key={`f${i}`}
           points={f.d}
-          className="fill-accent"
+          className="fill-accent2"
           fillOpacity={(0.05 + 0.06 * ((f.depth + maxDepth) / (2 * maxDepth))).toFixed(4)}
           stroke="none"
         />

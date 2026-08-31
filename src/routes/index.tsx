@@ -115,7 +115,7 @@ function Inicio() {
           <Wire3D
             model={model}
             autoSpin
-            className="pointer-events-none absolute -right-10 -bottom-8 size-[78%] text-foreground/60 transition-transform duration-700 group-hover:scale-105"
+            className="pointer-events-none absolute -right-10 -bottom-8 size-[86%] text-foreground/80 transition-transform duration-700 group-hover:scale-105"
           />
           <div className="relative z-10 flex items-center gap-2 text-accent">
             <span className="tick-label text-accent">Abrir biblioteca</span>
