@@ -68,31 +68,31 @@
   --card-foreground: oklch(0.24 0.021 250);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.24 0.021 250);
-  --primary: oklch(0.58 0.105 178);
-  --primary-foreground: oklch(0.99 0.003 250);
-  --secondary: oklch(0.95 0.006 250);
-  --secondary-foreground: oklch(0.3 0.02 250);
-  --muted: oklch(0.95 0.006 250);
-  --muted-foreground: oklch(0.52 0.021 250);
-  --accent: oklch(0.58 0.105 178);
-  --accent-foreground: oklch(0.99 0.003 250);
-  --accent2: oklch(0.55 0.135 258);
+  --primary: oklch(0.66 0.15 62);
+  --primary-foreground: oklch(0.99 0.003 80);
+  --secondary: oklch(0.95 0.005 80);
+  --secondary-foreground: oklch(0.3 0.01 80);
+  --muted: oklch(0.95 0.005 80);
+  --muted-foreground: oklch(0.52 0.01 80);
+  --accent: oklch(0.66 0.15 62);
+  --accent-foreground: oklch(0.99 0.003 80);
+  --accent2: oklch(0.55 0.1 180);
   --warn: oklch(0.68 0.15 70);
   --destructive: oklch(0.58 0.2 25);
-  --destructive-foreground: oklch(0.99 0.003 250);
-  --border: oklch(0.9 0.008 250);
-  --line: oklch(0.9 0.008 250);
-  --input: oklch(0.9 0.008 250);
-  --ring: oklch(0.58 0.105 178);
+  --destructive-foreground: oklch(0.99 0.003 80);
+  --border: oklch(0.9 0.005 80);
+  --line: oklch(0.9 0.005 80);
+  --input: oklch(0.9 0.005 80);
+  --ring: oklch(0.66 0.15 62);
 
   --glass-bg: linear-gradient(
-    180deg,
+    165deg,
     color-mix(in oklab, var(--foreground) 4%, transparent),
     color-mix(in oklab, var(--foreground) 1%, transparent)
   );
   --glass-border: color-mix(in oklab, var(--foreground) 12%, transparent);
   --grid-line: color-mix(in oklab, var(--foreground) 7%, transparent);
-  --gradient-brand: linear-gradient(135deg, var(--accent), var(--accent2));
+  --gradient-brand: linear-gradient(120deg, var(--accent), oklch(0.6 0.16 40));
   --glow-accent: 0 0 0 1px color-mix(in oklab, var(--accent) 25%, transparent),
     0 0 24px color-mix(in oklab, var(--accent) 12%, transparent);
 
