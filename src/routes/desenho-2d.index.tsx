@@ -18,13 +18,13 @@ import {
 export const Route = createFileRoute("/desenho-2d/")({
   head: () => ({
     meta: [
-      { title: "Projetos 2D — Chameleon Lab" },
+      { title: "Projetos 2D — CALDRA" },
       {
         name: "description",
         content:
           "Explorador de projetos do Laboratório 2D: planos, autosave local e abertura direta na prancheta vetorial.",
       },
-      { property: "og:title", content: "Projetos 2D — Chameleon Lab" },
+      { property: "og:title", content: "Projetos 2D — CALDRA" },
       {
         property: "og:description",
         content: "Organize projetos e planos de caldeiraria antes de desenhar.",

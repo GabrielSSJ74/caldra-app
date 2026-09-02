@@ -17,13 +17,13 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/escola/")({
   head: () => ({
     meta: [
-      { title: "Estudos — CHAMELEON Caldeireiro" },
+      { title: "Estudos — CALDRA" },
       {
         name: "description",
         content:
           "Estudos de caldeiraria: matemática, trigonometria, geometria, planificação, traçagem e dobra.",
       },
-      { property: "og:title", content: "Estudos — CHAMELEON Caldeireiro" },
+      { property: "og:title", content: "Estudos — CALDRA" },
       {
         property: "og:description",
         content: "Diagramas, fórmulas e exemplos visuais em vez de longos textos.",

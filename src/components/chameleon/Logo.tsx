@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-/** Marca abstrata do Chameleon: losango facetado que muda com o tema. */
+/** Marca abstrata do CALDRA: losango facetado que muda com o tema. */
 export function ChameleonMark({ className }: { className?: string }) {
   return (
     <span
@@ -27,11 +27,11 @@ export function Wordmark({ compact = false }: { compact?: boolean }) {
   return (
     <div className="min-w-0 leading-tight">
       <p className="font-display text-[15px] font-semibold tracking-wide whitespace-nowrap">
-        CHAMELEON
+        CALDRA
       </p>
       {!compact && (
         <p className="font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
-          Laboratório Caldeireiro
+          Traçado e Planificação Zero Fresta
         </p>
       )}
     </div>

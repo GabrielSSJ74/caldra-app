@@ -11,12 +11,12 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/configuracoes")({
   head: () => ({
     meta: [
-      { title: "Configurações — CHAMELEON Caldeireiro" },
+      { title: "Configurações — CALDRA" },
       {
         name: "description",
         content: "Ative o Modo Mestre, escolha unidades, precisão decimal e tema da interface.",
       },
-      { property: "og:title", content: "Configurações — CHAMELEON Caldeireiro" },
+      { property: "og:title", content: "Configurações — CALDRA" },
       {
         property: "og:description",
         content: "Preferências do laboratório e ativação do Modo Mestre.",
@@ -153,7 +153,7 @@ function Configuracoes() {
       </Panel>
 
       <p className="text-center font-mono text-[10px] text-muted-foreground">
-        CHAMELEON · Laboratório Caldeireiro
+        CALDRA · Traçado e Planificação Zero Fresta
       </p>
     </div>
   );

@@ -7,13 +7,13 @@ import { Wire3D } from "@/components/chameleon/Wire3D";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "CHAMELEON — Laboratório Caldeireiro" },
+      { title: "CALDRA — Traçado e Planificação Zero Fresta" },
       {
         name: "description",
         content:
           "Laboratório digital de caldeiraria: traçagem, desenvolvimento vetorial 3D, desenho 2D e estudos técnicos.",
       },
-      { property: "og:title", content: "CHAMELEON — Laboratório Caldeireiro" },
+      { property: "og:title", content: "CALDRA — Traçado e Planificação Zero Fresta" },
       {
         property: "og:description",
         content: "Pense, calcule, desenhe e prepare peças de caldeiraria em um só ambiente.",
@@ -90,9 +90,9 @@ function Inicio() {
   return (
     <div className="space-y-6">
       <header className="relative pt-2">
-        <span className="tick-label">Laboratório Caldeireiro</span>
+        <span className="tick-label">Traçado e Planificação Zero Fresta</span>
         <h1 className="text-brand-gradient mt-1 font-display text-[clamp(2.4rem,13vw,4.5rem)] leading-[0.9] font-semibold tracking-tight">
-          CHAMELEON
+          CALDRA
         </h1>
         <div className="mt-3 flex items-center gap-3">
           <span className="h-px flex-1 bg-gradient-to-r from-accent/60 to-transparent" />

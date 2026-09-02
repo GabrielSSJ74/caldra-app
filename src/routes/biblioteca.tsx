@@ -9,13 +9,13 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/biblioteca")({
   head: () => ({
     meta: [
-      { title: "Biblioteca — CHAMELEON Caldeireiro" },
+      { title: "Biblioteca — CALDRA" },
       {
         name: "description",
         content:
           "Tabelas de tubos, chapas, perfis, materiais, soldagem, dobra, normas e conversões.",
       },
-      { property: "og:title", content: "Biblioteca — CHAMELEON Caldeireiro" },
+      { property: "og:title", content: "Biblioteca — CALDRA" },
       {
         property: "og:description",
         content: "Referência técnica rápida para o chão de fábrica.",

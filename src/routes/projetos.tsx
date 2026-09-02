@@ -10,12 +10,12 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/projetos")({
   head: () => ({
     meta: [
-      { title: "Projetos — CHAMELEON Caldeireiro" },
+      { title: "Projetos — CALDRA" },
       {
         name: "description",
         content: "Organize peças, materiais e progresso de cada obra de caldeiraria.",
       },
-      { property: "og:title", content: "Projetos — CHAMELEON Caldeireiro" },
+      { property: "og:title", content: "Projetos — CALDRA" },
       {
         property: "og:description",
         content: "Acompanhe peças calculadas, rascunhos e exportações por projeto.",

@@ -6,13 +6,13 @@ import { Lab2DEditor } from "@/components/lab2d/Lab2DEditor";
 export const Route = createFileRoute("/desenho-2d/$projectId")({
   head: () => ({
     meta: [
-      { title: "Laboratório 2D — Chameleon Lab" },
+      { title: "Laboratório 2D — CALDRA" },
       {
         name: "description",
         content:
           "Prancheta vetorial em milímetros: snap geométrico, planos, cotas de conferência e exportação DXF/SVG/PNG/PDF.",
       },
-      { property: "og:title", content: "Laboratório 2D — Chameleon Lab" },
+      { property: "og:title", content: "Laboratório 2D — CALDRA" },
       {
         property: "og:description",
         content: "Estação CAD de bolso para caldeiraria e corte CNC.",

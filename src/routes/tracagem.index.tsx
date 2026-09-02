@@ -10,13 +10,13 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/tracagem/")({
   head: () => ({
     meta: [
-      { title: "Traçagem — CHAMELEON Caldeireiro" },
+      { title: "Traçagem — CALDRA" },
       {
         name: "description",
         content:
           "Galeria vetorial 3D de geometrias de caldeiraria: transições, cones, curvas de gomos, tês e bocas de lobo.",
       },
-      { property: "og:title", content: "Traçagem — CHAMELEON Caldeireiro" },
+      { property: "og:title", content: "Traçagem — CALDRA" },
       {
         property: "og:description",
         content: "Escolha a peça pelo modelo 3D e gere o desenvolvimento com matemática real.",

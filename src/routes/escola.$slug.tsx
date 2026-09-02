@@ -13,10 +13,10 @@ export const Route = createFileRoute("/escola/$slug")({
   head: ({ loaderData }) => {
     if (!loaderData) {
       return {
-        meta: [{ title: "Aula indisponível — CHAMELEON" }, { name: "robots", content: "noindex" }],
+        meta: [{ title: "Aula indisponível — CALDRA" }, { name: "robots", content: "noindex" }],
       };
     }
-    const title = `${loaderData.lesson.title} — Escola CHAMELEON`;
+    const title = `${loaderData.lesson.title} — Escola CALDRA`;
     return {
       meta: [
         { title },

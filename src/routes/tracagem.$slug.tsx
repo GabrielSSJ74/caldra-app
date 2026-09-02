@@ -15,11 +15,11 @@ export const Route = createFileRoute("/tracagem/$slug")({
   head: ({ loaderData }) => {
     if (!loaderData) {
       return {
-        meta: [{ title: "Geometria indisponível — CHAMELEON" }, { name: "robots", content: "noindex" }],
+        meta: [{ title: "Geometria indisponível — CALDRA" }, { name: "robots", content: "noindex" }],
       };
     }
     const { name, short } = loaderData.geometry;
-    const title = `${name} — Traçagem CHAMELEON`;
+    const title = `${name} — Traçagem CALDRA`;
     return {
       meta: [
         { title },

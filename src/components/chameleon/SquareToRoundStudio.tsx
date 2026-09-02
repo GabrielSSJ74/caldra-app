@@ -104,7 +104,7 @@ export function SquareToRoundStudio() {
       svgRef.current,
       {
         pieceName: "Transição Quadrado → Redondo",
-        project: "Laboratório Chameleon",
+        project: "CALDRA",
         material,
         thickness: `${input.thickness} mm`,
         quantity: "1",
