@@ -70,6 +70,34 @@ export function simplify(pts: PxPoint[], tol: number): PxPoint[] {
   return pts.filter((_, i) => keep[i]);
 }
 
+/** Mesma simplificação, devolvendo os ÍNDICES mantidos no contorno original. */
+export function simplifyIndices(pts: PxPoint[], tol: number): number[] {
+  if (pts.length < 3) return pts.map((_, i) => i);
+  const keep = new Uint8Array(pts.length);
+  keep[0] = 1;
+  keep[pts.length - 1] = 1;
+  const stack: [number, number][] = [[0, pts.length - 1]];
+  while (stack.length) {
+    const [s, e] = stack.pop()!;
+    let maxD = 0;
+    let idx = -1;
+    for (let i = s + 1; i < e; i++) {
+      const dd = perpDistance(pts[i]!, pts[s]!, pts[e]!);
+      if (dd > maxD) {
+        maxD = dd;
+        idx = i;
+      }
+    }
+    if (idx > 0 && maxD > tol) {
+      keep[idx] = 1;
+      stack.push([s, idx], [idx, e]);
+    }
+  }
+  const out: number[] = [];
+  for (let i = 0; i < pts.length; i++) if (keep[i]) out.push(i);
+  return out;
+}
+
 /** Ajuste de círculo por mínimos quadrados (Kåsa). */
 export function fitCircle(pts: PxPoint[]) {
   const n = pts.length;
@@ -149,37 +177,6 @@ function recognizeRun(run: PxPoint[], tolPx: number, hole: boolean): Prim {
   return { kind: "polyline", pts: run, closed: false, hole, quality: 0.6 };
 }
 
-/** Divide o contorno simplificado em trechos homogêneos (retas x curvas). */
-function splitRuns(pts: PxPoint[], closed: boolean, tolPx: number): PxPoint[][] {
-  const runs: PxPoint[][] = [];
-  const n = pts.length;
-  if (n < 3) return [pts];
-  let current: PxPoint[] = [pts[0]!];
-  for (let i = 1; i < n; i++) {
-    const p = pts[i]!;
-    current.push(p);
-    if (current.length >= 3) {
-      const a = current[0]!;
-      const mid = current[Math.floor(current.length / 2)]!;
-      const straightNow = perpDistance(mid, a, p) <= tolPx;
-      const next = pts[i + 1];
-      if (next) {
-        const wouldBend = perpDistance(p, current[current.length - 2]!, next) > tolPx * 2.5;
-        if (straightNow && wouldBend) {
-          runs.push(current);
-          current = [p];
-        }
-      }
-    }
-  }
-  if (current.length > 1) runs.push(current);
-  if (closed && runs.length > 1) {
-    const last = runs[runs.length - 1]!;
-    if (d2(last[last.length - 1]!, pts[0]!) > 1) last.push(pts[0]!);
-  }
-  return runs;
-}
-
 export type RecognizeOptions = {
   tolerance: Tolerance;
   /** Diagonal da imagem em px — escala a tolerância relativa. */
@@ -188,15 +185,25 @@ export type RecognizeOptions = {
   preferCircles?: boolean;
 };
 
+/** Flecha (sagitta) máxima de um trecho em relação à sua corda. */
+function sagitta(pts: PxPoint[]) {
+  const a = pts[0]!;
+  const b = pts[pts.length - 1]!;
+  let m = 0;
+  for (const p of pts) m = Math.max(m, perpDistance(p, a, b));
+  return m;
+}
+
 /** Converte um contorno em uma ou mais primitivas geométricas. */
 export function recognizeContour(c: Contour, opt: RecognizeOptions): Prim[] {
   const tolPx = Math.max(0.8, TOLERANCE_FACTOR[opt.tolerance] * opt.diagonalPx);
+  const src = c.pts;
 
-  // 1) círculo completo tem prioridade absoluta
-  if (opt.preferCircles !== false && c.pts.length >= 20) {
-    const fit = fitCircle(c.pts);
+  // 1) círculo completo tem prioridade absoluta (furos, flanges, tubos)
+  if (opt.preferCircles !== false && src.length >= 20) {
+    const fit = fitCircle(src);
     if (fit) {
-      const { span } = angularSpan(c.pts, fit.cx, fit.cy);
+      const { span } = angularSpan(src, fit.cx, fit.cy);
       const roundness = fit.rms / Math.max(fit.r, 1);
       if (span > 5.9 && roundness < 0.06 && fit.rms < tolPx * 2)
         return [
@@ -212,27 +219,66 @@ export function recognizeContour(c: Contour, opt: RecognizeOptions): Prim[] {
     }
   }
 
-  // 2) simplificação e divisão em trechos
-  const simple = simplify(c.pts, tolPx);
-  if (simple.length < 3)
+  // 2) simplificação com rastreio dos índices originais
+  const idx = simplifyIndices(src, tolPx);
+  if (idx.length < 3) {
+    const a = src[0]!;
+    const b = src[src.length - 1]!;
+    return [{ kind: "line", x1: a.x, y1: a.y, x2: b.x, y2: b.y, hole: c.hole, quality: 0.5 }];
+  }
+
+  const prims: Prim[] = [];
+  let allLines = true;
+  let i = 0;
+  while (i < idx.length - 1) {
+    // tenta o maior arco possível a partir de i (mínimo de 3 segmentos)
+    let best: { j: number; fit: NonNullable<ReturnType<typeof fitCircle>> } | null = null;
+    for (let j = Math.min(i + 3, idx.length - 1); j < idx.length; j++) {
+      const run = src.slice(idx[i]!, idx[j]! + 1);
+      if (run.length < 8) continue;
+      const fit = fitCircle(run);
+      if (!fit || fit.rms > tolPx * 0.9 || fit.r < tolPx * 3 || fit.r > opt.diagonalPx * 20) break;
+      if (sagitta(run) < tolPx * 1.5) break; // praticamente reto → não é arco
+      best = { j, fit };
+    }
+
+    if (best) {
+      const run = src.slice(idx[i]!, idx[best.j]! + 1);
+      const { span, a0, a1 } = angularSpan(run, best.fit.cx, best.fit.cy);
+      if (span > 0.15) {
+        prims.push({
+          kind: "arc",
+          cx: best.fit.cx,
+          cy: best.fit.cy,
+          r: best.fit.r,
+          a0,
+          a1,
+          hole: c.hole,
+          quality: Math.max(0, 1 - best.fit.rms / (tolPx * 0.9)),
+        });
+        allLines = false;
+        i = best.j;
+        continue;
+      }
+    }
+
+    const a = src[idx[i]!]!;
+    const b = src[idx[i + 1]!]!;
+    prims.push({ kind: "line", x1: a.x, y1: a.y, x2: b.x, y2: b.y, hole: c.hole, quality: 0.95 });
+    i++;
+  }
+
+  // 3) contorno totalmente poligonal vira UMA polilinha fechada editável
+  if (c.closed && allLines && prims.length > 2) {
     return [
       {
-        kind: "line",
-        x1: simple[0]?.x ?? 0,
-        y1: simple[0]?.y ?? 0,
-        x2: simple[simple.length - 1]?.x ?? 0,
-        y2: simple[simple.length - 1]?.y ?? 0,
+        kind: "polyline",
+        pts: idx.map((k) => src[k]!),
+        closed: true,
         hole: c.hole,
-        quality: 0.5,
+        quality: 0.9,
       },
     ];
-
-  const runs = splitRuns(simple, c.closed, tolPx);
-  const prims = runs.map((r) => recognizeRun(r, tolPx, c.hole));
-
-  // 3) contorno inteiramente poligonal vira uma única polilinha fechada
-  if (c.closed && prims.every((p) => p.kind === "line") && prims.length > 2) {
-    return [{ kind: "polyline", pts: simple, closed: true, hole: c.hole, quality: 0.9 }];
   }
   return prims;
 }
