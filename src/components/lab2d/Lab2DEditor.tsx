@@ -1167,6 +1167,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
             onDoubleClick={() => tool === "polyline" && finishPolyline(false)}
             role="application"
             aria-label="Prancheta vetorial"
