@@ -13,6 +13,7 @@ import {
   Lock,
   Maximize,
   Minus,
+  MoreHorizontal,
   MousePointer2,
   Move3d,
   PenLine,
@@ -31,6 +32,7 @@ import {
   Waypoints,
   X,
 } from "lucide-react";
+
 import type { Vec2 } from "@/lib/geometry/types";
 import { ExportDialog } from "@/components/lab2d/ExportDialog";
 import { ImportDialog, type ImportSource } from "@/components/lab2d/ImportDialog";
