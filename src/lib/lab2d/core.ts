@@ -118,6 +118,7 @@ export function segmentsOf(e: Entity): [Vec2, Vec2][] {
     if (e.closed && e.pts.length > 2) out.push([e.pts[e.pts.length - 1]!, e.pts[0]!]);
     return out;
   }
+  if (e.type === "path") return pathSegments(e.start, e.segs, e.closed);
   return [];
 }
 
