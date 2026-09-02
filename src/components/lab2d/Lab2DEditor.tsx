@@ -377,11 +377,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * factor));
       const ratio = next / v.k;
       const nv = { k: next, tx: px - (px - v.tx) * ratio, ty: py - (py - v.ty) * ratio };
-      viewRef.current = nv;
-      setView(nv);
+      applyView(nv);
+      markGesture();
       return nv;
     },
-    [],
+    [applyView, markGesture],
   );
 
   useEffect(() => {
