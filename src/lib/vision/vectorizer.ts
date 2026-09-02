@@ -4,10 +4,24 @@
  */
 
 import { uid, type Entity } from "@/lib/lab2d/core";
-import { binarize, denoise, rasterize, type PreprocessOptions } from "./imagePreprocessor";
+import {
+  binarize,
+  denoise,
+  normalizeContrast,
+  rasterize,
+  sauvolaBinarize,
+  type PreprocessOptions,
+} from "./imagePreprocessor";
 import { extractContours } from "./visionEngine";
-import { recognizeContour, type Prim, type Tolerance } from "./geometryRecognizer";
+import {
+  recognizeContour,
+  TOLERANCE_FACTOR,
+  type Prim,
+  type Tolerance,
+} from "./geometryRecognizer";
+import { fitContourHQ } from "./contourFitter";
 import type { Calibration } from "./scaleCalibrationService";
+
 
 export type VisionStats = {
   lines: number;
@@ -32,18 +46,58 @@ export type AnalyzeOptions = PreprocessOptions & {
   tolerance: Tolerance;
   /** Intensidade da remoção de ruído (0 = desligada). */
   noise?: number;
+  /** Reconhecimento por cantos + ajuste por mínimos quadrados (padrão: ligado). */
+  hq?: boolean;
+  /** Limiar local de Sauvola em vez do global de Otsu. */
+  adaptive?: boolean;
+  /** Normaliza o contraste antes do limiar. */
+  normalize?: boolean;
+  /** Ortogonaliza/fecha dentro da tolerância (padrão: ligado). */
+  regularize?: boolean;
 };
 
 /** ETAPA COMPLETA: imagem → primitivas geométricas (ainda em pixels). */
 export function analyzeImage(img: HTMLImageElement, opt: AnalyzeOptions): VisionAnalysis {
-  const { pixels, width, height } = rasterize(img, opt);
-  const bin = denoise(binarize(pixels, opt.invert), opt.noise ?? 1);
+  const { pixels } = rasterize(img, opt);
+  return analyzeRaster(pixels, opt);
+}
+
+/** Mesma análise a partir de pixels já rasterizados — usada no Web Worker. */
+export function analyzeRaster(
+  input: ImageData,
+  opt: AnalyzeOptions,
+  onProgress?: (stage: string, pct: number) => void,
+): VisionAnalysis {
+  const width = input.width;
+  const height = input.height;
+  onProgress?.("Binarizando", 10);
+  const pixels = opt.normalize ? normalizeContrast(input) : input;
+  const bin = denoise(
+    opt.adaptive
+      ? sauvolaBinarize(pixels, { invert: opt.invert })
+      : binarize(pixels, opt.invert),
+    opt.noise ?? 1,
+  );
   const diagonalPx = Math.hypot(width, height);
   const minPixels = Math.max(12, Math.round((width * height) / 40000) * (opt.noise ?? 1 ? 2 : 1));
+  onProgress?.("Extraindo contornos", 40);
   const contours = extractContours(bin, { minPixels });
 
+  onProgress?.("Reconhecendo geometria", 70);
+  const maxDevPx = Math.max(0.8, TOLERANCE_FACTOR[opt.tolerance] * diagonalPx);
   const prims: Prim[] = [];
-  for (const c of contours) prims.push(...recognizeContour(c, { tolerance: opt.tolerance, diagonalPx }));
+  for (const c of contours) {
+    if (opt.hq === false) prims.push(...recognizeContour(c, { tolerance: opt.tolerance, diagonalPx }));
+    else
+      prims.push(
+        ...fitContourHQ(c, {
+          maxDevPx,
+          diagonalPx,
+          preferCircles: true,
+          regularize: opt.regularize !== false,
+        }),
+      );
+  }
 
   const stats: VisionStats = {
     lines: prims.filter((p) => p.kind === "line").length,
@@ -66,14 +120,16 @@ export function analyzeImage(img: HTMLImageElement, opt: AnalyzeOptions): Vision
   }
   if (!Number.isFinite(minX)) { minX = 0; minY = 0; maxX = width; maxY = height; }
 
+  onProgress?.("Finalizando", 95);
   return {
     prims,
     stats,
     imagePx: { w: width, h: height },
     contentPx: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
-    tolerancePx: Math.max(0.8, diagonalPx * 0.006),
+    tolerancePx: maxDevPx,
   };
 }
+
 
 /** Converte primitivas em entidades do CHAMFER, já em milímetros. */
 export function toEntities(

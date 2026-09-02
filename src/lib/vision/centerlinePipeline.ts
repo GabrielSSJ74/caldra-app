@@ -85,14 +85,28 @@ export function analyzeCenterline(
   img: HTMLImageElement,
   opt: CenterlineOptions,
 ): CenterlineAnalysis {
-  const { pixels, width, height } = rasterize(img, opt);
-  const blurred = opt.blur > 0 ? gaussianBlur(pixels, opt.blur) : pixels;
-  const bin = adaptiveBinarize(blurred, {
+  const { pixels } = rasterize(img, opt);
+  return analyzeCenterlineRaster(pixels, opt);
+}
+
+/** Mesma análise a partir de pixels já rasterizados — usada no Web Worker. */
+export function analyzeCenterlineRaster(
+  input: ImageData,
+  opt: CenterlineOptions,
+  onProgress?: (stage: string, pct: number) => void,
+): CenterlineAnalysis {
+  const width = input.width;
+  const height = input.height;
+  onProgress?.("Binarizando", 12);
+  const pixels = opt.blur > 0 ? gaussianBlur(input, opt.blur) : input;
+  const bin = adaptiveBinarize(pixels, {
     brightness: opt.brightness,
     contrast: opt.contrast,
     bias: opt.bias,
     invert: opt.invert,
   });
+  onProgress?.("Esqueletizando", 45);
+
 
   const skel = thinZhangSuen(bin);
   const diagonalPx = Math.hypot(width, height);
@@ -100,7 +114,9 @@ export function analyzeCenterline(
   const pruned = pruneChains(raw, (opt.minBranchPct / 100) * diagonalPx);
   const chains: Chain[] = snapChainEnds(pruned, (opt.gapPct / 100) * diagonalPx);
 
+  onProgress?.("Reconhecendo geometria", 75);
   const prims: Prim[] = [];
+
   for (const c of chains) {
     const pts = smooth(c.pts, c.closed);
     prims.push(

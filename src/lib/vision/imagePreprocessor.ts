@@ -261,3 +261,145 @@ export function closeHoles(bin: Binary, passes = 1): Binary {
   }
   return cur;
 }
+
+/**
+ * Normalização de contraste por percentis (2%–98%) — abre o histograma antes
+ * do limiar sem estourar o traço, útil em fotos lavadas ou escaneadas fracas.
+ */
+export function normalizeContrast(image: ImageData): ImageData {
+  const { width: w, height: h, data } = image;
+  const hist = new Uint32Array(256);
+  const lum = new Float32Array(w * h);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const a = data[i + 3]! / 255;
+    const r = data[i]! * a + 255 * (1 - a);
+    const g = data[i + 1]! * a + 255 * (1 - a);
+    const b = data[i + 2]! * a + 255 * (1 - a);
+    const v = 0.299 * r + 0.587 * g + 0.114 * b;
+    lum[p] = v;
+    hist[Math.max(0, Math.min(255, Math.round(v)))]++;
+  }
+  const total = w * h;
+  let acc = 0;
+  let lo = 0;
+  let hi = 255;
+  for (let i = 0; i < 256; i++) {
+    acc += hist[i]!;
+    if (acc >= total * 0.02) {
+      lo = i;
+      break;
+    }
+  }
+  acc = 0;
+  for (let i = 255; i >= 0; i--) {
+    acc += hist[i]!;
+    if (acc >= total * 0.02) {
+      hi = i;
+      break;
+    }
+  }
+  const range = Math.max(8, hi - lo);
+  const out = new ImageData(w, h);
+  for (let p = 0; p < lum.length; p++) {
+    const v = Math.max(0, Math.min(255, ((lum[p]! - lo) / range) * 255));
+    const i = p * 4;
+    out.data[i] = v;
+    out.data[i + 1] = v;
+    out.data[i + 2] = v;
+    out.data[i + 3] = 255;
+  }
+  return out;
+}
+
+/**
+ * Limiar ADAPTATIVO local (Sauvola) via imagens integrais.
+ * t(x,y) = m * (1 + k * (s / R - 1)) — compensa iluminação irregular sem
+ * inventar manchas em áreas de fundo liso.
+ */
+export function sauvolaBinarize(
+  image: ImageData,
+  opt: { window?: number; k?: number; invert?: boolean } = {},
+): Binary {
+  const { width: w, height: h, data } = image;
+  const k = opt.k ?? 0.3;
+  const win = Math.max(7, Math.round(opt.window ?? Math.max(15, Math.min(w, h) * 0.035)) | 1);
+  const rad = (win - 1) >> 1;
+
+  const gray = new Float64Array(w * h);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const a = data[i + 3]! / 255;
+    const r = data[i]! * a + 255 * (1 - a);
+    const g = data[i + 1]! * a + 255 * (1 - a);
+    const b = data[i + 2]! * a + 255 * (1 - a);
+    gray[p] = 0.299 * r + 0.587 * g + 0.114 * b;
+  }
+
+  const iw = w + 1;
+  const sum = new Float64Array(iw * (h + 1));
+  const sqr = new Float64Array(iw * (h + 1));
+  for (let y = 0; y < h; y++) {
+    let rs = 0;
+    let rq = 0;
+    for (let x = 0; x < w; x++) {
+      const v = gray[y * w + x]!;
+      rs += v;
+      rq += v * v;
+      sum[(y + 1) * iw + x + 1] = sum[y * iw + x + 1]! + rs;
+      sqr[(y + 1) * iw + x + 1] = sqr[y * iw + x + 1]! + rq;
+    }
+  }
+  const area = (
+    acc: Float64Array,
+    x0: number,
+    y0: number,
+    x1: number,
+    y1: number,
+  ) => acc[(y1 + 1) * iw + x1 + 1]! - acc[y0 * iw + x1 + 1]! - acc[(y1 + 1) * iw + x0]! + acc[y0 * iw + x0]!;
+
+  const out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    const y0 = Math.max(0, y - rad);
+    const y1 = Math.min(h - 1, y + rad);
+    for (let x = 0; x < w; x++) {
+      const x0 = Math.max(0, x - rad);
+      const x1 = Math.min(w - 1, x + rad);
+      const n = (x1 - x0 + 1) * (y1 - y0 + 1);
+      const s1 = area(sum, x0, y0, x1, y1);
+      const s2 = area(sqr, x0, y0, x1, y1);
+      const mean = s1 / n;
+      const std = Math.sqrt(Math.max(0, s2 / n - mean * mean));
+      const t = mean * (1 + k * (std / 128 - 1));
+      const ink = gray[y * w + x]! <= t;
+      out[y * w + x] = (opt.invert ? !ink : ink) ? 1 : 0;
+    }
+  }
+  return { data: out, width: w, height: h };
+}
+
+/** Reamostragem bilinear — base da análise MULTI-ESCALA. */
+export function resampleImageData(image: ImageData, factor: number): ImageData {
+  const f = Math.max(0.05, factor);
+  if (Math.abs(f - 1) < 1e-3) return image;
+  const { width: w, height: h, data } = image;
+  const nw = Math.max(1, Math.round(w * f));
+  const nh = Math.max(1, Math.round(h * f));
+  const out = new ImageData(nw, nh);
+  for (let y = 0; y < nh; y++) {
+    const sy = Math.min(h - 1, (y + 0.5) / f - 0.5);
+    const y0 = Math.max(0, Math.floor(sy));
+    const y1 = Math.min(h - 1, y0 + 1);
+    const fy = sy - y0;
+    for (let x = 0; x < nw; x++) {
+      const sx = Math.min(w - 1, (x + 0.5) / f - 0.5);
+      const x0 = Math.max(0, Math.floor(sx));
+      const x1 = Math.min(w - 1, x0 + 1);
+      const fx = sx - x0;
+      for (let c = 0; c < 4; c++) {
+        const a = data[(y0 * w + x0) * 4 + c]! * (1 - fx) + data[(y0 * w + x1) * 4 + c]! * fx;
+        const b = data[(y1 * w + x0) * 4 + c]! * (1 - fx) + data[(y1 * w + x1) * 4 + c]! * fx;
+        out.data[(y * nw + x) * 4 + c] = Math.round(a * (1 - fy) + b * fy);
+      }
+    }
+  }
+  return out;
+}
