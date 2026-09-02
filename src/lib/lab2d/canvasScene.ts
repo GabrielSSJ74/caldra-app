@@ -134,7 +134,12 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
 }
 
 /** Prévia de criação (draft) desenhada acima da cena, sem sujar o modelo. */
-export function drawDraft(ctx: CanvasRenderingContext2D, e: Entity, view: SceneView, color: string) {
+export function drawDraft(
+  ctx: CanvasRenderingContext2D,
+  e: Entity,
+  view: SceneView,
+  color: string,
+) {
   const inv = 1 / view.k;
   ctx.strokeStyle = color;
   ctx.lineWidth = 1.4 * inv;

@@ -19,10 +19,25 @@ export function stressEntities(total = 5000): Entity[] {
   for (let i = 0; i < lines; i++) {
     const x = rnd(2000);
     const y = rnd(2000);
-    out.push({ id: uid(), layer: layer(), type: "line", x1: x, y1: y, x2: x + rnd(60) - 30, y2: y + rnd(60) - 30 });
+    out.push({
+      id: uid(),
+      layer: layer(),
+      type: "line",
+      x1: x,
+      y1: y,
+      x2: x + rnd(60) - 30,
+      y2: y + rnd(60) - 30,
+    });
   }
   for (let i = 0; i < circles; i++)
-    out.push({ id: uid(), layer: layer(), type: "circle", cx: rnd(2000), cy: rnd(2000), r: 2 + rnd(20) });
+    out.push({
+      id: uid(),
+      layer: layer(),
+      type: "circle",
+      cx: rnd(2000),
+      cy: rnd(2000),
+      r: 2 + rnd(20),
+    });
   for (let i = 0; i < arcs; i++)
     out.push({
       id: uid(),
