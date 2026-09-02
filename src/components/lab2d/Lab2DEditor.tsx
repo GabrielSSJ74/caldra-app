@@ -849,11 +849,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setDraft(null);
   }, []);
 
-  /** Entidades desenháveis: camada visível + modo de saída (produção/corte). */
-  const drawable = useMemo(
-    () => visible.filter((e) => modeAllows(outputMode, e.layer)),
-    [visible, outputMode],
-  );
 
   const selectionActions = (
     <>
