@@ -46,7 +46,20 @@ export type Entity =
   | (Base & { type: "polyline"; pts: Vec2[]; closed: boolean })
   | (Base & { type: "circle"; cx: number; cy: number; r: number })
   | (Base & { type: "arc"; cx: number; cy: number; r: number; a0: number; a1: number })
+  | (Base & {
+      /** Curva de Bézier cúbica — fidelidade máxima com poucos pontos. */
+      type: "path";
+      start: Vec2;
+      segs: BezierSeg[];
+      closed: boolean;
+      /** Contorno interno (furo de letra) — corte com offset interno. */
+      hole?: boolean;
+      /** Id do contorno externo que contém este furo. */
+      parent?: string;
+    })
   | (Base & { type: "text"; x: number; y: number; text: string; size: number });
+
+export type PathEntity = Extract<Entity, { type: "path" }>;
 
 export const uid = () => Math.random().toString(36).slice(2, 9);
 export const dist = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y);
