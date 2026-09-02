@@ -987,6 +987,40 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       setMoreOpen(false);
                     }}
                   />
+                  <MenuItem
+                    label="CHAMFER VISION"
+                    icon={ScanEye}
+                    onClick={() => {
+                      setVisionOpen(true);
+                      setMoreOpen(false);
+                    }}
+                  />
+                  {imageLayer && (
+                    <>
+                      <MenuItem
+                        label={imageLayer.visible ? "Ocultar imagem" : "Mostrar imagem"}
+                        icon={ImageIcon}
+                        onClick={() => {
+                          setImageLayer({ ...imageLayer, visible: !imageLayer.visible });
+                          setMoreOpen(false);
+                        }}
+                      />
+                      <label className="flex items-center gap-2 rounded-xl px-2 py-2 text-[11px] text-muted-foreground">
+                        <ImageIcon className="size-3.5" />
+                        <input
+                          type="range"
+                          min={0.05}
+                          max={1}
+                          step={0.05}
+                          value={imageLayer.opacity}
+                          onChange={(ev) =>
+                            setImageLayer({ ...imageLayer, opacity: Number(ev.target.value) })
+                          }
+                          className="w-full accent-[var(--accent)]"
+                        />
+                      </label>
+                    </>
+                  )}
                   <label className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 text-[11px] text-muted-foreground hover:text-foreground">
                     <Upload className="size-3.5" /> Importar DXF/SVG
                     <input
@@ -1001,6 +1035,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       }}
                     />
                   </label>
+
                 </div>
               )}
             </div>
