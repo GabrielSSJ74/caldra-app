@@ -159,7 +159,6 @@ export function logoToEntities(
   const ox = analysis.contentPx.x;
   const oy = analysis.contentPx.y;
   const to = (p: Vec2): Vec2 => ({ x: (p.x - ox) * s, y: (p.y - oy) * s });
-  const tol = Math.max(0.05, Math.min(analysis.contentPx.w, analysis.contentPx.h) * s * 0.004);
 
   const out: Entity[] = [];
   analysis.layers.forEach((l, li) => {
@@ -169,7 +168,11 @@ export function logoToEntities(
     l.paths.forEach((t, i) => {
       const m = mapPath(t.start, t.segs, to);
       if (analysis.detectCircles) {
-        const c = circleFromPath(m.start, m.segs, tol);
+        // tolerância proporcional ao próprio contorno: 2% do raio médio
+        const pts = [m.start, ...m.segs.map((g) => g.p)];
+        const rx = (Math.max(...pts.map((q) => q.x)) - Math.min(...pts.map((q) => q.x))) / 2;
+        const ry = (Math.max(...pts.map((q) => q.y)) - Math.min(...pts.map((q) => q.y))) / 2;
+        const c = circleFromPath(m.start, m.segs, Math.max(0.02, ((rx + ry) / 2) * 0.02));
         if (c) {
           out.push({ id: ids[i]!, layer: target, type: "circle", cx: c.cx, cy: c.cy, r: c.r });
           return;
