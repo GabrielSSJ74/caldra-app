@@ -67,7 +67,8 @@ export function rasterize(img: HTMLImageElement, opt: PreprocessOptions = {}) {
   const ch = Math.max(1, Math.round(rh * crop.h));
 
   const max = opt.maxSize ?? 1400;
-  const scale = Math.min(1, max / Math.max(cw, ch));
+  const up = Math.max(1, Math.min(4, opt.upscale ?? 1));
+  const scale = Math.min(up, (max * up) / Math.max(cw, ch));
   const W = Math.max(1, Math.round(cw * scale));
   const H = Math.max(1, Math.round(ch * scale));
 
@@ -76,8 +77,11 @@ export function rasterize(img: HTMLImageElement, opt: PreprocessOptions = {}) {
   canvas.height = H;
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   if (!ctx) throw new Error("Canvas indisponível neste dispositivo.");
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, W, H);
+
 
   ctx.save();
   ctx.scale(scale, scale);
