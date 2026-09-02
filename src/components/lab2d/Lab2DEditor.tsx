@@ -317,6 +317,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   /* ------------------------------------------------------------ zoom roda */
   const viewRef = useRef(view);
   viewRef.current = view;
+
+  const flashZoom = useCallback((k: number) => {
+    setZoomHud(k);
+    if (hudTimer.current) clearTimeout(hudTimer.current);
+    hudTimer.current = setTimeout(() => setZoomHud(null), 600);
+  }, []);
+
+  /** único ponto de verdade do zoom: escala ancorada num ponto de tela */
+  const zoomAt = useCallback(
+    (factor: number, px: number, py: number) => {
+      const v = viewRef.current;
+      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * factor));
+      const ratio = next / v.k;
+      const nv = { k: next, tx: px - (px - v.tx) * ratio, ty: py - (py - v.ty) * ratio };
+      viewRef.current = nv;
+      setView(nv);
+      return nv;
+    },
+    [],
+  );
+
   useEffect(() => {
     const el = svgRef.current;
     if (!el) return;
@@ -324,16 +345,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       ev.preventDefault();
       const dy = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 100 : 1);
       const r = el.getBoundingClientRect();
-      const px = ev.clientX - r.left;
-      const py = ev.clientY - r.top;
-      const v = viewRef.current;
-      const next = Math.min(30, Math.max(0.05, v.k * Math.exp(-dy * 0.0015)));
-      const ratio = next / v.k;
-      setView({ k: next, tx: px - (px - v.tx) * ratio, ty: py - (py - v.ty) * ratio });
+      // ctrlKey = pinça de trackpad: mesma equação, ancorada no cursor
+      const intensity = ev.ctrlKey ? 0.01 : 0.0015;
+      const v = zoomAt(Math.exp(-dy * intensity), ev.clientX - r.left, ev.clientY - r.top);
+      flashZoom(v.k);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [zoomAt, flashZoom]);
 
   /* ---------------------------------------------------------- utilidades */
   const visible = useMemo(
