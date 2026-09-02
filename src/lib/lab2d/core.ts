@@ -11,13 +11,16 @@ export type Layer = {
   locked: boolean;
 };
 
+/** Camadas técnicas com cores fixas do CALDRA (nunca derivadas do tema). */
 export const DEFAULT_LAYERS: Layer[] = [
-  { id: "corte", name: "Corte", color: "var(--accent)", visible: true, locked: false },
-  { id: "dobra", name: "Dobra", color: "var(--accent2)", visible: true, locked: false },
-  { id: "marcacao", name: "Marcação", color: "var(--warn)", visible: true, locked: false },
-  { id: "construcao", name: "Construção", color: "var(--muted-foreground)", visible: true, locked: false },
-  { id: "cota", name: "Cota", color: "var(--foreground)", visible: true, locked: false },
+  { id: "construcao", name: "Construção", color: CONSTRUCTION_COLOR, visible: true, locked: false },
+  { id: "referencia", name: "Referência", color: REFERENCE_COLOR, visible: true, locked: false },
+  { id: "dobra", name: "Dobra", color: BEND_COLOR, visible: true, locked: false },
+  { id: "marcacao", name: "Marcação", color: MARK_COLOR, visible: true, locked: false },
+  { id: "corte", name: "Corte", color: CUT_COLOR, visible: true, locked: false },
+  { id: "cota", name: "Cota", color: DIMENSION_COLOR, visible: true, locked: false },
 ];
+
 
 type Base = { id: string; layer: LayerId; group?: string };
 export type Entity =
