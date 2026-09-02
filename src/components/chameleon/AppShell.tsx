@@ -3,15 +3,21 @@ import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
+import { useProfile } from "@/lib/profile/ProfileProvider";
 import { MasterModeDialog } from "./MasterModeDialog";
 import { BubbleNav } from "./BubbleNav";
 import { Intro, useIntro } from "./Intro";
+import { Onboarding } from "./Onboarding";
+import { Avatar, ProfileDialog } from "./Profile";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [masterOpen, setMasterOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const { isMestre } = useFeatureAccess();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const intro = useIntro();
+  const profile = useProfile();
+  const showOnboarding = profile.ready && !intro.show && !profile.onboarded;
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-background text-foreground">
@@ -24,17 +30,27 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         )}
       </div>
 
-      <button
-        onClick={() => setMasterOpen(true)}
-        aria-label={isMestre ? "Modo Mestre ativo" : "Ativar Modo Mestre"}
-        className={cn(
-          "fixed top-4 right-4 z-40 grid size-9 place-items-center rounded-full transition-all duration-300",
-          "metal backdrop-blur-xl hover:scale-110",
-          isMestre ? "text-accent glow-ring" : "text-muted-foreground hover:text-foreground",
-        )}
-      >
-        <Sparkles className="size-4" />
-      </button>
+      <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
+        <button
+          onClick={() => setMasterOpen(true)}
+          aria-label={isMestre ? "Modo Mestre ativo" : "Ativar Modo Mestre"}
+          className={cn(
+            "grid size-9 place-items-center rounded-full transition-all duration-300",
+            "metal backdrop-blur-xl hover:scale-110",
+            isMestre ? "text-accent glow-ring" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Sparkles className="size-4" />
+        </button>
+        <button
+          onClick={() => setProfileOpen(true)}
+          aria-label="Abrir perfil"
+          className="rounded-full transition-transform duration-300 hover:scale-110"
+        >
+          <Avatar photo={profile.photo} size={36} className="backdrop-blur-xl" />
+        </button>
+      </div>
+
 
       <main
         key={pathname}
@@ -45,7 +61,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <BubbleNav />
       <MasterModeDialog open={masterOpen} onOpenChange={setMasterOpen} />
+      <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
       {intro.show && <Intro onDone={intro.done} />}
+      {showOnboarding && <Onboarding />}
     </div>
   );
 }

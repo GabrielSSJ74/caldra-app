@@ -13,7 +13,7 @@ import { developmentToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
 import { cn } from "@/lib/utils";
 import { Wire3D } from "./Wire3D";
 import { DevelopmentView } from "./DevelopmentView";
-import { SchematicViews } from "./SchematicViews";
+import { ParametricDiagram, type CotaSpec } from "./ParametricDiagram";
 import { Metric, Panel, SectionLabel } from "./ui";
 
 const BASE_TABS = [
@@ -37,11 +37,14 @@ export function GeometryStudio({ slug, name }: Props) {
   const [values, setValues] = useState<EngineValues>(() => ({ ...(engine?.defaults ?? {}) }));
   const [material, setMaterial] = useState(MATERIALS[0]!.name);
   const [focused, setFocused] = useState<string | null>(null);
-  const [calculated, setCalculated] = useState(false);
+  const [calculated, setCalculated] = useState(true);
   const [calculating, setCalculating] = useState(false);
   const [tab, setTab] = useState<string>("Dimensões");
   const [explain, setExplain] = useState(false);
   const [unfold, setUnfold] = useState(0);
+  const [pulse, setPulse] = useState<string | null>(null);
+  const inputs = useRef<Record<string, HTMLInputElement | null>>({});
+  const pulseTimer = useRef<number | null>(null);
 
   const issues = useMemo(() => (engine ? engine.validate(values) : []), [engine, values]);
   const result = useMemo(() => {
@@ -58,6 +61,22 @@ export function GeometryStudio({ slug, name }: Props) {
     [engine, values],
   );
 
+  const cotas = useMemo<CotaSpec[]>(
+    () =>
+      engine
+        ? engine.fields
+            .filter((f) => engine.dimKey(f.key) !== null)
+            .map((f) => ({
+              field: f.key,
+              dim: engine.dimKey(f.key),
+              label: f.tag,
+              value: values[f.key] ?? 0,
+              unit: f.unit ?? "mm",
+            }))
+        : [],
+    [engine, values],
+  );
+
   if (!engine) return null;
 
   const tabs = isMestre ? (["3D", ...BASE_TABS] as string[]) : (BASE_TABS as readonly string[]);
@@ -66,21 +85,16 @@ export function GeometryStudio({ slug, name }: Props) {
     const value = raw === "" || raw === "-" ? 0 : Number(raw.replace(",", "."));
     if (Number.isNaN(value)) return;
     setValues((prev) => ({ ...prev, [key]: value }));
+    /* realce curto da cota alterada + micro-indicação de recálculo */
+    setPulse(key);
+    setCalculating(true);
+    if (pulseTimer.current) window.clearTimeout(pulseTimer.current);
+    pulseTimer.current = window.setTimeout(() => {
+      setPulse(null);
+      setCalculating(false);
+    }, 340);
   };
 
-  const run = () => {
-    if (issues.length) {
-      toast.error(issues[0]!.message);
-      return;
-    }
-    setCalculating(true);
-    setTimeout(() => {
-      setCalculating(false);
-      setCalculated(true);
-      setTab("Dimensões");
-      toast.success("Desenvolvimento calculado.");
-    }, 420);
-  };
 
   const issueFor = (key: string) => issues.find((i) => i.field === key)?.message;
 
@@ -146,11 +160,18 @@ export function GeometryStudio({ slug, name }: Props) {
       {/* MEDIDAS */}
       <Panel className="p-3.5 lg:p-5" glow>
         <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
-          <div className="grid-bg relative min-h-[220px] overflow-hidden rounded-xl border border-line bg-background/40 lg:min-h-[300px]">
-            <SchematicViews
+          <div className="grid-bg relative min-h-[240px] overflow-hidden rounded-xl border border-line bg-background/40 lg:min-h-[320px]">
+            <ParametricDiagram
               slug={slug}
               params={wireParams}
-              highlight={focused ? engine.dimKey(focused) : null}
+              cotas={cotas}
+              active={focused}
+              pulse={pulse}
+              onPick={(key) => {
+                setFocused(key);
+                inputs.current[key]?.focus();
+                inputs.current[key]?.select();
+              }}
             />
             <span className="absolute top-2 left-2.5 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase">
               Esquema · mm
@@ -193,6 +214,9 @@ export function GeometryStudio({ slug, name }: Props) {
                       )}
                     >
                       <input
+                        ref={(el) => {
+                          inputs.current[f.key] = el;
+                        }}
                         inputMode="decimal"
                         value={String(values[f.key] ?? 0)}
                         onChange={(e) => set(f.key, e.target.value)}
@@ -232,28 +256,23 @@ export function GeometryStudio({ slug, name }: Props) {
               </label>
             </div>
 
-            <button
-              onClick={run}
-              disabled={calculating}
-              className="brand-gradient mt-3 w-full rounded-xl py-3 font-display text-sm font-semibold text-background transition-transform active:scale-[0.99] disabled:opacity-70"
+            <p
+              className={cn(
+                "mt-3 text-center font-mono text-[11px] tracking-[0.16em] uppercase transition-colors",
+                calculating ? "text-muted-foreground" : "text-accent",
+              )}
             >
-              {calculating ? "Calculando…" : "Gerar desenvolvimento"}
-            </button>
-            <p className="mt-2 text-center text-[11px] text-muted-foreground">
-              Confira os parâmetros antes de gerar o desenvolvimento.
+              {issues.length
+                ? issues[0]!.message
+                : calculating
+                  ? "Calculando…"
+                  : "Pronto · atualização em tempo real"}
             </p>
           </div>
         </div>
       </Panel>
 
-      {calculating && (
-        <Panel className="space-y-2 p-4">
-          <div className="h-3 w-32 animate-pulse rounded bg-secondary" />
-          <div className="h-24 animate-pulse rounded-xl bg-secondary" />
-        </Panel>
-      )}
-
-      {calculated && result && !calculating && (
+      {calculated && result && (
         <Panel className="fade-up p-3.5 lg:p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <SectionLabel>Resultado</SectionLabel>

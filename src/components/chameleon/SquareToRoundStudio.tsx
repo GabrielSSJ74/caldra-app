@@ -51,7 +51,10 @@ export function SquareToRoundStudio() {
   const [input, setInput] = useState<SquareToRoundInput>(SQUARE_TO_ROUND_DEFAULTS);
   const [material, setMaterial] = useState(MATERIALS[0]!.name);
   const [focused, setFocused] = useState<FieldKey | null>(null);
-  const [calculated, setCalculated] = useState(false);
+  const [calculated, setCalculated] = useState(true);
+  const [pulse, setPulse] = useState<FieldKey | null>(null);
+  const inputs = useRef<Record<string, HTMLInputElement | null>>({});
+  const pulseTimer = useRef<number | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [tab, setTab] = useState<Tab>("3D");
   const [explain, setExplain] = useState(false);
@@ -74,21 +77,16 @@ export function SquareToRoundStudio() {
     const value = raw === "" || raw === "-" ? 0 : Number(raw.replace(",", "."));
     if (Number.isNaN(value)) return;
     setInput((prev) => ({ ...prev, [key]: value }));
+    setPulse(key);
+    setCalculating(true);
+    if (pulseTimer.current) window.clearTimeout(pulseTimer.current);
+    pulseTimer.current = window.setTimeout(() => {
+      setPulse(null);
+      setCalculating(false);
+    }, 340);
   };
 
-  const run = () => {
-    if (issues.length) {
-      toast.error(issues[0]!.message);
-      return;
-    }
-    setCalculating(true);
-    setTimeout(() => {
-      setCalculating(false);
-      setCalculated(true);
-      setTab("Dimensões");
-      toast.success("Desenvolvimento calculado.");
-    }, 420);
-  };
+
 
   const issueFor = (key: FieldKey) => issues.find((i) => i.field === key)?.message;
 
@@ -153,6 +151,35 @@ export function SquareToRoundStudio() {
         <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
           <div className="grid-bg relative min-h-[220px] overflow-hidden rounded-xl border border-line bg-background/40 lg:min-h-[300px]">
             <SchematicSquareToRound input={input} highlight={focused} />
+            {FIELDS.map((f, i) => (
+              <button
+                key={f.key}
+                type="button"
+                onClick={() => {
+                  setFocused(f.key);
+                  inputs.current[f.key]?.focus();
+                  inputs.current[f.key]?.select();
+                }}
+                style={
+                  f.key === "height"
+                    ? { left: "2%", top: "44%" }
+                    : f.key === "topDiameter"
+                      ? { left: "6%", top: "8%" }
+                      : f.key === "baseA"
+                        ? { left: "6%", bottom: "22%" }
+                        : { right: "3%", top: `${8 + i * 13}%` }
+                }
+                className={cn(
+                  "absolute rounded-full border px-2 py-1 font-mono text-[10px] whitespace-nowrap backdrop-blur-sm transition-all duration-300",
+                  focused === f.key || pulse === f.key
+                    ? "border-accent/50 bg-accent/15 text-accent shadow-[0_0_14px_-2px_var(--accent)]"
+                    : "border-line bg-background/70 text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {f.tag} {Number(Number(input[f.key]).toFixed(2))}
+                <span className="opacity-60"> mm</span>
+              </button>
+            ))}
             <span className="absolute top-2 left-2.5 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase">
               Esquema · mm
             </span>
@@ -179,6 +206,9 @@ export function SquareToRoundStudio() {
                       )}
                     >
                       <input
+                        ref={(el) => {
+                          inputs.current[f.key] = el;
+                        }}
                         inputMode="decimal"
                         value={String(input[f.key])}
                         onChange={(e) => set(f.key, e.target.value)}
@@ -218,29 +248,24 @@ export function SquareToRoundStudio() {
               </label>
             </div>
 
-            <button
-              onClick={run}
-              disabled={calculating}
-              className="brand-gradient mt-3 w-full rounded-xl py-3 font-display text-sm font-semibold text-background transition-transform active:scale-[0.99] disabled:opacity-70"
+            <p
+              className={cn(
+                "mt-3 text-center font-mono text-[11px] tracking-[0.16em] uppercase transition-colors",
+                calculating ? "text-muted-foreground" : "text-accent",
+              )}
             >
-              {calculating ? "Calculando…" : "Gerar desenvolvimento"}
-            </button>
-            <p className="mt-2 text-center text-[11px] text-muted-foreground">
-              Confira os parâmetros antes de gerar o desenvolvimento.
+              {issues.length
+                ? issues[0]!.message
+                : calculating
+                  ? "Calculando…"
+                  : "Pronto · atualização em tempo real"}
             </p>
           </div>
         </div>
       </Panel>
 
       {/* RESULTADO */}
-      {calculating && (
-        <Panel className="space-y-2 p-4">
-          <div className="h-3 w-32 animate-pulse rounded bg-secondary" />
-          <div className="h-24 animate-pulse rounded-xl bg-secondary" />
-        </Panel>
-      )}
-
-      {calculated && result && !calculating && (
+      {calculated && result && (
         <Panel className="fade-up p-3.5 lg:p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <SectionLabel>Resultado</SectionLabel>

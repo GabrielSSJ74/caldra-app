@@ -38,7 +38,7 @@ function bboxOf(prims: Prim[]) {
 }
 
 /**
- * Vistas ortográficas técnicas (VISTA FRONTAL + PLANTA) geradas
+ * Vistas ortográficas técnicas (VISTA FRONTAL + VISTA SUPERIOR) geradas
  * a partir da geometria da peça — mesmo padrão do motor de cálculo.
  */
 export function SchematicViews({ slug, params, highlight = null, className }: Props) {
@@ -60,11 +60,16 @@ export function SchematicViews({ slug, params, highlight = null, className }: Pr
 
     return prims.map((p, i) => {
       const common = {
-        stroke: "var(--accent)",
+        stroke: "dash" in p && p.dash ? "var(--holo, #00FFEF)" : "var(--accent)",
         strokeWidth: p.k === "poly" || !("dash" in p) || !p.dash ? 1.4 : 1,
         strokeOpacity: "dash" in p && p.dash ? 0.75 : 1,
         strokeDasharray: "dash" in p && p.dash ? "5 3" : undefined,
-        fill: ("fill" in p && p.fill) ?? false ? "var(--accent)" : "none",
+        fill:
+          ("fill" in p && p.fill) ?? false
+            ? "dash" in p && p.dash
+              ? "var(--holo, #00FFEF)"
+              : "var(--accent)"
+            : "none",
         fillOpacity: 0.07,
         strokeLinejoin: "round" as const,
       };
@@ -101,7 +106,7 @@ export function SchematicViews({ slug, params, highlight = null, className }: Pr
       viewBox={`0 0 ${W} ${H}`}
       className={className ?? "h-full w-full"}
       role="img"
-      aria-label="Vistas técnicas: frontal e planta"
+      aria-label="Vistas técnicas: frontal e superior"
     >
       <defs>
         <pattern id={`sv-grid-${slug}`} width="11" height="11" patternUnits="userSpaceOnUse">
@@ -129,27 +134,10 @@ export function SchematicViews({ slug, params, highlight = null, className }: Pr
       <g>
         {draw(views.plan, { x: 246, y: 22, w: 176, h: 168 }, false)}
         <text x={334} y={222} fill="var(--muted-foreground)" fontSize="8" fontFamily="var(--font-mono)" textAnchor="middle">
-          PLANTA / SUPERIOR
+          VISTA SUPERIOR
         </text>
       </g>
 
-      <g>
-        {views.dims.map((d, i) => {
-          const active = highlight === d.key;
-          return (
-            <text
-              key={d.key}
-              x={12}
-              y={16 + i * 11}
-              fill={active ? "var(--accent)" : "var(--muted-foreground)"}
-              fontSize="8"
-              fontFamily="var(--font-mono)"
-            >
-              {d.label} = {Number(params[d.key] ?? 0)}
-            </text>
-          );
-        })}
-      </g>
     </svg>
   );
 }

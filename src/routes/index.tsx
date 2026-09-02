@@ -1,8 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowUpRight, FolderKanban, PenTool, Sigma } from "lucide-react";
 import { DEMO_HISTORY, DEMO_PROJECTS } from "@/lib/projects/demo-data";
-import { buildWire, DEFAULT_PARAMS } from "@/lib/viz3d/wire";
-import { Wire3D } from "@/components/chameleon/Wire3D";
+import { PieceCarousel } from "@/components/chameleon/PieceCarousel";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -85,15 +84,16 @@ function MiniFolders() {
 function Inicio() {
   const project = DEMO_PROJECTS[0];
   const last = DEMO_HISTORY[0];
-  const model = buildWire("quadrado-redondo", DEFAULT_PARAMS);
 
   return (
     <div className="space-y-6">
       <header className="relative pt-2">
-        <span className="tick-label">Traçado e Planificação Zero Fresta</span>
-        <h1 className="text-brand-gradient mt-1 font-display text-[clamp(2.4rem,13vw,4.5rem)] leading-[0.9] font-semibold tracking-tight">
+        <h1 className="text-brand-gradient font-display text-[clamp(2.4rem,13vw,4.5rem)] leading-[0.9] font-semibold tracking-tight">
           CALDRA
         </h1>
+        <p className="mt-1.5 font-mono text-[11px] tracking-[0.22em] text-muted-foreground uppercase">
+          Traçado e Planificação Zero Fresta
+        </p>
         <div className="mt-3 flex items-center gap-3">
           <span className="h-px flex-1 bg-gradient-to-r from-accent/60 to-transparent" />
           <span className="tick-label">Laboratório</span>
@@ -112,11 +112,7 @@ function Inicio() {
               TRAÇAGEM
             </h2>
           </div>
-          <Wire3D
-            model={model}
-            autoSpin
-            className="pointer-events-none absolute -right-10 -bottom-8 size-[86%] text-foreground/80 transition-transform duration-700 group-hover:scale-105"
-          />
+          <PieceCarousel className="absolute -right-6 -bottom-4 size-[86%]" />
           <div className="relative z-10 flex items-center gap-2 text-accent">
             <span className="tick-label text-accent">Abrir biblioteca</span>
             <ArrowUpRight className="size-4 transition-transform group-hover:-translate-y-0.5" />

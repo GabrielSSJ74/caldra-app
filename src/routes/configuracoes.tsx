@@ -11,6 +11,8 @@ import {
   type Unit,
 } from "@/lib/settings/SettingsProvider";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
+import { PhotoPicker } from "@/components/chameleon/Profile";
+import { useProfile } from "@/lib/profile/ProfileProvider";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/configuracoes")({
@@ -47,6 +49,7 @@ function Configuracoes() {
   const { theme, setTheme, accent, setAccent, unit, setUnit, precision, setPrecision } =
     useSettings();
   const [code, setCode] = useState("");
+  const { photo, displayName, role, name, update } = useProfile();
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,6 +64,31 @@ function Configuracoes() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
+      <Panel className="flex flex-col items-center gap-3 px-4 py-7" glow>
+        <PhotoPicker
+          photo={photo}
+          size={132}
+          label={photo ? "Alterar foto de perfil" : "Adicionar foto de perfil"}
+          onPhoto={(p) => update({ photo: p })}
+        />
+        <div className="w-full text-center">
+          <input
+            value={name}
+            onChange={(e) => update({ name: e.target.value })}
+            placeholder={displayName}
+            aria-label="Nome"
+            className="w-full bg-transparent text-center font-display text-xl font-semibold outline-none"
+          />
+          <input
+            value={role}
+            onChange={(e) => update({ role: e.target.value })}
+            placeholder="Caldeireiro"
+            aria-label="Profissão"
+            className="mt-1 w-full bg-transparent text-center font-mono text-[11px] tracking-[0.2em] text-muted-foreground uppercase outline-none"
+          />
+        </div>
+      </Panel>
+
       <header>
         <h1 className="font-display text-2xl font-semibold">Configurações</h1>
         <p className="mt-1 text-sm text-muted-foreground">
