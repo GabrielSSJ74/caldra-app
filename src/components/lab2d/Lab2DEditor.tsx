@@ -668,6 +668,66 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     requestAnimationFrame(() => fitTo([...entities, ...next]));
   };
 
+  const pickTool = useCallback((id: Tool) => {
+    setTool(id);
+    setPending([]);
+    setDraft(null);
+  }, []);
+
+  /** Entidades desenháveis: camada visível + modo de saída (produção/corte). */
+  const drawable = useMemo(
+    () => visible.filter((e) => modeAllows(outputMode, e.layer)),
+    [visible, outputMode],
+  );
+
+  const selectionActions = (
+    <>
+      <IconBtn
+        label="Duplicar"
+        onClick={() =>
+          commit((e) => [...e, ...selected.map((s) => ({ ...translate(s, 10, 10), id: uid() }))])
+        }
+        icon={Copy}
+        flat
+      />
+      <IconBtn
+        label="Girar 90°"
+        onClick={() => applySelection((e) => rotate(e, center, 90))}
+        icon={RotateCw}
+        flat
+      />
+      <IconBtn
+        label="Espelhar horizontal"
+        onClick={() => applySelection((e) => mirror(e, center, "x"))}
+        icon={FlipHorizontal2}
+        flat
+      />
+      <IconBtn
+        label="Espelhar vertical"
+        onClick={() => applySelection((e) => mirror(e, center, "y"))}
+        icon={FlipVertical2}
+        flat
+      />
+      <IconBtn
+        label="Escala +10%"
+        onClick={() => applySelection((e) => scaleEntity(e, center, 1.1))}
+        icon={Maximize}
+        flat
+      />
+      <IconBtn
+        label="Excluir"
+        onClick={() => {
+          commit((e) => e.filter((x) => !selection.includes(x.id)));
+          setSelection([]);
+        }}
+        icon={Trash2}
+        flat
+      />
+    </>
+  );
+
+
+
 
   const gridStep = grid * view.k < 6 ? grid * 10 : grid;
 
