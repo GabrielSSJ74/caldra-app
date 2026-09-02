@@ -495,7 +495,7 @@ export function VisionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="glass max-h-[92vh] max-w-xl overflow-y-auto border-0">
+      <DialogContent className="glass flex max-h-[92vh] w-[calc(100vw-1rem)] max-w-xl flex-col overflow-y-auto border-0 p-4 sm:p-6">
         <DialogHeader>
           <DialogTitle className="font-display text-lg">
             CHAMFER VISION
