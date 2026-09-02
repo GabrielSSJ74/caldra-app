@@ -105,6 +105,8 @@ export function VisionDialog({
   const [tolerance, setTolerance] = useState<Tolerance>("media");
   const [noise, setNoise] = useState(1);
   const [analysis, setAnalysis] = useState<VisionAnalysis | null>(null);
+  const [centerOpt, setCenterOpt] = useState<CenterlineOptions>(DEFAULT_CENTERLINE);
+  const [center, setCenter] = useState<CenterlineAnalysis | null>(null);
   const [overlay, setOverlay] = useState<Overlay>("ambos");
 
   // calibração
@@ -114,8 +116,40 @@ export function VisionDialog({
   const [calPts, setCalPts] = useState<{ x: number; y: number }[]>([]);
   const [realMm, setRealMm] = useState("100");
 
-  // manual
-  const [manual, setManual] = useState<Manual | null>(null);
+  // vetorização manual (histórico próprio; o desenho final entra no undo do CHAMFER)
+  const [manualOn, setManualOn] = useState(false);
+  const [manual, setManual] = useState<ManualState>(EMPTY_MANUAL);
+  const [past, setPast] = useState<ManualState[]>([]);
+  const [future, setFuture] = useState<ManualState[]>([]);
+  const [snapTol, setSnapTol] = useState(10);
+
+  const pushManual = useCallback(
+    (next: ManualState) => {
+      setPast((p) => [...p.slice(-40), manual]);
+      setFuture([]);
+      setManual(next);
+    },
+    [manual],
+  );
+
+  const undoManual = useCallback(() => {
+    setPast((p) => {
+      if (!p.length) return p;
+      const prev = p[p.length - 1]!;
+      setFuture((f) => [manual, ...f]);
+      setManual(prev);
+      return p.slice(0, -1);
+    });
+  }, [manual]);
+
+  const redoManual = useCallback(() => {
+    setFuture((f) => {
+      if (!f.length) return f;
+      setPast((p) => [...p, manual]);
+      setManual(f[0]!);
+      return f.slice(1);
+    });
+  }, [manual]);
 
   const reset = useCallback(() => {
     setStep("importar");
@@ -126,12 +160,18 @@ export function VisionDialog({
     setZoom(1);
     setAnalysis(null);
     setLogo(null);
+    setCenter(null);
     setLogoOpt(DEFAULT_LOGO);
+    setCenterOpt(DEFAULT_CENTERLINE);
     setCal(DEFAULT_CALIBRATION);
     setWidthMm("");
     setCalPts([]);
-    setManual(null);
+    setManualOn(false);
+    setManual(EMPTY_MANUAL);
+    setPast([]);
+    setFuture([]);
   }, []);
+
 
   useEffect(() => {
     if (!open) reset();
