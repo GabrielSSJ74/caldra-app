@@ -144,7 +144,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [showDims, setShowDims] = useState(false);
   const [focus, setFocus] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [outputMode, setOutputMode] = useState<OutputMode>("completo");
   const [pending, setPending] = useState<Vec2[]>([]);
+
   const [draft, setDraft] = useState<Entity | null>(null);
   const [marquee, setMarquee] = useState<{ a: Vec2; b: Vec2 } | null>(null);
   const [measures, setMeasures] = useState<Measure[]>([]);
