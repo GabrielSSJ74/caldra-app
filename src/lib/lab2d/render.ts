@@ -9,6 +9,7 @@
 
 import type { Vec2 } from "@/lib/geometry/types";
 import { bbox, dist, entityPoints, type Entity, type Layer } from "./core";
+import { DIMENSION_COLOR, techColor, techStyle } from "./technical";
 
 export type RenderOptions = {
   dimensions: boolean;
@@ -17,18 +18,13 @@ export type RenderOptions = {
   title?: string;
 };
 
-const HEX: Record<string, string> = {
-  corte: "#0f1115",
-  dobra: "#2f7d8c",
-  marcacao: "#b26a12",
-  construcao: "#8c96a3",
-  cota: "#c2751a",
-};
+const AMBER = DIMENSION_COLOR;
 
-const AMBER = "#d1810f";
-
-export const colorFor = (layer: Layer | undefined, id: string, dark: boolean) =>
-  dark ? "#e8edf3" : (HEX[id] ?? HEX[layer?.id ?? "corte"] ?? "#0f1115");
+/**
+ * Cor de traço de uma entidade: sempre do sistema técnico fixo.
+ * O tema visual do aplicativo não interfere na exportação.
+ */
+export const colorFor = (_layer: Layer | undefined, id: string, _dark: boolean) => techColor(id);
 
 const f = (n: number) => (Math.abs(n) < 1e-9 ? "0" : n.toFixed(3));
 
@@ -149,17 +145,20 @@ export function renderSvg(
   const s = Math.max(w, h) / 200; // escala do traço em relação à peça
   const dark = opts.background === "dark";
 
-  const body = entities
+  const body = [...entities]
+    .sort((a, b) => techStyle(a.layer).order - techStyle(b.layer).order)
     .map((e) => {
       const layer = layers.find((l) => l.id === e.layer);
+      const style = techStyle(e.layer);
       const stroke = colorFor(layer, e.layer, dark);
       if (e.type === "text")
         return `<text x="${f(e.x)}" y="${f(e.y)}" font-size="${f(e.size)}" fill="${stroke}" font-family="ui-sans-serif, system-ui">${escapeXml(e.text)}</text>`;
       const d = entityPath(e);
       if (!d) return "";
-      const dash = e.layer === "dobra" ? ` stroke-dasharray="${f(4 * s)} ${f(3 * s)}"` : "";
+      const pattern = style.dash(s);
+      const dash = pattern ? ` stroke-dasharray="${pattern}"` : "";
       return `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${f(
-        1.1 * s,
+        1.1 * s * style.weight,
       )}" stroke-linecap="round" stroke-linejoin="round"${dash}/>`;
     })
     .join("");
