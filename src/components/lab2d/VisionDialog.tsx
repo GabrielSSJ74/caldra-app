@@ -684,6 +684,126 @@ function PreviewCanvas({
   );
 }
 
+/** Prévia do traçado de logo: curvas reais, furos em âmbar. */
+function LogoCanvas({
+  img,
+  logo,
+  overlay,
+}: {
+  img: ImportedImage;
+  logo: LogoAnalysis;
+  overlay: Overlay;
+}) {
+  const { w, h } = logo.imagePx;
+  return (
+    <svg
+      viewBox={`0 0 ${w} ${h}`}
+      className="w-full rounded-2xl border border-border bg-white"
+      role="img"
+      aria-label="Prévia do traçado por curvas"
+    >
+      {overlay !== "vetor" && (
+        <image
+          href={img.dataUrl}
+          x={0}
+          y={0}
+          width={w}
+          height={h}
+          opacity={overlay === "ambos" ? 0.35 : 1}
+          preserveAspectRatio="none"
+        />
+      )}
+      {overlay !== "original" && (
+        <g fill="none" strokeWidth={Math.max(1, w / 500)}>
+          {logo.layers.flatMap((l, li) =>
+            l.paths.map((t, i) => (
+              <path
+                key={`${li}-${i}`}
+                d={pathToSvg(t.start, t.segs, true)}
+                stroke={t.hole ? MARK_COLOR : CUT_COLOR}
+              />
+            )),
+          )}
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function LogoStats({
+  logo,
+  cal,
+  entities,
+}: {
+  logo: LogoAnalysis;
+  cal: Calibration;
+  entities: Entity[];
+}) {
+  const s = cal.mmPerPx;
+  return (
+    <div className="metal grid grid-cols-2 gap-1 rounded-2xl p-3 font-mono text-[10px] text-muted-foreground">
+      <span>{logo.stats.contours} contornos</span>
+      <span>{logo.stats.holes} furos</span>
+      <span>{logo.stats.curves} curvas</span>
+      <span>{logo.stats.segments} segmentos</span>
+      <span className="col-span-2 text-foreground">
+        {(logo.contentPx.w * s).toFixed(1)} × {(logo.contentPx.h * s).toFixed(1)} mm ·{" "}
+        {entities.length} entidades · SPLINE no DXF
+      </span>
+    </div>
+  );
+}
+
+const TURN_POLICIES: TurnPolicy[] = ["minority", "majority", "black", "white", "left", "right"];
+
+function LogoControls({
+  opt,
+  onChange,
+}: {
+  opt: LogoOptions;
+  onChange: (o: Partial<LogoOptions>) => void;
+}) {
+  return (
+    <>
+      <Section title="Pré-processamento" icon={ImageIcon}>
+        <div className="grid grid-cols-2 gap-2">
+          <Slider label={`Ampliação ${opt.upscale}×`} value={opt.upscale} min={1} max={4} step={1}
+            onChange={(v) => onChange({ upscale: v })} />
+          <Slider label={`Suavizar (JPG) ${opt.blur}px`} value={opt.blur} min={0} max={3} step={1}
+            onChange={(v) => onChange({ blur: v })} />
+          <Slider label={`Limiar ${opt.threshold}`} value={opt.threshold} min={20} max={235} step={1}
+            onChange={(v) => onChange({ threshold: v })} />
+          <Slider label={`Fechar furos ${opt.closeHoles}`} value={opt.closeHoles} min={0} max={3} step={1}
+            onChange={(v) => onChange({ closeHoles: v })} />
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <Toggle active={opt.invert} onClick={() => onChange({ invert: !opt.invert })} label="inverter tinta" />
+          <Toggle active={opt.detectCircles} onClick={() => onChange({ detectCircles: !opt.detectCircles })}
+            label="furos redondos → círculo" />
+        </div>
+      </Section>
+
+      <Section title="Traçado" icon={Spline}>
+        <div className="grid grid-cols-2 gap-2">
+          <Slider label={`Poeira (turdsize) ${opt.turdsize}`} value={opt.turdsize} min={0} max={12} step={1}
+            onChange={(v) => onChange({ turdsize: v })} />
+          <Slider label={`Cantos (alphamax) ${opt.alphamax.toFixed(2)}`} value={opt.alphamax} min={0} max={1.34} step={0.02}
+            onChange={(v) => onChange({ alphamax: v })} />
+          <Slider label={`Fidelidade (opttolerance) ${opt.opttolerance.toFixed(2)}`} value={opt.opttolerance}
+            min={0.05} max={1} step={0.05} onChange={(v) => onChange({ opttolerance: v })} />
+          <Slider label={`Cores ${opt.colors}`} value={opt.colors} min={1} max={6} step={1}
+            onChange={(v) => onChange({ colors: v })} />
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {TURN_POLICIES.map((t) => (
+            <Toggle key={t} active={opt.turnpolicy === t} onClick={() => onChange({ turnpolicy: t })} label={t} />
+          ))}
+        </div>
+      </Section>
+    </>
+  );
+}
+
 function PrimShape({ p }: { p: Prim }) {
   if (p.kind === "line") return <line x1={p.x1} y1={p.y1} x2={p.x2} y2={p.y2} />;
   if (p.kind === "circle") return <circle cx={p.cx} cy={p.cy} r={p.r} />;
