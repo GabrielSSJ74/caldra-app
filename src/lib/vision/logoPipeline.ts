@@ -17,9 +17,11 @@ import {
   closeHoles,
   gaussianBlur,
   rasterize,
+  resampleImageData,
   thresholdBinarize,
   type Binary,
 } from "./imagePreprocessor";
+
 import { maskForSwatch, quantize, type Swatch } from "./colorQuantizer";
 import { DEFAULT_TRACE, tracePaths, type TraceOptions, type TracedPath } from "./logoTracer";
 import type { Calibration } from "./scaleCalibrationService";
@@ -98,23 +100,77 @@ function boundsOf(layers: LogoLayerResult[]) {
 export function analyzeLogo(img: HTMLImageElement, opt: LogoOptions): LogoAnalysis {
   const scale = Math.max(1, Math.min(4, opt.upscale));
   const raster = rasterize(img, { maxSize: Math.round(Math.max(img.width, img.height) * scale) });
-  const pixels = opt.blur > 0 ? gaussianBlur(raster.pixels, opt.blur) : raster.pixels;
+  return analyzeLogoRaster(raster.pixels, opt);
+}
 
-  const prep = (bin: Binary) => (opt.closeHoles > 0 ? closeHoles(bin, opt.closeHoles) : bin);
-  const trace = (bin: Binary) => tracePaths(prep(bin), opt);
+/**
+ * Traçado a partir de pixels já ampliados — usado no Web Worker.
+ * Com `multiScale`, traça em 1×, 2× e 4× (reamostrando o raster recebido) e
+ * escolhe o resultado mais suave/fiel por métrica objetiva.
+ */
+export function analyzeLogoRaster(
+  input: ImageData,
+  opt: LogoOptions,
+  onProgress?: (stage: string, pct: number) => void,
+  multiScale = false,
+): LogoAnalysis {
+  const run = (source: ImageData): LogoAnalysis => {
+    const pixels = opt.blur > 0 ? gaussianBlur(source, opt.blur) : source;
 
-  const layers: LogoLayerResult[] = [];
-  let palette: Swatch[] = [];
+    const prep = (bin: Binary) => (opt.closeHoles > 0 ? closeHoles(bin, opt.closeHoles) : bin);
+    const trace = (bin: Binary) => tracePaths(prep(bin), opt);
 
-  if (opt.colors > 1) {
-    palette = quantize(pixels, opt.colors);
-    palette.forEach((sw, i) => {
-      const paths = trace(maskForSwatch(pixels, palette, i));
-      if (paths.length) layers.push({ swatch: sw, paths });
-    });
-  } else {
-    layers.push({ swatch: null, paths: trace(thresholdBinarize(pixels, opt.threshold, opt.invert)) });
-  }
+    const layers: LogoLayerResult[] = [];
+    let palette: Swatch[] = [];
+
+    if (opt.colors > 1) {
+      palette = quantize(pixels, opt.colors);
+      palette.forEach((sw, i) => {
+        const paths = trace(maskForSwatch(pixels, palette, i));
+        if (paths.length) layers.push({ swatch: sw, paths });
+      });
+    } else {
+      layers.push({
+        swatch: null,
+        paths: trace(thresholdBinarize(pixels, opt.threshold, opt.invert)),
+      });
+    }
+    return finish(layers, palette, source.width, source.height, opt);
+  };
+
+  onProgress?.("Traçando contornos", 35);
+  if (!multiScale) return run(input);
+
+  // MULTI-ESCALA: mesma imagem em 1×, 2× e 4× → melhor pontuação vence
+  const candidates: LogoAnalysis[] = [];
+  const factors = [0.25, 0.5, 1];
+  factors.forEach((f, i) => {
+    onProgress?.(`Traçando ${f * 4}×`, 30 + i * 20);
+    try {
+      candidates.push(run(resampleImageData(input, f)));
+    } catch {
+      /* escala descartada */
+    }
+  });
+  const scored = candidates
+    .filter((c) => c.stats.contours + c.stats.holes > 0)
+    .map((c) => {
+      const smooth = c.stats.segments ? c.stats.curves / c.stats.segments : 0;
+      const perContour = c.stats.segments / Math.max(1, c.stats.contours + c.stats.holes);
+      return { c, score: smooth * 100 - Math.abs(perContour - 14) };
+    })
+    .sort((a, b) => b.score - a.score);
+  return scored[0]?.c ?? run(input);
+}
+
+function finish(
+  layers: LogoLayerResult[],
+  palette: Swatch[],
+  width: number,
+  height: number,
+  opt: LogoOptions,
+): LogoAnalysis {
+
 
   let segments = 0;
   let holes = 0;
@@ -128,7 +184,7 @@ export function analyzeLogo(img: HTMLImageElement, opt: LogoOptions): LogoAnalys
 
   return {
     layers,
-    imagePx: { w: raster.width, h: raster.height },
+    imagePx: { w: width, h: height },
     contentPx: boundsOf(layers),
     stats: {
       contours,

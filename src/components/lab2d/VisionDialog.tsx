@@ -21,7 +21,7 @@ import type { Entity } from "@/lib/lab2d/core";
 import { CUT_COLOR, MARK_COLOR } from "@/lib/lab2d/technical";
 import { importImage, type ImportedImage } from "@/lib/vision/imageImportService";
 import type { Prim, Tolerance } from "@/lib/vision/geometryRecognizer";
-import { analyzeImage, toEntities, type VisionAnalysis } from "@/lib/vision/vectorizer";
+import { toEntities, type VisionAnalysis } from "@/lib/vision/vectorizer";
 import { countDuplicates, normalizeGeometry } from "@/lib/vision/geometryNormalizer";
 import {
   calibrateByDimension,
@@ -31,7 +31,6 @@ import {
 } from "@/lib/vision/scaleCalibrationService";
 import { validateVector } from "@/lib/vision/vectorValidationService";
 import {
-  analyzeLogo,
   DEFAULT_LOGO,
   logoToEntities,
   type LogoAnalysis,
@@ -40,11 +39,24 @@ import {
 import { pathToSvg } from "@/lib/lab2d/bezier";
 import type { TurnPolicy } from "@/lib/vision/logoTracer";
 import {
-  analyzeCenterline,
   DEFAULT_CENTERLINE,
   type CenterlineAnalysis,
   type CenterlineOptions,
 } from "@/lib/vision/centerlinePipeline";
+import {
+  profileImage,
+  suggestFromProfile,
+  type ImageProfile,
+  type VisionSuggestion,
+} from "@/lib/vision/imageProfiler";
+import {
+  rasterForLogo,
+  rasterForProfile,
+  rasterForTecnico,
+  rasterForTracado,
+} from "@/lib/vision/rasterSource";
+import { cancelVision, runVision } from "@/lib/vision/visionClient";
+import { buildQuality, type QualityItem } from "@/lib/vision/qualityReport";
 import {
   addManualPoint,
   arcFrom3Points,
@@ -59,6 +71,7 @@ import {
   snapTargets,
   type ManualState,
 } from "@/lib/vision/manualTracer";
+
 
 export type VisionImageLayer = {
   src: string;
@@ -108,6 +121,20 @@ export function VisionDialog({
   const [center, setCenter] = useState<CenterlineAnalysis | null>(null);
   const [overlay, setOverlay] = useState<Overlay>("ambos");
 
+  // qualidade / pré-flight / processamento
+  const [profile, setProfile] = useState<ImageProfile | null>(null);
+  const [suggestion, setSuggestion] = useState<VisionSuggestion | null>(null);
+  const [adaptive, setAdaptive] = useState(false);
+  const [normalize, setNormalize] = useState(false);
+  const [regularize, setRegularize] = useState(true);
+  const [multiScale, setMultiScale] = useState(false);
+  const [progress, setProgress] = useState<{ stage: string; pct: number }>({
+    stage: "Preparando",
+    pct: 0,
+  });
+  const [focusBox, setFocusBox] = useState<QualityItem["box"] | null>(null);
+
+
   // calibração
   const [cal, setCal] = useState<Calibration>(DEFAULT_CALIBRATION);
   const [widthMm, setWidthMm] = useState("");
@@ -151,6 +178,7 @@ export function VisionDialog({
   }, [manual]);
 
   const reset = useCallback(() => {
+    cancelVision();
     setStep("importar");
     setImg(null);
     setError(null);
@@ -169,6 +197,12 @@ export function VisionDialog({
     setManual(EMPTY_MANUAL);
     setPast([]);
     setFuture([]);
+    setProfile(null);
+    setSuggestion(null);
+    setAdaptive(false);
+    setNormalize(false);
+    setMultiScale(false);
+    setFocusBox(null);
   }, []);
 
   useEffect(() => {
@@ -181,100 +215,182 @@ export function VisionDialog({
       const imported = await importImage(file);
       setImg(imported);
       setStep("previa");
+      // relatório pré-flight: rápido, na thread principal, sem aplicar nada
+      try {
+        const p = profileImage(rasterForProfile(imported.element));
+        setProfile(p);
+        setSuggestion(suggestFromProfile(p));
+      } catch {
+        setProfile(null);
+        setSuggestion(null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao importar imagem.");
     }
   };
 
-  const run = async () => {
-    if (!img) return;
-    setStep("analisando");
-    setError(null);
-    await new Promise((r) => setTimeout(r, 260));
-    try {
-      if (mode === "logo") {
-        const res = analyzeLogo(img.element, logoOpt);
-        setAnalysis(null);
-        setCenter(null);
-        setLogo(res.stats.contours + res.stats.holes ? res : null);
-        if (!res.stats.contours && !res.stats.holes)
-          setError("Nenhum contorno encontrado. Ajuste o limiar ou inverta tinta/fundo.");
-        setStep("resultado");
-        return;
+  /** Aplica a sugestão do pré-flight — só quando o usuário confirma. */
+  const useSuggestion = () => {
+    if (!suggestion) return;
+    setMode(suggestion.mode);
+    setTolerance(suggestion.tolerance);
+    setNoise(suggestion.noise);
+    setAdaptive(suggestion.adaptive);
+    setNormalize(suggestion.normalize);
+    setMultiScale(profile?.small ?? false);
+    setLogoOpt((o) => ({
+      ...o,
+      threshold: suggestion.threshold,
+      invert: suggestion.invert,
+      upscale: suggestion.upscale,
+      blur: suggestion.blur,
+      turdsize: suggestion.turdsize,
+      alphamax: suggestion.alphamax,
+      opttolerance: suggestion.opttolerance,
+      turnpolicy: suggestion.turnpolicy,
+    }));
+    setCenterOpt((o) => ({
+      ...o,
+      invert: suggestion.invert,
+      blur: suggestion.blur,
+      tolerance: suggestion.tolerance,
+    }));
+    toast.success("Sugestão aplicada. Ajuste o que quiser antes de continuar.");
+  };
+
+  /** Executa a pipeline no Web Worker; devolve true quando houve resultado. */
+  const analyze = useCallback(
+    async (silent: boolean) => {
+      if (!img) return false;
+      if (!silent) {
+        setStep("analisando");
+        setProgress({ stage: "Preparando imagem", pct: 2 });
+        setError(null);
       }
-      setLogo(null);
-      if (mode === "tracado") {
-        const res = analyzeCenterline(img.element, { ...centerOpt, rotationDeg: rotation });
-        setCenter(res);
-        setAnalysis(res.prims.length ? res : null);
-        if (!res.prims.length)
-          setError(
-            "Nenhum traço central encontrado. Ajuste brilho, contraste ou o limiar adaptativo — ou use a vetorização manual.",
+      try {
+        if (mode === "logo") {
+          const pixels = rasterForLogo(img.element, logoOpt, multiScale);
+          const res = await runVision(
+            { mode: "logo", pixels, opt: logoOpt, multiScale },
+            silent ? undefined : setProgress,
           );
+          if (res.mode !== "logo") return false;
+          const ok = res.analysis.stats.contours + res.analysis.stats.holes > 0;
+          if (silent) {
+            if (ok) setLogo(res.analysis);
+            return ok;
+          }
+          setAnalysis(null);
+          setCenter(null);
+          setLogo(ok ? res.analysis : null);
+          if (!ok) setError("Nenhum contorno encontrado. Ajuste o limiar ou inverta tinta/fundo.");
+          setStep("resultado");
+          return ok;
+        }
+
+        if (mode === "tracado") {
+          const opt = { ...centerOpt, rotationDeg: rotation };
+          const pixels = rasterForTracado(img.element, opt);
+          const res = await runVision(
+            { mode: "tracado", pixels, opt },
+            silent ? undefined : setProgress,
+          );
+          if (res.mode !== "tracado") return false;
+          setLogo(null);
+          setCenter(res.analysis);
+          if (res.analysis.prims.length) setAnalysis(res.analysis);
+          else if (!silent) setAnalysis(null);
+          if (!silent) {
+            if (!res.analysis.prims.length)
+              setError(
+                "Nenhum traço central encontrado. Ajuste brilho, contraste ou o limiar adaptativo — ou use a vetorização manual.",
+              );
+            setStep("resultado");
+          }
+          return res.analysis.prims.length > 0;
+        }
+
+        const opt = {
+          tolerance,
+          noise,
+          rotationDeg: rotation,
+          adaptive,
+          normalize,
+          regularize,
+          hq: true,
+        };
+        const pixels = rasterForTecnico(img.element, opt);
+        const res = await runVision(
+          { mode: "tecnico", pixels, opt },
+          silent ? undefined : setProgress,
+        );
+        if (res.mode !== "tecnico") return false;
+        const ok = res.analysis.prims.length > 0;
+        if (silent) {
+          if (ok) setAnalysis(res.analysis);
+          return ok;
+        }
+        setLogo(null);
+        setCenter(null);
+        setAnalysis(ok ? res.analysis : null);
+        if (!ok) setError("Não foi possível reconhecer toda a geometria desta imagem.");
         setStep("resultado");
-        return;
+        return ok;
+      } catch (e) {
+        if (!silent) {
+          setError(e instanceof Error ? e.message : "Falha na análise.");
+          setStep("resultado");
+        }
+        return false;
       }
-      setCenter(null);
-      const res = analyzeImage(img.element, { tolerance, noise, rotationDeg: rotation });
-      if (!res.prims.length) {
-        setAnalysis(null);
-        setError("Não foi possível reconhecer toda a geometria desta imagem.");
-        setStep("resultado");
-        return;
-      }
-      setAnalysis(res);
-      setStep("resultado");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Falha na análise.");
-      setStep("resultado");
-    }
+    },
+    [
+      img,
+      mode,
+      logoOpt,
+      multiScale,
+      centerOpt,
+      rotation,
+      tolerance,
+      noise,
+      adaptive,
+      normalize,
+      regularize,
+    ],
+  );
+
+  const run = () => void analyze(false);
+
+  const cancelRun = () => {
+    cancelVision();
+    setStep("previa");
+    setError("Análise cancelada.");
   };
 
   // reanalisa ao mudar parâmetros do modo logo
   useEffect(() => {
     if (step !== "resultado" || !img || mode !== "logo") return;
-    const t = setTimeout(() => {
-      try {
-        const res = analyzeLogo(img.element, logoOpt);
-        if (res.stats.contours + res.stats.holes) setLogo(res);
-      } catch {
-        /* mantém resultado anterior */
-      }
-    }, 180);
+    const t = setTimeout(() => void analyze(true), 200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [logoOpt]);
+  }, [logoOpt, multiScale]);
 
   // reanalisa ao mudar parâmetros do modo traçado
   useEffect(() => {
     if (step !== "resultado" || !img || mode !== "tracado") return;
-    const t = setTimeout(() => {
-      try {
-        const res = analyzeCenterline(img.element, { ...centerOpt, rotationDeg: rotation });
-        setCenter(res);
-        if (res.prims.length) setAnalysis(res);
-      } catch {
-        /* mantém resultado anterior */
-      }
-    }, 220);
+    const t = setTimeout(() => void analyze(true), 240);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [centerOpt]);
 
-  // reanalisa ao mudar tolerância/ruído já no resultado
+  // reanalisa ao mudar tolerância/ruído/binarização já no resultado
   useEffect(() => {
     if (step !== "resultado" || !img || !analysis || mode !== "tecnico") return;
-    const t = setTimeout(() => {
-      try {
-        const res = analyzeImage(img.element, { tolerance, noise, rotationDeg: rotation });
-        setAnalysis(res.prims.length ? res : null);
-      } catch {
-        /* mantém resultado anterior */
-      }
-    }, 120);
+    const t = setTimeout(() => void analyze(true), 160);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tolerance, noise]);
+  }, [tolerance, noise, adaptive, normalize, regularize]);
+
 
   const geoRef = logo ?? analysis;
   const calibrated = cal.method !== "padrao";
@@ -315,6 +431,11 @@ export function VisionDialog({
 
   const duplicates = useMemo(() => countDuplicates(rawEntities), [rawEntities]);
   const validation = useMemo(() => validateVector(normalized.entities, cal), [normalized, cal]);
+  const quality = useMemo(
+    () => (analysis ? buildQuality(analysis.prims, cal.mmPerPx) : null),
+    [analysis, cal],
+  );
+
 
   const applyDimension = () => {
     const geo = logo ?? analysis;
@@ -465,6 +586,38 @@ export function VisionDialog({
               )}
             </Section>
 
+            {profile && suggestion && (
+              <Section title="Análise da imagem" icon={Scan}>
+                <ul className="space-y-0.5 font-mono text-[10px] text-muted-foreground">
+                  <li>
+                    {profile.widthPx} × {profile.heightPx} px analisados
+                    {profile.small ? " · resolução baixa" : " · resolução adequada"}
+                  </li>
+                  <li>
+                    contraste {Math.round(profile.contrast * 100)}% · ruído{" "}
+                    {Math.round(profile.noise * 100)}% · traço médio{" "}
+                    {profile.strokePx.toFixed(1)} px
+                  </li>
+                  <li>
+                    fundo {profile.uniformBackground ? "uniforme" : "irregular"} ·{" "}
+                    {profile.flatArt ? "arte chapada" : "tons contínuos"}
+                  </li>
+                </ul>
+                <p className="font-mono text-[10px] text-accent">
+                  Sugestão: modo {suggestion.mode} · tolerância {suggestion.tolerance} · limiar{" "}
+                  {suggestion.threshold}
+                  {suggestion.adaptive ? " · adaptativo" : ""}
+                  {suggestion.normalize ? " · normalizar" : ""}
+                </p>
+                <ul className="space-y-0.5 font-mono text-[10px] text-muted-foreground">
+                  {suggestion.reasons.map((r, i) => (
+                    <li key={i}>· {r}</li>
+                  ))}
+                </ul>
+                <Chip icon={Check} label="Usar sugestão" onClick={useSuggestion} />
+              </Section>
+            )}
+
             <div className="flex items-center gap-2">
               <Chip
                 icon={RotateCw}
@@ -475,7 +628,7 @@ export function VisionDialog({
                 {img.widthPx} × {img.heightPx} px
               </span>
               <button
-                onClick={() => void run()}
+                onClick={run}
                 className="brand-gradient ml-auto rounded-xl px-4 py-2 font-display text-sm font-semibold text-background"
               >
                 Continuar
@@ -485,13 +638,24 @@ export function VisionDialog({
         )}
 
         {step === "analisando" && (
-          <div className="flex flex-col items-center gap-3 py-16">
+          <div className="flex flex-col items-center gap-3 py-14">
             <Loader2 className="size-6 animate-spin text-accent" />
             <p className="font-mono text-[11px] tracking-[0.2em] text-muted-foreground uppercase">
-              Analisando imagem…
+              {progress.stage}…
             </p>
+            <div className="h-1.5 w-56 overflow-hidden rounded-full bg-secondary">
+              <div
+                className="brand-gradient h-full transition-all"
+                style={{ width: `${Math.max(4, Math.min(100, progress.pct))}%` }}
+              />
+            </div>
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {Math.round(progress.pct)}%
+            </span>
+            <Chip icon={X} label="Cancelar" onClick={cancelRun} />
           </div>
         )}
+
 
         {step === "resultado" && img && logo && (
           <>
@@ -506,6 +670,15 @@ export function VisionDialog({
             </div>
             <LogoStats logo={logo} cal={cal} entities={normalized.entities} />
             <LogoControls opt={logoOpt} onChange={(o) => setLogoOpt({ ...logoOpt, ...o })} />
+
+            <Section title="Multi-escala" icon={Scan}>
+              <Toggle
+                active={multiScale}
+                onClick={() => setMultiScale((v) => !v)}
+                label="traçar em 1× / 2× / 4× e escolher o melhor"
+              />
+            </Section>
+
 
             <Section title="Escala" icon={Ruler}>
               <div className="flex items-center gap-2">
@@ -551,6 +724,7 @@ export function VisionDialog({
             </p>
 
             <PreviewCanvas
+              focus={focusBox}
               img={img}
               analysis={analysis}
               overlay={overlay}
@@ -672,6 +846,63 @@ export function VisionDialog({
                     ))}
                   </div>
                 </Section>
+
+                <Section title="Binarização" icon={Scan}>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <Toggle
+                      active={adaptive}
+                      onClick={() => setAdaptive((v) => !v)}
+                      label="limiar adaptativo"
+                    />
+                    <Toggle
+                      active={normalize}
+                      onClick={() => setNormalize((v) => !v)}
+                      label="normalizar contraste"
+                    />
+                    <Toggle
+                      active={regularize}
+                      onClick={() => setRegularize((v) => !v)}
+                      label="regularizar"
+                    />
+                  </div>
+                  <p className="font-mono text-[10px] text-muted-foreground">
+                    Adaptativo compensa iluminação irregular. Regularizar ortogonaliza e fecha
+                    círculos apenas dentro da tolerância.
+                  </p>
+                </Section>
+
+                {quality && (
+                  <Section title="Qualidade" icon={Check}>
+                    <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground">
+                      <span className="text-accent">Score {quality.score}/100</span>
+                      <span>desvio máx {quality.maxDevMm.toFixed(2)} mm</span>
+                      <span>médio {quality.avgDevMm.toFixed(2)} mm</span>
+                      <span>
+                        {quality.counts.detectada} detectadas · {quality.counts.convertida}{" "}
+                        convertidas · {quality.counts.aproximada} aproximadas
+                      </span>
+                    </div>
+                    {quality.low.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="font-mono text-[10px] text-amber-500">
+                          {quality.low.length} entidade(s) de baixa confiança
+                        </p>
+                        <div className="flex max-h-24 flex-wrap gap-1 overflow-auto">
+                          {quality.low.slice(0, 24).map((it) => (
+                            <button
+                              key={it.index}
+                              onClick={() => setFocusBox(it.box)}
+                              className="rounded-lg border border-border px-2 py-1 font-mono text-[10px] text-muted-foreground hover:text-foreground"
+                            >
+                              #{it.index + 1} {it.kind} · {it.devMm.toFixed(2)} mm
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </Section>
+                )}
+
 
                 <Section title="Limpeza" icon={Eraser}>
                   <div className="flex flex-wrap items-center gap-1">
@@ -898,6 +1129,7 @@ function PreviewCanvas({
   snapTol,
   targets,
   calPts,
+  focus,
   onPick,
   onMoveNode,
 }: {
@@ -909,6 +1141,7 @@ function PreviewCanvas({
   snapTol: number;
   targets: { x: number; y: number }[];
   calPts: { x: number; y: number }[];
+  focus: { x: number; y: number; w: number; h: number } | null;
   onPick: (p: { x: number; y: number }) => void;
   onMoveNode: (shape: number, index: number, p: { x: number; y: number }) => void;
 }) {
@@ -925,6 +1158,20 @@ function PreviewCanvas({
   } | null>(null);
 
   useEffect(() => setView({ x: 0, y: 0, w, h }), [w, h]);
+
+  // "ir até a entidade": enquadra a caixa recebida com folga
+  useEffect(() => {
+    if (!focus) return;
+    const pad = Math.max(focus.w, focus.h, w / 40) * 0.8;
+    const bw = Math.max(focus.w + pad * 2, w / 20);
+    const bh = bw * (h / w);
+    setView({
+      x: focus.x + focus.w / 2 - bw / 2,
+      y: focus.y + focus.h / 2 - bh / 2,
+      w: bw,
+      h: bh,
+    });
+  }, [focus, w, h]);
 
   const toImage = useCallback(
     (clientX: number, clientY: number) => {

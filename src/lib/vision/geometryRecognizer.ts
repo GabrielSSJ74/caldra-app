@@ -7,7 +7,13 @@
 
 import type { Contour, PxPoint } from "./visionEngine";
 
-export type Prim =
+/** Confiança da primitiva: detectada direto, ajustada ou aproximada. */
+export type PrimStatus = "detectada" | "convertida" | "aproximada";
+
+/** Metadados de qualidade — `dev` é o desvio máximo medido, em PIXELS. */
+export type PrimMeta = { status?: PrimStatus; dev?: number };
+
+export type Prim = (
   | { kind: "circle"; cx: number; cy: number; r: number; hole: boolean; quality: number }
   | {
       kind: "arc";
@@ -20,7 +26,10 @@ export type Prim =
       quality: number;
     }
   | { kind: "line"; x1: number; y1: number; x2: number; y2: number; hole: boolean; quality: number }
-  | { kind: "polyline"; pts: PxPoint[]; closed: boolean; hole: boolean; quality: number };
+  | { kind: "polyline"; pts: PxPoint[]; closed: boolean; hole: boolean; quality: number }
+) &
+  PrimMeta;
+
 
 export type Tolerance = "baixa" | "media" | "alta";
 
