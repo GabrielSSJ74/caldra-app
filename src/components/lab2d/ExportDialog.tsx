@@ -35,7 +35,6 @@ export function ExportDialog({
   const [format, setFormat] = useState<Format>("dxf");
   const [scope, setScope] = useState<Scope>("plan");
   const [dimensions, setDimensions] = useState(false);
-  const [transparent, setTransparent] = useState(false);
   // curvas saem como SPLINE por padrão; achatar só para máquinas antigas
   const [flattenCurves, setFlattenCurves] = useState(false);
 
@@ -45,9 +44,9 @@ export function ExportDialog({
     () =>
       renderSvg(entities, layers, {
         dimensions,
-        background: transparent && format === "png" ? "transparent" : "white",
+        background: "white",
       }),
-    [entities, layers, dimensions, transparent, format],
+    [entities, layers, dimensions],
   );
 
   const issues = useMemo(() => verify(entities), [entities]);
@@ -155,13 +154,6 @@ export function ExportDialog({
               {flattenCurves ? "Curvas achatadas" : "Curvas como SPLINE"}
             </button>
           )}
-          {format === "png" && (
-            <button
-              onClick={() => setTransparent((t) => !t)}
-              className={cn(
-                "rounded-full border border-border px-2.5 py-1",
-                transparent && "border-accent/50 text-accent",
-              )}
             >
               Fundo transp.
             </button>
