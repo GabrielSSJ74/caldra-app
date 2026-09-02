@@ -81,16 +81,43 @@ function writeEntity(e: DxfEntity): string {
         g(50, e.startAngle.toFixed(4)) +
         g(51, e.endAngle.toFixed(4))
       );
+    case "SPLINE": {
+      const n = Math.max(1, Math.floor((e.controls.length - 1) / 3));
+      // nós de Bézier por partes: 0,0,0,0, 1,1,1, ..., n,n,n,n
+      const knots: number[] = [0, 0, 0, 0];
+      for (let i = 1; i < n; i++) knots.push(i, i, i);
+      knots.push(n, n, n, n);
+      return (
+        g(0, "SPLINE") +
+        g(8, e.layer) +
+        g(100, "AcDbEntity") +
+        g(100, "AcDbSpline") +
+        g(210, "0.0") +
+        g(220, "0.0") +
+        g(230, "1.0") +
+        g(70, 8 + (e.closed ? 1 : 0)) + // 8 = planar, 1 = fechada
+        g(71, 3) +
+        g(72, knots.length) +
+        g(73, e.controls.length) +
+        g(74, 0) +
+        knots.map((k) => g(40, k.toFixed(4))).join("") +
+        e.controls
+          .map((p) => g(10, p.x.toFixed(4)) + g(20, p.y.toFixed(4)) + g(30, "0.0"))
+          .join("")
+      );
+    }
   }
 }
 
 export function exportDxf(doc: DxfDocument): string {
   const layers = doc.layers.length ? doc.layers : [{ name: "0", color: 7 }];
+  const hasSpline = doc.entities.some((e) => e.type === "SPLINE");
   let out = "";
   out += g(0, "SECTION") + g(2, "HEADER");
-  out += g(9, "$ACADVER") + g(1, "AC1009");
+  out += g(9, "$ACADVER") + g(1, hasSpline ? "AC1015" : "AC1009");
   out += g(9, "$INSUNITS") + g(70, 4); // 4 = milímetros
   out += g(0, "ENDSEC");
+
 
   out += g(0, "SECTION") + g(2, "TABLES");
   out += g(0, "TABLE") + g(2, "LAYER") + g(70, layers.length);
