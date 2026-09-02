@@ -146,7 +146,14 @@ export function extractContours(bin: Binary, opt: ExtractOptions = {}): Contour[
     if (c.touchesBorder || c.pixels < minPixels) continue;
     const pts = traceBorder(bg.labels, w, h, c.id, c.seed);
     if (pts.length < minPoints) continue;
-    out.push({ pts, hole: true, closed: true, area: polygonArea(pts) });
+    const area = polygonArea(pts);
+    // Um traço fino gera contorno externo E interno quase idênticos: o interno
+    // é a outra margem da MESMA linha, não um furo. Descartamos esse caso.
+    const parent = out
+      .filter((o) => !o.hole && o.area > area)
+      .sort((a, b) => a.area - b.area)[0];
+    if (parent && area / parent.area > 0.55) continue;
+    out.push({ pts, hole: true, closed: true, area });
   }
 
   return out.sort((a, b) => b.area - a.area);
