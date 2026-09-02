@@ -46,6 +46,20 @@ import {
   type CenterlineOptions,
 } from "@/lib/vision/centerlinePipeline";
 import {
+  profileImage,
+  suggestFromProfile,
+  type ImageProfile,
+  type VisionSuggestion,
+} from "@/lib/vision/imageProfiler";
+import {
+  rasterForLogo,
+  rasterForProfile,
+  rasterForTecnico,
+  rasterForTracado,
+} from "@/lib/vision/rasterSource";
+import { cancelVision, runVision } from "@/lib/vision/visionClient";
+import { buildQuality, type QualityItem } from "@/lib/vision/qualityReport";
+import {
   addManualPoint,
   arcFrom3Points,
   closeManualContour,
@@ -59,6 +73,7 @@ import {
   snapTargets,
   type ManualState,
 } from "@/lib/vision/manualTracer";
+
 
 export type VisionImageLayer = {
   src: string;
