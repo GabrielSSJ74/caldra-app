@@ -47,13 +47,14 @@ export function quantize(image: ImageData, k: number, ignoreBackground = true): 
       }
       assign[i] = best;
     }
-    const sums = Array.from({ length: kk }, () => [0, 0, 0, 0]);
+    const sums: number[][] = Array.from({ length: kk }, () => [0, 0, 0, 0]);
     for (let i = 0; i < px.length; i++) {
       const s = sums[assign[i]!]!;
-      s[0] += px[i]![0];
-      s[1] += px[i]![1];
-      s[2] += px[i]![2];
-      s[3] += 1;
+      const p = px[i]!;
+      s[0] = s[0]! + p[0];
+      s[1] = s[1]! + p[1];
+      s[2] = s[2]! + p[2];
+      s[3] = s[3]! + 1;
     }
     for (let c = 0; c < kk; c++) {
       const s = sums[c]!;
