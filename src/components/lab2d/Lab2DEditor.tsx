@@ -1058,9 +1058,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             {showGrid && <rect width="100%" height="100%" fill="url(#lab2d-grid)" />}
 
             <g transform={`translate(${view.tx} ${view.ty}) scale(${view.k})`}>
+              {/* CAMADA IMAGEM — referência do CHAMFER VISION (nunca vira geometria) */}
+              {imageLayer && imageLayer.visible && outputMode === "completo" && (
+                <image
+                  href={imageLayer.src}
+                  x={imageLayer.x}
+                  y={imageLayer.y}
+                  width={imageLayer.widthMm}
+                  height={imageLayer.heightMm}
+                  opacity={imageLayer.opacity}
+                  preserveAspectRatio="none"
+                  style={{ pointerEvents: "none" }}
+                />
+              )}
+
               {/* eixos — cinza técnico discreto */}
               <line x1={-1e4} y1={0} x2={1e4} y2={0} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
               <line x1={0} y1={-1e4} x2={0} y2={1e4} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
+
 
               {drawable.map((e) => (
                 <EntityShape key={e.id} e={e} k={view.k} selected={selection.includes(e.id)} />
