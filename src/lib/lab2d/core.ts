@@ -7,6 +7,8 @@ import {
   DIMENSION_COLOR,
   MARK_COLOR,
   REFERENCE_COLOR,
+  techColor,
+  type TechLayerId,
 } from "@/lib/lab2d/technical";
 
 export type LayerId = string;
