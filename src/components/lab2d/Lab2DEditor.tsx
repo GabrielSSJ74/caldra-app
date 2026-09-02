@@ -437,6 +437,52 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [snapOn, near, view.k, grid, showGrid],
   );
 
+  /* ---------------------------------------- pintura em canvas (por sujidade) */
+  const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const r = entry?.contentRect;
+      if (r) setCanvasSize({ w: Math.round(r.width), h: Math.round(r.height) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const selectionSet = useMemo(() => new Set(selection), [selection]);
+
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el || !canvasSize.w || !canvasSize.h) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const pw = Math.round(canvasSize.w * dpr);
+    const ph = Math.round(canvasSize.h * dpr);
+    if (el.width !== pw) el.width = pw;
+    if (el.height !== ph) el.height = ph;
+    const ctx = el.getContext("2d");
+    if (!ctx) return;
+    // redesenha apenas uma vez por quadro, quando cena/viewport mudam
+    const id = requestAnimationFrame(() =>
+      drawScene(ctx, {
+        index: drawIndex,
+        view,
+        width: canvasSize.w,
+        height: canvasSize.h,
+        dpr,
+        selection: selectionSet,
+        lod: gesturing,
+      }),
+    );
+    return () => cancelAnimationFrame(id);
+  }, [drawIndex, view, selectionSet, gesturing, canvasSize]);
+
+  /* teste de estresse: ?stress=5000 gera milhares de entidades sintéticas */
+  useEffect(() => {
+    const n = Number(new URLSearchParams(window.location.search).get("stress") ?? 0);
+    if (n > 0) setEntities(stressEntities(n));
+  }, []);
+
 
   const selected = useMemo(
     () => entities.filter((e) => selection.includes(e.id)),
