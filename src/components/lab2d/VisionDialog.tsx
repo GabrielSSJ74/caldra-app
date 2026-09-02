@@ -431,6 +431,11 @@ export function VisionDialog({
 
   const duplicates = useMemo(() => countDuplicates(rawEntities), [rawEntities]);
   const validation = useMemo(() => validateVector(normalized.entities, cal), [normalized, cal]);
+  const quality = useMemo(
+    () => (analysis ? buildQuality(analysis.prims, cal.mmPerPx) : null),
+    [analysis, cal],
+  );
+
 
   const applyDimension = () => {
     const geo = logo ?? analysis;
