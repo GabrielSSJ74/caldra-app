@@ -1358,6 +1358,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
           <Rulers view={view} />
 
+          {zoomHud !== null && (
+            <div className="metal pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 font-mono text-[11px] text-accent tabular-nums">
+              {Math.round(zoomHud * 100)}%
+            </div>
+          )}
+
           {focus && (
             <button
               onClick={() => setFocus(false)}
