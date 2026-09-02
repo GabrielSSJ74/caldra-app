@@ -671,479 +671,514 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const gridStep = grid * view.k < 6 ? grid * 10 : grid;
 
+  /* posicionamento inteligente: painel do lado oposto ao objeto selecionado */
+  const panelSide: "left" | "right" = useMemo(() => {
+    if (!selBox || !svgRef.current) return "right";
+    const w = svgRef.current.getBoundingClientRect().width || 1;
+    const cx = view.tx + ((selBox.minX + selBox.maxX) / 2) * view.k;
+    return cx > w * 0.58 ? "left" : "right";
+  }, [selBox, view]);
+
+  const panelOpen = !focus && (selected.length > 0 || showLayers);
+  const primaryTools = TOOLS.filter((t) => PRIMARY.includes(t.id));
+  const extraTools = TOOLS.filter((t) => !PRIMARY.includes(t.id));
+
+  const aside = panelOpen ? (
+    <aside className="metal hairline flex w-56 shrink-0 flex-col overflow-y-auto rounded-2xl p-2">
+      <div className="mb-2 flex items-center gap-1">
+        <PanelTab active={!showLayers} onClick={() => setShowLayers(false)} label="Propriedades" />
+        <PanelTab active={showLayers} onClick={() => setShowLayers(true)} label="Camadas" />
+        <button
+          aria-label="Fechar painel"
+          onClick={() => {
+            setShowLayers(false);
+            setSelection([]);
+          }}
+          className="ml-auto text-muted-foreground hover:text-foreground"
+        >
+          <X className="size-3.5" />
+        </button>
+      </div>
+
+      {showLayers ? (
+        <div className="space-y-0.5">
+          {[...layers]
+            .sort((a, b) => layerOrder(b.id) - layerOrder(a.id))
+            .map((l) => (
+              <div key={l.id} className="flex items-center gap-1.5 rounded-xl px-1 py-1.5">
+                <button
+                  onClick={() => setActiveLayer(l.id)}
+                  className={cn(
+                    "size-3 shrink-0 rounded-full",
+                    activeLayer === l.id &&
+                      "ring-2 ring-offset-1 ring-offset-background",
+                  )}
+                  style={{
+                    background: techColor(l.id),
+                    ...(activeLayer === l.id ? { boxShadow: `0 0 0 2px ${SELECTION_COLOR}55` } : {}),
+                  }}
+                  aria-label={`Camada ativa: ${l.name}`}
+                />
+                <span className="min-w-0 flex-1 truncate text-[11px]">{l.name}</span>
+                <button
+                  aria-label={l.visible ? "Ocultar" : "Mostrar"}
+                  onClick={() =>
+                    setLayers((ls) =>
+                      ls.map((x) => (x.id === l.id ? { ...x, visible: !x.visible } : x)),
+                    )
+                  }
+                  className="grid size-7 place-items-center text-muted-foreground hover:text-foreground"
+                >
+                  {l.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
+                </button>
+                <button
+                  aria-label={l.locked ? "Desbloquear" : "Bloquear"}
+                  onClick={() =>
+                    setLayers((ls) =>
+                      ls.map((x) => (x.id === l.id ? { ...x, locked: !x.locked } : x)),
+                    )
+                  }
+                  className="grid size-7 place-items-center text-muted-foreground hover:text-foreground"
+                >
+                  {l.locked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}
+                </button>
+              </div>
+            ))}
+          <div className="mt-2 border-t border-line pt-2">
+            <p className="tick-label mb-1 text-muted-foreground">Saída</p>
+            <select
+              value={outputMode}
+              onChange={(ev) => setOutputMode(ev.target.value as OutputMode)}
+              aria-label="Modo de saída"
+              className="w-full rounded-lg border border-line bg-background/40 px-1.5 py-1 font-mono text-[10px] outline-none"
+            >
+              <option value="completo">Completo</option>
+              <option value="producao">Produção</option>
+              <option value="corte">Somente corte</option>
+              <option value="corte-marcacao">Corte + marcação</option>
+            </select>
+          </div>
+        </div>
+      ) : selected.length === 1 ? (
+        <DimensionEditor
+          e={selected[0]!}
+          onChange={(next) => commit((list) => list.map((x) => (x.id === next.id ? next : x)))}
+          layers={layers}
+          actions={selectionActions}
+        />
+      ) : (
+        <div className="space-y-2">
+          <p className="tick-label text-muted-foreground">{selected.length} objetos</p>
+          <div className="flex flex-wrap gap-1">{selectionActions}</div>
+        </div>
+      )}
+    </aside>
+  ) : null;
+
   return (
     <div
       ref={wrapRef}
       className={cn(
-        "glass relative overflow-hidden rounded-3xl",
+        "metal flex flex-col gap-2 overflow-hidden rounded-3xl p-2",
         isMestre && "glow-ring",
-        focus ? "fixed inset-0 z-50 rounded-none" : "h-[68vh] min-h-[440px]",
+        focus ? "fixed inset-0 z-50 rounded-none" : "h-[74vh] min-h-[460px]",
       )}
     >
-      {/* CANVAS */}
-      <svg
-        ref={svgRef}
-        className="size-full touch-none"
-        onPointerDown={onPointerDown}
-        onPointerMove={onPointerMove}
-        onPointerUp={onPointerUp}
-        onDoubleClick={() => tool === "polyline" && finishPolyline(false)}
-        role="application"
-        aria-label="Prancheta vetorial"
-      >
-        <defs>
-          <pattern
-            id="lab2d-grid"
-            width={gridStep * view.k}
-            height={gridStep * view.k}
-            patternUnits="userSpaceOnUse"
-            x={view.tx}
-            y={view.ty}
-          >
-            <path
-              d={`M ${gridStep * view.k} 0 L 0 0 0 ${gridStep * view.k}`}
-              fill="none"
-              stroke="var(--grid-line)"
-              strokeWidth="1"
-            />
-          </pattern>
-        </defs>
-        {showGrid && <rect width="100%" height="100%" fill="url(#lab2d-grid)" />}
-
-        <g transform={`translate(${view.tx} ${view.ty}) scale(${view.k})`}>
-          {/* eixos */}
-          <line x1={-1e4} y1={0} x2={1e4} y2={0} stroke="var(--accent)" strokeOpacity={0.18} strokeWidth={1 / view.k} />
-          <line x1={0} y1={-1e4} x2={0} y2={1e4} stroke="var(--accent)" strokeOpacity={0.18} strokeWidth={1 / view.k} />
-
-          {visible.map((e) => (
-            <EntityShape
-              key={e.id}
-              e={e}
-              color={layerOf(e.layer)?.color ?? "var(--foreground)"}
-              k={view.k}
-              selected={selection.includes(e.id)}
-            />
-          ))}
-
-          {draft && <EntityShape e={draft} color="var(--accent)" k={view.k} selected ghost />}
-
-          {pending.length > 0 && tool === "polyline" && (
-            <polyline
-              points={pending.map((p) => `${p.x},${p.y}`).join(" ")}
-              fill="none"
-              stroke="var(--accent)"
-              strokeWidth={1.4 / view.k}
-              strokeDasharray={`${4 / view.k} ${3 / view.k}`}
-            />
-          )}
-
-          {/* nós da seleção */}
-          {(tool === "node" || tool === "select") &&
-            selected.flatMap((e) =>
-              entityPoints(e).map((p, i) => (
-                <circle
-                  key={`${e.id}-${i}`}
-                  cx={p.x}
-                  cy={p.y}
-                  r={3.2 / view.k}
-                  className="fill-background stroke-accent"
-                  strokeWidth={1.4 / view.k}
-                />
-              )),
-            )}
-
-          {selBox && (
-            <rect
-              x={selBox.minX}
-              y={selBox.minY}
-              width={selBox.maxX - selBox.minX}
-              height={selBox.maxY - selBox.minY}
-              fill="none"
-              stroke="var(--accent)"
-              strokeOpacity={0.45}
-              strokeWidth={1 / view.k}
-              strokeDasharray={`${5 / view.k} ${4 / view.k}`}
-            />
-          )}
-
-          {marquee && (
-            <rect
-              x={Math.min(marquee.a.x, marquee.b.x)}
-              y={Math.min(marquee.a.y, marquee.b.y)}
-              width={Math.abs(marquee.b.x - marquee.a.x)}
-              height={Math.abs(marquee.b.y - marquee.a.y)}
-              className={marquee.b.x < marquee.a.x ? "fill-accent2/10" : "fill-accent/10"}
-              stroke="var(--accent)"
-              strokeWidth={1 / view.k}
-              strokeDasharray={marquee.b.x < marquee.a.x ? `${5 / view.k} ${4 / view.k}` : undefined}
-            />
-          )}
-
-          {/* cotas de conferência */}
-          {showDims &&
-            autoDimensions(visible).map((d, i) => {
-              const mx = (d.a.x + d.b.x) / 2;
-              const my = (d.a.y + d.b.y) / 2;
-              const ang = (Math.atan2(d.b.y - d.a.y, d.b.x - d.a.x) * 180) / Math.PI;
-              const flip = ang > 90 || ang < -90 ? 180 : 0;
-              return (
-                <g key={`dim-${i}`} stroke="var(--warn)" fill="var(--warn)">
-                  <line
-                    x1={d.a.x}
-                    y1={d.a.y}
-                    x2={d.b.x}
-                    y2={d.b.y}
-                    strokeWidth={1 / view.k}
-                    strokeDasharray={d.kind === "radial" ? `${4 / view.k} ${3 / view.k}` : undefined}
-                  />
-                  <text
-                    x={mx}
-                    y={my - 3 / view.k}
-                    transform={`rotate(${ang + flip} ${mx} ${my})`}
-                    fontSize={10 / view.k}
-                    textAnchor="middle"
-                    stroke="none"
-                    className="font-mono"
-                  >
-                    {d.label}
-                  </text>
-                </g>
-              );
-            })}
-
-          {[...measures, ...(liveMeasure ? [liveMeasure] : [])].map((m, i) => (
-            <g key={i} className="text-accent">
-              <line
-                x1={m.a.x}
-                y1={m.a.y}
-                x2={m.b.x}
-                y2={m.b.y}
-                stroke="currentColor"
-                strokeWidth={1 / view.k}
-                strokeDasharray={
-                  liveMeasure && i === measures.length ? `${5 / view.k} ${4 / view.k}` : undefined
-                }
-              />
-              <text
-                x={(m.a.x + m.b.x) / 2}
-                y={(m.a.y + m.b.y) / 2 - 6 / view.k}
-                fontSize={11 / view.k}
-                textAnchor="middle"
-                fill="currentColor"
-                className="font-mono"
-              >
-                {dist(m.a, m.b).toFixed(2)} mm ·{" "}
-                {(((Math.atan2(-(m.b.y - m.a.y), m.b.x - m.a.x) * 180) / Math.PI + 360) % 360).toFixed(
-                  1,
-                )}
-                °
-              </text>
-            </g>
-          ))}
-
-
-          {issues?.map((is, i) => (
-            <circle
-              key={i}
-              cx={is.p.x}
-              cy={is.p.y}
-              r={6 / view.k}
-              fill="none"
-              stroke="var(--warn)"
-              strokeWidth={1.5 / view.k}
-            />
-          ))}
-
-          {snapHit && (
-            <text
-              x={snapHit.p.x}
-              y={snapHit.p.y + 4 / view.k}
-              fontSize={12 / view.k}
-              textAnchor="middle"
-              fill="var(--accent)"
-            >
-              {SNAP_GLYPH[snapHit.kind]}
-            </text>
-          )}
-        </g>
-      </svg>
-
-      {/* RÉGUAS */}
-      <Rulers view={view} />
-
-      {/* FERRAMENTAS */}
+      {/* REGIÃO A — HEADER */}
       {!focus && (
-        <div className="glass absolute top-1/2 left-2 z-10 flex max-h-[86%] -translate-y-1/2 flex-col gap-0.5 overflow-y-auto rounded-2xl p-1 backdrop-blur-xl">
-          {TOOLS.map((t) => (
-            <button
-              key={t.id}
-              onClick={() => {
-                setTool(t.id);
-                setPending([]);
-                setDraft(null);
-              }}
-              title={`${t.label} · ${t.key}`}
-              aria-label={t.label}
-              className={cn(
-                "grid size-8 shrink-0 place-items-center rounded-xl transition-all",
-                tool === t.id
-                  ? "bg-accent/15 text-accent"
-                  : "text-muted-foreground hover:text-foreground",
+        <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="tick-label truncate text-muted-foreground">
+              {project?.name ?? "CALDRA"}
+            </span>
+            <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
+              {project?.plans.map((pl) => (
+                <button
+                  key={pl.id}
+                  onClick={() => {
+                    if (pl.id === planId) return;
+                    setProject((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            plans: prev.plans.map((x) =>
+                              x.id === planId ? { ...x, entities } : x,
+                            ),
+                          }
+                        : prev,
+                    );
+                    setPlanId(pl.id);
+                    setEntities(pl.entities);
+                    setSelection([]);
+                    past.current = [];
+                    future.current = [];
+                  }}
+                  className={cn(
+                    "shrink-0 rounded-lg px-2 py-1 font-mono text-[10px] tracking-widest transition-colors",
+                    pl.id === planId ? "bg-accent/15 text-accent" : "text-muted-foreground",
+                  )}
+                >
+                  {pl.name}
+                </button>
+              ))}
+              {project && (
+                <button
+                  aria-label="Novo plano"
+                  onClick={() => {
+                    const plan = emptyPlan(project.plans.length);
+                    plan.name = planLabel(project.plans.length);
+                    const next: Project = {
+                      ...project,
+                      plans: [
+                        ...project.plans.map((x) => (x.id === planId ? { ...x, entities } : x)),
+                        plan,
+                      ],
+                      lastPlanId: plan.id,
+                    };
+                    saveProject(next);
+                    setProject(next);
+                    setPlanId(plan.id);
+                    setEntities([]);
+                    setSelection([]);
+                    toast.success(`${plan.name} criado.`);
+                  }}
+                  className="shrink-0 rounded-lg px-2 py-1 text-muted-foreground hover:text-accent"
+                >
+                  +
+                </button>
               )}
-            >
-              <t.icon className="size-[15px]" />
-            </button>
-          ))}
-        </div>
-      )}
+            </div>
+          </div>
 
-      {/* AÇÕES */}
-      <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
-        {!focus && (
-          <>
+          <div className="flex shrink-0 items-center gap-1">
             <IconBtn label="Desfazer" onClick={undo} icon={Undo2} />
             <IconBtn label="Refazer" onClick={redo} icon={Redo2} />
             <IconBtn label="Enquadrar" onClick={() => fitTo(entities)} icon={ScanSearch} />
             <IconBtn
-              label="Verificar geometria"
-              onClick={() => {
-                const found = verify(entities);
-                setIssues(found);
-                found.length
-                  ? toast.warning(`${found.length} problemas encontrados`)
-                  : toast.success("Geometria válida");
-              }}
-              icon={Triangle}
+              label="Camadas"
+              onClick={() => setShowLayers((s) => !s)}
+              icon={LayersIcon}
+              active={showLayers}
             />
-            <IconBtn
-              label="Otimizar"
-              onClick={() => {
-                const res = optimize(entities);
-                commit(res.entities);
-                toast.success(`${res.removed + res.tiny} entidades limpas`);
-              }}
-              icon={Spline}
-            />
-            <IconBtn label="Layers" onClick={() => setShowLayers((s) => !s)} icon={LayersIcon} />
-            <IconBtn
-              label={showDims ? "Ocultar medidas" : "Mostrar medidas"}
-              onClick={() => setShowDims((s) => !s)}
-              icon={Ruler}
-            />
-            <label
-              title="Importar DXF/SVG"
-              className="glass grid size-8 cursor-pointer place-items-center rounded-xl text-muted-foreground hover:text-foreground"
-            >
-              <Upload className="size-[15px]" />
-              <input
-                type="file"
-                accept=".dxf,.svg"
-                className="hidden"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) setImportSrc({ file, layer: activeLayer });
-                  e.target.value = "";
-                }}
-              />
-            </label>
             <IconBtn label="Exportar" onClick={() => setExportOpen(true)} icon={Download} />
-
-          </>
-        )}
-        <IconBtn label="Foco" onClick={() => setFocus((f) => !f)} icon={focus ? X : Maximize} />
-      </div>
-
-      {/* CONTEXTUAL */}
-      {selection.length > 0 && !focus && (
-        <div className="glass pop-in absolute top-2 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 rounded-2xl p-1 backdrop-blur-xl">
-          <IconBtn
-            label="Duplicar"
-            onClick={() =>
-              commit((e) => [...e, ...selected.map((s) => ({ ...translate(s, 10, 10), id: uid() }))])
-            }
-            icon={Copy}
-            flat
-          />
-          <IconBtn
-            label="Girar 90°"
-            onClick={() => applySelection((e) => rotate(e, center, 90))}
-            icon={RotateCw}
-            flat
-          />
-          <IconBtn
-            label="Espelhar horizontal"
-            onClick={() => applySelection((e) => mirror(e, center, "x"))}
-            icon={FlipHorizontal2}
-            flat
-          />
-          <IconBtn
-            label="Espelhar vertical"
-            onClick={() => applySelection((e) => mirror(e, center, "y"))}
-            icon={FlipVertical2}
-            flat
-          />
-          <IconBtn
-            label="Escala +10%"
-            onClick={() => applySelection((e) => scaleEntity(e, center, 1.1))}
-            icon={Maximize}
-            flat
-          />
-          <IconBtn
-            label="Excluir"
-            onClick={() => {
-              commit((e) => e.filter((x) => !selection.includes(x.id)));
-              setSelection([]);
-            }}
-            icon={Trash2}
-            flat
-          />
-        </div>
-      )}
-
-      {/* PROPRIEDADES */}
-      {selected.length === 1 && !focus && (
-        <Properties
-          e={selected[0]!}
-          onChange={(next) => commit((list) => list.map((x) => (x.id === next.id ? next : x)))}
-          layers={layers}
-        />
-      )}
-
-      {/* LAYERS */}
-      {showLayers && !focus && (
-        <div className="glass pop-in absolute top-12 right-2 z-20 w-52 rounded-2xl p-2 backdrop-blur-xl">
-          {layers.map((l) => (
-            <div key={l.id} className="flex items-center gap-1.5 rounded-xl px-1.5 py-1">
-              <button
-                onClick={() => setActiveLayer(l.id)}
-                className={cn(
-                  "size-2.5 shrink-0 rounded-full",
-                  activeLayer === l.id && "ring-2 ring-accent/50 ring-offset-1 ring-offset-background",
-                )}
-                style={{ background: l.color }}
-                aria-label={`Camada ativa: ${l.name}`}
-              />
-              <span className="min-w-0 flex-1 truncate text-[11px]">{l.name}</span>
-              <button
-                aria-label={l.visible ? "Ocultar" : "Mostrar"}
-                onClick={() =>
-                  setLayers((ls) => ls.map((x) => (x.id === l.id ? { ...x, visible: !x.visible } : x)))
-                }
-                className="text-muted-foreground hover:text-foreground"
-              >
-                {l.visible ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-              </button>
-              <button
-                aria-label={l.locked ? "Desbloquear" : "Bloquear"}
-                onClick={() =>
-                  setLayers((ls) => ls.map((x) => (x.id === l.id ? { ...x, locked: !x.locked } : x)))
-                }
-                className="text-muted-foreground hover:text-foreground"
-              >
-                {l.locked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* BARRA INFERIOR */}
-      <div className="absolute inset-x-2 bottom-2 z-10 flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
-        <span className="glass rounded-full px-2.5 py-1">
-          X {cursor.x.toFixed(2)} · Y {cursor.y.toFixed(2)} mm
-        </span>
-        {!focus && (
-          <>
-            <button
-              onClick={() => setSnapOn((s) => !s)}
-              className={cn("glass rounded-full px-2.5 py-1", snapOn && "text-accent")}
-            >
-              SNAP
-            </button>
-            <button
-              onClick={() => setShowGrid((s) => !s)}
-              className={cn("glass rounded-full px-2.5 py-1", showGrid && "text-accent")}
-            >
-              GRID
-            </button>
-            <select
-              value={grid}
-              onChange={(e) => setGrid(Number(e.target.value))}
-              aria-label="Espaçamento da grade"
-              className="glass rounded-full bg-transparent px-2 py-1 outline-none"
-            >
-              {[1, 5, 10, 25, 50].map((g) => (
-                <option key={g} value={g}>
-                  {g}
-                </option>
-              ))}
-            </select>
-            {(tool === "offset" || tool === "fillet" || tool === "chamfer") && (
-              <input
-                type="number"
-                aria-label="Parâmetro da ferramenta"
-                value={tool === "offset" ? offsetDist : filletR}
-                onChange={(e) =>
-                  tool === "offset"
-                    ? setOffsetDist(Number(e.target.value))
-                    : setFilletR(Number(e.target.value))
-                }
-                className="glass w-16 rounded-full bg-transparent px-2 py-1 text-center outline-none"
-              />
-            )}
-          </>
-        )}
-        <span className="ml-auto glass rounded-full px-2.5 py-1">{Math.round(view.k * 100)}%</span>
-      </div>
-
-      {/* PLANOS */}
-      {project && !focus && (
-        <div className="glass absolute bottom-11 left-2 z-10 flex items-center gap-1 rounded-2xl p-1 font-mono text-[10px]">
-          {project.plans.map((pl) => (
-            <button
-              key={pl.id}
-              onClick={() => {
-                if (pl.id === planId) return;
-                setProject((prev) =>
-                  prev
-                    ? { ...prev, plans: prev.plans.map((x) => (x.id === planId ? { ...x, entities } : x)) }
-                    : prev,
-                );
-                setPlanId(pl.id);
-                setEntities(pl.entities);
-                setSelection([]);
-                past.current = [];
-                future.current = [];
-              }}
-              className={cn(
-                "rounded-xl px-2 py-1 tracking-widest transition-colors",
-                pl.id === planId ? "bg-accent/15 text-accent" : "text-muted-foreground",
+            <div className="relative">
+              <IconBtn label="Mais" onClick={() => setMoreOpen((m) => !m)} icon={MoreHorizontal} active={moreOpen} />
+              {moreOpen && (
+                <div className="metal hairline pop-in absolute top-10 right-0 z-30 w-48 rounded-2xl p-1.5">
+                  <MenuItem
+                    label={showDims ? "Ocultar medidas" : "Mostrar medidas"}
+                    icon={Ruler}
+                    onClick={() => {
+                      setShowDims((s) => !s);
+                      setMoreOpen(false);
+                    }}
+                  />
+                  <MenuItem
+                    label="Verificar geometria"
+                    icon={Triangle}
+                    onClick={() => {
+                      const found = verify(entities);
+                      setIssues(found);
+                      found.length
+                        ? toast.warning(`${found.length} problemas encontrados`)
+                        : toast.success("Geometria válida");
+                      setMoreOpen(false);
+                    }}
+                  />
+                  <MenuItem
+                    label="Otimizar"
+                    icon={Spline}
+                    onClick={() => {
+                      const res = optimize(entities);
+                      commit(res.entities);
+                      toast.success(`${res.removed + res.tiny} entidades limpas`);
+                      setMoreOpen(false);
+                    }}
+                  />
+                  <label className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 text-[11px] text-muted-foreground hover:text-foreground">
+                    <Upload className="size-3.5" /> Importar DXF/SVG
+                    <input
+                      type="file"
+                      accept=".dxf,.svg"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) setImportSrc({ file, layer: activeLayer });
+                        e.target.value = "";
+                        setMoreOpen(false);
+                      }}
+                    />
+                  </label>
+                </div>
               )}
-            >
-              {pl.name}
-            </button>
-          ))}
-          <button
-            aria-label="Novo plano"
-            onClick={() => {
-              const plan = emptyPlan(project.plans.length);
-              plan.name = planLabel(project.plans.length);
-              const next: Project = {
-                ...project,
-                plans: [...project.plans.map((x) => (x.id === planId ? { ...x, entities } : x)), plan],
-                lastPlanId: plan.id,
-              };
-              saveProject(next);
-              setProject(next);
-              setPlanId(plan.id);
-              setEntities([]);
-              setSelection([]);
-              toast.success(`${plan.name} criado.`);
-            }}
-            className="rounded-xl px-2 py-1 text-muted-foreground transition-colors hover:text-accent"
+            </div>
+            <IconBtn label="Foco" onClick={() => setFocus(true)} icon={Maximize} />
+          </div>
+        </header>
+      )}
+
+      {/* CORPO: TOOLBAR + CANVAS + PROPRIEDADES */}
+      <div className="flex min-h-0 min-w-0 flex-1 gap-2">
+        {/* REGIÃO B — TOOLBAR ESQUERDA */}
+        {!focus && (
+          <div className="metal hairline flex w-11 shrink-0 flex-col items-center gap-0.5 overflow-y-auto rounded-2xl p-1">
+            {primaryTools.map((t) => (
+              <ToolBtn key={t.id} t={t} active={tool === t.id} onPick={pickTool} />
+            ))}
+            <div className="my-1 h-px w-6 bg-line" />
+            {extraTools.map((t) => (
+              <ToolBtn key={t.id} t={t} active={tool === t.id} onPick={pickTool} />
+            ))}
+          </div>
+        )}
+
+        {panelSide === "left" && aside}
+
+        {/* REGIÃO C — CANVAS */}
+        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl">
+          <svg
+            ref={svgRef}
+            className="size-full touch-none"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onDoubleClick={() => tool === "polyline" && finishPolyline(false)}
+            role="application"
+            aria-label="Prancheta vetorial"
           >
-            +
+            <defs>
+              <pattern
+                id="lab2d-grid"
+                width={gridStep * view.k}
+                height={gridStep * view.k}
+                patternUnits="userSpaceOnUse"
+                x={view.tx}
+                y={view.ty}
+              >
+                <path
+                  d={`M ${gridStep * view.k} 0 L 0 0 0 ${gridStep * view.k}`}
+                  fill="none"
+                  stroke="var(--grid-line)"
+                  strokeWidth="1"
+                />
+              </pattern>
+            </defs>
+            {showGrid && <rect width="100%" height="100%" fill="url(#lab2d-grid)" />}
+
+            <g transform={`translate(${view.tx} ${view.ty}) scale(${view.k})`}>
+              {/* eixos — cinza técnico discreto */}
+              <line x1={-1e4} y1={0} x2={1e4} y2={0} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
+              <line x1={0} y1={-1e4} x2={0} y2={1e4} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
+
+              {drawable.map((e) => (
+                <EntityShape key={e.id} e={e} k={view.k} selected={selection.includes(e.id)} />
+              ))}
+
+              {draft && <EntityShape e={draft} k={view.k} preview />}
+
+              {pending.length > 0 && tool === "polyline" && (
+                <polyline
+                  points={pending.map((p) => `${p.x},${p.y}`).join(" ")}
+                  fill="none"
+                  stroke={PREVIEW_COLOR}
+                  strokeWidth={1.4 / view.k}
+                  strokeDasharray={`${4 / view.k} ${3 / view.k}`}
+                />
+              )}
+
+              {/* nós da seleção */}
+              {(tool === "node" || tool === "select") &&
+                selected.flatMap((e) =>
+                  entityPoints(e).map((p, i) => (
+                    <circle
+                      key={`${e.id}-${i}`}
+                      cx={p.x}
+                      cy={p.y}
+                      r={3.2 / view.k}
+                      className="fill-background"
+                      stroke={SELECTION_COLOR}
+                      strokeWidth={1.4 / view.k}
+                    />
+                  )),
+                )}
+
+              {selBox && (
+                <rect
+                  x={selBox.minX}
+                  y={selBox.minY}
+                  width={selBox.maxX - selBox.minX}
+                  height={selBox.maxY - selBox.minY}
+                  fill="none"
+                  stroke={SELECTION_COLOR}
+                  strokeOpacity={0.55}
+                  strokeWidth={1 / view.k}
+                  strokeDasharray={`${5 / view.k} ${4 / view.k}`}
+                />
+              )}
+
+              {marquee && (
+                <rect
+                  x={Math.min(marquee.a.x, marquee.b.x)}
+                  y={Math.min(marquee.a.y, marquee.b.y)}
+                  width={Math.abs(marquee.b.x - marquee.a.x)}
+                  height={Math.abs(marquee.b.y - marquee.a.y)}
+                  fill={SELECTION_COLOR}
+                  fillOpacity={0.08}
+                  stroke={SELECTION_COLOR}
+                  strokeWidth={1 / view.k}
+                  strokeDasharray={marquee.b.x < marquee.a.x ? `${5 / view.k} ${4 / view.k}` : undefined}
+                />
+              )}
+
+              {/* cotas — azul técnico fixo */}
+              {showDims &&
+                autoDimensions(drawable).map((d, i) => {
+                  const mx = (d.a.x + d.b.x) / 2;
+                  const my = (d.a.y + d.b.y) / 2;
+                  const ang = (Math.atan2(d.b.y - d.a.y, d.b.x - d.a.x) * 180) / Math.PI;
+                  const flip = ang > 90 || ang < -90 ? 180 : 0;
+                  return (
+                    <g key={`dim-${i}`} stroke={DIMENSION_COLOR} fill={DIMENSION_COLOR}>
+                      <line
+                        x1={d.a.x}
+                        y1={d.a.y}
+                        x2={d.b.x}
+                        y2={d.b.y}
+                        strokeWidth={1 / view.k}
+                        strokeDasharray={d.kind === "radial" ? `${4 / view.k} ${3 / view.k}` : undefined}
+                      />
+                      <text
+                        x={mx}
+                        y={my - 3 / view.k}
+                        transform={`rotate(${ang + flip} ${mx} ${my})`}
+                        fontSize={10 / view.k}
+                        textAnchor="middle"
+                        stroke="none"
+                        className="font-mono"
+                      >
+                        {d.label}
+                      </text>
+                    </g>
+                  );
+                })}
+
+              {[...measures, ...(liveMeasure ? [liveMeasure] : [])].map((m, i) => (
+                <g key={i} stroke={DIMENSION_COLOR} fill={DIMENSION_COLOR}>
+                  <line
+                    x1={m.a.x}
+                    y1={m.a.y}
+                    x2={m.b.x}
+                    y2={m.b.y}
+                    strokeWidth={1 / view.k}
+                    strokeDasharray={
+                      liveMeasure && i === measures.length ? `${5 / view.k} ${4 / view.k}` : undefined
+                    }
+                  />
+                  <text
+                    x={(m.a.x + m.b.x) / 2}
+                    y={(m.a.y + m.b.y) / 2 - 6 / view.k}
+                    fontSize={11 / view.k}
+                    textAnchor="middle"
+                    stroke="none"
+                    className="font-mono"
+                  >
+                    {dist(m.a, m.b).toFixed(2)} mm ·{" "}
+                    {(((Math.atan2(-(m.b.y - m.a.y), m.b.x - m.a.x) * 180) / Math.PI + 360) % 360).toFixed(1)}
+                    °
+                  </text>
+                </g>
+              ))}
+
+              {issues?.map((is, i) => (
+                <circle
+                  key={i}
+                  cx={is.p.x}
+                  cy={is.p.y}
+                  r={6 / view.k}
+                  fill="none"
+                  stroke={MARK_COLOR}
+                  strokeWidth={1.5 / view.k}
+                />
+              ))}
+
+              {snapHit && (
+                <text
+                  x={snapHit.p.x}
+                  y={snapHit.p.y + 4 / view.k}
+                  fontSize={12 / view.k}
+                  textAnchor="middle"
+                  fill={SELECTION_COLOR}
+                >
+                  {SNAP_GLYPH[snapHit.kind]}
+                </text>
+              )}
+            </g>
+          </svg>
+
+          <Rulers view={view} />
+
+          {focus && (
+            <button
+              onClick={() => setFocus(false)}
+              aria-label="Sair do foco"
+              className="metal absolute top-2 right-2 z-10 grid size-9 place-items-center rounded-xl text-muted-foreground hover:text-foreground"
+            >
+              <X className="size-4" />
+            </button>
+          )}
+        </div>
+
+        {/* REGIÃO D — PAINEL DE PROPRIEDADES */}
+        {panelSide === "right" && aside}
+      </div>
+
+      {/* REGIÃO E — STATUS BAR */}
+      {!focus && (
+        <div className="flex h-7 shrink-0 items-center gap-1.5 overflow-x-auto font-mono text-[10px] text-muted-foreground">
+          <span className="shrink-0 rounded-full bg-background/40 px-2 py-0.5">
+            X {cursor.x.toFixed(2)} · Y {cursor.y.toFixed(2)}
+          </span>
+          <button
+            onClick={() => setSnapOn((s) => !s)}
+            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", snapOn && "text-accent")}
+          >
+            SNAP
           </button>
+          <button
+            onClick={() => setShowGrid((s) => !s)}
+            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", showGrid && "text-accent")}
+          >
+            GRID
+          </button>
+          <select
+            value={grid}
+            onChange={(e) => setGrid(Number(e.target.value))}
+            aria-label="Espaçamento da grade"
+            className="shrink-0 rounded-full bg-background/40 px-1.5 py-0.5 outline-none"
+          >
+            {[1, 5, 10, 25, 50].map((g) => (
+              <option key={g} value={g}>
+                {g}
+              </option>
+            ))}
+          </select>
+          {(tool === "offset" || tool === "fillet" || tool === "chamfer") && (
+            <input
+              type="number"
+              inputMode="decimal"
+              aria-label="Parâmetro da ferramenta"
+              value={tool === "offset" ? offsetDist : filletR}
+              onChange={(e) =>
+                tool === "offset"
+                  ? setOffsetDist(Number(e.target.value))
+                  : setFilletR(Number(e.target.value))
+              }
+              className="w-16 shrink-0 rounded-full bg-background/40 px-2 py-0.5 text-center outline-none"
+            />
+          )}
+          <span className="ml-auto shrink-0 rounded-full bg-background/40 px-2 py-0.5">
+            {Math.round(view.k * 100)}%
+          </span>
         </div>
       )}
 
@@ -1155,8 +1190,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         planName={project?.plans.find((p) => p.id === planId)?.name ?? "P01"}
         scopes={{
           selection: selected,
-          plan: entities,
-          project: project ? project.plans.flatMap((p) => (p.id === planId ? entities : p.entities)) : entities,
+          plan: drawable,
+          project: project
+            ? project.plans.flatMap((p) => (p.id === planId ? drawable : p.entities))
+            : drawable,
         }}
       />
       <ImportDialog
@@ -1166,9 +1203,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         onConfirm={onImportConfirm}
       />
     </div>
-
   );
 }
+
 
 /* ------------------------------------------------------------ auxiliares */
 
