@@ -21,6 +21,8 @@ import {
   RotateCw,
   Ruler,
   ScanSearch,
+  ScanEye,
+  Image as ImageIcon,
   Scissors,
   Spline,
   Square,
@@ -36,6 +38,7 @@ import {
 import type { Vec2 } from "@/lib/geometry/types";
 import { ExportDialog } from "@/components/lab2d/ExportDialog";
 import { ImportDialog, type ImportSource } from "@/components/lab2d/ImportDialog";
+import { VisionDialog, type VisionImageLayer } from "@/components/lab2d/VisionDialog";
 import {
   DEFAULT_LAYERS,
   bbox,
@@ -182,6 +185,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [liveMeasure, setLiveMeasure] = useState<Measure | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [importSrc, setImportSrc] = useState<ImportSource | null>(null);
+  const [visionOpen, setVisionOpen] = useState(false);
+  const [imageLayer, setImageLayer] = useState<VisionImageLayer | null>(null);
   const [issues, setIssues] = useState<{ message: string; p: Vec2 }[] | null>(null);
   const [offsetDist, setOffsetDist] = useState(5);
   const [filletR, setFilletR] = useState(10);
@@ -987,6 +992,40 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       setMoreOpen(false);
                     }}
                   />
+                  <MenuItem
+                    label="CHAMFER VISION"
+                    icon={ScanEye}
+                    onClick={() => {
+                      setVisionOpen(true);
+                      setMoreOpen(false);
+                    }}
+                  />
+                  {imageLayer && (
+                    <>
+                      <MenuItem
+                        label={imageLayer.visible ? "Ocultar imagem" : "Mostrar imagem"}
+                        icon={ImageIcon}
+                        onClick={() => {
+                          setImageLayer({ ...imageLayer, visible: !imageLayer.visible });
+                          setMoreOpen(false);
+                        }}
+                      />
+                      <label className="flex items-center gap-2 rounded-xl px-2 py-2 text-[11px] text-muted-foreground">
+                        <ImageIcon className="size-3.5" />
+                        <input
+                          type="range"
+                          min={0.05}
+                          max={1}
+                          step={0.05}
+                          value={imageLayer.opacity}
+                          onChange={(ev) =>
+                            setImageLayer({ ...imageLayer, opacity: Number(ev.target.value) })
+                          }
+                          className="w-full accent-[var(--accent)]"
+                        />
+                      </label>
+                    </>
+                  )}
                   <label className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 text-[11px] text-muted-foreground hover:text-foreground">
                     <Upload className="size-3.5" /> Importar DXF/SVG
                     <input
@@ -1001,6 +1040,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       }}
                     />
                   </label>
+
                 </div>
               )}
             </div>
@@ -1058,9 +1098,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             {showGrid && <rect width="100%" height="100%" fill="url(#lab2d-grid)" />}
 
             <g transform={`translate(${view.tx} ${view.ty}) scale(${view.k})`}>
+              {/* CAMADA IMAGEM — referência do CHAMFER VISION (nunca vira geometria) */}
+              {imageLayer && imageLayer.visible && outputMode === "completo" && (
+                <image
+                  href={imageLayer.src}
+                  x={imageLayer.x}
+                  y={imageLayer.y}
+                  width={imageLayer.widthMm}
+                  height={imageLayer.heightMm}
+                  opacity={imageLayer.opacity}
+                  preserveAspectRatio="none"
+                  style={{ pointerEvents: "none" }}
+                />
+              )}
+
               {/* eixos — cinza técnico discreto */}
               <line x1={-1e4} y1={0} x2={1e4} y2={0} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
               <line x1={0} y1={-1e4} x2={0} y2={1e4} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
+
 
               {drawable.map((e) => (
                 <EntityShape key={e.id} e={e} k={view.k} selected={selection.includes(e.id)} />
@@ -1293,6 +1348,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         layers={layers}
         onClose={() => setImportSrc(null)}
         onConfirm={onImportConfirm}
+      />
+      <VisionDialog
+        open={visionOpen}
+        onOpenChange={setVisionOpen}
+        onCreate={(next, image) => {
+          setImageLayer(image);
+          onImportConfirm(next);
+        }}
       />
     </div>
   );
