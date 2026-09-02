@@ -142,10 +142,11 @@ export function Wire3D({
       ref={host}
       viewBox={`${-VB / 2} ${-VB / 2} ${VB} ${VB}`}
       className={cn(
-        "touch-none select-none",
-        interactive && "cursor-grab active:cursor-grabbing",
+        "select-none",
+        interactive ? "touch-none cursor-grab active:cursor-grabbing" : "touch-auto",
         className,
       )}
+
       role="img"
       aria-label="Modelo sólido tridimensional da peça"
       onPointerDown={(ev) => {
