@@ -412,14 +412,15 @@ export function VisionDialog({
 
         {step === "previa" && img && (
           <>
-            <div className="grid aspect-[4/3] place-items-center overflow-hidden rounded-2xl border border-border bg-white">
+            <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-white">
               <img
                 src={img.dataUrl}
                 alt={`Pré-visualização de ${img.name}`}
                 style={{ transform: `rotate(${rotation}deg) scale(${zoom})`, opacity }}
-                className="max-h-full max-w-full object-contain transition-transform"
+                className="mx-auto block h-full w-full object-contain object-center transition-transform"
               />
             </div>
+
             <div className="grid grid-cols-2 gap-2">
               <Slider label="Zoom" value={zoom} min={0.4} max={3} step={0.05} onChange={setZoom} />
               <Slider
