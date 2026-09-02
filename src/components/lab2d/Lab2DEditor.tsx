@@ -994,11 +994,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     }}
                   />
                   <MenuItem
-                    label="CHAMFER VISION"
+                    label={isMestre ? "CHAMFER VISION" : "CHAMFER VISION · Mestre"}
                     icon={ScanEye}
                     onClick={() => {
-                      setVisionOpen(true);
                       setMoreOpen(false);
+                      if (!isMestre) {
+                        toast.info("CHAMFER VISION é exclusivo do Modo Mestre.");
+                        return;
+                      }
+                      setVisionOpen(true);
                     }}
                   />
                   {imageLayer && (
