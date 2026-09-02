@@ -17,7 +17,7 @@ import {
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Entity } from "@/lib/lab2d/core";
-import { uid } from "@/lib/lab2d/core";
+
 import { CUT_COLOR, MARK_COLOR } from "@/lib/lab2d/technical";
 import { importImage, type ImportedImage } from "@/lib/vision/imageImportService";
 import type { Prim, Tolerance } from "@/lib/vision/geometryRecognizer";
