@@ -14,6 +14,7 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
 import { SubscriptionProvider } from "@/lib/subscription/SubscriptionProvider";
 import { SettingsProvider } from "@/lib/settings/SettingsProvider";
+import { ProfileProvider } from "@/lib/profile/ProfileProvider";
 import { AppShell } from "@/components/chameleon/AppShell";
 
 function NotFoundComponent() {
@@ -128,10 +129,12 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <SubscriptionProvider>
         <SettingsProvider>
-          <AppShell>
-            <Outlet />
-          </AppShell>
-          <Toaster position="top-center" />
+          <ProfileProvider>
+            <AppShell>
+              <Outlet />
+            </AppShell>
+            <Toaster position="top-center" />
+          </ProfileProvider>
         </SettingsProvider>
       </SubscriptionProvider>
     </QueryClientProvider>

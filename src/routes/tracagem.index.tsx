@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { Lock, Search } from "lucide-react";
-import { GEOMETRIES, type GeometryLevel } from "@/lib/geometry/catalog";
+import { GEOMETRIES } from "@/lib/geometry/catalog";
 import { buildWire, DEFAULT_PARAMS } from "@/lib/viz3d/wire";
 import { Wire3D } from "@/components/chameleon/Wire3D";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
@@ -26,21 +26,14 @@ export const Route = createFileRoute("/tracagem/")({
   component: TracagemIndex,
 });
 
-const LEVELS: (GeometryLevel | "•")[] = ["•", "Básico", "Intermediário", "Avançado"];
-
 function TracagemIndex() {
   const [query, setQuery] = useState("");
-  const [level, setLevel] = useState<(typeof LEVELS)[number]>("•");
   const { can } = useFeatureAccess();
 
   const list = useMemo(
     () =>
-      GEOMETRIES.filter(
-        (g) =>
-          (level === "•" || g.level === level) &&
-          g.name.toLowerCase().includes(query.toLowerCase()),
-      ),
-    [query, level],
+      GEOMETRIES.filter((g) => g.name.toLowerCase().includes(query.toLowerCase())),
+    [query],
   );
 
   return (
@@ -61,24 +54,6 @@ function TracagemIndex() {
             className="w-full bg-transparent py-2.5 text-[13px] outline-none placeholder:text-muted-foreground/60"
           />
         </label>
-        <div className="flex gap-1">
-          {LEVELS.map((l) => (
-            <button
-              key={l}
-              onClick={() => setLevel(l)}
-              aria-label={l === "•" ? "Todos os níveis" : l}
-              title={l === "•" ? "Todos" : l}
-              className={cn(
-                "size-9 rounded-full font-mono text-[10px] uppercase transition-all duration-300",
-                level === l
-                  ? "bg-accent/12 text-accent amber-ring"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {l === "•" ? "•" : l.charAt(0)}
-            </button>
-          ))}
-        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
