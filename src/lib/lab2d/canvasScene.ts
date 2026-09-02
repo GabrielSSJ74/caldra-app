@@ -46,7 +46,7 @@ function traceEntity(ctx: CanvasRenderingContext2D, e: Entity, lod: boolean) {
       ctx.lineTo(e.x2, e.y2);
       break;
     case "polyline":
-      tracePolyline(ctx, e.pts, !!e.closed, lod && e.pts.length > 400 ? 3 : 1);
+      tracePolyline(ctx, e.pts, !!e.closed, lod && e.pts.length > 64 ? 3 : 1);
       break;
     case "circle":
       ctx.moveTo(e.cx + e.r, e.cy);
