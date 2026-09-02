@@ -9,6 +9,7 @@
 
 import type { Vec2 } from "@/lib/geometry/types";
 import { bbox, dist, entityPoints, type Entity, type Layer } from "./core";
+import { pathToSvg } from "./bezier";
 import { DIMENSION_COLOR, techColor, techStyle } from "./technical";
 
 export type RenderOptions = {
@@ -56,6 +57,8 @@ export function entityPath(e: Entity): string {
       const large = sweep > Math.PI ? 1 : 0;
       return `M ${f(p0.x)} ${f(p0.y)} A ${f(e.r)} ${f(e.r)} 0 ${large} 1 ${f(p1.x)} ${f(p1.y)}`;
     }
+    case "path":
+      return pathToSvg(e.start, e.segs, e.closed);
     case "text":
       return "";
   }

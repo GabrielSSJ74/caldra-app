@@ -1,6 +1,14 @@
 import type { Vec2 } from "@/lib/geometry/types";
 import type { DxfDocument, DxfEntity } from "@/lib/dxf/dxfService";
 import {
+  flattenPath,
+  mapPath,
+  pathAnchors,
+  pathSegments,
+  samplePath,
+  type BezierSeg,
+} from "@/lib/lab2d/bezier";
+import {
   BEND_COLOR,
   CONSTRUCTION_COLOR,
   CUT_COLOR,
@@ -38,7 +46,20 @@ export type Entity =
   | (Base & { type: "polyline"; pts: Vec2[]; closed: boolean })
   | (Base & { type: "circle"; cx: number; cy: number; r: number })
   | (Base & { type: "arc"; cx: number; cy: number; r: number; a0: number; a1: number })
+  | (Base & {
+      /** Curva de Bézier cúbica — fidelidade máxima com poucos pontos. */
+      type: "path";
+      start: Vec2;
+      segs: BezierSeg[];
+      closed: boolean;
+      /** Contorno interno (furo de letra) — corte com offset interno. */
+      hole?: boolean;
+      /** Id do contorno externo que contém este furo. */
+      parent?: string;
+    })
   | (Base & { type: "text"; x: number; y: number; text: string; size: number });
+
+export type PathEntity = Extract<Entity, { type: "path" }>;
 
 export const uid = () => Math.random().toString(36).slice(2, 9);
 export const dist = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -68,10 +89,18 @@ export function entityPoints(e: Entity): Vec2[] {
         { x: e.cx + e.r * Math.cos(e.a0), y: e.cy + e.r * Math.sin(e.a0) },
         { x: e.cx + e.r * Math.cos(e.a1), y: e.cy + e.r * Math.sin(e.a1) },
       ];
+    case "path":
+      return pathAnchors(e.start, e.segs);
     case "text":
       return [{ x: e.x, y: e.y }];
   }
 }
+
+/** Pontos usados para enquadramento e hit-test (curvas entram amostradas). */
+export function outlinePoints(e: Entity): Vec2[] {
+  return e.type === "path" ? samplePath(e.start, e.segs, e.closed, 10) : entityPoints(e);
+}
+
 
 export type Snap = { p: Vec2; kind: "grid" | "end" | "mid" | "center" | "cross" | "near" };
 
@@ -89,6 +118,7 @@ export function segmentsOf(e: Entity): [Vec2, Vec2][] {
     if (e.closed && e.pts.length > 2) out.push([e.pts[e.pts.length - 1]!, e.pts[0]!]);
     return out;
   }
+  if (e.type === "path") return pathSegments(e.start, e.segs, e.closed);
   return [];
 }
 
@@ -174,6 +204,10 @@ export function mapEntity(e: Entity, f: (p: Vec2) => Vec2, scale = 1): Entity {
       const c = f({ x: e.cx, y: e.cy });
       return { ...e, cx: c.x, cy: c.y, r: e.r * Math.abs(scale) };
     }
+    case "path": {
+      const m = mapPath(e.start, e.segs, f);
+      return { ...e, start: m.start, segs: m.segs };
+    }
     case "text": {
       const c = f({ x: e.x, y: e.y });
       return { ...e, x: c.x, y: c.y };
@@ -213,7 +247,7 @@ export function bbox(entities: Entity[]): Box | null {
     maxX = -Infinity,
     maxY = -Infinity;
   for (const e of entities)
-    for (const p of entityPoints(e)) {
+    for (const p of outlinePoints(e)) {
       minX = Math.min(minX, p.x);
       minY = Math.min(minY, p.y);
       maxX = Math.max(maxX, p.x);
@@ -311,6 +345,17 @@ export function offsetEntity(e: Entity, d: number): Entity | null {
     return out;
   };
   if (e.type === "polyline") return { ...e, id: uid(), pts: shift(e.pts, e.closed) };
+  if (e.type === "path") {
+    // paralela de curva: o contorno amostrado é deslocado pela normal;
+    // furos recebem o sentido oposto (offset interno no corte).
+    const dir = e.hole ? -d : d;
+    const pts = samplePath(e.start, e.segs, false, 12);
+    const moved = shift(pts, e.closed);
+    return { id: uid(), layer: e.layer, type: "polyline", closed: e.closed, pts: moved.map((p, i) => ({
+      x: pts[i]!.x + (p.x - pts[i]!.x) * (dir / (d || 1)),
+      y: pts[i]!.y + (p.y - pts[i]!.y) * (dir / (d || 1)),
+    })) };
+  }
   if (e.type === "line") {
     const [a, b] = [
       { x: e.x1, y: e.y1 },
@@ -486,9 +531,22 @@ const DXF_ACI: Record<TechLayerId, number> = {
   referencia: 9, // cinza claro
 };
 
-export function toDxf(entities: Entity[], layers: Layer[]): DxfDocument {
+export type DxfExportOptions = {
+  /** Achata curvas em polilinha (só para máquinas antigas). Padrão: false. */
+  flattenCurves?: boolean;
+};
+
+export function toDxf(
+  entities: Entity[],
+  layers: Layer[],
+  opts: DxfExportOptions = {},
+): DxfDocument {
   const out: DxfEntity[] = [];
-  for (const e of entities) {
+  // furos saem depois do contorno externo: o CAM aplica offset interno neles
+  const ordered = [...entities].sort(
+    (a, b) => Number(a.type === "path" && a.hole) - Number(b.type === "path" && b.hole),
+  );
+  for (const e of ordered) {
     const layer = e.layer.toUpperCase();
     if (e.type === "line")
       out.push({ type: "LINE", layer, start: { x: e.x1, y: -e.y1 }, end: { x: e.x2, y: -e.y2 } });
@@ -513,8 +571,33 @@ export function toDxf(entities: Entity[], layers: Layer[]): DxfDocument {
         endAngle: deg(e.a0),
       });
     }
-
+    if (e.type === "path") {
+      if (opts.flattenCurves) {
+        out.push({
+          type: "LWPOLYLINE",
+          layer,
+          closed: e.closed,
+          points: flattenPath(e.start, e.segs, e.closed, 16).map((p) => ({ x: p.x, y: -p.y })),
+        });
+      } else {
+        // Bézier por partes vira SPLINE cúbica: curva perfeita, poucos pontos
+        const controls: { x: number; y: number }[] = [{ x: e.start.x, y: -e.start.y }];
+        let cur = e.start;
+        for (const s of e.segs) {
+          const c1 = s.line
+            ? { x: cur.x + (s.p.x - cur.x) / 3, y: cur.y + (s.p.y - cur.y) / 3 }
+            : s.c1;
+          const c2 = s.line
+            ? { x: cur.x + (2 * (s.p.x - cur.x)) / 3, y: cur.y + (2 * (s.p.y - cur.y)) / 3 }
+            : s.c2;
+          controls.push({ x: c1.x, y: -c1.y }, { x: c2.x, y: -c2.y }, { x: s.p.x, y: -s.p.y });
+          cur = s.p;
+        }
+        if (controls.length >= 4) out.push({ type: "SPLINE", layer, controls, closed: e.closed });
+      }
+    }
   }
+
   return {
     // ACI aproximado por camada + true color com o hex técnico fixo do CHAMFER
     layers: layers.map((l, i) => {
@@ -562,6 +645,14 @@ export function fromDxf(doc: DxfDocument, layer: LayerId): Entity[] {
         a0: rad(e.endAngle),
         a1: rad(e.startAngle),
       });
+    }
+    if (e.type === "SPLINE" && e.controls.length >= 4) {
+      const c = e.controls.map((p) => ({ x: p.x, y: -p.y }));
+      const segs: BezierSeg[] = [];
+      for (let i = 0; i + 3 < c.length; i += 3)
+        segs.push({ c1: c[i + 1]!, c2: c[i + 2]!, p: c[i + 3]! });
+      if (segs.length)
+        out.push({ id: uid(), layer, type: "path", start: c[0]!, segs, closed: !!e.closed });
     }
   }
 

@@ -30,6 +30,15 @@ import {
   type Calibration,
 } from "@/lib/vision/scaleCalibrationService";
 import { validateVector } from "@/lib/vision/vectorValidationService";
+import {
+  analyzeLogo,
+  DEFAULT_LOGO,
+  logoToEntities,
+  type LogoAnalysis,
+  type LogoOptions,
+} from "@/lib/vision/logoPipeline";
+import { pathToSvg } from "@/lib/lab2d/bezier";
+import type { TurnPolicy } from "@/lib/vision/logoTracer";
 
 export type VisionImageLayer = {
   src: string;
@@ -45,6 +54,8 @@ export type VisionImageLayer = {
 };
 
 type Step = "importar" | "previa" | "analisando" | "resultado";
+/** Técnico procura LINE/ARC/CIRCLE; logo preserva curvas de Bézier. */
+type Mode = "tecnico" | "logo";
 type Overlay = "original" | "vetor" | "ambos";
 type Manual = { pts: { x: number; y: number }[]; mode: "linha" | "arco"; closed: boolean };
 
@@ -68,6 +79,9 @@ export function VisionDialog({
   const [zoom, setZoom] = useState(1);
 
   // análise
+  const [mode, setMode] = useState<Mode>("tecnico");
+  const [logoOpt, setLogoOpt] = useState<LogoOptions>(DEFAULT_LOGO);
+  const [logo, setLogo] = useState<LogoAnalysis | null>(null);
   const [tolerance, setTolerance] = useState<Tolerance>("media");
   const [noise, setNoise] = useState(1);
   const [analysis, setAnalysis] = useState<VisionAnalysis | null>(null);
@@ -91,6 +105,8 @@ export function VisionDialog({
     setOpacity(1);
     setZoom(1);
     setAnalysis(null);
+    setLogo(null);
+    setLogoOpt(DEFAULT_LOGO);
     setCal(DEFAULT_CALIBRATION);
     setWidthMm("");
     setCalPts([]);
@@ -118,6 +134,16 @@ export function VisionDialog({
     setError(null);
     await new Promise((r) => setTimeout(r, 260));
     try {
+      if (mode === "logo") {
+        const res = analyzeLogo(img.element, logoOpt);
+        setAnalysis(null);
+        setLogo(res.stats.contours + res.stats.holes ? res : null);
+        if (!res.stats.contours && !res.stats.holes)
+          setError("Nenhum contorno encontrado. Ajuste o limiar ou inverta tinta/fundo.");
+        setStep("resultado");
+        return;
+      }
+      setLogo(null);
       const res = analyzeImage(img.element, { tolerance, noise, rotationDeg: rotation });
       if (!res.prims.length) {
         setAnalysis(null);
@@ -132,6 +158,21 @@ export function VisionDialog({
       setStep("resultado");
     }
   };
+
+  // reanalisa ao mudar parâmetros do modo logo
+  useEffect(() => {
+    if (step !== "resultado" || !img || mode !== "logo") return;
+    const t = setTimeout(() => {
+      try {
+        const res = analyzeLogo(img.element, logoOpt);
+        if (res.stats.contours + res.stats.holes) setLogo(res);
+      } catch {
+        /* mantém resultado anterior */
+      }
+    }, 180);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logoOpt]);
 
   // reanalisa ao mudar tolerância/ruído já no resultado
   useEffect(() => {
@@ -149,10 +190,11 @@ export function VisionDialog({
   }, [tolerance, noise]);
 
   const manualEntities = useMemo<Entity[]>(() => {
-    if (!manual || manual.pts.length < 2 || !analysis) return [];
+    const geo = logo ?? analysis;
+    if (!manual || manual.pts.length < 2 || !geo) return [];
     const s = cal.mmPerPx;
-    const ox = analysis.contentPx.x;
-    const oy = analysis.contentPx.y;
+    const ox = geo.contentPx.x;
+    const oy = geo.contentPx.y;
     return [
       {
         id: uid(),
@@ -162,25 +204,36 @@ export function VisionDialog({
         pts: manual.pts.map((p) => ({ x: (p.x - ox) * s, y: (p.y - oy) * s })),
       },
     ];
-  }, [manual, analysis, cal]);
+  }, [manual, analysis, logo, cal]);
 
   const rawEntities = useMemo<Entity[]>(
-    () => (analysis ? toEntities(analysis, cal) : []),
-    [analysis, cal],
+    () =>
+      logo
+        ? // cada cor da paleta vira uma camada técnica distinta
+          logoToEntities(logo, cal, "corte", (_sw, i) => (i === 0 ? "corte" : "marcacao"))
+        : analysis
+          ? toEntities(analysis, cal)
+          : [],
+    [analysis, logo, cal],
   );
 
   const normalized = useMemo(
-    () => normalizeGeometry([...rawEntities, ...manualEntities], { autoClose: false }),
-    [rawEntities, manualEntities],
+    () =>
+      logo
+        ? // curvas nunca passam pelo normalizador de polilinhas
+          { entities: [...rawEntities, ...manualEntities], report: { removedTiny: 0, nearlyClosed: [] as unknown[] } }
+        : normalizeGeometry([...rawEntities, ...manualEntities], { autoClose: false }),
+    [rawEntities, manualEntities, logo],
   );
 
   const duplicates = useMemo(() => countDuplicates(rawEntities), [rawEntities]);
   const validation = useMemo(() => validateVector(normalized.entities, cal), [normalized, cal]);
 
   const applyDimension = () => {
-    if (!analysis) return;
+    const geo = logo ?? analysis;
+    if (!geo) return;
     const w = Number(widthMm.replace(",", "."));
-    const next = calibrateByDimension(analysis.contentPx, { widthMm: w });
+    const next = calibrateByDimension(geo.contentPx, { widthMm: w });
     if (!next) {
       toast.error("Informe uma largura válida em mm.");
       return;
@@ -204,20 +257,21 @@ export function VisionDialog({
   };
 
   const create = () => {
-    if (!img || !analysis) return;
+    if (!img || (!analysis && !logo)) return;
     const list = normalized.entities;
     if (!list.length) {
       toast.error("Nada para inserir.");
       return;
     }
     const s = cal.mmPerPx;
+    const geo = (logo ?? analysis)!;
     onCreate(list, {
       src: img.dataUrl,
       name: img.name,
-      widthMm: analysis.imagePx.w * s,
-      heightMm: analysis.imagePx.h * s,
-      x: -analysis.contentPx.x * s,
-      y: -analysis.contentPx.y * s,
+      widthMm: geo.imagePx.w * s,
+      heightMm: geo.imagePx.h * s,
+      x: -geo.contentPx.x * s,
+      y: -geo.contentPx.y * s,
       opacity: 0.35,
       visible: true,
       locked: true,
@@ -278,6 +332,17 @@ export function VisionDialog({
               <Slider label="Zoom" value={zoom} min={0.4} max={3} step={0.05} onChange={setZoom} />
               <Slider label="Opacidade" value={opacity} min={0.2} max={1} step={0.05} onChange={setOpacity} />
             </div>
+            <Section title="Modo de vetorização" icon={Spline}>
+              <div className="flex gap-1">
+                <Toggle active={mode === "tecnico"} onClick={() => setMode("tecnico")} label="técnico" />
+                <Toggle active={mode === "logo"} onClick={() => setMode("logo")} label="logo (curvas)" />
+              </div>
+              <p className="font-mono text-[10px] text-muted-foreground">
+                {mode === "tecnico"
+                  ? "Reconhece linhas, arcos e círculos de desenhos técnicos."
+                  : "Preserva curvas de Bézier reais — exporta SPLINE, sem microsegmentos."}
+              </p>
+            </Section>
             <div className="flex items-center gap-2">
               <Chip icon={RotateCw} label="Girar 90°" onClick={() => setRotation((r) => (r + 90) % 360)} />
               <span className="font-mono text-[10px] text-muted-foreground">
@@ -290,9 +355,7 @@ export function VisionDialog({
                 Continuar
               </button>
             </div>
-            <p className="font-mono text-[10px] text-muted-foreground">
-              Recorte e correção de perspectiva ficam disponíveis após a análise.
-            </p>
+
           </>
         )}
 
@@ -305,7 +368,55 @@ export function VisionDialog({
           </div>
         )}
 
-        {step === "resultado" && img && (
+        {step === "resultado" && img && logo && (
+          <>
+            <p className="font-mono text-[10px] tracking-[0.2em] text-accent uppercase">
+              Contornos de Bézier
+            </p>
+            <LogoCanvas img={img} logo={logo} overlay={overlay} />
+            <div className="flex flex-wrap items-center gap-1">
+              {(["original", "vetor", "ambos"] as Overlay[]).map((o) => (
+                <Toggle key={o} active={overlay === o} onClick={() => setOverlay(o)} label={o} />
+              ))}
+            </div>
+            <LogoStats logo={logo} cal={cal} entities={normalized.entities} />
+            <LogoControls opt={logoOpt} onChange={(o) => setLogoOpt({ ...logoOpt, ...o })} />
+
+            <Section title="Escala" icon={Ruler}>
+              <div className="flex items-center gap-2">
+                <input
+                  value={widthMm}
+                  onChange={(e) => setWidthMm(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="Largura real (mm)"
+                  className="metal w-40 rounded-xl px-3 py-2 text-sm outline-none"
+                />
+                <button onClick={applyDimension} className="rounded-xl border border-border px-3 py-2 text-xs">
+                  Aplicar
+                </button>
+              </div>
+              <p className="font-mono text-[10px] text-muted-foreground">{cal.note}</p>
+            </Section>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setStep("previa")}
+                className="flex-1 rounded-xl border border-border py-2.5 text-sm transition-colors hover:bg-secondary"
+              >
+                Voltar
+              </button>
+              <button
+                disabled={!normalized.entities.length}
+                onClick={create}
+                className="brand-gradient flex-1 rounded-xl py-2.5 font-display text-sm font-semibold text-background disabled:opacity-40"
+              >
+                Criar geometria
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === "resultado" && img && !logo && (
           <>
             {analysis ? (
               <>
@@ -570,6 +681,126 @@ function PreviewCanvas({
         <circle key={i} cx={p.x} cy={p.y} r={Math.max(2.5, w / 180)} fill="#00CCFF" />
       ))}
     </svg>
+  );
+}
+
+/** Prévia do traçado de logo: curvas reais, furos em âmbar. */
+function LogoCanvas({
+  img,
+  logo,
+  overlay,
+}: {
+  img: ImportedImage;
+  logo: LogoAnalysis;
+  overlay: Overlay;
+}) {
+  const { w, h } = logo.imagePx;
+  return (
+    <svg
+      viewBox={`0 0 ${w} ${h}`}
+      className="w-full rounded-2xl border border-border bg-white"
+      role="img"
+      aria-label="Prévia do traçado por curvas"
+    >
+      {overlay !== "vetor" && (
+        <image
+          href={img.dataUrl}
+          x={0}
+          y={0}
+          width={w}
+          height={h}
+          opacity={overlay === "ambos" ? 0.35 : 1}
+          preserveAspectRatio="none"
+        />
+      )}
+      {overlay !== "original" && (
+        <g fill="none" strokeWidth={Math.max(1, w / 500)}>
+          {logo.layers.flatMap((l, li) =>
+            l.paths.map((t, i) => (
+              <path
+                key={`${li}-${i}`}
+                d={pathToSvg(t.start, t.segs, true)}
+                stroke={t.hole ? MARK_COLOR : CUT_COLOR}
+              />
+            )),
+          )}
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function LogoStats({
+  logo,
+  cal,
+  entities,
+}: {
+  logo: LogoAnalysis;
+  cal: Calibration;
+  entities: Entity[];
+}) {
+  const s = cal.mmPerPx;
+  return (
+    <div className="metal grid grid-cols-2 gap-1 rounded-2xl p-3 font-mono text-[10px] text-muted-foreground">
+      <span>{logo.stats.contours} contornos</span>
+      <span>{logo.stats.holes} furos</span>
+      <span>{logo.stats.curves} curvas</span>
+      <span>{logo.stats.segments} segmentos</span>
+      <span className="col-span-2 text-foreground">
+        {(logo.contentPx.w * s).toFixed(1)} × {(logo.contentPx.h * s).toFixed(1)} mm ·{" "}
+        {entities.length} entidades · SPLINE no DXF
+      </span>
+    </div>
+  );
+}
+
+const TURN_POLICIES: TurnPolicy[] = ["minority", "majority", "black", "white", "left", "right"];
+
+function LogoControls({
+  opt,
+  onChange,
+}: {
+  opt: LogoOptions;
+  onChange: (o: Partial<LogoOptions>) => void;
+}) {
+  return (
+    <>
+      <Section title="Pré-processamento" icon={ImageIcon}>
+        <div className="grid grid-cols-2 gap-2">
+          <Slider label={`Ampliação ${opt.upscale}×`} value={opt.upscale} min={1} max={4} step={1}
+            onChange={(v) => onChange({ upscale: v })} />
+          <Slider label={`Suavizar (JPG) ${opt.blur}px`} value={opt.blur} min={0} max={3} step={1}
+            onChange={(v) => onChange({ blur: v })} />
+          <Slider label={`Limiar ${opt.threshold}`} value={opt.threshold} min={20} max={235} step={1}
+            onChange={(v) => onChange({ threshold: v })} />
+          <Slider label={`Fechar furos ${opt.closeHoles}`} value={opt.closeHoles} min={0} max={3} step={1}
+            onChange={(v) => onChange({ closeHoles: v })} />
+        </div>
+        <div className="flex flex-wrap gap-1">
+          <Toggle active={opt.invert} onClick={() => onChange({ invert: !opt.invert })} label="inverter tinta" />
+          <Toggle active={opt.detectCircles} onClick={() => onChange({ detectCircles: !opt.detectCircles })}
+            label="furos redondos → círculo" />
+        </div>
+      </Section>
+
+      <Section title="Traçado" icon={Spline}>
+        <div className="grid grid-cols-2 gap-2">
+          <Slider label={`Poeira (turdsize) ${opt.turdsize}`} value={opt.turdsize} min={0} max={12} step={1}
+            onChange={(v) => onChange({ turdsize: v })} />
+          <Slider label={`Cantos (alphamax) ${opt.alphamax.toFixed(2)}`} value={opt.alphamax} min={0} max={1.34} step={0.02}
+            onChange={(v) => onChange({ alphamax: v })} />
+          <Slider label={`Fidelidade (opttolerance) ${opt.opttolerance.toFixed(2)}`} value={opt.opttolerance}
+            min={0.05} max={1} step={0.05} onChange={(v) => onChange({ opttolerance: v })} />
+          <Slider label={`Cores ${opt.colors}`} value={opt.colors} min={1} max={6} step={1}
+            onChange={(v) => onChange({ colors: v })} />
+        </div>
+        <div className="flex flex-wrap gap-1">
+          {TURN_POLICIES.map((t) => (
+            <Toggle key={t} active={opt.turnpolicy === t} onClick={() => onChange({ turnpolicy: t })} label={t} />
+          ))}
+        </div>
+      </Section>
+    </>
   );
 }
 

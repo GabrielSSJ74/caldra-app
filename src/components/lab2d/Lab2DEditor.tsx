@@ -69,6 +69,7 @@ import {
   type Snap,
 } from "@/lib/lab2d/core";
 import { autoDimensions } from "@/lib/lab2d/render";
+import { pathToSvg } from "@/lib/lab2d/bezier";
 import {
   AXIS_COLOR,
   DIMENSION_COLOR,
@@ -993,11 +994,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     }}
                   />
                   <MenuItem
-                    label="CHAMFER VISION"
+                    label={isMestre ? "CHAMFER VISION" : "CHAMFER VISION · Mestre"}
                     icon={ScanEye}
                     onClick={() => {
-                      setVisionOpen(true);
                       setMoreOpen(false);
+                      if (!isMestre) {
+                        toast.info("CHAMFER VISION é exclusivo do Modo Mestre.");
+                        return;
+                      }
+                      setVisionOpen(true);
                     }}
                   />
                   {imageLayer && (
@@ -1559,6 +1564,8 @@ export function EntityShape({
         />
       );
     }
+    if (e.type === "path")
+      return <path key={key} d={pathToSvg(e.start, e.segs, e.closed)} fill="none" {...p} />;
     return null;
   };
 
@@ -1619,6 +1626,7 @@ const TYPE_LABEL: Record<Entity["type"], string> = {
   polyline: "Polilinha",
   circle: "Círculo",
   arc: "Arco",
+  path: "Curva",
   text: "Texto",
 };
 
