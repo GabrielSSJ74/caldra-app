@@ -1259,10 +1259,11 @@ function PreviewCanvas({
   };
 
   return (
+    <div className="h-[42vh] max-h-[42vh] min-h-[200px] w-full shrink-0 overflow-hidden rounded-2xl border border-border bg-white">
     <svg
       ref={ref}
       viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-      className="w-full touch-none rounded-2xl border border-border bg-white"
+      className="block h-full w-full touch-none"
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}
@@ -1320,6 +1321,7 @@ function PreviewCanvas({
         <circle key={i} cx={p.x} cy={p.y} r={nodeR} fill="#00CCFF" />
       ))}
     </svg>
+    </div>
   );
 }
 
@@ -1355,38 +1357,90 @@ function LogoCanvas({
   overlay: Overlay;
 }) {
   const { w, h } = logo.imagePx;
+  const ref = useRef<SVGSVGElement>(null);
+  const [view, setView] = useState({ x: 0, y: 0, w, h });
+  const drag = useRef<{ sx: number; sy: number; vx: number; vy: number } | null>(null);
+  useEffect(() => setView({ x: 0, y: 0, w, h }), [w, h]);
+
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const v = viewRef.current;
+      const r = el.getBoundingClientRect();
+      const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1);
+      const k = Math.min(4, Math.max(0.25, Math.exp(dy * 0.0015)));
+      const nw = Math.min(w * 4, Math.max(w / 20, v.w * k));
+      const nh = nw * (v.h / v.w);
+      const px = v.x + ((e.clientX - r.left) / r.width) * v.w;
+      const py = v.y + ((e.clientY - r.top) / r.height) * v.h;
+      setView({
+        x: px - (px - v.x) * (nw / v.w),
+        y: py - (py - v.y) * (nh / v.h),
+        w: nw,
+        h: nh,
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [w]);
+
   return (
-    <svg
-      viewBox={`0 0 ${w} ${h}`}
-      className="w-full rounded-2xl border border-border bg-white"
-      role="img"
-      aria-label="Prévia do traçado por curvas"
-    >
-      {overlay !== "vetor" && (
-        <image
-          href={img.dataUrl}
-          x={0}
-          y={0}
-          width={w}
-          height={h}
-          opacity={overlay === "ambos" ? 0.35 : 1}
-          preserveAspectRatio="none"
-        />
-      )}
-      {overlay !== "original" && (
-        <g fill="none" strokeWidth={Math.max(1, w / 500)}>
-          {logo.layers.flatMap((l, li) =>
-            l.paths.map((t, i) => (
-              <path
-                key={`${li}-${i}`}
-                d={pathToSvg(t.start, t.segs, true)}
-                stroke={t.hole ? MARK_COLOR : CUT_COLOR}
-              />
-            )),
-          )}
-        </g>
-      )}
-    </svg>
+    <div className="h-[42vh] max-h-[42vh] min-h-[200px] w-full shrink-0 overflow-hidden rounded-2xl border border-border bg-white">
+      <svg
+        ref={ref}
+        viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+        className="block h-full w-full touch-none"
+        role="img"
+        aria-label="Prévia do traçado por curvas"
+        onPointerDown={(e) => {
+          drag.current = { sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
+          (e.target as Element).setPointerCapture?.(e.pointerId);
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          const el = ref.current;
+          if (!d || !el) return;
+          const r = el.getBoundingClientRect();
+          setView((v) => ({
+            ...v,
+            x: d.vx - ((e.clientX - d.sx) / r.width) * v.w,
+            y: d.vy - ((e.clientY - d.sy) / r.height) * v.h,
+          }));
+        }}
+        onPointerUp={() => {
+          drag.current = null;
+        }}
+      >
+        {overlay !== "vetor" && (
+          <image
+            href={img.dataUrl}
+            x={0}
+            y={0}
+            width={w}
+            height={h}
+            opacity={overlay === "ambos" ? 0.35 : 1}
+            preserveAspectRatio="none"
+          />
+        )}
+        {overlay !== "original" && (
+          <g fill="none" strokeWidth={Math.max(1, view.w / 500)}>
+            {logo.layers.flatMap((l, li) =>
+              l.paths.map((t, i) => (
+                <path
+                  key={`${li}-${i}`}
+                  d={pathToSvg(t.start, t.segs, true)}
+                  stroke={t.hole ? MARK_COLOR : CUT_COLOR}
+                />
+              )),
+            )}
+          </g>
+        )}
+      </svg>
+    </div>
   );
 }
 
