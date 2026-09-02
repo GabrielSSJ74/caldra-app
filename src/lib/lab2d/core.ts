@@ -7,6 +7,8 @@ import {
   DIMENSION_COLOR,
   MARK_COLOR,
   REFERENCE_COLOR,
+  techColor,
+  type TechLayerId,
 } from "@/lib/lab2d/technical";
 
 export type LayerId = string;
@@ -474,6 +476,16 @@ export function verify(entities: Entity[]): Issue[] {
 
 /* -------------------------------------------------------------------- DXF */
 
+/** Índice ACI aproximado por camada técnica (o hex exato vai no grupo 420). */
+const DXF_ACI: Record<TechLayerId, number> = {
+  corte: 1, // vermelho
+  marcacao: 30, // laranja/âmbar
+  dobra: 200, // violeta
+  cota: 4, // ciano
+  construcao: 8, // cinza
+  referencia: 9, // cinza claro
+};
+
 export function toDxf(entities: Entity[], layers: Layer[]): DxfDocument {
   const out: DxfEntity[] = [];
   for (const e of entities) {
@@ -503,7 +515,16 @@ export function toDxf(entities: Entity[], layers: Layer[]): DxfDocument {
     }
 
   }
-  return { layers: layers.map((l, i) => ({ name: l.name.toUpperCase(), color: i + 1 })), entities: out };
+  return {
+    // ACI aproximado por camada + true color com o hex técnico fixo do CHAMFER
+    layers: layers.map((l, i) => {
+      const hex = techColor(l.id);
+      const trueColor = parseInt(hex.slice(1), 16);
+      const aci = DXF_ACI[l.id as TechLayerId] ?? i + 1;
+      return { name: l.name.toUpperCase(), color: aci, trueColor };
+    }),
+    entities: out,
+  };
 }
 
 export function fromDxf(doc: DxfDocument, layer: LayerId): Entity[] {

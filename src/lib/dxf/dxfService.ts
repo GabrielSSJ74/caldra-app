@@ -25,7 +25,7 @@ export type DxfEntity =
       endAngle: number;
     };
 
-export type DxfLayer = { name: string; color: number };
+export type DxfLayer = { name: string; color: number; trueColor?: number };
 
 export type DxfDocument = { layers: DxfLayer[]; entities: DxfEntity[] };
 
@@ -87,6 +87,8 @@ export function exportDxf(doc: DxfDocument): string {
   out += g(0, "TABLE") + g(2, "LAYER") + g(70, layers.length);
   for (const l of layers) {
     out += g(0, "LAYER") + g(2, l.name) + g(70, 0) + g(62, l.color) + g(6, "CONTINUOUS");
+    // cor técnica real (AutoCAD true color) — preserva a convenção visual do CHAMFER
+    if (l.trueColor !== undefined) out += g(420, l.trueColor);
   }
   out += g(0, "ENDTAB") + g(0, "ENDSEC");
 
