@@ -576,6 +576,33 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   };
 
   const onPointerMove = (ev: React.PointerEvent) => {
+    if (ptrsRef.current.has(ev.pointerId))
+      ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+
+    // ---- pinça (2 ponteiros, ferramenta MÃO) ----
+    if (pinchRef.current && ptrsRef.current.size >= 2) {
+      ev.preventDefault();
+      const [a, b] = [...ptrsRef.current.values()];
+      if (!a || !b) return;
+      const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      const prev = pinchRef.current;
+      const factor = Math.min(2, Math.max(0.5, d / prev.dist));
+      const r = svgRef.current!.getBoundingClientRect();
+      const v = viewRef.current;
+      // ponto de mundo sob o ponto médio anterior
+      const wx = (prev.mx - r.left - v.tx) / v.k;
+      const wy = (prev.my - r.top - v.ty) / v.k;
+      const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * factor));
+      const nv = { k, tx: mx - r.left - wx * k, ty: my - r.top - wy * k };
+      viewRef.current = nv;
+      setView(nv);
+      flashZoom(k);
+      pinchRef.current = { dist: d, mx, my };
+      return;
+    }
+
     const raw = toWorld(ev);
     setCursor(raw);
     if (snapOn) {
@@ -589,6 +616,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setView((v) => ({ ...v, tx: v.tx + dx, ty: v.ty + dy }));
       return;
     }
+
     if (dragNode) {
       const p = snapPoint(raw);
       setEntities((list) =>
