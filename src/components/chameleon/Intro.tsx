@@ -13,7 +13,7 @@ const SLIDES = [
   {
     icon: PenTool,
     title: "Planificação zero fresta",
-    text: "Do holograma 3D ao desenho 2D pronto para corte, em milímetros.",
+    text: "Do modelo 3D ao CHAMFER, pronto para corte, em milímetros.",
   },
   {
     icon: Sigma,
