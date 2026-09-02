@@ -646,23 +646,26 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       viewRef.current = nv;
       setView(nv);
       flashZoom(k);
+      markGesture();
       pinchRef.current = { dist: d, mx, my };
       return;
     }
 
     const raw = toWorld(ev);
     setCursor(raw);
-    if (snapOn) {
-      const s = findSnap(raw, visible, 10 / view.k, grid, { grid: showGrid, object: true });
-      setSnapHit(s);
-    }
     if (panRef.current) {
       const dx = ev.clientX - panRef.current.x;
       const dy = ev.clientY - panRef.current.y;
       panRef.current = { x: ev.clientX, y: ev.clientY };
       setView((v) => ({ ...v, tx: v.tx + dx, ty: v.ty + dy }));
+      markGesture();
       return;
     }
+    if (snapOn) {
+      const tol = 10 / view.k;
+      setSnapHit(findSnap(raw, near(raw, tol * 2), tol, grid, { grid: showGrid, object: true }));
+    }
+
 
     if (dragNode) {
       const p = snapPoint(raw);
