@@ -9,6 +9,7 @@
 
 import type { Vec2 } from "@/lib/geometry/types";
 import { bbox, dist, entityPoints, type Entity, type Layer } from "./core";
+import { pathToSvg } from "./bezier";
 import { DIMENSION_COLOR, techColor, techStyle } from "./technical";
 
 export type RenderOptions = {
