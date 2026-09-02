@@ -247,7 +247,7 @@ export function bbox(entities: Entity[]): Box | null {
     maxX = -Infinity,
     maxY = -Infinity;
   for (const e of entities)
-    for (const p of entityPoints(e)) {
+    for (const p of outlinePoints(e)) {
       minX = Math.min(minX, p.x);
       minY = Math.min(minY, p.y);
       maxX = Math.max(maxX, p.x);
