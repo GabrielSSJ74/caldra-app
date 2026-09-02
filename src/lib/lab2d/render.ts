@@ -145,17 +145,20 @@ export function renderSvg(
   const s = Math.max(w, h) / 200; // escala do traço em relação à peça
   const dark = opts.background === "dark";
 
-  const body = entities
+  const body = [...entities]
+    .sort((a, b) => techStyle(a.layer).order - techStyle(b.layer).order)
     .map((e) => {
       const layer = layers.find((l) => l.id === e.layer);
+      const style = techStyle(e.layer);
       const stroke = colorFor(layer, e.layer, dark);
       if (e.type === "text")
         return `<text x="${f(e.x)}" y="${f(e.y)}" font-size="${f(e.size)}" fill="${stroke}" font-family="ui-sans-serif, system-ui">${escapeXml(e.text)}</text>`;
       const d = entityPath(e);
       if (!d) return "";
-      const dash = e.layer === "dobra" ? ` stroke-dasharray="${f(4 * s)} ${f(3 * s)}"` : "";
+      const pattern = style.dash(s);
+      const dash = pattern ? ` stroke-dasharray="${pattern}"` : "";
       return `<path d="${d}" fill="none" stroke="${stroke}" stroke-width="${f(
-        1.1 * s,
+        1.1 * s * style.weight,
       )}" stroke-linecap="round" stroke-linejoin="round"${dash}/>`;
     })
     .join("");
