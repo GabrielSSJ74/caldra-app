@@ -389,11 +389,31 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [entities, layerOf],
   );
 
+  /** Entidades desenháveis: camada visível + modo de saída (produção/corte). */
+  const drawable = useMemo(
+    () => visible.filter((e) => modeAllows(outputMode, e.layer)),
+    [visible, outputMode],
+  );
+
+  /* índices espaciais: reconstruídos só quando a geometria muda */
+  const pickIndex = useMemo(() => buildIndex(visible), [visible]);
+  const drawIndex = useMemo(
+    () => (outputMode === "completo" ? pickIndex : buildIndex(drawable)),
+    [outputMode, pickIndex, drawable],
+  );
+
+  /** Entidades próximas de um ponto, via índice espacial. */
+  const near = useCallback(
+    (p: Vec2, tol: number) =>
+      pickIndex.query({ minX: p.x - tol, minY: p.y - tol, maxX: p.x + tol, maxY: p.y + tol }),
+    [pickIndex],
+  );
+
   const hitTest = useCallback(
     (p: Vec2): Entity | null => {
       const tol = 6 / view.k;
       let best: { e: Entity; d: number } | null = null;
-      for (const e of visible) {
+      for (const e of near(p, tol)) {
         if (layerOf(e.layer)?.locked) continue;
         let d = Infinity;
         if (e.type === "circle" || e.type === "arc")
@@ -404,17 +424,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       return best?.e ?? null;
     },
-    [visible, view.k, layerOf],
+    [near, view.k, layerOf],
   );
 
   const snapPoint = useCallback(
     (p: Vec2): Vec2 => {
       if (!snapOn) return p;
-      const s = findSnap(p, visible, 10 / view.k, grid, { grid: showGrid, object: true });
+      const tol = 10 / view.k;
+      const s = findSnap(p, near(p, tol * 2), tol, grid, { grid: showGrid, object: true });
       return s ? s.p : p;
     },
-    [snapOn, visible, view.k, grid, showGrid],
+    [snapOn, near, view.k, grid, showGrid],
   );
+
 
   const selected = useMemo(
     () => entities.filter((e) => selection.includes(e.id)),
