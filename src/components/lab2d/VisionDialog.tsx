@@ -671,6 +671,15 @@ export function VisionDialog({
             <LogoStats logo={logo} cal={cal} entities={normalized.entities} />
             <LogoControls opt={logoOpt} onChange={(o) => setLogoOpt({ ...logoOpt, ...o })} />
 
+            <Section title="Multi-escala" icon={Scan}>
+              <Toggle
+                active={multiScale}
+                onClick={() => setMultiScale((v) => !v)}
+                label="traçar em 1× / 2× / 4× e escolher o melhor"
+              />
+            </Section>
+
+
             <Section title="Escala" icon={Ruler}>
               <div className="flex items-center gap-2">
                 <input
