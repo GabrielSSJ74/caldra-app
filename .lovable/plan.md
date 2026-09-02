@@ -82,7 +82,9 @@ Controle na UI: "Reconhecer círculos e retas" ligado por padrão, com tolerânc
 
 ## 8. Interface
 
-`VisionDialog` ganha seletor de modo no topo (Técnico | Logo). O painel de controles troca conforme o modo; prévia, calibração px→mm, escolha de camada de destino e imagem original como camada de referência continuam iguais para os dois. A validação final reporta nº de curvas, nº de pontos de controle e peso estimado do DXF — para o usuário ver na hora se a geometria está enxuta.
+`VisionDialog` ganha seletor de modo no topo (Técnico | Logo). O painel de controles troca conforme o modo; prévia, calibração px→mm, escolha de camada de destino e imagem original como camada de referência continuam iguais para os dois. A validação final reporta nº de curvas, **total de pontos de controle** e peso estimado do DXF — para o usuário ver na hora se a geometria está enxuta.
+
+No modo LOGO a exportação DXF sai como SPLINE + ARC + CIRCLE, nunca rasterizada, e nenhuma curva é amostrada em polilinha (o achatamento fica como opção explícita do usuário, desligada por padrão).
 
 ## Detalhes técnicos
 
