@@ -207,13 +207,22 @@ export function importDxf(text: string): DxfDocument {
         }
         break;
       }
+      case "SPLINE": {
+        const xs = d.get(10) ?? [];
+        const ys = d.get(20) ?? [];
+        const controls = xs.map((x, i) => ({ x: Number(x), y: Number(ys[i] ?? 0) }));
+        if (controls.length >= 4)
+          entities.push({ type: "SPLINE", layer, controls, closed: (num(70) & 1) === 1 });
+        break;
+      }
       default:
-        break; // SPLINE, TEXT, INSERT: suporte futuro
+        break; // TEXT, INSERT: suporte futuro
     }
     current = null;
   };
 
-  const SUPPORTED = ["LINE", "CIRCLE", "ARC", "LWPOLYLINE", "POLYLINE"];
+  const SUPPORTED = ["LINE", "CIRCLE", "ARC", "LWPOLYLINE", "POLYLINE", "SPLINE"];
+
 
   for (let i = 0; i < pairs.length; i++) {
     const { code, value } = pairs[i]!;
