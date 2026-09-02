@@ -90,6 +90,9 @@ import {
   type Project,
 } from "@/lib/lab2d/projects";
 import { takeHandoff } from "@/lib/lab2d/handoff";
+import { buildIndex } from "@/lib/lab2d/spatialIndex";
+import { drawScene } from "@/lib/lab2d/canvasScene";
+import { stressEntities } from "@/lib/lab2d/stress";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 
 import { cn } from "@/lib/utils";
@@ -163,6 +166,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const { isMestre } = useFeatureAccess();
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [project, setProject] = useState<Project | null>(null);
   const [planId, setPlanId] = useState<string>("");
@@ -206,6 +210,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const gestureUntilRef = useRef(0);
   const [zoomHud, setZoomHud] = useState<number | null>(null);
   const hudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* gesto ativo → renderização simplificada (LOD); refina ao soltar */
+  const [gesturing, setGesturing] = useState(false);
+  const gestureTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const markGesture = useCallback(() => {
+    setGesturing(true);
+    if (gestureTimer.current) clearTimeout(gestureTimer.current);
+    gestureTimer.current = setTimeout(() => setGesturing(false), 140);
+  }, []);
 
   /* ------------------------------------------- projeto, planos e autosave */
   useEffect(() => {
@@ -221,21 +233,34 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     future.current = [];
   }, [projectId]);
 
+  /* autosave fora do caminho crítico: debounce + tempo ocioso do navegador */
   useEffect(() => {
     if (!project || !planId) return;
+    let idle = 0;
     const t = setTimeout(() => {
-      const next: Project = {
-        ...project,
-        layers,
-        lastPlanId: planId,
-        plans: project.plans.map((pl) => (pl.id === planId ? { ...pl, entities } : pl)),
+      const run = () => {
+        const next: Project = {
+          ...project,
+          layers,
+          lastPlanId: planId,
+          plans: project.plans.map((pl) => (pl.id === planId ? { ...pl, entities } : pl)),
+        };
+        saveProject(next);
+        setProject(next);
       };
-      saveProject(next);
-      setProject(next);
-    }, 600);
-    return () => clearTimeout(t);
+      const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: object) => number })
+        .requestIdleCallback;
+      if (ric) idle = ric(run, { timeout: 1000 });
+      else run();
+    }, 1500);
+    return () => {
+      clearTimeout(t);
+      const cic = (window as unknown as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback;
+      if (idle && cic) cic(idle);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entities, layers, planId]);
+
 
   /* --------------------------------- paisagem automática no celular */
   useEffect(() => {
@@ -320,7 +345,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   /* ------------------------------------------------------------ zoom roda */
   const viewRef = useRef(view);
-  viewRef.current = view;
+  /* durante um gesto o ref é a fonte da verdade (React só acompanha por quadro) */
+  const pendingView = useRef<{ tx: number; ty: number; k: number } | null>(null);
+  const rafView = useRef(0);
+  if (!pendingView.current) viewRef.current = view;
+
+  /** Aplica a viewport no máximo uma vez por quadro — evita render por evento. */
+  const applyView = useCallback((nv: { tx: number; ty: number; k: number }) => {
+    viewRef.current = nv;
+    pendingView.current = nv;
+    if (rafView.current) return;
+    rafView.current = requestAnimationFrame(() => {
+      rafView.current = 0;
+      const next = pendingView.current;
+      pendingView.current = null;
+      if (next) setView(next);
+    });
+  }, []);
+
 
   const flashZoom = useCallback((k: number) => {
     setZoomHud(k);
@@ -335,11 +377,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * factor));
       const ratio = next / v.k;
       const nv = { k: next, tx: px - (px - v.tx) * ratio, ty: py - (py - v.ty) * ratio };
-      viewRef.current = nv;
-      setView(nv);
+      applyView(nv);
+      markGesture();
       return nv;
     },
-    [],
+    [applyView, markGesture],
   );
 
   useEffect(() => {
@@ -364,11 +406,31 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [entities, layerOf],
   );
 
+  /** Entidades desenháveis: camada visível + modo de saída (produção/corte). */
+  const drawable = useMemo(
+    () => visible.filter((e) => modeAllows(outputMode, e.layer)),
+    [visible, outputMode],
+  );
+
+  /* índices espaciais: reconstruídos só quando a geometria muda */
+  const pickIndex = useMemo(() => buildIndex(visible), [visible]);
+  const drawIndex = useMemo(
+    () => (outputMode === "completo" ? pickIndex : buildIndex(drawable)),
+    [outputMode, pickIndex, drawable],
+  );
+
+  /** Entidades próximas de um ponto, via índice espacial. */
+  const near = useCallback(
+    (p: Vec2, tol: number) =>
+      pickIndex.query({ minX: p.x - tol, minY: p.y - tol, maxX: p.x + tol, maxY: p.y + tol }),
+    [pickIndex],
+  );
+
   const hitTest = useCallback(
     (p: Vec2): Entity | null => {
       const tol = 6 / view.k;
       let best: { e: Entity; d: number } | null = null;
-      for (const e of visible) {
+      for (const e of near(p, tol)) {
         if (layerOf(e.layer)?.locked) continue;
         let d = Infinity;
         if (e.type === "circle" || e.type === "arc")
@@ -379,17 +441,65 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       return best?.e ?? null;
     },
-    [visible, view.k, layerOf],
+    [near, view.k, layerOf],
   );
 
   const snapPoint = useCallback(
     (p: Vec2): Vec2 => {
       if (!snapOn) return p;
-      const s = findSnap(p, visible, 10 / view.k, grid, { grid: showGrid, object: true });
+      const tol = 10 / view.k;
+      const s = findSnap(p, near(p, tol * 2), tol, grid, { grid: showGrid, object: true });
       return s ? s.p : p;
     },
-    [snapOn, visible, view.k, grid, showGrid],
+    [snapOn, near, view.k, grid, showGrid],
   );
+
+  /* ---------------------------------------- pintura em canvas (por sujidade) */
+  const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(([entry]) => {
+      const r = entry?.contentRect;
+      if (r) setCanvasSize({ w: Math.round(r.width), h: Math.round(r.height) });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const selectionSet = useMemo(() => new Set(selection), [selection]);
+
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el || !canvasSize.w || !canvasSize.h) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const pw = Math.round(canvasSize.w * dpr);
+    const ph = Math.round(canvasSize.h * dpr);
+    if (el.width !== pw) el.width = pw;
+    if (el.height !== ph) el.height = ph;
+    const ctx = el.getContext("2d");
+    if (!ctx) return;
+    // redesenha apenas uma vez por quadro, quando cena/viewport mudam
+    const id = requestAnimationFrame(() =>
+      drawScene(ctx, {
+        index: drawIndex,
+        view,
+        width: canvasSize.w,
+        height: canvasSize.h,
+        dpr,
+        selection: selectionSet,
+        lod: gesturing,
+      }),
+    );
+    return () => cancelAnimationFrame(id);
+  }, [drawIndex, view, selectionSet, gesturing, canvasSize]);
+
+  /* teste de estresse: ?stress=5000 gera milhares de entidades sintéticas */
+  useEffect(() => {
+    const n = Number(new URLSearchParams(window.location.search).get("stress") ?? 0);
+    if (n > 0) setEntities(stressEntities(n));
+  }, []);
+
 
   const selected = useMemo(
     () => entities.filter((e) => selection.includes(e.id)),
@@ -596,26 +706,29 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const wy = (prev.my - r.top - v.ty) / v.k;
       const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * factor));
       const nv = { k, tx: mx - r.left - wx * k, ty: my - r.top - wy * k };
-      viewRef.current = nv;
-      setView(nv);
+      applyView(nv);
       flashZoom(k);
+      markGesture();
       pinchRef.current = { dist: d, mx, my };
       return;
     }
 
     const raw = toWorld(ev);
     setCursor(raw);
-    if (snapOn) {
-      const s = findSnap(raw, visible, 10 / view.k, grid, { grid: showGrid, object: true });
-      setSnapHit(s);
-    }
     if (panRef.current) {
       const dx = ev.clientX - panRef.current.x;
       const dy = ev.clientY - panRef.current.y;
       panRef.current = { x: ev.clientX, y: ev.clientY };
-      setView((v) => ({ ...v, tx: v.tx + dx, ty: v.ty + dy }));
+      const v = viewRef.current;
+      applyView({ ...v, tx: v.tx + dx, ty: v.ty + dy });
+      markGesture();
       return;
     }
+    if (snapOn) {
+      const tol = 10 / view.k;
+      setSnapHit(findSnap(raw, near(raw, tol * 2), tol, grid, { grid: showGrid, object: true }));
+    }
+
 
     if (dragNode) {
       const p = snapPoint(raw);
@@ -799,11 +912,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setDraft(null);
   }, []);
 
-  /** Entidades desenháveis: camada visível + modo de saída (produção/corte). */
-  const drawable = useMemo(
-    () => visible.filter((e) => modeAllows(outputMode, e.layer)),
-    [visible, outputMode],
-  );
 
   const selectionActions = (
     <>
@@ -1161,17 +1269,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
         {/* REGIÃO C — CANVAS */}
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl">
-          <svg
-            ref={svgRef}
-            className="size-full touch-none"
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-            onDoubleClick={() => tool === "polyline" && finishPolyline(false)}
-            role="application"
-            aria-label="Prancheta vetorial"
-          >
+          {/* grade: camada própria, sempre abaixo da geometria */}
+          <svg className="pointer-events-none absolute inset-0 size-full">
             <defs>
               <pattern
                 id="lab2d-grid"
@@ -1190,6 +1289,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </pattern>
             </defs>
             {showGrid && <rect width="100%" height="100%" fill="url(#lab2d-grid)" />}
+          </svg>
+          <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
+          <svg
+            ref={svgRef}
+            className="absolute inset-0 size-full touch-none"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            onDoubleClick={() => tool === "polyline" && finishPolyline(false)}
+            role="application"
+            aria-label="Prancheta vetorial"
+          >
+
 
             <g transform={`translate(${view.tx} ${view.ty}) scale(${view.k})`}>
               {/* CAMADA IMAGEM — referência do CHAMFER VISION (nunca vira geometria) */}
@@ -1210,10 +1323,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               <line x1={-1e4} y1={0} x2={1e4} y2={0} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
               <line x1={0} y1={-1e4} x2={0} y2={1e4} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
 
+              {/* geometria principal: pintada no canvas sob este SVG */}
 
-              {drawable.map((e) => (
-                <EntityShape key={e.id} e={e} k={view.k} selected={selection.includes(e.id)} />
-              ))}
 
               {draft && <EntityShape e={draft} k={view.k} preview />}
 
