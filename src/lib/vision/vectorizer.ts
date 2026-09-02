@@ -74,7 +74,7 @@ export function analyzeRaster(
   const pixels = opt.normalize ? normalizeContrast(input) : input;
   const bin = denoise(
     opt.adaptive
-      ? sauvolaBinarize(pixels, { invert: opt.invert })
+      ? sauvolaBinarize(pixels, { invert: opt.invert ?? false })
       : binarize(pixels, opt.invert),
     opt.noise ?? 1,
   );

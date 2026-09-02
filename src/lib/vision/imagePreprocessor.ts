@@ -277,7 +277,8 @@ export function normalizeContrast(image: ImageData): ImageData {
     const b = data[i + 2]! * a + 255 * (1 - a);
     const v = 0.299 * r + 0.587 * g + 0.114 * b;
     lum[p] = v;
-    hist[Math.max(0, Math.min(255, Math.round(v)))]++;
+    const bi = Math.max(0, Math.min(255, Math.round(v)));
+    hist[bi] = (hist[bi] ?? 0) + 1;
   }
   const total = w * h;
   let acc = 0;

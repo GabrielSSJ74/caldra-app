@@ -88,8 +88,8 @@ export function profileImage(image: ImageData): ImageProfile {
   for (let p = 0; p < gray.length; p++) {
     const v = luminance(data, p * 4);
     gray[p] = v;
-    hist[Math.max(0, Math.min(255, Math.round(v)))] += 1;
-
+    const bi = Math.max(0, Math.min(255, Math.round(v)));
+    hist[bi] = (hist[bi] ?? 0) + 1;
   }
   const total = w * h;
   const otsu = otsuOf(hist, total);
