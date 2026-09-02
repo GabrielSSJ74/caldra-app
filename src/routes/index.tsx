@@ -130,7 +130,7 @@ function Inicio() {
           <div className="pointer-events-none absolute inset-x-2 top-6 h-20 text-accent2/70 opacity-70">
             <MiniPlan />
           </div>
-          <span className="relative font-display text-sm font-medium tracking-wide">LAB 2D</span>
+          <span className="relative font-display text-sm font-medium tracking-wide">CHAMFER</span>
         </Link>
 
         <Link

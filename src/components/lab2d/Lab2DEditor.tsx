@@ -270,7 +270,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const h = takeHandoff();
     if (!h) return;
     setEntities(h.entities);
-    toast.success(`${h.name} carregado no laboratório.`);
+    toast.success(`${h.name} carregado no CHAMFER.`);
     requestAnimationFrame(() => fitTo(h.entities));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

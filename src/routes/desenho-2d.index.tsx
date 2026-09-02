@@ -22,7 +22,7 @@ export const Route = createFileRoute("/desenho-2d/")({
       {
         name: "description",
         content:
-          "Explorador de projetos do Laboratório 2D: planos, autosave local e abertura direta na prancheta vetorial.",
+          "Explorador de projetos do CHAMFER: planos, autosave local e abertura direta na prancheta vetorial.",
       },
       { property: "og:title", content: "Projetos 2D — CALDRA" },
       {
@@ -40,7 +40,7 @@ function ExplorerPage() {
   return (
     <FeatureGate
       feature="lab2d"
-      title="Laboratório 2D"
+      title="CHAMFER"
       description="A prancheta vetorial faz parte do Modo Mestre."
     >
       <Explorer />
