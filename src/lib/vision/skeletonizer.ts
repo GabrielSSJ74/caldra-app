@@ -145,6 +145,12 @@ export type Chain = { pts: PxPoint[]; closed: boolean };
 export function traceSkeleton(skel: Binary): Chain[] {
   const { data, width: w, height: h } = skel;
   const idx = (x: number, y: number) => y * w + x;
+  const on = (x: number, y: number) => x >= 0 && y >= 0 && x < w && y < h && !!data[idx(x, y)];
+  /**
+   * Vizinhança 8 com redução diagonal: um vizinho na diagonal é ignorado
+   * quando já existe caminho ortogonal até ele. Sem isso o esqueleto vira
+   * uma sucessão de falsas bifurcações e o traço se fragmenta.
+   */
   const nbrs = (i: number) => {
     const x = i % w;
     const y = (i - x) / w;
@@ -152,11 +158,13 @@ export function traceSkeleton(skel: Binary): Chain[] {
     for (const [dx, dy] of N8) {
       const nx = x + dx;
       const ny = y + dy;
-      if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
-      if (data[idx(nx, ny)]) out.push(idx(nx, ny));
+      if (!on(nx, ny)) continue;
+      if (dx !== 0 && dy !== 0 && (on(x + dx, y) || on(x, y + dy))) continue;
+      out.push(idx(nx, ny));
     }
     return out;
   };
+
 
   const deg = new Uint8Array(data.length);
   const pixels: number[] = [];
