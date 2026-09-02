@@ -89,10 +89,18 @@ export function entityPoints(e: Entity): Vec2[] {
         { x: e.cx + e.r * Math.cos(e.a0), y: e.cy + e.r * Math.sin(e.a0) },
         { x: e.cx + e.r * Math.cos(e.a1), y: e.cy + e.r * Math.sin(e.a1) },
       ];
+    case "path":
+      return pathAnchors(e.start, e.segs);
     case "text":
       return [{ x: e.x, y: e.y }];
   }
 }
+
+/** Pontos usados para enquadramento e hit-test (curvas entram amostradas). */
+export function outlinePoints(e: Entity): Vec2[] {
+  return e.type === "path" ? samplePath(e.start, e.segs, e.closed, 10) : entityPoints(e);
+}
+
 
 export type Snap = { p: Vec2; kind: "grid" | "end" | "mid" | "center" | "cross" | "near" };
 
