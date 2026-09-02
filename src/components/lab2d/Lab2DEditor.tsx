@@ -143,6 +143,10 @@ const PRIMARY: Tool[] = [
   "pan",
 ];
 
+const ZOOM_MIN = 0.05;
+const ZOOM_MAX = 30;
+
+
 
 type Measure = { a: Vec2; b: Vec2 };
 
@@ -196,6 +200,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const future = useRef<Entity[][]>([]);
   const panRef = useRef<{ x: number; y: number } | null>(null);
   const moveRef = useRef<{ from: Vec2; ids: string[]; base: Entity[] } | null>(null);
+  /* ponteiros ativos (toque/caneta/mouse) para gesto de pinça */
+  const ptrsRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ dist: number; mx: number; my: number } | null>(null);
+  const gestureUntilRef = useRef(0);
+  const [zoomHud, setZoomHud] = useState<number | null>(null);
+  const hudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* ------------------------------------------- projeto, planos e autosave */
   useEffect(() => {
@@ -311,6 +321,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   /* ------------------------------------------------------------ zoom roda */
   const viewRef = useRef(view);
   viewRef.current = view;
+
+  const flashZoom = useCallback((k: number) => {
+    setZoomHud(k);
+    if (hudTimer.current) clearTimeout(hudTimer.current);
+    hudTimer.current = setTimeout(() => setZoomHud(null), 600);
+  }, []);
+
+  /** único ponto de verdade do zoom: escala ancorada num ponto de tela */
+  const zoomAt = useCallback(
+    (factor: number, px: number, py: number) => {
+      const v = viewRef.current;
+      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * factor));
+      const ratio = next / v.k;
+      const nv = { k: next, tx: px - (px - v.tx) * ratio, ty: py - (py - v.ty) * ratio };
+      viewRef.current = nv;
+      setView(nv);
+      return nv;
+    },
+    [],
+  );
+
   useEffect(() => {
     const el = svgRef.current;
     if (!el) return;
@@ -318,16 +349,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       ev.preventDefault();
       const dy = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 100 : 1);
       const r = el.getBoundingClientRect();
-      const px = ev.clientX - r.left;
-      const py = ev.clientY - r.top;
-      const v = viewRef.current;
-      const next = Math.min(30, Math.max(0.05, v.k * Math.exp(-dy * 0.0015)));
-      const ratio = next / v.k;
-      setView({ k: next, tx: px - (px - v.tx) * ratio, ty: py - (py - v.ty) * ratio });
+      // ctrlKey = pinça de trackpad: mesma equação, ancorada no cursor
+      const intensity = ev.ctrlKey ? 0.01 : 0.0015;
+      const v = zoomAt(Math.exp(-dy * intensity), ev.clientX - r.left, ev.clientY - r.top);
+      flashZoom(v.k);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  }, [zoomAt, flashZoom]);
 
   /* ---------------------------------------------------------- utilidades */
   const visible = useMemo(
@@ -383,8 +412,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const onPointerDown = (ev: React.PointerEvent) => {
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
+    ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+
+    // segundo dedo com a ferramenta MÃO ativa: inicia pinça, sem salto
+    if (tool === "pan" && ptrsRef.current.size >= 2) {
+      const [a, b] = [...ptrsRef.current.values()];
+      if (a && b) {
+        pinchRef.current = {
+          dist: Math.hypot(b.x - a.x, b.y - a.y) || 1,
+          mx: (a.x + b.x) / 2,
+          my: (a.y + b.y) / 2,
+        };
+        panRef.current = null;
+      }
+      return;
+    }
+    // ignora toques fantasma logo após um gesto
+    if (performance.now() < gestureUntilRef.current) return;
+
     const raw = toWorld(ev);
     const p = snapPoint(raw);
+
 
     if (tool === "pan" || ev.button === 1) {
       panRef.current = { x: ev.clientX, y: ev.clientY };
@@ -528,6 +576,33 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   };
 
   const onPointerMove = (ev: React.PointerEvent) => {
+    if (ptrsRef.current.has(ev.pointerId))
+      ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+
+    // ---- pinça (2 ponteiros, ferramenta MÃO) ----
+    if (pinchRef.current && ptrsRef.current.size >= 2) {
+      ev.preventDefault();
+      const [a, b] = [...ptrsRef.current.values()];
+      if (!a || !b) return;
+      const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      const prev = pinchRef.current;
+      const factor = Math.min(2, Math.max(0.5, d / prev.dist));
+      const r = svgRef.current!.getBoundingClientRect();
+      const v = viewRef.current;
+      // ponto de mundo sob o ponto médio anterior
+      const wx = (prev.mx - r.left - v.tx) / v.k;
+      const wy = (prev.my - r.top - v.ty) / v.k;
+      const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * factor));
+      const nv = { k, tx: mx - r.left - wx * k, ty: my - r.top - wy * k };
+      viewRef.current = nv;
+      setView(nv);
+      flashZoom(k);
+      pinchRef.current = { dist: d, mx, my };
+      return;
+    }
+
     const raw = toWorld(ev);
     setCursor(raw);
     if (snapOn) {
@@ -541,6 +616,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setView((v) => ({ ...v, tx: v.tx + dx, ty: v.ty + dy }));
       return;
     }
+
     if (dragNode) {
       const p = snapPoint(raw);
       setEntities((list) =>
@@ -592,8 +668,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = (ev?: React.PointerEvent) => {
+    if (ev) ptrsRef.current.delete(ev.pointerId);
+    const wasPinching = pinchRef.current !== null;
+    if (wasPinching && ptrsRef.current.size < 2) {
+      pinchRef.current = null;
+      gestureUntilRef.current = performance.now() + 350;
+      // continua o pan com o dedo restante, sem salto
+      const rest = [...ptrsRef.current.values()][0];
+      panRef.current = rest && tool === "pan" ? { ...rest } : null;
+      return;
+    }
+    if (wasPinching) return;
     panRef.current = null;
+
     if (dragNode) {
       setDragNode(null);
       past.current = [...past.current, entities];
@@ -1079,6 +1167,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
             onDoubleClick={() => tool === "polyline" && finishPolyline(false)}
             role="application"
             aria-label="Prancheta vetorial"
@@ -1268,6 +1357,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </svg>
 
           <Rulers view={view} />
+
+          {zoomHud !== null && (
+            <div className="metal pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 font-mono text-[11px] text-accent tabular-nums">
+              {Math.round(zoomHud * 100)}%
+            </div>
+          )}
 
           {focus && (
             <button
