@@ -425,16 +425,26 @@ export function VisionDialog({
               <Slider label="Opacidade" value={opacity} min={0.2} max={1} step={0.05} onChange={setOpacity} />
             </div>
             <Section title="Modo de vetorização" icon={Spline}>
-              <div className="flex gap-1">
+              <div className="flex flex-wrap gap-1">
                 <Toggle active={mode === "tecnico"} onClick={() => setMode("tecnico")} label="técnico" />
                 <Toggle active={mode === "logo"} onClick={() => setMode("logo")} label="logo (curvas)" />
+                <Toggle active={mode === "tracado"} onClick={() => setMode("tracado")} label="traçado (centro)" />
               </div>
               <p className="font-mono text-[10px] text-muted-foreground">
                 {mode === "tecnico"
                   ? "Reconhece linhas, arcos e círculos de desenhos técnicos."
-                  : "Preserva curvas de Bézier reais — exporta SPLINE, sem microsegmentos."}
+                  : mode === "logo"
+                    ? "Preserva curvas de Bézier reais — exporta SPLINE, sem microsegmentos."
+                    : "Extrai a LINHA CENTRAL do traço à mão — um traço, uma polilinha. Fotografe de cima, paralelo ao papel, com luz uniforme."}
               </p>
+              {Math.min(img.widthPx, img.heightPx) < 600 && (
+                <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-500">
+                  Imagem de baixa resolução detectada. O resultado pode ter bordas imprecisas. Prefira a
+                  maior versão disponível.
+                </p>
+              )}
             </Section>
+
             <div className="flex items-center gap-2">
               <Chip icon={RotateCw} label="Girar 90°" onClick={() => setRotation((r) => (r + 90) % 360)} />
               <span className="font-mono text-[10px] text-muted-foreground">
