@@ -646,6 +646,14 @@ export function fromDxf(doc: DxfDocument, layer: LayerId): Entity[] {
         a1: rad(e.startAngle),
       });
     }
+    if (e.type === "SPLINE" && e.controls.length >= 4) {
+      const c = e.controls.map((p) => ({ x: p.x, y: -p.y }));
+      const segs: BezierSeg[] = [];
+      for (let i = 0; i + 3 < c.length; i += 3)
+        segs.push({ c1: c[i + 1]!, c2: c[i + 2]!, p: c[i + 3]! });
+      if (segs.length)
+        out.push({ id: uid(), layer, type: "path", start: c[0]!, segs, closed: !!e.closed });
+    }
   }
 
   return out;
