@@ -162,7 +162,7 @@ function Inicio() {
             </div>
             <span className="font-display text-sm font-medium tracking-wide">ESTUDOS</span>
             <span className="font-mono text-[10px] text-muted-foreground">
-              {DEMO_PROJECTS.length} projetos ativos
+              Fórmulas e aulas
             </span>
           </div>
           <div className="pointer-events-none h-20 w-28 shrink-0 text-muted-foreground/60">
