@@ -73,14 +73,32 @@ export function Wire3D({
   }, [model, cam, scale, k]);
 
   const maxDepth = Math.max(1, ...edges.map((e) => Math.abs(e.depth)));
+  const uid = useMemo(() => Math.random().toString(36).slice(2, 8), []);
+  const vertices = useMemo(() => {
+    const seen = new Set<string>();
+    const out: { x: number; y: number; depth: number }[] = [];
+    for (const e of edges) {
+      for (const p of [e.pa, e.pb]) {
+        const key = `${p.x.toFixed(1)}|${p.y.toFixed(1)}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(p);
+      }
+    }
+    return out;
+  }, [edges]);
 
   return (
     <svg
       ref={host}
       viewBox={`${-VB / 2} ${-VB / 2} ${VB} ${VB}`}
-      className={cn("touch-none select-none", interactive && "cursor-grab active:cursor-grabbing", className)}
+      className={cn(
+        "holo-stage touch-none select-none",
+        interactive && "cursor-grab active:cursor-grabbing",
+        className,
+      )}
       role="img"
-      aria-label="Modelo tridimensional vetorial"
+      aria-label="Holograma tridimensional da peça"
       onPointerDown={(ev) => {
         if (!interactive) return;
         drag.current = { x: ev.clientX, y: ev.clientY };
@@ -100,29 +118,79 @@ export function Wire3D({
       onPointerUp={() => (drag.current = null)}
       onPointerLeave={() => (drag.current = null)}
     >
-      {faces.map((f, i) => (
-        <polygon
-          key={`f${i}`}
-          points={f.d}
-          className="fill-accent2"
-          fillOpacity={(0.05 + 0.06 * ((f.depth + maxDepth) / (2 * maxDepth))).toFixed(4)}
-          stroke="none"
-        />
-      ))}
-      {edges.map((e, i) => (
-        <line
-          key={`e${i}`}
-          x1={e.pa.x.toFixed(3)}
-          y1={e.pa.y.toFixed(3)}
-          x2={e.pb.x.toFixed(3)}
-          y2={e.pb.y.toFixed(3)}
-          stroke="currentColor"
-          strokeWidth={0.55}
-          strokeOpacity={(0.25 + 0.6 * ((e.depth + maxDepth) / (2 * maxDepth))).toFixed(4)}
-          strokeLinecap="round"
-        />
-      ))}
+      <defs>
+        <filter id={`glow-${uid}`} x="-40%" y="-40%" width="180%" height="180%">
+          <feGaussianBlur stdDeviation="1.6" result="b1" />
+          <feGaussianBlur stdDeviation="4" result="b2" />
+          <feMerge>
+            <feMergeNode in="b2" />
+            <feMergeNode in="b1" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <linearGradient id={`scan-${uid}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--holo)" stopOpacity="0" />
+          <stop offset="50%" stopColor="var(--holo)" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="var(--holo)" stopOpacity="0" />
+        </linearGradient>
+        <clipPath id={`clip-${uid}`}>
+          <rect x={-VB / 2} y={-VB / 2} width={VB} height={VB} />
+        </clipPath>
+      </defs>
 
+      <g filter={`url(#glow-${uid})`} color="var(--holo)">
+        {faces.map((f, i) => (
+          <polygon
+            key={`f${i}`}
+            points={f.d}
+            fill="var(--holo)"
+            fillOpacity={(0.04 + 0.08 * ((f.depth + maxDepth) / (2 * maxDepth))).toFixed(4)}
+            stroke="none"
+          />
+        ))}
+        {edges.map((e, i) => (
+          <line
+            key={`e${i}`}
+            x1={e.pa.x.toFixed(3)}
+            y1={e.pa.y.toFixed(3)}
+            x2={e.pb.x.toFixed(3)}
+            y2={e.pb.y.toFixed(3)}
+            stroke="var(--holo)"
+            strokeWidth={0.6}
+            strokeOpacity={(0.3 + 0.65 * ((e.depth + maxDepth) / (2 * maxDepth))).toFixed(4)}
+            strokeLinecap="round"
+          />
+        ))}
+        {vertices.map((p, i) => (
+          <circle
+            key={`v${i}`}
+            cx={p.x.toFixed(3)}
+            cy={p.y.toFixed(3)}
+            r={0.9}
+            fill="var(--holo)"
+            fillOpacity={(0.35 + 0.5 * ((p.depth + maxDepth) / (2 * maxDepth))).toFixed(4)}
+          />
+        ))}
+      </g>
+
+      <g clipPath={`url(#clip-${uid})`}>
+        <rect
+          x={-VB / 2}
+          y={-VB / 2}
+          width={VB}
+          height={VB * 0.22}
+          fill={`url(#scan-${uid})`}
+          opacity="0.7"
+        >
+          <animateTransform
+            attributeName="transform"
+            type="translate"
+            values={`0 0; 0 ${VB}; 0 0`}
+            dur="6s"
+            repeatCount="indefinite"
+          />
+        </rect>
+      </g>
     </svg>
   );
 }
