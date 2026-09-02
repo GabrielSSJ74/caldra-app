@@ -706,8 +706,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const wy = (prev.my - r.top - v.ty) / v.k;
       const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * factor));
       const nv = { k, tx: mx - r.left - wx * k, ty: my - r.top - wy * k };
-      viewRef.current = nv;
-      setView(nv);
+      applyView(nv);
       flashZoom(k);
       markGesture();
       pinchRef.current = { dist: d, mx, my };
