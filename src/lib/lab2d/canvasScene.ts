@@ -61,7 +61,9 @@ function traceEntity(ctx: CanvasRenderingContext2D, e: Entity, lod: boolean) {
     }
     case "path": {
       ctx.moveTo(e.start.x, e.start.y);
-      for (const s of e.segs) ctx.bezierCurveTo(s.c1.x, s.c1.y, s.c2.x, s.c2.y, s.to.x, s.to.y);
+      for (const s of e.segs)
+        if (s.line) ctx.lineTo(s.p.x, s.p.y);
+        else ctx.bezierCurveTo(s.c1.x, s.c1.y, s.c2.x, s.c2.y, s.p.x, s.p.y);
       if (e.closed) ctx.closePath();
       break;
     }
