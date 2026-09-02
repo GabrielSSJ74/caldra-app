@@ -8,13 +8,13 @@ import { Metric, Panel, SectionLabel } from "@/components/chameleon/ui";
 export const Route = createFileRoute("/planificacao")({
   head: () => ({
     meta: [
-      { title: "Planificação — CHAMELEON Caldeireiro" },
+      { title: "Planificação — CALDRA" },
       {
         name: "description",
         content:
           "Aproveitamento de chapa, cálculo de peso e distribuição de peças no formato comercial.",
       },
-      { property: "og:title", content: "Planificação — CHAMELEON Caldeireiro" },
+      { property: "og:title", content: "Planificação — CALDRA" },
       {
         property: "og:description",
         content: "Calcule aproveitamento de chapa, sobras e massa antes de cortar.",

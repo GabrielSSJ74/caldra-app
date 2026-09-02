@@ -6,7 +6,7 @@
 @custom-variant mestre (&:is(.mestre *));
 
 /*
- * CHAMELEON — Laboratório Caldeireiro
+ * CALDRA — Traçado e Planificação Zero Fresta
  * Design system: "Engineering Glass"
  * Todos os tokens em oklch. Nunca usar cores literais nos componentes.
  */
@@ -280,4 +280,109 @@
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--muted-foreground);
+}
+
+/* ——— acento cromático selecionável (Âmbar / Azul Real) ——— */
+.accent-blue {
+  --primary: oklch(0.75 0.145 226); /* #00CCFF */
+  --primary-foreground: oklch(0.16 0.01 240);
+  --accent: oklch(0.75 0.145 226);
+  --accent-foreground: oklch(0.16 0.01 240);
+  --accent2: oklch(0.86 0.14 195);
+  --ring: oklch(0.75 0.145 226);
+  --gradient-brand: linear-gradient(120deg, var(--accent), oklch(0.86 0.14 195));
+}
+
+/* ——— holograma 3D ——— */
+:root {
+  --holo: oklch(0.9 0.16 190); /* #00FFEF */
+}
+
+@utility holo-text {
+  color: var(--holo);
+}
+
+@keyframes holo-scan {
+  from {
+    transform: translateY(-120%);
+  }
+  to {
+    transform: translateY(320%);
+  }
+}
+
+@keyframes holo-flicker {
+  0%,
+  100% {
+    opacity: 0.92;
+  }
+  46% {
+    opacity: 0.86;
+  }
+  48% {
+    opacity: 1;
+  }
+  72% {
+    opacity: 0.9;
+  }
+}
+
+@utility holo-stage {
+  position: relative;
+  animation: holo-flicker 5.5s ease-in-out infinite;
+}
+
+@utility holo-scanline {
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in oklab, var(--holo) 26%, transparent),
+    transparent
+  );
+  animation: holo-scan 4.5s linear infinite;
+}
+
+/* ——— fade global entre temas / acentos ——— */
+@keyframes theme-fade {
+  0% {
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.theme-fade-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  background: var(--background);
+  animation: theme-fade 0.55s ease-in-out both;
+}
+
+/* ——— introdução CALDRA ——— */
+@keyframes caldra-draw {
+  from {
+    stroke-dashoffset: 340;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes caldra-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+    letter-spacing: 0.5em;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    letter-spacing: 0.14em;
+  }
 }

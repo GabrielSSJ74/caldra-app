@@ -134,7 +134,7 @@ export const MODULES: Module[] = [
         "Divide a superfície em triângulos e rebate cada um pelo comprimento verdadeiro. Método obrigatório em transições oblíquas.",
         "Transição 400×400 → Ø300 com 6 divisões por quadrante gera 28 triângulos.",
         "L = √(Δx² + Δy² + Δz²)",
-        "Base do módulo Quadrado → Redondo do Chameleon.",
+        "Base do módulo Quadrado → Redondo do CALDRA.",
         "Calcule a geratriz do vértice (200;200;0) até (150;0;500).",
       ),
       lesson(

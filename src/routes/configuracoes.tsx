@@ -4,19 +4,24 @@ import { toast } from "sonner";
 import { Sparkles } from "lucide-react";
 import { PLAN_LABEL } from "@/lib/subscription/features";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
-import { useSettings, type ThemeMode, type Unit } from "@/lib/settings/SettingsProvider";
+import {
+  useSettings,
+  type AccentColor,
+  type ThemeMode,
+  type Unit,
+} from "@/lib/settings/SettingsProvider";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/configuracoes")({
   head: () => ({
     meta: [
-      { title: "Configurações — CHAMELEON Caldeireiro" },
+      { title: "Configurações — CALDRA" },
       {
         name: "description",
         content: "Ative o Modo Mestre, escolha unidades, precisão decimal e tema da interface.",
       },
-      { property: "og:title", content: "Configurações — CHAMELEON Caldeireiro" },
+      { property: "og:title", content: "Configurações — CALDRA" },
       {
         property: "og:description",
         content: "Preferências do laboratório e ativação do Modo Mestre.",
@@ -31,11 +36,16 @@ const THEMES: { id: ThemeMode; label: string }[] = [
   { id: "light", label: "Claro" },
   { id: "system", label: "Sistema" },
 ];
+const ACCENTS: { id: AccentColor; label: string; swatch: string }[] = [
+  { id: "amber", label: "Âmbar", swatch: "#F59E0B" },
+  { id: "blue", label: "Azul Real", swatch: "#00CCFF" },
+];
 const UNITS: Unit[] = ["mm", "cm", "m", "in"];
 
 function Configuracoes() {
   const { plan, isMestre, unlockWithCode, reset } = useFeatureAccess();
-  const { theme, setTheme, unit, setUnit, precision, setPrecision } = useSettings();
+  const { theme, setTheme, accent, setAccent, unit, setUnit, precision, setPrecision } =
+    useSettings();
   const [code, setCode] = useState("");
 
   const submit = (e: React.FormEvent) => {
@@ -114,6 +124,31 @@ function Configuracoes() {
               </button>
             ))}
           </div>
+
+          <div className="mt-3">
+            <SectionLabel>Cor de destaque</SectionLabel>
+            <div className="flex gap-1.5">
+              {ACCENTS.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => setAccent(a.id)}
+                  className={cn(
+                    "flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
+                    accent === a.id
+                      ? "border-accent/25 bg-accent/10 text-accent"
+                      : "border-line text-muted-foreground",
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className="size-2.5 rounded-full"
+                    style={{ background: a.swatch }}
+                  />
+                  {a.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div>
@@ -153,7 +188,7 @@ function Configuracoes() {
       </Panel>
 
       <p className="text-center font-mono text-[10px] text-muted-foreground">
-        CHAMELEON · Laboratório Caldeireiro
+        CALDRA · Traçado e Planificação Zero Fresta
       </p>
     </div>
   );

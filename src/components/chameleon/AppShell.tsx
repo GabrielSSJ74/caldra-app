@@ -5,11 +5,13 @@ import { cn } from "@/lib/utils";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { MasterModeDialog } from "./MasterModeDialog";
 import { BubbleNav } from "./BubbleNav";
+import { Intro, useIntro } from "./Intro";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [masterOpen, setMasterOpen] = useState(false);
   const { isMestre } = useFeatureAccess();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const intro = useIntro();
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-background text-foreground">
@@ -43,6 +45,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <BubbleNav />
       <MasterModeDialog open={masterOpen} onOpenChange={setMasterOpen} />
+      {intro.show && <Intro onDone={intro.done} />}
     </div>
   );
 }

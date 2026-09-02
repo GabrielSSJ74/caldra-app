@@ -263,7 +263,7 @@ export function printSheet(svg: string, meta: SheetMeta, widthMm: number, height
   footer b { color:#10151c; font-weight:600; }
 </style></head><body>
 <header>
-  <div><h1>CHAMELEON LAB</h1><div class="sub">Laboratório Caldeireiro</div></div>
+  <div><h1>CALDRA</h1><div class="sub">Traçado e Planificação Zero Fresta</div></div>
   <div style="text-align:right"><div style="font-size:13px;font-weight:600">${escapeXml(meta.project)}</div><div class="sub">${escapeXml(meta.plan)}</div></div>
 </header>
 <div class="stage">${svg}</div>

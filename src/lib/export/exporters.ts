@@ -63,7 +63,7 @@ export function exportSvgAsPdf(svg: SVGSVGElement, info: SheetInfo, rows: string
     .map(([k, v]) => `<tr><td>${k}</td><td class="num">${v}</td></tr>`)
     .join("");
   win.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
-<title>${info.pieceName} — CHAMELEON</title>
+<title>${info.pieceName} — CALDRA</title>
 <style>
   @page { size: A4 landscape; margin: 10mm; }
   body { font-family: ui-sans-serif, system-ui, sans-serif; color:#10151c; margin:0; }
@@ -81,7 +81,7 @@ export function exportSvgAsPdf(svg: SVGSVGElement, info: SheetInfo, rows: string
   footer { margin-top:8px; font-size:9px; color:#5b6672; display:flex; justify-content:space-between; }
 </style></head><body>
 <header>
-  <div><h1>CHAMELEON</h1><div class="sub">Laboratório Caldeireiro</div></div>
+  <div><h1>CALDRA</h1><div class="sub">Traçado e Planificação Zero Fresta</div></div>
   <div style="text-align:right"><div style="font-size:13px;font-weight:600">${info.pieceName}</div><div class="sub">${info.project}</div></div>
 </header>
 <main>
