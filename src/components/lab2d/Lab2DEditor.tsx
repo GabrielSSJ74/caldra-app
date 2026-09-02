@@ -210,6 +210,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const gestureUntilRef = useRef(0);
   const [zoomHud, setZoomHud] = useState<number | null>(null);
   const hudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /* gesto ativo → renderização simplificada (LOD); refina ao soltar */
+  const [gesturing, setGesturing] = useState(false);
+  const gestureTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const markGesture = useCallback(() => {
+    setGesturing(true);
+    if (gestureTimer.current) clearTimeout(gestureTimer.current);
+    gestureTimer.current = setTimeout(() => setGesturing(false), 140);
+  }, []);
 
   /* ------------------------------------------- projeto, planos e autosave */
   useEffect(() => {
@@ -225,21 +233,34 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     future.current = [];
   }, [projectId]);
 
+  /* autosave fora do caminho crítico: debounce + tempo ocioso do navegador */
   useEffect(() => {
     if (!project || !planId) return;
+    let idle = 0;
     const t = setTimeout(() => {
-      const next: Project = {
-        ...project,
-        layers,
-        lastPlanId: planId,
-        plans: project.plans.map((pl) => (pl.id === planId ? { ...pl, entities } : pl)),
+      const run = () => {
+        const next: Project = {
+          ...project,
+          layers,
+          lastPlanId: planId,
+          plans: project.plans.map((pl) => (pl.id === planId ? { ...pl, entities } : pl)),
+        };
+        saveProject(next);
+        setProject(next);
       };
-      saveProject(next);
-      setProject(next);
-    }, 600);
-    return () => clearTimeout(t);
+      const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: object) => number })
+        .requestIdleCallback;
+      if (ric) idle = ric(run, { timeout: 1000 });
+      else run();
+    }, 1500);
+    return () => {
+      clearTimeout(t);
+      const cic = (window as unknown as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback;
+      if (idle && cic) cic(idle);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entities, layers, planId]);
+
 
   /* --------------------------------- paisagem automática no celular */
   useEffect(() => {
