@@ -1305,11 +1305,13 @@ function IconBtn({
   onClick,
   icon: Icon,
   flat,
+  active,
 }: {
   label: string;
   onClick: () => void;
   icon: typeof Minus;
   flat?: boolean;
+  active?: boolean;
 }) {
   return (
     <button
@@ -1317,14 +1319,81 @@ function IconBtn({
       title={label}
       aria-label={label}
       className={cn(
-        "grid size-8 place-items-center rounded-xl text-muted-foreground transition-colors hover:text-accent",
-        !flat && "glass",
+        "grid size-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:text-accent",
+        !flat && "bg-background/40",
+        active && "bg-accent/15 text-accent",
       )}
     >
       <Icon className="size-[15px]" />
     </button>
   );
 }
+
+function ToolBtn({
+  t,
+  active,
+  onPick,
+}: {
+  t: { id: Tool; icon: typeof Minus; label: string; key: string };
+  active: boolean;
+  onPick: (id: Tool) => void;
+}) {
+  return (
+    <button
+      onClick={() => onPick(t.id)}
+      title={`${t.label} · ${t.key}`}
+      aria-label={t.label}
+      className={cn(
+        "grid size-9 shrink-0 place-items-center rounded-xl transition-all",
+        active ? "bg-accent/15 text-accent" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      <t.icon className="size-[15px]" />
+    </button>
+  );
+}
+
+function PanelTab({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "rounded-lg px-2 py-1 font-mono text-[9px] tracking-[0.14em] uppercase transition-colors",
+        active ? "bg-accent/15 text-accent" : "text-muted-foreground hover:text-foreground",
+      )}
+    >
+      {label}
+    </button>
+  );
+}
+
+function MenuItem({
+  label,
+  icon: Icon,
+  onClick,
+}: {
+  label: string;
+  icon: typeof Minus;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <Icon className="size-3.5 shrink-0" /> {label}
+    </button>
+  );
+}
+
 
 function buildDraft(tool: Tool, a: Vec2, b: Vec2, layer: string, radius: number): Entity | null {
   switch (tool) {
