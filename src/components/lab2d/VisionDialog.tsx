@@ -18,7 +18,7 @@ import {
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import type { Entity } from "@/lib/lab2d/core";
 
-import { CUT_COLOR, MARK_COLOR } from "@/lib/lab2d/technical";
+import { CUT_COLOR, DIMENSION_COLOR, MARK_COLOR } from "@/lib/lab2d/technical";
 import { importImage, type ImportedImage } from "@/lib/vision/imageImportService";
 import type { Prim, Tolerance } from "@/lib/vision/geometryRecognizer";
 import { toEntities, type VisionAnalysis } from "@/lib/vision/vectorizer";
@@ -1303,7 +1303,7 @@ function PreviewCanvas({
         </g>
       )}
       {manual && snapTol > 0 && (
-        <g fill="none" stroke="#00CCFF" opacity={0.5} strokeWidth={Math.max(0.4, view.w / 900)}>
+        <g fill="none" stroke={DIMENSION_COLOR} opacity={0.5} strokeWidth={Math.max(0.4, view.w / 900)}>
           {targets.map((t, i) => (
             <circle key={i} cx={t.x} cy={t.y} r={nodeR * 0.9} />
           ))}
@@ -1318,7 +1318,7 @@ function PreviewCanvas({
         </g>
       ))}
       {calPts.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r={nodeR} fill="#00CCFF" />
+        <circle key={i} cx={p.x} cy={p.y} r={nodeR} fill={DIMENSION_COLOR} />
       ))}
     </svg>
     </div>
