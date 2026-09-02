@@ -482,7 +482,7 @@ export function SquareToRoundStudio() {
                 <button
                   onClick={() => {
                     if (!can("lab2d")) {
-                      toast.error("Laboratório 2D disponível no Modo Mestre.");
+                      toast.error("CHAMFER disponível no Modo Mestre.");
                       return;
                     }
 
@@ -494,7 +494,7 @@ export function SquareToRoundStudio() {
                   }}
                   className="brand-gradient flex w-full items-center justify-center gap-2 rounded-xl py-2.5 font-display text-[13px] font-semibold text-background"
                 >
-                  <PenTool className="size-4" /> Abrir no Laboratório 2D
+                  <PenTool className="size-4" /> Abrir no Chamfer
                 </button>
                 <div className="hidden">
                   <DevelopmentView ref={svgRef} pattern={result.development} />

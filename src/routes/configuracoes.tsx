@@ -101,7 +101,7 @@ function Configuracoes() {
         {isMestre ? (
           <div>
             <p className="text-[13px] text-muted-foreground">
-              Laboratório completo ativo: explicações passo a passo, exportação DXF e PDF, editor 2D,
+              Laboratório completo ativo: explicações passo a passo, exportação DXF e PDF, CHAMFER,
               escola e biblioteca integrais.
             </p>
             <button

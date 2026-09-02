@@ -6,13 +6,13 @@ import { Lab2DEditor } from "@/components/lab2d/Lab2DEditor";
 export const Route = createFileRoute("/desenho-2d/$projectId")({
   head: () => ({
     meta: [
-      { title: "Laboratório 2D — CALDRA" },
+      { title: "CHAMFER — CALDRA" },
       {
         name: "description",
         content:
           "Prancheta vetorial em milímetros: snap geométrico, planos, cotas de conferência e exportação DXF/SVG/PNG/PDF.",
       },
-      { property: "og:title", content: "Laboratório 2D — CALDRA" },
+      { property: "og:title", content: "CHAMFER — CALDRA" },
       {
         property: "og:description",
         content: "Estação CAD de bolso para caldeiraria e corte CNC.",
@@ -29,7 +29,7 @@ function Lab2DPage() {
   return (
     <FeatureGate
       feature="lab2d"
-      title="Laboratório 2D"
+      title="CHAMFER"
       description="A prancheta vetorial faz parte do Modo Mestre."
     >
       <div className="space-y-2">
