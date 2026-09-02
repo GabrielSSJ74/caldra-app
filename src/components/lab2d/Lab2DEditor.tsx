@@ -719,7 +719,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const dx = ev.clientX - panRef.current.x;
       const dy = ev.clientY - panRef.current.y;
       panRef.current = { x: ev.clientX, y: ev.clientY };
-      setView((v) => ({ ...v, tx: v.tx + dx, ty: v.ty + dy }));
+      const v = viewRef.current;
+      applyView({ ...v, tx: v.tx + dx, ty: v.ty + dy });
       markGesture();
       return;
     }
