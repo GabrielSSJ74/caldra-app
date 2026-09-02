@@ -586,6 +586,38 @@ export function VisionDialog({
               )}
             </Section>
 
+            {profile && suggestion && (
+              <Section title="Análise da imagem" icon={Scan}>
+                <ul className="space-y-0.5 font-mono text-[10px] text-muted-foreground">
+                  <li>
+                    {profile.widthPx} × {profile.heightPx} px analisados
+                    {profile.small ? " · resolução baixa" : " · resolução adequada"}
+                  </li>
+                  <li>
+                    contraste {Math.round(profile.contrast * 100)}% · ruído{" "}
+                    {Math.round(profile.noise * 100)}% · traço médio{" "}
+                    {profile.strokePx.toFixed(1)} px
+                  </li>
+                  <li>
+                    fundo {profile.uniformBackground ? "uniforme" : "irregular"} ·{" "}
+                    {profile.flatArt ? "arte chapada" : "tons contínuos"}
+                  </li>
+                </ul>
+                <p className="font-mono text-[10px] text-accent">
+                  Sugestão: modo {suggestion.mode} · tolerância {suggestion.tolerance} · limiar{" "}
+                  {suggestion.threshold}
+                  {suggestion.adaptive ? " · adaptativo" : ""}
+                  {suggestion.normalize ? " · normalizar" : ""}
+                </p>
+                <ul className="space-y-0.5 font-mono text-[10px] text-muted-foreground">
+                  {suggestion.reasons.map((r, i) => (
+                    <li key={i}>· {r}</li>
+                  ))}
+                </ul>
+                <Chip icon={Check} label="Usar sugestão" onClick={useSuggestion} />
+              </Section>
+            )}
+
             <div className="flex items-center gap-2">
               <Chip
                 icon={RotateCw}
@@ -596,7 +628,7 @@ export function VisionDialog({
                 {img.widthPx} × {img.heightPx} px
               </span>
               <button
-                onClick={() => void run()}
+                onClick={run}
                 className="brand-gradient ml-auto rounded-xl px-4 py-2 font-display text-sm font-semibold text-background"
               >
                 Continuar
@@ -606,13 +638,24 @@ export function VisionDialog({
         )}
 
         {step === "analisando" && (
-          <div className="flex flex-col items-center gap-3 py-16">
+          <div className="flex flex-col items-center gap-3 py-14">
             <Loader2 className="size-6 animate-spin text-accent" />
             <p className="font-mono text-[11px] tracking-[0.2em] text-muted-foreground uppercase">
-              Analisando imagem…
+              {progress.stage}…
             </p>
+            <div className="h-1.5 w-56 overflow-hidden rounded-full bg-secondary">
+              <div
+                className="brand-gradient h-full transition-all"
+                style={{ width: `${Math.max(4, Math.min(100, progress.pct))}%` }}
+              />
+            </div>
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {Math.round(progress.pct)}%
+            </span>
+            <Chip icon={X} label="Cancelar" onClick={cancelRun} />
           </div>
         )}
+
 
         {step === "resultado" && img && logo && (
           <>
