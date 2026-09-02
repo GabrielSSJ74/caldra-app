@@ -8,15 +8,19 @@
  * Proibido: drawingColor = theme.primaryColor
  */
 
-export const CUT_COLOR = "#9A0526"; // vermelho escuro — corte
+export const CUT_COLOR = "#F59E0B"; // âmbar técnico — corte
 export const BEND_COLOR = "#A78BFA"; // violeta técnico — dobra
-export const MARK_COLOR = "#F59E0B"; // âmbar técnico — marcação
+export const MARK_COLOR = "#3B82F6"; // azul técnico — marcação
 export const CONSTRUCTION_COLOR = "#9AA4B0"; // cinza técnico claro — construção
 export const REFERENCE_COLOR = "#6B7480"; // cinza discreto — referência
-export const DIMENSION_COLOR = "#00CCFF"; // azul técnico fixo — cotas
+export const DIMENSION_COLOR = "#22C55E"; // verde técnico — cotas
 export const AXIS_COLOR = "#5A636E"; // cinza discreto — eixos
-export const SELECTION_COLOR = "#22D3EE"; // destaque temporário de seleção
-export const PREVIEW_COLOR = "#7DD3FC"; // destaque temporário de criação
+/** Destaques de interface — neutros, para nunca confundir com a paleta técnica. */
+export const SELECTION_COLOR = "#FFFFFF"; // destaque temporário de seleção/snap
+export const PREVIEW_COLOR = "#E2E8F0"; // destaque temporário de criação
+export const WARNING_COLOR = "#FB7185"; // alertas de validação (não é camada)
+/** Tinta única da folha exportada (PDF/PNG): sempre preto puro. */
+export const SHEET_INK = "#000000";
 
 export type TechLayerId = "corte" | "dobra" | "marcacao" | "construcao" | "referencia" | "cota";
 

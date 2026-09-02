@@ -523,10 +523,10 @@ export function verify(entities: Entity[]): Issue[] {
 
 /** Índice ACI aproximado por camada técnica (o hex exato vai no grupo 420). */
 const DXF_ACI: Record<TechLayerId, number> = {
-  corte: 1, // vermelho
-  marcacao: 30, // laranja/âmbar
+  corte: 30, // âmbar
+  marcacao: 5, // azul
   dobra: 200, // violeta
-  cota: 4, // ciano
+  cota: 3, // verde
   construcao: 8, // cinza
   referencia: 9, // cinza claro
 };

@@ -74,6 +74,7 @@ import {
   AXIS_COLOR,
   DIMENSION_COLOR,
   MARK_COLOR,
+  WARNING_COLOR,
   PREVIEW_COLOR,
   SELECTION_COLOR,
   layerOrder,
@@ -1448,7 +1449,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   cy={is.p.y}
                   r={6 / view.k}
                   fill="none"
-                  stroke={MARK_COLOR}
+                  stroke={WARNING_COLOR}
                   strokeWidth={1.5 / view.k}
                 />
               ))}

@@ -12,7 +12,7 @@
 import type { Vec2 } from "@/lib/geometry/types";
 import { bbox, type Entity, type Layer } from "@/lib/lab2d/core";
 import { autoDimensions } from "@/lib/lab2d/render";
-import { techStyle } from "@/lib/lab2d/technical";
+import { SHEET_INK, techStyle } from "@/lib/lab2d/technical";
 
 /* --------------------------------------------------------------- geometria */
 
@@ -186,7 +186,7 @@ export function renderSheet(
         y: p.y,
         text: e.text,
         sizePt: Math.max(5, e.size * k * 2.5),
-        color: style.color,
+        color: SHEET_INK,
         align: "left",
       });
       continue;
@@ -194,7 +194,7 @@ export function renderSheet(
     const cmds = entityCmds(e);
     if (!cmds.length) continue;
     shapes.push({
-      color: style.color,
+      color: SHEET_INK,
       widthMm: BASE_LW * style.weight,
       dash: dashFor(e.layer),
       cmds: map(cmds),
@@ -207,7 +207,7 @@ export function renderSheet(
     const a = P(d.a);
     const b = P(d.b);
     shapes.push({
-      color: dimStyle.color,
+      color: SHEET_INK,
       widthMm: BASE_LW * dimStyle.weight,
       dash: d.kind === "radial" ? [1.2, 0.8] : null,
       cmds: [
@@ -220,7 +220,7 @@ export function renderSheet(
       y: (a.y + b.y) / 2 - 1,
       text: d.label,
       sizePt: 6,
-      color: dimStyle.color,
+      color: SHEET_INK,
       align: "center",
       mono: true,
     });

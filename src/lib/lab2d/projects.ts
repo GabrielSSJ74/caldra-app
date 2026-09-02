@@ -4,6 +4,7 @@
  */
 
 import { DEFAULT_LAYERS, uid, type Entity, type Layer } from "./core";
+import { techColor } from "./technical";
 
 const KEY = "chameleon.lab2d.projects";
 
@@ -50,7 +51,14 @@ export function listProjects(): Project[] {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return [];
     const list = JSON.parse(raw) as Project[];
-    return Array.isArray(list) ? list.sort((a, b) => b.updatedAt - a.updatedAt) : [];
+    if (!Array.isArray(list)) return [];
+    // migração única: projetos antigos guardam a cor da camada; a paleta técnica manda
+    return list
+      .map((p) => ({
+        ...p,
+        layers: (p.layers ?? DEFAULT_LAYERS).map((l) => ({ ...l, color: techColor(l.id) })),
+      }))
+      .sort((a, b) => b.updatedAt - a.updatedAt);
   } catch {
     return [];
   }
