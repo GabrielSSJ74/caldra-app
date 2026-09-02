@@ -1622,6 +1622,7 @@ const TYPE_LABEL: Record<Entity["type"], string> = {
   polyline: "Polilinha",
   circle: "Círculo",
   arc: "Arco",
+  path: "Curva",
   text: "Texto",
 };
 
