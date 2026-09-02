@@ -345,7 +345,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   /* ------------------------------------------------------------ zoom roda */
   const viewRef = useRef(view);
-  viewRef.current = view;
+  /* durante um gesto o ref é a fonte da verdade (React só acompanha por quadro) */
+  const pendingView = useRef<{ tx: number; ty: number; k: number } | null>(null);
+  const rafView = useRef(0);
+  if (!pendingView.current) viewRef.current = view;
+
+  /** Aplica a viewport no máximo uma vez por quadro — evita render por evento. */
+  const applyView = useCallback((nv: { tx: number; ty: number; k: number }) => {
+    viewRef.current = nv;
+    pendingView.current = nv;
+    if (rafView.current) return;
+    rafView.current = requestAnimationFrame(() => {
+      rafView.current = 0;
+      const next = pendingView.current;
+      pendingView.current = null;
+      if (next) setView(next);
+    });
+  }, []);
+
 
   const flashZoom = useCallback((k: number) => {
     setZoomHud(k);
