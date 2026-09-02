@@ -1151,7 +1151,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         open={exportOpen}
         onOpenChange={setExportOpen}
         layers={layers}
-        projectName={project?.name ?? "Chameleon"}
+        projectName={project?.name ?? "CALDRA"}
         planName={project?.plans.find((p) => p.id === planId)?.name ?? "P01"}
         scopes={{
           selection: selected,
