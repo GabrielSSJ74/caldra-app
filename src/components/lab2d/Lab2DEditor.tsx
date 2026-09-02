@@ -21,6 +21,8 @@ import {
   RotateCw,
   Ruler,
   ScanSearch,
+  ScanEye,
+  Image as ImageIcon,
   Scissors,
   Spline,
   Square,
@@ -36,6 +38,7 @@ import {
 import type { Vec2 } from "@/lib/geometry/types";
 import { ExportDialog } from "@/components/lab2d/ExportDialog";
 import { ImportDialog, type ImportSource } from "@/components/lab2d/ImportDialog";
+import { VisionDialog, type VisionImageLayer } from "@/components/lab2d/VisionDialog";
 import {
   DEFAULT_LAYERS,
   bbox,
@@ -182,6 +185,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [liveMeasure, setLiveMeasure] = useState<Measure | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [importSrc, setImportSrc] = useState<ImportSource | null>(null);
+  const [visionOpen, setVisionOpen] = useState(false);
+  const [imageLayer, setImageLayer] = useState<VisionImageLayer | null>(null);
   const [issues, setIssues] = useState<{ message: string; p: Vec2 }[] | null>(null);
   const [offsetDist, setOffsetDist] = useState(5);
   const [filletR, setFilletR] = useState(10);
@@ -1343,6 +1348,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         layers={layers}
         onClose={() => setImportSrc(null)}
         onConfirm={onImportConfirm}
+      />
+      <VisionDialog
+        open={visionOpen}
+        onOpenChange={setVisionOpen}
+        onCreate={(next, image) => {
+          setImageLayer(image);
+          onImportConfirm(next);
+        }}
       />
     </div>
   );
