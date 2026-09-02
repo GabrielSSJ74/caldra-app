@@ -345,6 +345,17 @@ export function offsetEntity(e: Entity, d: number): Entity | null {
     return out;
   };
   if (e.type === "polyline") return { ...e, id: uid(), pts: shift(e.pts, e.closed) };
+  if (e.type === "path") {
+    // paralela de curva: o contorno amostrado é deslocado pela normal;
+    // furos recebem o sentido oposto (offset interno no corte).
+    const dir = e.hole ? -d : d;
+    const pts = samplePath(e.start, e.segs, false, 12);
+    const moved = shift(pts, e.closed);
+    return { id: uid(), layer: e.layer, type: "polyline", closed: e.closed, pts: moved.map((p, i) => ({
+      x: pts[i]!.x + (p.x - pts[i]!.x) * (dir / (d || 1)),
+      y: pts[i]!.y + (p.y - pts[i]!.y) * (dir / (d || 1)),
+    })) };
+  }
   if (e.type === "line") {
     const [a, b] = [
       { x: e.x1, y: e.y1 },
