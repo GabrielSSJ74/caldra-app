@@ -1,6 +1,14 @@
 import type { Vec2 } from "@/lib/geometry/types";
 import type { DxfDocument, DxfEntity } from "@/lib/dxf/dxfService";
 import {
+  flattenPath,
+  mapPath,
+  pathAnchors,
+  pathSegments,
+  samplePath,
+  type BezierSeg,
+} from "@/lib/lab2d/bezier";
+import {
   BEND_COLOR,
   CONSTRUCTION_COLOR,
   CUT_COLOR,
