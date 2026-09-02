@@ -533,7 +533,7 @@ export function VisionDialog({
 
         {step === "previa" && img && (
           <div className="flex min-h-0 flex-col gap-3">
-            <div className="relative flex w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-white" style={{ maxHeight: "45vh" }}>
+            <div className="relative flex aspect-[4/3] w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-white" style={{ maxHeight: "45vh" }}>
               <img
                 src={img.dataUrl}
                 alt={`Pré-visualização de ${img.name}`}
