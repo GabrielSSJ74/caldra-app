@@ -1,5 +1,13 @@
 import type { Vec2 } from "@/lib/geometry/types";
 import type { DxfDocument, DxfEntity } from "@/lib/dxf/dxfService";
+import {
+  BEND_COLOR,
+  CONSTRUCTION_COLOR,
+  CUT_COLOR,
+  DIMENSION_COLOR,
+  MARK_COLOR,
+  REFERENCE_COLOR,
+} from "@/lib/lab2d/technical";
 
 export type LayerId = string;
 
