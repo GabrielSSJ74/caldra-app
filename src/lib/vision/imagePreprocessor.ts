@@ -170,3 +170,94 @@ export function denoise(bin: Binary, strength = 1): Binary {
   }
   return { data: src, width: w, height: h };
 }
+
+/**
+ * Desfoque gaussiano separável — remove o "mosquito noise" de bordas em JPG
+ * antes do limiar, evitando ondulação no contorno cortado.
+ */
+export function gaussianBlur(image: ImageData, radius: number): ImageData {
+  const r = Math.max(0, Math.min(4, radius));
+  if (r < 0.1) return image;
+  const { width: w, height: h } = image;
+  const src = new Float32Array(w * h * 4);
+  for (let i = 0; i < src.length; i++) src[i] = image.data[i]!;
+
+  const sigma = r;
+  const k = Math.max(1, Math.ceil(r * 2));
+  const kernel: number[] = [];
+  let sum = 0;
+  for (let i = -k; i <= k; i++) {
+    const v = Math.exp(-(i * i) / (2 * sigma * sigma));
+    kernel.push(v);
+    sum += v;
+  }
+  for (let i = 0; i < kernel.length; i++) kernel[i] = kernel[i]! / sum;
+
+  const tmp = new Float32Array(src.length);
+  const pass = (input: Float32Array, output: Float32Array, horizontal: boolean) => {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        for (let c = 0; c < 4; c++) {
+          let acc = 0;
+          for (let i = -k; i <= k; i++) {
+            const sx = horizontal ? Math.min(w - 1, Math.max(0, x + i)) : x;
+            const sy = horizontal ? y : Math.min(h - 1, Math.max(0, y + i));
+            acc += input[(sy * w + sx) * 4 + c]! * kernel[i + k]!;
+          }
+          output[(y * w + x) * 4 + c] = acc;
+        }
+      }
+    }
+  };
+  pass(src, tmp, true);
+  pass(tmp, src, false);
+
+  const out = new ImageData(w, h);
+  for (let i = 0; i < out.data.length; i++) out.data[i] = Math.round(src[i]!);
+  return out;
+}
+
+/** Limiar fixo (0–255) sobre a luminância — usado quando há prévia manual. */
+export function thresholdBinarize(image: ImageData, threshold: number, invert = false): Binary {
+  const { width, height, data } = image;
+  const out = new Uint8Array(width * height);
+  for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+    const a = data[i + 3]! / 255;
+    const r = data[i]! * a + 255 * (1 - a);
+    const g = data[i + 1]! * a + 255 * (1 - a);
+    const b = data[i + 2]! * a + 255 * (1 - a);
+    const v = 0.299 * r + 0.587 * g + 0.114 * b;
+    out[p] = (invert ? v > threshold : v <= threshold) ? 1 : 0;
+  }
+  return { data: out, width, height };
+}
+
+/** Fechamento morfológico leve: tapa microfuros internos do traço. */
+export function closeHoles(bin: Binary, passes = 1): Binary {
+  let cur = bin;
+  for (let n = 0; n < passes; n++) {
+    const { width: w, height: h } = cur;
+    const dil = new Uint8Array(cur.data.length);
+    for (let y = 1; y < h - 1; y++)
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        dil[i] =
+          cur.data[i] ||
+          cur.data[i - 1] ||
+          cur.data[i + 1] ||
+          cur.data[i - w] ||
+          cur.data[i + w]
+            ? 1
+            : 0;
+      }
+    const ero = new Uint8Array(dil.length);
+    for (let y = 1; y < h - 1; y++)
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        ero[i] =
+          dil[i] && dil[i - 1] && dil[i + 1] && dil[i - w] && dil[i + w] ? 1 : 0;
+      }
+    cur = { data: ero, width: w, height: h };
+  }
+  return cur;
+}
