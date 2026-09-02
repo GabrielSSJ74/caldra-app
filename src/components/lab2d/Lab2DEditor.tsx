@@ -1550,67 +1550,173 @@ function Rulers({ view }: { view: { tx: number; ty: number; k: number } }) {
   );
 }
 
-function Properties({
+const TYPE_LABEL: Record<Entity["type"], string> = {
+  line: "Linha",
+  polyline: "Polilinha",
+  circle: "Círculo",
+  arc: "Arco",
+  text: "Texto",
+};
+
+const deg = (r: number) => (r * 180) / Math.PI;
+const rad = (d: number) => (d * Math.PI) / 180;
+
+/**
+ * DimensionEditor — painel universal de propriedades e dimensões.
+ * Funciona para qualquer entidade: edição numérica atualiza a geometria na hora.
+ */
+function DimensionEditor({
   e,
   onChange,
   layers,
+  actions,
 }: {
   e: Entity;
   onChange: (e: Entity) => void;
   layers: Layer[];
+  actions?: React.ReactNode;
 }) {
-  const field = (label: string, value: number, set: (n: number) => void) => (
-    <label key={label} className="flex items-center justify-between gap-2">
+  const field = (label: string, value: number, set: (n: number) => void, unit?: string) => (
+    <label key={label} className="flex items-center justify-between gap-2 py-0.5">
       <span className="font-mono text-[9px] text-muted-foreground uppercase">{label}</span>
-      <input
-        type="number"
-        value={Number(value.toFixed(2))}
-        onChange={(ev) => set(Number(ev.target.value))}
-        className="w-20 rounded-lg border border-line bg-background/40 px-1.5 py-0.5 text-right font-mono text-[11px] outline-none"
-      />
+      <span className="flex items-center gap-1">
+        <input
+          type="number"
+          inputMode="decimal"
+          step="any"
+          value={Number(value.toFixed(2))}
+          onChange={(ev) => {
+            const n = Number(ev.target.value);
+            if (Number.isFinite(n)) set(n);
+          }}
+          className="w-20 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-right font-mono text-[11px] outline-none"
+        />
+        {unit && <span className="font-mono text-[8px] text-muted-foreground">{unit}</span>}
+      </span>
     </label>
   );
 
+  const info = (text: string) => (
+    <p className="font-mono text-[10px] text-muted-foreground">{text}</p>
+  );
+
+  const body: React.ReactNode[] = [];
+
+  if (e.type === "circle") {
+    body.push(
+      field("X", e.cx, (n) => onChange({ ...e, cx: n }), "mm"),
+      field("Y", e.cy, (n) => onChange({ ...e, cy: n }), "mm"),
+      field("R", e.r, (n) => onChange({ ...e, r: Math.max(n, 0.01) }), "mm"),
+      field("Ø", e.r * 2, (n) => onChange({ ...e, r: Math.max(n / 2, 0.01) }), "mm"),
+    );
+  }
+
+  if (e.type === "line") {
+    const len = Math.hypot(e.x2 - e.x1, e.y2 - e.y1);
+    const ang = Math.atan2(e.y2 - e.y1, e.x2 - e.x1);
+    const setPolar = (l: number, a: number) =>
+      onChange({ ...e, x2: e.x1 + l * Math.cos(a), y2: e.y1 + l * Math.sin(a) });
+    body.push(
+      field("X1", e.x1, (n) => onChange({ ...e, x1: n }), "mm"),
+      field("Y1", e.y1, (n) => onChange({ ...e, y1: n }), "mm"),
+      field("X2", e.x2, (n) => onChange({ ...e, x2: n }), "mm"),
+      field("Y2", e.y2, (n) => onChange({ ...e, y2: n }), "mm"),
+      field("Compr.", len, (n) => setPolar(Math.max(n, 0.01), ang), "mm"),
+      field("Ângulo", deg(ang), (n) => setPolar(len, rad(n)), "°"),
+    );
+  }
+
+  if (e.type === "arc") {
+    let sweep = e.a1 - e.a0;
+    while (sweep < 0) sweep += Math.PI * 2;
+    body.push(
+      field("X", e.cx, (n) => onChange({ ...e, cx: n }), "mm"),
+      field("Y", e.cy, (n) => onChange({ ...e, cy: n }), "mm"),
+      field("R", e.r, (n) => onChange({ ...e, r: Math.max(n, 0.01) }), "mm"),
+      field("Ø", e.r * 2, (n) => onChange({ ...e, r: Math.max(n / 2, 0.01) }), "mm"),
+      field("Âng. ini.", deg(e.a0), (n) => onChange({ ...e, a0: rad(n) }), "°"),
+      field("Âng. fim", deg(e.a1), (n) => onChange({ ...e, a1: rad(n) }), "°"),
+      info(`Arco ${(e.r * sweep).toFixed(2)} mm · ${deg(sweep).toFixed(1)}°`),
+    );
+  }
+
+  if (e.type === "polyline" && e.pts.length) {
+    const xs = e.pts.map((p) => p.x);
+    const ys = e.pts.map((p) => p.y);
+    const minX = Math.min(...xs);
+    const minY = Math.min(...ys);
+    const w = Math.max(...xs) - minX;
+    const h = Math.max(...ys) - minY;
+    const perim = e.pts.reduce((acc, p, i) => {
+      const q = e.pts[i + 1] ?? (e.closed ? e.pts[0] : undefined);
+      return q ? acc + Math.hypot(q.x - p.x, q.y - p.y) : acc;
+    }, 0);
+    const area = e.closed
+      ? Math.abs(
+          e.pts.reduce((acc, p, i) => {
+            const q = e.pts[(i + 1) % e.pts.length]!;
+            return acc + (p.x * q.y - q.x * p.y);
+          }, 0) / 2,
+        )
+      : 0;
+    const scaleTo = (sx: number, sy: number) =>
+      onChange({
+        ...e,
+        pts: e.pts.map((p) => ({ x: minX + (p.x - minX) * sx, y: minY + (p.y - minY) * sy })),
+      });
+    const moveTo = (x: number, y: number) =>
+      onChange({ ...e, pts: e.pts.map((p) => ({ x: p.x - minX + x, y: p.y - minY + y })) });
+    const rotateBy = (d: number) => {
+      const cx = minX + w / 2;
+      const cy = minY + h / 2;
+      const a = rad(d);
+      onChange({
+        ...e,
+        pts: e.pts.map((p) => ({
+          x: cx + (p.x - cx) * Math.cos(a) - (p.y - cy) * Math.sin(a),
+          y: cy + (p.x - cx) * Math.sin(a) + (p.y - cy) * Math.cos(a),
+        })),
+      });
+    };
+    body.push(
+      field("X", minX, (n) => moveTo(n, minY), "mm"),
+      field("Y", minY, (n) => moveTo(minX, n), "mm"),
+      field("Largura", w, (n) => scaleTo(w > 0.001 ? Math.max(n, 0.01) / w : 1, 1), "mm"),
+      field("Altura", h, (n) => scaleTo(1, h > 0.001 ? Math.max(n, 0.01) / h : 1), "mm"),
+      field("Rotação", 0, (n) => rotateBy(n), "°"),
+      info(
+        `${e.pts.length} vértices · ${e.closed ? "fechada" : "aberta"} · ${perim.toFixed(1)} mm` +
+          (area ? ` · ${(area / 100).toFixed(1)} cm²` : ""),
+      ),
+    );
+  }
+
+  if (e.type === "text") {
+    body.push(
+      field("X", e.x, (n) => onChange({ ...e, x: n }), "mm"),
+      field("Y", e.y, (n) => onChange({ ...e, y: n }), "mm"),
+      field("Altura", e.size, (n) => onChange({ ...e, size: Math.max(n, 0.5) }), "mm"),
+    );
+  }
+
   return (
-    <div className="glass pop-in absolute right-2 bottom-10 z-10 w-44 space-y-1.5 rounded-2xl p-2.5 backdrop-blur-xl">
-      <p className="font-mono text-[9px] tracking-[0.2em] text-accent uppercase">{e.type}</p>
-      {e.type === "circle" && (
-        <>
-          {field("X", e.cx, (n) => onChange({ ...e, cx: n }))}
-          {field("Y", e.cy, (n) => onChange({ ...e, cy: n }))}
-          {field("R", e.r, (n) => onChange({ ...e, r: n }))}
-          {field("Ø", e.r * 2, (n) => onChange({ ...e, r: n / 2 }))}
-        </>
-      )}
-      {e.type === "line" && (
-        <>
-          {field("X1", e.x1, (n) => onChange({ ...e, x1: n }))}
-          {field("Y1", e.y1, (n) => onChange({ ...e, y1: n }))}
-          {field("X2", e.x2, (n) => onChange({ ...e, x2: n }))}
-          {field("Y2", e.y2, (n) => onChange({ ...e, y2: n }))}
-          <p className="text-right font-mono text-[10px] text-muted-foreground">
-            {Math.hypot(e.x2 - e.x1, e.y2 - e.y1).toFixed(2)} mm ·{" "}
-            {((Math.atan2(e.y2 - e.y1, e.x2 - e.x1) * 180) / Math.PI).toFixed(1)}°
-          </p>
-        </>
-      )}
-      {e.type === "arc" && (
-        <>
-          {field("X", e.cx, (n) => onChange({ ...e, cx: n }))}
-          {field("Y", e.cy, (n) => onChange({ ...e, cy: n }))}
-          {field("R", e.r, (n) => onChange({ ...e, r: n }))}
-        </>
-      )}
-      {e.type === "polyline" && (
-        <p className="font-mono text-[10px] text-muted-foreground">
-          {e.pts.length} nós · {e.closed ? "fechada" : "aberta"}
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-1.5">
+        <span
+          className="size-2.5 shrink-0 rounded-full"
+          style={{ background: techColor(e.layer) }}
+          aria-hidden
+        />
+        <p className="font-mono text-[9px] tracking-[0.2em] text-foreground uppercase">
+          {TYPE_LABEL[e.type]}
         </p>
-      )}
+      </div>
+      <div className="rounded-xl bg-background/30 p-1.5">{body}</div>
       <select
         value={e.layer}
         onChange={(ev) => onChange({ ...e, layer: ev.target.value })}
         aria-label="Camada"
-        className="w-full rounded-lg border border-line bg-background/40 px-1.5 py-1 font-mono text-[10px] outline-none"
+        className="w-full rounded-lg border border-line bg-background/40 px-1.5 py-1.5 font-mono text-[10px] outline-none"
       >
         {layers.map((l) => (
           <option key={l.id} value={l.id}>
@@ -1618,6 +1724,8 @@ function Properties({
           </option>
         ))}
       </select>
+      {actions && <div className="flex flex-wrap gap-0.5 pt-1">{actions}</div>}
     </div>
   );
 }
+
