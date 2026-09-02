@@ -58,7 +58,7 @@ export function BubbleNav() {
                 aria-hidden
                 className={cn(
                   "pointer-events-none absolute bottom-full mb-2 rounded-full px-2 py-0.5 font-mono text-[9px] tracking-[0.18em] whitespace-nowrap uppercase",
-                  "bg-card/90 text-foreground hairline backdrop-blur-md",
+                  "bg-card text-foreground hairline",
                   "translate-y-1 scale-95 opacity-0 transition-all duration-300",
                   "group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100",
                   "group-focus-visible:translate-y-0 group-focus-visible:opacity-100",
