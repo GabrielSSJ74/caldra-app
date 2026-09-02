@@ -22,7 +22,14 @@ export type PreprocessOptions = {
   maxSize?: number;
   /** Inverte tinta/fundo quando o desenho é claro sobre fundo escuro. */
   invert?: boolean;
+  /** Ampliação antes da binarização (modo LOGO: 2–4×). */
+  upscale?: number;
+  /** Raio do desfoque gaussiano aplicado antes do limiar (px). */
+  blur?: number;
+  /** Limiar manual 0–255; ausente = Otsu automático. */
+  threshold?: number;
 };
+
 
 export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
