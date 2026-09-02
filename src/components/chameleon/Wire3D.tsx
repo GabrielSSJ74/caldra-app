@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { project, type Camera, type WireModel } from "@/lib/viz3d/wire";
 import { cn } from "@/lib/utils";
 
@@ -73,7 +73,7 @@ export function Wire3D({
   }, [model, cam, scale, k]);
 
   const maxDepth = Math.max(1, ...edges.map((e) => Math.abs(e.depth)));
-  const uid = useMemo(() => Math.random().toString(36).slice(2, 8), []);
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
   const vertices = useMemo(() => {
     const seen = new Set<string>();
     const out: { x: number; y: number; depth: number }[] = [];
