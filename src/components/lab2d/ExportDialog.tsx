@@ -3,7 +3,8 @@ import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { downloadDxf } from "@/lib/dxf/dxfService";
 import { toDxf, verify, type Entity, type Layer } from "@/lib/lab2d/core";
-import { downloadPng, downloadSvg, printSheet, renderSvg } from "@/lib/lab2d/render";
+import { downloadSvg, renderSvg } from "@/lib/lab2d/render";
+import { downloadSheetPdf, downloadSheetPng, renderSheet } from "@/lib/export/renderSheet";
 import { cn } from "@/lib/utils";
 
 type Format = "dxf" | "svg" | "png" | "pdf";
@@ -34,7 +35,6 @@ export function ExportDialog({
   const [format, setFormat] = useState<Format>("dxf");
   const [scope, setScope] = useState<Scope>("plan");
   const [dimensions, setDimensions] = useState(false);
-  const [transparent, setTransparent] = useState(false);
   // curvas saem como SPLINE por padrão; achatar só para máquinas antigas
   const [flattenCurves, setFlattenCurves] = useState(false);
 
@@ -44,9 +44,9 @@ export function ExportDialog({
     () =>
       renderSvg(entities, layers, {
         dimensions,
-        background: transparent && format === "png" ? "transparent" : "white",
+        background: "white",
       }),
-    [entities, layers, dimensions, transparent, format],
+    [entities, layers, dimensions],
   );
 
   const issues = useMemo(() => verify(entities), [entities]);
@@ -63,10 +63,26 @@ export function ExportDialog({
         downloadDxf(toDxf(entities, layers, { flattenCurves }), filename);
       } else if (format === "svg") {
         downloadSvg(preview.svg, filename);
-      } else if (format === "png") {
-        await downloadPng(preview.svg, filename, { transparent });
       } else {
-        printSheet(preview.svg, { project: projectName, plan: planName }, preview.widthMm, preview.heightMm);
+        // PDF e PNG partem da MESMA pipeline de folha, redesenhada a partir do
+        // modelo: zoom/pan da tela não influenciam o arquivo.
+        const started = Date.now();
+        const notify = window.setTimeout(
+          () => toast.loading("Gerando folha…", { id: "sheet-export" }),
+          1000,
+        );
+        await new Promise((r) => setTimeout(r, 0)); // libera a interface
+        const plan = renderSheet(
+          entities,
+          layers,
+          { project: projectName, plan: planName },
+          { dimensions },
+        );
+        await new Promise((r) => setTimeout(r, 0));
+        if (format === "png") await downloadSheetPng(plan);
+        else await downloadSheetPdf(plan);
+        window.clearTimeout(notify);
+        if (Date.now() - started > 1000) toast.dismiss("sheet-export");
       }
       toast.success(`${format.toUpperCase()} gerado.`);
       onOpenChange(false);
@@ -136,17 +152,6 @@ export function ExportDialog({
               )}
             >
               {flattenCurves ? "Curvas achatadas" : "Curvas como SPLINE"}
-            </button>
-          )}
-          {format === "png" && (
-            <button
-              onClick={() => setTransparent((t) => !t)}
-              className={cn(
-                "rounded-full border border-border px-2.5 py-1",
-                transparent && "border-accent/50 text-accent",
-              )}
-            >
-              Fundo transp.
             </button>
           )}
         </div>
