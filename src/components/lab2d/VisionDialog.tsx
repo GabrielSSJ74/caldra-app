@@ -180,6 +180,7 @@ export function VisionDialog({
   }, [manual]);
 
   const reset = useCallback(() => {
+    cancelVision();
     setStep("importar");
     setImg(null);
     setError(null);
@@ -198,6 +199,12 @@ export function VisionDialog({
     setManual(EMPTY_MANUAL);
     setPast([]);
     setFuture([]);
+    setProfile(null);
+    setSuggestion(null);
+    setAdaptive(false);
+    setNormalize(false);
+    setMultiScale(false);
+    setFocusBox(null);
   }, []);
 
   useEffect(() => {
@@ -210,100 +217,182 @@ export function VisionDialog({
       const imported = await importImage(file);
       setImg(imported);
       setStep("previa");
+      // relatório pré-flight: rápido, na thread principal, sem aplicar nada
+      try {
+        const p = profileImage(rasterForProfile(imported.element));
+        setProfile(p);
+        setSuggestion(suggestFromProfile(p));
+      } catch {
+        setProfile(null);
+        setSuggestion(null);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao importar imagem.");
     }
   };
 
-  const run = async () => {
-    if (!img) return;
-    setStep("analisando");
-    setError(null);
-    await new Promise((r) => setTimeout(r, 260));
-    try {
-      if (mode === "logo") {
-        const res = analyzeLogo(img.element, logoOpt);
-        setAnalysis(null);
-        setCenter(null);
-        setLogo(res.stats.contours + res.stats.holes ? res : null);
-        if (!res.stats.contours && !res.stats.holes)
-          setError("Nenhum contorno encontrado. Ajuste o limiar ou inverta tinta/fundo.");
-        setStep("resultado");
-        return;
+  /** Aplica a sugestão do pré-flight — só quando o usuário confirma. */
+  const useSuggestion = () => {
+    if (!suggestion) return;
+    setMode(suggestion.mode);
+    setTolerance(suggestion.tolerance);
+    setNoise(suggestion.noise);
+    setAdaptive(suggestion.adaptive);
+    setNormalize(suggestion.normalize);
+    setMultiScale(profile?.small ?? false);
+    setLogoOpt((o) => ({
+      ...o,
+      threshold: suggestion.threshold,
+      invert: suggestion.invert,
+      upscale: suggestion.upscale,
+      blur: suggestion.blur,
+      turdsize: suggestion.turdsize,
+      alphamax: suggestion.alphamax,
+      opttolerance: suggestion.opttolerance,
+      turnpolicy: suggestion.turnpolicy,
+    }));
+    setCenterOpt((o) => ({
+      ...o,
+      invert: suggestion.invert,
+      blur: suggestion.blur,
+      tolerance: suggestion.tolerance,
+    }));
+    toast.success("Sugestão aplicada. Ajuste o que quiser antes de continuar.");
+  };
+
+  /** Executa a pipeline no Web Worker; devolve true quando houve resultado. */
+  const analyze = useCallback(
+    async (silent: boolean) => {
+      if (!img) return false;
+      if (!silent) {
+        setStep("analisando");
+        setProgress({ stage: "Preparando imagem", pct: 2 });
+        setError(null);
       }
-      setLogo(null);
-      if (mode === "tracado") {
-        const res = analyzeCenterline(img.element, { ...centerOpt, rotationDeg: rotation });
-        setCenter(res);
-        setAnalysis(res.prims.length ? res : null);
-        if (!res.prims.length)
-          setError(
-            "Nenhum traço central encontrado. Ajuste brilho, contraste ou o limiar adaptativo — ou use a vetorização manual.",
+      try {
+        if (mode === "logo") {
+          const pixels = rasterForLogo(img.element, logoOpt, multiScale);
+          const res = await runVision(
+            { mode: "logo", pixels, opt: logoOpt, multiScale },
+            silent ? undefined : setProgress,
           );
+          if (res.mode !== "logo") return false;
+          const ok = res.analysis.stats.contours + res.analysis.stats.holes > 0;
+          if (silent) {
+            if (ok) setLogo(res.analysis);
+            return ok;
+          }
+          setAnalysis(null);
+          setCenter(null);
+          setLogo(ok ? res.analysis : null);
+          if (!ok) setError("Nenhum contorno encontrado. Ajuste o limiar ou inverta tinta/fundo.");
+          setStep("resultado");
+          return ok;
+        }
+
+        if (mode === "tracado") {
+          const opt = { ...centerOpt, rotationDeg: rotation };
+          const pixels = rasterForTracado(img.element, opt);
+          const res = await runVision(
+            { mode: "tracado", pixels, opt },
+            silent ? undefined : setProgress,
+          );
+          if (res.mode !== "tracado") return false;
+          setLogo(null);
+          setCenter(res.analysis);
+          if (res.analysis.prims.length) setAnalysis(res.analysis);
+          else if (!silent) setAnalysis(null);
+          if (!silent) {
+            if (!res.analysis.prims.length)
+              setError(
+                "Nenhum traço central encontrado. Ajuste brilho, contraste ou o limiar adaptativo — ou use a vetorização manual.",
+              );
+            setStep("resultado");
+          }
+          return res.analysis.prims.length > 0;
+        }
+
+        const opt = {
+          tolerance,
+          noise,
+          rotationDeg: rotation,
+          adaptive,
+          normalize,
+          regularize,
+          hq: true,
+        };
+        const pixels = rasterForTecnico(img.element, opt);
+        const res = await runVision(
+          { mode: "tecnico", pixels, opt },
+          silent ? undefined : setProgress,
+        );
+        if (res.mode !== "tecnico") return false;
+        const ok = res.analysis.prims.length > 0;
+        if (silent) {
+          if (ok) setAnalysis(res.analysis);
+          return ok;
+        }
+        setLogo(null);
+        setCenter(null);
+        setAnalysis(ok ? res.analysis : null);
+        if (!ok) setError("Não foi possível reconhecer toda a geometria desta imagem.");
         setStep("resultado");
-        return;
+        return ok;
+      } catch (e) {
+        if (!silent) {
+          setError(e instanceof Error ? e.message : "Falha na análise.");
+          setStep("resultado");
+        }
+        return false;
       }
-      setCenter(null);
-      const res = analyzeImage(img.element, { tolerance, noise, rotationDeg: rotation });
-      if (!res.prims.length) {
-        setAnalysis(null);
-        setError("Não foi possível reconhecer toda a geometria desta imagem.");
-        setStep("resultado");
-        return;
-      }
-      setAnalysis(res);
-      setStep("resultado");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Falha na análise.");
-      setStep("resultado");
-    }
+    },
+    [
+      img,
+      mode,
+      logoOpt,
+      multiScale,
+      centerOpt,
+      rotation,
+      tolerance,
+      noise,
+      adaptive,
+      normalize,
+      regularize,
+    ],
+  );
+
+  const run = () => void analyze(false);
+
+  const cancelRun = () => {
+    cancelVision();
+    setStep("previa");
+    setError("Análise cancelada.");
   };
 
   // reanalisa ao mudar parâmetros do modo logo
   useEffect(() => {
     if (step !== "resultado" || !img || mode !== "logo") return;
-    const t = setTimeout(() => {
-      try {
-        const res = analyzeLogo(img.element, logoOpt);
-        if (res.stats.contours + res.stats.holes) setLogo(res);
-      } catch {
-        /* mantém resultado anterior */
-      }
-    }, 180);
+    const t = setTimeout(() => void analyze(true), 200);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [logoOpt]);
+  }, [logoOpt, multiScale]);
 
   // reanalisa ao mudar parâmetros do modo traçado
   useEffect(() => {
     if (step !== "resultado" || !img || mode !== "tracado") return;
-    const t = setTimeout(() => {
-      try {
-        const res = analyzeCenterline(img.element, { ...centerOpt, rotationDeg: rotation });
-        setCenter(res);
-        if (res.prims.length) setAnalysis(res);
-      } catch {
-        /* mantém resultado anterior */
-      }
-    }, 220);
+    const t = setTimeout(() => void analyze(true), 240);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [centerOpt]);
 
-  // reanalisa ao mudar tolerância/ruído já no resultado
+  // reanalisa ao mudar tolerância/ruído/binarização já no resultado
   useEffect(() => {
     if (step !== "resultado" || !img || !analysis || mode !== "tecnico") return;
-    const t = setTimeout(() => {
-      try {
-        const res = analyzeImage(img.element, { tolerance, noise, rotationDeg: rotation });
-        setAnalysis(res.prims.length ? res : null);
-      } catch {
-        /* mantém resultado anterior */
-      }
-    }, 120);
+    const t = setTimeout(() => void analyze(true), 160);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tolerance, noise]);
+  }, [tolerance, noise, adaptive, normalize, regularize]);
+
 
   const geoRef = logo ?? analysis;
   const calibrated = cal.method !== "padrao";
