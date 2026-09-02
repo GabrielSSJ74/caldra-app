@@ -166,6 +166,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const { isMestre } = useFeatureAccess();
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const [project, setProject] = useState<Project | null>(null);
   const [planId, setPlanId] = useState<string>("");
