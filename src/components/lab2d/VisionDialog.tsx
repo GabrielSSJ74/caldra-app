@@ -181,15 +181,24 @@ export function VisionDialog({
     if (!analysis) return;
     const w = Number(widthMm.replace(",", "."));
     const next = calibrateByDimension(analysis.contentPx, { widthMm: w });
-    if (!next) return toast.error("Informe uma largura válida em mm.");
+    if (!next) {
+      toast.error("Informe uma largura válida em mm.");
+      return;
+    }
     setCal(next);
     toast.success(`Escala: ${next.mmPerPx.toFixed(4)} mm/px`);
   };
 
   const applyMeasure = () => {
-    if (calPts.length < 2) return toast.error("Selecione dois pontos na imagem.");
+    if (calPts.length < 2) {
+      toast.error("Selecione dois pontos na imagem.");
+      return;
+    }
     const next = calibrateByMeasure(calPts[0]!, calPts[1]!, Number(realMm.replace(",", ".")));
-    if (!next) return toast.error("Distância real inválida.");
+    if (!next) {
+      toast.error("Distância real inválida.");
+      return;
+    }
     setCal(next);
     toast.success(`Escala: ${next.mmPerPx.toFixed(4)} mm/px`);
   };
@@ -197,7 +206,10 @@ export function VisionDialog({
   const create = () => {
     if (!img || !analysis) return;
     const list = normalized.entities;
-    if (!list.length) return toast.error("Nada para inserir.");
+    if (!list.length) {
+      toast.error("Nada para inserir.");
+      return;
+    }
     const s = cal.mmPerPx;
     onCreate(list, {
       src: img.dataUrl,
