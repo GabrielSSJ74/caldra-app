@@ -412,14 +412,15 @@ export function VisionDialog({
 
         {step === "previa" && img && (
           <>
-            <div className="grid aspect-[4/3] place-items-center overflow-hidden rounded-2xl border border-border bg-white">
+            <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-white">
               <img
                 src={img.dataUrl}
                 alt={`Pré-visualização de ${img.name}`}
                 style={{ transform: `rotate(${rotation}deg) scale(${zoom})`, opacity }}
-                className="max-h-full max-w-full object-contain transition-transform"
+                className="mx-auto block h-full w-full object-contain object-center transition-transform"
               />
             </div>
+
             <div className="grid grid-cols-2 gap-2">
               <Slider label="Zoom" value={zoom} min={0.4} max={3} step={0.05} onChange={setZoom} />
               <Slider
@@ -1399,10 +1400,62 @@ function Slider({
   step: number;
   onChange: (v: number) => void;
 }) {
+  const decimals = (() => {
+    const s = String(step);
+    const i = s.indexOf(".");
+    return i < 0 ? 0 : s.length - i - 1;
+  })();
+  const fmt = (v: number) => v.toFixed(decimals);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  const commit = () => {
+    const n = Number(draft.replace(",", "."));
+    setEditing(false);
+    if (!Number.isFinite(n)) return;
+    const snapped = Math.round((n - min) / step) * step + min;
+    onChange(Number(Math.min(max, Math.max(min, snapped)).toFixed(decimals)));
+  };
+
   return (
     <label className="space-y-1">
-      <span className="font-mono text-[10px] tracking-wider text-muted-foreground uppercase">
-        {label}
+      <span className="flex items-center justify-between gap-2">
+        <span className="font-mono text-[10px] tracking-wider text-muted-foreground uppercase">
+          {label}
+        </span>
+        {editing ? (
+          <input
+            autoFocus
+            value={draft}
+            inputMode="decimal"
+            onFocus={(e) => e.currentTarget.select()}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commit();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                setEditing(false);
+              }
+            }}
+            aria-label={`Valor de ${label}`}
+            className="w-16 rounded-md border border-accent bg-transparent px-1 py-0.5 text-right font-mono text-[10px] outline-none"
+          />
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setDraft(fmt(value));
+              setEditing(true);
+            }}
+            aria-label={`Editar valor de ${label}`}
+            className="rounded-md px-1 py-0.5 font-mono text-[10px] text-accent transition-colors hover:bg-accent/10"
+          >
+            {fmt(value)}
+          </button>
+        )}
       </span>
       <input
         type="range"
@@ -1416,5 +1469,6 @@ function Slider({
     </label>
   );
 }
+
 
 export const VISION_ICONS = { ImageIcon, Scan, CircleIcon, X };
