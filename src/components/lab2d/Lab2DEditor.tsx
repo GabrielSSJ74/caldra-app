@@ -879,9 +879,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       {!focus && (
         <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="tick-label truncate text-muted-foreground">
-              {project?.name ?? "CALDRA"}
-            </span>
+            <span className="tick-label shrink-0 text-accent">CHAMFER</span>
+            {project && (
+              <span className="tick-label truncate text-muted-foreground">{project.name}</span>
+            )}
             <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
               {project?.plans.map((pl) => (
                 <button
