@@ -35,6 +35,8 @@ export function ExportDialog({
   const [scope, setScope] = useState<Scope>("plan");
   const [dimensions, setDimensions] = useState(false);
   const [transparent, setTransparent] = useState(false);
+  // curvas saem como SPLINE por padrão; achatar só para máquinas antigas
+  const [flattenCurves, setFlattenCurves] = useState(false);
 
   const entities = scopes[scope];
 
@@ -58,7 +60,7 @@ export function ExportDialog({
     try {
       if (format === "dxf") {
         if (issues.length) toast.warning(`${issues.length} avisos de geometria exportados assim mesmo.`);
-        downloadDxf(toDxf(entities, layers), filename);
+        downloadDxf(toDxf(entities, layers, { flattenCurves }), filename);
       } else if (format === "svg") {
         downloadSvg(preview.svg, filename);
       } else if (format === "png") {
@@ -125,6 +127,17 @@ export function ExportDialog({
           >
             Cotas
           </button>
+          {format === "dxf" && entities.some((e) => e.type === "path") && (
+            <button
+              onClick={() => setFlattenCurves((v) => !v)}
+              className={cn(
+                "rounded-full border border-border px-2.5 py-1",
+                flattenCurves && "border-warn/60 text-warn",
+              )}
+            >
+              {flattenCurves ? "Curvas achatadas" : "Curvas como SPLINE"}
+            </button>
+          )}
           {format === "png" && (
             <button
               onClick={() => setTransparent((t) => !t)}
