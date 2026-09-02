@@ -1438,47 +1438,74 @@ function arcFrom3(a: Vec2, b: Vec2, c: Vec2, layer: string): Entity | null {
   };
 }
 
+/**
+ * Desenha a entidade com a linguagem técnica fixa do CALDRA.
+ * A seleção adiciona apenas um halo temporário — a cor da camada não muda.
+ */
 export function EntityShape({
   e,
-  color,
   k,
   selected,
-  ghost,
+  preview,
 }: {
   e: Entity;
-  color: string;
   k: number;
   selected?: boolean;
-  ghost?: boolean;
+  preview?: boolean;
 }) {
-  const stroke = selected ? "var(--accent)" : color;
+  const style = techStyle(e.layer);
+  const stroke = preview ? PREVIEW_COLOR : style.color;
   const props = {
     fill: "none",
     stroke,
-    strokeWidth: (selected ? 2 : 1.4) / k,
+    strokeWidth: (1.4 * style.weight) / k,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
-    strokeDasharray: ghost ? `${5 / k} ${4 / k}` : undefined,
+    strokeDasharray: preview ? `${5 / k} ${4 / k}` : style.dash(1 / k),
     vectorEffect: "non-scaling-stroke" as const,
   };
-  if (e.type === "line") return <line x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} {...props} />;
-  if (e.type === "circle") return <circle cx={e.cx} cy={e.cy} r={e.r} {...props} />;
-  if (e.type === "polyline") {
-    const d = e.pts.map((p) => `${p.x},${p.y}`).join(" ");
-    return e.closed ? <polygon points={d} {...props} /> : <polyline points={d} {...props} />;
-  }
-  if (e.type === "arc") {
-    const p0 = { x: e.cx + e.r * Math.cos(e.a0), y: e.cy + e.r * Math.sin(e.a0) };
-    const p1 = { x: e.cx + e.r * Math.cos(e.a1), y: e.cy + e.r * Math.sin(e.a1) };
-    let sweep = e.a1 - e.a0;
-    while (sweep < 0) sweep += Math.PI * 2;
+  const halo = selected
+    ? {
+        fill: "none",
+        stroke: SELECTION_COLOR,
+        strokeOpacity: 0.5,
+        strokeWidth: 5 / k,
+        strokeLinecap: "round" as const,
+        strokeLinejoin: "round" as const,
+      }
+    : null;
+
+  const shape = (p: Record<string, unknown>, key?: string) => {
+    if (e.type === "line") return <line key={key} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} {...p} />;
+    if (e.type === "circle") return <circle key={key} cx={e.cx} cy={e.cy} r={e.r} {...p} />;
+    if (e.type === "polyline") {
+      const d = e.pts.map((q) => `${q.x},${q.y}`).join(" ");
+      return e.closed ? <polygon key={key} points={d} {...p} /> : <polyline key={key} points={d} {...p} />;
+    }
+    if (e.type === "arc") {
+      const p0 = { x: e.cx + e.r * Math.cos(e.a0), y: e.cy + e.r * Math.sin(e.a0) };
+      const p1 = { x: e.cx + e.r * Math.cos(e.a1), y: e.cy + e.r * Math.sin(e.a1) };
+      let sweep = e.a1 - e.a0;
+      while (sweep < 0) sweep += Math.PI * 2;
+      return (
+        <path
+          key={key}
+          d={`M ${p0.x} ${p0.y} A ${e.r} ${e.r} 0 ${sweep > Math.PI ? 1 : 0} 1 ${p1.x} ${p1.y}`}
+          {...p}
+        />
+      );
+    }
+    return null;
+  };
+
+  if (e.type !== "text")
     return (
-      <path
-        d={`M ${p0.x} ${p0.y} A ${e.r} ${e.r} 0 ${sweep > Math.PI ? 1 : 0} 1 ${p1.x} ${p1.y}`}
-        {...props}
-      />
+      <g>
+        {halo && shape(halo, "halo")}
+        {shape(props, "shape")}
+      </g>
     );
-  }
+
   return (
     <text x={e.x} y={e.y} fontSize={e.size} fill={stroke} className="font-mono">
       {e.text}
