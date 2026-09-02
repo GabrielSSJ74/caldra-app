@@ -412,8 +412,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const onPointerDown = (ev: React.PointerEvent) => {
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
+    ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+
+    // segundo dedo com a ferramenta MÃO ativa: inicia pinça, sem salto
+    if (tool === "pan" && ptrsRef.current.size >= 2) {
+      const [a, b] = [...ptrsRef.current.values()];
+      if (a && b) {
+        pinchRef.current = {
+          dist: Math.hypot(b.x - a.x, b.y - a.y) || 1,
+          mx: (a.x + b.x) / 2,
+          my: (a.y + b.y) / 2,
+        };
+        panRef.current = null;
+      }
+      return;
+    }
+    // ignora toques fantasma logo após um gesto
+    if (performance.now() < gestureUntilRef.current) return;
+
     const raw = toWorld(ev);
     const p = snapPoint(raw);
+
 
     if (tool === "pan" || ev.button === 1) {
       panRef.current = { x: ev.clientX, y: ev.clientY };
