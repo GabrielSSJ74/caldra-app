@@ -197,6 +197,7 @@ export function VisionDialog({
       if (mode === "logo") {
         const res = analyzeLogo(img.element, logoOpt);
         setAnalysis(null);
+        setCenter(null);
         setLogo(res.stats.contours + res.stats.holes ? res : null);
         if (!res.stats.contours && !res.stats.holes)
           setError("Nenhum contorno encontrado. Ajuste o limiar ou inverta tinta/fundo.");
@@ -204,6 +205,18 @@ export function VisionDialog({
         return;
       }
       setLogo(null);
+      if (mode === "tracado") {
+        const res = analyzeCenterline(img.element, { ...centerOpt, rotationDeg: rotation });
+        setCenter(res);
+        setAnalysis(res.prims.length ? res : null);
+        if (!res.prims.length)
+          setError(
+            "Nenhum traço central encontrado. Ajuste brilho, contraste ou o limiar adaptativo — ou use a vetorização manual.",
+          );
+        setStep("resultado");
+        return;
+      }
+      setCenter(null);
       const res = analyzeImage(img.element, { tolerance, noise, rotationDeg: rotation });
       if (!res.prims.length) {
         setAnalysis(null);
@@ -234,9 +247,25 @@ export function VisionDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logoOpt]);
 
+  // reanalisa ao mudar parâmetros do modo traçado
+  useEffect(() => {
+    if (step !== "resultado" || !img || mode !== "tracado") return;
+    const t = setTimeout(() => {
+      try {
+        const res = analyzeCenterline(img.element, { ...centerOpt, rotationDeg: rotation });
+        setCenter(res);
+        if (res.prims.length) setAnalysis(res);
+      } catch {
+        /* mantém resultado anterior */
+      }
+    }, 220);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [centerOpt]);
+
   // reanalisa ao mudar tolerância/ruído já no resultado
   useEffect(() => {
-    if (step !== "resultado" || !img || !analysis) return;
+    if (step !== "resultado" || !img || !analysis || mode !== "tecnico") return;
     const t = setTimeout(() => {
       try {
         const res = analyzeImage(img.element, { tolerance, noise, rotationDeg: rotation });
@@ -249,22 +278,19 @@ export function VisionDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tolerance, noise]);
 
+  const geoRef = logo ?? analysis;
+  const calibrated = cal.method !== "padrao";
+
   const manualEntities = useMemo<Entity[]>(() => {
-    const geo = logo ?? analysis;
-    if (!manual || manual.pts.length < 2 || !geo) return [];
-    const s = cal.mmPerPx;
-    const ox = geo.contentPx.x;
-    const oy = geo.contentPx.y;
-    return [
-      {
-        id: uid(),
-        layer: "corte",
-        type: "polyline",
-        closed: manual.closed,
-        pts: manual.pts.map((p) => ({ x: (p.x - ox) * s, y: (p.y - oy) * s })),
-      },
-    ];
-  }, [manual, analysis, logo, cal]);
+    if (!geoRef || !manualPointCount(manual)) return [];
+    return manualToEntities(manual, {
+      mmPerPx: cal.mmPerPx,
+      origin: { x: geoRef.contentPx.x, y: geoRef.contentPx.y },
+      layer: "corte",
+    });
+  }, [manual, geoRef, cal]);
+
+  const targets = useMemo(() => snapTargets(analysis?.prims ?? []), [analysis]);
 
   const rawEntities = useMemo<Entity[]>(
     () =>
@@ -285,6 +311,7 @@ export function VisionDialog({
         : normalizeGeometry([...rawEntities, ...manualEntities], { autoClose: false }),
     [rawEntities, manualEntities, logo],
   );
+
 
   const duplicates = useMemo(() => countDuplicates(rawEntities), [rawEntities]);
   const validation = useMemo(() => validateVector(normalized.entities, cal), [normalized, cal]);
