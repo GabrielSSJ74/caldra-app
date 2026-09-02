@@ -532,17 +532,17 @@ export function VisionDialog({
         )}
 
         {step === "previa" && img && (
-          <>
-            <div className="flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-white">
+          <div className="flex min-h-0 flex-col gap-3">
+            <div className="relative flex w-full items-center justify-center overflow-hidden rounded-2xl border border-border bg-white" style={{ maxHeight: "45vh" }}>
               <img
                 src={img.dataUrl}
                 alt={`Pré-visualização de ${img.name}`}
                 style={{ transform: `rotate(${rotation}deg) scale(${zoom})`, opacity }}
-                className="mx-auto block h-full w-full object-contain object-center transition-transform"
+                className="mx-auto block h-full w-full max-h-[45vh] object-contain object-center transition-transform"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
+            <div className="flex flex-col gap-3">
               <Slider label="Zoom" value={zoom} min={0.4} max={3} step={0.05} onChange={setZoom} />
               <Slider
                 label="Opacidade"
@@ -553,8 +553,9 @@ export function VisionDialog({
                 onChange={setOpacity}
               />
             </div>
+
             <Section title="Modo de vetorização" icon={Spline}>
-              <div className="flex flex-wrap gap-1">
+              <div className="grid grid-cols-3 gap-2">
                 <Toggle
                   active={mode === "tecnico"}
                   onClick={() => setMode("tecnico")}
@@ -571,7 +572,7 @@ export function VisionDialog({
                   label="traçado (centro)"
                 />
               </div>
-              <p className="font-mono text-[10px] text-muted-foreground">
+              <p className="font-mono text-[10px] leading-relaxed text-muted-foreground">
                 {mode === "tecnico"
                   ? "Reconhece linhas, arcos e círculos de desenhos técnicos."
                   : mode === "logo"
@@ -618,7 +619,7 @@ export function VisionDialog({
               </Section>
             )}
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2 pt-1">
               <Chip
                 icon={RotateCw}
                 label="Girar 90°"
@@ -634,7 +635,7 @@ export function VisionDialog({
                 Continuar
               </button>
             </div>
-          </>
+          </div>
         )}
 
         {step === "analisando" && (
