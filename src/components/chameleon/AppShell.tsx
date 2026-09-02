@@ -54,8 +54,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <main
         key={pathname}
-        className="fade-up relative z-10 min-w-0 flex-1 px-4 pt-6 pb-28 lg:px-10 lg:pt-10 lg:pb-24"
+        className="fade-up relative z-10 min-w-0 flex-1 px-4 pt-16 pb-28 lg:px-10 lg:pt-16 lg:pb-24"
       >
+
         <div className="mx-auto w-full max-w-6xl">{children}</div>
       </main>
 
