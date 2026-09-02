@@ -837,6 +837,63 @@ export function VisionDialog({
                   </div>
                 </Section>
 
+                <Section title="Binarização" icon={Scan}>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <Toggle
+                      active={adaptive}
+                      onClick={() => setAdaptive((v) => !v)}
+                      label="limiar adaptativo"
+                    />
+                    <Toggle
+                      active={normalize}
+                      onClick={() => setNormalize((v) => !v)}
+                      label="normalizar contraste"
+                    />
+                    <Toggle
+                      active={regularize}
+                      onClick={() => setRegularize((v) => !v)}
+                      label="regularizar"
+                    />
+                  </div>
+                  <p className="font-mono text-[10px] text-muted-foreground">
+                    Adaptativo compensa iluminação irregular. Regularizar ortogonaliza e fecha
+                    círculos apenas dentro da tolerância.
+                  </p>
+                </Section>
+
+                {quality && (
+                  <Section title="Qualidade" icon={Check}>
+                    <div className="flex flex-wrap items-center gap-2 font-mono text-[10px] text-muted-foreground">
+                      <span className="text-accent">Score {quality.score}/100</span>
+                      <span>desvio máx {quality.maxDevMm.toFixed(2)} mm</span>
+                      <span>médio {quality.avgDevMm.toFixed(2)} mm</span>
+                      <span>
+                        {quality.counts.detectada} detectadas · {quality.counts.convertida}{" "}
+                        convertidas · {quality.counts.aproximada} aproximadas
+                      </span>
+                    </div>
+                    {quality.low.length > 0 && (
+                      <div className="space-y-1">
+                        <p className="font-mono text-[10px] text-amber-500">
+                          {quality.low.length} entidade(s) de baixa confiança
+                        </p>
+                        <div className="flex max-h-24 flex-wrap gap-1 overflow-auto">
+                          {quality.low.slice(0, 24).map((it) => (
+                            <button
+                              key={it.index}
+                              onClick={() => setFocusBox(it.box)}
+                              className="rounded-lg border border-border px-2 py-1 font-mono text-[10px] text-muted-foreground hover:text-foreground"
+                            >
+                              #{it.index + 1} {it.kind} · {it.devMm.toFixed(2)} mm
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </Section>
+                )}
+
+
                 <Section title="Limpeza" icon={Eraser}>
                   <div className="flex flex-wrap items-center gap-1">
                     {[0, 1, 2].map((n) => (
