@@ -531,9 +531,22 @@ const DXF_ACI: Record<TechLayerId, number> = {
   referencia: 9, // cinza claro
 };
 
-export function toDxf(entities: Entity[], layers: Layer[]): DxfDocument {
+export type DxfExportOptions = {
+  /** Achata curvas em polilinha (só para máquinas antigas). Padrão: false. */
+  flattenCurves?: boolean;
+};
+
+export function toDxf(
+  entities: Entity[],
+  layers: Layer[],
+  opts: DxfExportOptions = {},
+): DxfDocument {
   const out: DxfEntity[] = [];
-  for (const e of entities) {
+  // furos saem depois do contorno externo: o CAM aplica offset interno neles
+  const ordered = [...entities].sort(
+    (a, b) => Number(a.type === "path" && a.hole) - Number(b.type === "path" && b.hole),
+  );
+  for (const e of ordered) {
     const layer = e.layer.toUpperCase();
     if (e.type === "line")
       out.push({ type: "LINE", layer, start: { x: e.x1, y: -e.y1 }, end: { x: e.x2, y: -e.y2 } });
@@ -558,8 +571,33 @@ export function toDxf(entities: Entity[], layers: Layer[]): DxfDocument {
         endAngle: deg(e.a0),
       });
     }
-
+    if (e.type === "path") {
+      if (opts.flattenCurves) {
+        out.push({
+          type: "LWPOLYLINE",
+          layer,
+          closed: e.closed,
+          points: flattenPath(e.start, e.segs, e.closed, 16).map((p) => ({ x: p.x, y: -p.y })),
+        });
+      } else {
+        // Bézier por partes vira SPLINE cúbica: curva perfeita, poucos pontos
+        const controls: { x: number; y: number }[] = [{ x: e.start.x, y: -e.start.y }];
+        let cur = e.start;
+        for (const s of e.segs) {
+          const c1 = s.line
+            ? { x: cur.x + (s.p.x - cur.x) / 3, y: cur.y + (s.p.y - cur.y) / 3 }
+            : s.c1;
+          const c2 = s.line
+            ? { x: cur.x + (2 * (s.p.x - cur.x)) / 3, y: cur.y + (2 * (s.p.y - cur.y)) / 3 }
+            : s.c2;
+          controls.push({ x: c1.x, y: -c1.y }, { x: c2.x, y: -c2.y }, { x: s.p.x, y: -s.p.y });
+          cur = s.p;
+        }
+        if (controls.length >= 4) out.push({ type: "SPLINE", layer, controls, closed: e.closed });
+      }
+    }
   }
+
   return {
     // ACI aproximado por camada + true color com o hex técnico fixo do CHAMFER
     layers: layers.map((l, i) => {
