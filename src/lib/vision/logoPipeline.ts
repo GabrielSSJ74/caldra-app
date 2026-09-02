@@ -172,7 +172,7 @@ export function logoToEntities(
         const pts = [m.start, ...m.segs.map((g) => g.p)];
         const rx = (Math.max(...pts.map((q) => q.x)) - Math.min(...pts.map((q) => q.x))) / 2;
         const ry = (Math.max(...pts.map((q) => q.y)) - Math.min(...pts.map((q) => q.y))) / 2;
-        const c = circleFromPath(m.start, m.segs, Math.max(0.02, ((rx + ry) / 2) * 0.02));
+        const c = circleFromPath(m.start, m.segs, Math.max(0.02, ((rx + ry) / 2) * 0.04));
         if (c) {
           out.push({ id: ids[i]!, layer: target, type: "circle", cx: c.cx, cy: c.cy, r: c.r });
           return;
