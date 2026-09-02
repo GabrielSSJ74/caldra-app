@@ -1206,9 +1206,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
         {/* REGIÃO C — CANVAS */}
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl">
+          <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
           <svg
             ref={svgRef}
-            className="size-full touch-none"
+            className="absolute inset-0 size-full touch-none"
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
