@@ -30,6 +30,15 @@ import {
   type Calibration,
 } from "@/lib/vision/scaleCalibrationService";
 import { validateVector } from "@/lib/vision/vectorValidationService";
+import {
+  analyzeLogo,
+  DEFAULT_LOGO,
+  logoToEntities,
+  type LogoAnalysis,
+  type LogoOptions,
+} from "@/lib/vision/logoPipeline";
+import { pathToSvg } from "@/lib/lab2d/bezier";
+import type { TurnPolicy } from "@/lib/vision/logoTracer";
 
 export type VisionImageLayer = {
   src: string;
@@ -45,6 +54,8 @@ export type VisionImageLayer = {
 };
 
 type Step = "importar" | "previa" | "analisando" | "resultado";
+/** Técnico procura LINE/ARC/CIRCLE; logo preserva curvas de Bézier. */
+type Mode = "tecnico" | "logo";
 type Overlay = "original" | "vetor" | "ambos";
 type Manual = { pts: { x: number; y: number }[]; mode: "linha" | "arco"; closed: boolean };
 
@@ -68,6 +79,9 @@ export function VisionDialog({
   const [zoom, setZoom] = useState(1);
 
   // análise
+  const [mode, setMode] = useState<Mode>("tecnico");
+  const [logoOpt, setLogoOpt] = useState<LogoOptions>(DEFAULT_LOGO);
+  const [logo, setLogo] = useState<LogoAnalysis | null>(null);
   const [tolerance, setTolerance] = useState<Tolerance>("media");
   const [noise, setNoise] = useState(1);
   const [analysis, setAnalysis] = useState<VisionAnalysis | null>(null);
@@ -91,6 +105,8 @@ export function VisionDialog({
     setOpacity(1);
     setZoom(1);
     setAnalysis(null);
+    setLogo(null);
+    setLogoOpt(DEFAULT_LOGO);
     setCal(DEFAULT_CALIBRATION);
     setWidthMm("");
     setCalPts([]);
@@ -118,6 +134,16 @@ export function VisionDialog({
     setError(null);
     await new Promise((r) => setTimeout(r, 260));
     try {
+      if (mode === "logo") {
+        const res = analyzeLogo(img.element, logoOpt);
+        setAnalysis(null);
+        setLogo(res.stats.contours + res.stats.holes ? res : null);
+        if (!res.stats.contours && !res.stats.holes)
+          setError("Nenhum contorno encontrado. Ajuste o limiar ou inverta tinta/fundo.");
+        setStep("resultado");
+        return;
+      }
+      setLogo(null);
       const res = analyzeImage(img.element, { tolerance, noise, rotationDeg: rotation });
       if (!res.prims.length) {
         setAnalysis(null);
@@ -132,6 +158,21 @@ export function VisionDialog({
       setStep("resultado");
     }
   };
+
+  // reanalisa ao mudar parâmetros do modo logo
+  useEffect(() => {
+    if (step !== "resultado" || !img || mode !== "logo") return;
+    const t = setTimeout(() => {
+      try {
+        const res = analyzeLogo(img.element, logoOpt);
+        if (res.stats.contours + res.stats.holes) setLogo(res);
+      } catch {
+        /* mantém resultado anterior */
+      }
+    }, 180);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logoOpt]);
 
   // reanalisa ao mudar tolerância/ruído já no resultado
   useEffect(() => {
@@ -165,22 +206,33 @@ export function VisionDialog({
   }, [manual, analysis, cal]);
 
   const rawEntities = useMemo<Entity[]>(
-    () => (analysis ? toEntities(analysis, cal) : []),
-    [analysis, cal],
+    () =>
+      logo
+        ? // cada cor da paleta vira uma camada técnica distinta
+          logoToEntities(logo, cal, "corte", (_sw, i) => (i === 0 ? "corte" : "marcacao"))
+        : analysis
+          ? toEntities(analysis, cal)
+          : [],
+    [analysis, logo, cal],
   );
 
   const normalized = useMemo(
-    () => normalizeGeometry([...rawEntities, ...manualEntities], { autoClose: false }),
-    [rawEntities, manualEntities],
+    () =>
+      logo
+        ? // curvas nunca passam pelo normalizador de polilinhas
+          { entities: [...rawEntities, ...manualEntities], report: { removedTiny: 0, nearlyClosed: [] as unknown[] } }
+        : normalizeGeometry([...rawEntities, ...manualEntities], { autoClose: false }),
+    [rawEntities, manualEntities, logo],
   );
 
   const duplicates = useMemo(() => countDuplicates(rawEntities), [rawEntities]);
   const validation = useMemo(() => validateVector(normalized.entities, cal), [normalized, cal]);
 
   const applyDimension = () => {
-    if (!analysis) return;
+    const geo = logo ?? analysis;
+    if (!geo) return;
     const w = Number(widthMm.replace(",", "."));
-    const next = calibrateByDimension(analysis.contentPx, { widthMm: w });
+    const next = calibrateByDimension(geo.contentPx, { widthMm: w });
     if (!next) {
       toast.error("Informe uma largura válida em mm.");
       return;
@@ -204,20 +256,21 @@ export function VisionDialog({
   };
 
   const create = () => {
-    if (!img || !analysis) return;
+    if (!img || (!analysis && !logo)) return;
     const list = normalized.entities;
     if (!list.length) {
       toast.error("Nada para inserir.");
       return;
     }
     const s = cal.mmPerPx;
+    const geo = (logo ?? analysis)!;
     onCreate(list, {
       src: img.dataUrl,
       name: img.name,
-      widthMm: analysis.imagePx.w * s,
-      heightMm: analysis.imagePx.h * s,
-      x: -analysis.contentPx.x * s,
-      y: -analysis.contentPx.y * s,
+      widthMm: geo.imagePx.w * s,
+      heightMm: geo.imagePx.h * s,
+      x: -geo.contentPx.x * s,
+      y: -geo.contentPx.y * s,
       opacity: 0.35,
       visible: true,
       locked: true,
