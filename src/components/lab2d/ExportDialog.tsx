@@ -154,10 +154,6 @@ export function ExportDialog({
               {flattenCurves ? "Curvas achatadas" : "Curvas como SPLINE"}
             </button>
           )}
-            >
-              Fundo transp.
-            </button>
-          )}
         </div>
 
         <p className="font-mono text-[10px] text-muted-foreground">
