@@ -1,30 +1,44 @@
-import { createContext, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 
 export type ThemeMode = "light" | "dark" | "system";
+export type AccentColor = "amber" | "blue";
 export type Unit = "mm" | "cm" | "m" | "in";
 
-const KEY = "chameleon.settings";
+const KEY = "caldra.settings";
 
 export type Settings = {
   theme: ThemeMode;
+  accent: AccentColor;
   unit: Unit;
   precision: number;
 };
 
-const DEFAULTS: Settings = { theme: "dark", unit: "mm", precision: 2 };
+const DEFAULTS: Settings = { theme: "dark", accent: "amber", unit: "mm", precision: 2 };
 
 type SettingsValue = Settings & {
   setTheme: (t: ThemeMode) => void;
+  setAccent: (a: AccentColor) => void;
   setUnit: (u: Unit) => void;
   setPrecision: (p: number) => void;
 };
 
 const SettingsContext = createContext<SettingsValue | null>(null);
 
+function applyToDom(s: Settings) {
+  const root = document.documentElement;
+  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true;
+  const dark = s.theme === "dark" || (s.theme === "system" && prefersDark);
+  root.classList.toggle("dark", dark);
+  root.classList.toggle("accent-blue", s.accent === "blue");
+}
+
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
+  const [veil, setVeil] = useState(0);
   const { isMestre } = useFeatureAccess();
+  const skin = `${settings.theme}:${settings.accent}`;
+  const prevSkin = useRef<string | null>(null);
 
   useEffect(() => {
     try {
@@ -41,13 +55,21 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* ignore */
     }
-    const root = document.documentElement;
-    const prefersDark =
-      typeof window !== "undefined" &&
-      window.matchMedia?.("(prefers-color-scheme: dark)").matches;
-    const dark = settings.theme === "dark" || (settings.theme === "system" && prefersDark);
-    root.classList.toggle("dark", dark);
   }, [settings]);
+
+  /* troca de tema/acento com transição suave */
+  useEffect(() => {
+    if (prevSkin.current === null || prevSkin.current === skin) {
+      prevSkin.current = skin;
+      applyToDom(settings);
+      return;
+    }
+    prevSkin.current = skin;
+    setVeil((v) => v + 1);
+    const swap = window.setTimeout(() => applyToDom(settings), 170);
+    return () => window.clearTimeout(swap);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [skin]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("mestre", isMestre);
@@ -57,13 +79,26 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     () => ({
       ...settings,
       setTheme: (theme) => setSettings((s) => ({ ...s, theme })),
+      setAccent: (accent) => setSettings((s) => ({ ...s, accent })),
       setUnit: (unit) => setSettings((s) => ({ ...s, unit })),
       setPrecision: (precision) => setSettings((s) => ({ ...s, precision })),
     }),
     [settings],
   );
 
-  return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
+  return (
+    <SettingsContext.Provider value={value}>
+      {children}
+      {veil > 0 && (
+        <div
+          key={veil}
+          aria-hidden
+          className="theme-fade-veil"
+          onAnimationEnd={() => setVeil(0)}
+        />
+      )}
+    </SettingsContext.Provider>
+  );
 }
 
 export function useSettings() {
