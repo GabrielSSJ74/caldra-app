@@ -67,6 +67,18 @@ import {
 } from "@/lib/lab2d/core";
 import { autoDimensions } from "@/lib/lab2d/render";
 import {
+  AXIS_COLOR,
+  DIMENSION_COLOR,
+  MARK_COLOR,
+  PREVIEW_COLOR,
+  SELECTION_COLOR,
+  layerOrder,
+  modeAllows,
+  techColor,
+  techStyle,
+  type OutputMode,
+} from "@/lib/lab2d/technical";
+import {
   emptyPlan,
   getProject,
   planLabel,
