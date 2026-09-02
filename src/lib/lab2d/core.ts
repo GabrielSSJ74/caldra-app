@@ -204,6 +204,10 @@ export function mapEntity(e: Entity, f: (p: Vec2) => Vec2, scale = 1): Entity {
       const c = f({ x: e.cx, y: e.cy });
       return { ...e, cx: c.x, cy: c.y, r: e.r * Math.abs(scale) };
     }
+    case "path": {
+      const m = mapPath(e.start, e.segs, f);
+      return { ...e, start: m.start, segs: m.segs };
+    }
     case "text": {
       const c = f({ x: e.x, y: e.y });
       return { ...e, x: c.x, y: c.y };
