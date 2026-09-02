@@ -78,6 +78,12 @@ function GeometryPage() {
         </div>
       </div>
 
+      <div className="glass overflow-hidden rounded-3xl p-2">
+        <SchematicViews slug={geometry.slug} params={params} highlight={hl} />
+      </div>
+
+
+
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {SLIDERS.map((s) => (
           <label key={s.key} className="glass flex items-center gap-2 rounded-2xl px-3 py-2">
