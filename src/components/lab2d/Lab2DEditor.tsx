@@ -69,6 +69,7 @@ import {
   type Snap,
 } from "@/lib/lab2d/core";
 import { autoDimensions } from "@/lib/lab2d/render";
+import { pathToSvg } from "@/lib/lab2d/bezier";
 import {
   AXIS_COLOR,
   DIMENSION_COLOR,
