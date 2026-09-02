@@ -787,35 +787,129 @@ function PreviewCanvas({
   overlay,
   rotation,
   manual,
+  snapTol,
+  targets,
   calPts,
   onPick,
+  onMoveNode,
 }: {
   img: ImportedImage;
   analysis: VisionAnalysis;
   overlay: Overlay;
   rotation: number;
-  manual: Manual | null;
+  manual: ManualState | null;
+  snapTol: number;
+  targets: { x: number; y: number }[];
   calPts: { x: number; y: number }[];
   onPick: (p: { x: number; y: number }) => void;
+  onMoveNode: (shape: number, index: number, p: { x: number; y: number }) => void;
 }) {
   const ref = useRef<SVGSVGElement>(null);
   const { w, h } = analysis.imagePx;
+  const [view, setView] = useState({ x: 0, y: 0, w, h });
+  const drag = useRef<{
+    sx: number;
+    sy: number;
+    vx: number;
+    vy: number;
+    moved: boolean;
+    node: { shape: number; index: number } | null;
+  } | null>(null);
 
-  const click = (e: React.MouseEvent) => {
+  useEffect(() => setView({ x: 0, y: 0, w, h }), [w, h]);
+
+  const toImage = useCallback(
+    (clientX: number, clientY: number) => {
+      const svg = ref.current;
+      if (!svg) return { x: 0, y: 0 };
+      const r = svg.getBoundingClientRect();
+      return {
+        x: view.x + ((clientX - r.left) / r.width) * view.w,
+        y: view.y + ((clientY - r.top) / r.height) * view.h,
+      };
+    },
+    [view],
+  );
+
+  // zoom por roda com âncora no cursor (listener nativo, não passivo)
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const v = viewRef.current;
+      const r = el.getBoundingClientRect();
+      const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 100 : 1);
+      const k = Math.min(4, Math.max(0.25, Math.exp(dy * 0.0015)));
+      const nw = Math.min(w * 4, Math.max(w / 20, v.w * k));
+      const nh = nw * (v.h / v.w);
+      const px = v.x + ((e.clientX - r.left) / r.width) * v.w;
+      const py = v.y + ((e.clientY - r.top) / r.height) * v.h;
+      setView({
+        x: px - (px - v.x) * (nw / v.w),
+        y: py - (py - v.y) * (nh / v.h),
+        w: nw,
+        h: nh,
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [w]);
+
+  const nodes = manual ? manualNodes(manual) : [];
+  const nodeR = Math.max(2, view.w / 160);
+
+  const down = (e: React.PointerEvent) => {
+    const p = toImage(e.clientX, e.clientY);
+    let node: { shape: number; index: number } | null = null;
+    if (manual) {
+      let bd = nodeR * 2;
+      for (const n of nodes) {
+        const d = Math.hypot(n.p.x - p.x, n.p.y - p.y);
+        if (d <= bd) {
+          bd = d;
+          node = { shape: n.shape, index: n.index };
+        }
+      }
+    }
+    drag.current = { sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y, moved: false, node };
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+  };
+
+  const move = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const dx = e.clientX - d.sx;
+    const dy = e.clientY - d.sy;
+    if (!d.moved && Math.hypot(dx, dy) < 4) return;
+    d.moved = true;
+    if (d.node) {
+      onMoveNode(d.node.shape, d.node.index, toImage(e.clientX, e.clientY));
+      return;
+    }
     const svg = ref.current;
     if (!svg) return;
     const r = svg.getBoundingClientRect();
-    const sx = ((e.clientX - r.left) / r.width) * w;
-    const sy = ((e.clientY - r.top) / r.height) * h;
-    onPick({ x: sx, y: sy });
+    setView((v) => ({ ...v, x: d.vx - (dx / r.width) * v.w, y: d.vy - (dy / r.height) * v.h }));
+  };
+
+  const up = (e: React.PointerEvent) => {
+    const d = drag.current;
+    drag.current = null;
+    if (!d || d.moved) return;
+    onPick(toImage(e.clientX, e.clientY));
   };
 
   return (
     <svg
       ref={ref}
-      viewBox={`0 0 ${w} ${h}`}
-      className="w-full rounded-2xl border border-border bg-white"
-      onClick={click}
+      viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+      className="w-full touch-none rounded-2xl border border-border bg-white"
+      onPointerDown={down}
+      onPointerMove={move}
+      onPointerUp={up}
       role="img"
       aria-label="Pré-visualização da vetorização"
     >
@@ -832,36 +926,66 @@ function PreviewCanvas({
         />
       )}
       {overlay !== "original" && (
-        <g fill="none" stroke={CUT_COLOR} strokeWidth={Math.max(1, w / 500)}>
+        <g fill="none" stroke={CUT_COLOR} strokeWidth={Math.max(0.6, view.w / 500)}>
           {analysis.prims.map((p, i) => (
             <PrimShape key={i} p={p} />
           ))}
         </g>
       )}
-      {manual && manual.pts.length > 0 && (
-        <g>
-          <polyline
-            points={manual.pts.map((p) => `${p.x},${p.y}`).join(" ")}
-            fill="none"
-            stroke={MARK_COLOR}
-            strokeWidth={Math.max(1.5, w / 400)}
-          />
-          {manual.pts.map((p, i) => (
-            <g key={i}>
-              <circle cx={p.x} cy={p.y} r={Math.max(2, w / 200)} fill={MARK_COLOR} />
-              <text x={p.x + w / 80} y={p.y} fontSize={w / 45} fill={MARK_COLOR}>
-                P{i + 1}
-              </text>
-            </g>
+      {manual && (
+        <g fill="none" stroke={MARK_COLOR} strokeWidth={Math.max(0.8, view.w / 400)}>
+          {manual.shapes.map((sh, i) => (
+            <ManualShapeView key={i} shape={sh} />
+          ))}
+          {manual.pending.length > 1 && (
+            <polyline
+              points={manual.pending.map((p) => `${p.x},${p.y}`).join(" ")}
+              strokeDasharray={`${view.w / 90} ${view.w / 90}`}
+            />
+          )}
+        </g>
+      )}
+      {manual && snapTol > 0 && (
+        <g fill="none" stroke="#00CCFF" opacity={0.5} strokeWidth={Math.max(0.4, view.w / 900)}>
+          {targets.map((t, i) => (
+            <circle key={i} cx={t.x} cy={t.y} r={nodeR * 0.9} />
           ))}
         </g>
       )}
+      {nodes.map((n, i) => (
+        <g key={i}>
+          <circle cx={n.p.x} cy={n.p.y} r={nodeR} fill={MARK_COLOR} />
+          <text x={n.p.x + nodeR * 1.4} y={n.p.y - nodeR} fontSize={nodeR * 2.6} fill={MARK_COLOR}>
+            P{i + 1}
+          </text>
+        </g>
+      ))}
       {calPts.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r={Math.max(2.5, w / 180)} fill="#00CCFF" />
+        <circle key={i} cx={p.x} cy={p.y} r={nodeR} fill="#00CCFF" />
       ))}
     </svg>
   );
 }
+
+/** Desenho de uma forma manual: polilinha reta ou arco por 3 pontos. */
+function ManualShapeView({ shape }: { shape: NonNullable<ManualState["shapes"][number]> }) {
+  if (shape.kind === "arc") {
+    const [a, b, c] = shape.pts;
+    if (!a || !b || !c) return null;
+    const fit = arcFrom3Points(a, b, c);
+    if (!fit) return <polyline points={`${a.x},${a.y} ${c.x},${c.y}`} />;
+    let sweep = fit.a1 - fit.a0;
+    while (sweep < 0) sweep += Math.PI * 2;
+    const x0 = fit.cx + fit.r * Math.cos(fit.a0);
+    const y0 = fit.cy + fit.r * Math.sin(fit.a0);
+    const x1 = fit.cx + fit.r * Math.cos(fit.a1);
+    const y1 = fit.cy + fit.r * Math.sin(fit.a1);
+    return <path d={`M ${x0} ${y0} A ${fit.r} ${fit.r} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x1} ${y1}`} />;
+  }
+  const pts = shape.pts.map((p) => `${p.x},${p.y}`).join(" ");
+  return shape.closed ? <polygon points={pts} /> : <polyline points={pts} />;
+}
+
 
 /** Prévia do traçado de logo: curvas reais, furos em âmbar. */
 function LogoCanvas({
