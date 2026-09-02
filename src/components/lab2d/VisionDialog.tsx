@@ -123,6 +123,20 @@ export function VisionDialog({
   const [center, setCenter] = useState<CenterlineAnalysis | null>(null);
   const [overlay, setOverlay] = useState<Overlay>("ambos");
 
+  // qualidade / pré-flight / processamento
+  const [profile, setProfile] = useState<ImageProfile | null>(null);
+  const [suggestion, setSuggestion] = useState<VisionSuggestion | null>(null);
+  const [adaptive, setAdaptive] = useState(false);
+  const [normalize, setNormalize] = useState(false);
+  const [regularize, setRegularize] = useState(true);
+  const [multiScale, setMultiScale] = useState(false);
+  const [progress, setProgress] = useState<{ stage: string; pct: number }>({
+    stage: "Preparando",
+    pct: 0,
+  });
+  const [focusBox, setFocusBox] = useState<QualityItem["box"] | null>(null);
+
+
   // calibração
   const [cal, setCal] = useState<Calibration>(DEFAULT_CALIBRATION);
   const [widthMm, setWidthMm] = useState("");
