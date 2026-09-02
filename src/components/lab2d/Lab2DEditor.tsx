@@ -1255,10 +1255,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               <line x1={-1e4} y1={0} x2={1e4} y2={0} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
               <line x1={0} y1={-1e4} x2={0} y2={1e4} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
 
+              {/* geometria principal: pintada no canvas sob este SVG */}
 
-              {drawable.map((e) => (
-                <EntityShape key={e.id} e={e} k={view.k} selected={selection.includes(e.id)} />
-              ))}
 
               {draft && <EntityShape e={draft} k={view.k} preview />}
 
