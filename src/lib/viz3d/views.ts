@@ -226,19 +226,20 @@ export function buildViews(slug: string, p: WireParams): OrthoViews {
 
     case "chamines":
       return {
-        front: [trapezoid(d1, d1 * 0.85, h / 2), trapezoid(d1 * 0.85, d2, h / 2).k === "poly"
-          ? {
-              k: "poly",
-              pts: [
-                [-(d1 * 0.85) / 2, h / 2],
-                [(d1 * 0.85) / 2, h / 2],
-                [d2 / 2, h],
-                [-d2 / 2, h],
-              ],
-              closed: true,
-              fill: true,
-            }
-          : trapezoid(d1 * 0.85, d2, h / 2)],
+        front: [
+          trapezoid(d1, d1 * 0.85, h / 2),
+          {
+            k: "poly",
+            pts: [
+              [-(d1 * 0.85) / 2, h / 2],
+              [(d1 * 0.85) / 2, h / 2],
+              [d2 / 2, h],
+              [-d2 / 2, h],
+            ],
+            closed: true,
+            fill: true,
+          },
+        ],
         plan: [circPlan(r1), circPlan(r2, 0, 0, true, false)],
         dims: dimsFull,
       };
