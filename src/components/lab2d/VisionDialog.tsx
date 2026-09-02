@@ -21,7 +21,7 @@ import type { Entity } from "@/lib/lab2d/core";
 import { CUT_COLOR, MARK_COLOR } from "@/lib/lab2d/technical";
 import { importImage, type ImportedImage } from "@/lib/vision/imageImportService";
 import type { Prim, Tolerance } from "@/lib/vision/geometryRecognizer";
-import { analyzeImage, toEntities, type VisionAnalysis } from "@/lib/vision/vectorizer";
+import { toEntities, type VisionAnalysis } from "@/lib/vision/vectorizer";
 import { countDuplicates, normalizeGeometry } from "@/lib/vision/geometryNormalizer";
 import {
   calibrateByDimension,
@@ -31,7 +31,6 @@ import {
 } from "@/lib/vision/scaleCalibrationService";
 import { validateVector } from "@/lib/vision/vectorValidationService";
 import {
-  analyzeLogo,
   DEFAULT_LOGO,
   logoToEntities,
   type LogoAnalysis,
@@ -40,7 +39,6 @@ import {
 import { pathToSvg } from "@/lib/lab2d/bezier";
 import type { TurnPolicy } from "@/lib/vision/logoTracer";
 import {
-  analyzeCenterline,
   DEFAULT_CENTERLINE,
   type CenterlineAnalysis,
   type CenterlineOptions,
