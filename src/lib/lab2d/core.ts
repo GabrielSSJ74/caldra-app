@@ -503,7 +503,16 @@ export function toDxf(entities: Entity[], layers: Layer[]): DxfDocument {
     }
 
   }
-  return { layers: layers.map((l, i) => ({ name: l.name.toUpperCase(), color: i + 1 })), entities: out };
+  return {
+    // ACI aproximado por camada + true color com o hex técnico fixo do CHAMFER
+    layers: layers.map((l, i) => {
+      const hex = techColor(l.id);
+      const trueColor = parseInt(hex.slice(1), 16);
+      const aci = DXF_ACI[l.id as TechLayerId] ?? i + 1;
+      return { name: l.name.toUpperCase(), color: aci, trueColor };
+    }),
+    entities: out,
+  };
 }
 
 export function fromDxf(doc: DxfDocument, layer: LayerId): Entity[] {
