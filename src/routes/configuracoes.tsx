@@ -4,7 +4,12 @@ import { toast } from "sonner";
 import { Sparkles } from "lucide-react";
 import { PLAN_LABEL } from "@/lib/subscription/features";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
-import { useSettings, type ThemeMode, type Unit } from "@/lib/settings/SettingsProvider";
+import {
+  useSettings,
+  type AccentColor,
+  type ThemeMode,
+  type Unit,
+} from "@/lib/settings/SettingsProvider";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { cn } from "@/lib/utils";
 
@@ -31,11 +36,16 @@ const THEMES: { id: ThemeMode; label: string }[] = [
   { id: "light", label: "Claro" },
   { id: "system", label: "Sistema" },
 ];
+const ACCENTS: { id: AccentColor; label: string; swatch: string }[] = [
+  { id: "amber", label: "Âmbar", swatch: "#F59E0B" },
+  { id: "blue", label: "Azul Real", swatch: "#00CCFF" },
+];
 const UNITS: Unit[] = ["mm", "cm", "m", "in"];
 
 function Configuracoes() {
   const { plan, isMestre, unlockWithCode, reset } = useFeatureAccess();
-  const { theme, setTheme, unit, setUnit, precision, setPrecision } = useSettings();
+  const { theme, setTheme, accent, setAccent, unit, setUnit, precision, setPrecision } =
+    useSettings();
   const [code, setCode] = useState("");
 
   const submit = (e: React.FormEvent) => {
