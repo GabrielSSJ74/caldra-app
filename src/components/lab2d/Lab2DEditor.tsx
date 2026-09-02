@@ -196,6 +196,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const future = useRef<Entity[][]>([]);
   const panRef = useRef<{ x: number; y: number } | null>(null);
   const moveRef = useRef<{ from: Vec2; ids: string[]; base: Entity[] } | null>(null);
+  /* ponteiros ativos (toque/caneta/mouse) para gesto de pinça */
+  const ptrsRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ dist: number; mx: number; my: number } | null>(null);
+  const gestureUntilRef = useRef(0);
+  const [zoomHud, setZoomHud] = useState<number | null>(null);
+  const hudTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /* ------------------------------------------- projeto, planos e autosave */
   useEffect(() => {
