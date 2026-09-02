@@ -64,6 +64,8 @@ export type LogoAnalysis = {
   contentPx: { x: number; y: number; w: number; h: number };
   stats: { contours: number; holes: number; segments: number; curves: number };
   palette: Swatch[];
+  /** Reconhecimento seletivo de círculos pedido na análise. */
+  detectCircles: boolean;
 };
 
 function boundsOf(layers: LogoLayerResult[]) {
@@ -138,6 +140,7 @@ export function analyzeLogo(img: HTMLImageElement, opt: LogoOptions): LogoAnalys
       ),
     },
     palette,
+    detectCircles: opt.detectCircles,
   };
 }
 
@@ -165,7 +168,7 @@ export function logoToEntities(
     const ids = l.paths.map(() => uid());
     l.paths.forEach((t, i) => {
       const m = mapPath(t.start, t.segs, to);
-      if (analysis.detectCirclesEnabled !== false) {
+      if (analysis.detectCircles) {
         const c = circleFromPath(m.start, m.segs, tol);
         if (c) {
           out.push({ id: ids[i]!, layer: target, type: "circle", cx: c.cx, cy: c.cy, r: c.r });
@@ -185,10 +188,4 @@ export function logoToEntities(
     });
   });
   return out;
-}
-
-declare module "./logoPipeline" {
-  interface LogoAnalysis {
-    detectCirclesEnabled?: boolean;
-  }
 }
