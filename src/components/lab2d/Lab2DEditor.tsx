@@ -143,6 +143,10 @@ const PRIMARY: Tool[] = [
   "pan",
 ];
 
+const ZOOM_MIN = 0.05;
+const ZOOM_MAX = 30;
+
+
 
 type Measure = { a: Vec2; b: Vec2 };
 
