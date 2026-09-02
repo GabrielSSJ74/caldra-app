@@ -1259,10 +1259,11 @@ function PreviewCanvas({
   };
 
   return (
+    <div className="h-[42vh] max-h-[42vh] min-h-[200px] w-full shrink-0 overflow-hidden rounded-2xl border border-border bg-white">
     <svg
       ref={ref}
       viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-      className="w-full touch-none rounded-2xl border border-border bg-white"
+      className="block h-full w-full touch-none"
       onPointerDown={down}
       onPointerMove={move}
       onPointerUp={up}
