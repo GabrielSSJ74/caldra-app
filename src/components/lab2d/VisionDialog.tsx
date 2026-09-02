@@ -1321,6 +1321,7 @@ function PreviewCanvas({
         <circle key={i} cx={p.x} cy={p.y} r={nodeR} fill="#00CCFF" />
       ))}
     </svg>
+    </div>
   );
 }
 
