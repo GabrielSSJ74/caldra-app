@@ -1,13 +1,13 @@
 /**
  * dxfService — camada única de importação/exportação DXF.
  *
- * Exportação: DXF R12 ASCII (SECTION HEADER/TABLES/ENTITIES), suportando
- * LINE, LWPOLYLINE, CIRCLE e ARC, com camadas.
+ * Exportação: DXF ASCII (SECTION HEADER/TABLES/ENTITIES), suportando
+ * LINE, LWPOLYLINE, CIRCLE, ARC e SPLINE (curvas de Bézier reais), com camadas.
  * Importação: parser de pares (código, valor) com suporte a
- * LINE, POLYLINE/VERTEX, LWPOLYLINE, CIRCLE e ARC.
+ * LINE, POLYLINE/VERTEX, LWPOLYLINE, CIRCLE, ARC e SPLINE.
  *
- * Preparado para evolução: SPLINE, TEXT e BLOCKS entram como novos
- * conversores em ENTITY_WRITERS / ENTITY_PARSERS sem tocar no restante do app.
+ * Quando há SPLINE o cabeçalho declara AC1015 (R2000), versão mínima que
+ * define a entidade — é o que CypCut e afins esperam.
  */
 
 export type DxfPoint = { x: number; y: number };
@@ -23,11 +23,20 @@ export type DxfEntity =
       radius: number;
       startAngle: number;
       endAngle: number;
+    }
+  | {
+      /** Spline cúbica em forma de Bézier por partes. */
+      type: "SPLINE";
+      layer: string;
+      /** 3n+1 pontos de controle. */
+      controls: DxfPoint[];
+      closed: boolean;
     };
 
 export type DxfLayer = { name: string; color: number; trueColor?: number };
 
 export type DxfDocument = { layers: DxfLayer[]; entities: DxfEntity[] };
+
 
 const g = (code: number, value: string | number) => `${code}\n${value}\n`;
 
