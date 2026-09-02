@@ -112,6 +112,20 @@ const TOOLS: { id: Tool; icon: typeof Minus; label: string; key: string }[] = [
   { id: "measure", icon: Ruler, label: "Medir", key: "M" },
 ];
 
+/** Ferramentas principais na barra lateral; as demais formam o grupo secundário. */
+const PRIMARY: Tool[] = [
+  "select",
+  "node",
+  "line",
+  "polyline",
+  "circle",
+  "arc",
+  "rect",
+  "polygon",
+  "pan",
+];
+
+
 type Measure = { a: Vec2; b: Vec2 };
 
 const SNAP_GLYPH: Record<Snap["kind"], string> = {
