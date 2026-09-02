@@ -11,8 +11,7 @@ import type { Prim } from "./geometryRecognizer";
 import type { PxPoint } from "./visionEngine";
 
 export type ManualShape =
-  | { kind: "poly"; pts: PxPoint[]; closed: boolean }
-  | { kind: "arc"; pts: PxPoint[] };
+  { kind: "poly"; pts: PxPoint[]; closed: boolean } | { kind: "arc"; pts: PxPoint[] };
 
 export type ManualState = {
   shapes: ManualShape[];
@@ -169,7 +168,15 @@ export function manualToEntities(s: ManualState, opt: ManualToEntitiesOptions): 
       if (!a || !b || !c) continue;
       const fit = arcFrom3Points(a, b, c);
       if (!fit) {
-        out.push({ id: uid(), layer, type: "line", x1: mx(a.x), y1: my(a.y), x2: mx(c.x), y2: my(c.y) });
+        out.push({
+          id: uid(),
+          layer,
+          type: "line",
+          x1: mx(a.x),
+          y1: my(a.y),
+          x2: mx(c.x),
+          y2: my(c.y),
+        });
         continue;
       }
       out.push({
@@ -187,7 +194,15 @@ export function manualToEntities(s: ManualState, opt: ManualToEntitiesOptions): 
     if (sh.pts.length < 2) continue;
     if (sh.pts.length === 2 && !sh.closed) {
       const [a, b] = sh.pts as [PxPoint, PxPoint];
-      out.push({ id: uid(), layer, type: "line", x1: mx(a.x), y1: my(a.y), x2: mx(b.x), y2: my(b.y) });
+      out.push({
+        id: uid(),
+        layer,
+        type: "line",
+        x1: mx(a.x),
+        y1: my(a.y),
+        x2: mx(b.x),
+        y2: my(b.y),
+      });
       continue;
     }
     out.push({

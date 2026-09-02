@@ -165,7 +165,6 @@ export function traceSkeleton(skel: Binary): Chain[] {
     return out;
   };
 
-
   const deg = new Uint8Array(data.length);
   const pixels: number[] = [];
   for (let i = 0; i < data.length; i++) {
@@ -197,7 +196,8 @@ export function traceSkeleton(skel: Binary): Chain[] {
       cur = next;
       if (cur === node) break;
     }
-    if (path.length >= 2) chains.push({ pts: path.map(pt), closed: path[0] === path[path.length - 1] });
+    if (path.length >= 2)
+      chains.push({ pts: path.map(pt), closed: path[0] === path[path.length - 1] });
   };
 
   for (const i of pixels) if (deg[i] !== 2) for (const n of nbrs(i)) walk(i, n);
@@ -225,7 +225,8 @@ export function traceSkeleton(skel: Binary): Chain[] {
 
 const chainLength = (pts: PxPoint[]) => {
   let l = 0;
-  for (let i = 1; i < pts.length; i++) l += Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y);
+  for (let i = 1; i < pts.length; i++)
+    l += Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y);
   return l;
 };
 

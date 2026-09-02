@@ -78,7 +78,6 @@ type Step = "importar" | "previa" | "analisando" | "resultado";
 type Mode = "tecnico" | "logo" | "tracado";
 type Overlay = "original" | "vetor" | "ambos";
 
-
 /** CHAMFER VISION — imagem → vetor → geometria CAD editável. */
 export function VisionDialog({
   open,
@@ -171,7 +170,6 @@ export function VisionDialog({
     setPast([]);
     setFuture([]);
   }, []);
-
 
   useEffect(() => {
     if (!open) reset();
@@ -307,11 +305,13 @@ export function VisionDialog({
     () =>
       logo
         ? // curvas nunca passam pelo normalizador de polilinhas
-          { entities: [...rawEntities, ...manualEntities], report: { removedTiny: 0, nearlyClosed: [] as unknown[] } }
+          {
+            entities: [...rawEntities, ...manualEntities],
+            report: { removedTiny: 0, nearlyClosed: [] as unknown[] },
+          }
         : normalizeGeometry([...rawEntities, ...manualEntities], { autoClose: false }),
     [rawEntities, manualEntities, logo],
   );
-
 
   const duplicates = useMemo(() => countDuplicates(rawEntities), [rawEntities]);
   const validation = useMemo(() => validateVector(normalized.entities, cal), [normalized, cal]);
@@ -422,13 +422,32 @@ export function VisionDialog({
             </div>
             <div className="grid grid-cols-2 gap-2">
               <Slider label="Zoom" value={zoom} min={0.4} max={3} step={0.05} onChange={setZoom} />
-              <Slider label="Opacidade" value={opacity} min={0.2} max={1} step={0.05} onChange={setOpacity} />
+              <Slider
+                label="Opacidade"
+                value={opacity}
+                min={0.2}
+                max={1}
+                step={0.05}
+                onChange={setOpacity}
+              />
             </div>
             <Section title="Modo de vetorização" icon={Spline}>
               <div className="flex flex-wrap gap-1">
-                <Toggle active={mode === "tecnico"} onClick={() => setMode("tecnico")} label="técnico" />
-                <Toggle active={mode === "logo"} onClick={() => setMode("logo")} label="logo (curvas)" />
-                <Toggle active={mode === "tracado"} onClick={() => setMode("tracado")} label="traçado (centro)" />
+                <Toggle
+                  active={mode === "tecnico"}
+                  onClick={() => setMode("tecnico")}
+                  label="técnico"
+                />
+                <Toggle
+                  active={mode === "logo"}
+                  onClick={() => setMode("logo")}
+                  label="logo (curvas)"
+                />
+                <Toggle
+                  active={mode === "tracado"}
+                  onClick={() => setMode("tracado")}
+                  label="traçado (centro)"
+                />
               </div>
               <p className="font-mono text-[10px] text-muted-foreground">
                 {mode === "tecnico"
@@ -439,14 +458,18 @@ export function VisionDialog({
               </p>
               {Math.min(img.widthPx, img.heightPx) < 600 && (
                 <p className="rounded-xl border border-amber-500/40 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-500">
-                  Imagem de baixa resolução detectada. O resultado pode ter bordas imprecisas. Prefira a
-                  maior versão disponível.
+                  Imagem de baixa resolução detectada. O resultado pode ter bordas imprecisas.
+                  Prefira a maior versão disponível.
                 </p>
               )}
             </Section>
 
             <div className="flex items-center gap-2">
-              <Chip icon={RotateCw} label="Girar 90°" onClick={() => setRotation((r) => (r + 90) % 360)} />
+              <Chip
+                icon={RotateCw}
+                label="Girar 90°"
+                onClick={() => setRotation((r) => (r + 90) % 360)}
+              />
               <span className="font-mono text-[10px] text-muted-foreground">
                 {img.widthPx} × {img.heightPx} px
               </span>
@@ -457,7 +480,6 @@ export function VisionDialog({
                 Continuar
               </button>
             </div>
-
           </>
         )}
 
@@ -493,7 +515,10 @@ export function VisionDialog({
                   placeholder="Largura real (mm)"
                   className="metal w-40 rounded-xl px-3 py-2 text-sm outline-none"
                 />
-                <button onClick={applyDimension} className="rounded-xl border border-border px-3 py-2 text-xs">
+                <button
+                  onClick={applyDimension}
+                  className="rounded-xl border border-border px-3 py-2 text-xs"
+                >
                   Aplicar
                 </button>
               </div>
@@ -560,30 +585,73 @@ export function VisionDialog({
                 </p>
                 <Section title="Foto de papel" icon={ImageIcon}>
                   <div className="grid grid-cols-2 gap-2">
-                    <Slider label={`Brilho ${centerOpt.brightness}`} value={centerOpt.brightness} min={-80} max={80}
-                      step={1} onChange={(v) => setCenterOpt({ ...centerOpt, brightness: v })} />
-                    <Slider label={`Contraste ${centerOpt.contrast}`} value={centerOpt.contrast} min={-60} max={90}
-                      step={1} onChange={(v) => setCenterOpt({ ...centerOpt, contrast: v })} />
-                    <Slider label={`Limiar adaptativo ${centerOpt.bias}`} value={centerOpt.bias} min={2} max={40}
-                      step={1} onChange={(v) => setCenterOpt({ ...centerOpt, bias: v })} />
-                    <Slider label={`Suavizar ${centerOpt.blur}px`} value={centerOpt.blur} min={0} max={3} step={1}
-                      onChange={(v) => setCenterOpt({ ...centerOpt, blur: v })} />
-                    <Slider label={`Traço mínimo ${centerOpt.minBranchPct}%`} value={centerOpt.minBranchPct} min={0.3}
-                      max={6} step={0.1} onChange={(v) => setCenterOpt({ ...centerOpt, minBranchPct: v })} />
-                    <Slider label={`Fechar vãos ${centerOpt.gapPct}%`} value={centerOpt.gapPct} min={0} max={4}
-                      step={0.1} onChange={(v) => setCenterOpt({ ...centerOpt, gapPct: v })} />
+                    <Slider
+                      label={`Brilho ${centerOpt.brightness}`}
+                      value={centerOpt.brightness}
+                      min={-80}
+                      max={80}
+                      step={1}
+                      onChange={(v) => setCenterOpt({ ...centerOpt, brightness: v })}
+                    />
+                    <Slider
+                      label={`Contraste ${centerOpt.contrast}`}
+                      value={centerOpt.contrast}
+                      min={-60}
+                      max={90}
+                      step={1}
+                      onChange={(v) => setCenterOpt({ ...centerOpt, contrast: v })}
+                    />
+                    <Slider
+                      label={`Limiar adaptativo ${centerOpt.bias}`}
+                      value={centerOpt.bias}
+                      min={2}
+                      max={40}
+                      step={1}
+                      onChange={(v) => setCenterOpt({ ...centerOpt, bias: v })}
+                    />
+                    <Slider
+                      label={`Suavizar ${centerOpt.blur}px`}
+                      value={centerOpt.blur}
+                      min={0}
+                      max={3}
+                      step={1}
+                      onChange={(v) => setCenterOpt({ ...centerOpt, blur: v })}
+                    />
+                    <Slider
+                      label={`Traço mínimo ${centerOpt.minBranchPct}%`}
+                      value={centerOpt.minBranchPct}
+                      min={0.3}
+                      max={6}
+                      step={0.1}
+                      onChange={(v) => setCenterOpt({ ...centerOpt, minBranchPct: v })}
+                    />
+                    <Slider
+                      label={`Fechar vãos ${centerOpt.gapPct}%`}
+                      value={centerOpt.gapPct}
+                      min={0}
+                      max={4}
+                      step={0.1}
+                      onChange={(v) => setCenterOpt({ ...centerOpt, gapPct: v })}
+                    />
                   </div>
                   <div className="flex flex-wrap gap-1">
-                    <Toggle active={centerOpt.invert}
+                    <Toggle
+                      active={centerOpt.invert}
                       onClick={() => setCenterOpt({ ...centerOpt, invert: !centerOpt.invert })}
-                      label="inverter tinta" />
+                      label="inverter tinta"
+                    />
                     {(["baixa", "media", "alta"] as Tolerance[]).map((t) => (
-                      <Toggle key={t} active={centerOpt.tolerance === t}
-                        onClick={() => setCenterOpt({ ...centerOpt, tolerance: t })} label={t} />
+                      <Toggle
+                        key={t}
+                        active={centerOpt.tolerance === t}
+                        onClick={() => setCenterOpt({ ...centerOpt, tolerance: t })}
+                        label={t}
+                      />
                     ))}
                   </div>
                   <p className="font-mono text-[10px] text-muted-foreground">
-                    Fotografe de cima, paralelo ao papel — correção de perspectiva não faz parte desta versão.
+                    Fotografe de cima, paralelo ao papel — correção de perspectiva não faz parte
+                    desta versão.
                   </p>
                 </Section>
               </>
@@ -594,7 +662,12 @@ export function VisionDialog({
                 <Section title="Tolerância" icon={Spline}>
                   <div className="flex gap-1">
                     {(["baixa", "media", "alta"] as Tolerance[]).map((t) => (
-                      <Toggle key={t} active={tolerance === t} onClick={() => setTolerance(t)} label={t} />
+                      <Toggle
+                        key={t}
+                        active={tolerance === t}
+                        onClick={() => setTolerance(t)}
+                        label={t}
+                      />
                     ))}
                   </div>
                 </Section>
@@ -615,7 +688,8 @@ export function VisionDialog({
                   </div>
                   {normalized.report.nearlyClosed.length > 0 && (
                     <p className="font-mono text-[10px] text-amber-500">
-                      {normalized.report.nearlyClosed.length} contorno(s) quase fechado(s) — revise após inserir.
+                      {normalized.report.nearlyClosed.length} contorno(s) quase fechado(s) — revise
+                      após inserir.
                     </p>
                   )}
                 </Section>
@@ -624,8 +698,16 @@ export function VisionDialog({
 
             <Section title="Escala" icon={Ruler}>
               <div className="flex gap-1">
-                <Toggle active={calMode === "dimensao"} onClick={() => setCalMode("dimensao")} label="dimensões" />
-                <Toggle active={calMode === "medida"} onClick={() => setCalMode("medida")} label="2 pontos" />
+                <Toggle
+                  active={calMode === "dimensao"}
+                  onClick={() => setCalMode("dimensao")}
+                  label="dimensões"
+                />
+                <Toggle
+                  active={calMode === "medida"}
+                  onClick={() => setCalMode("medida")}
+                  label="2 pontos"
+                />
               </div>
               {calMode === "dimensao" ? (
                 <div className="flex items-center gap-2">
@@ -636,20 +718,28 @@ export function VisionDialog({
                     placeholder="Largura real (mm)"
                     className="metal w-40 rounded-xl px-3 py-2 text-sm outline-none"
                   />
-                  <button onClick={applyDimension} className="rounded-xl border border-border px-3 py-2 text-xs">
+                  <button
+                    onClick={applyDimension}
+                    className="rounded-xl border border-border px-3 py-2 text-xs"
+                  >
                     Aplicar
                   </button>
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] text-muted-foreground">{calPts.length}/2 pontos</span>
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    {calPts.length}/2 pontos
+                  </span>
                   <input
                     value={realMm}
                     onChange={(e) => setRealMm(e.target.value)}
                     inputMode="decimal"
                     className="metal w-24 rounded-xl px-3 py-2 text-sm outline-none"
                   />
-                  <button onClick={applyMeasure} className="rounded-xl border border-border px-3 py-2 text-xs">
+                  <button
+                    onClick={applyMeasure}
+                    className="rounded-xl border border-border px-3 py-2 text-xs"
+                  >
                     Calibrar
                   </button>
                 </div>
@@ -659,10 +749,15 @@ export function VisionDialog({
 
             <Section title="Validação" icon={Check}>
               <ul className="space-y-0.5 font-mono text-[10px]">
-                <li>✓ {validation.counts.lines} linhas · {validation.counts.circles} círculos · {validation.counts.arcs} arcos</li>
+                <li>
+                  ✓ {validation.counts.lines} linhas · {validation.counts.circles} círculos ·{" "}
+                  {validation.counts.arcs} arcos
+                </li>
                 <li>✓ {validation.counts.closed} contornos fechados · unidade mm · 1:1</li>
                 {validation.issues.map((i, idx) => (
-                  <li key={idx} className="text-amber-500">⚠ {i.message}</li>
+                  <li key={idx} className="text-amber-500">
+                    ⚠ {i.message}
+                  </li>
                 ))}
               </ul>
             </Section>
@@ -686,10 +781,16 @@ export function VisionDialog({
                       onClick={() => setManual({ ...manual, mode: "arco", pending: [] })}
                       label="arco (3 pontos)"
                     />
-                    <Chip icon={CircleIcon} label="Fechar contorno"
-                      onClick={() => pushManual(closeManualContour(manual))} />
-                    <Chip icon={Undo2} label="Remover ponto"
-                      onClick={() => pushManual(removeLastManualPoint(manual))} />
+                    <Chip
+                      icon={CircleIcon}
+                      label="Fechar contorno"
+                      onClick={() => pushManual(closeManualContour(manual))}
+                    />
+                    <Chip
+                      icon={Undo2}
+                      label="Remover ponto"
+                      onClick={() => pushManual(removeLastManualPoint(manual))}
+                    />
                     <Chip icon={Undo2} label="Desfazer" onClick={undoManual} />
                     <Chip icon={RotateCw} label="Refazer" onClick={redoManual} />
                   </>
@@ -697,16 +798,23 @@ export function VisionDialog({
               </div>
               {manualOn && (
                 <>
-                  <Slider label={`Captura (snap) ${snapTol}px`} value={snapTol} min={0} max={40} step={1}
-                    onChange={setSnapTol} />
+                  <Slider
+                    label={`Captura (snap) ${snapTol}px`}
+                    value={snapTol}
+                    min={0}
+                    max={40}
+                    step={1}
+                    onChange={setSnapTol}
+                  />
                   <p className="font-mono text-[10px] text-muted-foreground">
                     {manualPointCount(manual)} pontos · {manualEntities.length} entidades ·{" "}
-                    {manual.mode === "arco" ? `arco ${manual.pending.length}/3` : "linha encadeada"} · arraste um
-                    ponto para movê-lo · role para dar zoom
+                    {manual.mode === "arco" ? `arco ${manual.pending.length}/3` : "linha encadeada"}{" "}
+                    · arraste um ponto para movê-lo · role para dar zoom
                   </p>
                   {!calibrated && (
                     <p className="font-mono text-[10px] text-amber-500">
-                      Calibre a escala antes de criar geometria manual — os pontos precisam nascer em mm.
+                      Calibre a escala antes de criar geometria manual — os pontos precisam nascer
+                      em mm.
                     </p>
                   )}
                 </>
@@ -734,8 +842,8 @@ export function VisionDialog({
         {step === "resultado" && img && !logo && !analysis && (
           <div className="space-y-2">
             <p className="text-sm text-muted-foreground">
-              Não foi possível reconhecer a geometria desta imagem. Ajuste os parâmetros e tente de novo, ou
-              vetorize manualmente sobre a imagem.
+              Não foi possível reconhecer a geometria desta imagem. Ajuste os parâmetros e tente de
+              novo, ou vetorize manualmente sobre a imagem.
             </p>
             <div className="flex flex-wrap gap-1">
               {(["baixa", "media", "alta"] as Tolerance[]).map((t) => (
@@ -773,7 +881,6 @@ export function VisionDialog({
             </button>
           </div>
         )}
-
       </DialogContent>
     </Dialog>
   );
@@ -980,12 +1087,13 @@ function ManualShapeView({ shape }: { shape: NonNullable<ManualState["shapes"][n
     const y0 = fit.cy + fit.r * Math.sin(fit.a0);
     const x1 = fit.cx + fit.r * Math.cos(fit.a1);
     const y1 = fit.cy + fit.r * Math.sin(fit.a1);
-    return <path d={`M ${x0} ${y0} A ${fit.r} ${fit.r} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x1} ${y1}`} />;
+    return (
+      <path d={`M ${x0} ${y0} A ${fit.r} ${fit.r} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x1} ${y1}`} />
+    );
   }
   const pts = shape.pts.map((p) => `${p.x},${p.y}`).join(" ");
   return shape.closed ? <polygon points={pts} /> : <polyline points={pts} />;
 }
-
 
 /** Prévia do traçado de logo: curvas reais, furos em âmbar. */
 function LogoCanvas({
@@ -1070,36 +1178,96 @@ function LogoControls({
     <>
       <Section title="Pré-processamento" icon={ImageIcon}>
         <div className="grid grid-cols-2 gap-2">
-          <Slider label={`Ampliação ${opt.upscale}×`} value={opt.upscale} min={1} max={4} step={1}
-            onChange={(v) => onChange({ upscale: v })} />
-          <Slider label={`Suavizar (JPG) ${opt.blur}px`} value={opt.blur} min={0} max={3} step={1}
-            onChange={(v) => onChange({ blur: v })} />
-          <Slider label={`Limiar ${opt.threshold}`} value={opt.threshold} min={20} max={235} step={1}
-            onChange={(v) => onChange({ threshold: v })} />
-          <Slider label={`Fechar furos ${opt.closeHoles}`} value={opt.closeHoles} min={0} max={3} step={1}
-            onChange={(v) => onChange({ closeHoles: v })} />
+          <Slider
+            label={`Ampliação ${opt.upscale}×`}
+            value={opt.upscale}
+            min={1}
+            max={4}
+            step={1}
+            onChange={(v) => onChange({ upscale: v })}
+          />
+          <Slider
+            label={`Suavizar (JPG) ${opt.blur}px`}
+            value={opt.blur}
+            min={0}
+            max={3}
+            step={1}
+            onChange={(v) => onChange({ blur: v })}
+          />
+          <Slider
+            label={`Limiar ${opt.threshold}`}
+            value={opt.threshold}
+            min={20}
+            max={235}
+            step={1}
+            onChange={(v) => onChange({ threshold: v })}
+          />
+          <Slider
+            label={`Fechar furos ${opt.closeHoles}`}
+            value={opt.closeHoles}
+            min={0}
+            max={3}
+            step={1}
+            onChange={(v) => onChange({ closeHoles: v })}
+          />
         </div>
         <div className="flex flex-wrap gap-1">
-          <Toggle active={opt.invert} onClick={() => onChange({ invert: !opt.invert })} label="inverter tinta" />
-          <Toggle active={opt.detectCircles} onClick={() => onChange({ detectCircles: !opt.detectCircles })}
-            label="furos redondos → círculo" />
+          <Toggle
+            active={opt.invert}
+            onClick={() => onChange({ invert: !opt.invert })}
+            label="inverter tinta"
+          />
+          <Toggle
+            active={opt.detectCircles}
+            onClick={() => onChange({ detectCircles: !opt.detectCircles })}
+            label="furos redondos → círculo"
+          />
         </div>
       </Section>
 
       <Section title="Traçado" icon={Spline}>
         <div className="grid grid-cols-2 gap-2">
-          <Slider label={`Poeira (turdsize) ${opt.turdsize}`} value={opt.turdsize} min={0} max={12} step={1}
-            onChange={(v) => onChange({ turdsize: v })} />
-          <Slider label={`Cantos (alphamax) ${opt.alphamax.toFixed(2)}`} value={opt.alphamax} min={0} max={1.34} step={0.02}
-            onChange={(v) => onChange({ alphamax: v })} />
-          <Slider label={`Fidelidade (opttolerance) ${opt.opttolerance.toFixed(2)}`} value={opt.opttolerance}
-            min={0.05} max={1} step={0.05} onChange={(v) => onChange({ opttolerance: v })} />
-          <Slider label={`Cores ${opt.colors}`} value={opt.colors} min={1} max={6} step={1}
-            onChange={(v) => onChange({ colors: v })} />
+          <Slider
+            label={`Poeira (turdsize) ${opt.turdsize}`}
+            value={opt.turdsize}
+            min={0}
+            max={12}
+            step={1}
+            onChange={(v) => onChange({ turdsize: v })}
+          />
+          <Slider
+            label={`Cantos (alphamax) ${opt.alphamax.toFixed(2)}`}
+            value={opt.alphamax}
+            min={0}
+            max={1.34}
+            step={0.02}
+            onChange={(v) => onChange({ alphamax: v })}
+          />
+          <Slider
+            label={`Fidelidade (opttolerance) ${opt.opttolerance.toFixed(2)}`}
+            value={opt.opttolerance}
+            min={0.05}
+            max={1}
+            step={0.05}
+            onChange={(v) => onChange({ opttolerance: v })}
+          />
+          <Slider
+            label={`Cores ${opt.colors}`}
+            value={opt.colors}
+            min={1}
+            max={6}
+            step={1}
+            onChange={(v) => onChange({ colors: v })}
+          />
         </div>
         <div className="flex flex-wrap gap-1">
           {TURN_POLICIES.map((t) => (
-            <Toggle key={t} active={opt.turnpolicy === t} onClick={() => onChange({ turnpolicy: t })} label={t} />
+            <Toggle
+              key={t}
+              active={opt.turnpolicy === t}
+              onClick={() => onChange({ turnpolicy: t })}
+              label={t}
+            />
           ))}
         </div>
       </Section>
@@ -1121,7 +1289,10 @@ function PrimShape({ p }: { p: Prim }) {
   }
   return (
     <polyline
-      points={p.pts.map((q) => `${q.x},${q.y}`).join(" ") + (p.closed && p.pts[0] ? ` ${p.pts[0].x},${p.pts[0].y}` : "")}
+      points={
+        p.pts.map((q) => `${q.x},${q.y}`).join(" ") +
+        (p.closed && p.pts[0] ? ` ${p.pts[0].x},${p.pts[0].y}` : "")
+      }
     />
   );
 }
@@ -1171,12 +1342,22 @@ function Section({
   );
 }
 
-function Toggle({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+function Toggle({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
   return (
     <button
       onClick={onClick}
       className={`rounded-xl px-2.5 py-1.5 font-mono text-[10px] tracking-wider uppercase transition-colors ${
-        active ? "bg-accent/15 text-accent" : "border border-border text-muted-foreground hover:text-foreground"
+        active
+          ? "bg-accent/15 text-accent"
+          : "border border-border text-muted-foreground hover:text-foreground"
       }`}
     >
       {label}
@@ -1184,7 +1365,15 @@ function Toggle({ active, onClick, label }: { active: boolean; onClick: () => vo
   );
 }
 
-function Chip({ icon: Icon, label, onClick }: { icon: typeof RotateCw; label: string; onClick: () => void }) {
+function Chip({
+  icon: Icon,
+  label,
+  onClick,
+}: {
+  icon: typeof RotateCw;
+  label: string;
+  onClick: () => void;
+}) {
   return (
     <button
       onClick={onClick}
@@ -1212,7 +1401,9 @@ function Slider({
 }) {
   return (
     <label className="space-y-1">
-      <span className="font-mono text-[10px] tracking-wider text-muted-foreground uppercase">{label}</span>
+      <span className="font-mono text-[10px] tracking-wider text-muted-foreground uppercase">
+        {label}
+      </span>
       <input
         type="range"
         min={min}
