@@ -668,8 +668,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = (ev?: React.PointerEvent) => {
+    if (ev) ptrsRef.current.delete(ev.pointerId);
+    const wasPinching = pinchRef.current !== null;
+    if (wasPinching && ptrsRef.current.size < 2) {
+      pinchRef.current = null;
+      gestureUntilRef.current = performance.now() + 350;
+      // continua o pan com o dedo restante, sem salto
+      const rest = [...ptrsRef.current.values()][0];
+      panRef.current = rest && tool === "pan" ? { ...rest } : null;
+      return;
+    }
+    if (wasPinching) return;
     panRef.current = null;
+
     if (dragNode) {
       setDragNode(null);
       past.current = [...past.current, entities];
