@@ -350,6 +350,11 @@ export function VisionDialog({
       toast.error("Nada para inserir.");
       return;
     }
+    if (manualEntities.length && !calibrated) {
+      toast.error("Calibre a escala antes de criar a geometria manual.");
+      return;
+    }
+
     const s = cal.mmPerPx;
     const geo = (logo ?? analysis)!;
     onCreate(list, {
