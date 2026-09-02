@@ -138,35 +138,35 @@ function Inicio() {
         </Link>
 
         <Link
-          to="/escola"
+          to="/projetos"
           className="metal group relative flex min-h-[130px] flex-col justify-between overflow-hidden rounded-3xl p-4 transition-all duration-500 hover:amber-ring"
         >
           <div className="flex items-center justify-between">
-            <Sigma className="size-4 text-accent" strokeWidth={1.4} />
+            <FolderKanban className="size-4 text-accent" strokeWidth={1.4} />
             <span className="tick-label">03</span>
           </div>
           <div className="pointer-events-none absolute inset-x-2 top-6 h-20 text-muted-foreground/70">
-            <MiniMath />
+            <MiniFolders />
           </div>
-          <span className="relative font-display text-sm font-medium tracking-wide">ESTUDOS</span>
+          <span className="relative font-display text-sm font-medium tracking-wide">PROJETOS</span>
         </Link>
 
         <Link
-          to="/projetos"
+          to="/escola"
           className="metal group relative col-span-2 flex min-h-[110px] items-center justify-between overflow-hidden rounded-3xl p-4 transition-all duration-500 hover:amber-ring lg:col-span-1 lg:col-start-3 lg:row-start-2"
         >
           <div className="relative z-10 flex min-w-0 flex-col gap-1">
             <div className="flex items-center gap-2">
-              <FolderKanban className="size-4 text-accent" strokeWidth={1.4} />
+              <Sigma className="size-4 text-accent" strokeWidth={1.4} />
               <span className="tick-label">04</span>
             </div>
-            <span className="font-display text-sm font-medium tracking-wide">PROJETOS</span>
+            <span className="font-display text-sm font-medium tracking-wide">ESTUDOS</span>
             <span className="font-mono text-[10px] text-muted-foreground">
-              {DEMO_PROJECTS.length} ativos
+              {DEMO_PROJECTS.length} projetos ativos
             </span>
           </div>
           <div className="pointer-events-none h-20 w-28 shrink-0 text-muted-foreground/60">
-            <MiniFolders />
+            <MiniMath />
           </div>
         </Link>
       </div>
