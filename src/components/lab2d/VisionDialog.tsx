@@ -39,6 +39,26 @@ import {
 } from "@/lib/vision/logoPipeline";
 import { pathToSvg } from "@/lib/lab2d/bezier";
 import type { TurnPolicy } from "@/lib/vision/logoTracer";
+import {
+  analyzeCenterline,
+  DEFAULT_CENTERLINE,
+  type CenterlineAnalysis,
+  type CenterlineOptions,
+} from "@/lib/vision/centerlinePipeline";
+import {
+  addManualPoint,
+  arcFrom3Points,
+  closeManualContour,
+  EMPTY_MANUAL,
+  manualNodes,
+  manualPointCount,
+  manualToEntities,
+  moveManualNode,
+  removeLastManualPoint,
+  snapPoint,
+  snapTargets,
+  type ManualState,
+} from "@/lib/vision/manualTracer";
 
 export type VisionImageLayer = {
   src: string;
@@ -54,10 +74,10 @@ export type VisionImageLayer = {
 };
 
 type Step = "importar" | "previa" | "analisando" | "resultado";
-/** Técnico procura LINE/ARC/CIRCLE; logo preserva curvas de Bézier. */
-type Mode = "tecnico" | "logo";
+/** Técnico procura LINE/ARC/CIRCLE; logo preserva Bézier; traçado extrai linha central. */
+type Mode = "tecnico" | "logo" | "tracado";
 type Overlay = "original" | "vetor" | "ambos";
-type Manual = { pts: { x: number; y: number }[]; mode: "linha" | "arco"; closed: boolean };
+
 
 /** CHAMFER VISION — imagem → vetor → geometria CAD editável. */
 export function VisionDialog({
