@@ -518,38 +518,79 @@ export function VisionDialog({
           </>
         )}
 
-        {step === "resultado" && img && !logo && (
+        {step === "resultado" && img && !logo && analysis && (
           <>
-            {analysis ? (
+            <p className="font-mono text-[10px] tracking-[0.2em] text-accent uppercase">
+              {mode === "tracado" ? "Linhas centrais" : "Geometria encontrada"}
+            </p>
+
+            <PreviewCanvas
+              img={img}
+              analysis={analysis}
+              overlay={overlay}
+              rotation={rotation}
+              manual={manualOn ? manual : null}
+              snapTol={snapTol}
+              targets={targets}
+              calPts={calMode === "medida" ? calPts : []}
+              onPick={(p) => {
+                if (manualOn) pushManual(addManualPoint(manual, snapPoint(p, targets, snapTol)));
+                else if (calMode === "medida")
+                  setCalPts((prev) => (prev.length >= 2 ? [p] : [...prev, p]));
+              }}
+              onMoveNode={(shape, index, p) =>
+                pushManual(moveManualNode(manual, shape, index, snapPoint(p, targets, snapTol)))
+              }
+            />
+
+            <div className="flex flex-wrap items-center gap-1">
+              {(["original", "vetor", "ambos"] as Overlay[]).map((o) => (
+                <Toggle key={o} active={overlay === o} onClick={() => setOverlay(o)} label={o} />
+              ))}
+            </div>
+
+            <Stats analysis={analysis} cal={cal} entities={normalized.entities} />
+
+            {mode === "tracado" && center && (
               <>
-                <p className="font-mono text-[10px] tracking-[0.2em] text-accent uppercase">
-                  Geometria encontrada
+                <p className="metal rounded-2xl p-3 font-mono text-[10px] text-muted-foreground">
+                  {center.centerline.strokes} traços centrais · {center.centerline.lines} linhas ·{" "}
+                  {center.centerline.arcs} arcos · {center.centerline.circles} círculos ·{" "}
+                  {center.centerline.polylines} polilinhas · camada CORTE
                 </p>
+                <Section title="Foto de papel" icon={ImageIcon}>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Slider label={`Brilho ${centerOpt.brightness}`} value={centerOpt.brightness} min={-80} max={80}
+                      step={1} onChange={(v) => setCenterOpt({ ...centerOpt, brightness: v })} />
+                    <Slider label={`Contraste ${centerOpt.contrast}`} value={centerOpt.contrast} min={-60} max={90}
+                      step={1} onChange={(v) => setCenterOpt({ ...centerOpt, contrast: v })} />
+                    <Slider label={`Limiar adaptativo ${centerOpt.bias}`} value={centerOpt.bias} min={2} max={40}
+                      step={1} onChange={(v) => setCenterOpt({ ...centerOpt, bias: v })} />
+                    <Slider label={`Suavizar ${centerOpt.blur}px`} value={centerOpt.blur} min={0} max={3} step={1}
+                      onChange={(v) => setCenterOpt({ ...centerOpt, blur: v })} />
+                    <Slider label={`Traço mínimo ${centerOpt.minBranchPct}%`} value={centerOpt.minBranchPct} min={0.3}
+                      max={6} step={0.1} onChange={(v) => setCenterOpt({ ...centerOpt, minBranchPct: v })} />
+                    <Slider label={`Fechar vãos ${centerOpt.gapPct}%`} value={centerOpt.gapPct} min={0} max={4}
+                      step={0.1} onChange={(v) => setCenterOpt({ ...centerOpt, gapPct: v })} />
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    <Toggle active={centerOpt.invert}
+                      onClick={() => setCenterOpt({ ...centerOpt, invert: !centerOpt.invert })}
+                      label="inverter tinta" />
+                    {(["baixa", "media", "alta"] as Tolerance[]).map((t) => (
+                      <Toggle key={t} active={centerOpt.tolerance === t}
+                        onClick={() => setCenterOpt({ ...centerOpt, tolerance: t })} label={t} />
+                    ))}
+                  </div>
+                  <p className="font-mono text-[10px] text-muted-foreground">
+                    Fotografe de cima, paralelo ao papel — correção de perspectiva não faz parte desta versão.
+                  </p>
+                </Section>
+              </>
+            )}
 
-                <PreviewCanvas
-                  img={img}
-                  analysis={analysis}
-                  overlay={overlay}
-                  rotation={rotation}
-                  manual={manual}
-                  calPts={calMode === "medida" ? calPts : []}
-                  onPick={(p) => {
-                    if (manual) {
-                      setManual({ ...manual, pts: [...manual.pts, p] });
-                    } else if (calMode === "medida") {
-                      setCalPts((prev) => (prev.length >= 2 ? [p] : [...prev, p]));
-                    }
-                  }}
-                />
-
-                <div className="flex flex-wrap items-center gap-1">
-                  {(["original", "vetor", "ambos"] as Overlay[]).map((o) => (
-                    <Toggle key={o} active={overlay === o} onClick={() => setOverlay(o)} label={o} />
-                  ))}
-                </div>
-
-                <Stats analysis={analysis} cal={cal} entities={normalized.entities} />
-
+            {mode === "tecnico" && (
+              <>
                 <Section title="Tolerância" icon={Spline}>
                   <div className="flex gap-1">
                     {(["baixa", "media", "alta"] as Tolerance[]).map((t) => (
@@ -578,107 +619,99 @@ export function VisionDialog({
                     </p>
                   )}
                 </Section>
-
-                <Section title="Escala" icon={Ruler}>
-                  <div className="flex gap-1">
-                    <Toggle active={calMode === "dimensao"} onClick={() => setCalMode("dimensao")} label="dimensões" />
-                    <Toggle active={calMode === "medida"} onClick={() => setCalMode("medida")} label="2 pontos" />
-                  </div>
-                  {calMode === "dimensao" ? (
-                    <div className="flex items-center gap-2">
-                      <input
-                        value={widthMm}
-                        onChange={(e) => setWidthMm(e.target.value)}
-                        inputMode="decimal"
-                        placeholder="Largura real (mm)"
-                        className="metal w-40 rounded-xl px-3 py-2 text-sm outline-none"
-                      />
-                      <button onClick={applyDimension} className="rounded-xl border border-border px-3 py-2 text-xs">
-                        Aplicar
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[10px] text-muted-foreground">
-                        {calPts.length}/2 pontos
-                      </span>
-                      <input
-                        value={realMm}
-                        onChange={(e) => setRealMm(e.target.value)}
-                        inputMode="decimal"
-                        className="metal w-24 rounded-xl px-3 py-2 text-sm outline-none"
-                      />
-                      <button onClick={applyMeasure} className="rounded-xl border border-border px-3 py-2 text-xs">
-                        Calibrar
-                      </button>
-                    </div>
-                  )}
-                  <p className="font-mono text-[10px] text-muted-foreground">{cal.note}</p>
-                </Section>
-
-                <Section title="Validação" icon={Check}>
-                  <ul className="space-y-0.5 font-mono text-[10px]">
-                    <li>✓ {validation.counts.lines} linhas · {validation.counts.circles} círculos · {validation.counts.arcs} arcos</li>
-                    <li>✓ {validation.counts.closed} contornos fechados · unidade mm · 1:1</li>
-                    {validation.issues.map((i, idx) => (
-                      <li key={idx} className="text-amber-500">⚠ {i.message}</li>
-                    ))}
-                  </ul>
-                </Section>
-
-                <Section title="Vetorização manual" icon={MousePointerClick}>
-                  <div className="flex flex-wrap items-center gap-1">
-                    <Toggle
-                      active={!!manual}
-                      onClick={() => setManual(manual ? null : { pts: [], mode: "linha", closed: false })}
-                      label={manual ? "ativa" : "ativar"}
-                    />
-                    {manual && (
-                      <>
-                        <Toggle
-                          active={manual.mode === "linha"}
-                          onClick={() => setManual({ ...manual, mode: "linha" })}
-                          label="linha"
-                        />
-                        <Toggle
-                          active={manual.closed}
-                          onClick={() => setManual({ ...manual, closed: !manual.closed })}
-                          label="fechar"
-                        />
-                        <Chip
-                          icon={Undo2}
-                          label="Desfazer"
-                          onClick={() => setManual({ ...manual, pts: manual.pts.slice(0, -1) })}
-                        />
-                        <span className="font-mono text-[10px] text-muted-foreground">
-                          {manual.pts.length} pontos
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </Section>
               </>
-            ) : (
-              <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">
-                  Não foi possível reconhecer toda a geometria. Ajuste a tolerância, limpe o ruído ou use a
-                  vetorização manual.
-                </p>
-                <div className="flex gap-1">
-                  {(["baixa", "media", "alta"] as Tolerance[]).map((t) => (
-                    <Toggle
-                      key={t}
-                      active={tolerance === t}
-                      onClick={() => {
-                        setTolerance(t);
-                        void run();
-                      }}
-                      label={t}
-                    />
-                  ))}
-                </div>
-              </div>
             )}
+
+            <Section title="Escala" icon={Ruler}>
+              <div className="flex gap-1">
+                <Toggle active={calMode === "dimensao"} onClick={() => setCalMode("dimensao")} label="dimensões" />
+                <Toggle active={calMode === "medida"} onClick={() => setCalMode("medida")} label="2 pontos" />
+              </div>
+              {calMode === "dimensao" ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    value={widthMm}
+                    onChange={(e) => setWidthMm(e.target.value)}
+                    inputMode="decimal"
+                    placeholder="Largura real (mm)"
+                    className="metal w-40 rounded-xl px-3 py-2 text-sm outline-none"
+                  />
+                  <button onClick={applyDimension} className="rounded-xl border border-border px-3 py-2 text-xs">
+                    Aplicar
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[10px] text-muted-foreground">{calPts.length}/2 pontos</span>
+                  <input
+                    value={realMm}
+                    onChange={(e) => setRealMm(e.target.value)}
+                    inputMode="decimal"
+                    className="metal w-24 rounded-xl px-3 py-2 text-sm outline-none"
+                  />
+                  <button onClick={applyMeasure} className="rounded-xl border border-border px-3 py-2 text-xs">
+                    Calibrar
+                  </button>
+                </div>
+              )}
+              <p className="font-mono text-[10px] text-muted-foreground">{cal.note}</p>
+            </Section>
+
+            <Section title="Validação" icon={Check}>
+              <ul className="space-y-0.5 font-mono text-[10px]">
+                <li>✓ {validation.counts.lines} linhas · {validation.counts.circles} círculos · {validation.counts.arcs} arcos</li>
+                <li>✓ {validation.counts.closed} contornos fechados · unidade mm · 1:1</li>
+                {validation.issues.map((i, idx) => (
+                  <li key={idx} className="text-amber-500">⚠ {i.message}</li>
+                ))}
+              </ul>
+            </Section>
+
+            <Section title="Vetorização manual" icon={MousePointerClick}>
+              <div className="flex flex-wrap items-center gap-1">
+                <Toggle
+                  active={manualOn}
+                  onClick={() => setManualOn(!manualOn)}
+                  label={manualOn ? "ativa" : "vetorizar manualmente"}
+                />
+                {manualOn && (
+                  <>
+                    <Toggle
+                      active={manual.mode === "linha"}
+                      onClick={() => setManual({ ...manual, mode: "linha", pending: [] })}
+                      label="linha"
+                    />
+                    <Toggle
+                      active={manual.mode === "arco"}
+                      onClick={() => setManual({ ...manual, mode: "arco", pending: [] })}
+                      label="arco (3 pontos)"
+                    />
+                    <Chip icon={CircleIcon} label="Fechar contorno"
+                      onClick={() => pushManual(closeManualContour(manual))} />
+                    <Chip icon={Undo2} label="Remover ponto"
+                      onClick={() => pushManual(removeLastManualPoint(manual))} />
+                    <Chip icon={Undo2} label="Desfazer" onClick={undoManual} />
+                    <Chip icon={RotateCw} label="Refazer" onClick={redoManual} />
+                  </>
+                )}
+              </div>
+              {manualOn && (
+                <>
+                  <Slider label={`Captura (snap) ${snapTol}px`} value={snapTol} min={0} max={40} step={1}
+                    onChange={setSnapTol} />
+                  <p className="font-mono text-[10px] text-muted-foreground">
+                    {manualPointCount(manual)} pontos · {manualEntities.length} entidades ·{" "}
+                    {manual.mode === "arco" ? `arco ${manual.pending.length}/3` : "linha encadeada"} · arraste um
+                    ponto para movê-lo · role para dar zoom
+                  </p>
+                  {!calibrated && (
+                    <p className="font-mono text-[10px] text-amber-500">
+                      Calibre a escala antes de criar geometria manual — os pontos precisam nascer em mm.
+                    </p>
+                  )}
+                </>
+              )}
+            </Section>
 
             <div className="flex gap-2 pt-1">
               <button
@@ -688,7 +721,7 @@ export function VisionDialog({
                 Voltar
               </button>
               <button
-                disabled={!normalized.entities.length}
+                disabled={!normalized.entities.length || (!!manualEntities.length && !calibrated)}
                 onClick={create}
                 className="brand-gradient flex-1 rounded-xl py-2.5 font-display text-sm font-semibold text-background disabled:opacity-40"
               >
@@ -697,6 +730,50 @@ export function VisionDialog({
             </div>
           </>
         )}
+
+        {step === "resultado" && img && !logo && !analysis && (
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground">
+              Não foi possível reconhecer a geometria desta imagem. Ajuste os parâmetros e tente de novo, ou
+              vetorize manualmente sobre a imagem.
+            </p>
+            <div className="flex flex-wrap gap-1">
+              {(["baixa", "media", "alta"] as Tolerance[]).map((t) => (
+                <Toggle
+                  key={t}
+                  active={tolerance === t}
+                  onClick={() => {
+                    setTolerance(t);
+                    void run();
+                  }}
+                  label={t}
+                />
+              ))}
+              <Chip
+                icon={MousePointerClick}
+                label="Vetorizar manualmente"
+                onClick={() => {
+                  setManualOn(true);
+                  setAnalysis({
+                    prims: [],
+                    stats: { lines: 0, circles: 0, arcs: 0, polylines: 0, contours: 0, holes: 0 },
+                    imagePx: { w: img.widthPx, h: img.heightPx },
+                    contentPx: { x: 0, y: 0, w: img.widthPx, h: img.heightPx },
+                    tolerancePx: 1,
+                  });
+                  setError(null);
+                }}
+              />
+            </div>
+            <button
+              onClick={() => setStep("previa")}
+              className="w-full rounded-xl border border-border py-2.5 text-sm transition-colors hover:bg-secondary"
+            >
+              Voltar
+            </button>
+          </div>
+        )}
+
       </DialogContent>
     </Dialog>
   );
