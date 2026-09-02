@@ -293,10 +293,14 @@
   --gradient-brand: linear-gradient(120deg, var(--accent), oklch(0.86 0.14 195));
 }
 
-/* ——— holograma 3D ——— */
+/* ——— render sólido 3D (estilo CAD) ——— */
 :root {
-  --holo: oklch(0.9 0.16 190); /* #00FFEF */
+  --holo: oklch(0.9 0.16 190);
+  --solid-hi: oklch(0.86 0.02 230); /* aço claro */
+  --solid-lo: oklch(0.5 0.03 240); /* aço sombreado */
+  --solid-edge: oklch(0.24 0.02 240); /* arestas */
 }
+
 
 @utility holo-text {
   color: var(--holo);

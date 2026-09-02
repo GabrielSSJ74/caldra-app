@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { project, type Camera, type WireModel } from "@/lib/viz3d/wire";
+import type { Vec3 } from "@/lib/geometry/types";
+import type { Camera, WireModel } from "@/lib/viz3d/wire";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -13,7 +14,22 @@ type Props = {
 
 const VB = 200;
 
-/** Visualização vetorial 3D: wireframe técnico com superfícies translúcidas. */
+/** Rotação yaw/pitch → espaço de câmera (z cresce em direção ao observador). */
+function toCam(p: Vec3, cam: Camera): Vec3 {
+  const cy = Math.cos(cam.yaw);
+  const sy = Math.sin(cam.yaw);
+  const cp = Math.cos(cam.pitch);
+  const sp = Math.sin(cam.pitch);
+  const x1 = p.x * cy - p.z * sy;
+  const z1 = p.x * sy + p.z * cy;
+  const y1 = p.y * cp - z1 * sp;
+  const z2 = p.y * sp + z1 * cp;
+  return { x: x1, y: y1, z: z2 };
+}
+
+const LIGHT = { x: -0.35, y: 0.62, z: 0.7 };
+
+/** Render sólido sombreado (estilo CAD/SolidWorks): faces em aço + arestas finas. */
 export function Wire3D({
   model,
   className,
@@ -53,52 +69,85 @@ export function Wire3D({
 
   const scale = (VB * 0.42) / (model.size || 1);
   const k = 1 - unfold * 0.9;
+  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
 
   const { faces, edges } = useMemo(() => {
+    const kk = scale * cam.zoom;
+    const cache = new Map<string, Vec3>();
+    const cp = (p: Vec3) => {
+      const key = `${p.x}|${p.y}|${p.z}`;
+      let c = cache.get(key);
+      if (!c) {
+        c = toCam({ x: p.x, y: p.y * k, z: p.z }, cam);
+        cache.set(key, c);
+      }
+      return c;
+    };
+
     const f = model.faces
       .map((poly) => {
-        const pts = poly.map((p) =>
-          project({ x: p.x, y: p.y * k, z: p.z }, cam, scale),
+        const cs = poly.map(cp);
+        // Newell normal em espaço de câmera
+        let nx = 0;
+        let ny = 0;
+        let nz = 0;
+        for (let i = 0; i < cs.length; i++) {
+          const a = cs[i]!;
+          const b = cs[(i + 1) % cs.length]!;
+          nx += (a.y - b.y) * (a.z + b.z);
+          ny += (a.z - b.z) * (a.x + b.x);
+          nz += (a.x - b.x) * (a.y + b.y);
+        }
+        const len = Math.hypot(nx, ny, nz) || 1;
+        nx /= len;
+        ny /= len;
+        nz /= len;
+        // normal voltada ao observador (superfícies finas: sem culling)
+        const s = nz < 0 ? -1 : 1;
+        const lambert = Math.max(
+          0,
+          nx * s * LIGHT.x + ny * s * LIGHT.y + nz * s * LIGHT.z,
         );
-        const depth = pts.reduce((s, p) => s + p.depth, 0) / pts.length;
-        return { d: pts.map((p) => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" "), depth };
+        const facing = Math.abs(nz);
+        const shade = 0.18 + 0.72 * Math.pow(lambert, 0.85);
+        // realce de silhueta / fresnel suave
+        const fres = 0.16 * (1 - facing);
+        const depth = cs.reduce((s2, p) => s2 + p.z, 0) / cs.length;
+        return {
+          d: cs.map((p) => `${(p.x * kk).toFixed(2)},${(-p.y * kk).toFixed(2)}`).join(" "),
+          depth,
+          shade: Math.min(1, shade + fres),
+        };
       })
       .sort((a, b) => a.depth - b.depth);
+
     const e = model.edges.map(([a, b]) => {
-      const pa = project({ x: a.x, y: a.y * k, z: a.z }, cam, scale);
-      const pb = project({ x: b.x, y: b.y * k, z: b.z }, cam, scale);
-      return { pa, pb, depth: (pa.depth + pb.depth) / 2 };
+      const pa = cp(a);
+      const pb = cp(b);
+      return {
+        x1: pa.x * kk,
+        y1: -pa.y * kk,
+        x2: pb.x * kk,
+        y2: -pb.y * kk,
+        depth: (pa.z + pb.z) / 2,
+      };
     });
     return { faces: f, edges: e };
   }, [model, cam, scale, k]);
 
   const maxDepth = Math.max(1, ...edges.map((e) => Math.abs(e.depth)));
-  const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
-  const vertices = useMemo(() => {
-    const seen = new Set<string>();
-    const out: { x: number; y: number; depth: number }[] = [];
-    for (const e of edges) {
-      for (const p of [e.pa, e.pb]) {
-        const key = `${p.x.toFixed(1)}|${p.y.toFixed(1)}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        out.push(p);
-      }
-    }
-    return out;
-  }, [edges]);
 
   return (
     <svg
       ref={host}
       viewBox={`${-VB / 2} ${-VB / 2} ${VB} ${VB}`}
       className={cn(
-        "holo-stage touch-none select-none",
+        "touch-none select-none",
         interactive && "cursor-grab active:cursor-grabbing",
         className,
       )}
       role="img"
-      aria-label="Holograma tridimensional da peça"
+      aria-label="Modelo sólido tridimensional da peça"
       onPointerDown={(ev) => {
         if (!interactive) return;
         drag.current = { x: ev.clientX, y: ev.clientY };
@@ -119,77 +168,44 @@ export function Wire3D({
       onPointerLeave={() => (drag.current = null)}
     >
       <defs>
-        <filter id={`glow-${uid}`} x="-40%" y="-40%" width="180%" height="180%">
-          <feGaussianBlur stdDeviation="1.6" result="b1" />
-          <feGaussianBlur stdDeviation="4" result="b2" />
-          <feMerge>
-            <feMergeNode in="b2" />
-            <feMergeNode in="b1" />
-            <feMergeNode in="SourceGraphic" />
-          </feMerge>
-        </filter>
-        <linearGradient id={`scan-${uid}`} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="var(--holo)" stopOpacity="0" />
-          <stop offset="50%" stopColor="var(--holo)" stopOpacity="0.35" />
-          <stop offset="100%" stopColor="var(--holo)" stopOpacity="0" />
+        <linearGradient id={`steel-${uid}`} x1="0" y1="0" x2="0.4" y2="1">
+          <stop offset="0%" stopColor="var(--solid-hi)" />
+          <stop offset="100%" stopColor="var(--solid-lo)" />
         </linearGradient>
-        <clipPath id={`clip-${uid}`}>
-          <rect x={-VB / 2} y={-VB / 2} width={VB} height={VB} />
-        </clipPath>
+        <radialGradient id={`floor-${uid}`} cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="var(--foreground)" stopOpacity="0.16" />
+          <stop offset="100%" stopColor="var(--foreground)" stopOpacity="0" />
+        </radialGradient>
       </defs>
 
-      <g filter={`url(#glow-${uid})`} color="var(--holo)">
+      <ellipse cx="0" cy={VB * 0.3} rx={VB * 0.42} ry={VB * 0.08} fill={`url(#floor-${uid})`} />
+
+      <g>
         {faces.map((f, i) => (
           <polygon
             key={`f${i}`}
             points={f.d}
-            fill="var(--holo)"
-            fillOpacity={(0.04 + 0.08 * ((f.depth + maxDepth) / (2 * maxDepth))).toFixed(4)}
-            stroke="none"
+            fill={`url(#steel-${uid})`}
+            fillOpacity={f.shade.toFixed(3)}
+            stroke="var(--solid-lo)"
+            strokeOpacity="0.35"
+            strokeWidth={0.35}
+            strokeLinejoin="round"
           />
         ))}
         {edges.map((e, i) => (
           <line
             key={`e${i}`}
-            x1={e.pa.x.toFixed(3)}
-            y1={e.pa.y.toFixed(3)}
-            x2={e.pb.x.toFixed(3)}
-            y2={e.pb.y.toFixed(3)}
-            stroke="var(--holo)"
-            strokeWidth={0.6}
-            strokeOpacity={(0.3 + 0.65 * ((e.depth + maxDepth) / (2 * maxDepth))).toFixed(4)}
+            x1={e.x1.toFixed(3)}
+            y1={e.y1.toFixed(3)}
+            x2={e.x2.toFixed(3)}
+            y2={e.y2.toFixed(3)}
+            stroke="var(--solid-edge)"
+            strokeWidth={0.7}
+            strokeOpacity={(0.35 + 0.5 * ((e.depth + maxDepth) / (2 * maxDepth))).toFixed(3)}
             strokeLinecap="round"
           />
         ))}
-        {vertices.map((p, i) => (
-          <circle
-            key={`v${i}`}
-            cx={p.x.toFixed(3)}
-            cy={p.y.toFixed(3)}
-            r={0.9}
-            fill="var(--holo)"
-            fillOpacity={(0.35 + 0.5 * ((p.depth + maxDepth) / (2 * maxDepth))).toFixed(4)}
-          />
-        ))}
-      </g>
-
-      <g clipPath={`url(#clip-${uid})`}>
-        <rect
-          x={-VB / 2}
-          y={-VB / 2}
-          width={VB}
-          height={VB * 0.22}
-          fill={`url(#scan-${uid})`}
-          opacity="0.7"
-        >
-          <animateTransform
-            attributeName="transform"
-            type="translate"
-            values={`0 0; 0 ${VB}; 0 0`}
-            dur="6s"
-            repeatCount="indefinite"
-          />
-        </rect>
       </g>
     </svg>
   );

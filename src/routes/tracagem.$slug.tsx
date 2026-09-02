@@ -5,6 +5,7 @@ import { findGeometry } from "@/lib/geometry/catalog";
 import { buildWire, DEFAULT_PARAMS, type WireParams } from "@/lib/viz3d/wire";
 import { Wire3D } from "@/components/chameleon/Wire3D";
 import { SquareToRoundStudio } from "@/components/chameleon/SquareToRoundStudio";
+import { SchematicViews } from "@/components/chameleon/SchematicViews";
 
 export const Route = createFileRoute("/tracagem/$slug")({
   loader: ({ params }) => {
@@ -43,6 +44,7 @@ function GeometryPage() {
   const { geometry } = Route.useLoaderData();
   const [params, setParams] = useState<WireParams>(DEFAULT_PARAMS);
   const [unfold, setUnfold] = useState(0);
+  const [hl, setHl] = useState<keyof WireParams | null>(null);
 
   if (geometry.slug === "quadrado-redondo")
     return (
@@ -78,6 +80,12 @@ function GeometryPage() {
         </div>
       </div>
 
+      <div className="glass overflow-hidden rounded-3xl p-2">
+        <SchematicViews slug={geometry.slug} params={params} highlight={hl} />
+      </div>
+
+
+
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {SLIDERS.map((s) => (
           <label key={s.key} className="glass flex items-center gap-2 rounded-2xl px-3 py-2">
@@ -88,6 +96,10 @@ function GeometryPage() {
               max={s.max}
               value={Number(params[s.key] ?? 0)}
               onChange={(e) => setParams((p) => ({ ...p, [s.key]: Number(e.target.value) }))}
+              onPointerDown={() => setHl(s.key)}
+              onPointerUp={() => setHl(null)}
+              onFocus={() => setHl(s.key)}
+              onBlur={() => setHl(null)}
               className="h-1 min-w-0 flex-1 accent-[var(--accent)]"
             />
             <span className="w-9 text-right font-mono text-[10px]">{params[s.key] ?? 0}</span>
