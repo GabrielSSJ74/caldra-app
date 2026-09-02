@@ -90,7 +90,7 @@ import {
   type Project,
 } from "@/lib/lab2d/projects";
 import { takeHandoff } from "@/lib/lab2d/handoff";
-import { buildIndex, viewportBox } from "@/lib/lab2d/spatialIndex";
+import { buildIndex } from "@/lib/lab2d/spatialIndex";
 import { drawScene } from "@/lib/lab2d/canvasScene";
 import { stressEntities } from "@/lib/lab2d/stress";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
