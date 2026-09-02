@@ -715,6 +715,7 @@ export function VisionDialog({
             </p>
 
             <PreviewCanvas
+              focus={focusBox}
               img={img}
               analysis={analysis}
               overlay={overlay}
@@ -1119,6 +1120,7 @@ function PreviewCanvas({
   snapTol,
   targets,
   calPts,
+  focus,
   onPick,
   onMoveNode,
 }: {
@@ -1130,6 +1132,7 @@ function PreviewCanvas({
   snapTol: number;
   targets: { x: number; y: number }[];
   calPts: { x: number; y: number }[];
+  focus: { x: number; y: number; w: number; h: number } | null;
   onPick: (p: { x: number; y: number }) => void;
   onMoveNode: (shape: number, index: number, p: { x: number; y: number }) => void;
 }) {
@@ -1146,6 +1149,20 @@ function PreviewCanvas({
   } | null>(null);
 
   useEffect(() => setView({ x: 0, y: 0, w, h }), [w, h]);
+
+  // "ir até a entidade": enquadra a caixa recebida com folga
+  useEffect(() => {
+    if (!focus) return;
+    const pad = Math.max(focus.w, focus.h, w / 40) * 0.8;
+    const bw = Math.max(focus.w + pad * 2, w / 20);
+    const bh = bw * (h / w);
+    setView({
+      x: focus.x + focus.w / 2 - bw / 2,
+      y: focus.y + focus.h / 2 - bh / 2,
+      w: bw,
+      h: bh,
+    });
+  }, [focus, w, h]);
 
   const toImage = useCallback(
     (clientX: number, clientY: number) => {
