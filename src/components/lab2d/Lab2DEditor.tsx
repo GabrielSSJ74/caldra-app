@@ -1559,6 +1559,8 @@ export function EntityShape({
         />
       );
     }
+    if (e.type === "path")
+      return <path key={key} d={pathToSvg(e.start, e.segs, e.closed)} fill="none" {...p} />;
     return null;
   };
 
