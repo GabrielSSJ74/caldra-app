@@ -190,10 +190,11 @@ export function VisionDialog({
   }, [tolerance, noise]);
 
   const manualEntities = useMemo<Entity[]>(() => {
-    if (!manual || manual.pts.length < 2 || !analysis) return [];
+    const geo = logo ?? analysis;
+    if (!manual || manual.pts.length < 2 || !geo) return [];
     const s = cal.mmPerPx;
-    const ox = analysis.contentPx.x;
-    const oy = analysis.contentPx.y;
+    const ox = geo.contentPx.x;
+    const oy = geo.contentPx.y;
     return [
       {
         id: uid(),
@@ -203,7 +204,7 @@ export function VisionDialog({
         pts: manual.pts.map((p) => ({ x: (p.x - ox) * s, y: (p.y - oy) * s })),
       },
     ];
-  }, [manual, analysis, cal]);
+  }, [manual, analysis, logo, cal]);
 
   const rawEntities = useMemo<Entity[]>(
     () =>
@@ -331,6 +332,17 @@ export function VisionDialog({
               <Slider label="Zoom" value={zoom} min={0.4} max={3} step={0.05} onChange={setZoom} />
               <Slider label="Opacidade" value={opacity} min={0.2} max={1} step={0.05} onChange={setOpacity} />
             </div>
+            <Section title="Modo de vetorização" icon={Spline}>
+              <div className="flex gap-1">
+                <Toggle active={mode === "tecnico"} onClick={() => setMode("tecnico")} label="técnico" />
+                <Toggle active={mode === "logo"} onClick={() => setMode("logo")} label="logo (curvas)" />
+              </div>
+              <p className="font-mono text-[10px] text-muted-foreground">
+                {mode === "tecnico"
+                  ? "Reconhece linhas, arcos e círculos de desenhos técnicos."
+                  : "Preserva curvas de Bézier reais — exporta SPLINE, sem microsegmentos."}
+              </p>
+            </Section>
             <div className="flex items-center gap-2">
               <Chip icon={RotateCw} label="Girar 90°" onClick={() => setRotation((r) => (r + 90) % 360)} />
               <span className="font-mono text-[10px] text-muted-foreground">
@@ -343,9 +355,7 @@ export function VisionDialog({
                 Continuar
               </button>
             </div>
-            <p className="font-mono text-[10px] text-muted-foreground">
-              Recorte e correção de perspectiva ficam disponíveis após a análise.
-            </p>
+
           </>
         )}
 
@@ -358,7 +368,55 @@ export function VisionDialog({
           </div>
         )}
 
-        {step === "resultado" && img && (
+        {step === "resultado" && img && logo && (
+          <>
+            <p className="font-mono text-[10px] tracking-[0.2em] text-accent uppercase">
+              Contornos de Bézier
+            </p>
+            <LogoCanvas img={img} logo={logo} overlay={overlay} />
+            <div className="flex flex-wrap items-center gap-1">
+              {(["original", "vetor", "ambos"] as Overlay[]).map((o) => (
+                <Toggle key={o} active={overlay === o} onClick={() => setOverlay(o)} label={o} />
+              ))}
+            </div>
+            <LogoStats logo={logo} cal={cal} entities={normalized.entities} />
+            <LogoControls opt={logoOpt} onChange={(o) => setLogoOpt({ ...logoOpt, ...o })} />
+
+            <Section title="Escala" icon={Ruler}>
+              <div className="flex items-center gap-2">
+                <input
+                  value={widthMm}
+                  onChange={(e) => setWidthMm(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="Largura real (mm)"
+                  className="metal w-40 rounded-xl px-3 py-2 text-sm outline-none"
+                />
+                <button onClick={applyDimension} className="rounded-xl border border-border px-3 py-2 text-xs">
+                  Aplicar
+                </button>
+              </div>
+              <p className="font-mono text-[10px] text-muted-foreground">{cal.note}</p>
+            </Section>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setStep("previa")}
+                className="flex-1 rounded-xl border border-border py-2.5 text-sm transition-colors hover:bg-secondary"
+              >
+                Voltar
+              </button>
+              <button
+                disabled={!normalized.entities.length}
+                onClick={create}
+                className="brand-gradient flex-1 rounded-xl py-2.5 font-display text-sm font-semibold text-background disabled:opacity-40"
+              >
+                Criar geometria
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === "resultado" && img && !logo && (
           <>
             {analysis ? (
               <>
