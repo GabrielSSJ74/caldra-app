@@ -1252,18 +1252,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
         {/* REGIÃO C — CANVAS */}
         <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl">
-          <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
-          <svg
-            ref={svgRef}
-            className="absolute inset-0 size-full touch-none"
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-            onDoubleClick={() => tool === "polyline" && finishPolyline(false)}
-            role="application"
-            aria-label="Prancheta vetorial"
-          >
+          {/* grade: camada própria, sempre abaixo da geometria */}
+          <svg className="pointer-events-none absolute inset-0 size-full">
             <defs>
               <pattern
                 id="lab2d-grid"
@@ -1282,6 +1272,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </pattern>
             </defs>
             {showGrid && <rect width="100%" height="100%" fill="url(#lab2d-grid)" />}
+          </svg>
+          <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
+          <svg
+            ref={svgRef}
+            className="absolute inset-0 size-full touch-none"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerUp}
+            onDoubleClick={() => tool === "polyline" && finishPolyline(false)}
+            role="application"
+            aria-label="Prancheta vetorial"
+          >
+
 
             <g transform={`translate(${view.tx} ${view.ty}) scale(${view.k})`}>
               {/* CAMADA IMAGEM — referência do CHAMFER VISION (nunca vira geometria) */}
