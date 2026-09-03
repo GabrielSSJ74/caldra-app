@@ -14,6 +14,7 @@ import { Route as BibliotecaRouteImport } from './routes/biblioteca'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as ContaRouteImport } from './routes/conta'
 import { Route as PlanificacaoRouteImport } from './routes/planificacao'
+import { Route as PrivacidadeRouteImport } from './routes/privacidade'
 import { Route as ProRouteImport } from './routes/pro'
 import { Route as ProjetosRouteImport } from './routes/projetos'
 import { Route as QaRouteImport } from './routes/qa'
@@ -47,6 +48,11 @@ const ContaRoute = ContaRouteImport.update({
 const PlanificacaoRoute = PlanificacaoRouteImport.update({
   id: '/planificacao',
   path: '/planificacao',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacidadeRoute = PrivacidadeRouteImport.update({
+  id: '/privacidade',
+  path: '/privacidade',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProRoute = ProRouteImport.update({
@@ -101,6 +107,7 @@ export interface FileRoutesByFullPath {
   '/configuracoes': typeof ConfiguracoesRoute
   '/conta': typeof ContaRoute
   '/planificacao': typeof PlanificacaoRoute
+  '/privacidade': typeof PrivacidadeRoute
   '/pro': typeof ProRoute
   '/projetos': typeof ProjetosRoute
   '/qa': typeof QaRoute
@@ -117,6 +124,7 @@ export interface FileRoutesByTo {
   '/configuracoes': typeof ConfiguracoesRoute
   '/conta': typeof ContaRoute
   '/planificacao': typeof PlanificacaoRoute
+  '/privacidade': typeof PrivacidadeRoute
   '/pro': typeof ProRoute
   '/projetos': typeof ProjetosRoute
   '/qa': typeof QaRoute
@@ -134,6 +142,7 @@ export interface FileRoutesById {
   '/configuracoes': typeof ConfiguracoesRoute
   '/conta': typeof ContaRoute
   '/planificacao': typeof PlanificacaoRoute
+  '/privacidade': typeof PrivacidadeRoute
   '/pro': typeof ProRoute
   '/projetos': typeof ProjetosRoute
   '/qa': typeof QaRoute
@@ -152,6 +161,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/conta'
     | '/planificacao'
+    | '/privacidade'
     | '/pro'
     | '/projetos'
     | '/qa'
@@ -168,6 +178,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/conta'
     | '/planificacao'
+    | '/privacidade'
     | '/pro'
     | '/projetos'
     | '/qa'
@@ -184,6 +195,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/conta'
     | '/planificacao'
+    | '/privacidade'
     | '/pro'
     | '/projetos'
     | '/qa'
@@ -201,6 +213,7 @@ export interface RootRouteChildren {
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   ContaRoute: typeof ContaRoute
   PlanificacaoRoute: typeof PlanificacaoRoute
+  PrivacidadeRoute: typeof PrivacidadeRoute
   ProRoute: typeof ProRoute
   ProjetosRoute: typeof ProjetosRoute
   QaRoute: typeof QaRoute
@@ -247,6 +260,13 @@ declare module '@tanstack/react-router' {
       path: '/planificacao'
       fullPath: '/planificacao'
       preLoaderRoute: typeof PlanificacaoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacidade': {
+      id: '/privacidade'
+      path: '/privacidade'
+      fullPath: '/privacidade'
+      preLoaderRoute: typeof PrivacidadeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pro': {
@@ -321,6 +341,7 @@ const rootRouteChildren: RootRouteChildren = {
   ConfiguracoesRoute: ConfiguracoesRoute,
   ContaRoute: ContaRoute,
   PlanificacaoRoute: PlanificacaoRoute,
+  PrivacidadeRoute: PrivacidadeRoute,
   ProRoute: ProRoute,
   ProjetosRoute: ProjetosRoute,
   QaRoute: QaRoute,
