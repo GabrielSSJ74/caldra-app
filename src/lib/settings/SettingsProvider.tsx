@@ -3,7 +3,7 @@ import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { DEFAULT_REGION, regionOf, type Region, type RegionId } from "@/lib/regional/regional";
 
 export type ThemeMode = "light" | "dark" | "system";
-export type AccentColor = "amber" | "blue";
+export type AccentColor = "amber" | "blue" | "magenta";
 export type Unit = "mm" | "cm" | "m" | "in";
 /** APRENDIZ mostra fórmulas e dicas; MESTRE segue direto. Só apresentação. */
 export type Level = "aprendiz" | "mestre";
@@ -48,6 +48,7 @@ function applyToDom(s: Settings) {
   const dark = s.theme === "dark" || (s.theme === "system" && prefersDark);
   root.classList.toggle("dark", dark);
   root.classList.toggle("accent-blue", s.accent === "blue");
+  root.classList.toggle("accent-magenta", s.accent === "magenta");
 }
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
