@@ -12,7 +12,14 @@ import { Check, ExternalLink, Lock, Minus } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { FEATURE_PITCH, PLAN_LABEL, planAllows, type Feature } from "@/lib/subscription/features";
-import { PRICES, PRODUCTS, WEB_CHECKOUT_URL, hasPlayBilling } from "@/lib/subscription/billing";
+import {
+  PRODUCTS,
+  WEB_CHECKOUT_URL,
+  hasPlayBilling,
+  queryProductDetails,
+  type ProductId,
+} from "@/lib/subscription/billing";
+import { PRICING, formatPrice, isBrl } from "@/lib/subscription/pricing";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { cn } from "@/lib/utils";
 import { Panel, SectionLabel } from "./ui";
