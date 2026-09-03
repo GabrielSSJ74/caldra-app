@@ -57,16 +57,15 @@ function LessonPage() {
           <div className="mx-auto grid size-11 place-items-center rounded-xl border border-accent/25 bg-accent/10 text-accent">
             <Lock className="size-4" />
           </div>
-          <h2 className="mt-3 font-display text-base">Aula do Modo Mestre</h2>
+          <h2 className="mt-3 font-display text-base">Aula do CALDRA PRO</h2>
           <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-            Ative o Modo Mestre para acessar a teoria completa, o exemplo resolvido e o exercício
-            desta aula.
+            Teoria completa, exemplo resolvido e exercício desta aula fazem parte do plano PRO.
           </p>
           <Link
-            to="/configuracoes"
+            to="/pro"
             className="brand-gradient mt-4 inline-block rounded-xl px-4 py-2 text-sm font-semibold text-background"
           >
-            Ativar Modo Mestre
+            Conhecer o CALDRA PRO
           </Link>
         </Panel>
       ) : (

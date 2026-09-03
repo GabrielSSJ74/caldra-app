@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
-import type { Feature } from "@/lib/subscription/features";
+import { FEATURE_PITCH, type Feature } from "@/lib/subscription/features";
 import { formatNumber } from "@/lib/settings/SettingsProvider";
 
 export function SectionLabel({
@@ -107,12 +107,23 @@ export function FeatureGate({
       </div>
       <h3 className="mt-3 font-display text-base">{title}</h3>
       <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>
-      <Link
-        to="/configuracoes"
-        className="brand-gradient mt-4 inline-block rounded-xl px-4 py-2 text-sm font-semibold text-background"
-      >
-        Ativar Modo Mestre
-      </Link>
+      <p className="mx-auto mt-2 max-w-sm text-[12px] text-muted-foreground">
+        {FEATURE_PITCH[feature].benefit}
+      </p>
+      <div className="mt-4 flex flex-wrap justify-center gap-2">
+        <Link
+          to="/pro"
+          className="brand-gradient inline-block rounded-xl px-4 py-2 text-sm font-semibold text-background"
+        >
+          Conhecer o CALDRA PRO
+        </Link>
+        <Link
+          to="/configuracoes"
+          className="inline-block rounded-xl border border-line px-4 py-2 text-sm"
+        >
+          Já tenho código
+        </Link>
+      </div>
     </Panel>
   );
 }

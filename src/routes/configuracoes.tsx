@@ -1,5 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { readConsent, setConsent } from "@/lib/analytics/consent";
 import { toast } from "sonner";
 import { Sparkles } from "lucide-react";
 import { PLAN_LABEL } from "@/lib/subscription/features";
@@ -50,11 +51,13 @@ function Configuracoes() {
   const { theme, setTheme, accent, setAccent, unit, setUnit, precision, setPrecision } =
     useSettings();
   const [code, setCode] = useState("");
+  const [consent, setConsentState] = useState(false);
+  useEffect(() => setConsentState(readConsent()), []);
   const { photo, displayName, role, name, update } = useProfile();
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = unlockWithCode(code);
+    const res = await unlockWithCode(code);
     if (res.ok) {
       setCode("");
       toast.success(res.message);
@@ -94,6 +97,14 @@ function Configuracoes() {
         <h1 className="font-display text-2xl font-semibold">Configurações</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Plano atual: <span className="text-accent">{PLAN_LABEL[plan]}</span>
+          {" · "}
+          <Link to="/pro" className="underline">
+            Ver planos
+          </Link>
+          {" · "}
+          <Link to="/conta" className="underline">
+            Conta
+          </Link>
         </p>
       </header>
 
@@ -135,6 +146,38 @@ function Configuracoes() {
       </Panel>
 
       <MaterialManager />
+
+      <Panel className="space-y-3 p-4">
+        <SectionLabel>Privacidade</SectionLabel>
+        <label className="flex items-start gap-3 text-[13px]">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => {
+              setConsentState(e.target.checked);
+              void setConsent(e.target.checked);
+            }}
+            className="mt-0.5 size-4 accent-[var(--accent)]"
+          />
+          <span>
+            Enviar estatísticas de uso anônimas
+            <span className="block text-muted-foreground">
+              Ajuda a priorizar melhorias. Nenhuma medida, desenho ou projeto é enviado.
+            </span>
+          </span>
+        </label>
+        <div className="flex gap-3 font-mono text-[11px] tracking-[0.16em] uppercase">
+          <Link to="/privacidade" className="text-muted-foreground underline">
+            Privacidade
+          </Link>
+          <Link to="/termos" className="text-muted-foreground underline">
+            Termos
+          </Link>
+          <Link to="/conta" className="text-muted-foreground underline">
+            Excluir conta
+          </Link>
+        </div>
+      </Panel>
 
 
 

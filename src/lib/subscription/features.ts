@@ -1,9 +1,9 @@
 /**
  * Camada central de permissões.
  *
- * Toda a checagem de acesso premium do app passa por aqui. Para trocar o
- * desbloqueio local por autenticação/assinatura real, basta substituir a
- * origem do `Plan` no provider — nenhuma tela precisa mudar.
+ * Toda a checagem de acesso premium do app passa por aqui, alimentada pelo
+ * plano resolvido em `entitlementService` (perfil remoto > cache local).
+ * PROIBIDO espalhar if/else de plano pelas telas.
  */
 
 export type Plan = "free" | "mestre" | "oficina";
@@ -20,7 +20,9 @@ export type Feature =
   | "projects.unlimited"
   | "school.full"
   | "library.full"
-  | "workshop.manage";
+  | "workshop.manage"
+  | "backup.import"
+  | "components.library";
 
 const MATRIX: Record<Feature, Plan[]> = {
   "geometry.basic": ["free", "mestre", "oficina"],
@@ -35,6 +37,8 @@ const MATRIX: Record<Feature, Plan[]> = {
   "school.full": ["mestre", "oficina"],
   "library.full": ["mestre", "oficina"],
   "workshop.manage": ["oficina"],
+  "backup.import": ["free", "mestre", "oficina"],
+  "components.library": ["mestre", "oficina"],
 };
 
 export const FREE_PROJECT_LIMIT = 2;
@@ -45,9 +49,63 @@ export function planAllows(plan: Plan, feature: Feature): boolean {
 
 export const PLAN_LABEL: Record<Plan, string> = {
   free: "Free",
-  mestre: "Mestre",
+  mestre: "PRO",
   oficina: "Oficina",
 };
 
-/** Código de desbloqueio do protótipo. Será substituído por autenticação real. */
+/**
+ * Convite específico por funcionalidade. O gate suave NUNCA mostra texto
+ * genérico: o usuário precisa saber exatamente o que ganha ali.
+ */
+export const FEATURE_PITCH: Record<Feature, { title: string; benefit: string }> = {
+  "geometry.basic": { title: "Traçagem", benefit: "Disponível em todos os planos." },
+  "geometry.advanced": {
+    title: "Peças avançadas",
+    benefit: "Transições, curvas gomadas e derivações completas, com planificação pronta para a chapa.",
+  },
+  "calc.explanation": {
+    title: "Cálculo passo a passo",
+    benefit: "Veja cada fórmula com os seus números — confira o traçado antes de cortar.",
+  },
+  "planification.advanced": {
+    title: "Planificação avançada",
+    benefit: "Desenvolvimento completo com cotas de conferência para riscar direto na chapa.",
+  },
+  lab2d: {
+    title: "CHAMFER",
+    benefit: "Editor 2D com plano de corte, corte comum e ordem de execução para a máquina.",
+  },
+  "export.dxf": {
+    title: "Exportar DXF",
+    benefit: "Arquivo pronto para a máquina de corte, com camadas e ordem de corte preservadas.",
+  },
+  "export.pdf": {
+    title: "Exportar PDF",
+    benefit: "Folha técnica em alta definição para imprimir e levar ao chão de fábrica.",
+  },
+  "export.png": { title: "Exportar imagem", benefit: "Disponível em todos os planos." },
+  "projects.unlimited": {
+    title: "Projetos ilimitados",
+    benefit: `No Free você guarda ${FREE_PROJECT_LIMIT} projetos. No PRO, todos os que a oficina precisar.`,
+  },
+  "school.full": {
+    title: "Estudos completos",
+    benefit: "Todas as aulas de traçagem, do risco ao acabamento.",
+  },
+  "library.full": {
+    title: "Biblioteca completa",
+    benefit: "Catálogo integral de peças e referências de fabricação.",
+  },
+  "workshop.manage": {
+    title: "Gestão de oficina",
+    benefit: "Recursos de equipe e produção do plano Oficina.",
+  },
+  "backup.import": { title: "Backup", benefit: "Disponível em todos os planos." },
+  "components.library": {
+    title: "Biblioteca de componentes",
+    benefit: "Salve conjuntos de parâmetros (ex.: FLANGE DN200) e insira depois em um toque.",
+  },
+};
+
+/** Código de desbloqueio do protótipo, mantido para contas antigas. */
 export const PROTOTYPE_MASTER_CODE = "DESPERTAR";

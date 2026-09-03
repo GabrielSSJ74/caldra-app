@@ -46,7 +46,7 @@ function Thumb({ seed }: { seed: number }) {
 }
 
 function Projetos() {
-  const { isMestre } = useFeatureAccess();
+  const { isMestre, requirePro } = useFeatureAccess();
   const [open, setOpen] = useState(DEMO_PROJECTS[0]!.id);
 
   return (
@@ -144,8 +144,14 @@ function Projetos() {
           <Panel className="flex items-center gap-3 p-4">
             <Lock className="size-4 shrink-0 text-accent" />
             <p className="text-[12px] text-muted-foreground">
-              Limite do plano Free atingido. Ative o Modo Mestre para criar projetos ilimitados com
-              peças, materiais e histórico de exportação.
+              Limite do plano Free atingido ({FREE_PROJECT_LIMIT} projetos).{" "}
+              <button
+                onClick={() => requirePro("projects.unlimited")}
+                className="text-accent underline"
+              >
+                Liberar projetos ilimitados
+              </button>{" "}
+              com peças, materiais e histórico de exportação.
             </p>
           </Panel>
         )}

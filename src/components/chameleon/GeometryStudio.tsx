@@ -35,7 +35,7 @@ type Props = { slug: string; name: string };
 
 export function GeometryStudio({ slug, name }: Props) {
   const engine = getEngine(slug);
-  const { can, isMestre } = useFeatureAccess();
+  const { can, isMestre, requirePro } = useFeatureAccess();
   const { precision } = useSettings();
   const navigate = useNavigate();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -492,11 +492,7 @@ export function GeometryStudio({ slug, name }: Props) {
                     <ImageIcon className="size-3.5" /> PNG
                   </button>
                   <button
-                    onClick={() =>
-                      can("export.pdf")
-                        ? exportPdf()
-                        : toast.error("Exportação PDF disponível no Modo Mestre.")
-                    }
+                    onClick={() => requirePro("export.pdf") && exportPdf()}
                     className={cn(
                       "flex items-center justify-center gap-1.5 rounded-lg border py-2.5 font-mono text-[11px] transition-colors",
                       can("export.pdf")
@@ -507,11 +503,7 @@ export function GeometryStudio({ slug, name }: Props) {
                     <FileText className="size-3.5" /> PDF
                   </button>
                   <button
-                    onClick={() =>
-                      can("export.dxf")
-                        ? exportDxfFile()
-                        : toast.error("Exportação DXF disponível no Modo Mestre.")
-                    }
+                    onClick={() => requirePro("export.dxf") && exportDxfFile()}
                     className={cn(
                       "flex items-center justify-center gap-1.5 rounded-lg border py-2.5 font-mono text-[11px] transition-colors",
                       can("export.dxf")
@@ -524,10 +516,7 @@ export function GeometryStudio({ slug, name }: Props) {
                 </div>
                 <button
                   onClick={() => {
-                    if (!can("lab2d")) {
-                      toast.error("CHAMFER disponível no Modo Mestre.");
-                      return;
-                    }
+                    if (!requirePro("lab2d")) return;
                     sendToLab2D({
                       name,
                       entities: developmentToEntities(result.development),
@@ -553,9 +542,7 @@ export function GeometryStudio({ slug, name }: Props) {
           <div className="mt-4 rounded-xl border border-accent/20 bg-accent/[0.04] p-3">
             <button
               onClick={() =>
-                can("calc.explanation")
-                  ? setExplain((v) => !v)
-                  : toast.error("Explicação passo a passo disponível no Modo Mestre.")
+                requirePro("calc.explanation") && setExplain((v) => !v)
               }
               className="flex w-full items-center gap-2 text-left"
             >

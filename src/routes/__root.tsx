@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { Toaster } from "@/components/ui/sonner";
+import { AuthProvider } from "@/lib/auth/AuthProvider";
 import { SubscriptionProvider } from "@/lib/subscription/SubscriptionProvider";
 import { SettingsProvider } from "@/lib/settings/SettingsProvider";
 import { ProfileProvider } from "@/lib/profile/ProfileProvider";
@@ -101,6 +102,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: "https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap",
       },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "manifest", href: "/site.webmanifest" },
     ],
   }),
   shellComponent: RootShell,
@@ -128,18 +130,20 @@ function RootComponent() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <SubscriptionProvider>
-        <SettingsProvider>
-          <ProfileProvider>
-            <MaterialsProvider>
-              <AppShell>
-                <Outlet />
-              </AppShell>
-              <Toaster position="top-center" />
-            </MaterialsProvider>
-          </ProfileProvider>
-        </SettingsProvider>
-      </SubscriptionProvider>
+      <AuthProvider>
+        <SubscriptionProvider>
+          <SettingsProvider>
+            <ProfileProvider>
+              <MaterialsProvider>
+                <AppShell>
+                  <Outlet />
+                </AppShell>
+                <Toaster position="top-center" />
+              </MaterialsProvider>
+            </ProfileProvider>
+          </SettingsProvider>
+        </SubscriptionProvider>
+      </AuthProvider>
     </QueryClientProvider>
   );
 }

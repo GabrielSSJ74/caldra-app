@@ -9,6 +9,7 @@ import { BubbleNav } from "./BubbleNav";
 import { Intro, useIntro } from "./Intro";
 import { Onboarding } from "./Onboarding";
 import { Avatar, ProfileDialog } from "./Profile";
+import { PaywallDialog } from "./Paywall";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [masterOpen, setMasterOpen] = useState(false);
@@ -63,6 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <BubbleNav />
       <MasterModeDialog open={masterOpen} onOpenChange={setMasterOpen} />
       <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
+      <PaywallDialog />
       {intro.show && <Intro onDone={intro.done} />}
       {showOnboarding && <Onboarding />}
     </div>
