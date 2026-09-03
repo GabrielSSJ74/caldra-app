@@ -481,10 +481,8 @@ export function SquareToRoundStudio() {
                 </div>
                 <button
                   onClick={() => {
-                    if (!requirePro("lab2d")) {
-                      toast.error("CHAMFER disponível no Modo Mestre.");
-                      return;
-                    }
+                    if (!requirePro("lab2d")) return;
+
 
                     sendToLab2D({
                       name: "Quadrado → Redondo",
