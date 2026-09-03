@@ -94,6 +94,14 @@ function Configuracoes() {
         <h1 className="font-display text-2xl font-semibold">Configurações</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Plano atual: <span className="text-accent">{PLAN_LABEL[plan]}</span>
+          {" · "}
+          <Link to="/pro" className="underline">
+            Ver planos
+          </Link>
+          {" · "}
+          <Link to="/conta" className="underline">
+            Conta
+          </Link>
         </p>
       </header>
 
