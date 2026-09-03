@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Box, Check, ChevronRight, Download, FileText, Image as ImageIcon, Lightbulb, PenTool } from "lucide-react";
+import { Box, Check, ChevronRight, Download, FileText, GraduationCap, Image as ImageIcon, Lightbulb, PenTool } from "lucide-react";
 import { getEngine, type EngineValues } from "@/lib/geometry/engines";
 import { downloadDxf, type DxfEntity } from "@/lib/dxf/dxfService";
 import { exportSvgAsPdf, exportSvgAsPng } from "@/lib/export/exporters";
@@ -10,6 +10,7 @@ import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { buildWire, type WireParams } from "@/lib/viz3d/wire";
 import { developmentToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
 import { conferenceRows } from "@/lib/geometry/conference";
+import { fieldMeaning } from "@/lib/education/learn";
 import { diagnose } from "@/lib/geometry/copilot";
 import { toKgDm3 } from "@/lib/geometry/mass";
 import { useMaterials } from "@/lib/materials/MaterialsProvider";
@@ -19,6 +20,7 @@ import { DevelopmentView } from "./DevelopmentView";
 import { ParametricDiagram, type CotaSpec } from "./ParametricDiagram";
 import { MassCostPanel } from "./MassCostPanel";
 import { SmartNumberInput } from "./SmartNumberInput";
+import { LearnDialog } from "./LearnDialog";
 import { Metric, Panel, SectionLabel } from "./ui";
 
 const BASE_TABS = [
@@ -36,7 +38,8 @@ type Props = { slug: string; name: string };
 export function GeometryStudio({ slug, name }: Props) {
   const engine = getEngine(slug);
   const { can, isMestre, requirePro } = useFeatureAccess();
-  const { precision } = useSettings();
+  const { precision, level } = useSettings();
+  const aprendiz = level === "aprendiz";
   const navigate = useNavigate();
   const svgRef = useRef<SVGSVGElement>(null);
 
@@ -50,6 +53,7 @@ export function GeometryStudio({ slug, name }: Props) {
   const [calculating, setCalculating] = useState(false);
   const [tab, setTab] = useState<string>("Dimensões");
   const [explain, setExplain] = useState(false);
+  const [learn, setLearn] = useState(false);
   const [unfold, setUnfold] = useState(0);
   const [pulse, setPulse] = useState<string | null>(null);
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -233,6 +237,11 @@ export function GeometryStudio({ slug, name }: Props) {
                       onChange={(mm) => setNumber(f.key, mm)}
                     />
                     {err && <span className="mt-1 block text-[10px] text-destructive">{err}</span>}
+                    {aprendiz && !err && fieldMeaning(f.key) && (
+                      <span className="mt-1 block text-[10px] leading-snug text-muted-foreground">
+                        {fieldMeaning(f.key)}
+                      </span>
+                    )}
                   </label>
                 );
               })}
@@ -538,6 +547,29 @@ export function GeometryStudio({ slug, name }: Props) {
             )}
           </div>
 
+          {/* APRENDER */}
+          <button
+            onClick={() => setLearn(true)}
+            className={cn(
+              "mt-4 flex w-full items-center justify-center gap-2 rounded-xl border py-2.5 font-display text-[13px] font-semibold transition-colors",
+              aprendiz
+                ? "border-accent/40 bg-accent/12 text-accent"
+                : "border-border text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <GraduationCap className="size-4" /> Aprender esta peça
+          </button>
+          <LearnDialog
+            open={learn}
+            onOpenChange={setLearn}
+            slug={slug}
+            name={name}
+            fields={engine.fields}
+            values={values}
+            result={result}
+            precision={precision}
+          />
+
           {/* ENTENDER O CÁLCULO */}
           <div className="mt-4 rounded-xl border border-accent/20 bg-accent/[0.04] p-3">
             <button
@@ -557,7 +589,7 @@ export function GeometryStudio({ slug, name }: Props) {
                 )}
               />
             </button>
-            {explain && can("calc.explanation") && (
+            {(explain || (aprendiz && can("calc.explanation"))) && can("calc.explanation") && (
               <div className="fade-up mt-3 space-y-3">
                 {result.steps.map((s) => (
                   <div key={s.title} className="rounded-lg border border-line bg-background/40 p-3">
