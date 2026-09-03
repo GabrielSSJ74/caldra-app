@@ -48,7 +48,7 @@ const UNITS: Unit[] = ["mm", "cm", "m", "in"];
 
 function Configuracoes() {
   const { plan, isMestre, unlockWithCode, reset } = useFeatureAccess();
-  const { theme, setTheme, accent, setAccent, unit, setUnit, precision, setPrecision } =
+  const { theme, setTheme, accent, setAccent, unit, setUnit, precision, setPrecision, level, setLevel } =
     useSettings();
   const [code, setCode] = useState("");
   const [consent, setConsentState] = useState(false);
@@ -245,6 +245,31 @@ function Configuracoes() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <SectionLabel>Modo de aprendizagem</SectionLabel>
+          <div className="flex gap-1.5">
+            {(["aprendiz", "mestre"] as const).map((l) => (
+              <button
+                key={l}
+                onClick={() => setLevel(l)}
+                className={cn(
+                  "flex-1 rounded-xl border px-3 py-2 font-mono text-[11px] uppercase transition-colors",
+                  level === l
+                    ? "border-accent/25 bg-accent/10 text-accent"
+                    : "border-line text-muted-foreground",
+                )}
+              >
+                {l}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            {level === "aprendiz"
+              ? "Fórmulas visíveis nos resultados, dicas em cada campo e Aprender em destaque."
+              : "Fluxo direto: fórmulas ocultas até você pedir. O cálculo é exatamente o mesmo."}
+          </p>
         </div>
 
         <div>

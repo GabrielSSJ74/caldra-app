@@ -4,6 +4,8 @@ import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 export type ThemeMode = "light" | "dark" | "system";
 export type AccentColor = "amber" | "blue";
 export type Unit = "mm" | "cm" | "m" | "in";
+/** APRENDIZ mostra fórmulas e dicas; MESTRE segue direto. Só apresentação. */
+export type Level = "aprendiz" | "mestre";
 
 const KEY = "caldra.settings";
 
@@ -12,15 +14,23 @@ export type Settings = {
   accent: AccentColor;
   unit: Unit;
   precision: number;
+  level: Level;
 };
 
-const DEFAULTS: Settings = { theme: "dark", accent: "amber", unit: "mm", precision: 2 };
+const DEFAULTS: Settings = {
+  theme: "dark",
+  accent: "amber",
+  unit: "mm",
+  precision: 2,
+  level: "aprendiz",
+};
 
 type SettingsValue = Settings & {
   setTheme: (t: ThemeMode) => void;
   setAccent: (a: AccentColor) => void;
   setUnit: (u: Unit) => void;
   setPrecision: (p: number) => void;
+  setLevel: (l: Level) => void;
 };
 
 const SettingsContext = createContext<SettingsValue | null>(null);
@@ -43,7 +53,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(KEY);
-      if (raw) setSettings({ ...DEFAULTS, ...(JSON.parse(raw) as Partial<Settings>) });
+      if (raw) {
+        const saved = JSON.parse(raw) as Partial<Settings>;
+        // conta já existente (sem o campo) começa em MESTRE; conta nova, APRENDIZ
+        setSettings({ ...DEFAULTS, level: saved.level ?? "mestre", ...saved });
+      }
     } catch {
       /* ignore */
     }
@@ -82,6 +96,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setAccent: (accent) => setSettings((s) => ({ ...s, accent })),
       setUnit: (unit) => setSettings((s) => ({ ...s, unit })),
       setPrecision: (precision) => setSettings((s) => ({ ...s, precision })),
+      setLevel: (level) => setSettings((s) => ({ ...s, level })),
     }),
     [settings],
   );

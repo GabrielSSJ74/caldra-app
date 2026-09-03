@@ -10,13 +10,27 @@ import {
   RotateCw,
   Ruler,
   Scan,
+  ScanText,
   Spline,
   Undo2,
   Upload,
   X,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import type { Entity } from "@/lib/lab2d/core";
+import {
+  buildParametric,
+  parametricBounds,
+  proposalValues,
+  proposeParametric,
+  type ParametricProposal,
+  type ParamValues,
+} from "@/lib/vision/parametricRecognizer";
+import {
+  detectDimensions,
+  ocrKindLabel,
+  type OcrCandidate,
+} from "@/lib/vision/ocrService";
+import { uid, type Entity } from "@/lib/lab2d/core";
 
 import { CUT_COLOR, DIMENSION_COLOR, MARK_COLOR } from "@/lib/lab2d/technical";
 import { importImage, type ImportedImage } from "@/lib/vision/imageImportService";
@@ -134,6 +148,15 @@ export function VisionDialog({
   });
   const [focusBox, setFocusBox] = useState<QualityItem["box"] | null>(null);
 
+  // A1 — reconstrução paramétrica
+  const [paramValues, setParamValues] = useState<ParamValues | null>(null);
+  const [paramRejected, setParamRejected] = useState(false);
+
+  // A2 — OCR técnico
+  const [ocr, setOcr] = useState<OcrCandidate[]>([]);
+  const [ocrBusy, setOcrBusy] = useState(false);
+  const [ocrStage, setOcrStage] = useState<{ stage: string; pct: number } | null>(null);
+
 
   // calibração
   const [cal, setCal] = useState<Calibration>(DEFAULT_CALIBRATION);
@@ -203,6 +226,11 @@ export function VisionDialog({
     setNormalize(false);
     setMultiScale(false);
     setFocusBox(null);
+    setParamValues(null);
+    setParamRejected(false);
+    setOcr([]);
+    setOcrBusy(false);
+    setOcrStage(null);
   }, []);
 
   useEffect(() => {
@@ -437,6 +465,68 @@ export function VisionDialog({
   );
 
 
+  /* A1 — proposta paramétrica: só no modo técnico, só com escala calibrada. */
+  const proposal = useMemo<ParametricProposal | null>(() => {
+    if (mode !== "tecnico" || !analysis || logo) return null;
+    if (cal.method === "padrao") return null;
+    return proposeParametric(
+      analysis.prims,
+      cal.mmPerPx,
+      { x: analysis.contentPx.x, y: analysis.contentPx.y },
+      analysis.tolerancePx * cal.mmPerPx,
+    );
+  }, [mode, analysis, logo, cal]);
+
+  useEffect(() => {
+    setParamValues(null);
+    setParamRejected(false);
+  }, [proposal]);
+
+  const paramEntities = useMemo<Entity[]>(
+    () => (proposal && paramValues ? buildParametric(proposal, paramValues, "corte") : []),
+    [proposal, paramValues],
+  );
+
+  /* A2 — cotas aprovadas viram texto na camada COTA. */
+  const ocrEntities = useMemo<Entity[]>(() => {
+    const geo = logo ?? analysis;
+    if (!geo) return [];
+    const s2 = cal.mmPerPx;
+    return ocr
+      .filter((c) => c.approved)
+      .map((c) => ({
+        id: uid(),
+        layer: "cota",
+        type: "text" as const,
+        x: (c.box.x * geo.imagePx.w - geo.contentPx.x) * s2,
+        y: ((c.box.y + c.box.h) * geo.imagePx.h - geo.contentPx.y) * s2,
+        text: c.text,
+        size: Math.max(2, c.box.h * geo.imagePx.h * s2),
+      }));
+  }, [ocr, analysis, logo, cal]);
+
+  const runOcr = async () => {
+    if (!img || ocrBusy) return;
+    setOcrBusy(true);
+    setOcrStage({ stage: "Carregando OCR", pct: 4 });
+    try {
+      const found = await detectDimensions(img.element, {
+        onProgress: (stage, pct) => setOcrStage({ stage, pct }),
+      });
+      setOcr(found);
+      toast[found.length ? "success" : "error"](
+        found.length
+          ? `${found.length} cota(s) candidata(s). Confirme uma a uma.`
+          : "Nenhuma cota reconhecida nesta imagem.",
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Falha no OCR.");
+    } finally {
+      setOcrBusy(false);
+      setOcrStage(null);
+    }
+  };
+
   const applyDimension = () => {
     const geo = logo ?? analysis;
     if (!geo) return;
@@ -466,7 +556,11 @@ export function VisionDialog({
 
   const create = () => {
     if (!img || (!analysis && !logo)) return;
-    const list = normalized.entities;
+    // template aceito: a geometria vetorizada original é preservada em CONSTRUÇÃO
+    const base = paramEntities.length
+      ? [...paramEntities, ...normalized.entities.map((e) => ({ ...e, layer: "construcao" }))]
+      : normalized.entities;
+    const list = [...base, ...ocrEntities];
     if (!list.length) {
       toast.error("Nada para inserir.");
       return;
@@ -540,6 +634,20 @@ export function VisionDialog({
                 style={{ transform: `rotate(${rotation}deg) scale(${zoom})`, opacity }}
                 className="mx-auto block h-full w-full max-h-[45vh] object-contain object-center transition-transform"
               />
+              {ocr.map((c) => (
+                <div
+                  key={c.id}
+                  className="pointer-events-none absolute rounded-[3px] border"
+                  style={{
+                    left: `${c.box.x * 100}%`,
+                    top: `${c.box.y * 100}%`,
+                    width: `${c.box.w * 100}%`,
+                    height: `${c.box.h * 100}%`,
+                    borderColor: c.approved ? DIMENSION_COLOR : MARK_COLOR,
+                    background: c.approved ? `${DIMENSION_COLOR}22` : "transparent",
+                  }}
+                />
+              ))}
             </div>
 
             <div className="flex flex-col gap-3">
@@ -585,6 +693,85 @@ export function VisionDialog({
                   Prefira a maior versão disponível.
                 </p>
               )}
+            </Section>
+
+            <Section title="Cotas na imagem (OCR)" icon={ScanText}>
+              <div className="flex flex-wrap items-center gap-2">
+                <Chip
+                  icon={ScanText}
+                  label={ocrBusy ? "lendo…" : "Detectar cotas (OCR)"}
+                  onClick={() => void runOcr()}
+                />
+                {ocr.length > 0 && (
+                  <>
+                    <Chip
+                      icon={Check}
+                      label="Aprovar todas"
+                      onClick={() => setOcr((l) => l.map((c) => ({ ...c, approved: true })))}
+                    />
+                    <Chip
+                      icon={Eraser}
+                      label="Limpar"
+                      onClick={() => setOcr([])}
+                    />
+                  </>
+                )}
+              </div>
+              {ocrStage && (
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+                  <div
+                    className="brand-gradient h-full transition-all"
+                    style={{ width: `${Math.max(4, ocrStage.pct)}%` }}
+                  />
+                </div>
+              )}
+              <p className="font-mono text-[10px] leading-relaxed text-muted-foreground">
+                Leitura 100% no seu aparelho. Em foto de desenho à mão a precisão é limitada —
+                confira e corrija cada texto antes de aplicar. Nada entra no desenho sem confirmação.
+              </p>
+              {ocr.map((c) => (
+                <div
+                  key={c.id}
+                  className="metal flex flex-wrap items-center gap-2 rounded-2xl p-2.5"
+                >
+                  <input
+                    value={c.text}
+                    onChange={(e) =>
+                      setOcr((l) =>
+                        l.map((o) => (o.id === c.id ? { ...o, text: e.target.value } : o)),
+                      )
+                    }
+                    aria-label="Texto reconhecido"
+                    className="w-24 rounded-lg border border-border bg-background/60 px-2 py-1 font-mono text-[11px]"
+                  />
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    {ocrKindLabel(c.kind)}
+                    {c.mm != null ? ` · ${c.mm.toFixed(2)} mm` : ""} · {c.confidence}%
+                  </span>
+                  <div className="ml-auto flex gap-1">
+                    {c.mm != null && (
+                      <Toggle
+                        active={false}
+                        onClick={() => {
+                          setRealMm(String(c.mm));
+                          setCalMode("medida");
+                          toast.success("Medida enviada para a calibração por dois pontos.");
+                        }}
+                        label="usar como escala"
+                      />
+                    )}
+                    <Toggle
+                      active={c.approved}
+                      onClick={() =>
+                        setOcr((l) =>
+                          l.map((o) => (o.id === c.id ? { ...o, approved: !o.approved } : o)),
+                        )
+                      }
+                      label={c.approved ? "aprovada" : "aprovar"}
+                    />
+                  </div>
+                </div>
+              ))}
             </Section>
 
             {profile && suggestion && (
@@ -749,6 +936,77 @@ export function VisionDialog({
                 <Toggle key={o} active={overlay === o} onClick={() => setOverlay(o)} label={o} />
               ))}
             </div>
+
+            {proposal && !paramRejected && (
+              <Section title="Reconstrução paramétrica" icon={Ruler}>
+                <div className="metal space-y-2 rounded-2xl p-3">
+                  <p className="font-mono text-[10px] tracking-[0.16em] text-accent uppercase">
+                    {proposal.title}
+                  </p>
+                  <p className="font-mono text-[10px] text-muted-foreground">
+                    {proposal.summary} · encaixe ±{proposal.fitMm.toFixed(1)} mm
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-[1fr_auto]">
+                    <div className="space-y-1">
+                      {proposal.fields.map((f) => {
+                        const v = (paramValues ?? proposalValues(proposal))[f.key] ?? 0;
+                        return (
+                          <label
+                            key={f.key}
+                            className="flex items-center gap-2 font-mono text-[10px] text-muted-foreground"
+                          >
+                            <span className="flex-1 truncate">{f.label}</span>
+                            <input
+                              type="number"
+                              step={f.integer ? 1 : 0.1}
+                              value={v}
+                              onChange={(e) =>
+                                setParamValues((prev) => ({
+                                  ...(prev ?? proposalValues(proposal)),
+                                  [f.key]: Number(e.target.value),
+                                }))
+                              }
+                              className="w-24 rounded-lg border border-border bg-background/60 px-2 py-1 text-right font-mono text-[11px] text-foreground"
+                            />
+                            <span className="w-6">{f.unit}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                    <ParamPreview
+                      entities={buildParametric(proposal, paramValues ?? proposalValues(proposal))}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Toggle
+                      active={!!paramValues}
+                      onClick={() => setParamValues(proposalValues(proposal))}
+                      label={paramValues ? "template aceito" : "aceitar template"}
+                    />
+                    <Toggle
+                      active={false}
+                      onClick={() => {
+                        setParamValues(null);
+                        setParamRejected(true);
+                      }}
+                      label="rejeitar"
+                    />
+                  </div>
+                  {paramValues && (
+                    <p className="font-mono text-[10px] text-muted-foreground">
+                      A geometria vetorizada original entra intacta na camada CONSTRUÇÃO; o template
+                      editável vai para CORTE.
+                    </p>
+                  )}
+                </div>
+              </Section>
+            )}
+
+            {ocrEntities.length > 0 && (
+              <p className="metal rounded-2xl p-3 font-mono text-[10px] text-muted-foreground">
+                {ocrEntities.length} cota(s) de OCR aprovada(s) · camada COTA
+              </p>
+            )}
 
             <Stats analysis={analysis} cal={cal} entities={normalized.entities} />
 
@@ -1597,6 +1855,39 @@ function PrimShape({ p }: { p: Prim }) {
         (p.closed && p.pts[0] ? ` ${p.pts[0].x},${p.pts[0].y}` : "")
       }
     />
+  );
+}
+
+function ParamPreview({ entities }: { entities: Entity[] }) {
+  const b = parametricBounds(entities);
+  const pad = Math.max(b.w, b.h) * 0.06;
+  return (
+    <svg
+      viewBox={`${b.x - pad} ${b.y - pad} ${b.w + pad * 2} ${b.h + pad * 2}`}
+      className="h-28 w-28 rounded-xl border border-border bg-background/40"
+    >
+      {entities.map((e) =>
+        e.type === "circle" ? (
+          <circle
+            key={e.id}
+            cx={e.cx}
+            cy={e.cy}
+            r={e.r}
+            fill="none"
+            stroke={CUT_COLOR}
+            strokeWidth={Math.max(b.w, b.h) / 160}
+          />
+        ) : e.type === "polyline" ? (
+          <polygon
+            key={e.id}
+            points={e.pts.map((p) => `${p.x},${p.y}`).join(" ")}
+            fill="none"
+            stroke={CUT_COLOR}
+            strokeWidth={Math.max(b.w, b.h) / 160}
+          />
+        ) : null,
+      )}
+    </svg>
   );
 }
 
