@@ -164,7 +164,7 @@ export function reversePath(
   for (let i = segs.length - 1; i >= 0; i--) {
     const s = segs[i]!;
     const from = anchors[i]!;
-    out.push({ c1: s.c2, c2: s.c1, p: from, line: s.line });
+    out.push({ c1: s.c2, c2: s.c1, p: from, ...(s.line === undefined ? {} : { line: s.line }) });
   }
   void closed;
   return { start: anchors[anchors.length - 1]!, segs: out };

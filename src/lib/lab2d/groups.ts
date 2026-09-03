@@ -44,7 +44,11 @@ export function createGroup(
 
 export function dissolveGroup(entities: Entity[], groups: GroupDef[], groupId: string) {
   return {
-    entities: entities.map((e) => (e.group === groupId ? { ...e, group: undefined } : e)),
+    entities: entities.map((e) => {
+      if (e.group !== groupId) return e;
+      const { group: _drop, ...rest } = e;
+      return rest as Entity;
+    }),
     groups: groups.filter((g) => g.id !== groupId),
   };
 }
@@ -53,7 +57,11 @@ export const addToGroup = (entities: Entity[], ids: string[], groupId: string): 
   entities.map((e) => (ids.includes(e.id) ? { ...e, group: groupId } : e));
 
 export const removeFromGroup = (entities: Entity[], ids: string[]): Entity[] =>
-  entities.map((e) => (ids.includes(e.id) ? { ...e, group: undefined } : e));
+  entities.map((e) => {
+    if (!ids.includes(e.id)) return e;
+    const { group: _drop, ...rest } = e;
+    return rest as Entity;
+  });
 
 export const renameGroup = (groups: GroupDef[], groupId: string, name: string): GroupDef[] =>
   groups.map((g) => (g.id === groupId ? { ...g, name: name.trim() || g.name } : g));

@@ -85,7 +85,10 @@ export function CutPanel({
 
   const reverseSelected = () => {
     const ids = selection.length ? selection : [];
-    if (!ids.length) return toast.info("Selecione um caminho para inverter.");
+    if (!ids.length) {
+      toast.info("Selecione um caminho para inverter.");
+      return;
+    }
     commit((list) => list.map((e) => (ids.includes(e.id) ? reverseEntity(e) : e)));
     toast.success("Direção invertida.");
   };
@@ -113,7 +116,10 @@ export function CutPanel({
 
   const confirm = (list: ShareCandidate[]) => {
     const res = applySharedCuts(entities, list);
-    if (!res.applied) return toast.error("Trechos não puderam ser aplicados.");
+    if (!res.applied) {
+      toast.error("Trechos não puderam ser aplicados.");
+      return;
+    }
     commit(revalidateShared(res.entities, tol));
     setCands((c) => (c ? c.filter((x) => !list.includes(x)) : c));
     onHighlight(null);
@@ -282,7 +288,10 @@ export function CutPanel({
               icon={Boxes}
               onClick={() => {
                 const res = createGroup(entities, selection, groups);
-                if (!res) return toast.info("Selecione 2 ou mais entidades.");
+                if (!res) {
+      toast.info("Selecione 2 ou mais entidades.");
+      return;
+    }
                 commit(res.entities);
                 setGroups(res.groups);
                 toast.success("Grupo criado.");
@@ -293,7 +302,10 @@ export function CutPanel({
               icon={Boxes}
               onClick={() => {
                 const gid = selection.map(groupOfId).find(Boolean);
-                if (!gid) return toast.info("Selecione um membro de um grupo junto das novas peças.");
+                if (!gid) {
+      toast.info("Selecione um membro de um grupo junto das novas peças.");
+      return;
+    }
                 commit(addToGroup(entities, selection, gid));
               }}
             />
