@@ -14,13 +14,109 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      activation_codes: {
+        Row: {
+          code: string
+          created_at: string
+          note: string | null
+          plan: string
+          status: string
+          used_at: string | null
+          used_by: string | null
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          note?: string | null
+          plan?: string
+          status?: string
+          used_at?: string | null
+          used_by?: string | null
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          note?: string | null
+          plan?: string
+          status?: string
+          used_at?: string | null
+          used_by?: string | null
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          analytics_consent: boolean
+          created_at: string
+          display_name: string | null
+          id: string
+          plan: string
+          plan_expires_at: string | null
+          plan_source: string
+          updated_at: string
+        }
+        Insert: {
+          analytics_consent?: boolean
+          created_at?: string
+          display_name?: string | null
+          id: string
+          plan?: string
+          plan_expires_at?: string | null
+          plan_source?: string
+          updated_at?: string
+        }
+        Update: {
+          analytics_consent?: boolean
+          created_at?: string
+          display_name?: string | null
+          id?: string
+          plan?: string
+          plan_expires_at?: string | null
+          plan_source?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      purchases: {
+        Row: {
+          created_at: string
+          expires_at: string | null
+          id: string
+          product_id: string
+          purchase_token: string | null
+          status: string
+          store: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          product_id: string
+          purchase_token?: string | null
+          status?: string
+          store: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          product_id?: string
+          purchase_token?: string | null
+          status?: string
+          store?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      delete_my_account: { Args: never; Returns: Json }
+      redeem_activation_code: { Args: { _code: string }; Returns: Json }
     }
     Enums: {
       [_ in never]: never
