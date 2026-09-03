@@ -16,9 +16,9 @@ export function MasterModeDialog({
   const [error, setError] = useState<string | null>(null);
   const [activating, setActivating] = useState(false);
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = unlockWithCode(code);
+    const res = await unlockWithCode(code);
     if (!res.ok) {
       setError(res.message);
       return;
