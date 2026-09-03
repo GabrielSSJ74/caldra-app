@@ -18,6 +18,7 @@ import { Route as PrivacidadeRouteImport } from './routes/privacidade'
 import { Route as ProRouteImport } from './routes/pro'
 import { Route as ProjetosRouteImport } from './routes/projetos'
 import { Route as QaRouteImport } from './routes/qa'
+import { Route as TermosRouteImport } from './routes/termos'
 import { Route as Desenho2dIndexRouteImport } from './routes/desenho-2d.index'
 import { Route as Desenho2dProjectIdRouteImport } from './routes/desenho-2d.$projectId'
 import { Route as EscolaIndexRouteImport } from './routes/escola.index'
@@ -70,6 +71,11 @@ const QaRoute = QaRouteImport.update({
   path: '/qa',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TermosRoute = TermosRouteImport.update({
+  id: '/termos',
+  path: '/termos',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const Desenho2dIndexRoute = Desenho2dIndexRouteImport.update({
   id: '/desenho-2d/',
   path: '/desenho-2d/',
@@ -111,6 +117,7 @@ export interface FileRoutesByFullPath {
   '/pro': typeof ProRoute
   '/projetos': typeof ProjetosRoute
   '/qa': typeof QaRoute
+  '/termos': typeof TermosRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
@@ -128,6 +135,7 @@ export interface FileRoutesByTo {
   '/pro': typeof ProRoute
   '/projetos': typeof ProjetosRoute
   '/qa': typeof QaRoute
+  '/termos': typeof TermosRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
@@ -146,6 +154,7 @@ export interface FileRoutesById {
   '/pro': typeof ProRoute
   '/projetos': typeof ProjetosRoute
   '/qa': typeof QaRoute
+  '/termos': typeof TermosRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
@@ -165,6 +174,7 @@ export interface FileRouteTypes {
     | '/pro'
     | '/projetos'
     | '/qa'
+    | '/termos'
     | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/tracagem/$slug'
@@ -182,6 +192,7 @@ export interface FileRouteTypes {
     | '/pro'
     | '/projetos'
     | '/qa'
+    | '/termos'
     | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/tracagem/$slug'
@@ -199,6 +210,7 @@ export interface FileRouteTypes {
     | '/pro'
     | '/projetos'
     | '/qa'
+    | '/termos'
     | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/tracagem/$slug'
@@ -217,6 +229,7 @@ export interface RootRouteChildren {
   ProRoute: typeof ProRoute
   ProjetosRoute: typeof ProjetosRoute
   QaRoute: typeof QaRoute
+  TermosRoute: typeof TermosRoute
   Desenho2dProjectIdRoute: typeof Desenho2dProjectIdRoute
   EscolaSlugRoute: typeof EscolaSlugRoute
   TracagemSlugRoute: typeof TracagemSlugRoute
@@ -290,6 +303,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof QaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/termos': {
+      id: '/termos'
+      path: '/termos'
+      fullPath: '/termos'
+      preLoaderRoute: typeof TermosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/desenho-2d/': {
       id: '/desenho-2d/'
       path: '/desenho-2d'
@@ -345,6 +365,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProRoute: ProRoute,
   ProjetosRoute: ProjetosRoute,
   QaRoute: QaRoute,
+  TermosRoute: TermosRoute,
   Desenho2dProjectIdRoute: Desenho2dProjectIdRoute,
   EscolaSlugRoute: EscolaSlugRoute,
   TracagemSlugRoute: TracagemSlugRoute,
