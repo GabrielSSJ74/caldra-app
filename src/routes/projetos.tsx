@@ -46,7 +46,7 @@ function Thumb({ seed }: { seed: number }) {
 }
 
 function Projetos() {
-  const { isMestre } = useFeatureAccess();
+  const { isMestre, requirePro } = useFeatureAccess();
   const [open, setOpen] = useState(DEMO_PROJECTS[0]!.id);
 
   return (
