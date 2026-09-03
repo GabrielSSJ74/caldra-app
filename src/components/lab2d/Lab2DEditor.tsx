@@ -925,7 +925,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   /* ------------------------------------------------------------- ações */
   const applySelection = (fn: (e: Entity) => Entity) =>
-    commit((list) => list.map((e) => (selection.includes(e.id) ? fn(e) : e)));
+    commit((list) =>
+      revalidateShared(list.map((e) => (selection.includes(e.id) ? fn(e) : e))),
+    );
 
   const selBox = useMemo(() => bbox(selected), [selected]);
   const center: Vec2 = selBox
