@@ -151,3 +151,21 @@ export function flattenPath(start: Vec2, segs: BezierSeg[], closed: boolean, per
   const pts = samplePath(start, segs, false, perSeg);
   return closed ? pts : pts;
 }
+
+/** Inverte o sentido do caminho, preservando cantos vivos e curvatura. */
+export function reversePath(
+  start: Vec2,
+  segs: BezierSeg[],
+  closed: boolean,
+): { start: Vec2; segs: BezierSeg[] } {
+  if (!segs.length) return { start, segs };
+  const anchors = pathAnchors(start, segs);
+  const out: BezierSeg[] = [];
+  for (let i = segs.length - 1; i >= 0; i--) {
+    const s = segs[i]!;
+    const from = anchors[i]!;
+    out.push({ c1: s.c2, c2: s.c1, p: from, line: s.line });
+  }
+  void closed;
+  return { start: anchors[anchors.length - 1]!, segs: out };
+}
