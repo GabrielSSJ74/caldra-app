@@ -11,6 +11,7 @@ import {
   type ThemeMode,
   type Unit,
 } from "@/lib/settings/SettingsProvider";
+import { REGIONS, type RegionId } from "@/lib/regional/regional";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { MaterialManager } from "@/components/chameleon/MaterialManager";
 import { PhotoPicker } from "@/components/chameleon/Profile";
@@ -245,6 +246,30 @@ function Configuracoes() {
               </button>
             ))}
           </div>
+        </div>
+
+        <div>
+          <SectionLabel>Região</SectionLabel>
+          <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            {(Object.keys(REGIONS) as RegionId[]).map((r) => (
+              <button
+                key={r}
+                onClick={() => setRegion(r)}
+                className={cn(
+                  "rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
+                  region === r
+                    ? "border-accent/25 bg-accent/10 text-accent"
+                    : "border-line text-muted-foreground",
+                )}
+              >
+                {REGIONS[r].label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Define moeda ({REGIONS[region].currency}), formato de números, chapas comerciais e o
+            imposto padrão do orçamento. A medida interna continua sempre em milímetro.
+          </p>
         </div>
 
         <div>
