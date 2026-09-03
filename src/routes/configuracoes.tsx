@@ -44,6 +44,7 @@ const THEMES: { id: ThemeMode; label: string }[] = [
 const ACCENTS: { id: AccentColor; label: string; swatch: string }[] = [
   { id: "amber", label: "Âmbar", swatch: "#F59E0B" },
   { id: "blue", label: "Azul Real", swatch: "#00CCFF" },
+  { id: "magenta", label: "Magenta", swatch: "#A01550" },
 ];
 const UNITS: Unit[] = ["mm", "cm", "m", "in"];
 
