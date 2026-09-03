@@ -1235,10 +1235,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             <IconBtn label="Enquadrar" onClick={() => fitTo(entities)} icon={ScanSearch} />
             <IconBtn
               label="Camadas"
-              onClick={() => setShowLayers((s) => !s)}
+              onClick={() => {
+                setShowLayers((s) => !s);
+                setShowCut(false);
+              }}
               icon={LayersIcon}
               active={showLayers}
             />
+            <IconBtn
+              label="Plano de corte"
+              onClick={() => {
+                setShowCut((s) => !s);
+                setShowLayers(false);
+              }}
+              icon={Scissors}
+              active={showCut}
+            />
+
             <IconBtn label="Exportar" onClick={() => setExportOpen(true)} icon={Download} />
             <div className="relative">
               <IconBtn label="Mais" onClick={() => setMoreOpen((m) => !m)} icon={MoreHorizontal} active={moreOpen} />
