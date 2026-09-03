@@ -9,6 +9,7 @@ import { BubbleNav } from "./BubbleNav";
 import { Intro, useIntro } from "./Intro";
 import { Onboarding } from "./Onboarding";
 import { Avatar, ProfileDialog } from "./Profile";
+import { PaywallDialog } from "./Paywall";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [masterOpen, setMasterOpen] = useState(false);
