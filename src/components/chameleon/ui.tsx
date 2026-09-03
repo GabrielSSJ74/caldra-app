@@ -8,13 +8,20 @@ import { formatNumber } from "@/lib/settings/SettingsProvider";
 export function SectionLabel({
   children,
   action,
+  className,
 }: {
   children: React.ReactNode;
   action?: React.ReactNode;
+  className?: string;
 }) {
   return (
     <div className="mb-2 flex items-center justify-between gap-3">
-      <h2 className="font-mono text-[11px] tracking-[0.18em] text-muted-foreground uppercase">
+      <h2
+        className={cn(
+          "font-mono text-[11px] tracking-[0.18em] text-muted-foreground uppercase",
+          className,
+        )}
+      >
         {children}
       </h2>
       {action}
