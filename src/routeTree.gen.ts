@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as BibliotecaRouteImport } from './routes/biblioteca'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
+import { Route as ContaRouteImport } from './routes/conta'
 import { Route as PlanificacaoRouteImport } from './routes/planificacao'
 import { Route as ProRouteImport } from './routes/pro'
 import { Route as ProjetosRouteImport } from './routes/projetos'
@@ -36,6 +37,11 @@ const BibliotecaRoute = BibliotecaRouteImport.update({
 const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
   id: '/configuracoes',
   path: '/configuracoes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContaRoute = ContaRouteImport.update({
+  id: '/conta',
+  path: '/conta',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlanificacaoRoute = PlanificacaoRouteImport.update({
@@ -93,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
+  '/conta': typeof ContaRoute
   '/planificacao': typeof PlanificacaoRoute
   '/pro': typeof ProRoute
   '/projetos': typeof ProjetosRoute
@@ -108,6 +115,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
+  '/conta': typeof ContaRoute
   '/planificacao': typeof PlanificacaoRoute
   '/pro': typeof ProRoute
   '/projetos': typeof ProjetosRoute
@@ -124,6 +132,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
+  '/conta': typeof ContaRoute
   '/planificacao': typeof PlanificacaoRoute
   '/pro': typeof ProRoute
   '/projetos': typeof ProjetosRoute
@@ -141,6 +150,7 @@ export interface FileRouteTypes {
     | '/'
     | '/biblioteca'
     | '/configuracoes'
+    | '/conta'
     | '/planificacao'
     | '/pro'
     | '/projetos'
@@ -156,6 +166,7 @@ export interface FileRouteTypes {
     | '/'
     | '/biblioteca'
     | '/configuracoes'
+    | '/conta'
     | '/planificacao'
     | '/pro'
     | '/projetos'
@@ -171,6 +182,7 @@ export interface FileRouteTypes {
     | '/'
     | '/biblioteca'
     | '/configuracoes'
+    | '/conta'
     | '/planificacao'
     | '/pro'
     | '/projetos'
@@ -187,6 +199,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   BibliotecaRoute: typeof BibliotecaRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
+  ContaRoute: typeof ContaRoute
   PlanificacaoRoute: typeof PlanificacaoRoute
   ProRoute: typeof ProRoute
   ProjetosRoute: typeof ProjetosRoute
@@ -220,6 +233,13 @@ declare module '@tanstack/react-router' {
       path: '/configuracoes'
       fullPath: '/configuracoes'
       preLoaderRoute: typeof ConfiguracoesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/conta': {
+      id: '/conta'
+      path: '/conta'
+      fullPath: '/conta'
+      preLoaderRoute: typeof ContaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/planificacao': {
@@ -299,6 +319,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BibliotecaRoute: BibliotecaRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
+  ContaRoute: ContaRoute,
   PlanificacaoRoute: PlanificacaoRoute,
   ProRoute: ProRoute,
   ProjetosRoute: ProjetosRoute,
