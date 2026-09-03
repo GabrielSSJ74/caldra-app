@@ -50,6 +50,8 @@ function Configuracoes() {
   const { theme, setTheme, accent, setAccent, unit, setUnit, precision, setPrecision } =
     useSettings();
   const [code, setCode] = useState("");
+  const [consent, setConsentState] = useState(false);
+  useEffect(() => setConsentState(readConsent()), []);
   const { photo, displayName, role, name, update } = useProfile();
 
   const submit = async (e: React.FormEvent) => {
