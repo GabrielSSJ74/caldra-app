@@ -38,8 +38,8 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent2: var(--accent2);
-  --color-pro: var(--caldra-pro);
-  --color-pro-foreground: var(--caldra-pro-foreground);
+  --color-pro: var(--accent);
+  --color-pro-foreground: var(--accent-foreground);
   --color-warn: var(--warn);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
@@ -87,11 +87,8 @@
   --input: oklch(0.9 0.005 80);
   --ring: oklch(0.66 0.15 62);
 
-  /* PRO — identidade premium (#A01550). Nunca usada em cor técnica de entidade. */
-  --caldra-pro: oklch(0.4641 0.1743 2.82);
-  --caldra-pro-strong: oklch(0.54 0.19 3);
-  --caldra-pro-foreground: oklch(1 0 0);
-  --gradient-pro: linear-gradient(120deg, var(--caldra-pro), var(--accent));
+  /* PRO — segue o acento da interface (sem cor própria). */
+  --gradient-pro: var(--gradient-brand);
 
   --glass-bg: linear-gradient(
     165deg,
@@ -139,11 +136,7 @@
   --input: oklch(0.27 0.006 60);
   --ring: oklch(0.77 0.163 70);
 
-  /* PRO — no escuro clareamos levemente para manter a cor perceptível */
-  --caldra-pro: oklch(0.52 0.19 3);
-  --caldra-pro-strong: oklch(0.6 0.2 4);
-  --caldra-pro-foreground: oklch(1 0 0);
-  --gradient-pro: linear-gradient(120deg, var(--caldra-pro), var(--accent));
+  --gradient-pro: var(--gradient-brand);
 
   --glass-bg: linear-gradient(165deg, oklch(1 0 0 / 5.5%), oklch(1 0 0 / 1.5%));
   --glass-border: oklch(1 0 0 / 8%);
@@ -296,7 +289,7 @@
   color: var(--muted-foreground);
 }
 
-/* ——— acento cromático selecionável (Âmbar / Azul Real) ——— */
+/* ——— acento cromático selecionável (Âmbar / Azul Real / Magenta) ——— */
 .accent-blue {
   --primary: oklch(0.75 0.145 226); /* #00CCFF */
   --primary-foreground: oklch(0.16 0.01 240);
@@ -305,6 +298,27 @@
   --accent2: oklch(0.86 0.14 195);
   --ring: oklch(0.75 0.145 226);
   --gradient-brand: linear-gradient(120deg, var(--accent), oklch(0.86 0.14 195));
+}
+
+/* Magenta #A01550 — sólido para controles; no escuro o acento clareia (#E8377F). */
+.accent-magenta {
+  --primary: oklch(0.4641 0.1743 2.82);
+  --primary-foreground: oklch(1 0 0);
+  --accent: oklch(0.4641 0.1743 2.82);
+  --accent-foreground: oklch(1 0 0);
+  --accent2: oklch(0.63 0.21 5);
+  --ring: oklch(0.4641 0.1743 2.82);
+  --gradient-brand: linear-gradient(120deg, oklch(0.4641 0.1743 2.82), oklch(0.63 0.21 5));
+}
+
+.dark.accent-magenta {
+  --primary: oklch(0.4641 0.1743 2.82);
+  --primary-foreground: oklch(1 0 0);
+  --accent: oklch(0.63 0.21 5); /* #E8377F — legível como texto no escuro */
+  --accent-foreground: oklch(1 0 0);
+  --accent2: oklch(0.72 0.17 8);
+  --ring: oklch(0.63 0.21 5);
+  --gradient-brand: linear-gradient(120deg, oklch(0.4641 0.1743 2.82), oklch(0.63 0.21 5));
 }
 
 /* ——— render sólido 3D (estilo CAD) ——— */
@@ -405,17 +419,17 @@
   }
 }
 
-/* ——— identidade PRO (#A01550): apenas premium, nunca linguagem técnica ——— */
+/* ——— identidade PRO: usa o acento da interface, nunca linguagem técnica ——— */
 @utility pro-gradient {
   background-image: var(--gradient-pro);
-  color: var(--caldra-pro-foreground);
+  color: var(--accent-foreground);
 }
 
 @utility pro-surface {
-  background-color: color-mix(in oklab, var(--caldra-pro) 16%, transparent);
-  border: 1px solid color-mix(in oklab, var(--caldra-pro) 45%, transparent);
+  background-color: color-mix(in oklab, var(--accent) 14%, transparent);
+  border: 1px solid color-mix(in oklab, var(--accent) 40%, transparent);
 }
 
 @utility text-pro {
-  color: var(--caldra-pro-strong);
+  color: var(--accent);
 }
