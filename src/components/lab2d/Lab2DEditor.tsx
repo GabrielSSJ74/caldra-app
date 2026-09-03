@@ -1133,6 +1133,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       ) : (
         <div className="space-y-2">
           <p className="tick-label text-muted-foreground">{selected.length} objetos</p>
+          {activeGroup && (
+            <div className="flex items-center gap-1">
+              <span className="rounded-full bg-accent/15 px-2 py-0.5 font-mono text-[9px] text-accent">
+                {activeGroup.name}
+              </span>
+              <button
+                onClick={() => setSelection(selection.slice(0, 1))}
+                className="rounded-lg border border-line px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground hover:text-foreground"
+              >
+                Selecionar só este
+              </button>
+            </div>
+          )}
           <div className="flex flex-wrap gap-1">{selectionActions}</div>
         </div>
       )}
