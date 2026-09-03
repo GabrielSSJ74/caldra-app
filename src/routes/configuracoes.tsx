@@ -49,8 +49,20 @@ const UNITS: Unit[] = ["mm", "cm", "m", "in"];
 
 function Configuracoes() {
   const { plan, isMestre, unlockWithCode, reset } = useFeatureAccess();
-  const { theme, setTheme, accent, setAccent, unit, setUnit, precision, setPrecision, level, setLevel } =
-    useSettings();
+  const {
+    theme,
+    setTheme,
+    accent,
+    setAccent,
+    unit,
+    setUnit,
+    precision,
+    setPrecision,
+    level,
+    setLevel,
+    region,
+    setRegion,
+  } = useSettings();
   const [code, setCode] = useState("");
   const [consent, setConsentState] = useState(false);
   useEffect(() => setConsentState(readConsent()), []);
