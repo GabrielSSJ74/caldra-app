@@ -94,7 +94,7 @@ export async function jobSheetPdf(sheet: JobSheet, region: Region): Promise<jsPD
     doc.text("CONFERÊNCIA DO TRAÇADO", left, y);
     y += 5;
     doc.setFont("helvetica", "normal");
-    doc.setFillColor(240);
+    doc.setFillColor(240, 240, 240);
     for (const r of sheet.conference) {
       if (y > 265) {
         doc.addPage();

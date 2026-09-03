@@ -145,7 +145,7 @@ export function quotePdf(q: Quote, region: Region, opts?: { title?: string }): j
 
   // cabeçalho da tabela
   const cols = [left, left + 86, left + 104, left + 133, right];
-  doc.setFillColor(238);
+  doc.setFillColor(238, 238, 238);
   doc.rect(left, y - 4.5, right - left, 6.5, "F");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(8);
