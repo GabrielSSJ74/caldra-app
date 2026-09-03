@@ -139,13 +139,13 @@ export function PaywallBody({ onDone }: { onDone?: () => void }) {
               ? run("m", () => buy(PRODUCTS.monthly))
               : window.open(WEB_CHECKOUT_URL, "_blank", "noopener")
           }
-          className="rounded-xl border border-line px-4 py-3 text-left transition-colors hover:border-accent/60 disabled:opacity-50"
+          className="rounded-xl border border-line px-4 py-3 text-left transition-colors hover:border-pro/60 disabled:opacity-50"
         >
           <span className="block font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
-            Mensal
+            {PRICING.monthly.label}
           </span>
-          <span className="font-display text-lg font-semibold">{PRICES.monthly}</span>
-          <span className="block text-[11px] text-muted-foreground">por mês, cancela quando quiser</span>
+          <span className="font-display text-lg font-semibold">{priceOf("monthly")}</span>
+          <span className="block text-[11px] text-muted-foreground">{PRICING.monthly.note}</span>
         </button>
 
         <button
@@ -155,15 +155,28 @@ export function PaywallBody({ onDone }: { onDone?: () => void }) {
               ? run("y", () => buy(PRODUCTS.yearly))
               : window.open(WEB_CHECKOUT_URL, "_blank", "noopener")
           }
-          className="glow-ring rounded-xl border border-accent/50 bg-accent/8 px-4 py-3 text-left disabled:opacity-50"
+          className="pro-surface rounded-xl px-4 py-3 text-left disabled:opacity-50"
         >
-          <span className="block font-mono text-[10px] tracking-[0.18em] text-accent uppercase">
-            Anual · melhor preço
+          <span className="block font-mono text-[10px] tracking-[0.18em] text-pro uppercase">
+            {PRICING.yearly.label} · {PRICING.yearly.badge}
           </span>
-          <span className="font-display text-lg font-semibold">{PRICES.yearly}</span>
-          <span className="block text-[11px] text-muted-foreground">equivale a 2 meses grátis</span>
+          <span className="font-display text-lg font-semibold">{priceOf("yearly")}</span>
+          <span className="block text-[11px] text-muted-foreground">{PRICING.yearly.note}</span>
         </button>
       </div>
+
+      {!playAvailable && (
+        <button
+          onClick={() => window.open(WEB_CHECKOUT_URL, "_blank", "noopener")}
+          className="w-full rounded-xl border border-line px-4 py-3 text-left transition-colors hover:border-pro/60"
+        >
+          <span className="block font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
+            {PRICING.lifetime.label} · {PRICING.lifetime.badge}
+          </span>
+          <span className="font-display text-lg font-semibold">{priceOf("lifetime")}</span>
+          <span className="block text-[11px] text-muted-foreground">{PRICING.lifetime.note}</span>
+        </button>
+      )}
 
       {!playAvailable && (
         <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
