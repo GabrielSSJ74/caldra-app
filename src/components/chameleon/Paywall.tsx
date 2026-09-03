@@ -5,7 +5,7 @@
  *   • Rota /pro — a mesma vitrine em página inteira.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Check, ExternalLink, Lock, Minus } from "lucide-react";
@@ -45,7 +45,7 @@ function ComparisonTable() {
       <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 border-b border-line bg-white/[0.02] px-3 py-2 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
         <span>Recurso</span>
         <span className="w-10 text-center">Free</span>
-        <span className="w-10 text-center text-accent">Pro</span>
+        <span className="w-10 text-center text-pro">Pro</span>
       </div>
       {COMPARED.map((feature) => {
         const free = planAllows("free", feature);
@@ -63,7 +63,7 @@ function ComparisonTable() {
               )}
             </span>
             <span className="grid w-10 place-items-center">
-              <Check className="size-3.5 text-accent" />
+              <Check className="size-3.5 text-pro" />
             </span>
           </div>
         );
@@ -116,7 +116,7 @@ export function PaywallBody({ onDone }: { onDone?: () => void }) {
     return (
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Você já está no <span className="text-accent">CALDRA {PLAN_LABEL[plan]}</span>. Tudo liberado.
+          Você já está no <span className="text-pro">CALDRA {PLAN_LABEL[plan]}</span>. Tudo liberado.
         </p>
         <ComparisonTable />
       </div>
@@ -229,7 +229,7 @@ export function PaywallBody({ onDone }: { onDone?: () => void }) {
           <button
             type="submit"
             disabled={busy !== null}
-            className="brand-gradient w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-background disabled:opacity-50"
+            className="pro-gradient w-full rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
           >
             Ativar código
           </button>
@@ -249,7 +249,7 @@ export function PaywallDialog() {
       <DialogContent className="max-h-[92vh] w-[calc(100vw-1.5rem)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-display">
-            <Lock className="size-4 text-accent" />
+            <Lock className="size-4 text-pro" />
             {pitch?.title ?? "CALDRA PRO"}
           </DialogTitle>
         </DialogHeader>
@@ -264,7 +264,7 @@ export function PaywallDialog() {
 export function PaywallPanel({ className }: { className?: string }) {
   return (
     <Panel className={cn("space-y-4 p-4", className)} glow>
-      <SectionLabel>CALDRA PRO</SectionLabel>
+      <SectionLabel className="text-pro">CALDRA PRO</SectionLabel>
       <PaywallBody />
     </Panel>
   );

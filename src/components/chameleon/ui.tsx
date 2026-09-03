@@ -102,9 +102,12 @@ export function FeatureGate({
   if (can(feature)) return <>{children}</>;
   return (
     <Panel className="p-6 text-center">
-      <div className="mx-auto grid size-11 place-items-center rounded-xl border border-accent/25 bg-accent/10 text-accent">
+      <div className="pro-surface mx-auto grid size-11 place-items-center rounded-xl text-pro">
         <Lock className="size-4" />
       </div>
+      <span className="pro-surface mx-auto mt-3 inline-block rounded-full px-2 py-0.5 font-mono text-[9px] tracking-[0.18em] text-pro uppercase">
+        Pro
+      </span>
       <h3 className="mt-3 font-display text-base">{title}</h3>
       <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">{description}</p>
       <p className="mx-auto mt-2 max-w-sm text-[12px] text-muted-foreground">
@@ -113,7 +116,7 @@ export function FeatureGate({
       <div className="mt-4 flex flex-wrap justify-center gap-2">
         <Link
           to="/pro"
-          className="brand-gradient inline-block rounded-xl px-4 py-2 text-sm font-semibold text-background"
+          className="pro-gradient inline-block rounded-xl px-4 py-2 text-sm font-semibold"
         >
           Conhecer o CALDRA PRO
         </Link>
