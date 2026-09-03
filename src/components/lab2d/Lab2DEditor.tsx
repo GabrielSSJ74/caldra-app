@@ -190,6 +190,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [showDims, setShowDims] = useState(false);
   const [focus, setFocus] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
+  const [showCut, setShowCut] = useState(false);
+  const [groups, setGroups] = useState<GroupDef[]>([]);
+  const [showArrows, setShowArrows] = useState(false);
+  const [showOrder, setShowOrder] = useState(false);
+  const [startPicking, setStartPicking] = useState(false);
+  const [shareHint, setShareHint] = useState<ShareCandidate | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [outputMode, setOutputMode] = useState<OutputMode>("completo");
   const [pending, setPending] = useState<Vec2[]>([]);
