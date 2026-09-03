@@ -1537,6 +1537,62 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               ))}
 
+              {/* PLANO DE CORTE — setas de direção, selos de ordem e trechos comuns */}
+              {(showArrows || showOrder) &&
+                drawable.filter(isCutPath).map((e, i) => {
+                  const s = startPointOf(e);
+                  const t = endPointOf(e);
+                  const ang = Math.atan2(t.y - s.y, t.x - s.x);
+                  const a = 9 / view.k;
+                  return (
+                    <g key={`cut-${e.id}`}>
+                      {showArrows && (
+                        <g
+                          transform={`translate(${s.x} ${s.y}) rotate(${(ang * 180) / Math.PI})`}
+                          fill={e.invalid ? WARNING_COLOR : CUT_COLOR}
+                        >
+                          <polygon points={`0,0 ${-a},${a / 2.6} ${-a},${-a / 2.6}`} transform={`translate(${a * 1.6} 0)`} />
+                        </g>
+                      )}
+                      {showOrder && (
+                        <>
+                          <circle
+                            cx={s.x}
+                            cy={s.y}
+                            r={7 / view.k}
+                            fill="var(--background)"
+                            stroke={e.invalid ? WARNING_COLOR : CUT_COLOR}
+                            strokeWidth={1 / view.k}
+                          />
+                          <text
+                            x={s.x}
+                            y={s.y + 3.4 / view.k}
+                            fontSize={9 / view.k}
+                            textAnchor="middle"
+                            fill={e.invalid ? WARNING_COLOR : CUT_COLOR}
+                            className="font-mono"
+                          >
+                            {i + 1}
+                          </text>
+                        </>
+                      )}
+                    </g>
+                  );
+                })}
+
+              {shareHint && (
+                <line
+                  x1={shareHint.p1.x}
+                  y1={shareHint.p1.y}
+                  x2={shareHint.p2.x}
+                  y2={shareHint.p2.y}
+                  stroke={SELECTION_COLOR}
+                  strokeWidth={5 / view.k}
+                  strokeOpacity={0.6}
+                  strokeLinecap="round"
+                />
+              )}
+
               {snapHit && (
                 <text
                   x={snapHit.p.x}
