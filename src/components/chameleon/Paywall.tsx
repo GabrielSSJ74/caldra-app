@@ -79,6 +79,26 @@ export function PaywallBody({ onDone }: { onDone?: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [showCode, setShowCode] = useState(false);
   const playAvailable = hasPlayBilling();
+  /** Dentro da TWA o preço exibido vem do Play Billing, nunca das constantes. */
+  const [playPrices, setPlayPrices] = useState<Partial<Record<ProductId, string>>>({});
+  const brl = isBrl();
+
+  useEffect(() => {
+    if (!playAvailable) return;
+    let alive = true;
+    void queryProductDetails().then((p) => {
+      if (alive) setPlayPrices(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [playAvailable]);
+
+  const priceOf = (key: "monthly" | "yearly" | "lifetime") => {
+    const entry = PRICING[key];
+    if (entry.product && playPrices[entry.product]) return playPrices[entry.product]!;
+    return formatPrice(entry, brl);
+  };
 
   const run = async (key: string, fn: () => Promise<{ ok: boolean; message: string }>) => {
     setBusy(key);
