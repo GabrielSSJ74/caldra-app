@@ -565,6 +565,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
+    // DEFINIR PARTIDA: o próximo clique com snap vira o início do caminho
+    if (startPicking) {
+      const target = entities.find((e) => selection.includes(e.id) && isCutPath(e));
+      if (!target) {
+        toast.info("Selecione primeiro o caminho fechado.");
+        setStartPicking(false);
+        return;
+      }
+      commit((list) => list.map((e) => (e.id === target.id ? setStartPoint(e, p) : e)));
+      setStartPicking(false);
+      toast.success("Ponto de partida definido.");
+      return;
+    }
+
     if (tool === "select" || tool === "node") {
       const hit = hitTest(raw);
       if (tool === "node" && hit && selection.includes(hit.id)) {
@@ -584,21 +598,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         }
       }
       if (hit) {
-        setSelection((s) =>
-          ev.shiftKey
-            ? s.includes(hit.id)
-              ? s.filter((i) => i !== hit.id)
-              : [...s, hit.id]
-            : s.includes(hit.id)
-              ? s
-              : [hit.id],
-        );
+        // clique num membro seleciona o GRUPO inteiro; Ctrl/⌘ isola o membro
+        const solo = ev.ctrlKey || ev.metaKey;
+        const target = solo ? [hit.id] : expandSelection(entities, [hit.id]);
+        const nextSel = ev.shiftKey
+          ? selection.includes(hit.id)
+            ? selection.filter((i) => !target.includes(i))
+            : [...new Set([...selection, ...target])]
+          : selection.includes(hit.id)
+            ? selection
+            : target;
+        setSelection(nextSel);
         if (tool === "select")
-          moveRef.current = {
-            from: raw,
-            ids: selection.includes(hit.id) ? selection : [hit.id],
-            base: entities,
-          };
+          moveRef.current = { from: raw, ids: nextSel, base: entities };
         return;
       }
       if (!ev.shiftKey) setSelection([]);
