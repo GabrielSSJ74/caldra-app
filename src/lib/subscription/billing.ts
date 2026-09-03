@@ -18,12 +18,7 @@ export const PRODUCTS = {
 
 export type ProductId = (typeof PRODUCTS)[keyof typeof PRODUCTS];
 
-/** Preços de vitrine. Ajuste em um lugar só. */
-export const PRICES = {
-  monthly: "R$ 19,90",
-  yearly: "R$ 149,00",
-  lifetime: "R$ 297,00",
-} as const;
+/** Preços de vitrine vivem em `pricing.ts` — nunca aqui. */
 
 /** Site externo onde a compra web e o Pix vitalício acontecem. */
 export const WEB_CHECKOUT_URL = "https://caldra.app/planos";
@@ -83,5 +78,30 @@ export async function listPlayPurchases(): Promise<PlayPurchase[]> {
     return list.map((p) => ({ productId: p.itemId, token: p.purchaseToken }));
   } catch {
     return [];
+  }
+}
+
+/**
+ * Preço LOCAL REAL da Play (`queryProductDetails`). Dentro da TWA é ele que
+ * aparece na tela — jamais um valor fixo no código. Fora da TWA devolve {}.
+ */
+export async function queryProductDetails(
+  ids: ProductId[] = [PRODUCTS.monthly, PRODUCTS.yearly],
+): Promise<Partial<Record<ProductId, string>>> {
+  const service = await playService();
+  if (!service) return {};
+  try {
+    const details = await service.getDetails(ids);
+    const out: Partial<Record<ProductId, string>> = {};
+    for (const d of details) {
+      const value = Number(d.price.value);
+      const formatted = Number.isFinite(value)
+        ? new Intl.NumberFormat(undefined, { style: "currency", currency: d.price.currency }).format(value)
+        : `${d.price.currency} ${d.price.value}`;
+      out[d.itemId as ProductId] = formatted;
+    }
+    return out;
+  } catch {
+    return {};
   }
 }

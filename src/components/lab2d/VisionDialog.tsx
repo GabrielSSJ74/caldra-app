@@ -70,6 +70,8 @@ import {
   rasterForTracado,
 } from "@/lib/vision/rasterSource";
 import { cancelVision, runVision } from "@/lib/vision/visionClient";
+import { useVisionQuota } from "@/lib/vision/useVisionQuota";
+import { VisionLimitDialog } from "./VisionLimitDialog";
 import { buildQuality, type QualityItem } from "@/lib/vision/qualityReport";
 import {
   addManualPoint,
@@ -116,6 +118,8 @@ export function VisionDialog({
   onCreate: (entities: Entity[], image: VisionImageLayer) => void;
 }) {
   const [step, setStep] = useState<Step>("importar");
+  const quota = useVisionQuota(open);
+  const [limitOpen, setLimitOpen] = useState(false);
   const [img, setImg] = useState<ImportedImage | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -387,7 +391,25 @@ export function VisionDialog({
     ],
   );
 
-  const run = () => void analyze(false);
+  /** Vetorização no modo TÉCNICO consome a cota diária do plano Free. */
+  const run = () => {
+    if (mode === "tecnico" && !quota.unlimited) {
+      if (quota.exhausted) {
+        setLimitOpen(true);
+        return;
+      }
+      void (async () => {
+        const ok = await quota.consume();
+        if (!ok) {
+          setLimitOpen(true);
+          return;
+        }
+        void analyze(false);
+      })();
+      return;
+    }
+    void analyze(false);
+  };
 
   const cancelRun = () => {
     cancelVision();
@@ -596,6 +618,15 @@ export function VisionDialog({
             <span className="ml-2 font-mono text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
               Imagem → Vetor
             </span>
+            {quota.unlimited ? (
+              <span className="pro-surface ml-2 rounded-full px-2 py-0.5 align-middle font-mono text-[9px] tracking-[0.18em] text-pro uppercase">
+                Vision ilimitado
+              </span>
+            ) : (
+              <span className="ml-2 rounded-full border border-line px-2 py-0.5 align-middle font-mono text-[9px] tracking-[0.18em] text-muted-foreground uppercase">
+                Vision hoje {quota.used}/{quota.limit}
+              </span>
+            )}
           </DialogTitle>
         </DialogHeader>
 
@@ -1373,6 +1404,7 @@ export function VisionDialog({
           </div>
         )}
       </DialogContent>
+      <VisionLimitDialog open={limitOpen} onOpenChange={setLimitOpen} />
     </Dialog>
   );
 }

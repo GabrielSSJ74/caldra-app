@@ -5,14 +5,21 @@
  *   • Rota /pro — a mesma vitrine em página inteira.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Check, ExternalLink, Lock, Minus } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { FEATURE_PITCH, PLAN_LABEL, planAllows, type Feature } from "@/lib/subscription/features";
-import { PRICES, PRODUCTS, WEB_CHECKOUT_URL, hasPlayBilling } from "@/lib/subscription/billing";
+import {
+  PRODUCTS,
+  WEB_CHECKOUT_URL,
+  hasPlayBilling,
+  queryProductDetails,
+  type ProductId,
+} from "@/lib/subscription/billing";
+import { PRICING, formatPrice, isBrl } from "@/lib/subscription/pricing";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { cn } from "@/lib/utils";
 import { Panel, SectionLabel } from "./ui";
@@ -38,7 +45,7 @@ function ComparisonTable() {
       <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 border-b border-line bg-white/[0.02] px-3 py-2 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
         <span>Recurso</span>
         <span className="w-10 text-center">Free</span>
-        <span className="w-10 text-center text-accent">Pro</span>
+        <span className="w-10 text-center text-pro">Pro</span>
       </div>
       {COMPARED.map((feature) => {
         const free = planAllows("free", feature);
@@ -56,7 +63,7 @@ function ComparisonTable() {
               )}
             </span>
             <span className="grid w-10 place-items-center">
-              <Check className="size-3.5 text-accent" />
+              <Check className="size-3.5 text-pro" />
             </span>
           </div>
         );
@@ -72,6 +79,26 @@ export function PaywallBody({ onDone }: { onDone?: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
   const [showCode, setShowCode] = useState(false);
   const playAvailable = hasPlayBilling();
+  /** Dentro da TWA o preço exibido vem do Play Billing, nunca das constantes. */
+  const [playPrices, setPlayPrices] = useState<Partial<Record<ProductId, string>>>({});
+  const brl = isBrl();
+
+  useEffect(() => {
+    if (!playAvailable) return;
+    let alive = true;
+    void queryProductDetails().then((p) => {
+      if (alive) setPlayPrices(p);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [playAvailable]);
+
+  const priceOf = (key: "monthly" | "yearly" | "lifetime") => {
+    const entry = PRICING[key];
+    if (entry.product && playPrices[entry.product]) return playPrices[entry.product]!;
+    return formatPrice(entry, brl);
+  };
 
   const run = async (key: string, fn: () => Promise<{ ok: boolean; message: string }>) => {
     setBusy(key);
@@ -89,7 +116,7 @@ export function PaywallBody({ onDone }: { onDone?: () => void }) {
     return (
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">
-          Você já está no <span className="text-accent">CALDRA {PLAN_LABEL[plan]}</span>. Tudo liberado.
+          Você já está no <span className="text-pro">CALDRA {PLAN_LABEL[plan]}</span>. Tudo liberado.
         </p>
         <ComparisonTable />
       </div>
@@ -112,13 +139,13 @@ export function PaywallBody({ onDone }: { onDone?: () => void }) {
               ? run("m", () => buy(PRODUCTS.monthly))
               : window.open(WEB_CHECKOUT_URL, "_blank", "noopener")
           }
-          className="rounded-xl border border-line px-4 py-3 text-left transition-colors hover:border-accent/60 disabled:opacity-50"
+          className="rounded-xl border border-line px-4 py-3 text-left transition-colors hover:border-pro/60 disabled:opacity-50"
         >
           <span className="block font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
-            Mensal
+            {PRICING.monthly.label}
           </span>
-          <span className="font-display text-lg font-semibold">{PRICES.monthly}</span>
-          <span className="block text-[11px] text-muted-foreground">por mês, cancela quando quiser</span>
+          <span className="font-display text-lg font-semibold">{priceOf("monthly")}</span>
+          <span className="block text-[11px] text-muted-foreground">{PRICING.monthly.note}</span>
         </button>
 
         <button
@@ -128,15 +155,28 @@ export function PaywallBody({ onDone }: { onDone?: () => void }) {
               ? run("y", () => buy(PRODUCTS.yearly))
               : window.open(WEB_CHECKOUT_URL, "_blank", "noopener")
           }
-          className="glow-ring rounded-xl border border-accent/50 bg-accent/8 px-4 py-3 text-left disabled:opacity-50"
+          className="pro-surface rounded-xl px-4 py-3 text-left disabled:opacity-50"
         >
-          <span className="block font-mono text-[10px] tracking-[0.18em] text-accent uppercase">
-            Anual · melhor preço
+          <span className="block font-mono text-[10px] tracking-[0.18em] text-pro uppercase">
+            {PRICING.yearly.label} · {PRICING.yearly.badge}
           </span>
-          <span className="font-display text-lg font-semibold">{PRICES.yearly}</span>
-          <span className="block text-[11px] text-muted-foreground">equivale a 2 meses grátis</span>
+          <span className="font-display text-lg font-semibold">{priceOf("yearly")}</span>
+          <span className="block text-[11px] text-muted-foreground">{PRICING.yearly.note}</span>
         </button>
       </div>
+
+      {!playAvailable && (
+        <button
+          onClick={() => window.open(WEB_CHECKOUT_URL, "_blank", "noopener")}
+          className="w-full rounded-xl border border-line px-4 py-3 text-left transition-colors hover:border-pro/60"
+        >
+          <span className="block font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
+            {PRICING.lifetime.label} · {PRICING.lifetime.badge}
+          </span>
+          <span className="font-display text-lg font-semibold">{priceOf("lifetime")}</span>
+          <span className="block text-[11px] text-muted-foreground">{PRICING.lifetime.note}</span>
+        </button>
+      )}
 
       {!playAvailable && (
         <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -189,7 +229,7 @@ export function PaywallBody({ onDone }: { onDone?: () => void }) {
           <button
             type="submit"
             disabled={busy !== null}
-            className="brand-gradient w-full rounded-xl px-4 py-2.5 text-sm font-semibold text-background disabled:opacity-50"
+            className="pro-gradient w-full rounded-xl px-4 py-2.5 text-sm font-semibold disabled:opacity-50"
           >
             Ativar código
           </button>
@@ -209,7 +249,7 @@ export function PaywallDialog() {
       <DialogContent className="max-h-[92vh] w-[calc(100vw-1.5rem)] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-display">
-            <Lock className="size-4 text-accent" />
+            <Lock className="size-4 text-pro" />
             {pitch?.title ?? "CALDRA PRO"}
           </DialogTitle>
         </DialogHeader>
@@ -224,7 +264,7 @@ export function PaywallDialog() {
 export function PaywallPanel({ className }: { className?: string }) {
   return (
     <Panel className={cn("space-y-4 p-4", className)} glow>
-      <SectionLabel>CALDRA PRO</SectionLabel>
+      <SectionLabel className="text-pro">CALDRA PRO</SectionLabel>
       <PaywallBody />
     </Panel>
   );

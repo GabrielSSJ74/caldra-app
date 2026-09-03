@@ -109,7 +109,16 @@ function Configuracoes() {
       <header>
         <h1 className="font-display text-2xl font-semibold">Configurações</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Plano atual: <span className="text-accent">{PLAN_LABEL[plan]}</span>
+          Plano atual:{" "}
+          <span
+            className={
+              plan === "free"
+                ? "text-muted-foreground"
+                : "pro-surface rounded-full px-2 py-0.5 text-pro"
+            }
+          >
+            {PLAN_LABEL[plan]}
+          </span>
           {" · "}
           <Link to="/pro" className="underline">
             Ver planos
@@ -122,7 +131,7 @@ function Configuracoes() {
       </header>
 
       <Panel className="p-4" glow>
-        <SectionLabel action={<Sparkles className="size-4 text-accent" />}>Modo Mestre</SectionLabel>
+        <SectionLabel action={<Sparkles className="size-4 text-pro" />}>Modo Mestre</SectionLabel>
         {isMestre ? (
           <div>
             <p className="text-[13px] text-muted-foreground">

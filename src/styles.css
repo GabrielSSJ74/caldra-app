@@ -38,6 +38,8 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-accent2: var(--accent2);
+  --color-pro: var(--caldra-pro);
+  --color-pro-foreground: var(--caldra-pro-foreground);
   --color-warn: var(--warn);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
@@ -85,6 +87,12 @@
   --input: oklch(0.9 0.005 80);
   --ring: oklch(0.66 0.15 62);
 
+  /* PRO — identidade premium (#A01550). Nunca usada em cor técnica de entidade. */
+  --caldra-pro: oklch(0.4641 0.1743 2.82);
+  --caldra-pro-strong: oklch(0.54 0.19 3);
+  --caldra-pro-foreground: oklch(1 0 0);
+  --gradient-pro: linear-gradient(120deg, var(--caldra-pro), var(--accent));
+
   --glass-bg: linear-gradient(
     165deg,
     color-mix(in oklab, var(--foreground) 4%, transparent),
@@ -130,6 +138,12 @@
   --line: oklch(0.27 0.006 60);
   --input: oklch(0.27 0.006 60);
   --ring: oklch(0.77 0.163 70);
+
+  /* PRO — no escuro clareamos levemente para manter a cor perceptível */
+  --caldra-pro: oklch(0.52 0.19 3);
+  --caldra-pro-strong: oklch(0.6 0.2 4);
+  --caldra-pro-foreground: oklch(1 0 0);
+  --gradient-pro: linear-gradient(120deg, var(--caldra-pro), var(--accent));
 
   --glass-bg: linear-gradient(165deg, oklch(1 0 0 / 5.5%), oklch(1 0 0 / 1.5%));
   --glass-border: oklch(1 0 0 / 8%);
@@ -389,4 +403,19 @@
     transform: translateY(0) scale(1);
     letter-spacing: 0.14em;
   }
+}
+
+/* ——— identidade PRO (#A01550): apenas premium, nunca linguagem técnica ——— */
+@utility pro-gradient {
+  background-image: var(--gradient-pro);
+  color: var(--caldra-pro-foreground);
+}
+
+@utility pro-surface {
+  background-color: color-mix(in oklab, var(--caldra-pro) 16%, transparent);
+  border: 1px solid color-mix(in oklab, var(--caldra-pro) 45%, transparent);
+}
+
+@utility text-pro {
+  color: var(--caldra-pro-strong);
 }

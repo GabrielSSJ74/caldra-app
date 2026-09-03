@@ -83,7 +83,10 @@ function ContaPage() {
             <SectionLabel action={<ShieldCheck className="size-4 text-accent" />}>Sessão</SectionLabel>
             <p className="text-sm">{user.email}</p>
             <p className="font-mono text-[11px] tracking-[0.18em] text-muted-foreground uppercase">
-              Plano {PLAN_LABEL[plan]}
+              Plano{" "}
+              <span className={plan === "free" ? "" : "pro-surface rounded-full px-2 py-0.5 text-pro"}>
+                {PLAN_LABEL[plan]}
+              </span>
             </p>
             <button
               onClick={() => void signOut()}

@@ -175,13 +175,37 @@ export type Database = {
         }
         Relationships: []
       }
+      usage_vectorizations: {
+        Row: {
+          count: number
+          day: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          count?: number
+          day: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          count?: number
+          day?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      consume_vectorization: { Args: { _local?: number }; Returns: Json }
       delete_my_account: { Args: never; Returns: Json }
       redeem_activation_code: { Args: { _code: string }; Returns: Json }
+      sp_today: { Args: never; Returns: string }
+      sync_vectorizations: { Args: { _local?: number }; Returns: Json }
     }
     Enums: {
       [_ in never]: never
