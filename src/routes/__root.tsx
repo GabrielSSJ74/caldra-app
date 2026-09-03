@@ -15,6 +15,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { SubscriptionProvider } from "@/lib/subscription/SubscriptionProvider";
 import { SettingsProvider } from "@/lib/settings/SettingsProvider";
 import { ProfileProvider } from "@/lib/profile/ProfileProvider";
+import { MaterialsProvider } from "@/lib/materials/MaterialsProvider";
 import { AppShell } from "@/components/chameleon/AppShell";
 
 function NotFoundComponent() {
@@ -130,10 +131,12 @@ function RootComponent() {
       <SubscriptionProvider>
         <SettingsProvider>
           <ProfileProvider>
-            <AppShell>
-              <Outlet />
-            </AppShell>
-            <Toaster position="top-center" />
+            <MaterialsProvider>
+              <AppShell>
+                <Outlet />
+              </AppShell>
+              <Toaster position="top-center" />
+            </MaterialsProvider>
           </ProfileProvider>
         </SettingsProvider>
       </SubscriptionProvider>

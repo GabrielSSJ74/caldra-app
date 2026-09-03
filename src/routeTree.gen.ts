@@ -14,6 +14,7 @@ import { Route as BibliotecaRouteImport } from './routes/biblioteca'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as PlanificacaoRouteImport } from './routes/planificacao'
 import { Route as ProjetosRouteImport } from './routes/projetos'
+import { Route as QaRouteImport } from './routes/qa'
 import { Route as Desenho2dIndexRouteImport } from './routes/desenho-2d.index'
 import { Route as Desenho2dProjectIdRouteImport } from './routes/desenho-2d.$projectId'
 import { Route as EscolaIndexRouteImport } from './routes/escola.index'
@@ -44,6 +45,11 @@ const PlanificacaoRoute = PlanificacaoRouteImport.update({
 const ProjetosRoute = ProjetosRouteImport.update({
   id: '/projetos',
   path: '/projetos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const QaRoute = QaRouteImport.update({
+  id: '/qa',
+  path: '/qa',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Desenho2dIndexRoute = Desenho2dIndexRouteImport.update({
@@ -83,6 +89,7 @@ export interface FileRoutesByFullPath {
   '/configuracoes': typeof ConfiguracoesRoute
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
+  '/qa': typeof QaRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
@@ -96,6 +103,7 @@ export interface FileRoutesByTo {
   '/configuracoes': typeof ConfiguracoesRoute
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
+  '/qa': typeof QaRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
@@ -110,6 +118,7 @@ export interface FileRoutesById {
   '/configuracoes': typeof ConfiguracoesRoute
   '/planificacao': typeof PlanificacaoRoute
   '/projetos': typeof ProjetosRoute
+  '/qa': typeof QaRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
@@ -125,6 +134,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/planificacao'
     | '/projetos'
+    | '/qa'
     | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/tracagem/$slug'
@@ -138,6 +148,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/planificacao'
     | '/projetos'
+    | '/qa'
     | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/tracagem/$slug'
@@ -151,6 +162,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/planificacao'
     | '/projetos'
+    | '/qa'
     | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/tracagem/$slug'
@@ -165,6 +177,7 @@ export interface RootRouteChildren {
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   PlanificacaoRoute: typeof PlanificacaoRoute
   ProjetosRoute: typeof ProjetosRoute
+  QaRoute: typeof QaRoute
   Desenho2dProjectIdRoute: typeof Desenho2dProjectIdRoute
   EscolaSlugRoute: typeof EscolaSlugRoute
   TracagemSlugRoute: typeof TracagemSlugRoute
@@ -208,6 +221,13 @@ declare module '@tanstack/react-router' {
       path: '/projetos'
       fullPath: '/projetos'
       preLoaderRoute: typeof ProjetosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/qa': {
+      id: '/qa'
+      path: '/qa'
+      fullPath: '/qa'
+      preLoaderRoute: typeof QaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/desenho-2d/': {
@@ -261,6 +281,7 @@ const rootRouteChildren: RootRouteChildren = {
   ConfiguracoesRoute: ConfiguracoesRoute,
   PlanificacaoRoute: PlanificacaoRoute,
   ProjetosRoute: ProjetosRoute,
+  QaRoute: QaRoute,
   Desenho2dProjectIdRoute: Desenho2dProjectIdRoute,
   EscolaSlugRoute: EscolaSlugRoute,
   TracagemSlugRoute: TracagemSlugRoute,

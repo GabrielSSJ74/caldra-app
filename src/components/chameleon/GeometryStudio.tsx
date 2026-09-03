@@ -5,20 +5,26 @@ import { Box, Check, ChevronRight, Download, FileText, Image as ImageIcon, Light
 import { getEngine, type EngineValues } from "@/lib/geometry/engines";
 import { downloadDxf, type DxfEntity } from "@/lib/dxf/dxfService";
 import { exportSvgAsPdf, exportSvgAsPng } from "@/lib/export/exporters";
-import { MATERIALS } from "@/lib/projects/demo-data";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { buildWire, type WireParams } from "@/lib/viz3d/wire";
 import { developmentToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
+import { conferenceRows } from "@/lib/geometry/conference";
+import { diagnose } from "@/lib/geometry/copilot";
+import { toKgDm3 } from "@/lib/geometry/mass";
+import { useMaterials } from "@/lib/materials/MaterialsProvider";
 import { cn } from "@/lib/utils";
 import { Wire3D } from "./Wire3D";
 import { DevelopmentView } from "./DevelopmentView";
 import { ParametricDiagram, type CotaSpec } from "./ParametricDiagram";
+import { MassCostPanel } from "./MassCostPanel";
+import { SmartNumberInput } from "./SmartNumberInput";
 import { Metric, Panel, SectionLabel } from "./ui";
 
 const BASE_TABS = [
   "Dimensões",
   "Cálculos",
+  "Conferência",
   "Traçado",
   "Desenvolvimento",
   "Material",
@@ -35,7 +41,10 @@ export function GeometryStudio({ slug, name }: Props) {
   const svgRef = useRef<SVGSVGElement>(null);
 
   const [values, setValues] = useState<EngineValues>(() => ({ ...(engine?.defaults ?? {}) }));
-  const [material, setMaterial] = useState(MATERIALS[0]!.name);
+  const { get, defaultMaterialId } = useMaterials();
+  const [materialId, setMaterialId] = useState(defaultMaterialId);
+  const [material, setMaterial] = useState("Aço Carbono");
+  const [quantity, setQuantity] = useState(1);
   const [focused, setFocused] = useState<string | null>(null);
   const [calculated, setCalculated] = useState(true);
   const [calculating, setCalculating] = useState(false);
@@ -95,6 +104,10 @@ export function GeometryStudio({ slug, name }: Props) {
     }, 340);
   };
 
+  /** Valor já convertido para mm pela entrada inteligente. */
+  const setNumber = (key: string, mm: number) => set(key, String(mm));
+
+  const diagnoses = diagnose(engine, values, issues);
 
   const issueFor = (key: string) => issues.find((i) => i.field === key)?.message;
 
@@ -207,27 +220,18 @@ export function GeometryStudio({ slug, name }: Props) {
                       <span className="truncate">{f.label}</span>
                       <span className="text-accent/80">{f.tag}</span>
                     </span>
-                    <span
-                      className={cn(
-                        "flex items-center overflow-hidden rounded-lg border bg-background/50 transition-colors",
-                        err ? "border-destructive" : "border-line focus-within:border-accent",
-                      )}
-                    >
-                      <input
-                        ref={(el) => {
-                          inputs.current[f.key] = el;
-                        }}
-                        inputMode="decimal"
-                        value={String(values[f.key] ?? 0)}
-                        onChange={(e) => set(f.key, e.target.value)}
-                        onFocus={() => setFocused(f.key)}
-                        onBlur={() => setFocused(null)}
-                        className="w-full min-w-0 bg-transparent px-2.5 py-2.5 font-mono text-[15px] outline-none"
-                      />
-                      <span className="border-l border-line px-2 font-mono text-[10px] text-muted-foreground">
-                        {f.unit ?? "mm"}
-                      </span>
-                    </span>
+                    <SmartNumberInput
+                      value={values[f.key] ?? 0}
+                      unit={f.unit ?? "mm"}
+                      invalid={Boolean(err)}
+                      ariaLabel={f.label}
+                      inputRef={(el) => {
+                        inputs.current[f.key] = el;
+                      }}
+                      onFocus={() => setFocused(f.key)}
+                      onBlur={() => setFocused(null)}
+                      onChange={(mm) => setNumber(f.key, mm)}
+                    />
                     {err && <span className="mt-1 block text-[10px] text-destructive">{err}</span>}
                   </label>
                 );
@@ -256,18 +260,38 @@ export function GeometryStudio({ slug, name }: Props) {
               </label>
             </div>
 
-            <p
-              className={cn(
-                "mt-3 text-center font-mono text-[11px] tracking-[0.16em] uppercase transition-colors",
-                calculating ? "text-muted-foreground" : "text-accent",
-              )}
-            >
-              {issues.length
-                ? issues[0]!.message
-                : calculating
-                  ? "Calculando…"
-                  : "Pronto · atualização em tempo real"}
-            </p>
+            {diagnoses.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {diagnoses.map((d) => (
+                  <div
+                    key={`${d.field}-${d.message}`}
+                    className="rounded-xl border border-destructive/40 bg-destructive/8 p-3"
+                  >
+                    <p className="text-[12px] text-destructive">{d.message}</p>
+                    {d.fix && (
+                      <button
+                        onClick={() => {
+                          setValues((p) => ({ ...p, ...d.fix!.values }));
+                          toast.success(d.fix!.label);
+                        }}
+                        className="mt-2 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 font-mono text-[10px] tracking-wider text-accent uppercase"
+                      >
+                        {d.fix.label}
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p
+                className={cn(
+                  "mt-3 text-center font-mono text-[11px] tracking-[0.16em] uppercase transition-colors",
+                  calculating ? "text-muted-foreground" : "text-accent",
+                )}
+              >
+                {calculating ? "Calculando…" : "Pronto · atualização em tempo real"}
+              </p>
+            )}
           </div>
         </div>
       </Panel>
@@ -399,51 +423,62 @@ export function GeometryStudio({ slug, name }: Props) {
               </div>
             )}
 
+            {tab === "Conferência" && (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-accent/25 bg-accent/8 p-3">
+                  <p className="font-mono text-[10px] tracking-[0.16em] text-accent uppercase">
+                    Conferência do traçado
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    Medidas que o caldeireiro usa para conferir o risco direto na chapa.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {conferenceRows(slug, values, result).map((row) => (
+                    <Metric
+                      key={row.label}
+                      label={row.label}
+                      value={row.value}
+                      suffix={row.suffix ?? "mm"}
+                      precision={row.suffix === "°" ? 2 : precision}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
             {tab === "Material" && (
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="font-mono text-[10px] text-muted-foreground uppercase">
-                    Material
-                  </span>
-                  <select
-                    value={material}
-                    onChange={(e) => {
-                      const m = MATERIALS.find((x) => x.name === e.target.value)!;
+              <div className="space-y-3">
+                <MassCostPanel
+                  areaMm2={result.areaMm2}
+                  materialId={materialId}
+                  onMaterialId={(id) => {
+                    setMaterialId(id);
+                    const m = get(id);
+                    if (m) {
                       setMaterial(m.name);
-                      setValues((p) => ({ ...p, density: m.density }));
-                    }}
-                    className="mt-1 w-full rounded-lg border border-line bg-background/50 px-3 py-2.5 text-sm outline-none focus:border-accent"
-                  >
-                    {MATERIALS.map((m) => (
-                      <option key={m.name} value={m.name}>
-                        {m.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="block">
-                  <span className="font-mono text-[10px] text-muted-foreground uppercase">
-                    Espessura (mm)
-                  </span>
-                  <input
-                    inputMode="decimal"
-                    value={String(thickness)}
-                    onChange={(e) => set("thickness", e.target.value)}
-                    className="mt-1 w-full rounded-lg border border-line bg-background/50 px-3 py-2.5 font-mono text-sm outline-none focus:border-accent"
+                      setValues((p) => ({ ...p, density: toKgDm3(m.density) }));
+                    }
+                  }}
+                  thickness={thickness}
+                  onThickness={(mm) => setValues((p) => ({ ...p, thickness: mm }))}
+                  quantity={quantity}
+                  onQuantity={setQuantity}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <Metric
+                    label="Área desenvolvida"
+                    value={result.areaMm2 / 1_000_000}
+                    suffix="m²"
+                    precision={4}
                   />
-                </label>
-                <Metric
-                  label="Área desenvolvida"
-                  value={result.areaMm2 / 1_000_000}
-                  suffix="m²"
-                  precision={4}
-                />
-                <Metric
-                  label="Massa estimada"
-                  value={(result.areaMm2 * thickness * density) / 1_000_000_000}
-                  suffix="kg"
-                  precision={precision}
-                />
+                  <Metric
+                    label="Densidade aplicada"
+                    value={density * 1000}
+                    suffix="kg/m³"
+                    precision={0}
+                  />
+                </div>
               </div>
             )}
 
