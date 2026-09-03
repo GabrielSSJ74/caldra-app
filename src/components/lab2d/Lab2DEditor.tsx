@@ -1661,6 +1661,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </option>
             ))}
           </select>
+          <button
+            onClick={() => setShowArrows((s) => !s)}
+            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", showArrows && "text-accent")}
+          >
+            SETAS
+          </button>
+          <button
+            onClick={() => setShowOrder((s) => !s)}
+            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", showOrder && "text-accent")}
+          >
+            ORDEM
+          </button>
           {(tool === "offset" || tool === "fillet" || tool === "chamfer") && (
             <input
               type="number"
