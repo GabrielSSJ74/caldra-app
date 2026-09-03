@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
-import type { Feature } from "@/lib/subscription/features";
+import { FEATURE_PITCH, type Feature } from "@/lib/subscription/features";
 import { formatNumber } from "@/lib/settings/SettingsProvider";
 
 export function SectionLabel({
