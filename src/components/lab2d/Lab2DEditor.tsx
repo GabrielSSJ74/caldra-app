@@ -1015,12 +1015,35 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const aside = panelOpen ? (
     <aside className="metal hairline flex w-56 shrink-0 flex-col overflow-y-auto rounded-2xl p-2">
       <div className="mb-2 flex items-center gap-1">
-        <PanelTab active={!showLayers} onClick={() => setShowLayers(false)} label="Propriedades" />
-        <PanelTab active={showLayers} onClick={() => setShowLayers(true)} label="Camadas" />
+        <PanelTab
+          active={!showLayers && !showCut}
+          onClick={() => {
+            setShowLayers(false);
+            setShowCut(false);
+          }}
+          label="Propriedades"
+        />
+        <PanelTab
+          active={showLayers}
+          onClick={() => {
+            setShowLayers(true);
+            setShowCut(false);
+          }}
+          label="Camadas"
+        />
+        <PanelTab
+          active={showCut}
+          onClick={() => {
+            setShowCut(true);
+            setShowLayers(false);
+          }}
+          label="Corte"
+        />
         <button
           aria-label="Fechar painel"
           onClick={() => {
             setShowLayers(false);
+            setShowCut(false);
             setSelection([]);
           }}
           className="ml-auto text-muted-foreground hover:text-foreground"
@@ -1029,7 +1052,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </button>
       </div>
 
-      {showLayers ? (
+      {showCut ? (
+        <CutPanel
+          entities={entities}
+          commit={commit}
+          selection={selection}
+          setSelection={setSelection}
+          groups={groups}
+          setGroups={setGroups}
+          onHighlight={setShareHint}
+          onPickStart={() => setStartPicking((s) => !s)}
+          startPicking={startPicking}
+        />
+      ) : showLayers ? (
         <div className="space-y-0.5">
           {[...layers]
             .sort((a, b) => layerOrder(b.id) - layerOrder(a.id))
