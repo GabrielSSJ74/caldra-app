@@ -26,7 +26,7 @@ export const Route = createFileRoute("/biblioteca")({
 });
 
 function Biblioteca() {
-  const { can } = useFeatureAccess();
+  const { can, requirePro } = useFeatureAccess();
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState<LibraryCategory | "Todas">("Todas");
 
@@ -87,12 +87,12 @@ function Biblioteca() {
               </div>
               <p className="mt-1 text-[11px] text-muted-foreground">{item.detail}</p>
               {locked ? (
-                <Link
-                  to="/configuracoes"
-                  className="mt-3 flex items-center gap-2 rounded-lg border border-line bg-background/40 px-3 py-2.5 font-mono text-[10px] text-muted-foreground"
+                <button
+                  onClick={() => requirePro("library.full")}
+                  className="mt-3 flex w-full items-center gap-2 rounded-lg border border-line bg-background/40 px-3 py-2.5 font-mono text-[10px] text-muted-foreground"
                 >
-                  <Lock className="size-3 text-accent" /> Dados no Modo Mestre
-                </Link>
+                  <Lock className="size-3 text-accent" /> Dados no CALDRA PRO
+                </button>
               ) : (
                 <dl className="mt-3 space-y-1 border-t border-line pt-2 font-mono text-[11px]">
                   {item.data.map((d) => (
