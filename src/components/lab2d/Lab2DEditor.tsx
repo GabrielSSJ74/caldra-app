@@ -24,6 +24,7 @@ import {
   ScanEye,
   Image as ImageIcon,
   Scissors,
+  ListOrdered,
   Spline,
   Square,
   Trash2,
@@ -1248,7 +1249,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 setShowCut((s) => !s);
                 setShowLayers(false);
               }}
-              icon={Scissors}
+              icon={ListOrdered}
               active={showCut}
             />
 
