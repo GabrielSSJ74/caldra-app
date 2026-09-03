@@ -18,12 +18,7 @@ export const PRODUCTS = {
 
 export type ProductId = (typeof PRODUCTS)[keyof typeof PRODUCTS];
 
-/** Preços de vitrine. Ajuste em um lugar só. */
-export const PRICES = {
-  monthly: "R$ 19,90",
-  yearly: "R$ 149,00",
-  lifetime: "R$ 297,00",
-} as const;
+/** Preços de vitrine vivem em `pricing.ts` — nunca aqui. */
 
 /** Site externo onde a compra web e o Pix vitalício acontecem. */
 export const WEB_CHECKOUT_URL = "https://caldra.app/planos";
