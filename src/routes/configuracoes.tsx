@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { readConsent, setConsent } from "@/lib/analytics/consent";
 import { toast } from "sonner";
 import { Sparkles } from "lucide-react";
 import { PLAN_LABEL } from "@/lib/subscription/features";
