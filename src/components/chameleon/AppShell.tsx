@@ -64,6 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <BubbleNav />
       <MasterModeDialog open={masterOpen} onOpenChange={setMasterOpen} />
       <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
+      <PaywallDialog />
       {intro.show && <Intro onDone={intro.done} />}
       {showOnboarding && <Onboarding />}
     </div>
