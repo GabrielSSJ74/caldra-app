@@ -826,12 +826,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (dragNode) {
       setDragNode(null);
       past.current = [...past.current, entities];
+      setEntities((list) => revalidateShared(list));
       return;
     }
     if (moveRef.current) {
       const base = moveRef.current.base;
       moveRef.current = null;
       past.current = [...past.current, base];
+      // mover pode invalidar um trecho comum ligado a peça fora do grupo
+      setEntities((list) => revalidateShared(list));
       return;
     }
     if (marquee) {
@@ -845,7 +848,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const hits = visible
         .filter((e) => (crossing ? overlaps(boxOf(e), box) : inside(boxOf(e), box)))
         .map((e) => e.id);
-      setSelection((s) => Array.from(new Set([...s, ...hits])));
+      setSelection((s) => expandSelection(entities, Array.from(new Set([...s, ...hits]))));
       setMarquee(null);
       return;
     }
