@@ -241,6 +241,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const plan = p.plans.find((x) => x.id === p.lastPlanId) ?? p.plans[0]!;
     setPlanId(plan.id);
     setEntities(plan.entities);
+    setGroups(plan.groups ?? []);
     past.current = [];
     future.current = [];
   }, [projectId]);
@@ -251,11 +252,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     let idle = 0;
     const t = setTimeout(() => {
       const run = () => {
+        const live = pruneGroups(entities, groups);
         const next: Project = {
           ...project,
           layers,
           lastPlanId: planId,
-          plans: project.plans.map((pl) => (pl.id === planId ? { ...pl, entities } : pl)),
+          plans: project.plans.map((pl) =>
+            pl.id === planId ? { ...pl, entities, groups: live } : pl,
+          ),
         };
         saveProject(next);
         setProject(next);
@@ -271,7 +275,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (idle && cic) cic(idle);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entities, layers, planId]);
+  }, [entities, layers, planId, groups]);
 
 
   /* --------------------------------- paisagem automática no celular */
