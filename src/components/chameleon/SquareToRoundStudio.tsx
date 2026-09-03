@@ -46,7 +46,7 @@ type Tab = (typeof TABS)[number];
 
 
 export function SquareToRoundStudio() {
-  const { can } = useFeatureAccess();
+  const { can, requirePro } = useFeatureAccess();
   const { precision } = useSettings();
   const [input, setInput] = useState<SquareToRoundInput>(SQUARE_TO_ROUND_DEFAULTS);
   const [material, setMaterial] = useState(MATERIALS[0]!.name);
@@ -457,7 +457,7 @@ export function SquareToRoundStudio() {
                     <ImageIcon className="size-3.5" /> PNG
                   </button>
                   <button
-                    onClick={() => (can("export.pdf") ? exportPdf() : toast.error("Exportação PDF disponível no Modo Mestre."))}
+                    onClick={() => requirePro("export.pdf") && exportPdf()}
                     className={cn(
                       "flex items-center justify-center gap-1.5 rounded-lg border py-2.5 font-mono text-[11px] transition-colors",
                       can("export.pdf")
@@ -468,7 +468,7 @@ export function SquareToRoundStudio() {
                     <FileText className="size-3.5" /> PDF
                   </button>
                   <button
-                    onClick={() => (can("export.dxf") ? exportDxfFile() : toast.error("Exportação DXF disponível no Modo Mestre."))}
+                    onClick={() => requirePro("export.dxf") && exportDxfFile()}
                     className={cn(
                       "flex items-center justify-center gap-1.5 rounded-lg border py-2.5 font-mono text-[11px] transition-colors",
                       can("export.dxf")
@@ -481,7 +481,7 @@ export function SquareToRoundStudio() {
                 </div>
                 <button
                   onClick={() => {
-                    if (!can("lab2d")) {
+                    if (!requirePro("lab2d")) {
                       toast.error("CHAMFER disponível no Modo Mestre.");
                       return;
                     }
