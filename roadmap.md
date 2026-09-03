@@ -29,8 +29,11 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Modo Oficina (alto contraste, alvos 56px, persistente)
 - [ ] QA ampliado: migração de backup, entitlement, funil
 
-## Fase 4 — Inteligência (pendente)
-- Vision 2.0 (reconstrução paramétrica, OCR Tesseract lazy), APRENDER, modos Aprendiz/Mestre
+## Fase 4 — Inteligência (CONCLUÍDA)
+- [x] A1 Reconstrução paramétrica (chapa perfurada / flange / anel) com tabela editável, preview e template em CORTE (original preservado em CONSTRUÇÃO)
+- [x] A2 OCR técnico com Tesseract.js lazy, caixas na imagem, confirmação individual/em massa, texto corrigível, medida reaproveitável na calibração
+- [x] B1 Botão APRENDER com 4 passos (parâmetros, cálculo, desenvolvimento, fabricação) usando os motores puros
+- [x] B2 Modos APRENDIZ / MESTRE em Configurações (só apresentação, um único caminho de cálculo)
 
 ## Fase 5 — Plataforma (pendente)
 - Nesting modo CHAPA, custo de fabricação, orçamento PDF, ficha + QR, nuvem, versões, regional
