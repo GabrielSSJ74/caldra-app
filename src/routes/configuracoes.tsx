@@ -144,6 +144,38 @@ function Configuracoes() {
 
       <MaterialManager />
 
+      <Panel className="space-y-3 p-4">
+        <SectionLabel>Privacidade</SectionLabel>
+        <label className="flex items-start gap-3 text-[13px]">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => {
+              setConsentState(e.target.checked);
+              void setConsent(e.target.checked);
+            }}
+            className="mt-0.5 size-4 accent-[var(--accent)]"
+          />
+          <span>
+            Enviar estatísticas de uso anônimas
+            <span className="block text-muted-foreground">
+              Ajuda a priorizar melhorias. Nenhuma medida, desenho ou projeto é enviado.
+            </span>
+          </span>
+        </label>
+        <div className="flex gap-3 font-mono text-[11px] tracking-[0.16em] uppercase">
+          <Link to="/privacidade" className="text-muted-foreground underline">
+            Privacidade
+          </Link>
+          <Link to="/termos" className="text-muted-foreground underline">
+            Termos
+          </Link>
+          <Link to="/conta" className="text-muted-foreground underline">
+            Excluir conta
+          </Link>
+        </div>
+      </Panel>
+
 
 
       <Panel className="space-y-4 p-4">
