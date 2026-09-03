@@ -992,8 +992,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     </>
   );
 
-
-
+  /** Grupo ativo na seleção (badge + botão de isolar membro). */
+  const activeGroup = useMemo(() => {
+    const gid = selected.find((e) => e.group)?.group;
+    return gid ? (groups.find((g) => g.id === gid) ?? null) : null;
+  }, [selected, groups]);
 
   const gridStep = grid * view.k < 6 ? grid * 10 : grid;
 
@@ -1005,7 +1008,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     return cx > w * 0.58 ? "left" : "right";
   }, [selBox, view]);
 
-  const panelOpen = !focus && (selected.length > 0 || showLayers);
+  const panelOpen = !focus && (selected.length > 0 || showLayers || showCut);
   const primaryTools = TOOLS.filter((t) => PRIMARY.includes(t.id));
   const extraTools = TOOLS.filter((t) => !PRIMARY.includes(t.id));
 
