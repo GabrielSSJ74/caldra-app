@@ -42,7 +42,7 @@ export function MasterModeDialog({
           <div className="pointer-events-none absolute inset-0 overflow-hidden">
             {activating && (
               <div
-                className="brand-gradient absolute inset-y-0 w-1/3 opacity-40 blur-2xl"
+                className="pro-gradient absolute inset-y-0 w-1/3 opacity-40 blur-2xl"
                 style={{ animation: "chameleon-sweep 1s ease-in-out" }}
               />
             )}
@@ -57,8 +57,8 @@ export function MasterModeDialog({
 
           {isMestre ? (
             <div className="relative mt-5 space-y-4">
-              <div className="rounded-xl border border-accent/25 bg-accent/5 p-3">
-                <p className="font-mono text-[11px] tracking-wider text-accent uppercase">
+              <div className="pro-surface rounded-xl p-3">
+                <p className="font-mono text-[11px] tracking-wider text-pro uppercase">
                   Ativo nesta sessão
                 </p>
                 <p className="mt-1 text-sm">
