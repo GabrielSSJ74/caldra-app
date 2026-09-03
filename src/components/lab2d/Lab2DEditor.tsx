@@ -94,6 +94,11 @@ import { takeHandoff } from "@/lib/lab2d/handoff";
 import { buildIndex } from "@/lib/lab2d/spatialIndex";
 import { drawScene } from "@/lib/lab2d/canvasScene";
 import { stressEntities } from "@/lib/lab2d/stress";
+import { CutPanel } from "@/components/lab2d/CutPanel";
+import { expandSelection, pruneGroups, type GroupDef } from "@/lib/lab2d/groups";
+import { isCutPath, setStartPoint, startPointOf, endPointOf } from "@/lib/lab2d/cutPlan";
+import { revalidateShared, type ShareCandidate } from "@/lib/lab2d/sharedCut";
+import { CUT_COLOR } from "@/lib/lab2d/technical";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 
 import { cn } from "@/lib/utils";
