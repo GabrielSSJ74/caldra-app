@@ -161,6 +161,12 @@ export function ExportDialog({
           {preview.widthMm.toFixed(1)} × {preview.heightMm.toFixed(1)} mm · escala 1:1
         </p>
 
+        {format === "dxf" && (
+          <p className="font-mono text-[10px] text-muted-foreground">
+            O DXF sai na ordem definida na aba CORTE; a direção de cada caminho é preservada.
+          </p>
+        )}
+
         {issues.length > 0 && (
           <p className="rounded-xl border border-warn/40 bg-warn/5 px-3 py-2 text-[11px] text-warn">
             {issues.length} aviso(s): {Array.from(new Set(issues.map((i) => i.message))).join(" · ")}
