@@ -24,6 +24,7 @@ import {
   ScanEye,
   Image as ImageIcon,
   Scissors,
+  ListOrdered,
   Spline,
   Square,
   Trash2,
@@ -72,6 +73,7 @@ import { autoDimensions } from "@/lib/lab2d/render";
 import { pathToSvg } from "@/lib/lab2d/bezier";
 import {
   AXIS_COLOR,
+  CUT_COLOR,
   DIMENSION_COLOR,
   MARK_COLOR,
   WARNING_COLOR,
@@ -94,6 +96,11 @@ import { takeHandoff } from "@/lib/lab2d/handoff";
 import { buildIndex } from "@/lib/lab2d/spatialIndex";
 import { drawScene } from "@/lib/lab2d/canvasScene";
 import { stressEntities } from "@/lib/lab2d/stress";
+import { CutPanel } from "@/components/lab2d/CutPanel";
+import { expandSelection, pruneGroups, type GroupDef } from "@/lib/lab2d/groups";
+import { isCutPath, setStartPoint, startPointOf, endPointOf } from "@/lib/lab2d/cutPlan";
+import { revalidateShared, type ShareCandidate } from "@/lib/lab2d/sharedCut";
+
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 
 import { cn } from "@/lib/utils";
@@ -185,6 +192,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [showDims, setShowDims] = useState(false);
   const [focus, setFocus] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
+  const [showCut, setShowCut] = useState(false);
+  const [groups, setGroups] = useState<GroupDef[]>([]);
+  const [showArrows, setShowArrows] = useState(false);
+  const [showOrder, setShowOrder] = useState(false);
+  const [startPicking, setStartPicking] = useState(false);
+  const [shareHint, setShareHint] = useState<ShareCandidate | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [outputMode, setOutputMode] = useState<OutputMode>("completo");
   const [pending, setPending] = useState<Vec2[]>([]);
@@ -230,6 +243,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const plan = p.plans.find((x) => x.id === p.lastPlanId) ?? p.plans[0]!;
     setPlanId(plan.id);
     setEntities(plan.entities);
+    setGroups(plan.groups ?? []);
     past.current = [];
     future.current = [];
   }, [projectId]);
@@ -240,11 +254,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     let idle = 0;
     const t = setTimeout(() => {
       const run = () => {
+        const live = pruneGroups(entities, groups);
         const next: Project = {
           ...project,
           layers,
           lastPlanId: planId,
-          plans: project.plans.map((pl) => (pl.id === planId ? { ...pl, entities } : pl)),
+          plans: project.plans.map((pl) =>
+            pl.id === planId ? { ...pl, entities, groups: live } : pl,
+          ),
         };
         saveProject(next);
         setProject(next);
@@ -260,7 +277,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (idle && cic) cic(idle);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entities, layers, planId]);
+  }, [entities, layers, planId, groups]);
 
 
   /* --------------------------------- paisagem automática no celular */
@@ -550,6 +567,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
+    // DEFINIR PARTIDA: o próximo clique com snap vira o início do caminho
+    if (startPicking) {
+      const target = entities.find((e) => selection.includes(e.id) && isCutPath(e));
+      if (!target) {
+        toast.info("Selecione primeiro o caminho fechado.");
+        setStartPicking(false);
+        return;
+      }
+      commit((list) => list.map((e) => (e.id === target.id ? setStartPoint(e, p) : e)));
+      setStartPicking(false);
+      toast.success("Ponto de partida definido.");
+      return;
+    }
+
     if (tool === "select" || tool === "node") {
       const hit = hitTest(raw);
       if (tool === "node" && hit && selection.includes(hit.id)) {
@@ -569,21 +600,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         }
       }
       if (hit) {
-        setSelection((s) =>
-          ev.shiftKey
-            ? s.includes(hit.id)
-              ? s.filter((i) => i !== hit.id)
-              : [...s, hit.id]
-            : s.includes(hit.id)
-              ? s
-              : [hit.id],
-        );
+        // clique num membro seleciona o GRUPO inteiro; Ctrl/⌘ isola o membro
+        const solo = ev.ctrlKey || ev.metaKey;
+        const target = solo ? [hit.id] : expandSelection(entities, [hit.id]);
+        const nextSel = ev.shiftKey
+          ? selection.includes(hit.id)
+            ? selection.filter((i) => !target.includes(i))
+            : [...new Set([...selection, ...target])]
+          : selection.includes(hit.id)
+            ? selection
+            : target;
+        setSelection(nextSel);
         if (tool === "select")
-          moveRef.current = {
-            from: raw,
-            ids: selection.includes(hit.id) ? selection : [hit.id],
-            base: entities,
-          };
+          moveRef.current = { from: raw, ids: nextSel, base: entities };
         return;
       }
       if (!ev.shiftKey) setSelection([]);
@@ -799,12 +828,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (dragNode) {
       setDragNode(null);
       past.current = [...past.current, entities];
+      setEntities((list) => revalidateShared(list));
       return;
     }
     if (moveRef.current) {
       const base = moveRef.current.base;
       moveRef.current = null;
       past.current = [...past.current, base];
+      // mover pode invalidar um trecho comum ligado a peça fora do grupo
+      setEntities((list) => revalidateShared(list));
       return;
     }
     if (marquee) {
@@ -818,7 +850,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const hits = visible
         .filter((e) => (crossing ? overlaps(boxOf(e), box) : inside(boxOf(e), box)))
         .map((e) => e.id);
-      setSelection((s) => Array.from(new Set([...s, ...hits])));
+      setSelection((s) => expandSelection(entities, Array.from(new Set([...s, ...hits]))));
       setMarquee(null);
       return;
     }
@@ -895,7 +927,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   /* ------------------------------------------------------------- ações */
   const applySelection = (fn: (e: Entity) => Entity) =>
-    commit((list) => list.map((e) => (selection.includes(e.id) ? fn(e) : e)));
+    commit((list) =>
+      revalidateShared(list.map((e) => (selection.includes(e.id) ? fn(e) : e))),
+    );
 
   const selBox = useMemo(() => bbox(selected), [selected]);
   const center: Vec2 = selBox
@@ -960,8 +994,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     </>
   );
 
-
-
+  /** Grupo ativo na seleção (badge + botão de isolar membro). */
+  const activeGroup = useMemo(() => {
+    const gid = selected.find((e) => e.group)?.group;
+    return gid ? (groups.find((g) => g.id === gid) ?? null) : null;
+  }, [selected, groups]);
 
   const gridStep = grid * view.k < 6 ? grid * 10 : grid;
 
@@ -973,19 +1010,42 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     return cx > w * 0.58 ? "left" : "right";
   }, [selBox, view]);
 
-  const panelOpen = !focus && (selected.length > 0 || showLayers);
+  const panelOpen = !focus && (selected.length > 0 || showLayers || showCut);
   const primaryTools = TOOLS.filter((t) => PRIMARY.includes(t.id));
   const extraTools = TOOLS.filter((t) => !PRIMARY.includes(t.id));
 
   const aside = panelOpen ? (
     <aside className="metal hairline flex w-56 shrink-0 flex-col overflow-y-auto rounded-2xl p-2">
       <div className="mb-2 flex items-center gap-1">
-        <PanelTab active={!showLayers} onClick={() => setShowLayers(false)} label="Propriedades" />
-        <PanelTab active={showLayers} onClick={() => setShowLayers(true)} label="Camadas" />
+        <PanelTab
+          active={!showLayers && !showCut}
+          onClick={() => {
+            setShowLayers(false);
+            setShowCut(false);
+          }}
+          label="Propriedades"
+        />
+        <PanelTab
+          active={showLayers}
+          onClick={() => {
+            setShowLayers(true);
+            setShowCut(false);
+          }}
+          label="Camadas"
+        />
+        <PanelTab
+          active={showCut}
+          onClick={() => {
+            setShowCut(true);
+            setShowLayers(false);
+          }}
+          label="Corte"
+        />
         <button
           aria-label="Fechar painel"
           onClick={() => {
             setShowLayers(false);
+            setShowCut(false);
             setSelection([]);
           }}
           className="ml-auto text-muted-foreground hover:text-foreground"
@@ -994,7 +1054,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </button>
       </div>
 
-      {showLayers ? (
+      {showCut ? (
+        <CutPanel
+          entities={entities}
+          commit={commit}
+          selection={selection}
+          setSelection={setSelection}
+          groups={groups}
+          setGroups={setGroups}
+          onHighlight={setShareHint}
+          onPickStart={() => setStartPicking((s) => !s)}
+          startPicking={startPicking}
+        />
+      ) : showLayers ? (
         <div className="space-y-0.5">
           {[...layers]
             .sort((a, b) => layerOrder(b.id) - layerOrder(a.id))
@@ -1063,6 +1135,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       ) : (
         <div className="space-y-2">
           <p className="tick-label text-muted-foreground">{selected.length} objetos</p>
+          {activeGroup && (
+            <div className="flex items-center gap-1">
+              <span className="rounded-full bg-accent/15 px-2 py-0.5 font-mono text-[9px] text-accent">
+                {activeGroup.name}
+              </span>
+              <button
+                onClick={() => setSelection(selection.slice(0, 1))}
+                className="rounded-lg border border-line px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground hover:text-foreground"
+              >
+                Selecionar só este
+              </button>
+            </div>
+          )}
           <div className="flex flex-wrap gap-1">{selectionActions}</div>
         </div>
       )}
@@ -1151,10 +1236,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             <IconBtn label="Enquadrar" onClick={() => fitTo(entities)} icon={ScanSearch} />
             <IconBtn
               label="Camadas"
-              onClick={() => setShowLayers((s) => !s)}
+              onClick={() => {
+                setShowLayers((s) => !s);
+                setShowCut(false);
+              }}
               icon={LayersIcon}
               active={showLayers}
             />
+            <IconBtn
+              label="Plano de corte"
+              onClick={() => {
+                setShowCut((s) => !s);
+                setShowLayers(false);
+              }}
+              icon={ListOrdered}
+              active={showCut}
+            />
+
             <IconBtn label="Exportar" onClick={() => setExportOpen(true)} icon={Download} />
             <div className="relative">
               <IconBtn label="Mais" onClick={() => setMoreOpen((m) => !m)} icon={MoreHorizontal} active={moreOpen} />
@@ -1454,6 +1552,62 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               ))}
 
+              {/* PLANO DE CORTE — setas de direção, selos de ordem e trechos comuns */}
+              {(showArrows || showOrder) &&
+                drawable.filter(isCutPath).map((e, i) => {
+                  const s = startPointOf(e);
+                  const t = endPointOf(e);
+                  const ang = Math.atan2(t.y - s.y, t.x - s.x);
+                  const a = 9 / view.k;
+                  return (
+                    <g key={`cut-${e.id}`}>
+                      {showArrows && (
+                        <g
+                          transform={`translate(${s.x} ${s.y}) rotate(${(ang * 180) / Math.PI})`}
+                          fill={e.invalid ? WARNING_COLOR : CUT_COLOR}
+                        >
+                          <polygon points={`0,0 ${-a},${a / 2.6} ${-a},${-a / 2.6}`} transform={`translate(${a * 1.6} 0)`} />
+                        </g>
+                      )}
+                      {showOrder && (
+                        <>
+                          <circle
+                            cx={s.x}
+                            cy={s.y}
+                            r={7 / view.k}
+                            fill="var(--background)"
+                            stroke={e.invalid ? WARNING_COLOR : CUT_COLOR}
+                            strokeWidth={1 / view.k}
+                          />
+                          <text
+                            x={s.x}
+                            y={s.y + 3.4 / view.k}
+                            fontSize={9 / view.k}
+                            textAnchor="middle"
+                            fill={e.invalid ? WARNING_COLOR : CUT_COLOR}
+                            className="font-mono"
+                          >
+                            {i + 1}
+                          </text>
+                        </>
+                      )}
+                    </g>
+                  );
+                })}
+
+              {shareHint && (
+                <line
+                  x1={shareHint.p1.x}
+                  y1={shareHint.p1.y}
+                  x2={shareHint.p2.x}
+                  y2={shareHint.p2.y}
+                  stroke={SELECTION_COLOR}
+                  strokeWidth={5 / view.k}
+                  strokeOpacity={0.6}
+                  strokeLinecap="round"
+                />
+              )}
+
               {snapHit && (
                 <text
                   x={snapHit.p.x}
@@ -1521,6 +1675,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </option>
             ))}
           </select>
+          <button
+            onClick={() => setShowArrows((s) => !s)}
+            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", showArrows && "text-accent")}
+          >
+            SETAS
+          </button>
+          <button
+            onClick={() => setShowOrder((s) => !s)}
+            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", showOrder && "text-accent")}
+          >
+            ORDEM
+          </button>
           {(tool === "offset" || tool === "fillet" || tool === "chamfer") && (
             <input
               type="number"

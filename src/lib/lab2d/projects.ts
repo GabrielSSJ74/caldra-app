@@ -4,6 +4,7 @@
  */
 
 import { DEFAULT_LAYERS, uid, type Entity, type Layer } from "./core";
+import type { GroupDef } from "./groups";
 import { techColor } from "./technical";
 
 const KEY = "chameleon.lab2d.projects";
@@ -14,6 +15,8 @@ export type Plan = {
   entities: Entity[];
   visible: boolean;
   locked: boolean;
+  /** Grupos do plano (Fase 2A) — a pertinência mora na entidade. */
+  groups?: GroupDef[];
 };
 
 export type Project = {
@@ -29,7 +32,14 @@ export type Project = {
 export const planLabel = (i: number) => `P${String(i + 1).padStart(2, "0")}`;
 
 export function emptyPlan(index = 0): Plan {
-  return { id: uid(), name: planLabel(index), entities: [], visible: true, locked: false };
+  return {
+    id: uid(),
+    name: planLabel(index),
+    entities: [],
+    visible: true,
+    locked: false,
+    groups: [],
+  };
 }
 
 export function newProject(name: string, entities: Entity[] = []): Project {

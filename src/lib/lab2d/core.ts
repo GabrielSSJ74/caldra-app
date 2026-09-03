@@ -40,7 +40,16 @@ export const DEFAULT_LAYERS: Layer[] = [
 ];
 
 
-type Base = { id: string; layer: LayerId; group?: string };
+type Base = {
+  id: string;
+  layer: LayerId;
+  /** Id do grupo (Fase 2A) — a entidade se comporta como parte de uma unidade. */
+  group?: string;
+  /** Trecho de CORTE COMUM: cortado uma única vez para duas peças. */
+  shared?: boolean;
+  /** Trecho comum invalidado por edição/movimento posterior. */
+  invalid?: boolean;
+};
 export type Entity =
   | (Base & { type: "line"; x1: number; y1: number; x2: number; y2: number })
   | (Base & { type: "polyline"; pts: Vec2[]; closed: boolean })
