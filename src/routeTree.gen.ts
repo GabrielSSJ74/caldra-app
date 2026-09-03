@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as BibliotecaRouteImport } from './routes/biblioteca'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as PlanificacaoRouteImport } from './routes/planificacao'
+import { Route as ProRouteImport } from './routes/pro'
 import { Route as ProjetosRouteImport } from './routes/projetos'
 import { Route as QaRouteImport } from './routes/qa'
 import { Route as Desenho2dIndexRouteImport } from './routes/desenho-2d.index'
@@ -40,6 +41,11 @@ const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
 const PlanificacaoRoute = PlanificacaoRouteImport.update({
   id: '/planificacao',
   path: '/planificacao',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProRoute = ProRouteImport.update({
+  id: '/pro',
+  path: '/pro',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProjetosRoute = ProjetosRouteImport.update({
@@ -88,6 +94,7 @@ export interface FileRoutesByFullPath {
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/planificacao': typeof PlanificacaoRoute
+  '/pro': typeof ProRoute
   '/projetos': typeof ProjetosRoute
   '/qa': typeof QaRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/planificacao': typeof PlanificacaoRoute
+  '/pro': typeof ProRoute
   '/projetos': typeof ProjetosRoute
   '/qa': typeof QaRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
@@ -117,6 +125,7 @@ export interface FileRoutesById {
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/planificacao': typeof PlanificacaoRoute
+  '/pro': typeof ProRoute
   '/projetos': typeof ProjetosRoute
   '/qa': typeof QaRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
@@ -133,6 +142,7 @@ export interface FileRouteTypes {
     | '/biblioteca'
     | '/configuracoes'
     | '/planificacao'
+    | '/pro'
     | '/projetos'
     | '/qa'
     | '/desenho-2d/$projectId'
@@ -147,6 +157,7 @@ export interface FileRouteTypes {
     | '/biblioteca'
     | '/configuracoes'
     | '/planificacao'
+    | '/pro'
     | '/projetos'
     | '/qa'
     | '/desenho-2d/$projectId'
@@ -161,6 +172,7 @@ export interface FileRouteTypes {
     | '/biblioteca'
     | '/configuracoes'
     | '/planificacao'
+    | '/pro'
     | '/projetos'
     | '/qa'
     | '/desenho-2d/$projectId'
@@ -176,6 +188,7 @@ export interface RootRouteChildren {
   BibliotecaRoute: typeof BibliotecaRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   PlanificacaoRoute: typeof PlanificacaoRoute
+  ProRoute: typeof ProRoute
   ProjetosRoute: typeof ProjetosRoute
   QaRoute: typeof QaRoute
   Desenho2dProjectIdRoute: typeof Desenho2dProjectIdRoute
@@ -214,6 +227,13 @@ declare module '@tanstack/react-router' {
       path: '/planificacao'
       fullPath: '/planificacao'
       preLoaderRoute: typeof PlanificacaoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pro': {
+      id: '/pro'
+      path: '/pro'
+      fullPath: '/pro'
+      preLoaderRoute: typeof ProRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/projetos': {
@@ -280,6 +300,7 @@ const rootRouteChildren: RootRouteChildren = {
   BibliotecaRoute: BibliotecaRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
   PlanificacaoRoute: PlanificacaoRoute,
+  ProRoute: ProRoute,
   ProjetosRoute: ProjetosRoute,
   QaRoute: QaRoute,
   Desenho2dProjectIdRoute: Desenho2dProjectIdRoute,
