@@ -52,9 +52,9 @@ function Configuracoes() {
   const [code, setCode] = useState("");
   const { photo, displayName, role, name, update } = useProfile();
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const res = unlockWithCode(code);
+    const res = await unlockWithCode(code);
     if (res.ok) {
       setCode("");
       toast.success(res.message);
