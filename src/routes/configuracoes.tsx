@@ -11,6 +11,7 @@ import {
   type Unit,
 } from "@/lib/settings/SettingsProvider";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
+import { MaterialManager } from "@/components/chameleon/MaterialManager";
 import { PhotoPicker } from "@/components/chameleon/Profile";
 import { useProfile } from "@/lib/profile/ProfileProvider";
 import { cn } from "@/lib/utils";
@@ -132,6 +133,10 @@ function Configuracoes() {
           </form>
         )}
       </Panel>
+
+      <MaterialManager />
+
+
 
       <Panel className="space-y-4 p-4">
         <div>

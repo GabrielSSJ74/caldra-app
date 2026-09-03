@@ -1,4 +1,5 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { useRef } from "react";
 import { ArrowUpRight, FolderKanban, PenTool, Sigma } from "lucide-react";
 import { DEMO_HISTORY, DEMO_PROJECTS } from "@/lib/projects/demo-data";
 import { PieceCarousel } from "@/components/chameleon/PieceCarousel";
@@ -84,11 +85,29 @@ function MiniFolders() {
 function Inicio() {
   const project = DEMO_PROJECTS[0];
   const last = DEMO_HISTORY[0];
+  const navigate = useNavigate();
+  const taps = useRef<{ count: number; at: number }>({ count: 0, at: 0 });
+
+  /* MODO QA interno: 5 toques no logo (ou ?qa=1). */
+  const tapLogo = () => {
+    const now = Date.now();
+    taps.current =
+      now - taps.current.at > 1200
+        ? { count: 1, at: now }
+        : { count: taps.current.count + 1, at: now };
+    if (taps.current.count >= 5) {
+      taps.current = { count: 0, at: 0 };
+      void navigate({ to: "/qa" });
+    }
+  };
 
   return (
     <div className="space-y-6">
       <header className="relative pt-2">
-        <h1 className="text-brand-gradient font-display text-[clamp(2.4rem,13vw,4.5rem)] leading-[0.9] font-semibold tracking-tight">
+        <h1
+          onClick={tapLogo}
+          className="text-brand-gradient font-display cursor-default text-[clamp(2.4rem,13vw,4.5rem)] leading-[0.9] font-semibold tracking-tight select-none"
+        >
           CALDRA
         </h1>
         <p className="mt-1.5 font-mono text-[11px] tracking-[0.22em] text-muted-foreground uppercase">
