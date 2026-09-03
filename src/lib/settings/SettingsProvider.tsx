@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
+import { DEFAULT_REGION, regionOf, type Region, type RegionId } from "@/lib/regional/regional";
 
 export type ThemeMode = "light" | "dark" | "system";
 export type AccentColor = "amber" | "blue";
@@ -15,6 +16,8 @@ export type Settings = {
   unit: Unit;
   precision: number;
   level: Level;
+  /** Moeda, formato numérico e catálogo de chapas. */
+  region: RegionId;
 };
 
 const DEFAULTS: Settings = {
@@ -23,6 +26,7 @@ const DEFAULTS: Settings = {
   unit: "mm",
   precision: 2,
   level: "aprendiz",
+  region: DEFAULT_REGION,
 };
 
 type SettingsValue = Settings & {
@@ -31,6 +35,9 @@ type SettingsValue = Settings & {
   setUnit: (u: Unit) => void;
   setPrecision: (p: number) => void;
   setLevel: (l: Level) => void;
+  setRegion: (r: RegionId) => void;
+  /** Região resolvida (nunca undefined). */
+  regionConfig: Region;
 };
 
 const SettingsContext = createContext<SettingsValue | null>(null);
@@ -97,6 +104,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setUnit: (unit) => setSettings((s) => ({ ...s, unit })),
       setPrecision: (precision) => setSettings((s) => ({ ...s, precision })),
       setLevel: (level) => setSettings((s) => ({ ...s, level })),
+      setRegion: (region) => setSettings((s) => ({ ...s, region })),
+      regionConfig: regionOf(settings.region),
     }),
     [settings],
   );
