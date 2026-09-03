@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Compass, FolderKanban, Settings, Sigma } from "lucide-react";
+import { Compass, Factory, FolderKanban, Settings, Sigma } from "lucide-react";
 import { ChameleonMark } from "./Logo";
 import { cn } from "@/lib/utils";
 
@@ -15,6 +15,7 @@ const ITEMS: Item[] = [
   { to: "/escola", name: "Estudos", icon: Sigma },
   { to: "/", name: "Início", icon: ChameleonMark, core: true },
   { to: "/projetos", name: "Projetos", icon: FolderKanban },
+  { to: "/oficina", name: "Oficina", icon: Factory },
   { to: "/configuracoes", name: "Configurações", icon: Settings },
 ];
 

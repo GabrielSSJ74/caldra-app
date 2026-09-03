@@ -35,8 +35,14 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] B1 Botão APRENDER com 4 passos (parâmetros, cálculo, desenvolvimento, fabricação) usando os motores puros
 - [x] B2 Modos APRENDIZ / MESTRE em Configurações (só apresentação, um único caminho de cálculo)
 
-## Fase 5 — Plataforma (pendente)
-- Nesting modo CHAPA, custo de fabricação, orçamento PDF, ficha + QR, nuvem, versões, regional
+## Fase 5 — Plataforma (CONCLUÍDA)
+- [x] Nesting modo CHAPA (chapas comerciais, folga, margem, giro 90°, aproveitamento e sobra)
+- [x] Custo de fabricação (corte, furos, dobras, solda, mão de obra, setup, fator de espessura)
+- [x] Orçamento em PDF (fornecedor/cliente, margem, desconto, imposto regional, validade)
+- [x] Ficha de produção em PDF com QR de rastreio e cotas de conferência
+- [x] Nuvem e versões (sincronização por `updatedAt`, snapshots nomeados, restauro)
+- [x] Regional (Brasil/Portugal/EUA/Europa: moeda, formato, chapas e imposto padrão)
+- Rota `/oficina` reúne CHAPA · CUSTO · ORÇAMENTO · FICHA · NUVEM
 
 ## Decisões pendentes do usuário
 - Preços do paywall (mensal / anual / vitalício Pix) — usar placeholders configuráveis até definir

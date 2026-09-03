@@ -22,7 +22,12 @@ export type Feature =
   | "library.full"
   | "workshop.manage"
   | "backup.import"
-  | "components.library";
+  | "components.library"
+  | "nesting"
+  | "cost.fabrication"
+  | "quote.pdf"
+  | "jobsheet"
+  | "cloud.sync";
 
 const MATRIX: Record<Feature, Plan[]> = {
   "geometry.basic": ["free", "mestre", "oficina"],
@@ -39,6 +44,11 @@ const MATRIX: Record<Feature, Plan[]> = {
   "workshop.manage": ["oficina"],
   "backup.import": ["free", "mestre", "oficina"],
   "components.library": ["mestre", "oficina"],
+  nesting: ["mestre", "oficina"],
+  "cost.fabrication": ["mestre", "oficina"],
+  "quote.pdf": ["mestre", "oficina"],
+  jobsheet: ["mestre", "oficina"],
+  "cloud.sync": ["mestre", "oficina"],
 };
 
 export const FREE_PROJECT_LIMIT = 2;
@@ -104,6 +114,26 @@ export const FEATURE_PITCH: Record<Feature, { title: string; benefit: string }> 
   "components.library": {
     title: "Biblioteca de componentes",
     benefit: "Salve conjuntos de parâmetros (ex.: FLANGE DN200) e insira depois em um toque.",
+  },
+  nesting: {
+    title: "Nesting modo CHAPA",
+    benefit: "Encaixe as peças na chapa comercial, veja o aproveitamento real e quantas chapas comprar.",
+  },
+  "cost.fabrication": {
+    title: "Custo de fabricação",
+    benefit: "Corte, perfurações, dobras, solda, mão de obra e setup somados ao custo do material.",
+  },
+  "quote.pdf": {
+    title: "Orçamento em PDF",
+    benefit: "Proposta pronta para o cliente, com margem, desconto, impostos e validade.",
+  },
+  jobsheet: {
+    title: "Ficha de produção",
+    benefit: "Folha de bancada com cotas de conferência e QR de rastreio da peça.",
+  },
+  "cloud.sync": {
+    title: "Nuvem e versões",
+    benefit: "Seus projetos em todos os aparelhos, com histórico de versões para voltar atrás.",
   },
 };
 
