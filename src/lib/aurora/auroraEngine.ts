@@ -105,9 +105,10 @@ void main() {
   vec3 coldCol = mix(u_indigo, u_violet, clamp(q.x + 0.4, 0.0, 1.0));
 
   float a = u_amp;
-  col = mix(col, coldCol, cold * 0.42 * a);
-  col = mix(col, warmCol, warm * 0.38 * a);
-  col = mix(col, coreCol, core * 0.40 * a);
+  // névoa: opacidade efetiva baixa — nunca blocos de cor saturada
+  col = mix(col, coldCol, cold * 0.17 * a);
+  col = mix(col, warmCol, warm * 0.15 * a);
+  col = mix(col, coreCol, core * 0.16 * a);
 
   // vinheta suave, mantém legibilidade das bordas
   col *= 1.0 - 0.25 * smoothstep(0.55, 1.25, rad);
