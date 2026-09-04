@@ -10,6 +10,14 @@ import { Intro, useIntro } from "./Intro";
 import { Onboarding } from "./Onboarding";
 import { Avatar, ProfileDialog } from "./Profile";
 import { PaywallDialog } from "./Paywall";
+import { AuroraBackground } from "./Aurora";
+
+/** Rotas com fundo AURORA. O editor CHAMFER (desenho-2d) nunca entra aqui. */
+const AURORA_ROUTES = ["/", "/tracagem", "/escola", "/projetos", "/oficina", "/configuracoes"];
+
+function auroraVisible(pathname: string) {
+  return AURORA_ROUTES.some((r) => (r === "/" ? pathname === "/" : pathname.startsWith(r)));
+}
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [masterOpen, setMasterOpen] = useState(false);
