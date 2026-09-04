@@ -110,6 +110,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setPrecision: (precision) => setSettings((s) => ({ ...s, precision })),
       setLevel: (level) => setSettings((s) => ({ ...s, level })),
       setRegion: (region) => setSettings((s) => ({ ...s, region })),
+      setAurora: (aurora) => setSettings((s) => ({ ...s, aurora })),
       regionConfig: regionOf(settings.region),
     }),
     [settings],
