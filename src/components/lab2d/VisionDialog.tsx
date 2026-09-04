@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AuroraBackground } from "@/components/chameleon/Aurora";
 import { toast } from "sonner";
 import {
   Check,
@@ -857,7 +858,8 @@ export function VisionDialog({
         )}
 
         {step === "analisando" && (
-          <div className="flex flex-col items-center gap-3 py-14">
+          <div className="relative flex flex-col items-center gap-3 overflow-hidden rounded-2xl py-14">
+            <AuroraBackground className="-z-10" />
             <Loader2 className="size-6 animate-spin text-accent" />
             <p className="font-mono text-[11px] tracking-[0.2em] text-muted-foreground uppercase">
               {progress.stage}…
