@@ -227,7 +227,16 @@ class AuroraEngine {
       }
 
       canvas.addEventListener("webglcontextlost", (e) => {
+        // preventDefault permite a restauração; até lá, degrada para o CSS.
         e.preventDefault();
+        this.stop();
+        this.listeners.forEach((l) => l(false));
+      });
+      canvas.addEventListener("webglcontextrestored", () => {
+        this.gl = null;
+        this.program = null;
+        this.canvas?.remove();
+        this.canvas = null;
         this.fail();
       });
 
