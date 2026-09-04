@@ -63,6 +63,8 @@ function Configuracoes() {
     setLevel,
     region,
     setRegion,
+    aurora,
+    setAurora,
   } = useSettings();
   const [code, setCode] = useState("");
   const [consent, setConsentState] = useState(false);
