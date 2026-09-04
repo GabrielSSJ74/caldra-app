@@ -90,7 +90,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   /* Hidrata do armazenamento antes do primeiro paint. */
   useIsoLayoutEffect(() => {
-    setSettings(readStoredSettings());
+    const stored = readStoredSettings();
+    // marca o skin hidratado ANTES do estado mudar: a hidratação não é uma
+    // troca voluntária de tema e portanto não acende o véu.
+    prevSkin.current = `${stored.theme}:${stored.accent}`;
+    applyToDom(stored);
+    setSettings(stored);
     hydrated.current = true;
   }, []);
 
@@ -106,8 +111,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   /* Troca VOLUNTÁRIA de tema/acento com transição suave. A aplicação
      inicial (e a hidratação do armazenamento) nunca acende o véu. */
   useIsoLayoutEffect(() => {
-    const first = prevSkin.current === null || !hydrated.current;
-    if (first || prevSkin.current === skin) {
+    if (prevSkin.current === null || prevSkin.current === skin) {
       prevSkin.current = skin;
       applyToDom(settings);
       return;
