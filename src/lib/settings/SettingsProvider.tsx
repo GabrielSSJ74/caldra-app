@@ -78,6 +78,8 @@ function applyToDom(s: Settings) {
   root.classList.toggle("accent-magenta", s.accent === "magenta");
 }
 
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
   const hydrated = useRef(false);
@@ -87,7 +89,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const prevSkin = useRef<string | null>(null);
 
   /* Hidrata do armazenamento antes do primeiro paint. */
-  const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
   useIsoLayoutEffect(() => {
     setSettings(readStoredSettings());
     hydrated.current = true;
@@ -102,9 +103,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [settings]);
 
-  /* troca de tema/acento com transição suave */
-  useEffect(() => {
-    if (prevSkin.current === null || prevSkin.current === skin) {
+  /* Troca VOLUNTÁRIA de tema/acento com transição suave. A aplicação
+     inicial (e a hidratação do armazenamento) nunca acende o véu. */
+  useIsoLayoutEffect(() => {
+    const first = prevSkin.current === null || !hydrated.current;
+    if (first || prevSkin.current === skin) {
       prevSkin.current = skin;
       applyToDom(settings);
       return;
@@ -115,6 +118,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     return () => window.clearTimeout(swap);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skin]);
+
 
   useEffect(() => {
     document.documentElement.classList.toggle("mestre", isMestre);
