@@ -39,6 +39,7 @@ type SettingsValue = Settings & {
   setPrecision: (p: number) => void;
   setLevel: (l: Level) => void;
   setRegion: (r: RegionId) => void;
+  setAurora: (v: boolean) => void;
   /** Região resolvida (nunca undefined). */
   regionConfig: Region;
 };
