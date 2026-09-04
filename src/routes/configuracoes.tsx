@@ -250,6 +250,41 @@ function Configuracoes() {
               ))}
             </div>
           </div>
+
+          {isMestre && (
+            <div className="mt-3">
+              <SectionLabel>Fundo Aurora</SectionLabel>
+              <button
+                onClick={() => setAurora(!aurora)}
+                aria-pressed={aurora}
+                className={cn(
+                  "flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left transition-colors",
+                  aurora ? "border-accent/25 bg-accent/10" : "border-line",
+                )}
+              >
+                <span className="text-[13px]">
+                  Fundo animado nas telas principais
+                  <span className="block font-mono text-[10px] text-muted-foreground">
+                    Desligado economiza bateria (fundo estático)
+                  </span>
+                </span>
+                <span
+                  aria-hidden
+                  className={cn(
+                    "relative h-5 w-9 shrink-0 rounded-full transition-colors",
+                    aurora ? "bg-accent" : "bg-secondary",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-0.5 size-4 rounded-full bg-background transition-all",
+                      aurora ? "left-[1.125rem]" : "left-0.5",
+                    )}
+                  />
+                </span>
+              </button>
+            </div>
+          )}
         </div>
 
         <div>
