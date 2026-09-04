@@ -10,6 +10,7 @@ import {
   type AccentColor,
   type ThemeMode,
   type Unit,
+  type AuroraStyle,
 } from "@/lib/settings/SettingsProvider";
 import { REGIONS, type RegionId } from "@/lib/regional/regional";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
@@ -40,6 +41,12 @@ const THEMES: { id: ThemeMode; label: string }[] = [
   { id: "dark", label: "Escuro" },
   { id: "light", label: "Claro" },
   { id: "system", label: "Sistema" },
+  { id: "amoled", label: "AMOLED" },
+];
+const AURORA_STYLES: { id: AuroraStyle; label: string; hint: string }[] = [
+  { id: "fluido", label: "Fluido", hint: "Shader líquido em movimento contínuo" },
+  { id: "suave", label: "Suave", hint: "Massas de luz leves, menor custo" },
+  { id: "estatico", label: "Estático", hint: "Frame congelado, máxima bateria" },
 ];
 const ACCENTS: { id: AccentColor; label: string; swatch: string }[] = [
   { id: "amber", label: "Âmbar", swatch: "#F59E0B" },
@@ -63,8 +70,8 @@ function Configuracoes() {
     setLevel,
     region,
     setRegion,
-    aurora,
-    setAurora,
+    auroraStyle,
+    setAuroraStyle,
   } = useSettings();
   const [code, setCode] = useState("");
   const [consent, setConsentState] = useState(false);
@@ -253,36 +260,27 @@ function Configuracoes() {
 
           {isMestre && (
             <div className="mt-3">
-              <SectionLabel>Fundo Aurora</SectionLabel>
-              <button
-                onClick={() => setAurora(!aurora)}
-                aria-pressed={aurora}
-                className={cn(
-                  "flex w-full items-center justify-between rounded-xl border px-3 py-2.5 text-left transition-colors",
-                  aurora ? "border-accent/25 bg-accent/10" : "border-line",
-                )}
-              >
-                <span className="text-[13px]">
-                  Fundo animado nas telas principais
-                  <span className="block font-mono text-[10px] text-muted-foreground">
-                    Desligado economiza bateria (fundo estático)
-                  </span>
-                </span>
-                <span
-                  aria-hidden
-                  className={cn(
-                    "relative h-5 w-9 shrink-0 rounded-full transition-colors",
-                    aurora ? "bg-accent" : "bg-secondary",
-                  )}
-                >
-                  <span
+              <SectionLabel>Estilo do fundo</SectionLabel>
+              <div className="flex gap-1.5">
+                {AURORA_STYLES.map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => setAuroraStyle(a.id)}
+                    aria-pressed={auroraStyle === a.id}
                     className={cn(
-                      "absolute top-0.5 size-4 rounded-full bg-background transition-all",
-                      aurora ? "left-[1.125rem]" : "left-0.5",
+                      "flex-1 rounded-xl border px-3 py-2 font-mono text-[11px] uppercase transition-colors",
+                      auroraStyle === a.id
+                        ? "border-accent/25 bg-accent/10 text-accent"
+                        : "border-line text-muted-foreground",
                     )}
-                  />
-                </span>
-              </button>
+                  >
+                    {a.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                {AURORA_STYLES.find((a) => a.id === auroraStyle)?.hint}
+              </p>
             </div>
           )}
         </div>
