@@ -111,21 +111,6 @@
   --sidebar-ring: oklch(0.58 0.105 178);
 }
 
-/* AMOLED — preto puro real; elevação por bordas, não por superfícies claras. */
-.amoled {
-  --background: oklch(0 0 0);
-  --card: oklch(0 0 0);
-  --popover: oklch(0.06 0 0);
-  --secondary: oklch(0.14 0 0);
-  --muted: oklch(0.14 0 0);
-  --muted-foreground: oklch(0.7 0.006 75);
-  --border: oklch(1 0 0 / 8%);
-  --input: oklch(1 0 0 / 10%);
-  --sidebar: oklch(0 0 0);
-  --line: oklch(1 0 0 / 8%);
-  --panel: oklch(0 0 0);
-}
-
 .dark {
   /* grafite / carvão, levemente quente */
   --background: oklch(0.145 0.006 60);
@@ -167,6 +152,22 @@
   --sidebar-border: oklch(0.27 0.006 60);
   --sidebar-ring: oklch(0.77 0.163 70);
 }
+
+/* AMOLED — preto puro real; elevação por bordas, não por superfícies claras. */
+.amoled {
+  --background: oklch(0 0 0);
+  --card: oklch(0 0 0);
+  --popover: oklch(0.06 0 0);
+  --secondary: oklch(0.14 0 0);
+  --muted: oklch(0.14 0 0);
+  --muted-foreground: oklch(0.7 0.006 75);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 10%);
+  --sidebar: oklch(0 0 0);
+  --line: oklch(1 0 0 / 8%);
+  --panel: oklch(0 0 0);
+}
+
 
 /* MODO MESTRE — identidade premium: espectro sutil em áreas selecionadas */
 .mestre {
