@@ -243,7 +243,7 @@ class AuroraEngine {
   }
 
   private top(): Mount | null {
-    return this.stack.length ? this.stack[this.stack.length - 1] : null;
+    return this.stack.length ? this.stack[this.stack.length - 1]! : null;
   }
 
   acquire(el: HTMLElement, animated: boolean, amp: number): () => void {
