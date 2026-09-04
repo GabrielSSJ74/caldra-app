@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   PROTOTYPE_MASTER_CODE,
   planAllows,
@@ -38,6 +38,9 @@ type SubscriptionValue = {
 
 const SubscriptionContext = createContext<SubscriptionValue | null>(null);
 
+/** Antes do primeiro paint (sem flash e sem divergência de hidratação). */
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
 export function SubscriptionProvider({ children }: { children: React.ReactNode }) {
   const [plan, setPlan] = useState<Plan>("free");
   const [planSource, setPlanSource] = useState<PlanSource>("none");
@@ -51,27 +54,38 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     writeCache(next, source);
   }, []);
 
-  /* 1. cache local — o app abre instantâneo e funciona offline */
-  useEffect(() => {
+  /* Cache local aplicado ANTES do paint — o app abre no plano correto. */
+  useIsoLayoutEffect(() => {
     const cached = readCache();
     setPlan(cached.plan);
     setPlanSource(cached.source);
     setReady(true);
   }, []);
 
-  /* 2. revalidação remota — o servidor manda quando há sessão */
+  /* Revalidação remota — resposta DEFINITIVA do servidor manda; qualquer
+     falha, timeout ou resposta parcial mantém o último valor conhecido. */
   const refresh = useCallback(async () => {
     try {
       const remote = await fetchRemotePlan();
-      if (remote) persist(remote.plan, remote.source);
+      if (!remote) return; // sem sessão / offline / erro → mantém o cache
+      persist(remote.plan, remote.source);
     } catch {
       /* offline: mantém o cache */
     }
   }, [persist]);
 
+  /* Uma sincronização por conta — navegar NUNCA revalida. */
+  const syncedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!authReady) return;
-    if (session) void refresh();
+    const uid = session?.user?.id ?? null;
+    if (!uid) {
+      syncedFor.current = null;
+      return;
+    }
+    if (syncedFor.current === uid) return;
+    syncedFor.current = uid;
+    void refresh();
   }, [authReady, session, refresh]);
 
   const value = useMemo<SubscriptionValue>(() => {

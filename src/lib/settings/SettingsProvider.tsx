@@ -1,12 +1,14 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { DEFAULT_REGION, regionOf, type Region, type RegionId } from "@/lib/regional/regional";
 
-export type ThemeMode = "light" | "dark" | "system";
+export type ThemeMode = "light" | "dark" | "system" | "amoled";
 export type AccentColor = "amber" | "blue" | "magenta";
 export type Unit = "mm" | "cm" | "m" | "in";
 /** APRENDIZ mostra fórmulas e dicas; MESTRE segue direto. Só apresentação. */
 export type Level = "aprendiz" | "mestre";
+/** Estilo do fundo AURORA: shader WebGL, blobs CSS ou frame congelado. */
+export type AuroraStyle = "fluido" | "suave" | "estatico";
 
 const KEY = "caldra.settings";
 
@@ -18,8 +20,8 @@ export type Settings = {
   level: Level;
   /** Moeda, formato numérico e catálogo de chapas. */
   region: RegionId;
-  /** Fundo AURORA animado (recurso PRO). Desligado = estático. */
-  aurora: boolean;
+  /** Estilo do fundo AURORA (recurso PRO para a versão animada). */
+  auroraStyle: AuroraStyle;
 };
 
 const DEFAULTS: Settings = {
@@ -29,7 +31,7 @@ const DEFAULTS: Settings = {
   precision: 2,
   level: "aprendiz",
   region: DEFAULT_REGION,
-  aurora: true,
+  auroraStyle: "fluido",
 };
 
 type SettingsValue = Settings & {
@@ -39,43 +41,66 @@ type SettingsValue = Settings & {
   setPrecision: (p: number) => void;
   setLevel: (l: Level) => void;
   setRegion: (r: RegionId) => void;
-  setAurora: (v: boolean) => void;
+  setAuroraStyle: (s: AuroraStyle) => void;
   /** Região resolvida (nunca undefined). */
   regionConfig: Region;
 };
 
 const SettingsContext = createContext<SettingsValue | null>(null);
 
+/**
+ * Leitura SÍNCRONA do armazenamento — fonte única, também usada pelo script
+ * pré-paint em `__root.tsx`. Sem isto o app pinta o tema padrão e depois
+ * corrige (flash de tonalidade).
+ */
+export function readStoredSettings(): Settings {
+  if (typeof window === "undefined") return DEFAULTS;
+  try {
+    const raw = window.localStorage.getItem(KEY);
+    if (!raw) return DEFAULTS;
+    const saved = JSON.parse(raw) as Partial<Settings> & { aurora?: boolean };
+    const auroraStyle: AuroraStyle =
+      saved.auroraStyle ?? (saved.aurora === false ? "estatico" : DEFAULTS.auroraStyle);
+    // conta já existente (sem o campo) começa em MESTRE; conta nova, APRENDIZ
+    return { ...DEFAULTS, level: saved.level ?? "mestre", ...saved, auroraStyle };
+  } catch {
+    return DEFAULTS;
+  }
+}
+
 function applyToDom(s: Settings) {
   const root = document.documentElement;
   const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? true;
-  const dark = s.theme === "dark" || (s.theme === "system" && prefersDark);
+  const dark = s.theme === "dark" || s.theme === "amoled" || (s.theme === "system" && prefersDark);
   root.classList.toggle("dark", dark);
+  root.classList.toggle("amoled", s.theme === "amoled");
   root.classList.toggle("accent-blue", s.accent === "blue");
   root.classList.toggle("accent-magenta", s.accent === "magenta");
 }
 
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
+  const hydrated = useRef(false);
   const [veil, setVeil] = useState(0);
   const { isMestre } = useFeatureAccess();
   const skin = `${settings.theme}:${settings.accent}`;
   const prevSkin = useRef<string | null>(null);
 
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(KEY);
-      if (raw) {
-        const saved = JSON.parse(raw) as Partial<Settings>;
-        // conta já existente (sem o campo) começa em MESTRE; conta nova, APRENDIZ
-        setSettings({ ...DEFAULTS, level: saved.level ?? "mestre", ...saved });
-      }
-    } catch {
-      /* ignore */
-    }
+  /* Hidrata do armazenamento antes do primeiro paint. */
+  useIsoLayoutEffect(() => {
+    const stored = readStoredSettings();
+    // marca o skin hidratado ANTES do estado mudar: a hidratação não é uma
+    // troca voluntária de tema e portanto não acende o véu.
+    prevSkin.current = `${stored.theme}:${stored.accent}`;
+    applyToDom(stored);
+    setSettings(stored);
+    hydrated.current = true;
   }, []);
 
   useEffect(() => {
+    if (!hydrated.current) return;
     try {
       window.localStorage.setItem(KEY, JSON.stringify(settings));
     } catch {
@@ -83,8 +108,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [settings]);
 
-  /* troca de tema/acento com transição suave */
-  useEffect(() => {
+  /* Troca VOLUNTÁRIA de tema/acento com transição suave. A aplicação
+     inicial (e a hidratação do armazenamento) nunca acende o véu. */
+  useIsoLayoutEffect(() => {
     if (prevSkin.current === null || prevSkin.current === skin) {
       prevSkin.current = skin;
       applyToDom(settings);
@@ -96,6 +122,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     return () => window.clearTimeout(swap);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skin]);
+
 
   useEffect(() => {
     document.documentElement.classList.toggle("mestre", isMestre);
@@ -110,7 +137,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setPrecision: (precision) => setSettings((s) => ({ ...s, precision })),
       setLevel: (level) => setSettings((s) => ({ ...s, level })),
       setRegion: (region) => setSettings((s) => ({ ...s, region })),
-      setAurora: (aurora) => setSettings((s) => ({ ...s, aurora })),
+      setAuroraStyle: (auroraStyle) => setSettings((s) => ({ ...s, auroraStyle })),
       regionConfig: regionOf(settings.region),
     }),
     [settings],

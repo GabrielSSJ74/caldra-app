@@ -1,13 +1,15 @@
 /**
- * AURORA CALDRA 2.0 — fundo shader WebGL (domain warping sobre FBM).
+ * AURORA CALDRA 2.0 — fundo do aplicativo em três estilos.
  *
- * Um único contexto WebGL vive em `auroraEngine`; este componente apenas
- * empresta um container para o canvas compartilhado. Sem WebGL (ou com
- * contexto perdido), o componente degrada para a versão CSS anterior.
+ *  FLUIDO   → shader WebGL (domain warping sobre FBM), contexto ÚNICO
+ *             compartilhado por todo o app (`auroraEngine`).
+ *  SUAVE    → blobs CSS (transform/opacity), pausados em background.
+ *  ESTÁTICO → um frame congelado do estilo escolhido.
  *
- * `mode="auto"` → animado só no PRO, com o toggle ligado, sem
- * prefers-reduced-motion e com a aba visível. `mode="always"` (paywall)
- * anima em qualquer plano, respeitando apenas acessibilidade/visibilidade.
+ * `mode="auto"` → animado só no PRO, sem prefers-reduced-motion e com a
+ * aba visível. `mode="always"` (paywall) anima em qualquer plano.
+ * `active={false}` (rota sem Aurora) pausa sem desmontar — a animação
+ * continua contínua ao navegar.
  */
 
 import { useEffect, useRef, useState } from "react";
@@ -44,22 +46,27 @@ function usePageVisible() {
 
 export function AuroraBackground({
   mode = "auto",
+  active = true,
   className,
 }: {
   mode?: "auto" | "always";
+  active?: boolean;
   className?: string;
 }) {
-  const { aurora } = useSettings();
+  const { auroraStyle } = useSettings();
   const { isMestre } = useFeatureAccess();
   const reduced = useReducedMotion();
-  const visible = usePageVisible();
+  const pageVisible = usePageVisible();
   const hostRef = useRef<HTMLDivElement>(null);
-  const [shader, setShader] = useState(false);
+  const [glOk, setGlOk] = useState(true);
 
-  const wants = mode === "always" || (isMestre && aurora);
-  const animated = wants && !reduced;
+  const wantsShader = auroraStyle === "fluido" && glOk;
+  /* PRO anima; FREE vê o frame congelado do mesmo estilo. */
+  const allowed = mode === "always" || isMestre;
+  const animated =
+    allowed && active && pageVisible && !reduced && auroraStyle !== "estatico";
 
-  /* Modo Oficina / alto contraste recuam a amplitude do shader. */
+  /* Modo Oficina / alto contraste recuam a amplitude do fundo. */
   const amp =
     typeof document !== "undefined" &&
     (document.documentElement.classList.contains("oficina") ||
@@ -67,34 +74,40 @@ export function AuroraBackground({
       ? 0.6
       : 1;
 
+  /* Empresta o container ao canvas compartilhado só no estilo FLUIDO. */
   useEffect(() => {
+    if (auroraStyle !== "fluido") return;
     const engine = auroraEngine();
     const host = hostRef.current;
-    if (!engine || !host || !engine.supported()) return;
+    if (!engine || !host) return;
+    if (!engine.supported()) {
+      setGlOk(false);
+      return;
+    }
     const release = engine.acquire(host, animated, amp);
-    setShader(engine.supported());
-    const off = engine.onStatus((ok) => setShader(ok));
+    const off = engine.onStatus((ok) => setGlOk(ok));
     return () => {
       off();
       release();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [auroraStyle]);
 
   useEffect(() => {
+    if (auroraStyle !== "fluido") return;
     const engine = auroraEngine();
     const host = hostRef.current;
     if (!engine || !host) return;
-    engine.update(host, animated && visible, amp);
-  }, [animated, visible, amp]);
+    engine.update(host, animated, amp);
+  }, [auroraStyle, animated, amp]);
 
   return (
     <div
       aria-hidden
       className={cn("aurora-root pointer-events-none absolute inset-0 overflow-hidden", className)}
       data-animated={animated ? "on" : "off"}
-      data-paused={animated && !visible ? "on" : "off"}
-      data-shader={shader ? "on" : "off"}
+      data-active={active ? "on" : "off"}
+      data-style={wantsShader ? "fluido" : "suave"}
     >
       <div ref={hostRef} className="aurora-gl absolute inset-0" />
       <div className="aurora-css absolute inset-0">
