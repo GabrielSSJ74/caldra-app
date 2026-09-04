@@ -30,6 +30,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-background text-foreground">
+      {auroraVisible(pathname) && <AuroraBackground className="fixed -z-10" />}
       {/* iluminação ambiente */}
       <div aria-hidden className="pointer-events-none fixed inset-0">
         <div className="absolute -top-40 -left-32 size-[26rem] rounded-full bg-accent/8 blur-[120px]" />
