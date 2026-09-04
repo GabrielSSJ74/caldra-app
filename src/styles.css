@@ -111,6 +111,21 @@
   --sidebar-ring: oklch(0.58 0.105 178);
 }
 
+/* AMOLED — preto puro real; elevação por bordas, não por superfícies claras. */
+.amoled {
+  --background: oklch(0 0 0);
+  --card: oklch(0 0 0);
+  --popover: oklch(0.06 0 0);
+  --secondary: oklch(0.14 0 0);
+  --muted: oklch(0.14 0 0);
+  --muted-foreground: oklch(0.7 0.006 75);
+  --border: oklch(1 0 0 / 8%);
+  --input: oklch(1 0 0 / 10%);
+  --sidebar: oklch(0 0 0);
+  --line: oklch(1 0 0 / 8%);
+  --panel: oklch(0 0 0);
+}
+
 .dark {
   /* grafite / carvão, levemente quente */
   --background: oklch(0.145 0.006 60);
@@ -457,6 +472,13 @@
   display: block;
 }
 
+/* AMOLED: a base do Aurora funde com preto puro; as massas permanecem. */
+.amoled {
+  --aurora-base-a: #050505;
+  --aurora-base-b: #000000;
+  --aurora-blob-opacity: 0.22;
+}
+
 /* Modo Oficina / alto contraste: o fundo recua para preservar legibilidade. */
 .oficina .aurora-root,
 .high-contrast .aurora-root {
@@ -587,11 +609,11 @@
   }
 }
 
-/* AURORA 2.0 — com shader WebGL ativo, a versão CSS vira apenas fallback. */
-.aurora-root[data-shader="on"] .aurora-css {
+/* AURORA 2.0 — FLUIDO usa o shader; SUAVE usa os blobs CSS (primeira classe). */
+.aurora-root[data-style="fluido"] .aurora-css {
   display: none;
 }
-.aurora-root[data-shader="off"] .aurora-gl {
+.aurora-root[data-style="suave"] .aurora-gl {
   display: none;
 }
 .oficina .aurora-root .aurora-gl,
