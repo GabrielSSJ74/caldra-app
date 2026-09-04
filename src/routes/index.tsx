@@ -102,7 +102,8 @@ function Inicio() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="relative space-y-6">
+      <AuroraBackground className="fixed -z-10" />
       <header className="relative pt-2">
         <h1
           onClick={tapLogo}
