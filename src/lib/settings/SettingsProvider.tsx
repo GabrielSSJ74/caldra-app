@@ -18,6 +18,8 @@ export type Settings = {
   level: Level;
   /** Moeda, formato numérico e catálogo de chapas. */
   region: RegionId;
+  /** Fundo AURORA animado (recurso PRO). Desligado = estático. */
+  aurora: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -27,6 +29,7 @@ const DEFAULTS: Settings = {
   precision: 2,
   level: "aprendiz",
   region: DEFAULT_REGION,
+  aurora: true,
 };
 
 type SettingsValue = Settings & {
