@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { DEFAULT_REGION, regionOf, type Region, type RegionId } from "@/lib/regional/regional";
 
@@ -79,13 +79,22 @@ function applyToDom(s: Settings) {
 }
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
-  const [settings, setSettings] = useState<Settings>(() => readStoredSettings());
+  const [settings, setSettings] = useState<Settings>(DEFAULTS);
+  const hydrated = useRef(false);
   const [veil, setVeil] = useState(0);
   const { isMestre } = useFeatureAccess();
   const skin = `${settings.theme}:${settings.accent}`;
   const prevSkin = useRef<string | null>(null);
 
+  /* Hidrata do armazenamento antes do primeiro paint. */
+  const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+  useIsoLayoutEffect(() => {
+    setSettings(readStoredSettings());
+    hydrated.current = true;
+  }, []);
+
   useEffect(() => {
+    if (!hydrated.current) return;
     try {
       window.localStorage.setItem(KEY, JSON.stringify(settings));
     } catch {

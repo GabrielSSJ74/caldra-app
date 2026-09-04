@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   PROTOTYPE_MASTER_CODE,
   planAllows,
@@ -38,14 +38,13 @@ type SubscriptionValue = {
 
 const SubscriptionContext = createContext<SubscriptionValue | null>(null);
 
-/** Estado inicial SÍNCRONO — a UI nunca pinta um plano diferente do cache. */
-const initial = () => (typeof window === "undefined" ? { plan: "free" as Plan, source: "none" as PlanSource } : readCache());
+/** Antes do primeiro paint (sem flash e sem divergência de hidratação). */
+const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export function SubscriptionProvider({ children }: { children: React.ReactNode }) {
-  const [boot] = useState(initial);
-  const [plan, setPlan] = useState<Plan>(boot.plan);
-  const [planSource, setPlanSource] = useState<PlanSource>(boot.source);
-  const [ready] = useState(true);
+  const [plan, setPlan] = useState<Plan>("free");
+  const [planSource, setPlanSource] = useState<PlanSource>("none");
+  const [ready, setReady] = useState(false);
   const [gatedFeature, setGatedFeature] = useState<Feature | null>(null);
   const { session, ready: authReady } = useAuth();
 
@@ -53,6 +52,14 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     setPlan(next);
     setPlanSource(source);
     writeCache(next, source);
+  }, []);
+
+  /* Cache local aplicado ANTES do paint — o app abre no plano correto. */
+  useIsoLayoutEffect(() => {
+    const cached = readCache();
+    setPlan(cached.plan);
+    setPlanSource(cached.source);
+    setReady(true);
   }, []);
 
   /* Revalidação remota — resposta DEFINITIVA do servidor manda; qualquer
