@@ -18,6 +18,8 @@ export type Settings = {
   level: Level;
   /** Moeda, formato numérico e catálogo de chapas. */
   region: RegionId;
+  /** Fundo AURORA animado (recurso PRO). Desligado = estático. */
+  aurora: boolean;
 };
 
 const DEFAULTS: Settings = {
@@ -27,6 +29,7 @@ const DEFAULTS: Settings = {
   precision: 2,
   level: "aprendiz",
   region: DEFAULT_REGION,
+  aurora: true,
 };
 
 type SettingsValue = Settings & {
@@ -36,6 +39,7 @@ type SettingsValue = Settings & {
   setPrecision: (p: number) => void;
   setLevel: (l: Level) => void;
   setRegion: (r: RegionId) => void;
+  setAurora: (v: boolean) => void;
   /** Região resolvida (nunca undefined). */
   regionConfig: Region;
 };
@@ -106,6 +110,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setPrecision: (precision) => setSettings((s) => ({ ...s, precision })),
       setLevel: (level) => setSettings((s) => ({ ...s, level })),
       setRegion: (region) => setSettings((s) => ({ ...s, region })),
+      setAurora: (aurora) => setSettings((s) => ({ ...s, aurora })),
       regionConfig: regionOf(settings.region),
     }),
     [settings],

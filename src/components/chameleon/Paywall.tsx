@@ -23,6 +23,7 @@ import { PRICING, formatPrice, isBrl } from "@/lib/subscription/pricing";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { cn } from "@/lib/utils";
 import { Panel, SectionLabel } from "./ui";
+import { AuroraBackground } from "./Aurora";
 
 /** Comparativo real: lido da matriz de permissões, nunca escrito à mão. */
 const COMPARED: Feature[] = [
@@ -246,7 +247,8 @@ export function PaywallDialog() {
 
   return (
     <Dialog open={gatedFeature !== null} onOpenChange={(o) => !o && closeGate()}>
-      <DialogContent className="max-h-[92vh] w-[calc(100vw-1.5rem)] overflow-y-auto sm:max-w-lg">
+      <DialogContent className="relative max-h-[92vh] w-[calc(100vw-1.5rem)] overflow-y-auto sm:max-w-lg">
+        <AuroraBackground mode="always" className="-z-10" />
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-display">
             <Lock className="size-4 text-pro" />
@@ -263,7 +265,8 @@ export function PaywallDialog() {
 /** Cartão de vitrine usado na rota /pro. */
 export function PaywallPanel({ className }: { className?: string }) {
   return (
-    <Panel className={cn("space-y-4 p-4", className)} glow>
+    <Panel className={cn("relative space-y-4 overflow-hidden p-4", className)} glow>
+      <AuroraBackground mode="always" className="-z-10" />
       <SectionLabel className="text-pro">CALDRA PRO</SectionLabel>
       <PaywallBody />
     </Panel>

@@ -3,6 +3,7 @@ import { useRef } from "react";
 import { ArrowUpRight, FolderKanban, PenTool, Sigma } from "lucide-react";
 import { DEMO_HISTORY, DEMO_PROJECTS } from "@/lib/projects/demo-data";
 import { PieceCarousel } from "@/components/chameleon/PieceCarousel";
+import { AuroraBackground } from "@/components/chameleon/Aurora";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -102,7 +103,8 @@ function Inicio() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="relative space-y-6">
+      <AuroraBackground className="fixed -z-10" />
       <header className="relative pt-2">
         <h1
           onClick={tapLogo}

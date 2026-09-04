@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Compass, PenTool, Sigma } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { AuroraBackground } from "./Aurora";
 
 const KEY = "caldra.intro.v1";
 
@@ -57,6 +58,7 @@ export function Intro({ onDone }: { onDone: () => void }) {
         if (end - start > 60 && step > 0) setStep(step - 1);
       }}
     >
+      <AuroraBackground />
       <div aria-hidden className="pointer-events-none absolute inset-0 grid-bg opacity-40" />
       <div
         aria-hidden
