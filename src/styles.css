@@ -586,3 +586,18 @@
     will-change: auto;
   }
 }
+
+/* AURORA 2.0 — com shader WebGL ativo, a versão CSS vira apenas fallback. */
+.aurora-root[data-shader="on"] .aurora-css {
+  display: none;
+}
+.aurora-root[data-shader="off"] .aurora-gl {
+  display: none;
+}
+.oficina .aurora-root .aurora-gl,
+.high-contrast .aurora-root .aurora-gl {
+  opacity: 0.75;
+}
+.aurora-root .aurora-gl {
+  transition: opacity 320ms ease;
+}
