@@ -610,6 +610,11 @@
   }
 }
 
+/* Rota sem Aurora (editor CHAMFER): oculto sem destruir o contexto WebGL. */
+.aurora-root[data-active="off"] {
+  visibility: hidden;
+}
+
 /* AURORA 2.0 — FLUIDO usa o shader; SUAVE usa os blobs CSS (primeira classe). */
 .aurora-root[data-style="fluido"] .aurora-css {
   display: none;

@@ -106,6 +106,7 @@ export function AuroraBackground({
       aria-hidden
       className={cn("aurora-root pointer-events-none absolute inset-0 overflow-hidden", className)}
       data-animated={animated ? "on" : "off"}
+      data-active={active ? "on" : "off"}
       data-style={wantsShader ? "fluido" : "suave"}
     >
       <div ref={hostRef} className="aurora-gl absolute inset-0" />
