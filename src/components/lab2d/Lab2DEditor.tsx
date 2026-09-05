@@ -360,9 +360,44 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   useEffect(() => {
     const h = takeHandoff();
     if (!h) return;
+    /* escala real 1:1 preservada — só há deslocamento de enquadramento */
+    const box = bbox(h.entities);
+    const cur = loadFrame();
+    if (!box) {
+      setEntities(h.entities);
+      toast.success(`${h.name} carregado no CHAMFER.`);
+      return;
+    }
+    const place = (f: WorkspaceFrame) => {
+      const { dx, dy } = centerOffset(box, f);
+      const list = h.entities.map((e) => translate(e, dx, dy));
+      setEntities(list);
+      requestAnimationFrame(() => fitBox(frameBox(f)));
+    };
+    if (fitsInFrame(box, cur)) {
+      place(cur);
+      toast.success(`${h.name} carregado e centralizado na área de trabalho.`);
+      return;
+    }
     setEntities(h.entities);
-    toast.success(`${h.name} carregado no CHAMFER.`);
-    requestAnimationFrame(() => fitTo(h.entities));
+    requestAnimationFrame(() => fitBox(box));
+    toast.warning("PEÇA EXCEDE A ÁREA DE TRABALHO", {
+      description: `${h.name} mede mais que ${cur.w} × ${cur.h} mm. A escala de fabricação não foi alterada.`,
+      duration: 12000,
+      action: {
+        label: "Centralizar mesmo assim",
+        onClick: () => place(cur),
+      },
+      cancel: {
+        label: "Ajustar área de trabalho",
+        onClick: () => {
+          const next = frameForBox(box, cur);
+          saveFrame(next);
+          setFrame(next);
+          place(next);
+        },
+      },
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
