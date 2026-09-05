@@ -81,6 +81,16 @@ function MiniPlan() {
         })}
       </g>
 
+      {/* esquadro 90° no canto superior esquerdo */}
+      <path
+        d="M8 24 V6 H32"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2.4"
+        strokeLinecap="square"
+      />
+
+
       {/* lápis 2D desenhando o último furo */}
       <g transform="rotate(35 72 27)">
         {/* corpo hexagonal */}
