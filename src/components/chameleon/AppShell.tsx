@@ -11,6 +11,7 @@ import { Onboarding } from "./Onboarding";
 import { Avatar, ProfileDialog } from "./Profile";
 import { PaywallDialog } from "./Paywall";
 import { AuroraBackground } from "./Aurora";
+import { ShellActionsProvider } from "./ShellActions";
 
 /** Rotas com fundo AURORA. O editor CHAMFER (desenho-2d) nunca entra aqui. */
 const AURORA_ROUTES = ["/", "/tracagem", "/escola", "/projetos", "/oficina", "/configuracoes"];
