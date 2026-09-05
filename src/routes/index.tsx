@@ -83,10 +83,17 @@ function MiniPlan() {
 
       {/* lápis 2D desenhando o último furo */}
       <g transform="rotate(35 72 27)">
-        <path d="M68 -8 h8 v29 h-8 Z" fill="var(--accent)" />
-        <path d="M68 21 h8 l-4 6 Z" fill="currentColor" />
-        <path d="M68 -10 h8 v3 h-8 Z" fill="currentColor" opacity=".5" />
+        {/* corpo hexagonal */}
+        <path d="M67 -12 h10 v27 h-10 Z" fill="var(--accent)" />
+        <path d="M71.5 -12 v27" stroke="var(--background)" strokeWidth=".8" opacity=".45" />
+        {/* virola */}
+        <path d="M67 -16 h10 v4 h-10 Z" fill="currentColor" opacity=".45" />
+        <path d="M67 -20 h10 v4 h-10 Z" fill="var(--accent)" opacity=".5" />
+        {/* madeira e grafite */}
+        <path d="M67 15 h10 l-5 8 Z" fill="currentColor" opacity=".35" />
+        <path d="M70.2 20 h3.6 l-1.8 3 Z" fill="currentColor" />
       </g>
+
 
     </svg>
   );
