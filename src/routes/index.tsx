@@ -28,24 +28,31 @@ export const Route = createFileRoute("/")({
 function MiniPlan() {
   return (
     <svg viewBox="0 0 120 80" className="size-full" aria-hidden>
-      <g fill="none" stroke="currentColor" strokeWidth="1">
-        <rect x="14" y="14" width="92" height="52" rx="4" opacity=".5" />
-        <circle cx="60" cy="40" r="17" />
-        <circle cx="60" cy="40" r="8" opacity=".7" />
-        {[0, 90, 180, 270].map((a) => {
-          const r = (a * Math.PI) / 180;
-          return (
-            <circle key={a} cx={60 + 24 * Math.cos(r)} cy={40 + 24 * Math.sin(r)} r="3.2" />
-          );
-        })}
+      {/* peça sendo desenhada */}
+      <g fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round">
+        <path d="M20 60 H70 L84 46 V26 H34 L20 40 Z" />
+        <path d="M34 26 V46 H84" opacity=".55" />
+        <path d="M20 40 H34" opacity=".55" />
+        <circle cx="52" cy="43" r="6" opacity=".8" />
       </g>
-      <g stroke="var(--accent)" strokeWidth=".9" opacity=".9">
-        <path d="M14 72 H106" />
-        <path d="M14 69 V75 M106 69 V75" />
+      {/* traço em execução */}
+      <path
+        d="M70 60 H92"
+        fill="none"
+        stroke="var(--accent)"
+        strokeWidth="1.2"
+        strokeDasharray="4 3"
+      />
+      {/* lápis desenhando */}
+      <g transform="rotate(38 96 58)">
+        <path d="M92 20 h8 v30 h-8 Z" fill="var(--accent)" opacity=".9" />
+        <path d="M92 50 h8 l-4 8 Z" fill="currentColor" opacity=".8" />
+        <path d="M92 16 h8 v4 h-8 Z" fill="currentColor" opacity=".5" />
       </g>
     </svg>
   );
 }
+
 
 function MiniMath() {
   return (
