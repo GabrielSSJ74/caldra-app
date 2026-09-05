@@ -28,8 +28,18 @@ export const Route = createFileRoute("/")({
 function MiniPlan() {
   return (
     <svg viewBox="0 0 120 80" className="size-full" aria-hidden>
-      {/* grid ortogonal 90° */}
-      <g stroke="#000000" strokeWidth=".4" opacity=".5">
+      <defs>
+        <radialGradient id="mini-grid-fade" cx="50%" cy="50%" r="55%">
+          <stop offset="0%" stopColor="#fff" stopOpacity="1" />
+          <stop offset="60%" stopColor="#fff" stopOpacity=".7" />
+          <stop offset="100%" stopColor="#fff" stopOpacity="0" />
+        </radialGradient>
+        <mask id="mini-grid-mask">
+          <rect x="0" y="0" width="120" height="80" fill="url(#mini-grid-fade)" />
+        </mask>
+      </defs>
+      {/* grid ortogonal 90° (atrás da peça) */}
+      <g stroke="#000000" strokeWidth=".4" opacity=".5" mask="url(#mini-grid-mask)">
         {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110].map((x) => (
           <path key={`v${x}`} d={`M${x} 6 V74`} />
         ))}
@@ -37,6 +47,7 @@ function MiniPlan() {
           <path key={`h${y}`} d={`M8 ${y} H112`} />
         ))}
       </g>
+
 
       {/* flange 2D com 8 furos */}
       <g fill="none" stroke="currentColor" strokeWidth="1.2">
