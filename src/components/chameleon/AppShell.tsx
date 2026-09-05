@@ -12,6 +12,7 @@ import { Avatar, ProfileDialog } from "./Profile";
 import { PaywallDialog } from "./Paywall";
 import { AuroraBackground } from "./Aurora";
 import { ShellActionsProvider } from "./ShellActions";
+import { useImmersiveActive } from "@/lib/ui/immersive";
 
 /** Rotas com fundo AURORA. O editor CHAMFER (desenho-2d) nunca entra aqui. */
 const AURORA_ROUTES = ["/", "/tracagem", "/escola", "/projetos", "/oficina", "/configuracoes"];
@@ -33,7 +34,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const intro = useIntro();
   const profile = useProfile();
   const showOnboarding = profile.ready && !intro.show && !profile.onboarded;
-  const immersive = immersiveRoute(pathname);
+  const editorMounted = useImmersiveActive();
+  const immersive = immersiveRoute(pathname) && editorMounted;
 
   return (
     <ShellActionsProvider

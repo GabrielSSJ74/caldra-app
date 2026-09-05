@@ -5,7 +5,7 @@
  * Nunca bloqueia o app: há sempre caminho de saída.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 
 type OrientationLock = ScreenOrientation & {
   lock?: (o: string) => Promise<void>;
@@ -111,4 +111,37 @@ export function useImmersiveLandscape(enabled: boolean) {
       await exitFullscreen();
     }, []),
   };
+}
+
+/* ---- sinal global: o editor CHAMFER está realmente montado? ---- */
+let immersiveOn = false;
+const listeners = new Set<() => void>();
+
+function emit() {
+  listeners.forEach((l) => l());
+}
+
+/** Marca o modo imersivo enquanto o componente estiver montado. */
+export function useDeclareImmersive(active: boolean) {
+  useEffect(() => {
+    if (!active) return;
+    immersiveOn = true;
+    emit();
+    return () => {
+      immersiveOn = false;
+      emit();
+    };
+  }, [active]);
+}
+
+/** O shell escuta este sinal para esconder navegação e cabeçalho. */
+export function useImmersiveActive() {
+  return useSyncExternalStore(
+    (cb) => {
+      listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+    () => immersiveOn,
+    () => false,
+  );
 }

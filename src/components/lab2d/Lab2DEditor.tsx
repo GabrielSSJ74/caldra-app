@@ -41,7 +41,7 @@ import {
 import type { Vec2 } from "@/lib/geometry/types";
 import { ExportDialog } from "@/components/lab2d/ExportDialog";
 import { RotateGate } from "@/components/lab2d/RotateGate";
-import { useImmersiveLandscape } from "@/lib/ui/immersive";
+import { useDeclareImmersive, useImmersiveLandscape } from "@/lib/ui/immersive";
 import { ImportDialog, type ImportSource } from "@/components/lab2d/ImportDialog";
 import { VisionDialog, type VisionImageLayer } from "@/components/lab2d/VisionDialog";
 import {
@@ -178,6 +178,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const { isMestre } = useFeatureAccess();
   const navigate = useNavigate();
   const { needsRotate, request: requestLandscape, release } = useImmersiveLandscape(true);
+  useDeclareImmersive(true);
   const [rotateDismissed, setRotateDismissed] = useState(false);
   const leaveEditor = useCallback(() => {
     void release().finally(() => void navigate({ to: "/desenho-2d" }));
