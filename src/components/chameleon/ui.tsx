@@ -16,12 +16,7 @@ export function SectionLabel({
 }) {
   return (
     <div className="mb-2 flex items-center justify-between gap-3">
-      <h2
-        className={cn(
-          "font-mono text-[11px] tracking-[0.18em] text-muted-foreground uppercase",
-          className,
-        )}
-      >
+      <h2 className={cn("t-eyebrow", className)}>
         {children}
       </h2>
       {action}
@@ -141,8 +136,8 @@ export function FeatureGate({
 export function EmptyState({ title, hint }: { title: string; hint: string }) {
   return (
     <div className="rounded-2xl border border-dashed border-border p-8 text-center">
-      <p className="font-display text-sm">{title}</p>
-      <p className="mt-1 text-xs text-muted-foreground">{hint}</p>
+      <p className="t-subtitle">{title}</p>
+      <p className="t-caption mt-1">{hint}</p>
     </div>
   );
 }

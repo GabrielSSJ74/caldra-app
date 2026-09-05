@@ -629,3 +629,119 @@
 .aurora-root .aurora-gl {
   transition: opacity 320ms ease;
 }
+
+/* ═══════════ DESIGN SYSTEM CALDRA — Parte 2 ═══════════
+   Tipografia, estados, carregamento e erro. Tokens únicos: nenhum
+   componente define tamanho, peso ou espaçamento próprio fora daqui. */
+
+:root {
+  --ds-eyebrow: 0.18em;
+  --ds-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* — escala tipográfica — */
+@utility t-display {
+  font-family: var(--font-display);
+  font-size: clamp(1.6rem, 1.2rem + 2vw, 2.25rem);
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+@utility t-title {
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+}
+
+@utility t-subtitle {
+  font-family: var(--font-display);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+@utility t-body {
+  font-size: 0.875rem;
+  line-height: 1.55;
+}
+
+@utility t-caption {
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--muted-foreground);
+}
+
+@utility t-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: var(--ds-eyebrow);
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+@utility t-numeric {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.01em;
+}
+
+/* — estados universais — */
+@layer base {
+  :where(button, a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 2px solid color-mix(in oklab, var(--accent) 70%, transparent);
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  :where(button, a, [role="button"]):disabled,
+  :where(button, a, [role="button"])[aria-disabled="true"] {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+}
+
+/* — carregamento — */
+@keyframes ds-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@utility ds-skeleton {
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--foreground) 5%, transparent) 0%,
+      color-mix(in oklab, var(--foreground) 11%, transparent) 50%,
+      color-mix(in oklab, var(--foreground) 5%, transparent) 100%
+    )
+    0 0 / 200% 100%;
+  animation: ds-shimmer 1.4s linear infinite;
+}
+
+@keyframes ds-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@utility ds-spinner {
+  border-radius: 9999px;
+  border: 2px solid color-mix(in oklab, var(--foreground) 14%, transparent);
+  border-top-color: var(--accent);
+  animation: ds-spin 0.7s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ds-skeleton,
+  .ds-spinner {
+    animation-duration: 0s !important;
+  }
+}
