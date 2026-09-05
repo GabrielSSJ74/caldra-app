@@ -210,6 +210,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [grid, setGrid] = useState(10);
   const [snapOn, setSnapOn] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
+  /* WORKSPACE_FRAME — moldura técnica de trabalho (não é geometria) */
+  const [frame, setFrame] = useState<WorkspaceFrame>(() =>
+    typeof window === "undefined" ? { w: 1500, h: 3000, visible: true, showDims: true } : loadFrame(),
+  );
+  const updateFrame = useCallback((patch: Partial<WorkspaceFrame>) => {
+    setFrame((f) => {
+      const next = { ...f, ...patch };
+      saveFrame(next);
+      return next;
+    });
+  }, []);
   const [showDims, setShowDims] = useState(false);
   const [focus, setFocus] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
