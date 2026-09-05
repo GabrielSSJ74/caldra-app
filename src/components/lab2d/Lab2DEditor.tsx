@@ -97,6 +97,17 @@ import {
   type Project,
 } from "@/lib/lab2d/projects";
 import { takeHandoff } from "@/lib/lab2d/handoff";
+import {
+  centerOffset,
+  fitsInFrame,
+  frameBox,
+  frameForBox,
+  frameForBox as frameToFit,
+  loadFrame,
+  saveFrame,
+  clampSide,
+  type WorkspaceFrame,
+} from "@/lib/lab2d/workspace";
 import { buildIndex } from "@/lib/lab2d/spatialIndex";
 import { drawScene } from "@/lib/lab2d/canvasScene";
 import { stressEntities } from "@/lib/lab2d/stress";
