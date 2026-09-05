@@ -28,30 +28,43 @@ export const Route = createFileRoute("/")({
 function MiniPlan() {
   return (
     <svg viewBox="0 0 120 80" className="size-full" aria-hidden>
-      {/* peça sendo desenhada */}
-      <g fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinejoin="round">
-        <path d="M20 60 H70 L84 46 V26 H34 L20 40 Z" />
-        <path d="M34 26 V46 H84" opacity=".55" />
-        <path d="M20 40 H34" opacity=".55" />
-        <circle cx="52" cy="43" r="6" opacity=".8" />
+      {/* grid ortogonal 90° */}
+      <g stroke="currentColor" strokeWidth=".4" opacity=".28">
+        {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110].map((x) => (
+          <path key={`v${x}`} d={`M${x} 6 V74`} />
+        ))}
+        {[10, 20, 30, 40, 50, 60, 70].map((y) => (
+          <path key={`h${y}`} d={`M8 ${y} H112`} />
+        ))}
       </g>
-      {/* traço em execução */}
+
+      {/* peça 2D: contorno ortogonal já desenhado */}
+      <g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="miter">
+        <path d="M20 60 V30 H50 V20 H80" />
+      </g>
+      {/* rastro do lápis (traço recém-feito) */}
+      <path d="M80 20 V44" fill="none" stroke="var(--accent)" strokeWidth="1.4" />
       <path
-        d="M70 60 H92"
+        d="M80 44 V60 H20"
         fill="none"
         stroke="var(--accent)"
-        strokeWidth="1.2"
-        strokeDasharray="4 3"
+        strokeWidth="1"
+        strokeDasharray="3 3"
+        opacity=".55"
       />
-      {/* lápis desenhando */}
-      <g transform="rotate(38 96 58)">
-        <path d="M92 20 h8 v30 h-8 Z" fill="var(--accent)" opacity=".9" />
-        <path d="M92 50 h8 l-4 8 Z" fill="currentColor" opacity=".8" />
-        <path d="M92 16 h8 v4 h-8 Z" fill="currentColor" opacity=".5" />
+      {/* furo */}
+      <circle cx="46" cy="46" r="5" fill="none" stroke="currentColor" strokeWidth="1" opacity=".7" />
+
+      {/* lápis 2D */}
+      <g transform="rotate(35 80 44)">
+        <path d="M76 8 h8 v30 h-8 Z" fill="var(--accent)" />
+        <path d="M76 38 h8 l-4 6 Z" fill="currentColor" />
+        <path d="M76 6 h8 v3 h-8 Z" fill="currentColor" opacity=".5" />
       </g>
     </svg>
   );
 }
+
 
 
 function MiniMath() {
