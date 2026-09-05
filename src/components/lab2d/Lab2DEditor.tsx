@@ -1531,6 +1531,67 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               <line x1={-1e4} y1={0} x2={1e4} y2={0} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
               <line x1={0} y1={-1e4} x2={0} y2={1e4} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
 
+              {/* WORKSPACE_FRAME — área de trabalho (referência, nunca exportada) */}
+              {frame.visible && (
+                <g pointerEvents="none">
+                  <rect
+                    x={0}
+                    y={0}
+                    width={frame.w}
+                    height={frame.h}
+                    fill="none"
+                    stroke={REFERENCE_COLOR}
+                    strokeOpacity={0.85}
+                    strokeWidth={1.6 / view.k}
+                  />
+                  {/* diagonais de canto que fecham a moldura */}
+                  {(
+                    [
+                      [0, 0, 1, 1],
+                      [frame.w, 0, -1, 1],
+                      [0, frame.h, 1, -1],
+                      [frame.w, frame.h, -1, -1],
+                    ] as const
+                  ).map(([x, y, sx, sy]) => {
+                    const c = Math.min(frame.w, frame.h) * 0.06;
+                    return (
+                      <path
+                        key={`${x}-${y}`}
+                        d={`M ${x + sx * c} ${y} L ${x} ${y + sy * c}`}
+                        fill="none"
+                        stroke={REFERENCE_COLOR}
+                        strokeOpacity={0.6}
+                        strokeWidth={1 / view.k}
+                      />
+                    );
+                  })}
+                  {frame.showDims && (
+                    <g fill={REFERENCE_COLOR} fillOpacity={0.9} fontFamily="ui-monospace, monospace">
+                      <text
+                        x={frame.w / 2}
+                        y={-8 / view.k}
+                        fontSize={13 / view.k}
+                        textAnchor="middle"
+                      >
+                        {frame.w.toFixed(2)} mm
+                      </text>
+                      <text
+                        x={-8 / view.k}
+                        y={frame.h / 2}
+                        fontSize={13 / view.k}
+                        textAnchor="middle"
+                        transform={`rotate(-90 ${-8 / view.k} ${frame.h / 2})`}
+                      >
+                        {frame.h.toFixed(2)} mm
+                      </text>
+                      <text x={6 / view.k} y={-8 / view.k} fontSize={10 / view.k} fillOpacity={0.6}>
+                        ÁREA DE TRABALHO
+                      </text>
+                    </g>
+                  )}
+                </g>
+              )}
+
               {/* geometria principal: pintada no canvas sob este SVG */}
 
 
