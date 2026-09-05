@@ -1709,6 +1709,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             {showGrid && <rect width="100%" height="100%" fill="url(#lab2d-grid)" />}
           </svg>
           <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
+          {/* FLUXO CALDRA / PRÉVIA CNC — camada de UI, nunca exportada */}
+          <canvas ref={flowRef} className="pointer-events-none absolute inset-0 size-full" />
+
           <svg
             ref={svgRef}
             className="absolute inset-0 size-full touch-none"
