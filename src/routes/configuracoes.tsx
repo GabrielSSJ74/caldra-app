@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { readConsent, setConsent } from "@/lib/analytics/consent";
 import { toast } from "sonner";
-import { Sparkles } from "lucide-react";
+import { Sparkles, Bug } from "lucide-react";
 import { PLAN_LABEL } from "@/lib/subscription/features";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import {
@@ -17,6 +17,9 @@ import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { MaterialManager } from "@/components/chameleon/MaterialManager";
 import { PhotoPicker } from "@/components/chameleon/Profile";
 import { useProfile } from "@/lib/profile/ProfileProvider";
+import { Button } from "@/components/chameleon/ds";
+import { ReportProblemDialog } from "@/components/chameleon/ReportProblemDialog";
+import { APP_VERSION, APP_BUILD } from "@/lib/app/version";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/configuracoes")({
@@ -74,6 +77,7 @@ function Configuracoes() {
     setAuroraStyle,
   } = useSettings();
   const [code, setCode] = useState("");
+  const [reportOpen, setReportOpen] = useState(false);
   const [consent, setConsentState] = useState(false);
   useEffect(() => setConsentState(readConsent()), []);
   const { photo, displayName, role, name, update } = useProfile();
@@ -210,6 +214,27 @@ function Configuracoes() {
           </Link>
         </div>
       </Panel>
+
+      <Panel className="space-y-3 p-4">
+        <SectionLabel>Suporte</SectionLabel>
+        <p className="text-[13px] text-muted-foreground">
+          Versão {APP_VERSION} · compilação {APP_BUILD}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" size="sm" icon={Bug} onClick={() => setReportOpen(true)}>
+            Reportar um problema
+          </Button>
+          <Link
+            to="/novidades"
+            className="font-mono text-[11px] tracking-[0.16em] text-muted-foreground uppercase underline"
+          >
+            Novidades
+          </Link>
+        </div>
+      </Panel>
+      <ReportProblemDialog open={reportOpen} onOpenChange={setReportOpen} />
+
+
 
 
 
