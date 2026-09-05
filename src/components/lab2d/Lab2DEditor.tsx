@@ -1367,7 +1367,57 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             <div className="relative">
               <IconBtn label="Mais" onClick={() => setMoreOpen((m) => !m)} icon={MoreHorizontal} active={moreOpen} />
               {moreOpen && (
-                <div className="metal hairline pop-in absolute top-10 right-0 z-30 w-48 rounded-2xl p-1.5">
+                <div className="metal hairline pop-in absolute top-10 right-0 z-30 w-52 rounded-2xl p-1.5">
+                  <MenuItem
+                    label="Centralizar peça"
+                    icon={Crosshair}
+                    onClick={() => {
+                      centerPiece(true);
+                      setMoreOpen(false);
+                    }}
+                  />
+                  <MenuItem
+                    label="Enquadrar área de trabalho"
+                    icon={Frame}
+                    onClick={() => {
+                      fitFrame();
+                      setMoreOpen(false);
+                    }}
+                  />
+                  <div className="my-1 h-px bg-line" />
+                  <div className="px-2 py-1.5">
+                    <p className="tick-label mb-1 text-muted-foreground">Área de trabalho (mm)</p>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        aria-label="Largura da área de trabalho"
+                        value={frame.w}
+                        onChange={(ev) =>
+                          updateFrame({ w: clampSide(Number(ev.target.value), frame.w) })
+                        }
+                        className="w-16 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-center font-mono text-[10px] outline-none"
+                      />
+                      <span className="font-mono text-[10px] text-muted-foreground">×</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        aria-label="Altura da área de trabalho"
+                        value={frame.h}
+                        onChange={(ev) =>
+                          updateFrame({ h: clampSide(Number(ev.target.value), frame.h) })
+                        }
+                        className="w-16 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-center font-mono text-[10px] outline-none"
+                      />
+                    </div>
+                    <button
+                      onClick={() => updateFrame({ showDims: !frame.showDims })}
+                      className="mt-1.5 w-full rounded-lg border border-line px-2 py-1 font-mono text-[9px] tracking-widest text-muted-foreground uppercase hover:text-foreground"
+                    >
+                      {frame.showDims ? "Ocultar dimensões" : "Mostrar dimensões"}
+                    </button>
+                  </div>
+                  <div className="my-1 h-px bg-line" />
                   <MenuItem
                     label={showDims ? "Ocultar medidas" : "Mostrar medidas"}
                     icon={Ruler}
