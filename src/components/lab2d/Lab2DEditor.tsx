@@ -5,7 +5,9 @@ import {
   ArrowLeft,
   Circle as CircleIcon,
   Copy,
+  Crosshair,
   Download,
+  Frame,
   Eye,
   EyeOff,
   FlipHorizontal2,
@@ -69,6 +71,7 @@ import {
   trimLine,
   uid,
   verify,
+  type Box,
   type Entity,
   type Layer,
   type Snap,
@@ -77,6 +80,7 @@ import { autoDimensions } from "@/lib/lab2d/render";
 import { pathToSvg } from "@/lib/lab2d/bezier";
 import {
   AXIS_COLOR,
+  REFERENCE_COLOR,
   CUT_COLOR,
   DIMENSION_COLOR,
   MARK_COLOR,
@@ -97,6 +101,16 @@ import {
   type Project,
 } from "@/lib/lab2d/projects";
 import { takeHandoff } from "@/lib/lab2d/handoff";
+import {
+  centerOffset,
+  fitsInFrame,
+  frameBox,
+  frameForBox,
+  loadFrame,
+  saveFrame,
+  clampSide,
+  type WorkspaceFrame,
+} from "@/lib/lab2d/workspace";
 import { buildIndex } from "@/lib/lab2d/spatialIndex";
 import { drawScene } from "@/lib/lab2d/canvasScene";
 import { stressEntities } from "@/lib/lab2d/stress";
@@ -200,6 +214,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [grid, setGrid] = useState(10);
   const [snapOn, setSnapOn] = useState(true);
   const [showGrid, setShowGrid] = useState(true);
+  /* WORKSPACE_FRAME — moldura técnica de trabalho (não é geometria) */
+  const [frame, setFrame] = useState<WorkspaceFrame>(() =>
+    typeof window === "undefined" ? { w: 1500, h: 3000, visible: true, showDims: true } : loadFrame(),
+  );
+  const updateFrame = useCallback((patch: Partial<WorkspaceFrame>) => {
+    setFrame((f) => {
+      const next = { ...f, ...patch };
+      saveFrame(next);
+      return next;
+    });
+  }, []);
   const [showDims, setShowDims] = useState(false);
   const [focus, setFocus] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
@@ -339,9 +364,44 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   useEffect(() => {
     const h = takeHandoff();
     if (!h) return;
+    /* escala real 1:1 preservada — só há deslocamento de enquadramento */
+    const box = bbox(h.entities);
+    const cur = loadFrame();
+    if (!box) {
+      setEntities(h.entities);
+      toast.success(`${h.name} carregado no CHAMFER.`);
+      return;
+    }
+    const place = (f: WorkspaceFrame) => {
+      const { dx, dy } = centerOffset(box, f);
+      const list = h.entities.map((e) => translate(e, dx, dy));
+      setEntities(list);
+      requestAnimationFrame(() => fitBox(frameBox(f)));
+    };
+    if (fitsInFrame(box, cur)) {
+      place(cur);
+      toast.success(`${h.name} carregado e centralizado na área de trabalho.`);
+      return;
+    }
     setEntities(h.entities);
-    toast.success(`${h.name} carregado no CHAMFER.`);
-    requestAnimationFrame(() => fitTo(h.entities));
+    requestAnimationFrame(() => fitBox(box));
+    toast.warning("PEÇA EXCEDE A ÁREA DE TRABALHO", {
+      description: `${h.name} mede mais que ${cur.w} × ${cur.h} mm. A escala de fabricação não foi alterada.`,
+      duration: 12000,
+      action: {
+        label: "Centralizar mesmo assim",
+        onClick: () => place(cur),
+      },
+      cancel: {
+        label: "Ajustar área de trabalho",
+        onClick: () => {
+          const next = frameForBox(box, cur);
+          saveFrame(next);
+          setFrame(next);
+          place(next);
+        },
+      },
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -357,8 +417,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [view],
   );
 
-  const fitTo = useCallback((list: Entity[]) => {
-    const box = bbox(list);
+  /** Enquadra uma caixa do desenho na viewport (margem visual, escala 1:1 preservada). */
+  const fitBox = useCallback((box: Box | null) => {
     const el = svgRef.current;
     if (!box || !el) return;
     const r = el.getBoundingClientRect();
@@ -371,6 +431,34 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       ty: r.height / 2 - ((box.minY + box.maxY) / 2) * k,
     });
   }, []);
+
+  const fitTo = useCallback((list: Entity[]) => fitBox(bbox(list)), [fitBox]);
+
+  /** Enquadra a moldura de trabalho inteira. */
+  const fitFrame = useCallback(() => fitBox(frameBox(frame)), [fitBox, frame]);
+
+  /**
+   * CENTRALIZAR PEÇA — por padrão move somente a visualização; com `moveGeometry`
+   * desloca a geometria (sem nenhuma escala) para o centro da área de trabalho.
+   */
+  const centerPiece = useCallback(
+    (moveGeometry: boolean) => {
+      const box = bbox(entities);
+      if (!box) {
+        fitFrame();
+        return;
+      }
+      if (!moveGeometry) {
+        fitBox(box);
+        return;
+      }
+      const { dx, dy } = centerOffset(box, frame);
+      commit((list) => list.map((e) => translate(e, dx, dy)));
+      requestAnimationFrame(() => fitBox(frameBox(frame)));
+      toast.success("Peça centralizada na área de trabalho.");
+    },
+    [entities, frame, fitBox, fitFrame, commit],
+  );
 
   /* ------------------------------------------------------------ zoom roda */
   const viewRef = useRef(view);
@@ -1281,7 +1369,57 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             <div className="relative">
               <IconBtn label="Mais" onClick={() => setMoreOpen((m) => !m)} icon={MoreHorizontal} active={moreOpen} />
               {moreOpen && (
-                <div className="metal hairline pop-in absolute top-10 right-0 z-30 w-48 rounded-2xl p-1.5">
+                <div className="metal hairline pop-in absolute top-10 right-0 z-30 w-52 rounded-2xl p-1.5">
+                  <MenuItem
+                    label="Centralizar peça"
+                    icon={Crosshair}
+                    onClick={() => {
+                      centerPiece(true);
+                      setMoreOpen(false);
+                    }}
+                  />
+                  <MenuItem
+                    label="Enquadrar área de trabalho"
+                    icon={Frame}
+                    onClick={() => {
+                      fitFrame();
+                      setMoreOpen(false);
+                    }}
+                  />
+                  <div className="my-1 h-px bg-line" />
+                  <div className="px-2 py-1.5">
+                    <p className="tick-label mb-1 text-muted-foreground">Área de trabalho (mm)</p>
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        aria-label="Largura da área de trabalho"
+                        value={frame.w}
+                        onChange={(ev) =>
+                          updateFrame({ w: clampSide(Number(ev.target.value), frame.w) })
+                        }
+                        className="w-16 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-center font-mono text-[10px] outline-none"
+                      />
+                      <span className="font-mono text-[10px] text-muted-foreground">×</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        aria-label="Altura da área de trabalho"
+                        value={frame.h}
+                        onChange={(ev) =>
+                          updateFrame({ h: clampSide(Number(ev.target.value), frame.h) })
+                        }
+                        className="w-16 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-center font-mono text-[10px] outline-none"
+                      />
+                    </div>
+                    <button
+                      onClick={() => updateFrame({ showDims: !frame.showDims })}
+                      className="mt-1.5 w-full rounded-lg border border-line px-2 py-1 font-mono text-[9px] tracking-widest text-muted-foreground uppercase hover:text-foreground"
+                    >
+                      {frame.showDims ? "Ocultar dimensões" : "Mostrar dimensões"}
+                    </button>
+                  </div>
+                  <div className="my-1 h-px bg-line" />
                   <MenuItem
                     label={showDims ? "Ocultar medidas" : "Mostrar medidas"}
                     icon={Ruler}
@@ -1445,6 +1583,67 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               {/* eixos — cinza técnico discreto */}
               <line x1={-1e4} y1={0} x2={1e4} y2={0} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
               <line x1={0} y1={-1e4} x2={0} y2={1e4} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
+
+              {/* WORKSPACE_FRAME — área de trabalho (referência, nunca exportada) */}
+              {frame.visible && (
+                <g pointerEvents="none">
+                  <rect
+                    x={0}
+                    y={0}
+                    width={frame.w}
+                    height={frame.h}
+                    fill="none"
+                    stroke={REFERENCE_COLOR}
+                    strokeOpacity={0.85}
+                    strokeWidth={1.6 / view.k}
+                  />
+                  {/* diagonais de canto que fecham a moldura */}
+                  {(
+                    [
+                      [0, 0, 1, 1],
+                      [frame.w, 0, -1, 1],
+                      [0, frame.h, 1, -1],
+                      [frame.w, frame.h, -1, -1],
+                    ] as const
+                  ).map(([x, y, sx, sy]) => {
+                    const c = Math.min(frame.w, frame.h) * 0.06;
+                    return (
+                      <path
+                        key={`${x}-${y}`}
+                        d={`M ${x + sx * c} ${y} L ${x} ${y + sy * c}`}
+                        fill="none"
+                        stroke={REFERENCE_COLOR}
+                        strokeOpacity={0.6}
+                        strokeWidth={1 / view.k}
+                      />
+                    );
+                  })}
+                  {frame.showDims && (
+                    <g fill={REFERENCE_COLOR} fillOpacity={0.9} fontFamily="ui-monospace, monospace">
+                      <text
+                        x={frame.w / 2}
+                        y={-8 / view.k}
+                        fontSize={13 / view.k}
+                        textAnchor="middle"
+                      >
+                        {frame.w.toFixed(2)} mm
+                      </text>
+                      <text
+                        x={-8 / view.k}
+                        y={frame.h / 2}
+                        fontSize={13 / view.k}
+                        textAnchor="middle"
+                        transform={`rotate(-90 ${-8 / view.k} ${frame.h / 2})`}
+                      >
+                        {frame.h.toFixed(2)} mm
+                      </text>
+                      <text x={6 / view.k} y={18 / view.k} fontSize={10 / view.k} fillOpacity={0.55}>
+                        ÁREA DE TRABALHO
+                      </text>
+                    </g>
+                  )}
+                </g>
+              )}
 
               {/* geometria principal: pintada no canvas sob este SVG */}
 
@@ -1695,6 +1894,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", showGrid && "text-accent")}
           >
             GRID
+          </button>
+          <button
+            onClick={() => updateFrame({ visible: !frame.visible })}
+            title={`Área de trabalho ${frame.w} × ${frame.h} mm`}
+            className={cn(
+              "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
+              frame.visible && "text-accent",
+            )}
+          >
+            QUADRO
           </button>
           <select
             value={grid}
