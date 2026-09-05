@@ -2137,6 +2137,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             : drawable,
         }}
       />
+      <CncExportDialog
+        open={cncOpen}
+        onOpenChange={setCncOpen}
+        entities={drawable}
+        filename={`${project?.name ?? "caldra"}-${
+          project?.plans.find((p) => p.id === planId)?.name ?? "P01"
+        }`
+          .replace(/\s+/g, "-")
+          .toLowerCase()}
+      />
+
       <ImportDialog
         source={importSrc}
         layers={layers}
