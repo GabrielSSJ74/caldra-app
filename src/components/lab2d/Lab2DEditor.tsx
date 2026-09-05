@@ -1523,6 +1523,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             />
 
             <IconBtn label="Exportar" onClick={() => setExportOpen(true)} icon={Download} />
+            <IconBtn label="Exportar DXF CNC" onClick={() => setCncOpen(true)} icon={Scissors} />
+
             <div className="relative">
               <IconBtn label="Mais" onClick={() => setMoreOpen((m) => !m)} icon={MoreHorizontal} active={moreOpen} />
               {moreOpen && (
