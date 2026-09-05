@@ -281,6 +281,9 @@ function cncCases(): QaCase[] {
   t.push(check("CNC", "Comprimento de corte", 400, cncCutLength([cut, mark]), "mm"));
 
   return t;
+}
+
+
 
 
 export function summarize(cases: QaCase[]) {
