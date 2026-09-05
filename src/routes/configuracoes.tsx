@@ -216,6 +216,22 @@ function Configuracoes() {
       </Panel>
 
       <Panel className="space-y-3 p-4">
+        <SectionLabel>Backup</SectionLabel>
+        <p className="text-[13px] text-muted-foreground">
+          Salve um arquivo com projetos, materiais, preferências e perfil — e traga tudo de volta em
+          outro aparelho.
+        </p>
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={HardDriveDownload}
+          onClick={() => setBackupOpen(true)}
+        >
+          Backup e restauração
+        </Button>
+      </Panel>
+
+      <Panel className="space-y-3 p-4">
         <SectionLabel>Suporte</SectionLabel>
         <p className="text-[13px] text-muted-foreground">
           Versão {APP_VERSION} · compilação {APP_BUILD}
@@ -233,6 +249,8 @@ function Configuracoes() {
         </div>
       </Panel>
       <ReportProblemDialog open={reportOpen} onOpenChange={setReportOpen} />
+      <BackupDialog open={backupOpen} onOpenChange={setBackupOpen} />
+
 
 
 
