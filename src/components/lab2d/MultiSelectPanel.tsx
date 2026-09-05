@@ -178,7 +178,11 @@ export function MultiSelectPanel({
           icon={Boxes}
           onClick={() => {
             const res = createGroup(entities, ids, groups);
-            if (!res) return toast.info("Selecione 2 ou mais entidades.");
+            if (!res) {
+              toast.info("Selecione 2 ou mais entidades.");
+              return;
+            }
+
             commit(res.entities);
             setGroups(res.groups);
           }}
