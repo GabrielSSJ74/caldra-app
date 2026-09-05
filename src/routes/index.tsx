@@ -202,7 +202,7 @@ function Inicio() {
           className="metal group relative col-span-2 row-span-2 flex min-h-[240px] flex-col justify-between overflow-hidden rounded-3xl p-5 transition-all duration-500 hover:amber-ring lg:min-h-[340px]"
         >
           <div className="relative z-10">
-            <span className="tick-label text-accent">01 · Módulo principal</span>
+            <span className="tick-label text-accent"></span>
             <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight lg:text-3xl">
               TRAÇAGEM
             </h2>
@@ -220,7 +220,7 @@ function Inicio() {
         >
           <div className="flex items-center justify-between">
             <PenTool className="size-4 text-accent" strokeWidth={1.4} />
-            <span className="tick-label">02</span>
+            <span className="tick-label">{"\n"}</span>
           </div>
           <div className="pointer-events-none absolute inset-x-2 top-6 h-20 text-accent2/70 opacity-70">
             <MiniPlan />
@@ -234,7 +234,7 @@ function Inicio() {
         >
           <div className="flex items-center justify-between">
             <FolderKanban className="size-4 text-accent" strokeWidth={1.4} />
-            <span className="tick-label">03</span>
+            <span className="tick-label">{"\n"}</span>
           </div>
           <div className="pointer-events-none absolute inset-x-2 top-6 h-20 text-muted-foreground/70">
             <MiniFolders />
@@ -249,7 +249,7 @@ function Inicio() {
           <div className="relative z-10 flex min-w-0 flex-col gap-1">
             <div className="flex items-center gap-2">
               <Sigma className="size-4 text-accent" strokeWidth={1.4} />
-              <span className="tick-label">04</span>
+              <span className="tick-label">{"\n"}</span>
             </div>
             <span className="font-display text-sm font-medium tracking-wide">ESTUDOS</span>
             <span className="font-mono text-[10px] text-muted-foreground">
@@ -265,16 +265,16 @@ function Inicio() {
       {/* informação recente — indicadores compactos */}
       <div className="grid grid-cols-3 gap-px overflow-hidden rounded-2xl bg-border/60">
         <div className="bg-background/70 p-3">
-          <p className="tick-label">Último projeto</p>
-          <p className="mt-1 truncate text-[12px]">{project?.name ?? "—"}</p>
+          <p className="tick-label">{"\n"}</p>
+          <p className="mt-1 truncate text-[12px]">{"\n"}</p>
         </div>
         <div className="bg-background/70 p-3">
-          <p className="tick-label">Última peça</p>
-          <p className="mt-1 truncate text-[12px]">{last?.label ?? "—"}</p>
+          <p className="tick-label">{"\n"}</p>
+          <p className="mt-1 truncate text-[12px]">{"\n"}</p>
         </div>
         <div className="bg-background/70 p-3">
-          <p className="tick-label">Progresso</p>
-          <p className="mt-1 font-mono text-[13px] text-accent">{project?.progress ?? 0}%</p>
+          <p className="tick-label">{"\n"}</p>
+          <p className="mt-1 font-mono text-[13px] text-accent">{"\n"}</p>
         </div>
       </div>
     </div>
