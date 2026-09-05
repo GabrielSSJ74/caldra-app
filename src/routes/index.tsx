@@ -115,7 +115,7 @@ function Inicio() {
         </p>
         <div className="mt-3 flex items-center gap-3">
           <span className="h-px flex-1 bg-gradient-to-r from-accent/60 to-transparent" />
-          <span className="tick-label">Laboratório</span>
+          <span className="tick-label">{"\n"}</span>
         </div>
       </header>
 
