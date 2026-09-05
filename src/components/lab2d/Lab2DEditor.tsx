@@ -378,8 +378,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [view],
   );
 
-  const fitTo = useCallback((list: Entity[]) => {
-    const box = bbox(list);
+  /** Enquadra uma caixa do desenho na viewport (margem visual, escala 1:1 preservada). */
+  const fitBox = useCallback((box: Box | null) => {
     const el = svgRef.current;
     if (!box || !el) return;
     const r = el.getBoundingClientRect();
@@ -392,6 +392,34 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       ty: r.height / 2 - ((box.minY + box.maxY) / 2) * k,
     });
   }, []);
+
+  const fitTo = useCallback((list: Entity[]) => fitBox(bbox(list)), [fitBox]);
+
+  /** Enquadra a moldura de trabalho inteira. */
+  const fitFrame = useCallback(() => fitBox(frameBox(frame)), [fitBox, frame]);
+
+  /**
+   * CENTRALIZAR PEÇA — por padrão move somente a visualização; com `moveGeometry`
+   * desloca a geometria (sem nenhuma escala) para o centro da área de trabalho.
+   */
+  const centerPiece = useCallback(
+    (moveGeometry: boolean) => {
+      const box = bbox(entities);
+      if (!box) {
+        fitFrame();
+        return;
+      }
+      if (!moveGeometry) {
+        fitBox(box);
+        return;
+      }
+      const { dx, dy } = centerOffset(box, frame);
+      commit((list) => list.map((e) => translate(e, dx, dy)));
+      requestAnimationFrame(() => fitBox(frameBox(frame)));
+      toast.success("Peça centralizada na área de trabalho.");
+    },
+    [entities, frame, fitBox, fitFrame, commit],
+  );
 
   /* ------------------------------------------------------------ zoom roda */
   const viewRef = useRef(view);
