@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as BibliotecaRouteImport } from './routes/biblioteca'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as ContaRouteImport } from './routes/conta'
+import { Route as MatrizVisualRouteImport } from './routes/matriz-visual'
+import { Route as NovidadesRouteImport } from './routes/novidades'
 import { Route as OficinaRouteImport } from './routes/oficina'
 import { Route as PlanificacaoRouteImport } from './routes/planificacao'
 import { Route as PrivacidadeRouteImport } from './routes/privacidade'
@@ -45,6 +47,16 @@ const ConfiguracoesRoute = ConfiguracoesRouteImport.update({
 const ContaRoute = ContaRouteImport.update({
   id: '/conta',
   path: '/conta',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MatrizVisualRoute = MatrizVisualRouteImport.update({
+  id: '/matriz-visual',
+  path: '/matriz-visual',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NovidadesRoute = NovidadesRouteImport.update({
+  id: '/novidades',
+  path: '/novidades',
   getParentRoute: () => rootRouteImport,
 } as any)
 const OficinaRoute = OficinaRouteImport.update({
@@ -118,6 +130,8 @@ export interface FileRoutesByFullPath {
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/conta': typeof ContaRoute
+  '/matriz-visual': typeof MatrizVisualRoute
+  '/novidades': typeof NovidadesRoute
   '/oficina': typeof OficinaRoute
   '/planificacao': typeof PlanificacaoRoute
   '/privacidade': typeof PrivacidadeRoute
@@ -137,6 +151,8 @@ export interface FileRoutesByTo {
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/conta': typeof ContaRoute
+  '/matriz-visual': typeof MatrizVisualRoute
+  '/novidades': typeof NovidadesRoute
   '/oficina': typeof OficinaRoute
   '/planificacao': typeof PlanificacaoRoute
   '/privacidade': typeof PrivacidadeRoute
@@ -157,6 +173,8 @@ export interface FileRoutesById {
   '/biblioteca': typeof BibliotecaRoute
   '/configuracoes': typeof ConfiguracoesRoute
   '/conta': typeof ContaRoute
+  '/matriz-visual': typeof MatrizVisualRoute
+  '/novidades': typeof NovidadesRoute
   '/oficina': typeof OficinaRoute
   '/planificacao': typeof PlanificacaoRoute
   '/privacidade': typeof PrivacidadeRoute
@@ -178,6 +196,8 @@ export interface FileRouteTypes {
     | '/biblioteca'
     | '/configuracoes'
     | '/conta'
+    | '/matriz-visual'
+    | '/novidades'
     | '/oficina'
     | '/planificacao'
     | '/privacidade'
@@ -197,6 +217,8 @@ export interface FileRouteTypes {
     | '/biblioteca'
     | '/configuracoes'
     | '/conta'
+    | '/matriz-visual'
+    | '/novidades'
     | '/oficina'
     | '/planificacao'
     | '/privacidade'
@@ -216,6 +238,8 @@ export interface FileRouteTypes {
     | '/biblioteca'
     | '/configuracoes'
     | '/conta'
+    | '/matriz-visual'
+    | '/novidades'
     | '/oficina'
     | '/planificacao'
     | '/privacidade'
@@ -236,6 +260,8 @@ export interface RootRouteChildren {
   BibliotecaRoute: typeof BibliotecaRoute
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   ContaRoute: typeof ContaRoute
+  MatrizVisualRoute: typeof MatrizVisualRoute
+  NovidadesRoute: typeof NovidadesRoute
   OficinaRoute: typeof OficinaRoute
   PlanificacaoRoute: typeof PlanificacaoRoute
   PrivacidadeRoute: typeof PrivacidadeRoute
@@ -279,6 +305,20 @@ declare module '@tanstack/react-router' {
       path: '/conta'
       fullPath: '/conta'
       preLoaderRoute: typeof ContaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/matriz-visual': {
+      id: '/matriz-visual'
+      path: '/matriz-visual'
+      fullPath: '/matriz-visual'
+      preLoaderRoute: typeof MatrizVisualRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/novidades': {
+      id: '/novidades'
+      path: '/novidades'
+      fullPath: '/novidades'
+      preLoaderRoute: typeof NovidadesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/oficina': {
@@ -380,6 +420,8 @@ const rootRouteChildren: RootRouteChildren = {
   BibliotecaRoute: BibliotecaRoute,
   ConfiguracoesRoute: ConfiguracoesRoute,
   ContaRoute: ContaRoute,
+  MatrizVisualRoute: MatrizVisualRoute,
+  NovidadesRoute: NovidadesRoute,
   OficinaRoute: OficinaRoute,
   PlanificacaoRoute: PlanificacaoRoute,
   PrivacidadeRoute: PrivacidadeRoute,
