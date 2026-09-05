@@ -248,7 +248,7 @@ function cncCases(): QaCase[] {
       id,
       type: "polyline",
       layer,
-      points: [
+      pts: [
         { x: 0, y: 0 },
         { x: 100, y: 0 },
         { x: 100, y: 100 },
