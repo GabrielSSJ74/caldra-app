@@ -40,6 +40,8 @@ import {
 
 import type { Vec2 } from "@/lib/geometry/types";
 import { ExportDialog } from "@/components/lab2d/ExportDialog";
+import { RotateGate } from "@/components/lab2d/RotateGate";
+import { useImmersiveLandscape } from "@/lib/ui/immersive";
 import { ImportDialog, type ImportSource } from "@/components/lab2d/ImportDialog";
 import { VisionDialog, type VisionImageLayer } from "@/components/lab2d/VisionDialog";
 import {
