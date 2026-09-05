@@ -1895,6 +1895,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           >
             GRID
           </button>
+          <button
+            onClick={() => updateFrame({ visible: !frame.visible })}
+            title={`Área de trabalho ${frame.w} × ${frame.h} mm`}
+            className={cn(
+              "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
+              frame.visible && "text-accent",
+            )}
+          >
+            QUADRO
+          </button>
           <select
             value={grid}
             onChange={(e) => setGrid(Number(e.target.value))}
