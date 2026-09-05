@@ -54,7 +54,7 @@ export function ImportDialog({
 
   return (
     <Dialog open={!!source} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="glass max-w-lg border-0">
+      <DialogContent className="glass flex max-h-[70dvh] w-[min(90vw,32rem)] max-w-none flex-col overflow-y-auto border-0">
         <DialogHeader>
           <DialogTitle className="font-display text-lg">Importar</DialogTitle>
         </DialogHeader>

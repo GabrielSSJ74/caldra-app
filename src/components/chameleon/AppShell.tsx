@@ -12,12 +12,18 @@ import { Avatar, ProfileDialog } from "./Profile";
 import { PaywallDialog } from "./Paywall";
 import { AuroraBackground } from "./Aurora";
 import { ShellActionsProvider } from "./ShellActions";
+import { useImmersiveActive } from "@/lib/ui/immersive";
 
 /** Rotas com fundo AURORA. O editor CHAMFER (desenho-2d) nunca entra aqui. */
 const AURORA_ROUTES = ["/", "/tracagem", "/escola", "/projetos", "/oficina", "/configuracoes"];
 
 function auroraVisible(pathname: string) {
   return AURORA_ROUTES.some((r) => (r === "/" ? pathname === "/" : pathname.startsWith(r)));
+}
+
+/** Editor CHAMFER aberto: tela cheia imersiva, sem navegação global. */
+function immersiveRoute(pathname: string) {
+  return /^\/desenho-2d\/[^/]+/.test(pathname);
 }
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -28,6 +34,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const intro = useIntro();
   const profile = useProfile();
   const showOnboarding = profile.ready && !intro.show && !profile.onboarded;
+  const editorMounted = useImmersiveActive();
+  const immersive = immersiveRoute(pathname) && editorMounted;
 
   return (
     <ShellActionsProvider
@@ -44,6 +52,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         </div>
 
+        {!immersive && (
         <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
           <button
             onClick={() => setMasterOpen(true)}
@@ -64,12 +73,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Avatar photo={profile.photo} size={36} className="backdrop-blur-xl" />
           </button>
         </div>
+        )}
 
-        <main className="fade-up relative z-10 min-w-0 flex-1 px-4 pt-16 pb-28 lg:px-10 lg:pt-16 lg:pb-24">
-          <div className="mx-auto w-full max-w-6xl">{children}</div>
+        <main
+          className={cn(
+            "fade-up relative z-10 min-w-0 flex-1",
+            immersive ? "p-0" : "px-4 pt-16 pb-28 lg:px-10 lg:pt-16 lg:pb-24",
+          )}
+        >
+          <div className={cn(immersive ? "w-full" : "mx-auto w-full max-w-6xl")}>{children}</div>
         </main>
 
-        <BubbleNav />
+        {!immersive && <BubbleNav />}
         <MasterModeDialog open={masterOpen} onOpenChange={setMasterOpen} />
         <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
         <PaywallDialog />

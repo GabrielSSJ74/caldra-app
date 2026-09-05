@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
+  ArrowLeft,
   Circle as CircleIcon,
   Copy,
   Download,
@@ -38,6 +40,8 @@ import {
 
 import type { Vec2 } from "@/lib/geometry/types";
 import { ExportDialog } from "@/components/lab2d/ExportDialog";
+import { RotateGate } from "@/components/lab2d/RotateGate";
+import { useDeclareImmersive, useImmersiveLandscape } from "@/lib/ui/immersive";
 import { ImportDialog, type ImportSource } from "@/components/lab2d/ImportDialog";
 import { VisionDialog, type VisionImageLayer } from "@/components/lab2d/VisionDialog";
 import {
@@ -172,6 +176,13 @@ const SNAP_GLYPH: Record<Snap["kind"], string> = {
 
 export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const { isMestre } = useFeatureAccess();
+  const navigate = useNavigate();
+  const { needsRotate, request: requestLandscape, release } = useImmersiveLandscape(true);
+  useDeclareImmersive(true);
+  const [rotateDismissed, setRotateDismissed] = useState(false);
+  const leaveEditor = useCallback(() => {
+    void release().finally(() => void navigate({ to: "/desenho-2d" }));
+  }, [navigate, release]);
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1158,15 +1169,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     <div
       ref={wrapRef}
       className={cn(
-        "metal flex flex-col gap-2 overflow-hidden rounded-3xl p-2",
+        "metal fixed inset-0 z-50 flex h-[100dvh] w-screen flex-col gap-2 overflow-hidden rounded-none p-2",
         isMestre && "glow-ring",
-        focus ? "fixed inset-0 z-50 rounded-none" : "h-[74vh] min-h-[460px]",
       )}
     >
+      {needsRotate && !rotateDismissed && (
+        <RotateGate
+          onRetry={() => void requestLandscape()}
+          onContinue={() => setRotateDismissed(true)}
+          onExit={leaveEditor}
+        />
+      )}
       {/* REGIÃO A — HEADER */}
       {!focus && (
         <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
           <div className="flex min-w-0 items-center gap-2">
+            <button
+              onClick={leaveEditor}
+              aria-label="Sair do CHAMFER"
+              className="flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase hover:text-accent"
+            >
+              <ArrowLeft className="size-3.5" /> Sair
+            </button>
             <span className="tick-label shrink-0 text-accent">CHAMFER</span>
             {project && (
               <span className="tick-label truncate text-muted-foreground">{project.name}</span>
@@ -1631,13 +1655,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           )}
 
           {focus && (
-            <button
-              onClick={() => setFocus(false)}
-              aria-label="Sair do foco"
-              className="metal absolute top-2 right-2 z-10 grid size-9 place-items-center rounded-xl text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-4" />
-            </button>
+            <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+              <button
+                onClick={leaveEditor}
+                aria-label="Sair do CHAMFER"
+                className="metal flex items-center gap-1 rounded-xl px-2.5 py-2 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase hover:text-accent"
+              >
+                <ArrowLeft className="size-3.5" /> Sair
+              </button>
+              <button
+                onClick={() => setFocus(false)}
+                aria-label="Sair do foco"
+                className="metal grid size-9 place-items-center rounded-xl text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
           )}
         </div>
 

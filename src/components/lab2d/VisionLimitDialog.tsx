@@ -20,7 +20,7 @@ export function VisionLimitDialog({
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="glass w-[calc(100vw-1.5rem)] max-w-md border-0">
+      <DialogContent className="glass max-h-[70dvh] w-[min(90vw,28rem)] max-w-none overflow-y-auto border-0">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-display">
             <Sparkles className="size-4 text-pro" />

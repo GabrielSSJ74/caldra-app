@@ -1,5 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
-import { ChevronLeft } from "lucide-react";
+import { createFileRoute } from "@tanstack/react-router";
 import { FeatureGate } from "@/components/chameleon/ui";
 import { Lab2DEditor } from "@/components/lab2d/Lab2DEditor";
 
@@ -32,15 +31,7 @@ function Lab2DPage() {
       title="CHAMFER"
       description="A prancheta vetorial faz parte do Modo Mestre."
     >
-      <div className="space-y-2">
-        <Link
-          to="/desenho-2d"
-          className="inline-flex items-center gap-1 font-mono text-[10px] tracking-[0.2em] text-muted-foreground uppercase transition-colors hover:text-accent"
-        >
-          <ChevronLeft className="size-3.5" /> Projetos
-        </Link>
-        <Lab2DEditor projectId={projectId} />
-      </div>
+      <Lab2DEditor projectId={projectId} />
     </FeatureGate>
   );
 }
