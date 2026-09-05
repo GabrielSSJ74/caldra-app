@@ -176,6 +176,12 @@ const SNAP_GLYPH: Record<Snap["kind"], string> = {
 
 export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const { isMestre } = useFeatureAccess();
+  const navigate = useNavigate();
+  const { needsRotate, request: requestLandscape, release } = useImmersiveLandscape(true);
+  const [rotateDismissed, setRotateDismissed] = useState(false);
+  const leaveEditor = useCallback(() => {
+    void release().finally(() => void navigate({ to: "/desenho-2d" }));
+  }, [navigate, release]);
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
