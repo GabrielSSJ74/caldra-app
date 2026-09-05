@@ -102,7 +102,6 @@ import {
   fitsInFrame,
   frameBox,
   frameForBox,
-  frameForBox as frameToFit,
   loadFrame,
   saveFrame,
   clampSide,
