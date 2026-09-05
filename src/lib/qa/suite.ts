@@ -11,6 +11,19 @@ import { calculateSquareToRound, SQUARE_TO_ROUND_DEFAULTS } from "@/lib/geometry
 import { circumference, coneSector, mitredElbow } from "@/lib/geometry/conference";
 import { plateMassKg, tubeMassKg, materialCostBRL } from "@/lib/geometry/mass";
 import { parseLength } from "@/lib/units/parse";
+import type { Entity } from "@/lib/lab2d/core";
+import { reverseEntity, startPointOf } from "@/lib/lab2d/cutPlan";
+import {
+  cncLayerOf,
+  cncOf,
+  withCnc,
+  orientationOf,
+  leadPolyline,
+  DEFAULT_LEAD,
+} from "@/lib/lab2d/manufacturing";
+import { buildCncDxf, cncCutLength, verifyCncDxf, DEFAULT_CNC_OPTIONS } from "@/lib/dxf/cncExport";
+import { exportDxf } from "@/lib/dxf/dxfService";
+
 
 export type QaCase = {
   group: string;
