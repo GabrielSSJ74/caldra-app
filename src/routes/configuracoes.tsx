@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { readConsent, setConsent } from "@/lib/analytics/consent";
 import { toast } from "sonner";
-import { Sparkles, Bug } from "lucide-react";
+import { Sparkles, Bug, HardDriveDownload } from "lucide-react";
 import { PLAN_LABEL } from "@/lib/subscription/features";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import {
@@ -19,6 +19,7 @@ import { PhotoPicker } from "@/components/chameleon/Profile";
 import { useProfile } from "@/lib/profile/ProfileProvider";
 import { Button } from "@/components/chameleon/ds";
 import { ReportProblemDialog } from "@/components/chameleon/ReportProblemDialog";
+import { BackupDialog } from "@/components/chameleon/BackupDialog";
 import { APP_VERSION, APP_BUILD } from "@/lib/app/version";
 import { cn } from "@/lib/utils";
 
@@ -78,6 +79,7 @@ function Configuracoes() {
   } = useSettings();
   const [code, setCode] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
   const [consent, setConsentState] = useState(false);
   useEffect(() => setConsentState(readConsent()), []);
   const { photo, displayName, role, name, update } = useProfile();
@@ -216,6 +218,22 @@ function Configuracoes() {
       </Panel>
 
       <Panel className="space-y-3 p-4">
+        <SectionLabel>Backup</SectionLabel>
+        <p className="text-[13px] text-muted-foreground">
+          Salve um arquivo com projetos, materiais, preferências e perfil — e traga tudo de volta em
+          outro aparelho.
+        </p>
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={HardDriveDownload}
+          onClick={() => setBackupOpen(true)}
+        >
+          Backup e restauração
+        </Button>
+      </Panel>
+
+      <Panel className="space-y-3 p-4">
         <SectionLabel>Suporte</SectionLabel>
         <p className="text-[13px] text-muted-foreground">
           Versão {APP_VERSION} · compilação {APP_BUILD}
@@ -233,6 +251,8 @@ function Configuracoes() {
         </div>
       </Panel>
       <ReportProblemDialog open={reportOpen} onOpenChange={setReportOpen} />
+      <BackupDialog open={backupOpen} onOpenChange={setBackupOpen} />
+
 
 
 

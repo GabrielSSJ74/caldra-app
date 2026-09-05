@@ -24,7 +24,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Onboarding máx. 3 telas, pulável
 - [ ] Projeto-exemplo marcado EXEMPLO, removível, com dicas contextuais
 - [ ] Sentry via env + analytics de funil (provider plugável, sem PII)
-- [ ] Backup .cal exportar/importar (schema versionado, substituir ou mesclar)
+- [x] Backup .cal exportar/importar (schema versionado, substituir ou mesclar)
 - [ ] Histórico de cálculos, favoritos, duplicar peça, biblioteca de componentes
 - [ ] Modo Oficina (alto contraste, alvos 56px, persistente)
 - [ ] QA ampliado: migração de backup, entitlement, funil
