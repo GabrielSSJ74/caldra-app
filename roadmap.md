@@ -48,7 +48,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Parte 3.0 — CHAMFER em tela cheia + paisagem obrigatória + modais contidos
 - [x] Parte 1 — WORKSPACE_FRAME 1500x3000 paramétrico, auto-fit da Traçagem, Centralizar Peça
 - [x] Parte 2 — Design System CALDRA (escala tipográfica, foco/desabilitado, botões, skeleton/spinner, estados de erro) em `src/components/chameleon/ds.tsx` + tokens em `styles.css`
-- [ ] Parte 3 — Feedback de instrumento técnico (estados GEOMETRIA/PLANIFICAÇÃO/FABRICAÇÃO)
+- [x] Parte 3 — Feedback de instrumento técnico (barra GEOMETRIA · PLANIFICAÇÃO · FABRICAÇÃO nos estúdios)
 - [ ] Parte 4 — Cold start, matriz visual, ícone/splash, changelog, reportar problema
 
 ## Decisões pendentes do usuário
