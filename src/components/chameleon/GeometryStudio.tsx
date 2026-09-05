@@ -22,6 +22,7 @@ import { MassCostPanel } from "./MassCostPanel";
 import { SmartNumberInput } from "./SmartNumberInput";
 import { LearnDialog } from "./LearnDialog";
 import { Metric, Panel, SectionLabel } from "./ui";
+import { StageBar } from "./StageBar";
 
 const BASE_TABS = [
   "Dimensões",
@@ -313,6 +314,8 @@ export function GeometryStudio({ slug, name }: Props) {
               <Check className="size-3" /> Desenvolvimento calculado
             </span>
           </div>
+
+          <StageBar tab={tab} tabs={tabs} onJump={setTab} />
 
           <div className="mb-4 flex gap-1 overflow-x-auto pb-1">
             {tabs.map((t) => (
