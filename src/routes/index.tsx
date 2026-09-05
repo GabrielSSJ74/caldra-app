@@ -29,7 +29,7 @@ function MiniPlan() {
   return (
     <svg viewBox="0 0 120 80" className="size-full" aria-hidden>
       {/* grid ortogonal 90° */}
-      <g stroke="currentColor" strokeWidth=".4" opacity=".28">
+      <g stroke="#000000" strokeWidth=".4" opacity=".5">
         {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110].map((x) => (
           <path key={`v${x}`} d={`M${x} 6 V74`} />
         ))}
@@ -83,12 +83,13 @@ function MiniPlan() {
 
       {/* esquadro 90° no canto superior esquerdo */}
       <path
-        d="M8 24 V6 H32"
+        d="M8 42 V6 H60"
         fill="none"
         stroke="currentColor"
-        strokeWidth="2.4"
+        strokeWidth="1.2"
         strokeLinecap="square"
       />
+
 
 
       {/* lápis 2D desenhando o último furo */}
