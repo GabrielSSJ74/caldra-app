@@ -20,6 +20,7 @@ import { Wire3D } from "./Wire3D";
 import { DevelopmentView } from "./DevelopmentView";
 import { SchematicSquareToRound } from "./SchematicSquareToRound";
 import { Metric, Panel, SectionLabel } from "./ui";
+import { StageBar } from "./StageBar";
 
 
 type FieldKey = keyof SquareToRoundInput;
@@ -273,6 +274,8 @@ export function SquareToRoundStudio() {
               <Check className="size-3" /> Desenvolvimento calculado
             </span>
           </div>
+
+          <StageBar tab={tab} tabs={TABS} onJump={(t) => setTab(t as Tab)} />
 
           <div className="mb-4 flex gap-1 overflow-x-auto pb-1">
             {TABS.map((t) => (
