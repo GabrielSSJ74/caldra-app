@@ -11,6 +11,19 @@ import { calculateSquareToRound, SQUARE_TO_ROUND_DEFAULTS } from "@/lib/geometry
 import { circumference, coneSector, mitredElbow } from "@/lib/geometry/conference";
 import { plateMassKg, tubeMassKg, materialCostBRL } from "@/lib/geometry/mass";
 import { parseLength } from "@/lib/units/parse";
+import type { Entity } from "@/lib/lab2d/core";
+import { reverseEntity, startPointOf } from "@/lib/lab2d/cutPlan";
+import {
+  cncLayerOf,
+  cncOf,
+  withCnc,
+  orientationOf,
+  leadPolyline,
+  DEFAULT_LEAD,
+} from "@/lib/lab2d/manufacturing";
+import { buildCncDxf, cncCutLength, verifyCncDxf, DEFAULT_CNC_OPTIONS } from "@/lib/dxf/cncExport";
+import { exportDxf } from "@/lib/dxf/dxfService";
+
 
 export type QaCase = {
   group: string;
@@ -218,8 +231,73 @@ export function runQaSuite(): QaCase[] {
     t.push(check("Catálogo", `${g.name} — cálculo íntegro`, 1, ok, "bool"));
   }
 
+  /* ------------------------------------------------------ CNC / CypCut */
+  t.push(...cncCases());
+
   return t;
 }
+
+/**
+ * QA de fabricação: direção, sequência, layers, lead-in/out e ida-e-volta
+ * pelo arquivo DXF CNC (exporta, relê e compara).
+ */
+function cncCases(): QaCase[] {
+  const t: QaCase[] = [];
+  const sq = (id: string, layer: string): Entity =>
+    ({
+      id,
+      type: "polyline",
+      layer,
+      pts: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+        { x: 100, y: 100 },
+        { x: 0, y: 100 },
+      ],
+      closed: true,
+    }) as unknown as Entity;
+
+  const cut = sq("q1", "corte");
+  const mark = sq("q2", "marcacao");
+
+  t.push(check("CNC", "Layer de corte mapeia CUT", 1, cncLayerOf(cut.layer) === "CUT" ? 1 : 0, "bool"));
+  t.push(check("CNC", "Layer de marcação mapeia MARK", 1, cncLayerOf(mark.layer) === "MARK" ? 1 : 0, "bool"));
+
+  const ori = orientationOf(cut);
+  const rev = orientationOf(reverseEntity(cut));
+  t.push(check("CNC", "Inverter sentido troca a orientação", 1, ori !== rev && rev !== "open" ? 1 : 0, "bool"));
+
+  const seq = [withCnc(cut, { sequence: 1 }), withCnc(mark, { sequence: 2 })];
+  t.push(
+    check("CNC", "Sequência preservada na ordem", 1, cncOf(seq[0]!).sequence === 1 && cncOf(seq[1]!).sequence === 2 ? 1 : 0, "bool"),
+  );
+
+  const led = withCnc(cut, { leadIn: { ...DEFAULT_LEAD, kind: "line", length: 5 } });
+  const poly = leadPolyline(led, "in");
+  const s = startPointOf(led);
+  t.push(
+    check(
+      "CNC",
+      "Lead-in conecta no ponto inicial",
+      0,
+      poly ? Math.hypot(poly[poly.length - 1]!.x - s.x, poly[poly.length - 1]!.y - s.y) : 99,
+      "mm",
+    ),
+  );
+
+  const opts = { ...DEFAULT_CNC_OPTIONS };
+  const doc = buildCncDxf([cut, mark], opts);
+  const text = exportDxf(doc);
+  const v = verifyCncDxf([cut, mark], opts, text);
+  t.push(check("CNC", "DXF CNC relido confere", 1, v.ok ? 1 : 0, "bool"));
+  t.push(check("CNC", "Sem REFERENCE/DIMENSION por padrão", 0, doc.layers.filter((l) => l.name === "REFERENCE" || l.name === "DIMENSION").length, "un"));
+  t.push(check("CNC", "Comprimento de corte", 400, cncCutLength([cut, mark]), "mm"));
+
+  return t;
+}
+
+
+
 
 export function summarize(cases: QaCase[]) {
   const passed = cases.filter((c) => c.ok).length;
