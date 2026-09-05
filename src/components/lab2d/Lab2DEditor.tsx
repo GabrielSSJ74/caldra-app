@@ -2042,9 +2042,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </select>
           <button
             onClick={() => setShowArrows((s) => !s)}
+            title="FLUXO CALDRA — direção real de corte"
             className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", showArrows && "text-accent")}
           >
-            SETAS
+            FLUXO
           </button>
           <button
             onClick={() => setShowOrder((s) => !s)}
@@ -2052,6 +2053,54 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           >
             ORDEM
           </button>
+          <button
+            onClick={() => {
+              setSimOn((s) => {
+                const next = !s;
+                setSimPlaying(next);
+                setSimDist(0);
+                return next;
+              });
+            }}
+            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", simOn && "text-accent")}
+          >
+            PRÉVIA CNC
+          </button>
+          {simOn && (
+            <>
+              <button
+                onClick={() => setSimPlaying((p) => !p)}
+                className="shrink-0 rounded-full bg-background/40 px-2 py-0.5 text-accent"
+              >
+                {simPlaying ? "PAUSAR" : "TOCAR"}
+              </button>
+              <button
+                onClick={() => {
+                  setSimDist(0);
+                  setSimPlaying(false);
+                }}
+                className="shrink-0 rounded-full bg-background/40 px-2 py-0.5"
+              >
+                REINICIAR
+              </button>
+              <select
+                value={simSpeed}
+                onChange={(e) => setSimSpeed(Number(e.target.value))}
+                aria-label="Velocidade da simulação"
+                className="shrink-0 rounded-full bg-background/40 px-1.5 py-0.5 outline-none"
+              >
+                {[0.5, 1, 2, 4].map((s) => (
+                  <option key={s} value={s}>
+                    {s}×
+                  </option>
+                ))}
+              </select>
+              <span className="shrink-0 rounded-full bg-background/40 px-2 py-0.5 text-accent">
+                {simSample ? `${SIM_LABEL[simSample.kind]} · ${String(simSample.sequence).padStart(2, "0")}` : "—"}
+              </span>
+            </>
+          )}
+
           {(tool === "offset" || tool === "fillet" || tool === "chamfer") && (
             <input
               type="number"
