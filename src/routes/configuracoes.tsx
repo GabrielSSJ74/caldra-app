@@ -211,6 +211,27 @@ function Configuracoes() {
         </div>
       </Panel>
 
+      <Panel className="space-y-3 p-4">
+        <SectionLabel>Suporte</SectionLabel>
+        <p className="text-[13px] text-muted-foreground">
+          Versão {APP_VERSION} · compilação {APP_BUILD}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" size="sm" icon={Bug} onClick={() => setReportOpen(true)}>
+            Reportar um problema
+          </Button>
+          <Link
+            to="/novidades"
+            className="font-mono text-[11px] tracking-[0.16em] text-muted-foreground uppercase underline"
+          >
+            Novidades
+          </Link>
+        </div>
+      </Panel>
+      <ReportProblemDialog open={reportOpen} onOpenChange={setReportOpen} />
+
+
+
 
 
       <Panel className="space-y-4 p-4">
