@@ -1637,7 +1637,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       >
                         {frame.h.toFixed(2)} mm
                       </text>
-                      <text x={6 / view.k} y={-8 / view.k} fontSize={10 / view.k} fillOpacity={0.6}>
+                      <text x={6 / view.k} y={18 / view.k} fontSize={10 / view.k} fillOpacity={0.55}>
                         ÁREA DE TRABALHO
                       </text>
                     </g>
