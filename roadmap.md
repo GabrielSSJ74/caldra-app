@@ -49,7 +49,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Parte 1 — WORKSPACE_FRAME 1500x3000 paramétrico, auto-fit da Traçagem, Centralizar Peça
 - [x] Parte 2 — Design System CALDRA (escala tipográfica, foco/desabilitado, botões, skeleton/spinner, estados de erro) em `src/components/chameleon/ds.tsx` + tokens em `styles.css`
 - [x] Parte 3 — Feedback de instrumento técnico (barra GEOMETRIA · PLANIFICAÇÃO · FABRICAÇÃO nos estúdios)
-- [ ] Parte 4 — Cold start, matriz visual, ícone/splash, changelog, reportar problema
+- [x] Parte 4 — Cold start (splash pré-JS), ícone/splash (favicon + manifest + apple-touch), matriz visual (/matriz-visual), changelog (/novidades), reportar problema (diagnóstico + copiar/e-mail)
 
 ## Decisões pendentes do usuário
 - Preços do paywall (mensal / anual / vitalício Pix) — usar placeholders configuráveis até definir
