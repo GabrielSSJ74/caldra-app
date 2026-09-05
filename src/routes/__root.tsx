@@ -122,14 +122,27 @@ r.classList.toggle("dark",dark);r.classList.toggle("amoled",t==="amoled");
 r.classList.toggle("accent-blue",a==="blue");r.classList.toggle("accent-magenta",a==="magenta");
 }catch(e){}})();`;
 
+/** Splash de abertura: pinta antes do JS e some com fade após a montagem. */
+const BOOT_SPLASH_STYLE = `
+#caldra-boot{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0B0B0C;transition:opacity .35s ease;font-family:'Space Grotesk',system-ui,sans-serif}
+#caldra-boot .mark{width:72px;height:72px;border-radius:20px;background:linear-gradient(135deg,#F59E0B,#B45309);display:grid;place-items:center}
+#caldra-boot .mark svg{width:44px;height:44px}
+#caldra-boot p{color:#E4E4E7;font-size:15px;font-weight:600;letter-spacing:.12em;margin:0}
+#caldra-boot span{color:#8A8A93;font-size:10px;letter-spacing:.22em;text-transform:uppercase}
+#caldra-boot.done{opacity:0;pointer-events:none}
+`;
+const BOOT_SPLASH_HTML = `<div class="mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 21.5 12 12 21.5 2.5 12Z" fill="none" stroke="#0B0B0C" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 7.5 16.5 12 12 16.5Z" fill="#0B0B0C"/></svg></div><p>CALDRA</p><span>Traçado · Planificação</span>`;
+
 function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="pt-BR" className="dark">
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+        <style dangerouslySetInnerHTML={{ __html: BOOT_SPLASH_STYLE }} />
         <HeadContent />
       </head>
       <body>
+        <div id="caldra-boot" dangerouslySetInnerHTML={{ __html: BOOT_SPLASH_HTML }} />
         {children}
         <Scripts />
       </body>
@@ -139,6 +152,15 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+
+  // Cold start: remove o splash assim que o app monta.
+  useEffect(() => {
+    const el = document.getElementById("caldra-boot");
+    if (!el) return;
+    el.classList.add("done");
+    const t = window.setTimeout(() => el.remove(), 420);
+    return () => window.clearTimeout(t);
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
