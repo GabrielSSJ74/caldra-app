@@ -38,29 +38,56 @@ function MiniPlan() {
         ))}
       </g>
 
-      {/* peça 2D: contorno ortogonal já desenhado */}
-      <g fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="miter">
-        <path d="M20 60 V30 H50 V20 H80" />
+      {/* flange 2D com 8 furos */}
+      <g fill="none" stroke="currentColor" strokeWidth="1.2">
+        <circle cx="58" cy="40" r="28" />
+        <circle cx="58" cy="40" r="10" />
       </g>
-      {/* rastro do lápis (traço recém-feito) */}
-      <path d="M80 20 V44" fill="none" stroke="var(--accent)" strokeWidth="1.4" />
-      <path
-        d="M80 44 V60 H20"
+      {/* circunferência de furação */}
+      <circle
+        cx="58"
+        cy="40"
+        r="19"
         fill="none"
-        stroke="var(--accent)"
-        strokeWidth="1"
-        strokeDasharray="3 3"
-        opacity=".55"
+        stroke="currentColor"
+        strokeWidth=".6"
+        strokeDasharray="4 3"
+        opacity=".6"
       />
-      {/* furo */}
-      <circle cx="46" cy="46" r="5" fill="none" stroke="currentColor" strokeWidth="1" opacity=".7" />
-
-      {/* lápis 2D */}
-      <g transform="rotate(35 80 44)">
-        <path d="M76 8 h8 v30 h-8 Z" fill="var(--accent)" />
-        <path d="M76 38 h8 l-4 6 Z" fill="currentColor" />
-        <path d="M76 6 h8 v3 h-8 Z" fill="currentColor" opacity=".5" />
+      {/* linhas de centro */}
+      <g stroke="var(--accent)" strokeWidth=".6" opacity=".8">
+        <path d="M26 40 H90" strokeDasharray="6 3 1 3" />
+        <path d="M58 8 V72" strokeDasharray="6 3 1 3" />
       </g>
+      {/* 8 furos */}
+      <g>
+        {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => {
+          const r = (a * Math.PI) / 180;
+          const cx = 58 + 19 * Math.cos(r);
+          const cy = 40 + 19 * Math.sin(r);
+          const drawing = a === 315;
+          return (
+            <circle
+              key={a}
+              cx={cx}
+              cy={cy}
+              r="3.4"
+              fill="none"
+              stroke={drawing ? "var(--accent)" : "currentColor"}
+              strokeWidth={drawing ? 1.4 : 1}
+              strokeDasharray={drawing ? "2.5 2" : undefined}
+            />
+          );
+        })}
+      </g>
+
+      {/* lápis 2D desenhando o último furo */}
+      <g transform="rotate(35 72 27)">
+        <path d="M68 -8 h8 v29 h-8 Z" fill="var(--accent)" />
+        <path d="M68 21 h8 l-4 6 Z" fill="currentColor" />
+        <path d="M68 -10 h8 v3 h-8 Z" fill="currentColor" opacity=".5" />
+      </g>
+
     </svg>
   );
 }
