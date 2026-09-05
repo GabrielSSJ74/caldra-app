@@ -1168,15 +1168,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     <div
       ref={wrapRef}
       className={cn(
-        "metal flex flex-col gap-2 overflow-hidden rounded-3xl p-2",
+        "metal fixed inset-0 z-50 flex h-[100dvh] w-screen flex-col gap-2 overflow-hidden rounded-none p-2",
         isMestre && "glow-ring",
-        focus ? "fixed inset-0 z-50 rounded-none" : "h-[74vh] min-h-[460px]",
       )}
     >
+      {needsRotate && !rotateDismissed && (
+        <RotateGate
+          onRetry={() => void requestLandscape()}
+          onContinue={() => setRotateDismissed(true)}
+          onExit={leaveEditor}
+        />
+      )}
       {/* REGIÃO A — HEADER */}
       {!focus && (
         <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
           <div className="flex min-w-0 items-center gap-2">
+            <button
+              onClick={leaveEditor}
+              aria-label="Sair do CHAMFER"
+              className="flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase hover:text-accent"
+            >
+              <ArrowLeft className="size-3.5" /> Sair
+            </button>
             <span className="tick-label shrink-0 text-accent">CHAMFER</span>
             {project && (
               <span className="tick-label truncate text-muted-foreground">{project.name}</span>
