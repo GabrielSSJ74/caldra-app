@@ -1654,13 +1654,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           )}
 
           {focus && (
-            <button
-              onClick={() => setFocus(false)}
-              aria-label="Sair do foco"
-              className="metal absolute top-2 right-2 z-10 grid size-9 place-items-center rounded-xl text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-4" />
-            </button>
+            <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+              <button
+                onClick={leaveEditor}
+                aria-label="Sair do CHAMFER"
+                className="metal flex items-center gap-1 rounded-xl px-2.5 py-2 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase hover:text-accent"
+              >
+                <ArrowLeft className="size-3.5" /> Sair
+              </button>
+              <button
+                onClick={() => setFocus(false)}
+                aria-label="Sair do foco"
+                className="metal grid size-9 place-items-center rounded-xl text-muted-foreground hover:text-foreground"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
           )}
         </div>
 
