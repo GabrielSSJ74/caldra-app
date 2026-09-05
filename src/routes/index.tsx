@@ -92,14 +92,6 @@ function MiniPlan() {
         })}
       </g>
 
-      {/* esquadro 90° no canto superior esquerdo */}
-      <path
-        d="M8 42 V6 H60"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.2"
-        strokeLinecap="square"
-      />
 
 
 
