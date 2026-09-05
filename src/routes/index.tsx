@@ -254,21 +254,6 @@ function Inicio() {
         </Link>
       </div>
 
-      {/* informação recente — indicadores compactos */}
-      <div className="grid grid-cols-3 gap-px overflow-hidden rounded-2xl bg-border/60">
-        <div className="bg-background/70 p-3">
-          <p className="tick-label">{"\n"}</p>
-          <p className="mt-1 truncate text-[12px]">{"\n"}</p>
-        </div>
-        <div className="bg-background/70 p-3">
-          <p className="tick-label">{"\n"}</p>
-          <p className="mt-1 truncate text-[12px]">{"\n"}</p>
-        </div>
-        <div className="bg-background/70 p-3">
-          <p className="tick-label">{"\n"}</p>
-          <p className="mt-1 font-mono text-[13px] text-accent">{"\n"}</p>
-        </div>
-      </div>
     </div>
   );
 }
