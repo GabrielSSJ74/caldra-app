@@ -44,5 +44,12 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Regional (Brasil/Portugal/EUA/Europa: moeda, formato, chapas e imposto padrão)
 - Rota `/oficina` reúne CHAPA · CUSTO · ORÇAMENTO · FICHA · NUVEM
 
+## Professionalization Pass
+- [x] Parte 3.0 — CHAMFER em tela cheia + paisagem obrigatória + modais contidos
+- [x] Parte 1 — WORKSPACE_FRAME 1500x3000 paramétrico, auto-fit da Traçagem, Centralizar Peça
+- [ ] Parte 2 — Design System CALDRA (tipografia, estados, loaders, erros)
+- [ ] Parte 3 — Feedback de instrumento técnico (estados GEOMETRIA/PLANIFICAÇÃO/FABRICAÇÃO)
+- [ ] Parte 4 — Cold start, matriz visual, ícone/splash, changelog, reportar problema
+
 ## Decisões pendentes do usuário
 - Preços do paywall (mensal / anual / vitalício Pix) — usar placeholders configuráveis até definir
