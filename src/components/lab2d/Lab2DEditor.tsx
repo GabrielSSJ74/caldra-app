@@ -115,9 +115,15 @@ import { buildIndex } from "@/lib/lab2d/spatialIndex";
 import { drawScene } from "@/lib/lab2d/canvasScene";
 import { stressEntities } from "@/lib/lab2d/stress";
 import { CutPanel } from "@/components/lab2d/CutPanel";
+import { MultiSelectPanel } from "@/components/lab2d/MultiSelectPanel";
+import { CncExportDialog } from "@/components/lab2d/CncExportDialog";
+import { usePanelSide } from "@/lib/lab2d/panelSide";
+import { drawFlow, drawSim } from "@/lib/lab2d/flow";
+import { buildSimPath, sampleSim, SIM_LABEL } from "@/lib/lab2d/simulation";
 import { expandSelection, pruneGroups, type GroupDef } from "@/lib/lab2d/groups";
 import { isCutPath, setStartPoint, startPointOf, endPointOf } from "@/lib/lab2d/cutPlan";
 import { revalidateShared, type ShareCandidate } from "@/lib/lab2d/sharedCut";
+
 
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 
@@ -232,6 +238,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [groups, setGroups] = useState<GroupDef[]>([]);
   const [showArrows, setShowArrows] = useState(false);
   const [showOrder, setShowOrder] = useState(false);
+  const [cncOpen, setCncOpen] = useState(false);
+  /* PRÉVIA CNC — simulação de trajetória (apenas visual) */
+  const [simOn, setSimOn] = useState(false);
+  const [simPlaying, setSimPlaying] = useState(false);
+  const [simSpeed, setSimSpeed] = useState(1);
+  const [simDist, setSimDist] = useState(0);
+
   const [startPicking, setStartPicking] = useState(false);
   const [shareHint, setShareHint] = useState<ShareCandidate | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
@@ -610,6 +623,122 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     );
     return () => cancelAnimationFrame(id);
   }, [drawIndex, view, selectionSet, gesturing, canvasSize]);
+
+  /* ------------------------------------------------------- FLUXO CALDRA */
+  /*
+   * Camada de UI própria: chevrons, anel de origem e simulação.
+   * Fica fora do canvas de geometria para não redesenhar a cena por frame,
+   * e só anima enquanto a ferramenta de direção/simulação está ativa.
+   */
+  const flowRef = useRef<HTMLCanvasElement | null>(null);
+  const simPath = useMemo(
+    () => (simOn ? buildSimPath(drawable) : null),
+    [simOn, drawable],
+  );
+  const simSample = useMemo(
+    () => (simPath ? sampleSim(simPath, simDist) : null),
+    [simPath, simDist],
+  );
+
+  useEffect(() => {
+    const el = flowRef.current;
+    if (!el || !canvasSize.w || !canvasSize.h) return;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const pw = Math.round(canvasSize.w * dpr);
+    const ph = Math.round(canvasSize.h * dpr);
+    if (el.width !== pw) el.width = pw;
+    if (el.height !== ph) el.height = ph;
+    const ctx = el.getContext("2d");
+    if (!ctx) return;
+
+    const active = showArrows || showOrder || simOn;
+    const clear = () => {
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, canvasSize.w, canvasSize.h);
+    };
+    if (!active) {
+      clear();
+      return;
+    }
+
+    const paint = (phase: number) => {
+      clear();
+      drawFlow(ctx, drawable, {
+        view,
+        width: canvasSize.w,
+        height: canvasSize.h,
+        dpr,
+        arrows: showArrows,
+        order: showOrder,
+        phase,
+        leads: showArrows || simOn,
+      });
+      if (simSample) drawSim(ctx, simSample, { view, dpr });
+    };
+
+    // estático quando a animação não é necessária (sem CPU em segundo plano)
+    const animate = showArrows && !gesturing && !document.hidden;
+    if (!animate) {
+      const id = requestAnimationFrame(() => paint(0));
+      return () => cancelAnimationFrame(id);
+    }
+
+    let raf = 0;
+    let last = 0;
+    let phase = 0;
+    let stopped = false;
+    const FRAME = 1000 / 30; // ~30 FPS
+    const loop = (t: number) => {
+      if (stopped) return;
+      if (t - last >= FRAME) {
+        phase = (phase + 1.1) % 1e6;
+        last = t;
+        paint(phase);
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    const onVis = () => {
+      if (document.hidden) {
+        stopped = true;
+        cancelAnimationFrame(raf);
+      } else if (stopped) {
+        stopped = false;
+        raf = requestAnimationFrame(loop);
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    raf = requestAnimationFrame(loop);
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(raf);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [drawable, view, canvasSize, showArrows, showOrder, simOn, simSample, gesturing]);
+
+  /* avanço da simulação */
+  useEffect(() => {
+    if (!simOn || !simPlaying || !simPath) return;
+    let raf = 0;
+    let last = performance.now();
+    const loop = (t: number) => {
+      const dt = t - last;
+      if (dt >= 1000 / 30) {
+        last = t;
+        setSimDist((d) => {
+          const next = d + (simPath.total / 6) * simSpeed * (dt / 1000);
+          if (next >= simPath.total) {
+            setSimPlaying(false);
+            return simPath.total;
+          }
+          return next;
+        });
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [simOn, simPlaying, simPath, simSpeed]);
+
 
   /* teste de estresse: ?stress=5000 gera milhares de entidades sintéticas */
   useEffect(() => {
@@ -1031,9 +1160,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     );
 
   const selBox = useMemo(() => bbox(selected), [selected]);
+  /* leitura fora do ciclo de render: medir nunca dispara novo render */
+  const selBoxRef = useRef<Box | null>(null);
+  selBoxRef.current = selBox;
   const center: Vec2 = selBox
     ? { x: (selBox.minX + selBox.maxX) / 2, y: (selBox.minY + selBox.maxY) / 2 }
     : { x: 0, y: 0 };
+
 
   const onImportConfirm = (next: Entity[]) => {
     commit((e) => [...e, ...next]);
@@ -1101,17 +1234,32 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const gridStep = grid * view.k < 6 ? grid * 10 : grid;
 
-  /* posicionamento inteligente: painel do lado oposto ao objeto selecionado */
-  const panelSide: "left" | "right" = useMemo(() => {
-    if (!selBox || !svgRef.current) return "right";
-    const w = svgRef.current.getBoundingClientRect().width || 1;
-    const cx = view.tx + ((selBox.minX + selBox.maxX) / 2) * view.k;
-    return cx > w * 0.58 ? "left" : "right";
-  }, [selBox, view]);
-
   const panelOpen = !focus && (selected.length > 0 || showLayers || showCut);
+
+  /*
+   * PANEL POSITION MANAGER — fonte única do lado do painel.
+   * A assinatura muda só em evento significativo (abertura, nova seleção,
+   * mudança de tipo de seleção, troca de aba). `view` NÃO entra aqui: era
+   * exatamente isso que provocava o vaivém esquerda/direita.
+   */
+  const panelSignature = `${showLayers ? "L" : showCut ? "C" : "P"}|${
+    selected.length === 0 ? "none" : selected.length === 1 ? `one:${selected[0]!.id}` : "multi"
+  }`;
+  const measurePanel = useCallback(() => {
+    const el = svgRef.current;
+    const width = el?.getBoundingClientRect().width ?? 0;
+    const b = selBoxRef.current;
+    const v = viewRef.current;
+    return {
+      width,
+      centerX: b ? v.tx + ((b.minX + b.maxX) / 2) * v.k : null,
+    };
+  }, []);
+  const panelSide = usePanelSide(panelOpen, panelSignature, measurePanel);
+
   const primaryTools = TOOLS.filter((t) => PRIMARY.includes(t.id));
   const extraTools = TOOLS.filter((t) => !PRIMARY.includes(t.id));
+
 
   const aside = panelOpen ? (
     <aside className="metal hairline flex w-56 shrink-0 flex-col overflow-y-auto rounded-2xl p-2">
@@ -1233,7 +1381,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       ) : (
         <div className="space-y-2">
-          <p className="tick-label text-muted-foreground">{selected.length} objetos</p>
           {activeGroup && (
             <div className="flex items-center gap-1">
               <span className="rounded-full bg-accent/15 px-2 py-0.5 font-mono text-[9px] text-accent">
@@ -1247,9 +1394,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </button>
             </div>
           )}
-          <div className="flex flex-wrap gap-1">{selectionActions}</div>
+          <MultiSelectPanel
+            entities={entities}
+            selected={selected}
+            setSelection={setSelection}
+            commit={commit}
+            layers={layers}
+            groups={groups}
+            setGroups={setGroups}
+          />
+          <div className="flex flex-wrap gap-1 border-t border-line pt-2">{selectionActions}</div>
         </div>
       )}
+
     </aside>
   ) : null;
 

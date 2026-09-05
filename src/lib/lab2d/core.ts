@@ -1,5 +1,7 @@
 import type { Vec2 } from "@/lib/geometry/types";
+import type { CncMeta } from "@/lib/lab2d/cncTypes";
 import type { DxfDocument, DxfEntity } from "@/lib/dxf/dxfService";
+
 import {
   flattenPath,
   mapPath,
@@ -49,7 +51,10 @@ type Base = {
   shared?: boolean;
   /** Trecho comum invalidado por edição/movimento posterior. */
   invalid?: boolean;
+  /** Dados semânticos de fabricação (sequência, contorno, lead-in/out). */
+  cnc?: CncMeta;
 };
+
 export type Entity =
   | (Base & { type: "line"; x1: number; y1: number; x2: number; y2: number })
   | (Base & { type: "polyline"; pts: Vec2[]; closed: boolean })
