@@ -69,6 +69,7 @@ import {
   trimLine,
   uid,
   verify,
+  type Box,
   type Entity,
   type Layer,
   type Snap,
