@@ -156,14 +156,19 @@ export function Wire3D({
         const spec = Math.pow(key, 14) * 0.3;
         const lum = m.amb + m.gain * (0.82 * Math.pow(key, 0.85) + 0.22 * fill) + spec + 0.12 * rim;
         const pct = Math.max(0, Math.min(100, lum * 100));
-        const depth = cs.reduce((acc, p) => acc + p.z, 0) / cs.length;
+        const span = Math.max(1e-6, fitRadius(model.bounds));
+        const depth =
+          cs.reduce((acc, p) => acc + p.z, 0) / cs.length +
+          (BIAS[face.kind] ?? 0) * span * 0.002;
         return {
           d: cs.map((p) => `${(p.x * kk).toFixed(2)},${(-p.y * kk).toFixed(2)}`).join(" "),
           depth,
+          idx,
           fill: `color-mix(in oklab, ${m.hi} ${pct.toFixed(1)}%, ${m.base})`,
         };
       })
-      .sort((a, b) => a.depth - b.depth);
+      // ordenação estável: empates resolvidos pelo índice, sem cintilação
+      .sort((a, b) => a.depth - b.depth || a.idx - b.idx);
 
     const line = (a: Vec3, b: Vec3) => {
       const pa = cp(a);
