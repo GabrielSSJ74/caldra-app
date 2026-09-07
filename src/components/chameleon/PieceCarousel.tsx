@@ -103,7 +103,7 @@ export function PieceCarousel({ className }: { className?: string }) {
         }}
       >
         <Wire3D
-          model={buildWire(piece.slug, DEFAULT_PARAMS)}
+          model={buildWire(piece.slug, { ...DEFAULT_PARAMS, seg: 32 })}
           autoSpin
           className="size-full text-foreground/85"
         />

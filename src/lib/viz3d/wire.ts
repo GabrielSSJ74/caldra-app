@@ -1,8 +1,31 @@
+/**
+ * MOTOR 3D PARAMÉTRICO DA TRAÇAGEM.
+ *
+ * PARÂMETROS → VALIDAÇÃO → MODELO PARAMÉTRICO → GEOMETRIA (malha + arestas)
+ *
+ * A matemática é a fonte de verdade: os parâmetros vêm dos mesmos valores
+ * usados por cálculos, cotas, vista superior e planificação (ver
+ * `src/lib/geometry/engines.ts`, que produz `WireParams` a partir das medidas
+ * reais da peça). Aqui não existe cálculo paralelo "só para o visual": a
+ * geometria 3D é derivada dos mesmos números, em milímetros de mundo.
+ */
+
 import type { Vec2, Vec3 } from "@/lib/geometry/types";
 
 export type Edge = [Vec3, Vec3];
-export type Face = Vec3[];
-export type WireModel = { edges: Edge[]; faces: Face[]; size: number };
+export type FaceKind = "outer" | "inner" | "rim" | "cap";
+export type Face = { pts: Vec3[]; kind: FaceKind };
+export type Bounds = { min: Vec3; max: Vec3 };
+
+export type WireModel = {
+  faces: Face[];
+  edges: Edge[];
+  /** linhas técnicas (eixo, referências) */
+  refLines: Edge[];
+  /** maior extensão do bounding box (mm) — usada para enquadramento */
+  size: number;
+  bounds: Bounds;
+};
 
 export type WireParams = {
   /** diâmetro / lado maior (base) */
@@ -15,226 +38,401 @@ export type WireParams = {
   e?: number;
   /** número de divisões da revolução */
   seg?: number;
+  /** espessura da chapa (mm) */
+  t?: number;
 };
 
-export const DEFAULT_PARAMS: WireParams = { d1: 300, d2: 160, h: 260, e: 0, seg: 24 };
+export const DEFAULT_PARAMS: WireParams = {
+  d1: 800,
+  d2: 400,
+  h: 500,
+  e: 0,
+  seg: 48,
+  t: 6,
+};
 
 const v = (x: number, y: number, z: number): Vec3 => ({ x, y, z });
 
+/* ------------------------------------------------------------------ */
+/* 1. VALIDAÇÃO — nunca gerar NaN / Infinity / malha quebrada          */
+/* ------------------------------------------------------------------ */
+
+export type ParamIssue = { field: keyof WireParams; message: string };
+
+function num(x: unknown, fallback: number): number {
+  return typeof x === "number" && Number.isFinite(x) ? x : fallback;
+}
+
+export function validateParameters(p: WireParams): ParamIssue[] {
+  const out: ParamIssue[] = [];
+  if (!Number.isFinite(p.d1) || p.d1 <= 0) out.push({ field: "d1", message: "Diâmetro maior inválido." });
+  if (!Number.isFinite(p.d2) || p.d2 < 0) out.push({ field: "d2", message: "Diâmetro menor inválido." });
+  if (!Number.isFinite(p.h) || p.h <= 0) out.push({ field: "h", message: "Altura inválida." });
+  return out;
+}
+
+/** Parâmetros saneados: finitos, dentro de limites plausíveis de caldeiraria. */
+export function normalizeParameters(p: WireParams): Required<WireParams> {
+  const d1 = Math.min(20000, Math.max(1, num(p.d1, DEFAULT_PARAMS.d1)));
+  const d2 = Math.min(20000, Math.max(0, num(p.d2, DEFAULT_PARAMS.d2)));
+  const h = Math.min(20000, Math.max(1, num(p.h, DEFAULT_PARAMS.h)));
+  const e = Math.max(-10000, Math.min(10000, num(p.e, 0)));
+  const seg = Math.round(Math.min(72, Math.max(8, num(p.seg, 40))));
+  const maxT = Math.max(0.4, Math.min(d1, d2 || d1, h) * 0.08);
+  const t = Math.min(maxT, Math.max(0.4, num(p.t, Math.max(2, d1 * 0.008))));
+  return { d1, d2, h, e, seg: seg % 4 === 0 ? seg : seg + (4 - (seg % 4)), t };
+}
+
+/* ------------------------------------------------------------------ */
+/* 2. PRIMITIVAS DE PERFIL                                             */
+/* ------------------------------------------------------------------ */
+
 function ring(r: number, y: number, seg: number, cx = 0, cz = 0): Vec3[] {
+  const rr = Math.max(r, 0.001);
   return Array.from({ length: seg }, (_, i) => {
     const a = (i / seg) * Math.PI * 2;
-    return v(cx + r * Math.cos(a), y, cz + r * Math.sin(a));
+    return v(cx + rr * Math.cos(a), y, cz + rr * Math.sin(a));
   });
 }
 
-function square(side: number, y: number): Vec3[] {
-  const s = side / 2;
-  return [v(-s, y, -s), v(s, y, -s), v(s, y, s), v(-s, y, s)];
+function squareLoop(side: number, y: number, seg: number): Vec3[] {
+  const s = Math.max(side, 0.001) / 2;
+  const corners: Vec2[] = [
+    { x: -s, y: -s },
+    { x: s, y: -s },
+    { x: s, y: s },
+    { x: -s, y: s },
+  ];
+  const per = Math.max(1, Math.round(seg / 4));
+  const out: Vec3[] = [];
+  for (let c = 0; c < 4; c++) {
+    const a = corners[c]!;
+    const b = corners[(c + 1) % 4]!;
+    for (let k = 0; k < per; k++) {
+      const u = k / per;
+      out.push(v(a.x + (b.x - a.x) * u, y, a.y + (b.y - a.y) * u));
+    }
+  }
+  return out;
+}
+
+/** Interpolação entre dois contornos de mesma contagem (transições regradas). */
+function blend(a: Vec3[], b: Vec3[], u: number, y: number): Vec3[] {
+  return a.map((p, i) => {
+    const q = b[i]!;
+    return v(p.x + (q.x - p.x) * u, y, p.z + (q.z - p.z) * u);
+  });
+}
+
+function centroid(loop: Vec3[]): Vec3 {
+  const c = loop.reduce((s, p) => ({ x: s.x + p.x, y: s.y + p.y, z: s.z + p.z }), v(0, 0, 0));
+  const n = Math.max(1, loop.length);
+  return v(c.x / n, c.y / n, c.z / n);
+}
+
+/** Contorno interno: deslocamento do contorno externo em direção ao eixo. */
+function offsetLoop(loop: Vec3[], t: number): Vec3[] {
+  const c = centroid(loop);
+  return loop.map((p) => {
+    const dx = c.x - p.x;
+    const dz = c.z - p.z;
+    const len = Math.hypot(dx, dz);
+    if (len < 1e-6) return p;
+    const k = Math.min(t / len, 0.9);
+    return v(p.x + dx * k, p.y, p.z + dz * k);
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* 3. GERAÇÃO DE MALHA                                                 */
+/* ------------------------------------------------------------------ */
+
+type ShellOpts = {
+  /** espessura da parede (mm) */
+  t: number;
+  /** fecha a primeira seção (tampa cheia) */
+  capStart?: boolean;
+  /** fecha a última seção (tampa cheia) */
+  capEnd?: boolean;
+  /** a cada quantas divisões desenhar uma geratriz */
+  gen?: number;
+};
+
+type Geo = { faces: Face[]; edges: Edge[] };
+
+const EMPTY: Geo = { faces: [], edges: [] };
+
+function merge(parts: Geo[]): Geo {
+  return {
+    faces: parts.flatMap((p) => p.faces),
+    edges: parts.flatMap((p) => p.edges),
+  };
 }
 
 function loopEdges(pts: Vec3[]): Edge[] {
   return pts.map((p, i) => [p, pts[(i + 1) % pts.length]!] as Edge);
 }
 
-function skin(a: Vec3[], b: Vec3[], step = 1): { edges: Edge[]; faces: Face[] } {
-  const n = Math.max(a.length, b.length);
-  const edges: Edge[] = [];
+/**
+ * Casca de parede fina a partir de uma sequência de contornos.
+ * Gera superfície externa, superfície interna, bordas (rim) das aberturas,
+ * tampas quando pedidas, e as arestas técnicas correspondentes.
+ */
+function shell(loops: Vec3[][], o: ShellOpts): Geo {
+  const valid = loops.filter((l) => l.length >= 3);
+  if (valid.length < 2) return EMPTY;
+  const inner = valid.map((l) => offsetLoop(l, o.t));
   const faces: Face[] = [];
-  for (let i = 0; i < n; i++) {
-    const a0 = a[i % a.length]!;
-    const b0 = b[Math.round((i * b.length) / n) % b.length]!;
-    if (i % step === 0) edges.push([a0, b0]);
-    const a1 = a[(i + 1) % a.length]!;
-    const b1 = b[Math.round(((i + 1) * b.length) / n) % b.length]!;
-    faces.push([a0, a1, b1, b0]);
+  const edges: Edge[] = [];
+  const n = valid[0]!.length;
+  const gen = Math.max(1, o.gen ?? Math.round(n / 8));
+
+  for (let s = 0; s < valid.length - 1; s++) {
+    const a = valid[s]!;
+    const b = valid[s + 1]!;
+    const ai = inner[s]!;
+    const bi = inner[s + 1]!;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      faces.push({ pts: [a[i]!, a[j]!, b[j]!, b[i]!], kind: "outer" });
+      faces.push({ pts: [bi[i]!, bi[j]!, ai[j]!, ai[i]!], kind: "inner" });
+    }
   }
-  return { edges, faces };
-}
 
-function build(parts: { edges?: Edge[]; faces?: Face[] }[], size: number): WireModel {
-  return {
-    edges: parts.flatMap((p) => p.edges ?? []),
-    faces: parts.flatMap((p) => p.faces ?? []),
-    size,
+  // arestas: contornos extremos + geratrizes reais da superfície
+  const first = valid[0]!;
+  const last = valid[valid.length - 1]!;
+  edges.push(...loopEdges(first), ...loopEdges(last));
+  if (!o.capStart) edges.push(...loopEdges(inner[0]!));
+  if (!o.capEnd) edges.push(...loopEdges(inner[inner.length - 1]!));
+  for (let i = 0; i < n; i += gen) {
+    for (let s = 0; s < valid.length - 1; s++) {
+      edges.push([valid[s]![i]!, valid[s + 1]![i]!]);
+    }
+  }
+
+  // bordas das aberturas (espessura visível)
+  const rim = (out: Vec3[], inn: Vec3[]) => {
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      faces.push({ pts: [out[i]!, out[j]!, inn[j]!, inn[i]!], kind: "rim" });
+    }
   };
+  if (o.capStart) faces.push({ pts: first, kind: "cap" });
+  else rim(first, inner[0]!);
+  if (o.capEnd) faces.push({ pts: last, kind: "cap" });
+  else rim(last, inner[inner.length - 1]!);
+
+  return { faces, edges };
 }
 
-/** Constrói o wireframe técnico da geometria a partir dos parâmetros. */
-export function buildWire(slug: string, p: WireParams): WireModel {
-  const seg = p.seg ?? 24;
+function boundsOf(faces: Face[]): Bounds {
+  const min = v(Infinity, Infinity, Infinity);
+  const max = v(-Infinity, -Infinity, -Infinity);
+  for (const f of faces)
+    for (const p of f.pts) {
+      min.x = Math.min(min.x, p.x);
+      min.y = Math.min(min.y, p.y);
+      min.z = Math.min(min.z, p.z);
+      max.x = Math.max(max.x, p.x);
+      max.y = Math.max(max.y, p.y);
+      max.z = Math.max(max.z, p.z);
+    }
+  if (!Number.isFinite(min.x)) return { min: v(-1, -1, -1), max: v(1, 1, 1) };
+  return { min, max };
+}
+
+function finish(geo: Geo, refLines: Edge[] = []): WireModel {
+  const bounds = boundsOf(geo.faces);
+  const size =
+    Math.max(bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y, bounds.max.z - bounds.min.z) ||
+    1;
+  return { faces: geo.faces, edges: geo.edges, refLines, size, bounds };
+}
+
+/** Eixo da peça + linha de base: referências geométricas reais. */
+function axisLines(b: Bounds): Edge[] {
+  const cx = (b.min.x + b.max.x) / 2;
+  const cz = (b.min.z + b.max.z) / 2;
+  const pad = (b.max.y - b.min.y) * 0.12;
+  return [[v(cx, b.min.y - pad, cz), v(cx, b.max.y + pad, cz)]];
+}
+
+/* ------------------------------------------------------------------ */
+/* 4. MODELOS PARAMÉTRICOS                                             */
+/* ------------------------------------------------------------------ */
+
+/** Sequência de contornos de um tronco (base → topo), com excentricidade. */
+function frustumLoops(r1: number, r2: number, h: number, seg: number, ex: number, steps = 6) {
+  const y0 = -h / 2;
+  return Array.from({ length: steps + 1 }, (_, i) => {
+    const u = i / steps;
+    return ring(r1 + (r2 - r1) * u, y0 + h * u, seg, ex * u, 0);
+  });
+}
+
+/** Constrói a geometria 3D real da peça a partir dos parâmetros. */
+export function buildWire(slug: string, raw: WireParams): WireModel {
+  const p = normalizeParameters(raw);
+  const { seg, t } = p;
   const h = p.h;
   const r1 = p.d1 / 2;
   const r2 = p.d2 / 2;
-  const e = p.e ?? 0;
   const y0 = -h / 2;
   const y1 = h / 2;
-  const size = Math.max(p.d1, p.d2, h) * 1.15;
 
-  const cyl = (ra: number, rb: number, ex = 0) => {
-    const a = ring(ra, y0, seg);
-    const b = ring(rb, y1, seg, ex, 0);
-    return build([{ edges: loopEdges(a) }, { edges: loopEdges(b) }, skin(a, b, 3)], size);
+  const withAxis = (geo: Geo) => {
+    const m = finish(geo);
+    return { ...m, refLines: axisLines(m.bounds) };
   };
 
   switch (slug) {
     case "cilindro":
     case "dutos":
-      return cyl(r1, r1);
+      return withAxis(shell(frustumLoops(r1, r1, h, seg, 0, 4), { t }));
+
     case "cone": {
-      const a = ring(r1, y0, seg);
-      const apex = v(0, y1, 0);
-      return build(
-        [
-          { edges: loopEdges(a) },
-          {
-            edges: a.filter((_, i) => i % 3 === 0).map((q) => [q, apex] as Edge),
-            faces: a.map((q, i) => [q, a[(i + 1) % a.length]!, apex]),
-          },
-        ],
-        size,
-      );
+      // ápice modelado com raio mínimo: evita triângulos degenerados
+      const tip = Math.max(r1 * 0.012, t * 0.6);
+      return withAxis(shell(frustumLoops(r1, tip, h, seg, 0, 8), { t }));
     }
+
     case "tronco-de-cone":
     case "reducao-circular":
-      return cyl(r1, r2);
+    case "chamines":
+      return withAxis(shell(frustumLoops(r1, r2, h, seg, 0, 8), { t }));
+
     case "cone-excentrico":
-      return cyl(r1, r2, r1 - r2);
-    case "quadrado-redondo": {
-      const a = square(p.d1, y0);
-      const b = ring(r2, y1, seg, e, 0);
-      const dense = a.flatMap((q, i) => {
-        const n = a[(i + 1) % a.length]!;
-        return Array.from({ length: seg / 4 }, (_, k) => {
-          const t = k / (seg / 4);
-          return v(q.x + (n.x - q.x) * t, y0, q.z + (n.z - q.z) * t);
-        });
-      });
-      return build([{ edges: loopEdges(a) }, { edges: loopEdges(b) }, skin(dense, b, 2)], size);
-    }
-    case "redondo-quadrado":
+      return withAxis(shell(frustumLoops(r1, r2, h, seg, r1 - r2, 8), { t }));
+
+    case "quadrado-redondo":
     case "transicoes": {
-      const a = ring(r1, y0, seg);
-      const b = square(p.d2, y1);
-      const dense = b.flatMap((q, i) => {
-        const n = b[(i + 1) % b.length]!;
-        return Array.from({ length: seg / 4 }, (_, k) => {
-          const t = k / (seg / 4);
-          return v(q.x + (n.x - q.x) * t, y1, q.z + (n.z - q.z) * t);
-        });
+      const steps = 8;
+      const sq = squareLoop(p.d1, y0, seg);
+      const ci = ring(r2, y1, seg, p.e, 0);
+      const loops = Array.from({ length: steps + 1 }, (_, i) => {
+        const u = i / steps;
+        return blend(sq, ci, u, y0 + h * u);
       });
-      return build([{ edges: loopEdges(a) }, { edges: loopEdges(b) }, skin(a, dense, 2)], size);
+      return withAxis(shell(loops, { t }));
     }
+
+    case "redondo-quadrado": {
+      const steps = 8;
+      const ci = ring(r1, y0, seg);
+      const sq = squareLoop(p.d2, y1, seg);
+      const loops = Array.from({ length: steps + 1 }, (_, i) => {
+        const u = i / steps;
+        return blend(ci, sq, u, y0 + h * u);
+      });
+      return withAxis(shell(loops, { t }));
+    }
+
     case "boca-de-lobo": {
+      // cilindro cortado por plano inclinado: altura varia com z
+      const steps = 6;
       const base = ring(r1, y0, seg);
-      const top = base.map((q) => v(q.x, y0 + h * (0.45 + 0.45 * (q.z / r1 + 1) * 0.5), q.z));
-      return build([{ edges: loopEdges(base) }, { edges: loopEdges(top) }, skin(base, top, 2)], size);
+      const top = base.map((q) => v(q.x, y0 + h * (0.4 + 0.6 * ((q.z / r1 + 1) / 2)), q.z));
+      const loops = Array.from({ length: steps + 1 }, (_, i) => {
+        const u = i / steps;
+        return base.map((q, k) => v(q.x, q.y + (top[k]!.y - q.y) * u, q.z));
+      });
+      return withAxis(shell(loops, { t }));
     }
+
     case "te":
     case "interseccoes": {
-      const main = cyl(r1, r1);
-      const bx = ring(r2, 0, seg).map((q) => v(q.z, q.x, 0));
-      const bx2 = bx.map((q) => v(q.x, q.y, r1 + h * 0.4));
-      return build(
-        [main, { edges: loopEdges(bx) }, { edges: loopEdges(bx2) }, skin(bx, bx2, 3)],
-        size,
+      const main = shell(frustumLoops(r1, r1, h, seg, 0, 4), { t });
+      const armLen = r1 + h * 0.45;
+      const branch = shell(
+        Array.from({ length: 5 }, (_, i) => {
+          const z = r1 * 0.2 + (armLen - r1 * 0.2) * (i / 4);
+          return ring(r2, 0, seg).map((q) => v(q.x, q.z, z));
+        }),
+        { t },
       );
+      return withAxis(merge([main, branch]));
     }
+
     case "y": {
-      const base = ring(r1, y0, seg);
-      const mid = ring(r1, 0, seg);
-      const armA = ring(r2, y1, seg, -r1 * 0.8);
-      const armB = ring(r2, y1, seg, r1 * 0.8);
-      return build(
-        [
-          { edges: loopEdges(base) },
-          { edges: loopEdges(mid) },
-          { edges: loopEdges(armA) },
-          { edges: loopEdges(armB) },
-          skin(base, mid, 4),
-          skin(mid, armA, 4),
-          skin(mid, armB, 4),
-        ],
-        size,
+      const half = h / 2;
+      const trunk = shell(
+        Array.from({ length: 4 }, (_, i) => ring(r1, y0 + (half * i) / 3, seg)),
+        { t },
       );
+      const arm = (dir: number) =>
+        shell(
+          Array.from({ length: 5 }, (_, i) => {
+            const u = i / 4;
+            return ring(r1 + (r2 - r1) * u, half * u, seg, dir * r1 * 0.8 * u, 0).map((q) =>
+              v(q.x, q.y, q.z),
+            );
+          }),
+          { t },
+        );
+      return withAxis(merge([trunk, arm(-1), arm(1)]));
     }
+
     case "curva-de-gomos": {
       const gomos = 5;
-      const R = p.d1;
-      const parts: { edges: Edge[]; faces?: Face[] }[] = [];
-      let prev: Vec3[] | null = null;
+      const R = Math.max(p.d1, 1);
+      const loops: Vec3[][] = [];
       for (let i = 0; i <= gomos; i++) {
         const a = (i / gomos) * (Math.PI / 2);
         const cx = R * Math.sin(a) - R / 2;
         const cy = -R * Math.cos(a) + R / 2;
-        const rr = ring(r2, 0, seg).map((q) =>
-          v(cx + q.x * Math.cos(a), cy + q.x * Math.sin(a), q.z),
+        loops.push(
+          ring(r2, 0, seg).map((q) => v(cx + q.x * Math.cos(a), cy + q.x * Math.sin(a), q.z)),
         );
-        parts.push({ edges: loopEdges(rr) });
-        if (prev) parts.push(skin(prev, rr, 3));
-        prev = rr;
       }
-      return build(parts, R * 1.6);
+      return withAxis(shell(loops, { t }));
     }
+
     case "flanges": {
-      const outer = ring(r1, 0, seg);
-      const inner = ring(r2, 0, seg);
+      const thick = Math.max(h * 0.12, t * 2);
+      const disc = shell(
+        [ring(r1, -thick / 2, seg), ring(r1, thick / 2, seg)],
+        { t: Math.max(r1 - r2, t) },
+      );
       const holes = Array.from({ length: 8 }, (_, i) => {
         const a = (i / 8) * Math.PI * 2;
-        const cx = (r1 + r2) / 2;
-        return ring(r1 * 0.08, 0, 10, cx * Math.cos(a), cx * Math.sin(a));
+        const c = (r1 + r2) / 2;
+        const rr = Math.max(r1 * 0.07, 2);
+        return shell(
+          [
+            ring(rr, -thick / 2, 12, c * Math.cos(a), c * Math.sin(a)),
+            ring(rr, thick / 2, 12, c * Math.cos(a), c * Math.sin(a)),
+          ],
+          { t: rr * 0.9 },
+        );
       });
-      const thick = (pts: Vec3[]) => pts.map((q) => v(q.x, q.y + h * 0.12, q.z));
-      return build(
-        [
-          { edges: loopEdges(outer), faces: [outer] },
-          { edges: loopEdges(inner) },
-          { edges: loopEdges(thick(outer)) },
-          { edges: loopEdges(thick(inner)) },
-          skin(outer, thick(outer), 4),
-          ...holes.map((hh) => ({ edges: loopEdges(hh) })),
-        ],
-        p.d1 * 1.25,
-      );
+      return withAxis(merge([disc, ...holes]));
     }
+
     case "tampas": {
-      const rim = ring(r1, y0, seg);
-      const lip = ring(r1, y0 + h * 0.15, seg);
-      return build([{ edges: loopEdges(rim), faces: [rim] }, { edges: loopEdges(lip) }, skin(rim, lip, 3)], size);
-    }
-    case "calotas": {
-      const layers = 6;
-      const parts: { edges: Edge[]; faces?: Face[] }[] = [];
-      let prev: Vec3[] | null = null;
-      for (let i = 0; i <= layers; i++) {
-        const t = i / layers;
-        const a = (t * Math.PI) / 2;
-        const rr = ring(r1 * Math.cos(a), y0 + h * Math.sin(a), seg);
-        parts.push({ edges: loopEdges(rr) });
-        if (prev) parts.push(skin(prev, rr, 3));
-        prev = rr;
-      }
-      return build(parts, size);
-    }
-    case "chamines": {
-      const a = ring(r1, y0, seg);
-      const b = ring(r1 * 0.85, 0, seg);
-      const c = ring(r2, y1, seg);
-      return build(
-        [
-          { edges: loopEdges(a) },
-          { edges: loopEdges(b) },
-          { edges: loopEdges(c) },
-          skin(a, b, 3),
-          skin(b, c, 3),
-        ],
-        size,
+      const lip = Math.max(h * 0.18, t * 3);
+      return withAxis(
+        shell([ring(r1, y0, seg), ring(r1, y0 + lip, seg)], { t, capStart: true }),
       );
     }
+
+    case "calotas": {
+      const layers = 8;
+      const loops = Array.from({ length: layers + 1 }, (_, i) => {
+        const a = ((i / layers) * Math.PI) / 2;
+        return ring(Math.max(r1 * Math.cos(a), r1 * 0.02), y0 + h * Math.sin(a), seg);
+      });
+      return withAxis(shell(loops, { t }));
+    }
+
     default:
-      return cyl(r1, r2);
+      return withAxis(shell(frustumLoops(r1, r2, h, seg, 0, 8), { t }));
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* 5. CÂMERA (apresentação — nunca altera a geometria)                 */
+/* ------------------------------------------------------------------ */
 
 export type Camera = { yaw: number; pitch: number; zoom: number };
 
@@ -250,4 +448,23 @@ export function project(pt: Vec3, cam: Camera, scale: number): Vec2 & { depth: n
   const z2 = pt.y * sp + z1 * cp;
   const k = scale * cam.zoom;
   return { x: x1 * k, y: -y1 * k, depth: z2 };
+}
+
+/**
+ * Enquadramento automático: raio necessário para conter a peça em qualquer
+ * ângulo de rotação (bounding sphere do bounding box real).
+ */
+export function fitRadius(b: Bounds): number {
+  const cx = (b.min.x + b.max.x) / 2;
+  const cy = (b.min.y + b.max.y) / 2;
+  const cz = (b.min.z + b.max.z) / 2;
+  const rx = Math.max(b.max.x - cx, cx - b.min.x);
+  const ry = Math.max(b.max.y - cy, cy - b.min.y);
+  const rz = Math.max(b.max.z - cz, cz - b.min.z);
+  return Math.max(Math.hypot(rx, rz), ry, 0.001);
+}
+
+/** Centro geométrico real da peça (usado como alvo da câmera). */
+export function centerOf(b: Bounds): Vec3 {
+  return v((b.min.x + b.max.x) / 2, (b.min.y + b.max.y) / 2, (b.min.z + b.max.z) / 2);
 }

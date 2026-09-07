@@ -1,6 +1,15 @@
+/**
+ * RENDERER CALDRA — apresentação da geometria paramétrica.
+ *
+ * Recebe GEOMETRIA (malha + arestas + bounds em mm), nunca parâmetros.
+ * Câmera, rotação, zoom e enquadramento vivem aqui; a peça nunca é alterada
+ * por interação. Sombreamento por normal real (key + fill + rim), superfície
+ * interna com material próprio e espessura visível nas aberturas.
+ */
+
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Vec3 } from "@/lib/geometry/types";
-import type { Camera, WireModel } from "@/lib/viz3d/wire";
+import { centerOf, fitRadius, type Camera, type WireModel } from "@/lib/viz3d/wire";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -27,9 +36,16 @@ function toCam(p: Vec3, cam: Camera): Vec3 {
   return { x: x1, y: y1, z: z2 };
 }
 
-const LIGHT = { x: -0.35, y: 0.62, z: 0.7 };
+const KEY = { x: -0.38, y: 0.66, z: 0.65 };
+const FILL = { x: 0.62, y: -0.12, z: 0.42 };
 
-/** Render sólido sombreado (estilo CAD/SolidWorks): faces em aço + arestas finas. */
+const MAT: Record<string, { base: string; hi: string; gain: number; amb: number }> = {
+  outer: { base: "var(--solid-lo)", hi: "var(--solid-hi)", gain: 0.86, amb: 0.2 },
+  inner: { base: "var(--solid-in)", hi: "var(--solid-lo)", gain: 0.66, amb: 0.24 },
+  rim: { base: "var(--solid-lo)", hi: "var(--solid-rim)", gain: 0.95, amb: 0.34 },
+  cap: { base: "var(--solid-lo)", hi: "var(--solid-hi)", gain: 0.8, amb: 0.26 },
+};
+
 export function Wire3D({
   model,
   className,
@@ -37,23 +53,45 @@ export function Wire3D({
   autoSpin = false,
   unfold = 0,
 }: Props) {
-  const [cam, setCam] = useState<Camera>({ yaw: 0.7, pitch: 0.42, zoom: 1 });
+  const [cam, setCam] = useState<Camera>({ yaw: 0.7, pitch: 0.4, zoom: 1 });
   const drag = useRef<{ x: number; y: number } | null>(null);
+  const resume = useRef(0);
   const host = useRef<SVGSVGElement>(null);
+  const [visible, setVisible] = useState(true);
 
+  /* pausa automática fora da viewport / aba oculta */
   useEffect(() => {
-    if (!autoSpin) return;
+    const el = host.current;
+    if (!el || typeof IntersectionObserver === "undefined") return;
+    const io = new IntersectionObserver((ents) => setVisible(ents[0]?.isIntersecting ?? true), {
+      threshold: 0.05,
+    });
+    io.observe(el);
+    const onVis = () => setVisible(!document.hidden && true);
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      io.disconnect();
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, []);
+
+  /* rotação automática 360° contínua (sem salto ao completar a volta) */
+  useEffect(() => {
+    if (!autoSpin || !visible) return;
+    if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+      return;
     let raf = 0;
     let last = performance.now();
     const tick = (t: number) => {
       const dt = Math.min((t - last) / 1000, 0.05);
       last = t;
-      setCam((c) => ({ ...c, yaw: c.yaw + dt * 0.25 }));
+      if (!drag.current && t > resume.current)
+        setCam((c) => ({ ...c, yaw: (c.yaw + dt * 0.32) % (Math.PI * 2) }));
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [autoSpin]);
+  }, [autoSpin, visible]);
 
   useEffect(() => {
     const el = host.current;
@@ -67,27 +105,34 @@ export function Wire3D({
     return () => el.removeEventListener("wheel", onWheel);
   }, [interactive]);
 
-  const scale = (VB * 0.42) / (model.size || 1);
+  /* enquadramento automático a partir do bounding box real (mm) */
+  const fit = useMemo(() => {
+    const c = centerOf(model.bounds);
+    return { center: c, scale: (VB * 0.4) / fitRadius(model.bounds) };
+  }, [model]);
+
   const k = 1 - unfold * 0.9;
   const uid = useId().replace(/[^a-zA-Z0-9]/g, "");
 
-  const { faces, edges } = useMemo(() => {
-    const kk = scale * cam.zoom;
+  const { faces, edges, refs, ground } = useMemo(() => {
+    const kk = fit.scale * cam.zoom;
     const cache = new Map<string, Vec3>();
     const cp = (p: Vec3) => {
       const key = `${p.x}|${p.y}|${p.z}`;
       let c = cache.get(key);
       if (!c) {
-        c = toCam({ x: p.x, y: p.y * k, z: p.z }, cam);
+        c = toCam(
+          { x: p.x - fit.center.x, y: (p.y - fit.center.y) * k, z: p.z - fit.center.z },
+          cam,
+        );
         cache.set(key, c);
       }
       return c;
     };
 
     const f = model.faces
-      .map((poly) => {
-        const cs = poly.map(cp);
-        // Newell normal em espaço de câmera
+      .map((face) => {
+        const cs = face.pts.map(cp);
         let nx = 0;
         let ny = 0;
         let nz = 0;
@@ -102,26 +147,23 @@ export function Wire3D({
         nx /= len;
         ny /= len;
         nz /= len;
-        // normal voltada ao observador (superfícies finas: sem culling)
         const s = nz < 0 ? -1 : 1;
-        const lambert = Math.max(
-          0,
-          nx * s * LIGHT.x + ny * s * LIGHT.y + nz * s * LIGHT.z,
-        );
-        const facing = Math.abs(nz);
-        const shade = 0.18 + 0.72 * Math.pow(lambert, 0.85);
-        // realce de silhueta / fresnel suave
-        const fres = 0.16 * (1 - facing);
-        const depth = cs.reduce((s2, p) => s2 + p.z, 0) / cs.length;
+        const key = Math.max(0, nx * s * KEY.x + ny * s * KEY.y + nz * s * KEY.z);
+        const fill = Math.max(0, nx * s * FILL.x + ny * s * FILL.y + nz * s * FILL.z);
+        const rim = Math.pow(1 - Math.abs(nz), 3);
+        const m = MAT[face.kind] ?? MAT["outer"]!;
+        const lum = m.amb + m.gain * (0.78 * Math.pow(key, 0.8) + 0.26 * fill) + 0.16 * rim;
+        const pct = Math.max(0, Math.min(100, lum * 100));
+        const depth = cs.reduce((acc, p) => acc + p.z, 0) / cs.length;
         return {
           d: cs.map((p) => `${(p.x * kk).toFixed(2)},${(-p.y * kk).toFixed(2)}`).join(" "),
           depth,
-          shade: Math.min(1, shade + fres),
+          fill: `color-mix(in oklab, ${m.hi} ${pct.toFixed(1)}%, ${m.base})`,
         };
       })
       .sort((a, b) => a.depth - b.depth);
 
-    const e = model.edges.map(([a, b]) => {
+    const line = (a: Vec3, b: Vec3) => {
       const pa = cp(a);
       const pb = cp(b);
       return {
@@ -131,11 +173,24 @@ export function Wire3D({
         y2: -pb.y * kk,
         depth: (pa.z + pb.z) / 2,
       };
-    });
-    return { faces: f, edges: e };
-  }, [model, cam, scale, k]);
+    };
+
+    // remoção aproximada de linhas ocultas: apenas arestas do hemisfério frontal
+    const e = model.edges.map(([a, b]) => line(a, b)).filter((l) => l.depth > 0);
+    const r = (model.refLines ?? []).map(([a, b]) => line(a, b));
+
+    const rx = fitRadius(model.bounds) * kk * 0.92;
+    const gy = ((model.bounds.min.y - fit.center.y) * k * Math.cos(cam.pitch) + 0) * kk;
+    return { faces: f, edges: e, refs: r, ground: { rx, y: -gy } };
+  }, [model, cam, fit, k]);
 
   const maxDepth = Math.max(1, ...edges.map((e) => Math.abs(e.depth)));
+
+  const onDragStart = (ev: React.PointerEvent<SVGSVGElement>) => {
+    if (!interactive && ev.pointerType === "touch") return; // toque continua servindo ao card
+    drag.current = { x: ev.clientX, y: ev.clientY };
+    ev.currentTarget.setPointerCapture(ev.pointerId);
+  };
 
   return (
     <svg
@@ -146,14 +201,9 @@ export function Wire3D({
         interactive ? "touch-none cursor-grab active:cursor-grabbing" : "touch-auto",
         className,
       )}
-
       role="img"
-      aria-label="Modelo sólido tridimensional da peça"
-      onPointerDown={(ev) => {
-        if (!interactive) return;
-        drag.current = { x: ev.clientX, y: ev.clientY };
-        ev.currentTarget.setPointerCapture(ev.pointerId);
-      }}
+      aria-label="Modelo tridimensional paramétrico da peça"
+      onPointerDown={onDragStart}
       onPointerMove={(ev) => {
         if (!drag.current) return;
         const dx = ev.clientX - drag.current.x;
@@ -162,48 +212,68 @@ export function Wire3D({
         setCam((c) => ({
           ...c,
           yaw: c.yaw + dx * 0.008,
-          pitch: Math.max(-1.3, Math.min(1.3, c.pitch + dy * 0.006)),
+          pitch: interactive ? Math.max(-1.3, Math.min(1.3, c.pitch + dy * 0.006)) : c.pitch,
         }));
       }}
-      onPointerUp={() => (drag.current = null)}
-      onPointerLeave={() => (drag.current = null)}
+      onPointerUp={() => {
+        drag.current = null;
+        resume.current = performance.now() + 900;
+      }}
+      onPointerLeave={() => {
+        drag.current = null;
+        resume.current = performance.now() + 900;
+      }}
     >
       <defs>
-        <linearGradient id={`steel-${uid}`} x1="0" y1="0" x2="0.4" y2="1">
-          <stop offset="0%" stopColor="var(--solid-hi)" />
-          <stop offset="100%" stopColor="var(--solid-lo)" />
-        </linearGradient>
         <radialGradient id={`floor-${uid}`} cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="var(--foreground)" stopOpacity="0.16" />
-          <stop offset="100%" stopColor="var(--foreground)" stopOpacity="0" />
+          <stop offset="0%" stopColor="var(--solid-edge)" stopOpacity="0.35" />
+          <stop offset="100%" stopColor="var(--solid-edge)" stopOpacity="0" />
         </radialGradient>
       </defs>
 
-      <ellipse cx="0" cy={VB * 0.3} rx={VB * 0.42} ry={VB * 0.08} fill={`url(#floor-${uid})`} />
+      {/* sombra de contato suave, derivada do bounding box real */}
+      <ellipse
+        cx="0"
+        cy={ground.y.toFixed(2)}
+        rx={Math.max(4, ground.rx).toFixed(2)}
+        ry={Math.max(2, ground.rx * 0.2).toFixed(2)}
+        fill={`url(#floor-${uid})`}
+      />
 
       <g>
         {faces.map((f, i) => (
           <polygon
             key={`f${i}`}
             points={f.d}
-            fill={`url(#steel-${uid})`}
-            fillOpacity={f.shade.toFixed(3)}
-            stroke="var(--solid-lo)"
-            strokeOpacity="0.35"
-            strokeWidth={0.35}
+            fill={f.fill}
+            stroke={f.fill}
+            strokeWidth={0.3}
             strokeLinejoin="round"
+          />
+        ))}
+        {refs.map((e, i) => (
+          <line
+            key={`r${i}`}
+            x1={e.x1.toFixed(2)}
+            y1={e.y1.toFixed(2)}
+            x2={e.x2.toFixed(2)}
+            y2={e.y2.toFixed(2)}
+            stroke="var(--solid-edge)"
+            strokeWidth={0.5}
+            strokeOpacity={0.45}
+            strokeDasharray="4 3 1 3"
           />
         ))}
         {edges.map((e, i) => (
           <line
             key={`e${i}`}
-            x1={e.x1.toFixed(3)}
-            y1={e.y1.toFixed(3)}
-            x2={e.x2.toFixed(3)}
-            y2={e.y2.toFixed(3)}
+            x1={e.x1.toFixed(2)}
+            y1={e.y1.toFixed(2)}
+            x2={e.x2.toFixed(2)}
+            y2={e.y2.toFixed(2)}
             stroke="var(--solid-edge)"
-            strokeWidth={0.7}
-            strokeOpacity={(0.35 + 0.5 * ((e.depth + maxDepth) / (2 * maxDepth))).toFixed(3)}
+            strokeWidth={0.6}
+            strokeOpacity={(0.18 + 0.42 * ((e.depth + maxDepth) / (2 * maxDepth))).toFixed(3)}
             strokeLinecap="round"
           />
         ))}
