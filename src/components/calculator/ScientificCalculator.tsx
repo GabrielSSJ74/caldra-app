@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { evaluateExpression, formatResult, toFraction, type AngleMode } from "@/lib/calculator/engine";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { useSettings } from "@/lib/settings/SettingsProvider";
 
 const HISTORY_KEY = "caldra.calculator.history";
 const PREFS_KEY = "caldra.calculator.preferences";
@@ -27,11 +28,16 @@ function CalcKey({ label, sub, ariaLabel, onClick, className, children }: { labe
 }
 
 export function ScientificCalculator() {
-  const [expression, setExpression] = useState("(sin(30) + cos(60)) × 2");
-  const [value, setValue] = useState(1);
+  /* Ângulo e casas decimais vêm das preferências centrais do CALDRA:
+     um único lugar de verdade, aplicado antes do primeiro cálculo. */
+  const { calcAngle, setCalcAngle, calcPlaces, setCalcPlaces } = useSettings();
+  const angleMode = calcAngle as AngleMode;
+  const setAngleMode = setCalcAngle;
+  const decimalPlaces = calcPlaces;
+  const setDecimalPlaces = setCalcPlaces;
+  const [expression, setExpression] = useState("");
+  const [value, setValue] = useState<number | null>(null);
   const [error, setError] = useState("");
-  const [angleMode, setAngleMode] = useState<AngleMode>("RAD");
-  const [decimalPlaces, setDecimalPlaces] = useState(4);
   const [shift, setShift] = useState(false);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -44,14 +50,14 @@ export function ScientificCalculator() {
   const [convertValue, setConvertValue] = useState("1");
 
   useEffect(() => {
-    const prefs = readJson(PREFS_KEY, { angleMode: "RAD" as AngleMode, decimalPlaces: 4, haptics: true, sound: false });
-    setAngleMode(prefs.angleMode); setDecimalPlaces(prefs.decimalPlaces); setHaptics(prefs.haptics); setSound(prefs.sound);
+    const prefs = readJson(PREFS_KEY, { haptics: true, sound: false });
+    setHaptics(prefs.haptics); setSound(prefs.sound);
     setHistory(readJson<HistoryItem[]>(HISTORY_KEY, []));
   }, []);
 
   useEffect(() => {
-    if (typeof window !== "undefined") window.localStorage.setItem(PREFS_KEY, JSON.stringify({ angleMode, decimalPlaces, haptics, sound }));
-  }, [angleMode, decimalPlaces, haptics, sound]);
+    if (typeof window !== "undefined") window.localStorage.setItem(PREFS_KEY, JSON.stringify({ haptics, sound }));
+  }, [haptics, sound]);
 
   const feedback = useCallback(() => {
     if (haptics && typeof navigator !== "undefined" && "vibrate" in navigator) navigator.vibrate(8);
@@ -62,7 +68,7 @@ export function ScientificCalculator() {
   }, [haptics, sound]);
 
   const append = useCallback((token: string) => { feedback(); setError(""); setExpression((current) => current === "0" ? token : current + token); }, [feedback]);
-  const clear = () => { feedback(); setExpression(""); setValue(0); setError(""); };
+  const clear = () => { feedback(); setExpression(""); setValue(null); setError(""); };
   const backspace = () => { feedback(); setExpression((current) => current.slice(0, -1)); setError(""); };
   const calculate = useCallback(() => {
     feedback();
@@ -79,7 +85,7 @@ export function ScientificCalculator() {
     append(`${shift ? shifted : normal}(`);
     if (shift) setShift(false);
   };
-  const displayed = error || formatResult(value, decimalPlaces);
+  const displayed = error || (value === null ? "" : formatResult(value, decimalPlaces));
   const toolTitle = tool ? ({ constants: "Constantes", fractions: "Frações", roots: "Raízes", matrix: "Matriz 2 × 2", conversion: "Conversão" } as const)[tool] : "";
   const matrixDet = (matrix[0] ?? 0) * (matrix[3] ?? 0) - (matrix[1] ?? 0) * (matrix[2] ?? 0);
   const converted = Number(convertValue.replace(",", "."));
@@ -98,7 +104,7 @@ export function ScientificCalculator() {
 
         <section aria-label="Display da calculadora" className="calc-display mt-2 rounded-[19px] border border-calc-border bg-calc-display px-4 py-4 sm:px-5">
           <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
-            <div className="min-w-0 overflow-x-auto whitespace-nowrap font-mono text-[14px] text-calc-expression sm:text-[17px]">{expression || "0"}</div>
+            <div className="min-w-0 overflow-x-auto whitespace-nowrap font-mono text-[14px] text-calc-expression sm:text-[17px]">{expression || "\u00A0"}</div>
             <button type="button" onClick={() => setHistoryOpen(true)} className="flex shrink-0 items-center gap-2 text-[12px] text-calc-muted sm:text-sm"><History className="size-4" /> Histórico <ArrowRight className="size-3.5" /></button>
           </div>
           <div className={cn("mt-3 min-h-[60px] truncate text-right font-mono text-[clamp(2.3rem,10vw,3.7rem)] leading-none font-medium text-calc-result", error && "text-calc-error text-[clamp(1rem,5vw,1.45rem)]")}>{displayed}</div>
@@ -137,7 +143,7 @@ export function ScientificCalculator() {
 
           <CalcKey label="0" onClick={() => append("0")} className="col-span-2" />
           <CalcKey label="," onClick={() => append(",")} />
-          <CalcKey onClick={() => append("%")} ariaLabel="Porcentagem"><Percent className="size-5" /></CalcKey>
+          <CalcKey onClick={() => { if (shift) { append("!"); setShift(false); } else append("%"); }} ariaLabel={shift ? "Fatorial" : "Porcentagem"}>{shift ? <span className="calc-key-main">x!</span> : <Percent className="size-5" />}</CalcKey>
           <CalcKey onClick={calculate} ariaLabel="Calcular resultado" className="calc-key-equals"><Equal className="size-6" /></CalcKey>
         </section>
 
@@ -159,7 +165,7 @@ export function ScientificCalculator() {
 
       <Dialog open={tool !== null} onOpenChange={(open) => !open && setTool(null)}><DialogContent className="calculator-theme w-[min(92vw,430px)] border-calc-border bg-calc-shell text-calc-text"><DialogHeader><DialogTitle>{toolTitle}</DialogTitle><DialogDescription className="text-calc-muted">Ferramenta rápida da calculadora científica.</DialogDescription></DialogHeader>
         {tool === "constants" && <div className="grid grid-cols-2 gap-2"><ToolButton label="π — Pi" onClick={() => { append("π"); setTool(null); }} /><ToolButton label="e — Euler" onClick={() => { append("e"); setTool(null); }} /></div>}
-        {tool === "fractions" && <div className="rounded-xl border border-calc-line bg-calc-display p-4 text-center"><p className="text-sm text-calc-muted">Resultado como fração</p><p className="mt-2 font-mono text-2xl text-calc-result">{toFraction(value)}</p></div>}
+        {tool === "fractions" && <div className="rounded-xl border border-calc-line bg-calc-display p-4 text-center"><p className="text-sm text-calc-muted">Resultado como fração</p><p className="mt-2 font-mono text-2xl text-calc-result">{toFraction(value ?? 0)}</p></div>}
         {tool === "roots" && <div className="grid grid-cols-2 gap-2"><ToolButton label="Raiz quadrada" onClick={() => { append("sqrt("); setTool(null); }} /><ToolButton label="Raiz cúbica" onClick={() => { append("cbrt("); setTool(null); }} /></div>}
         {tool === "matrix" && <div><div className="mx-auto grid max-w-48 grid-cols-2 gap-2">{matrix.map((n, i) => <input key={i} aria-label={`Valor ${i + 1} da matriz`} type="number" value={n} onChange={(e) => setMatrix((current) => current.map((v, j) => j === i ? Number(e.target.value) : v))} className="rounded-lg border border-calc-line bg-calc-display p-3 text-center font-mono" />)}</div><p className="mt-4 text-center text-sm text-calc-muted">Determinante: <strong className="text-calc-result">{matrixDet}</strong></p></div>}
         {tool === "conversion" && <div className="space-y-3"><input value={convertValue} onChange={(e) => setConvertValue(e.target.value)} inputMode="decimal" aria-label="Valor para conversão" className="w-full rounded-lg border border-calc-line bg-calc-display p-3 font-mono" /><div className="grid grid-cols-2 gap-2 text-center text-sm"><div className="rounded-lg border border-calc-line p-3"><span className="text-calc-muted">mm → pol</span><strong className="mt-1 block font-mono text-calc-result">{Number.isFinite(converted) ? formatResult(converted / 25.4, 4) : "—"}</strong></div><div className="rounded-lg border border-calc-line p-3"><span className="text-calc-muted">pol → mm</span><strong className="mt-1 block font-mono text-calc-result">{Number.isFinite(converted) ? formatResult(converted * 25.4, 4) : "—"}</strong></div></div></div>}
