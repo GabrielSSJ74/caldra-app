@@ -27,6 +27,12 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Favoritos, Recentes e Meus Modelos como atalhos (referência única, sem duplicar peças)
 - [x] Geradores vetoriais CNC 2D → CHAMFER (1:1 em mm)
 
+## Escola CALDRA (CONCLUÍDO)
+- [x] Currículo de 16 módulos com 41 aulas publicadas (fundamentos → fabricação)
+- [x] Base de conhecimento única (conceito, fórmula, passo a passo, erros comuns)
+- [x] Diagnóstico de nível, mapa de competências e progresso por aula
+- [x] Simuladores de triângulo e arco + envio de fórmula para a calculadora
+
 ## Fase 3 — Lançamento (EM ANDAMENTO)
 ### Etapa A — Monetização e entitlement
 - [ ] Ativar Lovable Cloud (perfil com `plan`, tabela `activation_codes`)
