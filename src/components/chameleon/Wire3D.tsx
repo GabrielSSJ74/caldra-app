@@ -152,7 +152,9 @@ export function Wire3D({
         const fill = Math.max(0, nx * s * FILL.x + ny * s * FILL.y + nz * s * FILL.z);
         const rim = Math.pow(1 - Math.abs(nz), 3);
         const m = MAT[face.kind] ?? MAT["outer"]!;
-        const lum = m.amb + m.gain * (0.78 * Math.pow(key, 0.8) + 0.26 * fill) + 0.16 * rim;
+        // difuso + preenchimento + reflexo especular discreto (metal semiacetinado)
+        const spec = Math.pow(key, 14) * 0.3;
+        const lum = m.amb + m.gain * (0.82 * Math.pow(key, 0.85) + 0.22 * fill) + spec + 0.12 * rim;
         const pct = Math.max(0, Math.min(100, lum * 100));
         const depth = cs.reduce((acc, p) => acc + p.z, 0) / cs.length;
         return {
