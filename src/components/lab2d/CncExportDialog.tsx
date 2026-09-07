@@ -18,6 +18,7 @@ import {
 import { CNC_LAYER_HINT, validateManufacturing, type CncLayer } from "@/lib/lab2d/manufacturing";
 import type { Entity } from "@/lib/lab2d/core";
 import { cn } from "@/lib/utils";
+import { LxdsAnalysisDialog } from "@/components/lab2d/LxdsAnalysisDialog";
 
 const LAYERS: CncLayer[] = ["CUT", "MARK", "BEND", "REFERENCE", "DIMENSION"];
 
@@ -33,6 +34,7 @@ export function CncExportDialog({
   filename: string;
 }) {
   const [opts, setOpts] = useState<CncExportOptions>(DEFAULT_CNC_OPTIONS);
+  const [lxdsOpen, setLxdsOpen] = useState(false);
   const [report, setReport] = useState<ReturnType<typeof verifyCncDxf> | null>(null);
 
   const counts = useMemo(() => cncCounts(entities), [entities]);
@@ -153,6 +155,14 @@ export function CncExportDialog({
             ))}
           </div>
         )}
+
+        <button
+          onClick={() => setLxdsOpen(true)}
+          className="rounded-xl border border-border px-3 py-2 text-left text-[11px] text-muted-foreground transition-colors hover:bg-secondary"
+        >
+          Analisar arquivo LXDS do CypCut (referência técnica, somente leitura)
+        </button>
+        <LxdsAnalysisDialog open={lxdsOpen} onOpenChange={setLxdsOpen} />
 
         <div className="flex gap-2">
           <button

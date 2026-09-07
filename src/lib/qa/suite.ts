@@ -23,6 +23,7 @@ import {
 } from "@/lib/lab2d/manufacturing";
 import { buildCncDxf, cncCutLength, verifyCncDxf, DEFAULT_CNC_OPTIONS } from "@/lib/dxf/cncExport";
 import { exportDxf } from "@/lib/dxf/dxfService";
+import { CYPCT_GOLDEN_SAMPLE_01 as GOLDEN } from "@/lib/lxds/goldenSample";
 
 
 export type QaCase = {
@@ -292,6 +293,40 @@ function cncCases(): QaCase[] {
   t.push(check("CNC", "DXF CNC relido confere", 1, v.ok ? 1 : 0, "bool"));
   t.push(check("CNC", "Sem REFERENCE/DIMENSION por padrão", 0, doc.layers.filter((l) => l.name === "REFERENCE" || l.name === "DIMENSION").length, "un"));
   t.push(check("CNC", "Comprimento de corte", 400, cncCutLength([cut, mark]), "mm"));
+
+  /* ---------------------------------------- LXDS (referência do CypCut) */
+  const gl = GOLDEN.layers.map((l) => l.name);
+  t.push(check("LXDS", "Amostra com 2 layers", 2, GOLDEN.layerCount, "un"));
+  t.push(check("LXDS", "Layer CUT presente", 1, gl.includes("CUT") ? 1 : 0, "bool"));
+  t.push(check("LXDS", "Layer MARK presente", 1, gl.includes("MARK") ? 1 : 0, "bool"));
+  t.push(check("LXDS", "Entidades indexadas", 3, GOLDEN.shapeCount, "un"));
+  t.push(
+    check(
+      "LXDS",
+      "Nomes de layer sem acento/maiúsculos",
+      1,
+      gl.every((n) => n === n.toUpperCase() && !/[^A-Z0-9_]/.test(n)) ? 1 : 0,
+      "bool",
+    ),
+  );
+  t.push(
+    check(
+      "LXDS",
+      "Layers CNC do CALDRA cobrem a amostra",
+      1,
+      gl.every((n) => cncLayerOf(n) !== null) ? 1 : 0,
+      "bool",
+    ),
+  );
+  t.push(
+    check(
+      "LXDS",
+      "Largura da amostra",
+      910.7,
+      GOLDEN.extents.maxX - GOLDEN.extents.minX,
+      "mm",
+    ),
+  );
 
   return t;
 }
