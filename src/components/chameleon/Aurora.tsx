@@ -80,19 +80,32 @@ export function AuroraBackground({
 
   /* Empresta o container ao canvas compartilhado só no estilo FLUIDO. */
   useEffect(() => {
-    if (auroraStyle !== "fluido") return;
+    if (auroraStyle !== "fluido") {
+      setShaderLive(false);
+      return;
+    }
     const engine = auroraEngine();
     const host = hostRef.current;
-    if (!engine || !host) return;
+    if (!engine || !host) {
+      setShaderLive(false);
+      return;
+    }
     if (!engine.supported()) {
       setGlOk(false);
+      setShaderLive(false);
       return;
     }
     const release = engine.acquire(host, animated, amp);
-    const off = engine.onStatus((ok) => setGlOk(ok));
+    const off = engine.onStatus((ok) => {
+      setGlOk(ok);
+      if (!ok) setShaderLive(false);
+    });
+    /* Confirmação factual: o canvas foi mesmo anexado a este container. */
+    setShaderLive(!!host.querySelector("canvas"));
     return () => {
       off();
       release();
+      setShaderLive(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [auroraStyle]);
