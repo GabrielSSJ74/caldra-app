@@ -130,23 +130,23 @@ export function Wire3D({
       return c;
     };
 
+    // "polygon offset": prioridade de profundidade por tipo de face, sem
+    // mexer em nenhum vértice — apenas política de desenho.
+    const BIAS: Record<string, number> = { inner: -0.6, cap: -0.3, rim: 0.3, outer: 0 };
+
     const f = model.faces
-      .map((face) => {
+      .map((face, idx) => {
         const cs = face.pts.map(cp);
-        let nx = 0;
-        let ny = 0;
-        let nz = 0;
-        for (let i = 0; i < cs.length; i++) {
-          const a = cs[i]!;
-          const b = cs[(i + 1) % cs.length]!;
-          nx += (a.y - b.y) * (a.z + b.z);
-          ny += (a.z - b.z) * (a.x + b.x);
-          nz += (a.x - b.x) * (a.y + b.y);
-        }
-        const len = Math.hypot(nx, ny, nz) || 1;
-        nx /= len;
-        ny /= len;
-        nz /= len;
+        // normal real da malha (espaço de modelo), corrigida pela escala de
+        // planificação e levada ao espaço de câmera — nunca derivada da tela.
+        const mn = face.n ?? { x: 0, y: 1, z: 0 };
+        const sy = k > 1e-6 ? 1 / k : 1;
+        const nl = Math.hypot(mn.x, mn.y * sy, mn.z) || 1;
+        const cn = toCam({ x: mn.x / nl, y: (mn.y * sy) / nl, z: mn.z / nl }, cam);
+        const nx = cn.x;
+        const ny = cn.y;
+        const nz = cn.z;
+        // dupla face: a superfície interna é iluminada pela normal invertida
         const s = nz < 0 ? -1 : 1;
         const key = Math.max(0, nx * s * KEY.x + ny * s * KEY.y + nz * s * KEY.z);
         const fill = Math.max(0, nx * s * FILL.x + ny * s * FILL.y + nz * s * FILL.z);
