@@ -5,7 +5,7 @@ import { SquareToRoundStudio } from "@/components/chameleon/SquareToRoundStudio"
 import { GeometryStudio } from "@/components/chameleon/GeometryStudio";
 import { getPart, getProject, savePartParameters } from "@/lib/projects/store";
 
-type Search = { projeto?: string; peca?: string };
+type Search = { projeto?: string | undefined; peca?: string | undefined };
 
 export const Route = createFileRoute("/tracagem/$slug")({
   validateSearch: (raw: Record<string, unknown>): Search => ({

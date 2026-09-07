@@ -56,9 +56,9 @@ type Props = {
   slug: string;
   name: string;
   /** Estado salvo de uma peça de projeto (instância). */
-  initial?: Partial<StudioSnapshot>;
+  initial?: Partial<StudioSnapshot> | undefined;
   /** Autosave: chamado com atraso após alterações relevantes. */
-  onPersist?: (snapshot: StudioSnapshot) => void;
+  onPersist?: ((snapshot: StudioSnapshot) => void) | undefined;
 };
 
 export function GeometryStudio({ slug, name, initial, onPersist }: Props) {

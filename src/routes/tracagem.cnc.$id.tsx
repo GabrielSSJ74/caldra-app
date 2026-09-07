@@ -13,7 +13,7 @@ import { cn } from "@/lib/utils";
 import { getPart, getProject, savePartParameters } from "@/lib/projects/store";
 
 export const Route = createFileRoute("/tracagem/cnc/$id")({
-  validateSearch: (raw: Record<string, unknown>): { projeto?: string; peca?: string } => ({
+  validateSearch: (raw: Record<string, unknown>): { projeto?: string | undefined; peca?: string | undefined } => ({
     projeto: typeof raw['projeto'] === "string" ? raw['projeto'] : undefined,
     peca: typeof raw['peca'] === "string" ? raw['peca'] : undefined,
   }),

@@ -43,13 +43,13 @@ export type ProjectPart = {
   modelId: string;
   name: string;
   parameters: Record<string, number>;
-  materialId?: string;
+  materialId?: string | undefined;
   material: string;
   thickness: number;
   quantity: number;
   status: PartStatus;
   /** 0–100; derivado do status quando não editado manualmente. */
-  progress?: number;
+  progress?: number | undefined;
   notes: string;
   createdAt: number;
   updatedAt: number;
@@ -65,11 +65,11 @@ export type Project = {
   client: string;
   description: string;
   type: ProjectType;
-  owner?: string;
-  place?: string;
-  deadline?: string;
-  code?: string;
-  tags?: string[];
+  owner?: string | undefined;
+  place?: string | undefined;
+  deadline?: string | undefined;
+  code?: string | undefined;
+  tags?: string[] | undefined;
   status: ProjectStatus;
   /** marcado manualmente pelo usuário. */
   delivered: boolean;
@@ -296,9 +296,9 @@ export type NewProjectInput = {
   client?: string;
   description?: string;
   type?: ProjectType;
-  owner?: string;
-  place?: string;
-  deadline?: string;
+  owner?: string | undefined;
+  place?: string | undefined;
+  deadline?: string | undefined;
   notes?: string;
 };
 
@@ -380,7 +380,7 @@ export type NewPartInput = {
   name?: string;
   parameters?: Record<string, number>;
   material?: string;
-  materialId?: string;
+  materialId?: string | undefined;
   thickness?: number;
   quantity?: number;
   notes?: string;
