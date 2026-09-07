@@ -137,7 +137,7 @@
 .calc-key-operator { color: var(--calc-cyan); }
 .calc-key-shift { flex-direction: column; color: var(--calc-cyan); }
 .calc-key-shift.is-active { border-color: var(--calc-cyan); background: var(--calc-active); box-shadow: var(--shadow-calc-glow); }
-.calc-key-equals { border-color: var(--calc-cyan); background: var(--calc-cyan); color: var(--calc-page); box-shadow: var(--shadow-calc-glow); }
+.calc-key-equals { border-color: var(--calc-cyan); background: var(--calc-cyan); color: var(--accent-foreground); box-shadow: var(--shadow-calc-glow); }
 .calc-key-equals:hover { background: color-mix(in oklab, var(--calc-cyan) 88%, white); }
 
 @media (max-width: 420px) {
