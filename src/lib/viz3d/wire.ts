@@ -14,7 +14,12 @@ import type { Vec2, Vec3 } from "@/lib/geometry/types";
 
 export type Edge = [Vec3, Vec3];
 export type FaceKind = "outer" | "inner" | "rim" | "cap";
-export type Face = { pts: Vec3[]; kind: FaceKind };
+/**
+ * Face da malha. `n` é a normal REAL em espaço de modelo, calculada uma única
+ * vez em `finish()` — depois que posições e índices estão completos (Newell).
+ * Nunca é derivada da projeção de tela, o que elimina manchas de iluminação.
+ */
+export type Face = { pts: Vec3[]; kind: FaceKind; n?: Vec3 };
 export type Bounds = { min: Vec3; max: Vec3 };
 
 export type WireModel = {
