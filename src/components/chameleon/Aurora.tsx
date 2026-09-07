@@ -59,8 +59,12 @@ export function AuroraBackground({
   const pageVisible = usePageVisible();
   const hostRef = useRef<HTMLDivElement>(null);
   const [glOk, setGlOk] = useState(true);
+  /* Só escondemos os blobs CSS quando o canvas do shader está REALMENTE
+     montado e desenhando. Sem isto, uma falha silenciosa do WebGL deixa a
+     tela sem nenhum fundo. */
+  const [shaderLive, setShaderLive] = useState(false);
 
-  const wantsShader = auroraStyle === "fluido" && glOk;
+  const wantsShader = auroraStyle === "fluido" && glOk && shaderLive;
   /* PRO anima; FREE vê o frame congelado do mesmo estilo. */
   const allowed = mode === "always" || isMestre;
   const animated =
