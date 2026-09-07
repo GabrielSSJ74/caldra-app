@@ -113,10 +113,9 @@ export function ScientificCalculator() {
         <section aria-label="Teclado científico" className="mt-4 grid grid-cols-5 gap-2 sm:gap-2.5">
           <CalcKey onClick={() => { feedback(); setShift((v) => !v); }} ariaLabel="Alternar Shift" className={cn("calc-key-shift", shift && "is-active")}><span className="text-base">⇧</span><span className="text-[13px] font-semibold">SHIFT</span></CalcKey>
           <CalcKey label="C" onClick={clear} />
-          <CalcKey onClick={backspace} ariaLabel="Apagar último caractere"><ArrowLeft className="size-5" /></CalcKey>
+          <CalcKey onClick={backspace} ariaLabel="Apagar último caractere"><Delete className="size-5" /></CalcKey>
           <CalcKey label="(" onClick={() => append("(")} />
           <CalcKey label=")" onClick={() => append(")")} />
-          <CalcKey onClick={backspace} ariaLabel="Apagar"><Delete className="size-5" /></CalcKey>
 
           <CalcKey label={shift ? "sin⁻¹" : "sin"} sub={shift ? "sin" : "sin⁻¹"} onClick={() => functionKey("sin", "asin")} />
           <CalcKey label={shift ? "cos⁻¹" : "cos"} sub={shift ? "cos" : "cos⁻¹"} onClick={() => functionKey("cos", "acos")} />
@@ -136,9 +135,8 @@ export function ScientificCalculator() {
           <CalcKey label="xʸ" onClick={() => append("^")} className="calc-key-operator" />
           <CalcKey label="√" onClick={() => append("sqrt(")} className="calc-key-operator" />
 
-          <CalcKey label="0" onClick={() => append("0")} className="col-span-1 sm:col-span-1" />
+          <CalcKey label="0" onClick={() => append("0")} className="col-span-2" />
           <CalcKey label="," onClick={() => append(",")} />
-          <CalcKey label="±" onClick={() => setExpression((current) => current.startsWith("−") ? current.slice(1) : `−${current}`)} />
           <CalcKey onClick={() => append("%")} ariaLabel="Porcentagem"><Percent className="size-5" /></CalcKey>
           <CalcKey onClick={calculate} ariaLabel="Calcular resultado" className="calc-key-equals"><Equal className="size-6" /></CalcKey>
         </section>
