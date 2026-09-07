@@ -97,7 +97,7 @@ export async function readZip(buf: ArrayBuffer): Promise<Map<string, Uint8Array>
 const parse = (text: string) =>
   new DOMParser().parseFromString(text, "application/xml").documentElement;
 
-const attr = (el: Element | null, name: string) => el?.getAttribute(name) ?? "";
+const attr = (el: Element | null | undefined, name: string) => el?.getAttribute(name) ?? "";
 
 /* -------------------------------------------------------------- análise */
 
