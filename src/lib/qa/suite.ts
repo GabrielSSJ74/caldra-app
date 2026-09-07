@@ -46,8 +46,10 @@ function check(
   expected: number,
   actual: number,
   unit = "mm",
+  /** Tolerância própria: a calculadora exige precisão numérica, não de chapa. */
+  tol?: number,
 ): QaCase {
-  const tolerance = Math.max(TOL_ABS, Math.abs(expected) * TOL_REL);
+  const tolerance = tol ?? Math.max(TOL_ABS, Math.abs(expected) * TOL_REL);
   return {
     group,
     name,
@@ -377,7 +379,7 @@ function calculatorCases(): QaCase[] {
     ["√(81)", "DEG", 9, "símbolo de raiz"],
   ];
   for (const [src, mode, expected, label] of cases) {
-    t.push(check("Calculadora", `${label} — ${src}`, expected, ev(src, mode), "un"));
+    t.push(check("Calculadora", `${label} — ${src}`, expected, ev(src, mode), "un", 1e-9));
   }
   t.push(check("Calculadora", "Divisão por zero é recusada", 1, Number.isNaN(ev("1/0")) ? 1 : 0, "bool"));
   t.push(check("Calculadora", "Expressão inválida é recusada", 1, Number.isNaN(ev("2++")) ? 1 : 0, "bool"));
