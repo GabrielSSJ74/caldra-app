@@ -29,6 +29,7 @@ import { Route as EscolaIndexRouteImport } from './routes/escola.index'
 import { Route as EscolaSlugRouteImport } from './routes/escola.$slug'
 import { Route as TracagemIndexRouteImport } from './routes/tracagem.index'
 import { Route as TracagemSlugRouteImport } from './routes/tracagem.$slug'
+import { Route as TracagemCncIdRouteImport } from './routes/tracagem.cnc.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -130,6 +131,11 @@ const TracagemSlugRoute = TracagemSlugRouteImport.update({
   path: '/tracagem/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TracagemCncIdRoute = TracagemCncIdRouteImport.update({
+  id: '/tracagem/cnc/$id',
+  path: '/tracagem/cnc/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -152,6 +158,7 @@ export interface FileRoutesByFullPath {
   '/desenho-2d/': typeof Desenho2dIndexRoute
   '/escola/': typeof EscolaIndexRoute
   '/tracagem/': typeof TracagemIndexRoute
+  '/tracagem/cnc/$id': typeof TracagemCncIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -174,6 +181,7 @@ export interface FileRoutesByTo {
   '/desenho-2d': typeof Desenho2dIndexRoute
   '/escola': typeof EscolaIndexRoute
   '/tracagem': typeof TracagemIndexRoute
+  '/tracagem/cnc/$id': typeof TracagemCncIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -197,6 +205,7 @@ export interface FileRoutesById {
   '/desenho-2d/': typeof Desenho2dIndexRoute
   '/escola/': typeof EscolaIndexRoute
   '/tracagem/': typeof TracagemIndexRoute
+  '/tracagem/cnc/$id': typeof TracagemCncIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -221,6 +230,7 @@ export interface FileRouteTypes {
     | '/desenho-2d/'
     | '/escola/'
     | '/tracagem/'
+    | '/tracagem/cnc/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -243,6 +253,7 @@ export interface FileRouteTypes {
     | '/desenho-2d'
     | '/escola'
     | '/tracagem'
+    | '/tracagem/cnc/$id'
   id:
     | '__root__'
     | '/'
@@ -265,6 +276,7 @@ export interface FileRouteTypes {
     | '/desenho-2d/'
     | '/escola/'
     | '/tracagem/'
+    | '/tracagem/cnc/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -288,6 +300,7 @@ export interface RootRouteChildren {
   Desenho2dIndexRoute: typeof Desenho2dIndexRoute
   EscolaIndexRoute: typeof EscolaIndexRoute
   TracagemIndexRoute: typeof TracagemIndexRoute
+  TracagemCncIdRoute: typeof TracagemCncIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -432,6 +445,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TracagemSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tracagem/cnc/$id': {
+      id: '/tracagem/cnc/$id'
+      path: '/tracagem/cnc/$id'
+      fullPath: '/tracagem/cnc/$id'
+      preLoaderRoute: typeof TracagemCncIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -456,6 +476,7 @@ const rootRouteChildren: RootRouteChildren = {
   Desenho2dIndexRoute: Desenho2dIndexRoute,
   EscolaIndexRoute: EscolaIndexRoute,
   TracagemIndexRoute: TracagemIndexRoute,
+  TracagemCncIdRoute: TracagemCncIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
