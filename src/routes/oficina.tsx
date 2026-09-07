@@ -18,14 +18,25 @@ import { useSettings } from "@/lib/settings/SettingsProvider";
 import { useMaterials } from "@/lib/materials/MaterialsProvider";
 import { formatMoney, formatWeight } from "@/lib/regional/regional";
 import { materialCostBRL, plateMassKg } from "@/lib/geometry/mass";
-import { DEFAULT_RATES, cutTimeMinutes, fabricationCost, type MachineRates } from "@/lib/costing/fabrication";
+import {
+  DEFAULT_RATES,
+  cutTimeMinutes,
+  fabricationCost,
+  type MachineRates,
+} from "@/lib/costing/fabrication";
 import { nestParts, type NestResult } from "@/lib/nesting/nesting";
 import { DEFAULT_SHEET_ID } from "@/lib/nesting/sheets";
 import { emptyPart, partsFromProject, type ProductionPart } from "@/lib/production/parts";
 import { jobSheetPdf } from "@/lib/production/jobSheet";
 import { newQuote, quotePdf, quoteTotals, quoteFilename, type Quote } from "@/lib/costing/quote";
 import { listProjects, type Project } from "@/lib/lab2d/projects";
-import { listVersions, restoreVersion, saveVersion, syncProjects, type CloudVersion } from "@/lib/cloud/cloudProjects";
+import {
+  listVersions,
+  restoreVersion,
+  saveVersion,
+  syncProjects,
+  type CloudVersion,
+} from "@/lib/cloud/cloudProjects";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/oficina")({
@@ -160,8 +171,7 @@ function Oficina() {
   useEffect(() => setProjects(listProjects()), []);
 
   const material = materials.get(materialId) ?? materials.visible[0];
-  const sheet =
-    regionConfig.sheets.find((s) => s.id === sheetId) ?? regionConfig.sheets[0]!;
+  const sheet = regionConfig.sheets.find((s) => s.id === sheetId) ?? regionConfig.sheets[0]!;
 
   const money = (v: number) => formatMoney(v, regionConfig);
 
@@ -339,7 +349,9 @@ function Oficina() {
         />
       )}
 
-      {tab === "nuvem" && <NuvemTab projects={projects} onRefresh={() => setProjects(listProjects())} />}
+      {tab === "nuvem" && (
+        <NuvemTab projects={projects} onRefresh={() => setProjects(listProjects())} />
+      )}
     </div>
   );
 }
@@ -512,7 +524,13 @@ function ChapaTab({
             </select>
           </label>
           <Field label="Folga entre peças" value={gap} onChange={setGap} suffix="mm" step={0.5} />
-          <Field label="Margem da borda" value={margin} onChange={setMargin} suffix="mm" step={0.5} />
+          <Field
+            label="Margem da borda"
+            value={margin}
+            onChange={setMargin}
+            suffix="mm"
+            step={0.5}
+          />
           <label className="flex items-end gap-2 pb-2">
             <input
               type="checkbox"
@@ -527,7 +545,11 @@ function ChapaTab({
 
       <div className="grid gap-2 sm:grid-cols-4">
         <Stat label="Chapas" value={String(nest.sheets.length)} hint={sheetLabel} />
-        <Stat label="Aproveitamento" value={`${(nest.utilization * 100).toFixed(1)}%`} hint="área útil" />
+        <Stat
+          label="Aproveitamento"
+          value={`${(nest.utilization * 100).toFixed(1)}%`}
+          hint="área útil"
+        />
         <Stat label="Peças posicionadas" value={String(nest.placed)} hint="no lote" />
         <Stat
           label="Sobra"
@@ -538,7 +560,9 @@ function ChapaTab({
 
       {nest.rejected.length > 0 && (
         <Panel className="border border-warn/30 p-3">
-          <p className="font-mono text-[10px] tracking-wider text-warn uppercase">Não cabem na chapa</p>
+          <p className="font-mono text-[10px] tracking-wider text-warn uppercase">
+            Não cabem na chapa
+          </p>
           <ul className="mt-1 space-y-0.5 text-[12px] text-muted-foreground">
             {nest.rejected.map((r) => (
               <li key={`${r.name}${r.w}`}>
@@ -696,7 +720,13 @@ function CustoTab({
               ))}
             </select>
           </label>
-          <Field label="Espessura" value={thickness} onChange={setThickness} suffix="mm" step={0.1} />
+          <Field
+            label="Espessura"
+            value={thickness}
+            onChange={setThickness}
+            suffix="mm"
+            step={0.1}
+          />
           <Field label="Perda" value={lossPct} onChange={setLossPct} suffix="%" step={1} />
         </div>
       </Panel>
@@ -736,7 +766,8 @@ function CustoTab({
                     <td className="max-w-[180px] truncate py-1.5 pr-2">{c.part.name}</td>
                     <td className="py-1.5 pr-2 font-mono">{weight(c.massKg)}</td>
                     <td className="py-1.5 pr-2 font-mono text-muted-foreground">
-                      {cutTimeMinutes(c.part.cutLengthMm * c.part.quantity, thickness).toFixed(1)} min
+                      {cutTimeMinutes(c.part.cutLengthMm * c.part.quantity, thickness).toFixed(1)}{" "}
+                      min
                     </td>
                     <td className="py-1.5 pr-2 font-mono">{money(c.mat)}</td>
                     <td className="py-1.5 pr-2 font-mono">{money(c.fab.total)}</td>
@@ -798,10 +829,15 @@ function OrcamentoTab({
         ) : (
           <ul className="space-y-1 text-[12px]">
             {quote.items.map((i) => (
-              <li key={i.id} className="flex items-center justify-between border-b border-line py-1.5">
+              <li
+                key={i.id}
+                className="flex items-center justify-between border-b border-line py-1.5"
+              >
                 <span className="min-w-0">
                   <span className="block truncate">{i.description}</span>
-                  <span className="block font-mono text-[10px] text-muted-foreground">{i.detail}</span>
+                  <span className="block font-mono text-[10px] text-muted-foreground">
+                    {i.detail}
+                  </span>
                 </span>
                 <span className="ml-3 shrink-0 font-mono">
                   ×{i.quantity} · {money(i.materialCost + i.fabricationCost)}
@@ -992,13 +1028,21 @@ function FichaTab({
   return (
     <Panel className="p-4">
       <SectionLabel>Ficha de produção</SectionLabel>
-      <TextField label="Projeto / OS" value={projectName} onChange={setProjectName} placeholder="Obra, cliente ou nº da OS" />
+      <TextField
+        label="Projeto / OS"
+        value={projectName}
+        onChange={setProjectName}
+        placeholder="Obra, cliente ou nº da OS"
+      />
       {costed.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">Sem peças no lote.</p>
       ) : (
         <ul className="mt-3 space-y-1.5">
           {costed.map((c) => (
-            <li key={c.part.id} className="flex items-center justify-between gap-3 border-b border-line py-2">
+            <li
+              key={c.part.id}
+              className="flex items-center justify-between gap-3 border-b border-line py-2"
+            >
               <span className="min-w-0">
                 <span className="block truncate text-sm">{c.part.name}</span>
                 <span className="block font-mono text-[10px] text-muted-foreground">
@@ -1083,7 +1127,10 @@ function NuvemTab({ projects, onRefresh }: { projects: Project[]; onRefresh: () 
                   </button>
                   <button
                     onClick={async () => {
-                      const label = window.prompt("Nome da versão", new Date().toLocaleString("pt-BR"));
+                      const label = window.prompt(
+                        "Nome da versão",
+                        new Date().toLocaleString("pt-BR"),
+                      );
                       if (label === null) return;
                       try {
                         await saveVersion(p, label);
@@ -1106,7 +1153,10 @@ function NuvemTab({ projects, onRefresh }: { projects: Project[]; onRefresh: () 
                       </li>
                     )}
                     {versions.map((v) => (
-                      <li key={v.id} className="flex items-center justify-between gap-2 text-[12px]">
+                      <li
+                        key={v.id}
+                        className="flex items-center justify-between gap-2 text-[12px]"
+                      >
                         <span className="min-w-0 truncate text-muted-foreground">{v.label}</span>
                         <button
                           onClick={async () => {

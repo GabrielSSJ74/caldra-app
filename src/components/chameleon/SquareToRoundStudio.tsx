@@ -1,7 +1,15 @@
 import { useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Check, ChevronRight, Download, FileText, Image as ImageIcon, Lightbulb, PenTool } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  Download,
+  FileText,
+  Image as ImageIcon,
+  Lightbulb,
+  PenTool,
+} from "lucide-react";
 import {
   SQUARE_TO_ROUND_DEFAULTS,
   calculateSquareToRound,
@@ -21,7 +29,6 @@ import { DevelopmentView } from "./DevelopmentView";
 import { SchematicSquareToRound } from "./SchematicSquareToRound";
 import { Metric, Panel, SectionLabel } from "./ui";
 import { StageBar } from "./StageBar";
-
 
 type FieldKey = keyof SquareToRoundInput;
 
@@ -44,7 +51,6 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number];
 
-
 export function SquareToRoundStudio() {
   const { can, requirePro } = useFeatureAccess();
   const { precision } = useSettings();
@@ -63,7 +69,6 @@ export function SquareToRoundStudio() {
   const [unfold, setUnfold] = useState(0);
   const navigate = useNavigate();
   const svgRef = useRef<SVGSVGElement>(null);
-
 
   const issues = useMemo(() => validateSquareToRound(input), [input]);
   const result = useMemo(() => {
@@ -87,8 +92,6 @@ export function SquareToRoundStudio() {
       setCalculating(false);
     }, 340);
   };
-
-
 
   const issueFor = (key: FieldKey) => issues.find((i) => i.field === key)?.message;
 
@@ -297,7 +300,6 @@ export function SquareToRoundStudio() {
 
           <div key={tab} className="fade-up">
             {tab === "Dimensões" && (
-
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                 {result.metrics.map((m) => (
                   <Metric
@@ -375,26 +377,26 @@ export function SquareToRoundStudio() {
                   />
                 </div>
               ) : (
-              <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
-                <View3DToggle
-                  active={false}
-                  onToggle={() => setView3d(true)}
-                  className="absolute top-3 right-3 z-10"
-                />
-                <div className="h-[300px] lg:h-[420px]">
-                  <DevelopmentView
-                    ref={svgRef}
-                    pattern={result.development}
-                    showFolds={tab === "Traçado"}
-                    showPoints={tab === "Traçado"}
+                <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
+                  <View3DToggle
+                    active={false}
+                    onToggle={() => setView3d(true)}
+                    className="absolute top-3 right-3 z-10"
                   />
+                  <div className="h-[300px] lg:h-[420px]">
+                    <DevelopmentView
+                      ref={svgRef}
+                      pattern={result.development}
+                      showFolds={tab === "Traçado"}
+                      showPoints={tab === "Traçado"}
+                    />
+                  </div>
+                  <p className="mt-2 font-mono text-[10px] text-muted-foreground">
+                    {tab === "Traçado"
+                      ? "Linhas de corte (contorno) · geratrizes tracejadas · pontos V0–V3 da base."
+                      : "Contorno de corte pronto para nesting. Escala real em milímetros."}
+                  </p>
                 </div>
-                <p className="mt-2 font-mono text-[10px] text-muted-foreground">
-                  {tab === "Traçado"
-                    ? "Linhas de corte (contorno) · geratrizes tracejadas · pontos V0–V3 da base."
-                    : "Contorno de corte pronto para nesting. Escala real em milímetros."}
-                </p>
-              </div>
               ))}
 
             {tab === "Material" && (
@@ -480,7 +482,6 @@ export function SquareToRoundStudio() {
                 <button
                   onClick={() => {
                     if (!requirePro("lab2d")) return;
-
 
                     sendToLab2D({
                       name: "Quadrado → Redondo",

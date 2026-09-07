@@ -186,11 +186,6 @@ function Configuracoes() {
       <ReportProblemDialog open={reportOpen} onOpenChange={setReportOpen} />
       <BackupDialog open={backupOpen} onOpenChange={setBackupOpen} />
 
-
-
-
-
-
       <Panel className="space-y-4 p-4">
         <div>
           <SectionLabel>Tema</SectionLabel>

@@ -1,7 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Box, Check, ChevronRight, Download, FileText, GraduationCap, Image as ImageIcon, Lightbulb, PenTool } from "lucide-react";
+import {
+  Box,
+  Check,
+  ChevronRight,
+  Download,
+  FileText,
+  GraduationCap,
+  Image as ImageIcon,
+  Lightbulb,
+  PenTool,
+} from "lucide-react";
 import { getEngine, type EngineValues } from "@/lib/geometry/engines";
 import { downloadDxf, type DxfEntity } from "@/lib/dxf/dxfService";
 import { exportSvgAsPdf, exportSvgAsPng } from "@/lib/export/exporters";
@@ -266,7 +276,9 @@ export function GeometryStudio({ slug, name }: Props) {
                   onChange={(e) => set("divisions", e.target.value)}
                   className="h-1 flex-1 accent-[var(--accent)]"
                 />
-                <span className="w-8 text-right font-mono text-xs">{values["divisions"] ?? 12}</span>
+                <span className="w-8 text-right font-mono text-xs">
+                  {values["divisions"] ?? 12}
+                </span>
               </label>
             </div>
 
@@ -407,28 +419,28 @@ export function GeometryStudio({ slug, name }: Props) {
                   />
                 </div>
               ) : (
-              <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
-                {isMestre && (
-                  <View3DToggle
-                    active={false}
-                    onToggle={() => setView3d(true)}
-                    className="absolute top-3 right-3 z-10"
-                  />
-                )}
-                <div className="h-[300px] lg:h-[420px]">
-                  <DevelopmentView
-                    ref={svgRef}
-                    pattern={result.development}
-                    showFolds={tab === "Traçado"}
-                    showPoints={tab === "Traçado"}
-                  />
+                <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
+                  {isMestre && (
+                    <View3DToggle
+                      active={false}
+                      onToggle={() => setView3d(true)}
+                      className="absolute top-3 right-3 z-10"
+                    />
+                  )}
+                  <div className="h-[300px] lg:h-[420px]">
+                    <DevelopmentView
+                      ref={svgRef}
+                      pattern={result.development}
+                      showFolds={tab === "Traçado"}
+                      showPoints={tab === "Traçado"}
+                    />
+                  </div>
+                  <p className="mt-2 font-mono text-[10px] text-muted-foreground">
+                    {tab === "Traçado"
+                      ? "Linhas de corte (contorno) · geratrizes e ordenadas tracejadas · pontos notáveis."
+                      : "Contorno de corte pronto para nesting. Escala real em milímetros."}
+                  </p>
                 </div>
-                <p className="mt-2 font-mono text-[10px] text-muted-foreground">
-                  {tab === "Traçado"
-                    ? "Linhas de corte (contorno) · geratrizes e ordenadas tracejadas · pontos notáveis."
-                    : "Contorno de corte pronto para nesting. Escala real em milímetros."}
-                </p>
-              </div>
               ))}
 
             {tab === "Conferência" && (
@@ -572,9 +584,7 @@ export function GeometryStudio({ slug, name }: Props) {
           {/* ENTENDER O CÁLCULO */}
           <div className="mt-4 rounded-xl border border-accent/20 bg-accent/[0.04] p-3">
             <button
-              onClick={() =>
-                requirePro("calc.explanation") && setExplain((v) => !v)
-              }
+              onClick={() => requirePro("calc.explanation") && setExplain((v) => !v)}
               className="flex w-full items-center gap-2 text-left"
             >
               <Lightbulb className="size-4 shrink-0 text-accent" />
