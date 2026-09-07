@@ -118,6 +118,9 @@ export function AuroraBackground({
     engine.update(host, animated, amp);
   }, [auroraStyle, animated, amp]);
 
+  /* PADRÃO: nenhuma camada — o fundo sólido do tema aparece. */
+  if (auroraStyle === "padrao") return null;
+
   return (
     <div
       aria-hidden

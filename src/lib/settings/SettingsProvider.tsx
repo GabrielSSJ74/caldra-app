@@ -8,7 +8,8 @@ export type Unit = "mm" | "cm" | "m" | "in";
 /** APRENDIZ mostra fórmulas e dicas; MESTRE segue direto. Só apresentação. */
 export type Level = "aprendiz" | "mestre";
 /** Estilo do fundo AURORA: shader WebGL, blobs CSS ou frame congelado. */
-export type AuroraStyle = "fluido" | "suave" | "estatico";
+/** PADRÃO = nenhuma camada Aurora (fundo sólido do tema). Só por escolha explícita. */
+export type AuroraStyle = "fluido" | "suave" | "estatico" | "padrao";
 
 const KEY = "caldra.settings";
 
@@ -22,6 +23,10 @@ export type Settings = {
   region: RegionId;
   /** Estilo do fundo AURORA (recurso PRO para a versão animada). */
   auroraStyle: AuroraStyle;
+  /** Modo de ângulo da calculadora científica. */
+  calcAngle: "RAD" | "DEG" | "GRAD";
+  /** Casas decimais exibidas na calculadora científica. */
+  calcPlaces: number;
 };
 
 const DEFAULTS: Settings = {
@@ -32,6 +37,8 @@ const DEFAULTS: Settings = {
   level: "aprendiz",
   region: DEFAULT_REGION,
   auroraStyle: "fluido",
+  calcAngle: "DEG",
+  calcPlaces: 4,
 };
 
 type SettingsValue = Settings & {
@@ -42,6 +49,8 @@ type SettingsValue = Settings & {
   setLevel: (l: Level) => void;
   setRegion: (r: RegionId) => void;
   setAuroraStyle: (s: AuroraStyle) => void;
+  setCalcAngle: (a: "RAD" | "DEG" | "GRAD") => void;
+  setCalcPlaces: (n: number) => void;
   /** Região resolvida (nunca undefined). */
   regionConfig: Region;
 };
@@ -59,7 +68,7 @@ export function readStoredSettings(): Settings {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return DEFAULTS;
     const saved = JSON.parse(raw) as Partial<Settings> & { aurora?: boolean };
-    const VALID: AuroraStyle[] = ["fluido", "suave", "estatico"];
+    const VALID: AuroraStyle[] = ["fluido", "suave", "estatico", "padrao"];
     const auroraStyle: AuroraStyle =
       saved.aurora === false
         ? "estatico"
@@ -144,6 +153,8 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setLevel: (level) => setSettings((s) => ({ ...s, level })),
       setRegion: (region) => setSettings((s) => ({ ...s, region })),
       setAuroraStyle: (auroraStyle) => setSettings((s) => ({ ...s, auroraStyle })),
+      setCalcAngle: (calcAngle) => setSettings((s) => ({ ...s, calcAngle })),
+      setCalcPlaces: (calcPlaces) => setSettings((s) => ({ ...s, calcPlaces })),
       regionConfig: regionOf(settings.region),
     }),
     [settings],
