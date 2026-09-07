@@ -10,8 +10,13 @@ import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { sendToLab2D } from "@/lib/lab2d/handoff";
 import { markRecent, saveCustom, toggleFavorite, useLibraryState } from "@/lib/library/store";
 import { cn } from "@/lib/utils";
+import { getPart, getProject, savePartParameters } from "@/lib/projects/store";
 
 export const Route = createFileRoute("/tracagem/cnc/$id")({
+  validateSearch: (raw: Record<string, unknown>): { projeto?: string | undefined; peca?: string | undefined } => ({
+    projeto: typeof raw['projeto'] === "string" ? raw['projeto'] : undefined,
+    peca: typeof raw['peca'] === "string" ? raw['peca'] : undefined,
+  }),
   loader: ({ params }) => {
     const part = findPart(`cnc.${params.id}`);
     if (!part || !part.generator) throw notFound();
@@ -36,14 +41,28 @@ export const Route = createFileRoute("/tracagem/cnc/$id")({
 
 function CncPartPage() {
   const { part } = Route.useLoaderData();
+  const { projeto, peca } = Route.useSearch();
   const navigate = useNavigate();
   const { favorites } = useLibraryState();
   const gen = getGenerator(part.generator!)!;
-  const [values, setValues] = useState<Record<string, number>>(() => defaultValues(gen));
+  const instance = projeto && peca ? getPart(projeto, peca) : null;
+  const project = projeto ? getProject(projeto) : null;
+  const [values, setValues] = useState<Record<string, number>>(() => ({
+    ...defaultValues(gen),
+    ...(instance?.parameters ?? {}),
+  }));
 
   useEffect(() => {
     markRecent(part.id);
   }, [part.id]);
+
+  /* Autosave da peça do projeto (instância independente do modelo). */
+  useEffect(() => {
+    if (!projeto || !peca) return;
+    const id = window.setTimeout(() => savePartParameters(projeto, peca, values), 700);
+    return () => window.clearTimeout(id);
+  }, [projeto, peca, values]);
+
 
   const fields = visibleFields(gen, values);
   const entities = useMemo(() => {
@@ -65,6 +84,24 @@ function CncPartPage() {
 
   return (
     <div className="space-y-4">
+      {project && instance && (
+        <div className="rounded-xl border border-line bg-background/40 px-3 py-2">
+          <p className="t-eyebrow">
+            <Link to="/projetos" className="hover:text-accent">
+              Projetos
+            </Link>{" "}
+            /{" "}
+            <Link
+              to="/projetos/$projectId"
+              params={{ projectId: project.id }}
+              className="hover:text-accent"
+            >
+              {project.name}
+            </Link>{" "}
+            / {instance.name}
+          </p>
+        </div>
+      )}
       <div className="flex items-start justify-between gap-3">
         <div>
           <Link

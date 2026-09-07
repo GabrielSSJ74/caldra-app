@@ -44,9 +44,24 @@ const BASE_TABS = [
   "Exportação",
 ] as const;
 
-type Props = { slug: string; name: string };
+export type StudioSnapshot = {
+  values: Record<string, number>;
+  materialId: string;
+  material: string;
+  thickness: number;
+  quantity: number;
+};
 
-export function GeometryStudio({ slug, name }: Props) {
+type Props = {
+  slug: string;
+  name: string;
+  /** Estado salvo de uma peça de projeto (instância). */
+  initial?: { [K in keyof StudioSnapshot]?: StudioSnapshot[K] | undefined } | undefined;
+  /** Autosave: chamado com atraso após alterações relevantes. */
+  onPersist?: ((snapshot: StudioSnapshot) => void) | undefined;
+};
+
+export function GeometryStudio({ slug, name, initial, onPersist }: Props) {
   const engine = getEngine(slug);
   const { can, isMestre, requirePro } = useFeatureAccess();
   const { precision, level } = useSettings();
@@ -54,11 +69,15 @@ export function GeometryStudio({ slug, name }: Props) {
   const navigate = useNavigate();
   const svgRef = useRef<SVGSVGElement>(null);
 
-  const [values, setValues] = useState<EngineValues>(() => ({ ...(engine?.defaults ?? {}) }));
+  const [values, setValues] = useState<EngineValues>(() => ({
+    ...(engine?.defaults ?? {}),
+    ...(initial?.values ?? {}),
+  }));
   const { get, defaultMaterialId } = useMaterials();
-  const [materialId, setMaterialId] = useState(defaultMaterialId);
-  const [material, setMaterial] = useState("Aço Carbono");
-  const [quantity, setQuantity] = useState(1);
+  const [materialId, setMaterialId] = useState(initial?.materialId ?? defaultMaterialId);
+  const [material, setMaterial] = useState(initial?.material ?? "Aço Carbono");
+  const [quantity, setQuantity] = useState(initial?.quantity ?? 1);
+
   const [focused, setFocused] = useState<string | null>(null);
   const [calculated, setCalculated] = useState(true);
   const [calculating, setCalculating] = useState(false);
@@ -104,6 +123,24 @@ export function GeometryStudio({ slug, name }: Props) {
         : [],
     [engine, values],
   );
+
+  /* Autosave inteligente: grava 700 ms após a última alteração. */
+  const persistRef = useRef(onPersist);
+  persistRef.current = onPersist;
+  useEffect(() => {
+    if (!persistRef.current) return;
+    const id = window.setTimeout(() => {
+      persistRef.current?.({
+        values: { ...values } as Record<string, number>,
+        materialId,
+        material,
+        thickness: (values["thickness"] as number) ?? 3,
+        quantity,
+      });
+    }, 700);
+    return () => window.clearTimeout(id);
+  }, [values, materialId, material, quantity]);
+
 
   if (!engine) return null;
 

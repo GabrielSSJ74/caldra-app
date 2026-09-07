@@ -77,3 +77,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 
 ## Decisões pendentes do usuário
 - Preços do paywall (mensal / anual / vitalício Pix) — usar placeholders configuráveis até definir
+
+## Projetos como dossiê de fabricação (CONCLUÍDO)
+- Projeto = cliente/obra com peças-instância independentes, progresso e histórico.
+- Peças abrem a mesma tela de Traçagem (paramétricas e CNC 2D) com breadcrumb e autosave.
