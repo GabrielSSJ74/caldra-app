@@ -1,7 +1,17 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Box, Check, ChevronRight, Download, FileText, GraduationCap, Image as ImageIcon, Lightbulb, PenTool } from "lucide-react";
+import {
+  Box,
+  Check,
+  ChevronRight,
+  Download,
+  FileText,
+  GraduationCap,
+  Image as ImageIcon,
+  Lightbulb,
+  PenTool,
+} from "lucide-react";
 import { getEngine, type EngineValues } from "@/lib/geometry/engines";
 import { downloadDxf, type DxfEntity } from "@/lib/dxf/dxfService";
 import { exportSvgAsPdf, exportSvgAsPng } from "@/lib/export/exporters";
@@ -15,7 +25,7 @@ import { diagnose } from "@/lib/geometry/copilot";
 import { toKgDm3 } from "@/lib/geometry/mass";
 import { useMaterials } from "@/lib/materials/MaterialsProvider";
 import { cn } from "@/lib/utils";
-import { Wire3D } from "./Wire3D";
+import { View3DPanel, View3DToggle } from "./View3DPanel";
 import { DevelopmentView } from "./DevelopmentView";
 import { ParametricDiagram, type CotaSpec } from "./ParametricDiagram";
 import { MassCostPanel } from "./MassCostPanel";
@@ -56,6 +66,10 @@ export function GeometryStudio({ slug, name }: Props) {
   const [explain, setExplain] = useState(false);
   const [learn, setLearn] = useState(false);
   const [unfold, setUnfold] = useState(0);
+  /* 3D é camada da área de resultado, não etapa do fluxo. */
+  const [view3d, setView3d] = useState(false);
+  /* Trocar de peça sempre volta para o 2D. */
+  useEffect(() => setView3d(false), [slug]);
   const [pulse, setPulse] = useState<string | null>(null);
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
   const pulseTimer = useRef<number | null>(null);
@@ -93,7 +107,7 @@ export function GeometryStudio({ slug, name }: Props) {
 
   if (!engine) return null;
 
-  const tabs = isMestre ? (["3D", ...BASE_TABS] as string[]) : (BASE_TABS as readonly string[]);
+  const tabs = BASE_TABS as readonly string[];
 
   const set = (key: string, raw: string) => {
     const value = raw === "" || raw === "-" ? 0 : Number(raw.replace(",", "."));
@@ -195,19 +209,15 @@ export function GeometryStudio({ slug, name }: Props) {
               Esquema · mm
             </span>
             {isMestre && (
-              <button
-                onClick={() => {
+              <View3DToggle
+                active={view3d}
+                onToggle={() => {
                   setCalculated(true);
-                  setTab("3D");
+                  setView3d((v) => !v);
+                  setTab((t) => (t === "Traçado" || t === "Desenvolvimento" ? t : "Traçado"));
                 }}
-                aria-label="Ver em 3D"
-                className="absolute right-2.5 bottom-2.5 flex size-11 items-center justify-center rounded-full border border-accent/35 bg-accent/12 text-accent backdrop-blur transition-transform hover:scale-105 active:scale-95"
-              >
-                <span className="flex flex-col items-center leading-none">
-                  <Box className="size-3.5" />
-                  <span className="mt-0.5 font-mono text-[9px] tracking-wider">3D</span>
-                </span>
-              </button>
+                className="absolute right-2.5 bottom-2.5"
+              />
             )}
           </div>
 
@@ -266,7 +276,9 @@ export function GeometryStudio({ slug, name }: Props) {
                   onChange={(e) => set("divisions", e.target.value)}
                   className="h-1 flex-1 accent-[var(--accent)]"
                 />
-                <span className="w-8 text-right font-mono text-xs">{values["divisions"] ?? 12}</span>
+                <span className="w-8 text-right font-mono text-xs">
+                  {values["divisions"] ?? 12}
+                </span>
               </label>
             </div>
 
@@ -335,38 +347,6 @@ export function GeometryStudio({ slug, name }: Props) {
           </div>
 
           <div key={tab} className="fade-up">
-            {tab === "3D" && isMestre && (
-              <div className="grid-bg-fine relative rounded-2xl border border-line bg-background/40">
-                <Wire3D
-                  interactive
-                  unfold={unfold}
-                  model={buildWire(slug, wireParams)}
-                  className="h-[300px] w-full text-foreground/80 lg:h-[420px]"
-                />
-                <div className="absolute inset-x-4 bottom-3 flex items-center gap-3">
-                  <span className="font-mono text-[9px] text-muted-foreground uppercase">3D</span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={unfold * 100}
-                    onChange={(e) => setUnfold(Number(e.target.value) / 100)}
-                    aria-label="Abrir peça"
-                    className="h-1 flex-1 accent-[var(--accent)]"
-                  />
-                  <button
-                    onClick={() => {
-                      setUnfold(1);
-                      setTimeout(() => setTab("Desenvolvimento"), 420);
-                    }}
-                    className="font-mono text-[9px] text-accent uppercase"
-                  >
-                    Planificar
-                  </button>
-                </div>
-              </div>
-            )}
-
             {tab === "Dimensões" && (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                 {result.metrics.map((m) => (
@@ -417,23 +397,51 @@ export function GeometryStudio({ slug, name }: Props) {
               </div>
             )}
 
-            {(tab === "Traçado" || tab === "Desenvolvimento") && (
-              <div className="grid-bg-fine rounded-xl border border-line bg-background/40 p-3">
-                <div className="h-[300px] lg:h-[420px]">
-                  <DevelopmentView
-                    ref={svgRef}
-                    pattern={result.development}
-                    showFolds={tab === "Traçado"}
-                    showPoints={tab === "Traçado"}
+            {(tab === "Traçado" || tab === "Desenvolvimento") &&
+              (view3d && isMestre ? (
+                <div className="relative">
+                  <View3DPanel
+                    model={buildWire(slug, wireParams)}
+                    unfold={unfold}
+                    onUnfold={setUnfold}
+                    onPlanificar={() => {
+                      setUnfold(1);
+                      setTimeout(() => {
+                        setView3d(false);
+                        setTab("Desenvolvimento");
+                      }, 420);
+                    }}
+                  />
+                  <View3DToggle
+                    active
+                    onToggle={() => setView3d(false)}
+                    className="absolute top-3 right-3"
                   />
                 </div>
-                <p className="mt-2 font-mono text-[10px] text-muted-foreground">
-                  {tab === "Traçado"
-                    ? "Linhas de corte (contorno) · geratrizes e ordenadas tracejadas · pontos notáveis."
-                    : "Contorno de corte pronto para nesting. Escala real em milímetros."}
-                </p>
-              </div>
-            )}
+              ) : (
+                <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
+                  {isMestre && (
+                    <View3DToggle
+                      active={false}
+                      onToggle={() => setView3d(true)}
+                      className="absolute top-3 right-3 z-10"
+                    />
+                  )}
+                  <div className="h-[300px] lg:h-[420px]">
+                    <DevelopmentView
+                      ref={svgRef}
+                      pattern={result.development}
+                      showFolds={tab === "Traçado"}
+                      showPoints={tab === "Traçado"}
+                    />
+                  </div>
+                  <p className="mt-2 font-mono text-[10px] text-muted-foreground">
+                    {tab === "Traçado"
+                      ? "Linhas de corte (contorno) · geratrizes e ordenadas tracejadas · pontos notáveis."
+                      : "Contorno de corte pronto para nesting. Escala real em milímetros."}
+                  </p>
+                </div>
+              ))}
 
             {tab === "Conferência" && (
               <div className="space-y-3">
@@ -576,9 +584,7 @@ export function GeometryStudio({ slug, name }: Props) {
           {/* ENTENDER O CÁLCULO */}
           <div className="mt-4 rounded-xl border border-accent/20 bg-accent/[0.04] p-3">
             <button
-              onClick={() =>
-                requirePro("calc.explanation") && setExplain((v) => !v)
-              }
+              onClick={() => requirePro("calc.explanation") && setExplain((v) => !v)}
               className="flex w-full items-center gap-2 text-left"
             >
               <Lightbulb className="size-4 shrink-0 text-accent" />

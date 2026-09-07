@@ -14,7 +14,6 @@ import {
 } from "@/lib/settings/SettingsProvider";
 import { REGIONS, type RegionId } from "@/lib/regional/regional";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
-import { MaterialManager } from "@/components/chameleon/MaterialManager";
 import { PhotoPicker } from "@/components/chameleon/Profile";
 import { useProfile } from "@/lib/profile/ProfileProvider";
 import { Button } from "@/components/chameleon/ds";
@@ -51,6 +50,7 @@ const AURORA_STYLES: { id: AuroraStyle; label: string; hint: string }[] = [
   { id: "fluido", label: "Fluido", hint: "Shader líquido em movimento contínuo" },
   { id: "suave", label: "Suave", hint: "Massas de luz leves, menor custo" },
   { id: "estatico", label: "Estático", hint: "Frame congelado, máxima bateria" },
+  { id: "padrao", label: "Padrão", hint: "Sem fundo animado — só a cor sólida do tema" },
 ];
 const ACCENTS: { id: AccentColor; label: string; swatch: string }[] = [
   { id: "amber", label: "Âmbar", swatch: "#F59E0B" },
@@ -183,80 +183,8 @@ function Configuracoes() {
         )}
       </Panel>
 
-      <MaterialManager />
-
-      <Panel className="space-y-3 p-4">
-        <SectionLabel>Privacidade</SectionLabel>
-        <label className="flex items-start gap-3 text-[13px]">
-          <input
-            type="checkbox"
-            checked={consent}
-            onChange={(e) => {
-              setConsentState(e.target.checked);
-              void setConsent(e.target.checked);
-            }}
-            className="mt-0.5 size-4 accent-[var(--accent)]"
-          />
-          <span>
-            Enviar estatísticas de uso anônimas
-            <span className="block text-muted-foreground">
-              Ajuda a priorizar melhorias. Nenhuma medida, desenho ou projeto é enviado.
-            </span>
-          </span>
-        </label>
-        <div className="flex gap-3 font-mono text-[11px] tracking-[0.16em] uppercase">
-          <Link to="/privacidade" className="text-muted-foreground underline">
-            Privacidade
-          </Link>
-          <Link to="/termos" className="text-muted-foreground underline">
-            Termos
-          </Link>
-          <Link to="/conta" className="text-muted-foreground underline">
-            Excluir conta
-          </Link>
-        </div>
-      </Panel>
-
-      <Panel className="space-y-3 p-4">
-        <SectionLabel>Backup</SectionLabel>
-        <p className="text-[13px] text-muted-foreground">
-          Salve um arquivo com projetos, materiais, preferências e perfil — e traga tudo de volta em
-          outro aparelho.
-        </p>
-        <Button
-          variant="secondary"
-          size="sm"
-          icon={HardDriveDownload}
-          onClick={() => setBackupOpen(true)}
-        >
-          Backup e restauração
-        </Button>
-      </Panel>
-
-      <Panel className="space-y-3 p-4">
-        <SectionLabel>Suporte</SectionLabel>
-        <p className="text-[13px] text-muted-foreground">
-          Versão {APP_VERSION} · compilação {APP_BUILD}
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" size="sm" icon={Bug} onClick={() => setReportOpen(true)}>
-            Reportar um problema
-          </Button>
-          <Link
-            to="/novidades"
-            className="font-mono text-[11px] tracking-[0.16em] text-muted-foreground uppercase underline"
-          >
-            Novidades
-          </Link>
-        </div>
-      </Panel>
       <ReportProblemDialog open={reportOpen} onOpenChange={setReportOpen} />
       <BackupDialog open={backupOpen} onOpenChange={setBackupOpen} />
-
-
-
-
-
 
       <Panel className="space-y-4 p-4">
         <div>
@@ -306,7 +234,7 @@ function Configuracoes() {
           {isMestre && (
             <div className="mt-3">
               <SectionLabel>Estilo do fundo</SectionLabel>
-              <div className="flex gap-1.5">
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
                 {AURORA_STYLES.map((a) => (
                   <button
                     key={a.id}
@@ -415,6 +343,71 @@ function Configuracoes() {
         </div>
       </Panel>
 
+      <Panel className="space-y-3 p-4">
+        <SectionLabel>Backup</SectionLabel>
+        <p className="text-[13px] text-muted-foreground">
+          Salve um arquivo com projetos, materiais, preferências e perfil — e traga tudo de volta em
+          outro aparelho.
+        </p>
+        <Button
+          variant="secondary"
+          size="sm"
+          icon={HardDriveDownload}
+          onClick={() => setBackupOpen(true)}
+        >
+          Backup e restauração
+        </Button>
+      </Panel>
+
+      <Panel className="space-y-3 p-4">
+        <SectionLabel>Privacidade</SectionLabel>
+        <label className="flex items-start gap-3 text-[13px]">
+          <input
+            type="checkbox"
+            checked={consent}
+            onChange={(e) => {
+              setConsentState(e.target.checked);
+              void setConsent(e.target.checked);
+            }}
+            className="mt-0.5 size-4 accent-[var(--accent)]"
+          />
+          <span>
+            Enviar estatísticas de uso anônimas
+            <span className="block text-muted-foreground">
+              Ajuda a priorizar melhorias. Nenhuma medida, desenho ou projeto é enviado.
+            </span>
+          </span>
+        </label>
+        <div className="flex gap-3 font-mono text-[11px] tracking-[0.16em] uppercase">
+          <Link to="/privacidade" className="text-muted-foreground underline">
+            Privacidade
+          </Link>
+          <Link to="/termos" className="text-muted-foreground underline">
+            Termos
+          </Link>
+          <Link to="/conta" className="text-muted-foreground underline">
+            Excluir conta
+          </Link>
+        </div>
+      </Panel>
+
+      <Panel className="space-y-3 p-4">
+        <SectionLabel>Suporte</SectionLabel>
+        <p className="text-[13px] text-muted-foreground">
+          Versão {APP_VERSION} · compilação {APP_BUILD}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" size="sm" icon={Bug} onClick={() => setReportOpen(true)}>
+            Reportar um problema
+          </Button>
+          <Link
+            to="/novidades"
+            className="font-mono text-[11px] tracking-[0.16em] text-muted-foreground uppercase underline"
+          >
+            Novidades
+          </Link>
+        </div>
+      </Panel>
       <p className="text-center font-mono text-[10px] text-muted-foreground">
         CALDRA · Traçado e Planificação Zero Fresta
       </p>

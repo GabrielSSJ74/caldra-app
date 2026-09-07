@@ -15,6 +15,7 @@ import type { Entity } from "@/lib/lab2d/core";
 import { reverseEntity, startPointOf } from "@/lib/lab2d/cutPlan";
 import {
   cncLayerOf,
+  DEFAULT_CNC_LAYERS,
   cncOf,
   withCnc,
   orientationOf,
@@ -24,6 +25,7 @@ import {
 import { buildCncDxf, cncCutLength, verifyCncDxf, DEFAULT_CNC_OPTIONS } from "@/lib/dxf/cncExport";
 import { exportDxf } from "@/lib/dxf/dxfService";
 import { CYPCT_GOLDEN_SAMPLE_01 as GOLDEN } from "@/lib/lxds/goldenSample";
+import { evaluateExpression, formatResult, toFraction, type AngleMode } from "@/lib/calculator/engine";
 
 
 export type QaCase = {
@@ -45,8 +47,10 @@ function check(
   expected: number,
   actual: number,
   unit = "mm",
+  /** Tolerância própria: a calculadora exige precisão numérica, não de chapa. */
+  tol?: number,
 ): QaCase {
-  const tolerance = Math.max(TOL_ABS, Math.abs(expected) * TOL_REL);
+  const tolerance = tol ?? Math.max(TOL_ABS, Math.abs(expected) * TOL_REL);
   return {
     group,
     name,
@@ -235,6 +239,9 @@ export function runQaSuite(): QaCase[] {
   /* ------------------------------------------------------ CNC / CypCut */
   t.push(...cncCases());
 
+  /* ------------------------------------------------- Calculadora */
+  t.push(...calculatorCases());
+
   return t;
 }
 
@@ -314,7 +321,7 @@ function cncCases(): QaCase[] {
       "LXDS",
       "Layers CNC do CALDRA cobrem a amostra",
       1,
-      gl.every((n) => cncLayerOf(n) !== null) ? 1 : 0,
+      gl.every((n) => n in DEFAULT_CNC_LAYERS) ? 1 : 0,
       "bool",
     ),
   );
@@ -333,6 +340,55 @@ function cncCases(): QaCase[] {
 
 
 
+
+/**
+ * QA da calculadora científica: o modo de ângulo é a fonte de erro clássica
+ * (sen 30° = 0,5 e NÃO sen 30 rad), além de porcentagem e fatorial.
+ */
+function calculatorCases(): QaCase[] {
+  const t: QaCase[] = [];
+  const ev = (src: string, mode: AngleMode = "DEG") => {
+    try {
+      return evaluateExpression(src, mode);
+    } catch {
+      return Number.NaN;
+    }
+  };
+  const cases: [string, AngleMode, number, string][] = [
+    ["sin(30)", "DEG", 0.5, "sen 30° = 0,5"],
+    ["cos(60)", "DEG", 0.5, "cos 60° = 0,5"],
+    ["tan(45)", "DEG", 1, "tan 45° = 1"],
+    ["sin(90)", "DEG", 1, "sen 90° = 1"],
+    ["asin(0.5)", "DEG", 30, "arco-seno volta em grau"],
+    ["sin(pi/6)", "RAD", 0.5, "sen π/6 em radiano"],
+    ["sin(100)", "GRAD", 1, "sen 100 grado = 1"],
+    ["10%*250", "DEG", 25, "10% de 250"],
+    ["5!", "DEG", 120, "fatorial de 5"],
+    ["0!", "DEG", 1, "fatorial de 0"],
+    ["2+3*4", "DEG", 14, "precedência de operadores"],
+    ["(2+3)*4", "DEG", 20, "parênteses"],
+    ["2^10", "DEG", 1024, "potência"],
+    ["2^3^2", "DEG", 512, "potência associa à direita"],
+    ["sqrt(144)", "DEG", 12, "raiz quadrada"],
+    ["cbrt(27)", "DEG", 3, "raiz cúbica"],
+    ["log(1000)", "DEG", 3, "logaritmo decimal"],
+    ["ln(e)", "DEG", 1, "logaritmo natural"],
+    ["exp(0)", "DEG", 1, "exponencial"],
+    ["-3^2", "DEG", -9, "sinal fora da potência"],
+    ["100*1.05^2", "DEG", 110.25, "juro composto de 2 períodos"],
+    ["1,5+2,5", "DEG", 4, "vírgula decimal"],
+    ["√(81)", "DEG", 9, "símbolo de raiz"],
+  ];
+  for (const [src, mode, expected, label] of cases) {
+    t.push(check("Calculadora", `${label} — ${src}`, expected, ev(src, mode), "un", 1e-9));
+  }
+  t.push(check("Calculadora", "Divisão por zero é recusada", 1, Number.isNaN(ev("1/0")) ? 1 : 0, "bool"));
+  t.push(check("Calculadora", "Expressão inválida é recusada", 1, Number.isNaN(ev("2++")) ? 1 : 0, "bool"));
+  t.push(check("Calculadora", "Fatorial fracionário é recusado", 1, Number.isNaN(ev("2.5!")) ? 1 : 0, "bool"));
+  t.push(check("Calculadora", "Formata com vírgula", 1, formatResult(1.5, 2) === "1,50" ? 1 : 0, "bool"));
+  t.push(check("Calculadora", "Fração de 0,25", 1, toFraction(0.25) === "1/4" ? 1 : 0, "bool"));
+  return t;
+}
 
 export function summarize(cases: QaCase[]) {
   const passed = cases.filter((c) => c.ok).length;
