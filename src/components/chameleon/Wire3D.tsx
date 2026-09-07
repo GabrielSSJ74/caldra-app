@@ -40,10 +40,10 @@ const KEY = { x: -0.38, y: 0.66, z: 0.65 };
 const FILL = { x: 0.62, y: -0.12, z: 0.42 };
 
 const MAT: Record<string, { base: string; hi: string; gain: number; amb: number }> = {
-  outer: { base: "var(--solid-lo)", hi: "var(--solid-hi)", gain: 0.86, amb: 0.2 },
-  inner: { base: "var(--solid-in)", hi: "var(--solid-lo)", gain: 0.66, amb: 0.24 },
-  rim: { base: "var(--solid-lo)", hi: "var(--solid-rim)", gain: 0.95, amb: 0.34 },
-  cap: { base: "var(--solid-lo)", hi: "var(--solid-hi)", gain: 0.8, amb: 0.26 },
+  outer: { base: "var(--solid-lo)", hi: "var(--solid-hi)", gain: 1.05, amb: 0.04 },
+  inner: { base: "var(--solid-in)", hi: "var(--solid-lo)", gain: 0.8, amb: 0.1 },
+  rim: { base: "var(--solid-lo)", hi: "var(--solid-rim)", gain: 1.1, amb: 0.2 },
+  cap: { base: "var(--solid-lo)", hi: "var(--solid-hi)", gain: 0.95, amb: 0.08 },
 };
 
 export function Wire3D({
