@@ -133,7 +133,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "h", label: "Altura", def: 250, min: 1, max: 6000 },
       { key: "r", label: "Raio de canto", def: 0, min: 0, max: 500 },
     ],
-    build: (v) => [rect(v.w, v.h, v.r)],
+    build: (v: Record<"w"|"h"|"r", number>) => [rect(v.w, v.h, v.r)],
   },
   "chapa-circular": {
     id: "chapa-circular",
@@ -141,7 +141,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "d", label: "Diâmetro", def: 300, min: 1, max: 6000 },
       { key: "dInt", label: "Furo central", def: 0, min: 0, max: 5900 },
     ],
-    build: (v) => {
+    build: (v: Record<"d"|"dInt", number>) => {
       const r = v.d / 2;
       const out = [circle(r, r, r), ...centerMarks(r, r, r)];
       if (v.dInt > 0.5) out.push(circle(r, r, v.dInt / 2));
@@ -154,7 +154,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "b", label: "Base", def: 300, min: 1, max: 6000 },
       { key: "h", label: "Altura", def: 260, min: 1, max: 6000 },
     ],
-    build: (v) => [poly([P(0, 0), P(v.b, 0), P(v.b / 2, v.h)])],
+    build: (v: Record<"b"|"h", number>) => [poly([P(0, 0), P(v.b, 0), P(v.b / 2, v.h)])],
   },
   "chapa-poligonal": {
     id: "chapa-poligonal",
@@ -162,7 +162,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "n", label: "Lados", def: 6, min: 3, max: 24, step: 1, suffix: "" },
       { key: "d", label: "Ø circunscrito", def: 300, min: 1, max: 6000 },
     ],
-    build: (v) => {
+    build: (v: Record<"n"|"d", number>) => {
       const n = Math.round(v.n);
       const r = v.d / 2;
       const pts: Vec2[] = [];
@@ -176,7 +176,7 @@ const GENERATORS: Record<string, CncGenerator> = {
   "furo-simples": {
     id: "furo-simples",
     fields: [{ key: "d", label: "Ø do furo", def: 20, min: 0.5, max: 2000 }],
-    build: (v) => {
+    build: (v: Record<"d", number>) => {
       const r = v.d / 2;
       return [circle(r, r, r), ...centerMarks(r, r, r)];
     },
@@ -191,7 +191,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "d", label: "Ø do furo", def: 18, min: 0.5, max: 500 },
       { key: "borda", label: "Margem", def: 40, min: 1, max: 2000 },
     ],
-    build: (v) => {
+    build: (v: Record<"w"|"h"|"cols"|"rows"|"d"|"borda", number>) => {
       const out: Entity[] = [rect(v.w, v.h)];
       const cols = Math.round(v.cols);
       const rows = Math.round(v.rows);
@@ -214,7 +214,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "d", label: "Ø do furo", def: 18, min: 0.5, max: 500 },
       { key: "start", label: "Ângulo inicial", def: 0, min: -360, max: 360, suffix: "°" },
     ],
-    build: (v) => {
+    build: (v: Record<"bc"|"n"|"d"|"start", number>) => {
       const c = v.bc / 2 + v.d;
       return [
         circle(c, c, v.bc / 2, "referencia"),
@@ -229,7 +229,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "w", label: "Largura", def: 20, min: 1, max: 2000 },
       { key: "ang", label: "Ângulo", def: 0, min: -180, max: 180, suffix: "°" },
     ],
-    build: (v) => oblong(v.len / 2, v.w / 2 + 5, v.len, Math.min(v.w, v.len), v.ang),
+    build: (v: Record<"len"|"w"|"ang", number>) => oblong(v.len / 2, v.w / 2 + 5, v.len, Math.min(v.w, v.len), v.ang),
   },
   slot: {
     id: "slot",
@@ -239,7 +239,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "len", label: "Comprimento do slot", def: 160, min: 2, max: 6000 },
       { key: "sw", label: "Largura do slot", def: 24, min: 1, max: 2000 },
     ],
-    build: (v) => [rect(v.w, v.h), ...oblong(v.w / 2, v.h / 2, Math.min(v.len, v.w - 10), v.sw)],
+    build: (v: Record<"w"|"h"|"len"|"sw", number>) => [rect(v.w, v.h), ...oblong(v.w / 2, v.h / 2, Math.min(v.len, v.w - 10), v.sw)],
   },
   "suporte-l": {
     id: "suporte-l",
@@ -249,7 +249,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "t", label: "Largura da aba", def: 60, min: 5, max: 2000 },
       { key: "d", label: "Ø dos furos", def: 12, min: 0, max: 400 },
     ],
-    build: (v) => {
+    build: (v: Record<"a"|"b"|"t"|"d", number>) => {
       const out: Entity[] = [
         poly([P(0, 0), P(v.a, 0), P(v.a, v.t), P(v.t, v.t), P(v.t, v.b), P(0, v.b)]),
       ];
@@ -268,7 +268,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "h", label: "Altura das abas", def: 120, min: 10, max: 4000 },
       { key: "t", label: "Largura da aba", def: 50, min: 5, max: 2000 },
     ],
-    build: (v) => [
+    build: (v: Record<"w"|"h"|"t", number>) => [
       poly([
         P(0, 0),
         P(v.w, 0),
@@ -288,7 +288,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "b", label: "Cateto B", def: 200, min: 10, max: 4000 },
       { key: "r", label: "Alívio no vértice", def: 20, min: 0, max: 500 },
     ],
-    build: (v) => {
+    build: (v: Record<"a"|"b"|"r", number>) => {
       const out: Entity[] = [poly([P(0, 0), P(v.a, 0), P(0, v.b)])];
       if (v.r > 0.5) out.push(arc(v.r * 1.6, v.r * 1.6, v.r, 0, Math.PI * 2));
       return out;
@@ -303,7 +303,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "borda", label: "Distância da borda", def: 30, min: 2, max: 1000 },
       { key: "r", label: "Raio de canto", def: 15, min: 0, max: 500 },
     ],
-    build: (v) => {
+    build: (v: Record<"w"|"h"|"d"|"borda"|"r", number>) => {
       const out: Entity[] = [rect(v.w, v.h, v.r)];
       const pts = [
         P(v.borda, v.borda),
@@ -325,7 +325,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "d", label: "Ø do furo", def: 22, min: 1, max: 500, when: (v) => v.n > 0 },
       { key: "start", label: "Ângulo inicial", def: 22.5, min: -360, max: 360, suffix: "°" },
     ],
-    build: (v) => {
+    build: (v: Record<"de"|"di"|"bc"|"n"|"d"|"start", number>) => {
       const c = v.de / 2;
       const out: Entity[] = [circle(c, c, v.de / 2), ...centerMarks(c, c, v.de / 2)];
       if (v.di > 0.5) out.push(circle(c, c, v.di / 2));
@@ -346,7 +346,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "borda", label: "Distância da borda", def: 30, min: 2, max: 1000 },
       { key: "r", label: "Raio de canto", def: 12, min: 0, max: 500 },
     ],
-    build: (v) => {
+    build: (v: Record<"w"|"h"|"di"|"d"|"borda"|"r", number>) => {
       const out: Entity[] = [rect(v.w, v.h, v.r)];
       if (v.di > 0.5) out.push(circle(v.w / 2, v.h / 2, v.di / 2), ...centerMarks(v.w / 2, v.h / 2, v.di / 2));
       if (v.d > 0.5)
@@ -369,7 +369,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "d", label: "Ø dos furos", def: 18, min: 0, max: 400 },
       { key: "ec", label: "Entre centros dos furos", def: 320, min: 0, max: 6000 },
     ],
-    build: (v) => {
+    build: (v: Record<"len"|"w"|"di"|"d"|"ec", number>) => {
       const cx = v.len / 2;
       const cy = v.w / 2;
       const out = oblong(cx, cy, v.len, v.w);
