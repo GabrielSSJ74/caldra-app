@@ -30,10 +30,21 @@ function tokenize(source: string): Token[] {
     }
     if (c === "(") out.push({ type: "lparen" });
     else if (c === ")") out.push({ type: "rparen" });
-    else if ("+-*/^%".includes(c)) out.push({ type: "op", value: c });
+    else if ("+-*/^%!".includes(c)) out.push({ type: "op", value: c });
     else throw new CalculatorError("Símbolo não reconhecido");
     i += 1;
   }
+  return out;
+}
+
+/** Fatorial exato para inteiros (0! = 1). Acima de 170 estoura o double. */
+function factorial(n: number): number {
+  if (!Number.isFinite(n) || n < 0 || Math.abs(n - Math.round(n)) > 1e-9)
+    throw new CalculatorError("Fatorial exige inteiro não negativo");
+  const k = Math.round(n);
+  if (k > 170) throw new CalculatorError("Fatorial grande demais");
+  let out = 1;
+  for (let i = 2; i <= k; i += 1) out *= i;
   return out;
 }
 
@@ -68,6 +79,7 @@ export function evaluateExpression(source: string, angleMode: AngleMode): number
       if (token.value === "pi") return Math.PI;
       if (token.value === "e") return Math.E;
       if (!FUNCTIONS.has(token.value)) throw new CalculatorError("Função desconhecida");
+      if (token.value === "fact") { /* fallthrough para o switch */ }
       let argument: number;
       if (peek()?.type === "lparen") { take(); argument = expression(); if (take()?.type !== "rparen") throw new CalculatorError("Feche os parênteses"); }
       else argument = unary();
@@ -89,6 +101,21 @@ export function evaluateExpression(source: string, angleMode: AngleMode): number
     throw new CalculatorError("Valor esperado");
   };
 
+  /* Pós-fixos: `!` (fatorial) e `%` (porcentagem = valor / 100).
+     `10%×250` → 25. Precedência acima de potência. */
+  const postfix = (base: () => number) => (): number => {
+    let value = base();
+    while (true) {
+      const token = peek();
+      if (token?.type !== "op" || (token.value !== "!" && token.value !== "%")) break;
+      take();
+      value = token.value === "!" ? factorial(value) : value / 100;
+    }
+    return value;
+  };
+
+  const primaryPostfix = postfix(primary);
+
   const unary = (): number => {
     const token = peek();
     if (token?.type === "op" && (token.value === "+" || token.value === "-")) {
@@ -96,7 +123,7 @@ export function evaluateExpression(source: string, angleMode: AngleMode): number
       const value = unary();
       return token.value === "-" ? -value : value;
     }
-    return primary();
+    return primaryPostfix();
   };
 
   const power = (): number => {
@@ -110,12 +137,11 @@ export function evaluateExpression(source: string, angleMode: AngleMode): number
     let value = power();
     while (true) {
       const token = peek();
-      if (token?.type !== "op" || !["*", "/", "%"].includes(token.value)) break;
+      if (token?.type !== "op" || !["*", "/"].includes(token.value)) break;
       take();
       const right = power();
       if (token.value === "*") value *= right;
-      else if (token.value === "/") value /= right;
-      else value %= right;
+      else value /= right;
     }
     return value;
   };
