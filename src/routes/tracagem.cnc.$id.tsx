@@ -10,6 +10,7 @@ import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { sendToLab2D } from "@/lib/lab2d/handoff";
 import { markRecent, saveCustom, toggleFavorite, useLibraryState } from "@/lib/library/store";
 import { cn } from "@/lib/utils";
+import { getPart, getProject, savePartParameters } from "@/lib/projects/store";
 
 export const Route = createFileRoute("/tracagem/cnc/$id")({
   validateSearch: (raw: Record<string, unknown>): { projeto?: string; peca?: string } => ({
@@ -83,6 +84,24 @@ function CncPartPage() {
 
   return (
     <div className="space-y-4">
+      {project && instance && (
+        <div className="rounded-xl border border-line bg-background/40 px-3 py-2">
+          <p className="t-eyebrow">
+            <Link to="/projetos" className="hover:text-accent">
+              Projetos
+            </Link>{" "}
+            /{" "}
+            <Link
+              to="/projetos/$projectId"
+              params={{ projectId: project.id }}
+              className="hover:text-accent"
+            >
+              {project.name}
+            </Link>{" "}
+            / {instance.name}
+          </p>
+        </div>
+      )}
       <div className="flex items-start justify-between gap-3">
         <div>
           <Link
