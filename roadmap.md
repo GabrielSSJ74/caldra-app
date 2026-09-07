@@ -51,6 +51,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Parte 3 — Feedback de instrumento técnico (barra GEOMETRIA · PLANIFICAÇÃO · FABRICAÇÃO nos estúdios)
 - [x] Parte 4 — Cold start (splash pré-JS), ícone/splash (favicon + manifest + apple-touch), matriz visual (/matriz-visual), changelog (/novidades), reportar problema (diagnóstico + copiar/e-mail)
 
+- [x] Fase LXDS/UI — LXDS REFERENCE MAP (`docs/LXDS-REFERENCE-MAP.md`), modo de análise LXDS somente leitura, amostra CYPCT_GOLDEN_SAMPLE_01 no QA, janelas de exportação tematizadas e pinch-zoom sem deslocamento
 - [x] Fase CNC — layers CUT/MARK/BEND, exportador DXF CNC com conferência, trajetória (direção, start point, lead-in/out), FLUXO CALDRA + prévia animada, painel de multi-seleção e lado do painel estável (sem oscilação)
 
 ## Decisões pendentes do usuário
