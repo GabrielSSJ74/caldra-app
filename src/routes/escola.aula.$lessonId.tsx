@@ -52,6 +52,7 @@ function LessonPage() {
   const locked = !lesson.free && !can("school.full");
   const st = lessonState(lesson.id);
   const missing = missingPrerequisites(lesson.id, state);
+  const lessonFormulas = lesson.knowledge.flatMap((kid) => knowledgeById(kid)?.formulas ?? []);
 
   useEffect(() => {
     if (!locked) markOpened(lesson.id);
