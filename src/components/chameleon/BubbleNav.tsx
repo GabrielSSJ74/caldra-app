@@ -2,6 +2,7 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   BookOpen,
+  Calculator,
   Compass,
   Factory,
   FolderKanban,
@@ -34,7 +35,7 @@ const ITEMS: Item[] = [
   { to: "/projetos", name: "Projetos", icon: FolderKanban },
 ];
 
-const MORE_ROUTES = ["/configuracoes", "/biblioteca", "/oficina", "/conta"];
+const MORE_ROUTES = ["/configuracoes", "/biblioteca", "/oficina", "/conta", "/calculadora"];
 
 /** Cápsula flutuante: ícones discretos, nome revelado só na interação. */
 export function BubbleNav() {
@@ -145,6 +146,7 @@ type Entry = {
 };
 
 const MORE: Entry[] = [
+  { name: "Calculadora", icon: Calculator, to: "/calculadora" },
   { name: "Configurações", icon: Settings, to: "/configuracoes" },
   { name: "Perfil", icon: User, action: "profile" },
   { name: "Modo Mestre", icon: Sparkles, action: "master" },
