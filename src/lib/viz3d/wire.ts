@@ -263,7 +263,7 @@ function axisLines(b: Bounds): Edge[] {
 /* ------------------------------------------------------------------ */
 
 /** Sequência de contornos de um tronco (base → topo), com excentricidade. */
-function frustumLoops(r1: number, r2: number, h: number, seg: number, ex: number, steps = 6) {
+function frustumLoops(r1: number, r2: number, h: number, seg: number, ex: number, steps = 2) {
   const y0 = -h / 2;
   return Array.from({ length: steps + 1 }, (_, i) => {
     const u = i / steps;
@@ -289,21 +289,21 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
   switch (slug) {
     case "cilindro":
     case "dutos":
-      return withAxis(shell(frustumLoops(r1, r1, h, seg, 0, 4), { t }));
+      return withAxis(shell(frustumLoops(r1, r1, h, seg, 0, 2), { t }));
 
     case "cone": {
       // ápice modelado com raio mínimo: evita triângulos degenerados
       const tip = Math.max(r1 * 0.012, t * 0.6);
-      return withAxis(shell(frustumLoops(r1, tip, h, seg, 0, 8), { t }));
+      return withAxis(shell(frustumLoops(r1, tip, h, seg, 0, 3), { t }));
     }
 
     case "tronco-de-cone":
     case "reducao-circular":
     case "chamines":
-      return withAxis(shell(frustumLoops(r1, r2, h, seg, 0, 8), { t }));
+      return withAxis(shell(frustumLoops(r1, r2, h, seg, 0, 2), { t }));
 
     case "cone-excentrico":
-      return withAxis(shell(frustumLoops(r1, r2, h, seg, r1 - r2, 8), { t }));
+      return withAxis(shell(frustumLoops(r1, r2, h, seg, r1 - r2, 3), { t }));
 
     case "quadrado-redondo":
     case "transicoes": {
@@ -342,7 +342,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
 
     case "te":
     case "interseccoes": {
-      const main = shell(frustumLoops(r1, r1, h, seg, 0, 4), { t });
+      const main = shell(frustumLoops(r1, r1, h, seg, 0, 2), { t });
       const armLen = r1 + h * 0.45;
       const branch = shell(
         Array.from({ length: 5 }, (_, i) => {
@@ -426,7 +426,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
     }
 
     default:
-      return withAxis(shell(frustumLoops(r1, r2, h, seg, 0, 8), { t }));
+      return withAxis(shell(frustumLoops(r1, r2, h, seg, 0, 2), { t }));
   }
 }
 
