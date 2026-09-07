@@ -20,6 +20,13 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] QA da calculadora (28 casos) — 103/103 OK
 - [x] 3D deixou de ser etapa: virou alternância 2D/3D na área de resultado, com carregamento sob demanda
 
+## Biblioteca de peças / Traçagem (CONCLUÍDO)
+- [x] Registro único de modelos (caldeiraria, tubulações, CNC 2D) com capacidades e metadados
+- [x] Abas Todas / Caldeiraria / Tubulações / CNC 2D + filtros por família contextuais
+- [x] Busca inteligente (nome, sinônimos, categoria, números) e cards com prévia real
+- [x] Favoritos, Recentes e Meus Modelos como atalhos (referência única, sem duplicar peças)
+- [x] Geradores vetoriais CNC 2D → CHAMFER (1:1 em mm)
+
 ## Fase 3 — Lançamento (EM ANDAMENTO)
 ### Etapa A — Monetização e entitlement
 - [ ] Ativar Lovable Cloud (perfil com `plan`, tabela `activation_codes`)
