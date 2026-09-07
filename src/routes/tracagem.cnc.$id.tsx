@@ -12,6 +12,10 @@ import { markRecent, saveCustom, toggleFavorite, useLibraryState } from "@/lib/l
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/tracagem/cnc/$id")({
+  validateSearch: (raw: Record<string, unknown>): { projeto?: string; peca?: string } => ({
+    projeto: typeof raw['projeto'] === "string" ? raw['projeto'] : undefined,
+    peca: typeof raw['peca'] === "string" ? raw['peca'] : undefined,
+  }),
   loader: ({ params }) => {
     const part = findPart(`cnc.${params.id}`);
     if (!part || !part.generator) throw notFound();
