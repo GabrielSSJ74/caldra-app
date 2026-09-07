@@ -7,16 +7,16 @@ export class CalculatorError extends Error {}
 const FUNCTIONS = new Set(["sin", "cos", "tan", "asin", "acos", "atan", "log", "ln", "sqrt", "cbrt", "exp"]);
 
 function tokenize(source: string): Token[] {
-  const normalized = source.replace(/,/g, ".").replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-").replace(/√/g, "sqrt").replace(/π/g, "pi");
+  const normalized = source.replace(/√\s*([0-9.]+)/g, "sqrt($1)").replace(/√/g, "sqrt").replace(/,/g, ".").replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-").replace(/π/g, "pi");
   const out: Token[] = [];
   let i = 0;
   while (i < normalized.length) {
-    const c = normalized[i];
+    const c = normalized[i] ?? "";
     if (/\s/.test(c)) { i += 1; continue; }
     if (/[0-9.]/.test(c)) {
       let raw = "";
-      while (i < normalized.length && /[0-9.eE]/.test(normalized[i])) raw += normalized[i++];
-      if ((normalized[i] === "+" || normalized[i] === "-") && /[eE]$/.test(raw)) raw += normalized[i++];
+      while (i < normalized.length && /[0-9.eE]/.test(normalized[i] ?? "")) raw += normalized[i++] ?? "";
+      if ((normalized[i] === "+" || normalized[i] === "-") && /[eE]$/.test(raw)) raw += normalized[i++] ?? "";
       const value = Number(raw);
       if (!Number.isFinite(value)) throw new CalculatorError("Número inválido");
       out.push({ type: "number", value });
@@ -24,7 +24,7 @@ function tokenize(source: string): Token[] {
     }
     if (/[a-zA-Z]/.test(c)) {
       let value = "";
-      while (i < normalized.length && /[a-zA-Z0-9]/.test(normalized[i])) value += normalized[i++];
+      while (i < normalized.length && /[a-zA-Z0-9]/.test(normalized[i] ?? "")) value += normalized[i++] ?? "";
       out.push({ type: "name", value: value.toLowerCase() });
       continue;
     }

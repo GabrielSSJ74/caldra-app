@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArrowLeft, ArrowRight, Backspace, BarChart3, Beaker, ChevronDown,
+  ArrowLeft, ArrowRight, Delete, BarChart3, Beaker, ChevronDown,
   Database, Divide, Equal, FlaskConical, Grid2X2, History, Percent, Pi,
   Repeat2, Settings, Volume2, VolumeX, X,
 } from "lucide-react";
@@ -81,7 +81,7 @@ export function ScientificCalculator() {
   };
   const displayed = error || formatResult(value, decimalPlaces);
   const toolTitle = tool ? ({ constants: "Constantes", fractions: "Frações", roots: "Raízes", matrix: "Matriz 2 × 2", conversion: "Conversão" } as const)[tool] : "";
-  const matrixDet = matrix[0] * matrix[3] - matrix[1] * matrix[2];
+  const matrixDet = (matrix[0] ?? 0) * (matrix[3] ?? 0) - (matrix[1] ?? 0) * (matrix[2] ?? 0);
   const converted = Number(convertValue.replace(",", "."));
 
   return (
@@ -116,7 +116,7 @@ export function ScientificCalculator() {
           <CalcKey onClick={backspace} ariaLabel="Apagar último caractere"><ArrowLeft className="size-5" /></CalcKey>
           <CalcKey label="(" onClick={() => append("(")} />
           <CalcKey label=")" onClick={() => append(")")} />
-          <CalcKey onClick={backspace} ariaLabel="Apagar"><Backspace className="size-5" /></CalcKey>
+          <CalcKey onClick={backspace} ariaLabel="Apagar"><Delete className="size-5" /></CalcKey>
 
           <CalcKey label={shift ? "sin⁻¹" : "sin"} sub={shift ? "sin" : "sin⁻¹"} onClick={() => functionKey("sin", "asin")} />
           <CalcKey label={shift ? "cos⁻¹" : "cos"} sub={shift ? "cos" : "cos⁻¹"} onClick={() => functionKey("cos", "acos")} />
@@ -151,7 +151,7 @@ export function ScientificCalculator() {
         </section>
 
         <nav aria-label="Módulos da calculadora" className="mt-3 grid grid-cols-4 items-center rounded-full border border-calc-line bg-calc-recess p-1">
-          {[["Científica", FlaskConical], ["Engenharia", Settings], ["Financeira", Database], ["Estatística", BarChart3]].map(([name, Icon]) => <button key={String(name)} type="button" onClick={() => setModule(String(name))} aria-current={module === name ? "page" : undefined} className={cn("relative flex min-w-0 items-center justify-center gap-1 rounded-full px-1 py-3 text-[9px] text-calc-muted transition-all sm:text-[12px]", module === name && "border border-calc-cyan bg-calc-tab text-calc-cyan shadow-calc-glow")}><Icon className="size-4 shrink-0" /><span className="truncate">{name}</span>{module === name && <span className="absolute -bottom-0.5 h-0.5 w-7 rounded-full bg-calc-cyan" />}</button>)}
+          {([{ name: "Científica", icon: FlaskConical }, { name: "Engenharia", icon: Settings }, { name: "Financeira", icon: Database }, { name: "Estatística", icon: BarChart3 }]).map(({ name, icon: Icon }) => <button key={name} type="button" onClick={() => setModule(name)} aria-current={module === name ? "page" : undefined} className={cn("relative flex min-w-0 items-center justify-center gap-1 rounded-full px-1 py-3 text-[9px] text-calc-muted transition-all sm:text-[12px]", module === name && "border border-calc-cyan bg-calc-tab text-calc-cyan shadow-calc-glow")}><Icon className="size-4 shrink-0" /><span className="truncate">{name}</span>{module === name && <span className="absolute -bottom-0.5 h-0.5 w-7 rounded-full bg-calc-cyan" />}</button>)}
         </nav>
       </main>
 
