@@ -3,41 +3,10 @@
  *
  * Camada de CONTEÚDO TÉCNICO — sem estado de usuário, sem interface, sem
  * cálculo. Os motores matemáticos continuam em @/lib/geometry e a calculadora
- * em @/lib/calculator. Aqui mora apenas o conhecimento estruturado e a sua
- * procedência (fonte, página, seção).
+ * em @/lib/calculator.
  */
 
-export type SourceId =
-  | "tracagem-caldeiraria"
-  | "calculos"
-  | "compasso-videos"
-  | "tubulacao-industrial"
-  | "ebook-complementar";
-
-export type Source = {
-  id: SourceId;
-  title: string;
-  kind: "apostila" | "ebook" | "video";
-};
-
-export const SOURCES: Record<SourceId, Source> = {
-  "tracagem-caldeiraria": { id: "tracagem-caldeiraria", title: "Traçagem de Caldeiraria", kind: "apostila" },
-  calculos: { id: "calculos", title: "Cálculos", kind: "apostila" },
-  "compasso-videos": { id: "compasso-videos", title: "Compasso e Vídeos", kind: "video" },
-  "tubulacao-industrial": { id: "tubulacao-industrial", title: "Tubulação Industrial", kind: "apostila" },
-  "ebook-complementar": { id: "ebook-complementar", title: "E-book complementar", kind: "ebook" },
-};
-
-/** Referência de origem de uma informação técnica. */
-export type SourceRef = {
-  sourceDocument: SourceId;
-  sourcePage?: number;
-  sourceSection?: string;
-  sourceMethod?: string;
-  sourceNotes?: string;
-};
-
-/** Estado editorial do item — impede que suposição vire regra técnica. */
+/** Estado editorial do item. */
 export type ContentState = "verificado" | "needs-review" | "content-gap";
 
 export type Variable = { symbol: string; meaning: string; unit?: string };
@@ -63,7 +32,6 @@ export type Formula = {
   why: string;
   variables: Variable[];
   example?: string;
-  sources: SourceRef[];
   state: ContentState;
 };
 
@@ -81,7 +49,6 @@ export type KnowledgeItem = {
   prerequisites?: string[];
   relatedParts?: string[];
   relatedTools?: ("calculadora" | "tracagem" | "chamfer")[];
-  sources: SourceRef[];
   state: ContentState;
 };
 
@@ -120,7 +87,6 @@ export const FORMULAS: Formula[] = [
       { symbol: "D", meaning: "Diâmetro da linha média da chapa", unit: "mm" },
     ],
     example: "Ø400 → C = π × 400 = 1256,6 mm.",
-    sources: [{ sourceDocument: "calculos", sourceSection: "Circunferência" }],
     state: "verificado",
   },
   {
@@ -137,7 +103,6 @@ export const FORMULAS: Formula[] = [
       { symbol: "d", meaning: "Hipotenusa — comprimento verdadeiro", unit: "mm" },
     ],
     example: "400 e 300 → d = 500 mm.",
-    sources: [{ sourceDocument: "calculos", sourceSection: "Triângulo retângulo" }],
     state: "verificado",
   },
   {
@@ -152,7 +117,6 @@ export const FORMULAS: Formula[] = [
       { symbol: "n", meaning: "Número de divisões" },
     ],
     example: "Ø300 em 12 partes → corda 77,65 mm.",
-    sources: [{ sourceDocument: "tracagem-caldeiraria", sourceSection: "Divisão da circunferência" }],
     state: "verificado",
   },
   {
@@ -167,7 +131,6 @@ export const FORMULAS: Formula[] = [
       { symbol: "f", meaning: "Flecha", unit: "mm" },
       { symbol: "R", meaning: "Raio do arco", unit: "mm" },
     ],
-    sources: [{ sourceDocument: "compasso-videos", sourceSection: "Arco, corda e flecha" }],
     state: "needs-review",
   },
   {
@@ -179,7 +142,6 @@ export const FORMULAS: Formula[] = [
     why: "O traçado é executado em milímetro; misturar unidades no meio do cálculo é a origem mais comum de peça fora de medida.",
     variables: [{ symbol: "pol", meaning: "Medida em polegadas" }],
     example: '3/8" = 9,525 mm.',
-    sources: [{ sourceDocument: "calculos", sourceSection: "Unidades" }],
     state: "verificado",
   },
   {
@@ -194,7 +156,6 @@ export const FORMULAS: Formula[] = [
       { symbol: "d", meaning: "Diâmetro menor", unit: "mm" },
       { symbol: "h", meaning: "Altura no eixo", unit: "mm" },
     ],
-    sources: [{ sourceDocument: "tracagem-caldeiraria", sourceSection: "Tronco de cone" }],
     state: "verificado",
   },
 ];
@@ -215,7 +176,6 @@ export const KNOWLEDGE: KnowledgeItem[] = [
     example: '1/2" = 12,7 mm · 3/8" = 9,525 mm',
     commonErrors: ["Converter só no final e arrastar erro de arredondamento para todas as cotas."],
     relatedTools: ["calculadora"],
-    sources: [{ sourceDocument: "calculos", sourceSection: "Unidades" }],
     state: "verificado",
   },
   {
@@ -229,7 +189,6 @@ export const KNOWLEDGE: KnowledgeItem[] = [
     warnings: ["Use sempre o diâmetro da linha média da chapa, não o externo."],
     commonErrors: ["Usar diâmetro externo em chapa grossa e obter virola comprida demais."],
     relatedTools: ["calculadora", "tracagem"],
-    sources: [{ sourceDocument: "calculos", sourceSection: "Circunferência" }],
     state: "verificado",
   },
   {
@@ -242,7 +201,6 @@ export const KNOWLEDGE: KnowledgeItem[] = [
     formulas: ["arco-corda-flecha", "corda-divisao"],
     prerequisites: ["raio-diametro-perimetro"],
     relatedTools: ["calculadora"],
-    sources: [{ sourceDocument: "compasso-videos", sourceSection: "Arco, corda e flecha" }],
     state: "needs-review",
   },
   {
@@ -254,7 +212,6 @@ export const KNOWLEDGE: KnowledgeItem[] = [
     formulas: ["pitagoras"],
     prerequisites: ["unidades-medida"],
     relatedTools: ["calculadora", "tracagem"],
-    sources: [{ sourceDocument: "calculos", sourceSection: "Triângulo retângulo" }],
     state: "verificado",
   },
   {
@@ -267,7 +224,6 @@ export const KNOWLEDGE: KnowledgeItem[] = [
     formulas: ["tangente-cone", "pitagoras"],
     prerequisites: ["triangulo-retangulo"],
     relatedTools: ["calculadora", "tracagem"],
-    sources: [{ sourceDocument: "tracagem-caldeiraria", sourceSection: "Trigonometria aplicada" }],
     state: "verificado",
   },
   {
@@ -279,7 +235,6 @@ export const KNOWLEDGE: KnowledgeItem[] = [
       "Traçagem, corte, calandragem, dobra, montagem e solda. O traçador converte medidas de projeto em desenvolvimento plano.",
     formulas: ["circunferencia"],
     relatedTools: ["tracagem", "chamfer"],
-    sources: [{ sourceDocument: "tracagem-caldeiraria", sourceSection: "Introdução" }],
     state: "verificado",
   },
   {
@@ -291,7 +246,6 @@ export const KNOWLEDGE: KnowledgeItem[] = [
       "Uma medida aparece em verdadeira grandeza quando o plano que a contém é paralelo ao plano de projeção; caso contrário está encurtada.",
     formulas: ["pitagoras"],
     prerequisites: ["triangulo-retangulo"],
-    sources: [{ sourceDocument: "tracagem-caldeiraria", sourceSection: "Vistas e verdadeira grandeza" }],
     state: "needs-review",
   },
 ];
