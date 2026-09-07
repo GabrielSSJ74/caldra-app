@@ -32,6 +32,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Base de conhecimento única (conceito, fórmula, passo a passo, erros comuns)
 - [x] Diagnóstico de nível, mapa de competências e progresso por aula
 - [x] Simuladores de triângulo e arco + envio de fórmula para a calculadora
+- [x] Exercícios gerados por fórmula com correção passo a passo e placar por aula
 
 ## Fase 3 — Lançamento (EM ANDAMENTO)
 ### Etapa A — Monetização e entitlement
