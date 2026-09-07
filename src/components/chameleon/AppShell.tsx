@@ -42,10 +42,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <ShellActionsProvider
       value={{ openProfile: () => setProfileOpen(true), openMaster: () => setMasterOpen(true) }}
     >
-      <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-background text-foreground">
-        <AuroraBackground active={auroraVisible(pathname)} className="fixed -z-10" />
+      <div className="relative flex min-h-screen flex-col overflow-x-hidden text-foreground">
+        <AuroraBackground active={auroraVisible(pathname)} className="fixed inset-0 z-0" />
         {/* iluminação ambiente */}
-        <div aria-hidden className="pointer-events-none fixed inset-0">
+        <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
           <div className="absolute -top-40 -left-32 size-[26rem] rounded-full bg-accent/8 blur-[120px]" />
           <div className="absolute -right-32 bottom-0 size-[26rem] rounded-full bg-accent2/8 blur-[120px]" />
           {isMestre && (
