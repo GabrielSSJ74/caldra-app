@@ -2,7 +2,7 @@ import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { AlertTriangle, Calculator, ChevronLeft, Clock, Lock, Star } from "lucide-react";
 import { findAcademyLesson } from "@/lib/education/curriculum";
-import { SOURCES, formulaById, knowledgeById } from "@/lib/education/knowledge";
+import { formulaById, knowledgeById } from "@/lib/education/knowledge";
 import {
   MASTERY_LABEL,
   lessonState,
@@ -185,18 +185,6 @@ function LessonPage() {
                   </Panel>
                 )}
 
-                <Panel className="p-4">
-                  <SectionLabel>Fontes</SectionLabel>
-                  <ul className="space-y-1 font-mono text-[10px] text-muted-foreground">
-                    {k.sources.map((s, i) => (
-                      <li key={i}>
-                        {SOURCES[s.sourceDocument].title}
-                        {s.sourceSection ? ` · ${s.sourceSection}` : ""}
-                        {s.sourcePage ? ` · p. ${s.sourcePage}` : ""}
-                      </li>
-                    ))}
-                  </ul>
-                </Panel>
               </div>
             );
           })}

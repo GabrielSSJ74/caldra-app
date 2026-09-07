@@ -148,7 +148,7 @@ function EstudosIndex() {
       </div>
 
       <p className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
-        <BookOpen className="size-3" /> Conteúdo construído a partir das apostilas técnicas do projeto.
+        <BookOpen className="size-3" /> Conteúdo técnico do CALDRA.
         <Lock className="ml-1 size-3" /> Algumas aulas fazem parte do CALDRA PRO.
       </p>
     </div>
