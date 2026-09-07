@@ -186,8 +186,13 @@ export function Wire3D({
     const e = model.edges.map(([a, b]) => line(a, b)).filter((l) => l.depth > 0);
     const r = (model.refLines ?? []).map(([a, b]) => line(a, b));
 
-    const rx = fitRadius(model.bounds) * kk * 0.92;
-    const gy = ((model.bounds.min.y - fit.center.y) * k * Math.cos(cam.pitch) + 0) * kk;
+    const radius = fitRadius(model.bounds);
+    const rx = radius * kk * 0.92;
+    // piso/sombra levemente ABAIXO da base: sem disputa de profundidade com a
+    // peça e sem afastamento perceptível (a peça não é movida).
+    const floorDrop = radius * 0.006;
+    const gy =
+      ((model.bounds.min.y - fit.center.y) * k - floorDrop) * Math.cos(cam.pitch) * kk;
     return { faces: f, edges: e, refs: r, ground: { rx, y: -gy } };
   }, [model, cam, fit, k]);
 
