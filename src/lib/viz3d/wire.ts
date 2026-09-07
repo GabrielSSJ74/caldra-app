@@ -247,7 +247,32 @@ function boundsOf(faces: Face[]): Bounds {
   return { min, max };
 }
 
+/**
+ * Normais da malha (equivalente a `computeVertexNormals`): executado UMA vez,
+ * depois que todas as faces de todas as partes já estão definidas. Newell
+ * suporta polígonos não triangulares e faces levemente não planares.
+ */
+function computeFaceNormals(faces: Face[]): void {
+  for (const f of faces) {
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    const pts = f.pts;
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i]!;
+      const b = pts[(i + 1) % pts.length]!;
+      nx += (a.y - b.y) * (a.z + b.z);
+      ny += (a.z - b.z) * (a.x + b.x);
+      nz += (a.x - b.x) * (a.y + b.y);
+    }
+    const len = Math.hypot(nx, ny, nz);
+    f.n = len > 1e-9 ? v(nx / len, ny / len, nz / len) : v(0, 1, 0);
+  }
+}
+
 function finish(geo: Geo, refLines: Edge[] = []): WireModel {
+  // 1. malha completa → 2. normais → 3. bounding box (nesta ordem, sempre)
+  computeFaceNormals(geo.faces);
   const bounds = boundsOf(geo.faces);
   const size =
     Math.max(bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y, bounds.max.z - bounds.min.z) ||
