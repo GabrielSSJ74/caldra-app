@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useRef } from "react";
 import { ArrowUpRight, Calculator, FolderKanban, PenTool, Sigma } from "lucide-react";
-import { DEMO_HISTORY, DEMO_PROJECTS } from "@/lib/projects/demo-data";
+import { DEMO_HISTORY } from "@/lib/projects/demo-data";
 import { PieceCarousel } from "@/components/chameleon/PieceCarousel";
 
 export const Route = createFileRoute("/")({
@@ -178,7 +178,6 @@ function MiniFolders() {
 }
 
 function Inicio() {
-  const project = DEMO_PROJECTS[0];
   const last = DEMO_HISTORY[0];
   const navigate = useNavigate();
   const taps = useRef<{ count: number; at: number }>({ count: 0, at: 0 });
