@@ -186,8 +186,8 @@ const GENERATORS: Record<string, CncGenerator> = {
     fields: [
       { key: "w", label: "Largura da chapa", def: 400, min: 10, max: 6000 },
       { key: "h", label: "Altura da chapa", def: 300, min: 10, max: 6000 },
-      { key: "cols", label: "Colunas", def: 4, min: 1, max: 60, step: 1 },
-      { key: "rows", label: "Linhas", def: 3, min: 1, max: 60, step: 1 },
+      { key: "cols", label: "Colunas", def: 4, min: 1, max: 60, step: 1, suffix: "" },
+      { key: "rows", label: "Linhas", def: 3, min: 1, max: 60, step: 1, suffix: "" },
       { key: "d", label: "Ø do furo", def: 18, min: 0.5, max: 500 },
       { key: "borda", label: "Margem", def: 40, min: 1, max: 2000 },
     ],
@@ -210,7 +210,7 @@ const GENERATORS: Record<string, CncGenerator> = {
     id: "furacao-circular",
     fields: [
       { key: "bc", label: "Ø círculo de furos", def: 300, min: 5, max: 6000 },
-      { key: "n", label: "Nº de furos", def: 8, min: 1, max: 200, step: 1 },
+      { key: "n", label: "Nº de furos", def: 8, min: 1, max: 200, step: 1, suffix: "" },
       { key: "d", label: "Ø do furo", def: 18, min: 0.5, max: 500 },
       { key: "start", label: "Ângulo inicial", def: 0, min: -360, max: 360, suffix: "°" },
     ],
@@ -321,7 +321,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "de", label: "Ø externo", def: 500, min: 10, max: 6000 },
       { key: "di", label: "Ø interno", def: 300, min: 0, max: 5900 },
       { key: "bc", label: "Ø círculo de furos", def: 420, min: 0, max: 5900 },
-      { key: "n", label: "Nº de furos", def: 8, min: 0, max: 200, step: 1 },
+      { key: "n", label: "Nº de furos", def: 8, min: 0, max: 200, step: 1, suffix: "" },
       { key: "d", label: "Ø do furo", def: 22, min: 1, max: 500, when: (v) => (v["n"] ?? 0) > 0 },
       { key: "start", label: "Ângulo inicial", def: 22.5, min: -360, max: 360, suffix: "°" },
     ],
