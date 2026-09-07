@@ -55,6 +55,102 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-calc-page: var(--calc-page);
+  --color-calc-shell: var(--calc-shell);
+  --color-calc-display: var(--calc-display);
+  --color-calc-recess: var(--calc-recess);
+  --color-calc-key: var(--calc-key);
+  --color-calc-key-hover: var(--calc-key-hover);
+  --color-calc-border: var(--calc-border);
+  --color-calc-line: var(--calc-line);
+  --color-calc-text: var(--calc-text);
+  --color-calc-muted: var(--calc-muted);
+  --color-calc-expression: var(--calc-expression);
+  --color-calc-result: var(--calc-result);
+  --color-calc-cyan: var(--calc-cyan);
+  --color-calc-icon: var(--calc-icon);
+  --color-calc-active: var(--calc-active);
+  --color-calc-tab: var(--calc-tab);
+  --color-calc-error: var(--calc-error);
+}
+
+.calculator-theme {
+  --calc-page: oklch(0.12 0.025 245);
+  --calc-shell: oklch(0.16 0.035 246);
+  --calc-display: oklch(0.12 0.028 246);
+  --calc-recess: oklch(0.13 0.03 246);
+  --calc-key: oklch(0.2 0.035 245);
+  --calc-key-hover: oklch(0.25 0.045 240);
+  --calc-border: oklch(0.33 0.04 238 / 72%);
+  --calc-line: oklch(0.34 0.035 238 / 55%);
+  --calc-text: oklch(0.95 0.01 230);
+  --calc-muted: oklch(0.68 0.035 230);
+  --calc-expression: oklch(0.75 0.035 228);
+  --calc-result: oklch(0.98 0.01 220);
+  --calc-cyan: oklch(0.84 0.14 205);
+  --calc-icon: oklch(0.77 0.1 205);
+  --calc-active: oklch(0.22 0.07 220);
+  --calc-tab: oklch(0.2 0.06 225);
+  --calc-error: oklch(0.72 0.18 25);
+  --shadow-calc: 0 30px 80px oklch(0 0 0 / 45%), inset 0 1px 0 oklch(1 0 0 / 4%);
+  --shadow-calc-glow: 0 0 18px oklch(0.84 0.14 205 / 13%);
+  color-scheme: dark;
+}
+
+@utility shadow-calc { box-shadow: var(--shadow-calc); }
+@utility shadow-calc-glow { box-shadow: var(--shadow-calc-glow); }
+
+.calc-icon-button {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 1px solid var(--calc-line);
+  border-radius: 999px;
+  color: var(--calc-muted);
+  background: var(--calc-recess);
+  transition: color 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.calc-icon-button:hover { color: var(--calc-cyan); border-color: var(--calc-cyan); }
+.calc-icon-button:active { transform: scale(.95); }
+.calc-icon-button svg { width: 1.1rem; height: 1.1rem; }
+
+.calc-key {
+  display: flex;
+  height: clamp(3.15rem, 8dvh, 4.15rem);
+  align-items: center;
+  justify-content: center;
+  gap: .2rem;
+  border: 1px solid var(--calc-line);
+  border-radius: .75rem;
+  background: linear-gradient(155deg, color-mix(in oklab, var(--calc-key) 92%, white 8%), var(--calc-key));
+  color: var(--calc-text);
+  box-shadow: inset 0 1px 0 oklch(1 0 0 / 5%), 0 5px 10px oklch(0 0 0 / 18%);
+  transition: background 150ms ease, border-color 150ms ease, transform 80ms ease;
+}
+
+.calc-key:hover { background: var(--calc-key-hover); border-color: color-mix(in oklab, var(--calc-cyan) 32%, var(--calc-line)); }
+.calc-key-main { font-family: var(--font-mono); font-size: clamp(1rem, 4.5vw, 1.3rem); }
+.calc-key-sub { align-self: flex-start; margin-top: .45rem; font-size: .55rem; color: var(--calc-muted); }
+.calc-key-operator { color: var(--calc-cyan); }
+.calc-key-shift { flex-direction: column; color: var(--calc-cyan); }
+.calc-key-shift.is-active { border-color: var(--calc-cyan); background: var(--calc-active); box-shadow: var(--shadow-calc-glow); }
+.calc-key-equals { border-color: var(--calc-cyan); background: var(--calc-cyan); color: var(--calc-page); box-shadow: var(--shadow-calc-glow); }
+.calc-key-equals:hover { background: color-mix(in oklab, var(--calc-cyan) 88%, white); }
+
+@media (max-width: 420px) {
+  .calc-shell { border-radius: 1.25rem; }
+  .calc-key { border-radius: .62rem; }
+}
+
+@media (max-height: 760px) and (orientation: landscape) {
+  .calculator-theme { padding-block: .35rem; }
+  .calc-shell { max-width: 920px; padding: .65rem; }
+  .calc-display { padding-block: .7rem; }
+  .calc-display > div:nth-child(2) { min-height: 2.5rem; }
+  .calc-key { height: 2.45rem; }
 }
 
 :root {

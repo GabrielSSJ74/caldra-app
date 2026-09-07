@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useRef } from "react";
-import { ArrowUpRight, FolderKanban, PenTool, Sigma } from "lucide-react";
+import { ArrowUpRight, Calculator, FolderKanban, PenTool, Sigma } from "lucide-react";
 import { DEMO_HISTORY, DEMO_PROJECTS } from "@/lib/projects/demo-data";
 import { PieceCarousel } from "@/components/chameleon/PieceCarousel";
 
@@ -137,6 +137,33 @@ function MiniMath() {
   );
 }
 
+function MiniCalculator() {
+  return (
+    <svg viewBox="0 0 120 80" className="size-full" aria-hidden>
+      <rect x="30" y="7" width="60" height="66" rx="7" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <rect x="38" y="15" width="44" height="14" rx="2" fill="none" stroke="var(--accent2)" strokeWidth="1" />
+      <path d="M43 24h22l7-5" fill="none" stroke="var(--accent)" strokeWidth="1.2" />
+      {[0, 1, 2, 3].map((row) =>
+        [0, 1, 2, 3].map((col) => (
+          <rect
+            key={`${row}-${col}`}
+            x={38 + col * 11}
+            y={36 + row * 8}
+            width="7"
+            height="4.5"
+            rx="1"
+            fill={col === 3 ? "var(--accent)" : "none"}
+            stroke={col === 3 ? "var(--accent)" : "currentColor"}
+            strokeWidth=".8"
+          />
+        )),
+      )}
+      <path d="M95 18h12M101 12v12" stroke="var(--accent)" strokeWidth="1" opacity=".8" />
+      <text x="13" y="59" fill="currentColor" fontFamily="ui-monospace, monospace" fontSize="9" opacity=".7">sin</text>
+    </svg>
+  );
+}
+
 function MiniFolders() {
   return (
     <svg viewBox="0 0 120 80" className="size-full" aria-hidden>
@@ -236,7 +263,7 @@ function Inicio() {
 
         <Link
           to="/escola"
-          className="metal group relative col-span-2 flex min-h-[110px] items-center justify-between overflow-hidden rounded-3xl p-4 transition-all duration-500 hover:amber-ring lg:col-span-1 lg:col-start-3 lg:row-start-2"
+          className="metal group relative flex min-h-[110px] items-center justify-between overflow-hidden rounded-3xl p-4 transition-all duration-500 hover:amber-ring lg:col-start-3 lg:row-start-2"
         >
           <div className="relative z-10 flex min-w-0 flex-col gap-1">
             <div className="flex items-center gap-2">
@@ -248,8 +275,26 @@ function Inicio() {
               Fórmulas e aulas
             </span>
           </div>
-          <div className="pointer-events-none h-20 w-28 shrink-0 text-muted-foreground/60">
+          <div className="pointer-events-none hidden h-20 w-28 shrink-0 text-muted-foreground/60 sm:block lg:hidden xl:block">
             <MiniMath />
+          </div>
+        </Link>
+
+        <Link
+          to="/calculadora"
+          className="metal group relative flex min-h-[110px] items-center justify-between overflow-hidden rounded-3xl p-4 transition-all duration-500 hover:amber-ring lg:col-start-3 lg:row-start-3"
+        >
+          <div className="relative z-10 flex min-w-0 flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <Calculator className="size-4 text-accent" strokeWidth={1.4} />
+              <span className="tick-label">{` `}</span>
+            </div>
+            <span className="font-display text-[13px] leading-tight font-medium tracking-wide">
+              CALCULADORA<br />CIENTÍFICA
+            </span>
+          </div>
+          <div className="pointer-events-none absolute inset-y-2 right-0 w-[58%] text-muted-foreground/60 sm:relative sm:inset-auto sm:h-20 sm:w-28 sm:shrink-0 lg:absolute lg:inset-y-2 lg:right-0 lg:w-[55%] xl:relative xl:inset-auto xl:h-20 xl:w-28">
+            <MiniCalculator />
           </div>
         </Link>
       </div>

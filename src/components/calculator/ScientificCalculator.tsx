@@ -1,9 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArrowLeft, ArrowRight, Backspace, BarChart3, Beaker, ChevronDown, Clock3,
+  ArrowLeft, ArrowRight, Backspace, BarChart3, Beaker, ChevronDown,
   Database, Divide, Equal, FlaskConical, Grid2X2, History, Percent, Pi,
-  Repeat2, RotateCcw, Settings, Sigma, Superscript, Volume2, VolumeX, X,
+  Repeat2, Settings, Volume2, VolumeX, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { evaluateExpression, formatResult, toFraction, type AngleMode } from "@/lib/calculator/engine";
@@ -165,7 +165,7 @@ export function ScientificCalculator() {
         {tool === "roots" && <div className="grid grid-cols-2 gap-2"><ToolButton label="Raiz quadrada" onClick={() => { append("sqrt("); setTool(null); }} /><ToolButton label="Raiz cúbica" onClick={() => { append("cbrt("); setTool(null); }} /></div>}
         {tool === "matrix" && <div><div className="mx-auto grid max-w-48 grid-cols-2 gap-2">{matrix.map((n, i) => <input key={i} aria-label={`Valor ${i + 1} da matriz`} type="number" value={n} onChange={(e) => setMatrix((current) => current.map((v, j) => j === i ? Number(e.target.value) : v))} className="rounded-lg border border-calc-line bg-calc-display p-3 text-center font-mono" />)}</div><p className="mt-4 text-center text-sm text-calc-muted">Determinante: <strong className="text-calc-result">{matrixDet}</strong></p></div>}
         {tool === "conversion" && <div className="space-y-3"><input value={convertValue} onChange={(e) => setConvertValue(e.target.value)} inputMode="decimal" aria-label="Valor para conversão" className="w-full rounded-lg border border-calc-line bg-calc-display p-3 font-mono" /><div className="grid grid-cols-2 gap-2 text-center text-sm"><div className="rounded-lg border border-calc-line p-3"><span className="text-calc-muted">mm → pol</span><strong className="mt-1 block font-mono text-calc-result">{Number.isFinite(converted) ? formatResult(converted / 25.4, 4) : "—"}</strong></div><div className="rounded-lg border border-calc-line p-3"><span className="text-calc-muted">pol → mm</span><strong className="mt-1 block font-mono text-calc-result">{Number.isFinite(converted) ? formatResult(converted * 25.4, 4) : "—"}</strong></div></div></div>}
-      </Dialog>
+      </DialogContent></Dialog>
     </div>
   );
 }

@@ -36,6 +36,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const showOnboarding = profile.ready && !intro.show && !profile.onboarded;
   const editorMounted = useImmersiveActive();
   const immersive = immersiveRoute(pathname) && editorMounted;
+  const standalone = pathname.startsWith("/calculadora");
 
   return (
     <ShellActionsProvider
@@ -52,7 +53,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         </div>
 
-        {!immersive && (
+        {!immersive && !standalone && (
         <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
           <button
             onClick={() => setMasterOpen(true)}
@@ -78,13 +79,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main
           className={cn(
             "fade-up relative z-10 min-w-0 flex-1",
-            immersive ? "p-0" : "px-4 pt-16 pb-28 lg:px-10 lg:pt-16 lg:pb-24",
+            immersive || standalone ? "p-0" : "px-4 pt-16 pb-28 lg:px-10 lg:pt-16 lg:pb-24",
           )}
         >
-          <div className={cn(immersive ? "w-full" : "mx-auto w-full max-w-6xl")}>{children}</div>
+          <div className={cn(immersive || standalone ? "w-full" : "mx-auto w-full max-w-6xl")}>{children}</div>
         </main>
 
-        {!immersive && <BubbleNav />}
+        {!immersive && !standalone && <BubbleNav />}
         <MasterModeDialog open={masterOpen} onOpenChange={setMasterOpen} />
         <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
         <PaywallDialog />
