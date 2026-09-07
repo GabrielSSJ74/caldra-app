@@ -6,6 +6,11 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - Fase 1 — Calculadora impecável (módulos puros, QA 60/60, conferência, peso/custo, materiais, unidades)
 - Fase 2A — Plano de corte (ordem, direção, ponto de partida, corte comum, grupos)
 
+## Calculadora Científica (EM ANDAMENTO)
+- [ ] Criar módulo independente, funcional e fiel à referência visual
+- [ ] Adicionar card CALCULADORA CIENTÍFICA ao lado de ESTUDOS sem mover os demais cards
+- [ ] Validar motor matemático, histórico, configurações, ferramentas rápidas e responsividade
+
 ## Fase 3 — Lançamento (EM ANDAMENTO)
 ### Etapa A — Monetização e entitlement
 - [ ] Ativar Lovable Cloud (perfil com `plan`, tabela `activation_codes`)
