@@ -35,13 +35,6 @@ export type AcademyModule = {
   lessons: AcademyLesson[];
 };
 
-const soon = (
-  code: string,
-  id: string,
-  title: string,
-  summary: string,
-  competency: CompetencyId,
-): AcademyModule => ({ id, code, title, summary, competency, lessons: [] });
 
 export const CURRICULUM: AcademyModule[] = [
   {
