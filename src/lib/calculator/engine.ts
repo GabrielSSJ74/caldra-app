@@ -79,7 +79,6 @@ export function evaluateExpression(source: string, angleMode: AngleMode): number
       if (token.value === "pi") return Math.PI;
       if (token.value === "e") return Math.E;
       if (!FUNCTIONS.has(token.value)) throw new CalculatorError("Função desconhecida");
-      if (token.value === "fact") { /* fallthrough para o switch */ }
       let argument: number;
       if (peek()?.type === "lparen") { take(); argument = expression(); if (take()?.type !== "rparen") throw new CalculatorError("Feche os parênteses"); }
       else argument = unary();
