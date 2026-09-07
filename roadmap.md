@@ -11,6 +11,15 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Adicionar card CALCULADORA CIENTÍFICA ao lado de ESTUDOS sem mover os demais cards
 - [x] Validar motor matemático, histórico, configurações, ferramentas rápidas e responsividade
 
+## Ajustes de refino (CONCLUÍDO)
+- [x] AURORA suave mais rápido + novo estilo PADRÃO (sem fundo animado)
+- [x] Meus Materiais movido de Configurações para a Oficina
+- [x] Configurações reordenadas (Backup, Privacidade e Suporte no fim)
+- [x] Paywall com comparativo completo (VISION, plano de corte, DXF CNC, nuvem, AURORA)
+- [x] Calculadora: ângulo/casas nas preferências centrais, DEG padrão, %, fatorial, tema do app, display vazio
+- [x] QA da calculadora (28 casos) — 103/103 OK
+- [x] 3D deixou de ser etapa: virou alternância 2D/3D na área de resultado, com carregamento sob demanda
+
 ## Fase 3 — Lançamento (EM ANDAMENTO)
 ### Etapa A — Monetização e entitlement
 - [ ] Ativar Lovable Cloud (perfil com `plan`, tabela `activation_codes`)
