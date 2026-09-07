@@ -13,6 +13,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { FeatureGate, Panel, SectionLabel } from "@/components/chameleon/ui";
+import { MaterialManager } from "@/components/chameleon/MaterialManager";
 import { useSettings } from "@/lib/settings/SettingsProvider";
 import { useMaterials } from "@/lib/materials/MaterialsProvider";
 import { formatMoney, formatWeight } from "@/lib/regional/regional";
@@ -59,13 +60,18 @@ type TabId = (typeof TABS)[number]["id"];
 
 function OficinaPage() {
   return (
-    <FeatureGate
+    <div className="space-y-5">
+      {/* Materiais moraram em Configurações; agora ficam ao lado de quem os usa.
+          Fora do FeatureGate: continuam disponíveis no plano gratuito. */}
+      <MaterialManager />
+      <FeatureGate
       feature="nesting"
       title="OFICINA"
       description="Nesting, custo de fabricação, orçamento e ficha de produção fazem parte do CALDRA PRO."
     >
-      <Oficina />
-    </FeatureGate>
+        <Oficina />
+      </FeatureGate>
+    </div>
   );
 }
 
