@@ -59,8 +59,14 @@ export function readStoredSettings(): Settings {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return DEFAULTS;
     const saved = JSON.parse(raw) as Partial<Settings> & { aurora?: boolean };
+    const VALID: AuroraStyle[] = ["fluido", "suave", "estatico"];
     const auroraStyle: AuroraStyle =
-      saved.auroraStyle ?? (saved.aurora === false ? "estatico" : DEFAULTS.auroraStyle);
+      saved.aurora === false
+        ? "estatico"
+        : saved.auroraStyle && VALID.includes(saved.auroraStyle)
+          ? saved.auroraStyle
+          : // valor ausente ou inválido nunca resulta em "nenhum fundo"
+            "suave";
     // conta já existente (sem o campo) começa em MESTRE; conta nova, APRENDIZ
     return { ...DEFAULTS, level: saved.level ?? "mestre", ...saved, auroraStyle };
   } catch {
