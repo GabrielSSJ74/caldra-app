@@ -49,6 +49,23 @@ function EstudosIndex() {
         </p>
       </header>
 
+      <Panel className="p-4">
+        <SectionLabel>Descubra seu nível</SectionLabel>
+        <div className="flex items-center justify-between gap-3">
+          <p className="text-[12px] text-muted-foreground">
+            {state.diagnosis
+              ? `Nível registrado: ${state.diagnosis.level === "avancado" ? "Avançado" : state.diagnosis.level === "intermediario" ? "Intermediário" : "Iniciante"}. Refazer quando quiser.`
+              : "Seis perguntas rápidas definem por onde você começa."}
+          </p>
+          <Link
+            to="/escola/diagnostico"
+            className="shrink-0 rounded-xl border border-accent/25 bg-accent/10 px-3 py-1.5 font-mono text-[10px] text-accent uppercase"
+          >
+            {state.diagnosis ? "Refazer" : "Começar"}
+          </Link>
+        </div>
+      </Panel>
+
       {next && (
         <Panel className="p-4">
           <SectionLabel>Continuar aprendendo</SectionLabel>
