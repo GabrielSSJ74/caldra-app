@@ -99,18 +99,21 @@ function CncPartPage() {
             <SectionLabel>Parâmetros</SectionLabel>
             <div className="space-y-2.5">
               {fields.map((f) => (
-                <SmartNumberInput
-                  key={f.key}
-                  label={f.label}
-                  value={values[f.key] ?? f.def}
-                  suffix={f.suffix ?? "mm"}
-                  onChange={(n) =>
-                    setValues((v) => ({
-                      ...v,
-                      [f.key]: Math.min(f.max, Math.max(f.min, Number.isFinite(n) ? n : f.def)),
-                    }))
-                  }
-                />
+                <label key={f.key} className="flex items-center justify-between gap-3">
+                  <span className="t-caption">{f.label}</span>
+                  <SmartNumberInput
+                    value={values[f.key] ?? f.def}
+                    unit={f.suffix ?? "mm"}
+                    ariaLabel={f.label}
+                    className="w-32"
+                    onChange={(n) =>
+                      setValues((v) => ({
+                        ...v,
+                        [f.key]: Math.min(f.max, Math.max(f.min, Number.isFinite(n) ? n : f.def)),
+                      }))
+                    }
+                  />
+                </label>
               ))}
             </div>
           </Panel>
