@@ -174,6 +174,20 @@ function LessonPage() {
                   );
                 })}
 
+                {k.method?.length ? (
+                  <Panel className="p-4">
+                    <SectionLabel>Passo a passo</SectionLabel>
+                    <ol className="space-y-1.5 text-[12px] text-muted-foreground">
+                      {k.method.map((m, i) => (
+                        <li key={m} className="flex gap-2">
+                          <span className="font-mono text-[10px] text-accent">{i + 1}</span>
+                          <span>{m}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  </Panel>
+                ) : null}
+
                 {(k.warnings?.length || k.commonErrors?.length) && (
                   <Panel className="p-4">
                     <SectionLabel>Atenção na prática</SectionLabel>

@@ -158,6 +158,32 @@ export const FORMULAS: Formula[] = [
     ],
     state: "verificado",
   },
+  {
+    id: "escala",
+    category: "geometria",
+    expression: "medida real = medida do desenho × fator da escala",
+    computes: "Conversão entre a medida do desenho e a medida da peça.",
+    whenToUse: "Leitura de projeto em escala 1:2, 1:5, 1:10 e ampliações.",
+    why: "A cota manda; a escala só existe para caber no papel. Quando falta cota, é a escala que devolve a medida real.",
+    variables: [
+      { symbol: "fator", meaning: "Denominador da escala (1:5 → 5)" },
+    ],
+    example: "Traço de 38 mm em 1:10 → 380 mm na peça.",
+    state: "verificado",
+  },
+  {
+    id: "perimetro-poligono",
+    category: "geometria",
+    expression: "P = n × L",
+    computes: "Perímetro de um polígono regular de n lados.",
+    whenToUse: "Anéis poligonais, bases quadradas e estruturas de n faces.",
+    why: "É o desenvolvimento reto da peça poligonal — o mesmo papel que a circunferência tem no cilindro.",
+    variables: [
+      { symbol: "n", meaning: "Número de lados" },
+      { symbol: "L", meaning: "Comprimento de um lado", unit: "mm" },
+    ],
+    state: "verificado",
+  },
 ];
 
 export const formulaById = (id: string) => FORMULAS.find((f) => f.id === id) ?? null;
@@ -247,6 +273,109 @@ export const KNOWLEDGE: KnowledgeItem[] = [
     formulas: ["pitagoras"],
     prerequisites: ["triangulo-retangulo"],
     state: "needs-review",
+  },
+  {
+    id: "vistas-ortograficas",
+    title: "Vistas ortográficas",
+    category: "desenho-tecnico",
+    concept: "Uma peça de três dimensões descrita por vistas planas relacionadas entre si.",
+    definition:
+      "Frontal, superior e lateral mostram a mesma peça em direções perpendiculares. Cada ponto guarda a mesma altura entre frontal e lateral, e o mesmo afastamento entre frontal e superior.",
+    formulas: [],
+    method: [
+      "Escolha a frontal: a vista que melhor mostra o contorno da peça.",
+      "Projete alturas na horizontal para a lateral.",
+      "Projete larguras na vertical para a superior.",
+      "Confira: toda medida deve fechar nas três vistas.",
+    ],
+    commonErrors: ["Ler uma face inclinada como se estivesse em verdadeira grandeza."],
+    prerequisites: ["verdadeira-grandeza"],
+    relatedTools: ["tracagem"],
+    state: "verificado",
+  },
+  {
+    id: "cotas-escalas",
+    title: "Cotas e escalas",
+    category: "desenho-tecnico",
+    concept: "A cota é a lei da peça; a escala é só o tamanho do desenho.",
+    definition:
+      "Cota é a medida escrita no desenho e prevalece sobre qualquer medição feita no papel. Escala indica a proporção entre desenho e peça real.",
+    formulas: ["escala"],
+    warnings: ["Nunca meça o desenho com régua para obter medida de fabricação quando existe cota."],
+    commonErrors: ["Aplicar escala em desenho impresso fora de proporção."],
+    prerequisites: ["unidades-medida"],
+    relatedTools: ["calculadora"],
+    state: "verificado",
+  },
+  {
+    id: "cortes-secoes",
+    title: "Cortes e seções",
+    category: "desenho-tecnico",
+    concept: "Cortar o desenho para enxergar o que está escondido.",
+    definition:
+      "O corte remove imaginariamente parte da peça para revelar espessuras, furos e paredes internas; o hachurado marca o material atingido pelo plano de corte.",
+    formulas: [],
+    method: [
+      "Localize a linha de corte e o sentido das setas.",
+      "Leia a vista em corte olhando na direção das setas.",
+      "Use as hachuras para separar material de vazio.",
+    ],
+    prerequisites: ["vistas-ortograficas"],
+    state: "verificado",
+  },
+  {
+    id: "instrumentos-tracagem",
+    title: "Instrumentos de traçagem",
+    category: "tracagem",
+    concept: "Cada instrumento resolve um tipo de medida; a precisão da peça começa aqui.",
+    definition:
+      "Riscador marca a linha, compasso transfere raios e cordas, esquadro garante o ângulo reto, punção fixa centros e a trena resolve grandes distâncias.",
+    formulas: [],
+    method: [
+      "Limpe e prepare a chapa antes de riscar.",
+      "Defina uma aresta de referência e trabalhe sempre a partir dela.",
+      "Punce os centros antes de abrir o compasso.",
+      "Risque uma vez só: linha repetida vira erro de corte.",
+    ],
+    warnings: ["Riscador desgastado engorda a linha e some com a precisão."],
+    relatedTools: ["tracagem"],
+    state: "verificado",
+  },
+  {
+    id: "referencias-tracagem",
+    title: "Referências e conferência",
+    category: "tracagem",
+    concept: "Medidas acumuladas a partir de uma única referência não somam erro.",
+    definition:
+      "Escolhe-se uma aresta e uma linha de centro como origem de todas as cotas. A conferência final compara diagonais e simetria antes do corte.",
+    formulas: ["pitagoras"],
+    method: [
+      "Marque a aresta de referência e a linha de centro.",
+      "Cote tudo a partir dessa origem, nunca de marca em marca.",
+      "Confira as diagonais: iguais, o traçado está em esquadro.",
+    ],
+    commonErrors: ["Medir de marca em marca e acumular folga em cada passo."],
+    prerequisites: ["triangulo-retangulo"],
+    relatedTools: ["tracagem", "calculadora"],
+    state: "verificado",
+  },
+  {
+    id: "divisao-circunferencia",
+    title: "Divisão da circunferência",
+    category: "tracagem",
+    concept: "Dividir a boca da peça em partes iguais com o compasso, sem transferidor.",
+    definition:
+      "As geratrizes de um desenvolvimento nascem de divisões iguais da circunferência, marcadas por cordas calculadas.",
+    formulas: ["corda-divisao", "circunferencia"],
+    method: [
+      "Defina o número de divisões (12 e 16 são os usuais).",
+      "Calcule a corda e abra o compasso nela.",
+      "Percorra a circunferência; o fechamento confirma o cálculo.",
+    ],
+    warnings: ["Se a última divisão não fecha, o erro está na abertura do compasso, não na fórmula."],
+    prerequisites: ["raio-diametro-perimetro"],
+    relatedTools: ["calculadora", "tracagem"],
+    state: "verificado",
   },
 ];
 
