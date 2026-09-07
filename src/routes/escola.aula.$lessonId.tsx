@@ -132,7 +132,7 @@ function LessonPage() {
                       <AlertTriangle className="mt-0.5 size-3 shrink-0" />
                       {k.state === "needs-review"
                         ? "Conteúdo em revisão técnica"
-                        : "Conteúdo ainda não sustentado pelas fontes"}
+                        : "Conteúdo em preparação"}
                     </p>
                   )}
                 </Panel>
