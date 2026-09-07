@@ -20,13 +20,13 @@ import { Route as OficinaRouteImport } from './routes/oficina'
 import { Route as PlanificacaoRouteImport } from './routes/planificacao'
 import { Route as PrivacidadeRouteImport } from './routes/privacidade'
 import { Route as ProRouteImport } from './routes/pro'
-import { Route as ProjetosRouteImport } from './routes/projetos'
 import { Route as QaRouteImport } from './routes/qa'
 import { Route as TermosRouteImport } from './routes/termos'
 import { Route as Desenho2dIndexRouteImport } from './routes/desenho-2d.index'
 import { Route as Desenho2dProjectIdRouteImport } from './routes/desenho-2d.$projectId'
 import { Route as EscolaIndexRouteImport } from './routes/escola.index'
 import { Route as EscolaSlugRouteImport } from './routes/escola.$slug'
+import { Route as ProjetosIndexRouteImport } from './routes/projetos.index'
 import { Route as ProjetosProjectIdRouteImport } from './routes/projetos.$projectId'
 import { Route as TracagemIndexRouteImport } from './routes/tracagem.index'
 import { Route as TracagemSlugRouteImport } from './routes/tracagem.$slug'
@@ -87,11 +87,6 @@ const ProRoute = ProRouteImport.update({
   path: '/pro',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ProjetosRoute = ProjetosRouteImport.update({
-  id: '/projetos',
-  path: '/projetos',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const QaRoute = QaRouteImport.update({
   id: '/qa',
   path: '/qa',
@@ -122,10 +117,15 @@ const EscolaSlugRoute = EscolaSlugRouteImport.update({
   path: '/escola/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjetosIndexRoute = ProjetosIndexRouteImport.update({
+  id: '/projetos/',
+  path: '/projetos/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjetosProjectIdRoute = ProjetosProjectIdRouteImport.update({
-  id: '/$projectId',
-  path: '/$projectId',
-  getParentRoute: () => ProjetosRoute,
+  id: '/projetos/$projectId',
+  path: '/projetos/$projectId',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const TracagemIndexRoute = TracagemIndexRouteImport.update({
   id: '/tracagem/',
@@ -155,7 +155,6 @@ export interface FileRoutesByFullPath {
   '/planificacao': typeof PlanificacaoRoute
   '/privacidade': typeof PrivacidadeRoute
   '/pro': typeof ProRoute
-  '/projetos': typeof ProjetosRouteWithChildren
   '/qa': typeof QaRoute
   '/termos': typeof TermosRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
@@ -164,6 +163,7 @@ export interface FileRoutesByFullPath {
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/desenho-2d/': typeof Desenho2dIndexRoute
   '/escola/': typeof EscolaIndexRoute
+  '/projetos/': typeof ProjetosIndexRoute
   '/tracagem/': typeof TracagemIndexRoute
   '/tracagem/cnc/$id': typeof TracagemCncIdRoute
 }
@@ -179,7 +179,6 @@ export interface FileRoutesByTo {
   '/planificacao': typeof PlanificacaoRoute
   '/privacidade': typeof PrivacidadeRoute
   '/pro': typeof ProRoute
-  '/projetos': typeof ProjetosRouteWithChildren
   '/qa': typeof QaRoute
   '/termos': typeof TermosRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
@@ -188,6 +187,7 @@ export interface FileRoutesByTo {
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/desenho-2d': typeof Desenho2dIndexRoute
   '/escola': typeof EscolaIndexRoute
+  '/projetos': typeof ProjetosIndexRoute
   '/tracagem': typeof TracagemIndexRoute
   '/tracagem/cnc/$id': typeof TracagemCncIdRoute
 }
@@ -204,7 +204,6 @@ export interface FileRoutesById {
   '/planificacao': typeof PlanificacaoRoute
   '/privacidade': typeof PrivacidadeRoute
   '/pro': typeof ProRoute
-  '/projetos': typeof ProjetosRouteWithChildren
   '/qa': typeof QaRoute
   '/termos': typeof TermosRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
@@ -213,6 +212,7 @@ export interface FileRoutesById {
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/desenho-2d/': typeof Desenho2dIndexRoute
   '/escola/': typeof EscolaIndexRoute
+  '/projetos/': typeof ProjetosIndexRoute
   '/tracagem/': typeof TracagemIndexRoute
   '/tracagem/cnc/$id': typeof TracagemCncIdRoute
 }
@@ -230,7 +230,6 @@ export interface FileRouteTypes {
     | '/planificacao'
     | '/privacidade'
     | '/pro'
-    | '/projetos'
     | '/qa'
     | '/termos'
     | '/desenho-2d/$projectId'
@@ -239,6 +238,7 @@ export interface FileRouteTypes {
     | '/tracagem/$slug'
     | '/desenho-2d/'
     | '/escola/'
+    | '/projetos/'
     | '/tracagem/'
     | '/tracagem/cnc/$id'
   fileRoutesByTo: FileRoutesByTo
@@ -254,7 +254,6 @@ export interface FileRouteTypes {
     | '/planificacao'
     | '/privacidade'
     | '/pro'
-    | '/projetos'
     | '/qa'
     | '/termos'
     | '/desenho-2d/$projectId'
@@ -263,6 +262,7 @@ export interface FileRouteTypes {
     | '/tracagem/$slug'
     | '/desenho-2d'
     | '/escola'
+    | '/projetos'
     | '/tracagem'
     | '/tracagem/cnc/$id'
   id:
@@ -278,7 +278,6 @@ export interface FileRouteTypes {
     | '/planificacao'
     | '/privacidade'
     | '/pro'
-    | '/projetos'
     | '/qa'
     | '/termos'
     | '/desenho-2d/$projectId'
@@ -287,6 +286,7 @@ export interface FileRouteTypes {
     | '/tracagem/$slug'
     | '/desenho-2d/'
     | '/escola/'
+    | '/projetos/'
     | '/tracagem/'
     | '/tracagem/cnc/$id'
   fileRoutesById: FileRoutesById
@@ -303,14 +303,15 @@ export interface RootRouteChildren {
   PlanificacaoRoute: typeof PlanificacaoRoute
   PrivacidadeRoute: typeof PrivacidadeRoute
   ProRoute: typeof ProRoute
-  ProjetosRoute: typeof ProjetosRouteWithChildren
   QaRoute: typeof QaRoute
   TermosRoute: typeof TermosRoute
   Desenho2dProjectIdRoute: typeof Desenho2dProjectIdRoute
   EscolaSlugRoute: typeof EscolaSlugRoute
+  ProjetosProjectIdRoute: typeof ProjetosProjectIdRoute
   TracagemSlugRoute: typeof TracagemSlugRoute
   Desenho2dIndexRoute: typeof Desenho2dIndexRoute
   EscolaIndexRoute: typeof EscolaIndexRoute
+  ProjetosIndexRoute: typeof ProjetosIndexRoute
   TracagemIndexRoute: typeof TracagemIndexRoute
   TracagemCncIdRoute: typeof TracagemCncIdRoute
 }
@@ -394,13 +395,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/projetos': {
-      id: '/projetos'
-      path: '/projetos'
-      fullPath: '/projetos'
-      preLoaderRoute: typeof ProjetosRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/qa': {
       id: '/qa'
       path: '/qa'
@@ -443,12 +437,19 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EscolaSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projetos/': {
+      id: '/projetos/'
+      path: '/projetos'
+      fullPath: '/projetos/'
+      preLoaderRoute: typeof ProjetosIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projetos/$projectId': {
       id: '/projetos/$projectId'
-      path: '/$projectId'
+      path: '/projetos/$projectId'
       fullPath: '/projetos/$projectId'
       preLoaderRoute: typeof ProjetosProjectIdRouteImport
-      parentRoute: typeof ProjetosRoute
+      parentRoute: typeof rootRouteImport
     }
     '/tracagem/': {
       id: '/tracagem/'
@@ -474,18 +475,6 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface ProjetosRouteChildren {
-  ProjetosProjectIdRoute: typeof ProjetosProjectIdRoute
-}
-
-const ProjetosRouteChildren: ProjetosRouteChildren = {
-  ProjetosProjectIdRoute: ProjetosProjectIdRoute,
-}
-
-const ProjetosRouteWithChildren = ProjetosRoute._addFileChildren(
-  ProjetosRouteChildren,
-)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   BibliotecaRoute: BibliotecaRoute,
@@ -498,14 +487,15 @@ const rootRouteChildren: RootRouteChildren = {
   PlanificacaoRoute: PlanificacaoRoute,
   PrivacidadeRoute: PrivacidadeRoute,
   ProRoute: ProRoute,
-  ProjetosRoute: ProjetosRouteWithChildren,
   QaRoute: QaRoute,
   TermosRoute: TermosRoute,
   Desenho2dProjectIdRoute: Desenho2dProjectIdRoute,
   EscolaSlugRoute: EscolaSlugRoute,
+  ProjetosProjectIdRoute: ProjetosProjectIdRoute,
   TracagemSlugRoute: TracagemSlugRoute,
   Desenho2dIndexRoute: Desenho2dIndexRoute,
   EscolaIndexRoute: EscolaIndexRoute,
+  ProjetosIndexRoute: ProjetosIndexRoute,
   TracagemIndexRoute: TracagemIndexRoute,
   TracagemCncIdRoute: TracagemCncIdRoute,
 }
