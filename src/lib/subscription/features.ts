@@ -27,7 +27,13 @@ export type Feature =
   | "cost.fabrication"
   | "quote.pdf"
   | "jobsheet"
-  | "cloud.sync";
+  | "cloud.sync"
+  | "calculator.scientific"
+  | "materials.custom"
+  | "vision.import"
+  | "cut.plan"
+  | "export.dxf.cnc"
+  | "aurora.animated";
 
 const MATRIX: Record<Feature, Plan[]> = {
   "geometry.basic": ["free", "mestre", "oficina"],
@@ -49,6 +55,12 @@ const MATRIX: Record<Feature, Plan[]> = {
   "quote.pdf": ["mestre", "oficina"],
   jobsheet: ["mestre", "oficina"],
   "cloud.sync": ["mestre", "oficina"],
+  "calculator.scientific": ["free", "mestre", "oficina"],
+  "materials.custom": ["free", "mestre", "oficina"],
+  "vision.import": ["mestre", "oficina"],
+  "cut.plan": ["mestre", "oficina"],
+  "export.dxf.cnc": ["mestre", "oficina"],
+  "aurora.animated": ["mestre", "oficina"],
 };
 
 export const FREE_PROJECT_LIMIT = 2;
@@ -134,6 +146,30 @@ export const FEATURE_PITCH: Record<Feature, { title: string; benefit: string }> 
   "cloud.sync": {
     title: "Nuvem e versões",
     benefit: "Seus projetos em todos os aparelhos, com histórico de versões para voltar atrás.",
+  },
+  "calculator.scientific": {
+    title: "Calculadora científica",
+    benefit: "Disponível em todos os planos.",
+  },
+  "materials.custom": {
+    title: "Meus materiais",
+    benefit: "Disponível em todos os planos.",
+  },
+  "vision.import": {
+    title: "CHAMFER VISION",
+    benefit: "Transforme foto, desenho ou logo em geometria vetorial pronta para editar e cortar.",
+  },
+  "cut.plan": {
+    title: "Plano de corte",
+    benefit: "Ordem de execução, sentido de corte, corte comum e entradas/saídas definidas por você.",
+  },
+  "export.dxf.cnc": {
+    title: "DXF para CNC",
+    benefit: "Camadas CUT e MARK, sequência e direção do jeito que a máquina de corte espera.",
+  },
+  "aurora.animated": {
+    title: "Fundo AURORA animado",
+    benefit: "O fundo vivo do CALDRA, com estilos Fluido e Suave. No Free ele fica parado.",
   },
 };
 

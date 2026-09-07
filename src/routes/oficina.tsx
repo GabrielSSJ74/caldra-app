@@ -65,10 +65,10 @@ function OficinaPage() {
           Fora do FeatureGate: continuam disponíveis no plano gratuito. */}
       <MaterialManager />
       <FeatureGate
-      feature="nesting"
-      title="OFICINA"
-      description="Nesting, custo de fabricação, orçamento e ficha de produção fazem parte do CALDRA PRO."
-    >
+        feature="nesting"
+        title="OFICINA"
+        description="Nesting, custo de fabricação, orçamento e ficha de produção fazem parte do CALDRA PRO."
+      >
         <Oficina />
       </FeatureGate>
     </div>
