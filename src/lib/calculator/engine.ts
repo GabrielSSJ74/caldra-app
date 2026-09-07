@@ -115,6 +115,14 @@ export function evaluateExpression(source: string, angleMode: AngleMode): number
 
   const primaryPostfix = postfix(primary);
 
+  /* `-3^2` = −9: o sinal é aplicado DEPOIS da potência, como na matemática. */
+  const power = (): number => {
+    const left = primaryPostfix();
+    const token = peek();
+    if (token?.type === "op" && token.value === "^") { take(); return left ** unary(); }
+    return left;
+  };
+
   const unary = (): number => {
     const token = peek();
     if (token?.type === "op" && (token.value === "+" || token.value === "-")) {
@@ -122,23 +130,16 @@ export function evaluateExpression(source: string, angleMode: AngleMode): number
       const value = unary();
       return token.value === "-" ? -value : value;
     }
-    return primaryPostfix();
-  };
-
-  const power = (): number => {
-    const left = unary();
-    const token = peek();
-    if (token?.type === "op" && token.value === "^") { take(); return left ** power(); }
-    return left;
+    return power();
   };
 
   const product = (): number => {
-    let value = power();
+    let value = unary();
     while (true) {
       const token = peek();
       if (token?.type !== "op" || !["*", "/"].includes(token.value)) break;
       take();
-      const right = power();
+      const right = unary();
       if (token.value === "*") value *= right;
       else value /= right;
     }

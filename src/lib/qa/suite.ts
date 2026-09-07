@@ -15,6 +15,7 @@ import type { Entity } from "@/lib/lab2d/core";
 import { reverseEntity, startPointOf } from "@/lib/lab2d/cutPlan";
 import {
   cncLayerOf,
+  DEFAULT_CNC_LAYERS,
   cncOf,
   withCnc,
   orientationOf,
@@ -320,7 +321,7 @@ function cncCases(): QaCase[] {
       "LXDS",
       "Layers CNC do CALDRA cobrem a amostra",
       1,
-      gl.every((n) => cncLayerOf(n) !== null) ? 1 : 0,
+      gl.every((n) => n in DEFAULT_CNC_LAYERS) ? 1 : 0,
       "bool",
     ),
   );
