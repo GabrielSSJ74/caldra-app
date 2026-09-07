@@ -322,7 +322,7 @@ const GENERATORS: Record<string, CncGenerator> = {
       { key: "di", label: "Ø interno", def: 300, min: 0, max: 5900 },
       { key: "bc", label: "Ø círculo de furos", def: 420, min: 0, max: 5900 },
       { key: "n", label: "Nº de furos", def: 8, min: 0, max: 200, step: 1 },
-      { key: "d", label: "Ø do furo", def: 22, min: 1, max: 500, when: (v) => v.n > 0 },
+      { key: "d", label: "Ø do furo", def: 22, min: 1, max: 500, when: (v) => (v["n"] ?? 0) > 0 },
       { key: "start", label: "Ângulo inicial", def: 22.5, min: -360, max: 360, suffix: "°" },
     ],
     build: (v: Record<"de"|"di"|"bc"|"n"|"d"|"start", number>) => {
