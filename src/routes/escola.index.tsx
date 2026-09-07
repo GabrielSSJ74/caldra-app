@@ -1,105 +1,156 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { ArrowRight, BookOpen, CircleDashed, Lock } from "lucide-react";
+import { CURRICULUM } from "@/lib/education/curriculum";
 import {
-  Compass,
-  Flame,
-  Layers,
-  PencilRuler,
-  Ruler,
-  Sigma,
-  Triangle,
-  type LucideIcon,
-} from "lucide-react";
-import { MODULES } from "@/lib/education/courses";
-import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
+  COMPETENCY_LEVEL_LABEL,
+  COMPETENCY_MAP,
+  competencyLevel,
+  moduleProgress,
+  nextLesson,
+  reviewQueue,
+  useAcademy,
+} from "@/lib/education/progress";
+import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/escola/")({
   head: () => ({
     meta: [
-      { title: "Estudos — CALDRA" },
+      { title: "Estudos — Escola de caldeiraria | CALDRA" },
       {
         name: "description",
         content:
-          "Estudos de caldeiraria: matemática, trigonometria, geometria, planificação, traçagem e dobra.",
+          "Trilha de formação em caldeiraria: fundamentos, matemática aplicada, traçagem e planificação, com mapa de competências e simuladores.",
       },
-      { property: "og:title", content: "Estudos — CALDRA" },
+      { property: "og:title", content: "Estudos — Escola de caldeiraria | CALDRA" },
       {
         property: "og:description",
-        content: "Diagramas, fórmulas e exemplos visuais em vez de longos textos.",
+        content: "Aprenda por conceito, fórmula, simulação e prática — do zero à competência.",
       },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: EstudosIndex,
 });
 
-const ICONS: LucideIcon[] = [Sigma, Triangle, Compass, Layers, PencilRuler, Ruler, Flame];
-
 function EstudosIndex() {
-  const [open, setOpen] = useState<string | null>(null);
-  const { isMestre } = useFeatureAccess();
+  const state = useAcademy();
+  const next = nextLesson(state);
+  const review = reviewQueue(state);
 
   return (
     <div className="space-y-5">
       <header className="pt-1">
-        <span className="tick-label">Aprendizagem visual</span>
+        <span className="tick-label">Escola CALDRA</span>
         <h1 className="font-display text-3xl font-semibold tracking-tight">ESTUDOS</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Do zero à competência: conceito, fórmula, simulação e prática.
+        </p>
       </header>
 
-      <div className="divide-y divide-border overflow-hidden rounded-3xl metal">
-        {MODULES.map((m, i) => {
-          const Icon = ICONS[i % ICONS.length]!;
-          const active = open === m.slug;
-          return (
-            <div key={m.slug}>
-              <button
-                onClick={() => setOpen(active ? null : m.slug)}
-                className={cn(
-                  "grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-4 px-4 py-4 text-left transition-colors duration-300",
-                  active ? "bg-accent/6 text-accent" : "hover:bg-foreground/3",
-                )}
-              >
-                <span
-                  className={cn(
-                    "grid size-11 shrink-0 place-items-center rounded-2xl transition-all duration-500",
-                    active ? "bg-accent/12 amber-ring text-accent" : "hairline text-muted-foreground",
-                  )}
-                >
-                  <Icon className="size-5" strokeWidth={1.2} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block truncate font-display text-[15px] font-medium tracking-tight">
-                    {m.title}
-                  </span>
-                  <span className="tick-label">{m.lessons.length} aulas</span>
-                </span>
-                <span className="font-mono text-[11px] text-muted-foreground">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-              </button>
+      {next && (
+        <Panel className="p-4">
+          <SectionLabel>Continuar aprendendo</SectionLabel>
+          <Link
+            to="/escola/aula/$lessonId"
+            params={{ lessonId: next.lesson.id }}
+            className="flex items-center justify-between gap-3"
+          >
+            <div className="min-w-0">
+              <p className="truncate font-display text-base">{next.lesson.title}</p>
+              <p className="truncate font-mono text-[10px] text-muted-foreground uppercase">
+                {next.module.code} · {next.module.title} · {next.lesson.minutes} min
+              </p>
+            </div>
+            <ArrowRight className="size-4 shrink-0 text-accent" />
+          </Link>
+        </Panel>
+      )}
 
-              {active && (
-                <div className="fade-up grid gap-px bg-border/60 sm:grid-cols-2">
-                  {m.lessons.map((l) => (
-                    <Link
-                      key={l.slug}
-                      to="/escola/$slug"
-                      params={{ slug: l.slug }}
-                      className="flex items-center gap-3 bg-background/70 px-4 py-3 transition-colors hover:text-accent"
-                    >
-                      <span className="font-mono text-[10px] text-accent">{l.minutes}′</span>
-                      <span className="min-w-0 truncate text-[12px]">{l.title}</span>
-                      {!l.free && !isMestre && (
-                        <span className="ml-auto size-1.5 shrink-0 rounded-full bg-accent" />
-                      )}
-                    </Link>
-                  ))}
+      <Panel className="p-4">
+        <SectionLabel>Mapa de competências</SectionLabel>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {COMPETENCY_MAP.map((c) => {
+            const { level, pct } = competencyLevel(c.id, state);
+            return (
+              <div key={c.id} className="rounded-xl border border-line p-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="font-display text-sm">{c.title}</span>
+                  <span className="font-mono text-[10px] text-accent">{pct}%</span>
                 </div>
+                <div className="mt-2 h-1 overflow-hidden rounded-full bg-foreground/10">
+                  <div className="h-full rounded-full bg-accent" style={{ width: `${pct}%` }} />
+                </div>
+                <p className="mt-1.5 font-mono text-[10px] text-muted-foreground uppercase">
+                  {COMPETENCY_LEVEL_LABEL[level]}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      </Panel>
+
+      {review.length > 0 && (
+        <Panel className="p-4">
+          <SectionLabel>Revisão sugerida</SectionLabel>
+          <div className="flex flex-wrap gap-2">
+            {review.map((x) => (
+              <Link
+                key={x.lesson.id}
+                to="/escola/aula/$lessonId"
+                params={{ lessonId: x.lesson.id }}
+                className="rounded-lg border border-line px-2.5 py-1.5 font-mono text-[10px] uppercase"
+              >
+                {x.lesson.title}
+              </Link>
+            ))}
+          </div>
+        </Panel>
+      )}
+
+      <div className="space-y-2">
+        <SectionLabel>Currículo</SectionLabel>
+        {CURRICULUM.map((m) => {
+          const pct = moduleProgress(m.id, state);
+          const soon = m.lessons.length === 0;
+          const Body = (
+            <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3.5">
+              <span className="font-mono text-[11px] text-muted-foreground">{m.code}</span>
+              <div className="min-w-0">
+                <p className="truncate font-display text-sm">{m.title}</p>
+                <p className="truncate text-[11px] text-muted-foreground">{m.summary}</p>
+              </div>
+              {soon ? (
+                <span className="flex items-center gap-1 font-mono text-[9px] text-muted-foreground uppercase">
+                  <CircleDashed className="size-3" /> em breve
+                </span>
+              ) : (
+                <span className="font-mono text-[11px] text-accent">{pct}%</span>
               )}
             </div>
           );
+          return soon ? (
+            <div key={m.id} className="metal rounded-2xl opacity-60">
+              {Body}
+            </div>
+          ) : (
+            <Link
+              key={m.id}
+              to="/escola/modulo/$moduleId"
+              params={{ moduleId: m.id }}
+              className="metal block rounded-2xl transition-colors hover:amber-ring"
+            >
+              {Body}
+            </Link>
+          );
         })}
       </div>
+
+      <p className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground">
+        <BookOpen className="size-3" /> Conteúdo construído a partir das apostilas técnicas do projeto.
+        <Lock className="ml-1 size-3" /> Algumas aulas fazem parte do CALDRA PRO.
+      </p>
     </div>
   );
 }
