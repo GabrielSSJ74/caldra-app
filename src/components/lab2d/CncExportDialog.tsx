@@ -68,7 +68,7 @@ export function CncExportDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="glass flex max-h-[70dvh] w-[min(90vw,32rem)] max-w-none flex-col gap-3 overflow-y-auto border-0">
+      <DialogContent className="flex max-h-[70dvh] w-[min(90vw,32rem)] max-w-none flex-col gap-3 overflow-y-auto border border-border bg-popover text-popover-foreground">
         <DialogHeader>
           <DialogTitle className="font-display text-lg">Exportar DXF CNC</DialogTitle>
         </DialogHeader>
