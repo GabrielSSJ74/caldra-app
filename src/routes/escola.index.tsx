@@ -86,7 +86,15 @@ function EstudosIndex() {
       )}
 
       <Panel className="p-4">
-        <SectionLabel>Mapa de competências</SectionLabel>
+        <div className="flex items-baseline justify-between gap-2">
+          <SectionLabel>Mapa de competências</SectionLabel>
+          <Link
+            to="/escola/competencias"
+            className="font-mono text-[10px] text-accent uppercase"
+          >
+            Ver detalhe
+          </Link>
+        </div>
         <div className="grid gap-2 sm:grid-cols-2">
           {COMPETENCY_MAP.map((c) => {
             const { level, pct } = competencyLevel(c.id, state);
