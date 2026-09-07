@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
@@ -422,12 +422,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const toWorld = useCallback(
     (ev: { clientX: number; clientY: number }): Vec2 => {
       const r = svgRef.current!.getBoundingClientRect();
+      // CÂMERA ÚNICA: durante um gesto o estado React fica um quadro atrás;
+      // o hit-test precisa usar exatamente a mesma câmera que desenhou.
+      const v = viewRef.current;
       return {
-        x: (ev.clientX - r.left - view.tx) / view.k,
-        y: (ev.clientY - r.top - view.ty) / view.k,
+        x: (ev.clientX - r.left - v.tx) / v.k,
+        y: (ev.clientY - r.top - v.ty) / v.k,
       };
     },
-    [view],
+    [],
   );
 
   /** Enquadra uma caixa do desenho na viewport (margem visual, escala 1:1 preservada). */
@@ -586,7 +589,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   /* ---------------------------------------- pintura em canvas (por sujidade) */
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
@@ -609,19 +612,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (el.height !== ph) el.height = ph;
     const ctx = el.getContext("2d");
     if (!ctx) return;
-    // redesenha apenas uma vez por quadro, quando cena/viewport mudam
-    const id = requestAnimationFrame(() =>
-      drawScene(ctx, {
-        index: drawIndex,
-        view,
-        width: canvasSize.w,
-        height: canvasSize.h,
-        dpr,
-        selection: selectionSet,
-        lod: gesturing,
-      }),
-    );
-    return () => cancelAnimationFrame(id);
+    // pinta no MESMO quadro em que o SVG recebe a transformação: sem atraso
+    // de um frame entre a geometria (canvas) e os overlays (SVG) no pinch.
+    drawScene(ctx, {
+      index: drawIndex,
+      view,
+      width: canvasSize.w,
+      height: canvasSize.h,
+      dpr,
+      selection: selectionSet,
+      lod: gesturing,
+    });
   }, [drawIndex, view, selectionSet, gesturing, canvasSize]);
 
   /* ------------------------------------------------------- FLUXO CALDRA */
@@ -640,7 +641,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [simPath, simDist],
   );
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = flowRef.current;
     if (!el || !canvasSize.w || !canvasSize.h) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -679,8 +680,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     // estático quando a animação não é necessária (sem CPU em segundo plano)
     const animate = showArrows && !gesturing && !document.hidden;
     if (!animate) {
-      const id = requestAnimationFrame(() => paint(0));
-      return () => cancelAnimationFrame(id);
+      paint(0);
+      return;
     }
 
     let raf = 0;
