@@ -1428,7 +1428,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       )}
       {/* REGIÃO A — HEADER */}
       {!focus && (
-        <header className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <header className="grid shrink-0 grid-cols-[auto_minmax(4rem,1fr)_minmax(0,auto)] items-center gap-2">
           <div className="flex min-w-0 items-center gap-2">
             <button
               onClick={leaveEditor}
@@ -1438,9 +1438,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               <ArrowLeft className="size-3.5" /> Sair
             </button>
             <span className="tick-label shrink-0 text-accent">CHAMFER</span>
+          </div>
+
+          <div className="min-w-0 px-1 text-center">
             {project && (
-              <span className="tick-label truncate text-muted-foreground">{project.name}</span>
+              <span
+                className="tick-label block truncate text-muted-foreground"
+                title={project.name}
+              >
+                {project.name}
+              </span>
             )}
+          </div>
+
+          <div className="flex min-w-0 items-center justify-end gap-1 overflow-x-auto">
             <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
               {project?.plans.map((pl) => (
                 <button
@@ -1498,9 +1509,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 </button>
               )}
             </div>
-          </div>
-
-          <div className="flex shrink-0 items-center gap-1">
             <IconBtn label="Desfazer" onClick={undo} icon={Undo2} />
             <IconBtn label="Refazer" onClick={redo} icon={Redo2} />
             <IconBtn label="Enquadrar" onClick={() => fitTo(entities)} icon={ScanSearch} />
@@ -1512,15 +1520,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               }}
               icon={LayersIcon}
               active={showLayers}
-            />
-            <IconBtn
-              label="Plano de corte"
-              onClick={() => {
-                setShowCut((s) => !s);
-                setShowLayers(false);
-              }}
-              icon={ListOrdered}
-              active={showCut}
             />
 
             <IconBtn label="Exportar" onClick={() => setExportOpen(true)} icon={Download} />
@@ -2006,9 +2005,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       {/* REGIÃO E — STATUS BAR */}
       {!focus && (
         <div className="flex h-7 shrink-0 items-center gap-1.5 overflow-x-auto font-mono text-[10px] text-muted-foreground">
-          <span className="shrink-0 rounded-full bg-background/40 px-2 py-0.5">
-            X {cursor.x.toFixed(2)} · Y {cursor.y.toFixed(2)}
-          </span>
+          <button
+            onClick={() => {
+              setShowCut((s) => !s);
+              setShowLayers(false);
+            }}
+            title="Plano de corte"
+            className={cn(
+              "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
+              showCut && "text-accent",
+            )}
+          >
+            PLANO
+          </button>
           <button
             onClick={() => setSnapOn((s) => !s)}
             className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", snapOn && "text-accent")}
