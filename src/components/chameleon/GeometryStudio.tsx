@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState useEffect,} from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Box, Check, ChevronRight, Download, FileText, GraduationCap, Image as ImageIcon, Lightbulb, PenTool } from "lucide-react";
@@ -58,6 +58,8 @@ export function GeometryStudio({ slug, name }: Props) {
   const [unfold, setUnfold] = useState(0);
   /* 3D é camada da área de resultado, não etapa do fluxo. */
   const [view3d, setView3d] = useState(false);
+  /* Trocar de peça sempre volta para o 2D. */
+  useEffect(() => setView3d(false), [slug]);
   const [pulse, setPulse] = useState<string | null>(null);
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
   const pulseTimer = useRef<number | null>(null);
