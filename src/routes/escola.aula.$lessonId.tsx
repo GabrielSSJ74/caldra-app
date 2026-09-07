@@ -13,6 +13,7 @@ import {
   useAcademy,
 } from "@/lib/education/progress";
 import { ArcSim, TriangleSim } from "@/components/education/Simulators";
+import { ExercisePanel } from "@/components/education/ExercisePanel";
 import { Panel, PlanBadge, SectionLabel } from "@/components/chameleon/ui";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { cn } from "@/lib/utils";
@@ -205,6 +206,8 @@ function LessonPage() {
 
           {lesson.simulator === "triangulo" && <TriangleSim />}
           {lesson.simulator === "arco" && <ArcSim />}
+
+          <ExercisePanel lessonId={lesson.id} formulaIds={lessonFormulas} />
 
           <Panel className="p-4">
             <SectionLabel>Prática</SectionLabel>
