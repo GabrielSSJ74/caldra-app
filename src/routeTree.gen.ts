@@ -26,6 +26,7 @@ import { Route as Desenho2dIndexRouteImport } from './routes/desenho-2d.index'
 import { Route as Desenho2dProjectIdRouteImport } from './routes/desenho-2d.$projectId'
 import { Route as EscolaIndexRouteImport } from './routes/escola.index'
 import { Route as EscolaSlugRouteImport } from './routes/escola.$slug'
+import { Route as EscolaDiagnosticoRouteImport } from './routes/escola.diagnostico'
 import { Route as ProjetosIndexRouteImport } from './routes/projetos.index'
 import { Route as ProjetosProjectIdRouteImport } from './routes/projetos.$projectId'
 import { Route as TracagemIndexRouteImport } from './routes/tracagem.index'
@@ -119,6 +120,11 @@ const EscolaSlugRoute = EscolaSlugRouteImport.update({
   path: '/escola/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EscolaDiagnosticoRoute = EscolaDiagnosticoRouteImport.update({
+  id: '/escola/diagnostico',
+  path: '/escola/diagnostico',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProjetosIndexRoute = ProjetosIndexRouteImport.update({
   id: '/projetos/',
   path: '/projetos/',
@@ -171,6 +177,7 @@ export interface FileRoutesByFullPath {
   '/termos': typeof TermosRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
+  '/escola/diagnostico': typeof EscolaDiagnosticoRoute
   '/projetos/$projectId': typeof ProjetosProjectIdRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/desenho-2d/': typeof Desenho2dIndexRoute
@@ -197,6 +204,7 @@ export interface FileRoutesByTo {
   '/termos': typeof TermosRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
+  '/escola/diagnostico': typeof EscolaDiagnosticoRoute
   '/projetos/$projectId': typeof ProjetosProjectIdRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/desenho-2d': typeof Desenho2dIndexRoute
@@ -224,6 +232,7 @@ export interface FileRoutesById {
   '/termos': typeof TermosRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
+  '/escola/diagnostico': typeof EscolaDiagnosticoRoute
   '/projetos/$projectId': typeof ProjetosProjectIdRoute
   '/tracagem/$slug': typeof TracagemSlugRoute
   '/desenho-2d/': typeof Desenho2dIndexRoute
@@ -252,6 +261,7 @@ export interface FileRouteTypes {
     | '/termos'
     | '/desenho-2d/$projectId'
     | '/escola/$slug'
+    | '/escola/diagnostico'
     | '/projetos/$projectId'
     | '/tracagem/$slug'
     | '/desenho-2d/'
@@ -278,6 +288,7 @@ export interface FileRouteTypes {
     | '/termos'
     | '/desenho-2d/$projectId'
     | '/escola/$slug'
+    | '/escola/diagnostico'
     | '/projetos/$projectId'
     | '/tracagem/$slug'
     | '/desenho-2d'
@@ -304,6 +315,7 @@ export interface FileRouteTypes {
     | '/termos'
     | '/desenho-2d/$projectId'
     | '/escola/$slug'
+    | '/escola/diagnostico'
     | '/projetos/$projectId'
     | '/tracagem/$slug'
     | '/desenho-2d/'
@@ -331,6 +343,7 @@ export interface RootRouteChildren {
   TermosRoute: typeof TermosRoute
   Desenho2dProjectIdRoute: typeof Desenho2dProjectIdRoute
   EscolaSlugRoute: typeof EscolaSlugRoute
+  EscolaDiagnosticoRoute: typeof EscolaDiagnosticoRoute
   ProjetosProjectIdRoute: typeof ProjetosProjectIdRoute
   TracagemSlugRoute: typeof TracagemSlugRoute
   Desenho2dIndexRoute: typeof Desenho2dIndexRoute
@@ -463,6 +476,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EscolaSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/escola/diagnostico': {
+      id: '/escola/diagnostico'
+      path: '/escola/diagnostico'
+      fullPath: '/escola/diagnostico'
+      preLoaderRoute: typeof EscolaDiagnosticoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/projetos/': {
       id: '/projetos/'
       path: '/projetos'
@@ -531,6 +551,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermosRoute: TermosRoute,
   Desenho2dProjectIdRoute: Desenho2dProjectIdRoute,
   EscolaSlugRoute: EscolaSlugRoute,
+  EscolaDiagnosticoRoute: EscolaDiagnosticoRoute,
   ProjetosProjectIdRoute: ProjetosProjectIdRoute,
   TracagemSlugRoute: TracagemSlugRoute,
   Desenho2dIndexRoute: Desenho2dIndexRoute,

@@ -3,7 +3,7 @@
  *
  * Só ESTRUTURA + referências para a base de conhecimento. Nenhum texto técnico
  * novo mora aqui: as aulas apontam para itens de @/lib/education/knowledge.
- * Módulos ainda sem conteúdo sustentado pelas fontes ficam "em-construcao".
+ * Módulos ainda sem conteúdo publicado ficam "em-construcao".
  */
 
 import type { CompetencyId } from "./knowledge";
