@@ -169,7 +169,10 @@ const listeners = new Set<() => void>();
 
 const uid = (p: string) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
-function normalizePart(raw: Partial<ProjectPart>): ProjectPart {
+type PartDraft = { [K in keyof ProjectPart]?: ProjectPart[K] | undefined };
+type ProjectDraft = { [K in keyof Project]?: Project[K] | undefined };
+
+function normalizePart(raw: PartDraft): ProjectPart {
   const now = Date.now();
   return {
     instanceId: raw.instanceId ?? uid("pt"),
@@ -190,7 +193,7 @@ function normalizePart(raw: Partial<ProjectPart>): ProjectPart {
 }
 
 /** Migração segura: campos ausentes recebem padrões, nada é descartado. */
-function normalizeProject(raw: Partial<Project>): Project {
+function normalizeProject(raw: ProjectDraft): Project {
   const now = Date.now();
   return {
     id: raw.id ?? uid("pj"),

@@ -56,7 +56,7 @@ type Props = {
   slug: string;
   name: string;
   /** Estado salvo de uma peça de projeto (instância). */
-  initial?: Partial<StudioSnapshot> | undefined;
+  initial?: { [K in keyof StudioSnapshot]?: StudioSnapshot[K] | undefined } | undefined;
   /** Autosave: chamado com atraso após alterações relevantes. */
   onPersist?: ((snapshot: StudioSnapshot) => void) | undefined;
 };
