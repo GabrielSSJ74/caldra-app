@@ -124,6 +124,24 @@ export function GeometryStudio({ slug, name, initial, onPersist }: Props) {
     [engine, values],
   );
 
+  /* Autosave inteligente: grava 700 ms após a última alteração. */
+  const persistRef = useRef(onPersist);
+  persistRef.current = onPersist;
+  useEffect(() => {
+    if (!persistRef.current) return;
+    const id = window.setTimeout(() => {
+      persistRef.current?.({
+        values: { ...values } as Record<string, number>,
+        materialId,
+        material,
+        thickness: (values["thickness"] as number) ?? 3,
+        quantity,
+      });
+    }, 700);
+    return () => window.clearTimeout(id);
+  }, [values, materialId, material, quantity]);
+
+
   if (!engine) return null;
 
   const tabs = BASE_TABS as readonly string[];
