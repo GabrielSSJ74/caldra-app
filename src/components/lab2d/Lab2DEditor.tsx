@@ -1528,7 +1528,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             <div className="relative">
               <IconBtn label="Mais" onClick={() => setMoreOpen((m) => !m)} icon={MoreHorizontal} active={moreOpen} />
               {moreOpen && (
-                <div className="metal hairline pop-in absolute top-10 right-0 z-30 w-52 rounded-2xl p-1.5">
+                <div className="metal hairline pop-in fixed top-12 right-3 z-[70] w-52 rounded-2xl p-1.5">
                   <MenuItem
                     label="Centralizar peça"
                     icon={Crosshair}
