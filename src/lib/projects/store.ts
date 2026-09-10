@@ -37,10 +37,32 @@ export type PartStatus =
   | "finalizada"
   | "entregue";
 
+/** CONJUNTO — escada, plataforma, guarda-corpo, linha de tubulação… */
+export type Assembly = {
+  id: string;
+  /** sufixo do código, ex.: "EST" em ESC-EST. */
+  code: string;
+  name: string;
+  description?: string | undefined;
+  order: number;
+};
+
+/** SUBCONJUNTO — pertence sempre a um conjunto. */
+export type Subassembly = {
+  id: string;
+  assemblyId: string;
+  code: string;
+  name: string;
+  description?: string | undefined;
+  order: number;
+};
+
 export type ProjectPart = {
   instanceId: string;
   /** referência ao modelo global da biblioteca (nunca uma cópia dele). */
   modelId: string;
+  /** identidade única no projeto, ex.: ESC-EST-001. */
+  code: string;
   name: string;
   parameters: Record<string, number>;
   materialId?: string | undefined;
@@ -51,6 +73,15 @@ export type ProjectPart = {
   /** 0–100; derivado do status quando não editado manualmente. */
   progress?: number | undefined;
   notes: string;
+  /** vínculo estrutural (opcional: peça avulsa continua válida). */
+  assemblyId?: string | undefined;
+  subassemblyId?: string | undefined;
+  /** função da peça no conjunto (longarina, degrau, chapa de base…). */
+  role?: string | undefined;
+  /** posição / ordem de montagem dentro do conjunto. */
+  position?: string | undefined;
+  /** revisão corrente da peça: A, B, C… */
+  revision: string;
   createdAt: number;
   updatedAt: number;
   /** estrutura reservada para versionamento futuro. */
@@ -68,17 +99,75 @@ export type Project = {
   owner?: string | undefined;
   place?: string | undefined;
   deadline?: string | undefined;
+  /** identidade única do projeto, ex.: ESC-001. */
   code?: string | undefined;
+  revision: string;
   tags?: string[] | undefined;
   status: ProjectStatus;
   /** marcado manualmente pelo usuário. */
   delivered: boolean;
   notes: string;
+  assemblies: Assembly[];
+  subassemblies: Subassembly[];
   parts: ProjectPart[];
   history: HistoryEvent[];
   createdAt: number;
   updatedAt: number;
 };
+
+/* ------------------------------------------------------------------ */
+/* Códigos — identidade única (ESC-001 / ESC-EST / ESC-EST-001)        */
+/* ------------------------------------------------------------------ */
+
+const STOP = new Set(["de", "da", "do", "das", "dos", "e", "para", "com", "em", "a", "o"]);
+
+function slugToken(text: string, size = 3): string {
+  const clean = text
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w && !STOP.has(w.toLowerCase()));
+  if (!clean.length) return "GEN";
+  if (clean.length >= size) return clean.slice(0, size).map((w) => w[0]).join("");
+  return clean[0]!.slice(0, size).padEnd(Math.min(size, clean[0]!.length), "");
+}
+
+const seq = (n: number) => String(n).padStart(3, "0");
+
+export function nextRevision(rev: string): string {
+  const c = (rev || "A").toUpperCase().charCodeAt(0);
+  return c >= 90 ? "A1" : String.fromCharCode(c + 1);
+}
+
+function makeProjectCode(name: string, taken: Set<string>): string {
+  const base = slugToken(name);
+  let i = 1;
+  while (taken.has(`${base}-${seq(i)}`)) i += 1;
+  return `${base}-${seq(i)}`;
+}
+
+function makeAssemblyCode(name: string, taken: Set<string>): string {
+  const base = slugToken(name);
+  if (!taken.has(base)) return base;
+  let i = 2;
+  while (taken.has(`${base}${i}`)) i += 1;
+  return `${base}${i}`;
+}
+
+/** Código de peça derivado do conjunto (ou do projeto, quando avulsa). */
+export function makePartCode(project: Project, assemblyId?: string): string {
+  const asm = project.assemblies.find((a) => a.id === assemblyId);
+  const prefix = asm
+    ? `${project.code ?? slugToken(project.name)}-${asm.code}`
+    : `${project.code ?? slugToken(project.name)}-P`;
+  const taken = new Set(project.parts.map((p) => p.code));
+  let i = 1;
+  while (taken.has(`${prefix}-${seq(i)}`)) i += 1;
+  return `${prefix}-${seq(i)}`;
+}
+
 
 /* ------------------------------------------------------------------ */
 /* Progresso — determinístico, ponderado pela quantidade               */
