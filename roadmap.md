@@ -101,4 +101,4 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Fase 9 — Vista Explodida (esquema por conjunto, afastamento ajustável, peça clicável).
 - [x] Fase 10 — Modo Montagem (roteiro derivado da estrutura + checklist local por passo).
 - [x] Fase 11 — QR / identificação (etiquetas QR por peça + abertura do dossiê com a peça destacada).
-- [ ] Fase 12 — Campo / obra.
+- [x] Fase 12 — Campo / obra (checklist de instalação por peça, ocorrências com foto, resumo instaladas × pendentes, offline).
