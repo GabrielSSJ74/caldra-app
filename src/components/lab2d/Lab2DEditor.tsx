@@ -299,6 +299,38 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     future.current = [];
   }, [projectId]);
 
+  /* MODO PROJETO — desenho vinculado a uma peça do dossiê */
+  const [dossier, setDossier] = useState<{
+    projectId: string;
+    projectName: string;
+    partName: string;
+    partCode: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!projectId) {
+      setDossier(null);
+      return;
+    }
+    const link = findChamferLink(projectId);
+    if (!link) {
+      setDossier(null);
+      return;
+    }
+    const dp = getDossier(link.projectId);
+    const part = dp?.parts.find((p) => p.instanceId === link.instanceId);
+    setDossier(
+      dp && part
+        ? {
+            projectId: dp.id,
+            projectName: dp.name,
+            partName: part.name,
+            partCode: part.code,
+          }
+        : null,
+    );
+  }, [projectId]);
+
   /* autosave fora do caminho crítico: debounce + tempo ocioso do navegador */
   useEffect(() => {
     if (!project || !planId) return;
