@@ -43,6 +43,7 @@ import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { AddPartDialog } from "@/components/projects/AddPartDialog";
 import { AssemblyTree } from "@/components/projects/AssemblyTree";
 import { BomPanel } from "@/components/projects/BomPanel";
+import { FabricationPackage } from "@/components/projects/FabricationPackage";
 import { ValidationPanel } from "@/components/projects/ValidationPanel";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
