@@ -352,6 +352,17 @@ function ProjectDetail() {
                               <Pencil className="size-3.5" /> Renomear
                             </DropdownMenuItem>
                             <DropdownMenuItem
+                              onSelect={() => {
+                                const labId = openPartInChamfer(project, piece);
+                                navigate({
+                                  to: "/desenho-2d/$projectId",
+                                  params: { projectId: labId },
+                                });
+                              }}
+                            >
+                              <PenTool className="size-3.5" /> Abrir no CHAMFER
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
                               onSelect={() => duplicatePart(project.id, piece.instanceId)}
                             >
                               <Copy className="size-3.5" /> Duplicar
