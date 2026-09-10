@@ -5,6 +5,8 @@ import {
   Check,
   ChevronLeft,
   Copy,
+  GitBranch,
+  Layers,
   MoreHorizontal,
   Pencil,
   PackageCheck,
@@ -12,6 +14,7 @@ import {
   Trash2,
   Undo2,
 } from "lucide-react";
+
 import {
   addPart,
   assignPart,
