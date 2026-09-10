@@ -94,7 +94,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Fase 2 — Conjuntos / subconjuntos / peças: árvore de estrutura, código único por peça (ESC-EST-001), vínculo e revisão de peça.
 - [x] Fase 3 — vínculo Traçagem → Projeto (salvar no conjunto).
 - [x] Fase 4 — vínculo Planificação → Projeto (modo "Do projeto" com aninhamento real).
-- [ ] Fase 5 — CHAMFER Modo Projeto.
+- [x] Fase 5 — CHAMFER Modo Projeto (peça do dossiê abre desenho vinculado, com volta ao projeto).
 - [x] Fase 6 — BOM + Lista de Corte (painel no dossiê + CSV).
 - [x] Fase 7 — Validação de Fabricação (impedimentos, alertas e observações por peça).
 - [ ] Fase 8 — Pacote de Fabricação.
