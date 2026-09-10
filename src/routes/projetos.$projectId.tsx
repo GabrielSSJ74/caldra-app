@@ -40,6 +40,7 @@ import { findPart } from "@/lib/library/registry";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { AddPartDialog } from "@/components/projects/AddPartDialog";
 import { AssemblyTree } from "@/components/projects/AssemblyTree";
+import { BomPanel } from "@/components/projects/BomPanel";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -207,6 +208,8 @@ function ProjectDetail() {
       </Panel>
 
       <AssemblyTree project={project} onOpenPart={openPart} />
+
+      <BomPanel project={project} />
 
       <Panel className="p-4">
 
