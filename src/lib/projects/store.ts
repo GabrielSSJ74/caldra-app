@@ -80,6 +80,8 @@ export type ProjectPart = {
   role?: string | undefined;
   /** posição / ordem de montagem dentro do conjunto. */
   position?: string | undefined;
+  /** desenho vinculado no CHAMFER (id do projeto do editor 2D). */
+  chamferProjectId?: string | undefined;
   /** revisão corrente da peça: A, B, C… */
   revision: string;
   createdAt: number;
@@ -280,6 +282,7 @@ function normalizePart(raw: PartDraft): ProjectPart {
     subassemblyId: raw.subassemblyId,
     role: raw.role,
     position: raw.position,
+    chamferProjectId: raw.chamferProjectId,
     revision: raw.revision ?? "A",
     createdAt: raw.createdAt ?? now,
     updatedAt: raw.updatedAt ?? now,
@@ -733,6 +736,7 @@ export function duplicatePart(projectId: string, instanceId: string) {
     code: makePartCode(project, src.assemblyId),
     name: `${src.name} 02`,
     revision: "A",
+    chamferProjectId: undefined,
     createdAt: now,
     updatedAt: now,
     version: 1,

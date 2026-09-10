@@ -10,6 +10,7 @@ import {
   MoreHorizontal,
   Pencil,
   PackageCheck,
+  PenTool,
   Plus,
   Trash2,
   Undo2,
@@ -36,6 +37,7 @@ import {
   type ProjectPart,
 } from "@/lib/projects/store";
 import { formatDateTime, partTarget } from "@/lib/projects/links";
+import { openPartInChamfer } from "@/lib/projects/chamfer";
 import { findPart } from "@/lib/library/registry";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { AddPartDialog } from "@/components/projects/AddPartDialog";
@@ -350,6 +352,17 @@ function ProjectDetail() {
                               }}
                             >
                               <Pencil className="size-3.5" /> Renomear
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                const labId = openPartInChamfer(project, piece);
+                                navigate({
+                                  to: "/desenho-2d/$projectId",
+                                  params: { projectId: labId },
+                                });
+                              }}
+                            >
+                              <PenTool className="size-3.5" /> Abrir no CHAMFER
                             </DropdownMenuItem>
                             <DropdownMenuItem
                               onSelect={() => duplicatePart(project.id, piece.instanceId)}

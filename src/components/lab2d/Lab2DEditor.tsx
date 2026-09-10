@@ -101,6 +101,8 @@ import {
   type Project,
 } from "@/lib/lab2d/projects";
 import { takeHandoff } from "@/lib/lab2d/handoff";
+import { findChamferLink } from "@/lib/projects/chamfer";
+import { getProject as getDossier } from "@/lib/projects/store";
 import {
   centerOffset,
   fitsInFrame,
@@ -295,6 +297,38 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setGroups(plan.groups ?? []);
     past.current = [];
     future.current = [];
+  }, [projectId]);
+
+  /* MODO PROJETO — desenho vinculado a uma peça do dossiê */
+  const [dossier, setDossier] = useState<{
+    projectId: string;
+    projectName: string;
+    partName: string;
+    partCode: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!projectId) {
+      setDossier(null);
+      return;
+    }
+    const link = findChamferLink(projectId);
+    if (!link) {
+      setDossier(null);
+      return;
+    }
+    const dp = getDossier(link.projectId);
+    const part = dp?.parts.find((p) => p.instanceId === link.instanceId);
+    setDossier(
+      dp && part
+        ? {
+            projectId: dp.id,
+            projectName: dp.name,
+            partName: part.name,
+            partCode: part.code,
+          }
+        : null,
+    );
   }, [projectId]);
 
   /* autosave fora do caminho crítico: debounce + tempo ocioso do navegador */
@@ -1448,6 +1482,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               >
                 {project.name}
               </span>
+            )}
+            {dossier && (
+              <button
+                onClick={() =>
+                  navigate({
+                    to: "/projetos/$projectId",
+                    params: { projectId: dossier.projectId },
+                  })
+                }
+                title={`${dossier.projectName} · ${dossier.partName}`}
+                className="mx-auto block max-w-full truncate rounded-full bg-accent/10 px-2 py-0.5 font-mono text-[9px] tracking-wider text-accent uppercase ring-1 ring-accent/25"
+              >
+                {dossier.partCode || dossier.partName} · {dossier.projectName}
+              </button>
             )}
           </div>
 
