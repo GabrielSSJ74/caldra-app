@@ -43,6 +43,7 @@ import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { AddPartDialog } from "@/components/projects/AddPartDialog";
 import { AssemblyTree } from "@/components/projects/AssemblyTree";
 import { BomPanel } from "@/components/projects/BomPanel";
+import { FabricationPackage } from "@/components/projects/FabricationPackage";
 import { ValidationPanel } from "@/components/projects/ValidationPanel";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -60,6 +61,8 @@ import {
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/projetos/$projectId")({
+  validateSearch: (search: Record<string, unknown>): { peca?: string } =>
+    typeof search["peca"] === "string" ? { peca: search["peca"] as string } : {},
   head: () => ({
     meta: [
       { title: "Projeto — CALDRA" },
@@ -103,6 +106,7 @@ const STATUS_STYLE: Partial<Record<PartStatus, string>> = {
 
 function ProjectDetail() {
   const { projectId } = Route.useParams();
+  const { peca } = Route.useSearch();
   const project = useProject(projectId);
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
@@ -214,6 +218,8 @@ function ProjectDetail() {
 
       <BomPanel project={project} />
 
+      <FabricationPackage project={project} />
+
       <ValidationPanel
         project={project}
         onOpenPart={(instanceId) => {
@@ -285,7 +291,13 @@ function ProjectDetail() {
                   const model = findPart(piece.modelId);
                   const done = piece.status === "finalizada" || piece.status === "entregue";
                   return (
-                    <tr key={piece.instanceId} className="border-t border-line">
+                    <tr
+                      key={piece.instanceId}
+                      className={cn(
+                        "border-t border-line",
+                        peca === piece.instanceId && "bg-accent/8 ring-1 ring-accent/30",
+                      )}
+                    >
                       <td className="py-2 pr-3">
                         <button onClick={() => openPart(piece)} className="text-left hover:text-accent">
                           {piece.name}
