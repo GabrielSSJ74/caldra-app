@@ -14,6 +14,8 @@ import {
 } from "lucide-react";
 import {
   addPart,
+  assignPart,
+  bumpPartRevision,
   derivedStatus,
   duplicatePart,
   markDelivered,
@@ -34,6 +36,8 @@ import { formatDateTime, partTarget } from "@/lib/projects/links";
 import { findPart } from "@/lib/library/registry";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { AddPartDialog } from "@/components/projects/AddPartDialog";
+import { AssemblyTree } from "@/components/projects/AssemblyTree";
+
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
