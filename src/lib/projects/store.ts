@@ -649,17 +649,23 @@ export function addPart(projectId: string, input: NewPartInput): ProjectPart | n
   const model = findPart(input.modelId);
   const part = normalizePart({
     modelId: input.modelId,
+    code: makePartCode(project, input.assemblyId),
     name: input.name?.trim() || model?.name || "Peça",
     parameters: input.parameters ?? {},
     material: input.material ?? "Aço Carbono",
     materialId: input.materialId,
     thickness: input.thickness,
     quantity: input.quantity,
+    assemblyId: input.assemblyId,
+    subassemblyId: input.subassemblyId,
     notes: input.notes ?? "",
   });
-  replace(touch({ ...project, parts: [...project.parts, part] }, `Peça "${part.name}" adicionada`));
+  replace(
+    touch({ ...project, parts: [...project.parts, part] }, `Peça ${part.code} "${part.name}" adicionada`),
+  );
   return part;
 }
+
 
 function withPart(
   projectId: string,
