@@ -98,7 +98,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Fase 6 — BOM + Lista de Corte (painel no dossiê + CSV).
 - [x] Fase 7 — Validação de Fabricação (impedimentos, alertas e observações por peça).
 - [x] Fase 8 — Pacote de Fabricação (PDF único: capa, estrutura, BOM, conferência e ficha por peça).
-- [ ] Fase 9 — Vista Explodida.
-- [ ] Fase 10 — Modo Montagem.
+- [x] Fase 9 — Vista Explodida (esquema por conjunto, afastamento ajustável, peça clicável).
+- [x] Fase 10 — Modo Montagem (roteiro derivado da estrutura + checklist local por passo).
 - [x] Fase 11 — QR / identificação (etiquetas QR por peça + abertura do dossiê com a peça destacada).
 - [ ] Fase 12 — Campo / obra.
