@@ -5,6 +5,8 @@ import {
   Check,
   ChevronLeft,
   Copy,
+  GitBranch,
+  Layers,
   MoreHorizontal,
   Pencil,
   PackageCheck,
@@ -12,8 +14,11 @@ import {
   Trash2,
   Undo2,
 } from "lucide-react";
+
 import {
   addPart,
+  assignPart,
+  bumpPartRevision,
   derivedStatus,
   duplicatePart,
   markDelivered,
@@ -34,13 +39,19 @@ import { formatDateTime, partTarget } from "@/lib/projects/links";
 import { findPart } from "@/lib/library/registry";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { AddPartDialog } from "@/components/projects/AddPartDialog";
+import { AssemblyTree } from "@/components/projects/AssemblyTree";
+
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
+
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
@@ -183,10 +194,10 @@ function ProjectDetail() {
       </div>
 
       <Panel className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Info label="Código" value={`${project.code ?? "—"} · REV ${project.revision}`} />
         <Info label="Cliente" value={project.client || "—"} />
         <Info label="Última modificação" value={formatDateTime(project.updatedAt)} />
-        <Info label="Conclusão" value={`${pct}%`} />
-        <Info label="Status" value={PROJECT_STATUS_LABEL[status]} />
+        <Info label="Status" value={`${PROJECT_STATUS_LABEL[status]} · ${pct}%`} />
         {project.description && (
           <p className="t-caption sm:col-span-2 lg:col-span-4">{project.description}</p>
         )}
@@ -195,7 +206,10 @@ function ProjectDetail() {
         </div>
       </Panel>
 
+      <AssemblyTree project={project} onOpenPart={openPart} />
+
       <Panel className="p-4">
+
         <SectionLabel
           action={
             <button
@@ -263,9 +277,15 @@ function ProjectDetail() {
                           {piece.name}
                         </button>
                         <p className="font-mono text-[10px] text-muted-foreground">
+                          {piece.code} · REV {piece.revision} ·{" "}
+                          {project.assemblies.find((a) => a.id === piece.assemblyId)?.name ??
+                            "sem conjunto"}
+                        </p>
+                        <p className="font-mono text-[10px] text-muted-foreground">
                           {partProgress(piece)}% · {formatDateTime(piece.updatedAt)}
                         </p>
                       </td>
+
                       <td className="py-2 pr-3 text-muted-foreground">{model?.name ?? "—"}</td>
                       <td className="py-2 pr-3 text-muted-foreground">
                         {piece.material} · {piece.thickness} mm
@@ -325,6 +345,48 @@ function ProjectDetail() {
                               <Copy className="size-3.5" /> Duplicar
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
+                            <DropdownMenuSub>
+                              <DropdownMenuSubTrigger>
+                                <Layers className="size-3.5" /> Conjunto
+                              </DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent className="w-52">
+                                <DropdownMenuItem
+                                  onSelect={() => assignPart(project.id, piece.instanceId)}
+                                >
+                                  Sem conjunto
+                                </DropdownMenuItem>
+                                {project.assemblies.map((asm) => (
+                                  <DropdownMenuItem
+                                    key={asm.id}
+                                    onSelect={() => assignPart(project.id, piece.instanceId, asm.id)}
+                                  >
+                                    {asm.name}
+                                  </DropdownMenuItem>
+                                ))}
+                                {project.subassemblies.map((sub) => (
+                                  <DropdownMenuItem
+                                    key={sub.id}
+                                    onSelect={() =>
+                                      assignPart(
+                                        project.id,
+                                        piece.instanceId,
+                                        sub.assemblyId,
+                                        sub.id,
+                                      )
+                                    }
+                                  >
+                                    ↳ {sub.name}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                            <DropdownMenuItem
+                              onSelect={() => bumpPartRevision(project.id, piece.instanceId)}
+                            >
+                              <GitBranch className="size-3.5" /> Registrar nova revisão
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+
                             {done ? (
                               <DropdownMenuItem
                                 onSelect={() =>
