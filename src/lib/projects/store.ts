@@ -724,11 +724,14 @@ export function duplicatePart(projectId: string, instanceId: string) {
   const copy: ProjectPart = {
     ...structuredClone(src),
     instanceId: uid("pt"),
+    code: makePartCode(project, src.assemblyId),
     name: `${src.name} 02`,
+    revision: "A",
     createdAt: now,
     updatedAt: now,
     version: 1,
   };
+
   const at = project.parts.findIndex((p) => p.instanceId === instanceId) + 1;
   const parts = [...project.parts.slice(0, at), copy, ...project.parts.slice(at)];
   replace(touch({ ...project, parts }, `Peça "${src.name}" duplicada`));
