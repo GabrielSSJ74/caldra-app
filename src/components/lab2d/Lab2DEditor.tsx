@@ -1483,6 +1483,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 {project.name}
               </span>
             )}
+            {dossier && (
+              <button
+                onClick={() =>
+                  navigate({
+                    to: "/projetos/$projectId",
+                    params: { projectId: dossier.projectId },
+                  })
+                }
+                title={`${dossier.projectName} · ${dossier.partName}`}
+                className="mx-auto block max-w-full truncate rounded-full bg-accent/10 px-2 py-0.5 font-mono text-[9px] tracking-wider text-accent uppercase ring-1 ring-accent/25"
+              >
+                {dossier.partCode || dossier.partName} · {dossier.projectName}
+              </button>
+            )}
           </div>
 
           <div className="flex min-w-0 items-center justify-end gap-1 overflow-x-auto">
