@@ -61,9 +61,8 @@ import {
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/projetos/$projectId")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    peca: typeof search["peca"] === "string" ? (search["peca"] as string) : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>): { peca?: string } =>
+    typeof search["peca"] === "string" ? { peca: search["peca"] as string } : {},
   head: () => ({
     meta: [
       { title: "Projeto — CALDRA" },
