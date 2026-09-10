@@ -80,6 +80,8 @@ export type ProjectPart = {
   role?: string | undefined;
   /** posição / ordem de montagem dentro do conjunto. */
   position?: string | undefined;
+  /** desenho vinculado no CHAMFER (id do projeto do editor 2D). */
+  chamferProjectId?: string | undefined;
   /** revisão corrente da peça: A, B, C… */
   revision: string;
   createdAt: number;
