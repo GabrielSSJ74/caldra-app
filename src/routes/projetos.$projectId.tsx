@@ -41,6 +41,7 @@ import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { AddPartDialog } from "@/components/projects/AddPartDialog";
 import { AssemblyTree } from "@/components/projects/AssemblyTree";
 import { BomPanel } from "@/components/projects/BomPanel";
+import { ValidationPanel } from "@/components/projects/ValidationPanel";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -210,6 +211,14 @@ function ProjectDetail() {
       <AssemblyTree project={project} onOpenPart={openPart} />
 
       <BomPanel project={project} />
+
+      <ValidationPanel
+        project={project}
+        onOpenPart={(instanceId) => {
+          const part = project.parts.find((p) => p.instanceId === instanceId);
+          if (part) openPart(part);
+        }}
+      />
 
       <Panel className="p-4">
 
