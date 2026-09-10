@@ -37,6 +37,7 @@ import {
   type ProjectPart,
 } from "@/lib/projects/store";
 import { formatDateTime, partTarget } from "@/lib/projects/links";
+import { openPartInChamfer } from "@/lib/projects/chamfer";
 import { findPart } from "@/lib/library/registry";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { AddPartDialog } from "@/components/projects/AddPartDialog";
