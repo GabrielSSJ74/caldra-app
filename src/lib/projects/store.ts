@@ -641,7 +641,10 @@ export type NewPartInput = {
   thickness?: number;
   quantity?: number;
   notes?: string;
+  assemblyId?: string | undefined;
+  subassemblyId?: string | undefined;
 };
+
 
 export function addPart(projectId: string, input: NewPartInput): ProjectPart | null {
   const project = getProject(projectId);
