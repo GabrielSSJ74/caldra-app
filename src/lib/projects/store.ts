@@ -415,23 +415,169 @@ export type NewProjectInput = {
 
 export function createProject(input: NewProjectInput): Project {
   const now = Date.now();
-  const project = normalizeProject({
-    name: input.name.trim() || "Novo projeto",
-    client: input.client?.trim() ?? "",
-    description: input.description?.trim() ?? "",
-    type: input.type ?? "cliente",
-    owner: input.owner?.trim() || undefined,
-    place: input.place?.trim() || undefined,
-    deadline: input.deadline?.trim() || undefined,
-    notes: input.notes?.trim() ?? "",
-    history: [{ at: now, text: "Projeto criado" }],
-    createdAt: now,
-    updatedAt: now,
-  });
   const s = load();
+  const taken = new Set(s.projects.map((p) => p.code ?? "").filter(Boolean));
+  const project = normalizeProject(
+    {
+      name: input.name.trim() || "Novo projeto",
+      client: input.client?.trim() ?? "",
+      description: input.description?.trim() ?? "",
+      type: input.type ?? "cliente",
+      owner: input.owner?.trim() || undefined,
+      place: input.place?.trim() || undefined,
+      deadline: input.deadline?.trim() || undefined,
+      notes: input.notes?.trim() ?? "",
+      history: [{ at: now, text: "Projeto criado" }],
+      createdAt: now,
+      updatedAt: now,
+    },
+    taken,
+  );
   commit({ projects: [project, ...s.projects] });
   return project;
 }
+
+/* ------------------------------------------------------------------ */
+/* Conjuntos e subconjuntos                                            */
+/* ------------------------------------------------------------------ */
+
+export function addAssembly(projectId: string, name: string, description?: string): Assembly | null {
+  const project = getProject(projectId);
+  if (!project) return null;
+  const clean = name.trim() || "Conjunto";
+  const asm: Assembly = {
+    id: uid("as"),
+    code: makeAssemblyCode(clean, new Set(project.assemblies.map((a) => a.code))),
+    name: clean,
+    description: description?.trim() || undefined,
+    order: project.assemblies.length,
+  };
+  replace(touch({ ...project, assemblies: [...project.assemblies, asm] }, `Conjunto "${clean}" criado`));
+  return asm;
+}
+
+export function renameAssembly(projectId: string, assemblyId: string, name: string) {
+  const project = getProject(projectId);
+  if (!project) return;
+  const clean = name.trim();
+  if (!clean) return;
+  replace(
+    touch(
+      {
+        ...project,
+        assemblies: project.assemblies.map((a) => (a.id === assemblyId ? { ...a, name: clean } : a)),
+      },
+      `Conjunto renomeado para "${clean}"`,
+    ),
+  );
+}
+
+/** Remove o conjunto; as peças permanecem no projeto, apenas sem vínculo. */
+export function removeAssembly(projectId: string, assemblyId: string) {
+  const project = getProject(projectId);
+  if (!project) return;
+  const asm = project.assemblies.find((a) => a.id === assemblyId);
+  const subs = project.subassemblies.filter((s) => s.assemblyId === assemblyId).map((s) => s.id);
+  replace(
+    touch(
+      {
+        ...project,
+        assemblies: project.assemblies.filter((a) => a.id !== assemblyId),
+        subassemblies: project.subassemblies.filter((s) => s.assemblyId !== assemblyId),
+        parts: project.parts.map((p) =>
+          p.assemblyId === assemblyId || (p.subassemblyId && subs.includes(p.subassemblyId))
+            ? { ...p, assemblyId: undefined, subassemblyId: undefined }
+            : p,
+        ),
+      },
+      asm ? `Conjunto "${asm.name}" removido` : undefined,
+    ),
+  );
+}
+
+export function addSubassembly(
+  projectId: string,
+  assemblyId: string,
+  name: string,
+): Subassembly | null {
+  const project = getProject(projectId);
+  if (!project) return null;
+  const asm = project.assemblies.find((a) => a.id === assemblyId);
+  if (!asm) return null;
+  const clean = name.trim() || "Subconjunto";
+  const siblings = project.subassemblies.filter((s) => s.assemblyId === assemblyId);
+  const sub: Subassembly = {
+    id: uid("sb"),
+    assemblyId,
+    code: makeAssemblyCode(clean, new Set(siblings.map((s) => s.code))),
+    name: clean,
+    order: siblings.length,
+  };
+  replace(
+    touch(
+      { ...project, subassemblies: [...project.subassemblies, sub] },
+      `Subconjunto "${clean}" criado em ${asm.name}`,
+    ),
+  );
+  return sub;
+}
+
+export function removeSubassembly(projectId: string, subassemblyId: string) {
+  const project = getProject(projectId);
+  if (!project) return;
+  const sub = project.subassemblies.find((s) => s.id === subassemblyId);
+  replace(
+    touch(
+      {
+        ...project,
+        subassemblies: project.subassemblies.filter((s) => s.id !== subassemblyId),
+        parts: project.parts.map((p) =>
+          p.subassemblyId === subassemblyId ? { ...p, subassemblyId: undefined } : p,
+        ),
+      },
+      sub ? `Subconjunto "${sub.name}" removido` : undefined,
+    ),
+  );
+}
+
+/** Move a peça para outro conjunto/subconjunto e recodifica sua identidade. */
+export function assignPart(
+  projectId: string,
+  instanceId: string,
+  assemblyId?: string,
+  subassemblyId?: string,
+) {
+  const project = getProject(projectId);
+  if (!project) return;
+  const part = project.parts.find((p) => p.instanceId === instanceId);
+  if (!part) return;
+  const asm = project.assemblies.find((a) => a.id === assemblyId);
+  const code = makePartCode(project, assemblyId);
+  const next: ProjectPart = {
+    ...part,
+    assemblyId: assemblyId ?? undefined,
+    subassemblyId: subassemblyId ?? undefined,
+    code,
+    updatedAt: Date.now(),
+  };
+  replace(
+    touch(
+      { ...project, parts: project.parts.map((p) => (p.instanceId === instanceId ? next : p)) },
+      asm ? `${next.code} vinculada a ${asm.name}` : `${next.code} sem conjunto`,
+    ),
+  );
+}
+
+/** Registra uma nova revisão da peça (REV A → REV B). */
+export function bumpPartRevision(projectId: string, instanceId: string, reason?: string) {
+  withPart(
+    projectId,
+    instanceId,
+    (p) => ({ ...p, revision: nextRevision(p.revision), version: p.version + 1 }),
+    (p) => `${p.code} passou para REV ${p.revision}${reason ? ` — ${reason}` : ""}`,
+  );
+}
+
 
 export function renameProject(id: string, name: string) {
   const p = getProject(id);
