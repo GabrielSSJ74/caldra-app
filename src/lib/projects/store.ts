@@ -282,6 +282,7 @@ function normalizePart(raw: PartDraft): ProjectPart {
     subassemblyId: raw.subassemblyId,
     role: raw.role,
     position: raw.position,
+    chamferProjectId: raw.chamferProjectId,
     revision: raw.revision ?? "A",
     createdAt: raw.createdAt ?? now,
     updatedAt: raw.updatedAt ?? now,
