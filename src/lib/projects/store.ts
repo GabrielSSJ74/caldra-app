@@ -608,7 +608,13 @@ export function duplicateProject(id: string): Project | null {
     })),
   };
   const s = load();
+  copy.code = makeProjectCode(
+    src.name,
+    new Set(s.projects.map((p) => p.code ?? "").filter(Boolean)),
+  );
+  copy.parts = copy.parts.map((p) => ({ ...p, code: p.code.replace(src.code ?? "", copy.code!) }));
   commit({ projects: [copy, ...s.projects] });
+
   return copy;
 }
 
