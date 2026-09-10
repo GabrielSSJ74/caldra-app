@@ -44,6 +44,7 @@ import { AddPartDialog } from "@/components/projects/AddPartDialog";
 import { AssemblyMode } from "@/components/projects/AssemblyMode";
 import { AssemblyTree } from "@/components/projects/AssemblyTree";
 import { ExplodedView } from "@/components/projects/ExplodedView";
+import { FieldMode } from "@/components/projects/FieldMode";
 import { BomPanel } from "@/components/projects/BomPanel";
 import { FabricationPackage } from "@/components/projects/FabricationPackage";
 import { ValidationPanel } from "@/components/projects/ValidationPanel";
