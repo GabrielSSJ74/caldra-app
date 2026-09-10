@@ -187,10 +187,10 @@ function ProjectDetail() {
       </div>
 
       <Panel className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Info label="Código" value={`${project.code ?? "—"} · REV ${project.revision}`} />
         <Info label="Cliente" value={project.client || "—"} />
         <Info label="Última modificação" value={formatDateTime(project.updatedAt)} />
-        <Info label="Conclusão" value={`${pct}%`} />
-        <Info label="Status" value={PROJECT_STATUS_LABEL[status]} />
+        <Info label="Status" value={`${PROJECT_STATUS_LABEL[status]} · ${pct}%`} />
         {project.description && (
           <p className="t-caption sm:col-span-2 lg:col-span-4">{project.description}</p>
         )}
@@ -199,7 +199,10 @@ function ProjectDetail() {
         </div>
       </Panel>
 
+      <AssemblyTree project={project} onOpenPart={openPart} />
+
       <Panel className="p-4">
+
         <SectionLabel
           action={
             <button
