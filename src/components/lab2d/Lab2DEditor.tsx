@@ -101,6 +101,8 @@ import {
   type Project,
 } from "@/lib/lab2d/projects";
 import { takeHandoff } from "@/lib/lab2d/handoff";
+import { findChamferLink } from "@/lib/projects/chamfer";
+import { getProject as getDossier } from "@/lib/projects/store";
 import {
   centerOffset,
   fitsInFrame,
