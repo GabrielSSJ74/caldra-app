@@ -92,11 +92,11 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 ## Ecossistema CALDRA (evolução em fases)
 - [x] Fase 1 — Master Project Model: código único do projeto (ESC-001), revisão, migração segura dos projetos existentes.
 - [x] Fase 2 — Conjuntos / subconjuntos / peças: árvore de estrutura, código único por peça (ESC-EST-001), vínculo e revisão de peça.
-- [ ] Fase 3 — vínculo Traçagem → Projeto (salvar no conjunto).
-- [ ] Fase 4 — vínculo Planificação → Projeto.
+- [x] Fase 3 — vínculo Traçagem → Projeto (salvar no conjunto).
+- [x] Fase 4 — vínculo Planificação → Projeto (modo "Do projeto" com aninhamento real).
 - [ ] Fase 5 — CHAMFER Modo Projeto.
-- [ ] Fase 6 — BOM + Lista de Corte.
-- [ ] Fase 7 — Validação de Fabricação.
+- [x] Fase 6 — BOM + Lista de Corte (painel no dossiê + CSV).
+- [x] Fase 7 — Validação de Fabricação (impedimentos, alertas e observações por peça).
 - [ ] Fase 8 — Pacote de Fabricação.
 - [ ] Fase 9 — Vista Explodida.
 - [ ] Fase 10 — Modo Montagem.
