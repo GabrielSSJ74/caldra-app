@@ -270,9 +270,15 @@ function ProjectDetail() {
                           {piece.name}
                         </button>
                         <p className="font-mono text-[10px] text-muted-foreground">
+                          {piece.code} · REV {piece.revision} ·{" "}
+                          {project.assemblies.find((a) => a.id === piece.assemblyId)?.name ??
+                            "sem conjunto"}
+                        </p>
+                        <p className="font-mono text-[10px] text-muted-foreground">
                           {partProgress(piece)}% · {formatDateTime(piece.updatedAt)}
                         </p>
                       </td>
+
                       <td className="py-2 pr-3 text-muted-foreground">{model?.name ?? "—"}</td>
                       <td className="py-2 pr-3 text-muted-foreground">
                         {piece.material} · {piece.thickness} mm
