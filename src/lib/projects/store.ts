@@ -266,6 +266,7 @@ function normalizePart(raw: PartDraft): ProjectPart {
   return {
     instanceId: raw.instanceId ?? uid("pt"),
     modelId: raw.modelId ?? "",
+    code: raw.code ?? "",
     name: raw.name ?? "Peça",
     parameters: raw.parameters ?? {},
     materialId: raw.materialId,
@@ -275,6 +276,11 @@ function normalizePart(raw: PartDraft): ProjectPart {
     status: raw.status ?? "rascunho",
     progress: typeof raw.progress === "number" ? raw.progress : undefined,
     notes: raw.notes ?? "",
+    assemblyId: raw.assemblyId,
+    subassemblyId: raw.subassemblyId,
+    role: raw.role,
+    position: raw.position,
+    revision: raw.revision ?? "A",
     createdAt: raw.createdAt ?? now,
     updatedAt: raw.updatedAt ?? now,
     version: raw.version ?? 1,
@@ -282,28 +288,39 @@ function normalizePart(raw: PartDraft): ProjectPart {
 }
 
 /** Migração segura: campos ausentes recebem padrões, nada é descartado. */
-function normalizeProject(raw: ProjectDraft): Project {
+function normalizeProject(raw: ProjectDraft, takenCodes?: Set<string>): Project {
   const now = Date.now();
-  return {
+  const name = raw.name ?? "Projeto";
+  const project: Project = {
     id: raw.id ?? uid("pj"),
-    name: raw.name ?? "Projeto",
+    name,
     client: raw.client ?? "",
     description: raw.description ?? "",
     type: raw.type ?? "cliente",
     owner: raw.owner,
     place: raw.place,
     deadline: raw.deadline,
-    code: raw.code,
+    code: raw.code ?? makeProjectCode(name, takenCodes ?? new Set()),
+    revision: raw.revision ?? "A",
     tags: raw.tags ?? [],
     status: raw.status ?? "rascunho",
     delivered: raw.delivered ?? false,
     notes: raw.notes ?? "",
+    assemblies: (raw.assemblies ?? []).map((a, i) => ({ ...a, order: a.order ?? i })),
+    subassemblies: (raw.subassemblies ?? []).map((s, i) => ({ ...s, order: s.order ?? i })),
     parts: (raw.parts ?? []).map(normalizePart),
     history: raw.history ?? [],
     createdAt: raw.createdAt ?? now,
     updatedAt: raw.updatedAt ?? now,
   };
+  takenCodes?.add(project.code!);
+  // peças antigas não têm código: recebem um agora, de forma estável.
+  for (const part of project.parts) {
+    if (!part.code) part.code = makePartCode(project, part.assemblyId);
+  }
+  return project;
 }
+
 
 function load(): State {
   if (loaded) return state;
