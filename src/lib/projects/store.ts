@@ -329,7 +329,9 @@ function load(): State {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<State>;
-      state = { projects: (parsed.projects ?? []).map(normalizeProject) };
+      const taken = new Set<string>();
+      state = { projects: (parsed.projects ?? []).map((p) => normalizeProject(p, taken)) };
+
     } else {
       state = { projects: [seedProject()] };
       persist(state);
