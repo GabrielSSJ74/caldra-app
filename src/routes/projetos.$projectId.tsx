@@ -338,6 +338,48 @@ function ProjectDetail() {
                               <Copy className="size-3.5" /> Duplicar
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
+                            <DropdownMenuSub>
+                              <DropdownMenuSubTrigger>
+                                <Layers className="size-3.5" /> Conjunto
+                              </DropdownMenuSubTrigger>
+                              <DropdownMenuSubContent className="w-52">
+                                <DropdownMenuItem
+                                  onSelect={() => assignPart(project.id, piece.instanceId)}
+                                >
+                                  Sem conjunto
+                                </DropdownMenuItem>
+                                {project.assemblies.map((asm) => (
+                                  <DropdownMenuItem
+                                    key={asm.id}
+                                    onSelect={() => assignPart(project.id, piece.instanceId, asm.id)}
+                                  >
+                                    {asm.name}
+                                  </DropdownMenuItem>
+                                ))}
+                                {project.subassemblies.map((sub) => (
+                                  <DropdownMenuItem
+                                    key={sub.id}
+                                    onSelect={() =>
+                                      assignPart(
+                                        project.id,
+                                        piece.instanceId,
+                                        sub.assemblyId,
+                                        sub.id,
+                                      )
+                                    }
+                                  >
+                                    ↳ {sub.name}
+                                  </DropdownMenuItem>
+                                ))}
+                              </DropdownMenuSubContent>
+                            </DropdownMenuSub>
+                            <DropdownMenuItem
+                              onSelect={() => bumpPartRevision(project.id, piece.instanceId)}
+                            >
+                              <GitBranch className="size-3.5" /> Registrar nova revisão
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+
                             {done ? (
                               <DropdownMenuItem
                                 onSelect={() =>
