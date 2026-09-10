@@ -88,3 +88,17 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 ## Projetos como dossiê de fabricação (CONCLUÍDO)
 - Projeto = cliente/obra com peças-instância independentes, progresso e histórico.
 - Peças abrem a mesma tela de Traçagem (paramétricas e CNC 2D) com breadcrumb e autosave.
+
+## Ecossistema CALDRA (evolução em fases)
+- [x] Fase 1 — Master Project Model: código único do projeto (ESC-001), revisão, migração segura dos projetos existentes.
+- [x] Fase 2 — Conjuntos / subconjuntos / peças: árvore de estrutura, código único por peça (ESC-EST-001), vínculo e revisão de peça.
+- [ ] Fase 3 — vínculo Traçagem → Projeto (salvar no conjunto).
+- [ ] Fase 4 — vínculo Planificação → Projeto.
+- [ ] Fase 5 — CHAMFER Modo Projeto.
+- [ ] Fase 6 — BOM + Lista de Corte.
+- [ ] Fase 7 — Validação de Fabricação.
+- [ ] Fase 8 — Pacote de Fabricação.
+- [ ] Fase 9 — Vista Explodida.
+- [ ] Fase 10 — Modo Montagem.
+- [ ] Fase 11 — QR / identificação.
+- [ ] Fase 12 — Campo / obra.
