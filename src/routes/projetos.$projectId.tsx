@@ -235,6 +235,15 @@ function ProjectDetail() {
         }}
       />
 
+      <FieldMode
+        project={project}
+        highlight={peca}
+        onOpenPart={(instanceId) => {
+          const part = project.parts.find((p) => p.instanceId === instanceId);
+          if (part) openPart(part);
+        }}
+      />
+
       <BomPanel project={project} />
 
       <FabricationPackage project={project} />
