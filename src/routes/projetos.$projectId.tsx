@@ -61,6 +61,9 @@ import {
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/projetos/$projectId")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    peca: typeof search["peca"] === "string" ? (search["peca"] as string) : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Projeto — CALDRA" },
@@ -214,6 +217,8 @@ function ProjectDetail() {
       <AssemblyTree project={project} onOpenPart={openPart} />
 
       <BomPanel project={project} />
+
+      <FabricationPackage project={project} />
 
       <ValidationPanel
         project={project}
