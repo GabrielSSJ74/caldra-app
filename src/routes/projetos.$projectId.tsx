@@ -41,7 +41,9 @@ import { openPartInChamfer } from "@/lib/projects/chamfer";
 import { findPart } from "@/lib/library/registry";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { AddPartDialog } from "@/components/projects/AddPartDialog";
+import { AssemblyMode } from "@/components/projects/AssemblyMode";
 import { AssemblyTree } from "@/components/projects/AssemblyTree";
+import { ExplodedView } from "@/components/projects/ExplodedView";
 import { BomPanel } from "@/components/projects/BomPanel";
 import { FabricationPackage } from "@/components/projects/FabricationPackage";
 import { ValidationPanel } from "@/components/projects/ValidationPanel";
@@ -215,6 +217,22 @@ function ProjectDetail() {
       </Panel>
 
       <AssemblyTree project={project} onOpenPart={openPart} />
+
+      <ExplodedView
+        project={project}
+        onOpenPart={(instanceId) => {
+          const part = project.parts.find((p) => p.instanceId === instanceId);
+          if (part) openPart(part);
+        }}
+      />
+
+      <AssemblyMode
+        project={project}
+        onOpenPart={(instanceId) => {
+          const part = project.parts.find((p) => p.instanceId === instanceId);
+          if (part) openPart(part);
+        }}
+      />
 
       <BomPanel project={project} />
 
