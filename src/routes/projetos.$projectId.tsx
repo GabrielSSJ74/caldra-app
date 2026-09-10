@@ -107,6 +107,7 @@ const STATUS_STYLE: Partial<Record<PartStatus, string>> = {
 
 function ProjectDetail() {
   const { projectId } = Route.useParams();
+  const { peca } = Route.useSearch();
   const project = useProject(projectId);
   const navigate = useNavigate();
   const [adding, setAdding] = useState(false);
@@ -291,7 +292,13 @@ function ProjectDetail() {
                   const model = findPart(piece.modelId);
                   const done = piece.status === "finalizada" || piece.status === "entregue";
                   return (
-                    <tr key={piece.instanceId} className="border-t border-line">
+                    <tr
+                      key={piece.instanceId}
+                      className={cn(
+                        "border-t border-line",
+                        peca === piece.instanceId && "bg-accent/8 ring-1 ring-accent/30",
+                      )}
+                    >
                       <td className="py-2 pr-3">
                         <button onClick={() => openPart(piece)} className="text-left hover:text-accent">
                           {piece.name}
