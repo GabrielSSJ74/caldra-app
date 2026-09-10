@@ -736,6 +736,7 @@ export function duplicatePart(projectId: string, instanceId: string) {
     code: makePartCode(project, src.assemblyId),
     name: `${src.name} 02`,
     revision: "A",
+    chamferProjectId: undefined,
     createdAt: now,
     updatedAt: now,
     version: 1,
