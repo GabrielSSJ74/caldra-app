@@ -102,3 +102,13 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Fase 10 — Modo Montagem (roteiro derivado da estrutura + checklist local por passo).
 - [x] Fase 11 — QR / identificação (etiquetas QR por peça + abertura do dossiê com a peça destacada).
 - [x] Fase 12 — Campo / obra (checklist de instalação por peça, ocorrências com foto, resumo instaladas × pendentes, offline).
+
+## Catálogo de projetos paramétricos (NOVA EVOLUÇÃO)
+- [ ] Fundação — contrato canônico único, derivados versionados e criação atômica.
+- [ ] Golden Project — Escada Reta completa: parâmetros → cálculo → 2D/3D → decomposição → BOM/corte → CHAMFER → fabricação → montagem.
+- [ ] Invalidação — marcar derivados desatualizados após mudança crítica e regenerá-los sem apagar artefatos CNC de revisões anteriores.
+- [ ] Revisões — preservar parâmetros, mudanças, derivados e artefatos por REV A/B/C.
+- [ ] Testes matemáticos — garantir consistência entre geometria, vistas, peças, BOM, corte e montagem.
+- [ ] Regressão total — validar áreas existentes, projetos antigos, exportações, temas, celular e paisagem.
+- [ ] Plataforma Industrial — somente após validação da Escada Reta.
+- [ ] Suporte de Tubulação — somente após regressão da Plataforma.
