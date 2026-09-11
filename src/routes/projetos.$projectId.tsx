@@ -49,6 +49,7 @@ import { BomPanel } from "@/components/projects/BomPanel";
 import { FabricationPackage } from "@/components/projects/FabricationPackage";
 import { ValidationPanel } from "@/components/projects/ValidationPanel";
 import { CatalogRevisionPanel } from "@/components/projects/catalog/CatalogRevisionPanel";
+import { CatalogProjectStudio } from "@/components/projects/catalog/CatalogProjectStudio";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -224,6 +225,8 @@ function ProjectDetail() {
       </Panel>
 
       <CatalogRevisionPanel project={project} />
+
+      <CatalogProjectStudio project={project} />
 
       <AssemblyTree project={project} onOpenPart={openPart} />
 
