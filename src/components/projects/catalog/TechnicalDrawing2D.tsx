@@ -111,7 +111,7 @@ export function TechnicalDrawing2D({
 
     const sheetW = side.ox + side.w;
     const blockH = Math.max(Hv, L) * 0.26;
-    const sheetH = top.oy + top.h + blockH * 1.25;
+    const sheetH = top.oy + top.h + blockH * 1.5;
     const k = Math.max(sheetW, sheetH) / 620;
     const margin = Math.max(sheetW, sheetH) * 0.13;
 
@@ -205,7 +205,7 @@ export function TechnicalDrawing2D({
   const material = result.parts[0]?.material ?? "Aço Carbono";
 
   const bx = 0;
-  const by = sheet.top.oy + sheet.top.h + sheet.blockH * 0.25;
+  const by = sheet.top.oy + sheet.top.h + sheet.blockH * 0.5;
   const bw = sheet.sheetW;
   const bh = sheet.blockH;
   const col = bw / 4;
