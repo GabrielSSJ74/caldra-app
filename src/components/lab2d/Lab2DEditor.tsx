@@ -2223,7 +2223,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           .replace(/\s+/g, "-")
           .toLowerCase()}
       />
-      {solidEver && (
+      {solidEver.current && (
         <Cad3DStage
           open={solidOpen}
           onClose={() => setSolidOpen(false)}
