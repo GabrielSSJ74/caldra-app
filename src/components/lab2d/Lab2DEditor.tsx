@@ -101,7 +101,7 @@ import {
   saveProject,
   type Project,
 } from "@/lib/lab2d/projects";
-import { Solid3DDialog } from "@/components/lab2d/Solid3DDialog";
+import { Cad3DStage } from "@/components/lab2d/Cad3DStage";
 import { takeHandoff } from "@/lib/lab2d/handoff";
 import { findChamferLink } from "@/lib/projects/chamfer";
 import { getProject as getDossier } from "@/lib/projects/store";
@@ -2219,13 +2219,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           .replace(/\s+/g, "-")
           .toLowerCase()}
       />
-      <Solid3DDialog
-        open={solidOpen}
-        onOpenChange={setSolidOpen}
-        entities={drawable}
-        thickness={thickness}
-        onThickness={setThickness}
-      />
+      {solidEver && (
+        <Cad3DStage
+          open={solidOpen}
+          onClose={() => setSolidOpen(false)}
+          entities={drawable}
+          thickness={thickness}
+          onThickness={setThickness}
+          title={project?.name ?? "CHAMFER"}
+          labProjectId={projectId}
+          selection={selection}
+          onSelectEntity={(id) => setSelection(id ? [id] : [])}
+        />
+      )}
+
 
       <ImportDialog
         source={importSrc}
