@@ -255,6 +255,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   /* ESPESSURA — chapa do plano; alimenta a vista 3D (mesmo motor do CALDRA) */
   const [thickness, setThickness] = useState(DEFAULT_PLAN_THICKNESS);
   const [solidOpen, setSolidOpen] = useState(false);
+  /* uma vez aberto, o MODO 3D fica montado: preserva câmera, seleção e estado */
+  const solidEver = useRef(false);
+  if (solidOpen) solidEver.current = true;
+
   const [outputMode, setOutputMode] = useState<OutputMode>("completo");
   const [pending, setPending] = useState<Vec2[]>([]);
 
