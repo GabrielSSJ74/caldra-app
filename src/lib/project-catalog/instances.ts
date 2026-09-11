@@ -29,6 +29,11 @@ export type SolidInstance = {
   material: SolidMaterial;
   assemblyKey: string;
   fabricable: boolean;
+  /**
+   * Perfil fechado real (mm, plano XY) extrudado pela espessura em Z.
+   * Quando ausente, o motor usa a caixa definida por `size`.
+   */
+  shape?: { outline: { x: number; y: number }[]; holes: { x: number; y: number }[][] };
 };
 
 const num = (p: Record<string, number>, k: string, fb: number) =>

@@ -306,11 +306,28 @@ export function Model3DViewer({
   useEffect(() => {
     const a = api.current;
     if (!a) return;
-    for (const m of a.meshes) a.scene.remove(m);
+    for (const m of a.meshes) {
+      a.scene.remove(m);
+      if (m.userData["own"]) m.geometry.dispose();
+    }
     a.meshes = [];
     for (const inst of instances) {
-      const mesh = new THREE.Mesh(shared.boxGeo, shared.mats[inst.material] ?? shared.mats["aco"]!);
-      mesh.scale.set(Math.max(inst.size.x, 1) * S, Math.max(inst.size.y, 1) * S, Math.max(inst.size.z, 1) * S);
+      /* perfil real (desenho do CHAMFER) → extrusão; senão, caixa canônica */
+      let geo: THREE.BufferGeometry = shared.boxGeo;
+      let own = false;
+      if (inst.shape && inst.shape.outline.length > 2) {
+        const shape = new THREE.Shape(inst.shape.outline.map((p) => new THREE.Vector2(p.x * S, p.y * S)));
+        for (const hole of inst.shape.holes) {
+          if (hole.length > 2) shape.holes.push(new THREE.Path(hole.map((p) => new THREE.Vector2(p.x * S, p.y * S))));
+        }
+        geo = new THREE.ExtrudeGeometry(shape, { depth: Math.max(inst.size.z, 0.2) * S, bevelEnabled: false });
+        geo.center();
+        own = true;
+      }
+      const mesh = new THREE.Mesh(geo, shared.mats[inst.material] ?? shared.mats["aco"]!);
+      mesh.userData["own"] = own;
+      if (!own)
+        mesh.scale.set(Math.max(inst.size.x, 1) * S, Math.max(inst.size.y, 1) * S, Math.max(inst.size.z, 1) * S);
       mesh.rotation.z = inst.rotZ;
       mesh.userData["id"] = inst.id;
       mesh.userData["base"] = [inst.center.x * S, inst.center.y * S, inst.center.z * S];

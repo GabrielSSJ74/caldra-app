@@ -27,7 +27,11 @@ export type Project = {
   plans: Plan[];
   lastPlanId: string;
   layers: Layer[];
+  /** Espessura da chapa (mm) — usada pela vista 3D e pela fabricação. */
+  thickness?: number;
 };
+
+export const DEFAULT_PLAN_THICKNESS = 3;
 
 export const planLabel = (i: number) => `P${String(i + 1).padStart(2, "0")}`;
 

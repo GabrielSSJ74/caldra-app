@@ -94,12 +94,14 @@ import {
   type OutputMode,
 } from "@/lib/lab2d/technical";
 import {
+  DEFAULT_PLAN_THICKNESS,
   emptyPlan,
   getProject,
   planLabel,
   saveProject,
   type Project,
 } from "@/lib/lab2d/projects";
+import { Solid3DDialog } from "@/components/lab2d/Solid3DDialog";
 import { takeHandoff } from "@/lib/lab2d/handoff";
 import { findChamferLink } from "@/lib/projects/chamfer";
 import { getProject as getDossier } from "@/lib/projects/store";
@@ -250,6 +252,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [startPicking, setStartPicking] = useState(false);
   const [shareHint, setShareHint] = useState<ShareCandidate | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  /* ESPESSURA — chapa do plano; alimenta a vista 3D (mesmo motor do CALDRA) */
+  const [thickness, setThickness] = useState(DEFAULT_PLAN_THICKNESS);
+  const [solidOpen, setSolidOpen] = useState(false);
   const [outputMode, setOutputMode] = useState<OutputMode>("completo");
   const [pending, setPending] = useState<Vec2[]>([]);
 
@@ -295,6 +300,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setPlanId(plan.id);
     setEntities(plan.entities);
     setGroups(plan.groups ?? []);
+    setThickness(p.thickness ?? DEFAULT_PLAN_THICKNESS);
     past.current = [];
     future.current = [];
   }, [projectId]);
@@ -341,6 +347,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         const next: Project = {
           ...project,
           layers,
+          thickness,
           lastPlanId: planId,
           plans: project.plans.map((pl) =>
             pl.id === planId ? { ...pl, entities, groups: live } : pl,
@@ -360,7 +367,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (idle && cic) cic(idle);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entities, layers, planId, groups]);
+  }, [entities, layers, planId, groups, thickness]);
 
 
   /* --------------------------------- paisagem automática no celular */
@@ -2088,6 +2095,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           >
             QUADRO
           </button>
+          <button
+            onClick={() => setSolidOpen(true)}
+            title={`Espessura ${thickness} mm — ver peça em 3D`}
+            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", solidOpen && "text-accent")}
+          >
+            3D {thickness}MM
+          </button>
           <select
             value={grid}
             onChange={(e) => setGrid(Number(e.target.value))}
@@ -2204,6 +2218,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         }`
           .replace(/\s+/g, "-")
           .toLowerCase()}
+      />
+      <Solid3DDialog
+        open={solidOpen}
+        onOpenChange={setSolidOpen}
+        entities={drawable}
+        thickness={thickness}
+        onThickness={setThickness}
       />
 
       <ImportDialog
