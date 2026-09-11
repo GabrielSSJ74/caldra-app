@@ -300,6 +300,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setPlanId(plan.id);
     setEntities(plan.entities);
     setGroups(plan.groups ?? []);
+    setThickness(p.thickness ?? DEFAULT_PLAN_THICKNESS);
     past.current = [];
     future.current = [];
   }, [projectId]);
