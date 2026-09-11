@@ -1,0 +1,13 @@
+import { useNavigate } from "@tanstack/react-router";
+import { Calculator, Save } from "lucide-react";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { Panel, SectionLabel } from "@/components/chameleon/ui";
+import { createCatalogProject } from "@/lib/projects/store";
+import { markRecent } from "@/lib/project-catalog/preferences";
+import type { CatalogModel } from "@/lib/project-catalog/types";
+import { ProjectDrawing2D } from "./ProjectDrawing2D";
+import { ProjectModel3D } from "./ProjectModel3D";
+import { ProjectBreakdown } from "./ProjectBreakdown";
+export function ProjectConfigurator({model}:{model:CatalogModel}){const nav=useNavigate();const[values,setValues]=useState(model.defaults);const[generated,setGenerated]=useState(false);const result=useMemo(()=>model.generate?.(values),[model,values]);const errors=model.parameters.filter(f=>!Number.isFinite(values[f.key])||values[f.key]!<f.min||values[f.key]!>f.max);const save=()=>{if(!result)return;const project=createCatalogProject(result);markRecent(model.slug);toast.success("Projeto criado em Meus projetos");nav({to:"/projetos/$projectId",params:{projectId:project.id}})};return <div className="space-y-4"><Panel className="p-4"><SectionLabel>Parâmetros do projeto</SectionLabel><div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{model.parameters.map(f=><label key={f.key} className="text-xs"><span className="text-muted-foreground">{f.label}</span><div className="mt-1 flex items-center rounded-lg border border-line bg-background/50"><input type="number" value={values[f.key]??0} min={f.min} max={f.max} step={f.step??1} onChange={e=>{setValues(v=>({...v,[f.key]:Number(e.target.value)}));setGenerated(false)}} className="min-w-0 flex-1 bg-transparent px-2 py-2 font-mono outline-none"/><span className="pr-2 text-muted-foreground">{f.unit}</span></div></label>)}</div><Button className="mt-4" disabled={errors.length>0||!result} onClick={()=>setGenerated(true)}><Calculator/>Calcular projeto</Button>{errors.length>0&&<p className="mt-2 text-xs text-destructive">Revise os parâmetros fora dos limites técnicos.</p>}</Panel>{generated&&result&&<><div className="grid gap-4 xl:grid-cols-2"><Panel className="p-4"><SectionLabel>Vista 2D</SectionLabel><ProjectDrawing2D result={result}/></Panel><Panel className="p-4"><SectionLabel>Modelo 3D</SectionLabel><ProjectModel3D result={result}/></Panel></div><Panel className="p-4"><SectionLabel>Resumo e decomposição</SectionLabel><ProjectBreakdown result={result}/><Button onClick={save} className="mt-4 w-full sm:w-auto"><Save/>Criar meu projeto</Button></Panel></>}</div>}

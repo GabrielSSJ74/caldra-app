@@ -1,5 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
+import { ProjectCatalog } from "@/components/projects/catalog/ProjectCatalog";
+import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import { Copy, FolderKanban, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import {
@@ -36,12 +38,12 @@ import { cn } from "@/lib/utils";
 export const Route = createFileRoute("/projetos/")({
   head: () => ({
     meta: [
-      { title: "Projetos — CALDRA" },
+      { title: "Catálogo de Projetos — CALDRA" },
       {
         name: "description",
-        content: "Organize clientes, obras e ordens de fabricação com todas as peças do serviço.",
+        content: "Escolha modelos paramétricos de caldeiraria ou acompanhe seus dossiês de fabricação.",
       },
-      { property: "og:title", content: "Projetos — CALDRA" },
+      { property: "og:title", content: "Catálogo de Projetos — CALDRA" },
       {
         property: "og:description",
         content: "Cada projeto é um pacote de fabricação: peças, materiais, quantidades e entrega.",
@@ -74,6 +76,7 @@ function Projetos() {
   const [renameValue, setRenameValue] = useState("");
   const [deleting, setDeleting] = useState<Project | null>(null);
   const [q, setQ] = useState("");
+  const [tab, setTab] = useState<"catalogo" | "meus">("catalogo");
 
   const list = useMemo(() => {
     const term = q.trim().toLowerCase();
@@ -110,7 +113,14 @@ function Projetos() {
         </button>
       </header>
 
-      {projects.length > 3 && (
+      <div className="grid grid-cols-2 rounded-lg border border-line bg-background/40 p-1">
+        <Button variant={tab === "catalogo" ? "default" : "ghost"} onClick={() => setTab("catalogo")}>Catálogo</Button>
+        <Button variant={tab === "meus" ? "default" : "ghost"} onClick={() => setTab("meus")}>Meus projetos ({projects.length})</Button>
+      </div>
+
+      {tab === "catalogo" && <ProjectCatalog />}
+
+      {tab === "meus" && projects.length > 3 && (
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -119,7 +129,7 @@ function Projetos() {
         />
       )}
 
-      <div className="space-y-2">
+      {tab === "meus" && <div className="space-y-2">
         {list.map((p, i) => {
           const pct = projectProgress(p);
           const status = derivedStatus(p);
@@ -227,7 +237,7 @@ function Projetos() {
             </p>
           </Panel>
         )}
-      </div>
+      </div>}
 
       <NewProjectDialog
         open={creating}
