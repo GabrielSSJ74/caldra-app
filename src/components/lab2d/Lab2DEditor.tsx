@@ -94,12 +94,14 @@ import {
   type OutputMode,
 } from "@/lib/lab2d/technical";
 import {
+  DEFAULT_PLAN_THICKNESS,
   emptyPlan,
   getProject,
   planLabel,
   saveProject,
   type Project,
 } from "@/lib/lab2d/projects";
+import { Solid3DDialog } from "@/components/lab2d/Solid3DDialog";
 import { takeHandoff } from "@/lib/lab2d/handoff";
 import { findChamferLink } from "@/lib/projects/chamfer";
 import { getProject as getDossier } from "@/lib/projects/store";
