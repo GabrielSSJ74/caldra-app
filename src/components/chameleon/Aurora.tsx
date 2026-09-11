@@ -44,6 +44,20 @@ function usePageVisible() {
   return visible;
 }
 
+/** O shader tem paleta escura fixa: no tema claro usamos a versão CSS. */
+function useDarkSurface() {
+  const [dark, setDark] = useState(true);
+  useEffect(() => {
+    const el = document.documentElement;
+    const sync = () => setDark(el.classList.contains("dark"));
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(el, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+  return dark;
+}
+
 export function AuroraBackground({
   mode = "auto",
   active = true,
