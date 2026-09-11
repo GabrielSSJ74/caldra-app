@@ -34,6 +34,7 @@ import { Route as TracagemIndexRouteImport } from './routes/tracagem.index'
 import { Route as TracagemSlugRouteImport } from './routes/tracagem.$slug'
 import { Route as EscolaAulaLessonIdRouteImport } from './routes/escola.aula.$lessonId'
 import { Route as EscolaModuloModuleIdRouteImport } from './routes/escola.modulo.$moduleId'
+import { Route as ProjetosCatalogoSlugRouteImport } from './routes/projetos.catalogo.$slug'
 import { Route as TracagemCncIdRouteImport } from './routes/tracagem.cnc.$id'
 
 const IndexRoute = IndexRouteImport.update({
@@ -161,6 +162,11 @@ const EscolaModuloModuleIdRoute = EscolaModuloModuleIdRouteImport.update({
   path: '/escola/modulo/$moduleId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProjetosCatalogoSlugRoute = ProjetosCatalogoSlugRouteImport.update({
+  id: '/projetos/catalogo/$slug',
+  path: '/projetos/catalogo/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TracagemCncIdRoute = TracagemCncIdRouteImport.update({
   id: '/tracagem/cnc/$id',
   path: '/tracagem/cnc/$id',
@@ -193,6 +199,7 @@ export interface FileRoutesByFullPath {
   '/tracagem/': typeof TracagemIndexRoute
   '/escola/aula/$lessonId': typeof EscolaAulaLessonIdRoute
   '/escola/modulo/$moduleId': typeof EscolaModuloModuleIdRoute
+  '/projetos/catalogo/$slug': typeof ProjetosCatalogoSlugRoute
   '/tracagem/cnc/$id': typeof TracagemCncIdRoute
 }
 export interface FileRoutesByTo {
@@ -221,6 +228,7 @@ export interface FileRoutesByTo {
   '/tracagem': typeof TracagemIndexRoute
   '/escola/aula/$lessonId': typeof EscolaAulaLessonIdRoute
   '/escola/modulo/$moduleId': typeof EscolaModuloModuleIdRoute
+  '/projetos/catalogo/$slug': typeof ProjetosCatalogoSlugRoute
   '/tracagem/cnc/$id': typeof TracagemCncIdRoute
 }
 export interface FileRoutesById {
@@ -250,6 +258,7 @@ export interface FileRoutesById {
   '/tracagem/': typeof TracagemIndexRoute
   '/escola/aula/$lessonId': typeof EscolaAulaLessonIdRoute
   '/escola/modulo/$moduleId': typeof EscolaModuloModuleIdRoute
+  '/projetos/catalogo/$slug': typeof ProjetosCatalogoSlugRoute
   '/tracagem/cnc/$id': typeof TracagemCncIdRoute
 }
 export interface FileRouteTypes {
@@ -280,6 +289,7 @@ export interface FileRouteTypes {
     | '/tracagem/'
     | '/escola/aula/$lessonId'
     | '/escola/modulo/$moduleId'
+    | '/projetos/catalogo/$slug'
     | '/tracagem/cnc/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -308,6 +318,7 @@ export interface FileRouteTypes {
     | '/tracagem'
     | '/escola/aula/$lessonId'
     | '/escola/modulo/$moduleId'
+    | '/projetos/catalogo/$slug'
     | '/tracagem/cnc/$id'
   id:
     | '__root__'
@@ -336,6 +347,7 @@ export interface FileRouteTypes {
     | '/tracagem/'
     | '/escola/aula/$lessonId'
     | '/escola/modulo/$moduleId'
+    | '/projetos/catalogo/$slug'
     | '/tracagem/cnc/$id'
   fileRoutesById: FileRoutesById
 }
@@ -365,6 +377,7 @@ export interface RootRouteChildren {
   TracagemIndexRoute: typeof TracagemIndexRoute
   EscolaAulaLessonIdRoute: typeof EscolaAulaLessonIdRoute
   EscolaModuloModuleIdRoute: typeof EscolaModuloModuleIdRoute
+  ProjetosCatalogoSlugRoute: typeof ProjetosCatalogoSlugRoute
   TracagemCncIdRoute: typeof TracagemCncIdRoute
 }
 
@@ -545,6 +558,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EscolaModuloModuleIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/projetos/catalogo/$slug': {
+      id: '/projetos/catalogo/$slug'
+      path: '/projetos/catalogo/$slug'
+      fullPath: '/projetos/catalogo/$slug'
+      preLoaderRoute: typeof ProjetosCatalogoSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tracagem/cnc/$id': {
       id: '/tracagem/cnc/$id'
       path: '/tracagem/cnc/$id'
@@ -581,6 +601,7 @@ const rootRouteChildren: RootRouteChildren = {
   TracagemIndexRoute: TracagemIndexRoute,
   EscolaAulaLessonIdRoute: EscolaAulaLessonIdRoute,
   EscolaModuloModuleIdRoute: EscolaModuloModuleIdRoute,
+  ProjetosCatalogoSlugRoute: ProjetosCatalogoSlugRoute,
   TracagemCncIdRoute: TracagemCncIdRoute,
 }
 export const routeTree = rootRouteImport
