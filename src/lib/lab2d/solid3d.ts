@@ -11,7 +11,7 @@ import type { Vec2 } from "@/lib/geometry/types";
 import type { SolidInstance, SolidMaterial } from "@/lib/project-catalog/instances";
 import { outlinePoints, type Entity } from "./core";
 
-type Loop = { pts: Vec2[]; area: number };
+type Loop = { pts: Vec2[]; area: number; id: string };
 
 const signedArea = (pts: Vec2[]) => {
   let a = 0;
@@ -53,12 +53,13 @@ function closedLoops(entities: Entity[]): Loop[] {
     if (!pts || pts.length < 3) continue;
     const area = Math.abs(signedArea(pts));
     if (area < 1e-3) continue;
-    out.push({ pts, area });
+    out.push({ pts, area, id: e.id });
   }
   return out.sort((a, b) => b.area - a.area);
 }
 
-export type SolidShape = { outline: Vec2[]; holes: Vec2[][] };
+export type SolidShape = { outline: Vec2[]; holes: Vec2[][]; entityId: string };
+
 
 /** Agrupa contornos externos com seus furos (contenção geométrica). */
 export function solidShapes(entities: Entity[]): SolidShape[] {
