@@ -22,6 +22,20 @@ export type AssemblyStep = {
 
 /** Roteiro determinístico de montagem. Função pura. */
 export function assemblySteps(project: Project): AssemblyStep[] {
+  if (project.catalogSource?.steps.length) {
+    const byKey = new Map(project.parts.map((p) => [p.catalogPart?.key, p]));
+    return project.catalogSource.steps.map((step, index) => ({
+      id: `catalog_${step.key}`,
+      index: index + 1,
+      kind: index === project.catalogSource!.steps.length - 1 ? "final" : "conjunto",
+      title: step.title,
+      detail: step.detail,
+      parts: step.partKeys.flatMap((key) => {
+        const p = byKey.get(key);
+        return p ? [{ instanceId: p.instanceId, code: p.code, name: p.name, quantity: Math.max(1, p.quantity) }] : [];
+      }),
+    }));
+  }
   const steps: AssemblyStep[] = [];
   const push = (s: Omit<AssemblyStep, "index">) => steps.push({ ...s, index: steps.length + 1 });
   const mapParts = (list: Project["parts"]) =>

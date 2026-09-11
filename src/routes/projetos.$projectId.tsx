@@ -48,6 +48,7 @@ import { FieldMode } from "@/components/projects/FieldMode";
 import { BomPanel } from "@/components/projects/BomPanel";
 import { FabricationPackage } from "@/components/projects/FabricationPackage";
 import { ValidationPanel } from "@/components/projects/ValidationPanel";
+import { CatalogRevisionPanel } from "@/components/projects/catalog/CatalogRevisionPanel";
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -151,6 +152,11 @@ function ProjectDetail() {
   const status = derivedStatus(project);
 
   const openPart = (part: ProjectPart) => {
+    if (part.catalogPart) {
+      const labId = openPartInChamfer(project, part);
+      navigate({ to: "/desenho-2d/$projectId", params: { projectId: labId } });
+      return;
+    }
     const target = partTarget(part.modelId);
     if (!target) {
       toast.error("Modelo desta peça não está disponível.");
@@ -216,6 +222,8 @@ function ProjectDetail() {
           <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
         </div>
       </Panel>
+
+      <CatalogRevisionPanel project={project} />
 
       <AssemblyTree project={project} onOpenPart={openPart} />
 

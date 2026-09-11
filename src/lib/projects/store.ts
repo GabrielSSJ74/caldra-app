@@ -14,6 +14,8 @@
 
 import { useSyncExternalStore } from "react";
 import { findPart } from "@/lib/library/registry";
+import type { Entity } from "@/lib/lab2d/core";
+import type { CanonicalProject, DerivedKind } from "@/lib/project-catalog/types";
 
 const KEY = "caldra.projects.v1";
 
@@ -88,6 +90,15 @@ export type ProjectPart = {
   updatedAt: number;
   /** estrutura reservada para versionamento futuro. */
   version: number;
+  /** Peça estrutural derivada de um modelo paramétrico de projeto. */
+  catalogPart?: {
+    key: string;
+    dimensions: { length: number; width: number; height: number };
+    process: string;
+    stage: number;
+    fabricable: boolean;
+    entities: Entity[];
+  } | undefined;
 };
 
 export type HistoryEvent = { at: number; text: string };
@@ -115,6 +126,24 @@ export type Project = {
   history: HistoryEvent[];
   createdAt: number;
   updatedAt: number;
+  /** Origem imutável + revisão de um projeto criado pelo catálogo. */
+  catalogSource?: {
+    modelSlug: string;
+    parameters: Record<string, number>;
+    pendingParameters?: Record<string, number> | undefined;
+    fingerprint: string;
+    generatedAt: number;
+    stale: DerivedKind[];
+    steps: { key: string; title: string; detail: string; partKeys: string[] }[];
+    snapshots: {
+      revision: string;
+      at: number;
+      parameters: Record<string, number>;
+      fingerprint: string;
+      parts: ProjectPart[];
+      changed: string[];
+    }[];
+  } | undefined;
 };
 
 /* ------------------------------------------------------------------ */
@@ -287,6 +316,7 @@ function normalizePart(raw: PartDraft): ProjectPart {
     createdAt: raw.createdAt ?? now,
     updatedAt: raw.updatedAt ?? now,
     version: raw.version ?? 1,
+    catalogPart: raw.catalogPart,
   };
 }
 
@@ -315,6 +345,7 @@ function normalizeProject(raw: ProjectDraft, takenCodes?: Set<string>): Project 
     history: raw.history ?? [],
     createdAt: raw.createdAt ?? now,
     updatedAt: raw.updatedAt ?? now,
+    catalogSource: raw.catalogSource,
   };
   takenCodes?.add(project.code!);
   // peças antigas não têm código: recebem um agora, de forma estável.
@@ -438,6 +469,95 @@ export function createProject(input: NewProjectInput): Project {
   );
   commit({ projects: [project, ...s.projects] });
   return project;
+}
+
+const ALL_DERIVED: DerivedKind[] = ["2d", "3d", "bom", "corte", "cnc", "documentacao", "montagem"];
+
+/** Cria em uma única gravação uma instância independente do modelo do catálogo. */
+export function createCatalogProject(result: CanonicalProject): Project {
+  const now = Date.now();
+  const s = load();
+  const taken = new Set(s.projects.map((p) => p.code ?? "").filter(Boolean));
+  const project = normalizeProject({
+    name: result.modelName,
+    description: `Projeto paramétrico gerado pelo catálogo CALDRA.`,
+    type: "industrial",
+    status: "em-desenvolvimento",
+    history: [{ at: now, text: `${result.modelName} gerada a partir do catálogo` }],
+    createdAt: now,
+    updatedAt: now,
+    assemblies: result.assemblies.map((a) => ({ id: `as_${uid("cat")}`, code: a.code, name: a.name, order: a.order })),
+    subassemblies: [],
+    parts: [],
+    catalogSource: {
+      modelSlug: result.modelSlug,
+      parameters: result.parameters,
+      fingerprint: result.fingerprint,
+      generatedAt: now,
+      stale: [],
+      steps: result.steps,
+      snapshots: [],
+    },
+  }, taken);
+  const assemblyByKey = new Map(result.assemblies.map((a, i) => [a.key, project.assemblies[i]!]));
+  project.subassemblies = result.subassemblies.map((sub) => ({
+    id: `sb_${uid("cat")}`,
+    assemblyId: assemblyByKey.get(sub.assemblyKey)?.id ?? "",
+    code: sub.code,
+    name: sub.name,
+    order: sub.order,
+  }));
+  const subByKey = new Map(result.subassemblies.map((sub, i) => [sub.key, project.subassemblies[i]!]));
+  project.parts = result.parts.map((part) => normalizePart({
+    instanceId: `pt_${uid("cat")}`,
+    modelId: `catalog.${result.modelSlug}.${part.key}`,
+    code: `${project.code}-${part.codeSuffix}`,
+    name: part.name,
+    parameters: result.parameters,
+    material: part.material,
+    thickness: part.thickness,
+    quantity: part.quantity,
+    status: "calculada",
+    assemblyId: assemblyByKey.get(part.assemblyKey)?.id,
+    subassemblyId: part.subassemblyKey ? subByKey.get(part.subassemblyKey)?.id : undefined,
+    role: part.role,
+    position: String(part.stage),
+    catalogPart: {
+      key: part.key,
+      dimensions: part.dimensions,
+      process: part.process,
+      stage: part.stage,
+      fabricable: part.fabricable,
+      entities: structuredClone(part.entities),
+    },
+    createdAt: now,
+    updatedAt: now,
+  }));
+  commit({ projects: [project, ...s.projects] });
+  return project;
+}
+
+/** Edita parâmetros sem tocar nos derivados aprovados da revisão atual. */
+export function invalidateCatalogProject(id: string, parameters: Record<string, number>) {
+  const project = getProject(id);
+  if (!project?.catalogSource) return;
+  replace(touch({ ...project, catalogSource: { ...project.catalogSource, pendingParameters: parameters, stale: ALL_DERIVED } }, "Parâmetros alterados — derivados aguardam regeneração"));
+}
+
+/** Regenera em nova revisão e arquiva integralmente a revisão anterior. */
+export function regenerateCatalogProject(id: string, result: CanonicalProject) {
+  const project = getProject(id);
+  if (!project?.catalogSource) return;
+  const now = Date.now();
+  const changed = Object.keys(result.parameters).filter((k) => result.parameters[k] !== project.catalogSource?.parameters[k]);
+  const snapshot = { revision: project.revision, at: now, parameters: project.catalogSource.parameters, fingerprint: project.catalogSource.fingerprint, parts: structuredClone(project.parts), changed };
+  const assemblyByKey = new Map(result.assemblies.map((a, i) => [a.key, project.assemblies[i]]));
+  const oldByKey = new Map(project.parts.map((p) => [p.catalogPart?.key, p]));
+  const parts = result.parts.map((part) => {
+    const old = oldByKey.get(part.key);
+    return normalizePart({ ...old, instanceId: old?.instanceId ?? `pt_${uid("cat")}`, modelId: `catalog.${result.modelSlug}.${part.key}`, code: old?.code ?? `${project.code}-${part.codeSuffix}`, name: part.name, parameters: result.parameters, material: part.material, thickness: part.thickness, quantity: part.quantity, status: "calculada", chamferProjectId: undefined, assemblyId: assemblyByKey.get(part.assemblyKey)?.id, role: part.role, position: String(part.stage), revision: nextRevision(project.revision), version: (old?.version ?? 0) + 1, catalogPart: { key: part.key, dimensions: part.dimensions, process: part.process, stage: part.stage, fabricable: part.fabricable, entities: structuredClone(part.entities) }, updatedAt: now });
+  });
+  replace(touch({ ...project, revision: nextRevision(project.revision), parts, catalogSource: { ...project.catalogSource, parameters: result.parameters, pendingParameters: undefined, fingerprint: result.fingerprint, generatedAt: now, stale: [], steps: result.steps, snapshots: [...project.catalogSource.snapshots, snapshot] } }, `Derivados regenerados — REV ${nextRevision(project.revision)}`));
 }
 
 /* ------------------------------------------------------------------ */
