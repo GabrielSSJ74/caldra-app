@@ -54,7 +54,7 @@ const COMPARED: Feature[] = [
 function ComparisonTable() {
   return (
     <div className="overflow-hidden rounded-xl border border-line">
-      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 border-b border-line bg-white/[0.02] px-3 py-2 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
+      <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 border-b border-line bg-foreground/[0.03] px-3 py-2 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
         <span>Recurso</span>
         <span className="w-10 text-center">Free</span>
         <span className="w-10 text-center text-pro">Pro</span>

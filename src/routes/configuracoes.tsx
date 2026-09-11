@@ -231,31 +231,38 @@ function Configuracoes() {
             </div>
           </div>
 
-          {isMestre && (
-            <div className="mt-3">
-              <SectionLabel>Estilo do fundo</SectionLabel>
-              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
-                {AURORA_STYLES.map((a) => (
+          <div className="mt-3">
+            <SectionLabel>Estilo do fundo</SectionLabel>
+            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+              {AURORA_STYLES.map((a) => {
+                /* Sem PRO o fundo não anima: os estilos animados ficam
+                   indisponíveis em vez de prometer algo que não acontece. */
+                const locked = !isMestre && (a.id === "fluido" || a.id === "suave");
+                return (
                   <button
                     key={a.id}
-                    onClick={() => setAuroraStyle(a.id)}
+                    onClick={() => !locked && setAuroraStyle(a.id)}
+                    disabled={locked}
                     aria-pressed={auroraStyle === a.id}
                     className={cn(
                       "flex-1 rounded-xl border px-3 py-2 font-mono text-[11px] uppercase transition-colors",
-                      auroraStyle === a.id
+                      locked && "cursor-not-allowed opacity-45",
+                      auroraStyle === a.id && !locked
                         ? "border-accent/25 bg-accent/10 text-accent"
                         : "border-line text-muted-foreground",
                     )}
                   >
                     {a.label}
                   </button>
-                ))}
-              </div>
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                {AURORA_STYLES.find((a) => a.id === auroraStyle)?.hint}
-              </p>
+                );
+              })}
             </div>
-          )}
+            <p className="mt-2 text-[11px] text-muted-foreground">
+              {isMestre
+                ? AURORA_STYLES.find((a) => a.id === auroraStyle)?.hint
+                : "Os fundos em movimento fazem parte do plano PRO."}
+            </p>
+          </div>
         </div>
 
         <div>

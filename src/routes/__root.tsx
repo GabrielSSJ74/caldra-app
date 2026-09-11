@@ -134,8 +134,10 @@ const BOOT_SPLASH_STYLE = `
 const BOOT_SPLASH_HTML = `<div class="mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.5 21.5 12 12 21.5 2.5 12Z" fill="none" stroke="#0B0B0C" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 7.5 16.5 12 12 16.5Z" fill="#0B0B0C"/></svg></div><p>CALDRA</p><span>Traçado · Planificação</span>`;
 
 function RootShell({ children }: { children: ReactNode }) {
+  // O script pré-paint troca as classes de tema; a diferença com o HTML do
+  // servidor é esperada e não deve virar aviso de hidratação.
   return (
-    <html lang="pt-BR" className="dark">
+    <html lang="pt-BR" className="dark" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
         <style dangerouslySetInnerHTML={{ __html: BOOT_SPLASH_STYLE }} />

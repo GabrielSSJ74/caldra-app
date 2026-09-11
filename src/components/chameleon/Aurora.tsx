@@ -44,6 +44,20 @@ function usePageVisible() {
   return visible;
 }
 
+/** O shader tem paleta escura fixa: no tema claro usamos a versão CSS. */
+function useDarkSurface() {
+  const [dark, setDark] = useState(true);
+  useEffect(() => {
+    const el = document.documentElement;
+    const sync = () => setDark(el.classList.contains("dark"));
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(el, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+  return dark;
+}
+
 export function AuroraBackground({
   mode = "auto",
   active = true,
@@ -63,8 +77,11 @@ export function AuroraBackground({
      montado e desenhando. Sem isto, uma falha silenciosa do WebGL deixa a
      tela sem nenhum fundo. */
   const [shaderLive, setShaderLive] = useState(false);
+  const darkSurface = useDarkSurface();
 
-  const wantsShader = auroraStyle === "fluido" && glOk && shaderLive;
+  /* FLUIDO só liga o shader no tema escuro; no claro cai para os blobs CSS. */
+  const shaderStyle = auroraStyle === "fluido" && darkSurface;
+  const wantsShader = shaderStyle && glOk && shaderLive;
   /* PRO anima; FREE vê o frame congelado do mesmo estilo. */
   const allowed = mode === "always" || isMestre;
   const animated =
@@ -80,7 +97,7 @@ export function AuroraBackground({
 
   /* Empresta o container ao canvas compartilhado só no estilo FLUIDO. */
   useEffect(() => {
-    if (auroraStyle !== "fluido") {
+    if (!shaderStyle) {
       setShaderLive(false);
       return;
     }
@@ -108,15 +125,15 @@ export function AuroraBackground({
       setShaderLive(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auroraStyle]);
+  }, [shaderStyle]);
 
   useEffect(() => {
-    if (auroraStyle !== "fluido") return;
+    if (!shaderStyle) return;
     const engine = auroraEngine();
     const host = hostRef.current;
     if (!engine || !host) return;
     engine.update(host, animated, amp);
-  }, [auroraStyle, animated, amp]);
+  }, [shaderStyle, animated, amp]);
 
   /* PADRÃO: nenhuma camada — o fundo sólido do tema aparece. */
   if (auroraStyle === "padrao") return null;

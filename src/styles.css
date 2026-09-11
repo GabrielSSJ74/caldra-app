@@ -549,8 +549,28 @@
   color: var(--accent);
 }
 
-/* ——— AURORA CALDRA — fundo animado (exclusivo PRO), apenas tema escuro ——— */
+/* ——— AURORA CALDRA — fundo do app (versão animada exclusiva PRO) ——— */
+/* Modo CLARO: mesma composição, paleta pastel de baixa saturação — o texto
+   escuro continua com contraste de sobra. */
 :root {
+  --aurora-base-a: #ffffff;
+  --aurora-base-b: #f3f5f8;
+  --aurora-warm: #fcd9a0;
+  --aurora-warm-deep: #f6c67a;
+  --aurora-magenta: #e6e9ef;
+  --aurora-wine: #f0e3d2;
+  --aurora-fuchsia: #dfe6f2;
+  --aurora-indigo: #cfdbe9;
+  --aurora-violet: #dde4ee;
+  --aurora-blob-opacity: 0.5;
+  --aurora-blur: 130px;
+}
+
+.aurora-root {
+  display: block;
+}
+
+.dark {
   --aurora-base-a: #18181b;
   --aurora-base-b: #111114;
   --aurora-warm: #f59e0b;
@@ -564,19 +584,11 @@
   --aurora-blur: 120px;
 }
 
-.aurora-root {
-  display: none;
-}
-
-.dark .aurora-root {
-  display: block;
-}
-
-/* AMOLED: a base do Aurora funde com preto puro; as massas permanecem. */
+/* AMOLED: preto puro é a identidade — as massas só insinuam cor. */
 .amoled {
-  --aurora-base-a: #050505;
+  --aurora-base-a: #000000;
   --aurora-base-b: #000000;
-  --aurora-blob-opacity: 0.22;
+  --aurora-blob-opacity: 0.1;
 }
 
 /* Modo Oficina / alto contraste: o fundo recua para preservar legibilidade. */
