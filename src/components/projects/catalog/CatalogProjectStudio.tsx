@@ -14,12 +14,12 @@ import { buildInstances } from "@/lib/project-catalog/instances";
 import { findCatalogModel } from "@/lib/project-catalog/registry";
 import type { Project } from "@/lib/projects/store";
 import { cn } from "@/lib/utils";
-import { ProjectDrawing2D } from "./ProjectDrawing2D";
 import { ProjectModel3D } from "./ProjectModel3D";
 import { ProjectTreePanel } from "./ProjectTreePanel";
 import { SendToChamferDialog } from "./SendToChamferDialog";
+import { TechnicalDrawing2D } from "./TechnicalDrawing2D";
 
-type Tab = "3d" | "explodida" | "2d";
+type Tab = "3d" | "explodida" | "perspectiva" | "2d";
 
 export function CatalogProjectStudio({ project }: { project: Project }) {
   const [tab, setTab] = useState<Tab>("3d");
@@ -50,7 +50,7 @@ export function CatalogProjectStudio({ project }: { project: Project }) {
         </Button>
       </div>
       <div className="flex flex-wrap gap-1">
-        {(["3d", "explodida", "2d"] as Tab[]).map((t) => (
+        {(["3d", "explodida", "perspectiva", "2d"] as Tab[]).map((t) => (
           <button
             key={t}
             type="button"
@@ -60,12 +60,23 @@ export function CatalogProjectStudio({ project }: { project: Project }) {
               tab === t ? "bg-accent/15 text-accent" : "text-muted-foreground",
             )}
           >
-            {t === "2d" ? "Vista 2D" : t === "3d" ? "Vista 3D" : "Explodida"}
+            {t === "2d" ? "2D Técnico" : t === "3d" ? "Vista 3D" : t === "perspectiva" ? "Perspectiva técnica" : "Explodida"}
           </button>
         ))}
       </div>
       {tab === "2d" ? (
-        <ProjectDrawing2D result={result} instances={instances} selectedId={selectedId} onSelect={setSelectedId} />
+        <TechnicalDrawing2D
+          result={result}
+          instances={instances}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          meta={{
+            projectName: project.name,
+            ...(project.code ? { code: project.code } : {}),
+            revision: project.revision,
+            ...(project.notes ? { notes: project.notes.slice(0, 28) } : {}),
+          }}
+        />
       ) : (
         <ProjectModel3D
           instances={instances}
@@ -73,6 +84,7 @@ export function CatalogProjectStudio({ project }: { project: Project }) {
           onSelect={setSelectedId}
           hidden={hidden}
           exploded={tab === "explodida"}
+          perspective={tab === "perspectiva"}
         />
       )}
       <ProjectTreePanel
