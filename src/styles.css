@@ -554,15 +554,15 @@
    escuro continua com contraste de sobra. */
 :root {
   --aurora-base-a: #ffffff;
-  --aurora-base-b: #f2f4f8;
-  --aurora-warm: #fbbf24;
-  --aurora-warm-deep: #f59e0b;
-  --aurora-magenta: #f472b6;
-  --aurora-wine: #fb7185;
-  --aurora-fuchsia: #c084fc;
-  --aurora-indigo: #93c5fd;
-  --aurora-violet: #a5b4fc;
-  --aurora-blob-opacity: 0.16;
+  --aurora-base-b: #f3f5f8;
+  --aurora-warm: #fcd9a0;
+  --aurora-warm-deep: #f6c67a;
+  --aurora-magenta: #e6e9ef;
+  --aurora-wine: #f0e3d2;
+  --aurora-fuchsia: #dfe6f2;
+  --aurora-indigo: #cfdbe9;
+  --aurora-violet: #dde4ee;
+  --aurora-blob-opacity: 0.5;
   --aurora-blur: 130px;
 }
 
