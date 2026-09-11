@@ -44,8 +44,22 @@ export const TECHNICAL_STYLE: Record<
 
 const FALLBACK = TECHNICAL_STYLE.corte;
 
-export const techStyle = (layerId: string) =>
-  TECHNICAL_STYLE[layerId as TechLayerId] ?? FALLBACK;
+/**
+ * Apresentação da camada CORTE na tela: preto no tema claro, branco no tema
+ * escuro. Isto é apenas RENDERIZAÇÃO — a semântica da camada "corte" e a
+ * exportação (sempre preta) permanecem inalteradas, e a cor de destaque do
+ * tema NUNCA é usada aqui.
+ */
+export function cutDisplayColor(): string {
+  if (typeof document === "undefined") return CUT_COLOR;
+  return document.documentElement.classList.contains("dark") ? "#FFFFFF" : "#000000";
+}
+
+export const techStyle = (layerId: string) => {
+  const base = TECHNICAL_STYLE[layerId as TechLayerId] ?? FALLBACK;
+  if (layerId === "corte") return { ...base, color: cutDisplayColor() };
+  return base;
+};
 
 export const techColor = (layerId: string) => techStyle(layerId).color;
 
