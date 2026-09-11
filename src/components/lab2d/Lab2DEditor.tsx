@@ -2219,6 +2219,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           .replace(/\s+/g, "-")
           .toLowerCase()}
       />
+      <Solid3DDialog
+        open={solidOpen}
+        onOpenChange={setSolidOpen}
+        entities={drawable}
+        thickness={thickness}
+        onThickness={setThickness}
+      />
 
       <ImportDialog
         source={importSrc}
