@@ -97,7 +97,7 @@ export function AuroraBackground({
 
   /* Empresta o container ao canvas compartilhado só no estilo FLUIDO. */
   useEffect(() => {
-    if (auroraStyle !== "fluido") {
+    if (!shaderStyle) {
       setShaderLive(false);
       return;
     }
@@ -125,15 +125,15 @@ export function AuroraBackground({
       setShaderLive(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auroraStyle]);
+  }, [shaderStyle]);
 
   useEffect(() => {
-    if (auroraStyle !== "fluido") return;
+    if (!shaderStyle) return;
     const engine = auroraEngine();
     const host = hostRef.current;
     if (!engine || !host) return;
     engine.update(host, animated, amp);
-  }, [auroraStyle, animated, amp]);
+  }, [shaderStyle, animated, amp]);
 
   /* PADRÃO: nenhuma camada — o fundo sólido do tema aparece. */
   if (auroraStyle === "padrao") return null;
