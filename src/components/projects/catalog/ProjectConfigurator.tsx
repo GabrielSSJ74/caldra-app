@@ -109,9 +109,9 @@ export function ProjectConfigurator({ model }: { model: CatalogModel }) {
               ))}
             </div>
             {tab === "2d" && (
-              <ProjectDrawing2D result={result} instances={instances} selectedId={selectedId} onSelect={setSelectedId} />
+              <TechnicalDrawing2D result={result} instances={instances} selectedId={selectedId} onSelect={setSelectedId} />
             )}
-            {(tab === "3d" || tab === "explodida") && (
+            {(tab === "3d" || tab === "explodida" || tab === "perspectiva") && (
               <ProjectModel3D
                 key="viewer"
                 instances={instances}
@@ -119,6 +119,7 @@ export function ProjectConfigurator({ model }: { model: CatalogModel }) {
                 onSelect={setSelectedId}
                 hidden={hidden}
                 exploded={tab === "explodida"}
+                perspective={tab === "perspectiva"}
               />
             )}
             {tab === "detalhes" && (

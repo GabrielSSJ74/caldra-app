@@ -26,6 +26,7 @@ export function ProjectModel3D({
   onSelect,
   hidden,
   exploded = false,
+  perspective = false,
   className,
 }: {
   instances: SolidInstance[];
@@ -33,6 +34,8 @@ export function ProjectModel3D({
   onSelect: (id: string | null) => void;
   hidden: Set<string>;
   exploded?: boolean;
+  /** Perspectiva técnica: apresentação limpa do conjunto, sem explosão. */
+  perspective?: boolean;
   className?: string;
 }) {
   const [view, setView] = useState<ViewKey>("iso");
@@ -47,6 +50,16 @@ export function ProjectModel3D({
   useEffect(() => {
     setExplode(exploded ? 0.6 : 0);
   }, [exploded]);
+
+  useEffect(() => {
+    if (!perspective) return;
+    setOrtho(true);
+    setIsolate(false);
+    setGhost(false);
+    setExplode(0);
+    setView("iso");
+    setViewNonce((n) => n + 1);
+  }, [perspective]);
 
   const shell = clean
     ? "fixed inset-0 z-[80] bg-background"
