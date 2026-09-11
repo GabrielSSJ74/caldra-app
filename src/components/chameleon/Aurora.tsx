@@ -77,8 +77,11 @@ export function AuroraBackground({
      montado e desenhando. Sem isto, uma falha silenciosa do WebGL deixa a
      tela sem nenhum fundo. */
   const [shaderLive, setShaderLive] = useState(false);
+  const darkSurface = useDarkSurface();
 
-  const wantsShader = auroraStyle === "fluido" && glOk && shaderLive;
+  /* FLUIDO só liga o shader no tema escuro; no claro cai para os blobs CSS. */
+  const shaderStyle = auroraStyle === "fluido" && darkSurface;
+  const wantsShader = shaderStyle && glOk && shaderLive;
   /* PRO anima; FREE vê o frame congelado do mesmo estilo. */
   const allowed = mode === "always" || isMestre;
   const animated =
