@@ -252,6 +252,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [startPicking, setStartPicking] = useState(false);
   const [shareHint, setShareHint] = useState<ShareCandidate | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  /* ESPESSURA — chapa do plano; alimenta a vista 3D (mesmo motor do CALDRA) */
+  const [thickness, setThickness] = useState(DEFAULT_PLAN_THICKNESS);
+  const [solidOpen, setSolidOpen] = useState(false);
   const [outputMode, setOutputMode] = useState<OutputMode>("completo");
   const [pending, setPending] = useState<Vec2[]>([]);
 
