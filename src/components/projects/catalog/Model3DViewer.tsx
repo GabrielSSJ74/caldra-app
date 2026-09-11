@@ -112,7 +112,7 @@ export function Model3DViewer({
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
     el.appendChild(renderer.domElement);
     renderer.domElement.style.width = "100%";
     renderer.domElement.style.height = "100%";
@@ -211,7 +211,7 @@ export function Model3DViewer({
         persp.position.y - controls.target.y,
         persp.position.z - controls.target.z,
       ])).normalize();
-      const dist = radius / Math.sin((persp.fov * Math.PI) / 360) * 1.15;
+      const dist = radius / Math.sin((persp.fov * Math.PI) / 360) * 0.95;
       const to = center.clone().add(d.multiplyScalar(dist));
       const frustum = radius * 1.25;
       orthoCam.left = -frustum; orthoCam.right = frustum;
