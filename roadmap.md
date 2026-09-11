@@ -113,3 +113,11 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Regressão ampliada — projetos antigos, demais exportações, temas, celular e paisagem antes de liberar o próximo modelo.
 - [ ] Plataforma Industrial — somente após validação da Escada Reta.
 - [ ] Suporte de Tubulação — somente após regressão da Plataforma.
+
+## Refinamento técnico (set/2026)
+- [x] Vista 2D técnica da Escada (frontal + lateral + superior, 1º diedro, cotas, notas, quadro CALDRA)
+- [x] Aba Perspectiva técnica (2D TÉCNICO | 3D | EXPLODIDA | PERSPECTIVA)
+- [x] Sincronização 2D ↔ 3D ↔ árvore mantida (mesmas instâncias canônicas)
+- [x] CHAMFER: linha de CORTE preta no tema claro e branca no tema escuro (exportação segue preta)
+- [ ] CHAMFER: ferramenta ESPESSURA + vista 3D com extrusão real
+- [ ] Temas: revisão de FLUIDO/SUAVE/ESTÁTICO no tema claro, tema PADRÃO neutro e AMOLED redesenhado

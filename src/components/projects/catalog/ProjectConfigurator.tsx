@@ -10,16 +10,17 @@ import type { CatalogModel } from "@/lib/project-catalog/types";
 import { createCatalogProject } from "@/lib/projects/store";
 import { cn } from "@/lib/utils";
 import { ProjectBreakdown } from "./ProjectBreakdown";
-import { ProjectDrawing2D } from "./ProjectDrawing2D";
 import { ProjectModel3D } from "./ProjectModel3D";
 import { ProjectTreePanel } from "./ProjectTreePanel";
 import { SendToChamferDialog } from "./SendToChamferDialog";
+import { TechnicalDrawing2D } from "./TechnicalDrawing2D";
 
-type Tab = "2d" | "3d" | "explodida" | "detalhes";
+type Tab = "2d" | "3d" | "explodida" | "perspectiva" | "detalhes";
 const TABS: { key: Tab; label: string }[] = [
-  { key: "2d", label: "Vista 2D" },
+  { key: "2d", label: "2D Técnico" },
   { key: "3d", label: "Vista 3D" },
   { key: "explodida", label: "Explodida" },
+  { key: "perspectiva", label: "Perspectiva técnica" },
   { key: "detalhes", label: "Detalhes" },
 ];
 
@@ -108,9 +109,9 @@ export function ProjectConfigurator({ model }: { model: CatalogModel }) {
               ))}
             </div>
             {tab === "2d" && (
-              <ProjectDrawing2D result={result} instances={instances} selectedId={selectedId} onSelect={setSelectedId} />
+              <TechnicalDrawing2D result={result} instances={instances} selectedId={selectedId} onSelect={setSelectedId} />
             )}
-            {(tab === "3d" || tab === "explodida") && (
+            {(tab === "3d" || tab === "explodida" || tab === "perspectiva") && (
               <ProjectModel3D
                 key="viewer"
                 instances={instances}
@@ -118,6 +119,7 @@ export function ProjectConfigurator({ model }: { model: CatalogModel }) {
                 onSelect={setSelectedId}
                 hidden={hidden}
                 exploded={tab === "explodida"}
+                perspective={tab === "perspectiva"}
               />
             )}
             {tab === "detalhes" && (
