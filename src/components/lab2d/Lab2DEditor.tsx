@@ -2095,6 +2095,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           >
             QUADRO
           </button>
+          <button
+            onClick={() => setSolidOpen(true)}
+            title={`Espessura ${thickness} mm — ver peça em 3D`}
+            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", solidOpen && "text-accent")}
+          >
+            3D {thickness}MM
+          </button>
           <select
             value={grid}
             onChange={(e) => setGrid(Number(e.target.value))}
