@@ -80,7 +80,7 @@ export function Model3DViewer({
     meshes: THREE.Mesh[];
     ground: THREE.Mesh;
     request: () => void;
-    fit: (dir?: [number, number, number], animate?: boolean) => void;
+    fit: (dir?: [number, number, number], animate?: boolean, only?: THREE.Object3D) => void;
     setCamera: (o: boolean) => void;
   } | null>(null);
 
@@ -115,7 +115,11 @@ export function Model3DViewer({
         opacity: 0.16,
         depthWrite: false,
       }),
+      boxEdges: new THREE.EdgesGeometry(boxGeo, 25),
+      edgeMat: new THREE.LineBasicMaterial({ color: 0x1b2026, transparent: true, opacity: 0.55 }),
+      wire: new THREE.MeshBasicMaterial({ color: 0x8d979f, wireframe: true }),
     };
+
   }, []);
 
   /* montagem única do renderizador */
