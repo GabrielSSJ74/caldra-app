@@ -48,6 +48,8 @@ export const Route = createFileRoute("/projetos/")({
         property: "og:description",
         content: "Cada projeto é um pacote de fabricação: peças, materiais, quantidades e entrega.",
       },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary" },
     ],
   }),
   component: Projetos,
