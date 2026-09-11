@@ -92,7 +92,7 @@ export function Model3DViewer({
         color: 0xf59e0b,
         roughness: 0.35,
         metalness: 0.5,
-        emissive: 0x insert,
+        emissive: 0x3a2400,
       }),
       ghost: new THREE.MeshStandardMaterial({
         color: 0x8a929b,
