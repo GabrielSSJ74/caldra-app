@@ -28,6 +28,9 @@ const DIRS: Record<ViewKey, [number, number, number]> = {
   direita: [1, 0, 0],
 };
 
+/** Modo de exibição industrial: sombreado, sombreado com arestas, ou arame. */
+export type DisplayMode = "shaded" | "edges" | "wireframe";
+
 type Props = {
   instances: SolidInstance[];
   selectedId: string | null;
@@ -40,6 +43,12 @@ type Props = {
   view: ViewKey;
   viewNonce: number;
   fitNonce: number;
+  /** padrão: arestas visíveis (leitura industrial) */
+  display?: DisplayMode;
+  /** incrementar para enquadrar apenas a peça selecionada */
+  zoomSelNonce?: number;
+  /** incrementar para voltar à vista isométrica padrão */
+  resetNonce?: number;
   className?: string;
 };
 
@@ -55,8 +64,12 @@ export function Model3DViewer({
   view,
   viewNonce,
   fitNonce,
+  display = "edges",
+  zoomSelNonce = 0,
+  resetNonce = 0,
   className,
 }: Props) {
+
   const host = useRef<HTMLDivElement>(null);
   const api = useRef<{
     renderer: THREE.WebGLRenderer;
