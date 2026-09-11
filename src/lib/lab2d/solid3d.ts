@@ -77,14 +77,16 @@ export function solidShapes(entities: Entity[]): SolidShape[] {
         holes.push(inner.pts);
       }
     });
-    shapes.push({ outline: loop.pts, holes });
+    shapes.push({ outline: loop.pts, holes, entityId: loop.id });
   });
   return shapes;
 }
 
 /**
  * Instâncias sólidas do desenho atual. Y do desenho cresce para baixo;
- * no 3D o eixo Y cresce para cima, por isso o espelho em Y.
+ * no 3D o eixo Y cresce para cima, por isso o espelho em Y. O perfil é
+ * guardado em coordenadas locais e a posição vai no `center` — assim vários
+ * contornos convivem na mesma cena sem se sobrepor.
  */
 export function planSolids(
   entities: Entity[],
@@ -103,21 +105,25 @@ export function planSolids(
     const maxX = Math.max(...xs);
     const minY = Math.min(...ys);
     const maxY = Math.max(...ys);
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const local = (p: Vec2) => ({ x: p.x - cx, y: p.y - cy });
     return {
-      id: `chamfer-solid-${i}`,
-      partKey: `chamfer-solid-${i}`,
+      id: shape.entityId,
+      partKey: shape.entityId,
       code: `C${String(i + 1).padStart(2, "0")}`,
       index: i + 1,
       label: shapes.length > 1 ? `Contorno ${i + 1}` : "Peça",
-      center: { x: 0, y: 0, z: 0 },
+      center: { x: cx, y: cy, z: 0 },
       size: { x: maxX - minX, y: maxY - minY, z: t },
       rotZ: 0,
       material,
       assemblyKey: "chamfer",
       fabricable: true,
-      shape: { outline, holes },
+      shape: { outline: outline.map(local), holes: holes.map((h) => h.map(local)) },
     } satisfies SolidInstance;
   });
+
 }
 
 /** Área líquida (mm²) do desenho — contorno menos furos. */
