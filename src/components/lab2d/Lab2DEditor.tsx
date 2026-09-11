@@ -367,7 +367,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (idle && cic) cic(idle);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entities, layers, planId, groups]);
+  }, [entities, layers, planId, groups, thickness]);
 
 
   /* --------------------------------- paisagem automática no celular */
