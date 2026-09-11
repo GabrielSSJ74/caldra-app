@@ -207,8 +207,9 @@ export function Model3DViewer({
       else anim = null;
     };
 
-    const bounds = () => {
+    const bounds = (only?: THREE.Object3D) => {
       const bb = new THREE.Box3();
+      if (only) return bb.expandByObject(only);
       let has = false;
       for (const m of apiObj.meshes) {
         if (!m.visible) continue;
@@ -219,8 +220,9 @@ export function Model3DViewer({
       return bb;
     };
 
-    const fit = (dir?: [number, number, number], animate = true) => {
-      const bb = bounds();
+    const fit = (dir?: [number, number, number], animate = true, only?: THREE.Object3D) => {
+      const bb = bounds(only);
+
       const center = bb.getCenter(new THREE.Vector3());
       const radius = Math.max(0.5, bb.getBoundingSphere(new THREE.Sphere()).radius);
       const d = new THREE.Vector3(...(dir ?? [
