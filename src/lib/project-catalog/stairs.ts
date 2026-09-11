@@ -11,10 +11,10 @@ const part=(p:Omit<CanonicalPart,"entities"|"dimensions"> & {length:number;width
 export const STAIR_DEFAULTS={width:900,height:2800,length:4200,steps:14,treadDepth:280,stringerHeight:250,stringerThickness:8,treadThickness:4,profileWidth:50,handrailHeight:1100,materialDensity:7850};
 export function generateStraightStair(raw:Record<string,number>):CanonicalProject {
  const v:Record<string,number>={...STAIR_DEFAULTS,...raw};
- const width=Math.max(500,v.width), height=Math.max(500,v.height), length=Math.max(800,v.length), steps=Math.max(3,Math.round(v.steps));
+ const width=Math.max(500,v["width"]??STAIR_DEFAULTS.width), height=Math.max(500,v["height"]??STAIR_DEFAULTS.height), length=Math.max(800,v["length"]??STAIR_DEFAULTS.length), steps=Math.max(3,Math.round(v["steps"]??STAIR_DEFAULTS.steps));
  const rise=height/steps, run=length/steps, angle=Math.atan2(height,length), slope=Math.hypot(height,length);
- const treadDepth=Math.min(Math.max(120,v.treadDepth),run+80), stringerH=Math.max(80,v.stringerHeight), stringerT=Math.max(3,v.stringerThickness);
- const treadT=Math.max(2,v.treadThickness), profile=Math.max(25,v.profileWidth), railH=Math.max(700,v.handrailHeight);
+ const treadDepth=Math.min(Math.max(120,v["treadDepth"]??STAIR_DEFAULTS.treadDepth),run+80), stringerH=Math.max(80,v["stringerHeight"]??STAIR_DEFAULTS.stringerHeight), stringerT=Math.max(3,v["stringerThickness"]??STAIR_DEFAULTS.stringerThickness);
+ const treadT=Math.max(2,v["treadThickness"]??STAIR_DEFAULTS.treadThickness), profile=Math.max(25,v["profileWidth"]??STAIR_DEFAULTS.profileWidth), railH=Math.max(700,v["handrailHeight"]??STAIR_DEFAULTS.handrailHeight);
  const parts:CanonicalPart[]=[];
  for(const side of [0,1]) parts.push(part({key:`stringer-${side}`,codeSuffix:`LON-${side+1}`,name:`Longarina ${side?"direita":"esquerda"}`,quantity:1,material:"Aço Carbono",thickness:stringerT,role:"Estrutura principal",assemblyKey:"estrutura",stage:1,process:"Corte de chapa",fabricable:true,length:slope,width:stringerH,height:stringerT,box:box(0,0,side*(width-stringerT),length,height,stringerT)}));
  parts.push(part({key:"tread",codeSuffix:"DEG-001",name:"Degrau",quantity:steps,material:"Aço Carbono",thickness:treadT,role:"Piso",assemblyKey:"degraus",stage:2,process:"Corte e dobra",fabricable:true,length:width,width:treadDepth,height:treadT,box:box(run-treadDepth,rise,width/2-width/2,treadDepth,treadT,width),entities:[rect("tread",width,treadDepth)]}));
