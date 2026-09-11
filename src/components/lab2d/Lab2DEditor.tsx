@@ -2101,11 +2101,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </button>
           <button
             onClick={() => setSolidOpen(true)}
-            title={`Espessura ${thickness} mm — ver peça em 3D`}
+            title={`Abrir o modo 3D em tela inteira — espessura ${thickness} mm`}
             className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", solidOpen && "text-accent")}
           >
-            3D {thickness}MM
+            VISTA 3D · {thickness}MM
           </button>
+
           <select
             value={grid}
             onChange={(e) => setGrid(Number(e.target.value))}
