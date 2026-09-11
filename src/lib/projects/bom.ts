@@ -71,6 +71,10 @@ function shapeFromEntities(entities: Entity[]): Shape {
 
 /** Desenvolvimento da peça: motor paramétrico ou gerador vetorial. */
 export function partShape(part: ProjectPart): Shape {
+  if (part.catalogPart) {
+    const { length: w, width: h } = part.catalogPart.dimensions;
+    return w > 0 && h > 0 ? { w, h, areaMm2: w * h } : null;
+  }
   const model = findPart(part.modelId);
   if (!model) return null;
   try {

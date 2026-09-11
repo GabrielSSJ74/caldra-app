@@ -22,6 +22,9 @@ import { listProjects, updatePart, type Project, type ProjectPart } from "./stor
 
 /** Geometria inicial da peça (mm), ou null quando faltam parâmetros. */
 export function partEntities(part: ProjectPart): Entity[] | null {
+  if (part.catalogPart?.fabricable && part.catalogPart.entities.length) {
+    return structuredClone(part.catalogPart.entities);
+  }
   const model = findPart(part.modelId);
   if (!model) return null;
   try {
