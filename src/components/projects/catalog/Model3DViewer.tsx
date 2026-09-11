@@ -341,8 +341,10 @@ export function Model3DViewer({
         for (const hole of inst.shape.holes) {
           if (hole.length > 2) shape.holes.push(new THREE.Path(hole.map((p) => new THREE.Vector2(p.x * S, p.y * S))));
         }
-        geo = new THREE.ExtrudeGeometry(shape, { depth: Math.max(inst.size.z, 0.2) * S, bevelEnabled: false });
-        geo.center();
+        const depth = Math.max(inst.size.z, 0.2) * S;
+        geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
+        geo.translate(0, 0, -depth / 2);
+
         own = true;
       }
       const mesh = new THREE.Mesh(geo, shared.mats[inst.material] ?? shared.mats["aco"]!);
