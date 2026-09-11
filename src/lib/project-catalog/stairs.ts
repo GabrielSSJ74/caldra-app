@@ -10,7 +10,7 @@ const part=(p:Omit<CanonicalPart,"entities"|"dimensions"> & {length:number;width
 });
 export const STAIR_DEFAULTS={width:900,height:2800,length:4200,steps:14,treadDepth:280,stringerHeight:250,stringerThickness:8,treadThickness:4,profileWidth:50,handrailHeight:1100,materialDensity:7850};
 export function generateStraightStair(raw:Record<string,number>):CanonicalProject {
- const v={...STAIR_DEFAULTS,...raw};
+ const v:Record<string,number>={...STAIR_DEFAULTS,...raw};
  const width=Math.max(500,v.width), height=Math.max(500,v.height), length=Math.max(800,v.length), steps=Math.max(3,Math.round(v.steps));
  const rise=height/steps, run=length/steps, angle=Math.atan2(height,length), slope=Math.hypot(height,length);
  const treadDepth=Math.min(Math.max(120,v.treadDepth),run+80), stringerH=Math.max(80,v.stringerHeight), stringerT=Math.max(3,v.stringerThickness);
