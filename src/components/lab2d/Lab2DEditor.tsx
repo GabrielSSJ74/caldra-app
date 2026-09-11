@@ -347,6 +347,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         const next: Project = {
           ...project,
           layers,
+          thickness,
           lastPlanId: planId,
           plans: project.plans.map((pl) =>
             pl.id === planId ? { ...pl, entities, groups: live } : pl,
