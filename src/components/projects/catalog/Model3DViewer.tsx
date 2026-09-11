@@ -28,6 +28,9 @@ const DIRS: Record<ViewKey, [number, number, number]> = {
   direita: [1, 0, 0],
 };
 
+/** Modo de exibição industrial: sombreado, sombreado com arestas, ou arame. */
+export type DisplayMode = "shaded" | "edges" | "wireframe";
+
 type Props = {
   instances: SolidInstance[];
   selectedId: string | null;
@@ -40,6 +43,12 @@ type Props = {
   view: ViewKey;
   viewNonce: number;
   fitNonce: number;
+  /** padrão: arestas visíveis (leitura industrial) */
+  display?: DisplayMode;
+  /** incrementar para enquadrar apenas a peça selecionada */
+  zoomSelNonce?: number;
+  /** incrementar para voltar à vista isométrica padrão */
+  resetNonce?: number;
   className?: string;
 };
 
@@ -55,8 +64,12 @@ export function Model3DViewer({
   view,
   viewNonce,
   fitNonce,
+  display = "edges",
+  zoomSelNonce = 0,
+  resetNonce = 0,
   className,
 }: Props) {
+
   const host = useRef<HTMLDivElement>(null);
   const api = useRef<{
     renderer: THREE.WebGLRenderer;
@@ -67,7 +80,7 @@ export function Model3DViewer({
     meshes: THREE.Mesh[];
     ground: THREE.Mesh;
     request: () => void;
-    fit: (dir?: [number, number, number], animate?: boolean) => void;
+    fit: (dir?: [number, number, number], animate?: boolean, only?: THREE.Object3D) => void;
     setCamera: (o: boolean) => void;
   } | null>(null);
 
@@ -102,7 +115,11 @@ export function Model3DViewer({
         opacity: 0.16,
         depthWrite: false,
       }),
+      boxEdges: new THREE.EdgesGeometry(boxGeo, 25),
+      edgeMat: new THREE.LineBasicMaterial({ color: 0x1b2026, transparent: true, opacity: 0.55 }),
+      wire: new THREE.MeshBasicMaterial({ color: 0x8d979f, wireframe: true }),
     };
+
   }, []);
 
   /* montagem única do renderizador */
@@ -190,8 +207,9 @@ export function Model3DViewer({
       else anim = null;
     };
 
-    const bounds = () => {
+    const bounds = (only?: THREE.Object3D) => {
       const bb = new THREE.Box3();
+      if (only) return bb.expandByObject(only);
       let has = false;
       for (const m of apiObj.meshes) {
         if (!m.visible) continue;
@@ -202,8 +220,9 @@ export function Model3DViewer({
       return bb;
     };
 
-    const fit = (dir?: [number, number, number], animate = true) => {
-      const bb = bounds();
+    const fit = (dir?: [number, number, number], animate = true, only?: THREE.Object3D) => {
+      const bb = bounds(only);
+
       const center = bb.getCenter(new THREE.Vector3());
       const radius = Math.max(0.5, bb.getBoundingSphere(new THREE.Sphere()).radius);
       const d = new THREE.Vector3(...(dir ?? [
@@ -308,6 +327,8 @@ export function Model3DViewer({
     if (!a) return;
     for (const m of a.meshes) {
       a.scene.remove(m);
+      const edges = m.children[0] as THREE.LineSegments | undefined;
+      if (edges && m.userData["own"]) edges.geometry.dispose();
       if (m.userData["own"]) m.geometry.dispose();
     }
     a.meshes = [];
@@ -320,8 +341,10 @@ export function Model3DViewer({
         for (const hole of inst.shape.holes) {
           if (hole.length > 2) shape.holes.push(new THREE.Path(hole.map((p) => new THREE.Vector2(p.x * S, p.y * S))));
         }
-        geo = new THREE.ExtrudeGeometry(shape, { depth: Math.max(inst.size.z, 0.2) * S, bevelEnabled: false });
-        geo.center();
+        const depth = Math.max(inst.size.z, 0.2) * S;
+        geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
+        geo.translate(0, 0, -depth / 2);
+
         own = true;
       }
       const mesh = new THREE.Mesh(geo, shared.mats[inst.material] ?? shared.mats["aco"]!);
@@ -333,13 +356,20 @@ export function Model3DViewer({
       mesh.userData["base"] = [inst.center.x * S, inst.center.y * S, inst.center.z * S];
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      /* arestas reais: geometria compartilhada nas caixas, própria nos perfis */
+      const line = new THREE.LineSegments(
+        own ? new THREE.EdgesGeometry(geo, 25) : shared.boxEdges,
+        shared.edgeMat,
+      );
+      line.userData["edges"] = true;
+      mesh.add(line);
       a.scene.add(mesh);
       a.meshes.push(mesh);
     }
     a.fit(DIRS.iso, false);
   }, [instances, shared]);
 
-  /* explosão, visibilidade, isolamento e destaque — sem recriar objetos */
+  /* explosão, visibilidade, isolamento, destaque e modo de exibição */
   useEffect(() => {
     const a = api.current;
     if (!a) return;
@@ -357,14 +387,20 @@ export function Model3DViewer({
       const sameKey = selInst ? inst.partKey === selInst.partKey : false;
       const visible = !hidden.has(inst.partKey) && (!isolate || !selInst || sameKey);
       mesh.visible = visible;
-      mesh.material = isSel
-        ? shared.selected
-        : ghost && selInst && !sameKey
-          ? shared.ghost
-          : (shared.mats[inst.material] ?? shared.mats["aco"]!);
+      mesh.material =
+        display === "wireframe"
+          ? shared.wire
+          : isSel
+            ? shared.selected
+            : ghost && selInst && !sameKey
+              ? shared.ghost
+              : (shared.mats[inst.material] ?? shared.mats["aco"]!);
+      mesh.castShadow = display !== "wireframe";
+      const line = mesh.children[0] as THREE.LineSegments | undefined;
+      if (line) line.visible = display === "edges";
     }
     a.request();
-  }, [instances, explode, hidden, isolate, ghost, selectedId, shared]);
+  }, [instances, explode, hidden, isolate, ghost, selectedId, shared, display]);
 
   useEffect(() => {
     api.current?.setCamera(ortho);
@@ -377,6 +413,20 @@ export function Model3DViewer({
   useEffect(() => {
     if (fitNonce > 0) api.current?.fit(undefined, true);
   }, [fitNonce]);
+
+  /* enquadrar somente a peça selecionada */
+  useEffect(() => {
+    if (zoomSelNonce <= 0) return;
+    const a = api.current;
+    const mesh = a?.meshes.find((m) => m.userData["id"] === selectedRef.current && m.visible);
+    if (a && mesh) a.fit(undefined, true, mesh);
+  }, [zoomSelNonce]);
+
+  /* voltar à isométrica padrão */
+  useEffect(() => {
+    if (resetNonce > 0) api.current?.fit(DIRS.iso, true);
+  }, [resetNonce]);
+
 
   return <div ref={host} className={cn("relative h-full w-full overflow-hidden", className)} />;
 }

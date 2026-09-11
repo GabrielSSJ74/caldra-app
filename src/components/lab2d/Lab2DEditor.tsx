@@ -101,7 +101,7 @@ import {
   saveProject,
   type Project,
 } from "@/lib/lab2d/projects";
-import { Solid3DDialog } from "@/components/lab2d/Solid3DDialog";
+import { Cad3DStage } from "@/components/lab2d/Cad3DStage";
 import { takeHandoff } from "@/lib/lab2d/handoff";
 import { findChamferLink } from "@/lib/projects/chamfer";
 import { getProject as getDossier } from "@/lib/projects/store";
@@ -255,6 +255,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   /* ESPESSURA — chapa do plano; alimenta a vista 3D (mesmo motor do CALDRA) */
   const [thickness, setThickness] = useState(DEFAULT_PLAN_THICKNESS);
   const [solidOpen, setSolidOpen] = useState(false);
+  /* uma vez aberto, o MODO 3D fica montado: preserva câmera, seleção e estado */
+  const solidEver = useRef(false);
+  if (solidOpen) solidEver.current = true;
+
   const [outputMode, setOutputMode] = useState<OutputMode>("completo");
   const [pending, setPending] = useState<Vec2[]>([]);
 
@@ -2097,11 +2101,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </button>
           <button
             onClick={() => setSolidOpen(true)}
-            title={`Espessura ${thickness} mm — ver peça em 3D`}
+            title={`Abrir o modo 3D em tela inteira — espessura ${thickness} mm`}
             className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", solidOpen && "text-accent")}
           >
-            3D {thickness}MM
+            VISTA 3D · {thickness}MM
           </button>
+
           <select
             value={grid}
             onChange={(e) => setGrid(Number(e.target.value))}
@@ -2219,13 +2224,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           .replace(/\s+/g, "-")
           .toLowerCase()}
       />
-      <Solid3DDialog
-        open={solidOpen}
-        onOpenChange={setSolidOpen}
-        entities={drawable}
-        thickness={thickness}
-        onThickness={setThickness}
-      />
+      {solidEver.current && (
+        <Cad3DStage
+          open={solidOpen}
+          onClose={() => setSolidOpen(false)}
+          entities={drawable}
+          thickness={thickness}
+          onThickness={setThickness}
+          title={project?.name ?? "CHAMFER"}
+          labProjectId={projectId}
+          selection={selection}
+          onSelectEntity={(id) => setSelection(id ? [id] : [])}
+        />
+      )}
+
 
       <ImportDialog
         source={importSrc}
