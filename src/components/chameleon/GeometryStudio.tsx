@@ -18,7 +18,7 @@ import { exportSvgAsPdf, exportSvgAsPng } from "@/lib/export/exporters";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { buildWire, type WireParams } from "@/lib/viz3d/wire";
-import { developmentToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
+import { developmentToEntities, piecesToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
 import { conferenceRows } from "@/lib/geometry/conference";
 import { fieldMeaning } from "@/lib/education/learn";
 import { diagnose } from "@/lib/geometry/copilot";
@@ -91,6 +91,7 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
   const [tab, setTab] = useState<string>("Dimensões");
   const [explain, setExplain] = useState(false);
   const [learn, setLearn] = useState(false);
+  const [piece, setPiece] = useState<number | "all">("all");
   const [unfold, setUnfold] = useState(0);
   /* 3D é camada da área de resultado, não etapa do fluxo. */
   const [view3d, setView3d] = useState(false);
