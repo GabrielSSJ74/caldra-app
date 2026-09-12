@@ -278,8 +278,36 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
               Defina as dimensões da peça. O desenho acompanha cada alteração.
             </p>
             <div className="grid grid-cols-2 gap-2.5">
-              {engine.fields.map((f) => {
+              {activeFields.map((f) => {
                 const err = issueFor(f.key);
+                if (f.options) {
+                  const current = Math.round(values[f.key] ?? f.options[0]!.value);
+                  return (
+                    <div key={f.key} className="col-span-2">
+                      <span className="mb-1 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
+                        <span className="truncate">{f.label}</span>
+                        <span className="text-accent/80">{f.tag}</span>
+                      </span>
+                      <div className="flex gap-1.5" role="group" aria-label={f.label}>
+                        {f.options.map((o) => (
+                          <button
+                            key={o.value}
+                            type="button"
+                            aria-pressed={current === o.value}
+                            onClick={() => setNumber(f.key, o.value)}
+                            className={`flex-1 rounded-lg border px-2 py-2 font-mono text-[10px] tracking-[0.12em] uppercase transition-colors ${
+                              current === o.value
+                                ? "border-accent/60 bg-accent/10 text-accent"
+                                : "border-line text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <label key={f.key} className="block">
                     <span className="mb-1 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
@@ -308,6 +336,7 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
                 );
               })}
             </div>
+
 
             {/* MÉTODO */}
             <div className="mt-3 rounded-xl border border-line bg-background/40 p-3">
