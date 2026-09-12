@@ -468,19 +468,40 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
     }
 
     case "curva-de-gomos": {
-      const gomos = 5;
-      const R = Math.max(p.d1, 1);
+      /*
+       * Curva de gomos real: a linha de centro e os planos de corte vêm de
+       * `geometry/elbowSegments` — as mesmas peças da planificação.
+       * O ângulo total e a quantidade de gomos são parâmetros.
+       */
+      const model = elbowModel({
+        diameter: p.d2,
+        radius: p.d1,
+        angleDeg: p.ang,
+        gores: p.n,
+        divisions: seg,
+      });
+      const rb = p.d2 / 2;
+      const beta = model.beta;
+      const k = 1 / Math.max(Math.cos(beta), 0.15);
       const loops: Vec3[][] = [];
-      for (let i = 0; i <= gomos; i++) {
-        const a = (i / gomos) * (Math.PI / 2);
-        const cx = R * Math.sin(a) - R / 2;
-        const cy = -R * Math.cos(a) + R / 2;
+      model.centerline.forEach((c, j) => {
+        const prev = model.segments[j - 1];
+        const next = model.segments[j];
+        const dirs = [prev?.rotationDeg, next?.rotationDeg].filter((x) => x !== undefined) as number[];
+        const φm = ((dirs.reduce((s, x) => s + x, 0) / dirs.length) * Math.PI) / 180;
+        const mitred = dirs.length === 2;
+        const ax = mitred ? k : 1;
         loops.push(
-          ring(r2, 0, seg).map((q) => v(cx + q.x * Math.cos(a), cy + q.x * Math.sin(a), q.z)),
+          Array.from({ length: seg }, (_, i) => {
+            const θ = (i / seg) * Math.PI * 2;
+            const s = rb * ax * Math.sin(θ);
+            return v(c.x - s * Math.sin(φm), c.y + s * Math.cos(φm), rb * Math.cos(θ));
+          }),
         );
-      }
+      });
       return withAxis(shell(loops, { t }));
     }
+
 
     case "flanges": {
       const thick = Math.max(h * 0.12, t * 2);
