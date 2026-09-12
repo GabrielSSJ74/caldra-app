@@ -379,6 +379,49 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
     }
 
     case "boca-de-lobo": {
+      if (p.mode === "branch") {
+        /*
+         * Boca de lobo real: tubo principal (eixo X) + derivação inclinada,
+         * cortada exatamente pela linha de interseção calculada em
+         * `geometry/branch` — a mesma equação da planificação.
+         */
+        const input = {
+          mainDiameter: p.d1,
+          branchDiameter: p.d2,
+          angleDeg: p.ang,
+          offset: p.e,
+          branchLength: Math.max(p.h, p.d1 * 0.6),
+          divisions: seg,
+        };
+        const R = p.d1 / 2;
+        const rb = p.d2 / 2;
+        const a = (p.ang * Math.PI) / 180;
+        const half = Math.max(p.d1 * 0.9, rb * 3);
+        const mainLoops = [-half, -half / 2, 0, half / 2, half].map((x) =>
+          Array.from({ length: seg }, (_, i) => {
+            const φ = (i / seg) * Math.PI * 2;
+            return v(x, R * Math.cos(φ), R * Math.sin(φ));
+          }),
+        );
+        const main = shell(mainLoops, { t });
+
+        const steps = 5;
+        const branchLoops = Array.from({ length: steps + 1 }, (_, s) => {
+          const u = s / steps;
+          return Array.from({ length: seg }, (_, i) => {
+            const θ = (i / seg) * Math.PI * 2;
+            const t0 = branchAxisLength(input, θ);
+            const tt = t0 + (input.branchLength - t0) * u;
+            return v(
+              tt * Math.cos(a) - rb * Math.sin(θ) * Math.sin(a),
+              tt * Math.sin(a) + rb * Math.sin(θ) * Math.cos(a),
+              p.e + rb * Math.cos(θ),
+            );
+          });
+        });
+        const branch = shell(branchLoops, { t });
+        return withAxis(merge([main, branch]));
+      }
       // cilindro cortado por plano inclinado: altura varia com z
       const steps = 6;
       const base = ring(r1, y0, seg);
@@ -389,6 +432,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
       });
       return withAxis(shell(loops, { t }));
     }
+
 
     case "te":
     case "interseccoes": {
