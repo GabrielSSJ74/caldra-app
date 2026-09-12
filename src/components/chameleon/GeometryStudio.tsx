@@ -115,11 +115,17 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
     [engine, values],
   );
 
+  /** Campos ativos para os parâmetros atuais (o método escolhe o conjunto). */
+  const activeFields = useMemo(
+    () => (engine ? engine.fields.filter((f) => !f.visibleIf || f.visibleIf(values)) : []),
+    [engine, values],
+  );
+
   const cotas = useMemo<CotaSpec[]>(
     () =>
       engine
-        ? engine.fields
-            .filter((f) => engine.dimKey(f.key) !== null)
+        ? activeFields
+            .filter((f) => !f.options && engine.dimKey(f.key) !== null)
             .map((f) => ({
               field: f.key,
               dim: engine.dimKey(f.key),
@@ -128,8 +134,9 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
               unit: f.unit ?? "mm",
             }))
         : [],
-    [engine, values],
+    [engine, activeFields, values],
   );
+
 
   /* Autosave inteligente: grava 700 ms após a última alteração. */
   const persistRef = useRef(onPersist);
