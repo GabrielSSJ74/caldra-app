@@ -718,11 +718,33 @@ function elbowEngine(slug: string): Engine {
       );
       const lMax = Lmid + 2 * r * tb;
       const lMin = Lmid - 2 * r * tb;
+      /* Peças reais da curva: 2 pontas + (n−1) gomos, cada uma com geometria. */
+      const elbowInput: ElbowInput = {
+        diameter: D,
+        radius: R,
+        angleDeg: ang,
+        gores: g,
+        divisions: n,
+      };
+      const em = elbowModel(elbowInput);
+      const pieces: GeometryPiece[] = em.segments.map((s) => ({
+        code: s.code,
+        name: s.name,
+        quantity: 1,
+        development: s.development,
+        metrics: [
+          { label: "Comprimento na linha de centro", value: s.centerLength, unitMm: true },
+          { label: "Geratriz máxima", value: s.maxLength, unitMm: true },
+          { label: "Geratriz mínima", value: s.minLength, unitMm: true },
+          { label: "Direção do eixo", value: s.rotationDeg, suffix: "°" },
+        ],
+      }));
       return finalize({
         v,
         method: "Seções oblíquas — gomos por ordenadas",
         development: dev.development,
         trueLengths: dev.trueLengths,
+        pieces,
         metrics: [
           { label: "Perímetro", value: Math.PI * D, unitMm: true },
           { label: "Ângulo por junta", value: (2 * beta * 180) / Math.PI, suffix: "°" },
@@ -730,7 +752,9 @@ function elbowEngine(slug: string): Engine {
           { label: "Geratriz máxima", value: lMax, unitMm: true },
           { label: "Geratriz mínima", value: lMin, unitMm: true },
           { label: "Gomos", value: g, suffix: "un" },
+          { label: "Peças da curva", value: em.segments.length, suffix: "un" },
         ],
+
         steps: [
           {
             title: "Como se divide o ângulo?",
