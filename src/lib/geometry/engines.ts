@@ -416,69 +416,182 @@ function radialEngine(slug: string, opts: { topZero?: boolean; labels?: [string,
   };
 }
 
-/** Cilindro cortado por plano oblíquo (boca de lobo, bocas inclinadas). */
+/**
+ * BOCA DE LOBO — MODELO PARAMÉTRICO ÚNICO.
+ *
+ * Um só modelo cobre todos os casos: o ângulo, os diâmetros, a
+ * excentricidade e o comprimento são parâmetros livres. 30°, 45°, 60° e 90°
+ * são valores, não modelos diferentes.
+ *
+ *  - Método "corte oblíquo": cilindro cortado por um plano (h₁ → h₂).
+ *  - Método "boca em tubo": interseção real cilindro/cilindro, calculada
+ *    geometricamente em `./branch` (nunca aproximada por desenho).
+ */
 function obliqueEngine(slug: string): Engine {
+  const isBranch = (v: EngineValues) => Math.round(v["metodo"] ?? 1) === 1;
   const fields: EngineField[] = [
-    { key: "d", label: "Diâmetro do tubo", tag: "ØD", min: 10, max: 3000 },
-    { key: "h1", label: "Altura menor", tag: "h₁", min: 5, max: 6000 },
-    { key: "h2", label: "Altura maior", tag: "h₂", min: 5, max: 6000 },
+    {
+      key: "metodo",
+      label: "Método",
+      tag: "M",
+      options: [
+        { value: 0, label: "Corte oblíquo" },
+        { value: 1, label: "Boca em tubo" },
+      ],
+    },
+    { key: "d", label: "Ø da derivação", tag: "Ød", min: 10, max: 3000 },
+    { key: "h1", label: "Altura menor", tag: "h₁", min: 5, max: 6000, visibleIf: (v) => !isBranch(v) },
+    { key: "h2", label: "Altura maior", tag: "h₂", min: 5, max: 6000, visibleIf: (v) => !isBranch(v) },
+    { key: "dMain", label: "Ø tubo principal", tag: "ØD", min: 20, max: 4000, visibleIf: isBranch },
+    { key: "ang", label: "Ângulo da derivação", tag: "α", unit: "°", min: 10, max: 90, visibleIf: isBranch },
+    { key: "offset", label: "Excentricidade", tag: "e", min: -2000, max: 2000, visibleIf: isBranch },
+    { key: "len", label: "Comprimento do ramal", tag: "L", min: 20, max: 8000, visibleIf: isBranch },
   ];
+  const toBranch = (v: EngineValues): BranchInput => ({
+    mainDiameter: v["dMain"] ?? 500,
+    branchDiameter: v["d"] ?? 250,
+    angleDeg: v["ang"] ?? 90,
+    offset: v["offset"] ?? 0,
+    branchLength: v["len"] ?? 400,
+    divisions: Math.max(8, Math.round(v["divisions"] ?? 12) * 2),
+  });
   return {
     slug,
-    method: "Desenvolvimento direto — corte oblíquo por ordenadas",
+    method: "Boca de lobo — interseção cilindro/cilindro por ordenadas",
     fields,
-    defaults: { d: 350, h1: 200, h2: 520, divisions: 12, thickness: 3, density: 7.85 },
-    wire: (v) => ({ d1: v["d"]!, d2: v["d"]!, h: v["h2"]!, e: 0, seg: 32 }),
-    dimKey: (k) => (k === "d" ? "d1" : k === "h2" ? "h" : k === "h1" ? "d2" : null),
+    defaults: {
+      metodo: 1,
+      d: 250,
+      h1: 200,
+      h2: 520,
+      dMain: 500,
+      ang: 90,
+      offset: 0,
+      len: 400,
+      divisions: 12,
+      thickness: 3,
+      density: 7.85,
+    },
+    wire: (v) =>
+      isBranch(v)
+        ? {
+            d1: v["dMain"] ?? 500,
+            d2: v["d"] ?? 250,
+            h: v["len"] ?? 400,
+            e: v["offset"] ?? 0,
+            seg: 40,
+            ang: v["ang"] ?? 90,
+            mode: "branch",
+          }
+        : { d1: v["d"]!, d2: v["d"]!, h: v["h2"]!, e: 0, seg: 32, mode: "oblique" },
+    dimKey: (k) =>
+      k === "dMain" ? "d1" : k === "d" ? "d2" : k === "len" || k === "h2" ? "h" : k === "h1" ? "d2" : null,
     validate: (v) => {
       const issues = baseValidate(fields, v);
-      if ((v["h2"] ?? 0) <= (v["h1"] ?? 0))
+      if (isBranch(v)) {
+        for (const e of validateBranch(toBranch(v))) issues.push(e);
+        const t = branchIntersection(toBranch(v));
+        if ((v["len"] ?? 0) <= t.tMax)
+          issues.push({ field: "len", message: "O ramal precisa ser mais longo que a penetração." });
+      } else if ((v["h2"] ?? 0) <= (v["h1"] ?? 0)) {
         issues.push({ field: "h2", message: "A altura maior deve superar a altura menor." });
+      }
       return issues;
     },
     calculate: (v) => {
-      const D = v["d"]!;
-      const h1 = v["h1"]!;
-      const h2 = v["h2"]!;
-      const n = Math.max(8, Math.round(v["divisions"] ?? 12) * 2);
-      const mid = (h1 + h2) / 2;
-      const amp = (h2 - h1) / 2;
-      const dev = cylinderDevelopment(D, n, (t) => mid + amp * Math.cos(t));
-      const angle = (Math.atan2(h2 - h1, D) * 180) / Math.PI;
+      if (!isBranch(v)) {
+        const D = v["d"]!;
+        const h1 = v["h1"]!;
+        const h2 = v["h2"]!;
+        const n = Math.max(8, Math.round(v["divisions"] ?? 12) * 2);
+        const mid = (h1 + h2) / 2;
+        const amp = (h2 - h1) / 2;
+        const dev = cylinderDevelopment(D, n, (t) => mid + amp * Math.cos(t));
+        const angle = (Math.atan2(h2 - h1, D) * 180) / Math.PI;
+        return finalize({
+          v,
+          method: "Corte oblíquo — desenvolvimento por ordenadas",
+          development: dev.development,
+          trueLengths: dev.trueLengths,
+          metrics: [
+            { label: "Perímetro", value: Math.PI * D, unitMm: true },
+            { label: "Altura média", value: mid, unitMm: true },
+            { label: "Inclinação do corte", value: angle, suffix: "°" },
+            { label: "Ordenadas geradas", value: n, suffix: "un" },
+          ],
+          steps: [
+            {
+              title: "Por que ordenadas?",
+              given: `${n} divisões do perímetro`,
+              formula: "y(θ) = (h₁+h₂)/2 + ((h₂−h₁)/2)·cos θ",
+              substitution: `y(θ) = ${mid.toFixed(1)} + ${amp.toFixed(1)}·cos θ`,
+              result: `y varia de ${h1} a ${h2} mm`,
+              meaning:
+                "O plano inclinado corta o cilindro numa elipse; ao abrir a chapa ela vira uma senóide — cada ordenada é uma geratriz verdadeira.",
+            },
+            {
+              title: "Qual é a inclinação real?",
+              given: `Δh = ${(h2 - h1).toFixed(1)} mm, Ø = ${D} mm`,
+              formula: "α = arctg(Δh / D)",
+              substitution: `α = arctg(${(h2 - h1).toFixed(1)} / ${D})`,
+              result: `α = ${angle.toFixed(2)}°`,
+              meaning: "Ângulo do plano de corte em relação à seção reta do tubo.",
+            },
+          ],
+        });
+      }
+
+      const input = toBranch(v);
+      const model = branchIntersection(input);
+      const dev = branchDevelopments(input, model);
+      const pieces: GeometryPiece[] = [
+        {
+          code: "RAM",
+          name: "Derivação (ramal)",
+          quantity: 1,
+          development: dev.branch,
+          metrics: [
+            { label: "Comprimento máximo", value: input.branchLength - model.tMin, unitMm: true },
+            { label: "Comprimento mínimo", value: input.branchLength - model.tMax, unitMm: true },
+          ],
+        },
+        {
+          code: "FUR",
+          name: "Furo no tubo principal",
+          quantity: 1,
+          development: dev.hole,
+          metrics: [
+            {
+              label: "Largura do furo",
+              value: dev.hole.bounds.maxX - dev.hole.bounds.minX,
+              unitMm: true,
+            },
+          ],
+        },
+      ];
       return finalize({
         v,
-        method: "Desenvolvimento direto — corte oblíquo por ordenadas",
-        development: dev.development,
+        method: "Boca de lobo — interseção cilindro/cilindro por ordenadas",
+        development: dev.branch,
         trueLengths: dev.trueLengths,
+        pieces,
         metrics: [
-          { label: "Perímetro", value: Math.PI * D, unitMm: true },
-          { label: "Altura média", value: mid, unitMm: true },
-          { label: "Inclinação do corte", value: angle, suffix: "°" },
-          { label: "Ordenadas geradas", value: n, suffix: "un" },
+          { label: "Perímetro da derivação", value: Math.PI * input.branchDiameter, unitMm: true },
+          { label: "Penetração máxima", value: model.tMax, unitMm: true },
+          { label: "Penetração mínima", value: model.tMin, unitMm: true },
+          { label: "Altura útil mínima", value: input.branchLength - model.tMax, unitMm: true },
+          { label: "Ângulo da derivação", value: input.angleDeg, suffix: "°" },
+          { label: "Excentricidade", value: input.offset, unitMm: true },
         ],
-        steps: [
-          {
-            title: "Por que ordenadas?",
-            given: `${n} divisões do perímetro`,
-            formula: "y(θ) = (h₁+h₂)/2 + ((h₂−h₁)/2)·cos θ",
-            substitution: `y(θ) = ${mid.toFixed(1)} + ${amp.toFixed(1)}·cos θ`,
-            result: `y varia de ${h1} a ${h2} mm`,
-            meaning:
-              "O plano inclinado corta o cilindro numa elipse; ao abrir a chapa ela vira uma senóide — cada ordenada é uma geratriz verdadeira.",
-          },
-          {
-            title: "Qual é a inclinação real?",
-            given: `Δh = ${(h2 - h1).toFixed(1)} mm, Ø = ${D} mm`,
-            formula: "α = arctg(Δh / D)",
-            substitution: `α = arctg(${(h2 - h1).toFixed(1)} / ${D})`,
-            result: `α = ${angle.toFixed(2)}°`,
-            meaning: "Ângulo do plano de corte em relação à seção reta do tubo.",
-          },
+        steps: branchSteps(input, model),
+        warnings: [
+          "A planificação do ramal é da superfície média; o furo do tubo é gabarito de traçado.",
         ],
       });
     },
   };
 }
+
 
 /** Derivação cilíndrica sobre tubo principal (tê, interseções, Y). */
 function branchEngine(slug: string, withAngle: boolean): Engine {
