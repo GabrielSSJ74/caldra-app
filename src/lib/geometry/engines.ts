@@ -148,8 +148,10 @@ function finalize(args: {
     warnings: args.warnings ?? [
       "O desenvolvimento é da superfície média; descontos de dobra não estão aplicados.",
     ],
+    ...(args.pieces ? { pieces: args.pieces } : {}),
   };
 }
+
 
 const common: EngineField[] = [];
 
