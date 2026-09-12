@@ -19,6 +19,7 @@ import type { WireParams } from "@/lib/viz3d/wire";
 import type {
   CalcStep,
   DevelopmentPattern,
+  GeometryPiece,
   GeometryResult,
   MetricRow,
   Segment2,
@@ -31,6 +32,14 @@ import {
   validateSquareToRound,
   type SquareToRoundInput,
 } from "./squareToRound";
+import {
+  branchDevelopments,
+  branchIntersection,
+  branchSteps,
+  validateBranch,
+  type BranchInput,
+} from "./branch";
+import { elbowModel, type ElbowInput } from "./elbowSegments";
 
 export type EngineValues = Record<string, number>;
 
@@ -42,7 +51,12 @@ export type EngineField = {
   min?: number;
   max?: number;
   integer?: boolean;
+  /** Campo de escolha (o valor continua numérico). */
+  options?: { value: number; label: string }[];
+  /** Campo só aparece/valida quando a condição é verdadeira. */
+  visibleIf?: (v: EngineValues) => boolean;
 };
+
 
 export type Engine = {
   slug: string;
