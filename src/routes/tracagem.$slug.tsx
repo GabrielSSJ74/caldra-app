@@ -53,7 +53,7 @@ export const Route = createFileRoute("/tracagem/$slug")({
 
 function GeometryPage() {
   const { geometry } = Route.useLoaderData();
-  const { projeto, peca } = Route.useSearch();
+  const { projeto, peca, preset } = Route.useSearch();
 
   const project = projeto ? getProject(projeto) : null;
   const part = projeto && peca ? getPart(projeto, peca) : null;
@@ -86,6 +86,7 @@ function GeometryPage() {
           key={part?.instanceId ?? geometry.slug}
           slug={geometry.slug}
           name={part?.name ?? geometry.name}
+          preset={parsePreset(preset)}
           initial={
             part
               ? {
