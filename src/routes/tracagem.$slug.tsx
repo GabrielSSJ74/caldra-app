@@ -5,13 +5,27 @@ import { SquareToRoundStudio } from "@/components/chameleon/SquareToRoundStudio"
 import { GeometryStudio } from "@/components/chameleon/GeometryStudio";
 import { getPart, getProject, savePartParameters } from "@/lib/projects/store";
 
-type Search = { projeto?: string | undefined; peca?: string | undefined };
+type Search = { projeto?: string | undefined; peca?: string | undefined; preset?: string | undefined };
+
+/** "gomos:3,ang:90" → { gomos: 3, ang: 90 } (compatibilidade de modelos antigos). */
+function parsePreset(raw: string | undefined): Record<string, number> | undefined {
+  if (!raw) return undefined;
+  const out: Record<string, number> = {};
+  for (const part of raw.split(",")) {
+    const [k, val] = part.split(":");
+    const n = Number(val);
+    if (k && Number.isFinite(n)) out[k] = n;
+  }
+  return Object.keys(out).length ? out : undefined;
+}
 
 export const Route = createFileRoute("/tracagem/$slug")({
   validateSearch: (raw: Record<string, unknown>): Search => ({
     projeto: typeof raw['projeto'] === "string" ? raw['projeto'] : undefined,
     peca: typeof raw['peca'] === "string" ? raw['peca'] : undefined,
+    preset: typeof raw['preset'] === "string" ? raw['preset'] : undefined,
   }),
+
   loader: ({ params }) => {
     const geometry = findGeometry(params.slug);
     if (!geometry) throw notFound();
