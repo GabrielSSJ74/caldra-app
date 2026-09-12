@@ -92,8 +92,21 @@ export function normalizeParameters(p: WireParams): Required<WireParams> {
   const seg = Math.round(Math.min(72, Math.max(8, num(p.seg, 40))));
   const maxT = Math.max(0.4, Math.min(d1, d2 || d1, h) * 0.08);
   const t = Math.min(maxT, Math.max(0.4, num(p.t, Math.max(2, d1 * 0.008))));
-  return { d1, d2, h, e, seg: seg % 4 === 0 ? seg : seg + (4 - (seg % 4)), t };
+  const ang = Math.min(180, Math.max(1, num(p.ang, 90)));
+  const n = Math.round(Math.min(24, Math.max(2, num(p.n, 4))));
+  return {
+    d1,
+    d2,
+    h,
+    e,
+    seg: seg % 4 === 0 ? seg : seg + (4 - (seg % 4)),
+    t,
+    ang,
+    n,
+    mode: typeof p.mode === "string" ? p.mode : "",
+  };
 }
+
 
 /* ------------------------------------------------------------------ */
 /* 2. PRIMITIVAS DE PERFIL                                             */
