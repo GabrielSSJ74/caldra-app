@@ -614,19 +614,69 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
                     <Download className="size-3.5" /> DXF
                   </button>
                 </div>
+                {result.pieces && result.pieces.length > 1 && (
+                  <div className="rounded-xl border border-line bg-background/40 p-3">
+                    <p className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
+                      Peças desta geometria
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        aria-pressed={piece === "all"}
+                        onClick={() => setPiece("all")}
+                        className={cn(
+                          "rounded-lg border px-2 py-1.5 font-mono text-[10px] uppercase",
+                          piece === "all"
+                            ? "border-accent/60 bg-accent/10 text-accent"
+                            : "border-line text-muted-foreground",
+                        )}
+                      >
+                        Todas ({result.pieces.length})
+                      </button>
+                      {result.pieces.map((pc, i) => (
+                        <button
+                          key={pc.code}
+                          type="button"
+                          aria-pressed={piece === i}
+                          onClick={() => setPiece(i)}
+                          className={cn(
+                            "rounded-lg border px-2 py-1.5 font-mono text-[10px] uppercase",
+                            piece === i
+                              ? "border-accent/60 bg-accent/10 text-accent"
+                              : "border-line text-muted-foreground",
+                          )}
+                        >
+                          {pc.code}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      {piece === "all"
+                        ? "Todas as peças vão para o CHAMFER lado a lado, em geometria vetorial."
+                        : result.pieces[piece as number]?.name}
+                    </p>
+                  </div>
+                )}
                 <button
                   onClick={() => {
                     if (!requirePro("lab2d")) return;
-                    sendToLab2D({
-                      name,
-                      entities: developmentToEntities(result.development),
-                    });
+                    const pieces = result.pieces ?? [];
+                    const entities =
+                      pieces.length > 1
+                        ? piece === "all"
+                          ? piecesToEntities(pieces)
+                          : developmentToEntities(
+                              pieces[piece as number]?.development ?? result.development,
+                            )
+                        : developmentToEntities(result.development);
+                    sendToLab2D({ name, entities });
                     navigate({ to: "/desenho-2d" });
                   }}
                   className="brand-gradient flex w-full items-center justify-center gap-2 rounded-xl py-2.5 font-display text-[13px] font-semibold text-background"
                 >
                   <PenTool className="size-4" /> Abrir no Chamfer
                 </button>
+
                 <div className="hidden">
                   <DevelopmentView ref={svgRef} pattern={result.development} />
                 </div>
