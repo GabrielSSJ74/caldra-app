@@ -3,6 +3,8 @@
 ## Princípio
 Uma família de peça = um modelo paramétrico. As variações (ângulo, número de gomos, tipo de derivação) passam a ser **parâmetros**, nunca modelos separados. Nenhum cálculo atual é apagado: os métodos continuam existindo dentro do motor, que escolhe o método matemático certo conforme os parâmetros.
 
+**Regra absoluta:** o motor 3D atual não é tocado. Câmera, orbit, pan, zoom, fit, gestos, iluminação, materiais, seleção e tela cheia permanecem exatamente como estão. Muda apenas **a geometria que ele recebe**.
+
 ## Fase 1 — Consolidar a lista (visível imediatamente)
 Hoje a lista de Tubulações repete a mesma família:
 `Curva 1 Gomo`, `Curva 2 Gomos`, `Curva 3 Gomos`, `Curva 4 Gomos`, `Curva Múltiplos Gomos` → um único **CURVA DE GOMOS**.
@@ -44,11 +46,11 @@ Cada modelo ganha as vistas **RESULTADO · TRAÇADO · 3D · PLANIFICAÇÃO**. N
 **ENVIAR PARA CHAMFER** envia geometria vetorial real (contorno, dobras, linhas de referência, identificação, espessura, material) — nunca imagem. Na curva é possível enviar todos os gomos ou apenas o gomo selecionado.
 
 ## Detalhes técnicos
-- `src/lib/library/registry.ts` — consolidar `tub.curva-*` e `tub.corte-angular`; adicionar `ALIASES` id-antigo → id-novo consumido por `store.ts` (favoritos/recentes) e `links.ts`.
-- `src/lib/geometry/engines.ts` — `obliqueEngine` ganha campo `modo` e delega ao método correto; `elbowEngine` passa a expor gomos. Matemática atual preservada como método padrão para não mudar resultados.
-- Novos: `src/lib/geometry/branch.ts` (interseção cilindro/cilindro), `src/lib/geometry/elbowSegments.ts` (gomos como entidades), ambos puros e testados.
-- `src/lib/viz3d/wire.ts` — 3D derivado da geometria canônica para `boca-de-lobo`, `curva-de-gomos` e `quadrado-redondo`.
-- CHAMFER reutiliza o caminho já existente de geometria vetorial (`src/lib/projects/chamfer.ts`), sem novo motor.
+- `src/lib/library/registry.ts` — consolidar `tub.curva-*` e `tub.corte-angular`; mapa `ALIASES` id-antigo → id-novo **com os parâmetros históricos** (ex.: `tub.curva-3` abre a curva já com 3 gomos), consumido por favoritos, recentes e links.
+- `src/lib/geometry/engines.ts` — `obliqueEngine` ganha o campo de método e delega ao cálculo correto; `elbowEngine` passa a expor gomos. A matemática atual continua sendo o método padrão, para não mudar resultados existentes.
+- Novos módulos puros: `src/lib/geometry/branch.ts` (interseção cilindro/cilindro) e `src/lib/geometry/elbowSegments.ts` (gomos como entidades), ambos com testes.
+- `src/lib/viz3d/wire.ts` — apenas passa a montar os pontos/geratrizes vindos da geometria canônica para `boca-de-lobo`, `curva-de-gomos` e `quadrado-redondo`. **Nenhuma alteração** em `Model3DViewer`, `Cad3DStage`, câmeras, controles, luzes, materiais ou seleção.
+- CHAMFER reutiliza o caminho vetorial já existente (`src/lib/projects/chamfer.ts`), sem novo motor.
 
 ## Regressão
-Testes comparando os valores atuais de corte oblíquo, curva de gomos e quadrado→redondo antes/depois (mesmos resultados para os mesmos parâmetros), mais typecheck, build e verificação no navegador.
+Comparação antes/depois não só dos números, mas de pontos, segmentos, contornos, fechamento, escala e da geometria enviada ao CHAMFER. Casos obrigatórios: boca de lobo a 30°, 45°, 60° e 90°; curva 45°/3, 90°/3 e 90°/5 gomos; quadrado→redondo com larguras, comprimentos, diâmetros e alturas variados. Mais typecheck, build, testes e verificação no navegador.
