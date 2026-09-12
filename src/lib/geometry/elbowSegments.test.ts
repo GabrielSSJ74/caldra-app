@@ -21,12 +21,15 @@ describe("curva de gomos — decomposição em peças", () => {
   it("a soma das deflexões fecha o ângulo total", () => {
     for (const ang of [45, 90, 180]) {
       const m = elbowModel({ ...base, angleDeg: ang });
+      const joints = m.segments.length - 1;
       const last = m.segments[m.segments.length - 1]!;
-      expect(last.rotationDeg).toBeCloseTo(ang - (2 * m.beta * 180) / Math.PI, 6);
-      const totalTurn = (m.segments.length - 1 + 1) * ((2 * m.beta * 180) / Math.PI);
-      expect(totalTurn).toBeCloseTo(ang, 6);
+      // primeira peça alinhada com a entrada, última alinhada com a saída
+      expect(m.segments[0]!.rotationDeg).toBeCloseTo(0, 9);
+      expect(last.rotationDeg).toBeCloseTo(ang, 6);
+      expect(joints * ((2 * m.beta * 180) / Math.PI)).toBeCloseTo(ang, 6);
     }
   });
+
 
   it("ponta mede metade do gomo intermediário na linha de centro", () => {
     const m = elbowModel(base);
