@@ -172,7 +172,10 @@ const common: EngineField[] = [];
 function baseValidate(fields: EngineField[], v: EngineValues): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
   for (const f of fields) {
+    if (f.visibleIf && !f.visibleIf(v)) continue;
+    if (f.options) continue;
     const value = v[f.key] ?? 0;
+
     const min = f.min ?? 0.001;
     const max = f.max ?? Infinity;
     if (!Number.isFinite(value) || value < min)
