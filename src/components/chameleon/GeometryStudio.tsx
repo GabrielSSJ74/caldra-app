@@ -655,7 +655,7 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
             onOpenChange={setLearn}
             slug={slug}
             name={name}
-            fields={engine.fields}
+            fields={activeFields}
             values={values}
             result={result}
             precision={precision}
