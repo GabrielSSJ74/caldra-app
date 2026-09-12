@@ -682,7 +682,16 @@ function elbowEngine(slug: string): Engine {
     method: "Seções oblíquas — gomos por ordenadas",
     fields,
     defaults: { d: 300, r: 450, ang: 90, gomos: 4, divisions: 12, thickness: 3, density: 7.85 },
-    wire: (v) => ({ d1: v["r"]!, d2: v["d"]!, h: v["r"]!, e: 0, seg: 32 }),
+    wire: (v) => ({
+      d1: v["r"]!,
+      d2: v["d"]!,
+      h: v["r"]!,
+      e: 0,
+      seg: 32,
+      ang: v["ang"] ?? 90,
+      n: Math.round(v["gomos"] ?? 4),
+      mode: "elbow",
+    }),
     dimKey: (k) => (k === "r" ? "d1" : k === "d" ? "d2" : null),
     validate: (v) => {
       const issues = baseValidate(fields, v);
