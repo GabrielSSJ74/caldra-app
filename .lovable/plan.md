@@ -3,6 +3,8 @@
 ## Princípio
 Uma família de peça = um modelo paramétrico. As variações (ângulo, número de gomos, tipo de derivação) passam a ser **parâmetros**, nunca modelos separados. Nenhum cálculo atual é apagado: os métodos continuam existindo dentro do motor, que escolhe o método matemático certo conforme os parâmetros.
 
+**Regra absoluta:** o motor 3D atual não é tocado. Câmera, orbit, pan, zoom, fit, gestos, iluminação, materiais, seleção e tela cheia permanecem exatamente como estão. Muda apenas **a geometria que ele recebe**.
+
 ## Fase 1 — Consolidar a lista (visível imediatamente)
 Hoje a lista de Tubulações repete a mesma família:
 `Curva 1 Gomo`, `Curva 2 Gomos`, `Curva 3 Gomos`, `Curva 4 Gomos`, `Curva Múltiplos Gomos` → um único **CURVA DE GOMOS**.
