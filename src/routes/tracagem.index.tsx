@@ -246,13 +246,14 @@ function PartCard({ part, index, favorite }: { part: PartModel; index: number; f
   const { can } = useFeatureAccess();
   const { ref, seen } = useInView<HTMLDivElement>();
   const locked = !can(part.feature);
-  const href = partHref(part);
+  const href = partHref(part, part.id);
 
   return (
     <div ref={ref} className="relative">
       <Link
         to={href.to}
         params={href.params as never}
+        search={href.search as never}
         onClick={() => markRecent(part.id)}
         style={{ animationDelay: `${Math.min(index, 12) * 24}ms` }}
         className="metal pop-in group relative flex aspect-[4/5] flex-col overflow-hidden rounded-3xl transition-all duration-500 hover:scale-[1.02] hover:amber-ring"
@@ -323,12 +324,13 @@ function CustomList({ items }: { items: CustomModel[] }) {
       {items.map((c) => {
         const base = findPart(c.baseId);
         if (!base) return null;
-        const href = partHref(base);
+        const href = partHref(base, c.baseId);
         return (
           <div key={c.id} className="glass flex items-center gap-3 rounded-2xl p-3">
             <Link
               to={href.to}
               params={href.params as never}
+              search={href.search as never}
               onClick={() => markRecent(base.id)}
               className="min-w-0 flex-1"
             >
