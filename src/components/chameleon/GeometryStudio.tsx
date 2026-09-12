@@ -18,7 +18,7 @@ import { exportSvgAsPdf, exportSvgAsPng } from "@/lib/export/exporters";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { buildWire, type WireParams } from "@/lib/viz3d/wire";
-import { developmentToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
+import { developmentToEntities, piecesToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
 import { conferenceRows } from "@/lib/geometry/conference";
 import { fieldMeaning } from "@/lib/education/learn";
 import { diagnose } from "@/lib/geometry/copilot";
@@ -57,11 +57,16 @@ type Props = {
   name: string;
   /** Estado salvo de uma peça de projeto (instância). */
   initial?: { [K in keyof StudioSnapshot]?: StudioSnapshot[K] | undefined } | undefined;
+  /**
+   * Configuração inicial de compatibilidade: modelos antigos (ex.: "curva de
+   * 3 gomos") abrem a família paramétrica já nos parâmetros históricos.
+   */
+  preset?: Record<string, number> | undefined;
   /** Autosave: chamado com atraso após alterações relevantes. */
   onPersist?: ((snapshot: StudioSnapshot) => void) | undefined;
 };
 
-export function GeometryStudio({ slug, name, initial, onPersist }: Props) {
+export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props) {
   const engine = getEngine(slug);
   const { can, isMestre, requirePro } = useFeatureAccess();
   const { precision, level } = useSettings();
@@ -71,8 +76,10 @@ export function GeometryStudio({ slug, name, initial, onPersist }: Props) {
 
   const [values, setValues] = useState<EngineValues>(() => ({
     ...(engine?.defaults ?? {}),
+    ...(preset ?? {}),
     ...(initial?.values ?? {}),
   }));
+
   const { get, defaultMaterialId } = useMaterials();
   const [materialId, setMaterialId] = useState(initial?.materialId ?? defaultMaterialId);
   const [material, setMaterial] = useState(initial?.material ?? "Aço Carbono");
@@ -84,6 +91,7 @@ export function GeometryStudio({ slug, name, initial, onPersist }: Props) {
   const [tab, setTab] = useState<string>("Dimensões");
   const [explain, setExplain] = useState(false);
   const [learn, setLearn] = useState(false);
+  const [piece, setPiece] = useState<number | "all">("all");
   const [unfold, setUnfold] = useState(0);
   /* 3D é camada da área de resultado, não etapa do fluxo. */
   const [view3d, setView3d] = useState(false);
@@ -108,11 +116,17 @@ export function GeometryStudio({ slug, name, initial, onPersist }: Props) {
     [engine, values],
   );
 
+  /** Campos ativos para os parâmetros atuais (o método escolhe o conjunto). */
+  const activeFields = useMemo(
+    () => (engine ? engine.fields.filter((f) => !f.visibleIf || f.visibleIf(values)) : []),
+    [engine, values],
+  );
+
   const cotas = useMemo<CotaSpec[]>(
     () =>
       engine
-        ? engine.fields
-            .filter((f) => engine.dimKey(f.key) !== null)
+        ? activeFields
+            .filter((f) => !f.options && engine.dimKey(f.key) !== null)
             .map((f) => ({
               field: f.key,
               dim: engine.dimKey(f.key),
@@ -121,8 +135,9 @@ export function GeometryStudio({ slug, name, initial, onPersist }: Props) {
               unit: f.unit ?? "mm",
             }))
         : [],
-    [engine, values],
+    [engine, activeFields, values],
   );
+
 
   /* Autosave inteligente: grava 700 ms após a última alteração. */
   const persistRef = useRef(onPersist);
@@ -264,8 +279,36 @@ export function GeometryStudio({ slug, name, initial, onPersist }: Props) {
               Defina as dimensões da peça. O desenho acompanha cada alteração.
             </p>
             <div className="grid grid-cols-2 gap-2.5">
-              {engine.fields.map((f) => {
+              {activeFields.map((f) => {
                 const err = issueFor(f.key);
+                if (f.options) {
+                  const current = Math.round(values[f.key] ?? f.options[0]!.value);
+                  return (
+                    <div key={f.key} className="col-span-2">
+                      <span className="mb-1 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
+                        <span className="truncate">{f.label}</span>
+                        <span className="text-accent/80">{f.tag}</span>
+                      </span>
+                      <div className="flex gap-1.5" role="group" aria-label={f.label}>
+                        {f.options.map((o) => (
+                          <button
+                            key={o.value}
+                            type="button"
+                            aria-pressed={current === o.value}
+                            onClick={() => setNumber(f.key, o.value)}
+                            className={`flex-1 rounded-lg border px-2 py-2 font-mono text-[10px] tracking-[0.12em] uppercase transition-colors ${
+                              current === o.value
+                                ? "border-accent/60 bg-accent/10 text-accent"
+                                : "border-line text-muted-foreground hover:text-foreground"
+                            }`}
+                          >
+                            {o.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                }
                 return (
                   <label key={f.key} className="block">
                     <span className="mb-1 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
@@ -294,6 +337,7 @@ export function GeometryStudio({ slug, name, initial, onPersist }: Props) {
                 );
               })}
             </div>
+
 
             {/* MÉTODO */}
             <div className="mt-3 rounded-xl border border-line bg-background/40 p-3">
@@ -571,19 +615,69 @@ export function GeometryStudio({ slug, name, initial, onPersist }: Props) {
                     <Download className="size-3.5" /> DXF
                   </button>
                 </div>
+                {result.pieces && result.pieces.length > 1 && (
+                  <div className="rounded-xl border border-line bg-background/40 p-3">
+                    <p className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
+                      Peças desta geometria
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      <button
+                        type="button"
+                        aria-pressed={piece === "all"}
+                        onClick={() => setPiece("all")}
+                        className={cn(
+                          "rounded-lg border px-2 py-1.5 font-mono text-[10px] uppercase",
+                          piece === "all"
+                            ? "border-accent/60 bg-accent/10 text-accent"
+                            : "border-line text-muted-foreground",
+                        )}
+                      >
+                        Todas ({result.pieces.length})
+                      </button>
+                      {result.pieces.map((pc, i) => (
+                        <button
+                          key={pc.code}
+                          type="button"
+                          aria-pressed={piece === i}
+                          onClick={() => setPiece(i)}
+                          className={cn(
+                            "rounded-lg border px-2 py-1.5 font-mono text-[10px] uppercase",
+                            piece === i
+                              ? "border-accent/60 bg-accent/10 text-accent"
+                              : "border-line text-muted-foreground",
+                          )}
+                        >
+                          {pc.code}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      {piece === "all"
+                        ? "Todas as peças vão para o CHAMFER lado a lado, em geometria vetorial."
+                        : result.pieces[piece as number]?.name}
+                    </p>
+                  </div>
+                )}
                 <button
                   onClick={() => {
                     if (!requirePro("lab2d")) return;
-                    sendToLab2D({
-                      name,
-                      entities: developmentToEntities(result.development),
-                    });
+                    const pieces = result.pieces ?? [];
+                    const entities =
+                      pieces.length > 1
+                        ? piece === "all"
+                          ? piecesToEntities(pieces)
+                          : developmentToEntities(
+                              pieces[piece as number]?.development ?? result.development,
+                            )
+                        : developmentToEntities(result.development);
+                    sendToLab2D({ name, entities });
                     navigate({ to: "/desenho-2d" });
                   }}
                   className="brand-gradient flex w-full items-center justify-center gap-2 rounded-xl py-2.5 font-display text-[13px] font-semibold text-background"
                 >
                   <PenTool className="size-4" /> Abrir no Chamfer
                 </button>
+
                 <div className="hidden">
                   <DevelopmentView ref={svgRef} pattern={result.development} />
                 </div>
@@ -612,7 +706,7 @@ export function GeometryStudio({ slug, name, initial, onPersist }: Props) {
             onOpenChange={setLearn}
             slug={slug}
             name={name}
-            fields={engine.fields}
+            fields={activeFields}
             values={values}
             result={result}
             precision={precision}

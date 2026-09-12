@@ -10,6 +10,8 @@
  * geometria 3D é derivada dos mesmos números, em milímetros de mundo.
  */
 
+import { branchAxisLength } from "@/lib/geometry/branch";
+import { elbowModel } from "@/lib/geometry/elbowSegments";
 import type { Vec2, Vec3 } from "@/lib/geometry/types";
 
 export type Edge = [Vec3, Vec3];
@@ -45,6 +47,12 @@ export type WireParams = {
   seg?: number;
   /** espessura da chapa (mm) */
   t?: number;
+  /** ângulo paramétrico (graus) — derivação, curva de gomos */
+  ang?: number;
+  /** quantidade paramétrica (gomos) */
+  n?: number;
+  /** variante do modelo paramétrico */
+  mode?: string;
 };
 
 export const DEFAULT_PARAMS: WireParams = {
@@ -55,6 +63,7 @@ export const DEFAULT_PARAMS: WireParams = {
   seg: 48,
   t: 6,
 };
+
 
 const v = (x: number, y: number, z: number): Vec3 => ({ x, y, z });
 
@@ -85,8 +94,21 @@ export function normalizeParameters(p: WireParams): Required<WireParams> {
   const seg = Math.round(Math.min(72, Math.max(8, num(p.seg, 40))));
   const maxT = Math.max(0.4, Math.min(d1, d2 || d1, h) * 0.08);
   const t = Math.min(maxT, Math.max(0.4, num(p.t, Math.max(2, d1 * 0.008))));
-  return { d1, d2, h, e, seg: seg % 4 === 0 ? seg : seg + (4 - (seg % 4)), t };
+  const ang = Math.min(180, Math.max(1, num(p.ang, 90)));
+  const n = Math.round(Math.min(24, Math.max(2, num(p.n, 4))));
+  return {
+    d1,
+    d2,
+    h,
+    e,
+    seg: seg % 4 === 0 ? seg : seg + (4 - (seg % 4)),
+    t,
+    ang,
+    n,
+    mode: typeof p.mode === "string" ? p.mode : "",
+  };
 }
+
 
 /* ------------------------------------------------------------------ */
 /* 2. PRIMITIVAS DE PERFIL                                             */
@@ -359,6 +381,49 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
     }
 
     case "boca-de-lobo": {
+      if (p.mode === "branch") {
+        /*
+         * Boca de lobo real: tubo principal (eixo X) + derivação inclinada,
+         * cortada exatamente pela linha de interseção calculada em
+         * `geometry/branch` — a mesma equação da planificação.
+         */
+        const input = {
+          mainDiameter: p.d1,
+          branchDiameter: p.d2,
+          angleDeg: p.ang,
+          offset: p.e,
+          branchLength: Math.max(p.h, p.d1 * 0.6),
+          divisions: seg,
+        };
+        const R = p.d1 / 2;
+        const rb = p.d2 / 2;
+        const a = (p.ang * Math.PI) / 180;
+        const half = Math.max(p.d1 * 0.9, rb * 3);
+        const mainLoops = [-half, -half / 2, 0, half / 2, half].map((x) =>
+          Array.from({ length: seg }, (_, i) => {
+            const φ = (i / seg) * Math.PI * 2;
+            return v(x, R * Math.cos(φ), R * Math.sin(φ));
+          }),
+        );
+        const main = shell(mainLoops, { t });
+
+        const steps = 5;
+        const branchLoops = Array.from({ length: steps + 1 }, (_, s) => {
+          const u = s / steps;
+          return Array.from({ length: seg }, (_, i) => {
+            const θ = (i / seg) * Math.PI * 2;
+            const t0 = branchAxisLength(input, θ);
+            const tt = t0 + (input.branchLength - t0) * u;
+            return v(
+              tt * Math.cos(a) - rb * Math.sin(θ) * Math.sin(a),
+              tt * Math.sin(a) + rb * Math.sin(θ) * Math.cos(a),
+              p.e + rb * Math.cos(θ),
+            );
+          });
+        });
+        const branch = shell(branchLoops, { t });
+        return withAxis(merge([main, branch]));
+      }
       // cilindro cortado por plano inclinado: altura varia com z
       const steps = 6;
       const base = ring(r1, y0, seg);
@@ -369,6 +434,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
       });
       return withAxis(shell(loops, { t }));
     }
+
 
     case "te":
     case "interseccoes": {
@@ -404,19 +470,40 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
     }
 
     case "curva-de-gomos": {
-      const gomos = 5;
-      const R = Math.max(p.d1, 1);
+      /*
+       * Curva de gomos real: a linha de centro e os planos de corte vêm de
+       * `geometry/elbowSegments` — as mesmas peças da planificação.
+       * O ângulo total e a quantidade de gomos são parâmetros.
+       */
+      const model = elbowModel({
+        diameter: p.d2,
+        radius: p.d1,
+        angleDeg: p.ang,
+        gores: p.n,
+        divisions: seg,
+      });
+      const rb = p.d2 / 2;
+      const beta = model.beta;
+      const k = 1 / Math.max(Math.cos(beta), 0.15);
       const loops: Vec3[][] = [];
-      for (let i = 0; i <= gomos; i++) {
-        const a = (i / gomos) * (Math.PI / 2);
-        const cx = R * Math.sin(a) - R / 2;
-        const cy = -R * Math.cos(a) + R / 2;
+      model.centerline.forEach((c, j) => {
+        const prev = model.segments[j - 1];
+        const next = model.segments[j];
+        const dirs = [prev?.rotationDeg, next?.rotationDeg].filter((x) => x !== undefined) as number[];
+        const φm = ((dirs.reduce((s, x) => s + x, 0) / dirs.length) * Math.PI) / 180;
+        const mitred = dirs.length === 2;
+        const ax = mitred ? k : 1;
         loops.push(
-          ring(r2, 0, seg).map((q) => v(cx + q.x * Math.cos(a), cy + q.x * Math.sin(a), q.z)),
+          Array.from({ length: seg }, (_, i) => {
+            const θ = (i / seg) * Math.PI * 2;
+            const s = rb * ax * Math.sin(θ);
+            return v(c.x - s * Math.sin(φm), c.y + s * Math.cos(φm), rb * Math.cos(θ));
+          }),
         );
-      }
+      });
       return withAxis(shell(loops, { t }));
     }
+
 
     case "flanges": {
       const thick = Math.max(h * 0.12, t * 2);

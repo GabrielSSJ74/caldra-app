@@ -128,68 +128,36 @@ const TUBES: TubeDef[] = [
     tags: ["duto", "desenvolvimento", "tubo"],
   },
   {
-    id: "tub.corte-angular",
-    name: "Corte Angular",
-    family: "Tubos",
-    slug: "boca-de-lobo",
-    summary: "Tubo cortado em ângulo: senoide do desenvolvimento.",
-    specs: ["Ângulo do corte"],
-    tags: ["corte", "angular", "oblíquo", "boca de lobo"],
-  },
-  {
-    id: "tub.curva-1",
-    name: "Curva 1 Gomo",
+    id: "tub.curva-gomos",
+    name: "Curva de Gomos",
     family: "Curvas",
     slug: "curva-de-gomos",
-    summary: "Joelho de um gomo com corte único.",
-    specs: ["1 gomo"],
-    tags: ["curva", "joelho", "1 gomo", "cotovelo"],
-  },
-  {
-    id: "tub.curva-2",
-    name: "Curva 2 Gomos",
-    family: "Curvas",
-    slug: "curva-de-gomos",
-    summary: "Curva segmentada em dois gomos soldados.",
-    specs: ["2 gomos"],
-    tags: ["curva", "2 gomos"],
-  },
-  {
-    id: "tub.curva-3",
-    name: "Curva 3 Gomos",
-    family: "Curvas",
-    slug: "curva-de-gomos",
-    summary: "Curva de três gomos: padrão em dutos de processo.",
-    specs: ["3 gomos"],
-    tags: ["curva", "3 gomos", "gomos"],
-  },
-  {
-    id: "tub.curva-4",
-    name: "Curva 4 Gomos",
-    family: "Curvas",
-    slug: "curva-de-gomos",
-    summary: "Curva de quatro gomos, transição mais suave.",
-    specs: ["4 gomos"],
-    tags: ["curva", "4 gomos"],
-  },
-  {
-    id: "tub.curva-n",
-    name: "Curva Múltiplos Gomos",
-    family: "Curvas",
-    slug: "curva-de-gomos",
-    summary: "Número de gomos e raio livres.",
-    specs: ["n gomos · raio livre"],
-    tags: ["curva", "múltiplos", "raio", "especial"],
+    summary: "Uma família: ângulo total e quantidade de gomos são parâmetros.",
+    specs: ["Ângulo livre · n gomos"],
+    tags: [
+      "curva",
+      "gomos",
+      "joelho",
+      "cotovelo",
+      "1 gomo",
+      "2 gomos",
+      "3 gomos",
+      "4 gomos",
+      "5 gomos",
+      "múltiplos",
+      "raio",
+    ],
   },
   {
     id: "tub.boca-de-lobo",
     name: "Boca de Lobo",
     family: "Interseções",
     slug: "boca-de-lobo",
-    summary: "Derivação inclinada em tubo cilíndrico.",
-    specs: ["Tubo × tubo inclinado"],
-    tags: ["boca de lobo", "derivação", "interseção"],
+    summary: "Corte oblíquo ou derivação em tubo: o método é escolhido pelos parâmetros.",
+    specs: ["Ângulo livre · tubo × tubo"],
+    tags: ["boca de lobo", "derivação", "interseção", "corte", "angular", "oblíquo", "30°", "45°", "60°", "90°"],
   },
+
   {
     id: "tub.tubo-tubo",
     name: "Tubo × Tubo",
@@ -484,9 +452,35 @@ export const PART_REGISTRY: PartModel[] = [...caldeiraria, ...tubulacoes, ...cnc
 
 const BY_ID = new Map(PART_REGISTRY.map((p) => [p.id, p]));
 
-export function findPart(id: string): PartModel | undefined {
-  return BY_ID.get(id);
+/**
+ * COMPATIBILIDADE — ids antigos (um modelo por variação) apontam para a
+ * família paramétrica, preservando a configuração histórica em `values`.
+ * Favoritos, recentes, "meus modelos" e links antigos continuam válidos.
+ */
+export const PART_ALIASES: Record<string, { id: string; values?: Record<string, number> }> = {
+  "tub.curva-1": { id: "tub.curva-gomos", values: { gomos: 2 } },
+  "tub.curva-2": { id: "tub.curva-gomos", values: { gomos: 2 } },
+  "tub.curva-3": { id: "tub.curva-gomos", values: { gomos: 3 } },
+  "tub.curva-4": { id: "tub.curva-gomos", values: { gomos: 4 } },
+  "tub.curva-n": { id: "tub.curva-gomos", values: { gomos: 5 } },
+  "tub.curva-multiplos": { id: "tub.curva-gomos", values: { gomos: 5 } },
+  "tub.corte-angular": { id: "tub.boca-de-lobo", values: { metodo: 0 } },
+};
+
+/** Resolve o id atual de um modelo, aceitando ids antigos. */
+export function resolvePartId(id: string): string {
+  return PART_ALIASES[id]?.id ?? id;
 }
+
+/** Parâmetros históricos associados a um id antigo (ex.: 3 gomos). */
+export function aliasValues(id: string): Record<string, number> | undefined {
+  return PART_ALIASES[id]?.values;
+}
+
+export function findPart(id: string): PartModel | undefined {
+  return BY_ID.get(id) ?? BY_ID.get(resolvePartId(id));
+}
+
 
 export const FAMILIES: Record<PartCategory, string[]> = {
   caldeiraria: ["Transições", "Cones", "Cilíndricas", "Curvas", "Interseções", "Flanges"],
@@ -504,7 +498,22 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
 };
 
 /** Destino de abertura do modelo — a biblioteca não decide fluxo, só encaminha. */
-export function partHref(p: PartModel): { to: string; params?: Record<string, string> } {
+export function partHref(
+  p: PartModel,
+  originalId?: string,
+): { to: string; params?: Record<string, string>; search?: Record<string, string> } {
   if (p.kind === "vector") return { to: "/tracagem/cnc/$id", params: { id: p.id.replace("cnc.", "") } };
-  return { to: "/tracagem/$slug", params: { slug: p.engineSlug! } };
+  const preset = originalId ? aliasValues(originalId) : undefined;
+  const search = preset
+    ? {
+        preset: Object.entries(preset)
+          .map(([k, v]) => `${k}:${v}`)
+          .join(","),
+      }
+    : undefined;
+  return {
+    to: "/tracagem/$slug",
+    params: { slug: p.engineSlug! },
+    ...(search ? { search } : {}),
+  };
 }
