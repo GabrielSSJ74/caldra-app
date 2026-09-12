@@ -57,11 +57,16 @@ type Props = {
   name: string;
   /** Estado salvo de uma peça de projeto (instância). */
   initial?: { [K in keyof StudioSnapshot]?: StudioSnapshot[K] | undefined } | undefined;
+  /**
+   * Configuração inicial de compatibilidade: modelos antigos (ex.: "curva de
+   * 3 gomos") abrem a família paramétrica já nos parâmetros históricos.
+   */
+  preset?: Record<string, number> | undefined;
   /** Autosave: chamado com atraso após alterações relevantes. */
   onPersist?: ((snapshot: StudioSnapshot) => void) | undefined;
 };
 
-export function GeometryStudio({ slug, name, initial, onPersist }: Props) {
+export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props) {
   const engine = getEngine(slug);
   const { can, isMestre, requirePro } = useFeatureAccess();
   const { precision, level } = useSettings();
@@ -71,8 +76,10 @@ export function GeometryStudio({ slug, name, initial, onPersist }: Props) {
 
   const [values, setValues] = useState<EngineValues>(() => ({
     ...(engine?.defaults ?? {}),
+    ...(preset ?? {}),
     ...(initial?.values ?? {}),
   }));
+
   const { get, defaultMaterialId } = useMaterials();
   const [materialId, setMaterialId] = useState(initial?.materialId ?? defaultMaterialId);
   const [material, setMaterial] = useState(initial?.material ?? "Aço Carbono");
