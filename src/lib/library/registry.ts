@@ -452,9 +452,35 @@ export const PART_REGISTRY: PartModel[] = [...caldeiraria, ...tubulacoes, ...cnc
 
 const BY_ID = new Map(PART_REGISTRY.map((p) => [p.id, p]));
 
-export function findPart(id: string): PartModel | undefined {
-  return BY_ID.get(id);
+/**
+ * COMPATIBILIDADE — ids antigos (um modelo por variação) apontam para a
+ * família paramétrica, preservando a configuração histórica em `values`.
+ * Favoritos, recentes, "meus modelos" e links antigos continuam válidos.
+ */
+export const PART_ALIASES: Record<string, { id: string; values?: Record<string, number> }> = {
+  "tub.curva-1": { id: "tub.curva-gomos", values: { gomos: 2 } },
+  "tub.curva-2": { id: "tub.curva-gomos", values: { gomos: 2 } },
+  "tub.curva-3": { id: "tub.curva-gomos", values: { gomos: 3 } },
+  "tub.curva-4": { id: "tub.curva-gomos", values: { gomos: 4 } },
+  "tub.curva-n": { id: "tub.curva-gomos", values: { gomos: 5 } },
+  "tub.curva-multiplos": { id: "tub.curva-gomos", values: { gomos: 5 } },
+  "tub.corte-angular": { id: "tub.boca-de-lobo", values: { metodo: 0 } },
+};
+
+/** Resolve o id atual de um modelo, aceitando ids antigos. */
+export function resolvePartId(id: string): string {
+  return PART_ALIASES[id]?.id ?? id;
 }
+
+/** Parâmetros históricos associados a um id antigo (ex.: 3 gomos). */
+export function aliasValues(id: string): Record<string, number> | undefined {
+  return PART_ALIASES[id]?.values;
+}
+
+export function findPart(id: string): PartModel | undefined {
+  return BY_ID.get(id) ?? BY_ID.get(resolvePartId(id));
+}
+
 
 export const FAMILIES: Record<PartCategory, string[]> = {
   caldeiraria: ["Transições", "Cones", "Cilíndricas", "Curvas", "Interseções", "Flanges"],
