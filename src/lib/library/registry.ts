@@ -498,7 +498,22 @@ export const CAPABILITY_LABEL: Record<Capability, string> = {
 };
 
 /** Destino de abertura do modelo — a biblioteca não decide fluxo, só encaminha. */
-export function partHref(p: PartModel): { to: string; params?: Record<string, string> } {
+export function partHref(
+  p: PartModel,
+  originalId?: string,
+): { to: string; params?: Record<string, string>; search?: Record<string, string> } {
   if (p.kind === "vector") return { to: "/tracagem/cnc/$id", params: { id: p.id.replace("cnc.", "") } };
-  return { to: "/tracagem/$slug", params: { slug: p.engineSlug! } };
+  const preset = originalId ? aliasValues(originalId) : undefined;
+  const search = preset
+    ? {
+        preset: Object.entries(preset)
+          .map(([k, v]) => `${k}:${v}`)
+          .join(","),
+      }
+    : undefined;
+  return {
+    to: "/tracagem/$slug",
+    params: { slug: p.engineSlug! },
+    ...(search ? { search } : {}),
+  };
 }
