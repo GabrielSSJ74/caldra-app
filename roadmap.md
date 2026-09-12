@@ -121,3 +121,12 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] CHAMFER: linha de CORTE preta no tema claro e branca no tema escuro (exportação segue preta)
 - [ ] CHAMFER: ferramenta ESPESSURA + vista 3D com extrusão real
 - [ ] Temas: revisão de FLUIDO/SUAVE/ESTÁTICO no tema claro, tema PADRÃO neutro e AMOLED redesenhado
+
+## Unificação paramétrica da Traçagem (set/2026)
+- [ ] Consolidar registro: uma família = um modelo (Curva de Gomos, Boca de Lobo, Quadrado→Redondo) com aliases dos IDs antigos preservando parâmetros históricos.
+- [ ] Boca de Lobo: método interno (corte oblíquo | derivação em tubo) com interseção cilindro/cilindro real e ângulo paramétrico.
+- [ ] Curva de Gomos: ângulo e quantidade livres; gomos como entidades com planificação própria e meios-gomos nas extremidades.
+- [ ] Quadrado→Redondo: superfície 3D derivada das mesmas geratrizes da triangulação (sem cone genérico).
+- [ ] CHAMFER: enviar todos os gomos ou o gomo selecionado, geometria vetorial real.
+- [ ] REGRA: não alterar o motor 3D existente — só a geometria canônica que ele recebe.
+- [ ] Regressão: valores, geometria, planificação e exportação antes/depois; casos 30/45/60/90°, curvas 45°-3, 90°-3, 90°-5.
