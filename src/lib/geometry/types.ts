@@ -26,6 +26,19 @@ export type DevelopmentPattern = {
 
 export type MetricRow = { label: string; value: number; unitMm?: boolean; suffix?: string };
 
+/**
+ * Peça física derivada do MESMO cálculo (ex.: cada gomo de uma curva).
+ * Quantidade de gomos ≠ quantidade de peças: cada entidade tem código,
+ * geometria e posição próprias.
+ */
+export type GeometryPiece = {
+  code: string;
+  name: string;
+  quantity: number;
+  development: DevelopmentPattern;
+  metrics?: MetricRow[];
+};
+
 export type GeometryResult = {
   metrics: MetricRow[];
   /** Comprimentos verdadeiros das geratrizes (mm). */
@@ -36,6 +49,9 @@ export type GeometryResult = {
   areaMm2: number;
   method: string;
   warnings: string[];
+  /** Peças individuais quando a peça se decompõe (curva de gomos, boca de lobo). */
+  pieces?: GeometryPiece[];
 };
+
 
 export type ValidationIssue = { field: string; message: string };
