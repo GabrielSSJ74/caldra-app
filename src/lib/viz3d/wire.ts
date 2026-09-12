@@ -45,6 +45,12 @@ export type WireParams = {
   seg?: number;
   /** espessura da chapa (mm) */
   t?: number;
+  /** ângulo paramétrico (graus) — derivação, curva de gomos */
+  ang?: number;
+  /** quantidade paramétrica (gomos) */
+  n?: number;
+  /** variante do modelo paramétrico */
+  mode?: string;
 };
 
 export const DEFAULT_PARAMS: WireParams = {
@@ -55,6 +61,7 @@ export const DEFAULT_PARAMS: WireParams = {
   seg: 48,
   t: 6,
 };
+
 
 const v = (x: number, y: number, z: number): Vec3 => ({ x, y, z });
 
