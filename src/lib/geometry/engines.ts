@@ -103,6 +103,7 @@ function finalize(args: {
   steps: CalcStep[];
   warnings?: string[];
   areaMm2?: number;
+  pieces?: GeometryPiece[];
 }): GeometryResult {
   const { v, development } = args;
   const areaMm2 = args.areaMm2 ?? polygonArea(development.outline);
