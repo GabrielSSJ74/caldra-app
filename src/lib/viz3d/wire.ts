@@ -10,6 +10,8 @@
  * geometria 3D é derivada dos mesmos números, em milímetros de mundo.
  */
 
+import { branchAxisLength } from "@/lib/geometry/branch";
+import { elbowModel } from "@/lib/geometry/elbowSegments";
 import type { Vec2, Vec3 } from "@/lib/geometry/types";
 
 export type Edge = [Vec3, Vec3];
