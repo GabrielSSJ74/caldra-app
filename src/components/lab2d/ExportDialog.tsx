@@ -88,7 +88,13 @@ export function ExportDialog({
       roles,
       leads,
       flattenCurves,
-      metadata: { project: projectName, plan: planName, material, thickness, quantity },
+      metadata: {
+        project: projectName,
+        plan: planName,
+        ...(material ? { material } : {}),
+        ...(thickness ? { thickness } : {}),
+        ...(quantity ? { quantity } : {}),
+      },
     }),
     [entities, profile, roles, leads, flattenCurves, projectName, planName, material, thickness, quantity],
   );

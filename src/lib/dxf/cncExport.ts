@@ -305,7 +305,7 @@ export function buildCncDxf(entities: Entity[], opts: CncExportOptions): DxfDocu
   return {
     layers: used.map((name, i) => ({ name, color: EXPORT_ACI[name] ?? i + 1 })),
     entities: out,
-    appIds: cypcut ? [CYPCUT_APPID] : undefined,
+    ...(cypcut ? { appIds: [CYPCUT_APPID] } : {}),
 
   };
 }
@@ -384,7 +384,7 @@ export function validateCncExport(entities: Entity[], opts: CncExportOptions): C
   const version = dxfVersionFor(doc);
   const hasLw = doc.entities.some((e) => e.type === "LWPOLYLINE");
   const hasSpline = doc.entities.some((e) => e.type === "SPLINE");
-  if ((version === "AC1009" && (hasLw || hasSpline)) || (version === "AC1014" && hasSpline))
+  if (version === "AC1009" && (hasLw || hasSpline))
     issues.push({
       level: "error",
       scope: "Versão DXF",
