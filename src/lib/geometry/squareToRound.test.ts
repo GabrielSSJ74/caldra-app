@@ -105,3 +105,13 @@ describe("estratégia de fabricação", () => {
     expect(b.refLines.length).toBe(a.refLines.length + 2);
   });
 });
+
+function polygonAreaForTest(points: { x: number; y: number }[]): number {
+  let s = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]!;
+    const q = points[(i + 1) % points.length]!;
+    s += p.x * q.y - q.x * p.y;
+  }
+  return Math.abs(s) / 2;
+}
