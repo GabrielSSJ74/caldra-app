@@ -193,6 +193,12 @@
   );
   --glass-border: color-mix(in oklab, var(--foreground) 12%, transparent);
   --grid-line: color-mix(in oklab, var(--foreground) 7%, transparent);
+  --grid-minor: color-mix(in oklab, var(--foreground) 9%, transparent);
+  --grid-major: color-mix(in oklab, var(--foreground) 18%, transparent);
+  --axis-line: color-mix(in oklab, var(--foreground) 38%, transparent);
+  --vision-surface: color-mix(in oklab, var(--card) 94%, var(--accent) 6%);
+  --vision-control: color-mix(in oklab, var(--foreground) 5%, var(--background));
+  --vision-control-hover: color-mix(in oklab, var(--accent) 12%, var(--background));
   --gradient-brand: linear-gradient(120deg, var(--accent), oklch(0.6 0.16 40));
   --glow-accent: 0 0 0 1px color-mix(in oklab, var(--accent) 25%, transparent),
     0 0 24px color-mix(in oklab, var(--accent) 12%, transparent);
@@ -237,6 +243,12 @@
   --glass-bg: linear-gradient(165deg, oklch(1 0 0 / 5.5%), oklch(1 0 0 / 1.5%));
   --glass-border: oklch(1 0 0 / 8%);
   --grid-line: oklch(1 0 0 / 3.2%);
+  --grid-minor: oklch(1 0 0 / 9%);
+  --grid-major: oklch(1 0 0 / 19%);
+  --axis-line: oklch(1 0 0 / 34%);
+  --vision-surface: color-mix(in oklab, var(--card) 94%, var(--accent) 6%);
+  --vision-control: oklch(1 0 0 / 7%);
+  --vision-control-hover: color-mix(in oklab, var(--accent) 16%, transparent);
   --gradient-brand: linear-gradient(120deg, var(--accent), oklch(0.66 0.17 42));
 
   --sidebar: oklch(0.17 0.006 60);
@@ -262,7 +274,31 @@
   --sidebar: oklch(0 0 0);
   --line: oklch(1 0 0 / 8%);
   --panel: oklch(0 0 0);
+  --grid-line: oklch(1 0 0 / 13%);
+  --grid-minor: oklch(1 0 0 / 13%);
+  --grid-major: oklch(1 0 0 / 27%);
+  --axis-line: oklch(1 0 0 / 42%);
+  --vision-surface: oklch(0.075 0 0);
+  --vision-control: oklch(0.13 0 0);
+  --vision-control-hover: color-mix(in oklab, var(--accent) 22%, transparent);
 }
+
+.vision-dialog {
+  background: var(--vision-surface);
+  color: var(--foreground);
+  border-color: var(--line);
+}
+
+.vision-control {
+  background: var(--vision-control);
+  color: var(--foreground);
+  border: 1px solid var(--line);
+}
+
+.vision-control:hover { background: var(--vision-control-hover); }
+.vision-control:active { filter: brightness(.92); }
+.vision-control[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent) 16%, var(--background)); }
+.vision-control:disabled { opacity: .45; }
 
 
 /* MODO MESTRE — identidade premium: espectro sutil em áreas selecionadas */

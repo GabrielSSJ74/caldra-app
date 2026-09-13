@@ -74,7 +74,18 @@ export type Entity =
       /** Id do contorno externo que contém este furo. */
       parent?: string;
     })
-  | (Base & { type: "text"; x: number; y: number; text: string; size: number });
+  | (Base & {
+      type: "text";
+      x: number;
+      y: number;
+      text: string;
+      /** Dimensões reais do texto no desenho, em milímetros. */
+      size: number;
+      width?: number;
+      bold?: boolean;
+      italic?: boolean;
+      rotation?: number;
+    });
 
 export type PathEntity = Extract<Entity, { type: "path" }>;
 
