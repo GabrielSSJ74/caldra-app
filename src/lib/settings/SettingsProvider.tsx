@@ -32,14 +32,14 @@ export type Settings = {
 };
 
 const DEFAULTS: Settings = {
-  theme: "dark",
-  accent: "amber",
+  theme: "light",
+  accent: "blue",
   language: "pt",
   unit: "mm",
   precision: 2,
   level: "aprendiz",
   region: DEFAULT_REGION,
-  auroraStyle: "fluido",
+  auroraStyle: "padrao",
   calcAngle: "DEG",
   calcPlaces: 4,
 };
@@ -79,11 +79,11 @@ export function readStoredSettings(): Settings {
     const LANGUAGES: AppLanguage[] = ["pt", "en", "es"];
     const auroraStyle: AuroraStyle =
       saved.aurora === false || saved.auroraStyle === "estatico"
-        ? "suave"
+        ? "padrao"
         : saved.auroraStyle && VALID.includes(saved.auroraStyle)
           ? saved.auroraStyle
-          : // valor ausente ou inválido nunca resulta em "nenhum fundo"
-            "suave";
+          : // instalação nova começa no estilo Padrão (Free)
+            "padrao";
     // conta já existente (sem o campo) começa em MESTRE; conta nova, APRENDIZ
     const language = saved.language && LANGUAGES.includes(saved.language) ? saved.language : "pt";
     return { ...DEFAULTS, level: saved.level ?? "mestre", ...saved, language, auroraStyle };
