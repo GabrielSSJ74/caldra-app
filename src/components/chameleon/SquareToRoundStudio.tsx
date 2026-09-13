@@ -22,7 +22,7 @@ import { MATERIALS } from "@/lib/projects/demo-data";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { buildWire } from "@/lib/viz3d/wire";
-import { developmentToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
+import { developmentToEntities, piecesToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
 import { cn } from "@/lib/utils";
 import { VisualizationViewport, type VisualizationMode } from "./View3DPanel";
 import { DevelopmentView } from "./DevelopmentView";
@@ -139,20 +139,29 @@ export function SquareToRoundStudio() {
 
   const exportDxfFile = () => {
     if (!result) return;
-    const entities: DxfEntity[] = [
-      {
+    const parts = result.pieces?.length
+      ? result.pieces
+      : [{ code: "QR", development: result.development }];
+    const entities: DxfEntity[] = [];
+    let cursor = 0;
+    for (const part of parts) {
+      const b = part.development.bounds;
+      const dx = cursor - b.minX;
+      entities.push({
         type: "LWPOLYLINE",
         layer: "CORTE",
         closed: true,
-        points: result.development.outline.map((p) => ({ x: p.x, y: p.y })),
-      },
-      ...result.development.foldLines.map<DxfEntity>((s) => ({
-        type: "LINE",
-        layer: "DOBRA",
-        start: s.a,
-        end: s.b,
-      })),
-    ];
+        points: part.development.outline.map((p) => ({ x: p.x + dx, y: p.y })),
+      });
+      for (const s of part.development.foldLines)
+        entities.push({
+          type: "LINE",
+          layer: "DOBRA",
+          start: { x: s.a.x + dx, y: s.a.y },
+          end: { x: s.b.x + dx, y: s.b.y },
+        });
+      cursor += b.maxX - b.minX + 40;
+    }
     downloadDxf(
       {
         layers: [
@@ -561,8 +570,12 @@ export function SquareToRoundStudio() {
                     if (!requirePro("lab2d")) return;
 
                     sendToLab2D({
-                      name: "Quadrado → Redondo",
-                      entities: developmentToEntities(result.development),
+                      name: result.pieces?.length
+                        ? "Quadrado → Redondo · 2 partes + solda"
+                        : "Quadrado → Redondo",
+                      entities: result.pieces?.length
+                        ? piecesToEntities(result.pieces)
+                        : developmentToEntities(result.development),
                     });
                     navigate({ to: "/desenho-2d" });
                   }}
