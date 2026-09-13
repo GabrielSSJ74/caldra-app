@@ -333,12 +333,8 @@ export function verifyCncDxf(
   push("Perímetro (mm)", lenOf(doc.entities).toFixed(1), lenOf(back.entities).toFixed(1));
   push("Unidade", "mm", /\$INSUNITS\n\s*70\n4/.test(dxfText) ? "mm" : "?");
   push("Escala", "1:1", "1:1");
-  push("Sem geometria não classificada", 0, unclassifiedOf(entities).length);
-  push(
-    "Cotas fora do corte",
-    0,
-    back.entities.filter((e) => e.layer === "CUT" && false).length,
-  );
+  push("Geometria não classificada", 0, unclassifiedOf(entities).length);
+
 
   return { ok: rows.every((r) => r.ok), rows };
 }
