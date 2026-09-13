@@ -1610,13 +1610,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         <DimensionEditor
           e={selected[0]!}
           onChange={(next) => commit((list) => list.map((x) => (x.id === next.id ? next : x)))}
-          onEditText={selected[0]?.type === "text" ? () => {
+          {...(selected[0]?.type === "text" ? { onEditText: () => {
             const current = selected[0];
             if (!current || current.type !== "text") return;
             setEditingTextId(current.id);
             setTextSpec({ text: current.text, width: current.width ?? Math.max(current.size, current.text.length * current.size * .6), height: current.size, bold: !!current.bold, italic: !!current.italic });
             setTextOpen(true);
-          } : undefined}
+          }} : {})}
           layers={layers}
           actions={selectionActions}
         />
@@ -2429,7 +2429,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         onClose={() => { setImportOpen(false); setImportSrc(null); }}
         onConfirm={onImportConfirm}
       />
-      <TextDialog open={textOpen} initial={editingTextId ? textSpec ?? undefined : undefined} onClose={() => { setTextOpen(false); setEditingTextId(null); if (!textSpec) setTool("select"); }} onConfirm={(spec) => {
+      <TextDialog open={textOpen} {...(editingTextId && textSpec ? { initial: textSpec } : {})} onClose={() => { setTextOpen(false); setEditingTextId(null); if (!textSpec) setTool("select"); }} onConfirm={(spec) => {
         if (editingTextId) {
           commit((list) => list.map((entity) => entity.id === editingTextId && entity.type === "text" ? { ...entity, text: spec.text, size: spec.height, width: spec.width, bold: spec.bold, italic: spec.italic } : entity));
           setEditingTextId(null); setTextSpec(null); setTextOpen(false); return;
