@@ -11,7 +11,7 @@ import { toast } from "sonner";
 import { Check, ExternalLink, Lock, Minus } from "lucide-react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
-import { FEATURE_PITCH, PLAN_LABEL, planAllows, type Feature } from "@/lib/subscription/features";
+import { COMPARISON, FEATURE_PITCH, PLAN_LABEL, PLAN_PITCH } from "@/lib/subscription/features";
 import {
   PRODUCTS,
   WEB_CHECKOUT_URL,
@@ -25,61 +25,61 @@ import { cn } from "@/lib/utils";
 import { Panel, SectionLabel } from "./ui";
 import { AuroraBackground } from "./Aurora";
 
-/** Comparativo real: lido da matriz de permissões, nunca escrito à mão. */
-const COMPARED: Feature[] = [
-  "geometry.basic",
-  "calculator.scientific",
-  "materials.custom",
-  "geometry.advanced",
-  "calc.explanation",
-  "planification.advanced",
-  "lab2d",
-  "vision.import",
-  "cut.plan",
-  "export.png",
-  "export.pdf",
-  "export.dxf",
-  "export.dxf.cnc",
-  "nesting",
-  "cost.fabrication",
-  "quote.pdf",
-  "jobsheet",
-  "cloud.sync",
-  "aurora.animated",
-  "projects.unlimited",
-  "school.full",
-  "library.full",
-];
+/** Comparativo oficial: lido da matriz central, nunca escrito à mão na tela. */
+function Cell({ value, pro }: { value: string | boolean; pro?: boolean }) {
+  if (value === true)
+    return <Check className={cn("size-3.5", pro ? "text-pro" : "text-muted-foreground")} />;
+  if (value === false) return <Minus className="size-3.5 text-muted-foreground/40" />;
+  return (
+    <span className={cn("font-mono text-[10px]", pro ? "text-pro" : "text-muted-foreground")}>
+      {value}
+    </span>
+  );
+}
 
 function ComparisonTable() {
   return (
     <div className="overflow-hidden rounded-xl border border-line">
       <div className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 border-b border-line bg-foreground/[0.03] px-3 py-2 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
         <span>Recurso</span>
-        <span className="w-10 text-center">Free</span>
-        <span className="w-10 text-center text-pro">Pro</span>
+        <span className="w-14 text-center">Free</span>
+        <span className="w-14 text-center text-pro">Pro</span>
       </div>
-      {COMPARED.map((feature) => {
-        const free = planAllows("free", feature);
-        return (
-          <div
-            key={feature}
-            className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 border-b border-line/60 px-3 py-2 text-[13px] last:border-0"
-          >
-            <span>{FEATURE_PITCH[feature].title}</span>
-            <span className="grid w-10 place-items-center">
-              {free ? (
-                <Check className="size-3.5 text-muted-foreground" />
-              ) : (
-                <Minus className="size-3.5 text-muted-foreground/40" />
-              )}
-            </span>
-            <span className="grid w-10 place-items-center">
-              <Check className="size-3.5 text-pro" />
-            </span>
-          </div>
-        );
-      })}
+      {COMPARISON.map((row) => (
+        <div
+          key={row.label}
+          className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 border-b border-line/60 px-3 py-2 text-[13px] last:border-0"
+        >
+          <span>{row.label}</span>
+          <span className="grid w-14 place-items-center">
+            <Cell value={row.free} />
+          </span>
+          <span className="grid w-14 place-items-center">
+            <Cell value={row.pro} pro />
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PlanHeads() {
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <div className="rounded-xl border border-line p-3">
+        <p className="font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
+          {PLAN_PITCH.free.title}
+        </p>
+        <p className="mt-1 text-[13px]">{PLAN_PITCH.free.subtitle}</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">{PLAN_PITCH.free.line}</p>
+      </div>
+      <div className="pro-surface rounded-xl p-3">
+        <p className="font-mono text-[10px] tracking-[0.18em] text-pro uppercase">
+          {PLAN_PITCH.pro.title}
+        </p>
+        <p className="mt-1 text-[13px]">{PLAN_PITCH.pro.subtitle}</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">{PLAN_PITCH.pro.line}</p>
+      </div>
     </div>
   );
 }
@@ -127,6 +127,7 @@ export function PaywallBody({ onDone }: { onDone?: () => void }) {
   if (plan !== "free") {
     return (
       <div className="space-y-3">
+        <PlanHeads />
         <p className="text-sm text-muted-foreground">
           Você já está no <span className="text-pro">CALDRA {PLAN_LABEL[plan]}</span>. Tudo liberado.
         </p>
@@ -141,6 +142,7 @@ export function PaywallBody({ onDone }: { onDone?: () => void }) {
         Da medida ao corte em <span className="text-accent">2 minutos</span>.
       </p>
 
+      <PlanHeads />
       <ComparisonTable />
 
       <div className="grid gap-2 sm:grid-cols-2">
