@@ -162,13 +162,23 @@ export function buildModel(i: SquareToRoundInput): SquareToRoundModel {
       const startPoint = quadrant[j];
       const endPoint = quadrant[j + 1];
       if (!startPoint || !endPoint) continue;
-      faces.push({ id: `Q${k}-T${j}`, points: [corner, startPoint, endPoint] });
-      generatrices.push({ id: `V${k}-P${k * i.divisions + j}`, a: corner, b: startPoint });
+      faces.push({ id: `Q${k}-T${j}`, piece: pieceOf(k), points: [corner, startPoint, endPoint] });
+      generatrices.push({
+        id: `V${k}-P${k * i.divisions + j}`,
+        piece: pieceOf(k),
+        a: corner,
+        b: startPoint,
+      });
     }
     const endPoint = quadrant[i.divisions];
     if (!endPoint) continue;
-    generatrices.push({ id: `V${k}-P${(k + 1) * i.divisions}`, a: corner, b: endPoint });
-    faces.push({ id: `Q${k}-BASE`, points: [corner, nextCorner, endPoint] });
+    generatrices.push({
+      id: `V${k}-P${(k + 1) * i.divisions}`,
+      piece: pieceOf(k),
+      a: corner,
+      b: endPoint,
+    });
+    faces.push({ id: `Q${k}-BASE`, piece: pieceOf(k), points: [corner, nextCorner, endPoint] });
   }
   return { corners, arcPoints, circle, faces, generatrices };
 }
