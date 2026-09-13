@@ -202,57 +202,10 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
   const n = input.divisions;
 
   // ---- desenvolvimento por encadeamento de triângulos ----
-  const outlineTop: Vec2[] = [];
-  const outlineBottom: Vec2[] = [];
-  const foldLines: Segment2[] = [];
-  const trueLengths: { id: string; length: number }[] = [];
+  const part = developRange(model, input.divisions, 0, 3);
+  const { trueLengths } = part;
 
-  // Costura no vértice 0. Primeiro ponto da base na origem.
-  let cornerPos: Vec2 = { x: 0, y: 0 };
-  const firstArc = arcPoints[0]![0]!;
-  const l0 = dist3(corners[0]!, firstArc);
-  let arcPos: Vec2 = { x: 0, y: l0 };
-  outlineBottom.push(cornerPos);
-  outlineTop.push(arcPos);
-  trueLengths.push({ id: "V0-P0", length: l0 });
-  foldLines.push({ a: cornerPos, b: arcPos });
-
-  for (let k = 0; k < 4; k++) {
-    const corner3 = corners[k]!;
-    const quad = arcPoints[k]!;
-    // setor cônico: leque em torno do vértice k
-    for (let j = 0; j < n; j++) {
-      const chord = dist3(quad[j]!, quad[j + 1]!);
-      const nextLen = dist3(corner3, quad[j + 1]!);
-      const next = triangulatePoint(arcPos, cornerPos, chord, nextLen, 1);
-      outlineTop.push(next);
-      foldLines.push({ a: cornerPos, b: next });
-      trueLengths.push({ id: `V${k}-P${k * n + j + 1}`, length: nextLen });
-      arcPos = next;
-    }
-    // triângulo plano até o próximo vértice da base
-    const nextCorner3 = corners[(k + 1) % 4]!;
-    const baseEdge = dist3(corner3, nextCorner3);
-    const diag = dist3(nextCorner3, quad[n]!);
-    const nextCorner = triangulatePoint(cornerPos, arcPos, baseEdge, diag, -1);
-    outlineBottom.push(nextCorner);
-    foldLines.push({ a: nextCorner, b: arcPos });
-    cornerPos = nextCorner;
-  }
-
-  const outline: Vec2[] = [...outlineTop, ...outlineBottom.slice().reverse()];
-
-  const minX = Math.min(...outline.map((p) => p.x));
-  const maxX = Math.max(...outline.map((p) => p.x));
-  const minY = Math.min(...outline.map((p) => p.y));
-  const maxY = Math.max(...outline.map((p) => p.y));
-
-  const development: DevelopmentPattern = {
-    outline,
-    foldLines,
-    points: outlineBottom.map((p, idx) => ({ id: `V${idx}`, p })),
-    bounds: { minX, minY, maxX, maxY },
-  };
+  const development = patternOf(part, "V");
 
   const areaMm2 = polygonArea(outline);
   const volumeDm3 = (areaMm2 * input.thickness) / 1_000_000;
