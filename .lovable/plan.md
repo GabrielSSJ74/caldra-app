@@ -40,9 +40,10 @@ Uma dobra continua guardando internamente sua linha completa (ponto inicial e po
 O que muda é apenas **como ela é desenhada em cada contexto**:
 
 - **Traçagem**: linha de dobra completa, de ponta a ponta (leitura pedagógica).
-- **CHAMFER**: apenas as testemunhas curtas nas duas extremidades, junto às bordas da peça — claramente identificáveis como dobra, na mesma cor rosa técnica.
+- **CHAMFER**: em cada extremidade, um **ponto preenchido sobre a borda da peça + uma linha curta saindo dele** — `●────` / `────●`. Ponto pequeno, circular e centralizado exatamente no ponto da borda, sem afastamento e sem espaço entre borda, ponto e linha. Mesma cor rosa técnica da dobra. Nada de testemunhas afastadas, prolongamentos nem símbolos complexos. Selecionar destaca ponto + linha juntos e volta ao rosa ao desmarcar.
 - **Desenho técnico**: linha completa, com traço técnico de dobra.
-- **Exportações**: inalteradas. O DXF técnico leva a linha completa; o DXF laser CNC mantém a função BEND na camada BEND. Dobra nunca vira marcação.
+- **Exportações**: inalteradas. O DXF técnico leva a linha completa; o DXF laser CNC mantém a função BEND na camada BEND. Dobra nunca vira marcação — a simplificação é só visual.
+- Dentro de grupos, o papel BEND e a representação ponto + linha permanecem intactos.
 
 ## 4. Sobre dobradeira
 
