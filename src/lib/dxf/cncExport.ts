@@ -3,7 +3,7 @@
  *
  * A operação de cada entidade vem do seu PAPEL (ManufacturingRole), nunca
  * da cor. O papel é traduzido para um nome de layer no arquivo pelo
- * DxfExportProfile escolhido (TÉCNICO / PRODUÇÃO / CYP CUT).
+ * DxfExportProfile escolhido (DXF TÉCNICO / DXF LASER CNC).
  *
  * NUNCA entram aqui: grade, moldura, cursor, seleção, chevrons de FLUXO,
  * selos, indicadores de interface. Setas de direção são metadado e jamais
@@ -27,6 +27,7 @@ import {
   CYPCUT_CHANNEL,
   DEFAULT_PROFILE_ID,
   ENTITY_ROLES,
+  LASER_PROFILE_ID,
   EXPORT_ACI,
   profileById,
   roleOf,
@@ -50,30 +51,27 @@ export type CncExportOptions = {
   leads: boolean;
   /** Achatar curvas Bézier em polilinha (máquinas antigas). */
   flattenCurves: boolean;
-  /** Algumas máquinas executam dobra como marcação — mapeamento, não cor. */
-  bendAs: "BEND" | "MARK";
 };
 
 export const DEFAULT_CNC_OPTIONS: CncExportOptions = {
   profileId: DEFAULT_PROFILE_ID,
-  roles: { CUT: true, MARK: true, BEND: true, REFERENCE: false, DIMENSION: false },
+  roles: { CUT: true, RECORTE: true, MARK: true, BEND: true, REFERENCE: false, DIMENSION: false },
   leads: true,
   flattenCurves: false,
-  bendAs: "BEND",
 };
 
 /** DXF é Y para cima; o modelo do CHAMFER é Y para baixo. */
 const m = (p: Vec2) => ({ x: p.x, y: -p.y });
 
-/** Layer de saída de um papel, considerando perfil e mapeamento de dobra. */
+/**
+ * Layer de saída de um papel, definida EXCLUSIVAMENTE pelo perfil.
+ * Nenhum papel é convertido em outro: DOBRA nunca vira MARCAÇÃO.
+ */
 export function exportLayerOf(
   role: ManufacturingRole,
   opts: CncExportOptions,
 ): string | null {
-  const profile = profileById(opts.profileId);
-  const effective: ManufacturingRole =
-    role === "BEND" && opts.bendAs === "MARK" ? "MARK" : role;
-  return profile.layerMap[effective] ?? null;
+  return profileById(opts.profileId).layerMap[role] ?? null;
 }
 
 /** Mapeamento visível ao usuário antes de exportar. */
@@ -154,6 +152,7 @@ export type CncCounts = Record<CncRole, number> & {
 export function cncCounts(entities: Entity[]): CncCounts {
   const c: CncCounts = {
     CUT: 0,
+    RECORTE: 0,
     MARK: 0,
     BEND: 0,
     REFERENCE: 0,
@@ -243,7 +242,8 @@ export function cypcutXdata(role: ManufacturingRole): DxfXdata {
 }
 
 /** O perfil escolhido pede a estrutura estendida do CypCut? */
-export const isCypcutProfile = (opts: CncExportOptions) => profileById(opts.profileId).id === "cypcut";
+export const isCypcutProfile = (opts: CncExportOptions) =>
+  profileById(opts.profileId).id === LASER_PROFILE_ID;
 
 /**
  * Constrói o documento DXF CNC.
@@ -274,8 +274,6 @@ export function buildCncDxf(entities: Entity[], opts: CncExportOptions): DxfDocu
     if (!layer) continue;
     useLayer(layer);
 
-    const effective: ManufacturingRole =
-      role === "BEND" && opts.bendAs === "MARK" ? "MARK" : role;
     const isCut = role === "CUT";
     if (opts.leads && isCut) {
       const lin = leadPolyline(e, "in");
@@ -288,7 +286,7 @@ export function buildCncDxf(entities: Entity[], opts: CncExportOptions): DxfDocu
           ),
         );
     }
-    out.push(...tag(geometryOf(e, layer, opts.flattenCurves), effective));
+    out.push(...tag(geometryOf(e, layer, opts.flattenCurves), role));
     if (opts.leads && isCut) {
       const lout = leadPolyline(e, "out");
       const target = exportLayerOf("LEAD_OUT", opts);
