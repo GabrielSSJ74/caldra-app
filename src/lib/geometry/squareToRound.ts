@@ -193,6 +193,83 @@ function polygonArea(points: Vec2[]): number {
   return Math.abs(s) / 2;
 }
 
+type DevelopedPart = {
+  outlineTop: Vec2[];
+  outlineBottom: Vec2[];
+  foldLines: Segment2[];
+  trueLengths: { id: string; length: number }[];
+};
+
+/**
+ * Desenvolve os quadrantes [from..to] por encadeamento de triângulos,
+ * com costura no início do intervalo. Extrai a rotina original (0..3) para
+ * que o modo "2 partes + solda" desenvolva [0,1] e [2,3] separadamente,
+ * sem alterar a matemática nem a geometria 3D do conjunto.
+ */
+function developRange(
+  model: ReturnType<typeof buildModel>,
+  n: number,
+  from: number,
+  to: number,
+): DevelopedPart {
+  const { corners, arcPoints } = model;
+  const outlineTop: Vec2[] = [];
+  const outlineBottom: Vec2[] = [];
+  const foldLines: Segment2[] = [];
+  const trueLengths: { id: string; length: number }[] = [];
+
+  let cornerPos: Vec2 = { x: 0, y: 0 };
+  const firstArc = arcPoints[from]![0]!;
+  const l0 = dist3(corners[from]!, firstArc);
+  let arcPos: Vec2 = { x: 0, y: l0 };
+  outlineBottom.push(cornerPos);
+  outlineTop.push(arcPos);
+  trueLengths.push({ id: `V${from}-P${from * n}`, length: l0 });
+  foldLines.push({ a: cornerPos, b: arcPos });
+
+  for (let k = from; k <= to; k++) {
+    const corner3 = corners[k]!;
+    const quad = arcPoints[k]!;
+    for (let j = 0; j < n; j++) {
+      const chord = dist3(quad[j]!, quad[j + 1]!);
+      const nextLen = dist3(corner3, quad[j + 1]!);
+      const next = triangulatePoint(arcPos, cornerPos, chord, nextLen, 1);
+      outlineTop.push(next);
+      foldLines.push({ a: cornerPos, b: next });
+      trueLengths.push({ id: `V${k}-P${k * n + j + 1}`, length: nextLen });
+      arcPos = next;
+    }
+    const nextCorner3 = corners[(k + 1) % 4]!;
+    const baseEdge = dist3(corner3, nextCorner3);
+    const diag = dist3(nextCorner3, quad[n]!);
+    const nextCorner = triangulatePoint(cornerPos, arcPos, baseEdge, diag, -1);
+    outlineBottom.push(nextCorner);
+    foldLines.push({ a: nextCorner, b: arcPos });
+    cornerPos = nextCorner;
+  }
+
+  return { outlineTop, outlineBottom, foldLines, trueLengths };
+}
+
+/** Converte o encadeamento em padrão de desenvolvimento com bounds e pontos V. */
+function patternOf(part: DevelopedPart, vertexPrefix: string): DevelopmentPattern {
+  const outline: Vec2[] = [...part.outlineTop, ...part.outlineBottom.slice().reverse()];
+  const minX = Math.min(...outline.map((p) => p.x));
+  const maxX = Math.max(...outline.map((p) => p.x));
+  const minY = Math.min(...outline.map((p) => p.y));
+  const maxY = Math.max(...outline.map((p) => p.y));
+  return {
+    outline,
+    foldLines: part.foldLines,
+    points: part.outlineBottom.map((p, idx) => ({ id: `${vertexPrefix}${idx}`, p })),
+    bounds: { minX, minY, maxX, maxY },
+  };
+}
+
+function partPerimeter(outline: Vec2[]): number {
+  return outline.reduce((acc, p, idx) => acc + dist2(p, outline[(idx + 1) % outline.length]!), 0);
+}
+
 export function calculateSquareToRound(input: SquareToRoundInput): GeometryResult {
   const issues = validateSquareToRound(input);
   if (issues.length) throw new Error(issues[0]!.message);
