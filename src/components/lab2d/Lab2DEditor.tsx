@@ -12,14 +12,12 @@ import {
   EyeOff,
   FlipHorizontal2,
   FlipVertical2,
-  Hand,
   Layers as LayersIcon,
   Lock,
   Maximize,
   Minus,
   MoreHorizontal,
   MousePointer2,
-  Move3d,
   PenLine,
   Redo2,
   RotateCw,
@@ -92,7 +90,6 @@ import {
 } from "@/lib/lab2d/dimensions";
 import { pathToSvg } from "@/lib/lab2d/bezier";
 import {
-  AXIS_COLOR,
   REFERENCE_COLOR,
   CUT_COLOR,
   DIMENSION_COLOR,
@@ -1075,7 +1072,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setSelection((ids) => ids.filter((id) => id !== hit.id));
         toast.success("Entidade removida.");
       }
-        }
       return;
     }
     if (tool === "extend") {
@@ -1127,7 +1123,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       longPressRef.current = null;
     }
 
-    // ---- pinça (2 ponteiros, ferramenta MÃO) ----
+    // ---- pinça + pan (2 ponteiros, qualquer ferramenta) ----
     if (pinchRef.current && ptrsRef.current.size >= 2) {
       ev.preventDefault();
       const [a, b] = [...ptrsRef.current.values()];
@@ -1211,6 +1207,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
     if (tool === "measure" && pending.length === 1) {
       setLiveMeasure({ a: pending[0]!, b: snapPoint(raw) });
+      return;
+    }
+    if (tool === "polyline" && pending.length) {
+      const p = snapPoint(raw);
+      setDraft({ id: "draft", layer: activeLayer, type: "line", x1: pending[pending.length - 1]!.x, y1: pending[pending.length - 1]!.y, x2: p.x, y2: p.y });
       return;
     }
     if (pending.length === 1 && draft) {
@@ -1335,6 +1336,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         c: "circle",
         a: "arc",
         r: "rect",
+        x: "text",
         g: "polygon",
         o: "offset",
         t: "trim",
@@ -1696,63 +1698,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </div>
 
           <div className="flex min-w-0 items-center justify-end gap-1 overflow-x-auto">
-            <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto">
-              {project?.plans.map((pl) => (
-                <button
-                  key={pl.id}
-                  onClick={() => {
-                    if (pl.id === planId) return;
-                    setProject((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            plans: prev.plans.map((x) =>
-                              x.id === planId ? { ...x, entities } : x,
-                            ),
-                          }
-                        : prev,
-                    );
-                    setPlanId(pl.id);
-                    setEntities(pl.entities);
-                    setSelection([]);
-                    past.current = [];
-                    future.current = [];
-                  }}
-                  className={cn(
-                    "shrink-0 rounded-lg px-2 py-1 font-mono text-[10px] tracking-widest transition-colors",
-                    pl.id === planId ? "bg-accent/15 text-accent" : "text-muted-foreground",
-                  )}
-                >
-                  {pl.name}
-                </button>
-              ))}
-              {project && (
-                <button
-                  aria-label="Novo plano"
-                  onClick={() => {
-                    const plan = emptyPlan(project.plans.length);
-                    plan.name = planLabel(project.plans.length);
-                    const next: Project = {
-                      ...project,
-                      plans: [
-                        ...project.plans.map((x) => (x.id === planId ? { ...x, entities } : x)),
-                        plan,
-                      ],
-                      lastPlanId: plan.id,
-                    };
-                    saveProject(next);
-                    setProject(next);
-                    setPlanId(plan.id);
-                    setEntities([]);
-                    setSelection([]);
-                    toast.success(`${plan.name} criado.`);
-                  }}
-                  className="shrink-0 rounded-lg px-2 py-1 text-muted-foreground hover:text-accent"
-                >
-                  +
-                </button>
-              )}
-            </div>
             <IconBtn label="Desfazer" onClick={undo} icon={Undo2} />
             <IconBtn label="Refazer" onClick={redo} icon={Redo2} />
             <IconBtn label="Enquadrar" onClick={() => fitTo(entities)} icon={ScanSearch} />
@@ -1891,21 +1836,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       </label>
                     </>
                   )}
-                  <label className="flex cursor-pointer items-center gap-2 rounded-xl px-2 py-2 text-[11px] text-muted-foreground hover:text-foreground">
-                    <Upload className="size-3.5" /> Importar DXF/SVG
-                    <input
-                      type="file"
-                      accept=".dxf,.svg"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) setImportSrc({ file, layer: activeLayer });
-                        e.target.value = "";
-                        setMoreOpen(false);
-                      }}
-                    />
-                  </label>
-
                 </div>
               )}
             </div>
@@ -1923,9 +1853,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               <ToolBtn key={t.id} t={t} active={tool === t.id} onPick={pickTool} />
             ))}
             <div className="my-1 h-px w-6 bg-line" />
-            {extraTools.map((t) => (
-              <ToolBtn key={t.id} t={t} active={tool === t.id} onPick={pickTool} />
-            ))}
+            <IconBtn label="Importar CNC 2D" onClick={() => setImportOpen(true)} icon={MoreHorizontal} flat />
           </div>
         )}
 
@@ -1947,12 +1875,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 <path
                   d={`M ${gridStep * view.k} 0 L 0 0 0 ${gridStep * view.k}`}
                   fill="none"
-                  stroke="var(--grid-line)"
+                  stroke="var(--grid-minor)"
                   strokeWidth="1"
                 />
               </pattern>
+              <pattern id="lab2d-grid-major" width={gridStep * view.k * 5} height={gridStep * view.k * 5} patternUnits="userSpaceOnUse" x={view.tx} y={view.ty}>
+                <path d={`M ${gridStep * view.k * 5} 0 L 0 0 0 ${gridStep * view.k * 5}`} fill="none" stroke="var(--grid-major)" strokeWidth="1" />
+              </pattern>
             </defs>
-            {showGrid && <rect width="100%" height="100%" fill="url(#lab2d-grid)" />}
+            {showGrid && <><rect width="100%" height="100%" fill="url(#lab2d-grid)" /><rect width="100%" height="100%" fill="url(#lab2d-grid-major)" /></>}
           </svg>
           <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
           {/* FLUXO CALDRA / PRÉVIA CNC — camada de UI, nunca exportada */}
@@ -1987,8 +1918,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               )}
 
               {/* eixos — cinza técnico discreto */}
-              <line x1={-1e4} y1={0} x2={1e4} y2={0} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
-              <line x1={0} y1={-1e4} x2={0} y2={1e4} stroke={AXIS_COLOR} strokeOpacity={0.5} strokeWidth={1 / view.k} />
+              <line x1={-1e4} y1={0} x2={1e4} y2={0} stroke="var(--axis-line)" strokeWidth={1 / view.k} />
+              <line x1={0} y1={-1e4} x2={0} y2={1e4} stroke="var(--axis-line)" strokeWidth={1 / view.k} />
 
               {/* WORKSPACE_FRAME — área de trabalho (referência, nunca exportada) */}
               {frame.visible && (
@@ -2264,6 +2195,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
           <Rulers view={view} />
 
+          {clipboardMenu && clipboardRef.current && (
+            <div className="metal absolute z-40 min-w-40 rounded-xl border border-line p-1 shadow-lg" style={{ left: Math.min(clipboardMenu.x, canvasSize.w - 180), top: Math.min(clipboardMenu.y, canvasSize.h - 120) }}>
+              <MenuItem label="Colar" icon={Copy} onClick={() => {
+                const pasted = pasteClipboard(clipboardRef.current as ChamferClipboard, { x: clipboardRef.current!.anchor.x + 10, y: clipboardRef.current!.anchor.y + 10 });
+                commit((list) => [...list, ...pasted.entities]); setGroups((list) => [...list, ...pasted.groups]); setSelection(pasted.ids); setClipboardMenu(null);
+              }} />
+              <MenuItem label="Colar na posição" icon={Crosshair} onClick={() => {
+                const pasted = pasteClipboard(clipboardRef.current as ChamferClipboard, clipboardMenu.world);
+                commit((list) => [...list, ...pasted.entities]); setGroups((list) => [...list, ...pasted.groups]); setSelection(pasted.ids); setClipboardMenu(null);
+              }} />
+              <MenuItem label="Cancelar" icon={X} onClick={() => setClipboardMenu(null)} />
+            </div>
+          )}
+
           {zoomHud !== null && (
             <div className="metal pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 font-mono text-[11px] text-accent tabular-nums">
               {Math.round(zoomHud * 100)}%
@@ -2297,25 +2242,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       {/* REGIÃO E — STATUS BAR */}
       {!focus && (
         <div className="flex h-7 shrink-0 items-center gap-1.5 overflow-x-auto font-mono text-[10px] text-muted-foreground">
-          <button
-            onClick={() => {
-              setShowCut((s) => !s);
-              setShowLayers(false);
-            }}
-            title="Plano de corte"
-            className={cn(
-              "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
-              showCut && "text-accent",
-            )}
-          >
-            PLANO
-          </button>
-          <button
-            onClick={() => setSnapOn((s) => !s)}
-            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", snapOn && "text-accent")}
-          >
-            SNAP
-          </button>
+          {project?.plans.map((pl) => (
+            <button key={pl.id} onClick={() => {
+              if (pl.id === planId) return;
+              setProject((prev) => prev ? { ...prev, plans: prev.plans.map((x) => x.id === planId ? { ...x, entities, groups, dims } : x) } : prev);
+              setPlanId(pl.id); setEntities(pl.entities); setGroups(pl.groups ?? []); setDims(pl.dims ?? []); setSelection([]); past.current = []; future.current = [];
+            }} className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", pl.id === planId && "text-accent")}>{pl.name}</button>
+          ))}
+          {project && <button aria-label="Novo plano" onClick={() => {
+            const plan = emptyPlan(project.plans.length); plan.name = planLabel(project.plans.length);
+            const next: Project = { ...project, plans: [...project.plans.map((x) => x.id === planId ? { ...x, entities, groups, dims } : x), plan], lastPlanId: plan.id };
+            saveProject(next); setProject(next); setPlanId(plan.id); setEntities([]); setGroups([]); setDims([]); setSelection([]); toast.success(`${plan.name} criado.`);
+          }} className="shrink-0 rounded-full bg-background/40 px-2 py-0.5 text-muted-foreground hover:text-accent">+</button>}
           <button
             onClick={() => setShowGrid((s) => !s)}
             className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", showGrid && "text-accent")}
@@ -2475,11 +2413,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
 
       <ImportDialog
+        open={importOpen}
         source={importSrc}
         layers={layers}
-        onClose={() => setImportSrc(null)}
+        layer={activeLayer}
+        onSource={setImportSrc}
+        onClose={() => { setImportOpen(false); setImportSrc(null); }}
         onConfirm={onImportConfirm}
       />
+      <TextDialog open={textOpen} onClose={() => { setTextOpen(false); if (!textSpec) setTool("select"); }} onConfirm={(spec) => { setTextSpec(spec); setTextOpen(false); toast.info("Toque no desenho para posicionar o texto."); }} />
       <VisionDialog
         open={visionOpen}
         onOpenChange={setVisionOpen}
