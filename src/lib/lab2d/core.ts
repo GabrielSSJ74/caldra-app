@@ -20,6 +20,7 @@ import {
   techColor,
   type TechLayerId,
 } from "@/lib/lab2d/technical";
+import { roleOf, ROLE_BY_LAYER } from "@/lib/lab2d/roles";
 
 export type LayerId = string;
 
@@ -561,7 +562,8 @@ export function toDxf(
     (a, b) => Number(a.type === "path" && a.hole) - Number(b.type === "path" && b.hole),
   );
   for (const e of ordered) {
-    const layer = e.layer.toUpperCase();
+    // LAYER = FUNÇÃO DE FABRICAÇÃO (papel), nunca cor nem nome livre.
+    const layer = roleOf(e) ?? "UNCLASSIFIED";
     if (e.type === "line")
       out.push({ type: "LINE", layer, start: { x: e.x1, y: -e.y1 }, end: { x: e.x2, y: -e.y2 } });
     if (e.type === "polyline")
@@ -612,16 +614,25 @@ export function toDxf(
     }
   }
 
-  return {
-    // ACI aproximado por camada + true color com o hex técnico fixo do CHAMFER
-    layers: layers.map((l, i) => {
+  // tabela de layers pelos PAPÉIS realmente usados no arquivo
+  const usedRoles = new Set(out.map((e) => e.layer));
+  const tableSource = layers.filter((l) => usedRoles.has(ROLE_BY_LAYER[l.id] ?? "UNCLASSIFIED"));
+  const seen = new Set<string>();
+  const table = tableSource
+    .map((l, i) => {
+      const name = ROLE_BY_LAYER[l.id] ?? "UNCLASSIFIED";
       const hex = techColor(l.id);
-      const trueColor = parseInt(hex.slice(1), 16);
-      const aci = DXF_ACI[l.id as TechLayerId] ?? i + 1;
-      return { name: l.name.toUpperCase(), color: aci, trueColor };
-    }),
-    entities: out,
-  };
+      return {
+        name,
+        color: DXF_ACI[l.id as TechLayerId] ?? i + 1,
+        trueColor: parseInt(hex.slice(1), 16),
+      };
+    })
+    .filter((l) => (seen.has(l.name) ? false : (seen.add(l.name), true)));
+  for (const name of usedRoles)
+    if (!seen.has(name)) table.push({ name, color: 7, trueColor: 0xffffff });
+
+  return { layers: table, entities: out };
 }
 
 export function fromDxf(doc: DxfDocument, layer: LayerId): Entity[] {
