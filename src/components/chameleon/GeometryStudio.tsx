@@ -481,7 +481,7 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
               </div>
             )}
 
-            {(tab === "Traçado" || tab === "Desenvolvimento") && (
+            {(tab === "Traçado" || tab === "Desenvolvimento") && viewMode === "2d" && (
                 <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
                   <div className="h-[300px] lg:h-[420px]">
                     <DevelopmentView

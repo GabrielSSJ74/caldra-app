@@ -401,29 +401,13 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
       };
       const faces: Face[] = [];
       const edges: Edge[] = [];
-      const outerTriangles: Vec3[][] = [];
-
-      canonical.arcPoints.forEach((quadrant, k) => {
-        const corner = canonical.corners[k];
-        const nextCorner = canonical.corners[(k + 1) % canonical.corners.length];
-        if (!corner || !nextCorner) return;
-        for (let j = 0; j < quadrant.length - 1; j++) {
-          const a = quadrant[j];
-          const b = quadrant[j + 1];
-          if (!a || !b) continue;
-          outerTriangles.push([corner, a, b]);
-          edges.push([cv(corner), cv(a)]);
-        }
-        const end = quadrant[quadrant.length - 1];
-        if (end) outerTriangles.push([corner, nextCorner, end]);
-      });
-
-      for (const tri of outerTriangles) {
-        const outer = tri.map(cv);
-        const inner = tri.map((q) => inset(q));
+      for (const face of canonical.faces) {
+        const outer = face.points.map(cv);
+        const inner = face.points.map((q) => inset(q));
         faces.push({ pts: outer, kind: "outer" });
         faces.push({ pts: inner.slice().reverse(), kind: "inner" });
       }
+      edges.push(...canonical.generatrices.map((line) => [cv(line.a), cv(line.b)] as Edge));
 
       for (let k = 0; k < canonical.corners.length; k++) {
         const a = canonical.corners[k];

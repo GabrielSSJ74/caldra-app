@@ -108,6 +108,10 @@ export type SquareToRoundModel = {
   corners: Vec3[];
   arcPoints: Vec3[][]; // por quadrante, inclui extremos
   circle: Vec3[]; // todos os pontos do topo, em ordem
+  /** Faces reais da superfície média, em ordem de fabricação. */
+  faces: { id: string; points: [Vec3, Vec3, Vec3] }[];
+  /** Geratrizes reais usadas tanto no 3D quanto na triangulação plana. */
+  generatrices: { id: string; a: Vec3; b: Vec3 }[];
 };
 
 export function buildModel(i: SquareToRoundInput): SquareToRoundModel {
@@ -137,7 +141,26 @@ export function buildModel(i: SquareToRoundInput): SquareToRoundModel {
     }
     arcPoints.push(quadrant);
   }
-  return { corners, arcPoints, circle };
+  const faces: SquareToRoundModel["faces"] = [];
+  const generatrices: SquareToRoundModel["generatrices"] = [];
+  for (let k = 0; k < 4; k++) {
+    const corner = corners[k];
+    const nextCorner = corners[(k + 1) % 4];
+    const quadrant = arcPoints[k];
+    if (!corner || !nextCorner || !quadrant) continue;
+    for (let j = 0; j < i.divisions; j++) {
+      const startPoint = quadrant[j];
+      const endPoint = quadrant[j + 1];
+      if (!startPoint || !endPoint) continue;
+      faces.push({ id: `Q${k}-T${j}`, points: [corner, startPoint, endPoint] });
+      generatrices.push({ id: `V${k}-P${k * i.divisions + j}`, a: corner, b: startPoint });
+    }
+    const endPoint = quadrant[i.divisions];
+    if (!endPoint) continue;
+    generatrices.push({ id: `V${k}-P${(k + 1) * i.divisions}`, a: corner, b: endPoint });
+    faces.push({ id: `Q${k}-BASE`, points: [corner, nextCorner, endPoint] });
+  }
+  return { corners, arcPoints, circle, faces, generatrices };
 }
 
 function polygonArea(points: Vec2[]): number {
