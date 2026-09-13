@@ -120,7 +120,6 @@ import { drawScene } from "@/lib/lab2d/canvasScene";
 import { stressEntities } from "@/lib/lab2d/stress";
 import { CutPanel } from "@/components/lab2d/CutPanel";
 import { MultiSelectPanel } from "@/components/lab2d/MultiSelectPanel";
-import { CncExportDialog } from "@/components/lab2d/CncExportDialog";
 import { usePanelSide } from "@/lib/lab2d/panelSide";
 import { drawFlow, drawSim } from "@/lib/lab2d/flow";
 import { buildSimPath, sampleSim, SIM_LABEL } from "@/lib/lab2d/simulation";
@@ -2200,12 +2199,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </div>
       )}
 
+      {/* PONTO ÚNICO DE EXPORTAÇÃO: DXF (três perfis), SVG, PNG e PDF. */}
       <ExportDialog
-        open={exportOpen}
-        onOpenChange={setExportOpen}
+        open={exportOpen || cncOpen}
+        onOpenChange={(v) => {
+          if (!v) {
+            setExportOpen(false);
+            setCncOpen(false);
+          }
+        }}
         layers={layers}
         projectName={project?.name ?? "CALDRA"}
         planName={project?.plans.find((p) => p.id === planId)?.name ?? "P01"}
+        thickness={thickness}
         scopes={{
           selection: selected,
           plan: drawable,
@@ -2214,16 +2220,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             : drawable,
         }}
       />
-      <CncExportDialog
-        open={cncOpen}
-        onOpenChange={setCncOpen}
-        entities={drawable}
-        filename={`${project?.name ?? "caldra"}-${
-          project?.plans.find((p) => p.id === planId)?.name ?? "P01"
-        }`
-          .replace(/\s+/g, "-")
-          .toLowerCase()}
-      />
+
       {solidEver.current && (
         <Cad3DStage
           open={solidOpen}

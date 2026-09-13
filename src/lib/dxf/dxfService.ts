@@ -1,51 +1,81 @@
 /**
- * dxfService — camada única de importação/exportação DXF.
+ * dxfService — SERIALIZADOR/PARSER DXF ÚNICO DO CALDRA.
  *
- * Exportação: DXF ASCII (SECTION HEADER/TABLES/ENTITIES), suportando
- * LINE, LWPOLYLINE, CIRCLE, ARC e SPLINE (curvas de Bézier reais), com camadas.
- * Importação: parser de pares (código, valor) com suporte a
- * LINE, POLYLINE/VERTEX, LWPOLYLINE, CIRCLE, ARC e SPLINE.
+ * Este é o único lugar do projeto que escreve bytes de DXF. Todo caminho de
+ * exportação (Exportar → DXF, perfis Técnico/Produção/CypCut) termina aqui,
+ * através de `src/lib/dxf/exportService.ts`.
  *
- * Quando há SPLINE o cabeçalho declara AC1015 (R2000), versão mínima que
- * define a entidade — é o que CypCut e afins esperam.
+ * Estrutura emitida: HEADER, TABLES (LTYPE, LAYER, APPID), ENTITIES, EOF,
+ * com handles, marcadores de subclasse (AcDbEntity/AcDbLine/...) e dados
+ * estendidos (XDATA) por entidade.
+ *
+ * A versão declarada no $ACADVER acompanha SEMPRE as entidades realmente
+ * emitidas: LWPOLYLINE/SPLINE/XDATA exigem formato moderno (AC1018/R2004).
  */
 
 export type DxfPoint = { x: number; y: number };
 
+/** Par bruto de dados estendidos (XDATA) dentro de um APPID. */
+export type DxfXdataPair = { code: number; value: string | number };
+
+/** Bloco XDATA de uma entidade: aplicativo + pares na ordem de escrita. */
+export type DxfXdata = { appId: string; pairs: DxfXdataPair[] };
+
+type WithMeta = { xdata?: DxfXdata[] };
+
 export type DxfEntity =
-  | { type: "LINE"; layer: string; start: DxfPoint; end: DxfPoint }
-  | { type: "LWPOLYLINE"; layer: string; points: DxfPoint[]; closed: boolean }
-  | { type: "CIRCLE"; layer: string; center: DxfPoint; radius: number }
-  | {
+  | ({ type: "LINE"; layer: string; start: DxfPoint; end: DxfPoint } & WithMeta)
+  | ({ type: "LWPOLYLINE"; layer: string; points: DxfPoint[]; closed: boolean } & WithMeta)
+  | ({ type: "CIRCLE"; layer: string; center: DxfPoint; radius: number } & WithMeta)
+  | ({
       type: "ARC";
       layer: string;
       center: DxfPoint;
       radius: number;
       startAngle: number;
       endAngle: number;
-    }
-  | {
+    } & WithMeta)
+  | ({
       /** Spline cúbica em forma de Bézier por partes. */
       type: "SPLINE";
       layer: string;
       /** 3n+1 pontos de controle. */
       controls: DxfPoint[];
       closed: boolean;
-    };
+    } & WithMeta);
 
 export type DxfLayer = { name: string; color: number; trueColor?: number };
 
-export type DxfDocument = { layers: DxfLayer[]; entities: DxfEntity[] };
-
+export type DxfDocument = {
+  layers: DxfLayer[];
+  entities: DxfEntity[];
+  /** APPIDs declarados na tabela (além dos usados pelas entidades). */
+  appIds?: string[];
+};
 
 const g = (code: number, value: string | number) => `${code}\n${value}\n`;
 
-function writeEntity(e: DxfEntity): string {
+const SUBCLASS: Record<DxfEntity["type"], string[]> = {
+  LINE: ["AcDbLine"],
+  LWPOLYLINE: ["AcDbPolyline"],
+  CIRCLE: ["AcDbCircle"],
+  ARC: ["AcDbCircle", "AcDbArc"],
+  SPLINE: ["AcDbSpline"],
+};
+
+function writeXdata(e: DxfEntity): string {
+  let out = "";
+  for (const block of e.xdata ?? []) {
+    out += g(1001, block.appId);
+    for (const p of block.pairs) out += g(p.code, p.value);
+  }
+  return out;
+}
+
+function writeBody(e: DxfEntity): string {
   switch (e.type) {
     case "LINE":
       return (
-        g(0, "LINE") +
-        g(8, e.layer) +
         g(10, e.start.x.toFixed(4)) +
         g(20, e.start.y.toFixed(4)) +
         g(30, "0.0") +
@@ -55,16 +85,12 @@ function writeEntity(e: DxfEntity): string {
       );
     case "LWPOLYLINE":
       return (
-        g(0, "LWPOLYLINE") +
-        g(8, e.layer) +
         g(90, e.points.length) +
         g(70, e.closed ? 1 : 0) +
         e.points.map((p) => g(10, p.x.toFixed(4)) + g(20, p.y.toFixed(4))).join("")
       );
     case "CIRCLE":
       return (
-        g(0, "CIRCLE") +
-        g(8, e.layer) +
         g(10, e.center.x.toFixed(4)) +
         g(20, e.center.y.toFixed(4)) +
         g(30, "0.0") +
@@ -72,12 +98,12 @@ function writeEntity(e: DxfEntity): string {
       );
     case "ARC":
       return (
-        g(0, "ARC") +
-        g(8, e.layer) +
         g(10, e.center.x.toFixed(4)) +
         g(20, e.center.y.toFixed(4)) +
         g(30, "0.0") +
         g(40, e.radius.toFixed(4)) +
+        // o marcador AcDbArc separa raio/centro dos ângulos
+        g(100, "AcDbArc") +
         g(50, e.startAngle.toFixed(4)) +
         g(51, e.endAngle.toFixed(4))
       );
@@ -88,10 +114,6 @@ function writeEntity(e: DxfEntity): string {
       for (let i = 1; i < n; i++) knots.push(i, i, i);
       knots.push(n, n, n, n);
       return (
-        g(0, "SPLINE") +
-        g(8, e.layer) +
-        g(100, "AcDbEntity") +
-        g(100, "AcDbSpline") +
         g(210, "0.0") +
         g(220, "0.0") +
         g(230, "1.0") +
@@ -109,40 +131,102 @@ function writeEntity(e: DxfEntity): string {
   }
 }
 
+function writeEntity(e: DxfEntity, handle: string): string {
+  const subclasses = SUBCLASS[e.type];
+  let out = g(0, e.type) + g(5, handle) + g(100, "AcDbEntity") + g(8, e.layer);
+  // ARC escreve o segundo marcador no meio do corpo
+  out += g(100, subclasses[0]!);
+  out += writeBody(e);
+  out += writeXdata(e);
+  return out;
+}
+
 /**
  * Versão DXF compatível com as entidades realmente emitidas.
- * LWPOLYLINE exige no mínimo R14 (AC1014); SPLINE exige R2000 (AC1015).
- * NUNCA declarar R12 (AC1009) quando houver LWPOLYLINE ou SPLINE.
+ * LWPOLYLINE, SPLINE e XDATA exigem formato moderno; declaramos AC1018
+ * (R2004), estável e aceito por CAM/CypCut. R12 (AC1009) só permanece
+ * para arquivos com LINE/CIRCLE/ARC puros e sem dados estendidos.
  */
-export function dxfVersionFor(doc: DxfDocument): "AC1015" | "AC1014" | "AC1009" {
-  if (doc.entities.some((e) => e.type === "SPLINE")) return "AC1015";
-  if (doc.entities.some((e) => e.type === "LWPOLYLINE")) return "AC1014";
-  return "AC1009";
+export function dxfVersionFor(doc: DxfDocument): "AC1018" | "AC1009" {
+  const modern = doc.entities.some(
+    (e) => e.type === "LWPOLYLINE" || e.type === "SPLINE" || (e.xdata?.length ?? 0) > 0,
+  );
+  return modern || (doc.appIds?.length ?? 0) > 0 ? "AC1018" : "AC1009";
+}
+
+/** APPIDs realmente necessários: os declarados no documento + os usados. */
+export function appIdsOf(doc: DxfDocument): string[] {
+  const ids = new Set<string>(["ACAD", ...(doc.appIds ?? [])]);
+  for (const e of doc.entities) for (const x of e.xdata ?? []) ids.add(x.appId);
+  return [...ids];
 }
 
 export function exportDxf(doc: DxfDocument): string {
   const layers = doc.layers.length ? doc.layers : [{ name: "0", color: 7 }];
+  const appIds = appIdsOf(doc);
+  let handle = 0x100;
+  const next = () => (++handle).toString(16).toUpperCase();
+
   let out = "";
   out += g(0, "SECTION") + g(2, "HEADER");
   out += g(9, "$ACADVER") + g(1, dxfVersionFor(doc));
   out += g(9, "$INSUNITS") + g(70, 4); // 4 = milímetros
+  out += g(9, "$MEASUREMENT") + g(70, 1); // 1 = métrico
+  out += g(9, "$LUNITS") + g(70, 2);
   out += g(0, "ENDSEC");
 
-
   out += g(0, "SECTION") + g(2, "TABLES");
-  out += g(0, "TABLE") + g(2, "LAYER") + g(70, layers.length);
+
+  // LTYPE — CONTINUOUS é o tipo de linha referenciado por todas as layers
+  out += g(0, "TABLE") + g(2, "LTYPE") + g(5, next()) + g(100, "AcDbSymbolTable") + g(70, 1);
+  out +=
+    g(0, "LTYPE") +
+    g(5, next()) +
+    g(100, "AcDbSymbolTableRecord") +
+    g(100, "AcDbLinetypeTableRecord") +
+    g(2, "CONTINUOUS") +
+    g(70, 0) +
+    g(3, "Solid line") +
+    g(72, 65) +
+    g(73, 0) +
+    g(40, "0.0");
+  out += g(0, "ENDTAB");
+
+  out += g(0, "TABLE") + g(2, "LAYER") + g(5, next()) + g(100, "AcDbSymbolTable") + g(70, layers.length);
   for (const l of layers) {
-    out += g(0, "LAYER") + g(2, l.name) + g(70, 0) + g(62, l.color) + g(6, "CONTINUOUS");
+    out +=
+      g(0, "LAYER") +
+      g(5, next()) +
+      g(100, "AcDbSymbolTableRecord") +
+      g(100, "AcDbLayerTableRecord") +
+      g(2, l.name) +
+      g(70, 0) +
+      g(62, l.color) +
+      g(6, "CONTINUOUS");
     // cor técnica real (AutoCAD true color) — preserva a convenção visual do CHAMFER
     if (l.trueColor !== undefined) out += g(420, l.trueColor);
+  }
+  out += g(0, "ENDTAB");
+
+  // APPID — sem o registro do aplicativo o XDATA é descartado na leitura
+  out += g(0, "TABLE") + g(2, "APPID") + g(5, next()) + g(100, "AcDbSymbolTable") + g(70, appIds.length);
+  for (const id of appIds) {
+    out +=
+      g(0, "APPID") +
+      g(5, next()) +
+      g(100, "AcDbSymbolTableRecord") +
+      g(100, "AcDbRegAppTableRecord") +
+      g(2, id) +
+      g(70, 0);
   }
   out += g(0, "ENDTAB") + g(0, "ENDSEC");
 
   out += g(0, "SECTION") + g(2, "ENTITIES");
-  for (const e of doc.entities) out += writeEntity(e);
+  for (const e of doc.entities) out += writeEntity(e, next());
   out += g(0, "ENDSEC") + g(0, "EOF");
   return out;
 }
+
 
 type Pair = { code: number; value: string };
 

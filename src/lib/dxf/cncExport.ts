@@ -11,8 +11,8 @@
  */
 
 import type { Vec2 } from "@/lib/geometry/types";
-import type { DxfDocument, DxfEntity } from "@/lib/dxf/dxfService";
-import { dxfVersionFor, importDxf } from "@/lib/dxf/dxfService";
+import type { DxfDocument, DxfEntity, DxfXdata } from "@/lib/dxf/dxfService";
+import { appIdsOf, dxfVersionFor, importDxf } from "@/lib/dxf/dxfService";
 import { flattenPath } from "@/lib/lab2d/bezier";
 import type { Entity } from "@/lib/lab2d/core";
 import { pathLength } from "@/lib/lab2d/cutPlan";
@@ -23,6 +23,8 @@ import {
   type CncIssue,
 } from "@/lib/lab2d/manufacturing";
 import {
+  CYPCUT_APPID,
+  CYPCUT_CHANNEL,
   DEFAULT_PROFILE_ID,
   ENTITY_ROLES,
   EXPORT_ACI,
@@ -34,6 +36,7 @@ import {
   type EntityRole,
   type ManufacturingRole,
 } from "@/lib/lab2d/roles";
+
 
 /** Papéis diretamente selecionáveis na exportação. */
 export type CncRole = EntityRole;
@@ -192,6 +195,57 @@ export function cncCounts(entities: Entity[]): CncCounts {
 }
 
 /**
+ * DADOS ESTENDIDOS FS_CYPCUT.
+ *
+ * Estrutura observada no golden sample aceito pelo CypCut: Channel (canal
+ * de processo, ver CYPCUT_CHANNEL), LeadIn/LeadOut (listas de parâmetros de
+ * entrada e saída), IsFill, PathStart e ToolCompensation. Os valores nulos
+ * significam "usar a configuração da máquina" — o CALDRA não inventa
+ * parâmetros de processo.
+ */
+export function cypcutXdata(role: ManufacturingRole): DxfXdata {
+  return {
+    appId: CYPCUT_APPID,
+    pairs: [
+      { code: 1000, value: "Channel" },
+      { code: 1070, value: CYPCUT_CHANNEL[role] },
+      { code: 1000, value: "LeadIn" },
+      { code: 1002, value: "{" },
+      { code: 1070, value: 0 },
+      { code: 1040, value: 0 },
+      { code: 1040, value: 0 },
+      { code: 1040, value: 0 },
+      { code: 1040, value: 0 },
+      { code: 1070, value: 0 },
+      { code: 1040, value: 0 },
+      { code: 1070, value: 0 },
+      { code: 1002, value: "}" },
+      { code: 1000, value: "LeadOut" },
+      { code: 1002, value: "{" },
+      { code: 1070, value: 0 },
+      { code: 1040, value: 0 },
+      { code: 1040, value: 0 },
+      { code: 1040, value: 0 },
+      { code: 1070, value: 0 },
+      { code: 1002, value: "}" },
+      { code: 1000, value: "IsFill" },
+      { code: 1070, value: 0 },
+      { code: 1000, value: "PathStart" },
+      { code: 1040, value: 0 },
+      { code: 1000, value: "ToolCompensation" },
+      { code: 1002, value: "{" },
+      { code: 1070, value: 0 },
+      { code: 1040, value: 0 },
+      { code: 1070, value: 0 },
+      { code: 1002, value: "}" },
+    ],
+  };
+}
+
+/** O perfil escolhido pede a estrutura estendida do CypCut? */
+export const isCypcutProfile = (opts: CncExportOptions) => profileById(opts.profileId).id === "cypcut";
+
+/**
  * Constrói o documento DXF CNC.
  * A ORDEM do array de entidades é a intenção de sequência do CALDRA e é
  * preservada na estrutura do arquivo (o CypCut pode reordenar segundo a
@@ -200,9 +254,15 @@ export function cncCounts(entities: Entity[]): CncCounts {
 export function buildCncDxf(entities: Entity[], opts: CncExportOptions): DxfDocument {
   const out: DxfEntity[] = [];
   const used: string[] = [];
+  const cypcut = isCypcutProfile(opts);
   const useLayer = (name: string) => {
     if (!used.includes(name)) used.push(name);
     return name;
+  };
+  const tag = (list: DxfEntity[], role: ManufacturingRole) => {
+    if (!cypcut) return list;
+    const xdata = [cypcutXdata(role)];
+    return list.map((e) => ({ ...e, xdata }) as DxfEntity);
   };
 
   for (const e of entities) {
@@ -214,25 +274,39 @@ export function buildCncDxf(entities: Entity[], opts: CncExportOptions): DxfDocu
     if (!layer) continue;
     useLayer(layer);
 
+    const effective: ManufacturingRole =
+      role === "BEND" && opts.bendAs === "MARK" ? "MARK" : role;
     const isCut = role === "CUT";
     if (opts.leads && isCut) {
       const lin = leadPolyline(e, "in");
       const target = exportLayerOf("LEAD_IN", opts);
       if (lin && target)
-        out.push({ type: "LWPOLYLINE", layer: useLayer(target), closed: false, points: lin.map(m) });
+        out.push(
+          ...tag(
+            [{ type: "LWPOLYLINE", layer: useLayer(target), closed: false, points: lin.map(m) }],
+            "LEAD_IN",
+          ),
+        );
     }
-    out.push(...geometryOf(e, layer, opts.flattenCurves));
+    out.push(...tag(geometryOf(e, layer, opts.flattenCurves), effective));
     if (opts.leads && isCut) {
       const lout = leadPolyline(e, "out");
       const target = exportLayerOf("LEAD_OUT", opts);
       if (lout && target)
-        out.push({ type: "LWPOLYLINE", layer: useLayer(target), closed: false, points: lout.map(m) });
+        out.push(
+          ...tag(
+            [{ type: "LWPOLYLINE", layer: useLayer(target), closed: false, points: lout.map(m) }],
+            "LEAD_OUT",
+          ),
+        );
     }
   }
 
   return {
     layers: used.map((name, i) => ({ name, color: EXPORT_ACI[name] ?? i + 1 })),
     entities: out,
+    appIds: cypcut ? [CYPCUT_APPID] : undefined,
+
   };
 }
 
@@ -408,6 +482,14 @@ export function preflightCnc(entities: Entity[], opts: CncExportOptions): CncPre
   ];
   for (const role of ENTITY_ROLES)
     rows.push({ label: role, value: `${counts[role]} entidades`, ok: true });
+  const cypcut = isCypcutProfile(opts);
+  const tagged = doc.entities.filter((e) =>
+    (e.xdata ?? []).some((x) => x.appId === CYPCUT_APPID),
+  ).length;
+  const zeroLen = doc.entities.filter(
+    (e) => e.type === "LINE" && Math.hypot(e.end.x - e.start.x, e.end.y - e.start.y) < 0.01,
+  ).length;
+
   rows.push(
     { label: "Layers válidos", value: layersOk ? "sim" : "não", ok: layersOk },
     {
@@ -417,13 +499,33 @@ export function preflightCnc(entities: Entity[], opts: CncExportOptions): CncPre
     },
     { label: "Sem duplicatas", value: dups === 0 ? "sim" : `${dups}`, ok: dups === 0 },
     {
+      label: "Sem segmentos nulos",
+      value: zeroLen === 0 ? "sim" : `${zeroLen}`,
+      ok: zeroLen === 0,
+    },
+    {
+      label: "Funções preservadas",
+      value: counts.unclassified === 0 ? "sim" : `${counts.unclassified} sem função`,
+      ok: counts.unclassified === 0,
+    },
+    {
       label: "DXF estruturalmente válido",
       value: errors === 0 ? dxfVersionFor(doc) : `${errors} erros`,
       ok: errors === 0,
     },
   );
+  if (cypcut)
+    rows.push({
+      label: "Estrutura CypCut (FS_CYPCUT)",
+      value:
+        tagged === doc.entities.length && appIdsOf(doc).includes(CYPCUT_APPID)
+          ? `${tagged} entidades · canais ${CYPCUT_CHANNEL.CUT}/${CYPCUT_CHANNEL.MARK}`
+          : "incompleta",
+      ok: tagged === doc.entities.length && doc.entities.length > 0,
+    });
   return rows;
 }
+
 
 /** Comprimento total de corte do plano, em mm. */
 export const cncCutLength = (entities: Entity[]) =>

@@ -202,3 +202,30 @@ export const EXPORT_ACI: Record<string, number> = {
   LEAD_IN: 4,
   LEAD_OUT: 4,
 };
+
+/**
+ * CANAIS (Channel) DO DADO ESTENDIDO FS_CYPCUT.
+ *
+ * Observado no golden sample corrigido manualmente e aceito pelo CypCut
+ * (`quadrado-redondo-p01.dxf`): o valor de `Channel` coincide com o nome
+ * numérico da layer do arquivo — contorno de corte em layer "1" traz
+ * `Channel 1`; as linhas auxiliares em layer "15" trazem `Channel 15`.
+ *
+ * ATENÇÃO: apenas 1 (corte) e 15 (auxiliar/marcação) estão ATESTADOS no
+ * golden sample. Os demais valores abaixo são convenção do CALDRA, não
+ * regra universal do CypCut, e podem ser ajustados por máquina.
+ */
+export const CYPCUT_CHANNEL: Record<ManufacturingRole, number> = {
+  CUT: 1, // atestado no golden sample
+  MARK: 15, // atestado no golden sample
+  BEND: 2, // convenção CALDRA
+  REFERENCE: 14, // convenção CALDRA
+  DIMENSION: 14, // convenção CALDRA
+  LEAD_IN: 1, // entra junto do corte
+  LEAD_OUT: 1, // entra junto do corte
+  DIRECTION: 0, // metadado: nunca vira geometria
+};
+
+/** Nome do aplicativo registrado (APPID) dos dados estendidos do CypCut. */
+export const CYPCUT_APPID = "FS_CYPCUT";
+
