@@ -77,6 +77,18 @@ import {
   type Snap,
 } from "@/lib/lab2d/core";
 import { autoDimensions } from "@/lib/lab2d/render";
+import {
+  DIM_LABEL,
+  DIM_REFS,
+  dimensionDraw,
+  dimensionEntities,
+  formatDimension,
+  makeDimension,
+  pruneDimensions,
+  type DimKind,
+  type DimRef,
+  type Dimension,
+} from "@/lib/lab2d/dimensions";
 import { pathToSvg } from "@/lib/lab2d/bezier";
 import {
   AXIS_COLOR,
