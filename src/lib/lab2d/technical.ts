@@ -23,7 +23,23 @@ export const WARNING_COLOR = "#FB7185"; // alertas de validação (não é camad
 /** Tinta única da folha exportada (PDF/PNG): sempre preto puro. */
 export const SHEET_INK = "#000000";
 
-export type TechLayerId = "corte" | "dobra" | "marcacao" | "construcao" | "referencia" | "cota";
+export type TechLayerId =
+  | "corte"
+  | "recorte"
+  | "dobra"
+  | "marcacao"
+  | "construcao"
+  | "referencia"
+  | "cota";
+
+/**
+ * CAMADAS VISÍVEIS PARA O USUÁRIO NO CHAMFER.
+ * Apenas estas quatro representam operações de fabricação escolhidas por quem
+ * desenha. Construção, referência e cota continuam existindo internamente.
+ */
+export const USER_LAYER_IDS: TechLayerId[] = ["corte", "marcacao", "dobra", "recorte"];
+
+export const isUserLayer = (layerId: string) => USER_LAYER_IDS.includes(layerId as TechLayerId);
 
 /** Estilo técnico completo de cada camada (cor + traço + espessura relativa). */
 export const TECHNICAL_STYLE: Record<
@@ -39,32 +55,23 @@ export const TECHNICAL_STYLE: Record<
   },
   dobra: { color: BEND_COLOR, dash: (s) => `${7 * s} ${2.5 * s} ${1.5 * s} ${2.5 * s}`, weight: 1, order: 2 },
   marcacao: { color: MARK_COLOR, dash: (s) => `${4 * s} ${2.5 * s}`, weight: 1, order: 3 },
-  corte: { color: CUT_COLOR, dash: () => undefined, weight: 1.4, order: 4 },
-  cota: { color: DIMENSION_COLOR, dash: () => undefined, weight: 0.8, order: 5 },
+  recorte: { color: RECORTE_COLOR, dash: () => undefined, weight: 1.2, order: 4 },
+  corte: { color: CUT_COLOR, dash: () => undefined, weight: 1.4, order: 5 },
+  cota: { color: DIMENSION_COLOR, dash: () => undefined, weight: 0.8, order: 6 },
 };
 
 const FALLBACK = TECHNICAL_STYLE.corte;
 
 /**
- * Apresentação da camada CORTE na tela: preto no tema claro, branco no tema
- * escuro. Isto é apenas RENDERIZAÇÃO — a semântica da camada "corte" e a
- * exportação (sempre preta) permanecem inalteradas, e a cor de destaque do
- * tema NUNCA é usada aqui.
+ * A cor técnica é FIXA: corte verde, marcação azul, dobra rosa e recorte
+ * âmbar, em qualquer tema. Cor é representação visual; a camada é a operação.
  */
-export function cutDisplayColor(): string {
-  if (typeof document === "undefined") return CUT_COLOR;
-  return document.documentElement.classList.contains("dark") ? "#FFFFFF" : "#000000";
-}
-
-export const techStyle = (layerId: string) => {
-  const base = TECHNICAL_STYLE[layerId as TechLayerId] ?? FALLBACK;
-  if (layerId === "corte") return { ...base, color: cutDisplayColor() };
-  return base;
-};
+export const techStyle = (layerId: string) =>
+  TECHNICAL_STYLE[layerId as TechLayerId] ?? FALLBACK;
 
 export const techColor = (layerId: string) => techStyle(layerId).color;
 
-/** Ordem de pintura: construção → referência → dobra → marcação → corte → cotas. */
+/** Ordem de pintura: construção → referência → dobra → marcação → recorte → corte → cotas. */
 export const layerOrder = (layerId: string) => techStyle(layerId).order;
 
 /** Modos de saída para fabricação. */
@@ -72,9 +79,9 @@ export type OutputMode = "completo" | "producao" | "corte" | "corte-marcacao";
 
 export const MODE_LAYERS: Record<OutputMode, TechLayerId[] | null> = {
   completo: null,
-  producao: ["corte", "dobra", "marcacao"],
-  corte: ["corte"],
-  "corte-marcacao": ["corte", "marcacao"],
+  producao: ["corte", "recorte", "dobra", "marcacao"],
+  corte: ["corte", "recorte"],
+  "corte-marcacao": ["corte", "recorte", "marcacao"],
 };
 
 export function modeAllows(mode: OutputMode, layerId: string): boolean {
