@@ -146,3 +146,11 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Validação antes do download: não classificados (erro), contorno fechado, duplicatas, degenerados, mm, 1:1
 - [x] Golden sample `src/lib/dxf/__fixtures__/quadrado-redondo-p01.dxf` + regressão geométrica/semântica (11 testes)
 - [ ] Conferir o arquivo gerado no CypCut real do usuário
+
+## Exportação DXF simplificada (tipos de linha + dois perfis)
+- [x] Quatro tipos de linha: Corte (verde), Marcação (azul), Dobra (rosa), Recorte (âmbar)
+- [x] Camadas internas (construção, referência, cota) ocultas da interface
+- [x] Dois perfis: DXF TÉCNICO e DXF LASER CNC (ids antigos mantidos como alias)
+- [x] Dobra nunca é convertida em marcação (opção bendAs removida)
+- [x] Prévia gerada a partir do próprio DXF, fundo claro e cores fixas
+- [x] Análise LXDS removida da interface de exportação
