@@ -51,6 +51,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [ready, setReady] = useState(false);
   const [gatedFeature, setGatedFeature] = useState<Feature | null>(null);
   const { session, ready: authReady } = useAuth();
+  const closeGate = useCallback(() => setGatedFeature(null), []);
 
   const persist = useCallback((next: Plan, source: PlanSource) => {
     setPlan(next);
@@ -109,7 +110,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         return false;
       },
       gatedFeature,
-      closeGate: () => setGatedFeature(null),
+      closeGate,
       unlockWithCode: async (code) => {
         const normalized = code.trim().toUpperCase();
         if (!normalized) return { ok: false, message: "Informe o código." };
@@ -151,7 +152,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       refresh,
       reset: () => persist("free", "none"),
     };
-  }, [plan, planSource, ready, gatedFeature, persist, refresh]);
+  }, [plan, planSource, ready, gatedFeature, closeGate, persist, refresh]);
 
   return <SubscriptionContext.Provider value={value}>{children}</SubscriptionContext.Provider>;
 }
