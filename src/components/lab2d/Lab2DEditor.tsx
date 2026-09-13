@@ -1372,7 +1372,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const gridStep = grid * view.k < 6 ? grid * 10 : grid;
 
-  const panelOpen = !focus && (selected.length > 0 || showLayers || showCut);
+  const panelOpen = !focus && (selected.length > 0 || showLayers || showCut || showDims2);
 
   /*
    * PANEL POSITION MANAGER — fonte única do lado do painel.
