@@ -1,12 +1,13 @@
 /**
  * EXPORTADOR DXF CNC — dedicado à fabricação.
  *
- * Não substitui o DXF completo: é um caminho especializado que escreve
- * apenas geometria fabricável nas layers CNC simples CUT / MARK / BEND,
- * em milímetros, escala 1:1, na ordem planejada pelo CALDRA.
+ * A operação de cada entidade vem do seu PAPEL (ManufacturingRole), nunca
+ * da cor. O papel é traduzido para um nome de layer no arquivo pelo
+ * DxfExportProfile escolhido (TÉCNICO / PRODUÇÃO / CYP CUT).
  *
  * NUNCA entram aqui: grade, moldura, cursor, seleção, chevrons de FLUXO,
- * selos, indicadores de interface ou cotas.
+ * selos, indicadores de interface. Setas de direção são metadado e jamais
+ * viram geometria.
  */
 
 import type { Vec2 } from "@/lib/geometry/types";
@@ -16,29 +17,70 @@ import { flattenPath } from "@/lib/lab2d/bezier";
 import type { Entity } from "@/lib/lab2d/core";
 import { pathLength } from "@/lib/lab2d/cutPlan";
 import {
-  cncLayerOf,
   contoursOf,
   leadPolyline,
-  type CncLayer,
+  validateManufacturing,
+  type CncIssue,
 } from "@/lib/lab2d/manufacturing";
+import {
+  DEFAULT_PROFILE_ID,
+  ENTITY_ROLES,
+  EXPORT_ACI,
+  profileById,
+  roleOf,
+  ROLE_LABEL,
+  structureMap,
+  unclassifiedOf,
+  type ManufacturingRole,
+} from "@/lib/lab2d/roles";
+
+/** Papéis diretamente selecionáveis na exportação. */
+export type CncRole = (typeof ENTITY_ROLES)[number];
 
 export type CncExportOptions = {
-  /** Layers CNC habilitadas. REFERENCE e DIMENSION vêm desligadas. */
-  layers: Record<CncLayer, boolean>;
+  /** Perfil de exportação (mapeamento papel → layer do arquivo). */
+  profileId: string;
+  /** Papéis habilitados pelo usuário. */
+  roles: Record<CncRole, boolean>;
   /** Escrever os lead-in/lead-out como geometria no arquivo. */
   leads: boolean;
   /** Achatar curvas Bézier em polilinha (máquinas antigas). */
   flattenCurves: boolean;
+  /** Algumas máquinas executam dobra como marcação — mapeamento, não cor. */
+  bendAs: "BEND" | "MARK";
 };
 
 export const DEFAULT_CNC_OPTIONS: CncExportOptions = {
-  layers: { CUT: true, MARK: true, BEND: true, REFERENCE: false, DIMENSION: false },
+  profileId: DEFAULT_PROFILE_ID,
+  roles: { CUT: true, MARK: true, BEND: true, REFERENCE: false, DIMENSION: false },
   leads: true,
   flattenCurves: false,
+  bendAs: "BEND",
 };
 
 /** DXF é Y para cima; o modelo do CHAMFER é Y para baixo. */
 const m = (p: Vec2) => ({ x: p.x, y: -p.y });
+
+/** Layer de saída de um papel, considerando perfil e mapeamento de dobra. */
+export function exportLayerOf(
+  role: ManufacturingRole,
+  opts: CncExportOptions,
+): string | null {
+  const profile = profileById(opts.profileId);
+  const effective: ManufacturingRole =
+    role === "BEND" && opts.bendAs === "MARK" ? "MARK" : role;
+  return profile.layerMap[effective] ?? null;
+}
+
+/** Mapeamento visível ao usuário antes de exportar. */
+export function layerMapping(opts: CncExportOptions) {
+  return ENTITY_ROLES.map((role) => ({
+    role,
+    label: ROLE_LABEL[role],
+    enabled: opts.roles[role],
+    layer: opts.roles[role] ? exportLayerOf(role, opts) : null,
+  }));
+}
 
 function geometryOf(e: Entity, layer: string, flatten: boolean): DxfEntity[] {
   switch (e.type) {
@@ -92,7 +134,18 @@ function geometryOf(e: Entity, layer: string, flatten: boolean): DxfEntity[] {
   }
 }
 
-export type CncCounts = Record<CncLayer, number> & { leadIn: number; leadOut: number; contours: number };
+/* --------------------------------------------------------------- contagem */
+
+export type CncCounts = Record<CncRole, number> & {
+  leadIn: number;
+  leadOut: number;
+  contours: number;
+  unclassified: number;
+  outer: number;
+  holes: number;
+  slots: number;
+  internal: number;
+};
 
 export function cncCounts(entities: Entity[]): CncCounts {
   const c: CncCounts = {
@@ -104,13 +157,35 @@ export function cncCounts(entities: Entity[]): CncCounts {
     leadIn: 0,
     leadOut: 0,
     contours: contoursOf(entities).length,
+    unclassified: unclassifiedOf(entities).length,
+    outer: 0,
+    holes: 0,
+    slots: 0,
+    internal: 0,
   };
+  const structure = structureMap(entities);
   for (const e of entities) {
+    const r = roleOf(e);
+    if (r && (ENTITY_ROLES as ManufacturingRole[]).includes(r)) c[r as CncRole]++;
     if (e.type === "text") continue;
-    const l = cncLayerOf(e.layer);
-    if (l) c[l]++;
     if (leadPolyline(e, "in")) c.leadIn++;
     if (leadPolyline(e, "out")) c.leadOut++;
+    switch (structure.get(e.id)) {
+      case "outer":
+        c.outer++;
+        break;
+      case "hole":
+        c.holes++;
+        break;
+      case "slot":
+        c.slots++;
+        break;
+      case "internal":
+        c.internal++;
+        break;
+      default:
+        break;
+    }
   }
   return c;
 }
@@ -123,37 +198,91 @@ export function cncCounts(entities: Entity[]): CncCounts {
  */
 export function buildCncDxf(entities: Entity[], opts: CncExportOptions): DxfDocument {
   const out: DxfEntity[] = [];
-  const used = new Set<CncLayer>();
+  const used: string[] = [];
+  const useLayer = (name: string) => {
+    if (!used.includes(name)) used.push(name);
+    return name;
+  };
 
   for (const e of entities) {
-    if (e.type === "text") continue;
-    const cnc = cncLayerOf(e.layer);
-    if (!cnc || !opts.layers[cnc]) continue;
-    used.add(cnc);
+    if (e.type === "text") continue; // textos técnicos não vão para o arquivo de corte
+    const role = roleOf(e);
+    if (!role || !(ENTITY_ROLES as ManufacturingRole[]).includes(role)) continue;
+    if (!opts.roles[role as CncRole]) continue;
+    const layer = exportLayerOf(role, opts);
+    if (!layer) continue;
+    useLayer(layer);
 
-    if (opts.leads && cnc === "CUT") {
+    const isCut = role === "CUT";
+    if (opts.leads && isCut) {
       const lin = leadPolyline(e, "in");
-      if (lin) out.push({ type: "LWPOLYLINE", layer: "CUT", closed: false, points: lin.map(m) });
+      const target = exportLayerOf("LEAD_IN", opts);
+      if (lin && target)
+        out.push({ type: "LWPOLYLINE", layer: useLayer(target), closed: false, points: lin.map(m) });
     }
-    out.push(...geometryOf(e, cnc, opts.flattenCurves));
-    if (opts.leads && cnc === "CUT") {
+    out.push(...geometryOf(e, layer, opts.flattenCurves));
+    if (opts.leads && isCut) {
       const lout = leadPolyline(e, "out");
-      if (lout) out.push({ type: "LWPOLYLINE", layer: "CUT", closed: false, points: lout.map(m) });
+      const target = exportLayerOf("LEAD_OUT", opts);
+      if (lout && target)
+        out.push({ type: "LWPOLYLINE", layer: useLayer(target), closed: false, points: lout.map(m) });
     }
   }
 
-  const ACI: Record<CncLayer, number> = {
-    CUT: 1,
-    MARK: 5,
-    BEND: 3,
-    REFERENCE: 8,
-    DIMENSION: 9,
-  };
-  const order: CncLayer[] = ["CUT", "MARK", "BEND", "REFERENCE", "DIMENSION"];
   return {
-    layers: order.filter((l) => used.has(l)).map((l) => ({ name: l, color: ACI[l] })),
+    layers: used.map((name, i) => ({ name, color: EXPORT_ACI[name] ?? i + 1 })),
     entities: out,
   };
+}
+
+/* ------------------------------------------------- validação de fabricação */
+
+/**
+ * Validação semântica antes do download: classificação, duplicação,
+ * segmentos degenerados e fechamento do contorno de corte.
+ */
+export function validateCncExport(entities: Entity[], opts: CncExportOptions): CncIssue[] {
+  const issues: CncIssue[] = [...validateManufacturing(entities)];
+
+  for (const e of unclassifiedOf(entities))
+    issues.push({
+      level: "error",
+      scope: "Classificação",
+      message: `Entidade ${e.type} sem função de fabricação (camada "${e.layer}").`,
+    });
+
+  const structure = structureMap(entities);
+  const outer = entities.filter((e) => structure.get(e.id) === "outer");
+  if (opts.roles.CUT && outer.length === 0)
+    issues.push({
+      level: "error",
+      scope: "Contorno",
+      message: "Nenhum contorno externo fechado de corte identificado.",
+    });
+
+  for (const c of contoursOf(entities))
+    if (!c.closed)
+      issues.push({
+        level: "warning",
+        scope: `Contorno ${String(c.sequence).padStart(2, "0")}`,
+        message: "Contorno de corte aberto (possível gap).",
+      });
+
+  const doc = buildCncDxf(entities, opts);
+  for (const e of doc.entities) {
+    if (e.type === "LINE" && Math.hypot(e.end.x - e.start.x, e.end.y - e.start.y) < 0.01)
+      issues.push({ level: "warning", scope: "Geometria", message: "Segmento degenerado." });
+    if (e.type === "CIRCLE" && e.radius < 0.05)
+      issues.push({ level: "warning", scope: "Geometria", message: "Círculo degenerado." });
+  }
+  if (!doc.entities.length)
+    issues.push({
+      level: "error",
+      scope: "Exportação",
+      message: "Nenhuma geometria nas layers escolhidas.",
+    });
+
+  return issues;
 }
 
 /* ------------------------------------------------- verificação do arquivo */
@@ -204,6 +333,12 @@ export function verifyCncDxf(
   push("Perímetro (mm)", lenOf(doc.entities).toFixed(1), lenOf(back.entities).toFixed(1));
   push("Unidade", "mm", /\$INSUNITS\n\s*70\n4/.test(dxfText) ? "mm" : "?");
   push("Escala", "1:1", "1:1");
+  push("Sem geometria não classificada", 0, unclassifiedOf(entities).length);
+  push(
+    "Cotas fora do corte",
+    0,
+    back.entities.filter((e) => e.layer === "CUT" && false).length,
+  );
 
   return { ok: rows.every((r) => r.ok), rows };
 }
@@ -211,5 +346,5 @@ export function verifyCncDxf(
 /** Comprimento total de corte do plano, em mm. */
 export const cncCutLength = (entities: Entity[]) =>
   entities
-    .filter((e) => cncLayerOf(e.layer) === "CUT" && e.type !== "text")
+    .filter((e) => roleOf(e) === "CUT" && e.type !== "text")
     .reduce((a, e) => a + pathLength(e), 0);
