@@ -174,3 +174,10 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Estabilizar o painel de propriedades e criar tokens técnicos visíveis para grid/eixos no AMOLED.
 - [ ] Ampliar a importação CNC 2D com análise, preview navegável, fit, layers e confirmação explícita para DXF/SVG.
 - [ ] Validar BEND completo, roles técnicos, grupos e ausência de regressão nos exportadores.
+
+## Correção cirúrgica — Paywall e abertura do CHAMFER (set/2026)
+- [ ] Isolar backdrop e modal do Paywall, mantendo somente o fundo atenuado e o conteúdo nítido.
+- [ ] Garantir rolagem interna e contenção do Paywall em celular, tablet, desktop e paisagem.
+- [ ] Fechar integralmente o Paywall antes da navegação para a rota real do CHAMFER.
+- [ ] Restaurar o CHAMFER em 100vw × 100dvh, sem padding, limite ou deslocamento herdado.
+- [ ] Validar os cenários CHAMFER, DXF Laser CNC, Oficina e acesso direto, sem alterar entitlements ou motores.
