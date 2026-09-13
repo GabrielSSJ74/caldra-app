@@ -158,6 +158,7 @@ type Tool =
   | "polygon"
   | "text"
   | "measure"
+  | "dim"
   | "offset"
   | "trim"
   | "extend"
@@ -178,7 +179,36 @@ const TOOLS: { id: Tool; icon: typeof Minus; label: string; key: string }[] = [
   { id: "trim", icon: Scissors, label: "Aparar", key: "T" },
   { id: "extend", icon: Move3d, label: "Prolongar", key: "E" },
   { id: "fillet", icon: CircleIcon, label: "Arredondar", key: "F" },
-  { id: "measure", icon: Ruler, label: "Medir", key: "M" },
+  { id: "measure", icon: Crosshair, label: "Medir", key: "M" },
+  { id: "dim", icon: Ruler, label: "Cotar", key: "D" },
+];
+
+/** Tipos de cota oferecidos na barra de cotagem. */
+const DIM_KINDS: DimKind[] = [
+  "linear",
+  "horizontal",
+  "vertical",
+  "aligned",
+  "chain",
+  "diameter",
+  "radius",
+  "angle",
+  "arc-length",
+  "coord-x",
+  "coord-y",
+  "center-distance",
+  "center-dx",
+  "center-dy",
+];
+
+/** Tipos que exigem vínculo com uma entidade real (círculo, arco ou linha). */
+const ENTITY_KINDS: DimKind[] = [
+  "diameter",
+  "radius",
+  "arc-length",
+  "center-distance",
+  "center-dx",
+  "center-dy",
 ];
 
 /** Ferramentas principais na barra lateral; as demais formam o grupo secundário. */
