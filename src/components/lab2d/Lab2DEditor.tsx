@@ -77,6 +77,18 @@ import {
   type Snap,
 } from "@/lib/lab2d/core";
 import { autoDimensions } from "@/lib/lab2d/render";
+import {
+  DIM_LABEL,
+  DIM_REFS,
+  dimensionDraw,
+  dimensionEntities,
+  formatDimension,
+  makeDimension,
+  pruneDimensions,
+  type DimKind,
+  type DimRef,
+  type Dimension,
+} from "@/lib/lab2d/dimensions";
 import { pathToSvg } from "@/lib/lab2d/bezier";
 import {
   AXIS_COLOR,
@@ -146,6 +158,7 @@ type Tool =
   | "polygon"
   | "text"
   | "measure"
+  | "dim"
   | "offset"
   | "trim"
   | "extend"
@@ -166,7 +179,36 @@ const TOOLS: { id: Tool; icon: typeof Minus; label: string; key: string }[] = [
   { id: "trim", icon: Scissors, label: "Aparar", key: "T" },
   { id: "extend", icon: Move3d, label: "Prolongar", key: "E" },
   { id: "fillet", icon: CircleIcon, label: "Arredondar", key: "F" },
-  { id: "measure", icon: Ruler, label: "Medir", key: "M" },
+  { id: "measure", icon: Crosshair, label: "Medir", key: "M" },
+  { id: "dim", icon: Ruler, label: "Cotar", key: "D" },
+];
+
+/** Tipos de cota oferecidos na barra de cotagem. */
+const DIM_KINDS: DimKind[] = [
+  "linear",
+  "horizontal",
+  "vertical",
+  "aligned",
+  "chain",
+  "diameter",
+  "radius",
+  "angle",
+  "arc-length",
+  "coord-x",
+  "coord-y",
+  "center-distance",
+  "center-dx",
+  "center-dy",
+];
+
+/** Tipos que exigem vínculo com uma entidade real (círculo, arco ou linha). */
+const ENTITY_KINDS: DimKind[] = [
+  "diameter",
+  "radius",
+  "arc-length",
+  "center-distance",
+  "center-dx",
+  "center-dy",
 ];
 
 /** Ferramentas principais na barra lateral; as demais formam o grupo secundário. */
@@ -266,6 +308,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [marquee, setMarquee] = useState<{ a: Vec2; b: Vec2 } | null>(null);
   const [measures, setMeasures] = useState<Measure[]>([]);
   const [liveMeasure, setLiveMeasure] = useState<Measure | null>(null);
+  /* COTAGEM — entidades DIMENSION associativas (nunca geometria de corte) */
+  const [dims, setDims] = useState<Dimension[]>([]);
+  const [dimKind, setDimKind] = useState<DimKind>("linear");
+  const [dimPicks, setDimPicks] = useState<DimRef[]>([]);
+  const [showDims2, setShowDims2] = useState(false);
+  const [dimSel, setDimSel] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [importSrc, setImportSrc] = useState<ImportSource | null>(null);
   const [visionOpen, setVisionOpen] = useState(false);
@@ -304,6 +352,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setPlanId(plan.id);
     setEntities(plan.entities);
     setGroups(plan.groups ?? []);
+    setDims(plan.dims ?? []);
     setThickness(p.thickness ?? DEFAULT_PLAN_THICKNESS);
     past.current = [];
     future.current = [];
@@ -354,7 +403,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           thickness,
           lastPlanId: planId,
           plans: project.plans.map((pl) =>
-            pl.id === planId ? { ...pl, entities, groups: live } : pl,
+            pl.id === planId
+              ? { ...pl, entities, groups: live, dims: pruneDimensions(dims, entities) }
+              : pl,
           ),
         };
         saveProject(next);
@@ -371,7 +422,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (idle && cic) cic(idle);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entities, layers, planId, groups, thickness]);
+  }, [entities, layers, planId, groups, dims, thickness]);
 
 
   /* --------------------------------- paisagem automática no celular */
@@ -909,6 +960,47 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       } else setPending(q);
       return;
     }
+    /*
+     * COTAGEM — a cota guarda REFERÊNCIAS (entidade ou ponto) e mede sempre
+     * na geometria real. Nenhuma cota vira geometria de fabricação.
+     */
+    if (tool === "dim") {
+      const needsEntity = ENTITY_KINDS.includes(dimKind);
+      const hit = hitTest(raw);
+      let ref: DimRef | null = null;
+      if (needsEntity) {
+        if (!hit) {
+          toast.info("Selecione um círculo, arco ou linha para esta cota.");
+          return;
+        }
+        ref = { kind: "entity", id: hit.id };
+      } else if (dimKind === "angle" && hit && (hit.type === "line" || hit.type === "polyline")) {
+        ref = { kind: "entity", id: hit.id };
+      } else {
+        ref = { kind: "point", p };
+      }
+      const picks = [...dimPicks, ref];
+      const needed =
+        dimKind === "angle"
+          ? picks[0]?.kind === "entity"
+            ? 2
+            : 3
+          : dimKind === "chain"
+            ? 3
+            : DIM_REFS[dimKind];
+      if (picks.length < needed) {
+        setDimPicks(picks);
+        return;
+      }
+      const dim = makeDimension(dimKind, picks, 20);
+      setDims((list) => [...list, dim]);
+      setDimPicks([]);
+      setDimSel(dim.id);
+      const label = formatDimension(dim, entities);
+      toast.success(label ? `Cota ${DIM_LABEL[dimKind]}: ${label}` : `Cota ${DIM_LABEL[dimKind]}`);
+      return;
+    }
+
     if (tool === "measure") {
       const q = [...pending, p];
       if (q.length === 2) {
@@ -1280,7 +1372,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const gridStep = grid * view.k < 6 ? grid * 10 : grid;
 
-  const panelOpen = !focus && (selected.length > 0 || showLayers || showCut);
+  const panelOpen = !focus && (selected.length > 0 || showLayers || showCut || showDims2);
 
   /*
    * PANEL POSITION MANAGER — fonte única do lado do painel.
@@ -1311,10 +1403,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     <aside className="metal hairline flex w-56 shrink-0 flex-col overflow-y-auto rounded-2xl p-2">
       <div className="mb-2 flex items-center gap-1">
         <PanelTab
-          active={!showLayers && !showCut}
+          active={!showLayers && !showCut && !showDims2}
           onClick={() => {
             setShowLayers(false);
             setShowCut(false);
+            setShowDims2(false);
           }}
           label="Propriedades"
         />
@@ -1323,6 +1416,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onClick={() => {
             setShowLayers(true);
             setShowCut(false);
+            setShowDims2(false);
           }}
           label="Camadas"
         />
@@ -1331,14 +1425,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onClick={() => {
             setShowCut(true);
             setShowLayers(false);
+            setShowDims2(false);
           }}
           label="Corte"
+        />
+        <PanelTab
+          active={showDims2}
+          onClick={() => {
+            setShowDims2(true);
+            setShowCut(false);
+            setShowLayers(false);
+          }}
+          label="Cotas"
         />
         <button
           aria-label="Fechar painel"
           onClick={() => {
             setShowLayers(false);
             setShowCut(false);
+            setShowDims2(false);
             setSelection([]);
           }}
           className="ml-auto text-muted-foreground hover:text-foreground"
@@ -1347,7 +1452,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </button>
       </div>
 
-      {showCut ? (
+      {showDims2 ? (
+        <DimensionsPanel
+          dims={dims}
+          entities={entities}
+          kind={dimKind}
+          onKind={(k) => {
+            setDimKind(k);
+            setDimPicks([]);
+            setTool("dim");
+          }}
+          selected={dimSel}
+          onSelect={setDimSel}
+          onChange={(d) => setDims((list) => list.map((x) => (x.id === d.id ? d : x)))}
+          onDelete={(id) => {
+            setDims((list) => list.filter((x) => x.id !== id));
+            setDimSel(null);
+          }}
+        />
+      ) : showCut ? (
         <CutPanel
           entities={entities}
           commit={commit}
@@ -1926,7 +2049,55 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               )}
 
-              {/* cotas — azul técnico fixo */}
+              {/* COTAS ASSOCIATIVAS — âmbar técnico, sempre medidas na geometria */}
+              {dims.map((d) => {
+                const draw = dimensionDraw(d, entities);
+                const on = dimSel === d.id;
+                return (
+                  <g
+                    key={d.id}
+                    stroke={DIMENSION_COLOR}
+                    fill={DIMENSION_COLOR}
+                    strokeWidth={(on ? 1.8 : 1) / view.k}
+                    opacity={on ? 1 : 0.9}
+                    onPointerDown={() => setDimSel(d.id)}
+                  >
+                    {draw.lines.map((l, i) => (
+                      <line key={`l${i}`} x1={l[0].x} y1={l[0].y} x2={l[1].x} y2={l[1].y} />
+                    ))}
+                    {draw.arcs.map((a, i) => (
+                      <path
+                        key={`a${i}`}
+                        fill="none"
+                        d={`M ${a.c.x + a.r * Math.cos(a.a0)} ${a.c.y + a.r * Math.sin(a.a0)} A ${a.r} ${a.r} 0 ${Math.abs(a.a1 - a.a0) > Math.PI ? 1 : 0} 1 ${a.c.x + a.r * Math.cos(a.a1)} ${a.c.y + a.r * Math.sin(a.a1)}`}
+                      />
+                    ))}
+                    {draw.arrows.map((ar, i) => {
+                      const s = d.style.arrowSize / view.k;
+                      const p1 = `${ar.p.x + Math.cos(ar.angle + 0.25) * s},${ar.p.y + Math.sin(ar.angle + 0.25) * s}`;
+                      const p2 = `${ar.p.x + Math.cos(ar.angle - 0.25) * s},${ar.p.y + Math.sin(ar.angle - 0.25) * s}`;
+                      return (
+                        <polygon key={`r${i}`} points={`${ar.p.x},${ar.p.y} ${p1} ${p2}`} stroke="none" />
+                      );
+                    })}
+                    {draw.labels.map((l, i) => (
+                      <text
+                        key={`t${i}`}
+                        x={l.p.x}
+                        y={l.p.y - 3 / view.k}
+                        fontSize={d.style.textSize / view.k}
+                        textAnchor="middle"
+                        stroke="none"
+                        className="font-mono"
+                      >
+                        {l.text}
+                      </text>
+                    ))}
+                  </g>
+                );
+              })}
+
+              {/* cotas automáticas de apoio */}
               {showDims &&
                 autoDimensions(drawable).map((d, i) => {
                   const mx = (d.a.x + d.b.x) / 2;
@@ -2216,9 +2387,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         thickness={thickness}
         scopes={{
           selection: selected,
-          plan: drawable,
+          /* as cotas entram como entidades DIMENSION: o perfil LASER as descarta */
+          plan: [...drawable, ...dimensionEntities(dims, entities)],
           project: project
-            ? project.plans.flatMap((p) => (p.id === planId ? drawable : p.entities))
+            ? [
+                ...project.plans.flatMap((p) => (p.id === planId ? drawable : p.entities)),
+                ...dimensionEntities(dims, entities),
+              ]
             : drawable,
         }}
       />
@@ -2258,6 +2433,207 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
 
 /* ------------------------------------------------------------ auxiliares */
+
+/**
+ * PAINEL DE COTAS — escolha do tipo, lista e propriedades.
+ * Editar propriedades aqui é SEMPRE visual: nenhuma alteração toca a
+ * geometria do desenho.
+ */
+function DimensionsPanel({
+  dims,
+  entities,
+  kind,
+  onKind,
+  selected,
+  onSelect,
+  onChange,
+  onDelete,
+}: {
+  dims: Dimension[];
+  entities: Entity[];
+  kind: DimKind;
+  onKind: (k: DimKind) => void;
+  selected: string | null;
+  onSelect: (id: string | null) => void;
+  onChange: (d: Dimension) => void;
+  onDelete: (id: string) => void;
+}) {
+  const cur = dims.find((d) => d.id === selected) ?? null;
+  const field =
+    "w-full rounded-lg border border-line bg-background/40 px-1.5 py-1 font-mono text-[10px] outline-none";
+
+  const setStyle = (patch: Partial<Dimension["style"]>) =>
+    cur && onChange({ ...cur, style: { ...cur.style, ...patch } });
+
+  return (
+    <div className="space-y-2 text-[11px]">
+      <div>
+        <p className="tick-label mb-1 text-muted-foreground">Tipo de cota</p>
+        <select
+          value={kind}
+          onChange={(ev) => onKind(ev.target.value as DimKind)}
+          aria-label="Tipo de cota"
+          className={field}
+        >
+          {DIM_KINDS.map((k) => (
+            <option key={k} value={k}>
+              {DIM_LABEL[k]}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          Clique no desenho para marcar as referências.
+        </p>
+      </div>
+
+      <div className="border-t border-line pt-2">
+        <p className="tick-label mb-1 text-muted-foreground">Cotas ({dims.length})</p>
+        <div className="max-h-40 space-y-0.5 overflow-y-auto">
+          {dims.map((d) => (
+            <button
+              key={d.id}
+              onClick={() => onSelect(d.id)}
+              className={cn(
+                "flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-left",
+                selected === d.id ? "bg-foreground/10" : "hover:bg-foreground/5",
+              )}
+            >
+              <span className="size-2 shrink-0 rounded-full" style={{ background: DIMENSION_COLOR }} />
+              <span className="min-w-0 flex-1 truncate">{DIM_LABEL[d.kind]}</span>
+              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                {formatDimension(d, entities) ?? "—"}
+              </span>
+            </button>
+          ))}
+          {!dims.length && <p className="text-[10px] text-muted-foreground">Nenhuma cota.</p>}
+        </div>
+      </div>
+
+      {cur && (
+        <div className="space-y-1.5 border-t border-line pt-2">
+          <p className="tick-label text-muted-foreground">Propriedades</p>
+          <label className="block">
+            <span className="text-[10px] text-muted-foreground">Precisão</span>
+            <select
+              value={cur.style.precision}
+              onChange={(ev) => setStyle({ precision: Number(ev.target.value) })}
+              className={field}
+            >
+              <option value={0}>0</option>
+              <option value={1}>0.0</option>
+              <option value={2}>0.00</option>
+              <option value={3}>0.000</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-muted-foreground">Precisão angular</span>
+            <select
+              value={cur.style.anglePrecision}
+              onChange={(ev) => setStyle({ anglePrecision: Number(ev.target.value) })}
+              className={field}
+            >
+              <option value={0}>0°</option>
+              <option value={1}>0.0°</option>
+              <option value={2}>0.00°</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-muted-foreground">Unidade</span>
+            <input
+              value={cur.style.unit}
+              onChange={(ev) => setStyle({ unit: ev.target.value })}
+              className={field}
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-1.5">
+            <label className="block">
+              <span className="text-[10px] text-muted-foreground">Afastamento</span>
+              <input
+                type="number"
+                value={cur.offset}
+                onChange={(ev) => onChange({ ...cur, offset: Number(ev.target.value) })}
+                className={field}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-muted-foreground">Lado</span>
+              <select
+                value={cur.style.side}
+                onChange={(ev) => setStyle({ side: Number(ev.target.value) === -1 ? -1 : 1 })}
+                className={field}
+              >
+                <option value={1}>Positivo</option>
+                <option value={-1}>Negativo</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-muted-foreground">Texto</span>
+              <input
+                type="number"
+                value={cur.style.textSize}
+                onChange={(ev) => setStyle({ textSize: Number(ev.target.value) })}
+                className={field}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-muted-foreground">Setas</span>
+              <input
+                type="number"
+                value={cur.style.arrowSize}
+                onChange={(ev) => setStyle({ arrowSize: Number(ev.target.value) })}
+                className={field}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-muted-foreground">Prefixo</span>
+              <input
+                value={cur.style.prefix}
+                onChange={(ev) => setStyle({ prefix: ev.target.value })}
+                className={field}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-muted-foreground">Sufixo</span>
+              <input
+                value={cur.style.suffix}
+                onChange={(ev) => setStyle({ suffix: ev.target.value })}
+                className={field}
+              />
+            </label>
+          </div>
+          <label className="block">
+            <span className="text-[10px] text-muted-foreground">Tolerância ±</span>
+            <input
+              type="number"
+              step="0.01"
+              value={cur.style.tolerance?.plus ?? ""}
+              placeholder="—"
+              onChange={(ev) => {
+                const v = ev.target.value;
+                if (!cur) return;
+                const { tolerance: _drop, ...rest } = cur.style;
+                onChange({
+                  ...cur,
+                  style:
+                    v === ""
+                      ? rest
+                      : { ...cur.style, tolerance: { plus: Number(v), minus: Number(v) } },
+                });
+              }}
+              className={field}
+            />
+          </label>
+          <button
+            onClick={() => onDelete(cur.id)}
+            className="w-full rounded-lg border border-line px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            Excluir cota
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function IconBtn({
   label,
