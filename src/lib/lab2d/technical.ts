@@ -8,12 +8,13 @@
  * Proibido: drawingColor = theme.primaryColor
  */
 
-export const CUT_COLOR = "#F59E0B"; // âmbar técnico — corte
-export const BEND_COLOR = "#A78BFA"; // violeta técnico — dobra
+export const CUT_COLOR = "#22C55E"; // verde técnico — corte
+export const BEND_COLOR = "#EC4899"; // rosa técnico — dobra
 export const MARK_COLOR = "#3B82F6"; // azul técnico — marcação
+export const RECORTE_COLOR = "#F59E0B"; // âmbar técnico — recorte interno
 export const CONSTRUCTION_COLOR = "#9AA4B0"; // cinza técnico claro — construção
 export const REFERENCE_COLOR = "#6B7480"; // cinza discreto — referência
-export const DIMENSION_COLOR = "#22C55E"; // verde técnico — cotas
+export const DIMENSION_COLOR = "#7DD3FC"; // azul claro — cotas (apoio)
 export const AXIS_COLOR = "#5A636E"; // cinza discreto — eixos
 /** Destaques de interface — neutros, para nunca confundir com a paleta técnica. */
 export const SELECTION_COLOR = "#FFFFFF"; // destaque temporário de seleção/snap
