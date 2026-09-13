@@ -284,16 +284,14 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
 
   const development = patternOf(part, "V");
 
+  const outline = development.outline;
   const areaMm2 = polygonArea(outline);
   const volumeDm3 = (areaMm2 * input.thickness) / 1_000_000;
   const massKg = volumeDm3 * input.density;
 
   const topPerimeter = Math.PI * input.topDiameter;
-  const basePerimeter = 2 * (input.baseA + input.baseB);
-  const developedPerimeter = outline.reduce(
-    (acc, p, idx) => acc + dist2(p, outline[(idx + 1) % outline.length]!),
-    0,
-  );
+  const basePerimeter = 2 × (input.baseA + input.baseB);
+  const developedPerimeter = partPerimeter(outline);
 
   const metrics = [
     { label: "Perímetro da base", value: basePerimeter, unitMm: true },
