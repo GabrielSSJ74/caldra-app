@@ -290,7 +290,7 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
   const massKg = volumeDm3 * input.density;
 
   const topPerimeter = Math.PI * input.topDiameter;
-  const basePerimeter = 2 × (input.baseA + input.baseB);
+  const basePerimeter = 2 * (input.baseA + input.baseB);
   const developedPerimeter = partPerimeter(outline);
 
   const metrics = [
