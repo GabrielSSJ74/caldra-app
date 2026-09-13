@@ -176,8 +176,8 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Validar BEND completo, roles técnicos, grupos e ausência de regressão nos exportadores.
 
 ## Correção cirúrgica — Paywall e abertura do CHAMFER (set/2026)
-- [ ] Isolar backdrop e modal do Paywall, mantendo somente o fundo atenuado e o conteúdo nítido.
-- [ ] Garantir rolagem interna e contenção do Paywall em celular, tablet, desktop e paisagem.
-- [ ] Fechar integralmente o Paywall antes da navegação para a rota real do CHAMFER.
-- [ ] Restaurar o CHAMFER em 100vw × 100dvh, sem padding, limite ou deslocamento herdado.
-- [ ] Validar os cenários CHAMFER, DXF Laser CNC, Oficina e acesso direto, sem alterar entitlements ou motores.
+- [x] Isolar backdrop e modal do Paywall, mantendo somente o fundo atenuado e o conteúdo nítido.
+- [x] Garantir rolagem interna e contenção do Paywall em celular, tablet, desktop e paisagem.
+- [x] Fechar integralmente o Paywall antes da navegação para a rota real do CHAMFER.
+- [x] Restaurar o CHAMFER em 100vw × 100dvh, sem padding, limite ou deslocamento herdado.
+- [x] Validar os cenários CHAMFER, DXF Laser CNC, Oficina e acesso direto, sem alterar entitlements ou motores.

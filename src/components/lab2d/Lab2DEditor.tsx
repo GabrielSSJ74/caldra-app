@@ -1654,7 +1654,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     <div
       ref={wrapRef}
       className={cn(
-        "metal fixed inset-0 z-50 flex h-[100dvh] w-screen flex-col gap-2 overflow-hidden rounded-none p-2",
+        "metal fixed inset-0 z-50 flex h-[100dvh] w-[100vw] max-w-none flex-col gap-2 overflow-hidden rounded-none p-2",
         isMestre && "glow-ring",
       )}
     >
