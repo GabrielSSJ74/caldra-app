@@ -20,6 +20,7 @@ import {
   techColor,
   type TechLayerId,
 } from "@/lib/lab2d/technical";
+import { roleOf, ROLE_BY_LAYER } from "@/lib/lab2d/roles";
 
 export type LayerId = string;
 
