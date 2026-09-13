@@ -23,23 +23,15 @@ import { endPointOf, isCutPath, pathLength, startPointOf } from "./cutPlan";
 
 export type CncLayer = "CUT" | "MARK" | "BEND" | "REFERENCE" | "DIMENSION";
 
-/** Camada CNC de uma camada de desenho — pela SEMÂNTICA, nunca pela cor. */
+/**
+ * Camada CNC de uma camada de desenho — pela SEMÂNTICA, nunca pela cor.
+ * Fonte única: o mapa de papéis em `roles.ts`.
+ */
 export function cncLayerOf(layerId: string): CncLayer | null {
-  switch (layerId) {
-    case "corte":
-      return "CUT";
-    case "marcacao":
-      return "MARK";
-    case "dobra":
-      return "BEND";
-    case "referencia":
-    case "construcao":
-      return "REFERENCE";
-    case "cota":
-      return "DIMENSION";
-    default:
-      return null;
-  }
+  const role = ROLE_BY_LAYER[layerId];
+  return role && role !== "LEAD_IN" && role !== "LEAD_OUT" && role !== "DIRECTION"
+    ? (role as CncLayer)
+    : null;
 }
 
 /** Camadas exportáveis por padrão no modo CNC. */
