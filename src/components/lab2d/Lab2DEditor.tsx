@@ -87,6 +87,7 @@ import {
   WARNING_COLOR,
   PREVIEW_COLOR,
   SELECTION_COLOR,
+  isUserLayer,
   layerOrder,
   modeAllows,
   techColor,

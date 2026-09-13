@@ -22,6 +22,7 @@ import {
   type Lead,
   type LeadKind,
 } from "@/lib/lab2d/manufacturing";
+import { isUserLayer } from "@/lib/lab2d/technical";
 import { cn } from "@/lib/utils";
 
 const TYPE_LABEL: Record<Entity["type"], string> = {
