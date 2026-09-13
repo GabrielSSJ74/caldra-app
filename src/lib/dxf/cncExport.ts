@@ -25,6 +25,7 @@ import {
 import {
   CYPCUT_APPID,
   CYPCUT_CHANNEL,
+  CYPCUT_MAPPED_ROLES,
   DEFAULT_PROFILE_ID,
   ENTITY_ROLES,
   LASER_PROFILE_ID,
@@ -512,15 +513,22 @@ export function preflightCnc(entities: Entity[], opts: CncExportOptions): CncPre
       ok: errors === 0,
     },
   );
-  if (cypcut)
+  if (cypcut) {
     rows.push({
       label: "Estrutura CypCut (FS_CYPCUT)",
       value:
         tagged === doc.entities.length && appIdsOf(doc).includes(CYPCUT_APPID)
-          ? `${tagged} entidades · canais ${CYPCUT_CHANNEL.CUT}/${CYPCUT_CHANNEL.MARK}`
+          ? `${tagged} entidades · ${CYPCUT_MAPPED_ROLES.map((r) => CYPCUT_CHANNEL[r]).join("/")}`
           : "incompleta",
       ok: tagged === doc.entities.length && doc.entities.length > 0,
     });
+    for (const role of CYPCUT_MAPPED_ROLES)
+      rows.push({
+        label: `${ROLE_LABEL[role]} → CypCut`,
+        value: `Channel ${CYPCUT_CHANNEL[role]}`,
+        ok: true,
+      });
+  }
   return rows;
 }
 
