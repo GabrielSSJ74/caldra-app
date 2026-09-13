@@ -48,6 +48,12 @@ export type SquareToRoundInput = {
   thickness: number;
   /** Densidade do material (kg/dm³). */
   density: number;
+  /**
+   * Estratégia de fabricação — parâmetro do MESMO modelo geométrico.
+   * A geometria final do conjunto é idêntica nos dois modos; o que muda é a
+   * decomposição fabricável (uma peça ou duas metades unidas por solda).
+   */
+  strategy: "single" | "two-weld";
 };
 
 export const SQUARE_TO_ROUND_DEFAULTS: SquareToRoundInput = {
@@ -60,6 +66,7 @@ export const SQUARE_TO_ROUND_DEFAULTS: SquareToRoundInput = {
   divisions: 6,
   thickness: 3,
   density: 7.85,
+  strategy: "single",
 };
 
 export function validateSquareToRound(i: SquareToRoundInput): ValidationIssue[] {
@@ -109,10 +116,13 @@ export type SquareToRoundModel = {
   arcPoints: Vec3[][]; // por quadrante, inclui extremos
   circle: Vec3[]; // todos os pontos do topo, em ordem
   /** Faces reais da superfície média, em ordem de fabricação. */
-  faces: { id: string; points: [Vec3, Vec3, Vec3] }[];
+  faces: { id: string; piece: "A" | "B"; points: [Vec3, Vec3, Vec3] }[];
   /** Geratrizes reais usadas tanto no 3D quanto na triangulação plana. */
-  generatrices: { id: string; a: Vec3; b: Vec3 }[];
+  generatrices: { id: string; piece: "A" | "B"; a: Vec3; b: Vec3 }[];
 };
+
+/** Quadrantes 0–1 formam a metade A; 2–3, a metade B (modo 2 partes + solda). */
+const pieceOf = (quadrant: number): "A" | "B" => (quadrant < 2 ? "A" : "B");
 
 export function buildModel(i: SquareToRoundInput): SquareToRoundModel {
   const a = i.baseA / 2;
