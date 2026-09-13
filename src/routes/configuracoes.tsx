@@ -50,7 +50,7 @@ const THEMES: { id: ThemeMode; label: string }[] = [
 const AURORA_STYLES: { id: AuroraStyle; label: string; hint: string }[] = [
   { id: "fluido", label: "Fluido", hint: "Shader líquido em movimento contínuo" },
   { id: "suave", label: "Suave", hint: "Massas de luz leves, menor custo" },
-  { id: "padrao", label: "Padrão", hint: "Sem fundo animado — só a cor sólida do tema" },
+  { id: "padrao", label: "Preto e Branco", hint: "Sem fundo animado — só a cor sólida do tema" },
 ];
 const ACCENTS: { id: AccentColor; label: string; swatch: string }[] = [
   { id: "default", label: "Padrão", swatch: "var(--foreground)" },
