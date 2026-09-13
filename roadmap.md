@@ -154,7 +154,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Dobra nunca é convertida em marcação (opção bendAs removida)
 - [x] Prévia gerada a partir do próprio DXF, fundo claro e cores fixas
 - [x] Análise LXDS removida da interface de exportação
-- [x] CHAMFER: dobra vira duas marcas lineares rosas nas extremidades; geometria/role BEND intactos, Traçagem mantém linha completa e exportação usa P1→P2
+- [x] CHAMFER: dobra usa a geometria BEND completa P1→P2 em rosa, igual à Traçagem; exportação e role BEND permanecem intactos
 
 ## Correção coordenada — fabricação, exportação e preferências (set/2026)
 - [x] Quadrado→Redondo em 2 partes: recalcular metades canônicas equivalentes com emendas nos centros das faces, nunca sobre dobras; validar remontagem A+B e alimentar o 3D existente.
