@@ -154,4 +154,13 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Dobra nunca é convertida em marcação (opção bendAs removida)
 - [x] Prévia gerada a partir do próprio DXF, fundo claro e cores fixas
 - [x] Análise LXDS removida da interface de exportação
-- [ ] CHAMFER: dobra vira ponto preenchido + linha curta na borda (rosa), geometria/role BEND intactos, Traçagem mantém linha completa, exportação inalterada
+- [ ] CHAMFER: dobra vira duas marcas lineares rosas nas extremidades, encostadas e perpendiculares às bordas locais; geometria/role BEND intactos, Traçagem mantém linha completa e exportação usa P1→P2
+
+## Correção coordenada — fabricação, exportação e preferências (set/2026)
+- [ ] Quadrado→Redondo em 2 partes: recalcular metades canônicas equivalentes com emendas nos centros das faces, nunca sobre dobras; validar remontagem A+B e alimentar o 3D existente.
+- [ ] PNG exclusivo de Traçado: prancha técnica colorida, dimensionada, em alta resolução, com auto-fit, metadados, preview real e nome descritivo; demais formatos inalterados.
+- [ ] Calculadora: remover barra de categorias e implementar semântica percentual convencional em operações relativas, com regressão matemática.
+- [ ] Meus Modelos: snapshots versionados dos parâmetros atuais, nome configurável, restauração exata, atualização da instância e salvar como novo sem alterar defaults.
+- [ ] Configurações: remover Estático com migração segura, adicionar destaque Padrão neutro, renomear Região para Idioma e preservar configuração regional separadamente.
+- [ ] Internacionalização: Português, English e Español com persistência e fallback em português, aplicada progressivamente a todas as superfícies da interface.
+- [ ] Regressão final: geometria, BEND/DXF, PNG, calculadora, modelos salvos, temas, idiomas, desktop e mobile.
