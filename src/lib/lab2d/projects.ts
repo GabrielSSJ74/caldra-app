@@ -5,6 +5,7 @@
 
 import { DEFAULT_LAYERS, uid, type Entity, type Layer } from "./core";
 import type { GroupDef } from "./groups";
+import type { Dimension } from "./dimensions";
 import { techColor } from "./technical";
 
 const KEY = "chameleon.lab2d.projects";
@@ -17,6 +18,8 @@ export type Plan = {
   locked: boolean;
   /** Grupos do plano (Fase 2A) — a pertinência mora na entidade. */
   groups?: GroupDef[];
+  /** Cotas associativas do plano — informação, nunca geometria de fabricação. */
+  dims?: Dimension[];
 };
 
 export type Project = {

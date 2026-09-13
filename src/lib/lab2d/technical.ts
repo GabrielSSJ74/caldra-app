@@ -14,7 +14,12 @@ export const MARK_COLOR = "#3B82F6"; // azul técnico — marcação
 export const RECORTE_COLOR = "#F59E0B"; // âmbar técnico — recorte interno
 export const CONSTRUCTION_COLOR = "#9AA4B0"; // cinza técnico claro — construção
 export const REFERENCE_COLOR = "#6B7480"; // cinza discreto — referência
-export const DIMENSION_COLOR = "#7DD3FC"; // azul claro — cotas (apoio)
+/**
+ * COTAS — âmbar técnico, independente do tema e da cor primária.
+ * ATENÇÃO: DIMENSION ≠ RECORTE. Compartilham a família cromática âmbar na
+ * interface, mas são funções completamente diferentes no modelo interno.
+ */
+export const DIMENSION_COLOR = "#F59E0B"; // âmbar técnico — cotas
 export const AXIS_COLOR = "#5A636E"; // cinza discreto — eixos
 /** Destaques de interface — neutros, para nunca confundir com a paleta técnica. */
 export const SELECTION_COLOR = "#FFFFFF"; // destaque temporário de seleção/snap
