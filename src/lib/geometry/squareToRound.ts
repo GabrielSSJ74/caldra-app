@@ -357,13 +357,63 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
     },
   ];
 
+  // ---- estratégia de fabricação: decomposição do MESMO modelo ----
+  const strategy = input.strategy ?? "single";
+  let pieces: GeometryResult["pieces"];
+  let joints: GeometryResult["joints"];
+  if (strategy === "two-weld") {
+    const devA = patternOf(developRange(model, n, 0, 1), "V");
+    const devB = patternOf(developRange(model, n, 2, 3), "V");
+    const mkPiece = (code: string, name: string, dev: DevelopmentPattern): GeometryPiece => {
+      const area = polygonArea(dev.outline);
+      const volDm3 = (area * input.thickness) / 1_000_000;
+      return {
+        code,
+        name,
+        quantity: 1,
+        development: dev,
+        metrics: {
+          areaMm2: area,
+          massKg: volDm3 * input.density,
+          perimeter: partPerimeter(dev.outline),
+          volumeDm3: volDm3,
+        },
+      };
+    };
+    pieces = [
+      mkPiece("QR-A", "Metade A (quadrantes V0–V1–V2)", devA),
+      mkPiece("QR-B", "Metade B (quadrantes V2–V3–V0)", devB),
+    ];
+    joints = [
+      {
+        id: "J1",
+        kind: "weld",
+        label: "Emenda soldada J1 — geratriz V0 → P0",
+        position: `Costura no vértice V0: linha de ${trueLengths[0]!.length.toFixed(2)} mm (V0 até o primeiro ponto do topo).`,
+        between: ["QR-B", "QR-A"],
+      },
+      {
+        id: "J2",
+        kind: "weld",
+        label: "Emenda soldada J2 — geratriz V2 → P" + 2 * n,
+        position: `Costura no vértice V2: linha de ${(dist3(model.corners[2]!, model.arcPoints[1]![n]!)).toFixed(2)} mm (V2 até o ponto do topo no fim do quadrante 1).`,
+        between: ["QR-A", "QR-B"],
+      },
+    ];
+  }
+
   return {
     metrics,
     trueLengths,
     development,
+    pieces,
+    joints,
     steps,
     areaMm2,
-    method: "Triangulação — comprimentos verdadeiros",
+    method:
+      strategy === "two-weld"
+        ? "Triangulação — comprimentos verdadeiros · 2 partes + solda"
+        : "Triangulação — comprimentos verdadeiros",
     warnings: [
       "O arco do topo é aproximado por cordas. Aumente as divisões para reduzir o erro.",
       "O desenvolvimento é da superfície média; descontos de dobra e espessura não estão aplicados.",
