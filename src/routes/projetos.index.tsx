@@ -233,9 +233,9 @@ function Projetos() {
                 onClick={() => requirePro("projects.unlimited")}
                 className="text-accent underline"
               >
-                Liberar projetos ilimitados
+                Ir para o PRO
               </button>{" "}
-              com peças, materiais e histórico de exportação.
+              — tenha projetos ilimitados no CALDRA Pro.
             </p>
           </Panel>
         )}
