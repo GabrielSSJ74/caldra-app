@@ -122,8 +122,23 @@ export type SquareToRoundModel = {
   generatrices: { id: string; piece: "A" | "B"; a: Vec3; b: Vec3 }[];
 };
 
-/** Quadrantes 0–1 formam a metade A; 2–3, a metade B (modo 2 partes + solda). */
-const pieceOf = (quadrant: number): "A" | "B" => (quadrant < 2 ? "A" : "B");
+/** Metades separadas pelo plano que cruza os centros das faces 0 e 2. */
+const pieceOf = (quadrant: number): "A" | "B" => (quadrant === 1 || quadrant === 2 ? "A" : "B");
+
+export function squareToRoundSeams(model: Pick<SquareToRoundModel, "corners" | "arcPoints">): [
+  { a: Vec3; b: Vec3 },
+  { a: Vec3; b: Vec3 },
+] {
+  const midpoint = (a: Vec3, b: Vec3): Vec3 => ({
+    x: (a.x + b.x) / 2,
+    y: (a.y + b.y) / 2,
+    z: (a.z + b.z) / 2,
+  });
+  return [
+    { a: midpoint(model.corners[0]!, model.corners[1]!), b: model.arcPoints[0]!.at(-1)! },
+    { a: midpoint(model.corners[2]!, model.corners[3]!), b: model.arcPoints[2]!.at(-1)! },
+  ];
+}
 
 export function buildModel(i: SquareToRoundInput): SquareToRoundModel {
   const a = i.baseA / 2;
@@ -179,7 +194,15 @@ export function buildModel(i: SquareToRoundInput): SquareToRoundModel {
       a: corner,
       b: endPoint,
     });
-    faces.push({ id: `Q${k}-BASE`, piece: pieceOf(k), points: [corner, nextCorner, endPoint] });
+    if (k === 0 || k === 2) {
+      const middle = { x: (corner.x + nextCorner.x) / 2, y: (corner.y + nextCorner.y) / 2, z: 0 };
+      const firstPiece: "A" | "B" = k === 0 ? "B" : "A";
+      const secondPiece: "A" | "B" = k === 0 ? "A" : "B";
+      faces.push({ id: `Q${k}-BASE-1`, piece: firstPiece, points: [corner, middle, endPoint] });
+      faces.push({ id: `Q${k}-BASE-2`, piece: secondPiece, points: [middle, nextCorner, endPoint] });
+    } else {
+      faces.push({ id: `Q${k}-BASE`, piece: pieceOf(k), points: [corner, nextCorner, endPoint] });
+    }
   }
   return { corners, arcPoints, circle, faces, generatrices };
 }
@@ -249,6 +272,67 @@ function developRange(
     cornerPos = nextCorner;
   }
 
+  return { outlineTop, outlineBottom, foldLines, trueLengths };
+}
+
+/** Desenvolve uma metade entre centros de faces opostas, sem transformar a costura em dobra. */
+function developHalf(model: SquareToRoundModel, n: number, seamFace: 0 | 2): DevelopedPart {
+  const { corners, arcPoints } = model;
+  const seams = squareToRoundSeams(model);
+  const seamStart = seamFace === 0 ? seams[0] : seams[1];
+  const seamEnd = seamFace === 0 ? seams[1] : seams[0];
+  const firstQuadrant = (seamFace + 1) % 4;
+  const outlineTop: Vec2[] = [];
+  const outlineBottom: Vec2[] = [];
+  const foldLines: Segment2[] = [];
+  const trueLengths: { id: string; length: number }[] = [];
+
+  let bottomPos: Vec2 = { x: 0, y: 0 };
+  let topPos: Vec2 = { x: 0, y: dist3(seamStart.a, seamStart.b) };
+  outlineBottom.push(bottomPos);
+  outlineTop.push(topPos);
+
+  const firstCorner3 = corners[firstQuadrant]!;
+  bottomPos = triangulatePoint(
+    bottomPos,
+    topPos,
+    dist3(seamStart.a, firstCorner3),
+    dist3(firstCorner3, seamStart.b),
+    -1,
+  );
+  outlineBottom.push(bottomPos);
+  foldLines.push({ a: bottomPos, b: topPos });
+
+  for (let step = 0; step < 2; step++) {
+    const k = (firstQuadrant + step) % 4;
+    const corner3 = corners[k]!;
+    const quad = arcPoints[k]!;
+    for (let j = 0; j < n; j++) {
+      const nextLen = dist3(corner3, quad[j + 1]!);
+      const next = triangulatePoint(topPos, bottomPos, dist3(quad[j]!, quad[j + 1]!), nextLen, 1);
+      outlineTop.push(next);
+      foldLines.push({ a: bottomPos, b: next });
+      trueLengths.push({ id: `V${k}-P${k * n + j + 1}`, length: nextLen });
+      topPos = next;
+    }
+    if (step === 0) {
+      const nextCorner3 = corners[(k + 1) % 4]!;
+      const nextBottom = triangulatePoint(bottomPos, topPos, dist3(corner3, nextCorner3), dist3(nextCorner3, quad[n]!), -1);
+      outlineBottom.push(nextBottom);
+      foldLines.push({ a: nextBottom, b: topPos });
+      bottomPos = nextBottom;
+    }
+  }
+
+  const lastCorner3 = corners[(firstQuadrant + 1) % 4]!;
+  const endMid = triangulatePoint(
+    bottomPos,
+    topPos,
+    dist3(lastCorner3, seamEnd.a),
+    dist3(seamEnd.a, seamEnd.b),
+    -1,
+  );
+  outlineBottom.push(endMid);
   return { outlineTop, outlineBottom, foldLines, trueLengths };
 }
 
@@ -363,8 +447,9 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
   let pieces: GeometryResult["pieces"];
   let joints: GeometryResult["joints"];
   if (strategy === "two-weld") {
-    const devA = patternOf(developRange(model, n, 0, 1), "V");
-    const devB = patternOf(developRange(model, n, 2, 3), "V");
+    const devA = patternOf(developHalf(model, n, 0), "A");
+    const devB = patternOf(developHalf(model, n, 2), "B");
+    const seams = squareToRoundSeams(model);
     const mkPiece = (code: string, name: string, dev: DevelopmentPattern): GeometryPiece => {
       const area = polygonArea(dev.outline);
       const volDm3 = (area * input.thickness) / 1_000_000;
@@ -381,23 +466,23 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
       };
     };
     pieces = [
-      mkPiece("QR-A", "Metade A (quadrantes V0–V1–V2)", devA),
-      mkPiece("QR-B", "Metade B (quadrantes V2–V3–V0)", devB),
+      mkPiece("Q-R-001-A", "Parte A — centros das faces opostas", devA),
+      mkPiece("Q-R-001-B", "Parte B — centros das faces opostas", devB),
     ];
     joints = [
       {
         id: "J1",
         kind: "weld",
-        label: "Emenda soldada J1 — geratriz V0 → P0",
-        position: `Costura no vértice V0: linha de ${trueLengths[0]!.length.toFixed(2)} mm (V0 até o primeiro ponto do topo).`,
-        between: ["QR-B", "QR-A"],
+        label: "Emenda soldada J1 — centro da face superior",
+        position: `Centro da face superior até a boca: ${dist3(seams[0].a, seams[0].b).toFixed(2)} mm.`,
+        between: ["Q-R-001-B", "Q-R-001-A"],
       },
       {
         id: "J2",
         kind: "weld",
-        label: "Emenda soldada J2 — geratriz V2 → P" + 2 * n,
-        position: `Costura no vértice V2: linha de ${(dist3(model.corners[2]!, model.arcPoints[1]![n]!)).toFixed(2)} mm (V2 até o ponto do topo no fim do quadrante 1).`,
-        between: ["QR-A", "QR-B"],
+        label: "Emenda soldada J2 — centro da face inferior",
+        position: `Centro da face inferior até a boca: ${dist3(seams[1].a, seams[1].b).toFixed(2)} mm.`,
+        between: ["Q-R-001-A", "Q-R-001-B"],
       },
     ];
   }

@@ -435,12 +435,13 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
       // Emendas soldadas (modo 2 partes + solda): posição real das costuras J1/J2.
       const seamRefs: Edge[] = [];
       if (p.strategy === "two-weld") {
-        const n = p.divisions;
-        const s1a = canonical.corners[0]!;
-        const s1b = canonical.arcPoints[0]![0]!;
-        const s2a = canonical.corners[2]!;
-        const s2b = canonical.arcPoints[1]![n]!;
-        seamRefs.push([cv(s1a), cv(s1b)], [cv(s2a), cv(s2b)]);
+        const midpoint = (a: typeof canonical.corners[number], b: typeof canonical.corners[number]) => ({
+          x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: 0,
+        });
+        seamRefs.push(
+          [cv(midpoint(canonical.corners[0]!, canonical.corners[1]!)), cv(canonical.arcPoints[0]!.at(-1)!)],
+          [cv(midpoint(canonical.corners[2]!, canonical.corners[3]!)), cv(canonical.arcPoints[2]!.at(-1)!)],
+        );
       }
 
       return withAxis({ faces, edges }, seamRefs);
