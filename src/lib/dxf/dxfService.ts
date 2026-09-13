@@ -109,12 +109,22 @@ function writeEntity(e: DxfEntity): string {
   }
 }
 
+/**
+ * Versão DXF compatível com as entidades realmente emitidas.
+ * LWPOLYLINE exige no mínimo R14 (AC1014); SPLINE exige R2000 (AC1015).
+ * NUNCA declarar R12 (AC1009) quando houver LWPOLYLINE ou SPLINE.
+ */
+export function dxfVersionFor(doc: DxfDocument): "AC1015" | "AC1014" | "AC1009" {
+  if (doc.entities.some((e) => e.type === "SPLINE")) return "AC1015";
+  if (doc.entities.some((e) => e.type === "LWPOLYLINE")) return "AC1014";
+  return "AC1009";
+}
+
 export function exportDxf(doc: DxfDocument): string {
   const layers = doc.layers.length ? doc.layers : [{ name: "0", color: 7 }];
-  const hasSpline = doc.entities.some((e) => e.type === "SPLINE");
   let out = "";
   out += g(0, "SECTION") + g(2, "HEADER");
-  out += g(9, "$ACADVER") + g(1, hasSpline ? "AC1015" : "AC1009");
+  out += g(9, "$ACADVER") + g(1, dxfVersionFor(doc));
   out += g(9, "$INSUNITS") + g(70, 4); // 4 = milímetros
   out += g(0, "ENDSEC");
 
