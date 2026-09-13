@@ -78,7 +78,8 @@ function Biblioteca() {
 
       <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((item) => {
-          const locked = item.premium && !can("library.full");
+          /* Biblioteca é 100% Free: nada fica bloqueado por plano. */
+          const locked = false;
           return (
             <Panel key={item.id} className="p-3.5">
               <div className="flex items-start justify-between gap-2">

@@ -76,9 +76,9 @@ function OficinaPage() {
           Fora do FeatureGate: continuam disponíveis no plano gratuito. */}
       <MaterialManager />
       <FeatureGate
-        feature="nesting"
+        feature="workshop.manage"
         title="OFICINA"
-        description="Nesting, custo de fabricação, orçamento e ficha de produção fazem parte do CALDRA PRO."
+        description="Encaixe na chapa, custo de fabricação, orçamento e ficha de produção. Disponível no CALDRA Pro."
       >
         <Oficina />
       </FeatureGate>
