@@ -61,6 +61,8 @@ export type WireParams = {
   offsetY?: number;
   /** divisões reais por quadrante usadas pela triangulação */
   divisions?: number;
+  /** estratégia de fabricação (Quadrado → Redondo): "single" | "two-weld" */
+  strategy?: string;
 };
 
 export const DEFAULT_PARAMS: WireParams = {
@@ -122,6 +124,7 @@ export function normalizeParameters(p: WireParams): Required<WireParams> {
     baseB,
     offsetY,
     divisions,
+    strategy: p.strategy === "two-weld" ? "two-weld" : "single",
   };
 }
 
@@ -385,6 +388,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
         divisions: p.divisions,
         thickness: p.t,
         density: 7.85,
+        strategy: p.strategy === "two-weld" ? "two-weld" : "single",
       });
       const cv = (q: Vec3) => v(q.x, q.z - p.h / 2, q.y);
       const inset = (q: Vec3) => {
