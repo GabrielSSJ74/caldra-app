@@ -2610,8 +2610,14 @@ function DimensionsPanel({
               placeholder="—"
               onChange={(ev) => {
                 const v = ev.target.value;
-                setStyle({
-                  tolerance: v === "" ? undefined : { plus: Number(v), minus: Number(v) },
+                if (!cur) return;
+                const { tolerance: _drop, ...rest } = cur.style;
+                onChange({
+                  ...cur,
+                  style:
+                    v === ""
+                      ? rest
+                      : { ...cur.style, tolerance: { plus: Number(v), minus: Number(v) } },
                 });
               }}
               className={field}
