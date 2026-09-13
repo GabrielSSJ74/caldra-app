@@ -12,7 +12,7 @@
 
 import type { Vec2 } from "@/lib/geometry/types";
 import type { DxfDocument, DxfEntity } from "@/lib/dxf/dxfService";
-import { importDxf } from "@/lib/dxf/dxfService";
+import { dxfVersionFor, importDxf } from "@/lib/dxf/dxfService";
 import { flattenPath } from "@/lib/lab2d/bezier";
 import type { Entity } from "@/lib/lab2d/core";
 import { pathLength } from "@/lib/lab2d/cutPlan";
@@ -281,6 +281,40 @@ export function validateCncExport(entities: Entity[], opts: CncExportOptions): C
       level: "error",
       scope: "Exportação",
       message: "Nenhuma geometria nas layers escolhidas.",
+    });
+
+  // entidades CUT duplicadas (mesma geometria, tolerância de 0,001 mm)
+  const cutKeys = new Set<string>();
+  for (const e of doc.entities.filter((x) => x.layer === exportLayerOf("CUT", opts))) {
+    const key = JSON.stringify(e, (k, v) => (typeof v === "number" ? Math.round(v * 1000) / 1000 : v));
+    if (cutKeys.has(key))
+      issues.push({
+        level: "warning",
+        scope: "Geometria",
+        message: "Entidade CUT duplicada.",
+      });
+    cutKeys.add(key);
+  }
+
+  // todo layer usado precisa existir na tabela LAYER do documento
+  const declared = new Set(doc.layers.map((l) => l.name));
+  for (const e of doc.entities)
+    if (!declared.has(e.layer))
+      issues.push({
+        level: "error",
+        scope: "Layers",
+        message: `Entidade em layer inexistente na tabela: "${e.layer}".`,
+      });
+
+  // versão declarada compatível com as entidades emitidas
+  const version = dxfVersionFor(doc);
+  const hasLw = doc.entities.some((e) => e.type === "LWPOLYLINE");
+  const hasSpline = doc.entities.some((e) => e.type === "SPLINE");
+  if ((version === "AC1009" && (hasLw || hasSpline)) || (version === "AC1014" && hasSpline))
+    issues.push({
+      level: "error",
+      scope: "Versão DXF",
+      message: `Versão ${version} incompatível com as entidades emitidas.`,
     });
 
   return issues;
