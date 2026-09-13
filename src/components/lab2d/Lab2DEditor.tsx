@@ -1403,10 +1403,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     <aside className="metal hairline flex w-56 shrink-0 flex-col overflow-y-auto rounded-2xl p-2">
       <div className="mb-2 flex items-center gap-1">
         <PanelTab
-          active={!showLayers && !showCut}
+          active={!showLayers && !showCut && !showDims2}
           onClick={() => {
             setShowLayers(false);
             setShowCut(false);
+            setShowDims2(false);
           }}
           label="Propriedades"
         />
@@ -1415,6 +1416,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onClick={() => {
             setShowLayers(true);
             setShowCut(false);
+            setShowDims2(false);
           }}
           label="Camadas"
         />
@@ -1423,14 +1425,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onClick={() => {
             setShowCut(true);
             setShowLayers(false);
+            setShowDims2(false);
           }}
           label="Corte"
+        />
+        <PanelTab
+          active={showDims2}
+          onClick={() => {
+            setShowDims2(true);
+            setShowCut(false);
+            setShowLayers(false);
+          }}
+          label="Cotas"
         />
         <button
           aria-label="Fechar painel"
           onClick={() => {
             setShowLayers(false);
             setShowCut(false);
+            setShowDims2(false);
             setSelection([]);
           }}
           className="ml-auto text-muted-foreground hover:text-foreground"
@@ -1439,7 +1452,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </button>
       </div>
 
-      {showCut ? (
+      {showDims2 ? (
+        <DimensionsPanel
+          dims={dims}
+          entities={entities}
+          kind={dimKind}
+          onKind={(k) => {
+            setDimKind(k);
+            setDimPicks([]);
+            setTool("dim");
+          }}
+          selected={dimSel}
+          onSelect={setDimSel}
+          onChange={(d) => setDims((list) => list.map((x) => (x.id === d.id ? d : x)))}
+          onDelete={(id) => {
+            setDims((list) => list.filter((x) => x.id !== id));
+            setDimSel(null);
+          }}
+        />
+      ) : showCut ? (
         <CutPanel
           entities={entities}
           commit={commit}
