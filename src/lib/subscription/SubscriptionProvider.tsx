@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   PROTOTYPE_MASTER_CODE,
+  getFeatureLimit,
   planAllows,
   type Feature,
   type Plan,
@@ -22,6 +23,9 @@ type SubscriptionValue = {
   plan: Plan;
   planSource: PlanSource;
   isMestre: boolean;
+  isPro: boolean;
+  isFree: boolean;
+  projectLimit: number;
   ready: boolean;
   /** ÚNICO ponto de checagem de acesso do aplicativo. */
   can: (feature: Feature) => boolean;
@@ -93,7 +97,10 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     return {
       plan,
       planSource,
-      isMestre: plan !== "free",
+      isMestre: plan === "pro",
+      isPro: plan === "pro",
+      isFree: plan === "free",
+      projectLimit: getFeatureLimit(plan, "projects"),
       ready,
       can,
       requirePro: (feature) => {
@@ -107,11 +114,11 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         const normalized = code.trim().toUpperCase();
         if (!normalized) return { ok: false, message: "Informe o código." };
         if (normalized === PROTOTYPE_MASTER_CODE) {
-          persist("mestre", "local");
+          persist("pro", "local");
           return { ok: true, message: "Modo Mestre ativado." };
         }
         const res = await redeemActivationCode(normalized);
-        if (res.ok) persist("mestre", "code");
+        if (res.ok) persist("pro", "code");
         return res;
       },
       buy: async (product) => {
@@ -122,7 +129,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
           const purchase = await buyWithPlay(product);
           if (!purchase) return { ok: false, message: "Compra não concluída." };
           const res = await registerPurchase(purchase.productId, purchase.token, "play");
-          if (res.ok) persist("mestre", "play");
+          if (res.ok) persist("pro", "play");
           return res;
         } catch {
           return { ok: false, message: "Compra cancelada." };
@@ -138,7 +145,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         const first = purchases[0];
         if (!first) return { ok: false, message: "Nenhuma compra encontrada nesta conta." };
         const res = await registerPurchase(first.productId, first.token, "play");
-        if (res.ok) persist("mestre", "play");
+        if (res.ok) persist("pro", "play");
         return res;
       },
       refresh,
