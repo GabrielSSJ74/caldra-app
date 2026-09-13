@@ -87,6 +87,7 @@ import {
   WARNING_COLOR,
   PREVIEW_COLOR,
   SELECTION_COLOR,
+  isUserLayer,
   layerOrder,
   modeAllows,
   techColor,
@@ -1361,6 +1362,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       ) : showLayers ? (
         <div className="space-y-0.5">
           {[...layers]
+            .filter((l) => isUserLayer(l.id))
             .sort((a, b) => layerOrder(b.id) - layerOrder(a.id))
             .map((l) => (
               <div key={l.id} className="flex items-center gap-1.5 rounded-xl px-1 py-1.5">
@@ -2678,7 +2680,9 @@ function DimensionEditor({
         aria-label="Camada"
         className="w-full rounded-lg border border-line bg-background/40 px-1.5 py-1.5 font-mono text-[10px] outline-none"
       >
-        {layers.map((l) => (
+        {layers
+          .filter((l) => isUserLayer(l.id) || l.id === e.layer)
+          .map((l) => (
           <option key={l.id} value={l.id}>
             {l.name}
           </option>

@@ -1,17 +1,17 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { LxdsAnalysisDialog } from "@/components/lab2d/LxdsAnalysisDialog";
 import { cncCounts, cncCutLength, layerMapping } from "@/lib/dxf/cncExport";
 import {
-  DXF_PROFILE_CYPCUT,
+  DXF_PROFILE_LASER,
   downloadDXF,
   exportDXF,
   type DxfExportRequest,
 } from "@/lib/dxf/exportService";
 import { verify, type Entity, type Layer } from "@/lib/lab2d/core";
 import { downloadSvg, renderSvg } from "@/lib/lab2d/render";
-import { DXF_PROFILES, ENTITY_ROLES } from "@/lib/lab2d/roles";
+import { DXF_PROFILES, ROLE_LABEL, USER_ROLES } from "@/lib/lab2d/roles";
+import { previewDxfSvg } from "@/lib/dxf/previewRenderer";
 import { downloadSheetPdf, downloadSheetPng, renderSheet } from "@/lib/export/renderSheet";
 import { cn } from "@/lib/utils";
 import type { CncRole } from "@/lib/dxf/cncExport";
@@ -20,20 +20,17 @@ type Format = "dxf" | "svg" | "png" | "pdf";
 type Scope = "selection" | "plan" | "project";
 
 const FORMATS: { id: Format; label: string; hint: string }[] = [
-  { id: "dxf", label: "DXF", hint: "CNC / CypCut" },
+  { id: "dxf", label: "DXF", hint: "Corte CNC" },
   { id: "svg", label: "SVG", hint: "Vetor" },
   { id: "png", label: "PNG", hint: "Imagem" },
   { id: "pdf", label: "PDF", hint: "Prancha" },
 ];
 
-/** Conteúdo exportável, por função de fabricação. */
-const CONTENT: { role: CncRole; label: string }[] = [
-  { role: "CUT", label: "Corte" },
-  { role: "BEND", label: "Dobra" },
-  { role: "MARK", label: "Marcação" },
-  { role: "REFERENCE", label: "Referência" },
-  { role: "DIMENSION", label: "Cotas" },
-];
+/** Conteúdo exportável — as quatro funções que o usuário desenha. */
+const CONTENT: { role: CncRole; label: string }[] = USER_ROLES.map((role) => ({
+  role,
+  label: ROLE_LABEL[role],
+}));
 
 export function ExportDialog({
   open,
@@ -61,10 +58,9 @@ export function ExportDialog({
   const [dimensions, setDimensions] = useState(false);
   // curvas saem como SPLINE por padrão; achatar só para máquinas antigas
   const [flattenCurves, setFlattenCurves] = useState(false);
-  const [profile, setProfile] = useState(DXF_PROFILE_CYPCUT);
+  const [profile, setProfile] = useState(DXF_PROFILE_LASER);
   const [roles, setRoles] = useState<Partial<Record<CncRole, boolean>>>({});
   const [leads, setLeads] = useState(true);
-  const [lxdsOpen, setLxdsOpen] = useState(false);
 
   const entities = scopes[scope];
 
@@ -103,6 +99,10 @@ export function ExportDialog({
     () => (format === "dxf" && entities.length ? exportDXF(request) : null),
     [format, entities, request],
   );
+
+  /** A prévia do DXF vem do próprio arquivo gerado; os demais formatos, da folha. */
+  const dxfPreview = useMemo(() => (dxf ? previewDxfSvg(dxf.doc) : null), [dxf]);
+  const shown = dxfPreview ?? preview;
   const counts = useMemo(() => cncCounts(entities), [entities]);
   const mapping = useMemo(() => (dxf ? layerMapping(dxf.options) : []), [dxf]);
   const activeRoles = dxf?.options.roles;
@@ -162,9 +162,9 @@ export function ExportDialog({
         </DialogHeader>
 
         <div
-          className="grid aspect-[4/3] place-items-center overflow-hidden rounded-2xl border border-border bg-white p-2 [&_svg]:max-h-full [&_svg]:w-auto [&_svg]:max-w-full"
+          className="grid aspect-[4/3] place-items-center overflow-hidden rounded-2xl border border-border bg-white p-2 [&_svg]:size-full"
           // prévia real do arquivo gerado
-          dangerouslySetInnerHTML={{ __html: preview.svg }}
+          dangerouslySetInnerHTML={{ __html: shown.svg }}
         />
 
         <div className="flex flex-wrap gap-1.5">
@@ -227,7 +227,7 @@ export function ExportDialog({
 
             {/* geometria por função de fabricação */}
             <div className="space-y-1">
-              {ENTITY_ROLES.map((r) => {
+              {USER_ROLES.map((r) => {
                 const on = activeRoles?.[r as CncRole] ?? false;
                 const layer = mapping.find((m) => m.role === r)?.layer;
                 return (
@@ -238,7 +238,9 @@ export function ExportDialog({
                       on ? "border-accent/40" : "opacity-60",
                     )}
                   >
-                    <span className="font-mono text-[11px] tracking-widest">{r}</span>
+                    <span className="font-mono text-[11px] tracking-widest">
+                      {ROLE_LABEL[r].toUpperCase()}
+                    </span>
                     <span className="font-mono text-[10px] text-muted-foreground">
                       {counts[r as CncRole]}
                       {r === "CUT" &&
@@ -295,7 +297,7 @@ export function ExportDialog({
               )}
             </div>
 
-            {/* perfil — três configurações do MESMO exportador */}
+            {/* perfil — duas configurações do MESMO exportador */}
             <div className="flex flex-wrap gap-1.5">
               {DXF_PROFILES.map((p) => (
                 <button
@@ -339,15 +341,23 @@ export function ExportDialog({
               </p>
             )}
 
-            <button
-              onClick={() => setLxdsOpen(true)}
-              className="rounded-full border border-border px-2.5 py-1 font-mono text-[10px] tracking-wider uppercase"
-            >
-              Análise LXDS
-            </button>
-            <p className="font-mono text-[10px] text-muted-foreground">
-              A camada do arquivo é a função de fabricação; a ordem do plano de CORTE é preservada.
-            </p>
+            {/* o que o arquivo contém — linguagem direta de fabricação */}
+            <div className="rounded-xl border border-border px-3 py-2 text-[11px] text-muted-foreground">
+              <p className="font-mono text-[10px] tracking-widest text-foreground uppercase">
+                O que este arquivo contém
+              </p>
+              <p className="mt-1">
+                Escala 1:1 em milímetros · {dxfPreview?.widthMm.toFixed(1) ?? "—"} ×{" "}
+                {dxfPreview?.heightMm.toFixed(1) ?? "—"} mm ·{" "}
+                {dxf?.doc.entities.length ?? 0} objetos em{" "}
+                {dxf?.doc.layers.map((l) => l.name).join(", ") || "—"}.
+              </p>
+              <p className="mt-1">
+                Cada camada é uma operação: CORTE corta, RECORTE corta por dentro, MARCAÇÃO risca e
+                DOBRA indica a linha de dobra. Nada é convertido em outra operação e a ordem do
+                plano de corte é preservada.
+              </p>
+            </div>
           </div>
         )}
 
@@ -378,7 +388,6 @@ export function ExportDialog({
             {format === "dxf" ? "Exportar DXF" : "Exportar"}
           </button>
         </div>
-        <LxdsAnalysisDialog open={lxdsOpen} onOpenChange={setLxdsOpen} />
       </DialogContent>
     </Dialog>
   );

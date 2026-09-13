@@ -5,7 +5,7 @@
  *
  *   PARÂMETROS → GEOMETRIA CANÔNICA → buildCncDxf() → exportDxf() → arquivo
  *
- * Técnico, Produção e CypCut NÃO são exportadores: são apenas configurações
+ * DXF TÉCNICO e DXF LASER CNC NÃO são exportadores: são apenas configurações
  * (`DXF_PROFILE_*`) do mesmo pipeline. Nenhum componente de interface pode
  * gerar DXF por conta própria — todos passam por `exportDXF()`.
  *
@@ -27,10 +27,12 @@ import {
 import { exportDxf, type DxfDocument } from "@/lib/dxf/dxfService";
 import type { Entity } from "@/lib/lab2d/core";
 import type { CncIssue } from "@/lib/lab2d/manufacturing";
-import { profileById } from "@/lib/lab2d/roles";
+import { LASER_PROFILE_ID, profileById, TECHNICAL_PROFILE_ID } from "@/lib/lab2d/roles";
 
 /** Perfis = configurações do mesmo exportador. */
-export const DXF_PROFILE_TECHNICAL = "tecnico";
+export const DXF_PROFILE_TECHNICAL = TECHNICAL_PROFILE_ID;
+export const DXF_PROFILE_LASER = LASER_PROFILE_ID;
+/** IDs antigos — continuam abrindo o perfil equivalente atual. */
 export const DXF_PROFILE_PRODUCTION = "producao";
 export const DXF_PROFILE_CYPCUT = "cypcut";
 
@@ -52,7 +54,6 @@ export type DxfExportRequest = {
   roles?: Partial<Record<CncRole, boolean>>;
   leads?: boolean;
   flattenCurves?: boolean;
-  bendAs?: CncExportOptions["bendAs"];
   metadata?: DxfMetadata;
 };
 
@@ -70,13 +71,12 @@ export function optionsForProfile(
 }
 
 export function optionsFrom(req: DxfExportRequest): CncExportOptions {
-  const base = optionsForProfile(req.profile ?? DXF_PROFILE_CYPCUT);
+  const base = optionsForProfile(req.profile ?? DXF_PROFILE_LASER);
   return {
     ...base,
     roles: { ...base.roles, ...req.roles },
     leads: req.leads ?? base.leads,
     flattenCurves: req.flattenCurves ?? base.flattenCurves,
-    bendAs: req.bendAs ?? base.bendAs,
   };
 }
 
