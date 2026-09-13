@@ -21,7 +21,7 @@ import {
 } from "@/lib/dxf/cncExport";
 import { exportDXF } from "@/lib/dxf/exportService";
 import { uid, type Entity } from "@/lib/lab2d/core";
-import { CYPCUT_APPID, CYPCUT_CHANNEL, roleOf, structureMap } from "@/lib/lab2d/roles";
+import { CYPCUT_APPID, CYPCUT_CHANNEL, LASER_PROFILE_ID, roleOf, structureMap } from "@/lib/lab2d/roles";
 
 const golden = importDxf(
   readFileSync(join(process.cwd(), "src/lib/dxf/__fixtures__/quadrado-redondo-p01.dxf"), "utf8"),
