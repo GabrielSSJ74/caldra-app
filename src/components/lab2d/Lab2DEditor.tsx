@@ -42,7 +42,7 @@ import type { Vec2 } from "@/lib/geometry/types";
 import { ExportDialog } from "@/components/lab2d/ExportDialog";
 import { RotateGate } from "@/components/lab2d/RotateGate";
 import { useDeclareImmersive, useImmersiveLandscape } from "@/lib/ui/immersive";
-import { ImportDialog, type ImportSource } from "@/components/lab2d/ImportDialog";
+import { ImportDialog } from "@/components/lab2d/ImportDialog";
 import { VisionDialog, type VisionImageLayer } from "@/components/lab2d/VisionDialog";
 import { TextDialog, type TextSpec } from "@/components/lab2d/TextDialog";
 import {
@@ -311,7 +311,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [showDims2, setShowDims2] = useState(false);
   const [dimSel, setDimSel] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
-  const [importSrc, setImportSrc] = useState<ImportSource | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [visionOpen, setVisionOpen] = useState(false);
   const [imageLayer, setImageLayer] = useState<VisionImageLayer | null>(null);
@@ -2422,11 +2421,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
       <ImportDialog
         open={importOpen}
-        source={importSrc}
         layers={layers}
-        layer={activeLayer}
-        onSource={setImportSrc}
-        onClose={() => { setImportOpen(false); setImportSrc(null); }}
+        onClose={() => setImportOpen(false)}
         onConfirm={onImportConfirm}
       />
       <TextDialog open={textOpen} {...(editingTextId && textSpec ? { initial: textSpec } : {})} onClose={() => { setTextOpen(false); setEditingTextId(null); if (!textSpec) setTool("select"); }} onConfirm={(spec) => {
