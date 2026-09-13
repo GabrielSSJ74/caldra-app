@@ -39,6 +39,17 @@ export type GeometryPiece = {
   metrics?: MetricRow[];
 };
 
+/** União física entre peças da decomposição (emenda soldada etc.). */
+export type FabricationJoint = {
+  id: string;
+  kind: "weld";
+  label: string;
+  /** Posição da emenda descrita pelas geratrizes/arestas envolvidas. */
+  position: string;
+  /** Códigos das peças unidas. */
+  between: [string, string];
+};
+
 export type GeometryResult = {
   metrics: MetricRow[];
   /** Comprimentos verdadeiros das geratrizes (mm). */
@@ -50,7 +61,9 @@ export type GeometryResult = {
   method: string;
   warnings: string[];
   /** Peças individuais quando a peça se decompõe (curva de gomos, boca de lobo). */
-  pieces?: GeometryPiece[];
+  pieces?: GeometryPiece[] | undefined;
+  /** Uniões físicas entre as peças (emendas soldadas), quando houver. */
+  joints?: FabricationJoint[] | undefined;
 };
 
 

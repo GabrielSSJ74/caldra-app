@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { GeometryPiece } from "./types";
 import { buildWire } from "@/lib/viz3d/wire";
 import {
   SQUARE_TO_ROUND_DEFAULTS,
@@ -58,3 +59,59 @@ describe("transição quadrado para redondo canônica", () => {
     expect(center.y / model.circle.length).toBeCloseTo(input.offsetY, 8);
   });
 });
+describe("estratégia de fabricação", () => {
+  it("modo peça única não decompõe", () => {
+    const r = calculateSquareToRound({ ...SQUARE_TO_ROUND_DEFAULTS, strategy: "single" });
+    expect(r.pieces).toBeUndefined();
+    expect(r.joints).toBeUndefined();
+  });
+
+  it.each(cases)("modo 2 partes + solda gera 2 peças e 2 emendas: %#", (base) => {
+    const input: SquareToRoundInput = { ...base, strategy: "two-weld" };
+    const single = calculateSquareToRound({ ...base, strategy: "single" });
+    const split = calculateSquareToRound(input);
+
+    expect(split.pieces).toHaveLength(2);
+    expect(split.joints).toHaveLength(2);
+    expect(split.joints!.every((j) => j.kind === "weld")).toBe(true);
+
+    // a geometria do conjunto é a MESMA: comprimentos verdadeiros idênticos
+    expect(split.trueLengths).toEqual(single.trueLengths);
+
+    // a soma das áreas das metades reproduz a área da peça inteira
+    const areaOf = (p: GeometryPiece) => polygonAreaForTest(p.development.outline);
+    const sum = split.pieces!.reduce((s, p) => s + areaOf(p), 0);
+    expect(sum).toBeCloseTo(single.areaMm2, 3);
+  });
+
+  it("3D recebe a estratégia sem alterar o envelope do conjunto", () => {
+    const p = {
+      d1: 500,
+      d2: SQUARE_TO_ROUND_DEFAULTS.topDiameter,
+      h: SQUARE_TO_ROUND_DEFAULTS.height,
+      e: 0,
+      t: SQUARE_TO_ROUND_DEFAULTS.thickness,
+      seg: SQUARE_TO_ROUND_DEFAULTS.divisions * 4,
+      baseA: SQUARE_TO_ROUND_DEFAULTS.baseA,
+      baseB: SQUARE_TO_ROUND_DEFAULTS.baseB,
+      offsetY: 0,
+      divisions: SQUARE_TO_ROUND_DEFAULTS.divisions,
+    };
+    const a = buildWire("quadrado-redondo", { ...p, strategy: "single" });
+    const b = buildWire("quadrado-redondo", { ...p, strategy: "two-weld" });
+    expect(b.bounds).toEqual(a.bounds);
+    expect(b.faces.length).toBe(a.faces.length);
+    // as costuras J1/J2 aparecem como linhas de referência adicionais
+    expect(b.refLines.length).toBe(a.refLines.length + 2);
+  });
+});
+
+function polygonAreaForTest(points: { x: number; y: number }[]): number {
+  let s = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]!;
+    const q = points[(i + 1) % points.length]!;
+    s += p.x * q.y - q.x * p.y;
+  }
+  return Math.abs(s) / 2;
+}

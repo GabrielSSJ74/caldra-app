@@ -22,7 +22,7 @@ import { MATERIALS } from "@/lib/projects/demo-data";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { buildWire } from "@/lib/viz3d/wire";
-import { developmentToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
+import { developmentToEntities, piecesToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
 import { cn } from "@/lib/utils";
 import { VisualizationViewport, type VisualizationMode } from "./View3DPanel";
 import { DevelopmentView } from "./DevelopmentView";
@@ -92,6 +92,7 @@ export function SquareToRoundStudio() {
         baseB: input.baseB,
         offsetY: input.offsetY,
         divisions: input.divisions,
+        strategy: input.strategy,
       }),
     [input],
   );
@@ -138,20 +139,29 @@ export function SquareToRoundStudio() {
 
   const exportDxfFile = () => {
     if (!result) return;
-    const entities: DxfEntity[] = [
-      {
+    const parts = result.pieces?.length
+      ? result.pieces
+      : [{ code: "QR", development: result.development }];
+    const entities: DxfEntity[] = [];
+    let cursor = 0;
+    for (const part of parts) {
+      const b = part.development.bounds;
+      const dx = cursor - b.minX;
+      entities.push({
         type: "LWPOLYLINE",
         layer: "CORTE",
         closed: true,
-        points: result.development.outline.map((p) => ({ x: p.x, y: p.y })),
-      },
-      ...result.development.foldLines.map<DxfEntity>((s) => ({
-        type: "LINE",
-        layer: "DOBRA",
-        start: s.a,
-        end: s.b,
-      })),
-    ];
+        points: part.development.outline.map((p) => ({ x: p.x + dx, y: p.y })),
+      });
+      for (const s of part.development.foldLines)
+        entities.push({
+          type: "LINE",
+          layer: "DOBRA",
+          start: { x: s.a.x + dx, y: s.a.y },
+          end: { x: s.b.x + dx, y: s.b.y },
+        });
+      cursor += b.maxX - b.minX + 40;
+    }
     downloadDxf(
       {
         layers: [
@@ -280,6 +290,48 @@ export function SquareToRoundStudio() {
                 />
                 <span className="w-8 text-right font-mono text-xs">{input.divisions}</span>
               </label>
+
+              {/* ESTRATÉGIA DE FABRICAÇÃO — mesmo modelo, decomposição diferente */}
+              <div className="mt-3 border-t border-line pt-3">
+                <span className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
+                  Estratégia de fabricação
+                </span>
+                <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                  {(
+                    [
+                      { id: "single", label: "Uma peça única" },
+                      { id: "two-weld", label: "2 partes + solda" },
+                    ] as const
+                  ).map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setInput((p) => ({ ...p, strategy: s.id }))}
+                      className={cn(
+                        "rounded-lg border px-2 py-2 font-mono text-[10px] tracking-wider uppercase transition-colors",
+                        input.strategy === s.id
+                          ? "border-accent/40 bg-accent/12 text-accent"
+                          : "border-line text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+                {input.strategy === "two-weld" && result?.joints && (
+                  <div className="mt-2 space-y-1 rounded-lg border border-line bg-background/60 p-2">
+                    {result.joints.map((j) => (
+                      <p key={j.id} className="font-mono text-[10px] text-muted-foreground">
+                        <span className="text-accent">{j.id}</span> · {j.position}
+                      </p>
+                    ))}
+                    <p className="font-mono text-[9px] text-muted-foreground/70">
+                      A geometria final do conjunto é idêntica nos dois modos — muda apenas a
+                      decomposição da chapa.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
             <p
@@ -378,7 +430,44 @@ export function SquareToRoundStudio() {
               </div>
             )}
 
-            {(tab === "Traçado" || tab === "Desenvolvimento") && viewMode === "2d" && (
+            {(tab === "Traçado" || tab === "Desenvolvimento") &&
+              viewMode === "2d" &&
+              result.pieces?.length && (
+                <div className={cn("grid gap-3", result.pieces.length > 1 && "lg:grid-cols-2")}>
+                  {result.pieces.map((piece, i) => (
+                    <div
+                      key={piece.code}
+                      className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3"
+                    >
+                      <div className="mb-2 flex items-baseline justify-between gap-2">
+                        <span className="font-mono text-[10px] tracking-wider text-accent uppercase">
+                          {piece.code}
+                        </span>
+                        <span className="truncate text-[11px] text-muted-foreground">
+                          {piece.name}
+                        </span>
+                      </div>
+                      <div className="h-[280px] lg:h-[380px]">
+                        <DevelopmentView
+                          ref={i === 0 ? svgRef : undefined}
+                          pattern={piece.development}
+                          showFolds={tab === "Traçado"}
+                          showPoints={tab === "Traçado"}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  <p className="font-mono text-[10px] text-muted-foreground lg:col-span-2">
+                    {tab === "Traçado"
+                      ? "Cada metade é traçada separadamente; as costuras J1/J2 unem as peças na montagem."
+                      : "Contornos de corte das duas metades prontos para nesting. Escala real em milímetros."}
+                  </p>
+                </div>
+              )}
+
+            {(tab === "Traçado" || tab === "Desenvolvimento") &&
+              viewMode === "2d" &&
+              !result.pieces?.length && (
                 <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
                   <div className="h-[300px] lg:h-[420px]">
                     <DevelopmentView
@@ -481,8 +570,12 @@ export function SquareToRoundStudio() {
                     if (!requirePro("lab2d")) return;
 
                     sendToLab2D({
-                      name: "Quadrado → Redondo",
-                      entities: developmentToEntities(result.development),
+                      name: result.pieces?.length
+                        ? "Quadrado → Redondo · 2 partes + solda"
+                        : "Quadrado → Redondo",
+                      entities: result.pieces?.length
+                        ? piecesToEntities(result.pieces)
+                        : developmentToEntities(result.development),
                     });
                     navigate({ to: "/desenho-2d" });
                   }}

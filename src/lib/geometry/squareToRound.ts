@@ -20,6 +20,7 @@
  */
 
 import type {
+  GeometryPiece,
   CalcStep,
   DevelopmentPattern,
   GeometryResult,
@@ -48,6 +49,12 @@ export type SquareToRoundInput = {
   thickness: number;
   /** Densidade do material (kg/dm³). */
   density: number;
+  /**
+   * Estratégia de fabricação — parâmetro do MESMO modelo geométrico.
+   * A geometria final do conjunto é idêntica nos dois modos; o que muda é a
+   * decomposição fabricável (uma peça ou duas metades unidas por solda).
+   */
+  strategy: "single" | "two-weld";
 };
 
 export const SQUARE_TO_ROUND_DEFAULTS: SquareToRoundInput = {
@@ -60,6 +67,7 @@ export const SQUARE_TO_ROUND_DEFAULTS: SquareToRoundInput = {
   divisions: 6,
   thickness: 3,
   density: 7.85,
+  strategy: "single",
 };
 
 export function validateSquareToRound(i: SquareToRoundInput): ValidationIssue[] {
@@ -109,10 +117,13 @@ export type SquareToRoundModel = {
   arcPoints: Vec3[][]; // por quadrante, inclui extremos
   circle: Vec3[]; // todos os pontos do topo, em ordem
   /** Faces reais da superfície média, em ordem de fabricação. */
-  faces: { id: string; points: [Vec3, Vec3, Vec3] }[];
+  faces: { id: string; piece: "A" | "B"; points: [Vec3, Vec3, Vec3] }[];
   /** Geratrizes reais usadas tanto no 3D quanto na triangulação plana. */
-  generatrices: { id: string; a: Vec3; b: Vec3 }[];
+  generatrices: { id: string; piece: "A" | "B"; a: Vec3; b: Vec3 }[];
 };
+
+/** Quadrantes 0–1 formam a metade A; 2–3, a metade B (modo 2 partes + solda). */
+const pieceOf = (quadrant: number): "A" | "B" => (quadrant < 2 ? "A" : "B");
 
 export function buildModel(i: SquareToRoundInput): SquareToRoundModel {
   const a = i.baseA / 2;
@@ -152,13 +163,23 @@ export function buildModel(i: SquareToRoundInput): SquareToRoundModel {
       const startPoint = quadrant[j];
       const endPoint = quadrant[j + 1];
       if (!startPoint || !endPoint) continue;
-      faces.push({ id: `Q${k}-T${j}`, points: [corner, startPoint, endPoint] });
-      generatrices.push({ id: `V${k}-P${k * i.divisions + j}`, a: corner, b: startPoint });
+      faces.push({ id: `Q${k}-T${j}`, piece: pieceOf(k), points: [corner, startPoint, endPoint] });
+      generatrices.push({
+        id: `V${k}-P${k * i.divisions + j}`,
+        piece: pieceOf(k),
+        a: corner,
+        b: startPoint,
+      });
     }
     const endPoint = quadrant[i.divisions];
     if (!endPoint) continue;
-    generatrices.push({ id: `V${k}-P${(k + 1) * i.divisions}`, a: corner, b: endPoint });
-    faces.push({ id: `Q${k}-BASE`, points: [corner, nextCorner, endPoint] });
+    generatrices.push({
+      id: `V${k}-P${(k + 1) * i.divisions}`,
+      piece: pieceOf(k),
+      a: corner,
+      b: endPoint,
+    });
+    faces.push({ id: `Q${k}-BASE`, piece: pieceOf(k), points: [corner, nextCorner, endPoint] });
   }
   return { corners, arcPoints, circle, faces, generatrices };
 }
@@ -173,34 +194,43 @@ function polygonArea(points: Vec2[]): number {
   return Math.abs(s) / 2;
 }
 
-export function calculateSquareToRound(input: SquareToRoundInput): GeometryResult {
-  const issues = validateSquareToRound(input);
-  if (issues.length) throw new Error(issues[0]!.message);
+type DevelopedPart = {
+  outlineTop: Vec2[];
+  outlineBottom: Vec2[];
+  foldLines: Segment2[];
+  trueLengths: { id: string; length: number }[];
+};
 
-  const model = buildModel(input);
+/**
+ * Desenvolve os quadrantes [from..to] por encadeamento de triângulos,
+ * com costura no início do intervalo. Extrai a rotina original (0..3) para
+ * que o modo "2 partes + solda" desenvolva [0,1] e [2,3] separadamente,
+ * sem alterar a matemática nem a geometria 3D do conjunto.
+ */
+function developRange(
+  model: ReturnType<typeof buildModel>,
+  n: number,
+  from: number,
+  to: number,
+): DevelopedPart {
   const { corners, arcPoints } = model;
-  const n = input.divisions;
-
-  // ---- desenvolvimento por encadeamento de triângulos ----
   const outlineTop: Vec2[] = [];
   const outlineBottom: Vec2[] = [];
   const foldLines: Segment2[] = [];
   const trueLengths: { id: string; length: number }[] = [];
 
-  // Costura no vértice 0. Primeiro ponto da base na origem.
   let cornerPos: Vec2 = { x: 0, y: 0 };
-  const firstArc = arcPoints[0]![0]!;
-  const l0 = dist3(corners[0]!, firstArc);
+  const firstArc = arcPoints[from]![0]!;
+  const l0 = dist3(corners[from]!, firstArc);
   let arcPos: Vec2 = { x: 0, y: l0 };
   outlineBottom.push(cornerPos);
   outlineTop.push(arcPos);
-  trueLengths.push({ id: "V0-P0", length: l0 });
+  trueLengths.push({ id: `V${from}-P${from * n}`, length: l0 });
   foldLines.push({ a: cornerPos, b: arcPos });
 
-  for (let k = 0; k < 4; k++) {
+  for (let k = from; k <= to; k++) {
     const corner3 = corners[k]!;
     const quad = arcPoints[k]!;
-    // setor cônico: leque em torno do vértice k
     for (let j = 0; j < n; j++) {
       const chord = dist3(quad[j]!, quad[j + 1]!);
       const nextLen = dist3(corner3, quad[j + 1]!);
@@ -210,7 +240,6 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
       trueLengths.push({ id: `V${k}-P${k * n + j + 1}`, length: nextLen });
       arcPos = next;
     }
-    // triângulo plano até o próximo vértice da base
     const nextCorner3 = corners[(k + 1) % 4]!;
     const baseEdge = dist3(corner3, nextCorner3);
     const diag = dist3(nextCorner3, quad[n]!);
@@ -220,30 +249,50 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
     cornerPos = nextCorner;
   }
 
-  const outline: Vec2[] = [...outlineTop, ...outlineBottom.slice().reverse()];
+  return { outlineTop, outlineBottom, foldLines, trueLengths };
+}
 
+/** Converte o encadeamento em padrão de desenvolvimento com bounds e pontos V. */
+function patternOf(part: DevelopedPart, vertexPrefix: string): DevelopmentPattern {
+  const outline: Vec2[] = [...part.outlineTop, ...part.outlineBottom.slice().reverse()];
   const minX = Math.min(...outline.map((p) => p.x));
   const maxX = Math.max(...outline.map((p) => p.x));
   const minY = Math.min(...outline.map((p) => p.y));
   const maxY = Math.max(...outline.map((p) => p.y));
-
-  const development: DevelopmentPattern = {
+  return {
     outline,
-    foldLines,
-    points: outlineBottom.map((p, idx) => ({ id: `V${idx}`, p })),
+    foldLines: part.foldLines,
+    points: part.outlineBottom.map((p, idx) => ({ id: `${vertexPrefix}${idx}`, p })),
     bounds: { minX, minY, maxX, maxY },
   };
+}
 
+function partPerimeter(outline: Vec2[]): number {
+  return outline.reduce((acc, p, idx) => acc + dist2(p, outline[(idx + 1) % outline.length]!), 0);
+}
+
+export function calculateSquareToRound(input: SquareToRoundInput): GeometryResult {
+  const issues = validateSquareToRound(input);
+  if (issues.length) throw new Error(issues[0]!.message);
+
+  const model = buildModel(input);
+  const { corners, arcPoints } = model;
+  const n = input.divisions;
+
+  // ---- desenvolvimento por encadeamento de triângulos ----
+  const part = developRange(model, input.divisions, 0, 3);
+  const { trueLengths } = part;
+
+  const development = patternOf(part, "V");
+
+  const outline = development.outline;
   const areaMm2 = polygonArea(outline);
   const volumeDm3 = (areaMm2 * input.thickness) / 1_000_000;
   const massKg = volumeDm3 * input.density;
 
   const topPerimeter = Math.PI * input.topDiameter;
   const basePerimeter = 2 * (input.baseA + input.baseB);
-  const developedPerimeter = outline.reduce(
-    (acc, p, idx) => acc + dist2(p, outline[(idx + 1) % outline.length]!),
-    0,
-  );
+  const developedPerimeter = partPerimeter(outline);
 
   const metrics = [
     { label: "Perímetro da base", value: basePerimeter, unitMm: true },
@@ -252,8 +301,8 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
     { label: "Geratriz mínima", value: Math.min(...trueLengths.map((t) => t.length)), unitMm: true },
     { label: "Geratriz máxima", value: Math.max(...trueLengths.map((t) => t.length)), unitMm: true },
     { label: "Contorno do desenvolvimento", value: developedPerimeter, unitMm: true },
-    { label: "Largura da planificação", value: maxX - minX, unitMm: true },
-    { label: "Altura da planificação", value: maxY - minY, unitMm: true },
+    { label: "Largura da planificação", value: development.bounds.maxX - development.bounds.minX, unitMm: true },
+    { label: "Altura da planificação", value: development.bounds.maxY - development.bounds.minY, unitMm: true },
     { label: "Área desenvolvida", value: areaMm2 / 1_000_000, suffix: "m²" },
     { label: "Massa estimada", value: massKg, suffix: "kg" },
     { label: "Triângulos gerados", value: 4 * (input.divisions + 1), suffix: "un" },
@@ -309,13 +358,62 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
     },
   ];
 
+  // ---- estratégia de fabricação: decomposição do MESMO modelo ----
+  const strategy = input.strategy ?? "single";
+  let pieces: GeometryResult["pieces"];
+  let joints: GeometryResult["joints"];
+  if (strategy === "two-weld") {
+    const devA = patternOf(developRange(model, n, 0, 1), "V");
+    const devB = patternOf(developRange(model, n, 2, 3), "V");
+    const mkPiece = (code: string, name: string, dev: DevelopmentPattern): GeometryPiece => {
+      const area = polygonArea(dev.outline);
+      const volDm3 = (area * input.thickness) / 1_000_000;
+      return {
+        code,
+        name,
+        quantity: 1,
+        development: dev,
+        metrics: [
+          { label: "Área desenvolvida", value: area / 1_000_000, suffix: "m²" },
+          { label: "Massa estimada", value: volDm3 * input.density, suffix: "kg" },
+          { label: "Perímetro de corte", value: partPerimeter(dev.outline), unitMm: true },
+        ],
+      };
+    };
+    pieces = [
+      mkPiece("QR-A", "Metade A (quadrantes V0–V1–V2)", devA),
+      mkPiece("QR-B", "Metade B (quadrantes V2–V3–V0)", devB),
+    ];
+    joints = [
+      {
+        id: "J1",
+        kind: "weld",
+        label: "Emenda soldada J1 — geratriz V0 → P0",
+        position: `Costura no vértice V0: linha de ${trueLengths[0]!.length.toFixed(2)} mm (V0 até o primeiro ponto do topo).`,
+        between: ["QR-B", "QR-A"],
+      },
+      {
+        id: "J2",
+        kind: "weld",
+        label: "Emenda soldada J2 — geratriz V2 → P" + 2 * n,
+        position: `Costura no vértice V2: linha de ${(dist3(model.corners[2]!, model.arcPoints[1]![n]!)).toFixed(2)} mm (V2 até o ponto do topo no fim do quadrante 1).`,
+        between: ["QR-A", "QR-B"],
+      },
+    ];
+  }
+
   return {
     metrics,
     trueLengths,
     development,
+    pieces,
+    joints,
     steps,
     areaMm2,
-    method: "Triangulação — comprimentos verdadeiros",
+    method:
+      strategy === "two-weld"
+        ? "Triangulação — comprimentos verdadeiros · 2 partes + solda"
+        : "Triangulação — comprimentos verdadeiros",
     warnings: [
       "O arco do topo é aproximado por cordas. Aumente as divisões para reduzir o erro.",
       "O desenvolvimento é da superfície média; descontos de dobra e espessura não estão aplicados.",

@@ -9,7 +9,7 @@
 import type { Vec2 } from "@/lib/geometry/types";
 import type { Box, Entity } from "./core";
 import { samplePath } from "./bezier";
-import { SELECTION_COLOR, techStyle } from "./technical";
+import { SELECTION_COLOR, bendEdgeMarks, techStyle } from "./technical";
 import { viewportBox, type SpatialIndex } from "./spatialIndex";
 
 export type SceneView = { tx: number; ty: number; k: number };
@@ -102,6 +102,23 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       ctx.lineWidth = 1.4 * style.weight * inv;
       const dash = !lod && style.dash(inv);
       ctx.setLineDash(dash ? dash.split(" ").map(Number) : []);
+    }
+    // DOBRA: representação visual reduzida — ponto preenchido + traço curto
+    // na borda. A entidade inteira permanece no modelo; hit-test, seleção e
+    // exportação continuam usando a linha completa.
+    if (e.layer === "dobra" && e.type === "line") {
+      const m = bendEdgeMarks(e, 10 * inv, 3 * inv);
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(m.tick.x1, m.tick.y1);
+      ctx.lineTo(m.tick.x2, m.tick.y2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(m.dot.x, m.dot.y, m.dotR, 0, Math.PI * 2);
+      ctx.fillStyle = style.color;
+      ctx.fill();
+      currentLayer = ""; // força re-aplicação do traço da camada
+      continue;
     }
     ctx.beginPath();
     traceEntity(ctx, e, lod);

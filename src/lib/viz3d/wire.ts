@@ -61,6 +61,8 @@ export type WireParams = {
   offsetY?: number;
   /** divisões reais por quadrante usadas pela triangulação */
   divisions?: number;
+  /** estratégia de fabricação (Quadrado → Redondo): "single" | "two-weld" */
+  strategy?: string;
 };
 
 export const DEFAULT_PARAMS: WireParams = {
@@ -122,6 +124,7 @@ export function normalizeParameters(p: WireParams): Required<WireParams> {
     baseB,
     offsetY,
     divisions,
+    strategy: p.strategy === "two-weld" ? "two-weld" : "single",
   };
 }
 
@@ -349,9 +352,9 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
   const y0 = -h / 2;
   const y1 = h / 2;
 
-  const withAxis = (geo: Geo) => {
+  const withAxis = (geo: Geo, extraRefs: Edge[] = []) => {
     const m = finish(geo);
-    return { ...m, refLines: axisLines(m.bounds) };
+    return { ...m, refLines: [...axisLines(m.bounds), ...extraRefs] };
   };
 
   switch (slug) {
@@ -385,6 +388,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
         divisions: p.divisions,
         thickness: p.t,
         density: 7.85,
+        strategy: p.strategy === "two-weld" ? "two-weld" : "single",
       });
       const cv = (q: Vec3) => v(q.x, q.z - p.h / 2, q.y);
       const inset = (q: Vec3) => {
@@ -428,7 +432,18 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
         edges.push([ao, bo]);
       }
 
-      return withAxis({ faces, edges });
+      // Emendas soldadas (modo 2 partes + solda): posição real das costuras J1/J2.
+      const seamRefs: Edge[] = [];
+      if (p.strategy === "two-weld") {
+        const n = p.divisions;
+        const s1a = canonical.corners[0]!;
+        const s1b = canonical.arcPoints[0]![0]!;
+        const s2a = canonical.corners[2]!;
+        const s2b = canonical.arcPoints[1]![n]!;
+        seamRefs.push([cv(s1a), cv(s1b)], [cv(s2a), cv(s2b)]);
+      }
+
+      return withAxis({ faces, edges }, seamRefs);
     }
 
     case "redondo-quadrado": {
