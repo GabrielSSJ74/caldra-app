@@ -308,6 +308,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [marquee, setMarquee] = useState<{ a: Vec2; b: Vec2 } | null>(null);
   const [measures, setMeasures] = useState<Measure[]>([]);
   const [liveMeasure, setLiveMeasure] = useState<Measure | null>(null);
+  /* COTAGEM — entidades DIMENSION associativas (nunca geometria de corte) */
+  const [dims, setDims] = useState<Dimension[]>([]);
+  const [dimKind, setDimKind] = useState<DimKind>("linear");
+  const [dimPicks, setDimPicks] = useState<DimRef[]>([]);
+  const [showDims2, setShowDims2] = useState(false);
+  const [dimSel, setDimSel] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [importSrc, setImportSrc] = useState<ImportSource | null>(null);
   const [visionOpen, setVisionOpen] = useState(false);
@@ -346,6 +352,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setPlanId(plan.id);
     setEntities(plan.entities);
     setGroups(plan.groups ?? []);
+    setDims(plan.dims ?? []);
     setThickness(p.thickness ?? DEFAULT_PLAN_THICKNESS);
     past.current = [];
     future.current = [];
@@ -396,7 +403,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           thickness,
           lastPlanId: planId,
           plans: project.plans.map((pl) =>
-            pl.id === planId ? { ...pl, entities, groups: live } : pl,
+            pl.id === planId
+              ? { ...pl, entities, groups: live, dims: pruneDimensions(dims, entities) }
+              : pl,
           ),
         };
         saveProject(next);
