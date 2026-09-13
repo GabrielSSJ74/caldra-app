@@ -154,3 +154,4 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Dobra nunca é convertida em marcação (opção bendAs removida)
 - [x] Prévia gerada a partir do próprio DXF, fundo claro e cores fixas
 - [x] Análise LXDS removida da interface de exportação
+- [ ] CHAMFER: dobra vira ponto preenchido + linha curta na borda (rosa), geometria/role BEND intactos, Traçagem mantém linha completa, exportação inalterada
