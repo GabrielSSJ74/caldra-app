@@ -71,7 +71,10 @@ export function readStoredSettings(): Settings {
   try {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return DEFAULTS;
-    const saved = JSON.parse(raw) as Partial<Settings> & { aurora?: boolean };
+    const saved = JSON.parse(raw) as Omit<Partial<Settings>, "auroraStyle"> & {
+      aurora?: boolean;
+      auroraStyle?: AuroraStyle | "estatico";
+    };
     const VALID: AuroraStyle[] = ["fluido", "suave", "padrao"];
     const LANGUAGES: AppLanguage[] = ["pt", "en", "es"];
     const auroraStyle: AuroraStyle =
