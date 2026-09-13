@@ -134,7 +134,7 @@ function entityCmds(e: Entity): Cmd[] {
 
 /* ------------------------------------------------------------------ montagem */
 
-export type SheetOptions = { dimensions?: boolean };
+export type SheetOptions = { dimensions?: boolean; technicalColors?: boolean };
 
 /** Constrói o plano da folha (fonte única da verdade de PDF e PNG). */
 export function renderSheet(
@@ -186,7 +186,7 @@ export function renderSheet(
         y: p.y,
         text: e.text,
         sizePt: Math.max(5, e.size * k * 2.5),
-        color: SHEET_INK,
+        color: opts.technicalColors ? style.color : SHEET_INK,
         align: "left",
       });
       continue;
@@ -194,7 +194,7 @@ export function renderSheet(
     const cmds = entityCmds(e);
     if (!cmds.length) continue;
     shapes.push({
-      color: SHEET_INK,
+      color: opts.technicalColors ? style.color : SHEET_INK,
       widthMm: BASE_LW * style.weight,
       dash: dashFor(e.layer),
       cmds: map(cmds),
@@ -349,8 +349,7 @@ export function sheetToCanvas(plan: SheetPlan, longSide = PNG_LONG_SIDE): HTMLCa
   ctx.scale(pxPerMm, pxPerMm);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.strokeStyle = "#000000";
-  ctx.fillStyle = "#000000";
+    ctx.strokeStyle = s.color;
 
   for (const s of plan.shapes) {
     ctx.setLineDash(s.dash ?? []);
@@ -370,6 +369,7 @@ export function sheetToCanvas(plan: SheetPlan, longSide = PNG_LONG_SIDE): HTMLCa
     const px = t.sizePt * 0.3528; // pt -> mm
     ctx.font = `${t.bold ? "600 " : ""}${px}px ${t.mono ? "ui-monospace, monospace" : "Helvetica, Arial, sans-serif"}`;
     ctx.textAlign = t.align === "right" ? "right" : t.align === "center" ? "center" : "left";
+    ctx.fillStyle = t.color;
     ctx.fillText(t.text, t.x, t.y);
   }
   return canvas;

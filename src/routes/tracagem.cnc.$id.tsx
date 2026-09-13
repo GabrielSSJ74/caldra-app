@@ -171,11 +171,13 @@ function CncPartPage() {
             </button>
             <button
               onClick={() => {
+                const chosenName = window.prompt("Nome do modelo", custom?.name ?? `Meu ${part.name}`)?.trim();
+                if (!chosenName) return;
                 if (custom) {
-                  updateCustom(custom.id, { name: custom.name, values: { ...values } });
+                  updateCustom(custom.id, { name: chosenName, values: { ...values } });
                   toast.success("Modelo atualizado");
                 } else {
-                  saveCustom({ baseId: part.id, name: `Meu ${part.name}`, values: { ...values }, modelFamily: "vector" });
+                  saveCustom({ baseId: part.id, name: chosenName, values: { ...values }, modelFamily: "vector" });
                   toast.success("Salvo em Meus Modelos");
                 }
               }}

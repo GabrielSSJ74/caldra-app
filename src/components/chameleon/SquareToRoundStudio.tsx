@@ -600,8 +600,10 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
                   type="button"
                   onClick={() => {
                     const values = { ...input, strategy: input.strategy === "two-weld" ? 1 : 0 } as unknown as Record<string, number>;
-                    if (customId) updateCustom(customId, { name: customName ?? "Quadrado → Redondo", values });
-                    else saveCustom({ baseId: "cald.quadrado-redondo", name: "Meu Quadrado → Redondo", values, modelFamily: "parametric", manufacturingStrategy: input.strategy });
+                    const chosenName = window.prompt("Nome do modelo", customName ?? "Meu Quadrado → Redondo")?.trim();
+                    if (!chosenName) return;
+                    if (customId) updateCustom(customId, { name: chosenName, values });
+                    else saveCustom({ baseId: "cald.quadrado-redondo", name: chosenName, values, modelFamily: "parametric", manufacturingStrategy: input.strategy });
                     toast.success(customId ? "Modelo atualizado" : "Salvo em Meus Modelos");
                   }}
                   className="flex w-full items-center justify-center gap-2 rounded-xl border border-line py-2.5 font-mono text-[11px] tracking-wider text-muted-foreground uppercase"

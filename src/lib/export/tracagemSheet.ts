@@ -7,7 +7,7 @@ export function tracagemSheetPlan(result: GeometryResult, meta: SheetMeta): Shee
   const entities = result.pieces?.length
     ? piecesToEntities(result.pieces)
     : developmentToEntities(result.development);
-  return renderSheet(entities, DEFAULT_LAYERS, meta, { dimensions: true });
+  return renderSheet(entities, DEFAULT_LAYERS, meta, { dimensions: true, technicalColors: true });
 }
 
 export async function downloadTracagemPng(result: GeometryResult, meta: SheetMeta) {

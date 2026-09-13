@@ -666,8 +666,10 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
                   type="button"
                   onClick={() => {
                     const snapshot = { ...values } as Record<string, number>;
-                    if (customId) updateCustom(customId, { name: customName ?? name, values: snapshot });
-                    else saveCustom({ baseId: `cald.${slug}`, name: `Meu ${name}`, values: snapshot, modelFamily: "parametric" });
+                    const chosenName = window.prompt("Nome do modelo", customName ?? `Meu ${name}`)?.trim();
+                    if (!chosenName) return;
+                    if (customId) updateCustom(customId, { name: chosenName, values: snapshot });
+                    else saveCustom({ baseId: `cald.${slug}`, name: chosenName, values: snapshot, modelFamily: "parametric" });
                     toast.success(customId ? "Modelo atualizado" : "Salvo em Meus Modelos");
                   }}
                   className="flex w-full items-center justify-center gap-2 rounded-xl border border-line py-2.5 font-mono text-[11px] tracking-wider text-muted-foreground uppercase"
