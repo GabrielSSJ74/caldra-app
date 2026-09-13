@@ -61,9 +61,9 @@ export type GeometryResult = {
   method: string;
   warnings: string[];
   /** Peças individuais quando a peça se decompõe (curva de gomos, boca de lobo). */
-  pieces?: GeometryPiece[];
+  pieces?: GeometryPiece[] | undefined;
   /** Uniões físicas entre as peças (emendas soldadas), quando houver. */
-  joints?: FabricationJoint[];
+  joints?: FabricationJoint[] | undefined;
 };
 
 

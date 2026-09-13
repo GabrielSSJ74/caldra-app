@@ -20,6 +20,7 @@
  */
 
 import type {
+  GeometryPiece,
   CalcStep,
   DevelopmentPattern,
   GeometryResult,
@@ -300,8 +301,8 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
     { label: "Geratriz mínima", value: Math.min(...trueLengths.map((t) => t.length)), unitMm: true },
     { label: "Geratriz máxima", value: Math.max(...trueLengths.map((t) => t.length)), unitMm: true },
     { label: "Contorno do desenvolvimento", value: developedPerimeter, unitMm: true },
-    { label: "Largura da planificação", value: maxX - minX, unitMm: true },
-    { label: "Altura da planificação", value: maxY - minY, unitMm: true },
+    { label: "Largura da planificação", value: development.bounds.maxX - development.bounds.minX, unitMm: true },
+    { label: "Altura da planificação", value: development.bounds.maxY - development.bounds.minY, unitMm: true },
     { label: "Área desenvolvida", value: areaMm2 / 1_000_000, suffix: "m²" },
     { label: "Massa estimada", value: massKg, suffix: "kg" },
     { label: "Triângulos gerados", value: 4 * (input.divisions + 1), suffix: "un" },
