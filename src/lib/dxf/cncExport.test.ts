@@ -85,7 +85,7 @@ describe("papéis de fabricação", () => {
     expect(structure.get(part[0]!.id)).toBe("outer");
     expect(structure.get(part[1]!.id)).toBe("hole");
     const c = cncCounts(part);
-    expect(c).toMatchObject({ CUT: 2, MARK: 1, BEND: 2, REFERENCE: 1, DIMENSION: 1, outer: 1, holes: 1 });
+    expect(c).toMatchObject({ CUT: 2, RECORTE: 0, MARK: 1, BEND: 2, REFERENCE: 1, DIMENSION: 1, outer: 1, holes: 1 });
     expect(c.unclassified).toBe(0);
   });
 
@@ -103,7 +103,7 @@ describe("papéis de fabricação", () => {
   });
 });
 
-describe("perfil CYP CUT", () => {
+describe("perfil DXF LASER CNC", () => {
   const part = samplePart();
   const doc = buildCncDxf(part, DEFAULT_CNC_OPTIONS);
 
@@ -134,11 +134,25 @@ describe("perfil CYP CUT", () => {
     expect(check.ok).toBe(true);
   });
 
-  it("permite mapear dobra como marcação sem alterar a geometria", () => {
-    const asMark = buildCncDxf(part, { ...DEFAULT_CNC_OPTIONS, bendAs: "MARK" });
-    expect(asMark.entities.filter((e) => e.layer === "MARK")).toHaveLength(3);
-    expect(asMark.entities.some((e) => e.layer === "BEND")).toBe(false);
-    expect(asMark.entities.length).toBe(doc.entities.length);
+  it("NUNCA converte dobra em marcação", () => {
+    expect(doc.entities.filter((e) => e.layer === "MARK")).toHaveLength(1);
+    expect(doc.entities.filter((e) => e.layer === "BEND")).toHaveLength(2);
+    for (const profile of ["tecnico", "laser-cnc", "cypcut", "producao"]) {
+      const d = buildCncDxf(part, { ...DEFAULT_CNC_OPTIONS, profileId: profile });
+      expect(d.entities.filter((e) => e.layer === "BEND")).toHaveLength(2);
+      expect(d.entities.filter((e) => e.layer === "MARK")).toHaveLength(1);
+    }
+  });
+
+  it("exporta o recorte em layer própria, sem virar corte", () => {
+    const withCut: Entity[] = [
+      ...part,
+      { id: uid(), layer: "recorte", type: "circle", cx: 120, cy: 120, r: 25 },
+    ];
+    const d = buildCncDxf(withCut, DEFAULT_CNC_OPTIONS);
+    expect(d.entities.filter((e) => e.layer === "RECORTE")).toHaveLength(1);
+    expect(d.entities.filter((e) => e.layer === "CUT")).toHaveLength(2);
+    expect(cncCounts(withCut).unclassified).toBe(0);
   });
 });
 
@@ -225,7 +239,7 @@ describe("estrutura CypCut (FS_CYPCUT)", () => {
 describe("ponto único de exportação", () => {
   it("os três perfis são configurações do mesmo pipeline", () => {
     const part = samplePart();
-    for (const profile of ["tecnico", "producao", "cypcut"]) {
+    for (const profile of ["tecnico", "laser-cnc", "cypcut", "producao"]) {
       const r = exportDXF({ geometry: part, profile });
       expect(r.text).toContain("$INSUNITS");
       expect(r.doc.entities.length).toBeGreaterThan(0);
@@ -235,31 +249,33 @@ describe("ponto único de exportação", () => {
     const cut = (p: string) =>
       exportDXF({ geometry: samplePart(), profile: p }).doc.entities.filter((e) => e.layer === "CUT")
         .length;
-    expect(cut("tecnico")).toBe(cut("cypcut"));
-    expect(cut("producao")).toBe(cut("cypcut"));
+    expect(cut("tecnico")).toBe(cut("laser-cnc"));
+    // ids antigos continuam válidos e apontam para o perfil de laser
+    expect(cut("cypcut")).toBe(cut("laser-cnc"));
+    expect(cut("producao")).toBe(cut("laser-cnc"));
   });
 });
 
 
-describe("perfis técnico e produção", () => {
+describe("perfis técnico e laser", () => {
   const part = samplePart();
 
   it("o técnico inclui referência e cotas em layers próprias", () => {
     const opts = {
       ...DEFAULT_CNC_OPTIONS,
       profileId: "tecnico",
-      roles: { CUT: true, MARK: true, BEND: true, REFERENCE: true, DIMENSION: true },
+      roles: { CUT: true, RECORTE: true, MARK: true, BEND: true, REFERENCE: true, DIMENSION: true },
     };
     const doc = buildCncDxf(part, opts);
     expect(doc.layers.map((l) => l.name)).toContain("REFERENCE");
     expect(doc.entities.some((e) => e.layer === "REFERENCE")).toBe(true);
   });
 
-  it("a produção descarta referência e cota mesmo se habilitadas", () => {
+  it("o laser descarta referência e cota mesmo se habilitadas", () => {
     const opts = {
       ...DEFAULT_CNC_OPTIONS,
-      profileId: "producao",
-      roles: { CUT: true, MARK: true, BEND: true, REFERENCE: true, DIMENSION: true },
+      profileId: "laser-cnc",
+      roles: { CUT: true, RECORTE: true, MARK: true, BEND: true, REFERENCE: true, DIMENSION: true },
     };
     const doc = buildCncDxf(part, opts);
     expect(doc.entities.some((e) => e.layer === "REFERENCE")).toBe(false);
