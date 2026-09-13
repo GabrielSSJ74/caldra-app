@@ -120,7 +120,10 @@ export function entityPoints(e: Entity): Vec2[] {
     case "path":
       return pathAnchors(e.start, e.segs);
     case "text":
-      return [{ x: e.x, y: e.y }];
+      return [
+        { x: e.x, y: e.y - e.size },
+        { x: e.x + (e.width ?? Math.max(e.size, e.text.length * e.size * 0.6)), y: e.y },
+      ];
   }
 }
 

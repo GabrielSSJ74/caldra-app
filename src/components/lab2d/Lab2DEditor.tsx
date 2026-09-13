@@ -27,6 +27,7 @@ import {
   ScanSearch,
   ScanEye,
   Image as ImageIcon,
+  Type,
   Scissors,
   ListOrdered,
   Spline,
@@ -36,7 +37,6 @@ import {
   Undo2,
   Unlock,
   Upload,
-  Waypoints,
   X,
 } from "lucide-react";
 
@@ -46,6 +46,7 @@ import { RotateGate } from "@/components/lab2d/RotateGate";
 import { useDeclareImmersive, useImmersiveLandscape } from "@/lib/ui/immersive";
 import { ImportDialog, type ImportSource } from "@/components/lab2d/ImportDialog";
 import { VisionDialog, type VisionImageLayer } from "@/components/lab2d/VisionDialog";
+import { TextDialog, type TextSpec } from "@/components/lab2d/TextDialog";
 import {
   DEFAULT_LAYERS,
   bbox,
@@ -139,6 +140,14 @@ import { buildSimPath, sampleSim, SIM_LABEL } from "@/lib/lab2d/simulation";
 import { expandSelection, pruneGroups, type GroupDef } from "@/lib/lab2d/groups";
 import { isCutPath, setStartPoint, startPointOf, endPointOf } from "@/lib/lab2d/cutPlan";
 import { revalidateShared, type ShareCandidate } from "@/lib/lab2d/sharedCut";
+import {
+  copySelection,
+  finishPolylinePoints,
+  pasteClipboard,
+  removeEntityOnly,
+  shouldClosePolyline,
+  type ChamferClipboard,
+} from "@/lib/lab2d/editorInteractions";
 
 
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
@@ -167,20 +176,12 @@ type Tool =
 
 const TOOLS: { id: Tool; icon: typeof Minus; label: string; key: string }[] = [
   { id: "select", icon: MousePointer2, label: "Selecionar", key: "V" },
-  { id: "node", icon: Waypoints, label: "Nós", key: "N" },
-  { id: "pan", icon: Hand, label: "Deslocar", key: "H" },
   { id: "line", icon: Minus, label: "Linha", key: "L" },
   { id: "polyline", icon: PenLine, label: "Polilinha", key: "P" },
   { id: "circle", icon: CircleIcon, label: "Círculo", key: "C" },
-  { id: "arc", icon: Spline, label: "Arco", key: "A" },
   { id: "rect", icon: Square, label: "Retângulo", key: "R" },
-  { id: "polygon", icon: Triangle, label: "Polígono", key: "G" },
-  { id: "offset", icon: Copy, label: "Paralela", key: "O" },
-  { id: "trim", icon: Scissors, label: "Aparar", key: "T" },
-  { id: "extend", icon: Move3d, label: "Prolongar", key: "E" },
-  { id: "fillet", icon: CircleIcon, label: "Arredondar", key: "F" },
-  { id: "measure", icon: Crosshair, label: "Medir", key: "M" },
-  { id: "dim", icon: Ruler, label: "Cotar", key: "D" },
+  { id: "text", icon: Type, label: "Texto", key: "X" },
+  { id: "trim", icon: Scissors, label: "Tesoura", key: "T" },
 ];
 
 /** Tipos de cota oferecidos na barra de cotagem. */
@@ -214,14 +215,12 @@ const ENTITY_KINDS: DimKind[] = [
 /** Ferramentas principais na barra lateral; as demais formam o grupo secundário. */
 const PRIMARY: Tool[] = [
   "select",
-  "node",
   "line",
   "polyline",
   "circle",
-  "arc",
   "rect",
-  "polygon",
-  "pan",
+  "text",
+  "trim",
 ];
 
 const ZOOM_MIN = 0.05;
@@ -316,12 +315,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [dimSel, setDimSel] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [importSrc, setImportSrc] = useState<ImportSource | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   const [visionOpen, setVisionOpen] = useState(false);
   const [imageLayer, setImageLayer] = useState<VisionImageLayer | null>(null);
   const [issues, setIssues] = useState<{ message: string; p: Vec2 }[] | null>(null);
   const [offsetDist, setOffsetDist] = useState(5);
   const [filletR, setFilletR] = useState(10);
   const [dragNode, setDragNode] = useState<{ id: string; index: number } | null>(null);
+  const [textOpen, setTextOpen] = useState(false);
+  const [textSpec, setTextSpec] = useState<TextSpec | null>(null);
+  const clipboardRef = useRef<ChamferClipboard | null>(null);
+  const [clipboardMenu, setClipboardMenu] = useState<{ x: number; y: number; world: Vec2 } | null>(null);
+  const longPressRef = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
   const past = useRef<Entity[][]>([]);
   const future = useRef<Entity[][]>([]);
   const panRef = useRef<{ x: number; y: number } | null>(null);
@@ -852,10 +857,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   /* --------------------------------------------------------- interações */
   const finishPolyline = useCallback(
     (close: boolean) => {
-      if (pending.length > 1)
+      const points = finishPolylinePoints(pending, close);
+      if (points.length > 1)
         commit((p) => [
           ...p,
-          { id: uid(), layer: activeLayer, type: "polyline", pts: pending, closed: close },
+          { id: uid(), layer: activeLayer, type: "polyline", pts: points, closed: close },
         ]);
       setPending([]);
       setDraft(null);
@@ -867,8 +873,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
     ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
 
-    // segundo dedo com a ferramenta MÃO ativa: inicia pinça, sem salto
-    if (tool === "pan" && ptrsRef.current.size >= 2) {
+    // dois dedos sempre navegam, independentemente da ferramenta ativa
+    if (ptrsRef.current.size >= 2) {
+      if (longPressRef.current) clearTimeout(longPressRef.current.timer);
+      longPressRef.current = null;
       const [a, b] = [...ptrsRef.current.values()];
       if (a && b) {
         pinchRef.current = {
@@ -885,6 +893,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     const raw = toWorld(ev);
     const p = snapPoint(raw);
+
+    if (ev.pointerType === "touch") {
+      if (longPressRef.current) clearTimeout(longPressRef.current.timer);
+      longPressRef.current = {
+        x: ev.clientX,
+        y: ev.clientY,
+        timer: setTimeout(() => {
+          if (clipboardRef.current)
+            setClipboardMenu({ x: ev.clientX, y: ev.clientY, world: toWorld(ev) });
+          longPressRef.current = null;
+        }, 520),
+      };
+    }
 
 
     if (tool === "pan" || ev.button === 1) {
@@ -946,7 +967,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
 
     if (tool === "polyline") {
+      if (shouldClosePolyline(pending, p, 10 / view.k)) {
+        finishPolyline(true);
+        return;
+      }
       setPending((q) => [...q, p]);
+      return;
+    }
+    if (tool === "text") {
+      if (!textSpec) {
+        setTextOpen(true);
+        return;
+      }
+      commit((list) => [...list, {
+        id: uid(), layer: activeLayer, type: "text", x: p.x, y: p.y,
+        text: textSpec.text, size: textSpec.height, width: textSpec.width,
+        bold: textSpec.bold, italic: textSpec.italic,
+      }]);
+      setTextSpec(null);
+      setTool("select");
       return;
     }
     if (tool === "arc") {
@@ -1029,14 +1068,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
     if (tool === "trim") {
       const hit = hitTest(raw);
-      if (hit)
-        for (const other of entities) {
-          if (other.id === hit.id) continue;
-          const t = trimLine(hit, other, raw);
-          if (t) {
-            commit((e) => e.map((x) => (x.id === t.id ? t : x)));
-            break;
-          }
+      if (hit) {
+        const result = removeEntityOnly(entities, groups, hit.id);
+        commit(result.entities);
+        setGroups(result.groups);
+        setSelection((ids) => ids.filter((id) => id !== hit.id));
+        toast.success("Entidade removida.");
+      }
         }
       return;
     }
@@ -1084,6 +1122,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const onPointerMove = (ev: React.PointerEvent) => {
     if (ptrsRef.current.has(ev.pointerId))
       ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (longPressRef.current && Math.hypot(ev.clientX - longPressRef.current.x, ev.clientY - longPressRef.current.y) > 8) {
+      clearTimeout(longPressRef.current.timer);
+      longPressRef.current = null;
+    }
 
     // ---- pinça (2 ponteiros, ferramenta MÃO) ----
     if (pinchRef.current && ptrsRef.current.size >= 2) {
@@ -1178,6 +1220,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   };
 
   const onPointerUp = (ev?: React.PointerEvent) => {
+    if (longPressRef.current) clearTimeout(longPressRef.current.timer);
+    longPressRef.current = null;
     if (ev) ptrsRef.current.delete(ev.pointerId);
     const wasPinching = pinchRef.current !== null;
     if (wasPinching && ptrsRef.current.size < 2) {
@@ -1185,7 +1229,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       gestureUntilRef.current = performance.now() + 350;
       // continua o pan com o dedo restante, sem salto
       const rest = [...ptrsRef.current.values()][0];
-      panRef.current = rest && tool === "pan" ? { ...rest } : null;
+      panRef.current = null;
       return;
     }
     if (wasPinching) return;
@@ -1246,6 +1290,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         commit((e) => [...e, ...selected.map((s) => ({ ...translate(s, 10, 10), id: uid() }))]);
         return;
       }
+      if (meta && ev.key.toLowerCase() === "c") {
+        ev.preventDefault();
+        clipboardRef.current = copySelection(entities, selection, groups);
+        if (clipboardRef.current) toast.success(`${clipboardRef.current.entities.length} objeto(s) copiado(s).`);
+        return;
+      }
+      if (meta && ev.key.toLowerCase() === "v" && clipboardRef.current) {
+        ev.preventDefault();
+        const pasted = pasteClipboard(clipboardRef.current, { x: cursor.x + 10, y: cursor.y + 10 });
+        commit((list) => [...list, ...pasted.entities]);
+        setGroups((list) => [...list, ...pasted.groups]);
+        setSelection(pasted.ids);
+        return;
+      }
       if (ev.key === "Delete" || ev.key === "Backspace") {
         if (selection.length) {
           commit((e) => e.filter((x) => !selection.includes(x.id)));
@@ -1289,7 +1347,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, selection, selected, commit, tool, finishPolyline, fitTo, entities]);
+  }, [undo, redo, selection, selected, commit, tool, finishPolyline, fitTo, entities, groups, cursor]);
 
   /* ------------------------------------------------------------- ações */
   const applySelection = (fn: (e: Entity) => Entity) =>
@@ -1312,19 +1370,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   };
 
   const pickTool = useCallback((id: Tool) => {
+    if (id === "text") setTextOpen(true);
     setTool(id);
     setPending([]);
     setDraft(null);
   }, []);
 
 
+  const copySelected = useCallback(() => {
+    clipboardRef.current = copySelection(entities, selection, groups);
+    if (clipboardRef.current) toast.success(`${clipboardRef.current.entities.length} objeto(s) copiado(s).`);
+  }, [entities, selection, groups]);
+
   const selectionActions = (
     <>
       <IconBtn
-        label="Duplicar"
-        onClick={() =>
-          commit((e) => [...e, ...selected.map((s) => ({ ...translate(s, 10, 10), id: uid() }))])
-        }
+        label="Copiar"
+        onClick={copySelected}
         icon={Copy}
         flat
       />
@@ -1396,7 +1458,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const panelSide = usePanelSide(panelOpen, panelSignature, measurePanel);
 
   const primaryTools = TOOLS.filter((t) => PRIMARY.includes(t.id));
-  const extraTools = TOOLS.filter((t) => !PRIMARY.includes(t.id));
 
 
   const aside = panelOpen ? (

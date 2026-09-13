@@ -5,6 +5,7 @@ import { pruneGroups, type GroupDef } from "./groups";
 export type ChamferClipboard = {
   entities: Entity[];
   anchor: Vec2;
+  groups: GroupDef[];
 };
 
 const clone = <T,>(value: T): T => structuredClone(value);
@@ -21,7 +22,7 @@ export function shouldClosePolyline(points: Vec2[], point: Vec2, tolerance: numb
   return points.length > 2 && dist(points[0]!, point) <= tolerance;
 }
 
-export function copySelection(entities: Entity[], selectedIds: string[]): ChamferClipboard | null {
+export function copySelection(entities: Entity[], selectedIds: string[], groups: GroupDef[] = []): ChamferClipboard | null {
   const selected = entities.filter((entity) => selectedIds.includes(entity.id));
   if (!selected.length) return null;
   const points = selected.flatMap((entity) => {
@@ -33,13 +34,18 @@ export function copySelection(entities: Entity[], selectedIds: string[]): Chamfe
   });
   const minX = Math.min(...points.map((point) => point.x));
   const minY = Math.min(...points.map((point) => point.y));
-  return { entities: clone(selected), anchor: { x: minX, y: minY } };
+  const groupIds = new Set(selected.map((entity) => entity.group).filter(Boolean));
+  return {
+    entities: clone(selected),
+    anchor: { x: minX, y: minY },
+    groups: clone(groups.filter((group) => groupIds.has(group.id))),
+  };
 }
 
 export function pasteClipboard(
   clipboard: ChamferClipboard,
   target: Vec2,
-): { entities: Entity[]; ids: string[] } {
+): { entities: Entity[]; ids: string[]; groups: GroupDef[] } {
   const dx = target.x - clipboard.anchor.x;
   const dy = target.y - clipboard.anchor.y;
   const groupIds = new Map<string, string>();
@@ -72,7 +78,11 @@ export function pasteClipboard(
     }
     return { ...base, x: base.x + dx, y: base.y + dy };
   });
-  return { entities, ids: entities.map((entity) => entity.id) };
+  const groups = [...groupIds].map(([oldId, id]) => ({
+    id,
+    name: clipboard.groups.find((group) => group.id === oldId)?.name ?? "Grupo copiado",
+  }));
+  return { entities, ids: entities.map((entity) => entity.id), groups };
 }
 
 export function removeEntityOnly(
