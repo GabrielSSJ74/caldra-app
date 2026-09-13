@@ -154,8 +154,11 @@ export function renderSvg(
       const layer = layers.find((l) => l.id === e.layer);
       const style = techStyle(e.layer);
       const stroke = colorFor(layer, e.layer, dark);
-      if (e.type === "text")
-        return `<text x="${f(e.x)}" y="${f(e.y)}" font-size="${f(e.size)}" fill="${stroke}" font-family="ui-sans-serif, system-ui">${escapeXml(e.text)}</text>`;
+      if (e.type === "text") {
+        const width = e.width ? ` textLength="${f(e.width)}" lengthAdjust="spacingAndGlyphs"` : "";
+        const rotate = e.rotation ? ` transform="rotate(${f(e.rotation)} ${f(e.x)} ${f(e.y)})"` : "";
+        return `<text x="${f(e.x)}" y="${f(e.y)}" font-size="${f(e.size)}" fill="${stroke}" font-family="Space Grotesk,ui-sans-serif,system-ui" font-weight="${e.bold ? "700" : "400"}" font-style="${e.italic ? "italic" : "normal"}"${width}${rotate}>${escapeXml(e.text)}</text>`;
+      }
       const d = entityPath(e);
       if (!d) return "";
       const pattern = style.dash(s);

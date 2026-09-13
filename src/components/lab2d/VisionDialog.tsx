@@ -612,7 +612,7 @@ export function VisionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="glass flex max-h-[70dvh] w-[min(90vw,36rem)] max-w-none flex-col overflow-y-auto border-0 p-4 sm:p-6">
+      <DialogContent className="vision-dialog flex max-h-[70dvh] w-[min(90vw,36rem)] max-w-none flex-col overflow-y-auto border p-4 shadow-2xl sm:p-6">
         <DialogHeader>
           <DialogTitle className="font-display text-lg">
             CHAMFER VISION
@@ -1980,12 +1980,13 @@ function Toggle({
   label: string;
 }) {
   return (
-    <button
+            <button
       onClick={onClick}
+              aria-pressed={active}
       className={`rounded-xl px-2.5 py-1.5 font-mono text-[10px] tracking-wider uppercase transition-colors ${
         active
-          ? "bg-accent/15 text-accent"
-          : "border border-border text-muted-foreground hover:text-foreground"
+          ? "vision-control border-accent text-accent"
+          : "vision-control text-muted-foreground hover:text-foreground"
       }`}
     >
       {label}
@@ -2005,7 +2006,7 @@ function Chip({
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-1 rounded-xl border border-border px-2.5 py-1.5 font-mono text-[10px] tracking-wider uppercase text-muted-foreground transition-colors hover:text-foreground"
+      className="vision-control flex items-center gap-1 rounded-xl px-2.5 py-1.5 font-mono text-[10px] tracking-wider uppercase text-muted-foreground transition-colors hover:text-foreground"
     >
       <Icon className="size-3" /> {label}
     </button>

@@ -42,6 +42,7 @@ export function usePanelSide(
   const sideRef = useRef<PanelSide>("right");
   const measureRef = useRef(measure);
   const lastWidth = useRef(0);
+  const wasOpen = useRef(false);
   measureRef.current = measure;
 
   const decide = useRef((reason: "context" | "viewport") => {
@@ -62,7 +63,12 @@ export function usePanelSide(
 
   /* evento significativo: abertura / nova seleção / mudança de tipo */
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      wasOpen.current = false;
+      return;
+    }
+    if (wasOpen.current) return;
+    wasOpen.current = true;
     // uma única medição após o layout estar pronto, sem encadear re-medições
     const id = requestAnimationFrame(() => decide.current("context"));
     return () => cancelAnimationFrame(id);

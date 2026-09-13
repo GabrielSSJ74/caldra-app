@@ -128,8 +128,14 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
   for (const e of list) {
     if (e.type !== "text") continue;
     ctx.fillStyle = techStyle(e.layer).color;
-    ctx.font = `${e.size}px ui-monospace, monospace`;
-    ctx.fillText(e.text, e.x, e.y);
+    ctx.font = `${e.italic ? "italic " : ""}${e.bold ? "700 " : "400 "}${e.size}px var(--font-display-family), ui-sans-serif, system-ui`;
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    if (e.rotation) ctx.rotate((e.rotation * Math.PI) / 180);
+    const natural = Math.max(ctx.measureText(e.text).width, 0.01);
+    if (e.width && e.width > 0) ctx.scale(e.width / natural, 1);
+    ctx.fillText(e.text, 0, 0);
+    ctx.restore();
   }
 }
 
