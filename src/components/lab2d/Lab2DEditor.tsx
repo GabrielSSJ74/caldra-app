@@ -422,7 +422,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (idle && cic) cic(idle);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entities, layers, planId, groups, thickness]);
+  }, [entities, layers, planId, groups, dims, thickness]);
 
 
   /* --------------------------------- paisagem automática no celular */
@@ -960,6 +960,47 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       } else setPending(q);
       return;
     }
+    /*
+     * COTAGEM — a cota guarda REFERÊNCIAS (entidade ou ponto) e mede sempre
+     * na geometria real. Nenhuma cota vira geometria de fabricação.
+     */
+    if (tool === "dim") {
+      const needsEntity = ENTITY_KINDS.includes(dimKind);
+      const hit = hitTest(raw);
+      let ref: DimRef | null = null;
+      if (needsEntity) {
+        if (!hit) {
+          toast.info("Selecione um círculo, arco ou linha para esta cota.");
+          return;
+        }
+        ref = { kind: "entity", id: hit.id };
+      } else if (dimKind === "angle" && hit && (hit.type === "line" || hit.type === "polyline")) {
+        ref = { kind: "entity", id: hit.id };
+      } else {
+        ref = { kind: "point", p };
+      }
+      const picks = [...dimPicks, ref];
+      const needed =
+        dimKind === "angle"
+          ? picks[0]?.kind === "entity"
+            ? 2
+            : 3
+          : dimKind === "chain"
+            ? 3
+            : DIM_REFS[dimKind];
+      if (picks.length < needed) {
+        setDimPicks(picks);
+        return;
+      }
+      const dim = makeDimension(dimKind, picks, 20);
+      setDims((list) => [...list, dim]);
+      setDimPicks([]);
+      setDimSel(dim.id);
+      const label = formatDimension(dim, entities);
+      toast.success(label ? `Cota ${DIM_LABEL[dimKind]}: ${label}` : `Cota ${DIM_LABEL[dimKind]}`);
+      return;
+    }
+
     if (tool === "measure") {
       const q = [...pending, p];
       if (q.length === 2) {
