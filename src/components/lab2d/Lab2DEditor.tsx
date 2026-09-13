@@ -2387,9 +2387,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         thickness={thickness}
         scopes={{
           selection: selected,
-          plan: drawable,
+          /* as cotas entram como entidades DIMENSION: o perfil LASER as descarta */
+          plan: [...drawable, ...dimensionEntities(dims, entities)],
           project: project
-            ? project.plans.flatMap((p) => (p.id === planId ? drawable : p.entities))
+            ? [
+                ...project.plans.flatMap((p) => (p.id === planId ? drawable : p.entities)),
+                ...dimensionEntities(dims, entities),
+              ]
             : drawable,
         }}
       />
