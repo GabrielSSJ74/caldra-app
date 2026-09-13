@@ -13,21 +13,21 @@
  */
 
 import { supabase } from "@/integrations/supabase/client";
-import type { Plan } from "./features";
+import { normalizePlan, type Plan } from "./features";
 
 const CACHE_KEY = "chameleon.plan";
 const SOURCE_KEY = "caldra.plan.source";
 
 export type PlanSource = "none" | "code" | "play" | "manual" | "local";
 
-/** O banco fala 'free' | 'pro'; o app tem também o plano local 'oficina'. */
-const fromRemote = (remote: string): Plan => (remote === "pro" ? "mestre" : "free");
+/** O banco fala 'free' | 'pro'; valores antigos ('mestre'/'oficina') viram PRO. */
+const fromRemote = (remote: string): Plan => normalizePlan(remote);
 
 export function readCache(): { plan: Plan; source: PlanSource } {
   try {
     const plan = window.localStorage.getItem(CACHE_KEY);
     const source = window.localStorage.getItem(SOURCE_KEY) as PlanSource | null;
-    if (plan === "mestre" || plan === "oficina") return { plan, source: source ?? "local" };
+    if (normalizePlan(plan) === "pro") return { plan: "pro", source: source ?? "local" };
   } catch {
     /* armazenamento indisponível */
   }

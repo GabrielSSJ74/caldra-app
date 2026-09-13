@@ -70,7 +70,7 @@ function Thumb({ seed }: { seed: number }) {
 }
 
 function Projetos() {
-  const { isMestre, requirePro } = useFeatureAccess();
+  const { isMestre, requirePro, projectLimit } = useFeatureAccess();
   const navigate = useNavigate();
   const projects = useProjects();
   const [creating, setCreating] = useState(false);
@@ -91,7 +91,7 @@ function Projetos() {
   const open = (id: string) => navigate({ to: "/projetos/$projectId", params: { projectId: id } });
 
   const startNew = () => {
-    if (!isMestre && projects.length >= FREE_PROJECT_LIMIT) {
+    if (projects.length >= projectLimit) {
       requirePro("projects.unlimited");
       return;
     }
@@ -103,7 +103,7 @@ function Projetos() {
       <header className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 pt-1">
         <div className="min-w-0">
           <span className="tick-label">
-            {isMestre ? "Mestre · ilimitado" : `Free · até ${FREE_PROJECT_LIMIT}`}
+            {isMestre ? "PRO · projetos ilimitados" : `Free · até ${projectLimit} projetos`}
           </span>
           <h1 className="font-display text-3xl font-semibold tracking-tight">PROJETOS</h1>
         </div>
@@ -225,17 +225,17 @@ function Projetos() {
           </Panel>
         )}
 
-        {!isMestre && projects.length >= FREE_PROJECT_LIMIT && (
+        {projects.length >= projectLimit && (
           <Panel className="flex items-center gap-3 p-4">
             <p className="text-[12px] text-muted-foreground">
-              Limite do plano Free atingido ({FREE_PROJECT_LIMIT} projetos).{" "}
+              Você atingiu o limite de {FREE_PROJECT_LIMIT} projetos do plano Free.{" "}
               <button
                 onClick={() => requirePro("projects.unlimited")}
                 className="text-accent underline"
               >
-                Liberar projetos ilimitados
+                Ir para o PRO
               </button>{" "}
-              com peças, materiais e histórico de exportação.
+              — tenha projetos ilimitados no CALDRA Pro.
             </p>
           </Panel>
         )}
