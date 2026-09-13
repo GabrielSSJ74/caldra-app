@@ -5,6 +5,7 @@ import {
   SQUARE_TO_ROUND_DEFAULTS,
   buildModel,
   calculateSquareToRound,
+  squareToRoundSeams,
   type SquareToRoundInput,
 } from "./squareToRound";
 
@@ -73,15 +74,19 @@ describe("estratégia de fabricação", () => {
 
     expect(split.pieces).toHaveLength(2);
     expect(split.joints).toHaveLength(2);
-    expect(split.joints!.every((j) => j.kind === "weld")).toBe(true);
+    expect(split.joints?.every((j) => j.kind === "weld")).toBe(true);
 
     // a geometria do conjunto é a MESMA: comprimentos verdadeiros idênticos
     expect(split.trueLengths).toEqual(single.trueLengths);
 
     // a soma das áreas das metades reproduz a área da peça inteira
     const areaOf = (p: GeometryPiece) => polygonAreaForTest(p.development.outline);
-    const sum = split.pieces!.reduce((s, p) => s + areaOf(p), 0);
+    const sum = split.pieces?.reduce((s, p) => s + areaOf(p), 0) ?? 0;
     expect(sum).toBeCloseTo(single.areaMm2, 3);
+    expect(split.pieces?.map((p) => p.code)).toEqual(["Q-R-001-A", "Q-R-001-B"]);
+    const seams = squareToRoundSeams(buildModel(input));
+    expect(seams[0].a).toEqual({ x: 0, y: input.baseB / 2, z: 0 });
+    expect(seams[1].a).toEqual({ x: 0, y: -input.baseB / 2, z: 0 });
   });
 
   it("3D recebe a estratégia sem alterar o envelope do conjunto", () => {

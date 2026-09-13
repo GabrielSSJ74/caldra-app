@@ -103,20 +103,17 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       const dash = !lod && style.dash(inv);
       ctx.setLineDash(dash ? dash.split(" ").map(Number) : []);
     }
-    // DOBRA: representação visual reduzida — ponto preenchido + traço curto
-    // na borda. A entidade inteira permanece no modelo; hit-test, seleção e
-    // exportação continuam usando a linha completa.
+    // DOBRA: duas marcas curtas nas extremidades. A entidade inteira permanece
+    // no modelo para hit-test, seleção, grupos e exportação.
     if (e.layer === "dobra" && e.type === "line") {
-      const m = bendEdgeMarks(e, 10 * inv, 3 * inv);
+      const marks = bendEdgeMarks(e, 12 * inv);
       ctx.setLineDash([]);
-      ctx.beginPath();
-      ctx.moveTo(m.tick.x1, m.tick.y1);
-      ctx.lineTo(m.tick.x2, m.tick.y2);
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(m.dot.x, m.dot.y, m.dotR, 0, Math.PI * 2);
-      ctx.fillStyle = style.color;
-      ctx.fill();
+      for (const mark of marks) {
+        ctx.beginPath();
+        ctx.moveTo(mark.x1, mark.y1);
+        ctx.lineTo(mark.x2, mark.y2);
+        ctx.stroke();
+      }
       currentLayer = ""; // força re-aplicação do traço da camada
       continue;
     }

@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import { getEngine, type EngineValues } from "@/lib/geometry/engines";
 import { downloadDxf, type DxfEntity } from "@/lib/dxf/dxfService";
-import { exportSvgAsPdf, exportSvgAsPng } from "@/lib/export/exporters";
+import { exportSvgAsPdf } from "@/lib/export/exporters";
+import { downloadTracagemPng } from "@/lib/export/tracagemSheet";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { buildWire, type WireParams } from "@/lib/viz3d/wire";
@@ -33,6 +34,8 @@ import { SmartNumberInput } from "./SmartNumberInput";
 import { LearnDialog } from "./LearnDialog";
 import { Metric, Panel, SectionLabel } from "./ui";
 import { StageBar } from "./StageBar";
+import { saveCustom, updateCustom } from "@/lib/library/store";
+import { Save } from "lucide-react";
 
 const BASE_TABS = [
   "Dimensões",
@@ -64,9 +67,11 @@ type Props = {
   preset?: Record<string, number> | undefined;
   /** Autosave: chamado com atraso após alterações relevantes. */
   onPersist?: ((snapshot: StudioSnapshot) => void) | undefined;
+  customId?: string | undefined;
+  customName?: string | undefined;
 };
 
-export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props) {
+export function GeometryStudio({ slug, name, initial, preset, onPersist, customId, customName }: Props) {
   const engine = getEngine(slug);
   const { can, isMestre, requirePro } = useFeatureAccess();
   const { precision, level } = useSettings();
@@ -183,8 +188,14 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
   const issueFor = (key: string) => issues.find((i) => i.field === key)?.message;
 
   const exportPng = async () => {
-    if (!svgRef.current) return;
-    await exportSvgAsPng(svgRef.current, `caldra-${slug}`);
+    if (!result) return;
+    await downloadTracagemPng(result, {
+      project: "CALDRA",
+      plan: name,
+      material,
+      thickness: `${values["thickness"] ?? 3} mm`,
+      quantity: String(quantity),
+    });
     toast.success("PNG exportado.");
   };
 
@@ -650,6 +661,20 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
                   className="brand-gradient flex w-full items-center justify-center gap-2 rounded-xl py-2.5 font-display text-[13px] font-semibold text-background"
                 >
                   <PenTool className="size-4" /> Abrir no Chamfer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const snapshot = { ...values } as Record<string, number>;
+                    const chosenName = window.prompt("Nome do modelo", customName ?? `Meu ${name}`)?.trim();
+                    if (!chosenName) return;
+                    if (customId) updateCustom(customId, { name: chosenName, values: snapshot });
+                    else saveCustom({ baseId: `cald.${slug}`, name: chosenName, values: snapshot, modelFamily: "parametric" });
+                    toast.success(customId ? "Modelo atualizado" : "Salvo em Meus Modelos");
+                  }}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-line py-2.5 font-mono text-[11px] tracking-wider text-muted-foreground uppercase"
+                >
+                  <Save className="size-3.5" /> {customId ? "Atualizar modelo" : "Salvar em Meus Modelos"}
                 </button>
 
                 <div className="hidden">

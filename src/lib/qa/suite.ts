@@ -363,6 +363,8 @@ function calculatorCases(): QaCase[] {
     ["sin(pi/6)", "RAD", 0.5, "sen π/6 em radiano"],
     ["sin(100)", "GRAD", 1, "sen 100 grado = 1"],
     ["10%*250", "DEG", 25, "10% de 250"],
+    ["200+10%", "DEG", 220, "acréscimo percentual"],
+    ["200-10%", "DEG", 180, "desconto percentual"],
     ["5!", "DEG", 120, "fatorial de 5"],
     ["0!", "DEG", 1, "fatorial de 0"],
     ["2+3*4", "DEG", 14, "precedência de operadores"],

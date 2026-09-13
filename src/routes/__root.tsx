@@ -119,7 +119,8 @@ var t=s.theme||"dark";var a=s.accent||"amber";var r=document.documentElement;
 var prefersDark=!window.matchMedia||window.matchMedia("(prefers-color-scheme: dark)").matches;
 var dark=t==="dark"||t==="amoled"||(t==="system"&&prefersDark);
 r.classList.toggle("dark",dark);r.classList.toggle("amoled",t==="amoled");
-r.classList.toggle("accent-blue",a==="blue");r.classList.toggle("accent-magenta",a==="magenta");
+r.classList.toggle("accent-default",a==="default");r.classList.toggle("accent-blue",a==="blue");r.classList.toggle("accent-magenta",a==="magenta");
+r.lang=s.language==="en"?"en":s.language==="es"?"es":"pt-BR";
 }catch(e){}})();`;
 
 /** Splash de abertura: pinta antes do JS e some com fade após a montagem. */

@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  ArrowLeft, ArrowRight, Delete, BarChart3, Beaker, ChevronDown,
-  Database, Divide, Equal, FlaskConical, Grid2X2, History, Percent, Pi,
+  ArrowLeft, ArrowRight, Delete, Beaker, ChevronDown,
+  Divide, Equal, Grid2X2, History, Percent, Pi,
   Repeat2, Settings, Volume2, VolumeX, X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -45,7 +45,6 @@ export function ScientificCalculator() {
   const [tool, setTool] = useState<Tool>(null);
   const [haptics, setHaptics] = useState(true);
   const [sound, setSound] = useState(false);
-  const [module, setModule] = useState("Científica");
   const [matrix, setMatrix] = useState([1, 0, 0, 1]);
   const [convertValue, setConvertValue] = useState("1");
 
@@ -154,9 +153,6 @@ export function ScientificCalculator() {
           ].map(([id, icon, label]) => <button key={String(id)} type="button" onClick={() => setTool(id as Tool)} className="flex min-w-0 flex-col items-center gap-1 px-0.5 py-1.5 text-calc-muted transition-colors active:scale-95 hover:text-calc-cyan [&>svg]:size-5"><span className="text-calc-icon">{icon}</span><span className="truncate text-[9px] sm:text-[12px]">{label}</span></button>)}
         </section>
 
-        <nav aria-label="Módulos da calculadora" className="mt-3 grid grid-cols-4 items-center rounded-full border border-calc-line bg-calc-recess p-1">
-          {([{ name: "Científica", icon: FlaskConical }, { name: "Engenharia", icon: Settings }, { name: "Financeira", icon: Database }, { name: "Estatística", icon: BarChart3 }]).map(({ name, icon: Icon }) => <button key={name} type="button" onClick={() => setModule(name)} aria-current={module === name ? "page" : undefined} className={cn("relative flex min-w-0 items-center justify-center gap-1 rounded-full px-1 py-3 text-[9px] text-calc-muted transition-all sm:text-[12px]", module === name && "border border-calc-cyan bg-calc-tab text-calc-cyan shadow-calc-glow")}><Icon className="size-4 shrink-0" /><span className="truncate">{name}</span>{module === name && <span className="absolute -bottom-0.5 h-0.5 w-7 rounded-full bg-calc-cyan" />}</button>)}
-        </nav>
       </main>
 
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}><DialogContent className="calculator-theme max-h-[75dvh] w-[min(92vw,430px)] overflow-y-auto border-calc-border bg-calc-shell text-calc-text"><DialogHeader><DialogTitle>Histórico</DialogTitle><DialogDescription className="text-calc-muted">Toque em um cálculo para reutilizá-lo.</DialogDescription></DialogHeader><div className="space-y-2">{history.length === 0 ? <p className="py-8 text-center text-sm text-calc-muted">Nenhum cálculo ainda.</p> : history.map((item) => <button key={item.at} type="button" onClick={() => { setExpression(item.expression); setValue(item.value); setHistoryOpen(false); }} className="w-full rounded-xl border border-calc-line bg-calc-display p-3 text-left"><span className="block truncate font-mono text-xs text-calc-muted">{item.expression}</span><span className="mt-1 block font-mono text-lg text-calc-result">{item.result}</span><span className="text-[10px] text-calc-muted">{new Date(item.at).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span></button>)}</div>{history.length > 0 && <button type="button" onClick={() => { setHistory([]); localStorage.removeItem(HISTORY_KEY); }} className="text-sm text-calc-muted">Limpar histórico</button>}</DialogContent></Dialog>

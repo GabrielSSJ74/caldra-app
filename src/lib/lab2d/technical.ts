@@ -101,36 +101,25 @@ export function modeAllows(mode: OutputMode, layerId: string): boolean {
 /* reduzido aparece. Sem testemunhas, sem círculos maiores, sem setas.  */
 /* ------------------------------------------------------------------ */
 
-export type BendMark = {
-  /** ponto preenchido (centro do segmento de dobra) */
-  dot: { x: number; y: number };
-  /** raio do ponto, em mm no plano do desenho */
-  dotR: number;
-  /** traço curto perpendicular, partindo da borda para fora */
-  tick: { x1: number; y1: number; x2: number; y2: number };
-};
+export type BendEndMark = { x1: number; y1: number; x2: number; y2: number };
 
 /**
- * Gera a marca mínima de dobra para um segmento (x1,y1)-(x2,y2):
- * ponto preenchido no centro + traço curto na borda, perpendicular à linha.
- * `len` = comprimento do traço em mm; `dotR` = raio do ponto em mm.
+ * Gera as duas marcas visuais do CHAMFER. Cada traço começa exatamente em
+ * uma extremidade da entidade BEND e segue para dentro, na direção da dobra.
+ * A entidade completa continua sendo a fonte de seleção e exportação.
  */
 export function bendEdgeMarks(
   line: { x1: number; y1: number; x2: number; y2: number },
   len = 3,
-  dotR = 0.9,
-): BendMark {
-  const cx = (line.x1 + line.x2) / 2;
-  const cy = (line.y1 + line.y2) / 2;
+): [BendEndMark, BendEndMark] {
   const dx = line.x2 - line.x1;
   const dy = line.y2 - line.y1;
   const l = Math.hypot(dx, dy) || 1;
-  // perpendicular unitária
-  const px = (-dy / l) * len;
-  const py = (dx / l) * len;
-  return {
-    dot: { x: cx, y: cy },
-    dotR,
-    tick: { x1: cx - px / 2, y1: cy - py / 2, x2: cx + px / 2, y2: cy + py / 2 },
-  };
+  const ux = dx / l;
+  const uy = dy / l;
+  const d = Math.min(len, l / 2);
+  return [
+    { x1: line.x1, y1: line.y1, x2: line.x1 + ux * d, y2: line.y1 + uy * d },
+    { x1: line.x2, y1: line.y2, x2: line.x2 - ux * d, y2: line.y2 - uy * d },
+  ];
 }

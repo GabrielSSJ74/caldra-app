@@ -17,7 +17,8 @@ import {
   type SquareToRoundInput,
 } from "@/lib/geometry/squareToRound";
 import { downloadDxf, type DxfEntity } from "@/lib/dxf/dxfService";
-import { exportSvgAsPdf, exportSvgAsPng } from "@/lib/export/exporters";
+import { exportSvgAsPdf } from "@/lib/export/exporters";
+import { downloadTracagemPng } from "@/lib/export/tracagemSheet";
 import { MATERIALS } from "@/lib/projects/demo-data";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
@@ -29,6 +30,8 @@ import { DevelopmentView } from "./DevelopmentView";
 import { SchematicSquareToRound } from "./SchematicSquareToRound";
 import { Metric, Panel, SectionLabel } from "./ui";
 import { StageBar } from "./StageBar";
+import { saveCustom, updateCustom } from "@/lib/library/store";
+import { Save } from "lucide-react";
 
 type FieldKey = keyof SquareToRoundInput;
 
@@ -51,10 +54,14 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number];
 
-export function SquareToRoundStudio() {
+export function SquareToRoundStudio({ initialValues, customId, customName }: { initialValues?: Record<string, number> | undefined; customId?: string | undefined; customName?: string | undefined }) {
   const { can, requirePro } = useFeatureAccess();
   const { precision } = useSettings();
-  const [input, setInput] = useState<SquareToRoundInput>(SQUARE_TO_ROUND_DEFAULTS);
+  const [input, setInput] = useState<SquareToRoundInput>(() => ({
+    ...SQUARE_TO_ROUND_DEFAULTS,
+    ...(initialValues ?? {}),
+    strategy: initialValues?.["strategy"] === 1 ? "two-weld" : SQUARE_TO_ROUND_DEFAULTS.strategy,
+  }));
   const [material, setMaterial] = useState(MATERIALS[0]!.name);
   const [focused, setFocused] = useState<FieldKey | null>(null);
   const [calculated, setCalculated] = useState(true);
@@ -113,8 +120,14 @@ export function SquareToRoundStudio() {
   const issueFor = (key: FieldKey) => issues.find((i) => i.field === key)?.message;
 
   const exportPng = async () => {
-    if (!svgRef.current) return;
-    await exportSvgAsPng(svgRef.current, "chameleon-quadrado-redondo");
+    if (!result) return;
+    await downloadTracagemPng(result, {
+      project: "CALDRA",
+      plan: input.strategy === "two-weld" ? "Quadrado Redondo 2 partes" : "Quadrado Redondo",
+      material,
+      thickness: `${input.thickness} mm`,
+      quantity: input.strategy === "two-weld" ? "2" : "1",
+    });
     toast.success("PNG exportado.");
   };
 
@@ -582,6 +595,20 @@ export function SquareToRoundStudio() {
                   className="brand-gradient flex w-full items-center justify-center gap-2 rounded-xl py-2.5 font-display text-[13px] font-semibold text-background"
                 >
                   <PenTool className="size-4" /> Abrir no Chamfer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const values = { ...input, strategy: input.strategy === "two-weld" ? 1 : 0 } as unknown as Record<string, number>;
+                    const chosenName = window.prompt("Nome do modelo", customName ?? "Meu Quadrado → Redondo")?.trim();
+                    if (!chosenName) return;
+                    if (customId) updateCustom(customId, { name: chosenName, values });
+                    else saveCustom({ baseId: "cald.quadrado-redondo", name: chosenName, values, modelFamily: "parametric", manufacturingStrategy: input.strategy });
+                    toast.success(customId ? "Modelo atualizado" : "Salvo em Meus Modelos");
+                  }}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-line py-2.5 font-mono text-[11px] tracking-wider text-muted-foreground uppercase"
+                >
+                  <Save className="size-3.5" /> {customId ? "Atualizar modelo" : "Salvar em Meus Modelos"}
                 </button>
                 <div className="hidden">
                   <DevelopmentView ref={svgRef} pattern={result.development} />

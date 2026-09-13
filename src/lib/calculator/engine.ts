@@ -102,22 +102,24 @@ export function evaluateExpression(source: string, angleMode: AngleMode): number
 
   /* Pós-fixos: `!` (fatorial) e `%` (porcentagem = valor / 100).
      `10%×250` → 25. Precedência acima de potência. */
-  const postfix = (base: () => number) => (): number => {
+  const postfix = (base: () => number) => (): { value: number; percent: boolean } => {
     let value = base();
+    let percent = false;
     while (true) {
       const token = peek();
       if (token?.type !== "op" || (token.value !== "!" && token.value !== "%")) break;
       take();
-      value = token.value === "!" ? factorial(value) : value / 100;
+      if (token.value === "!") value = factorial(value);
+      else { value /= 100; percent = true; }
     }
-    return value;
+    return { value, percent };
   };
 
   const primaryPostfix = postfix(primary);
 
   /* `-3^2` = −9: o sinal é aplicado DEPOIS da potência, como na matemática. */
   const power = (): number => {
-    const left = primaryPostfix();
+    const left = primaryPostfix().value;
     const token = peek();
     if (token?.type === "op" && token.value === "^") { take(); return left ** unary(); }
     return left;
@@ -152,8 +154,11 @@ export function evaluateExpression(source: string, angleMode: AngleMode): number
       const token = peek();
       if (token?.type !== "op" || !["+", "-"].includes(token.value)) break;
       take();
+      const rightStart = index;
       const right = product();
-      value = token.value === "+" ? value + right : value - right;
+      const rightIsPercent = tokens.slice(rightStart, index).some((t) => t.type === "op" && t.value === "%");
+      const operand = rightIsPercent ? value * right : right;
+      value = token.value === "+" ? value + operand : value - operand;
     }
     return value;
   };

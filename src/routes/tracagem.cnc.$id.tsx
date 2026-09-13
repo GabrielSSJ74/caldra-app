@@ -8,14 +8,15 @@ import { VectorPreview } from "@/components/chameleon/VectorPreview";
 import { SmartNumberInput } from "@/components/chameleon/SmartNumberInput";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { sendToLab2D } from "@/lib/lab2d/handoff";
-import { markRecent, saveCustom, toggleFavorite, useLibraryState } from "@/lib/library/store";
+import { getCustom, markRecent, saveCustom, toggleFavorite, updateCustom, useLibraryState } from "@/lib/library/store";
 import { cn } from "@/lib/utils";
 import { getPart, getProject, savePartParameters } from "@/lib/projects/store";
 
 export const Route = createFileRoute("/tracagem/cnc/$id")({
-  validateSearch: (raw: Record<string, unknown>): { projeto?: string | undefined; peca?: string | undefined } => ({
+  validateSearch: (raw: Record<string, unknown>): { projeto?: string | undefined; peca?: string | undefined; modelo?: string | undefined } => ({
     projeto: typeof raw['projeto'] === "string" ? raw['projeto'] : undefined,
     peca: typeof raw['peca'] === "string" ? raw['peca'] : undefined,
+    modelo: typeof raw['modelo'] === "string" ? raw['modelo'] : undefined,
   }),
   loader: ({ params }) => {
     const part = findPart(`cnc.${params.id}`);
@@ -41,15 +42,17 @@ export const Route = createFileRoute("/tracagem/cnc/$id")({
 
 function CncPartPage() {
   const { part } = Route.useLoaderData();
-  const { projeto, peca } = Route.useSearch();
+  const { projeto, peca, modelo } = Route.useSearch();
   const navigate = useNavigate();
   const { favorites } = useLibraryState();
   const gen = getGenerator(part.generator!)!;
   const instance = projeto && peca ? getPart(projeto, peca) : null;
   const project = projeto ? getProject(projeto) : null;
+  const custom = modelo ? getCustom(modelo) : undefined;
   const [values, setValues] = useState<Record<string, number>>(() => ({
     ...defaultValues(gen),
     ...(instance?.parameters ?? {}),
+    ...(custom?.values ?? {}),
   }));
 
   useEffect(() => {
@@ -168,12 +171,19 @@ function CncPartPage() {
             </button>
             <button
               onClick={() => {
-                saveCustom({ baseId: part.id, name: `Meu ${part.name}`, values });
-                toast.success("Salvo em Meus Modelos");
+                const chosenName = window.prompt("Nome do modelo", custom?.name ?? `Meu ${part.name}`)?.trim();
+                if (!chosenName) return;
+                if (custom) {
+                  updateCustom(custom.id, { name: chosenName, values: { ...values } });
+                  toast.success("Modelo atualizado");
+                } else {
+                  saveCustom({ baseId: part.id, name: chosenName, values: { ...values }, modelFamily: "vector" });
+                  toast.success("Salvo em Meus Modelos");
+                }
               }}
               className="flex w-full items-center justify-center gap-2 rounded-xl border border-line px-3 py-2.5 font-mono text-[11px] tracking-wider text-muted-foreground uppercase transition-colors hover:text-foreground"
             >
-              <Save className="size-3.5" /> Salvar em Meus Modelos
+              <Save className="size-3.5" /> {custom ? "Atualizar modelo" : "Salvar em Meus Modelos"}
             </button>
           </Panel>
         </div>

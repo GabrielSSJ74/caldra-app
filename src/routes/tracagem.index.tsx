@@ -325,12 +325,13 @@ function CustomList({ items }: { items: CustomModel[] }) {
         const base = findPart(c.baseId);
         if (!base) return null;
         const href = partHref(base, c.baseId);
+        const search = { ...(href.search ?? {}), modelo: c.id };
         return (
           <div key={c.id} className="glass flex items-center gap-3 rounded-2xl p-3">
             <Link
               to={href.to}
               params={href.params as never}
-              search={href.search as never}
+              search={search as never}
               onClick={() => markRecent(base.id)}
               className="min-w-0 flex-1"
             >

@@ -3,19 +3,21 @@ import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { DEFAULT_REGION, regionOf, type Region, type RegionId } from "@/lib/regional/regional";
 
 export type ThemeMode = "light" | "dark" | "system" | "amoled";
-export type AccentColor = "amber" | "blue" | "magenta";
+export type AccentColor = "default" | "amber" | "blue" | "magenta";
+export type AppLanguage = "pt" | "en" | "es";
 export type Unit = "mm" | "cm" | "m" | "in";
 /** APRENDIZ mostra fórmulas e dicas; MESTRE segue direto. Só apresentação. */
 export type Level = "aprendiz" | "mestre";
 /** Estilo do fundo AURORA: shader WebGL, blobs CSS ou frame congelado. */
 /** PADRÃO = nenhuma camada Aurora (fundo sólido do tema). Só por escolha explícita. */
-export type AuroraStyle = "fluido" | "suave" | "estatico" | "padrao";
+export type AuroraStyle = "fluido" | "suave" | "padrao";
 
 const KEY = "caldra.settings";
 
 export type Settings = {
   theme: ThemeMode;
   accent: AccentColor;
+  language: AppLanguage;
   unit: Unit;
   precision: number;
   level: Level;
@@ -32,6 +34,7 @@ export type Settings = {
 const DEFAULTS: Settings = {
   theme: "dark",
   accent: "amber",
+  language: "pt",
   unit: "mm",
   precision: 2,
   level: "aprendiz",
@@ -44,6 +47,7 @@ const DEFAULTS: Settings = {
 type SettingsValue = Settings & {
   setTheme: (t: ThemeMode) => void;
   setAccent: (a: AccentColor) => void;
+  setLanguage: (language: AppLanguage) => void;
   setUnit: (u: Unit) => void;
   setPrecision: (p: number) => void;
   setLevel: (l: Level) => void;
@@ -67,17 +71,22 @@ export function readStoredSettings(): Settings {
   try {
     const raw = window.localStorage.getItem(KEY);
     if (!raw) return DEFAULTS;
-    const saved = JSON.parse(raw) as Partial<Settings> & { aurora?: boolean };
-    const VALID: AuroraStyle[] = ["fluido", "suave", "estatico", "padrao"];
+    const saved = JSON.parse(raw) as Omit<Partial<Settings>, "auroraStyle"> & {
+      aurora?: boolean;
+      auroraStyle?: AuroraStyle | "estatico";
+    };
+    const VALID: AuroraStyle[] = ["fluido", "suave", "padrao"];
+    const LANGUAGES: AppLanguage[] = ["pt", "en", "es"];
     const auroraStyle: AuroraStyle =
-      saved.aurora === false
-        ? "estatico"
+      saved.aurora === false || saved.auroraStyle === "estatico"
+        ? "suave"
         : saved.auroraStyle && VALID.includes(saved.auroraStyle)
           ? saved.auroraStyle
           : // valor ausente ou inválido nunca resulta em "nenhum fundo"
             "suave";
     // conta já existente (sem o campo) começa em MESTRE; conta nova, APRENDIZ
-    return { ...DEFAULTS, level: saved.level ?? "mestre", ...saved, auroraStyle };
+    const language = saved.language && LANGUAGES.includes(saved.language) ? saved.language : "pt";
+    return { ...DEFAULTS, level: saved.level ?? "mestre", ...saved, language, auroraStyle };
   } catch {
     return DEFAULTS;
   }
@@ -89,8 +98,10 @@ function applyToDom(s: Settings) {
   const dark = s.theme === "dark" || s.theme === "amoled" || (s.theme === "system" && prefersDark);
   root.classList.toggle("dark", dark);
   root.classList.toggle("amoled", s.theme === "amoled");
+  root.classList.toggle("accent-default", s.accent === "default");
   root.classList.toggle("accent-blue", s.accent === "blue");
   root.classList.toggle("accent-magenta", s.accent === "magenta");
+  root.lang = s.language === "pt" ? "pt-BR" : s.language;
 }
 
 const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
@@ -148,6 +159,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       ...settings,
       setTheme: (theme) => setSettings((s) => ({ ...s, theme })),
       setAccent: (accent) => setSettings((s) => ({ ...s, accent })),
+      setLanguage: (language) => setSettings((s) => ({ ...s, language })),
       setUnit: (unit) => setSettings((s) => ({ ...s, unit })),
       setPrecision: (precision) => setSettings((s) => ({ ...s, precision })),
       setLevel: (level) => setSettings((s) => ({ ...s, level })),

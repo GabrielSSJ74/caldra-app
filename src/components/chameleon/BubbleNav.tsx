@@ -19,6 +19,8 @@ import {
 import { ChameleonMark } from "./Logo";
 import { useShellActions } from "./ShellActions";
 import { cn } from "@/lib/utils";
+import { useSettings } from "@/lib/settings/SettingsProvider";
+import { translate } from "@/lib/i18n/i18n";
 
 type Item = {
   to: string;
@@ -34,6 +36,7 @@ const ITEMS: Item[] = [
   { to: "/", name: "Início", icon: ChameleonMark, core: true },
   { to: "/projetos", name: "Projetos", icon: FolderKanban },
 ];
+const ITEM_KEYS = ["tracing", "studies", "home", "projects"] as const;
 
 const MORE_ROUTES = ["/configuracoes", "/biblioteca", "/oficina", "/conta", "/calculadora"];
 
@@ -41,6 +44,7 @@ const MORE_ROUTES = ["/configuracoes", "/biblioteca", "/oficina", "/conta", "/ca
 export function BubbleNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [moreOpen, setMoreOpen] = useState(false);
+  const { language } = useSettings();
   const active = (to: string) => (to === "/" ? pathname === "/" : pathname.startsWith(to));
   const moreActive = MORE_ROUTES.some((r) => pathname.startsWith(r));
 
@@ -54,14 +58,14 @@ export function BubbleNav() {
         className="fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[calc(env(safe-area-inset-bottom)+12px)]"
       >
         <div className="metal pointer-events-auto grid grid-cols-5 items-center justify-items-center gap-0.5 rounded-full p-1 backdrop-blur-xl">
-          {ITEMS.map((item) => {
+          {ITEMS.map((item, itemIndex) => {
             const Icon = item.icon as (p: { className?: string }) => React.ReactNode;
             const on = active(item.to);
             return (
               <Link
                 key={item.to}
                 to={item.to}
-                aria-label={item.name}
+                 aria-label={translate(language, ITEM_KEYS[itemIndex]!)}
                 className={cn(
                   cell,
                   item.core ? "size-11" : "size-9",
@@ -87,7 +91,7 @@ export function BubbleNav() {
                     "group-focus-visible:translate-y-0 group-focus-visible:opacity-100",
                   )}
                 >
-                  {item.name}
+                   {translate(language, ITEM_KEYS[itemIndex]!)}
                 </span>
                 {on && (
                   <span
@@ -102,7 +106,7 @@ export function BubbleNav() {
           <button
             type="button"
             onClick={() => setMoreOpen(true)}
-            aria-label="Mais"
+            aria-label={translate(language, "more")}
             aria-haspopup="dialog"
             aria-expanded={moreOpen}
             className={cn(
@@ -124,7 +128,7 @@ export function BubbleNav() {
                 "group-focus-visible:translate-y-0 group-focus-visible:opacity-100",
               )}
             >
-              Mais
+              {translate(language, "more")}
             </span>
             {moreActive && (
               <span aria-hidden className="absolute -bottom-0.5 h-0.5 w-4 rounded-full bg-accent" />
@@ -156,9 +160,13 @@ const MORE: Entry[] = [
   { name: "Oficina", icon: Factory, to: "/oficina" },
   { name: "Ajuda", icon: HelpCircle, to: "/escola" },
 ];
+const MORE_KEYS = [
+  "calculator", "settings", "profile", "master", "library", "history", "favorites", "workshop", "help",
+] as const;
 
 function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
+  const { language } = useSettings();
   const { openProfile, openMaster } = useShellActions();
   if (!open) return null;
 
@@ -172,24 +180,24 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50">
       <button
-        aria-label="Fechar menu"
+        aria-label={translate(language, "closeMenu")}
         onClick={onClose}
         className="absolute inset-0 bg-background/70 backdrop-blur-sm animate-in fade-in duration-200"
       />
       <div
         role="dialog"
-        aria-label="Mais opções"
+        aria-label={translate(language, "moreOptions")}
         className="metal absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+78px)] mx-auto max-w-md rounded-3xl p-4 backdrop-blur-xl animate-in fade-in slide-in-from-bottom-4 duration-300 [animation-timing-function:cubic-bezier(.22,1,.36,1)]"
       >
         <div className="mb-3 flex items-center gap-3">
           <BookOpen className="size-3.5 text-accent" strokeWidth={1.4} />
           <span className="font-mono text-[9px] tracking-[0.22em] text-muted-foreground uppercase">
-            Mais
+            {translate(language, "more")}
           </span>
           <span className="h-px flex-1 bg-gradient-to-r from-accent/40 to-transparent" />
         </div>
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {MORE.map((e) => {
+          {MORE.map((e, entryIndex) => {
             const Icon = e.icon;
             return (
               <button
@@ -200,7 +208,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
               >
                 <Icon className="size-4 text-accent" strokeWidth={1.4} />
                 <span className="font-mono text-[9px] leading-tight tracking-[0.1em] uppercase">
-                  {e.name}
+                  {translate(language, MORE_KEYS[entryIndex]!)}
                 </span>
               </button>
             );
