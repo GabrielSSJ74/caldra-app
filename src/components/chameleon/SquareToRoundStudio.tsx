@@ -24,7 +24,7 @@ import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { buildWire } from "@/lib/viz3d/wire";
 import { developmentToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
 import { cn } from "@/lib/utils";
-import { View3DPanel, View3DToggle } from "./View3DPanel";
+import { VisualizationViewport, type VisualizationMode } from "./View3DPanel";
 import { DevelopmentView } from "./DevelopmentView";
 import { SchematicSquareToRound } from "./SchematicSquareToRound";
 import { Metric, Panel, SectionLabel } from "./ui";
@@ -64,7 +64,7 @@ export function SquareToRoundStudio() {
   const [calculating, setCalculating] = useState(false);
   const [tab, setTab] = useState<Tab>("Dimensões");
   /* 3D é camada da área de resultado, não etapa do fluxo. */
-  const [view3d, setView3d] = useState(false);
+  const [viewMode, setViewMode] = useState<VisualizationMode>("2d");
   const [explain, setExplain] = useState(false);
   const [unfold, setUnfold] = useState(0);
   const navigate = useNavigate();
@@ -79,6 +79,22 @@ export function SquareToRoundStudio() {
       return null;
     }
   }, [input, issues]);
+  const wireModel = useMemo(
+    () =>
+      buildWire("quadrado-redondo", {
+        d1: Math.max(input.baseA, input.baseB),
+        d2: input.topDiameter,
+        h: input.height,
+        e: input.offsetX,
+        t: input.thickness,
+        seg: input.divisions * 4,
+        baseA: input.baseA,
+        baseB: input.baseB,
+        offsetY: input.offsetY,
+        divisions: input.divisions,
+      }),
+    [input],
+  );
 
   const set = (key: FieldKey, raw: string) => {
     const value = raw === "" || raw === "-" ? 0 : Number(raw.replace(",", "."));
@@ -154,7 +170,20 @@ export function SquareToRoundStudio() {
       {/* MEDIDAS */}
       <Panel className="p-3.5 lg:p-5" glow>
         <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
-          <div className="grid-bg relative min-h-[220px] overflow-hidden rounded-xl border border-line bg-background/40 lg:min-h-[300px]">
+          <VisualizationViewport
+            mode={viewMode}
+            onModeChange={setViewMode}
+            model={wireModel}
+            unfold={unfold}
+            onUnfold={setUnfold}
+            onPlanificar={() => {
+              setUnfold(1);
+              window.setTimeout(() => {
+                setViewMode("2d");
+                setTab("Desenvolvimento");
+              }, 420);
+            }}
+          >
             <SchematicSquareToRound input={input} highlight={focused} />
             {FIELDS.map((f, i) => (
               <button
@@ -186,9 +215,9 @@ export function SquareToRoundStudio() {
               </button>
             ))}
             <span className="absolute top-2 left-2.5 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase">
-              Esquema · mm
+              Vista 2D · mm
             </span>
-          </div>
+          </VisualizationViewport>
 
           <div>
             <SectionLabel>Medidas</SectionLabel>
@@ -298,7 +327,7 @@ export function SquareToRoundStudio() {
             ))}
           </div>
 
-          <div key={tab} className="fade-up">
+          <div className="fade-up">
             {tab === "Dimensões" && (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                 {result.metrics.map((m) => (
@@ -349,40 +378,8 @@ export function SquareToRoundStudio() {
               </div>
             )}
 
-            {(tab === "Traçado" || tab === "Desenvolvimento") &&
-              (view3d ? (
-                <div className="relative">
-                  <View3DPanel
-                    model={buildWire("quadrado-redondo", {
-                      d1: Math.max(input.baseA, input.baseB),
-                      d2: input.topDiameter,
-                      h: input.height,
-                      e: input.offsetX,
-                      seg: 24,
-                    })}
-                    unfold={unfold}
-                    onUnfold={setUnfold}
-                    onPlanificar={() => {
-                      setUnfold(1);
-                      setTimeout(() => {
-                        setView3d(false);
-                        setTab("Desenvolvimento");
-                      }, 420);
-                    }}
-                  />
-                  <View3DToggle
-                    active
-                    onToggle={() => setView3d(false)}
-                    className="absolute top-3 right-3"
-                  />
-                </div>
-              ) : (
+            {(tab === "Traçado" || tab === "Desenvolvimento") && viewMode === "2d" && (
                 <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
-                  <View3DToggle
-                    active={false}
-                    onToggle={() => setView3d(true)}
-                    className="absolute top-3 right-3 z-10"
-                  />
                   <div className="h-[300px] lg:h-[420px]">
                     <DevelopmentView
                       ref={svgRef}
@@ -397,7 +394,7 @@ export function SquareToRoundStudio() {
                       : "Contorno de corte pronto para nesting. Escala real em milímetros."}
                   </p>
                 </div>
-              ))}
+              )}
 
             {tab === "Material" && (
               <div className="grid gap-3 sm:grid-cols-2">

@@ -25,7 +25,7 @@ import { diagnose } from "@/lib/geometry/copilot";
 import { toKgDm3 } from "@/lib/geometry/mass";
 import { useMaterials } from "@/lib/materials/MaterialsProvider";
 import { cn } from "@/lib/utils";
-import { View3DPanel, View3DToggle } from "./View3DPanel";
+import { VisualizationViewport, type VisualizationMode } from "./View3DPanel";
 import { DevelopmentView } from "./DevelopmentView";
 import { ParametricDiagram, type CotaSpec } from "./ParametricDiagram";
 import { MassCostPanel } from "./MassCostPanel";
@@ -94,9 +94,9 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
   const [piece, setPiece] = useState<number | "all">("all");
   const [unfold, setUnfold] = useState(0);
   /* 3D é camada da área de resultado, não etapa do fluxo. */
-  const [view3d, setView3d] = useState(false);
+  const [viewMode, setViewMode] = useState<VisualizationMode>("2d");
   /* Trocar de peça sempre volta para o 2D. */
-  useEffect(() => setView3d(false), [slug]);
+  useEffect(() => setViewMode("2d"), [slug]);
   const [pulse, setPulse] = useState<string | null>(null);
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
   const pulseTimer = useRef<number | null>(null);
@@ -244,7 +244,20 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
       {/* MEDIDAS */}
       <Panel className="p-3.5 lg:p-5" glow>
         <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
-          <div className="grid-bg relative min-h-[240px] overflow-hidden rounded-xl border border-line bg-background/40 lg:min-h-[320px]">
+          <VisualizationViewport
+            mode={viewMode}
+            onModeChange={setViewMode}
+            model={buildWire(slug, wireParams)}
+            unfold={unfold}
+            onUnfold={setUnfold}
+            onPlanificar={() => {
+              setUnfold(1);
+              window.setTimeout(() => {
+                setViewMode("2d");
+                setTab("Desenvolvimento");
+              }, 420);
+            }}
+          >
             <ParametricDiagram
               slug={slug}
               params={wireParams}
@@ -258,20 +271,9 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
               }}
             />
             <span className="absolute top-2 left-2.5 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase">
-              Esquema · mm
+              Vista 2D · mm
             </span>
-            {isMestre && (
-              <View3DToggle
-                active={view3d}
-                onToggle={() => {
-                  setCalculated(true);
-                  setView3d((v) => !v);
-                  setTab((t) => (t === "Traçado" || t === "Desenvolvimento" ? t : "Traçado"));
-                }}
-                className="absolute right-2.5 bottom-2.5"
-              />
-            )}
-          </div>
+          </VisualizationViewport>
 
           <div>
             <SectionLabel>Medidas</SectionLabel>
@@ -427,7 +429,7 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
             ))}
           </div>
 
-          <div key={tab} className="fade-up">
+          <div className="fade-up">
             {tab === "Dimensões" && (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
                 {result.metrics.map((m) => (
@@ -478,36 +480,8 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
               </div>
             )}
 
-            {(tab === "Traçado" || tab === "Desenvolvimento") &&
-              (view3d && isMestre ? (
-                <div className="relative">
-                  <View3DPanel
-                    model={buildWire(slug, wireParams)}
-                    unfold={unfold}
-                    onUnfold={setUnfold}
-                    onPlanificar={() => {
-                      setUnfold(1);
-                      setTimeout(() => {
-                        setView3d(false);
-                        setTab("Desenvolvimento");
-                      }, 420);
-                    }}
-                  />
-                  <View3DToggle
-                    active
-                    onToggle={() => setView3d(false)}
-                    className="absolute top-3 right-3"
-                  />
-                </div>
-              ) : (
+            {(tab === "Traçado" || tab === "Desenvolvimento") && viewMode === "2d" && (
                 <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
-                  {isMestre && (
-                    <View3DToggle
-                      active={false}
-                      onToggle={() => setView3d(true)}
-                      className="absolute top-3 right-3 z-10"
-                    />
-                  )}
                   <div className="h-[300px] lg:h-[420px]">
                     <DevelopmentView
                       ref={svgRef}
@@ -522,7 +496,7 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
                       : "Contorno de corte pronto para nesting. Escala real em milímetros."}
                   </p>
                 </div>
-              ))}
+              )}
 
             {tab === "Conferência" && (
               <div className="space-y-3">

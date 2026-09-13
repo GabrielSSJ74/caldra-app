@@ -6,39 +6,86 @@
  * vista em 2D ou em 3D. O modelo só é carregado quando o 3D é ligado.
  */
 
-import { Suspense, lazy } from "react";
-import { Box, Square } from "lucide-react";
+import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 import type { WireModel } from "@/lib/viz3d/wire";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 const Wire3D = lazy(() => import("./Wire3D").then((m) => ({ default: m.Wire3D })));
 
-/** Bolha de alternância: mostra para onde o toque leva (3D ↔ 2D). */
-export function View3DToggle({
-  active,
-  onToggle,
-  className,
+export type VisualizationMode = "2d" | "3d";
+
+/**
+ * Área principal única da Traçagem. O 3D é montado somente no primeiro uso e
+ * depois permanece vivo, preservando câmera, zoom e orientação ao voltar ao 2D.
+ */
+export function VisualizationViewport({
+  mode,
+  onModeChange,
+  model,
+  unfold,
+  onUnfold,
+  onPlanificar,
+  allow3d = true,
+  children,
 }: {
-  active: boolean;
-  onToggle: () => void;
-  className?: string;
+  mode: VisualizationMode;
+  onModeChange: (mode: VisualizationMode) => void;
+  model: WireModel;
+  unfold: number;
+  onUnfold: (value: number) => void;
+  onPlanificar: () => void;
+  allow3d?: boolean;
+  children: ReactNode;
 }) {
+  const [mounted3d, setMounted3d] = useState(mode === "3d");
+
+  useEffect(() => {
+    if (mode === "3d") setMounted3d(true);
+  }, [mode]);
+
+  const activeMode: VisualizationMode = allow3d ? mode : "2d";
+
   return (
-    <button
-      type="button"
-      onClick={onToggle}
-      aria-pressed={active}
-      aria-label={active ? "Ver em 2D" : "Ver em 3D"}
-      className={cn(
-        "flex size-11 items-center justify-center rounded-full border border-accent/35 bg-accent/12 text-accent backdrop-blur transition-transform hover:scale-105 active:scale-95",
-        className,
+    <div className="grid-bg relative h-[300px] overflow-hidden rounded-xl border border-line bg-background/40 lg:h-[420px]">
+      <div className={cn("size-full", activeMode !== "2d" && "invisible absolute inset-0")}>
+        {children}
+      </div>
+      {mounted3d && allow3d && (
+        <div className={cn("size-full", activeMode !== "3d" && "invisible absolute inset-0")}>
+          <View3DPanel
+            model={model}
+            unfold={unfold}
+            onUnfold={onUnfold}
+            onPlanificar={onPlanificar}
+          />
+        </div>
       )}
-    >
-      <span className="flex flex-col items-center leading-none">
-        {active ? <Square className="size-3.5" /> : <Box className="size-3.5" />}
-        <span className="mt-0.5 font-mono text-[9px] tracking-wider">{active ? "2D" : "3D"}</span>
-      </span>
-    </button>
+      {allow3d && (
+        <div
+          className="absolute top-2 right-2 z-20 flex rounded-md border border-line bg-background/85 p-0.5 shadow-sm backdrop-blur"
+          role="group"
+          aria-label="Modo de visualização"
+        >
+          {(["2d", "3d"] as const).map((item) => (
+            <Button
+              key={item}
+              type="button"
+              size="sm"
+              variant="ghost"
+              aria-pressed={activeMode === item}
+              onClick={() => onModeChange(item)}
+              className={cn(
+                "h-7 min-w-11 px-2 font-mono text-[10px] uppercase shadow-none",
+                activeMode === item && "bg-accent/15 text-accent",
+              )}
+            >
+              {item.toUpperCase()}
+            </Button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -54,10 +101,10 @@ export function View3DPanel({
   onPlanificar: () => void;
 }) {
   return (
-    <div className="grid-bg-fine relative rounded-2xl border border-line bg-background/40">
+    <div className="grid-bg-fine relative size-full">
       <Suspense
         fallback={
-          <div className="grid h-[300px] w-full place-items-center font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase lg:h-[420px]">
+          <div className="grid size-full place-items-center font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
             Carregando 3D…
           </div>
         }
@@ -66,7 +113,7 @@ export function View3DPanel({
           interactive
           unfold={unfold}
           model={model}
-          className="h-[300px] w-full text-foreground/80 lg:h-[420px]"
+          className="size-full text-foreground/80"
         />
       </Suspense>
       <div className="absolute inset-x-4 bottom-3 flex items-center gap-3">
@@ -80,9 +127,9 @@ export function View3DPanel({
           aria-label="Abrir peça"
           className="h-1 flex-1 accent-[var(--accent)]"
         />
-        <button onClick={onPlanificar} className="font-mono text-[9px] text-accent uppercase">
+        <Button type="button" size="sm" variant="ghost" onClick={onPlanificar} className="h-7 px-2 font-mono text-[9px] text-accent uppercase shadow-none">
           Planificar
-        </button>
+        </Button>
       </div>
     </div>
   );
