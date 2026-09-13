@@ -421,7 +421,44 @@ export function SquareToRoundStudio() {
               </div>
             )}
 
-            {(tab === "Traçado" || tab === "Desenvolvimento") && viewMode === "2d" && (
+            {(tab === "Traçado" || tab === "Desenvolvimento") &&
+              viewMode === "2d" &&
+              result.pieces?.length && (
+                <div className={cn("grid gap-3", result.pieces.length > 1 && "lg:grid-cols-2")}>
+                  {result.pieces.map((piece, i) => (
+                    <div
+                      key={piece.code}
+                      className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3"
+                    >
+                      <div className="mb-2 flex items-baseline justify-between gap-2">
+                        <span className="font-mono text-[10px] tracking-wider text-accent uppercase">
+                          {piece.code}
+                        </span>
+                        <span className="truncate text-[11px] text-muted-foreground">
+                          {piece.name}
+                        </span>
+                      </div>
+                      <div className="h-[280px] lg:h-[380px]">
+                        <DevelopmentView
+                          ref={i === 0 ? svgRef : undefined}
+                          pattern={piece.development}
+                          showFolds={tab === "Traçado"}
+                          showPoints={tab === "Traçado"}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  <p className="font-mono text-[10px] text-muted-foreground lg:col-span-2">
+                    {tab === "Traçado"
+                      ? "Cada metade é traçada separadamente; as costuras J1/J2 unem as peças na montagem."
+                      : "Contornos de corte das duas metades prontos para nesting. Escala real em milímetros."}
+                  </p>
+                </div>
+              )}
+
+            {(tab === "Traçado" || tab === "Desenvolvimento") &&
+              viewMode === "2d" &&
+              !result.pieces?.length && (
                 <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
                   <div className="h-[300px] lg:h-[420px]">
                     <DevelopmentView
