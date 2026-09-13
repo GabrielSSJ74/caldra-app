@@ -3,7 +3,7 @@ import type { Entity } from "./core";
 import { copySelection, finishPolylinePoints, pasteClipboard, removeEntityOnly, shouldClosePolyline } from "./editorInteractions";
 
 const line = (id: string, x: number, group?: string): Entity => ({
-  id, group, layer: id === "bend" ? "dobra" : "corte", type: "line", x1: x, y1: 0, x2: x + 10, y2: 0,
+  id, ...(group ? { group } : {}), layer: id === "bend" ? "dobra" : "corte", type: "line", x1: x, y1: 0, x2: x + 10, y2: 0,
 });
 
 describe("interações do editor CHAMFER", () => {

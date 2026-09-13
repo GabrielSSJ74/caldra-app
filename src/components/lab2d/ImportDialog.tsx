@@ -78,7 +78,7 @@ export function ImportDialog({ open, source, layer, layers, onSource, onClose, o
             <div className="grid gap-1 font-mono text-[10px] text-muted-foreground sm:grid-cols-2">
               <span>{source.file.name}</span><span>{preview.count} objetos</span><span>{preview.widthMm.toFixed(1)} × {preview.heightMm.toFixed(1)} mm</span><span>Layers: {layerNames.join(", ") || "—"}</span>
             </div>
-            <div className="flex gap-2"><Button className="flex-1" onClick={onClose}>Cancelar</Button><Button variant="primary" className="flex-1" onClick={() => { onConfirm(entities); toast.success(`${entities.length} objetos inseridos no plano.`); onClose(); }}>Importar</Button></div>
+            <div className="flex gap-2"><Button className="flex-1" onClick={onClose}>Cancelar</Button><Button variant="primary" className="flex-1" onClick={() => { if (!entities) return; onConfirm(entities); toast.success(`${entities.length} objetos inseridos no plano.`); onClose(); }}>Importar</Button></div>
           </>
         ) : (
           <p className="py-10 text-center font-mono text-[11px] text-muted-foreground">Analisando arquivo vetorial…</p>

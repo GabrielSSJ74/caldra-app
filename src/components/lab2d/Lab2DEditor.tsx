@@ -321,6 +321,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [dragNode, setDragNode] = useState<{ id: string; index: number } | null>(null);
   const [textOpen, setTextOpen] = useState(false);
   const [textSpec, setTextSpec] = useState<TextSpec | null>(null);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const clipboardRef = useRef<ChamferClipboard | null>(null);
   const [clipboardMenu, setClipboardMenu] = useState<{ x: number; y: number; world: Vec2 } | null>(null);
   const longPressRef = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
@@ -1609,6 +1610,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         <DimensionEditor
           e={selected[0]!}
           onChange={(next) => commit((list) => list.map((x) => (x.id === next.id ? next : x)))}
+          onEditText={selected[0]?.type === "text" ? () => {
+            const current = selected[0];
+            if (!current || current.type !== "text") return;
+            setEditingTextId(current.id);
+            setTextSpec({ text: current.text, width: current.width ?? Math.max(current.size, current.text.length * current.size * .6), height: current.size, bold: !!current.bold, italic: !!current.italic });
+            setTextOpen(true);
+          } : undefined}
           layers={layers}
           actions={selectionActions}
         />
@@ -2421,7 +2429,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         onClose={() => { setImportOpen(false); setImportSrc(null); }}
         onConfirm={onImportConfirm}
       />
-      <TextDialog open={textOpen} onClose={() => { setTextOpen(false); if (!textSpec) setTool("select"); }} onConfirm={(spec) => { setTextSpec(spec); setTextOpen(false); toast.info("Toque no desenho para posicionar o texto."); }} />
+      <TextDialog open={textOpen} initial={editingTextId ? textSpec ?? undefined : undefined} onClose={() => { setTextOpen(false); setEditingTextId(null); if (!textSpec) setTool("select"); }} onConfirm={(spec) => {
+        if (editingTextId) {
+          commit((list) => list.map((entity) => entity.id === editingTextId && entity.type === "text" ? { ...entity, text: spec.text, size: spec.height, width: spec.width, bold: spec.bold, italic: spec.italic } : entity));
+          setEditingTextId(null); setTextSpec(null); setTextOpen(false); return;
+        }
+        setTextSpec(spec); setTextOpen(false); toast.info("Toque no desenho para posicionar o texto.");
+      }} />
       <VisionDialog
         open={visionOpen}
         onOpenChange={setVisionOpen}
@@ -2911,11 +2925,13 @@ function DimensionEditor({
   onChange,
   layers,
   actions,
+  onEditText,
 }: {
   e: Entity;
   onChange: (e: Entity) => void;
   layers: Layer[];
   actions?: React.ReactNode;
+  onEditText?: () => void;
 }) {
   const field = (label: string, value: number, set: (n: number) => void, unit?: string) => (
     <label key={label} className="flex items-center justify-between gap-2 py-0.5">
@@ -3037,6 +3053,9 @@ function DimensionEditor({
       field("X", e.x, (n) => onChange({ ...e, x: n }), "mm"),
       field("Y", e.y, (n) => onChange({ ...e, y: n }), "mm"),
       field("Altura", e.size, (n) => onChange({ ...e, size: Math.max(n, 0.5) }), "mm"),
+      field("Largura", e.width ?? Math.max(e.size, e.text.length * e.size * .6), (n) => onChange({ ...e, width: Math.max(n, .5) }), "mm"),
+      field("Rotação", e.rotation ?? 0, (n) => onChange({ ...e, rotation: n }), "°"),
+      <button key="editar-texto" onClick={onEditText} className="w-full rounded-lg border border-line px-2 py-1.5 text-[10px] text-foreground hover:border-accent">Editar texto e estilo</button>,
     );
   }
 
