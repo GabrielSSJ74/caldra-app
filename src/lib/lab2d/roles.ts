@@ -25,7 +25,9 @@ export type ManufacturingRole =
   | "DIRECTION";
 
 /** Papéis que uma entidade de desenho pode assumir diretamente. */
-export const ENTITY_ROLES: ManufacturingRole[] = [
+export type EntityRole = "CUT" | "MARK" | "BEND" | "REFERENCE" | "DIMENSION";
+
+export const ENTITY_ROLES: EntityRole[] = [
   "CUT",
   "MARK",
   "BEND",
