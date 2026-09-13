@@ -2049,7 +2049,55 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               )}
 
-              {/* cotas — azul técnico fixo */}
+              {/* COTAS ASSOCIATIVAS — âmbar técnico, sempre medidas na geometria */}
+              {dims.map((d) => {
+                const draw = dimensionDraw(d, entities);
+                const on = dimSel === d.id;
+                return (
+                  <g
+                    key={d.id}
+                    stroke={DIMENSION_COLOR}
+                    fill={DIMENSION_COLOR}
+                    strokeWidth={(on ? 1.8 : 1) / view.k}
+                    opacity={on ? 1 : 0.9}
+                    onPointerDown={() => setDimSel(d.id)}
+                  >
+                    {draw.lines.map((l, i) => (
+                      <line key={`l${i}`} x1={l[0].x} y1={l[0].y} x2={l[1].x} y2={l[1].y} />
+                    ))}
+                    {draw.arcs.map((a, i) => (
+                      <path
+                        key={`a${i}`}
+                        fill="none"
+                        d={`M ${a.c.x + a.r * Math.cos(a.a0)} ${a.c.y + a.r * Math.sin(a.a0)} A ${a.r} ${a.r} 0 ${Math.abs(a.a1 - a.a0) > Math.PI ? 1 : 0} 1 ${a.c.x + a.r * Math.cos(a.a1)} ${a.c.y + a.r * Math.sin(a.a1)}`}
+                      />
+                    ))}
+                    {draw.arrows.map((ar, i) => {
+                      const s = d.style.arrowSize / view.k;
+                      const p1 = `${ar.p.x + Math.cos(ar.angle + 0.25) * s},${ar.p.y + Math.sin(ar.angle + 0.25) * s}`;
+                      const p2 = `${ar.p.x + Math.cos(ar.angle - 0.25) * s},${ar.p.y + Math.sin(ar.angle - 0.25) * s}`;
+                      return (
+                        <polygon key={`r${i}`} points={`${ar.p.x},${ar.p.y} ${p1} ${p2}`} stroke="none" />
+                      );
+                    })}
+                    {draw.labels.map((l, i) => (
+                      <text
+                        key={`t${i}`}
+                        x={l.p.x}
+                        y={l.p.y - 3 / view.k}
+                        fontSize={d.style.textSize / view.k}
+                        textAnchor="middle"
+                        stroke="none"
+                        className="font-mono"
+                      >
+                        {l.text}
+                      </text>
+                    ))}
+                  </g>
+                );
+              })}
+
+              {/* cotas automáticas de apoio */}
               {showDims &&
                 autoDimensions(drawable).map((d, i) => {
                   const mx = (d.a.x + d.b.x) / 2;
