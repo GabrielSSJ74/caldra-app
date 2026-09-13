@@ -18,6 +18,7 @@ import type { Vec2 } from "@/lib/geometry/types";
 import { samplePath } from "./bezier";
 import { dist, outlinePoints, segmentsOf, type Entity } from "./core";
 import { endPointOf, isCutPath, pathLength, startPointOf } from "./cutPlan";
+import { ROLE_BY_LAYER } from "./roles";
 
 /* ------------------------------------------------------------- operações */
 
