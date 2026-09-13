@@ -561,7 +561,8 @@ export function toDxf(
     (a, b) => Number(a.type === "path" && a.hole) - Number(b.type === "path" && b.hole),
   );
   for (const e of ordered) {
-    const layer = e.layer.toUpperCase();
+    // LAYER = FUNÇÃO DE FABRICAÇÃO (papel), nunca cor nem nome livre.
+    const layer = roleOf(e) ?? "UNCLASSIFIED";
     if (e.type === "line")
       out.push({ type: "LINE", layer, start: { x: e.x1, y: -e.y1 }, end: { x: e.x2, y: -e.y2 } });
     if (e.type === "polyline")
