@@ -35,16 +35,12 @@ describe("transição quadrado para redondo canônica", () => {
     expect(canonical.circle).toHaveLength(input.divisions * 4);
     expect(result.trueLengths).toHaveLength(input.divisions * 4 + 1);
     expect(result.development.foldLines).toHaveLength(input.divisions * 4 + 5);
-    const expectedWidth = Math.max(
-      input.baseA,
-      input.offsetX + input.topDiameter / 2,
-      input.topDiameter / 2 - input.offsetX,
-    );
-    const expectedDepth = Math.max(
-      input.baseB,
-      input.offsetY + input.topDiameter / 2,
-      input.topDiameter / 2 - input.offsetY,
-    );
+    const expectedWidth =
+      Math.max(input.baseA / 2, input.offsetX + input.topDiameter / 2) -
+      Math.min(-input.baseA / 2, input.offsetX - input.topDiameter / 2);
+    const expectedDepth =
+      Math.max(input.baseB / 2, input.offsetY + input.topDiameter / 2) -
+      Math.min(-input.baseB / 2, input.offsetY - input.topDiameter / 2);
     expect(wire.bounds.max.x - wire.bounds.min.x).toBeCloseTo(expectedWidth, 6);
     expect(wire.bounds.max.z - wire.bounds.min.z).toBeCloseTo(expectedDepth, 6);
     expect(wire.bounds.max.y - wire.bounds.min.y).toBeCloseTo(input.height, 6);
