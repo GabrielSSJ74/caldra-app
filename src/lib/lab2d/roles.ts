@@ -16,6 +16,7 @@ import type { Entity, LayerId } from "@/lib/lab2d/core";
 
 export type ManufacturingRole =
   | "CUT"
+  | "RECORTE"
   | "MARK"
   | "BEND"
   | "REFERENCE"
@@ -25,18 +26,23 @@ export type ManufacturingRole =
   | "DIRECTION";
 
 /** Papéis que uma entidade de desenho pode assumir diretamente. */
-export type EntityRole = "CUT" | "MARK" | "BEND" | "REFERENCE" | "DIMENSION";
+export type EntityRole = "CUT" | "RECORTE" | "MARK" | "BEND" | "REFERENCE" | "DIMENSION";
 
 export const ENTITY_ROLES: EntityRole[] = [
   "CUT",
+  "RECORTE",
   "MARK",
   "BEND",
   "REFERENCE",
   "DIMENSION",
 ];
 
+/** Papéis oferecidos ao usuário no CHAMFER — os únicos que ele escolhe. */
+export const USER_ROLES: EntityRole[] = ["CUT", "MARK", "BEND", "RECORTE"];
+
 export const ROLE_LABEL: Record<ManufacturingRole, string> = {
   CUT: "Corte",
+  RECORTE: "Recorte",
   MARK: "Marcação",
   BEND: "Dobra",
   REFERENCE: "Referência",
@@ -49,6 +55,7 @@ export const ROLE_LABEL: Record<ManufacturingRole, string> = {
 /** Camada semântica do desenho → papel de fabricação. Nunca por cor. */
 export const ROLE_BY_LAYER: Record<string, ManufacturingRole> = {
   corte: "CUT",
+  recorte: "RECORTE",
   marcacao: "MARK",
   dobra: "BEND",
   referencia: "REFERENCE",
@@ -147,6 +154,7 @@ export type DxfExportProfile = {
 
 const TECHNICAL_MAP: Record<ManufacturingRole, string | null> = {
   CUT: "CUT",
+  RECORTE: "RECORTE",
   MARK: "MARK",
   BEND: "BEND",
   REFERENCE: "REFERENCE",
@@ -156,27 +164,23 @@ const TECHNICAL_MAP: Record<ManufacturingRole, string | null> = {
   DIRECTION: null, // direção é metadado, nunca geometria
 };
 
+/** Identificadores dos DOIS perfis oficiais. */
+export const TECHNICAL_PROFILE_ID = "tecnico";
+export const LASER_PROFILE_ID = "laser-cnc";
+
 export const DXF_PROFILES: DxfExportProfile[] = [
   {
-    id: "tecnico",
+    id: TECHNICAL_PROFILE_ID,
     name: "DXF TÉCNICO",
-    description: "Tudo: corte, marcação, dobra, referência e cotas em layers separadas.",
+    description:
+      "Conferência e documentação: corte, recorte, marcação, dobra, referência e cotas em layers separadas.",
     layerMap: { ...TECHNICAL_MAP },
   },
   {
-    id: "producao",
-    name: "DXF PRODUÇÃO",
-    description: "Somente o que a máquina executa: corte, marcação e dobra.",
-    layerMap: {
-      ...TECHNICAL_MAP,
-      REFERENCE: null,
-      DIMENSION: null,
-    },
-  },
-  {
-    id: "cypcut",
-    name: "CYP CUT",
-    description: "Corte e marcação para o CypCut; entradas e saídas dentro da layer de corte.",
+    id: LASER_PROFILE_ID,
+    name: "DXF LASER CNC",
+    description:
+      "Máquina de corte a laser (CypCut e similares): corte, recorte, marcação e dobra em layers próprias, com entradas e saídas na layer de corte.",
     layerMap: {
       ...TECHNICAL_MAP,
       REFERENCE: null,
@@ -187,14 +191,23 @@ export const DXF_PROFILES: DxfExportProfile[] = [
   },
 ];
 
-export const DEFAULT_PROFILE_ID = "cypcut";
+/** IDs antigos preservados: abrem o perfil equivalente atual. */
+const PROFILE_ALIAS: Record<string, string> = {
+  producao: LASER_PROFILE_ID,
+  cypcut: LASER_PROFILE_ID,
+};
 
-export const profileById = (id: string): DxfExportProfile =>
-  DXF_PROFILES.find((p) => p.id === id) ?? DXF_PROFILES[DXF_PROFILES.length - 1]!;
+export const DEFAULT_PROFILE_ID = LASER_PROFILE_ID;
+
+export const profileById = (id: string): DxfExportProfile => {
+  const key = PROFILE_ALIAS[id] ?? id;
+  return DXF_PROFILES.find((p) => p.id === key) ?? DXF_PROFILES[DXF_PROFILES.length - 1]!;
+};
 
 /** Cor ACI por nome de layer de saída — visual apenas, sem valor semântico. */
 export const EXPORT_ACI: Record<string, number> = {
   CUT: 1,
+  RECORTE: 2,
   MARK: 5,
   BEND: 3,
   REFERENCE: 8,
@@ -217,6 +230,7 @@ export const EXPORT_ACI: Record<string, number> = {
  */
 export const CYPCUT_CHANNEL: Record<ManufacturingRole, number> = {
   CUT: 1, // atestado no golden sample
+  RECORTE: 1, // recorte é corte interno: mesmo canal de corte
   MARK: 15, // atestado no golden sample
   BEND: 2, // convenção CALDRA
   REFERENCE: 14, // convenção CALDRA

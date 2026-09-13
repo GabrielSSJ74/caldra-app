@@ -16,6 +16,7 @@ import {
   CUT_COLOR,
   DIMENSION_COLOR,
   MARK_COLOR,
+  RECORTE_COLOR,
   REFERENCE_COLOR,
   techColor,
   type TechLayerId,
@@ -38,6 +39,7 @@ export const DEFAULT_LAYERS: Layer[] = [
   { id: "referencia", name: "Referência", color: REFERENCE_COLOR, visible: true, locked: false },
   { id: "dobra", name: "Dobra", color: BEND_COLOR, visible: true, locked: false },
   { id: "marcacao", name: "Marcação", color: MARK_COLOR, visible: true, locked: false },
+  { id: "recorte", name: "Recorte", color: RECORTE_COLOR, visible: true, locked: false },
   { id: "corte", name: "Corte", color: CUT_COLOR, visible: true, locked: false },
   { id: "cota", name: "Cota", color: DIMENSION_COLOR, visible: true, locked: false },
 ];
