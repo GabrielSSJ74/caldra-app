@@ -103,19 +103,6 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       const dash = !lod && style.dash(inv);
       ctx.setLineDash(dash ? dash.split(" ").map(Number) : []);
     }
-    ctx.beginPath();
-    traceEntity(ctx, e, lod);
-    ctx.stroke();
-  }
-
-  // halo de seleção — destaque temporário, nunca substitui a cor técnica
-  if (selection.size) {
-    ctx.setLineDash([]);
-    ctx.strokeStyle = SELECTION_COLOR;
-    ctx.globalAlpha = 0.5;
-    ctx.lineWidth = 5 * inv;
-    for (const e of list) {
-      if (!selection.has(e.id) || e.type === "text") continue;
     // DOBRA: representação visual reduzida — ponto preenchido + traço curto
     // na borda. A entidade inteira permanece no modelo; hit-test, seleção e
     // exportação continuam usando a linha completa.
@@ -137,6 +124,19 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     traceEntity(ctx, e, lod);
     ctx.stroke();
   }
+
+  // halo de seleção — destaque temporário, nunca substitui a cor técnica
+  if (selection.size) {
+    ctx.setLineDash([]);
+    ctx.strokeStyle = SELECTION_COLOR;
+    ctx.globalAlpha = 0.5;
+    ctx.lineWidth = 5 * inv;
+    for (const e of list) {
+      if (!selection.has(e.id) || e.type === "text") continue;
+      ctx.beginPath();
+      traceEntity(ctx, e, lod);
+      ctx.stroke();
+    }
     ctx.globalAlpha = 1;
   }
 
