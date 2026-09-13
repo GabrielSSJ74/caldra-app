@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { exportDxf, importDxf } from "@/lib/dxf/dxfService";
+import { dxfVersionFor, exportDxf, importDxf } from "@/lib/dxf/dxfService";
 import {
   DEFAULT_CNC_OPTIONS,
   buildCncDxf,
@@ -137,6 +137,39 @@ describe("perfil CYP CUT", () => {
     expect(asMark.entities.filter((e) => e.layer === "MARK")).toHaveLength(3);
     expect(asMark.entities.some((e) => e.layer === "BEND")).toBe(false);
     expect(asMark.entities.length).toBe(doc.entities.length);
+  });
+});
+
+describe("versão DXF declarada", () => {
+  const part = samplePart();
+  const doc = buildCncDxf(part, DEFAULT_CNC_OPTIONS);
+
+  it("nunca declara AC1009 (R12) quando há LWPOLYLINE", () => {
+    expect(doc.entities.some((e) => e.type === "LWPOLYLINE")).toBe(true);
+    expect(dxfVersionFor(doc)).toBe("AC1014");
+    const text = exportDxf(doc);
+    expect(text).toContain("$ACADVER\n1\nAC1014");
+    expect(text).not.toContain("AC1009");
+  });
+
+  it("declara AC1015 quando há SPLINE", () => {
+    expect(dxfVersionFor({ layers: [], entities: [{ type: "SPLINE", layer: "CUT", closed: false, controls: [
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 },
+    ] }] })).toBe("AC1015");
+  });
+
+  it("só declara AC1009 sem LWPOLYLINE e sem SPLINE", () => {
+    expect(dxfVersionFor({ layers: [], entities: [
+      { type: "LINE", layer: "CUT", start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+    ] })).toBe("AC1009");
+  });
+
+  it("a conferência do arquivo confere a versão declarada", () => {
+    const check = verifyCncDxf(part, DEFAULT_CNC_OPTIONS, exportDxf(doc));
+    const row = check.rows.find((r) => r.field === "Versão DXF");
+    expect(row?.ok).toBe(true);
+    expect(row?.actual).toBe("AC1014");
+    expect(check.ok).toBe(true);
   });
 });
 
