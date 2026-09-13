@@ -15,6 +15,7 @@ import {
   cncCounts,
   cncCutLength,
   layerMapping,
+  preflightCnc,
   validateCncExport,
   verifyCncDxf,
   type CncExportOptions,
@@ -45,6 +46,7 @@ export function CncExportDialog({
   const issues = useMemo(() => validateCncExport(entities, opts), [entities, opts]);
   const errors = issues.filter((i) => i.level === "error");
   const mapping = useMemo(() => layerMapping(opts), [opts]);
+  const preflight = useMemo(() => preflightCnc(entities, opts), [entities, opts]);
 
   // PRÉ-VISUALIZAÇÃO CNC: só o que realmente vai para o arquivo
   const preview = useMemo(() => {
@@ -229,6 +231,18 @@ export function CncExportDialog({
             ))}
           </ul>
         )}
+
+        {/* preflight antes do download */}
+        <div className="rounded-xl border border-border px-3 py-2 font-mono text-[10px]">
+          <p className="mb-1 tracking-widest uppercase">
+            {errors.length === 0 ? "DXF CNC READY" : "DXF CNC — pendências"}
+          </p>
+          {preflight.map((r) => (
+            <p key={r.label} className={r.ok ? "text-muted-foreground" : "text-warn"}>
+              {r.ok ? "✓" : "✗"} {r.label}: {r.value}
+            </p>
+          ))}
+        </div>
 
         {report && (
           <div className="rounded-xl border border-border px-3 py-2 font-mono text-[10px]">
