@@ -92,6 +92,7 @@ export function SquareToRoundStudio() {
         baseB: input.baseB,
         offsetY: input.offsetY,
         divisions: input.divisions,
+        strategy: input.strategy,
       }),
     [input],
   );
@@ -280,6 +281,48 @@ export function SquareToRoundStudio() {
                 />
                 <span className="w-8 text-right font-mono text-xs">{input.divisions}</span>
               </label>
+
+              {/* ESTRATÉGIA DE FABRICAÇÃO — mesmo modelo, decomposição diferente */}
+              <div className="mt-3 border-t border-line pt-3">
+                <span className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
+                  Estratégia de fabricação
+                </span>
+                <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                  {(
+                    [
+                      { id: "single", label: "Uma peça única" },
+                      { id: "two-weld", label: "2 partes + solda" },
+                    ] as const
+                  ).map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => setInput((p) => ({ ...p, strategy: s.id }))}
+                      className={cn(
+                        "rounded-lg border px-2 py-2 font-mono text-[10px] tracking-wider uppercase transition-colors",
+                        input.strategy === s.id
+                          ? "border-accent/40 bg-accent/12 text-accent"
+                          : "border-line text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+                {input.strategy === "two-weld" && result?.joints && (
+                  <div className="mt-2 space-y-1 rounded-lg border border-line bg-background/60 p-2">
+                    {result.joints.map((j) => (
+                      <p key={j.id} className="font-mono text-[10px] text-muted-foreground">
+                        <span className="text-accent">{j.id}</span> · {j.position}
+                      </p>
+                    ))}
+                    <p className="font-mono text-[9px] text-muted-foreground/70">
+                      A geometria final do conjunto é idêntica nos dois modos — muda apenas a
+                      decomposição da chapa.
+                    </p>
+                  </div>
+                )}
+              </div>
             </div>
 
             <p
