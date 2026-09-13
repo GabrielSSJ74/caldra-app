@@ -373,12 +373,11 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
         name,
         quantity: 1,
         development: dev,
-        metrics: {
-          areaMm2: area,
-          massKg: volDm3 * input.density,
-          perimeter: partPerimeter(dev.outline),
-          volumeDm3: volDm3,
-        },
+        metrics: [
+          { label: "Área desenvolvida", value: area / 1_000_000, suffix: "m²" },
+          { label: "Massa estimada", value: volDm3 * input.density, suffix: "kg" },
+          { label: "Perímetro de corte", value: partPerimeter(dev.outline), unitMm: true },
+        ],
       };
     };
     pieces = [

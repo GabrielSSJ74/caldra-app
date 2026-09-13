@@ -78,7 +78,9 @@ describe("estratégia de fabricação", () => {
     expect(split.trueLengths).toEqual(single.trueLengths);
 
     // a soma das áreas das metades reproduz a área da peça inteira
-    const sum = split.pieces!.reduce((s, p) => s + p.metrics.areaMm2, 0);
+    const areaOf = (p: (typeof split.pieces)[number]) =>
+      polygonAreaForTest(p!.development.outline);
+    const sum = split.pieces!.reduce((s, p) => s + areaOf(p), 0);
     expect(sum).toBeCloseTo(single.areaMm2, 3);
   });
 
