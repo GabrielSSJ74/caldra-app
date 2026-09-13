@@ -160,6 +160,9 @@ const MORE: Entry[] = [
   { name: "Oficina", icon: Factory, to: "/oficina" },
   { name: "Ajuda", icon: HelpCircle, to: "/escola" },
 ];
+const MORE_KEYS = [
+  "calculator", "settings", "profile", "master", "library", "history", "favorites", "workshop", "help",
+] as const;
 
 function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
@@ -194,7 +197,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
           <span className="h-px flex-1 bg-gradient-to-r from-accent/40 to-transparent" />
         </div>
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-          {MORE.map((e) => {
+          {MORE.map((e, entryIndex) => {
             const Icon = e.icon;
             return (
               <button
@@ -205,7 +208,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
               >
                 <Icon className="size-4 text-accent" strokeWidth={1.4} />
                 <span className="font-mono text-[9px] leading-tight tracking-[0.1em] uppercase">
-                  {e.name}
+                  {translate(language, MORE_KEYS[entryIndex]!)}
                 </span>
               </button>
             );

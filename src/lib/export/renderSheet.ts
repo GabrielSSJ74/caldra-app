@@ -349,9 +349,9 @@ export function sheetToCanvas(plan: SheetPlan, longSide = PNG_LONG_SIDE): HTMLCa
   ctx.scale(pxPerMm, pxPerMm);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-    ctx.strokeStyle = s.color;
 
   for (const s of plan.shapes) {
+    ctx.strokeStyle = s.color;
     ctx.setLineDash(s.dash ?? []);
     ctx.lineWidth = s.widthMm;
     ctx.beginPath();
