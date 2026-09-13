@@ -1,5 +1,5 @@
 import { useRouterState } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
@@ -29,14 +29,21 @@ function immersiveRoute(pathname: string) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [masterOpen, setMasterOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const { isMestre } = useFeatureAccess();
+  const { isMestre, closeGate } = useFeatureAccess();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const intro = useIntro();
   const profile = useProfile();
   const showOnboarding = profile.ready && !intro.show && !profile.onboarded;
   const editorMounted = useImmersiveActive();
-  const immersive = immersiveRoute(pathname) && editorMounted;
+  const editorPath = immersiveRoute(pathname);
+  const immersive = editorPath && (isMestre || editorMounted);
   const standalone = pathname.startsWith("/calculadora");
+
+  /* A troca de rota encerra o gate antes de o editor montar. Assim, o portal,
+     o bloqueio de scroll e o backdrop nunca sobrevivem dentro do CHAMFER. */
+  useEffect(() => {
+    if (editorPath) closeGate();
+  }, [closeGate, editorPath]);
 
   return (
     <ShellActionsProvider
@@ -78,7 +85,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <main
           className={cn(
-            "fade-up relative z-10 min-w-0 flex-1",
+            "relative z-10 min-w-0 flex-1",
+            !immersive && "fade-up",
             immersive || standalone ? "p-0" : "px-4 pt-16 pb-28 lg:px-10 lg:pt-16 lg:pb-24",
           )}
         >

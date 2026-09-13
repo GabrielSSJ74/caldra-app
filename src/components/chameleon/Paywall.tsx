@@ -260,8 +260,10 @@ export function PaywallDialog() {
 
   return (
     <Dialog open={gatedFeature !== null} onOpenChange={(o) => !o && closeGate()}>
-      <DialogContent className="relative max-h-[92vh] w-[calc(100vw-1.5rem)] overflow-y-auto sm:max-w-lg">
-        <AuroraBackground mode="always" className="-z-10" />
+      <DialogContent
+        overlayClassName="bg-background/75 backdrop-blur-none"
+        className="isolate max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-lg overflow-y-auto overscroll-contain p-4 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] sm:p-6"
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 font-display">
             <Lock className="size-4 text-pro" />
