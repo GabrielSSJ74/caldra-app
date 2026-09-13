@@ -180,4 +180,4 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Garantir rolagem interna e contenção do Paywall em celular, tablet, desktop e paisagem.
 - [x] Fechar integralmente o Paywall antes da navegação para a rota real do CHAMFER.
 - [x] Restaurar o CHAMFER em 100vw × 100dvh, sem padding, limite ou deslocamento herdado.
-- [ ] Validar os cenários CHAMFER, DXF Laser CNC, Oficina e acesso direto, sem alterar entitlements ou motores.
+- [x] Validar os cenários CHAMFER, DXF Laser CNC, Oficina e acesso direto, sem alterar entitlements ou motores.
