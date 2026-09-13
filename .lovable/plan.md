@@ -55,12 +55,12 @@ A estratégia é apresentada como opção de fabricação. O CALDRA não afirma 
 - `src/lib/geometry/squareToRound.ts`: novo campo `strategy: "single" | "two-weld"` em `SquareToRoundInput` (default `single`). A rotina de encadeamento de triângulos é extraída para uma função que recebe o intervalo de quadrantes, permitindo desenvolver `[0,1]` e `[2,3]` separadamente. `pieces` e `joints` preenchidos só no modo dividido. `buildModel` marca cada face/geratriz com `piece: "A" | "B"`.
 - `src/lib/viz3d/wire.ts`: o construtor de malha `quadrado-redondo` já existente passa a aceitar `strategy` e a separar as duas metades em grupos (com afastamento na explodida). Nenhum motor novo, nenhuma reescrita do renderizador.
 - `src/components/chameleon/SquareToRoundStudio.tsx`: seletor de estratégia junto ao bloco Método; abas Desenvolvimento/Exportação/CHAMFER passam a iterar `result.pieces` quando existirem (`piecesToEntities` já suporta).
-- `src/lib/lab2d/technical.ts`: novo `BendRender = "full" | "witness"` e helper `bendWitnessSegments(line, mm)` que devolve os dois trechos curtos a partir da linha completa — puro cálculo de desenho, não toca em `Entity`.
-- `src/lib/lab2d/canvasScene.ts`: no traçado de entidades da camada `dobra`, desenha as testemunhas em vez da linha inteira; a seleção e o hit-test continuam usando a linha completa.
+- `src/lib/lab2d/technical.ts`: helper `bendEdgeMarks(line, len)` que devolve, para cada extremidade, o ponto exato na borda e o trecho curto ao longo da linha da dobra — puro cálculo de desenho, não toca em `Entity`.
+- `src/lib/lab2d/canvasScene.ts`: no traçado de entidades da camada `dobra`, desenha ponto preenchido + linha curta em cada extremidade em vez da linha inteira; a seleção e o hit-test continuam usando a linha completa.
 - `src/lib/lab2d/render.ts` e as exportações DXF ficam intactas (linha completa, role BEND).
 
 ## 6. Testes
 
 - Quadrado → Redondo peça única e 2 partes: mesma área desenvolvida total, mesmos comprimentos verdadeiros, 2 peças, códigos A/B, quantidades, posição das emendas, presença da união na montagem.
-- Dobra: linha completa preservada na entidade; testemunhas do CHAMFER contidas nas extremidades e mais curtas que a linha; DXF mantém role BEND e nunca MARK.
+- Dobra: linha completa preservada na entidade; as marcas do CHAMFER ficam exatamente nas extremidades, com linha curta e padronizada; DXF mantém role BEND e nunca MARK.
 - Regressão: typecheck, suíte completa e build.
