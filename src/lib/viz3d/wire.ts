@@ -12,6 +12,7 @@
 
 import { branchAxisLength } from "@/lib/geometry/branch";
 import { elbowModel } from "@/lib/geometry/elbowSegments";
+import { buildModel as buildSquareToRoundModel } from "@/lib/geometry/squareToRound";
 import type { Vec2, Vec3 } from "@/lib/geometry/types";
 
 export type Edge = [Vec3, Vec3];
@@ -53,6 +54,13 @@ export type WireParams = {
   n?: number;
   /** variante do modelo paramétrico */
   mode?: string;
+  /** lados independentes da base retangular (Quadrado → Redondo) */
+  baseA?: number;
+  baseB?: number;
+  /** segunda excentricidade no plano da base */
+  offsetY?: number;
+  /** divisões reais por quadrante usadas pela triangulação */
+  divisions?: number;
 };
 
 export const DEFAULT_PARAMS: WireParams = {
@@ -96,6 +104,10 @@ export function normalizeParameters(p: WireParams): Required<WireParams> {
   const t = Math.min(maxT, Math.max(0.4, num(p.t, Math.max(2, d1 * 0.008))));
   const ang = Math.min(180, Math.max(1, num(p.ang, 90)));
   const n = Math.round(Math.min(24, Math.max(2, num(p.n, 4))));
+  const baseA = Math.min(20000, Math.max(1, num(p.baseA, d1)));
+  const baseB = Math.min(20000, Math.max(1, num(p.baseB, d1)));
+  const offsetY = Math.max(-10000, Math.min(10000, num(p.offsetY, 0)));
+  const divisions = Math.round(Math.min(24, Math.max(3, num(p.divisions, seg / 4))));
   return {
     d1,
     d2,
@@ -106,6 +118,10 @@ export function normalizeParameters(p: WireParams): Required<WireParams> {
     ang,
     n,
     mode: typeof p.mode === "string" ? p.mode : "",
+    baseA,
+    baseB,
+    offsetY,
+    divisions,
   };
 }
 
@@ -359,14 +375,76 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
 
     case "quadrado-redondo":
     case "transicoes": {
-      const steps = 8;
-      const sq = squareLoop(p.d1, y0, seg);
-      const ci = ring(r2, y1, seg, p.e, 0);
-      const loops = Array.from({ length: steps + 1 }, (_, i) => {
-        const u = i / steps;
-        return blend(sq, ci, u, y0 + h * u);
+      const canonical = buildSquareToRoundModel({
+        baseA: p.baseA,
+        baseB: p.baseB,
+        topDiameter: p.d2,
+        height: p.h,
+        offsetX: p.e,
+        offsetY: p.offsetY,
+        divisions: p.divisions,
+        thickness: p.t,
+        density: 7.85,
       });
-      return withAxis(shell(loops, { t }));
+      const cv = (q: Vec3) => v(q.x, q.z - p.h / 2, q.y);
+      const inset = (q: Vec3) => {
+        if (q.z === 0) {
+          const x = Math.sign(q.x) * Math.max(0, Math.abs(q.x) - p.t);
+          const z = Math.sign(q.y) * Math.max(0, Math.abs(q.y) - p.t);
+          return v(x, -p.h / 2, z);
+        }
+        const dx = q.x - p.e;
+        const dz = q.y - p.offsetY;
+        const radius = Math.hypot(dx, dz);
+        const ratio = radius > 0 ? Math.max(0, radius - p.t) / radius : 1;
+        return v(p.e + dx * ratio, p.h / 2, p.offsetY + dz * ratio);
+      };
+      const faces: Face[] = [];
+      const edges: Edge[] = [];
+      const outerTriangles: Vec3[][] = [];
+
+      canonical.arcPoints.forEach((quadrant, k) => {
+        const corner = canonical.corners[k];
+        const nextCorner = canonical.corners[(k + 1) % canonical.corners.length];
+        if (!corner || !nextCorner) return;
+        for (let j = 0; j < quadrant.length - 1; j++) {
+          const a = quadrant[j];
+          const b = quadrant[j + 1];
+          if (!a || !b) continue;
+          outerTriangles.push([corner, a, b]);
+          edges.push([cv(corner), cv(a)]);
+        }
+        const end = quadrant[quadrant.length - 1];
+        if (end) outerTriangles.push([corner, nextCorner, end]);
+      });
+
+      for (const tri of outerTriangles) {
+        const outer = tri.map(cv);
+        const inner = tri.map((q) => inset(q));
+        faces.push({ pts: outer, kind: "outer" });
+        faces.push({ pts: inner.slice().reverse(), kind: "inner" });
+      }
+
+      for (let k = 0; k < canonical.corners.length; k++) {
+        const a = canonical.corners[k];
+        const b = canonical.corners[(k + 1) % canonical.corners.length];
+        if (!a || !b) continue;
+        const ao = cv(a);
+        const bo = cv(b);
+        faces.push({ pts: [ao, bo, inset(b), inset(a)], kind: "rim" });
+        edges.push([ao, bo]);
+      }
+      for (let k = 0; k < canonical.circle.length; k++) {
+        const a = canonical.circle[k];
+        const b = canonical.circle[(k + 1) % canonical.circle.length];
+        if (!a || !b) continue;
+        const ao = cv(a);
+        const bo = cv(b);
+        faces.push({ pts: [ao, bo, inset(b), inset(a)], kind: "rim" });
+        edges.push([ao, bo]);
+      }
+
+      return withAxis({ faces, edges });
     }
 
     case "redondo-quadrado": {

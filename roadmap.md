@@ -130,3 +130,9 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] CHAMFER: enviar todos os gomos ou o gomo selecionado, geometria vetorial real.
 - [ ] REGRA: não alterar o motor 3D existente — só a geometria canônica que ele recebe.
 - [ ] Regressão: valores, geometria, planificação e exportação antes/depois; casos 30/45/60/90°, curvas 45°-3, 90°-3, 90°-5.
+
+## Correção global 2D/3D + Quadrado → Redondo (set/2026)
+- [ ] Área principal única e reutilizável com alternância 2D ↔ 3D em todos os modelos de Traçagem.
+- [ ] Preservar a câmera 3D durante a alternância mantendo o visor montado após o primeiro uso.
+- [ ] Quadrado → Redondo: malha facetada derivada dos mesmos pontos, geratrizes e divisões da planificação.
+- [ ] Testar bases quadrada/retangular, alturas, diâmetros, coerência 2D/3D/traçado/planificação e regressão.
