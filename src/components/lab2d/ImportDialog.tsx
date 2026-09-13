@@ -78,7 +78,7 @@ export function ImportDialog({ open, source, layer, layers, onSource, onClose, o
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="metal flex max-h-[82dvh] w-[min(94vw,42rem)] max-w-none flex-col overflow-y-auto border-line">
-        <DialogHeader><DialogTitle className="font-display text-lg">Importar traçado CNC 2D</DialogTitle></DialogHeader>
+        <DialogHeader><DialogTitle className="font-display text-lg">Importar Traçado CNC 2D</DialogTitle></DialogHeader>
         {origin === "menu" && !source ? (
           <div className="grid gap-3 sm:grid-cols-2">
             <button type="button" onClick={() => setOrigin("catalog")} className="flex flex-col items-center gap-2 rounded-xl border border-line bg-background/40 px-5 py-10 text-center transition-colors hover:border-accent">
