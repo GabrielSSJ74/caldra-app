@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { GeometryPiece } from "./types";
 import { buildWire } from "@/lib/viz3d/wire";
 import {
   SQUARE_TO_ROUND_DEFAULTS,
@@ -78,8 +79,7 @@ describe("estratégia de fabricação", () => {
     expect(split.trueLengths).toEqual(single.trueLengths);
 
     // a soma das áreas das metades reproduz a área da peça inteira
-    const areaOf = (p: (typeof split.pieces)[number]) =>
-      polygonAreaForTest(p!.development.outline);
+    const areaOf = (p: GeometryPiece) => polygonAreaForTest(p.development.outline);
     const sum = split.pieces!.reduce((s, p) => s + areaOf(p), 0);
     expect(sum).toBeCloseTo(single.areaMm2, 3);
   });
