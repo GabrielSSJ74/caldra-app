@@ -247,7 +247,6 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
           <VisualizationViewport
             mode={viewMode}
             onModeChange={setViewMode}
-            allow3d={isMestre}
             model={buildWire(slug, wireParams)}
             unfold={unfold}
             onUnfold={setUnfold}
