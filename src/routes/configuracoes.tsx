@@ -66,7 +66,7 @@ const LANGUAGES: { id: AppLanguage; label: string }[] = [
 const UNITS: Unit[] = ["mm", "cm", "m", "in"];
 
 function Configuracoes() {
-  const { plan, isMestre, unlockWithCode, reset } = useFeatureAccess();
+  const { plan, isMestre, requirePro, unlockWithCode, reset } = useFeatureAccess();
   const {
     theme,
     setTheme,
@@ -155,7 +155,7 @@ function Configuracoes() {
       </header>
 
       <Panel className="p-4" glow>
-        <SectionLabel action={<Sparkles className="size-4 text-pro" />}>Modo Mestre</SectionLabel>
+        <SectionLabel action={<Sparkles className="size-4 text-pro" />}>CALDRA PRO</SectionLabel>
         {isMestre ? (
           <div>
             <p className="text-[13px] text-muted-foreground">
@@ -165,7 +165,7 @@ function Configuracoes() {
             <button
               onClick={() => {
                 reset();
-                toast.success("Modo Mestre desativado.");
+                toast.success("CALDRA PRO desativado neste aparelho.");
               }}
               className="mt-3 rounded-xl border border-border px-3 py-2 font-mono text-[11px] text-muted-foreground"
             >
@@ -220,7 +220,11 @@ function Configuracoes() {
               {ACCENTS.map((a) => (
                 <button
                   key={a.id}
-                  onClick={() => setAccent(a.id)}
+                  onClick={() => {
+                    /* Azul é Free; as demais cores abrem o convite do PRO. */
+                    if (a.id !== "blue" && !requirePro("accent.colors")) return;
+                    setAccent(a.id);
+                  }}
                   className={cn(
                     "flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
                     accent === a.id
@@ -249,8 +253,10 @@ function Configuracoes() {
                 return (
                   <button
                     key={a.id}
-                    onClick={() => !locked && setAuroraStyle(a.id)}
-                    disabled={locked}
+                    onClick={() => {
+                      if (locked && !requirePro("aurora.animated")) return;
+                      setAuroraStyle(a.id);
+                    }}
                     aria-pressed={auroraStyle === a.id}
                     className={cn(
                       "flex-1 rounded-xl border px-3 py-2 font-mono text-[11px] uppercase transition-colors",
@@ -268,7 +274,7 @@ function Configuracoes() {
             <p className="mt-2 text-[11px] text-muted-foreground">
               {isMestre
                 ? AURORA_STYLES.find((a) => a.id === auroraStyle)?.hint
-                : "Os fundos em movimento fazem parte do plano PRO."}
+                : "Fluido e Suave fazem parte do CALDRA PRO. O estilo Padrão segue disponível."}
             </p>
           </div>
         </div>

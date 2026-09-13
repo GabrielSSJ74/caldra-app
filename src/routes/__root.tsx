@@ -115,7 +115,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 /** Tema aplicado SINCRONAMENTE antes do primeiro paint — sem flash. */
 const THEME_BOOT = `(function(){try{
 var s=JSON.parse(localStorage.getItem("caldra.settings")||"{}");
-var t=s.theme||"dark";var a=s.accent||"amber";var r=document.documentElement;
+var t=s.theme||"light";var a=s.accent||"blue";var r=document.documentElement;
 var prefersDark=!window.matchMedia||window.matchMedia("(prefers-color-scheme: dark)").matches;
 var dark=t==="dark"||t==="amoled"||(t==="system"&&prefersDark);
 r.classList.toggle("dark",dark);r.classList.toggle("amoled",t==="amoled");
