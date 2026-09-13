@@ -21,7 +21,7 @@ import {
 } from "@/lib/dxf/cncExport";
 import { exportDXF } from "@/lib/dxf/exportService";
 import { uid, type Entity } from "@/lib/lab2d/core";
-import { CYPCUT_APPID, CYPCUT_CHANNEL, roleOf, structureMap } from "@/lib/lab2d/roles";
+import { CYPCUT_APPID, CYPCUT_CHANNEL, LASER_PROFILE_ID, roleOf, structureMap } from "@/lib/lab2d/roles";
 
 const golden = importDxf(
   readFileSync(join(process.cwd(), "src/lib/dxf/__fixtures__/quadrado-redondo-p01.dxf"), "utf8"),
@@ -208,6 +208,26 @@ describe("estrutura CypCut (FS_CYPCUT)", () => {
     expect(channelOf("CUT")).toBe(CYPCUT_CHANNEL.CUT);
     expect(channelOf("MARK")).toBe(CYPCUT_CHANNEL.MARK);
     expect(channelOf("BEND")).toBe(CYPCUT_CHANNEL.BEND);
+  });
+
+  it("mapeia o golden sample: CUT 1, RECORTE 2, BEND 7, MARK 15", () => {
+    expect(CYPCUT_CHANNEL.CUT).toBe(1);
+    expect(CYPCUT_CHANNEL.RECORTE).toBe(2);
+    expect(CYPCUT_CHANNEL.BEND).toBe(7);
+    expect(CYPCUT_CHANNEL.MARK).toBe(15);
+  });
+
+  it("RECORTE nunca vira CUT: layer própria e Channel 2", () => {
+    const recorte: Entity[] = [
+      { id: "c1", layer: "corte", type: "circle", cx: 0, cy: 0, r: 50 },
+      { id: "r1", layer: "recorte", type: "circle", cx: 0, cy: 0, r: 10 },
+    ];
+    const d = buildCncDxf(recorte, { ...DEFAULT_CNC_OPTIONS, profileId: LASER_PROFILE_ID });
+    const e = d.entities.find((x) => x.layer === "RECORTE")!;
+    expect(e).toBeTruthy();
+    const pairs = e.xdata![0]!.pairs;
+    expect(pairs[pairs.findIndex((p) => p.value === "Channel") + 1]!.value).toBe(2);
+    expect(d.entities.filter((x) => x.layer === "CUT")).toHaveLength(1);
   });
 
   it("escreve APPID, blocos balanceados e 1001 no arquivo", () => {

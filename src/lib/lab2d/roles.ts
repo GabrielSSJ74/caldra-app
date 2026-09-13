@@ -230,15 +230,18 @@ export const EXPORT_ACI: Record<string, number> = {
  */
 export const CYPCUT_CHANNEL: Record<ManufacturingRole, number> = {
   CUT: 1, // atestado no golden sample
-  RECORTE: 1, // recorte é corte interno: mesmo canal de corte
+  RECORTE: 2, // atestado em "batata 01.dxf" (layer 2 / Channel 2)
   MARK: 15, // atestado no golden sample
-  BEND: 2, // convenção CALDRA
+  BEND: 7, // atestado no golden sample corrigido
   REFERENCE: 14, // convenção CALDRA
   DIMENSION: 14, // convenção CALDRA
   LEAD_IN: 1, // entra junto do corte
   LEAD_OUT: 1, // entra junto do corte
   DIRECTION: 0, // metadado: nunca vira geometria
 };
+
+/** Papéis com canal CypCut atestado — usados no preflight do perfil laser. */
+export const CYPCUT_MAPPED_ROLES: ManufacturingRole[] = ["CUT", "BEND", "RECORTE", "MARK"];
 
 /** Nome do aplicativo registrado (APPID) dos dados estendidos do CypCut. */
 export const CYPCUT_APPID = "FS_CYPCUT";
