@@ -9,7 +9,7 @@
 import type { Vec2 } from "@/lib/geometry/types";
 import type { Box, Entity } from "./core";
 import { samplePath } from "./bezier";
-import { SELECTION_COLOR, bendEdgeMarks, techStyle } from "./technical";
+import { SELECTION_COLOR, techStyle } from "./technical";
 import { viewportBox, type SpatialIndex } from "./spatialIndex";
 
 export type SceneView = { tx: number; ty: number; k: number };
@@ -102,20 +102,6 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       ctx.lineWidth = 1.4 * style.weight * inv;
       const dash = !lod && style.dash(inv);
       ctx.setLineDash(dash ? dash.split(" ").map(Number) : []);
-    }
-    // DOBRA: duas marcas curtas nas extremidades. A entidade inteira permanece
-    // no modelo para hit-test, seleção, grupos e exportação.
-    if (e.layer === "dobra" && e.type === "line") {
-      const marks = bendEdgeMarks(e, 12 * inv);
-      ctx.setLineDash([]);
-      for (const mark of marks) {
-        ctx.beginPath();
-        ctx.moveTo(mark.x1, mark.y1);
-        ctx.lineTo(mark.x2, mark.y2);
-        ctx.stroke();
-      }
-      currentLayer = ""; // força re-aplicação do traço da camada
-      continue;
     }
     ctx.beginPath();
     traceEntity(ctx, e, lod);

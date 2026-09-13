@@ -93,33 +93,3 @@ export function modeAllows(mode: OutputMode, layerId: string): boolean {
   const allowed = MODE_LAYERS[mode];
   return !allowed || allowed.includes(layerId as TechLayerId);
 }
-
-/* ------------------------------------------------------------------ */
-/* MARCA DE DOBRA NA BORDA — única representação visual permitida.      */
-/* Ponto preenchido centrado na linha + traço curto saindo da borda.    */
-/* A entidade BEND inteira permanece armazenada; apenas o DESENHO       */
-/* reduzido aparece. Sem testemunhas, sem círculos maiores, sem setas.  */
-/* ------------------------------------------------------------------ */
-
-export type BendEndMark = { x1: number; y1: number; x2: number; y2: number };
-
-/**
- * Gera as duas marcas visuais do CHAMFER. Cada traço começa exatamente em
- * uma extremidade da entidade BEND e segue para dentro, na direção da dobra.
- * A entidade completa continua sendo a fonte de seleção e exportação.
- */
-export function bendEdgeMarks(
-  line: { x1: number; y1: number; x2: number; y2: number },
-  len = 3,
-): [BendEndMark, BendEndMark] {
-  const dx = line.x2 - line.x1;
-  const dy = line.y2 - line.y1;
-  const l = Math.hypot(dx, dy) || 1;
-  const ux = dx / l;
-  const uy = dy / l;
-  const d = Math.min(len, l / 2);
-  return [
-    { x1: line.x1, y1: line.y1, x2: line.x1 + ux * d, y2: line.y1 + uy * d },
-    { x1: line.x2, y1: line.y2, x2: line.x2 - ux * d, y2: line.y2 - uy * d },
-  ];
-}
