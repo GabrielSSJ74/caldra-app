@@ -164,3 +164,13 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Configurações: remover Estático com migração segura, adicionar destaque Padrão neutro, adicionar Idioma e preservar configuração regional separadamente.
 - [ ] Internacionalização: infraestrutura, persistência, fallback e navegação global concluídos; tradução progressiva das superfícies internas permanece.
 - [x] Regressão final automatizada: 82 testes cobrindo geometria, BEND/DXF, calculadora e projetos; smoke visual de temas, idiomas e Traçagem.
+
+## Correções de interface e interação do CHAMFER (set/2026)
+- [ ] Corrigir contraste e estados visuais do CHAMFER VISION nos temas claro, escuro e AMOLED.
+- [ ] Simplificar e reordenar a barra lateral: Selecionar, Linha, Polilinha, Círculo, Retângulo, Texto e Importar CNC 2D.
+- [ ] Corrigir ciclo completo da Polilinha, entidade de Texto dimensional, cópia da seleção, clipboard por pressão longa e Tesoura por entidade.
+- [ ] Tornar PAN/zoom por dois dedos independente da ferramenta ativa.
+- [ ] Mover P01/P02/+ para a barra inferior, remover SNAP dessa barra e preservar planos independentes.
+- [ ] Estabilizar o painel de propriedades e criar tokens técnicos visíveis para grid/eixos no AMOLED.
+- [ ] Ampliar a importação CNC 2D com análise, preview navegável, fit, layers e confirmação explícita para DXF/SVG.
+- [ ] Validar BEND completo, roles técnicos, grupos e ausência de regressão nos exportadores.
