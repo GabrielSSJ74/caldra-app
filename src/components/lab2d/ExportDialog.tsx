@@ -1,11 +1,20 @@
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { downloadDxf } from "@/lib/dxf/dxfService";
-import { toDxf, verify, type Entity, type Layer } from "@/lib/lab2d/core";
+import { LxdsAnalysisDialog } from "@/components/lab2d/LxdsAnalysisDialog";
+import { cncCounts, cncCutLength, layerMapping } from "@/lib/dxf/cncExport";
+import {
+  DXF_PROFILE_CYPCUT,
+  downloadDXF,
+  exportDXF,
+  type DxfExportRequest,
+} from "@/lib/dxf/exportService";
+import { verify, type Entity, type Layer } from "@/lib/lab2d/core";
 import { downloadSvg, renderSvg } from "@/lib/lab2d/render";
+import { DXF_PROFILES, ENTITY_ROLES } from "@/lib/lab2d/roles";
 import { downloadSheetPdf, downloadSheetPng, renderSheet } from "@/lib/export/renderSheet";
 import { cn } from "@/lib/utils";
+import type { CncRole } from "@/lib/dxf/cncExport";
 
 type Format = "dxf" | "svg" | "png" | "pdf";
 type Scope = "selection" | "plan" | "project";
@@ -17,6 +26,15 @@ const FORMATS: { id: Format; label: string; hint: string }[] = [
   { id: "pdf", label: "PDF", hint: "Prancha" },
 ];
 
+/** Conteúdo exportável, por função de fabricação. */
+const CONTENT: { role: CncRole; label: string }[] = [
+  { role: "CUT", label: "Corte" },
+  { role: "BEND", label: "Dobra" },
+  { role: "MARK", label: "Marcação" },
+  { role: "REFERENCE", label: "Referência" },
+  { role: "DIMENSION", label: "Cotas" },
+];
+
 export function ExportDialog({
   open,
   onOpenChange,
@@ -24,6 +42,9 @@ export function ExportDialog({
   scopes,
   projectName,
   planName,
+  material,
+  thickness,
+  quantity,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -31,12 +52,19 @@ export function ExportDialog({
   scopes: Record<Scope, Entity[]>;
   projectName: string;
   planName: string;
+  material?: string;
+  thickness?: number;
+  quantity?: number;
 }) {
   const [format, setFormat] = useState<Format>("dxf");
   const [scope, setScope] = useState<Scope>("plan");
   const [dimensions, setDimensions] = useState(false);
   // curvas saem como SPLINE por padrão; achatar só para máquinas antigas
   const [flattenCurves, setFlattenCurves] = useState(false);
+  const [profile, setProfile] = useState(DXF_PROFILE_CYPCUT);
+  const [roles, setRoles] = useState<Partial<Record<CncRole, boolean>>>({});
+  const [leads, setLeads] = useState(true);
+  const [lxdsOpen, setLxdsOpen] = useState(false);
 
   const entities = scopes[scope];
 
@@ -52,6 +80,33 @@ export function ExportDialog({
   const issues = useMemo(() => verify(entities), [entities]);
   const filename = `${projectName}-${planName}`.replace(/\s+/g, "-").toLowerCase();
 
+  /** Pedido único de exportação DXF — mesmo objeto usado na prévia e no download. */
+  const request = useMemo<DxfExportRequest>(
+    () => ({
+      geometry: entities,
+      profile,
+      roles,
+      leads,
+      flattenCurves,
+      metadata: {
+        project: projectName,
+        plan: planName,
+        ...(material ? { material } : {}),
+        ...(thickness ? { thickness } : {}),
+        ...(quantity ? { quantity } : {}),
+      },
+    }),
+    [entities, profile, roles, leads, flattenCurves, projectName, planName, material, thickness, quantity],
+  );
+
+  const dxf = useMemo(
+    () => (format === "dxf" && entities.length ? exportDXF(request) : null),
+    [format, entities, request],
+  );
+  const counts = useMemo(() => cncCounts(entities), [entities]);
+  const mapping = useMemo(() => (dxf ? layerMapping(dxf.options) : []), [dxf]);
+  const activeRoles = dxf?.options.roles;
+
   const run = async () => {
     if (!entities.length) {
       toast.error("Nada para exportar neste escopo.");
@@ -59,8 +114,14 @@ export function ExportDialog({
     }
     try {
       if (format === "dxf") {
-        if (issues.length) toast.warning(`${issues.length} avisos de geometria exportados assim mesmo.`);
-        downloadDxf(toDxf(entities, layers, { flattenCurves }), filename);
+        if (!dxf) return;
+        if (dxf.errors.length) {
+          toast.error("Erro de fabricação — corrija antes de exportar o DXF.");
+          return;
+        }
+        const result = downloadDXF(request, filename);
+        if (!result.verification.ok)
+          toast.warning("DXF gerado com divergências — veja a conferência.");
       } else if (format === "svg") {
         downloadSvg(preview.svg, filename);
       } else {
@@ -95,7 +156,9 @@ export function ExportDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[70dvh] w-[min(90vw,32rem)] max-w-none flex-col overflow-y-auto border border-border bg-popover text-popover-foreground">
         <DialogHeader>
-          <DialogTitle className="font-display text-lg">Exportar</DialogTitle>
+          <DialogTitle className="font-display text-lg">
+            {format === "dxf" ? "Exportar DXF" : "Exportar"}
+          </DialogTitle>
         </DialogHeader>
 
         <div
@@ -134,36 +197,164 @@ export function ExportDialog({
               {s === "selection" ? "Seleção" : s === "plan" ? "Plano" : "Projeto"}
             </button>
           ))}
-          <button
-            onClick={() => setDimensions((d) => !d)}
-            className={cn(
-              "rounded-full border border-border px-2.5 py-1",
-              dimensions && "border-warn/60 text-warn",
-            )}
-          >
-            Cotas
-          </button>
-          {format === "dxf" && entities.some((e) => e.type === "path") && (
+          {format !== "dxf" && (
             <button
-              onClick={() => setFlattenCurves((v) => !v)}
+              onClick={() => setDimensions((d) => !d)}
               className={cn(
                 "rounded-full border border-border px-2.5 py-1",
-                flattenCurves && "border-warn/60 text-warn",
+                dimensions && "border-warn/60 text-warn",
               )}
             >
-              {flattenCurves ? "Curvas achatadas" : "Curvas como SPLINE"}
+              Cotas
             </button>
           )}
         </div>
 
-        <p className="font-mono text-[10px] text-muted-foreground">
-          {projectName} · {planName} · {preview.count} objetos ·{" "}
-          {preview.widthMm.toFixed(1)} × {preview.heightMm.toFixed(1)} mm · escala 1:1
-        </p>
-
         {format === "dxf" && (
+          <div className="space-y-3">
+            {/* peça / projeto */}
+            <div className="rounded-xl border border-border px-3 py-2 font-mono text-[10px] text-muted-foreground">
+              <p className="text-foreground">
+                {projectName} · {planName}
+              </p>
+              <p>
+                {material ? `Material ${material} · ` : ""}
+                {thickness ? `Espessura ${thickness} mm · ` : ""}
+                {quantity ? `Quantidade ${quantity} · ` : ""}
+                {cncCutLength(entities).toFixed(1)} mm de corte
+              </p>
+            </div>
+
+            {/* geometria por função de fabricação */}
+            <div className="space-y-1">
+              {ENTITY_ROLES.map((r) => {
+                const on = activeRoles?.[r as CncRole] ?? false;
+                const layer = mapping.find((m) => m.role === r)?.layer;
+                return (
+                  <div
+                    key={r}
+                    className={cn(
+                      "flex items-center gap-2 rounded-xl border border-border px-3 py-1.5",
+                      on ? "border-accent/40" : "opacity-60",
+                    )}
+                  >
+                    <span className="font-mono text-[11px] tracking-widest">{r}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      {counts[r as CncRole]}
+                      {r === "CUT" &&
+                        ` · ${counts.contours} contornos · ${counts.outer} externo · ${counts.holes} furos`}
+                    </span>
+                    <span className="ml-auto font-mono text-[9px] uppercase">
+                      {on && layer ? (
+                        <span className="text-accent">→ {layer}</span>
+                      ) : (
+                        <span className="text-muted-foreground">não exportado</span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* conteúdo */}
+            <div className="flex flex-wrap gap-1.5 font-mono text-[10px] tracking-wider uppercase">
+              {CONTENT.map((c) => {
+                const on = activeRoles?.[c.role] ?? false;
+                return (
+                  <button
+                    key={c.role}
+                    onClick={() => setRoles((r) => ({ ...r, [c.role]: !on }))}
+                    className={cn(
+                      "rounded-full border border-border px-2.5 py-1",
+                      on && "border-accent/50 text-accent",
+                    )}
+                  >
+                    {on ? "☑" : "☐"} {c.label}
+                  </button>
+                );
+              })}
+              <button
+                onClick={() => setLeads((v) => !v)}
+                className={cn(
+                  "rounded-full border border-border px-2.5 py-1",
+                  leads && "border-accent/50 text-accent",
+                )}
+              >
+                {leads ? "☑" : "☐"} Entrada/Saída
+              </button>
+              {entities.some((e) => e.type === "path") && (
+                <button
+                  onClick={() => setFlattenCurves((v) => !v)}
+                  className={cn(
+                    "rounded-full border border-border px-2.5 py-1",
+                    flattenCurves && "border-warn/60 text-warn",
+                  )}
+                >
+                  {flattenCurves ? "Curvas achatadas" : "Curvas como SPLINE"}
+                </button>
+              )}
+            </div>
+
+            {/* perfil — três configurações do MESMO exportador */}
+            <div className="flex flex-wrap gap-1.5">
+              {DXF_PROFILES.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => {
+                    setProfile(p.id);
+                    setRoles({});
+                  }}
+                  className={cn(
+                    "rounded-xl border border-border px-3 py-2 text-left transition-colors",
+                    profile === p.id && "border-accent/50 bg-accent/10 text-accent",
+                  )}
+                >
+                  <span className="block font-mono text-[10px] tracking-widest">{p.name}</span>
+                </button>
+              ))}
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              {DXF_PROFILES.find((p) => p.id === profile)?.description}
+            </p>
+
+            {/* preflight */}
+            {dxf && (
+              <div className="rounded-xl border border-border px-3 py-2">
+                <p className="font-mono text-[10px] tracking-widest uppercase">
+                  DXF CNC READY {dxf.preflight.every((r) => r.ok) ? "✓" : "—"}
+                </p>
+                <div className="mt-1 grid grid-cols-1 gap-0.5 font-mono text-[10px] sm:grid-cols-2">
+                  {dxf.preflight.map((row) => (
+                    <p key={row.label} className={row.ok ? "text-muted-foreground" : "text-warn"}>
+                      {row.ok ? "✓" : "✕"} {row.label}: {row.value}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {dxf && dxf.errors.length > 0 && (
+              <p className="rounded-xl border border-danger/40 bg-danger/5 px-3 py-2 text-[11px] text-danger">
+                {dxf.errors.map((i) => `${i.scope}: ${i.message}`).join(" · ")}
+              </p>
+            )}
+
+            <button
+              onClick={() => setLxdsOpen(true)}
+              className="rounded-full border border-border px-2.5 py-1 font-mono text-[10px] tracking-wider uppercase"
+            >
+              Análise LXDS
+            </button>
+            <p className="font-mono text-[10px] text-muted-foreground">
+              A camada do arquivo é a função de fabricação; a ordem do plano de CORTE é preservada.
+            </p>
+          </div>
+        )}
+
+        {format !== "dxf" && (
           <p className="font-mono text-[10px] text-muted-foreground">
-            O DXF sai na ordem definida na aba CORTE; a direção de cada caminho é preservada.
+            {projectName} · {planName} · {preview.count} objetos ·{" "}
+            {preview.widthMm.toFixed(1)} × {preview.heightMm.toFixed(1)} mm · escala 1:1
           </p>
         )}
 
@@ -184,9 +375,10 @@ export function ExportDialog({
             onClick={run}
             className="brand-gradient flex-1 rounded-xl py-2.5 font-display text-sm font-semibold text-background transition-transform active:scale-[0.98]"
           >
-            Exportar
+            {format === "dxf" ? "Exportar DXF" : "Exportar"}
           </button>
         </div>
+        <LxdsAnalysisDialog open={lxdsOpen} onOpenChange={setLxdsOpen} />
       </DialogContent>
     </Dialog>
   );
