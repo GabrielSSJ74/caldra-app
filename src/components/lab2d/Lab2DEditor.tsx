@@ -2434,6 +2434,201 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
 /* ------------------------------------------------------------ auxiliares */
 
+/**
+ * PAINEL DE COTAS — escolha do tipo, lista e propriedades.
+ * Editar propriedades aqui é SEMPRE visual: nenhuma alteração toca a
+ * geometria do desenho.
+ */
+function DimensionsPanel({
+  dims,
+  entities,
+  kind,
+  onKind,
+  selected,
+  onSelect,
+  onChange,
+  onDelete,
+}: {
+  dims: Dimension[];
+  entities: Entity[];
+  kind: DimKind;
+  onKind: (k: DimKind) => void;
+  selected: string | null;
+  onSelect: (id: string | null) => void;
+  onChange: (d: Dimension) => void;
+  onDelete: (id: string) => void;
+}) {
+  const cur = dims.find((d) => d.id === selected) ?? null;
+  const field =
+    "w-full rounded-lg border border-line bg-background/40 px-1.5 py-1 font-mono text-[10px] outline-none";
+
+  const setStyle = (patch: Partial<Dimension["style"]>) =>
+    cur && onChange({ ...cur, style: { ...cur.style, ...patch } });
+
+  return (
+    <div className="space-y-2 text-[11px]">
+      <div>
+        <p className="tick-label mb-1 text-muted-foreground">Tipo de cota</p>
+        <select
+          value={kind}
+          onChange={(ev) => onKind(ev.target.value as DimKind)}
+          aria-label="Tipo de cota"
+          className={field}
+        >
+          {DIM_KINDS.map((k) => (
+            <option key={k} value={k}>
+              {DIM_LABEL[k]}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          Clique no desenho para marcar as referências.
+        </p>
+      </div>
+
+      <div className="border-t border-line pt-2">
+        <p className="tick-label mb-1 text-muted-foreground">Cotas ({dims.length})</p>
+        <div className="max-h-40 space-y-0.5 overflow-y-auto">
+          {dims.map((d) => (
+            <button
+              key={d.id}
+              onClick={() => onSelect(d.id)}
+              className={cn(
+                "flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-left",
+                selected === d.id ? "bg-foreground/10" : "hover:bg-foreground/5",
+              )}
+            >
+              <span className="size-2 shrink-0 rounded-full" style={{ background: DIMENSION_COLOR }} />
+              <span className="min-w-0 flex-1 truncate">{DIM_LABEL[d.kind]}</span>
+              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                {formatDimension(d, entities) ?? "—"}
+              </span>
+            </button>
+          ))}
+          {!dims.length && <p className="text-[10px] text-muted-foreground">Nenhuma cota.</p>}
+        </div>
+      </div>
+
+      {cur && (
+        <div className="space-y-1.5 border-t border-line pt-2">
+          <p className="tick-label text-muted-foreground">Propriedades</p>
+          <label className="block">
+            <span className="text-[10px] text-muted-foreground">Precisão</span>
+            <select
+              value={cur.style.precision}
+              onChange={(ev) => setStyle({ precision: Number(ev.target.value) })}
+              className={field}
+            >
+              <option value={0}>0</option>
+              <option value={1}>0.0</option>
+              <option value={2}>0.00</option>
+              <option value={3}>0.000</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-muted-foreground">Precisão angular</span>
+            <select
+              value={cur.style.anglePrecision}
+              onChange={(ev) => setStyle({ anglePrecision: Number(ev.target.value) })}
+              className={field}
+            >
+              <option value={0}>0°</option>
+              <option value={1}>0.0°</option>
+              <option value={2}>0.00°</option>
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-[10px] text-muted-foreground">Unidade</span>
+            <input
+              value={cur.style.unit}
+              onChange={(ev) => setStyle({ unit: ev.target.value })}
+              className={field}
+            />
+          </label>
+          <div className="grid grid-cols-2 gap-1.5">
+            <label className="block">
+              <span className="text-[10px] text-muted-foreground">Afastamento</span>
+              <input
+                type="number"
+                value={cur.offset}
+                onChange={(ev) => onChange({ ...cur, offset: Number(ev.target.value) })}
+                className={field}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-muted-foreground">Lado</span>
+              <select
+                value={cur.style.side}
+                onChange={(ev) => setStyle({ side: Number(ev.target.value) === -1 ? -1 : 1 })}
+                className={field}
+              >
+                <option value={1}>Positivo</option>
+                <option value={-1}>Negativo</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-muted-foreground">Texto</span>
+              <input
+                type="number"
+                value={cur.style.textSize}
+                onChange={(ev) => setStyle({ textSize: Number(ev.target.value) })}
+                className={field}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-muted-foreground">Setas</span>
+              <input
+                type="number"
+                value={cur.style.arrowSize}
+                onChange={(ev) => setStyle({ arrowSize: Number(ev.target.value) })}
+                className={field}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-muted-foreground">Prefixo</span>
+              <input
+                value={cur.style.prefix}
+                onChange={(ev) => setStyle({ prefix: ev.target.value })}
+                className={field}
+              />
+            </label>
+            <label className="block">
+              <span className="text-[10px] text-muted-foreground">Sufixo</span>
+              <input
+                value={cur.style.suffix}
+                onChange={(ev) => setStyle({ suffix: ev.target.value })}
+                className={field}
+              />
+            </label>
+          </div>
+          <label className="block">
+            <span className="text-[10px] text-muted-foreground">Tolerância ±</span>
+            <input
+              type="number"
+              step="0.01"
+              value={cur.style.tolerance?.plus ?? ""}
+              placeholder="—"
+              onChange={(ev) => {
+                const v = ev.target.value;
+                setStyle({
+                  tolerance: v === "" ? undefined : { plus: Number(v), minus: Number(v) },
+                });
+              }}
+              className={field}
+            />
+          </label>
+          <button
+            onClick={() => onDelete(cur.id)}
+            className="w-full rounded-lg border border-line px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            Excluir cota
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function IconBtn({
   label,
   onClick,
