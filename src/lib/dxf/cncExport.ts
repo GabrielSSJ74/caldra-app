@@ -368,10 +368,61 @@ export function verifyCncDxf(
   push("Perímetro (mm)", lenOf(doc.entities).toFixed(1), lenOf(back.entities).toFixed(1));
   push("Unidade", "mm", /\$INSUNITS\n\s*70\n4/.test(dxfText) ? "mm" : "?");
   push("Escala", "1:1", "1:1");
+  const expectedVersion = dxfVersionFor(doc);
+  const declaredVersion = /\$ACADVER\n\s*1\n(\S+)/.exec(dxfText)?.[1] ?? "?";
+  push("Versão DXF", expectedVersion, declaredVersion);
   push("Geometria não classificada", 0, unclassifiedOf(entities).length);
 
 
   return { ok: rows.every((r) => r.ok), rows };
+}
+
+/* ----------------------------------------------------- preflight CNC READY */
+
+export type CncPreflightRow = { label: string; value: string; ok: boolean };
+
+/**
+ * Relatório de preflight exibido antes do download. Tudo em `ok === false`
+ * com peso de erro já aparece também em `validateCncExport`.
+ */
+export function preflightCnc(entities: Entity[], opts: CncExportOptions): CncPreflightRow[] {
+  const counts = cncCounts(entities);
+  const doc = buildCncDxf(entities, opts);
+  const issues = validateCncExport(entities, opts);
+  const errors = issues.filter((i) => i.level === "error").length;
+  const declared = new Set(doc.layers.map((l) => l.name));
+  const layersOk = doc.entities.every((e) => declared.has(e.layer));
+  const closedCuts = contoursOf(entities).filter((c) => c.closed).length;
+
+  const cutKeys = new Set<string>();
+  let dups = 0;
+  for (const e of doc.entities.filter((x) => x.layer === exportLayerOf("CUT", opts))) {
+    const key = JSON.stringify(e, (k, v) => (typeof v === "number" ? Math.round(v * 1000) / 1000 : v));
+    if (cutKeys.has(key)) dups++;
+    cutKeys.add(key);
+  }
+
+  const rows: CncPreflightRow[] = [
+    { label: "Units", value: "mm", ok: true },
+    { label: "Scale", value: "1:1", ok: true },
+  ];
+  for (const role of ENTITY_ROLES)
+    rows.push({ label: role, value: `${counts[role]} entidades`, ok: true });
+  rows.push(
+    { label: "Layers válidos", value: layersOk ? "sim" : "não", ok: layersOk },
+    {
+      label: "Contornos fechados",
+      value: `${closedCuts}/${counts.contours}`,
+      ok: counts.contours > 0 && closedCuts === counts.contours,
+    },
+    { label: "Sem duplicatas", value: dups === 0 ? "sim" : `${dups}`, ok: dups === 0 },
+    {
+      label: "DXF estruturalmente válido",
+      value: errors === 0 ? dxfVersionFor(doc) : `${errors} erros`,
+      ok: errors === 0,
+    },
+  );
+  return rows;
 }
 
 /** Comprimento total de corte do plano, em mm. */
