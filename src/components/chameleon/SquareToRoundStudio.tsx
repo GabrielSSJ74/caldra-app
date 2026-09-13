@@ -17,7 +17,8 @@ import {
   type SquareToRoundInput,
 } from "@/lib/geometry/squareToRound";
 import { downloadDxf, type DxfEntity } from "@/lib/dxf/dxfService";
-import { exportSvgAsPdf, exportSvgAsPng } from "@/lib/export/exporters";
+import { exportSvgAsPdf } from "@/lib/export/exporters";
+import { downloadTracagemPng } from "@/lib/export/tracagemSheet";
 import { MATERIALS } from "@/lib/projects/demo-data";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
@@ -113,8 +114,14 @@ export function SquareToRoundStudio() {
   const issueFor = (key: FieldKey) => issues.find((i) => i.field === key)?.message;
 
   const exportPng = async () => {
-    if (!svgRef.current) return;
-    await exportSvgAsPng(svgRef.current, "chameleon-quadrado-redondo");
+    if (!result) return;
+    await downloadTracagemPng(result, {
+      project: "CALDRA",
+      plan: input.strategy === "two-weld" ? "Quadrado Redondo 2 partes" : "Quadrado Redondo",
+      material,
+      thickness: `${input.thickness} mm`,
+      quantity: input.strategy === "two-weld" ? "2" : "1",
+    });
     toast.success("PNG exportado.");
   };
 

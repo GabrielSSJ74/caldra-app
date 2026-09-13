@@ -14,7 +14,8 @@ import {
 } from "lucide-react";
 import { getEngine, type EngineValues } from "@/lib/geometry/engines";
 import { downloadDxf, type DxfEntity } from "@/lib/dxf/dxfService";
-import { exportSvgAsPdf, exportSvgAsPng } from "@/lib/export/exporters";
+import { exportSvgAsPdf } from "@/lib/export/exporters";
+import { downloadTracagemPng } from "@/lib/export/tracagemSheet";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { buildWire, type WireParams } from "@/lib/viz3d/wire";
@@ -183,8 +184,14 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist }: Props
   const issueFor = (key: string) => issues.find((i) => i.field === key)?.message;
 
   const exportPng = async () => {
-    if (!svgRef.current) return;
-    await exportSvgAsPng(svgRef.current, `caldra-${slug}`);
+    if (!result) return;
+    await downloadTracagemPng(result, {
+      project: "CALDRA",
+      plan: name,
+      material,
+      thickness: `${values["thickness"] ?? 3} mm`,
+      quantity: String(quantity),
+    });
     toast.success("PNG exportado.");
   };
 
