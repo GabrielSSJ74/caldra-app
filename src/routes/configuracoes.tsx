@@ -11,6 +11,7 @@ import {
   type ThemeMode,
   type Unit,
   type AuroraStyle,
+  type AppLanguage,
 } from "@/lib/settings/SettingsProvider";
 import { REGIONS, type RegionId } from "@/lib/regional/regional";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
@@ -49,13 +50,18 @@ const THEMES: { id: ThemeMode; label: string }[] = [
 const AURORA_STYLES: { id: AuroraStyle; label: string; hint: string }[] = [
   { id: "fluido", label: "Fluido", hint: "Shader líquido em movimento contínuo" },
   { id: "suave", label: "Suave", hint: "Massas de luz leves, menor custo" },
-  { id: "estatico", label: "Estático", hint: "Frame congelado, máxima bateria" },
   { id: "padrao", label: "Padrão", hint: "Sem fundo animado — só a cor sólida do tema" },
 ];
 const ACCENTS: { id: AccentColor; label: string; swatch: string }[] = [
+  { id: "default", label: "Padrão", swatch: "var(--foreground)" },
   { id: "amber", label: "Âmbar", swatch: "#F59E0B" },
   { id: "blue", label: "Azul Real", swatch: "#00CCFF" },
   { id: "magenta", label: "Magenta", swatch: "#A01550" },
+];
+const LANGUAGES: { id: AppLanguage; label: string }[] = [
+  { id: "pt", label: "Português" },
+  { id: "en", label: "English" },
+  { id: "es", label: "Español" },
 ];
 const UNITS: Unit[] = ["mm", "cm", "m", "in"];
 
@@ -76,6 +82,8 @@ function Configuracoes() {
     setRegion,
     auroraStyle,
     setAuroraStyle,
+    language,
+    setLanguage,
   } = useSettings();
   const [code, setCode] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
@@ -233,7 +241,7 @@ function Configuracoes() {
 
           <div className="mt-3">
             <SectionLabel>Estilo do fundo</SectionLabel>
-            <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+            <div className="grid grid-cols-3 gap-1.5">
               {AURORA_STYLES.map((a) => {
                 /* Sem PRO o fundo não anima: os estilos animados ficam
                    indisponíveis em vez de prometer algo que não acontece. */
@@ -286,7 +294,20 @@ function Configuracoes() {
         </div>
 
         <div>
-          <SectionLabel>Região</SectionLabel>
+          <SectionLabel>Idioma</SectionLabel>
+          <div className="grid grid-cols-3 gap-1.5">
+            {LANGUAGES.map((item) => (
+              <button key={item.id} onClick={() => setLanguage(item.id)} className={cn(
+                "rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
+                language === item.id ? "border-accent/25 bg-accent/10 text-accent" : "border-line text-muted-foreground",
+              )}>{item.label}</button>
+            ))}
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">Altera o idioma da interface. Textos ainda não traduzidos permanecem em português.</p>
+        </div>
+
+        <div>
+          <SectionLabel>Formato regional</SectionLabel>
           <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-4">
             {(Object.keys(REGIONS) as RegionId[]).map((r) => (
               <button

@@ -84,8 +84,7 @@ export function AuroraBackground({
   const wantsShader = shaderStyle && glOk && shaderLive;
   /* PRO anima; FREE vê o frame congelado do mesmo estilo. */
   const allowed = mode === "always" || isMestre;
-  const animated =
-    allowed && active && pageVisible && !reduced && auroraStyle !== "estatico";
+  const animated = allowed && active && pageVisible && !reduced;
 
   /* Modo Oficina / alto contraste recuam a amplitude do fundo. */
   const amp =
