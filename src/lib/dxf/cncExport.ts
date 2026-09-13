@@ -31,11 +31,12 @@ import {
   ROLE_LABEL,
   structureMap,
   unclassifiedOf,
+  type EntityRole,
   type ManufacturingRole,
 } from "@/lib/lab2d/roles";
 
 /** Papéis diretamente selecionáveis na exportação. */
-export type CncRole = (typeof ENTITY_ROLES)[number];
+export type CncRole = EntityRole;
 
 export type CncExportOptions = {
   /** Perfil de exportação (mapeamento papel → layer do arquivo). */

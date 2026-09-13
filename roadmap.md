@@ -136,3 +136,13 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Preservar a câmera 3D durante a alternância mantendo o visor montado após o primeiro uso.
 - [x] Quadrado → Redondo: malha facetada derivada dos mesmos pontos, geratrizes e divisões da planificação.
 - [x] Testar bases quadrada/retangular, alturas, diâmetros, coerência 2D/3D/traçado/planificação e regressão.
+
+## Exportação DXF para CypCut (papéis de fabricação)
+- [x] `ManufacturingRole` (CUT/MARK/BEND/REFERENCE/DIMENSION/LEAD_IN/LEAD_OUT/DIRECTION) em `src/lib/lab2d/roles.ts` — operação pela layer/role, nunca pela cor
+- [x] `DxfExportProfile` com mapeamento papel → layer: DXF TÉCNICO, DXF PRODUÇÃO, CYP CUT
+- [x] `toDxf` (DXF completo) passa a nomear layers pelos papéis
+- [x] Classificação estrutural: contorno externo, furos, rasgos, cortes internos
+- [x] Pré-visualização CNC com liga/desliga por papel, contagem por layer e correspondência visível
+- [x] Validação antes do download: não classificados (erro), contorno fechado, duplicatas, degenerados, mm, 1:1
+- [x] Golden sample `src/lib/dxf/__fixtures__/quadrado-redondo-p01.dxf` + regressão geométrica/semântica (11 testes)
+- [ ] Conferir o arquivo gerado no CypCut real do usuário
