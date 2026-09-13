@@ -613,16 +613,25 @@ export function toDxf(
     }
   }
 
-  return {
-    // ACI aproximado por camada + true color com o hex técnico fixo do CHAMFER
-    layers: layers.map((l, i) => {
+  // tabela de layers pelos PAPÉIS realmente usados no arquivo
+  const usedRoles = new Set(out.map((e) => e.layer));
+  const tableSource = layers.filter((l) => usedRoles.has(ROLE_BY_LAYER[l.id] ?? "UNCLASSIFIED"));
+  const seen = new Set<string>();
+  const table = tableSource
+    .map((l, i) => {
+      const name = ROLE_BY_LAYER[l.id] ?? "UNCLASSIFIED";
       const hex = techColor(l.id);
-      const trueColor = parseInt(hex.slice(1), 16);
-      const aci = DXF_ACI[l.id as TechLayerId] ?? i + 1;
-      return { name: l.name.toUpperCase(), color: aci, trueColor };
-    }),
-    entities: out,
-  };
+      return {
+        name,
+        color: DXF_ACI[l.id as TechLayerId] ?? i + 1,
+        trueColor: parseInt(hex.slice(1), 16),
+      };
+    })
+    .filter((l) => (seen.has(l.name) ? false : (seen.add(l.name), true)));
+  for (const name of usedRoles)
+    if (!seen.has(name)) table.push({ name, color: 7, trueColor: 0xffffff });
+
+  return { layers: table, entities: out };
 }
 
 export function fromDxf(doc: DxfDocument, layer: LayerId): Entity[] {
