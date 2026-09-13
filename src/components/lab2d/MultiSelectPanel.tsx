@@ -122,7 +122,9 @@ export function MultiSelectPanel({
           className="w-28 rounded-lg border border-line bg-background/40 px-1 py-0.5 font-mono text-[10px] outline-none"
         >
           {layerValue === MIXED && <option value={MIXED}>{MIXED}</option>}
-          {layers.map((l) => (
+          {layers
+            .filter((l) => isUserLayer(l.id))
+            .map((l) => (
             <option key={l.id} value={l.id}>
               {l.name}
             </option>
