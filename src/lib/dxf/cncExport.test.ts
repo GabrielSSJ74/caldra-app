@@ -15,11 +15,13 @@ import {
   buildCncDxf,
   cncCounts,
   layerMapping,
+  preflightCnc,
   validateCncExport,
   verifyCncDxf,
 } from "@/lib/dxf/cncExport";
+import { exportDXF } from "@/lib/dxf/exportService";
 import { uid, type Entity } from "@/lib/lab2d/core";
-import { roleOf, structureMap } from "@/lib/lab2d/roles";
+import { CYPCUT_APPID, CYPCUT_CHANNEL, roleOf, structureMap } from "@/lib/lab2d/roles";
 
 const golden = importDxf(
   readFileSync(join(process.cwd(), "src/lib/dxf/__fixtures__/quadrado-redondo-p01.dxf"), "utf8"),
