@@ -28,6 +28,14 @@ import { useMaterials } from "@/lib/materials/MaterialsProvider";
 import { cn } from "@/lib/utils";
 import { VisualizationViewport, type VisualizationMode } from "./View3DPanel";
 import { DevelopmentView } from "./DevelopmentView";
+import { TracagemPanel } from "./TracagemPanel";
+import {
+  NO_HIGHLIGHT,
+  fieldRefs,
+  refsForDim,
+  stepForDim,
+  type HighlightState,
+} from "@/lib/geometry/refs";
 import { ParametricDiagram, type CotaSpec } from "./ParametricDiagram";
 import { MassCostPanel } from "./MassCostPanel";
 import { SmartNumberInput } from "./SmartNumberInput";
@@ -42,6 +50,7 @@ const BASE_TABS = [
   "Cálculos",
   "Conferência",
   "Traçado",
+  "Traçagem",
   "Desenvolvimento",
   "Material",
   "Exportação",
