@@ -48,6 +48,7 @@ const TABS = [
   "Dimensões",
   "Cálculos",
   "Traçado",
+  "Traçagem",
   "Desenvolvimento",
   "Material",
   "Exportação",
@@ -441,6 +442,10 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
                   </p>
                 ))}
               </div>
+            )}
+
+            {tab === "Traçagem" && viewMode === "2d" && (
+              <TracagemPanel slug="quadrado-redondo" result={result} />
             )}
 
             {(tab === "Traçado" || tab === "Desenvolvimento") &&
