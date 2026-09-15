@@ -109,6 +109,10 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
 
   useEffect(() => {
     if (!playing || showAll || mode === "with-me") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setProgress(1);
+      return;
+    }
     let raf = 0;
     const tick = (now: number) => {
       const previous = lastFrame.current ?? now;
@@ -146,14 +150,14 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
               completedRefs={completedRefs}
               showAll={false}
               stepLabel={`Passo ${step.order}/${steps.length} · ${step.title}`}
-              onTarget={mode === "with-me" ? (point) => {
+              {...(mode === "with-me" ? { onTarget: (point) => {
                 const target = resolvedAction.startPoint;
                 const tolerance = Math.max(result.development.bounds.maxX - result.development.bounds.minX, result.development.bounds.maxY - result.development.bounds.minY) * 0.08;
                 if (target && Math.hypot(point.x - target.x, point.y - target.y) <= tolerance) {
                   setPracticeMessage("Perfeito. Execute a ação indicada.");
                   setProgress(1);
                 } else setPracticeMessage("Toque no ponto destacado para continuar.");
-              } : undefined}
+              }} : {})}
             />
           )}
         </div>
@@ -212,13 +216,23 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
       </div>
       {mode === "with-me" && <p className="rounded-lg border border-accent/30 bg-accent/[0.06] px-3 py-2 text-[12px] text-foreground">{practiceMessage ?? traceAction.instruction}</p>}
 
+      {index === steps.length - 1 && progress >= 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-y border-success/30 py-3">
+          <span className="font-mono text-[11px] tracking-wider text-success">✓ Desenvolvimento concluído</span>
+          <div className="flex gap-1">
+            <Button size="sm" variant="secondary" onClick={() => setShowAll(true)}>Desenvolvimento final</Button>
+            <Button size="sm" variant="ghost" onClick={() => { setShowAll(false); setIndex(0); resetStep(); }}>Como foi construído</Button>
+          </div>
+        </div>
+      )}
+
       {/* PASSOS */}
       <div className="flex gap-1 overflow-x-auto pb-1">
         {steps.map((s, i) => (
           <button
             key={s.id}
             type="button"
-            onClick={() => setIndex(i)}
+            onClick={() => moveToStep(i)}
             aria-current={i === index}
             className={cn(
               "shrink-0 rounded-lg border px-2.5 py-1.5 font-mono text-[10px] tracking-wider uppercase transition-colors",

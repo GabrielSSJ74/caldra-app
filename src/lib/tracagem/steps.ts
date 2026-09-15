@@ -130,7 +130,7 @@ export function buildTraceSequence(slug: string, result: GeometryResult): TraceS
       { label: "Comprimento da base", value: baseLength, unit: "mm", origin: "Segmento real da linha de referência" },
       { label: "Altura útil", value: height, unit: "mm", origin: "Altura do desenvolvimento" },
     ],
-    tool: "regua",
+    tool: "riscador",
     animation: "line",
     validation: "A base deve medir exatamente o comprimento indicado, em esquadro com o eixo.",
   });
