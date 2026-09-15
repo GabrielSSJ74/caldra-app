@@ -27,6 +27,7 @@ import { developmentToEntities, piecesToEntities, sendToLab2D } from "@/lib/lab2
 import { cn } from "@/lib/utils";
 import { VisualizationViewport, type VisualizationMode } from "./View3DPanel";
 import { DevelopmentView } from "./DevelopmentView";
+import { TracagemPanel } from "./TracagemPanel";
 import { SchematicSquareToRound } from "./SchematicSquareToRound";
 import { Metric, Panel, SectionLabel } from "./ui";
 import { StageBar } from "./StageBar";
@@ -48,6 +49,7 @@ const TABS = [
   "Dimensões",
   "Cálculos",
   "Traçado",
+  "Traçagem",
   "Desenvolvimento",
   "Material",
   "Exportação",
@@ -441,6 +443,10 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
                   </p>
                 ))}
               </div>
+            )}
+
+            {tab === "Traçagem" && viewMode === "2d" && (
+              <TracagemPanel slug="quadrado-redondo" result={result} />
             )}
 
             {(tab === "Traçado" || tab === "Desenvolvimento") &&

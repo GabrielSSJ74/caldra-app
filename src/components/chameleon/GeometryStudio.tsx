@@ -28,6 +28,14 @@ import { useMaterials } from "@/lib/materials/MaterialsProvider";
 import { cn } from "@/lib/utils";
 import { VisualizationViewport, type VisualizationMode } from "./View3DPanel";
 import { DevelopmentView } from "./DevelopmentView";
+import { TracagemPanel } from "./TracagemPanel";
+import {
+  NO_HIGHLIGHT,
+  fieldRefs,
+  refsForDim,
+  stepForDim,
+  type HighlightState,
+} from "@/lib/geometry/refs";
 import { ParametricDiagram, type CotaSpec } from "./ParametricDiagram";
 import { MassCostPanel } from "./MassCostPanel";
 import { SmartNumberInput } from "./SmartNumberInput";
@@ -42,6 +50,7 @@ const BASE_TABS = [
   "Cálculos",
   "Conferência",
   "Traçado",
+  "Traçagem",
   "Desenvolvimento",
   "Material",
   "Exportação",
@@ -142,6 +151,19 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
         : [],
     [engine, activeFields, values],
   );
+
+  /* Vínculo PARÂMETRO ↔ COTA ↔ ENTIDADE: destaque temporário, cor técnica intacta. */
+  const devHighlight = useMemo<HighlightState>(() => {
+    const dev = result?.development;
+    const field = focused ?? pulse;
+    if (!engine || !dev || !field) return NO_HIGHLIGHT;
+    return {
+      refs: fieldRefs(field, dev, refsForDim(engine.dimKey(field), dev)),
+      level: "focus",
+      label: engine.fields.find((f) => f.key === field)?.tag ?? field,
+    };
+  }, [engine, result, focused, pulse]);
+
 
 
   /* Autosave inteligente: grava 700 ms após a última alteração. */
@@ -491,6 +513,14 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
               </div>
             )}
 
+            {tab === "Traçagem" && viewMode === "2d" && (
+              <TracagemPanel
+                slug={slug}
+                result={result}
+                focusStepId={focused ? stepForDim(engine.dimKey(focused)) : null}
+              />
+            )}
+
             {(tab === "Traçado" || tab === "Desenvolvimento") && viewMode === "2d" && (
                 <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
                   <div className="h-[300px] lg:h-[420px]">
@@ -499,6 +529,7 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
                       pattern={result.development}
                       showFolds={tab === "Traçado"}
                       showPoints={tab === "Traçado"}
+                      highlight={devHighlight}
                     />
                   </div>
                   <p className="mt-2 font-mono text-[10px] text-muted-foreground">

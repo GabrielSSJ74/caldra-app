@@ -15,6 +15,13 @@ import {
   type PlanSource,
 } from "./entitlementService";
 import { buyWithPlay, hasPlayBilling, listPlayPurchases, type ProductId } from "./billing";
+import { restorePurchases, syncEntitlement, verifyPurchase, type SyncOutcome } from "./entitlement.functions";
+import {
+  applySync,
+  initialState,
+  type EntitlementState,
+  type SyncState,
+} from "./entitlementState";
 import { useAuth } from "@/lib/auth/AuthProvider";
 
 type Result = { ok: boolean; message: string };
@@ -38,6 +45,9 @@ type SubscriptionValue = {
   restore: () => Promise<Result>;
   refresh: () => Promise<void>;
   reset: () => void;
+  /** Diagnóstico da assinatura — nunca expõe token de compra. */
+  entitlement: EntitlementState;
+  syncState: SyncState;
 };
 
 const SubscriptionContext = createContext<SubscriptionValue | null>(null);
@@ -46,38 +56,59 @@ const SubscriptionContext = createContext<SubscriptionValue | null>(null);
 const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export function SubscriptionProvider({ children }: { children: React.ReactNode }) {
-  const [plan, setPlan] = useState<Plan>("free");
-  const [planSource, setPlanSource] = useState<PlanSource>("none");
+  const [ent, setEnt] = useState<EntitlementState>(() => initialState("free", "none"));
   const [ready, setReady] = useState(false);
   const [gatedFeature, setGatedFeature] = useState<Feature | null>(null);
   const { session, ready: authReady } = useAuth();
   const closeGate = useCallback(() => setGatedFeature(null), []);
 
+  const plan = ent.plan;
+  const planSource = ent.source as PlanSource;
+
   const persist = useCallback((next: Plan, source: PlanSource) => {
-    setPlan(next);
-    setPlanSource(source);
+    setEnt((prev) => ({ ...prev, plan: next, source }));
     writeCache(next, source);
   }, []);
 
   /* Cache local aplicado ANTES do paint — o app abre no plano correto. */
   useIsoLayoutEffect(() => {
     const cached = readCache();
-    setPlan(cached.plan);
-    setPlanSource(cached.source);
+    setEnt(initialState(cached.plan, cached.source));
     setReady(true);
   }, []);
 
-  /* Revalidação remota — resposta DEFINITIVA do servidor manda; qualquer
-     falha, timeout ou resposta parcial mantém o último valor conhecido. */
+  /**
+   * Revalidação: SOMENTE resposta conclusiva do servidor muda o plano.
+   * Offline, timeout ou erro mantêm o direito atual.
+   */
+  const applyOutcome = useCallback((outcome: SyncOutcome | { state: "offline" }) => {
+    setEnt((prev) => {
+      const next = applySync(prev, outcome);
+      if (next.plan !== prev.plan || next.source !== prev.source) {
+        writeCache(next.plan, next.source as PlanSource);
+      }
+      return next;
+    });
+    return outcome;
+  }, []);
+
   const refresh = useCallback(async () => {
-    try {
-      const remote = await fetchRemotePlan();
-      if (!remote) return; // sem sessão / offline / erro → mantém o cache
-      persist(remote.plan, remote.source);
-    } catch {
-      /* offline: mantém o cache */
+    if (typeof navigator !== "undefined" && navigator.onLine === false) {
+      applyOutcome({ state: "offline" });
+      return;
     }
-  }, [persist]);
+    try {
+      const outcome = await syncEntitlement({ data: undefined });
+      applyOutcome(outcome);
+      if (outcome.state === "sync_failed") {
+        /* Caminho antigo (perfil) como rede de segurança — nunca rebaixa. */
+        const remote = await fetchRemotePlan();
+        if (remote?.plan === "pro") persist(remote.plan, remote.source);
+      }
+    } catch {
+      applyOutcome({ state: "offline" });
+    }
+  }, [applyOutcome, persist]);
 
   /* Uma sincronização por conta — navegar NUNCA revalida. */
   const syncedFor = useRef<string | null>(null);
@@ -129,30 +160,53 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
         try {
           const purchase = await buyWithPlay(product);
           if (!purchase) return { ok: false, message: "Compra não concluída." };
-          const res = await registerPurchase(purchase.productId, purchase.token, "play");
-          if (res.ok) persist("pro", "play");
-          return res;
+          /* O servidor valida no Google Play — o cliente não libera nada. */
+          const outcome = await verifyPurchase({
+            data: { purchaseToken: purchase.token, productId: purchase.productId },
+          });
+          applyOutcome(outcome);
+          if (outcome.state === "sync_ok" && outcome.entitlement.plan === "pro") {
+            return { ok: true, message: "CALDRA PRO ativo." };
+          }
+          if (outcome.state === "sync_failed") {
+            await registerPurchase(purchase.productId, purchase.token, "play");
+            return {
+              ok: false,
+              message: "Compra recebida. Estamos confirmando com a loja — toque em Verificar assinatura em instantes.",
+            };
+          }
+          return { ok: false, message: "A loja ainda não confirmou esta compra." };
         } catch {
           return { ok: false, message: "Compra cancelada." };
         }
       },
       restore: async () => {
-        const remote = await fetchRemotePlan();
-        if (remote?.plan !== "free" && remote) {
-          persist(remote.plan, remote.source);
-          return { ok: true, message: "Plano restaurado." };
+        const tokens = (await listPlayPurchases()).map((p) => ({
+          purchaseToken: p.token,
+          productId: p.productId,
+        }));
+        try {
+          const outcome = await restorePurchases({ data: { tokens } });
+          applyOutcome(outcome);
+          if (outcome.state === "sync_ok") {
+            return outcome.entitlement.plan === "pro"
+              ? { ok: true, message: "CALDRA PRO restaurado nesta conta." }
+              : { ok: false, message: "Nenhuma assinatura ativa encontrada nesta conta." };
+          }
+        } catch {
+          applyOutcome({ state: "offline" });
         }
-        const purchases = await listPlayPurchases();
-        const first = purchases[0];
-        if (!first) return { ok: false, message: "Nenhuma compra encontrada nesta conta." };
-        const res = await registerPurchase(first.productId, first.token, "play");
-        if (res.ok) persist("pro", "play");
-        return res;
+        return {
+          ok: false,
+          message: "Não foi possível sincronizar agora. Seu acesso atual permanece preservado.",
+        };
       },
       refresh,
       reset: () => persist("free", "none"),
+      entitlement: ent,
+      syncState: ent.syncState,
     };
-  }, [plan, planSource, ready, gatedFeature, closeGate, persist, refresh]);
+  }, [plan, planSource, ready, gatedFeature, closeGate, persist, refresh, applyOutcome, ent]);
 
   return <SubscriptionContext.Provider value={value}>{children}</SubscriptionContext.Provider>;
 }

@@ -32,6 +32,7 @@ import { Route as ProjetosIndexRouteImport } from './routes/projetos.index'
 import { Route as ProjetosProjectIdRouteImport } from './routes/projetos.$projectId'
 import { Route as TracagemIndexRouteImport } from './routes/tracagem.index'
 import { Route as TracagemSlugRouteImport } from './routes/tracagem.$slug'
+import { Route as ApiPublicRtdnRouteImport } from './routes/api/public/rtdn'
 import { Route as EscolaAulaLessonIdRouteImport } from './routes/escola.aula.$lessonId'
 import { Route as EscolaModuloModuleIdRouteImport } from './routes/escola.modulo.$moduleId'
 import { Route as ProjetosCatalogoSlugRouteImport } from './routes/projetos.catalogo.$slug'
@@ -152,6 +153,11 @@ const TracagemSlugRoute = TracagemSlugRouteImport.update({
   path: '/tracagem/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicRtdnRoute = ApiPublicRtdnRouteImport.update({
+  id: '/api/public/rtdn',
+  path: '/api/public/rtdn',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EscolaAulaLessonIdRoute = EscolaAulaLessonIdRouteImport.update({
   id: '/escola/aula/$lessonId',
   path: '/escola/aula/$lessonId',
@@ -197,6 +203,7 @@ export interface FileRoutesByFullPath {
   '/escola/': typeof EscolaIndexRoute
   '/projetos/': typeof ProjetosIndexRoute
   '/tracagem/': typeof TracagemIndexRoute
+  '/api/public/rtdn': typeof ApiPublicRtdnRoute
   '/escola/aula/$lessonId': typeof EscolaAulaLessonIdRoute
   '/escola/modulo/$moduleId': typeof EscolaModuloModuleIdRoute
   '/projetos/catalogo/$slug': typeof ProjetosCatalogoSlugRoute
@@ -226,6 +233,7 @@ export interface FileRoutesByTo {
   '/escola': typeof EscolaIndexRoute
   '/projetos': typeof ProjetosIndexRoute
   '/tracagem': typeof TracagemIndexRoute
+  '/api/public/rtdn': typeof ApiPublicRtdnRoute
   '/escola/aula/$lessonId': typeof EscolaAulaLessonIdRoute
   '/escola/modulo/$moduleId': typeof EscolaModuloModuleIdRoute
   '/projetos/catalogo/$slug': typeof ProjetosCatalogoSlugRoute
@@ -256,6 +264,7 @@ export interface FileRoutesById {
   '/escola/': typeof EscolaIndexRoute
   '/projetos/': typeof ProjetosIndexRoute
   '/tracagem/': typeof TracagemIndexRoute
+  '/api/public/rtdn': typeof ApiPublicRtdnRoute
   '/escola/aula/$lessonId': typeof EscolaAulaLessonIdRoute
   '/escola/modulo/$moduleId': typeof EscolaModuloModuleIdRoute
   '/projetos/catalogo/$slug': typeof ProjetosCatalogoSlugRoute
@@ -287,6 +296,7 @@ export interface FileRouteTypes {
     | '/escola/'
     | '/projetos/'
     | '/tracagem/'
+    | '/api/public/rtdn'
     | '/escola/aula/$lessonId'
     | '/escola/modulo/$moduleId'
     | '/projetos/catalogo/$slug'
@@ -316,6 +326,7 @@ export interface FileRouteTypes {
     | '/escola'
     | '/projetos'
     | '/tracagem'
+    | '/api/public/rtdn'
     | '/escola/aula/$lessonId'
     | '/escola/modulo/$moduleId'
     | '/projetos/catalogo/$slug'
@@ -345,6 +356,7 @@ export interface FileRouteTypes {
     | '/escola/'
     | '/projetos/'
     | '/tracagem/'
+    | '/api/public/rtdn'
     | '/escola/aula/$lessonId'
     | '/escola/modulo/$moduleId'
     | '/projetos/catalogo/$slug'
@@ -375,6 +387,7 @@ export interface RootRouteChildren {
   EscolaIndexRoute: typeof EscolaIndexRoute
   ProjetosIndexRoute: typeof ProjetosIndexRoute
   TracagemIndexRoute: typeof TracagemIndexRoute
+  ApiPublicRtdnRoute: typeof ApiPublicRtdnRoute
   EscolaAulaLessonIdRoute: typeof EscolaAulaLessonIdRoute
   EscolaModuloModuleIdRoute: typeof EscolaModuloModuleIdRoute
   ProjetosCatalogoSlugRoute: typeof ProjetosCatalogoSlugRoute
@@ -544,6 +557,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TracagemSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/rtdn': {
+      id: '/api/public/rtdn'
+      path: '/api/public/rtdn'
+      fullPath: '/api/public/rtdn'
+      preLoaderRoute: typeof ApiPublicRtdnRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/escola/aula/$lessonId': {
       id: '/escola/aula/$lessonId'
       path: '/escola/aula/$lessonId'
@@ -599,6 +619,7 @@ const rootRouteChildren: RootRouteChildren = {
   EscolaIndexRoute: EscolaIndexRoute,
   ProjetosIndexRoute: ProjetosIndexRoute,
   TracagemIndexRoute: TracagemIndexRoute,
+  ApiPublicRtdnRoute: ApiPublicRtdnRoute,
   EscolaAulaLessonIdRoute: EscolaAulaLessonIdRoute,
   EscolaModuloModuleIdRoute: EscolaModuloModuleIdRoute,
   ProjetosCatalogoSlugRoute: ProjetosCatalogoSlugRoute,
