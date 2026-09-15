@@ -190,9 +190,9 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Credenciais do Google Play (GOOGLE_PLAY_SERVICE_ACCOUNT_JSON, GOOGLE_PLAY_PACKAGE_NAME) e RTDN_SHARED_SECRET — pendente do usuário
 
 ## Traçagem Guiada — execução visual e cota viva
-- [ ] Iniciar a reprodução com a chapa limpa e a primeira operação geométrica real.
-- [ ] Vincular cada TraceAction a geometryRefs e measurementRefs canônicas.
-- [ ] Manter a cota real visível no palco durante todo o movimento do instrumento.
-- [ ] Separar geometria executada, em execução e futura; revelar progressivamente desde a primeira linha.
-- [ ] Implementar Ver como fazer, Passo a passo e Repetir etapa sem antecipar o desenho final.
-- [ ] Validar Quadrado → Redondo em celular e desktop, incluindo redução de movimento.
+- [x] Iniciar a reprodução com a chapa limpa e a primeira operação geométrica real.
+- [x] Vincular cada TraceAction a geometryRefs e measurementRefs canônicas.
+- [x] Manter a cota real visível no palco durante todo o movimento do instrumento.
+- [x] Separar geometria executada, em execução e futura; revelar progressivamente desde a primeira linha.
+- [x] Implementar Ver como fazer, Passo a passo e Repetir etapa sem antecipar o desenho final.
+- [x] Validar Quadrado → Redondo em celular e desktop, incluindo redução de movimento.

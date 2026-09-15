@@ -7,6 +7,7 @@ const TOOLS: { id: TraceTool; icon: typeof Ruler; hint: string }[] = [
   { id: "regua", icon: Ruler, hint: "Apoie a régua na linha de base e confira o comprimento." },
   { id: "esquadro", icon: Move3d, hint: "Garanta o esquadro entre a base e o eixo da peça." },
   { id: "compasso", icon: Compass, hint: "Mantenha a abertura do compasso e repita a divisão." },
+  { id: "transferidor", icon: Move3d, hint: "Alinhe a base no vértice e marque o ângulo indicado." },
   { id: "transferir", icon: Stamp, hint: "Leve a medida da tabela para a chapa sem reabrir o compasso." },
   { id: "marcar", icon: Eraser, hint: "Marque corte, dobra e recorte de forma distinta." },
 ];

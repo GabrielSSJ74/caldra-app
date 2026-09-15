@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { Eye, EyeOff, Pause, Play, RotateCcw, ChevronLeft, ChevronRight, Layers } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Eye, EyeOff, Pause, Play, RotateCcw, ChevronLeft, ChevronRight, Layers, Hand } from "lucide-react";
 import type { GeometryResult } from "@/lib/geometry/types";
 import { buildTraceSequence, TOOL_LABEL, type TraceStep } from "@/lib/tracagem/steps";
 import type { HighlightState } from "@/lib/geometry/refs";
@@ -7,6 +7,10 @@ import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { cn } from "@/lib/utils";
 import { DevelopmentView } from "./DevelopmentView";
 import { BenchTools } from "./BenchTools";
+import { TraceAnimationStage } from "./TraceAnimationStage";
+import { buildTraceActions, resolveTraceAction, sampleTraceAction } from "@/lib/tracagem/animation";
+import type { GeometryRef } from "@/lib/geometry/refs";
+import { Button } from "./ds";
 
 type Props = {
   slug: string;
@@ -27,31 +31,107 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
   const [hideText, setHideText] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [intensity, setIntensity] = useState(1);
+  const [actionIndex, setActionIndex] = useState(0);
+  const [progress, setProgress] = useState(0);
+  const [speed, setSpeed] = useState<0.5 | 1 | 2>(1);
+  const [mode, setMode] = useState<"watch" | "step" | "with-me">("step");
+  const [practiceMessage, setPracticeMessage] = useState<string | null>(null);
+  const lastFrame = useRef<number | null>(null);
 
   /* Geometria mudou → sequência regenerada e leitura reiniciada. */
-  useEffect(() => setIndex(0), [steps]);
+  useEffect(() => {
+    setIndex(0);
+    setActionIndex(0);
+    setProgress(0);
+    setPlaying(false);
+  }, [steps]);
 
   useEffect(() => {
     if (!focusStepId) return;
     const i = steps.findIndex((s) => s.id === focusStepId);
-    if (i >= 0) setIndex(i);
+    if (i >= 0) {
+      setIndex(i);
+      setActionIndex(0);
+      setProgress(0);
+      setPlaying(false);
+    }
   }, [focusStepId, steps]);
 
-  useEffect(() => {
-    if (!playing) return;
-    const id = window.setInterval(() => {
-      setIndex((i) => {
-        if (i >= steps.length - 1) {
-          setPlaying(false);
-          return i;
-        }
-        return i + 1;
-      });
-    }, 3200);
-    return () => window.clearInterval(id);
-  }, [playing, steps.length]);
-
   const step = steps[Math.min(index, steps.length - 1)]!;
+  const actions = useMemo(() => buildTraceActions(step, result.development), [step, result.development]);
+  const traceAction = actions[Math.min(actionIndex, actions.length - 1)]!;
+  const resolvedAction = useMemo(
+    () => resolveTraceAction(result.development, step, traceAction),
+    [result.development, step, traceAction],
+  );
+  const frame = useMemo(() => sampleTraceAction(resolvedAction, progress), [resolvedAction, progress]);
+
+  const completedRefs = useMemo<GeometryRef[]>(() => {
+    if (showAll) return result.development.outline.map((_, i) => `outline:${i}`).concat(result.development.foldLines.map((_, i) => `fold:${i}`), result.development.points.map((p) => `point:${p.id}`));
+    const refs = steps.slice(0, index).flatMap((item) => item.geometryRefs);
+    refs.push(...actions.slice(0, actionIndex).flatMap((item) => item.geometryRefs));
+    if (progress >= 1) refs.push(...traceAction.geometryRefs);
+    return [...new Set(refs)];
+  }, [showAll, result.development, steps, index, actions, actionIndex, progress, traceAction.geometryRefs]);
+
+  const resetStep = useCallback(() => {
+    setActionIndex(0);
+    setProgress(0);
+    setPracticeMessage(null);
+    lastFrame.current = null;
+  }, []);
+
+  const moveToStep = useCallback((next: number) => {
+    setIndex(Math.max(0, Math.min(steps.length - 1, next)));
+    resetStep();
+  }, [resetStep, steps.length]);
+
+  const advance = useCallback(() => {
+    if (progress < 1) {
+      setProgress(1);
+      return;
+    }
+    if (actionIndex < actions.length - 1) {
+      setActionIndex((value) => value + 1);
+      setProgress(0);
+      setPracticeMessage(null);
+      return;
+    }
+    if (index < steps.length - 1) {
+      setIndex((value) => value + 1);
+      setActionIndex(0);
+      setProgress(0);
+      setPracticeMessage(null);
+    } else {
+      setPlaying(false);
+    }
+  }, [progress, actionIndex, actions.length, index, steps.length]);
+
+  useEffect(() => {
+    if (!playing || showAll || mode === "with-me") return;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setProgress(1);
+      return;
+    }
+    let raf = 0;
+    const tick = (now: number) => {
+      const previous = lastFrame.current ?? now;
+      lastFrame.current = now;
+      setProgress((value) => Math.min(1, value + ((now - previous) * speed) / Math.max(resolvedAction.duration, 1)));
+      raf = window.requestAnimationFrame(tick);
+    };
+    raf = window.requestAnimationFrame(tick);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      lastFrame.current = null;
+    };
+  }, [playing, showAll, mode, speed, resolvedAction.duration]);
+
+  useEffect(() => {
+    if (!playing || progress < 1 || mode !== "watch") return;
+    const timeout = window.setTimeout(advance, 520 / speed);
+    return () => window.clearTimeout(timeout);
+  }, [playing, progress, mode, speed, advance]);
 
   const highlight: HighlightState = showAll
     ? { refs: [], level: "normal" }
@@ -59,9 +139,27 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
 
   return (
     <div className="space-y-3">
-      <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
+      <div className="grid-bg-fine relative overflow-hidden rounded-xl border border-line bg-background/40 p-3">
         <div className="h-[300px] lg:h-[420px]">
-          <DevelopmentView pattern={result.development} highlight={highlight} />
+          {showAll ? (
+            <DevelopmentView pattern={result.development} highlight={highlight} />
+          ) : (
+            <TraceAnimationStage
+              pattern={result.development}
+              frame={frame}
+              completedRefs={completedRefs}
+              showAll={false}
+              stepLabel={`Passo ${step.order}/${steps.length} · ${step.title}`}
+              {...(mode === "with-me" ? { onTarget: (point) => {
+                const target = resolvedAction.startPoint;
+                const tolerance = Math.max(result.development.bounds.maxX - result.development.bounds.minX, result.development.bounds.maxY - result.development.bounds.minY) * 0.08;
+                if (target && Math.hypot(point.x - target.x, point.y - target.y) <= tolerance) {
+                  setPracticeMessage("Perfeito. Execute a ação indicada.");
+                  setProgress(1);
+                } else setPracticeMessage("Toque no ponto destacado para continuar.");
+              }} : {})}
+            />
+          )}
         </div>
         <span className="absolute top-2 left-3 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase">
           Chapa · vista superior · mm
@@ -70,17 +168,17 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
 
       {/* CONTROLES */}
       <div className="flex flex-wrap items-center gap-1.5">
-        <Ctrl onClick={() => setIndex((i) => Math.max(0, i - 1))} disabled={index === 0}>
+        <Ctrl onClick={() => moveToStep(index - 1)} disabled={index === 0}>
           <ChevronLeft className="size-3.5" /> Anterior
         </Ctrl>
         <Ctrl
-          onClick={() => setIndex((i) => Math.min(steps.length - 1, i + 1))}
-          disabled={index >= steps.length - 1}
+          onClick={mode === "step" ? advance : () => moveToStep(index + 1)}
+          disabled={index >= steps.length - 1 && actionIndex >= actions.length - 1 && progress >= 1}
         >
           Próximo <ChevronRight className="size-3.5" />
         </Ctrl>
-        <Ctrl onClick={() => setIndex(0)}>
-          <RotateCcw className="size-3.5" /> Repetir
+        <Ctrl onClick={resetStep}>
+          <RotateCcw className="size-3.5" /> Repetir etapa
         </Ctrl>
         <Ctrl onClick={() => setShowAll((v) => !v)} active={showAll}>
           <Layers className="size-3.5" /> Mostrar tudo
@@ -89,8 +187,14 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
           {hideText ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />} Instruções
         </Ctrl>
         <Ctrl onClick={() => setPlaying((v) => !v)} active={playing}>
-          {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />} Automático
+          {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />} {playing ? "Pausar" : "Continuar"}
         </Ctrl>
+        <Button size="sm" variant="primary" icon={Play} onClick={() => { setMode("watch"); setShowAll(false); setIndex(0); resetStep(); setPlaying(true); }}>Ver como fazer</Button>
+        <Button size="sm" variant="secondary" icon={Hand} onClick={() => { setMode("with-me"); setShowAll(false); setPlaying(false); resetStep(); }}>Faça comigo</Button>
+        <div className="flex h-8 overflow-hidden rounded-lg border border-line" aria-label="Velocidade">
+          {([0.5, 1, 2] as const).map((value) => <button key={value} type="button" onClick={() => setSpeed(value)} className={cn("min-w-10 px-2 font-mono text-[10px]", speed === value ? "bg-accent/15 text-accent" : "text-muted-foreground")}>{value}×</button>)}
+        </div>
+        <Ctrl onClick={() => { setMode("step"); setPlaying(false); }} active={mode === "step"}>Passo a passo</Ctrl>
         <label className="ml-auto flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
           Destaque
           <input
@@ -106,13 +210,29 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
         </label>
       </div>
 
+      <div className="flex min-h-9 items-center justify-between gap-3 rounded-lg border border-line bg-background/50 px-3 py-2 font-mono text-[10px]">
+        <span className="text-foreground">Ação {actionIndex + 1}/{actions.length} · {traceAction.instruction}</span>
+        <span className="shrink-0 text-success">{Math.round(progress * 100)}%</span>
+      </div>
+      {mode === "with-me" && <p className="rounded-lg border border-accent/30 bg-accent/[0.06] px-3 py-2 text-[12px] text-foreground">{practiceMessage ?? traceAction.instruction}</p>}
+
+      {index === steps.length - 1 && progress >= 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-y border-success/30 py-3">
+          <span className="font-mono text-[11px] tracking-wider text-success">✓ Desenvolvimento concluído</span>
+          <div className="flex gap-1">
+            <Button size="sm" variant="secondary" onClick={() => setShowAll(true)}>Desenvolvimento final</Button>
+            <Button size="sm" variant="ghost" onClick={() => { setShowAll(false); setIndex(0); resetStep(); }}>Como foi construído</Button>
+          </div>
+        </div>
+      )}
+
       {/* PASSOS */}
       <div className="flex gap-1 overflow-x-auto pb-1">
         {steps.map((s, i) => (
           <button
             key={s.id}
             type="button"
-            onClick={() => setIndex(i)}
+            onClick={() => moveToStep(i)}
             aria-current={i === index}
             className={cn(
               "shrink-0 rounded-lg border px-2.5 py-1.5 font-mono text-[10px] tracking-wider uppercase transition-colors",
