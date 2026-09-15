@@ -17,13 +17,14 @@ import {
   type GeometryRef,
 } from "@/lib/geometry/refs";
 
-export type TraceTool = "riscador" | "regua" | "esquadro" | "compasso" | "transferir" | "marcar";
+export type TraceTool = "riscador" | "regua" | "esquadro" | "compasso" | "transferidor" | "transferir" | "marcar";
 
 export const TOOL_LABEL: Record<TraceTool, string> = {
   riscador: "Riscador",
   regua: "Régua",
   esquadro: "Esquadro",
   compasso: "Compasso",
+  transferidor: "Transferidor",
   transferir: "Transferidor de medidas",
   marcar: "Marcação",
 };
@@ -109,14 +110,24 @@ export function buildTraceSequence(slug: string, result: GeometryResult): TraceS
   const pointAll = dev.points.map((p) => pointRef(p.id));
 
   const steps: Omit<TraceStep, "order">[] = [];
+  const segmentLength = (i: number) => {
+    const a = dev.outline[i];
+    const b = dev.outline[(i + 1) % dev.outline.length];
+    return a && b ? Math.hypot(b.x - a.x, b.y - a.y) : 0;
+  };
+  const baseIndex = outlineAll.reduce(
+    (best, _, i) => (Math.abs(segmentLength(i) - width) < Math.abs(segmentLength(best) - width) ? i : best),
+    0,
+  );
+  const baseLength = mm(segmentLength(baseIndex) || width);
 
   steps.push({
     id: "referencia",
     title: "Linha de referência",
-    instruction: `${copy.base} Trace uma linha base de ${width} mm.`,
-    geometryRefs: outlineAll.slice(0, 2),
+    instruction: `${copy.base} Trace uma linha base de ${baseLength} mm.`,
+    geometryRefs: outlineAll.length ? [outlineRef(baseIndex)] : [],
     measurements: [
-      { label: "Comprimento da base", value: width, unit: "mm", origin: "Largura do desenvolvimento" },
+      { label: "Comprimento da base", value: baseLength, unit: "mm", origin: "Segmento real da linha de referência" },
       { label: "Altura útil", value: height, unit: "mm", origin: "Altura do desenvolvimento" },
     ],
     tool: "regua",
