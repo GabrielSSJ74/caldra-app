@@ -8,8 +8,8 @@ const MODELS = ["quadrado-redondo", "cone", "tronco-de-cone", "reducao-circular"
 function compute(slug: string) {
   const engine = getEngine(slug);
   if (!engine) return null;
-  if (engine.validate(engine.values).length) return null;
-  return engine.calculate(engine.values);
+  if (engine.validate(engine.defaults).length) return null;
+  return engine.calculate(engine.defaults);
 }
 
 describe("Traçagem Guiada", () => {
@@ -46,8 +46,8 @@ describe("Traçagem Guiada", () => {
   it("alterar parâmetros regenera a sequência com novas medidas", () => {
     const engine = getEngine("cone");
     if (!engine) return;
-    const base = engine.calculate(engine.values);
-    const changed = engine.calculate({ ...engine.values, h: (engine.values["h"] ?? 200) * 1.5 });
+    const base = engine.calculate(engine.defaults);
+    const changed = engine.calculate({ ...engine.defaults, h: (engine.defaults["h"] ?? 200) * 1.5 });
     const a = buildTraceSequence("cone", base);
     const b = buildTraceSequence("cone", changed);
     expect(JSON.stringify(a)).not.toBe(JSON.stringify(b));
