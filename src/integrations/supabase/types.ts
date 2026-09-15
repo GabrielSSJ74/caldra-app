@@ -175,6 +175,60 @@ export type Database = {
         }
         Relationships: []
       }
+      subscriptions: {
+        Row: {
+          auto_renew: boolean
+          created_at: string
+          entitlement: string
+          environment: string
+          expires_at: string | null
+          id: string
+          last_verified_at: string | null
+          linked_purchase_token: string | null
+          product_id: string
+          provider: string
+          purchase_token: string | null
+          start_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          auto_renew?: boolean
+          created_at?: string
+          entitlement?: string
+          environment?: string
+          expires_at?: string | null
+          id?: string
+          last_verified_at?: string | null
+          linked_purchase_token?: string | null
+          product_id: string
+          provider?: string
+          purchase_token?: string | null
+          start_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          auto_renew?: boolean
+          created_at?: string
+          entitlement?: string
+          environment?: string
+          expires_at?: string | null
+          id?: string
+          last_verified_at?: string | null
+          linked_purchase_token?: string | null
+          product_id?: string
+          provider?: string
+          purchase_token?: string | null
+          start_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       usage_vectorizations: {
         Row: {
           count: number
@@ -204,6 +258,7 @@ export type Database = {
       consume_vectorization: { Args: { _local?: number }; Returns: Json }
       delete_my_account: { Args: never; Returns: Json }
       redeem_activation_code: { Args: { _code: string }; Returns: Json }
+      resolve_entitlement: { Args: { _user_id?: string }; Returns: Json }
       sp_today: { Args: never; Returns: string }
       sync_vectorizations: { Args: { _local?: number }; Returns: Json }
     }
