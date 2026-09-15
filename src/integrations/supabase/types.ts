@@ -258,7 +258,7 @@ export type Database = {
       consume_vectorization: { Args: { _local?: number }; Returns: Json }
       delete_my_account: { Args: never; Returns: Json }
       redeem_activation_code: { Args: { _code: string }; Returns: Json }
-      resolve_entitlement: { Args: { _user_id?: string }; Returns: Json }
+      resolve_entitlement: { Args: never; Returns: Json }
       sp_today: { Args: never; Returns: string }
       sync_vectorizations: { Args: { _local?: number }; Returns: Json }
     }
