@@ -91,3 +91,29 @@ export function dimFactor(state: HighlightState): number {
   if (state.level === "focus") return 0.5;
   return 1;
 }
+
+/**
+ * Entidades associadas a uma cota do desenho (h, d1, d2, e...).
+ * Mapa de LEITURA: não cria geometria, apenas escolhe o que destacar.
+ */
+export function refsForDim(dim: string | null | undefined, dev: DevelopmentPattern | null | undefined): GeometryRef[] {
+  if (!dev) return [];
+  const folds = dev.foldLines.map((_, i) => foldRef(i));
+  const pts = dev.points;
+  if (dim === "h" || dim === "e") return folds;
+  if (dim === "d1" || dim === "d2") {
+    if (!pts.length) return folds;
+    const ys = pts.map((p) => p.p.y);
+    const mid = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const half = pts.filter((p) => (dim === "d1" ? p.p.y <= mid : p.p.y > mid));
+    return (half.length ? half : pts).map((p) => pointRef(p.id));
+  }
+  return dev.outline.map((_, i) => outlineRef(i));
+}
+
+/** Etapa da Traçagem Guiada correspondente à cota em foco. */
+export function stepForDim(dim: string | null | undefined): string {
+  if (dim === "h" || dim === "e") return "geratrizes";
+  if (dim === "d1" || dim === "d2") return "divisao";
+  return "referencia";
+}
