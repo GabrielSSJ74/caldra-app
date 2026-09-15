@@ -152,6 +152,19 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
     [engine, activeFields, values],
   );
 
+  /* Vínculo PARÂMETRO ↔ COTA ↔ ENTIDADE: destaque temporário, cor técnica intacta. */
+  const devHighlight = useMemo<HighlightState>(() => {
+    const dev = result?.development;
+    const field = focused ?? pulse;
+    if (!engine || !dev || !field) return NO_HIGHLIGHT;
+    return {
+      refs: fieldRefs(field, dev, refsForDim(engine.dimKey(field), dev)),
+      level: "focus",
+      label: engine.fields.find((f) => f.key === field)?.tag ?? field,
+    };
+  }, [engine, result, focused, pulse]);
+
+
 
   /* Autosave inteligente: grava 700 ms após a última alteração. */
   const persistRef = useRef(onPersist);
