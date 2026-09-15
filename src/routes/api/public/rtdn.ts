@@ -59,7 +59,7 @@ export const Route = createFileRoute("/api/public/rtdn")({
           .update({
             status: check.status,
             entitlement: check.entitlement,
-            product_id: check.productId || undefined,
+            ...(check.productId ? { product_id: check.productId } : {}),
             linked_purchase_token: check.linkedPurchaseToken,
             start_at: check.startAt,
             expires_at: check.expiresAt,
