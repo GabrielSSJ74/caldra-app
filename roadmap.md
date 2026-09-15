@@ -181,3 +181,10 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Fechar integralmente o Paywall antes da navegação para a rota real do CHAMFER.
 - [x] Restaurar o CHAMFER em 100vw × 100dvh, sem padding, limite ou deslocamento herdado.
 - [x] Validar os cenários CHAMFER, DXF Laser CNC, Oficina e acesso direto, sem alterar entitlements ou motores.
+
+## Traçagem Guiada + vínculo + assinatura (2026-09-15)
+- [x] Traçagem Guiada (steps.ts, TracagemPanel, BenchTools) nas abas de Traçagem
+- [x] Vínculo parâmetro ↔ cota ↔ entidade (refs.ts, destaque temporário sem trocar cor técnica)
+- [x] Assinatura: tabela subscriptions + resolve_entitlement + verifyPurchase/syncEntitlement/restorePurchases + RTDN
+- [x] Configurações → Minha assinatura (status, validade, restaurar, verificar)
+- [ ] Credenciais do Google Play (GOOGLE_PLAY_SERVICE_ACCOUNT_JSON, GOOGLE_PLAY_PACKAGE_NAME) e RTDN_SHARED_SECRET — pendente do usuário
