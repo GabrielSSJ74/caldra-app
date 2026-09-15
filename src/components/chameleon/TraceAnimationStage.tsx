@@ -19,10 +19,22 @@ export function TraceAnimationStage({ pattern, frame, completedRefs, showAll, st
   const { minX, minY, maxX, maxY } = pattern.bounds;
   const width = Math.max(maxX - minX, 1);
   const height = Math.max(maxY - minY, 1);
-  const pad = Math.max(width * 0.13, height * 0.13, 32);
-  const stroke = Math.max(width, height) / 360;
   const activeRef = frame.action.geometryRefs[0];
   const activeEntity = frame.action.entities[0];
+  const focusStart = activeEntity?.startPoint;
+  const focusEnd = activeEntity?.endPoint;
+  const focusMinX = focusStart && focusEnd ? Math.min(focusStart.x, focusEnd.x) : minX;
+  const focusMaxX = focusStart && focusEnd ? Math.max(focusStart.x, focusEnd.x) : maxX;
+  const focusMinY = focusStart && focusEnd ? Math.min(focusStart.y, focusEnd.y) : minY;
+  const focusMaxY = focusStart && focusEnd ? Math.max(focusStart.y, focusEnd.y) : maxY;
+  const focusWidth = Math.max(focusMaxX - focusMinX, width * 0.24, 1);
+  const focusHeight = Math.max(focusMaxY - focusMinY, height * 0.24, 1);
+  const viewMinX = showAll ? minX : (focusMinX + focusMaxX - focusWidth) / 2;
+  const viewMaxY = showAll ? maxY : (focusMinY + focusMaxY + focusHeight) / 2;
+  const viewWidth = showAll ? width : focusWidth;
+  const viewHeight = showAll ? height : focusHeight;
+  const pad = Math.max(viewWidth * 0.16, viewHeight * 0.16, 22);
+  const stroke = Math.max(viewWidth, viewHeight) / 280;
   const drawing = frame.action.type === "DRAW" || frame.action.type === "TRANSFER" || frame.action.type === "ROTATE";
   const markProgress = frame.action.type === "MARK" ? frame.progress : 0;
   const tool = frame.action.tool;
@@ -43,7 +55,7 @@ export function TraceAnimationStage({ pattern, frame, completedRefs, showAll, st
 
   return (
     <svg
-      viewBox={`${minX - pad} ${-maxY - pad} ${width + pad * 2} ${height + pad * 2}`}
+      viewBox={`${viewMinX - pad} ${-viewMaxY - pad} ${viewWidth + pad * 2} ${viewHeight + pad * 2}`}
       className="h-full w-full touch-manipulation"
       role="img"
       aria-label={`${stepLabel}. ${frame.action.instruction}`}
@@ -56,7 +68,7 @@ export function TraceAnimationStage({ pattern, frame, completedRefs, showAll, st
         onTarget({ x: point.x, y: -point.y });
       }}
     >
-      <rect x={minX - pad} y={-maxY - pad} width={width + pad * 2} height={height + pad * 2} fill="var(--background)" fillOpacity="0" />
+      <rect x={viewMinX - pad} y={-viewMaxY - pad} width={viewWidth + pad * 2} height={viewHeight + pad * 2} fill="var(--background)" fillOpacity="0" />
 
       {pattern.outline.map((start, i) => {
         const end = pattern.outline[(i + 1) % pattern.outline.length];
@@ -123,7 +135,7 @@ export function TraceAnimationStage({ pattern, frame, completedRefs, showAll, st
         </g>
       )}
 
-      <g transform={`translate(${minX} ${-maxY - pad * 0.58})`}>
+      <g transform={`translate(${viewMinX} ${-viewMaxY - pad * 0.58})`}>
         <text fill="var(--accent)" fontFamily="var(--font-mono)" fontSize={stroke * 7}>{stepLabel.toUpperCase()}</text>
         <text y={stroke * 9} fill="var(--foreground)" fontFamily="var(--font-mono)" fontSize={stroke * 6}>{TOOL_LABEL[tool]} · {frame.action.type}</text>
       </g>

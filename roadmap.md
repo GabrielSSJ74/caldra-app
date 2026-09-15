@@ -195,4 +195,4 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Manter a cota real visível no palco durante todo o movimento do instrumento.
 - [x] Separar geometria executada, em execução e futura; revelar progressivamente desde a primeira linha.
 - [x] Implementar Ver como fazer, Passo a passo e Repetir etapa sem antecipar o desenho final.
-- [ ] Validar Quadrado → Redondo em celular e desktop, incluindo redução de movimento.
+- [x] Validar Quadrado → Redondo em celular e desktop, incluindo redução de movimento.
