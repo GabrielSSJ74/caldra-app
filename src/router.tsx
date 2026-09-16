@@ -9,7 +9,13 @@ export const getRouter = () => {
     routeTree,
     context: { queryClient },
     scrollRestoration: true,
-    defaultPreloadStaleTime: 0,
+    /* O módulo da tela é buscado na INTENÇÃO (hover/toque), não no clique.
+       Sem isto, o primeiro toque em cada botão pagava o download + parse do
+       código daquela tela — a origem da espera na primeira interação. */
+    defaultPreload: "intent",
+    defaultPreloadDelay: 30,
+    /* Preload reaproveitado por 30s: navegar não refaz o mesmo trabalho. */
+    defaultPreloadStaleTime: 30_000,
   });
 
   return router;
