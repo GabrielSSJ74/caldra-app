@@ -18,6 +18,13 @@ import { SettingsProvider } from "@/lib/settings/SettingsProvider";
 import { ProfileProvider } from "@/lib/profile/ProfileProvider";
 import { MaterialsProvider } from "@/lib/materials/MaterialsProvider";
 import { AppShell } from "@/components/chameleon/AppShell";
+import {
+  CORE_ROUTES,
+  measureFirstInteraction,
+  onIdle,
+  prefetchAllowed,
+} from "@/lib/perf/firstInteraction";
+
 
 function NotFoundComponent() {
   return (
@@ -155,6 +162,7 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const router = useRouter();
 
   // Cold start: remove o splash assim que o app monta.
   useEffect(() => {
@@ -164,6 +172,46 @@ function RootComponent() {
     const t = window.setTimeout(() => el.remove(), 420);
     return () => window.clearTimeout(t);
   }, []);
+
+  // Medição de latência da primeira interação (somente desenvolvimento).
+  useEffect(() => measureFirstInteraction(), []);
+
+  /* Prefetch das telas de navegação essencial, UMA de cada vez, só com o
+     navegador ocioso e nunca durante uma navegação — para não disputar a
+     linha principal justamente quando o usuário toca em algo.
+     Fica fora do modo de desenvolvimento: ali cada tela é servida em
+     centenas de arquivos soltos e o prefetch atrapalharia em vez de ajudar
+     (no aplicativo publicado cada tela é um único pacote). */
+  useEffect(() => {
+    if (import.meta.env.DEV) return;
+    if (!prefetchAllowed()) return;
+
+    let cancelled = false;
+    let cancel: () => void = () => {};
+    const queue = [...CORE_ROUTES];
+    const step = () => {
+      if (cancelled) return;
+      /* Navegação em curso: o toque do usuário tem prioridade absoluta. */
+      if (router.state.isLoading || router.state.isTransitioning) {
+        cancel = onIdle(step, 4000);
+        return;
+      }
+      const to = queue.shift();
+      if (!to) return;
+      void Promise.resolve(router.preloadRoute({ to }))
+        .catch(() => {})
+        .finally(() => {
+          if (!cancelled) cancel = onIdle(step, 4000);
+        });
+    };
+    cancel = onIdle(step, 4000);
+    return () => {
+      cancelled = true;
+      cancel();
+    };
+  }, [router]);
+
+
 
   return (
     <QueryClientProvider client={queryClient}>

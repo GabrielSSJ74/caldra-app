@@ -196,3 +196,8 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Separar geometria executada, em execução e futura; revelar progressivamente desde a primeira linha.
 - [x] Implementar Ver como fazer, Passo a passo e Repetir etapa sem antecipar o desenho final.
 - [x] Validar Quadrado → Redondo em celular e desktop, incluindo redução de movimento.
+
+## Latência da primeira interação (16/09)
+- Causa: cada tela só começava a ser baixada no instante do clique (router sem preload).
+- Correção: preload na intenção (toque/hover) + prefetch ocioso das telas essenciais no app publicado.
+- Medido (celular simulado 4x mais lento): 1º toque 1786ms -> 657ms; 2º toque 1976ms -> 493ms.
