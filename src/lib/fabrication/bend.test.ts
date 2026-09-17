@@ -10,6 +10,9 @@ const cfg = (over: Partial<FabricationConfig> = {}): FabricationConfig => ({
   ...over,
 });
 
+/** projeto sem Fator K informado */
+const cfgNoK = (): FabricationConfig => ({ thickness: 6.35, method: "k-factor" });
+
 const bend = (over: Partial<Bend> = {}): Bend => ({
   bendId: "B1",
   angleDeg: 90,
@@ -30,7 +33,7 @@ describe("fator K", () => {
   it("usa o K da dobra quando existir, senão o do projeto", () => {
     expect(resolveKFactor(bend(), cfg())).toBe(0.33);
     expect(resolveKFactor(bend({ kFactor: 0.3 }), cfg())).toBe(0.3);
-    expect(resolveKFactor(bend(), cfg({ defaultKFactor: undefined }))).toBeUndefined();
+    expect(resolveKFactor(bend(), cfgNoK())).toBeUndefined();
   });
 
   it("linha neutra em R + K × T", () => {
@@ -87,7 +90,7 @@ describe("resolução de dobras", () => {
 
   it("não inventa valores quando faltam dados", () => {
     expect(resolveBends([bend()], cfg({ thickness: 0 })).issues[0]!.reason).toBe("missing-thickness");
-    expect(resolveBends([bend()], cfg({ defaultKFactor: undefined })).issues[0]!.reason).toBe("missing-k");
+    expect(resolveBends([bend()], cfgNoK()).issues[0]!.reason).toBe("missing-k");
     expect(resolveBends([bend()], cfg({ method: "geometric" })).issues[0]!.reason).toBe("unsupported-method");
     expect(resolveBends([bend({ angleDeg: 0 })], cfg()).issues[0]!.reason).toBe("invalid-parameters");
   });
