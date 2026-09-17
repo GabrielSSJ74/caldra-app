@@ -26,12 +26,18 @@ describe("refFromTag — correspondência exata geratriz ↔ dobra", () => {
     expect(refFromTag({ k: 0, n: 8 }, 48)).toBe("fold:0");
   });
 
+  it("aceita a emenda de fechamento (divisões + 1)", () => {
+    // 25 dobras = 24 divisões + emenda final; 8 geratrizes → passo 3
+    expect(refFromTag({ k: 2, n: 8 }, 25)).toBe("fold:6");
+  });
+
   it("normaliza ordinais fora da faixa", () => {
     expect(refFromTag({ k: 8, n: 8 }, 48)).toBe("fold:0");
   });
 
   it("recusa (fallback silencioso) quando a divisão não é exata", () => {
     expect(refFromTag({ k: 1, n: 8 }, 47)).toBeNull();
+    expect(refFromTag({ k: 1, n: 8 }, 26)).toBeNull();
     expect(refFromTag({ k: 1, n: 0 }, 48)).toBeNull();
     expect(refFromTag(undefined, 48)).toBeNull();
     expect(refFromTag({ k: 1, n: 8 }, 0)).toBeNull();

@@ -15,11 +15,16 @@ import { foldRef, refId, refKind, type GeometryRef } from "@/lib/geometry/refs";
 import type { GeratrizTag, WireModel } from "./wire";
 import type { ProjectedLine, ProjectedTriangle } from "./visibility";
 
-/** Converte uma marca de geratriz em ref de dobra, ou null se não mapeável. */
+/**
+ * Converte uma marca de geratriz em ref de dobra, ou null se não mapeável.
+ * O desenvolvimento fecha a chapa repetindo a geratriz 0 como emenda final,
+ * portanto `foldCount` pode ser divisões ou divisões+1 — ambos exatos.
+ */
 export function refFromTag(tag: GeratrizTag | undefined, foldCount: number): GeometryRef | null {
   if (!tag || tag.n <= 0 || foldCount <= 0) return null;
-  if (foldCount % tag.n !== 0) return null;
-  const step = foldCount / tag.n;
+  const divs = foldCount % tag.n === 0 ? foldCount : (foldCount - 1) % tag.n === 0 ? foldCount - 1 : 0;
+  if (!divs) return null;
+  const step = divs / tag.n;
   const k = ((tag.k % tag.n) + tag.n) % tag.n;
   return foldRef((k * step) % foldCount);
 }
