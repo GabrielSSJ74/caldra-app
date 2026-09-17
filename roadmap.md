@@ -211,3 +211,11 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Fase F — seleção e sincronização comprovável com 2D/Traçagem/planificação.
 - [ ] Fase G — performance mobile e carregamento sob demanda.
 - [ ] Fase H — regressão matemática, visual e interativa.
+
+## Espessura, dobra e Fator K (17/09)
+- [ ] Fase C2 — espessura real derivada do modelo canônico, sem parede fictícia.
+- [ ] Fase D2 — camada de fabricação separada: dobra, raio, linha neutra, Fator K, métodos suportados.
+- [ ] Modos Dobra e Linha neutra no 3D quando houver dados reais.
+- [ ] Estado técnico da dobra entregue ao CHAMFER.
+- [ ] Invalidação de derivados por espessura, raio, ângulo, K ou método.
+- [ ] Testes: sem dobra, uma dobra, múltiplas dobras, espessura, K, raio e ângulo.

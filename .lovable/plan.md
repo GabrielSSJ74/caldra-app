@@ -1,74 +1,94 @@
-# Refinamento profissional do 3D da Traçagem
+# Refinamento profissional do 3D da Traçagem + espessura e fabricação
 
 ## Diagnóstico confirmado
 
-- O visor da Traçagem é o `Wire3D`, um renderizador técnico SVG próprio. Ele não usa AO, shadow map, depth buffer ou materiais Three.js; portanto desligar efeitos de GPU não corrigiria este caso.
-- O halo inferior é uma elipse de “sombra de contato” desenhada pelo próprio visor.
-- O efeito fantasma vem principalmente de superfícies externas e internas desenhadas simultaneamente com ordenação pela profundidade média de cada polígono. Em peças côncavas/intersectantes, essa ordenação não resolve oclusão corretamente.
-- O Quadrado → Redondo já recebe a malha canônica da planificação. Cone/Redução usam cascas paramétricas; Curva de Gomos usa `elbowModel`; Boca de Lobo usa a interseção canônica para o ramal, mas hoje combina duas cascas sobrepostas.
-- Auditoria inicial nos parâmetros padrão: Cone 256 faces/256 vértices; Curva 384/382; Quadrado → Redondo 88/62; Boca de Lobo 880/870; Redução 192/192. Não foram encontrados NaN, Infinity, faces exatamente duplicadas, triângulos de área zero ou normais não unitárias nesses casos.
-- O renderer atual possui orbit por arraste e zoom por roda; não expõe vistas padrão, reset, seleção de face ou pan dedicado. Essas capacidades serão adicionadas sem substituir câmera, projeção ou gestos existentes.
+- O visor da Traçagem é o `Wire3D`, um renderizador técnico SVG próprio. Ele não usa oclusão ambiente, mapa de sombra, buffer de profundidade nem materiais de GPU; desligar efeitos não corrigiria este caso.
+- O halo inferior é uma elipse de "sombra de contato" desenhada pelo próprio visor.
+- O efeito fantasma vem de superfícies externas e internas desenhadas juntas, ordenadas pela profundidade média de cada polígono. Em peças côncavas e em peças com corpos que se cruzam essa ordenação não resolve oclusão.
+- Boca de Lobo, Tê e Y sobrepõem dois corpos inteiros sem recortar a interseção real, embora a curva de interseção já exista no cálculo.
+- Arestas usam um corte grosseiro de linha oculta e as linhas de referência são desenhadas sempre por cima, reforçando o halo.
+- Auditoria com parâmetros padrão: Cone 256 faces; Curva de Gomos 384; Quadrado → Redondo 88; Boca de Lobo 880; Redução 192. Sem valores inválidos, faces duplicadas, triângulos de área zero ou normais irregulares nesses casos.
+- Hoje a espessura existe apenas como deslocamento aproximado da casca; não há camada de fabricação, dobra, linha neutra nem Fator K em nenhum motor.
 
 ## Fase A — diagnóstico reproduzível
 
-- Criar um auditor puro de `WireModel` que reporte vértices, faces, triângulos, bounds, degenerações, duplicatas, faces quase coincidentes, normais, winding, arestas abertas e superfícies internas inesperadas.
-- Executá-lo somente em desenvolvimento e criar uma pequena central de debug do visor: Normais, Faces, Estrutura, Bounds e IDs; “Shadow OFF” controla apenas a sombra artificial existente e “AO OFF” informa que este renderer não possui AO.
-- Registrar snapshots matemáticos dos cinco modelos com parâmetros, bounds, contagens e referências para comparação antes/depois.
+- Auditor puro do modelo 3D: vértices, faces, triângulos, limites, degenerações, duplicatas, faces quase coincidentes, normais, orientação, aberturas e superfícies internas inesperadas.
+- Central de diagnóstico apenas em desenvolvimento: normais, faces, estrutura, limites, identificadores e desligar a sombra artificial.
+- Registrar a linha de base matemática dos cinco modelos para comparação antes/depois.
 
 ## Fase B — topologia, normais e identidade
 
-- Estender `Face` e `Edge` de forma retrocompatível com IDs opcionais, referência canônica, grupo técnico e modo de shading; preservar consumidores atuais.
-- Triangular polígonos de modo determinístico apenas na camada de representação, mantendo posições e medidas canônicas intactas.
-- Corrigir winding por tipo de superfície: externa para fora, interna para dentro e bordas coerentes; rejeitar faces degeneradas em vez de atribuir uma normal artificial.
-- Propagar IDs reais: faces/geratrizes do Quadrado → Redondo, gomos/junções da Curva, divisões radiais de Cone/Redução e entidades de interseção da Boca de Lobo.
-- Na Boca de Lobo, remover a sobreposição visual entre tubo e ramal usando a curva de interseção já calculada; não criar linhas decorativas nem alterar a equação do cálculo.
+- Estender face e aresta de forma retrocompatível com identificador, referência canônica, grupo técnico e modo de sombreamento.
+- Triangulação determinística apenas na representação, sem mover vértices nem alterar medidas.
+- Corrigir orientação por tipo de superfície e rejeitar faces degeneradas em vez de atribuir normal artificial.
+- Propagar identidade real: faces e geratrizes do Quadrado → Redondo, gomos e junções da Curva, divisões de Cone e Redução, entidades de interseção da Boca de Lobo.
+- Recortar a interseção real entre tubo e ramal usando a curva já calculada, sem alterar a equação.
 
-## Fase C — eliminar ghost e ordenar corretamente
+## Fase C — eliminar o halo e o fantasma
 
-- Remover a elipse de sombra como padrão técnico; mantê-la apenas como opção de diagnóstico desligada por padrão.
-- Separar passes de superfície externa, superfície interna visível nas bocas, bordas e linhas técnicas.
-- Aplicar visibilidade por orientação e abertura: faces internas só aparecem quando geometricamente observáveis; nunca pintar toda a casca interna atrás da externa.
-- Ordenar triângulos, não polígonos grandes, com regra estável e sem deslocar vértices. Validar rotações críticas onde a ordenação média atual falha.
-- Isolar cada hipótese em testes visuais: internos, sombra, winding, ordenação e interseções.
+- Remover a elipse de sombra como padrão; manter apenas como opção de diagnóstico desligada.
+- Separar passes de superfície externa, interna, bordas e linhas técnicas.
+- Visibilidade interna determinística: orientação da face, posição da câmera, pertencimento a uma abertura real e topologia. Bocas, terminações e regiões observáveis continuam mostrando o interior; nada é escondido em bloco.
+- Ordenar triângulos com regra estável, com desempate por identidade e sem deslocar vértices.
+- Aplicar às arestas e às linhas de referência o mesmo critério de profundidade das superfícies.
+
+## Fase C2 — espessura real derivada do modelo canônico
+
+- Representar externa, interna, borda e relação de espessura somente quando a espessura do modelo for válida e o deslocamento interno for geometricamente confiável.
+- Onde não for confiável (ápices, cantos estreitos, raio menor que a espessura), manter representação de casca e registrar isso no diagnóstico; nunca inventar parede.
+- Nenhuma espessura fictícia e nenhuma alteração de coordenada canônica ou de resultado de cálculo.
 
 ## Fase D — visual técnico centralizado
 
-- Criar `technical3DConfig` único para qualidade, iluminação matemática, material de chapa, arestas, seleção e níveis mobile/desktop.
-- Preservar os tokens de chapa existentes, refinando contraste para fundo claro, escuro e AMOLED sem usar a cor principal do tema como significado técnico.
-- Implementar shading por modelo: facetado no Quadrado → Redondo, contínuo por faixas em Cone/Redução e híbrido com junções explícitas na Curva de Gomos e Boca de Lobo.
-- Manter iluminação uniforme baseada em normais reais, com destaque discreto e sem brilho fotográfico, textura, ferrugem ou contraste cinematográfico.
+- Configuração única do visor: qualidade, iluminação, material de chapa, arestas, seleção e níveis para celular e desktop.
+- Preservar os tokens de chapa, ajustando contraste para fundo claro, escuro e AMOLED, sem usar a cor do tema como significado técnico.
+- Sombreamento por modelo: facetado no Quadrado → Redondo, contínuo em Cone e Redução, híbrido com junções explícitas na Curva de Gomos e na Boca de Lobo.
+- Iluminação uniforme a partir das normais reais, sem brilho fotográfico, textura, ferrugem ou contraste dramático.
+
+## Fase D2 — separação Geometria × Fabricação
+
+- Criar uma camada de fabricação independente do motor geométrico: espessura, dobras, raio interno, ângulo, linha neutra, Fator K, allowance e deduction.
+- A geometria continua responsável por forma, superfícies, dimensões, interseções, planificação geométrica e relações paramétricas.
+- Superfície desenvolvível (cone, cilindro, transição) mantém planificação puramente geométrica mesmo com espessura no projeto. Compensação de dobra só entra em peça efetivamente dobrada.
+- Fator K com a relação `BA = θ × (R + K × T)`, com K padrão do projeto e K específico por dobra quando informado. Sem valor universal, sem valor embutido e sem conversão inventada entre K e Y.
+- Métodos de desenvolvimento configuráveis, exibindo apenas os efetivamente suportados. Fator Y e tabela de oficina ficam previstos na estrutura, sem opção falsa na interface.
+- Estrutura preparada para a Biblioteca de Dobra (material, espessura, processo, ferramenta, raio, ângulo, K, Y, allowance, deduction) sem popular tabelas não validadas.
+- Sem dado validado: entrada manual, identificação clara como parâmetro de fabricação e nenhuma afirmação de adequação a máquina ou processo.
 
 ## Fase E — arestas, vistas e enquadramento
 
-- Adicionar os modos `Superfície`, `Superfície + arestas` e `Estrutura`; o último mostra somente contornos, geratrizes, divisões, juntas e referências reais.
-- Adicionar ISO, Frontal, Traseira, Superior, Inferior, Esquerda, Direita, Ajustar à tela e Resetar usando a câmera existente.
-- Preservar orbit e zoom; adicionar pan compatível somente onde não conflitar com seleção e toque. Manter pinch e arraste estáveis no celular.
-- Recalcular fit apenas quando modelo ou vista mudar, com margem estável e sem cortar a peça.
+- Modos `Superfície`, `Superfície + arestas` e `Estrutura`; o último mostra contornos, geratrizes, divisões, juntas e referências reais.
+- Onde houver dobra real com dados suficientes, modos `Dobra` e `Linha neutra`: região da dobra, raio interno, ângulo, espessura, posição `R + K × T` e o K aplicado. Só aparecem quando os dados existem.
+- Vistas ISO, frontal, traseira, superior, inferior, esquerda, direita, ajustar à tela e resetar, usando a câmera existente.
+- Preservar órbita e zoom; pan apenas onde não conflitar com seleção e toque. Pinça e arraste estáveis no celular.
+- Recalcular enquadramento só quando modelo ou vista mudar, com margem estável e sem cortar a peça.
 
-## Fase F — seleção, 2D e planificação
+## Fase F — seleção, 2D, fabricação e planificação
 
-- Selecionar face, gomo ou componente pelo ID real; destacar temporariamente por contorno, espessura e rótulo, preservando a cor técnica.
-- Criar o vínculo opcional `faceId ↔ geometryRef ↔ entityId`, sem referências inventadas. Onde o modelo ainda não oferece equivalência, a seleção fica apenas no 3D.
-- Ligar referências já existentes da Traçagem Guiada às faces/arestas correspondentes quando a identidade canônica for comprovável.
-- Substituir o achatamento genérico atual por: desdobramento matemático somente nos modelos com mapeamento face→triângulo 2D válido; transição simples nos demais. O estado 2D/3D continua montado e preserva câmera.
+- Selecionar face, gomo ou componente pelo identificador real, com destaque temporário por contorno, espessura e rótulo, preservando a cor técnica.
+- Vínculo opcional entre face, referência geométrica e entidade 2D, sem referências inventadas.
+- Entregar ao CHAMFER o estado técnico da dobra (identificador, ângulo, raio interno, espessura, K, linha neutra, allowance, deduction e método) como dado, nunca como rótulo visual.
+- Alterar espessura, raio, ângulo, K ou método recalcula linha neutra, desenvolvimento de fabricação, 2D, 3D, cotas e CHAMFER, marca os derivados afetados como desatualizados e preserva a revisão anterior.
+- Desdobramento animado somente onde existir correspondência matemática válida; nos demais, transição simples com geometria correta.
 
 ## Fase G — performance
 
-- Manter o 3D sob demanda; nenhum modelo será pré-carregado na abertura do CALDRA.
-- Memorizar triangulação, normais, projeções invariantes, classificação de faces e estilos; durante orbit atualizar somente projeção/ordenação necessárias.
-- Reduzir polígonos e linhas secundárias no enquadramento distante sem remover geratrizes ou junções essenciais; elevar detalhe ao aproximar.
-- Pausar animação fora da tela, respeitar redução de movimento e evitar recriação de materiais/arrays por frame.
+- Manter o 3D sob demanda; nenhum modelo pré-carregado na abertura do aplicativo.
+- Memorizar triangulação, normais, classificação de faces e estilos; durante a órbita atualizar apenas projeção e ordenação.
+- O nível de detalhe altera apenas apresentação: rótulos, arestas secundárias, marcadores e referências. Medidas, vértices, faces principais, geratrizes, interseções e planificação nunca mudam com zoom, órbita ou troca de vista.
+- Pausar animação fora da tela, respeitar redução de movimento e evitar recriação de objetos por quadro.
 
 ## Fase H — validação e regressão
 
-- Testes unitários do auditor, winding, normais, IDs, contagens, bounds e invariância dos cálculos para Cone, Curva de Gomos, Quadrado → Redondo, Boca de Lobo e Redução.
-- Comparação visual automatizada em fundo claro/escuro/AMOLED, ISO/frontal, zoom mínimo/máximo e rotações críticas; o teste específico deve provar a ausência do halo e do ghost.
-- Testar modos técnicos, seleção, vistas, reset, fit, planificação e retorno ao 3D em celular e desktop.
-- Medir custo de construção e interação dos cinco modelos, especialmente Boca de Lobo, sem usar preload global.
-- Executar testes completos e confirmar a compilação após cada fase. Uma fase só avança quando a anterior preserva parâmetros, bounds, referências, comprimentos e planificação.
+- Testes do auditor, orientação, normais, identificadores, contagens, limites e invariância dos cálculos nos cinco modelos.
+- Testes de fabricação: peça sem dobra, uma dobra, múltiplas dobras, variação de espessura, de K, de raio e de ângulo, verificando linha neutra, desenvolvimento, 2D, 3D, dados entregues ao CHAMFER e invalidação de derivados.
+- Comparação visual em fundo claro, escuro e AMOLED, em vistas e zooms extremos, provando ausência do halo e do fantasma.
+- Testar modos técnicos, seleção, vistas, enquadramento, planificação e retorno ao 3D em celular e desktop.
+- Executar testes completos e confirmar compilação ao fim de cada fase; uma fase só avança preservando parâmetros, limites, referências, comprimentos e planificação.
 
 ## Limites preservados
 
-- Sem troca de renderer, câmera, motor matemático, CHAMFER, exportadores, assinatura, planos ou navegação.
-- Nenhuma correção visual poderá alterar coordenadas canônicas ou resultados de fabricação.
-- As imagens fornecidas e as capturas reproduzidas serão usadas como baseline visual; elas não serão incorporadas ao produto.
+- Sem troca de renderizador, câmera, motor matemático, CHAMFER, exportadores, assinatura, planos ou navegação.
+- Nenhuma mudança visual pode alterar coordenadas canônicas ou resultados de fabricação.
+- Prioridade fixa: geometria, espessura, dobra, linha neutra, Fator K, planificação de fabricação, visualização, CHAMFER, desempenho e só então estética.
+- As imagens enviadas e as capturas reproduzidas servem apenas como referência do problema.
