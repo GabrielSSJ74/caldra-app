@@ -128,13 +128,15 @@ export function pointInTriangle(
 export function refLabel(ref: GeometryRef): string {
   const kind = refKind(ref);
   const id = refId(ref);
+  const num = Number(id);
+  const ordinal = Number.isFinite(num) ? num + 1 : id;
   switch (kind) {
     case "fold":
-      return `Geratriz ${id + 1}`;
+      return `Geratriz ${ordinal}`;
     case "outline":
-      return `Contorno ${id + 1}`;
+      return `Contorno ${ordinal}`;
     case "point":
-      return `Ponto ${String.fromCharCode(65 + (id % 26))}`;
+      return `Ponto ${Number.isFinite(num) ? String.fromCharCode(65 + (num % 26)) : id}`;
     case "dim":
       return `Cota ${id}`;
     default:
