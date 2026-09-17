@@ -158,7 +158,7 @@ export function Wire3D({
       // dentro da peça) está voltada ao observador — isto é, a parede do lado
       // oposto, vista através da boca aberta. A parede interna próxima fica
       // atrás da superfície externa e não é desenhada.
-      if (face.kind === "inner" && nz <= 0 && false) return;
+      if (face.kind === "inner" && nz <= 0) return;
       // dupla face: a superfície interna é iluminada pela normal invertida
       const s = nz < 0 ? -1 : 1;
       const key = Math.max(0, nx * s * KEY.x + ny * s * KEY.y + nz * s * KEY.z);
