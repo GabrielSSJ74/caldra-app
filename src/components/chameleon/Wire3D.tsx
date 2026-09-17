@@ -31,6 +31,12 @@ type Props = {
   unfold?: number;
   /** padrão técnico persistente; oclusão espacial é opt-in */
   lineVisibility?: Extract<VisibilityPolicy, "technical-persistent" | "real-occlusion">;
+  /** vista padrão aplicada à câmera (não altera geometria) */
+  view?: ViewPresetId;
+  /** muda de valor para reenquadrar/reaplicar a vista atual */
+  viewNonce?: number;
+  /** modo de aresta — apenas apresentação */
+  edgeMode?: EdgeMode;
 };
 
 const VB = 200;
@@ -47,10 +53,19 @@ export function Wire3D({
   autoSpin = false,
   unfold = 0,
   lineVisibility = "technical-persistent",
+  view,
+  viewNonce = 0,
+  edgeMode = "shaded-edges",
 }: Props) {
-  const [cam, setCam] = useState<Camera>({ yaw: 0.7, pitch: 0.4, zoom: 1 });
+  const [cam, setCam] = useState<Camera>(() => (view ? cameraForView(view) : { yaw: 0.7, pitch: 0.4, zoom: 1 }));
   const drag = useRef<{ x: number; y: number } | null>(null);
   const resume = useRef(0);
+
+  /* vista padrão / reenquadramento: só orientação e zoom de fit */
+  useEffect(() => {
+    if (!view) return;
+    setCam(cameraForView(view));
+  }, [view, viewNonce]);
   const host = useRef<SVGSVGElement>(null);
   const [visible, setVisible] = useState(true);
 
