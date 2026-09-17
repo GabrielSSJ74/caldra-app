@@ -333,8 +333,10 @@ function shell(loops: Vec3[][], o: ShellOpts): Geo {
   // arestas: contornos extremos + geratrizes reais da superfície
   const first = valid[0]!;
   const last = valid[valid.length - 1]!;
-  edges.push(...loopEdges(first), ...loopEdges(last));
-  edgeTags.push(...Array<WireTag | undefined>(2 * n).fill(undefined));
+  edges.push(...loopEdges(first));
+  edgeTags.push(...Array<WireTag | undefined>(n).fill({ rim: "base" }));
+  edges.push(...loopEdges(last));
+  edgeTags.push(...Array<WireTag | undefined>(n).fill({ rim: "top" }));
   if (!o.capStart) {
     edges.push(...loopEdges(inner[0]!));
     edgeTags.push(...Array<WireTag | undefined>(n).fill(undefined));
