@@ -264,14 +264,16 @@ export function Wire3D({
         </radialGradient>
       </defs>
 
-      {/* sombra de contato suave, derivada do bounding box real */}
-      <ellipse
-        cx="0"
-        cy={ground.y.toFixed(2)}
-        rx={Math.max(4, ground.rx).toFixed(2)}
-        ry={Math.max(2, ground.rx * 0.2).toFixed(2)}
-        fill={`url(#floor-${uid})`}
-      />
+      {/* sombra de contato: apenas diagnóstico, nunca padrão técnico */}
+      {showShadow ? (
+        <ellipse
+          cx="0"
+          cy={ground.y.toFixed(2)}
+          rx={Math.max(4, ground.rx).toFixed(2)}
+          ry={Math.max(2, ground.rx * 0.2).toFixed(2)}
+          fill={`url(#floor-${uid})`}
+        />
+      ) : null}
 
       <g>
         {faces.map((f, i) => (
