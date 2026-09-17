@@ -133,42 +133,59 @@ export function Wire3D({
     // "polygon offset": prioridade de profundidade por tipo de face, sem
     // mexer em nenhum vértice — apenas política de desenho.
     const BIAS: Record<string, number> = { inner: -0.6, cap: -0.3, rim: 0.3, outer: 0 };
+    const span = Math.max(1e-6, fitRadius(model.bounds));
 
-    const f = model.faces
-      .map((face, idx) => {
-        const cs = face.pts.map(cp);
-        // normal real da malha (espaço de modelo), corrigida pela escala de
-        // planificação e levada ao espaço de câmera — nunca derivada da tela.
-        const mn = face.n ?? { x: 0, y: 1, z: 0 };
-        const sy = k > 1e-6 ? 1 / k : 1;
-        const nl = Math.hypot(mn.x, mn.y * sy, mn.z) || 1;
-        const cn = toCam({ x: mn.x / nl, y: (mn.y * sy) / nl, z: mn.z / nl }, cam);
-        const nx = cn.x;
-        const ny = cn.y;
-        const nz = cn.z;
-        // dupla face: a superfície interna é iluminada pela normal invertida
-        const s = nz < 0 ? -1 : 1;
-        const key = Math.max(0, nx * s * KEY.x + ny * s * KEY.y + nz * s * KEY.z);
-        const fill = Math.max(0, nx * s * FILL.x + ny * s * FILL.y + nz * s * FILL.z);
-        const rim = Math.pow(1 - Math.abs(nz), 3);
-        const m = MAT[face.kind] ?? MAT["outer"]!;
-        // difuso + preenchimento + reflexo especular discreto (metal semiacetinado)
-        const spec = Math.pow(key, 14) * 0.3;
-        const lum = m.amb + m.gain * (0.82 * Math.pow(key, 0.85) + 0.22 * fill) + spec + 0.12 * rim;
-        const pct = Math.max(0, Math.min(100, lum * 100));
-        const span = Math.max(1e-6, fitRadius(model.bounds));
-        const depth =
-          cs.reduce((acc, p) => acc + p.z, 0) / cs.length +
-          (BIAS[face.kind] ?? 0) * span * 0.002;
-        return {
-          d: cs.map((p) => `${(p.x * kk).toFixed(2)},${(-p.y * kk).toFixed(2)}`).join(" "),
-          depth,
+    type Tri = { d: string; depth: number; idx: number; fill: string };
+    const f: Tri[] = [];
+
+    model.faces.forEach((face, idx) => {
+      const cs = face.pts.map(cp);
+      if (cs.length < 3) return;
+      // normal real da malha (espaço de modelo), corrigida pela escala de
+      // planificação e levada ao espaço de câmera — nunca derivada da tela.
+      const mn = face.n ?? { x: 0, y: 1, z: 0 };
+      const sy = k > 1e-6 ? 1 / k : 1;
+      const nl = Math.hypot(mn.x, mn.y * sy, mn.z) || 1;
+      const cn = toCam({ x: mn.x / nl, y: (mn.y * sy) / nl, z: mn.z / nl }, cam);
+      const nx = cn.x;
+      const ny = cn.y;
+      const nz = cn.z;
+      // Visibilidade da superfície interna: regra geométrica determinística.
+      // A parede interna só é observável quando sua normal (que aponta para
+      // dentro da peça) está voltada ao observador — isto é, a parede do lado
+      // oposto, vista através da boca aberta. A parede interna próxima fica
+      // atrás da superfície externa e não é desenhada.
+      if (face.kind === "inner" && nz <= 0) return;
+      // dupla face: a superfície interna é iluminada pela normal invertida
+      const s = nz < 0 ? -1 : 1;
+      const key = Math.max(0, nx * s * KEY.x + ny * s * KEY.y + nz * s * KEY.z);
+      const fill = Math.max(0, nx * s * FILL.x + ny * s * FILL.y + nz * s * FILL.z);
+      const rim = Math.pow(1 - Math.abs(nz), 3);
+      const m = MAT[face.kind] ?? MAT["outer"]!;
+      // difuso + preenchimento + reflexo especular discreto (metal semiacetinado)
+      const spec = Math.pow(key, 14) * 0.3;
+      const lum = m.amb + m.gain * (0.82 * Math.pow(key, 0.85) + 0.22 * fill) + spec + 0.12 * rim;
+      const pct = Math.max(0, Math.min(100, lum * 100));
+      const paint = `color-mix(in oklab, ${m.hi} ${pct.toFixed(1)}%, ${m.base})`;
+      const bias = (BIAS[face.kind] ?? 0) * span * 0.002;
+
+      // ordenação por TRIÂNGULO, não por polígono inteiro: leque determinístico
+      // a partir do primeiro vértice, sem mover nenhum ponto.
+      const a = cs[0]!;
+      for (let i = 1; i + 1 < cs.length; i++) {
+        const b = cs[i]!;
+        const c = cs[i + 1]!;
+        f.push({
+          d: [a, b, c].map((p) => `${(p.x * kk).toFixed(2)},${(-p.y * kk).toFixed(2)}`).join(" "),
+          depth: (a.z + b.z + c.z) / 3 + bias,
           idx,
-          fill: `color-mix(in oklab, ${m.hi} ${pct.toFixed(1)}%, ${m.base})`,
-        };
-      })
-      // ordenação estável: empates resolvidos pelo índice, sem cintilação
-      .sort((a, b) => a.depth - b.depth || a.idx - b.idx);
+          fill: paint,
+        });
+      }
+    });
+
+    // ordenação estável: empates resolvidos pelo índice, sem cintilação
+    f.sort((x, y) => x.depth - y.depth || x.idx - y.idx);
 
     const line = (a: Vec3, b: Vec3) => {
       const pa = cp(a);
@@ -184,7 +201,9 @@ export function Wire3D({
 
     // remoção aproximada de linhas ocultas: apenas arestas do hemisfério frontal
     const e = model.edges.map(([a, b]) => line(a, b)).filter((l) => l.depth > 0);
-    const r = (model.refLines ?? []).map(([a, b]) => line(a, b));
+    // linhas técnicas seguem o MESMO critério de profundidade das arestas:
+    // não são mais desenhadas por cima da peça inteira.
+    const r = (model.refLines ?? []).map(([a, b]) => line(a, b)).filter((l) => l.depth > 0);
 
     const radius = fitRadius(model.bounds);
     const rx = radius * kk * 0.92;
