@@ -176,13 +176,24 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
   const devHighlight = useMemo<HighlightState>(() => {
     const dev = result?.development;
     const field = focused ?? pulse;
-    if (!engine || !dev || !field) return NO_HIGHLIGHT;
-    return {
-      refs: fieldRefs(field, dev, refsForDim(engine.dimKey(field), dev)),
-      level: "focus",
-      label: engine.fields.find((f) => f.key === field)?.tag ?? field,
-    };
-  }, [engine, result, focused, pulse]);
+    if (!engine || !dev) return NO_HIGHLIGHT;
+    if (field) {
+      return {
+        refs: fieldRefs(field, dev, refsForDim(engine.dimKey(field), dev)),
+        level: "focus",
+        label: engine.fields.find((f) => f.key === field)?.tag ?? field,
+      };
+    }
+    /* 3D → 2D: a entidade selecionada no modelo destaca a origem na planificação. */
+    if (selRef) return { refs: [selRef], level: "focus", label: refLabel(selRef) };
+    return NO_HIGHLIGHT;
+  }, [engine, result, focused, pulse, selRef]);
+
+  /* 2D/parâmetro → 3D: primeiro ref mapeável do destaque atual. */
+  const highlightRef3d = useMemo<GeometryRef | null>(() => {
+    if (selRef) return selRef;
+    return devHighlight.refs.find((r) => refKind(r) === "fold") ?? null;
+  }, [selRef, devHighlight]);
 
 
 
@@ -300,9 +311,15 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
           <VisualizationViewport
             mode={viewMode}
             onModeChange={setViewMode}
-            model={buildWire(slug, wireParams)}
+            model={wireModel}
             unfold={unfold}
             onUnfold={setUnfold}
+            selection={{
+              refForEdge,
+              refForFace,
+              highlightRef: highlightRef3d,
+              onSelectRef: setSelRef,
+            }}
             onPlanificar={() => {
               setUnfold(1);
               window.setTimeout(() => {
