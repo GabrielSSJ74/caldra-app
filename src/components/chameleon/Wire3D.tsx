@@ -330,9 +330,10 @@ export function Wire3D({
           pitch: interactive ? Math.max(-Math.PI / 2, Math.min(Math.PI / 2, c.pitch + dy * 0.006)) : c.pitch,
         }));
       }}
-      onPointerUp={() => {
+      onPointerUp={(ev) => {
         drag.current = null;
         resume.current = performance.now() + 900;
+        onTapSelect(ev);
       }}
       onPointerLeave={() => {
         drag.current = null;
@@ -388,6 +389,52 @@ export function Wire3D({
               strokeLinecap="round"
             />
           ))}
+        {highlightRef && (selectedEdges.length > 0 || selectedFaces.length > 0) && (
+          <g data-category="selection" pointerEvents="none">
+            {selectedFaces.map((f) => (
+              <polygon
+                key={`sel:${f.id}`}
+                data-entity-id={f.id}
+                data-category="selection"
+                points={f.d}
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth={0.9}
+                strokeLinejoin="round"
+              />
+            ))}
+            {selectedEdges.map((e) => (
+              <line
+                key={`sel:${e.id}`}
+                data-entity-id={e.id}
+                data-category="selection"
+                x1={e.x1.toFixed(2)}
+                y1={e.y1.toFixed(2)}
+                x2={e.x2.toFixed(2)}
+                y2={e.y2.toFixed(2)}
+                stroke="var(--accent)"
+                strokeWidth={1.6}
+                strokeLinecap="round"
+              />
+            ))}
+            {labelAnchor && (
+              <text
+                data-category="selection"
+                x={labelAnchor.x.toFixed(2)}
+                y={(labelAnchor.y - 3).toFixed(2)}
+                textAnchor="middle"
+                fontSize={7}
+                fontFamily="var(--font-mono, monospace)"
+                fill="var(--accent)"
+                stroke="var(--background)"
+                strokeWidth={2.2}
+                paintOrder="stroke"
+              >
+                {refLabel(highlightRef)}
+              </text>
+            )}
+          </g>
+        )}
       </g>
 
     </svg>
