@@ -22,7 +22,17 @@ export type FaceKind = "outer" | "inner" | "rim" | "cap";
  * vez em `finish()` — depois que posições e índices estão completos (Newell).
  * Nunca é derivada da projeção de tela, o que elimina manchas de iluminação.
  */
-export type Face = { pts: Vec3[]; kind: FaceKind; n?: Vec3 };
+export type Face = {
+  pts: Vec3[];
+  kind: FaceKind;
+  n?: Vec3;
+  /**
+   * Grupo de casca (corpos que se cruzam, ex.: tubo principal = 0, ramal = 1).
+   * Usado apenas como desempate de profundidade na apresentação; nunca altera
+   * coordenadas. Omitido em peças de corpo único.
+   */
+  g?: number;
+};
 export type Bounds = { min: Vec3; max: Vec3 };
 
 export type WireModel = {
