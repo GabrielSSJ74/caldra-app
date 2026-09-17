@@ -405,7 +405,12 @@ function computeFaceNormals(faces: Face[]): void {
 }
 
 function finish(geo: Geo, refLines: Edge[] = []): WireModel {
-...
+  // 1. malha completa → 2. normais → 3. bounding box (nesta ordem, sempre)
+  computeFaceNormals(geo.faces);
+  const bounds = boundsOf(geo.faces);
+  const size =
+    Math.max(bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y, bounds.max.z - bounds.min.z) ||
+    1;
   return {
     faces: geo.faces,
     edges: geo.edges,
