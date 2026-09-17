@@ -56,6 +56,12 @@ export type WireModel = {
 /** Geratriz ordinal k de n igualmente espaçadas ao redor da seção. */
 export type GeratrizTag = { k: number; n: number };
 
+/** Aro de boca (perímetro real) — a mesma entidade do contorno do desenvolvimento. */
+export type RimTag = { rim: "base" | "top" };
+
+/** Marca de entidade canônica carregada por aresta/face do wireframe. */
+export type WireTag = GeratrizTag | RimTag;
+
 export type WireParams = {
   /** diâmetro / lado maior (base) */
   d1: number;
