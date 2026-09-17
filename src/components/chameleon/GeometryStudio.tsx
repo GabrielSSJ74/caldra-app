@@ -189,15 +189,28 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
     return NO_HIGHLIGHT;
   }, [engine, result, focused, pulse, selRef]);
 
-  /* 2D/parâmetro → 3D: primeiro ref mapeável do destaque atual (geratriz ou contorno). */
-  const highlightRef3d = useMemo<GeometryRef | null>(() => {
-    if (selRef) return selRef;
-    return (
-      devHighlight.refs.find((r) => refKind(r) === "fold") ??
-      devHighlight.refs.find((r) => refKind(r) === "outline") ??
-      null
-    );
-  }, [selRef, devHighlight]);
+  /*
+   * 2D/parâmetro → 3D: refs do destaque atual que têm entidade no modelo.
+   * dobra/contorno passam direto; ponto de geratriz gN → dobra N;
+   * cota de diâmetro → contorno da boca (0 = base, 1 = topo).
+   */
+  const highlightRef3d = useMemo<readonly GeometryRef[]>(() => {
+    if (selRef) return [selRef];
+    const dev = result?.development;
+    if (!dev) return [];
+    const out: GeometryRef[] = [];
+    for (const r of devHighlight.refs) {
+      const kind = refKind(r);
+      const id = refId(r);
+      if (kind === "fold" || kind === "outline") out.push(r);
+      else if (kind === "point" && /^g\d+$/.test(id)) out.push(foldRef(Number(id.slice(1))));
+      else if (kind === "dim" && (id === "d1" || id === "d2")) {
+        const rim = outlineRef(id === "d1" ? 0 : 1);
+        if (refExists(dev, rim)) out.push(rim);
+      }
+    }
+    return out;
+  }, [selRef, devHighlight, result]);
 
 
 
