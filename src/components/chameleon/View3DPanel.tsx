@@ -141,6 +141,10 @@ export function View3DPanel({
           view={view}
           viewNonce={viewNonce}
           edgeMode={edgeMode}
+          refForEdge={selection?.refForEdge}
+          refForFace={selection?.refForFace}
+          highlightRef={selection?.highlightRef}
+          onSelectRef={selection?.onSelectRef}
           className="size-full text-foreground/80"
         />
       </Suspense>
