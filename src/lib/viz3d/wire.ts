@@ -212,11 +212,36 @@ type ShellOpts = {
   capEnd?: boolean;
   /** a cada quantas divisões desenhar uma geratriz */
   gen?: number;
+  /** grupo de casca (corpos que se cruzam) */
+  g?: number;
 };
 
 type Geo = { faces: Face[]; edges: Edge[] };
 
 const EMPTY: Geo = { faces: [], edges: [] };
+
+/** Marca todas as faces de uma parte com o grupo de casca informado. */
+function tag(geo: Geo, g: number): Geo {
+  for (const f of geo.faces) f.g = g;
+  return geo;
+}
+
+/**
+ * RECORTE REAL DE ABERTURA entre dois corpos que se cruzam.
+ * Remove do corpo cortado as faces INTEIRAMENTE dentro do volume do corpo
+ * penetrante (nenhum vértice é movido — a malha canônica é preservada) e
+ * suprime as arestas que cruzariam o vão. A linha de interseção real, quando
+ * fornecida, é adicionada como aresta do contorno do furo.
+ */
+function cutOpening(geo: Geo, inside: (p: Vec3) => boolean, curve?: Vec3[]): Geo {
+  const mid = (a: Vec3, b: Vec3): Vec3 => v((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+  const faces = geo.faces.filter((f) => !f.pts.every(inside));
+  const edges = geo.edges.filter(([a, b]) => !inside(mid(a, b)));
+  if (curve && curve.length > 1) {
+    for (let i = 0; i < curve.length - 1; i++) edges.push([curve[i]!, curve[i + 1]!]);
+  }
+  return { faces, edges };
+}
 
 function merge(parts: Geo[]): Geo {
   return {
