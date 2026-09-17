@@ -172,15 +172,18 @@ export function Wire3D({
       const paint = `color-mix(in oklab, ${m.hi} ${pct.toFixed(1)}%, ${m.base})`;
       const bias = (BIAS[face.kind] ?? 0) * span * 0.002;
 
-      // ordenação por TRIÂNGULO, não por polígono inteiro: leque determinístico
-      // a partir do primeiro vértice, sem mover nenhum ponto.
+      // Triangulação determinística em leque, apenas na representação: nenhum
+      // ponto é movido. A PROFUNDIDADE continua sendo a da face inteira, para
+      // que os triângulos de um mesmo polígono nunca se intercalem com os de
+      // polígonos vizinhos (origem de listras e do efeito fantasma).
+      const depth = cs.reduce((acc, p) => acc + p.z, 0) / cs.length + bias;
       const a = cs[0]!;
       for (let i = 1; i + 1 < cs.length; i++) {
         const b = cs[i]!;
         const c = cs[i + 1]!;
         f.push({
           d: [a, b, c].map((p) => `${(p.x * kk).toFixed(2)},${(-p.y * kk).toFixed(2)}`).join(" "),
-          depth: (a.z + b.z + c.z) / 3 + bias,
+          depth,
           idx,
           fill: paint,
         });
