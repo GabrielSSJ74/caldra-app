@@ -49,8 +49,8 @@ export type WireModel = {
    * metadado — nunca altera a geometria. A conversão para GeometryRef acontece
    * em `viz3d/selection`, que conhece o desenvolvimento.
    */
-  edgeTags?: readonly (GeratrizTag | undefined)[];
-  faceTags?: readonly (GeratrizTag | undefined)[];
+  edgeTags?: readonly (GeratrizTag | undefined)[] | undefined;
+  faceTags?: readonly (GeratrizTag | undefined)[] | undefined;
 };
 
 /** Geratriz ordinal k de n igualmente espaçadas ao redor da seção. */
@@ -230,8 +230,8 @@ type ShellOpts = {
 type Geo = {
   faces: Face[];
   edges: Edge[];
-  edgeTags?: (GeratrizTag | undefined)[];
-  faceTags?: (GeratrizTag | undefined)[];
+  edgeTags?: (GeratrizTag | undefined)[] | undefined;
+  faceTags?: (GeratrizTag | undefined)[] | undefined;
 };
 
 const EMPTY: Geo = { faces: [], edges: [] };
