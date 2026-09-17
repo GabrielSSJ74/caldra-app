@@ -54,6 +54,7 @@ export function Wire3D({
   interactive = false,
   autoSpin = false,
   unfold = 0,
+  showShadow = false,
 }: Props) {
   const [cam, setCam] = useState<Camera>({ yaw: 0.7, pitch: 0.4, zoom: 1 });
   const drag = useRef<{ x: number; y: number } | null>(null);
