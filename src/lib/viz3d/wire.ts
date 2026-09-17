@@ -302,8 +302,13 @@ function shell(loops: Vec3[][], o: ShellOpts): Geo {
   const inner = valid.map((l) => offsetLoop(l, o.t));
   const faces: Face[] = [];
   const edges: Edge[] = [];
+  const faceTags: (GeratrizTag | undefined)[] = [];
+  const edgeTags: (GeratrizTag | undefined)[] = [];
   const n = valid[0]!.length;
   const gen = Math.max(1, o.gen ?? Math.round(n / 8));
+  /* geratrizes traçadas: i = 0, gen, 2·gen … → ordinal k = i/gen de G */
+  const G = Math.ceil(n / gen);
+  const faceTag = (i: number): GeratrizTag => ({ k: Math.round(i / gen) % G, n: G });
 
   for (let s = 0; s < valid.length - 1; s++) {
     const a = valid[s]!;
@@ -313,7 +318,9 @@ function shell(loops: Vec3[][], o: ShellOpts): Geo {
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       faces.push({ pts: [a[i]!, a[j]!, b[j]!, b[i]!], kind: "outer" });
+      faceTags.push(faceTag(i));
       faces.push({ pts: [bi[i]!, bi[j]!, ai[j]!, ai[i]!], kind: "inner" });
+      faceTags.push(faceTag(i));
     }
   }
 
@@ -321,11 +328,20 @@ function shell(loops: Vec3[][], o: ShellOpts): Geo {
   const first = valid[0]!;
   const last = valid[valid.length - 1]!;
   edges.push(...loopEdges(first), ...loopEdges(last));
-  if (!o.capStart) edges.push(...loopEdges(inner[0]!));
-  if (!o.capEnd) edges.push(...loopEdges(inner[inner.length - 1]!));
+  edgeTags.push(...Array<GeratrizTag | undefined>(2 * n).fill(undefined));
+  if (!o.capStart) {
+    edges.push(...loopEdges(inner[0]!));
+    edgeTags.push(...Array<GeratrizTag | undefined>(n).fill(undefined));
+  }
+  if (!o.capEnd) {
+    edges.push(...loopEdges(inner[inner.length - 1]!));
+    edgeTags.push(...Array<GeratrizTag | undefined>(n).fill(undefined));
+  }
   for (let i = 0; i < n; i += gen) {
+    const t0: GeratrizTag = { k: i / gen, n: G };
     for (let s = 0; s < valid.length - 1; s++) {
       edges.push([valid[s]![i]!, valid[s + 1]![i]!]);
+      edgeTags.push(t0);
     }
   }
 
@@ -334,14 +350,19 @@ function shell(loops: Vec3[][], o: ShellOpts): Geo {
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       faces.push({ pts: [out[i]!, out[j]!, inn[j]!, inn[i]!], kind: "rim" });
+      faceTags.push(undefined);
     }
   };
-  if (o.capStart) faces.push({ pts: first, kind: "cap" });
-  else rim(first, inner[0]!);
-  if (o.capEnd) faces.push({ pts: last, kind: "cap" });
-  else rim(last, inner[inner.length - 1]!);
+  if (o.capStart) {
+    faces.push({ pts: first, kind: "cap" });
+    faceTags.push(undefined);
+  } else rim(first, inner[0]!);
+  if (o.capEnd) {
+    faces.push({ pts: last, kind: "cap" });
+    faceTags.push(undefined);
+  } else rim(last, inner[inner.length - 1]!);
 
-  return { faces, edges };
+  return { faces, edges, edgeTags, faceTags };
 }
 
 function boundsOf(faces: Face[]): Bounds {
