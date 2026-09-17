@@ -20,6 +20,13 @@ import {
   type ProjectedTriangle,
   type VisibilityPolicy,
 } from "@/lib/viz3d/visibility";
+import {
+  entityIndexOf,
+  pickEdgeIndex,
+  pickFaceIndex,
+  refLabel,
+} from "@/lib/viz3d/selection";
+import type { GeometryRef } from "@/lib/geometry/refs";
 import { cameraForView, type EdgeMode, type ViewPresetId } from "@/lib/viz3d/cameraPresets";
 import { cn } from "@/lib/utils";
 
@@ -38,6 +45,16 @@ type Props = {
   viewNonce?: number;
   /** modo de aresta — apenas apresentação */
   edgeMode?: EdgeMode;
+  /**
+   * SELEÇÃO (Fase F): resolve o índice de uma aresta/face para a referência
+   * canônica de origem. Quando ausente, a peça não é selecionável.
+   */
+  refForEdge?: ((index: number) => GeometryRef | null) | undefined;
+  refForFace?: ((index: number) => GeometryRef | null) | undefined;
+  /** Referência destacada (seleção 3D ou foco vindo do 2D/parâmetros). */
+  highlightRef?: GeometryRef | null | undefined;
+  /** Toque/clique sem arraste sobre entidade mapeável (null = toque no vazio). */
+  onSelectRef?: ((ref: GeometryRef | null) => void) | undefined;
 };
 
 const VB = 200;
