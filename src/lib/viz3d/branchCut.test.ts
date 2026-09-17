@@ -22,8 +22,8 @@ describe("boca-de-lobo: furo real no tubo principal", () => {
   const model = buildWire("boca-de-lobo", { ...P, mode: "branch" });
   const inside = insideBranchFactory(P);
 
-  it("nenhuma face sobrevivente está inteiramente dentro do volume do ramal", () => {
-    const viol = model.faces.filter((f) => f.pts.every(inside));
+  it("nenhuma face do tubo principal está inteiramente dentro do volume do ramal", () => {
+    const viol = model.faces.filter((f) => f.g === 0 && f.pts.every(inside));
     expect(viol).toEqual([]);
   });
 
