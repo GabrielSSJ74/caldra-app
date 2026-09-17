@@ -170,7 +170,10 @@ export function Wire3D({
       const lum = m.amb + m.gain * (0.82 * Math.pow(key, 0.85) + 0.22 * fill) + spec + 0.12 * rim;
       const pct = Math.max(0, Math.min(100, lum * 100));
       const paint = `color-mix(in oklab, ${m.hi} ${pct.toFixed(1)}%, ${m.base})`;
-      const bias = (BIAS[face.kind] ?? 0) * span * 0.002;
+      // desempate por GRUPO de casca: em corpos que se cruzam (tubo × ramal),
+      // o ramal é sempre o corpo externo na junção — vence empates de
+      // profundidade sem mover nenhum vértice.
+      const bias = ((BIAS[face.kind] ?? 0) + (face.g ?? 0) * 0.75) * span * 0.002;
 
       // Triangulação determinística em leque, apenas na representação: nenhum
       // ponto é movido. A PROFUNDIDADE continua sendo a da face inteira, para
