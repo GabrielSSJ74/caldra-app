@@ -43,7 +43,18 @@ export type WireModel = {
   /** maior extensão do bounding box (mm) — usada para enquadramento */
   size: number;
   bounds: Bounds;
+  /**
+   * Vínculo 3D ↔ geometria canônica: marca arestas/faces geradas por uma
+   * geratriz da superfície (ordinal `k` de `n` geratrizes espaçadas). Apenas
+   * metadado — nunca altera a geometria. A conversão para GeometryRef acontece
+   * em `viz3d/selection`, que conhece o desenvolvimento.
+   */
+  edgeTags?: readonly (GeratrizTag | undefined)[];
+  faceTags?: readonly (GeratrizTag | undefined)[];
 };
+
+/** Geratriz ordinal k de n igualmente espaçadas ao redor da seção. */
+export type GeratrizTag = { k: number; n: number };
 
 export type WireParams = {
   /** diâmetro / lado maior (base) */
@@ -216,7 +227,12 @@ type ShellOpts = {
   g?: number;
 };
 
-type Geo = { faces: Face[]; edges: Edge[] };
+type Geo = {
+  faces: Face[];
+  edges: Edge[];
+  edgeTags?: (GeratrizTag | undefined)[];
+  faceTags?: (GeratrizTag | undefined)[];
+};
 
 const EMPTY: Geo = { faces: [], edges: [] };
 
@@ -235,18 +251,39 @@ function tag(geo: Geo, g: number): Geo {
  */
 function cutOpening(geo: Geo, inside: (p: Vec3) => boolean, curve?: Vec3[]): Geo {
   const mid = (a: Vec3, b: Vec3): Vec3 => v((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
-  const faces = geo.faces.filter((f) => !f.pts.every(inside));
-  const edges = geo.edges.filter(([a, b]) => !inside(mid(a, b)));
+  const keepF = geo.faces.map((f, i) => ({ f, i })).filter(({ f }) => !f.pts.every(inside));
+  const keepE = geo.edges.map((e, i) => ({ e, i })).filter(({ e }) => !inside(mid(e[0], e[1])));
+  const faces = keepF.map(({ f }) => f);
+  const edges = keepE.map(({ e }) => e);
+  const faceTags = geo.faceTags ? keepF.map(({ i }) => geo.faceTags![i]) : undefined;
+  const edgeTags = geo.edgeTags ? keepE.map(({ i }) => geo.edgeTags![i]) : undefined;
   if (curve && curve.length > 1) {
-    for (let i = 0; i < curve.length - 1; i++) edges.push([curve[i]!, curve[i + 1]!]);
+    for (let i = 0; i < curve.length - 1; i++) {
+      edges.push([curve[i]!, curve[i + 1]!]);
+      edgeTags?.push(undefined);
+    }
   }
-  return { faces, edges };
+  return { faces, edges, edgeTags, faceTags };
 }
 
 function merge(parts: Geo[]): Geo {
+  const faces = parts.flatMap((p) => p.faces);
+  const edges = parts.flatMap((p) => p.edges);
+  const hasET = parts.some((p) => p.edgeTags);
+  const hasFT = parts.some((p) => p.faceTags);
   return {
-    faces: parts.flatMap((p) => p.faces),
-    edges: parts.flatMap((p) => p.edges),
+    faces,
+    edges,
+    edgeTags: hasET
+      ? parts.flatMap(
+          (p) => p.edgeTags ?? Array<GeratrizTag | undefined>(p.edges.length).fill(undefined),
+        )
+      : undefined,
+    faceTags: hasFT
+      ? parts.flatMap(
+          (p) => p.faceTags ?? Array<GeratrizTag | undefined>(p.faces.length).fill(undefined),
+        )
+      : undefined,
   };
 }
 
