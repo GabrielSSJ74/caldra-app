@@ -76,6 +76,7 @@ export function VisualizationViewport({
             unfold={unfold}
             onUnfold={onUnfold}
             onPlanificar={onPlanificar}
+            selection={selection}
           />
         </div>
       )}
@@ -112,11 +113,13 @@ export function View3DPanel({
   unfold,
   onUnfold,
   onPlanificar,
+  selection,
 }: {
   model: WireModel;
   unfold: number;
   onUnfold: (v: number) => void;
   onPlanificar: () => void;
+  selection?: SelectionSync | undefined;
 }) {
   const [view, setView] = useState<ViewPresetId>(DEFAULT_VIEW);
   const [viewNonce, setViewNonce] = useState(0);
