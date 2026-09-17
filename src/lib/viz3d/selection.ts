@@ -54,7 +54,7 @@ export function faceRefAt(
   foldCount: number,
   index: number,
 ): GeometryRef | null {
-  return refFromTag(model.faceTags?.[index], foldCount);
+  return refFromWireTag(model.faceTags?.[index], foldCount);
 }
 
 /** Índice estável da entidade a partir do ID projetado ("edge:12" ou "edge:12:0-3"). */
