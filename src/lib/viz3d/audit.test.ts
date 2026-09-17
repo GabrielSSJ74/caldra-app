@@ -13,7 +13,7 @@ const MODELS = [
 describe("auditoria da malha 3D", () => {
   for (const m of MODELS) {
     it(`${m.mode} gera malha saudável`, () => {
-      const audit = auditModel(buildWire(m.params));
+      const audit = auditModel(buildWire(m.mode, m.params));
       expect(audit.faces).toBeGreaterThan(0);
       expect(audit.nonFinite).toBe(0);
       expect(audit.degenerate).toBe(0);
@@ -25,8 +25,8 @@ describe("auditoria da malha 3D", () => {
   }
 
   it("a auditoria é determinística para os mesmos parâmetros", () => {
-    const a = auditModel(buildWire({ d1: 600, d2: 300, h: 400 }));
-    const b = auditModel(buildWire({ d1: 600, d2: 300, h: 400 }));
+    const a = auditModel(buildWire("reducao-circular", { d1: 600, d2: 300, h: 400 }));
+    const b = auditModel(buildWire("reducao-circular", { d1: 600, d2: 300, h: 400 }));
     expect(a).toEqual(b);
   });
 });
