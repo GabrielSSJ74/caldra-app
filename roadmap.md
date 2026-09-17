@@ -203,13 +203,13 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - Medido (celular simulado 4x mais lento): 1º toque 1786ms -> 657ms; 2º toque 1976ms -> 493ms.
 
 ## Refinamento profissional do 3D da Traçagem (17/09)
-- [ ] Fase A — diagnóstico geométrico e baseline dos cinco modelos.
-- [ ] Fase B — topologia, winding, normais e IDs canônicos.
-- [ ] Fase C — correção do halo, ghost e oclusão de faces internas.
-- [ ] Fase D — configuração central, chapa e shading técnico por modelo.
+- [x] Fase A — diagnóstico geométrico e baseline dos cinco modelos (auditor puro em src/lib/viz3d/audit.ts).
+- [x] Fase B — topologia/normais auditadas; recorte real da interseção (Boca de Lobo e Tê) com curva canônica e viés por grupo de casca.
+- [x] Fase C — halo eliminado (sombra artificial opt-in), ghost/listras corrigidos (ordenação por face inteira), parede interna só visível quando observável.
+- [~] Fase D — configuração central extraída (src/lib/viz3d/shading.ts); falta shading por modelo.
 - [ ] Fase E — modos de aresta, vistas padrão, fit e controles.
 - [ ] Fase F — seleção e sincronização comprovável com 2D/Traçagem/planificação.
-- [ ] Fase G — performance mobile e carregamento sob demanda.
+- [x] Fase G — projeção/ordenação memorizadas; pausa fora da viewport e em aba oculta (IntersectionObserver).
 - [ ] Fase H — regressão matemática, visual e interativa.
 
 ## Espessura, dobra e Fator K (17/09)

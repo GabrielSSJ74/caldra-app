@@ -10,7 +10,7 @@
  * geometria 3D é derivada dos mesmos números, em milímetros de mundo.
  */
 
-import { branchAxisLength } from "@/lib/geometry/branch";
+import { branchAxisLength, branchIntersection } from "@/lib/geometry/branch";
 import { elbowModel } from "@/lib/geometry/elbowSegments";
 import { buildModel as buildSquareToRoundModel } from "@/lib/geometry/squareToRound";
 import type { Vec2, Vec3 } from "@/lib/geometry/types";
@@ -22,7 +22,17 @@ export type FaceKind = "outer" | "inner" | "rim" | "cap";
  * vez em `finish()` — depois que posições e índices estão completos (Newell).
  * Nunca é derivada da projeção de tela, o que elimina manchas de iluminação.
  */
-export type Face = { pts: Vec3[]; kind: FaceKind; n?: Vec3 };
+export type Face = {
+  pts: Vec3[];
+  kind: FaceKind;
+  n?: Vec3;
+  /**
+   * Grupo de casca (corpos que se cruzam, ex.: tubo principal = 0, ramal = 1).
+   * Usado apenas como desempate de profundidade na apresentação; nunca altera
+   * coordenadas. Omitido em peças de corpo único.
+   */
+  g?: number;
+};
 export type Bounds = { min: Vec3; max: Vec3 };
 
 export type WireModel = {
@@ -202,11 +212,36 @@ type ShellOpts = {
   capEnd?: boolean;
   /** a cada quantas divisões desenhar uma geratriz */
   gen?: number;
+  /** grupo de casca (corpos que se cruzam) */
+  g?: number;
 };
 
 type Geo = { faces: Face[]; edges: Edge[] };
 
 const EMPTY: Geo = { faces: [], edges: [] };
+
+/** Marca todas as faces de uma parte com o grupo de casca informado. */
+function tag(geo: Geo, g: number): Geo {
+  for (const f of geo.faces) f.g = g;
+  return geo;
+}
+
+/**
+ * RECORTE REAL DE ABERTURA entre dois corpos que se cruzam.
+ * Remove do corpo cortado as faces INTEIRAMENTE dentro do volume do corpo
+ * penetrante (nenhum vértice é movido — a malha canônica é preservada) e
+ * suprime as arestas que cruzariam o vão. A linha de interseção real, quando
+ * fornecida, é adicionada como aresta do contorno do furo.
+ */
+function cutOpening(geo: Geo, inside: (p: Vec3) => boolean, curve?: Vec3[]): Geo {
+  const mid = (a: Vec3, b: Vec3): Vec3 => v((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
+  const faces = geo.faces.filter((f) => !f.pts.every(inside));
+  const edges = geo.edges.filter(([a, b]) => !inside(mid(a, b)));
+  if (curve && curve.length > 1) {
+    for (let i = 0; i < curve.length - 1; i++) edges.push([curve[i]!, curve[i + 1]!]);
+  }
+  return { faces, edges };
+}
 
 function merge(parts: Geo[]): Geo {
   return {
@@ -483,7 +518,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
             return v(x, R * Math.cos(φ), R * Math.sin(φ));
           }),
         );
-        const main = shell(mainLoops, { t });
+        const main = tag(shell(mainLoops, { t }), 0);
 
         const steps = 5;
         const branchLoops = Array.from({ length: steps + 1 }, (_, s) => {
@@ -499,8 +534,26 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
             );
           });
         });
-        const branch = shell(branchLoops, { t });
-        return withAxis(merge([main, branch]));
+        const branch = tag(shell(branchLoops, { t }), 1);
+
+        /*
+         * FURO REAL no tubo principal: a linha de interseção calculada em
+         * `geometry/branch` (a mesma da planificação do furo) define o volume
+         * do ramal; as faces do tubo inteiramente dentro dele são removidas
+         * e a curva vira o contorno da abertura. Nenhum vértice é movido.
+         */
+        const bm = branchIntersection(input);
+        const ax = Math.cos(a);
+        const ay = Math.sin(a);
+        const insideBranch = (q: Vec3) => {
+          const s = q.x * ax + q.y * ay;
+          if (s < -t) return false;
+          const px = q.x - s * ax;
+          const py = q.y - s * ay;
+          return Math.hypot(px, py, q.z - p.e) < rb - t * 0.25;
+        };
+        const cutMain = cutOpening(main, insideBranch, bm.curve.map((c) => c.p));
+        return withAxis(merge([cutMain, branch]));
       }
       // cilindro cortado por plano inclinado: altura varia com z
       const steps = 6;
@@ -516,16 +569,30 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
 
     case "te":
     case "interseccoes": {
-      const main = shell(frustumLoops(r1, r1, h, seg, 0, 2), { t });
+      const main = tag(shell(frustumLoops(r1, r1, h, seg, 0, 2), { t }), 0);
       const armLen = r1 + h * 0.45;
-      const branch = shell(
-        Array.from({ length: 5 }, (_, i) => {
-          const z = r1 * 0.2 + (armLen - r1 * 0.2) * (i / 4);
-          return ring(r2, 0, seg).map((q) => v(q.x, q.z, z));
-        }),
-        { t },
+      const branch = tag(
+        shell(
+          Array.from({ length: 5 }, (_, i) => {
+            const z = r1 * 0.2 + (armLen - r1 * 0.2) * (i / 4);
+            return ring(r2, 0, seg).map((q) => v(q.x, q.z, z));
+          }),
+          { t },
+        ),
+        1,
       );
-      return withAxis(merge([main, branch]));
+      // Furo real no tubo: interseção analítica cilindro ⊥ cilindro.
+      const curve: Vec3[] = Array.from({ length: seg + 1 }, (_, i) => {
+        const θ = (i / seg) * Math.PI * 2;
+        const x = r2 * Math.sin(θ);
+        return v(x, r2 * Math.cos(θ), Math.sqrt(Math.max(r1 * r1 - x * x, 0)));
+      });
+      const cutMain = cutOpening(
+        main,
+        (q) => q.z > -t && Math.hypot(q.x, q.y) < r2 - t * 0.25,
+        curve,
+      );
+      return withAxis(merge([cutMain, branch]));
     }
 
     case "y": {

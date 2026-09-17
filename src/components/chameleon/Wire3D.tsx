@@ -10,6 +10,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Vec3 } from "@/lib/geometry/types";
 import { centerOf, fitRadius, type Camera, type WireModel } from "@/lib/viz3d/wire";
+import { FACE_MATERIALS, FILL_LIGHT, KEY_LIGHT } from "@/lib/viz3d/shading";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -38,15 +39,9 @@ function toCam(p: Vec3, cam: Camera): Vec3 {
   return { x: x1, y: y1, z: z2 };
 }
 
-const KEY = { x: -0.38, y: 0.66, z: 0.65 };
-const FILL = { x: 0.62, y: -0.12, z: 0.42 };
-
-const MAT: Record<string, { base: string; hi: string; gain: number; amb: number }> = {
-  outer: { base: "var(--solid-lo)", hi: "var(--solid-hi)", gain: 1.05, amb: 0.04 },
-  inner: { base: "var(--solid-in)", hi: "var(--solid-lo)", gain: 0.8, amb: 0.1 },
-  rim: { base: "var(--solid-lo)", hi: "var(--solid-rim)", gain: 1.1, amb: 0.2 },
-  cap: { base: "var(--solid-lo)", hi: "var(--solid-hi)", gain: 0.95, amb: 0.08 },
-};
+const KEY = KEY_LIGHT;
+const FILL = FILL_LIGHT;
+const MAT = FACE_MATERIALS;
 
 export function Wire3D({
   model,
@@ -170,7 +165,10 @@ export function Wire3D({
       const lum = m.amb + m.gain * (0.82 * Math.pow(key, 0.85) + 0.22 * fill) + spec + 0.12 * rim;
       const pct = Math.max(0, Math.min(100, lum * 100));
       const paint = `color-mix(in oklab, ${m.hi} ${pct.toFixed(1)}%, ${m.base})`;
-      const bias = (BIAS[face.kind] ?? 0) * span * 0.002;
+      // desempate por GRUPO de casca: em corpos que se cruzam (tubo × ramal),
+      // o ramal é sempre o corpo externo na junção — vence empates de
+      // profundidade sem mover nenhum vértice.
+      const bias = ((BIAS[face.kind] ?? 0) + (face.g ?? 0) * 0.75) * span * 0.002;
 
       // Triangulação determinística em leque, apenas na representação: nenhum
       // ponto é movido. A PROFUNDIDADE continua sendo a da face inteira, para
