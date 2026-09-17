@@ -10,7 +10,7 @@
  * geometria 3D é derivada dos mesmos números, em milímetros de mundo.
  */
 
-import { branchAxisLength } from "@/lib/geometry/branch";
+import { branchAxisLength, branchIntersection } from "@/lib/geometry/branch";
 import { elbowModel } from "@/lib/geometry/elbowSegments";
 import { buildModel as buildSquareToRoundModel } from "@/lib/geometry/squareToRound";
 import type { Vec2, Vec3 } from "@/lib/geometry/types";
@@ -518,7 +518,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
             return v(x, R * Math.cos(φ), R * Math.sin(φ));
           }),
         );
-        const main = shell(mainLoops, { t });
+        const main = tag(shell(mainLoops, { t }), 0);
 
         const steps = 5;
         const branchLoops = Array.from({ length: steps + 1 }, (_, s) => {
@@ -534,8 +534,26 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
             );
           });
         });
-        const branch = shell(branchLoops, { t });
-        return withAxis(merge([main, branch]));
+        const branch = tag(shell(branchLoops, { t }), 1);
+
+        /*
+         * FURO REAL no tubo principal: a linha de interseção calculada em
+         * `geometry/branch` (a mesma da planificação do furo) define o volume
+         * do ramal; as faces do tubo inteiramente dentro dele são removidas
+         * e a curva vira o contorno da abertura. Nenhum vértice é movido.
+         */
+        const bm = branchIntersection(input);
+        const ax = Math.cos(a);
+        const ay = Math.sin(a);
+        const insideBranch = (q: Vec3) => {
+          const s = q.x * ax + q.y * ay;
+          if (s < -t) return false;
+          const px = q.x - s * ax;
+          const py = q.y - s * ay;
+          return Math.hypot(px, py, q.z - p.e) < rb - t * 0.25;
+        };
+        const cutMain = cutOpening(main, insideBranch, bm.curve.map((c) => c.p));
+        return withAxis(merge([cutMain, branch]));
       }
       // cilindro cortado por plano inclinado: altura varia com z
       const steps = 6;
