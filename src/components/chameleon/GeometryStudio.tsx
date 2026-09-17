@@ -189,10 +189,14 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
     return NO_HIGHLIGHT;
   }, [engine, result, focused, pulse, selRef]);
 
-  /* 2D/parâmetro → 3D: primeiro ref mapeável do destaque atual. */
+  /* 2D/parâmetro → 3D: primeiro ref mapeável do destaque atual (geratriz ou contorno). */
   const highlightRef3d = useMemo<GeometryRef | null>(() => {
     if (selRef) return selRef;
-    return devHighlight.refs.find((r) => refKind(r) === "fold") ?? null;
+    return (
+      devHighlight.refs.find((r) => refKind(r) === "fold") ??
+      devHighlight.refs.find((r) => refKind(r) === "outline") ??
+      null
+    );
   }, [selRef, devHighlight]);
 
 
