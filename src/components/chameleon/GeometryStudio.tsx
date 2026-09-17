@@ -112,8 +112,13 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
   const [unfold, setUnfold] = useState(0);
   /* 3D é camada da área de resultado, não etapa do fluxo. */
   const [viewMode, setViewMode] = useState<VisualizationMode>("2d");
-  /* Trocar de peça sempre volta para o 2D. */
-  useEffect(() => setViewMode("2d"), [slug]);
+  /* Seleção 3D ↔ 2D (Fase F): referência canônica escolhida no modelo. */
+  const [selRef, setSelRef] = useState<GeometryRef | null>(null);
+  /* Trocar de peça sempre volta para o 2D e limpa a seleção. */
+  useEffect(() => {
+    setViewMode("2d");
+    setSelRef(null);
+  }, [slug]);
   const [pulse, setPulse] = useState<string | null>(null);
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
   const pulseTimer = useRef<number | null>(null);
@@ -131,6 +136,18 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
   const wireParams: WireParams = useMemo(
     () => (engine ? engine.wire(values) : { d1: 300, d2: 160, h: 260, e: 0, seg: 24 }),
     [engine, values],
+  );
+  const wireModel = useMemo(() => buildWire(slug, wireParams), [slug, wireParams]);
+
+  /* Resolvers 3D → ref canônica: dependem só do modelo e do desenvolvimento. */
+  const foldCount = result?.development.foldLines.length ?? 0;
+  const refForEdge = useMemo(
+    () => (index: number) => edgeRefAt(wireModel, foldCount, index),
+    [wireModel, foldCount],
+  );
+  const refForFace = useMemo(
+    () => (index: number) => faceRefAt(wireModel, foldCount, index),
+    [wireModel, foldCount],
   );
 
   /** Campos ativos para os parâmetros atuais (o método escolhe o conjunto). */
