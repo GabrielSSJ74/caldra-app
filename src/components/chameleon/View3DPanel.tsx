@@ -8,6 +8,13 @@
 
 import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 import type { WireModel } from "@/lib/viz3d/wire";
+import {
+  DEFAULT_VIEW,
+  EDGE_MODES,
+  VIEW_PRESETS,
+  type EdgeMode,
+  type ViewPresetId,
+} from "@/lib/viz3d/cameraPresets";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
