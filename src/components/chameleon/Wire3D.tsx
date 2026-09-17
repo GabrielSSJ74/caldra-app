@@ -38,15 +38,11 @@ function toCam(p: Vec3, cam: Camera): Vec3 {
   return { x: x1, y: y1, z: z2 };
 }
 
-const KEY = { x: -0.38, y: 0.66, z: 0.65 };
-const FILL = { x: 0.62, y: -0.12, z: 0.42 };
+import { FACE_MATERIALS, FILL_LIGHT, KEY_LIGHT } from "@/lib/viz3d/shading";
 
-const MAT: Record<string, { base: string; hi: string; gain: number; amb: number }> = {
-  outer: { base: "var(--solid-lo)", hi: "var(--solid-hi)", gain: 1.05, amb: 0.04 },
-  inner: { base: "var(--solid-in)", hi: "var(--solid-lo)", gain: 0.8, amb: 0.1 },
-  rim: { base: "var(--solid-lo)", hi: "var(--solid-rim)", gain: 1.1, amb: 0.2 },
-  cap: { base: "var(--solid-lo)", hi: "var(--solid-hi)", gain: 0.95, amb: 0.08 },
-};
+const KEY = KEY_LIGHT;
+const FILL = FILL_LIGHT;
+const MAT = FACE_MATERIALS;
 
 export function Wire3D({
   model,
