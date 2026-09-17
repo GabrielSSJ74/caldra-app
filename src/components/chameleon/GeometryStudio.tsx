@@ -33,6 +33,10 @@ import { TracagemPanel } from "./TracagemPanel";
 import {
   NO_HIGHLIGHT,
   fieldRefs,
+  foldRef,
+  outlineRef,
+  refExists,
+  refId,
   refKind,
   refsForDim,
   stepForDim,
