@@ -74,9 +74,14 @@ export function Wire3D({
   view,
   viewNonce = 0,
   edgeMode = "shaded-edges",
+  refForEdge,
+  refForFace,
+  highlightRef = null,
+  onSelectRef,
 }: Props) {
   const [cam, setCam] = useState<Camera>(() => (view ? cameraForView(view) : { yaw: 0.7, pitch: 0.4, zoom: 1 }));
   const drag = useRef<{ x: number; y: number } | null>(null);
+  const downAt = useRef<{ x: number; y: number } | null>(null);
   const resume = useRef(0);
 
   /* vista padrão / reenquadramento: só orientação e zoom de fit */
@@ -243,10 +248,63 @@ export function Wire3D({
 
   const maxDepth = Math.max(1, ...edges.flatMap((e) => [Math.abs(e.z1), Math.abs(e.z2)]));
 
+  /*
+   * Destaque de seleção: entidades cuja origem canônica é `highlightRef`.
+   * Camada "selection" — acima de superfícies e arestas, nunca substitui as
+   * cores técnicas nem depende apenas de cor (rótulo textual acompanha).
+   */
+  const selectedEdges = useMemo(
+    () =>
+      highlightRef && refForEdge
+        ? edges.filter((e) => refForEdge(entityIndexOf(e.id)) === highlightRef)
+        : [],
+    [edges, highlightRef, refForEdge],
+  );
+  const selectedFaces = useMemo(
+    () =>
+      highlightRef && refForFace
+        ? faces.filter((f) => refForFace(f.priority) === highlightRef)
+        : [],
+    [faces, highlightRef, refForFace],
+  );
+  const labelAnchor = selectedEdges[0]
+    ? { x: (selectedEdges[0].x1 + selectedEdges[0].x2) / 2, y: (selectedEdges[0].y1 + selectedEdges[0].y2) / 2 }
+    : selectedFaces[0]
+      ? {
+          x: (selectedFaces[0].pts[0]!.x + selectedFaces[0].pts[2]!.x) / 2,
+          y: (selectedFaces[0].pts[0]!.y + selectedFaces[0].pts[2]!.y) / 2,
+        }
+      : null;
+
   const onDragStart = (ev: React.PointerEvent<SVGSVGElement>) => {
     if (!interactive && ev.pointerType === "touch") return; // toque continua servindo ao card
     drag.current = { x: ev.clientX, y: ev.clientY };
+    downAt.current = { x: ev.clientX, y: ev.clientY };
     ev.currentTarget.setPointerCapture(ev.pointerId);
+  };
+
+  /* Toque/clique SEM arraste = seleção; arraste continua sendo rotação. */
+  const onTapSelect = (ev: React.PointerEvent<SVGSVGElement>) => {
+    if (!onSelectRef || !downAt.current) return;
+    const moved = Math.hypot(ev.clientX - downAt.current.x, ev.clientY - downAt.current.y);
+    downAt.current = null;
+    if (moved > 8) return;
+    const svg = host.current;
+    if (!svg) return;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return;
+    const pt = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(ctm.inverse());
+    const faceIdx = refForFace ? pickFaceIndex(faces, pt.x, pt.y) : null;
+    if (faceIdx !== null) {
+      const ref = refForFace!(faceIdx);
+      if (ref) {
+        onSelectRef(ref);
+        return;
+      }
+    }
+    const edgeIdx = refForEdge ? pickEdgeIndex(edges, pt.x, pt.y, 4) : null;
+    const ref = edgeIdx !== null ? refForEdge!(edgeIdx) : null;
+    onSelectRef(ref);
   };
 
   return (
