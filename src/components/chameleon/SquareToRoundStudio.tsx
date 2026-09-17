@@ -23,6 +23,8 @@ import { MATERIALS } from "@/lib/projects/demo-data";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { buildWire } from "@/lib/viz3d/wire";
+import { edgeRefAt } from "@/lib/viz3d/selection";
+import type { GeometryRef } from "@/lib/geometry/refs";
 import { developmentToEntities, piecesToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
 import { cn } from "@/lib/utils";
 import { VisualizationViewport, type VisualizationMode } from "./View3DPanel";
@@ -104,6 +106,14 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
         strategy: input.strategy,
       }),
     [input],
+  );
+
+  /* Seleção 3D ↔ ref canônica (Fase F): geratrizes da malha facetada. */
+  const [selRef, setSelRef] = useState<GeometryRef | null>(null);
+  const foldCount = result?.development.foldLines.length ?? 0;
+  const refForEdge = useMemo(
+    () => (index: number) => edgeRefAt(wireModel, foldCount, index),
+    [wireModel, foldCount],
   );
 
   const set = (key: FieldKey, raw: string) => {
@@ -201,6 +211,7 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
             model={wireModel}
             unfold={unfold}
             onUnfold={setUnfold}
+            selection={{ refForEdge, highlightRef: selRef, onSelectRef: setSelRef }}
             onPlanificar={() => {
               setUnfold(1);
               window.setTimeout(() => {

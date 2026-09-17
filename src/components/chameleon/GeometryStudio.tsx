@@ -19,6 +19,7 @@ import { downloadTracagemPng } from "@/lib/export/tracagemSheet";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { buildWire, type WireParams } from "@/lib/viz3d/wire";
+import { edgeRefAt, faceRefAt, refLabel } from "@/lib/viz3d/selection";
 import { developmentToEntities, piecesToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
 import { conferenceRows } from "@/lib/geometry/conference";
 import { fieldMeaning } from "@/lib/education/learn";
@@ -32,8 +33,14 @@ import { TracagemPanel } from "./TracagemPanel";
 import {
   NO_HIGHLIGHT,
   fieldRefs,
+  foldRef,
+  outlineRef,
+  refExists,
+  refId,
+  refKind,
   refsForDim,
   stepForDim,
+  type GeometryRef,
   type HighlightState,
 } from "@/lib/geometry/refs";
 import { ParametricDiagram, type CotaSpec } from "./ParametricDiagram";
@@ -109,8 +116,13 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
   const [unfold, setUnfold] = useState(0);
   /* 3D é camada da área de resultado, não etapa do fluxo. */
   const [viewMode, setViewMode] = useState<VisualizationMode>("2d");
-  /* Trocar de peça sempre volta para o 2D. */
-  useEffect(() => setViewMode("2d"), [slug]);
+  /* Seleção 3D ↔ 2D (Fase F): referência canônica escolhida no modelo. */
+  const [selRef, setSelRef] = useState<GeometryRef | null>(null);
+  /* Trocar de peça sempre volta para o 2D e limpa a seleção. */
+  useEffect(() => {
+    setViewMode("2d");
+    setSelRef(null);
+  }, [slug]);
   const [pulse, setPulse] = useState<string | null>(null);
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
   const pulseTimer = useRef<number | null>(null);
@@ -128,6 +140,18 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
   const wireParams: WireParams = useMemo(
     () => (engine ? engine.wire(values) : { d1: 300, d2: 160, h: 260, e: 0, seg: 24 }),
     [engine, values],
+  );
+  const wireModel = useMemo(() => buildWire(slug, wireParams), [slug, wireParams]);
+
+  /* Resolvers 3D → ref canônica: dependem só do modelo e do desenvolvimento. */
+  const foldCount = result?.development.foldLines.length ?? 0;
+  const refForEdge = useMemo(
+    () => (index: number) => edgeRefAt(wireModel, foldCount, index),
+    [wireModel, foldCount],
+  );
+  const refForFace = useMemo(
+    () => (index: number) => faceRefAt(wireModel, foldCount, index),
+    [wireModel, foldCount],
   );
 
   /** Campos ativos para os parâmetros atuais (o método escolhe o conjunto). */
@@ -156,13 +180,41 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
   const devHighlight = useMemo<HighlightState>(() => {
     const dev = result?.development;
     const field = focused ?? pulse;
-    if (!engine || !dev || !field) return NO_HIGHLIGHT;
-    return {
-      refs: fieldRefs(field, dev, refsForDim(engine.dimKey(field), dev)),
-      level: "focus",
-      label: engine.fields.find((f) => f.key === field)?.tag ?? field,
-    };
-  }, [engine, result, focused, pulse]);
+    if (!engine || !dev) return NO_HIGHLIGHT;
+    if (field) {
+      return {
+        refs: fieldRefs(field, dev, refsForDim(engine.dimKey(field), dev)),
+        level: "focus",
+        label: engine.fields.find((f) => f.key === field)?.tag ?? field,
+      };
+    }
+    /* 3D → 2D: a entidade selecionada no modelo destaca a origem na planificação. */
+    if (selRef) return { refs: [selRef], level: "focus", label: refLabel(selRef) };
+    return NO_HIGHLIGHT;
+  }, [engine, result, focused, pulse, selRef]);
+
+  /*
+   * 2D/parâmetro → 3D: refs do destaque atual que têm entidade no modelo.
+   * dobra/contorno passam direto; ponto de geratriz gN → dobra N;
+   * cota de diâmetro → contorno da boca (0 = base, 1 = topo).
+   */
+  const highlightRef3d = useMemo<readonly GeometryRef[]>(() => {
+    if (selRef) return [selRef];
+    const dev = result?.development;
+    if (!dev) return [];
+    const out: GeometryRef[] = [];
+    for (const r of devHighlight.refs) {
+      const kind = refKind(r);
+      const id = refId(r);
+      if (kind === "fold" || kind === "outline") out.push(r);
+      else if (kind === "point" && /^g\d+$/.test(id)) out.push(foldRef(Number(id.slice(1))));
+      else if (kind === "dim" && (id === "d1" || id === "d2")) {
+        const rim = outlineRef(id === "d1" ? 0 : 1);
+        if (refExists(dev, rim)) out.push(rim);
+      }
+    }
+    return out;
+  }, [selRef, devHighlight, result]);
 
 
 
@@ -280,9 +332,15 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
           <VisualizationViewport
             mode={viewMode}
             onModeChange={setViewMode}
-            model={buildWire(slug, wireParams)}
+            model={wireModel}
             unfold={unfold}
             onUnfold={setUnfold}
+            selection={{
+              refForEdge,
+              refForFace,
+              highlightRef: highlightRef3d,
+              onSelectRef: setSelRef,
+            }}
             onPlanificar={() => {
               setUnfold(1);
               window.setTimeout(() => {

@@ -43,7 +43,24 @@ export type WireModel = {
   /** maior extensão do bounding box (mm) — usada para enquadramento */
   size: number;
   bounds: Bounds;
+  /**
+   * Vínculo 3D ↔ geometria canônica: marca arestas/faces geradas por uma
+   * geratriz da superfície (ordinal `k` de `n` geratrizes espaçadas). Apenas
+   * metadado — nunca altera a geometria. A conversão para GeometryRef acontece
+   * em `viz3d/selection`, que conhece o desenvolvimento.
+   */
+  edgeTags?: readonly (WireTag | undefined)[] | undefined;
+  faceTags?: readonly (WireTag | undefined)[] | undefined;
 };
+
+/** Geratriz ordinal k de n igualmente espaçadas ao redor da seção. */
+export type GeratrizTag = { k: number; n: number };
+
+/** Aro de boca (perímetro real) — a mesma entidade do contorno do desenvolvimento. */
+export type RimTag = { rim: "base" | "top" };
+
+/** Marca de entidade canônica carregada por aresta/face do wireframe. */
+export type WireTag = GeratrizTag | RimTag;
 
 export type WireParams = {
   /** diâmetro / lado maior (base) */
@@ -216,7 +233,12 @@ type ShellOpts = {
   g?: number;
 };
 
-type Geo = { faces: Face[]; edges: Edge[] };
+type Geo = {
+  faces: Face[];
+  edges: Edge[];
+  edgeTags?: (WireTag | undefined)[] | undefined;
+  faceTags?: (WireTag | undefined)[] | undefined;
+};
 
 const EMPTY: Geo = { faces: [], edges: [] };
 
@@ -235,18 +257,39 @@ function tag(geo: Geo, g: number): Geo {
  */
 function cutOpening(geo: Geo, inside: (p: Vec3) => boolean, curve?: Vec3[]): Geo {
   const mid = (a: Vec3, b: Vec3): Vec3 => v((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
-  const faces = geo.faces.filter((f) => !f.pts.every(inside));
-  const edges = geo.edges.filter(([a, b]) => !inside(mid(a, b)));
+  const keepF = geo.faces.map((f, i) => ({ f, i })).filter(({ f }) => !f.pts.every(inside));
+  const keepE = geo.edges.map((e, i) => ({ e, i })).filter(({ e }) => !inside(mid(e[0], e[1])));
+  const faces = keepF.map(({ f }) => f);
+  const edges = keepE.map(({ e }) => e);
+  const faceTags = geo.faceTags ? keepF.map(({ i }) => geo.faceTags![i]) : undefined;
+  const edgeTags = geo.edgeTags ? keepE.map(({ i }) => geo.edgeTags![i]) : undefined;
   if (curve && curve.length > 1) {
-    for (let i = 0; i < curve.length - 1; i++) edges.push([curve[i]!, curve[i + 1]!]);
+    for (let i = 0; i < curve.length - 1; i++) {
+      edges.push([curve[i]!, curve[i + 1]!]);
+      edgeTags?.push(undefined);
+    }
   }
-  return { faces, edges };
+  return { faces, edges, edgeTags, faceTags };
 }
 
 function merge(parts: Geo[]): Geo {
+  const faces = parts.flatMap((p) => p.faces);
+  const edges = parts.flatMap((p) => p.edges);
+  const hasET = parts.some((p) => p.edgeTags);
+  const hasFT = parts.some((p) => p.faceTags);
   return {
-    faces: parts.flatMap((p) => p.faces),
-    edges: parts.flatMap((p) => p.edges),
+    faces,
+    edges,
+    edgeTags: hasET
+      ? parts.flatMap(
+          (p) => p.edgeTags ?? Array<WireTag | undefined>(p.edges.length).fill(undefined),
+        )
+      : undefined,
+    faceTags: hasFT
+      ? parts.flatMap(
+          (p) => p.faceTags ?? Array<WireTag | undefined>(p.faces.length).fill(undefined),
+        )
+      : undefined,
   };
 }
 
@@ -265,8 +308,13 @@ function shell(loops: Vec3[][], o: ShellOpts): Geo {
   const inner = valid.map((l) => offsetLoop(l, o.t));
   const faces: Face[] = [];
   const edges: Edge[] = [];
+  const faceTags: (WireTag | undefined)[] = [];
+  const edgeTags: (WireTag | undefined)[] = [];
   const n = valid[0]!.length;
   const gen = Math.max(1, o.gen ?? Math.round(n / 8));
+  /* geratrizes traçadas: i = 0, gen, 2·gen … → ordinal k = i/gen de G */
+  const G = Math.ceil(n / gen);
+  const faceTag = (i: number): GeratrizTag => ({ k: Math.round(i / gen) % G, n: G });
 
   for (let s = 0; s < valid.length - 1; s++) {
     const a = valid[s]!;
@@ -276,19 +324,32 @@ function shell(loops: Vec3[][], o: ShellOpts): Geo {
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       faces.push({ pts: [a[i]!, a[j]!, b[j]!, b[i]!], kind: "outer" });
+      faceTags.push(faceTag(i));
       faces.push({ pts: [bi[i]!, bi[j]!, ai[j]!, ai[i]!], kind: "inner" });
+      faceTags.push(faceTag(i));
     }
   }
 
   // arestas: contornos extremos + geratrizes reais da superfície
   const first = valid[0]!;
   const last = valid[valid.length - 1]!;
-  edges.push(...loopEdges(first), ...loopEdges(last));
-  if (!o.capStart) edges.push(...loopEdges(inner[0]!));
-  if (!o.capEnd) edges.push(...loopEdges(inner[inner.length - 1]!));
+  edges.push(...loopEdges(first));
+  edgeTags.push(...Array<WireTag | undefined>(n).fill({ rim: "base" }));
+  edges.push(...loopEdges(last));
+  edgeTags.push(...Array<WireTag | undefined>(n).fill({ rim: "top" }));
+  if (!o.capStart) {
+    edges.push(...loopEdges(inner[0]!));
+    edgeTags.push(...Array<WireTag | undefined>(n).fill(undefined));
+  }
+  if (!o.capEnd) {
+    edges.push(...loopEdges(inner[inner.length - 1]!));
+    edgeTags.push(...Array<WireTag | undefined>(n).fill(undefined));
+  }
   for (let i = 0; i < n; i += gen) {
+    const t0: GeratrizTag = { k: i / gen, n: G };
     for (let s = 0; s < valid.length - 1; s++) {
       edges.push([valid[s]![i]!, valid[s + 1]![i]!]);
+      edgeTags.push(t0);
     }
   }
 
@@ -297,14 +358,19 @@ function shell(loops: Vec3[][], o: ShellOpts): Geo {
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       faces.push({ pts: [out[i]!, out[j]!, inn[j]!, inn[i]!], kind: "rim" });
+      faceTags.push(undefined);
     }
   };
-  if (o.capStart) faces.push({ pts: first, kind: "cap" });
-  else rim(first, inner[0]!);
-  if (o.capEnd) faces.push({ pts: last, kind: "cap" });
-  else rim(last, inner[inner.length - 1]!);
+  if (o.capStart) {
+    faces.push({ pts: first, kind: "cap" });
+    faceTags.push(undefined);
+  } else rim(first, inner[0]!);
+  if (o.capEnd) {
+    faces.push({ pts: last, kind: "cap" });
+    faceTags.push(undefined);
+  } else rim(last, inner[inner.length - 1]!);
 
-  return { faces, edges };
+  return { faces, edges, edgeTags, faceTags };
 }
 
 function boundsOf(faces: Face[]): Bounds {
@@ -353,7 +419,15 @@ function finish(geo: Geo, refLines: Edge[] = []): WireModel {
   const size =
     Math.max(bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y, bounds.max.z - bounds.min.z) ||
     1;
-  return { faces: geo.faces, edges: geo.edges, refLines, size, bounds };
+  return {
+    faces: geo.faces,
+    edges: geo.edges,
+    refLines,
+    size,
+    bounds,
+    edgeTags: geo.edgeTags,
+    faceTags: geo.faceTags,
+  };
 }
 
 /** Eixo da peça + linha de base: referências geométricas reais. */
@@ -440,13 +514,18 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
       };
       const faces: Face[] = [];
       const edges: Edge[] = [];
+      const edgeTags: (WireTag | undefined)[] = [];
+      const genN = canonical.generatrices.length;
       for (const face of canonical.faces) {
         const outer = face.points.map(cv);
         const inner = face.points.map((q) => inset(q));
         faces.push({ pts: outer, kind: "outer" });
         faces.push({ pts: inner.slice().reverse(), kind: "inner" });
       }
-      edges.push(...canonical.generatrices.map((line) => [cv(line.a), cv(line.b)] as Edge));
+      canonical.generatrices.forEach((line, i) => {
+        edges.push([cv(line.a), cv(line.b)]);
+        edgeTags.push({ k: i, n: genN });
+      });
 
       for (let k = 0; k < canonical.corners.length; k++) {
         const a = canonical.corners[k];
@@ -456,6 +535,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
         const bo = cv(b);
         faces.push({ pts: [ao, bo, inset(b), inset(a)], kind: "rim" });
         edges.push([ao, bo]);
+        edgeTags.push(undefined);
       }
       for (let k = 0; k < canonical.circle.length; k++) {
         const a = canonical.circle[k];
@@ -465,6 +545,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
         const bo = cv(b);
         faces.push({ pts: [ao, bo, inset(b), inset(a)], kind: "rim" });
         edges.push([ao, bo]);
+        edgeTags.push(undefined);
       }
 
       // Emendas soldadas (modo 2 partes + solda): posição real das costuras J1/J2.
@@ -479,7 +560,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
         );
       }
 
-      return withAxis({ faces, edges }, seamRefs);
+      return withAxis({ faces, edges, edgeTags }, seamRefs);
     }
 
     case "redondo-quadrado": {
