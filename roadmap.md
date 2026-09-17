@@ -206,11 +206,20 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Fase A — diagnóstico geométrico e baseline dos cinco modelos (auditor puro em src/lib/viz3d/audit.ts).
 - [x] Fase B — topologia/normais auditadas; recorte real da interseção (Boca de Lobo e Tê) com curva canônica e viés por grupo de casca.
 - [x] Fase C — halo eliminado (sombra artificial opt-in), ghost/listras corrigidos (ordenação por face inteira), parede interna só visível quando observável.
-- [~] Fase D — configuração central extraída (src/lib/viz3d/shading.ts); falta shading por modelo.
+- [x] Fase D — iluminação/material centralizados e ordenação estável por intervalo de profundidade, prioridade e ID.
 - [ ] Fase E — modos de aresta, vistas padrão, fit e controles.
 - [ ] Fase F — seleção e sincronização comprovável com 2D/Traçagem/planificação.
 - [x] Fase G — projeção/ordenação memorizadas; pausa fora da viewport e em aba oculta (IntersectionObserver).
-- [ ] Fase H — regressão matemática, visual e interativa.
+- [~] Fase H — regressão matemática, esférica e interativa do Wire3D concluída; seleção/2D e fabricação seguem pendentes.
+
+## Correção crítica do Wire3D — oclusão e rotação esférica (17/09)
+- [x] Remover integralmente sombra/halo do modo técnico padrão, inclusive composição e enquadramento.
+- [x] Separar políticas de superfície, aresta, linha técnica, referência, cota e seleção.
+- [x] Manter linhas técnicas persistentes por identidade estável em toda a rotação.
+- [x] Implementar oclusão espacial opcional por subsegmentos, sem alterar a entidade canônica.
+- [x] Tornar a ordenação determinística por intervalo de profundidade, prioridade e ID estável.
+- [x] Liberar inclinação vertical suportada de −90° a +90° sem trocar a câmera.
+- [x] Validar azimute 0–360°, elevação −90°–+90°, esfera, estresse e os cinco modelos nos três temas.
 
 ## Espessura, dobra e Fator K (17/09)
 - [ ] Fase C2 — espessura real derivada do modelo canônico, sem parede fictícia.
