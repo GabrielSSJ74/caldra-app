@@ -11,8 +11,8 @@
  * fallback silencioso (null) — nunca destaca a entidade errada.
  */
 
-import { foldRef, refId, refKind, type GeometryRef } from "@/lib/geometry/refs";
-import type { GeratrizTag, WireModel } from "./wire";
+import { foldRef, outlineRef, refId, refKind, type GeometryRef } from "@/lib/geometry/refs";
+import type { GeratrizTag, WireModel, WireTag } from "./wire";
 import type { ProjectedLine, ProjectedTriangle } from "./visibility";
 
 /**
@@ -29,13 +29,23 @@ export function refFromTag(tag: GeratrizTag | undefined, foldCount: number): Geo
   return foldRef((k * step) % foldCount);
 }
 
+/**
+ * Converte qualquer marca de entidade em ref canônica:
+ * geratriz → dobra; aro de boca → contorno (0 = base, 1 = topo).
+ */
+export function refFromWireTag(tag: WireTag | undefined, foldCount: number): GeometryRef | null {
+  if (!tag) return null;
+  if ("rim" in tag) return outlineRef(tag.rim === "base" ? 0 : 1);
+  return refFromTag(tag, foldCount);
+}
+
 /** Ref da aresta 3D `index`, dado o desenvolvimento (foldLines) atual. */
 export function edgeRefAt(
   model: Pick<WireModel, "edgeTags">,
   foldCount: number,
   index: number,
 ): GeometryRef | null {
-  return refFromTag(model.edgeTags?.[index], foldCount);
+  return refFromWireTag(model.edgeTags?.[index], foldCount);
 }
 
 /** Ref da face 3D `index` (índice = prioridade estável da face). */
