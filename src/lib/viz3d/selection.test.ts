@@ -111,7 +111,8 @@ describe("integração: modelos × desenvolvimentos dos motores", () => {
         const ref = edgeRefAt(model, folds, i);
         if (!ref) return;
         mapped++;
-        expect(refKind(ref)).toBe("fold");
+        // geratriz → dobra; aro de boca → contorno (base/topo)
+        expect(["fold", "outline"]).toContain(refKind(ref));
         expect(refExists(dev, ref)).toBe(true);
       });
       model.faces.forEach((_, i) => {
