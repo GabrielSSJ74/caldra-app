@@ -20,6 +20,7 @@ import {
   type ProjectedTriangle,
   type VisibilityPolicy,
 } from "@/lib/viz3d/visibility";
+import { cameraForView, type EdgeMode, type ViewPresetId } from "@/lib/viz3d/cameraPresets";
 import { cn } from "@/lib/utils";
 
 type Props = {
