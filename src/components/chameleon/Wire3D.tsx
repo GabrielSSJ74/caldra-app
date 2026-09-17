@@ -39,8 +39,6 @@ function toCam(p: Vec3, cam: Camera): Vec3 {
   return { x: x1, y: y1, z: z2 };
 }
 
-import { FACE_MATERIALS, FILL_LIGHT, KEY_LIGHT } from "@/lib/viz3d/shading";
-
 const KEY = KEY_LIGHT;
 const FILL = FILL_LIGHT;
 const MAT = FACE_MATERIALS;
