@@ -569,16 +569,30 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
 
     case "te":
     case "interseccoes": {
-      const main = shell(frustumLoops(r1, r1, h, seg, 0, 2), { t });
+      const main = tag(shell(frustumLoops(r1, r1, h, seg, 0, 2), { t }), 0);
       const armLen = r1 + h * 0.45;
-      const branch = shell(
-        Array.from({ length: 5 }, (_, i) => {
-          const z = r1 * 0.2 + (armLen - r1 * 0.2) * (i / 4);
-          return ring(r2, 0, seg).map((q) => v(q.x, q.z, z));
-        }),
-        { t },
+      const branch = tag(
+        shell(
+          Array.from({ length: 5 }, (_, i) => {
+            const z = r1 * 0.2 + (armLen - r1 * 0.2) * (i / 4);
+            return ring(r2, 0, seg).map((q) => v(q.x, q.z, z));
+          }),
+          { t },
+        ),
+        1,
       );
-      return withAxis(merge([main, branch]));
+      // Furo real no tubo: interseção analítica cilindro ⊥ cilindro.
+      const curve: Vec3[] = Array.from({ length: seg + 1 }, (_, i) => {
+        const θ = (i / seg) * Math.PI * 2;
+        const x = r2 * Math.sin(θ);
+        return v(x, r2 * Math.cos(θ), Math.sqrt(Math.max(r1 * r1 - x * x, 0)));
+      });
+      const cutMain = cutOpening(
+        main,
+        (q) => q.z > -t && Math.hypot(q.x, q.y) < r2 - t * 0.25,
+        curve,
+      );
+      return withAxis(merge([cutMain, branch]));
     }
 
     case "y": {
