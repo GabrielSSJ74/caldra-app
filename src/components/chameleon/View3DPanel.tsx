@@ -100,6 +100,10 @@ export function View3DPanel({
   onUnfold: (v: number) => void;
   onPlanificar: () => void;
 }) {
+  const [view, setView] = useState<ViewPresetId>(DEFAULT_VIEW);
+  const [viewNonce, setViewNonce] = useState(0);
+  const [edgeMode, setEdgeMode] = useState<EdgeMode>("shaded-edges");
+
   return (
     <div className="grid-bg-fine relative size-full">
       <Suspense
@@ -113,9 +117,56 @@ export function View3DPanel({
           interactive
           unfold={unfold}
           model={model}
+          view={view}
+          viewNonce={viewNonce}
+          edgeMode={edgeMode}
           className="size-full text-foreground/80"
         />
       </Suspense>
+      <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
+        <div className="flex rounded-md border border-line bg-background/85 p-0.5 shadow-sm backdrop-blur" role="group" aria-label="Vistas padrão">
+          {VIEW_PRESETS.map((preset) => (
+            <Button
+              key={preset.id}
+              type="button"
+              size="sm"
+              variant="ghost"
+              title={preset.title}
+              aria-pressed={view === preset.id}
+              onClick={() => {
+                setView(preset.id);
+                setViewNonce((n) => n + 1);
+              }}
+              className={cn(
+                "h-6 min-w-8 px-1.5 font-mono text-[9px] uppercase shadow-none",
+                view === preset.id && "bg-accent/15 text-accent",
+              )}
+            >
+              {preset.label}
+            </Button>
+          ))}
+        </div>
+        <div className="flex rounded-md border border-line bg-background/85 p-0.5 shadow-sm backdrop-blur" role="group" aria-label="Modo de aresta">
+          {EDGE_MODES.map((item) => (
+            <Button
+              key={item.id}
+              type="button"
+              size="sm"
+              variant="ghost"
+              title={item.title}
+              aria-pressed={edgeMode === item.id}
+              onClick={() => setEdgeMode(item.id)}
+              className={cn(
+                "h-6 px-1.5 font-mono text-[9px] uppercase shadow-none",
+                edgeMode === item.id && "bg-accent/15 text-accent",
+              )}
+            >
+              {item.label}
+            </Button>
+          ))}
+        </div>
+      </div>
+
       <div className="absolute inset-x-4 bottom-3 flex items-center gap-3">
         <span className="font-mono text-[9px] text-muted-foreground uppercase">3D</span>
         <input
