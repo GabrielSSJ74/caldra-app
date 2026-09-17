@@ -19,6 +19,7 @@ import { downloadTracagemPng } from "@/lib/export/tracagemSheet";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { buildWire, type WireParams } from "@/lib/viz3d/wire";
+import { edgeRefAt, faceRefAt, refLabel } from "@/lib/viz3d/selection";
 import { developmentToEntities, piecesToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
 import { conferenceRows } from "@/lib/geometry/conference";
 import { fieldMeaning } from "@/lib/education/learn";
@@ -32,8 +33,10 @@ import { TracagemPanel } from "./TracagemPanel";
 import {
   NO_HIGHLIGHT,
   fieldRefs,
+  refKind,
   refsForDim,
   stepForDim,
+  type GeometryRef,
   type HighlightState,
 } from "@/lib/geometry/refs";
 import { ParametricDiagram, type CotaSpec } from "./ParametricDiagram";
