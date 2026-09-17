@@ -208,7 +208,7 @@ export function Wire3D({
     return { faces: f, edges: e, refs: r };
   }, [model, cam, fit, k, lineVisibility]);
 
-  const maxDepth = Math.max(1, ...edges.map((e) => Math.abs(e.depth)));
+  const maxDepth = Math.max(1, ...edges.flatMap((e) => [Math.abs(e.z1), Math.abs(e.z2)]));
 
   const onDragStart = (ev: React.PointerEvent<SVGSVGElement>) => {
     if (!interactive && ev.pointerType === "touch") return; // toque continua servindo ao card

@@ -12,7 +12,7 @@ import {
 
 const AZIMUTHS = [0, 15, 30, 45, 60, 75, 90, 120, 150, 180, 210, 240, 270, 300, 330, 360];
 const ELEVATIONS = [90, 75, 60, 45, 30, 0, -30, -45, -60, -75, -90];
-const SPHERE = [[0, 0], [45, 30], [90, 45], [135, 60], [180, 90], [225, 60], [270, 45], [315, 30]];
+const SPHERE: readonly (readonly [number, number])[] = [[0, 0], [45, 30], [90, 45], [135, 60], [180, 90], [225, 60], [270, 45], [315, 30]];
 const MODELS = [
   ["cone", { d1: 800, d2: 0, h: 500 }],
   ["reducao-circular", { d1: 600, d2: 300, h: 400 }],
@@ -27,13 +27,25 @@ const camera = (yaw: number, pitch: number): Camera => ({ yaw: rad(yaw), pitch: 
 describe("política explícita de linhas técnicas", () => {
   const origin: Vec3 = { x: 0, y: 0, z: 0 };
   const angles = [0, 30, 45, 60, 90];
-  const fixture: Edge[] = angles.map((angle) => [
+  const straightLines: Edge[] = angles.map((angle) => [
     origin,
     { x: Math.cos(rad(angle)) * 100, y: Math.sin(rad(angle)) * 100, z: angle === 45 ? 40 : 0 },
   ]);
+  const circle: Edge[] = Array.from({ length: 24 }, (_, index) => {
+    const a = rad(index * 15);
+    const b = rad((index + 1) * 15);
+    return [{ x: Math.cos(a) * 40, y: Math.sin(a) * 40, z: 15 }, { x: Math.cos(b) * 40, y: Math.sin(b) * 40, z: 15 }];
+  });
+  const arc = circle.slice(0, 9);
+  const polyline: Edge[] = [
+    [{ x: -60, y: -25, z: -15 }, { x: -10, y: 35, z: 5 }],
+    [{ x: -10, y: 35, z: 5 }, { x: 55, y: -10, z: 25 }],
+  ];
+  const fixture: Edge[] = [...straightLines, ...circle, ...arc, ...polyline];
 
   it("mantém horizontal, vertical, inclinadas e diagonal como entidades em toda a esfera", () => {
-    for (const [yaw, pitch] of [...SPHERE, ...AZIMUTHS.map((a) => [a, 0]), ...ELEVATIONS.map((e) => [0, e])]) {
+    const views: (readonly [number, number])[] = [...SPHERE, ...AZIMUTHS.map((a) => [a, 0] as const), ...ELEVATIONS.map((e) => [0, e] as const)];
+    for (const [yaw, pitch] of views) {
       const cam = camera(yaw, pitch);
       const rendered = fixture.flatMap((edge, index) => {
         const line = projectLine(`fixture:${index}`, edge, (p) => toCameraPoint(p, cam), 1);
@@ -47,7 +59,8 @@ describe("política explícita de linhas técnicas", () => {
   it("preserva todas as arestas e referências dos cinco modelos em 360° e ±90°", () => {
     for (const [slug, params] of MODELS) {
       const model = buildWire(slug, params);
-      for (const [yaw, pitch] of [...SPHERE, ...AZIMUTHS.map((a) => [a, 0]), ...ELEVATIONS.map((e) => [0, e])]) {
+      const views: (readonly [number, number])[] = [...SPHERE, ...AZIMUTHS.map((a) => [a, 0] as const), ...ELEVATIONS.map((e) => [0, e] as const)];
+      for (const [yaw, pitch] of views) {
         const cam = camera(yaw, pitch);
         const edges = model.edges.map((edge, index) => projectLine(`edge:${index}`, edge, (p) => toCameraPoint(p, cam), 1));
         const refs = model.refLines.map((edge, index) => projectLine(`ref:${index}`, edge, (p) => toCameraPoint(p, cam), 1));

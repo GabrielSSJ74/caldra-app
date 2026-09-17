@@ -81,9 +81,13 @@ export function projectLine(id: string, edge: Edge, project: (p: Vec3) => Camera
  * prioridade técnica e ID estável. A profundidade média nunca decide sozinha.
  */
 export function compareSurfaceDepth(a: ProjectedTriangle, b: ProjectedTriangle): number {
-  if (a.maxDepth < b.minDepth) return -1;
-  if (b.maxDepth < a.minDepth) return 1;
-  return a.centerDepth - b.centerDepth || a.priority - b.priority || a.id.localeCompare(b.id);
+  return (
+    a.minDepth - b.minDepth ||
+    a.maxDepth - b.maxDepth ||
+    a.centerDepth - b.centerDepth ||
+    a.priority - b.priority ||
+    a.id.localeCompare(b.id)
+  );
 }
 
 const AREA_EPSILON = 1e-8;
