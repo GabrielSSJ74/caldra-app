@@ -498,13 +498,18 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
       };
       const faces: Face[] = [];
       const edges: Edge[] = [];
+      const edgeTags: (GeratrizTag | undefined)[] = [];
+      const genN = canonical.generatrices.length;
       for (const face of canonical.faces) {
         const outer = face.points.map(cv);
         const inner = face.points.map((q) => inset(q));
         faces.push({ pts: outer, kind: "outer" });
         faces.push({ pts: inner.slice().reverse(), kind: "inner" });
       }
-      edges.push(...canonical.generatrices.map((line) => [cv(line.a), cv(line.b)] as Edge));
+      canonical.generatrices.forEach((line, i) => {
+        edges.push([cv(line.a), cv(line.b)]);
+        edgeTags.push({ k: i, n: genN });
+      });
 
       for (let k = 0; k < canonical.corners.length; k++) {
         const a = canonical.corners[k];
@@ -514,6 +519,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
         const bo = cv(b);
         faces.push({ pts: [ao, bo, inset(b), inset(a)], kind: "rim" });
         edges.push([ao, bo]);
+        edgeTags.push(undefined);
       }
       for (let k = 0; k < canonical.circle.length; k++) {
         const a = canonical.circle[k];
@@ -523,6 +529,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
         const bo = cv(b);
         faces.push({ pts: [ao, bo, inset(b), inset(a)], kind: "rim" });
         edges.push([ao, bo]);
+        edgeTags.push(undefined);
       }
 
       // Emendas soldadas (modo 2 partes + solda): posição real das costuras J1/J2.
