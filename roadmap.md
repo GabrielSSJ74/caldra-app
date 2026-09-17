@@ -201,3 +201,13 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - Causa: cada tela só começava a ser baixada no instante do clique (router sem preload).
 - Correção: preload na intenção (toque/hover) + prefetch ocioso das telas essenciais no app publicado.
 - Medido (celular simulado 4x mais lento): 1º toque 1786ms -> 657ms; 2º toque 1976ms -> 493ms.
+
+## Refinamento profissional do 3D da Traçagem (17/09)
+- [ ] Fase A — diagnóstico geométrico e baseline dos cinco modelos.
+- [ ] Fase B — topologia, winding, normais e IDs canônicos.
+- [ ] Fase C — correção do halo, ghost e oclusão de faces internas.
+- [ ] Fase D — configuração central, chapa e shading técnico por modelo.
+- [ ] Fase E — modos de aresta, vistas padrão, fit e controles.
+- [ ] Fase F — seleção e sincronização comprovável com 2D/Traçagem/planificação.
+- [ ] Fase G — performance mobile e carregamento sob demanda.
+- [ ] Fase H — regressão matemática, visual e interativa.
