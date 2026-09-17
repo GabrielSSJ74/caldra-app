@@ -49,8 +49,8 @@ export type WireModel = {
    * metadado — nunca altera a geometria. A conversão para GeometryRef acontece
    * em `viz3d/selection`, que conhece o desenvolvimento.
    */
-  edgeTags?: readonly (GeratrizTag | undefined)[] | undefined;
-  faceTags?: readonly (GeratrizTag | undefined)[] | undefined;
+  edgeTags?: readonly (WireTag | undefined)[] | undefined;
+  faceTags?: readonly (WireTag | undefined)[] | undefined;
 };
 
 /** Geratriz ordinal k de n igualmente espaçadas ao redor da seção. */
@@ -236,8 +236,8 @@ type ShellOpts = {
 type Geo = {
   faces: Face[];
   edges: Edge[];
-  edgeTags?: (GeratrizTag | undefined)[] | undefined;
-  faceTags?: (GeratrizTag | undefined)[] | undefined;
+  edgeTags?: (WireTag | undefined)[] | undefined;
+  faceTags?: (WireTag | undefined)[] | undefined;
 };
 
 const EMPTY: Geo = { faces: [], edges: [] };
@@ -282,12 +282,12 @@ function merge(parts: Geo[]): Geo {
     edges,
     edgeTags: hasET
       ? parts.flatMap(
-          (p) => p.edgeTags ?? Array<GeratrizTag | undefined>(p.edges.length).fill(undefined),
+          (p) => p.edgeTags ?? Array<WireTag | undefined>(p.edges.length).fill(undefined),
         )
       : undefined,
     faceTags: hasFT
       ? parts.flatMap(
-          (p) => p.faceTags ?? Array<GeratrizTag | undefined>(p.faces.length).fill(undefined),
+          (p) => p.faceTags ?? Array<WireTag | undefined>(p.faces.length).fill(undefined),
         )
       : undefined,
   };
@@ -308,8 +308,8 @@ function shell(loops: Vec3[][], o: ShellOpts): Geo {
   const inner = valid.map((l) => offsetLoop(l, o.t));
   const faces: Face[] = [];
   const edges: Edge[] = [];
-  const faceTags: (GeratrizTag | undefined)[] = [];
-  const edgeTags: (GeratrizTag | undefined)[] = [];
+  const faceTags: (WireTag | undefined)[] = [];
+  const edgeTags: (WireTag | undefined)[] = [];
   const n = valid[0]!.length;
   const gen = Math.max(1, o.gen ?? Math.round(n / 8));
   /* geratrizes traçadas: i = 0, gen, 2·gen … → ordinal k = i/gen de G */
@@ -334,14 +334,14 @@ function shell(loops: Vec3[][], o: ShellOpts): Geo {
   const first = valid[0]!;
   const last = valid[valid.length - 1]!;
   edges.push(...loopEdges(first), ...loopEdges(last));
-  edgeTags.push(...Array<GeratrizTag | undefined>(2 * n).fill(undefined));
+  edgeTags.push(...Array<WireTag | undefined>(2 * n).fill(undefined));
   if (!o.capStart) {
     edges.push(...loopEdges(inner[0]!));
-    edgeTags.push(...Array<GeratrizTag | undefined>(n).fill(undefined));
+    edgeTags.push(...Array<WireTag | undefined>(n).fill(undefined));
   }
   if (!o.capEnd) {
     edges.push(...loopEdges(inner[inner.length - 1]!));
-    edgeTags.push(...Array<GeratrizTag | undefined>(n).fill(undefined));
+    edgeTags.push(...Array<WireTag | undefined>(n).fill(undefined));
   }
   for (let i = 0; i < n; i += gen) {
     const t0: GeratrizTag = { k: i / gen, n: G };
@@ -512,7 +512,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
       };
       const faces: Face[] = [];
       const edges: Edge[] = [];
-      const edgeTags: (GeratrizTag | undefined)[] = [];
+      const edgeTags: (WireTag | undefined)[] = [];
       const genN = canonical.generatrices.length;
       for (const face of canonical.faces) {
         const outer = face.points.map(cv);
