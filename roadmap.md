@@ -212,6 +212,15 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Fase G — projeção/ordenação memorizadas; pausa fora da viewport e em aba oculta (IntersectionObserver).
 - [ ] Fase H — regressão matemática, visual e interativa.
 
+## Correção crítica do Wire3D — oclusão e rotação esférica (17/09)
+- [ ] Remover integralmente sombra/halo do modo técnico padrão, inclusive composição e enquadramento.
+- [ ] Separar políticas de superfície, aresta, linha técnica, referência, cota e seleção.
+- [ ] Manter linhas técnicas persistentes por identidade estável em toda a rotação.
+- [ ] Implementar oclusão espacial opcional por subsegmentos, sem alterar a entidade canônica.
+- [ ] Tornar a ordenação determinística por intervalo de profundidade, prioridade e ID estável.
+- [ ] Liberar inclinação vertical suportada de −90° a +90° sem trocar a câmera.
+- [ ] Validar azimute 0–360°, elevação −90°–+90°, esfera, estresse e os cinco modelos nos três temas.
+
 ## Espessura, dobra e Fator K (17/09)
 - [ ] Fase C2 — espessura real derivada do modelo canônico, sem parede fictícia.
 - [ ] Fase D2 — camada de fabricação separada: dobra, raio, linha neutra, Fator K, métodos suportados.
