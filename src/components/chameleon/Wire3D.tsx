@@ -20,6 +20,7 @@ import {
   type ProjectedTriangle,
   type VisibilityPolicy,
 } from "@/lib/viz3d/visibility";
+import { cameraForView, type EdgeMode, type ViewPresetId } from "@/lib/viz3d/cameraPresets";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -31,6 +32,12 @@ type Props = {
   unfold?: number;
   /** padrão técnico persistente; oclusão espacial é opt-in */
   lineVisibility?: Extract<VisibilityPolicy, "technical-persistent" | "real-occlusion">;
+  /** vista padrão aplicada à câmera (não altera geometria) */
+  view?: ViewPresetId;
+  /** muda de valor para reenquadrar/reaplicar a vista atual */
+  viewNonce?: number;
+  /** modo de aresta — apenas apresentação */
+  edgeMode?: EdgeMode;
 };
 
 const VB = 200;
@@ -47,10 +54,19 @@ export function Wire3D({
   autoSpin = false,
   unfold = 0,
   lineVisibility = "technical-persistent",
+  view,
+  viewNonce = 0,
+  edgeMode = "shaded-edges",
 }: Props) {
-  const [cam, setCam] = useState<Camera>({ yaw: 0.7, pitch: 0.4, zoom: 1 });
+  const [cam, setCam] = useState<Camera>(() => (view ? cameraForView(view) : { yaw: 0.7, pitch: 0.4, zoom: 1 }));
   const drag = useRef<{ x: number; y: number } | null>(null);
   const resume = useRef(0);
+
+  /* vista padrão / reenquadramento: só orientação e zoom de fit */
+  useEffect(() => {
+    if (!view) return;
+    setCam(cameraForView(view));
+  }, [view, viewNonce]);
   const host = useRef<SVGSVGElement>(null);
   const [visible, setVisible] = useState(true);
 
@@ -249,18 +265,19 @@ export function Wire3D({
       }}
     >
       <g>
-        {faces.map((f) => (
-          <polygon
-            key={f.id}
-            data-entity-id={f.id}
-            data-category="surface"
-            points={f.d}
-            fill={f.fill}
-            stroke={f.fill}
-            strokeWidth={0.3}
-            strokeLinejoin="round"
-          />
-        ))}
+        {edgeMode !== "wireframe" &&
+          faces.map((f) => (
+            <polygon
+              key={f.id}
+              data-entity-id={f.id}
+              data-category="surface"
+              points={f.d}
+              fill={f.fill}
+              stroke={f.fill}
+              strokeWidth={0.3}
+              strokeLinejoin="round"
+            />
+          ))}
         {refs.map((e) => (
           <line
             key={e.id}
@@ -276,22 +293,28 @@ export function Wire3D({
             strokeDasharray="4 3 1 3"
           />
         ))}
-        {edges.map((e) => (
-          <line
-            key={e.id}
-            data-entity-id={e.id}
-            data-category="edge"
-            x1={e.x1.toFixed(2)}
-            y1={e.y1.toFixed(2)}
-            x2={e.x2.toFixed(2)}
-            y2={e.y2.toFixed(2)}
-            stroke="var(--solid-edge)"
-            strokeWidth={0.6}
-            strokeOpacity={(0.18 + 0.42 * (((e.z1 + e.z2) / 2 + maxDepth) / (2 * maxDepth))).toFixed(3)}
-            strokeLinecap="round"
-          />
-        ))}
+        {edgeMode !== "shaded" &&
+          edges.map((e) => (
+            <line
+              key={e.id}
+              data-entity-id={e.id}
+              data-category="edge"
+              x1={e.x1.toFixed(2)}
+              y1={e.y1.toFixed(2)}
+              x2={e.x2.toFixed(2)}
+              y2={e.y2.toFixed(2)}
+              stroke="var(--solid-edge)"
+              strokeWidth={0.6}
+              strokeOpacity={
+                edgeMode === "wireframe"
+                  ? (0.45 + 0.45 * (((e.z1 + e.z2) / 2 + maxDepth) / (2 * maxDepth))).toFixed(3)
+                  : (0.18 + 0.42 * (((e.z1 + e.z2) / 2 + maxDepth) / (2 * maxDepth))).toFixed(3)
+              }
+              strokeLinecap="round"
+            />
+          ))}
       </g>
+
     </svg>
   );
 }

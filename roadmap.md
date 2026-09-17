@@ -207,7 +207,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Fase B — topologia/normais auditadas; recorte real da interseção (Boca de Lobo e Tê) com curva canônica e viés por grupo de casca.
 - [x] Fase C — halo eliminado (sombra artificial opt-in), ghost/listras corrigidos (ordenação por face inteira), parede interna só visível quando observável.
 - [x] Fase D — iluminação/material centralizados e ordenação estável por intervalo de profundidade, prioridade e ID.
-- [ ] Fase E — modos de aresta, vistas padrão, fit e controles.
+- [x] Fase E — modos de aresta (SOMB / SOMB+AR / ARAME) e vistas padrão ISO/FR/LAT/SUP com reenquadramento (src/lib/viz3d/cameraPresets.ts).
 - [ ] Fase F — seleção e sincronização comprovável com 2D/Traçagem/planificação.
 - [x] Fase G — projeção/ordenação memorizadas; pausa fora da viewport e em aba oculta (IntersectionObserver).
 - [~] Fase H — regressão matemática, esférica e interativa do Wire3D concluída; seleção/2D e fabricação seguem pendentes.
