@@ -400,7 +400,7 @@ export function Wire3D({
               strokeLinecap="round"
             />
           ))}
-        {highlightRef && (selectedEdges.length > 0 || selectedFaces.length > 0) && (
+        {hasHighlight && (selectedEdges.length > 0 || selectedFaces.length > 0) && (
           <g data-category="selection" pointerEvents="none">
             {selectedFaces.map((f) => (
               <polygon
@@ -441,7 +441,7 @@ export function Wire3D({
                 strokeWidth={2.2}
                 paintOrder="stroke"
               >
-                {refLabel(highlightRef)}
+                {highlightRefs.length === 1 ? refLabel(highlightRefs[0]!) : `${highlightRefs.length} entidades · ${refLabel(highlightRefs[0]!)}`}
               </text>
             )}
           </g>

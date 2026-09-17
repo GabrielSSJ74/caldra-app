@@ -23,7 +23,7 @@ import { Button } from "@/components/ui/button";
 export type SelectionSync = {
   refForEdge?: ((index: number) => GeometryRef | null) | undefined;
   refForFace?: ((index: number) => GeometryRef | null) | undefined;
-  highlightRef?: GeometryRef | null | undefined;
+  highlightRef?: GeometryRef | readonly GeometryRef[] | null | undefined;
   onSelectRef?: ((ref: GeometryRef | null) => void) | undefined;
 };
 
