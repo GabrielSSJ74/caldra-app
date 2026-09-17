@@ -19,6 +19,8 @@ type Props = {
   autoSpin?: boolean;
   /** progresso 0..1 de "abertura" da peça (3D → planificação) */
   unfold?: number;
+  /** sombra de contato: recurso de diagnóstico, desligado no padrão técnico */
+  showShadow?: boolean;
 };
 
 const VB = 200;
