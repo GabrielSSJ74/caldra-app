@@ -51,8 +51,8 @@ type Props = {
    */
   refForEdge?: ((index: number) => GeometryRef | null) | undefined;
   refForFace?: ((index: number) => GeometryRef | null) | undefined;
-  /** Referência destacada (seleção 3D ou foco vindo do 2D/parâmetros). */
-  highlightRef?: GeometryRef | null | undefined;
+  /** Referência(s) destacada(s) (seleção 3D ou foco vindo do 2D/parâmetros). */
+  highlightRef?: GeometryRef | readonly GeometryRef[] | null | undefined;
   /** Toque/clique sem arraste sobre entidade mapeável (null = toque no vazio). */
   onSelectRef?: ((ref: GeometryRef | null) => void) | undefined;
 };
@@ -253,19 +253,30 @@ export function Wire3D({
    * Camada "selection" — acima de superfícies e arestas, nunca substitui as
    * cores técnicas nem depende apenas de cor (rótulo textual acompanha).
    */
+  const highlightRefs = useMemo<readonly GeometryRef[]>(
+    () => (highlightRef == null ? [] : Array.isArray(highlightRef) ? highlightRef : [highlightRef]),
+    [highlightRef],
+  );
+  const hasHighlight = highlightRefs.length > 0;
   const selectedEdges = useMemo(
     () =>
-      highlightRef && refForEdge
-        ? edges.filter((e) => refForEdge(entityIndexOf(e.id)) === highlightRef)
+      hasHighlight && refForEdge
+        ? edges.filter((e) => {
+            const r = refForEdge(entityIndexOf(e.id));
+            return r != null && highlightRefs.includes(r);
+          })
         : [],
-    [edges, highlightRef, refForEdge],
+    [edges, hasHighlight, highlightRefs, refForEdge],
   );
   const selectedFaces = useMemo(
     () =>
-      highlightRef && refForFace
-        ? faces.filter((f) => refForFace(f.priority) === highlightRef)
+      hasHighlight && refForFace
+        ? faces.filter((f) => {
+            const r = refForFace(f.priority);
+            return r != null && highlightRefs.includes(r);
+          })
         : [],
-    [faces, highlightRef, refForFace],
+    [faces, hasHighlight, highlightRefs, refForFace],
   );
   const labelAnchor = selectedEdges[0]
     ? { x: (selectedEdges[0].x1 + selectedEdges[0].x2) / 2, y: (selectedEdges[0].y1 + selectedEdges[0].y2) / 2 }
