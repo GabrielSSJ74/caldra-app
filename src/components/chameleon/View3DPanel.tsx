@@ -8,6 +8,7 @@
 
 import { Suspense, lazy, useEffect, useState, type ReactNode } from "react";
 import type { WireModel } from "@/lib/viz3d/wire";
+import type { GeometryRef } from "@/lib/geometry/refs";
 import {
   DEFAULT_VIEW,
   EDGE_MODES,
@@ -17,6 +18,14 @@ import {
 } from "@/lib/viz3d/cameraPresets";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+
+/** Sincronização de seleção 3D ↔ geometria canônica (Fase F). */
+export type SelectionSync = {
+  refForEdge?: ((index: number) => GeometryRef | null) | undefined;
+  refForFace?: ((index: number) => GeometryRef | null) | undefined;
+  highlightRef?: GeometryRef | null | undefined;
+  onSelectRef?: ((ref: GeometryRef | null) => void) | undefined;
+};
 
 const Wire3D = lazy(() => import("./Wire3D").then((m) => ({ default: m.Wire3D })));
 
@@ -34,6 +43,7 @@ export function VisualizationViewport({
   onUnfold,
   onPlanificar,
   allow3d = true,
+  selection,
   children,
 }: {
   mode: VisualizationMode;
@@ -43,6 +53,7 @@ export function VisualizationViewport({
   onUnfold: (value: number) => void;
   onPlanificar: () => void;
   allow3d?: boolean;
+  selection?: SelectionSync | undefined;
   children: ReactNode;
 }) {
   const [mounted3d, setMounted3d] = useState(mode === "3d");
