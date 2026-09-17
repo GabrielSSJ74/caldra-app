@@ -211,6 +211,7 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
             model={wireModel}
             unfold={unfold}
             onUnfold={setUnfold}
+            selection={{ refForEdge, highlightRef: selRef, onSelectRef: setSelRef }}
             onPlanificar={() => {
               setUnfold(1);
               window.setTimeout(() => {
