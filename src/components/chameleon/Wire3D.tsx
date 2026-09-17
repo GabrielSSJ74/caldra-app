@@ -10,6 +10,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import type { Vec3 } from "@/lib/geometry/types";
 import { centerOf, fitRadius, type Camera, type WireModel } from "@/lib/viz3d/wire";
+import { FACE_MATERIALS, FILL_LIGHT, KEY_LIGHT } from "@/lib/viz3d/shading";
 import { cn } from "@/lib/utils";
 
 type Props = {
