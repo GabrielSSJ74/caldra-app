@@ -208,7 +208,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Fase C — halo eliminado (sombra artificial opt-in), ghost/listras corrigidos (ordenação por face inteira), parede interna só visível quando observável.
 - [x] Fase D — iluminação/material centralizados e ordenação estável por intervalo de profundidade, prioridade e ID.
 - [x] Fase E — modos de aresta (SOMB / SOMB+AR / ARAME) e vistas padrão ISO/FR/LAT/SUP com reenquadramento (src/lib/viz3d/cameraPresets.ts).
-- [x] Fase F — seleção no 3D por proximidade ao segmento (alvo ≥12 px no mobile), overlay de seleção com rótulo ("Geratriz 7"), refs canônicas estéreis (tags rim/geratriz por aresta/face) e sincronização 2D↔3D↔Traçagem/planificação comprovada em desktop, mobile e três temas (18/09).
+- [x] Fase F — seleção no 3D por proximidade ao segmento (alvo ≥12 px no mobile), overlay de seleção com rótulo ("Geratriz 7"), refs canônicas estáveis (tags rim/geratriz por aresta/face) e sincronização 2D↔3D↔Traçagem/planificação comprovada em desktop, mobile e três temas (18/09).
 - [x] Fase G — projeção/ordenação memorizadas; pausa fora da viewport e em aba oculta (IntersectionObserver).
 - [x] Fase H — regressão matemática, esférica e interativa do Wire3D + seleção/2D validadas; fabricação segue nas fases C2/D2.
 
