@@ -58,6 +58,20 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number];
 
+/** Resultados em três grupos: cada grupo é uma aba com suas etapas. */
+const RESULT_GROUPS = [
+  { id: "Geometria", tabs: ["Dimensões", "Cálculos"] },
+  { id: "Planificação", tabs: ["Traçado", "Traçagem", "Desenvolvimento"] },
+  { id: "Fabricação", tabs: ["Material", "Exportação"] },
+] as const satisfies readonly { id: string; tabs: readonly Tab[] }[];
+
+type ResultGroup = (typeof RESULT_GROUPS)[number]["id"];
+
+function groupOf(tab: Tab): ResultGroup {
+  return RESULT_GROUPS.find((g) => (g.tabs as readonly string[]).includes(tab))?.id ?? "Geometria";
+}
+
+
 export function SquareToRoundStudio({ initialValues, customId, customName }: { initialValues?: Record<string, number> | undefined; customId?: string | undefined; customName?: string | undefined }) {
   const { can, requirePro } = useFeatureAccess();
   const { precision } = useSettings();
@@ -68,12 +82,15 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
   }));
   const [material, setMaterial] = useState(MATERIALS[0]!.name);
   const [focused, setFocused] = useState<FieldKey | null>(null);
-  const [calculated, setCalculated] = useState(true);
   const [pulse, setPulse] = useState<FieldKey | null>(null);
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
   const pulseTimer = useRef<number | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [tab, setTab] = useState<Tab>("Dimensões");
+  /* Fluxo em duas telas: modelo (medidas) → resultados. */
+  const [stage, setStage] = useState<"modelo" | "resultados">("modelo");
+  const group = groupOf(tab);
+
   /* 3D é camada da área de resultado, não etapa do fluxo. */
   const [viewMode, setViewMode] = useState<VisualizationMode>("2d");
   const [explain, setExplain] = useState(false);
@@ -203,6 +220,7 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
   return (
     <div className="space-y-4">
       {/* MEDIDAS */}
+      {stage === "modelo" && (
       <Panel className="p-3.5 lg:p-5" glow>
         <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
           <VisualizationViewport
@@ -217,8 +235,10 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
               window.setTimeout(() => {
                 setViewMode("2d");
                 setTab("Desenvolvimento");
+                setStage("resultados");
               }, 420);
             }}
+
           >
             <SchematicSquareToRound input={input} highlight={focused} />
             {FIELDS.map((f, i) => (

@@ -63,6 +63,20 @@ const BASE_TABS = [
   "Exportação",
 ] as const;
 
+/** Resultados em três grupos: cada grupo é uma aba com suas etapas. */
+const RESULT_GROUPS = [
+  { id: "Geometria", tabs: ["Dimensões", "Cálculos", "Conferência"] },
+  { id: "Planificação", tabs: ["Traçado", "Traçagem", "Desenvolvimento"] },
+  { id: "Fabricação", tabs: ["Material", "Exportação"] },
+] as const;
+
+type ResultGroup = (typeof RESULT_GROUPS)[number]["id"];
+
+function groupOf(tab: string): ResultGroup {
+  return RESULT_GROUPS.find((g) => (g.tabs as readonly string[]).includes(tab))?.id ?? "Geometria";
+}
+
+
 export type StudioSnapshot = {
   values: Record<string, number>;
   materialId: string;
@@ -107,9 +121,17 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
   const [quantity, setQuantity] = useState(initial?.quantity ?? 1);
 
   const [focused, setFocused] = useState<string | null>(null);
-  const [calculated, setCalculated] = useState(true);
   const [calculating, setCalculating] = useState(false);
+
   const [tab, setTab] = useState<string>("Dimensões");
+  /* Fluxo em duas telas: modelo (medidas) → resultados. */
+  const [stage, setStage] = useState<"modelo" | "resultados">("modelo");
+  const group = groupOf(tab);
+  const goTab = (t: string) => {
+    setTab(t);
+    setStage("resultados");
+  };
+
   const [explain, setExplain] = useState(false);
   const [learn, setLearn] = useState(false);
   const [piece, setPiece] = useState<number | "all">("all");
@@ -327,6 +349,7 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
   return (
     <div className="space-y-4">
       {/* MEDIDAS */}
+      {stage === "modelo" && (
       <Panel className="p-3.5 lg:p-5" glow>
         <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
           <VisualizationViewport
@@ -345,10 +368,11 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
               setUnfold(1);
               window.setTimeout(() => {
                 setViewMode("2d");
-                setTab("Desenvolvimento");
+                goTab("Desenvolvimento");
               }, 420);
             }}
           >
+
             <ParametricDiagram
               slug={slug}
               params={wireParams}
@@ -490,21 +514,65 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
             )}
           </div>
         </div>
-      </Panel>
 
-      {calculated && result && (
+        {/* AVANÇAR — leva para a tela de Resultados */}
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            disabled={!result}
+            onClick={() => setStage("resultados")}
+            className={cn(
+              "brand-gradient flex items-center gap-2 rounded-xl px-5 py-2.5 font-display text-[13px] font-semibold text-background transition-opacity",
+              !result && "pointer-events-none opacity-40",
+            )}
+          >
+            Avançar <ChevronRight className="size-4" />
+          </button>
+        </div>
+      </Panel>
+      )}
+
+      {stage === "resultados" && result && (
         <Panel className="fade-up p-3.5 lg:p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <SectionLabel>Resultado</SectionLabel>
+            <SectionLabel>Resultados</SectionLabel>
             <span className="flex items-center gap-1 font-mono text-[10px] text-accent">
               <Check className="size-3" /> Desenvolvimento calculado
             </span>
           </div>
 
+          <button
+            type="button"
+            onClick={() => setStage("modelo")}
+            className="mb-3 flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 font-mono text-[10px] tracking-wider text-muted-foreground uppercase transition-colors hover:text-foreground"
+          >
+            <ChevronRight className="size-3 rotate-180" /> Voltar ao modelo
+          </button>
+
+          {/* GRUPOS */}
+          <div className="mb-3 grid grid-cols-3 gap-1.5">
+            {RESULT_GROUPS.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                aria-pressed={group === g.id}
+                onClick={() => setTab(g.tabs[0]!)}
+                className={cn(
+                  "rounded-lg border px-2 py-2 font-mono text-[10px] tracking-wider uppercase transition-colors",
+                  group === g.id
+                    ? "border-accent/50 bg-accent/12 text-accent"
+                    : "border-line text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {g.id}
+              </button>
+            ))}
+          </div>
+
           <StageBar tab={tab} tabs={tabs} onJump={setTab} />
 
           <div className="mb-4 flex gap-1 overflow-x-auto pb-1">
-            {tabs.map((t) => (
+            {RESULT_GROUPS.find((g) => g.id === group)!.tabs.map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -519,6 +587,7 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
               </button>
             ))}
           </div>
+
 
           <div className="fade-up">
             {tab === "Dimensões" && (
@@ -571,7 +640,7 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
               </div>
             )}
 
-            {tab === "Traçagem" && viewMode === "2d" && (
+            {tab === "Traçagem" && (
               <TracagemPanel
                 slug={slug}
                 result={result}
@@ -579,7 +648,8 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
               />
             )}
 
-            {(tab === "Traçado" || tab === "Desenvolvimento") && viewMode === "2d" && (
+            {(tab === "Traçado" || tab === "Desenvolvimento") && (
+
                 <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
                   <div className="h-[300px] lg:h-[420px]">
                     <DevelopmentView
