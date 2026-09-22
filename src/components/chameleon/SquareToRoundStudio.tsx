@@ -220,6 +220,7 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
   return (
     <div className="space-y-4">
       {/* MEDIDAS */}
+      {stage === "modelo" && (
       <Panel className="p-3.5 lg:p-5" glow>
         <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
           <VisualizationViewport
@@ -234,8 +235,10 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
               window.setTimeout(() => {
                 setViewMode("2d");
                 setTab("Desenvolvimento");
+                setStage("resultados");
               }, 420);
             }}
+
           >
             <SchematicSquareToRound input={input} highlight={focused} />
             {FIELDS.map((f, i) => (
