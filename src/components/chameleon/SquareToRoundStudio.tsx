@@ -611,7 +611,7 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
                   }}
                   className="brand-gradient flex w-full items-center justify-center gap-2 rounded-xl py-2.5 font-display text-[13px] font-semibold text-background"
                 >
-                  <PenTool className="size-4" /> Abrir no Chamfer
+                  <PenTool className="size-4" /> Levar para Máquina a Laser
                 </button>
                 <button
                   type="button"
