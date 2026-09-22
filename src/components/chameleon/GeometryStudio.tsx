@@ -640,7 +640,7 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
               </div>
             )}
 
-            {tab === "Traçagem" && viewMode === "2d" && (
+            {tab === "Traçagem" && (
               <TracagemPanel
                 slug={slug}
                 result={result}
@@ -648,7 +648,8 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
               />
             )}
 
-            {(tab === "Traçado" || tab === "Desenvolvimento") && viewMode === "2d" && (
+            {(tab === "Traçado" || tab === "Desenvolvimento") && (
+
                 <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
                   <div className="h-[300px] lg:h-[420px]">
                     <DevelopmentView
