@@ -349,6 +349,7 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
   return (
     <div className="space-y-4">
       {/* MEDIDAS */}
+      {stage === "modelo" && (
       <Panel className="p-3.5 lg:p-5" glow>
         <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
           <VisualizationViewport
@@ -367,10 +368,11 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
               setUnfold(1);
               window.setTimeout(() => {
                 setViewMode("2d");
-                setTab("Desenvolvimento");
+                goTab("Desenvolvimento");
               }, 420);
             }}
           >
+
             <ParametricDiagram
               slug={slug}
               params={wireParams}
