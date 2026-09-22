@@ -82,12 +82,15 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
   }));
   const [material, setMaterial] = useState(MATERIALS[0]!.name);
   const [focused, setFocused] = useState<FieldKey | null>(null);
-  const [calculated, setCalculated] = useState(true);
   const [pulse, setPulse] = useState<FieldKey | null>(null);
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
   const pulseTimer = useRef<number | null>(null);
   const [calculating, setCalculating] = useState(false);
   const [tab, setTab] = useState<Tab>("Dimensões");
+  /* Fluxo em duas telas: modelo (medidas) → resultados. */
+  const [stage, setStage] = useState<"modelo" | "resultados">("modelo");
+  const group = groupOf(tab);
+
   /* 3D é camada da área de resultado, não etapa do fluxo. */
   const [viewMode, setViewMode] = useState<VisualizationMode>("2d");
   const [explain, setExplain] = useState(false);
