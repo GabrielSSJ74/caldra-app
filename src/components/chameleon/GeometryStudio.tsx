@@ -63,6 +63,20 @@ const BASE_TABS = [
   "Exportação",
 ] as const;
 
+/** Resultados em três grupos: cada grupo é uma aba com suas etapas. */
+const RESULT_GROUPS = [
+  { id: "Geometria", tabs: ["Dimensões", "Cálculos", "Conferência"] },
+  { id: "Planificação", tabs: ["Traçado", "Traçagem", "Desenvolvimento"] },
+  { id: "Fabricação", tabs: ["Material", "Exportação"] },
+] as const;
+
+type ResultGroup = (typeof RESULT_GROUPS)[number]["id"];
+
+function groupOf(tab: string): ResultGroup {
+  return RESULT_GROUPS.find((g) => (g.tabs as readonly string[]).includes(tab))?.id ?? "Geometria";
+}
+
+
 export type StudioSnapshot = {
   values: Record<string, number>;
   materialId: string;
