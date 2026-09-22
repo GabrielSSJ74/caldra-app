@@ -122,7 +122,7 @@ export function GeometryStudio({ slug, name, initial, preset, onPersist, customI
 
   const [focused, setFocused] = useState<string | null>(null);
   const [calculating, setCalculating] = useState(false);
-  const [calculating, setCalculating] = useState(false);
+
   const [tab, setTab] = useState<string>("Dimensões");
   /* Fluxo em duas telas: modelo (medidas) → resultados. */
   const [stage, setStage] = useState<"modelo" | "resultados">("modelo");
