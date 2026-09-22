@@ -58,6 +58,20 @@ const TABS = [
 ] as const;
 type Tab = (typeof TABS)[number];
 
+/** Resultados em três grupos: cada grupo é uma aba com suas etapas. */
+const RESULT_GROUPS = [
+  { id: "Geometria", tabs: ["Dimensões", "Cálculos"] },
+  { id: "Planificação", tabs: ["Traçado", "Traçagem", "Desenvolvimento"] },
+  { id: "Fabricação", tabs: ["Material", "Exportação"] },
+] as const satisfies readonly { id: string; tabs: readonly Tab[] }[];
+
+type ResultGroup = (typeof RESULT_GROUPS)[number]["id"];
+
+function groupOf(tab: Tab): ResultGroup {
+  return RESULT_GROUPS.find((g) => (g.tabs as readonly string[]).includes(tab))?.id ?? "Geometria";
+}
+
+
 export function SquareToRoundStudio({ initialValues, customId, customName }: { initialValues?: Record<string, number> | undefined; customId?: string | undefined; customName?: string | undefined }) {
   const { can, requirePro } = useFeatureAccess();
   const { precision } = useSettings();
