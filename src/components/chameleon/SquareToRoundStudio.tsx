@@ -521,12 +521,11 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
               </div>
             )}
 
-            {tab === "Traçagem" && viewMode === "2d" && (
+            {tab === "Traçagem" && (
               <TracagemPanel slug="quadrado-redondo" result={result} />
             )}
 
             {(tab === "Traçado" || tab === "Desenvolvimento") &&
-              viewMode === "2d" &&
               result.pieces?.length && (
                 <div className={cn("grid gap-3", result.pieces.length > 1 && "lg:grid-cols-2")}>
                   {result.pieces.map((piece, i) => (
@@ -561,7 +560,6 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
               )}
 
             {(tab === "Traçado" || tab === "Desenvolvimento") &&
-              viewMode === "2d" &&
               !result.pieces?.length && (
                 <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
                   <div className="h-[300px] lg:h-[420px]">
