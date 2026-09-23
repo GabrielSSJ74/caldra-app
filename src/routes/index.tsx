@@ -38,7 +38,6 @@ function MiniPlan() {
           <rect x="0" y="0" width="120" height="80" fill="url(#mini-grid-fade)" />
         </mask>
       </defs>
-      {/* grid ortogonal 90° (atrás da peça) */}
       <g stroke="#000000" strokeWidth=".4" opacity=".5" mask="url(#mini-grid-mask)">
         {[10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110].map((x) => (
           <path key={`v${x}`} d={`M${x} 6 V74`} />
@@ -47,14 +46,10 @@ function MiniPlan() {
           <path key={`h${y}`} d={`M8 ${y} H112`} />
         ))}
       </g>
-
-
-      {/* flange 2D com 8 furos */}
       <g fill="none" stroke="currentColor" strokeWidth="1.2">
         <circle cx="58" cy="40" r="28" />
         <circle cx="58" cy="40" r="10" />
       </g>
-      {/* circunferência de furação */}
       <circle
         cx="58"
         cy="40"
@@ -65,12 +60,10 @@ function MiniPlan() {
         strokeDasharray="4 3"
         opacity=".6"
       />
-      {/* linhas de centro */}
       <g stroke="var(--accent)" strokeWidth=".6" opacity=".8">
         <path d="M26 40 H90" strokeDasharray="6 3 1 3" />
         <path d="M58 8 V72" strokeDasharray="6 3 1 3" />
       </g>
-      {/* 8 furos */}
       <g>
         {[0, 45, 90, 135, 180, 225, 270, 315].map((a) => {
           const r = (a * Math.PI) / 180;
@@ -91,29 +84,17 @@ function MiniPlan() {
           );
         })}
       </g>
-
-
-
-
-      {/* lápis 2D desenhando o último furo */}
       <g transform="rotate(35 72 27)">
-        {/* corpo hexagonal */}
         <path d="M67 -12 h10 v27 h-10 Z" fill="var(--accent)" />
         <path d="M71.5 -12 v27" stroke="var(--background)" strokeWidth=".8" opacity=".45" />
-        {/* virola */}
         <path d="M67 -16 h10 v4 h-10 Z" fill="currentColor" opacity=".45" />
         <path d="M67 -20 h10 v4 h-10 Z" fill="var(--accent)" opacity=".5" />
-        {/* madeira e grafite */}
         <path d="M67 15 h10 l-5 8 Z" fill="currentColor" opacity=".35" />
         <path d="M70.2 20 h3.6 l-1.8 3 Z" fill="currentColor" />
       </g>
-
-
     </svg>
   );
 }
-
-
 
 function MiniMath() {
   return (
@@ -204,16 +185,12 @@ function Inicio() {
         >
           CALDRA
         </h1>
-        <p className="mt-1.5 font-mono text-[11px] tracking-[0.22em] text-muted-foreground uppercase">
-          Traçado e Planificação Zero Fresta
-        </p>
         <div className="mt-3 flex items-center gap-3">
           <span className="h-px flex-1 bg-gradient-to-r from-accent/60 to-transparent" />
-          <span className="tick-label">{"\n"}</span>
+          <span className="tick-label">{`\n`}</span>
         </div>
       </header>
 
-      {/* composição assimétrica */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:grid-rows-2">
         <Link
           to="/tracagem"
@@ -238,7 +215,7 @@ function Inicio() {
         >
           <div className="flex items-center justify-between">
             <PenTool className="size-4 text-accent" strokeWidth={1.4} />
-            <span className="tick-label">{"\n"}</span>
+            <span className="tick-label">{`\n`}</span>
           </div>
           <div className="pointer-events-none absolute inset-x-2 top-6 h-20 text-accent2/70 opacity-70">
             <MiniPlan />
@@ -252,7 +229,7 @@ function Inicio() {
         >
           <div className="flex items-center justify-between">
             <FolderKanban className="size-4 text-accent" strokeWidth={1.4} />
-            <span className="tick-label">{"\n"}</span>
+            <span className="tick-label">{`\n`}</span>
           </div>
           <div className="pointer-events-none absolute inset-x-2 top-6 h-20 text-muted-foreground/70">
             <MiniFolders />
@@ -267,7 +244,7 @@ function Inicio() {
           <div className="relative z-10 flex min-w-0 flex-col gap-1">
             <div className="flex items-center gap-2">
               <Sigma className="size-4 text-accent" strokeWidth={1.4} />
-              <span className="tick-label">{"\n"}</span>
+              <span className="tick-label">{`\n`}</span>
             </div>
             <span className="font-display text-sm font-medium tracking-wide">ESTUDOS</span>
             <span className="font-mono text-[10px] text-muted-foreground">
@@ -297,7 +274,6 @@ function Inicio() {
           </div>
         </Link>
       </div>
-
     </div>
   );
 }
