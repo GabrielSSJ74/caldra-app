@@ -394,22 +394,66 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
             </p>
           </div>
         </div>
-      </Panel>
 
-      {/* RESULTADO */}
-      {calculated && result && (
+        {/* AVANÇAR — leva para a tela de Resultados */}
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            disabled={!result}
+            onClick={() => setStage("resultados")}
+            className={cn(
+              "brand-gradient flex items-center gap-2 rounded-xl px-5 py-2.5 font-display text-[13px] font-semibold text-background transition-opacity",
+              !result && "pointer-events-none opacity-40",
+            )}
+          >
+            Avançar <ChevronRight className="size-4" />
+          </button>
+        </div>
+      </Panel>
+      )}
+
+      {/* RESULTADOS */}
+      {stage === "resultados" && result && (
         <Panel className="fade-up p-3.5 lg:p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <SectionLabel>Resultado</SectionLabel>
+            <SectionLabel>Resultados</SectionLabel>
             <span className="flex items-center gap-1 font-mono text-[10px] text-accent">
               <Check className="size-3" /> Desenvolvimento calculado
             </span>
           </div>
 
+          <button
+            type="button"
+            onClick={() => setStage("modelo")}
+            className="mb-3 flex items-center gap-1.5 rounded-lg border border-line px-3 py-1.5 font-mono text-[10px] tracking-wider text-muted-foreground uppercase transition-colors hover:text-foreground"
+          >
+            <ChevronRight className="size-3 rotate-180" /> Voltar ao modelo
+          </button>
+
+          {/* GRUPOS */}
+          <div className="mb-3 grid grid-cols-3 gap-1.5">
+            {RESULT_GROUPS.map((g) => (
+              <button
+                key={g.id}
+                type="button"
+                aria-pressed={group === g.id}
+                onClick={() => setTab(g.tabs[0]!)}
+                className={cn(
+                  "rounded-lg border px-2 py-2 font-mono text-[10px] tracking-wider uppercase transition-colors",
+                  group === g.id
+                    ? "border-accent/50 bg-accent/12 text-accent"
+                    : "border-line text-muted-foreground hover:text-foreground",
+                )}
+              >
+                {g.id}
+              </button>
+            ))}
+          </div>
+
           <StageBar tab={tab} tabs={TABS} onJump={(t) => setTab(t as Tab)} />
 
           <div className="mb-4 flex gap-1 overflow-x-auto pb-1">
-            {TABS.map((t) => (
+            {RESULT_GROUPS.find((g) => g.id === group)!.tabs.map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -424,6 +468,7 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
               </button>
             ))}
           </div>
+
 
           <div className="fade-up">
             {tab === "Dimensões" && (
@@ -476,12 +521,11 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
               </div>
             )}
 
-            {tab === "Traçagem" && viewMode === "2d" && (
+            {tab === "Traçagem" && (
               <TracagemPanel slug="quadrado-redondo" result={result} />
             )}
 
             {(tab === "Traçado" || tab === "Desenvolvimento") &&
-              viewMode === "2d" &&
               result.pieces?.length && (
                 <div className={cn("grid gap-3", result.pieces.length > 1 && "lg:grid-cols-2")}>
                   {result.pieces.map((piece, i) => (
@@ -516,7 +560,6 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
               )}
 
             {(tab === "Traçado" || tab === "Desenvolvimento") &&
-              viewMode === "2d" &&
               !result.pieces?.length && (
                 <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
                   <div className="h-[300px] lg:h-[420px]">
