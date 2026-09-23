@@ -91,12 +91,6 @@ export function Intro({ onDone }: { onDone: () => void }) {
           >
             CALDRA
           </h1>
-          <p
-            className="tick-label"
-            style={{ animation: "caldra-rise 1s 1.4s cubic-bezier(.22,1,.36,1) both" }}
-          >
-            Traçado e Planificação Zero Fresta
-          </p>
         </div>
       ) : (
         <>
