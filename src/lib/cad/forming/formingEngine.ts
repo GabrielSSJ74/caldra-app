@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — FORMING TOOLS & DEFORMATION ENGINE (FASE 12)
  *

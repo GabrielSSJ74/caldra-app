@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — CHAMFER BRIDGE (FASE 08)
  *

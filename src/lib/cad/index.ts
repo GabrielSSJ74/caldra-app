@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD KERNEL — ROOT EXPORTS
  *

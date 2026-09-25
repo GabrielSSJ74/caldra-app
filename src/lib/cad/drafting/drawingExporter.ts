@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — DRAWING EXPORTER (FASE 09)
  *

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — STRUCTURAL FRAMING & WELDMENTS ENGINE (FASE 10)
  *

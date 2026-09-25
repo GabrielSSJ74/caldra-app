@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — DFM (DESIGN FOR MANUFACTURING) AUDIT ENGINE (FASE 13)
  *

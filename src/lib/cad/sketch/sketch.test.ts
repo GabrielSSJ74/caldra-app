@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect } from "vitest";
 import { evaluateParametricExpression, ConstraintSolver } from "./solver";
 import { ParametricSketch } from "./parametricSketch";

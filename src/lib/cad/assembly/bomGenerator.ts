@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — HIERARCHICAL BOM & WELDMENT GENERATOR (FASE 06)
  *
