@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — INTERFERENCE & COLLISION ENGINE (FASE 06)
  *

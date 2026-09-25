@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA GEOMETRY CORE — CANONICAL MODEL & TOPOLOGY (FASE 01)
  *

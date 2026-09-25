@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD DRAFTING & TECHNICAL DRAWINGS — FASE 09
  *

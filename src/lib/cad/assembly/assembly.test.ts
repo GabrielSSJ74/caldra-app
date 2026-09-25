@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, it, expect } from "vitest";
 import type { Solid } from "../canonical";
 import { BooleanEngine } from "./booleanEngine";

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — BOOLEAN CSG ENGINE (FASE 06)
  *

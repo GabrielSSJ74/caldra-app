@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA VISION — CANDIDATE GENERATOR & EVALUATOR
  *

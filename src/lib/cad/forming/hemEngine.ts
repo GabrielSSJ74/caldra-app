@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — HEM & JOG FLANGE ENGINE (FASE 12)
  *

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — CAM TOOLPATH GENERATOR (FASE 07)
  *

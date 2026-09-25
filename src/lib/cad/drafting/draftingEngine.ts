@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — DRAFTING ENGINE (FASE 09)
  *

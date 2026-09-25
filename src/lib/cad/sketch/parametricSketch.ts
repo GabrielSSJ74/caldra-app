@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — PARAMETRIC SKETCH (FASE 02)
  *

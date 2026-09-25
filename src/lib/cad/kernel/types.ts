@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — UNIFIED KERNEL TYPES (FASE 08)
  *

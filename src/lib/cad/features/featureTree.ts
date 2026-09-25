@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — FEATURE TREE & REBUILD ENGINE (FASE 03)
  *

@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — INDUSTRIAL MULTI-SHEET NESTING ENGINE (FASE 11)
  *

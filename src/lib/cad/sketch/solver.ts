@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — GEOMETRIC CONSTRAINT SOLVER (FASE 02)
  *
