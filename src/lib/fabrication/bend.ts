@@ -31,7 +31,12 @@ export function neutralRadius(insideRadius: number, kFactor: number, thickness: 
   return insideRadius + kFactor * thickness;
 }
 
-export function bendAllowance(angleDeg: number, insideRadius: number, kFactor: number, thickness: number): number {
+export function bendAllowance(
+  angleDeg: number,
+  insideRadius: number,
+  kFactor: number,
+  thickness: number,
+): number {
   return angleDeg * DEG * neutralRadius(insideRadius, kFactor, thickness);
 }
 
@@ -39,8 +44,16 @@ export function outsideSetback(angleDeg: number, insideRadius: number, thickness
   return (insideRadius + thickness) * Math.tan((angleDeg * DEG) / 2);
 }
 
-export function bendDeduction(angleDeg: number, insideRadius: number, kFactor: number, thickness: number): number {
-  return 2 * outsideSetback(angleDeg, insideRadius, thickness) - bendAllowance(angleDeg, insideRadius, kFactor, thickness);
+export function bendDeduction(
+  angleDeg: number,
+  insideRadius: number,
+  kFactor: number,
+  thickness: number,
+): number {
+  return (
+    2 * outsideSetback(angleDeg, insideRadius, thickness) -
+    bendAllowance(angleDeg, insideRadius, kFactor, thickness)
+  );
 }
 
 export type BendResolution = { states: BendState[]; issues: BendIssue[] };

@@ -59,9 +59,7 @@ export function exportSvgAsPdf(svg: SVGSVGElement, info: SheetInfo, rows: string
   const source = serializeSvg(svg);
   const win = window.open("", "_blank", "width=1024,height=768");
   if (!win) throw new Error("Bloqueio de pop-up impediu a geração do PDF.");
-  const table = rows
-    .map(([k, v]) => `<tr><td>${k}</td><td class="num">${v}</td></tr>`)
-    .join("");
+  const table = rows.map(([k, v]) => `<tr><td>${k}</td><td class="num">${v}</td></tr>`).join("");
   win.document.write(`<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
 <title>${info.pieceName} — CALDRA</title>
 <style>

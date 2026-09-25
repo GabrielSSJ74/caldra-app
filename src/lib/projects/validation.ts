@@ -42,9 +42,7 @@ const MAX_SHEET = SHEETS_METRIC.reduce(
 
 /** A peça cabe em alguma chapa comercial (com giro de 90°)? */
 function fitsAnySheet(w: number, h: number): boolean {
-  return SHEETS_METRIC.some(
-    (s) => (w <= s.w && h <= s.h) || (h <= s.w && w <= s.h),
-  );
+  return SHEETS_METRIC.some((s) => (w <= s.w && h <= s.h) || (h <= s.w && w <= s.h));
 }
 
 const nearest = (list: number[], v: number) =>
@@ -55,11 +53,7 @@ const nearest = (list: number[], v: number) =>
 const fmt = (v: number, d = 1) =>
   v.toLocaleString("pt-BR", { minimumFractionDigits: d, maximumFractionDigits: d });
 
-function partIssues(
-  part: ProjectPart,
-  line: BomLine,
-  materials: Material[],
-): ValidationIssue[] {
+function partIssues(part: ProjectPart, line: BomLine, materials: Material[]): ValidationIssue[] {
   const out: ValidationIssue[] = [];
   const base = { partCode: line.code, instanceId: part.instanceId };
 
@@ -69,8 +63,7 @@ function partIssues(
       id: `${part.instanceId}:geometria`,
       level: "erro",
       title: `${line.code} sem medida calculada`,
-      detail:
-        "Abra a peça e confirme os parâmetros: sem desenvolvimento não há corte nem massa.",
+      detail: "Abra a peça e confirme os parâmetros: sem desenvolvimento não há corte nem massa.",
     });
   } else if (!fitsAnySheet(line.w, line.h)) {
     out.push({
@@ -140,10 +133,7 @@ function partIssues(
 }
 
 /** Conferência completa do dossiê. */
-export function validateProject(
-  project: Project,
-  materials: Material[] = [],
-): ProjectValidation {
+export function validateProject(project: Project, materials: Material[] = []): ProjectValidation {
   const bom = projectBom(project, materials);
   const byId = new Map(bom.lines.map((l) => [l.instanceId, l]));
   const issues: ValidationIssue[] = [];

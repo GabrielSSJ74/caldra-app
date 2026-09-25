@@ -32,7 +32,16 @@ export function assemblySteps(project: Project): AssemblyStep[] {
       detail: step.detail,
       parts: step.partKeys.flatMap((key) => {
         const p = byKey.get(key);
-        return p ? [{ instanceId: p.instanceId, code: p.code, name: p.name, quantity: Math.max(1, p.quantity) }] : [];
+        return p
+          ? [
+              {
+                instanceId: p.instanceId,
+                code: p.code,
+                name: p.name,
+                quantity: Math.max(1, p.quantity),
+              },
+            ]
+          : [];
       }),
     }));
   }

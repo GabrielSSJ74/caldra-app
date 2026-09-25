@@ -56,9 +56,7 @@ describe("tê: furo real no tubo principal", () => {
   it("nenhuma face do tubo principal inteiramente dentro do volume do ramal", () => {
     const rb = P.d2 / 2;
     const viol = model.faces.filter(
-      (f) =>
-        f.g === 0 &&
-        f.pts.every((q) => q.z > -P.t && Math.hypot(q.x, q.y) < rb - P.t * 0.25),
+      (f) => f.g === 0 && f.pts.every((q) => q.z > -P.t && Math.hypot(q.x, q.y) < rb - P.t * 0.25),
     );
     expect(viol).toEqual([]);
   });

@@ -107,7 +107,6 @@ export function analyzeCenterlineRaster(
   });
   onProgress?.("Esqueletizando", 45);
 
-
   const skel = thinZhangSuen(bin);
   const diagonalPx = Math.hypot(width, height);
   const raw = traceSkeleton(skel);

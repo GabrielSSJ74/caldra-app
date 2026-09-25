@@ -71,8 +71,15 @@ function groupOf(tab: Tab): ResultGroup {
   return RESULT_GROUPS.find((g) => (g.tabs as readonly string[]).includes(tab))?.id ?? "Geometria";
 }
 
-
-export function SquareToRoundStudio({ initialValues, customId, customName }: { initialValues?: Record<string, number> | undefined; customId?: string | undefined; customName?: string | undefined }) {
+export function SquareToRoundStudio({
+  initialValues,
+  customId,
+  customName,
+}: {
+  initialValues?: Record<string, number> | undefined;
+  customId?: string | undefined;
+  customName?: string | undefined;
+}) {
   const { can, requirePro } = useFeatureAccess();
   const { precision } = useSettings();
   const [input, setInput] = useState<SquareToRoundInput>(() => ({
@@ -221,195 +228,196 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
     <div className="space-y-4">
       {/* MEDIDAS */}
       {stage === "modelo" && (
-      <Panel className="p-3.5 lg:p-5" glow>
-        <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
-          <VisualizationViewport
-            mode={viewMode}
-            onModeChange={setViewMode}
-            model={wireModel}
-            unfold={unfold}
-            onUnfold={setUnfold}
-            selection={{ refForEdge, highlightRef: selRef, onSelectRef: setSelRef }}
-            onPlanificar={() => {
-              setUnfold(1);
-              window.setTimeout(() => {
-                setViewMode("2d");
-                setTab("Desenvolvimento");
-                setStage("resultados");
-              }, 420);
-            }}
+        <Panel className="p-3.5 lg:p-5" glow>
+          <div className="grid gap-4 lg:grid-cols-[1.15fr_1fr]">
+            <VisualizationViewport
+              mode={viewMode}
+              onModeChange={setViewMode}
+              model={wireModel}
+              unfold={unfold}
+              onUnfold={setUnfold}
+              selection={{ refForEdge, highlightRef: selRef, onSelectRef: setSelRef }}
+              onPlanificar={() => {
+                setUnfold(1);
+                window.setTimeout(() => {
+                  setViewMode("2d");
+                  setTab("Desenvolvimento");
+                  setStage("resultados");
+                }, 420);
+              }}
+            >
+              <SchematicSquareToRound input={input} highlight={focused} />
+              {FIELDS.map((f, i) => (
+                <button
+                  key={f.key}
+                  type="button"
+                  onClick={() => {
+                    setFocused(f.key);
+                    inputs.current[f.key]?.focus();
+                    inputs.current[f.key]?.select();
+                  }}
+                  style={
+                    f.key === "height"
+                      ? { left: "2%", top: "44%" }
+                      : f.key === "topDiameter"
+                        ? { left: "6%", top: "8%" }
+                        : f.key === "baseA"
+                          ? { left: "6%", bottom: "22%" }
+                          : { right: "3%", top: `${8 + i * 13}%` }
+                  }
+                  className={cn(
+                    "absolute rounded-full border px-2 py-1 font-mono text-[10px] whitespace-nowrap backdrop-blur-sm transition-all duration-300",
+                    focused === f.key || pulse === f.key
+                      ? "border-accent/50 bg-accent/15 text-accent shadow-[0_0_14px_-2px_var(--accent)]"
+                      : "border-line bg-background/70 text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {f.tag} {Number(Number(input[f.key]).toFixed(2))}
+                  <span className="opacity-60"> mm</span>
+                </button>
+              ))}
+              <span className="absolute top-2 left-2.5 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase">
+                Vista 2D · mm
+              </span>
+            </VisualizationViewport>
 
-          >
-            <SchematicSquareToRound input={input} highlight={focused} />
-            {FIELDS.map((f, i) => (
-              <button
-                key={f.key}
-                type="button"
-                onClick={() => {
-                  setFocused(f.key);
-                  inputs.current[f.key]?.focus();
-                  inputs.current[f.key]?.select();
-                }}
-                style={
-                  f.key === "height"
-                    ? { left: "2%", top: "44%" }
-                    : f.key === "topDiameter"
-                      ? { left: "6%", top: "8%" }
-                      : f.key === "baseA"
-                        ? { left: "6%", bottom: "22%" }
-                        : { right: "3%", top: `${8 + i * 13}%` }
-                }
+            <div>
+              <SectionLabel>Medidas</SectionLabel>
+              <p className="mb-3 text-xs text-muted-foreground">
+                Defina as dimensões da peça. O desenho acompanha cada alteração.
+              </p>
+              <div className="grid grid-cols-2 gap-2.5">
+                {FIELDS.map((f) => {
+                  const err = issueFor(f.key);
+                  return (
+                    <label key={f.key} className="block">
+                      <span className="mb-1 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
+                        <span className="truncate">{f.label}</span>
+                        <span className="text-accent/80">{f.tag}</span>
+                      </span>
+                      <span
+                        className={cn(
+                          "flex items-center overflow-hidden rounded-lg border bg-background/50 transition-colors",
+                          err ? "border-destructive" : "border-line focus-within:border-accent",
+                        )}
+                      >
+                        <input
+                          ref={(el) => {
+                            inputs.current[f.key] = el;
+                          }}
+                          inputMode="decimal"
+                          value={String(input[f.key])}
+                          onChange={(e) => set(f.key, e.target.value)}
+                          onFocus={() => setFocused(f.key)}
+                          onBlur={() => setFocused(null)}
+                          className="w-full min-w-0 bg-transparent px-2.5 py-2.5 font-mono text-[15px] outline-none"
+                        />
+                        <span className="border-l border-line px-2 font-mono text-[10px] text-muted-foreground">
+                          mm
+                        </span>
+                      </span>
+                      {err && (
+                        <span className="mt-1 block text-[10px] text-destructive">{err}</span>
+                      )}
+                    </label>
+                  );
+                })}
+              </div>
+
+              {/* MÉTODO */}
+              <div className="mt-3 rounded-xl border border-line bg-background/40 p-3">
+                <p className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
+                  Método
+                </p>
+                <p className="mt-1 text-sm">Triangulação · comprimentos verdadeiros</p>
+                <label className="mt-2 flex items-center gap-3">
+                  <span className="font-mono text-[10px] text-muted-foreground">
+                    Divisões por quadrante
+                  </span>
+                  <input
+                    type="range"
+                    min={3}
+                    max={24}
+                    value={input.divisions}
+                    onChange={(e) => set("divisions", e.target.value)}
+                    className="h-1 flex-1 accent-[var(--accent)]"
+                  />
+                  <span className="w-8 text-right font-mono text-xs">{input.divisions}</span>
+                </label>
+
+                {/* ESTRATÉGIA DE FABRICAÇÃO — mesmo modelo, decomposição diferente */}
+                <div className="mt-3 border-t border-line pt-3">
+                  <span className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
+                    Estratégia de fabricação
+                  </span>
+                  <div className="mt-1.5 grid grid-cols-2 gap-1.5">
+                    {(
+                      [
+                        { id: "single", label: "Uma peça única" },
+                        { id: "two-weld", label: "2 partes + solda" },
+                      ] as const
+                    ).map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setInput((p) => ({ ...p, strategy: s.id }))}
+                        className={cn(
+                          "rounded-lg border px-2 py-2 font-mono text-[10px] tracking-wider uppercase transition-colors",
+                          input.strategy === s.id
+                            ? "border-accent/40 bg-accent/12 text-accent"
+                            : "border-line text-muted-foreground hover:text-foreground",
+                        )}
+                      >
+                        {s.label}
+                      </button>
+                    ))}
+                  </div>
+                  {input.strategy === "two-weld" && result?.joints && (
+                    <div className="mt-2 space-y-1 rounded-lg border border-line bg-background/60 p-2">
+                      {result.joints.map((j) => (
+                        <p key={j.id} className="font-mono text-[10px] text-muted-foreground">
+                          <span className="text-accent">{j.id}</span> · {j.position}
+                        </p>
+                      ))}
+                      <p className="font-mono text-[9px] text-muted-foreground/70">
+                        A geometria final do conjunto é idêntica nos dois modos — muda apenas a
+                        decomposição da chapa.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <p
                 className={cn(
-                  "absolute rounded-full border px-2 py-1 font-mono text-[10px] whitespace-nowrap backdrop-blur-sm transition-all duration-300",
-                  focused === f.key || pulse === f.key
-                    ? "border-accent/50 bg-accent/15 text-accent shadow-[0_0_14px_-2px_var(--accent)]"
-                    : "border-line bg-background/70 text-muted-foreground hover:text-foreground",
+                  "mt-3 text-center font-mono text-[11px] tracking-[0.16em] uppercase transition-colors",
+                  calculating ? "text-muted-foreground" : "text-accent",
                 )}
               >
-                {f.tag} {Number(Number(input[f.key]).toFixed(2))}
-                <span className="opacity-60"> mm</span>
-              </button>
-            ))}
-            <span className="absolute top-2 left-2.5 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase">
-              Vista 2D · mm
-            </span>
-          </VisualizationViewport>
-
-          <div>
-            <SectionLabel>Medidas</SectionLabel>
-            <p className="mb-3 text-xs text-muted-foreground">
-              Defina as dimensões da peça. O desenho acompanha cada alteração.
-            </p>
-            <div className="grid grid-cols-2 gap-2.5">
-              {FIELDS.map((f) => {
-                const err = issueFor(f.key);
-                return (
-                  <label key={f.key} className="block">
-                    <span className="mb-1 flex items-center justify-between font-mono text-[10px] text-muted-foreground">
-                      <span className="truncate">{f.label}</span>
-                      <span className="text-accent/80">{f.tag}</span>
-                    </span>
-                    <span
-                      className={cn(
-                        "flex items-center overflow-hidden rounded-lg border bg-background/50 transition-colors",
-                        err ? "border-destructive" : "border-line focus-within:border-accent",
-                      )}
-                    >
-                      <input
-                        ref={(el) => {
-                          inputs.current[f.key] = el;
-                        }}
-                        inputMode="decimal"
-                        value={String(input[f.key])}
-                        onChange={(e) => set(f.key, e.target.value)}
-                        onFocus={() => setFocused(f.key)}
-                        onBlur={() => setFocused(null)}
-                        className="w-full min-w-0 bg-transparent px-2.5 py-2.5 font-mono text-[15px] outline-none"
-                      />
-                      <span className="border-l border-line px-2 font-mono text-[10px] text-muted-foreground">
-                        mm
-                      </span>
-                    </span>
-                    {err && <span className="mt-1 block text-[10px] text-destructive">{err}</span>}
-                  </label>
-                );
-              })}
-            </div>
-
-            {/* MÉTODO */}
-            <div className="mt-3 rounded-xl border border-line bg-background/40 p-3">
-              <p className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
-                Método
+                {issues.length
+                  ? issues[0]!.message
+                  : calculating
+                    ? "Calculando…"
+                    : "Pronto · atualização em tempo real"}
               </p>
-              <p className="mt-1 text-sm">Triangulação · comprimentos verdadeiros</p>
-              <label className="mt-2 flex items-center gap-3">
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  Divisões por quadrante
-                </span>
-                <input
-                  type="range"
-                  min={3}
-                  max={24}
-                  value={input.divisions}
-                  onChange={(e) => set("divisions", e.target.value)}
-                  className="h-1 flex-1 accent-[var(--accent)]"
-                />
-                <span className="w-8 text-right font-mono text-xs">{input.divisions}</span>
-              </label>
-
-              {/* ESTRATÉGIA DE FABRICAÇÃO — mesmo modelo, decomposição diferente */}
-              <div className="mt-3 border-t border-line pt-3">
-                <span className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
-                  Estratégia de fabricação
-                </span>
-                <div className="mt-1.5 grid grid-cols-2 gap-1.5">
-                  {(
-                    [
-                      { id: "single", label: "Uma peça única" },
-                      { id: "two-weld", label: "2 partes + solda" },
-                    ] as const
-                  ).map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => setInput((p) => ({ ...p, strategy: s.id }))}
-                      className={cn(
-                        "rounded-lg border px-2 py-2 font-mono text-[10px] tracking-wider uppercase transition-colors",
-                        input.strategy === s.id
-                          ? "border-accent/40 bg-accent/12 text-accent"
-                          : "border-line text-muted-foreground hover:text-foreground",
-                      )}
-                    >
-                      {s.label}
-                    </button>
-                  ))}
-                </div>
-                {input.strategy === "two-weld" && result?.joints && (
-                  <div className="mt-2 space-y-1 rounded-lg border border-line bg-background/60 p-2">
-                    {result.joints.map((j) => (
-                      <p key={j.id} className="font-mono text-[10px] text-muted-foreground">
-                        <span className="text-accent">{j.id}</span> · {j.position}
-                      </p>
-                    ))}
-                    <p className="font-mono text-[9px] text-muted-foreground/70">
-                      A geometria final do conjunto é idêntica nos dois modos — muda apenas a
-                      decomposição da chapa.
-                    </p>
-                  </div>
-                )}
-              </div>
             </div>
+          </div>
 
-            <p
+          {/* AVANÇAR — leva para a tela de Resultados */}
+          <div className="mt-4 flex justify-end">
+            <button
+              type="button"
+              disabled={!result}
+              onClick={() => setStage("resultados")}
               className={cn(
-                "mt-3 text-center font-mono text-[11px] tracking-[0.16em] uppercase transition-colors",
-                calculating ? "text-muted-foreground" : "text-accent",
+                "brand-gradient flex items-center gap-2 rounded-xl px-5 py-2.5 font-display text-[13px] font-semibold text-background transition-opacity",
+                !result && "pointer-events-none opacity-40",
               )}
             >
-              {issues.length
-                ? issues[0]!.message
-                : calculating
-                  ? "Calculando…"
-                  : "Pronto · atualização em tempo real"}
-            </p>
+              Avançar <ChevronRight className="size-4" />
+            </button>
           </div>
-        </div>
-
-        {/* AVANÇAR — leva para a tela de Resultados */}
-        <div className="mt-4 flex justify-end">
-          <button
-            type="button"
-            disabled={!result}
-            onClick={() => setStage("resultados")}
-            className={cn(
-              "brand-gradient flex items-center gap-2 rounded-xl px-5 py-2.5 font-display text-[13px] font-semibold text-background transition-opacity",
-              !result && "pointer-events-none opacity-40",
-            )}
-          >
-            Avançar <ChevronRight className="size-4" />
-          </button>
-        </div>
-      </Panel>
+        </Panel>
       )}
 
       {/* RESULTADOS */}
@@ -469,7 +477,6 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
             ))}
           </div>
 
-
           <div className="fade-up">
             {tab === "Dimensões" && (
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -521,62 +528,58 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
               </div>
             )}
 
-            {tab === "Traçagem" && (
-              <TracagemPanel slug="quadrado-redondo" result={result} />
+            {tab === "Traçagem" && <TracagemPanel slug="quadrado-redondo" result={result} />}
+
+            {(tab === "Traçado" || tab === "Desenvolvimento") && result.pieces?.length && (
+              <div className={cn("grid gap-3", result.pieces.length > 1 && "lg:grid-cols-2")}>
+                {result.pieces.map((piece, i) => (
+                  <div
+                    key={piece.code}
+                    className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3"
+                  >
+                    <div className="mb-2 flex items-baseline justify-between gap-2">
+                      <span className="font-mono text-[10px] tracking-wider text-accent uppercase">
+                        {piece.code}
+                      </span>
+                      <span className="truncate text-[11px] text-muted-foreground">
+                        {piece.name}
+                      </span>
+                    </div>
+                    <div className="h-[280px] lg:h-[380px]">
+                      <DevelopmentView
+                        ref={i === 0 ? svgRef : undefined}
+                        pattern={piece.development}
+                        showFolds={tab === "Traçado"}
+                        showPoints={tab === "Traçado"}
+                      />
+                    </div>
+                  </div>
+                ))}
+                <p className="font-mono text-[10px] text-muted-foreground lg:col-span-2">
+                  {tab === "Traçado"
+                    ? "Cada metade é traçada separadamente; as costuras J1/J2 unem as peças na montagem."
+                    : "Contornos de corte das duas metades prontos para nesting. Escala real em milímetros."}
+                </p>
+              </div>
             )}
 
-            {(tab === "Traçado" || tab === "Desenvolvimento") &&
-              result.pieces?.length && (
-                <div className={cn("grid gap-3", result.pieces.length > 1 && "lg:grid-cols-2")}>
-                  {result.pieces.map((piece, i) => (
-                    <div
-                      key={piece.code}
-                      className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3"
-                    >
-                      <div className="mb-2 flex items-baseline justify-between gap-2">
-                        <span className="font-mono text-[10px] tracking-wider text-accent uppercase">
-                          {piece.code}
-                        </span>
-                        <span className="truncate text-[11px] text-muted-foreground">
-                          {piece.name}
-                        </span>
-                      </div>
-                      <div className="h-[280px] lg:h-[380px]">
-                        <DevelopmentView
-                          ref={i === 0 ? svgRef : undefined}
-                          pattern={piece.development}
-                          showFolds={tab === "Traçado"}
-                          showPoints={tab === "Traçado"}
-                        />
-                      </div>
-                    </div>
-                  ))}
-                  <p className="font-mono text-[10px] text-muted-foreground lg:col-span-2">
-                    {tab === "Traçado"
-                      ? "Cada metade é traçada separadamente; as costuras J1/J2 unem as peças na montagem."
-                      : "Contornos de corte das duas metades prontos para nesting. Escala real em milímetros."}
-                  </p>
+            {(tab === "Traçado" || tab === "Desenvolvimento") && !result.pieces?.length && (
+              <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
+                <div className="h-[300px] lg:h-[420px]">
+                  <DevelopmentView
+                    ref={svgRef}
+                    pattern={result.development}
+                    showFolds={tab === "Traçado"}
+                    showPoints={tab === "Traçado"}
+                  />
                 </div>
-              )}
-
-            {(tab === "Traçado" || tab === "Desenvolvimento") &&
-              !result.pieces?.length && (
-                <div className="grid-bg-fine relative rounded-xl border border-line bg-background/40 p-3">
-                  <div className="h-[300px] lg:h-[420px]">
-                    <DevelopmentView
-                      ref={svgRef}
-                      pattern={result.development}
-                      showFolds={tab === "Traçado"}
-                      showPoints={tab === "Traçado"}
-                    />
-                  </div>
-                  <p className="mt-2 font-mono text-[10px] text-muted-foreground">
-                    {tab === "Traçado"
-                      ? "Linhas de corte (contorno) · geratrizes tracejadas · pontos V0–V3 da base."
-                      : "Contorno de corte pronto para nesting. Escala real em milímetros."}
-                  </p>
-                </div>
-              )}
+                <p className="mt-2 font-mono text-[10px] text-muted-foreground">
+                  {tab === "Traçado"
+                    ? "Linhas de corte (contorno) · geratrizes tracejadas · pontos V0–V3 da base."
+                    : "Contorno de corte pronto para nesting. Escala real em milímetros."}
+                </p>
+              </div>
+            )}
 
             {tab === "Material" && (
               <div className="grid gap-3 sm:grid-cols-2">
@@ -679,16 +682,29 @@ export function SquareToRoundStudio({ initialValues, customId, customName }: { i
                 <button
                   type="button"
                   onClick={() => {
-                    const values = { ...input, strategy: input.strategy === "two-weld" ? 1 : 0 } as unknown as Record<string, number>;
-                    const chosenName = window.prompt("Nome do modelo", customName ?? "Meu Quadrado → Redondo")?.trim();
+                    const values = {
+                      ...input,
+                      strategy: input.strategy === "two-weld" ? 1 : 0,
+                    } as unknown as Record<string, number>;
+                    const chosenName = window
+                      .prompt("Nome do modelo", customName ?? "Meu Quadrado → Redondo")
+                      ?.trim();
                     if (!chosenName) return;
                     if (customId) updateCustom(customId, { name: chosenName, values });
-                    else saveCustom({ baseId: "cald.quadrado-redondo", name: chosenName, values, modelFamily: "parametric", manufacturingStrategy: input.strategy });
+                    else
+                      saveCustom({
+                        baseId: "cald.quadrado-redondo",
+                        name: chosenName,
+                        values,
+                        modelFamily: "parametric",
+                        manufacturingStrategy: input.strategy,
+                      });
                     toast.success(customId ? "Modelo atualizado" : "Salvo em Meus Modelos");
                   }}
                   className="flex w-full items-center justify-center gap-2 rounded-xl border border-line py-2.5 font-mono text-[11px] tracking-wider text-muted-foreground uppercase"
                 >
-                  <Save className="size-3.5" /> {customId ? "Atualizar modelo" : "Salvar em Meus Modelos"}
+                  <Save className="size-3.5" />{" "}
+                  {customId ? "Atualizar modelo" : "Salvar em Meus Modelos"}
                 </button>
                 <div className="hidden">
                   <DevelopmentView ref={svgRef} pattern={result.development} />

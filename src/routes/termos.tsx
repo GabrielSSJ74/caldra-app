@@ -11,7 +11,10 @@ export const Route = createFileRoute("/termos")({
           "Termos de uso do CALDRA: assinatura, cancelamento, responsabilidade sobre os cálculos de traçagem e conferência antes do corte.",
       },
       { property: "og:title", content: "Termos de Uso — CALDRA" },
-      { property: "og:description", content: "Assinatura, cancelamento e responsabilidade técnica." },
+      {
+        property: "og:description",
+        content: "Assinatura, cancelamento e responsabilidade técnica.",
+      },
       { property: "og:type", content: "article" },
       { name: "twitter:card", content: "summary" },
     ],

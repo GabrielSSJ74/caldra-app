@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { bendAllowance, bendDeduction, developedLength, neutralRadius, resolveBends, resolveKFactor } from "./bend";
+import {
+  bendAllowance,
+  bendDeduction,
+  developedLength,
+  neutralRadius,
+  resolveBends,
+  resolveKFactor,
+} from "./bend";
 import { diffFabrication, staleDerivatives } from "./derivatives";
 import { isMethodSupported, type Bend, type FabricationConfig } from "./types";
 
@@ -46,7 +53,10 @@ describe("fator K", () => {
 
   it("BD = 2 × OSSB − BA", () => {
     const ossb = (8 + 6.35) * Math.tan(Math.PI / 4);
-    expect(bendDeduction(90, 8, 0.33, 6.35)).toBeCloseTo(2 * ossb - bendAllowance(90, 8, 0.33, 6.35), 4);
+    expect(bendDeduction(90, 8, 0.33, 6.35)).toBeCloseTo(
+      2 * ossb - bendAllowance(90, 8, 0.33, 6.35),
+      4,
+    );
   });
 });
 
@@ -89,17 +99,26 @@ describe("resolução de dobras", () => {
   });
 
   it("não inventa valores quando faltam dados", () => {
-    expect(resolveBends([bend()], cfg({ thickness: 0 })).issues[0]!.reason).toBe("missing-thickness");
+    expect(resolveBends([bend()], cfg({ thickness: 0 })).issues[0]!.reason).toBe(
+      "missing-thickness",
+    );
     expect(resolveBends([bend()], cfgNoK()).issues[0]!.reason).toBe("missing-k");
-    expect(resolveBends([bend()], cfg({ method: "geometric" })).issues[0]!.reason).toBe("unsupported-method");
-    expect(resolveBends([bend({ angleDeg: 0 })], cfg()).issues[0]!.reason).toBe("invalid-parameters");
+    expect(resolveBends([bend()], cfg({ method: "geometric" })).issues[0]!.reason).toBe(
+      "unsupported-method",
+    );
+    expect(resolveBends([bend({ angleDeg: 0 })], cfg()).issues[0]!.reason).toBe(
+      "invalid-parameters",
+    );
   });
 });
 
 describe("derivados", () => {
   it("mudanças de fabricação desatualizam os derivados", () => {
     const prev = { config: cfg(), bends: [bend()] };
-    const changes = diffFabrication(prev, { config: cfg({ defaultKFactor: 0.4 }), bends: [bend()] });
+    const changes = diffFabrication(prev, {
+      config: cfg({ defaultKFactor: 0.4 }),
+      bends: [bend()],
+    });
     expect(changes).toContain("kFactor");
     expect(staleDerivatives(changes)).toContain("chamfer");
   });
@@ -112,8 +131,14 @@ describe("derivados", () => {
 
   it("detecta mudança de espessura, ângulo e raio", () => {
     const prev = { config: cfg(), bends: [bend()] };
-    expect(diffFabrication(prev, { config: cfg({ thickness: 8 }), bends: [bend()] })).toContain("thickness");
-    expect(diffFabrication(prev, { config: cfg(), bends: [bend({ angleDeg: 60 })] })).toContain("angle");
-    expect(diffFabrication(prev, { config: cfg(), bends: [bend({ insideRadius: 10 })] })).toContain("insideRadius");
+    expect(diffFabrication(prev, { config: cfg({ thickness: 8 }), bends: [bend()] })).toContain(
+      "thickness",
+    );
+    expect(diffFabrication(prev, { config: cfg(), bends: [bend({ angleDeg: 60 })] })).toContain(
+      "angle",
+    );
+    expect(diffFabrication(prev, { config: cfg(), bends: [bend({ insideRadius: 10 })] })).toContain(
+      "insideRadius",
+    );
   });
 });

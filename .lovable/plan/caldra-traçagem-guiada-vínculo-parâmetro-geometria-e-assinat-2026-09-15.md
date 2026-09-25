@@ -63,11 +63,11 @@ A matriz Free/Pro atual continua intacta e segue sendo o único lugar de decisã
 ## Detalhes técnicos
 
 - `src/lib/tracagem/steps.ts`: tipo `TraceStep { id, title, instruction, geometryRefs[],
-  measurements[], tool, order, animation, validation }` + `buildTraceSequence(slug, result)`
+measurements[], tool, order, animation, validation }` + `buildTraceSequence(slug, result)`
   puro, derivado de `GeometryResult` (`development`, `foldLines`, `points`, `trueLengths`,
   `steps`). Um provider por modelo em `src/lib/tracagem/models/*.ts`.
 - `src/lib/geometry/refs.ts`: `GeometryRef` estável (`line:<i>`, `point:<id>`, `dim:<field>`)
-  + `linkFieldToRefs(slug, values)`; consumido por Traçagem, cotas e realce.
+  - `linkFieldToRefs(slug, values)`; consumido por Traçagem, cotas e realce.
 - UI: `src/components/chameleon/TracagemPanel.tsx` (passos + controles + Modo Bancada) e
   `src/components/chameleon/BenchTools.tsx`. Aba adicionada em `GeometryStudio` e
   `SquareToRoundStudio` sem mexer nas abas existentes.

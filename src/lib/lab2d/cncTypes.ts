@@ -15,14 +15,7 @@ export type Lead = {
 
 /** Papel de fabricação explícito — prevalece sobre a camada de desenho. */
 export type ManufacturingRoleId =
-  | "CUT"
-  | "MARK"
-  | "BEND"
-  | "REFERENCE"
-  | "DIMENSION"
-  | "LEAD_IN"
-  | "LEAD_OUT"
-  | "DIRECTION";
+  "CUT" | "MARK" | "BEND" | "REFERENCE" | "DIMENSION" | "LEAD_IN" | "LEAD_OUT" | "DIRECTION";
 
 /** Classificação estrutural de um corte (não muda a operação). */
 export type StructureId = "outer" | "hole" | "slot" | "internal";

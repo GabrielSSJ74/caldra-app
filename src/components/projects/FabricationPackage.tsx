@@ -37,8 +37,8 @@ export function FabricationPackage({ project }: { project: Project }) {
     <Panel className="p-4">
       <SectionLabel>Pacote de fabricação</SectionLabel>
       <p className="t-caption">
-        Documento único para a oficina: capa, estrutura, lista de materiais, conferência e uma
-        ficha por peça com QR de rastreio.
+        Documento único para a oficina: capa, estrutura, lista de materiais, conferência e uma ficha
+        por peça com QR de rastreio.
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
         <button

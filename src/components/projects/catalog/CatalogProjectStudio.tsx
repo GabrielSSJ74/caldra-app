@@ -60,7 +60,13 @@ export function CatalogProjectStudio({ project }: { project: Project }) {
               tab === t ? "bg-accent/15 text-accent" : "text-muted-foreground",
             )}
           >
-            {t === "2d" ? "2D Técnico" : t === "3d" ? "Vista 3D" : t === "perspectiva" ? "Perspectiva técnica" : "Explodida"}
+            {t === "2d"
+              ? "2D Técnico"
+              : t === "3d"
+                ? "Vista 3D"
+                : t === "perspectiva"
+                  ? "Perspectiva técnica"
+                  : "Explodida"}
           </button>
         ))}
       </div>
@@ -102,7 +108,12 @@ export function CatalogProjectStudio({ project }: { project: Project }) {
           })
         }
       />
-      <SendToChamferDialog result={result} open={chamfer} onOpenChange={setChamfer} existingProjectId={project.id} />
+      <SendToChamferDialog
+        result={result}
+        open={chamfer}
+        onOpenChange={setChamfer}
+        existingProjectId={project.id}
+      />
     </Panel>
   );
 }

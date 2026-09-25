@@ -44,7 +44,6 @@ export const DEFAULT_LAYERS: Layer[] = [
   { id: "cota", name: "Cota", color: DIMENSION_COLOR, visible: true, locked: false },
 ];
 
-
 type Base = {
   id: string;
   layer: LayerId;
@@ -132,7 +131,6 @@ export function outlinePoints(e: Entity): Vec2[] {
   return e.type === "path" ? samplePath(e.start, e.segs, e.closed, 10) : entityPoints(e);
 }
 
-
 export type Snap = { p: Vec2; kind: "grid" | "end" | "mid" | "center" | "cross" | "near" };
 
 export function segmentsOf(e: Entity): [Vec2, Vec2][] {
@@ -153,11 +151,7 @@ export function segmentsOf(e: Entity): [Vec2, Vec2][] {
   return [];
 }
 
-export function lineIntersection(
-  a: [Vec2, Vec2],
-  b: [Vec2, Vec2],
-  bounded = true,
-): Vec2 | null {
+export function lineIntersection(a: [Vec2, Vec2], b: [Vec2, Vec2], bounded = true): Vec2 | null {
   const [p1, p2] = a;
   const [p3, p4] = b;
   const d = (p2.x - p1.x) * (p4.y - p3.y) - (p2.y - p1.y) * (p4.x - p3.x);
@@ -209,7 +203,14 @@ export function findSnap(
       kind: "grid",
     });
 
-  const rank: Record<Snap["kind"], number> = { end: 0, cross: 1, center: 2, mid: 3, near: 5, grid: 4 };
+  const rank: Record<Snap["kind"], number> = {
+    end: 0,
+    cross: 1,
+    center: 2,
+    mid: 3,
+    near: 5,
+    grid: 4,
+  };
   const hit = cands
     .filter((c) => dist(c.p, cursor) <= tol)
     .sort((a, b) => rank[a.kind] - rank[b.kind] || dist(a.p, cursor) - dist(b.p, cursor));
@@ -263,9 +264,7 @@ export const scaleEntity = (e: Entity, o: Vec2, k: number) =>
   mapEntity(e, (p) => ({ x: o.x + (p.x - o.x) * k, y: o.y + (p.y - o.y) * k }), k);
 
 export const mirror = (e: Entity, o: Vec2, axis: "x" | "y") =>
-  mapEntity(e, (p) =>
-    axis === "x" ? { x: 2 * o.x - p.x, y: p.y } : { x: p.x, y: 2 * o.y - p.y },
-  );
+  mapEntity(e, (p) => (axis === "x" ? { x: 2 * o.x - p.x, y: p.y } : { x: p.x, y: 2 * o.y - p.y }));
 
 /* ------------------------------------------------------------ bounding box */
 
@@ -382,10 +381,16 @@ export function offsetEntity(e: Entity, d: number): Entity | null {
     const dir = e.hole ? -d : d;
     const pts = samplePath(e.start, e.segs, false, 12);
     const moved = shift(pts, e.closed);
-    return { id: uid(), layer: e.layer, type: "polyline", closed: e.closed, pts: moved.map((p, i) => ({
-      x: pts[i]!.x + (p.x - pts[i]!.x) * (dir / (d || 1)),
-      y: pts[i]!.y + (p.y - pts[i]!.y) * (dir / (d || 1)),
-    })) };
+    return {
+      id: uid(),
+      layer: e.layer,
+      type: "polyline",
+      closed: e.closed,
+      pts: moved.map((p, i) => ({
+        x: pts[i]!.x + (p.x - pts[i]!.x) * (dir / (d || 1)),
+        y: pts[i]!.y + (p.y - pts[i]!.y) * (dir / (d || 1)),
+      })),
+    };
   }
   if (e.type === "line") {
     const [a, b] = [
@@ -412,9 +417,7 @@ export function trimLine(target: Entity, cutter: Entity, click: Vec2): Entity | 
     const x = lineIntersection(ts, cs, true);
     if (!x) continue;
     const keepStart = dist(click, ts[0]) > dist(click, ts[1]);
-    return keepStart
-      ? { ...target, x2: x.x, y2: x.y }
-      : { ...target, x1: x.x, y1: x.y };
+    return keepStart ? { ...target, x2: x.x, y2: x.y } : { ...target, x1: x.x, y1: x.y };
   }
   return null;
 }
@@ -462,9 +465,7 @@ export function filletLines(
   const c = { x: x.x + (bis.x / bl) * cd, y: x.y + (bis.y / bl) * cd };
   const setNear = (e: Entity, s: [Vec2, Vec2], p: Vec2): Entity => {
     if (e.type !== "line") return e;
-    return dist(x, s[0]) < dist(x, s[1])
-      ? { ...e, x1: p.x, y1: p.y }
-      : { ...e, x2: p.x, y2: p.y };
+    return dist(x, s[0]) < dist(x, s[1]) ? { ...e, x1: p.x, y1: p.y } : { ...e, x2: p.x, y2: p.y };
   };
   const a0 = Math.atan2(pa.y - c.y, pa.x - c.x);
   const a1 = Math.atan2(pb.y - c.y, pb.x - c.x);
@@ -543,7 +544,10 @@ export function verify(entities: Entity[]): Issue[] {
   const keys = new Map<string, Vec2>();
   for (const e of entities) {
     if (e.type !== "line") continue;
-    const key = [e.x1, e.y1, e.x2, e.y2].map((n) => n.toFixed(2)).sort().join("|");
+    const key = [e.x1, e.y1, e.x2, e.y2]
+      .map((n) => n.toFixed(2))
+      .sort()
+      .join("|");
     if (keys.has(key)) issues.push({ message: "Entidade duplicada", p: keys.get(key)! });
     else keys.set(key, { x: e.x1, y: e.y1 });
   }

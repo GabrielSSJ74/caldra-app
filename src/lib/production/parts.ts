@@ -45,7 +45,9 @@ export function partFromEntities(id: string, name: string, entities: Entity[]): 
 export function partsFromProject(project: Project): ProductionPart[] {
   return project.plans
     .filter((p) => p.entities.length > 0)
-    .map((p) => partFromEntities(`${project.id}:${p.id}`, `${project.name} · ${p.name}`, p.entities));
+    .map((p) =>
+      partFromEntities(`${project.id}:${p.id}`, `${project.name} · ${p.name}`, p.entities),
+    );
 }
 
 export const emptyPart = (name: string): ProductionPart => ({

@@ -65,7 +65,6 @@ export const DEFAULT_LEAD: Lead = {
   side: "left",
 };
 
-
 export const cncOf = (e: Entity): CncMeta => (e as { cnc?: CncMeta }).cnc ?? {};
 
 export const withCnc = (e: Entity, patch: Partial<CncMeta>): Entity =>
@@ -78,8 +77,7 @@ export type Orientation = "cw" | "ccw" | "open";
 /** Área com sinal do percurso amostrado (Y para baixo → positiva = horário). */
 export function signedArea(e: Entity): number {
   if (e.type === "circle") return Math.PI * e.r * e.r;
-  const pts =
-    e.type === "path" ? samplePath(e.start, e.segs, e.closed, 8) : outlinePoints(e);
+  const pts = e.type === "path" ? samplePath(e.start, e.segs, e.closed, 8) : outlinePoints(e);
   let a = 0;
   for (let i = 0; i < pts.length; i++) {
     const p = pts[i]!;
@@ -91,8 +89,7 @@ export function signedArea(e: Entity): number {
 
 export function orientationOf(e: Entity): Orientation {
   if (e.type === "arc") return e.a1 >= e.a0 ? "cw" : "ccw";
-  const closed =
-    e.type === "circle" || ((e.type === "polyline" || e.type === "path") && e.closed);
+  const closed = e.type === "circle" || ((e.type === "polyline" || e.type === "path") && e.closed);
   if (!closed) return "open";
   return signedArea(e) >= 0 ? "cw" : "ccw";
 }
@@ -236,7 +233,8 @@ export function contoursOf(entities: Entity[]): Contour[] {
       id: cncOf(first).contourId ?? first.id,
       ids: chain.map((e) => e.id),
       closed,
-      orientation: chain.length === 1 ? orientationOf(first) : closed ? chainOrientation(chain) : "open",
+      orientation:
+        chain.length === 1 ? orientationOf(first) : closed ? chainOrientation(chain) : "open",
       length: chain.reduce((a, e) => a + pathLength(e), 0),
       sequence: out.length + 1,
       start: startPointOf(first),
@@ -247,8 +245,7 @@ export function contoursOf(entities: Entity[]): Contour[] {
 
 function chainOrientation(chain: Entity[]): Orientation {
   let a = 0;
-  for (const e of chain)
-    for (const s of segmentsOf(e)) a += s[0].x * s[1].y - s[1].x * s[0].y;
+  for (const e of chain) for (const s of segmentsOf(e)) a += s[0].x * s[1].y - s[1].x * s[0].y;
   return a >= 0 ? "cw" : "ccw";
 }
 

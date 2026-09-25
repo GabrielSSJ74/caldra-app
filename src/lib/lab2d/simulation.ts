@@ -75,7 +75,13 @@ export function buildSimPath(entities: Entity[]): SimPath {
   return { steps, total: steps.reduce((a, s) => a + s.length, 0) };
 }
 
-export type SimSample = { p: Vec2; kind: SimKind; sequence: number; done: SimStep[]; partial: Vec2[] };
+export type SimSample = {
+  p: Vec2;
+  kind: SimKind;
+  sequence: number;
+  done: SimStep[];
+  partial: Vec2[];
+};
 
 /** Posição do cabeçote a `d` mm do início, com o rastro já percorrido. */
 export function sampleSim(sim: SimPath, d: number): SimSample | null {

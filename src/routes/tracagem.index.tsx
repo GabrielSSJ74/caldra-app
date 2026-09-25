@@ -72,7 +72,9 @@ function TracagemIndex() {
     if (family) list = list.filter((p) => p.family === family);
     if (shortcut === "favoritos") list = list.filter((p) => favorites.includes(p.id));
     if (shortcut === "recentes")
-      list = recents.map((id) => findPart(id)).filter((p): p is PartModel => !!p && list.includes(p));
+      list = recents
+        .map((id) => findPart(id))
+        .filter((p): p is PartModel => !!p && list.includes(p));
     return searchParts(list, query);
   }, [tab, family, shortcut, favorites, recents, query]);
 
@@ -242,7 +244,15 @@ function useInView<T extends HTMLElement>() {
   return { ref, seen };
 }
 
-function PartCard({ part, index, favorite }: { part: PartModel; index: number; favorite: boolean }) {
+function PartCard({
+  part,
+  index,
+  favorite,
+}: {
+  part: PartModel;
+  index: number;
+  favorite: boolean;
+}) {
   const { can } = useFeatureAccess();
   const { ref, seen } = useInView<HTMLDivElement>();
   const locked = !can(part.feature);
@@ -258,17 +268,20 @@ function PartCard({ part, index, favorite }: { part: PartModel; index: number; f
         style={{ animationDelay: `${Math.min(index, 12) * 24}ms` }}
         className="metal pop-in group relative flex aspect-[4/5] flex-col overflow-hidden rounded-3xl transition-all duration-500 hover:scale-[1.02] hover:amber-ring"
       >
-        <span aria-hidden className="grid-bg-fine pointer-events-none absolute inset-0 opacity-40" />
-        <div className="relative min-h-0 flex-1 p-3">
-          {seen && <Preview part={part} />}
-        </div>
+        <span
+          aria-hidden
+          className="grid-bg-fine pointer-events-none absolute inset-0 opacity-40"
+        />
+        <div className="relative min-h-0 flex-1 p-3">{seen && <Preview part={part} />}</div>
         <div className="relative space-y-1 bg-gradient-to-t from-background/92 to-transparent px-3 pt-4 pb-2.5">
           <p className="truncate font-mono text-[10px] tracking-[0.14em] uppercase">{part.name}</p>
           <p className="truncate text-[10px] text-muted-foreground">
             {CATEGORY_LABEL[part.category]} · {part.kind === "vector" ? "Vetorial" : "Paramétrica"}
           </p>
           {part.specs[0] && (
-            <p className="truncate font-mono text-[10px] text-muted-foreground/80">{part.specs[0]}</p>
+            <p className="truncate font-mono text-[10px] text-muted-foreground/80">
+              {part.specs[0]}
+            </p>
           )}
           <p className="truncate font-mono text-[9px] tracking-[0.16em] text-accent/80 uppercase">
             {part.capabilities
@@ -278,7 +291,10 @@ function PartCard({ part, index, favorite }: { part: PartModel; index: number; f
           </p>
         </div>
         {locked && (
-          <Lock className="absolute top-2.5 left-3 size-3 text-accent/70" aria-label="Recurso PRO" />
+          <Lock
+            className="absolute top-2.5 left-3 size-3 text-accent/70"
+            aria-label="Recurso PRO"
+          />
         )}
       </Link>
       <button

@@ -70,11 +70,16 @@ function genericInstances(result: CanonicalProject): SolidInstance[] {
     const size = { x: b.max.x - b.min.x, y: b.max.y - b.min.y, z: b.max.z - b.min.z };
     for (let i = 1; i <= part.quantity; i++) {
       out.push(
-        make(part, i, {
-          x: b.min.x + size.x / 2 + (i - 1) * (size.x + size.x * 0.25),
-          y: b.min.y + size.y / 2,
-          z: b.min.z + size.z / 2,
-        }, size),
+        make(
+          part,
+          i,
+          {
+            x: b.min.x + size.x / 2 + (i - 1) * (size.x + size.x * 0.25),
+            y: b.min.y + size.y / 2,
+            z: b.min.z + size.z / 2,
+          },
+          size,
+        ),
       );
     }
   }
@@ -100,7 +105,10 @@ function stairInstances(result: CanonicalProject): SolidInstance[] {
   const slope = Math.hypot(height, length);
   const byKey = new Map(result.parts.map((x) => [x.key, x] as const));
   const out: SolidInstance[] = [];
-  const push = (key: string, ...rest: [number, SolidInstance["center"], SolidInstance["size"], number?, SolidMaterial?]) => {
+  const push = (
+    key: string,
+    ...rest: [number, SolidInstance["center"], SolidInstance["size"], number?, SolidMaterial?]
+  ) => {
     const part = byKey.get(key);
     if (!part) return;
     out.push(make(part, rest[0], rest[1], rest[2], rest[3] ?? 0, rest[4] ?? "aco"));
@@ -109,30 +117,46 @@ function stairInstances(result: CanonicalProject): SolidInstance[] {
   /* longarinas: chapas inclinadas, alma perpendicular ao plano da escada */
   for (const side of [0, 1]) {
     const z = side === 0 ? stringerT / 2 : width - stringerT / 2;
-    push(`stringer-${side}`, 1, {
-      x: length / 2 + Math.sin(angle) * (stringerH / 2),
-      y: height / 2 - Math.cos(angle) * (stringerH / 2),
-      z,
-    }, { x: slope, y: stringerH, z: stringerT }, angle);
+    push(
+      `stringer-${side}`,
+      1,
+      {
+        x: length / 2 + Math.sin(angle) * (stringerH / 2),
+        y: height / 2 - Math.cos(angle) * (stringerH / 2),
+        z,
+      },
+      { x: slope, y: stringerH, z: stringerT },
+      angle,
+    );
   }
 
   /* degraus: um sólido real por degrau */
   for (let i = 1; i <= steps; i++) {
-    push("tread", i, {
-      x: i * run - treadDepth / 2,
-      y: i * rise - treadT / 2,
-      z: width / 2,
-    }, { x: treadDepth, y: treadT, z: width - 2 * stringerT });
+    push(
+      "tread",
+      i,
+      {
+        x: i * run - treadDepth / 2,
+        y: i * rise - treadT / 2,
+        z: width / 2,
+      },
+      { x: treadDepth, y: treadT, z: width - 2 * stringerT },
+    );
   }
 
   /* travessas de travamento sob os degraus */
   const bars = Math.max(2, steps - 1);
   for (let i = 1; i <= bars; i++) {
-    push("crossbar", i, {
-      x: i * run - treadDepth - profile / 2,
-      y: i * rise - treadT - profile / 2,
-      z: width / 2,
-    }, { x: profile, y: profile, z: width - 2 * stringerT });
+    push(
+      "crossbar",
+      i,
+      {
+        x: i * run - treadDepth - profile / 2,
+        y: i * rise - treadT - profile / 2,
+        z: width / 2,
+      },
+      { x: profile, y: profile, z: width - 2 * stringerT },
+    );
   }
 
   /* montantes do guarda-corpo, apoiados na linha inclinada */
@@ -141,19 +165,30 @@ function stairInstances(result: CanonicalProject): SolidInstance[] {
   for (let i = 1; i <= posts; i++) {
     const x = ((i - 1) / (posts - 1 || 1)) * length;
     const base = (x / length) * height;
-    push("post", i, {
-      x,
-      y: base + railH / 2,
-      z: width - profile / 2,
-    }, { x: profile, y: railH, z: profile });
+    push(
+      "post",
+      i,
+      {
+        x,
+        y: base + railH / 2,
+        z: width - profile / 2,
+      },
+      { x: profile, y: railH, z: profile },
+    );
   }
 
   /* corrimão: barra inclinada acompanhando a rampa */
-  push("rail", 1, {
-    x: length / 2,
-    y: height / 2 + railH,
-    z: width - profile / 2,
-  }, { x: slope, y: profile, z: profile }, angle);
+  push(
+    "rail",
+    1,
+    {
+      x: length / 2,
+      y: height / 2 + railH,
+      z: width - profile / 2,
+    },
+    { x: slope, y: profile, z: profile },
+    angle,
+  );
 
   /* chapas de fixação: duas na base, duas no topo */
   const basePart = byKey.get("base");

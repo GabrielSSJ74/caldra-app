@@ -50,7 +50,10 @@ export type TraceFrame = {
 export const measurementRef = (stepId: string, index: number): MeasurementRef =>
   `measure:${stepId}:${index}`;
 
-export function resolveGeometryRef(pattern: DevelopmentPattern, ref: GeometryRef): ResolvedEntity | null {
+export function resolveGeometryRef(
+  pattern: DevelopmentPattern,
+  ref: GeometryRef,
+): ResolvedEntity | null {
   const kind = refKind(ref);
   const id = refId(ref);
   if (kind === "outline") {
@@ -58,7 +61,13 @@ export function resolveGeometryRef(pattern: DevelopmentPattern, ref: GeometryRef
     const a = pattern.outline[i];
     const b = pattern.outline[(i + 1) % pattern.outline.length];
     if (!a || !b) return null;
-    return { kind: "segment", ref, startPoint: a, endPoint: b, length: Math.hypot(b.x - a.x, b.y - a.y) };
+    return {
+      kind: "segment",
+      ref,
+      startPoint: a,
+      endPoint: b,
+      length: Math.hypot(b.x - a.x, b.y - a.y),
+    };
   }
   if (kind === "fold") {
     const segment = pattern.foldLines[Number(id)];
@@ -121,8 +130,17 @@ export function buildTraceActions(step: TraceStep, pattern: DevelopmentPattern):
     actions.push({ ...next, duration: actionDuration(entities, type) });
   };
 
-  push("POSITION", [refs[0]!], `Posicione ${step.tool === "regua" ? "a régua" : "o instrumento"} no início.`);
-  if (step.measurements.length) push("MEASURE", [refs[0]!], `Confira ${step.measurements[0]!.value} ${step.measurements[0]!.unit}.`);
+  push(
+    "POSITION",
+    [refs[0]!],
+    `Posicione ${step.tool === "regua" ? "a régua" : "o instrumento"} no início.`,
+  );
+  if (step.measurements.length)
+    push(
+      "MEASURE",
+      [refs[0]!],
+      `Confira ${step.measurements[0]!.value} ${step.measurements[0]!.unit}.`,
+    );
 
   if (step.tool === "compasso" && refs.length > 1) {
     push("OPEN", refs.slice(0, 2), "Abra o compasso entre os pontos calculados.");
@@ -140,7 +158,10 @@ export function buildTraceActions(step: TraceStep, pattern: DevelopmentPattern):
   return actions;
 }
 
-export function resolveMeasurement(step: TraceStep, ref: MeasurementRef | undefined): TraceMeasurement | null {
+export function resolveMeasurement(
+  step: TraceStep,
+  ref: MeasurementRef | undefined,
+): TraceMeasurement | null {
   if (!ref) return null;
   const index = Number(ref.slice(ref.lastIndexOf(":") + 1));
   return step.measurements[index] ?? null;
@@ -168,7 +189,10 @@ export function resolveTraceAction(
     endPoint,
     measurement: resolveMeasurement(step, traceAction.measurementRefs[0]),
     angleDeg: Math.atan2(dy, dx) * (180 / Math.PI),
-    radius: first && last ? Math.hypot(last.endPoint.x - first.startPoint.x, last.endPoint.y - first.startPoint.y) : null,
+    radius:
+      first && last
+        ? Math.hypot(last.endPoint.x - first.startPoint.x, last.endPoint.y - first.startPoint.y)
+        : null,
   };
 }
 
@@ -185,7 +209,8 @@ export function validateTraceActions(pattern: DevelopmentPattern, steps: TraceSt
   for (const step of steps) {
     for (const traceAction of buildTraceActions(step, pattern)) {
       for (const ref of traceAction.geometryRefs) {
-        if (!resolveGeometryRef(pattern, ref)) problems.push(`${traceAction.id}: referência inválida ${ref}`);
+        if (!resolveGeometryRef(pattern, ref))
+          problems.push(`${traceAction.id}: referência inválida ${ref}`);
       }
       const resolved = resolveTraceAction(pattern, step, traceAction);
       for (const point of [resolved.startPoint, resolved.endPoint]) {

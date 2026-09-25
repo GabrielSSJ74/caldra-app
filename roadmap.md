@@ -3,15 +3,18 @@
 Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 
 ## Concluído
+
 - Fase 1 — Calculadora impecável (módulos puros, QA 60/60, conferência, peso/custo, materiais, unidades)
 - Fase 2A — Plano de corte (ordem, direção, ponto de partida, corte comum, grupos)
 
 ## Calculadora Científica (CONCLUÍDO)
+
 - [x] Criar módulo independente, funcional e fiel à referência visual
 - [x] Adicionar card CALCULADORA CIENTÍFICA ao lado de ESTUDOS sem mover os demais cards
 - [x] Validar motor matemático, histórico, configurações, ferramentas rápidas e responsividade
 
 ## Ajustes de refino (CONCLUÍDO)
+
 - [x] AURORA suave mais rápido + novo estilo PADRÃO (sem fundo animado)
 - [x] Meus Materiais movido de Configurações para a Oficina
 - [x] Configurações reordenadas (Backup, Privacidade e Suporte no fim)
@@ -21,6 +24,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] 3D deixou de ser etapa: virou alternância 2D/3D na área de resultado, com carregamento sob demanda
 
 ## Biblioteca de peças / Traçagem (CONCLUÍDO)
+
 - [x] Registro único de modelos (caldeiraria, tubulações, CNC 2D) com capacidades e metadados
 - [x] Abas Todas / Caldeiraria / Tubulações / CNC 2D + filtros por família contextuais
 - [x] Busca inteligente (nome, sinônimos, categoria, números) e cards com prévia real
@@ -28,6 +32,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Geradores vetoriais CNC 2D → CHAMFER (1:1 em mm)
 
 ## Escola CALDRA (CONCLUÍDO)
+
 - [x] Currículo de 16 módulos com 41 aulas publicadas (fundamentos → fabricação)
 - [x] Base de conhecimento única (conceito, fórmula, passo a passo, erros comuns)
 - [x] Diagnóstico de nível, mapa de competências e progresso por aula
@@ -35,7 +40,9 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Exercícios gerados por fórmula com correção passo a passo e placar por aula
 
 ## Fase 3 — Lançamento (EM ANDAMENTO)
+
 ### Etapa A — Monetização e entitlement
+
 - [ ] Ativar Lovable Cloud (perfil com `plan`, tabela `activation_codes`)
 - [ ] `entitlementService` como fonte única (substituir checagens espalhadas)
 - [ ] Camada de compra: Play Billing (TWA) com degradação para web
@@ -44,11 +51,13 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Gate suave por feature (modal específico, nunca genérico)
 
 ### Etapa B — Conformidade Play Store / LGPD
+
 - [ ] Rotas públicas /privacidade e /termos (constantes de empresa e contato)
 - [ ] Excluir conta e dados (confirmação em 2 etapas, cascade, fallback offline)
 - [ ] Coleta consentida (opt-in na 1ª execução, revogável em Configurações)
 
 ### Etapa C — Onboarding, qualidade e retenção
+
 - [ ] Onboarding máx. 3 telas, pulável
 - [ ] Projeto-exemplo marcado EXEMPLO, removível, com dicas contextuais
 - [ ] Sentry via env + analytics de funil (provider plugável, sem PII)
@@ -58,12 +67,14 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] QA ampliado: migração de backup, entitlement, funil
 
 ## Fase 4 — Inteligência (CONCLUÍDA)
+
 - [x] A1 Reconstrução paramétrica (chapa perfurada / flange / anel) com tabela editável, preview e template em CORTE (original preservado em CONSTRUÇÃO)
 - [x] A2 OCR técnico com Tesseract.js lazy, caixas na imagem, confirmação individual/em massa, texto corrigível, medida reaproveitável na calibração
 - [x] B1 Botão APRENDER com 4 passos (parâmetros, cálculo, desenvolvimento, fabricação) usando os motores puros
 - [x] B2 Modos APRENDIZ / MESTRE em Configurações (só apresentação, um único caminho de cálculo)
 
 ## Fase 5 — Plataforma (CONCLUÍDA)
+
 - [x] Nesting modo CHAPA (chapas comerciais, folga, margem, giro 90°, aproveitamento e sobra)
 - [x] Custo de fabricação (corte, furos, dobras, solda, mão de obra, setup, fator de espessura)
 - [x] Orçamento em PDF (fornecedor/cliente, margem, desconto, imposto regional, validade)
@@ -73,6 +84,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - Rota `/oficina` reúne CHAPA · CUSTO · ORÇAMENTO · FICHA · NUVEM
 
 ## Professionalization Pass
+
 - [x] Parte 3.0 — CHAMFER em tela cheia + paisagem obrigatória + modais contidos
 - [x] Parte 1 — WORKSPACE_FRAME 1500x3000 paramétrico, auto-fit da Traçagem, Centralizar Peça
 - [x] Parte 2 — Design System CALDRA (escala tipográfica, foco/desabilitado, botões, skeleton/spinner, estados de erro) em `src/components/chameleon/ds.tsx` + tokens em `styles.css`
@@ -83,13 +95,16 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Fase CNC — layers CUT/MARK/BEND, exportador DXF CNC com conferência, trajetória (direção, start point, lead-in/out), FLUXO CALDRA + prévia animada, painel de multi-seleção e lado do painel estável (sem oscilação)
 
 ## Decisões pendentes do usuário
+
 - Preços do paywall (mensal / anual / vitalício Pix) — usar placeholders configuráveis até definir
 
 ## Projetos como dossiê de fabricação (CONCLUÍDO)
+
 - Projeto = cliente/obra com peças-instância independentes, progresso e histórico.
 - Peças abrem a mesma tela de Traçagem (paramétricas e CNC 2D) com breadcrumb e autosave.
 
 ## Ecossistema CALDRA (evolução em fases)
+
 - [x] Fase 1 — Master Project Model: código único do projeto (ESC-001), revisão, migração segura dos projetos existentes.
 - [x] Fase 2 — Conjuntos / subconjuntos / peças: árvore de estrutura, código único por peça (ESC-EST-001), vínculo e revisão de peça.
 - [x] Fase 3 — vínculo Traçagem → Projeto (salvar no conjunto).
@@ -104,6 +119,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Fase 12 — Campo / obra (checklist de instalação por peça, ocorrências com foto, resumo instaladas × pendentes, offline).
 
 ## Catálogo de projetos paramétricos (NOVA EVOLUÇÃO)
+
 - [x] Fundação — contrato canônico único, derivados versionados e criação atômica.
 - [x] Golden Project — Escada Reta completa: parâmetros → cálculo → 2D/3D → decomposição → BOM/corte → CHAMFER → fabricação → montagem.
 - [x] Invalidação — marcar derivados desatualizados após mudança crítica e regenerá-los sem apagar artefatos CNC de revisões anteriores.
@@ -115,6 +131,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Suporte de Tubulação — somente após regressão da Plataforma.
 
 ## Refinamento técnico (set/2026)
+
 - [x] Vista 2D técnica da Escada (frontal + lateral + superior, 1º diedro, cotas, notas, quadro CALDRA)
 - [x] Aba Perspectiva técnica (2D TÉCNICO | 3D | EXPLODIDA | PERSPECTIVA)
 - [x] Sincronização 2D ↔ 3D ↔ árvore mantida (mesmas instâncias canônicas)
@@ -123,6 +140,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Temas: revisão de FLUIDO/SUAVE/ESTÁTICO no tema claro, tema PADRÃO neutro e AMOLED redesenhado
 
 ## Unificação paramétrica da Traçagem (set/2026)
+
 - [ ] Consolidar registro: uma família = um modelo (Curva de Gomos, Boca de Lobo, Quadrado→Redondo) com aliases dos IDs antigos preservando parâmetros históricos.
 - [ ] Boca de Lobo: método interno (corte oblíquo | derivação em tubo) com interseção cilindro/cilindro real e ângulo paramétrico.
 - [ ] Curva de Gomos: ângulo e quantidade livres; gomos como entidades com planificação própria e meios-gomos nas extremidades.
@@ -132,12 +150,14 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Regressão: valores, geometria, planificação e exportação antes/depois; casos 30/45/60/90°, curvas 45°-3, 90°-3, 90°-5.
 
 ## Correção global 2D/3D + Quadrado → Redondo (set/2026)
+
 - [x] Área principal única e reutilizável com alternância 2D ↔ 3D em todos os modelos de Traçagem.
 - [x] Preservar a câmera 3D durante a alternância mantendo o visor montado após o primeiro uso.
 - [x] Quadrado → Redondo: malha facetada derivada dos mesmos pontos, geratrizes e divisões da planificação.
 - [x] Testar bases quadrada/retangular, alturas, diâmetros, coerência 2D/3D/traçado/planificação e regressão.
 
 ## Exportação DXF para CypCut (papéis de fabricação)
+
 - [x] `ManufacturingRole` (CUT/MARK/BEND/REFERENCE/DIMENSION/LEAD_IN/LEAD_OUT/DIRECTION) em `src/lib/lab2d/roles.ts` — operação pela layer/role, nunca pela cor
 - [x] `DxfExportProfile` com mapeamento papel → layer: DXF TÉCNICO, DXF PRODUÇÃO, CYP CUT
 - [x] `toDxf` (DXF completo) passa a nomear layers pelos papéis
@@ -148,6 +168,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Conferir o arquivo gerado no CypCut real do usuário
 
 ## Exportação DXF simplificada (tipos de linha + dois perfis)
+
 - [x] Quatro tipos de linha: Corte (verde), Marcação (azul), Dobra (rosa), Recorte (âmbar)
 - [x] Camadas internas (construção, referência, cota) ocultas da interface
 - [x] Dois perfis: DXF TÉCNICO e DXF LASER CNC (ids antigos mantidos como alias)
@@ -157,6 +178,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] CHAMFER: dobra usa a geometria BEND completa P1→P2 em rosa, igual à Traçagem; exportação e role BEND permanecem intactos
 
 ## Correção coordenada — fabricação, exportação e preferências (set/2026)
+
 - [x] Quadrado→Redondo em 2 partes: recalcular metades canônicas equivalentes com emendas nos centros das faces, nunca sobre dobras; validar remontagem A+B e alimentar o 3D existente.
 - [x] PNG exclusivo de Traçado: prancha técnica colorida, dimensionada, em alta resolução, com auto-fit, metadados e nome descritivo; demais formatos inalterados.
 - [x] Calculadora: remover barra de categorias e implementar semântica percentual convencional em operações relativas, com regressão matemática.
@@ -166,6 +188,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Regressão final automatizada: 82 testes cobrindo geometria, BEND/DXF, calculadora e projetos; smoke visual de temas, idiomas e Traçagem.
 
 ## Correções de interface e interação do CHAMFER (set/2026)
+
 - [ ] Corrigir contraste e estados visuais do CHAMFER VISION nos temas claro, escuro e AMOLED.
 - [ ] Simplificar e reordenar a barra lateral: Selecionar, Linha, Polilinha, Círculo, Retângulo, Texto e Importar CNC 2D.
 - [ ] Corrigir ciclo completo da Polilinha, entidade de Texto dimensional, cópia da seleção, clipboard por pressão longa e Tesoura por entidade.
@@ -176,6 +199,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Validar BEND completo, roles técnicos, grupos e ausência de regressão nos exportadores.
 
 ## Correção cirúrgica — Paywall e abertura do CHAMFER (set/2026)
+
 - [x] Isolar backdrop e modal do Paywall, mantendo somente o fundo atenuado e o conteúdo nítido.
 - [x] Garantir rolagem interna e contenção do Paywall em celular, tablet, desktop e paisagem.
 - [x] Fechar integralmente o Paywall antes da navegação para a rota real do CHAMFER.
@@ -183,6 +207,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Validar os cenários CHAMFER, DXF Laser CNC, Oficina e acesso direto, sem alterar entitlements ou motores.
 
 ## Traçagem Guiada + vínculo + assinatura (2026-09-15)
+
 - [x] Traçagem Guiada (steps.ts, TracagemPanel, BenchTools) nas abas de Traçagem
 - [x] Vínculo parâmetro ↔ cota ↔ entidade (refs.ts, destaque temporário sem trocar cor técnica)
 - [x] Assinatura: tabela subscriptions + resolve_entitlement + verifyPurchase/syncEntitlement/restorePurchases + RTDN
@@ -190,6 +215,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Credenciais do Google Play (GOOGLE_PLAY_SERVICE_ACCOUNT_JSON, GOOGLE_PLAY_PACKAGE_NAME) e RTDN_SHARED_SECRET — pendente do usuário
 
 ## Traçagem Guiada — execução visual e cota viva
+
 - [x] Iniciar a reprodução com a chapa limpa e a primeira operação geométrica real.
 - [x] Vincular cada TraceAction a geometryRefs e measurementRefs canônicas.
 - [x] Manter a cota real visível no palco durante todo o movimento do instrumento.
@@ -198,11 +224,13 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Validar Quadrado → Redondo em celular e desktop, incluindo redução de movimento.
 
 ## Latência da primeira interação (16/09)
+
 - Causa: cada tela só começava a ser baixada no instante do clique (router sem preload).
 - Correção: preload na intenção (toque/hover) + prefetch ocioso das telas essenciais no app publicado.
 - Medido (celular simulado 4x mais lento): 1º toque 1786ms -> 657ms; 2º toque 1976ms -> 493ms.
 
 ## Refinamento profissional do 3D da Traçagem (17/09)
+
 - [x] Fase A — diagnóstico geométrico e baseline dos cinco modelos (auditor puro em src/lib/viz3d/audit.ts).
 - [x] Fase B — topologia/normais auditadas; recorte real da interseção (Boca de Lobo e Tê) com curva canônica e viés por grupo de casca.
 - [x] Fase C — halo eliminado (sombra artificial opt-in), ghost/listras corrigidos (ordenação por face inteira), parede interna só visível quando observável.
@@ -213,6 +241,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Fase H — regressão matemática, esférica e interativa do Wire3D + seleção/2D validadas; fabricação segue nas fases C2/D2.
 
 ## Correção crítica do Wire3D — oclusão e rotação esférica (17/09)
+
 - [x] Remover integralmente sombra/halo do modo técnico padrão, inclusive composição e enquadramento.
 - [x] Separar políticas de superfície, aresta, linha técnica, referência, cota e seleção.
 - [x] Manter linhas técnicas persistentes por identidade estável em toda a rotação.
@@ -222,6 +251,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Validar azimute 0–360°, elevação −90°–+90°, esfera, estresse e os cinco modelos nos três temas.
 
 ## Espessura, dobra e Fator K (17/09)
+
 - [ ] Fase C2 — espessura real derivada do modelo canônico, sem parede fictícia.
 - [ ] Fase D2 — camada de fabricação separada: dobra, raio, linha neutra, Fator K, métodos suportados.
 - [ ] Modos Dobra e Linha neutra no 3D quando houver dados reais.

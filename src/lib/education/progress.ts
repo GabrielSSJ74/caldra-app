@@ -34,7 +34,11 @@ export type AcademyState = {
   version: 1;
   lessons: Record<string, LessonState>;
   /** Resultado do diagnóstico inicial, quando feito. */
-  diagnosis?: { at: number; level: "iniciante" | "intermediario" | "avancado"; byCompetency: Record<string, number> };
+  diagnosis?: {
+    at: number;
+    level: "iniciante" | "intermediario" | "avancado";
+    byCompetency: Record<string, number>;
+  };
 };
 
 const KEY = "caldra.academy.v1";
@@ -86,7 +90,10 @@ export function lessonState(id: string): LessonState {
 
 function patchLesson(id: string, patch: Partial<LessonState>) {
   const cur = lessonState(id);
-  commit({ ...load(), lessons: { ...load().lessons, [id]: { ...cur, ...patch, lastAt: Date.now() } } });
+  commit({
+    ...load(),
+    lessons: { ...load().lessons, [id]: { ...cur, ...patch, lastAt: Date.now() } },
+  });
 }
 
 /** Nunca rebaixa o domínio automaticamente. */
@@ -144,15 +151,28 @@ export function moduleProgress(moduleId: string, s: AcademyState): number {
   return Math.round((sum / mod.lessons.length) * 100);
 }
 
-export type CompetencyLevel = "precisa-praticar" | "em-desenvolvimento" | "dominado" | "nao-iniciado";
+export type CompetencyLevel =
+  "precisa-praticar" | "em-desenvolvimento" | "dominado" | "nao-iniciado";
 
-export function competencyLevel(id: CompetencyId, s: AcademyState): { level: CompetencyLevel; pct: number } {
+export function competencyLevel(
+  id: CompetencyId,
+  s: AcademyState,
+): { level: CompetencyLevel; pct: number } {
   const lessons = ALL_LESSONS.filter((x) => x.lesson.competency === id);
   if (lessons.length === 0) return { level: "nao-iniciado", pct: 0 };
-  const sum = lessons.reduce((a, x) => a + WEIGHT[s.lessons[x.lesson.id]?.mastery ?? "nao-iniciado"], 0);
+  const sum = lessons.reduce(
+    (a, x) => a + WEIGHT[s.lessons[x.lesson.id]?.mastery ?? "nao-iniciado"],
+    0,
+  );
   const pct = Math.round((sum / lessons.length) * 100);
   const level: CompetencyLevel =
-    pct === 0 ? "nao-iniciado" : pct >= 80 ? "dominado" : pct >= 40 ? "em-desenvolvimento" : "precisa-praticar";
+    pct === 0
+      ? "nao-iniciado"
+      : pct >= 80
+        ? "dominado"
+        : pct >= 40
+          ? "em-desenvolvimento"
+          : "precisa-praticar";
   return { level, pct };
 }
 

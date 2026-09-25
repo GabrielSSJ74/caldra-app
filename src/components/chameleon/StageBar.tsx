@@ -54,7 +54,10 @@ export function StageBar({
   const index = STAGES.findIndex((s) => s.id === active);
 
   return (
-    <div className={cn("mb-3 flex items-stretch gap-1.5", className)} aria-label="Etapa do trabalho">
+    <div
+      className={cn("mb-3 flex items-stretch gap-1.5", className)}
+      aria-label="Etapa do trabalho"
+    >
       {STAGES.map((stage, i) => {
         const target = stage.tabs.find((t) => tabs.includes(t));
         const done = i < index;
@@ -82,7 +85,11 @@ export function StageBar({
                 current ? "text-accent" : done ? "text-foreground/80" : "text-muted-foreground",
               )}
             >
-              {done ? <Check className="size-2.5" /> : <span className="tabular-nums">{i + 1}</span>}
+              {done ? (
+                <Check className="size-2.5" />
+              ) : (
+                <span className="tabular-nums">{i + 1}</span>
+              )}
               <span className="truncate">{stage.label}</span>
             </span>
             <span className="mt-0.5 block truncate text-[10px] text-muted-foreground">

@@ -15,7 +15,14 @@ type Props = {
 const sameRef = (refs: GeometryRef[], ref: GeometryRef) => refs.includes(ref);
 
 /** Palco SVG leve: desenho, ferramenta e cota usam as coordenadas canônicas em mm. */
-export function TraceAnimationStage({ pattern, frame, completedRefs, showAll, stepLabel, onTarget }: Props) {
+export function TraceAnimationStage({
+  pattern,
+  frame,
+  completedRefs,
+  showAll,
+  stepLabel,
+  onTarget,
+}: Props) {
   const { minX, minY, maxX, maxY } = pattern.bounds;
   const width = Math.max(maxX - minX, 1);
   const height = Math.max(maxY - minY, 1);
@@ -35,7 +42,10 @@ export function TraceAnimationStage({ pattern, frame, completedRefs, showAll, st
   const viewHeight = showAll ? height : focusHeight;
   const pad = Math.max(viewWidth * 0.16, viewHeight * 0.16, 22);
   const stroke = Math.max(viewWidth, viewHeight) / 280;
-  const drawing = frame.action.type === "DRAW" || frame.action.type === "TRANSFER" || frame.action.type === "ROTATE";
+  const drawing =
+    frame.action.type === "DRAW" ||
+    frame.action.type === "TRANSFER" ||
+    frame.action.type === "ROTATE";
   const markProgress = frame.action.type === "MARK" ? frame.progress : 0;
   const tool = frame.action.tool;
   const p = frame.toolPoint;
@@ -68,17 +78,47 @@ export function TraceAnimationStage({ pattern, frame, completedRefs, showAll, st
         onTarget({ x: point.x, y: -point.y });
       }}
     >
-      <rect x={viewMinX - pad} y={-viewMaxY - pad} width={viewWidth + pad * 2} height={viewHeight + pad * 2} fill="var(--background)" fillOpacity="0" />
+      <rect
+        x={viewMinX - pad}
+        y={-viewMaxY - pad}
+        width={viewWidth + pad * 2}
+        height={viewHeight + pad * 2}
+        fill="var(--background)"
+        fillOpacity="0"
+      />
 
       {pattern.outline.map((start, i) => {
         const end = pattern.outline[(i + 1) % pattern.outline.length];
         const ref = outlineRef(i);
         if (!end) return null;
-        return <line key={ref} x1={start.x} y1={-start.y} x2={end.x} y2={-end.y} stroke="var(--accent)" strokeWidth={stroke * 1.35} strokeOpacity={opacityFor(ref)} />;
+        return (
+          <line
+            key={ref}
+            x1={start.x}
+            y1={-start.y}
+            x2={end.x}
+            y2={-end.y}
+            stroke="var(--accent)"
+            strokeWidth={stroke * 1.35}
+            strokeOpacity={opacityFor(ref)}
+          />
+        );
       })}
       {pattern.foldLines.map((segment, i) => {
         const ref = foldRef(i);
-        return <line key={ref} x1={segment.a.x} y1={-segment.a.y} x2={segment.b.x} y2={-segment.b.y} stroke="var(--accent2)" strokeWidth={stroke} strokeDasharray={`${stroke * 4} ${stroke * 3}`} strokeOpacity={opacityFor(ref)} />;
+        return (
+          <line
+            key={ref}
+            x1={segment.a.x}
+            y1={-segment.a.y}
+            x2={segment.b.x}
+            y2={-segment.b.y}
+            stroke="var(--accent2)"
+            strokeWidth={stroke}
+            strokeDasharray={`${stroke * 4} ${stroke * 3}`}
+            strokeOpacity={opacityFor(ref)}
+          />
+        );
       })}
       {pattern.points.map((point) => {
         const ref = pointRef(point.id);
@@ -86,23 +126,86 @@ export function TraceAnimationStage({ pattern, frame, completedRefs, showAll, st
         return visible ? (
           <g key={ref} opacity={ref === activeRef && markProgress > 0 ? markProgress : 1}>
             <circle cx={point.p.x} cy={-point.p.y} r={stroke * 2.3} fill="var(--warn)" />
-            <text x={point.p.x} y={-point.p.y + stroke * 10} textAnchor="middle" fill="var(--warn)" fontFamily="var(--font-mono)" fontSize={stroke * 7}>{point.id}</text>
+            <text
+              x={point.p.x}
+              y={-point.p.y + stroke * 10}
+              textAnchor="middle"
+              fill="var(--warn)"
+              fontFamily="var(--font-mono)"
+              fontSize={stroke * 7}
+            >
+              {point.id}
+            </text>
           </g>
         ) : null;
       })}
 
       {drawing && activeEntity?.kind === "segment" && frame.partialEnd && (
-        <line x1={activeEntity.startPoint.x} y1={-activeEntity.startPoint.y} x2={frame.partialEnd.x} y2={-frame.partialEnd.y} stroke={activeRef?.startsWith("fold:") ? "var(--accent2)" : "var(--accent)"} strokeWidth={stroke * 2.5} strokeLinecap="round" />
+        <line
+          x1={activeEntity.startPoint.x}
+          y1={-activeEntity.startPoint.y}
+          x2={frame.partialEnd.x}
+          y2={-frame.partialEnd.y}
+          stroke={activeRef?.startsWith("fold:") ? "var(--accent2)" : "var(--accent)"}
+          strokeWidth={stroke * 2.5}
+          strokeLinecap="round"
+        />
       )}
 
       {a && b && dimension && (
         <g aria-label={`${dimension.label}: ${dimension.value} ${dimension.unit}`}>
-          <line x1={a.x + nx} y1={-(a.y + ny)} x2={b.x + nx} y2={-(b.y + ny)} stroke="var(--success)" strokeWidth={stroke} />
-          <line x1={a.x} y1={-a.y} x2={a.x + nx * 1.25} y2={-(a.y + ny * 1.25)} stroke="var(--success)" strokeWidth={stroke * 0.75} />
-          <line x1={b.x} y1={-b.y} x2={b.x + nx * 1.25} y2={-(b.y + ny * 1.25)} stroke="var(--success)" strokeWidth={stroke * 0.75} />
-          <text x={(a.x + b.x) / 2 + nx} y={-((a.y + b.y) / 2 + ny) - stroke * 4} textAnchor="middle" fill="var(--success)" fontFamily="var(--font-mono)" fontSize={stroke * 7}>{dimension.value} {dimension.unit}</text>
-          <text x={a.x - stroke * 5} y={-a.y + stroke * 8} fill="var(--foreground)" fontFamily="var(--font-mono)" fontSize={stroke * 6}>A</text>
-          <text x={b.x + stroke * 3} y={-b.y + stroke * 8} fill="var(--foreground)" fontFamily="var(--font-mono)" fontSize={stroke * 6}>B</text>
+          <line
+            x1={a.x + nx}
+            y1={-(a.y + ny)}
+            x2={b.x + nx}
+            y2={-(b.y + ny)}
+            stroke="var(--success)"
+            strokeWidth={stroke}
+          />
+          <line
+            x1={a.x}
+            y1={-a.y}
+            x2={a.x + nx * 1.25}
+            y2={-(a.y + ny * 1.25)}
+            stroke="var(--success)"
+            strokeWidth={stroke * 0.75}
+          />
+          <line
+            x1={b.x}
+            y1={-b.y}
+            x2={b.x + nx * 1.25}
+            y2={-(b.y + ny * 1.25)}
+            stroke="var(--success)"
+            strokeWidth={stroke * 0.75}
+          />
+          <text
+            x={(a.x + b.x) / 2 + nx}
+            y={-((a.y + b.y) / 2 + ny) - stroke * 4}
+            textAnchor="middle"
+            fill="var(--success)"
+            fontFamily="var(--font-mono)"
+            fontSize={stroke * 7}
+          >
+            {dimension.value} {dimension.unit}
+          </text>
+          <text
+            x={a.x - stroke * 5}
+            y={-a.y + stroke * 8}
+            fill="var(--foreground)"
+            fontFamily="var(--font-mono)"
+            fontSize={stroke * 6}
+          >
+            A
+          </text>
+          <text
+            x={b.x + stroke * 3}
+            y={-b.y + stroke * 8}
+            fill="var(--foreground)"
+            fontFamily="var(--font-mono)"
+            fontSize={stroke * 6}
+          >
+            B
+          </text>
         </g>
       )}
 
@@ -117,27 +220,76 @@ export function TraceAnimationStage({ pattern, frame, completedRefs, showAll, st
 
       {(tool === "regua" || tool === "esquadro") && a && b && (
         <g transform={`rotate(${-angle} ${a.x} ${-a.y})`}>
-          <rect x={a.x} y={-a.y - stroke * 6} width={Math.max(activeEntity?.length ?? 0, stroke * 30)} height={stroke * 9} fill="var(--foreground)" fillOpacity="0.12" stroke="var(--foreground)" strokeWidth={stroke * 0.8} />
+          <rect
+            x={a.x}
+            y={-a.y - stroke * 6}
+            width={Math.max(activeEntity?.length ?? 0, stroke * 30)}
+            height={stroke * 9}
+            fill="var(--foreground)"
+            fillOpacity="0.12"
+            stroke="var(--foreground)"
+            strokeWidth={stroke * 0.8}
+          />
         </g>
       )}
 
       {tool === "transferidor" && a && (
         <g transform={`translate(${a.x} ${-a.y}) rotate(${-angle})`}>
-          <path d={`M ${-offset} 0 A ${offset} ${offset} 0 0 1 ${offset} 0`} fill="var(--foreground)" fillOpacity="0.1" stroke="var(--foreground)" strokeWidth={stroke} />
-          <text x="0" y={-offset * 0.35} textAnchor="middle" fill="var(--success)" fontFamily="var(--font-mono)" fontSize={stroke * 6}>{Math.abs(angle).toFixed(1)}°</text>
+          <path
+            d={`M ${-offset} 0 A ${offset} ${offset} 0 0 1 ${offset} 0`}
+            fill="var(--foreground)"
+            fillOpacity="0.1"
+            stroke="var(--foreground)"
+            strokeWidth={stroke}
+          />
+          <text
+            x="0"
+            y={-offset * 0.35}
+            textAnchor="middle"
+            fill="var(--success)"
+            fontFamily="var(--font-mono)"
+            fontSize={stroke * 6}
+          >
+            {Math.abs(angle).toFixed(1)}°
+          </text>
         </g>
       )}
 
-      {p && tool !== "compasso" && tool !== "regua" && tool !== "esquadro" && tool !== "transferidor" && (
-        <g transform={`translate(${p.x} ${-p.y}) rotate(${-angle})`}>
-          <path d={`M ${-stroke * 16} ${-stroke * 3} L 0 0 L ${-stroke * 16} ${stroke * 3} Z`} fill="var(--warn)" stroke="var(--foreground)" strokeWidth={stroke * 0.7} />
-          <circle cx="0" cy="0" r={stroke * 3.4} fill="none" stroke="var(--warn)" strokeWidth={stroke} />
-        </g>
-      )}
+      {p &&
+        tool !== "compasso" &&
+        tool !== "regua" &&
+        tool !== "esquadro" &&
+        tool !== "transferidor" && (
+          <g transform={`translate(${p.x} ${-p.y}) rotate(${-angle})`}>
+            <path
+              d={`M ${-stroke * 16} ${-stroke * 3} L 0 0 L ${-stroke * 16} ${stroke * 3} Z`}
+              fill="var(--warn)"
+              stroke="var(--foreground)"
+              strokeWidth={stroke * 0.7}
+            />
+            <circle
+              cx="0"
+              cy="0"
+              r={stroke * 3.4}
+              fill="none"
+              stroke="var(--warn)"
+              strokeWidth={stroke}
+            />
+          </g>
+        )}
 
       <g transform={`translate(${viewMinX} ${-viewMaxY - pad * 0.58})`}>
-        <text fill="var(--accent)" fontFamily="var(--font-mono)" fontSize={stroke * 7}>{stepLabel.toUpperCase()}</text>
-        <text y={stroke * 9} fill="var(--foreground)" fontFamily="var(--font-mono)" fontSize={stroke * 6}>{TOOL_LABEL[tool]} · {frame.action.type}</text>
+        <text fill="var(--accent)" fontFamily="var(--font-mono)" fontSize={stroke * 7}>
+          {stepLabel.toUpperCase()}
+        </text>
+        <text
+          y={stroke * 9}
+          fill="var(--foreground)"
+          fontFamily="var(--font-mono)"
+          fontSize={stroke * 6}
+        >
+          {TOOL_LABEL[tool]} · {frame.action.type}
+        </text>
       </g>
     </svg>
   );

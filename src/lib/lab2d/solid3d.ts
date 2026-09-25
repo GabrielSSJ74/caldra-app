@@ -60,7 +60,6 @@ function closedLoops(entities: Entity[]): Loop[] {
 
 export type SolidShape = { outline: Vec2[]; holes: Vec2[][]; entityId: string };
 
-
 /** Agrupa contornos externos com seus furos (contenção geométrica). */
 export function solidShapes(entities: Entity[]): SolidShape[] {
   const loops = closedLoops(entities);
@@ -123,7 +122,6 @@ export function planSolids(
       shape: { outline: outline.map(local), holes: holes.map((h) => h.map(local)) },
     } satisfies SolidInstance;
   });
-
 }
 
 /** Área líquida (mm²) do desenho — contorno menos furos. */

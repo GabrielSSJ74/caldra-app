@@ -10,14 +10,10 @@ import type { Vec3 } from "@/lib/geometry/types";
 import type { Camera, Edge } from "./wire";
 
 export type RenderCategory =
-  | "surface"
-  | "edge"
-  | "technical"
-  | "reference"
-  | "dimension"
-  | "selection";
+  "surface" | "edge" | "technical" | "reference" | "dimension" | "selection";
 
-export type VisibilityPolicy = "surface-depth" | "real-occlusion" | "technical-persistent" | "overlay";
+export type VisibilityPolicy =
+  "surface-depth" | "real-occlusion" | "technical-persistent" | "overlay";
 
 export const VISIBILITY_POLICY: Readonly<Record<RenderCategory, VisibilityPolicy>> = {
   surface: "surface-depth",
@@ -61,7 +57,12 @@ export function toCameraPoint(p: Vec3, cam: Camera): CameraPoint {
   };
 }
 
-export function projectLine(id: string, edge: Edge, project: (p: Vec3) => CameraPoint, scale: number): ProjectedLine {
+export function projectLine(
+  id: string,
+  edge: Edge,
+  project: (p: Vec3) => CameraPoint,
+  scale: number,
+): ProjectedLine {
   const a = project(edge[0]);
   const b = project(edge[1]);
   return {
@@ -155,7 +156,15 @@ export function visibleLineSegments(
     if (start < 0) continue;
     const a = interpolate(line, start / count);
     const b = interpolate(line, index / count);
-    out.push({ id: `${line.id}:${start}-${index}`, x1: a.x, y1: a.y, x2: b.x, y2: b.y, z1: a.z, z2: b.z });
+    out.push({
+      id: `${line.id}:${start}-${index}`,
+      x1: a.x,
+      y1: a.y,
+      x2: b.x,
+      y2: b.y,
+      z1: a.z,
+      z2: b.z,
+    });
     start = -1;
   }
   return out;

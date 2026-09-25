@@ -62,7 +62,8 @@ export function piecesToEntities(
     const b = piece.development.bounds;
     const dx = cursor - b.minX;
     for (const e of developmentToEntities(piece.development)) {
-      if (e.type === "polyline") out.push({ ...e, pts: e.pts.map((p) => ({ x: p.x + dx, y: p.y })) });
+      if (e.type === "polyline")
+        out.push({ ...e, pts: e.pts.map((p) => ({ x: p.x + dx, y: p.y })) });
       else if (e.type === "line") out.push({ ...e, x1: e.x1 + dx, x2: e.x2 + dx });
       else out.push(e);
     }

@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getEngine } from "@/lib/geometry/engines";
-import {
-  SQUARE_TO_ROUND_DEFAULTS,
-  calculateSquareToRound,
-} from "@/lib/geometry/squareToRound";
+import { SQUARE_TO_ROUND_DEFAULTS, calculateSquareToRound } from "@/lib/geometry/squareToRound";
 import { refExists, refKind } from "@/lib/geometry/refs";
 import { buildWire } from "./wire";
 import {
@@ -46,7 +43,13 @@ describe("refFromTag — correspondência exata geratriz ↔ dobra", () => {
 
 describe("hit-test em coordenadas de tela", () => {
   const line = (id: string, x1: number, y1: number, x2: number, y2: number): ProjectedLine => ({
-    id, x1, y1, x2, y2, z1: 0, z2: 0,
+    id,
+    x1,
+    y1,
+    x2,
+    y2,
+    z1: 0,
+    z2: 0,
   });
 
   it("distância ponto–segmento", () => {

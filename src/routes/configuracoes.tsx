@@ -204,7 +204,12 @@ function Configuracoes() {
             {THEMES.map((t) => (
               <button
                 key={t.id}
-                onClick={() => setTheme(t.id)}
+                onClick={() => {
+                  setTheme(t.id);
+                  if (t.id === "light") {
+                    setAuroraStyle("fluido");
+                  }
+                }}
                 className={cn(
                   "flex-1 rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
                   theme === t.id
@@ -250,9 +255,7 @@ function Configuracoes() {
             <SectionLabel>Estilo do fundo</SectionLabel>
             <div className="grid grid-cols-3 gap-1.5">
               {AURORA_STYLES.map((a) => {
-                /* Sem PRO o fundo não anima: os estilos animados ficam
-                   indisponíveis em vez de prometer algo que não acontece. */
-                const locked = !isMestre && (a.id === "fluido" || a.id === "suave");
+                const locked = !isMestre && a.id === "suave";
                 return (
                   <button
                     key={a.id}
@@ -264,7 +267,7 @@ function Configuracoes() {
                     className={cn(
                       "flex-1 rounded-xl border px-3 py-2 font-mono text-[11px] uppercase transition-colors",
                       locked && "cursor-not-allowed opacity-45",
-                      auroraStyle === a.id && !locked
+                      auroraStyle === a.id
                         ? "border-accent/25 bg-accent/10 text-accent"
                         : "border-line text-muted-foreground",
                     )}
@@ -275,9 +278,10 @@ function Configuracoes() {
               })}
             </div>
             <p className="mt-2 text-[11px] text-muted-foreground">
-              {isMestre
-                ? AURORA_STYLES.find((a) => a.id === auroraStyle)?.hint
-                : "Fluido e Suave fazem parte do CALDRA PRO. O estilo Padrão segue disponível."}
+              {AURORA_STYLES.find((a) => a.id === auroraStyle)?.hint ??
+                (isMestre
+                  ? ""
+                  : "Fluido e Suave fazem parte do CALDRA PRO. O estilo Padrão segue disponível.")}
             </p>
           </div>
         </div>
@@ -306,13 +310,23 @@ function Configuracoes() {
           <SectionLabel>Idioma</SectionLabel>
           <div className="grid grid-cols-3 gap-1.5">
             {LANGUAGES.map((item) => (
-              <button key={item.id} onClick={() => setLanguage(item.id)} className={cn(
-                "rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
-                language === item.id ? "border-accent/25 bg-accent/10 text-accent" : "border-line text-muted-foreground",
-              )}>{item.label}</button>
+              <button
+                key={item.id}
+                onClick={() => setLanguage(item.id)}
+                className={cn(
+                  "rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
+                  language === item.id
+                    ? "border-accent/25 bg-accent/10 text-accent"
+                    : "border-line text-muted-foreground",
+                )}
+              >
+                {item.label}
+              </button>
             ))}
           </div>
-          <p className="mt-2 text-[11px] text-muted-foreground">Altera o idioma da interface. Textos ainda não traduzidos permanecem em português.</p>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Altera o idioma da interface. Textos ainda não traduzidos permanecem em português.
+          </p>
         </div>
 
         <div>

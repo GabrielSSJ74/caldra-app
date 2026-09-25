@@ -43,8 +43,7 @@ export function FieldMode({
 
   if (!project.parts.length) return null;
 
-  const codeOf = (id?: string) =>
-    project.parts.find((p) => p.instanceId === id)?.code ?? "Obra";
+  const codeOf = (id?: string) => project.parts.find((p) => p.instanceId === id)?.code ?? "Obra";
 
   const pickPhoto = async (file?: File) => {
     if (!file) return;
@@ -131,7 +130,9 @@ export function FieldMode({
                 aria-pressed={!!inst}
                 className={cn(
                   "grid size-11 shrink-0 place-items-center rounded-lg border",
-                  inst ? "border-accent bg-accent/20 text-accent" : "border-line text-muted-foreground",
+                  inst
+                    ? "border-accent bg-accent/20 text-accent"
+                    : "border-line text-muted-foreground",
                 )}
               >
                 <Check className="size-5" />
@@ -196,7 +197,11 @@ export function FieldMode({
 
           {photo && (
             <span className="relative">
-              <img src={photo} alt="Foto da ocorrência" className="size-11 rounded-lg object-cover" />
+              <img
+                src={photo}
+                alt="Foto da ocorrência"
+                className="size-11 rounded-lg object-cover"
+              />
               <button
                 type="button"
                 onClick={() => setPhoto(null)}

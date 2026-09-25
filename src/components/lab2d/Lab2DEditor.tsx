@@ -146,7 +146,6 @@ import {
   type ChamferClipboard,
 } from "@/lib/lab2d/editorInteractions";
 
-
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 
 import { cn } from "@/lib/utils";
@@ -210,20 +209,10 @@ const ENTITY_KINDS: DimKind[] = [
 ];
 
 /** Ferramentas principais na barra lateral; as demais formam o grupo secundário. */
-const PRIMARY: Tool[] = [
-  "select",
-  "line",
-  "polyline",
-  "circle",
-  "rect",
-  "text",
-  "trim",
-];
+const PRIMARY: Tool[] = ["select", "line", "polyline", "circle", "rect", "text", "trim"];
 
 const ZOOM_MIN = 0.05;
 const ZOOM_MAX = 30;
-
-
 
 type Measure = { a: Vec2; b: Vec2 };
 
@@ -264,7 +253,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [showGrid, setShowGrid] = useState(true);
   /* WORKSPACE_FRAME — moldura técnica de trabalho (não é geometria) */
   const [frame, setFrame] = useState<WorkspaceFrame>(() =>
-    typeof window === "undefined" ? { w: 1500, h: 3000, visible: true, showDims: true } : loadFrame(),
+    typeof window === "undefined"
+      ? { w: 1500, h: 3000, visible: true, showDims: true }
+      : loadFrame(),
   );
   const updateFrame = useCallback((patch: Partial<WorkspaceFrame>) => {
     setFrame((f) => {
@@ -322,8 +313,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [textSpec, setTextSpec] = useState<TextSpec | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const clipboardRef = useRef<ChamferClipboard | null>(null);
-  const [clipboardMenu, setClipboardMenu] = useState<{ x: number; y: number; world: Vec2 } | null>(null);
-  const longPressRef = useRef<{ timer: ReturnType<typeof setTimeout>; x: number; y: number } | null>(null);
+  const [clipboardMenu, setClipboardMenu] = useState<{ x: number; y: number; world: Vec2 } | null>(
+    null,
+  );
+  const longPressRef = useRef<{
+    timer: ReturnType<typeof setTimeout>;
+    x: number;
+    y: number;
+  } | null>(null);
   const past = useRef<Entity[][]>([]);
   const future = useRef<Entity[][]>([]);
   const panRef = useRef<{ x: number; y: number } | null>(null);
@@ -413,19 +410,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         saveProject(next);
         setProject(next);
       };
-      const ric = (window as unknown as { requestIdleCallback?: (cb: () => void, o?: object) => number })
-        .requestIdleCallback;
+      const ric = (
+        window as unknown as { requestIdleCallback?: (cb: () => void, o?: object) => number }
+      ).requestIdleCallback;
       if (ric) idle = ric(run, { timeout: 1000 });
       else run();
     }, 1500);
     return () => {
       clearTimeout(t);
-      const cic = (window as unknown as { cancelIdleCallback?: (id: number) => void }).cancelIdleCallback;
+      const cic = (window as unknown as { cancelIdleCallback?: (id: number) => void })
+        .cancelIdleCallback;
       if (idle && cic) cic(idle);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entities, layers, planId, groups, dims, thickness]);
-
 
   /* --------------------------------- paisagem automática no celular */
   useEffect(() => {
@@ -441,7 +439,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
     };
   }, []);
-
 
   const layerOf = useCallback((id: string) => layers.find((l) => l.id === id), [layers]);
 
@@ -517,19 +514,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, []);
 
   /* --------------------------------------------------------- coordenadas */
-  const toWorld = useCallback(
-    (ev: { clientX: number; clientY: number }): Vec2 => {
-      const r = svgRef.current!.getBoundingClientRect();
-      // CÂMERA ÚNICA: durante um gesto o estado React fica um quadro atrás;
-      // o hit-test precisa usar exatamente a mesma câmera que desenhou.
-      const v = viewRef.current;
-      return {
-        x: (ev.clientX - r.left - v.tx) / v.k,
-        y: (ev.clientY - r.top - v.ty) / v.k,
-      };
-    },
-    [],
-  );
+  const toWorld = useCallback((ev: { clientX: number; clientY: number }): Vec2 => {
+    const r = svgRef.current!.getBoundingClientRect();
+    // CÂMERA ÚNICA: durante um gesto o estado React fica um quadro atrás;
+    // o hit-test precisa usar exatamente a mesma câmera que desenhou.
+    const v = viewRef.current;
+    return {
+      x: (ev.clientX - r.left - v.tx) / v.k,
+      y: (ev.clientY - r.top - v.ty) / v.k,
+    };
+  }, []);
 
   /** Enquadra uma caixa do desenho na viewport (margem visual, escala 1:1 preservada). */
   const fitBox = useCallback((box: Box | null) => {
@@ -593,7 +587,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (next) setView(next);
     });
   }, []);
-
 
   const flashZoom = useCallback((k: number) => {
     setZoomHud(k);
@@ -730,10 +723,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
    * e só anima enquanto a ferramenta de direção/simulação está ativa.
    */
   const flowRef = useRef<HTMLCanvasElement | null>(null);
-  const simPath = useMemo(
-    () => (simOn ? buildSimPath(drawable) : null),
-    [simOn, drawable],
-  );
+  const simPath = useMemo(() => (simOn ? buildSimPath(drawable) : null), [simOn, drawable]);
   const simSample = useMemo(
     () => (simPath ? sampleSim(simPath, simDist) : null),
     [simPath, simDist],
@@ -838,13 +828,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     return () => cancelAnimationFrame(raf);
   }, [simOn, simPlaying, simPath, simSpeed]);
 
-
   /* teste de estresse: ?stress=5000 gera milhares de entidades sintéticas */
   useEffect(() => {
     const n = Number(new URLSearchParams(window.location.search).get("stress") ?? 0);
     if (n > 0) setEntities(stressEntities(n));
   }, []);
-
 
   const selected = useMemo(
     () => entities.filter((e) => selection.includes(e.id)),
@@ -904,7 +892,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       };
     }
 
-
     if (tool === "pan" || ev.button === 1) {
       panRef.current = { x: ev.clientX, y: ev.clientY };
       return;
@@ -954,8 +941,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             ? selection
             : target;
         setSelection(nextSel);
-        if (tool === "select")
-          moveRef.current = { from: raw, ids: nextSel, base: entities };
+        if (tool === "select") moveRef.current = { from: raw, ids: nextSel, base: entities };
         return;
       }
       if (!ev.shiftKey) setSelection([]);
@@ -976,11 +962,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setTextOpen(true);
         return;
       }
-      commit((list) => [...list, {
-        id: uid(), layer: activeLayer, type: "text", x: p.x, y: p.y,
-        text: textSpec.text, size: textSpec.height, width: textSpec.width,
-        bold: textSpec.bold, italic: textSpec.italic,
-      }]);
+      commit((list) => [
+        ...list,
+        {
+          id: uid(),
+          layer: activeLayer,
+          type: "text",
+          x: p.x,
+          y: p.y,
+          text: textSpec.text,
+          size: textSpec.height,
+          width: textSpec.width,
+          bold: textSpec.bold,
+          italic: textSpec.italic,
+        },
+      ]);
       setTextSpec(null);
       setTool("select");
       return;
@@ -1105,7 +1101,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         return;
       }
       const extra = "arc" in res ? res.arc : res.seg;
-      commit((e) => [...e.map((x) => (x.id === res.a.id ? res.a : x.id === res.b.id ? res.b : x)), extra]);
+      commit((e) => [
+        ...e.map((x) => (x.id === res.a.id ? res.a : x.id === res.b.id ? res.b : x)),
+        extra,
+      ]);
       setSelection([]);
       return;
     }
@@ -1118,7 +1117,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const onPointerMove = (ev: React.PointerEvent) => {
     if (ptrsRef.current.has(ev.pointerId))
       ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
-    if (longPressRef.current && Math.hypot(ev.clientX - longPressRef.current.x, ev.clientY - longPressRef.current.y) > 8) {
+    if (
+      longPressRef.current &&
+      Math.hypot(ev.clientX - longPressRef.current.x, ev.clientY - longPressRef.current.y) > 8
+    ) {
       clearTimeout(longPressRef.current.timer);
       longPressRef.current = null;
     }
@@ -1163,7 +1165,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setSnapHit(findSnap(raw, near(raw, tol * 2), tol, grid, { grid: showGrid, object: true }));
     }
 
-
     if (dragNode) {
       const p = snapPoint(raw);
       setEntities((list) =>
@@ -1172,9 +1173,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           if (e.type === "polyline")
             return { ...e, pts: e.pts.map((q, i) => (i === dragNode.index ? p : q)) };
           if (e.type === "line")
-            return dragNode.index === 0
-              ? { ...e, x1: p.x, y1: p.y }
-              : { ...e, x2: p.x, y2: p.y };
+            return dragNode.index === 0 ? { ...e, x1: p.x, y1: p.y } : { ...e, x2: p.x, y2: p.y };
           if (e.type === "circle")
             return dragNode.index === 0
               ? { ...e, cx: p.x, cy: p.y }
@@ -1201,7 +1200,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const p = snapPoint(raw);
       const [a, b] = pending;
       if (pending.length === 1 && a)
-        setDraft({ id: "draft", layer: activeLayer, type: "line", x1: a.x, y1: a.y, x2: p.x, y2: p.y });
+        setDraft({
+          id: "draft",
+          layer: activeLayer,
+          type: "line",
+          x1: a.x,
+          y1: a.y,
+          x2: p.x,
+          y2: p.y,
+        });
       else if (a && b) setDraft(arcFrom3(a, b, p, activeLayer));
       return;
     }
@@ -1211,13 +1218,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
     if (tool === "polyline" && pending.length) {
       const p = snapPoint(raw);
-      setDraft({ id: "draft", layer: activeLayer, type: "line", x1: pending[pending.length - 1]!.x, y1: pending[pending.length - 1]!.y, x2: p.x, y2: p.y });
+      setDraft({
+        id: "draft",
+        layer: activeLayer,
+        type: "line",
+        x1: pending[pending.length - 1]!.x,
+        y1: pending[pending.length - 1]!.y,
+        x2: p.x,
+        y2: p.y,
+      });
       return;
     }
     if (pending.length === 1 && draft) {
       setDraft(buildDraft(tool, pending[0]!, snapPoint(raw), activeLayer, filletR));
     }
-
   };
 
   const onPointerUp = (ev?: React.PointerEvent) => {
@@ -1282,7 +1296,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const meta = ev.ctrlKey || ev.metaKey;
       if (meta && ev.key.toLowerCase() === "z") {
         ev.preventDefault();
-        ev.shiftKey ? redo() : undo();
+        if (ev.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
         return;
       }
       if (meta && ev.key.toLowerCase() === "y") return redo();
@@ -1294,7 +1312,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (meta && ev.key.toLowerCase() === "c") {
         ev.preventDefault();
         clipboardRef.current = copySelection(entities, selection, groups);
-        if (clipboardRef.current) toast.success(`${clipboardRef.current.entities.length} objeto(s) copiado(s).`);
+        if (clipboardRef.current)
+          toast.success(`${clipboardRef.current.entities.length} objeto(s) copiado(s).`);
         return;
       }
       if (meta && ev.key.toLowerCase() === "v" && clipboardRef.current) {
@@ -1349,13 +1368,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo, selection, selected, commit, tool, finishPolyline, fitTo, entities, groups, cursor]);
+  }, [
+    undo,
+    redo,
+    selection,
+    selected,
+    commit,
+    tool,
+    finishPolyline,
+    fitTo,
+    entities,
+    groups,
+    cursor,
+  ]);
 
   /* ------------------------------------------------------------- ações */
   const applySelection = (fn: (e: Entity) => Entity) =>
-    commit((list) =>
-      revalidateShared(list.map((e) => (selection.includes(e.id) ? fn(e) : e))),
-    );
+    commit((list) => revalidateShared(list.map((e) => (selection.includes(e.id) ? fn(e) : e))));
 
   const selBox = useMemo(() => bbox(selected), [selected]);
   /* leitura fora do ciclo de render: medir nunca dispara novo render */
@@ -1364,7 +1393,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const center: Vec2 = selBox
     ? { x: (selBox.minX + selBox.maxX) / 2, y: (selBox.minY + selBox.maxY) / 2 }
     : { x: 0, y: 0 };
-
 
   const onImportConfirm = (next: Entity[]) => {
     commit((e) => [...e, ...next]);
@@ -1378,20 +1406,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setDraft(null);
   }, []);
 
-
   const copySelected = useCallback(() => {
     clipboardRef.current = copySelection(entities, selection, groups);
-    if (clipboardRef.current) toast.success(`${clipboardRef.current.entities.length} objeto(s) copiado(s).`);
+    if (clipboardRef.current)
+      toast.success(`${clipboardRef.current.entities.length} objeto(s) copiado(s).`);
   }, [entities, selection, groups]);
 
   const selectionActions = (
     <>
-      <IconBtn
-        label="Copiar"
-        onClick={copySelected}
-        icon={Copy}
-        flat
-      />
+      <IconBtn label="Copiar" onClick={copySelected} icon={Copy} flat />
       <IconBtn
         label="Girar 90°"
         onClick={() => applySelection((e) => rotate(e, center, 90))}
@@ -1460,7 +1483,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const panelSide = usePanelSide(panelOpen, panelSignature, measurePanel);
 
   const primaryTools = TOOLS.filter((t) => PRIMARY.includes(t.id));
-
 
   const aside = panelOpen ? (
     <aside className="metal hairline flex w-56 shrink-0 flex-col overflow-y-auto rounded-2xl p-2">
@@ -1556,12 +1578,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   onClick={() => setActiveLayer(l.id)}
                   className={cn(
                     "size-3 shrink-0 rounded-full",
-                    activeLayer === l.id &&
-                      "ring-2 ring-offset-1 ring-offset-background",
+                    activeLayer === l.id && "ring-2 ring-offset-1 ring-offset-background",
                   )}
                   style={{
                     background: techColor(l.id),
-                    ...(activeLayer === l.id ? { boxShadow: `0 0 0 2px ${SELECTION_COLOR}55` } : {}),
+                    ...(activeLayer === l.id
+                      ? { boxShadow: `0 0 0 2px ${SELECTION_COLOR}55` }
+                      : {}),
                   }}
                   aria-label={`Camada ativa: ${l.name}`}
                 />
@@ -1609,13 +1632,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         <DimensionEditor
           e={selected[0]!}
           onChange={(next) => commit((list) => list.map((x) => (x.id === next.id ? next : x)))}
-          {...(selected[0]?.type === "text" ? { onEditText: () => {
-            const current = selected[0];
-            if (!current || current.type !== "text") return;
-            setEditingTextId(current.id);
-            setTextSpec({ text: current.text, width: current.width ?? Math.max(current.size, current.text.length * current.size * .6), height: current.size, bold: !!current.bold, italic: !!current.italic });
-            setTextOpen(true);
-          }} : {})}
+          {...(selected[0]?.type === "text"
+            ? {
+                onEditText: () => {
+                  const current = selected[0];
+                  if (!current || current.type !== "text") return;
+                  setEditingTextId(current.id);
+                  setTextSpec({
+                    text: current.text,
+                    width:
+                      current.width ??
+                      Math.max(current.size, current.text.length * current.size * 0.6),
+                    height: current.size,
+                    bold: !!current.bold,
+                    italic: !!current.italic,
+                  });
+                  setTextOpen(true);
+                },
+              }
+            : {})}
           layers={layers}
           actions={selectionActions}
         />
@@ -1646,7 +1681,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           <div className="flex flex-wrap gap-1 border-t border-line pt-2">{selectionActions}</div>
         </div>
       )}
-
     </aside>
   ) : null;
 
@@ -1677,6 +1711,34 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               <ArrowLeft className="size-3.5" /> Sair
             </button>
             <span className="tick-label shrink-0 text-accent">CHAMFER</span>
+
+            {/* MODO CAD CANÔNICO: 2D ESBOÇO ↔ 3D CAD */}
+            <div className="flex items-center rounded-lg border border-line bg-background/50 p-0.5">
+              <button
+                type="button"
+                onClick={() => setSolidOpen(false)}
+                className={cn(
+                  "rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase transition-colors",
+                  !solidOpen
+                    ? "bg-accent/15 text-accent font-semibold"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                2D ESBOÇO
+              </button>
+              <button
+                type="button"
+                onClick={() => setSolidOpen(true)}
+                className={cn(
+                  "rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase transition-colors",
+                  solidOpen
+                    ? "bg-accent/15 text-accent font-semibold"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+              >
+                3D CAD
+              </button>
+            </div>
           </div>
 
           <div className="min-w-0 px-1 text-center">
@@ -1722,7 +1784,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             <IconBtn label="Exportar DXF CNC" onClick={() => setCncOpen(true)} icon={Scissors} />
 
             <div className="relative">
-              <IconBtn label="Mais" onClick={() => setMoreOpen((m) => !m)} icon={MoreHorizontal} active={moreOpen} />
+              <IconBtn
+                label="Mais"
+                onClick={() => setMoreOpen((m) => !m)}
+                icon={MoreHorizontal}
+                active={moreOpen}
+              />
               {moreOpen && (
                 <div className="metal hairline pop-in fixed top-12 right-3 z-[70] w-52 rounded-2xl p-1.5">
                   <MenuItem
@@ -1789,9 +1856,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     onClick={() => {
                       const found = verify(entities);
                       setIssues(found);
-                      found.length
-                        ? toast.warning(`${found.length} problemas encontrados`)
-                        : toast.success("Geometria válida");
+                      if (found.length) {
+                        toast.warning(`${found.length} problemas encontrados`);
+                      } else {
+                        toast.success("Geometria válida");
+                      }
                       setMoreOpen(false);
                     }}
                   />
@@ -1860,7 +1929,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               <ToolBtn key={t.id} t={t} active={tool === t.id} onPick={pickTool} />
             ))}
             <div className="my-1 h-px w-6 bg-line" />
-            <IconBtn label="Importar CNC 2D" onClick={() => setImportOpen(true)} icon={MoreHorizontal} flat />
+            <IconBtn
+              label="Importar CNC 2D"
+              onClick={() => setImportOpen(true)}
+              icon={MoreHorizontal}
+              flat
+            />
           </div>
         )}
 
@@ -1886,11 +1960,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   strokeWidth="1"
                 />
               </pattern>
-              <pattern id="lab2d-grid-major" width={gridStep * view.k * 5} height={gridStep * view.k * 5} patternUnits="userSpaceOnUse" x={view.tx} y={view.ty}>
-                <path d={`M ${gridStep * view.k * 5} 0 L 0 0 0 ${gridStep * view.k * 5}`} fill="none" stroke="var(--grid-major)" strokeWidth="1" />
+              <pattern
+                id="lab2d-grid-major"
+                width={gridStep * view.k * 5}
+                height={gridStep * view.k * 5}
+                patternUnits="userSpaceOnUse"
+                x={view.tx}
+                y={view.ty}
+              >
+                <path
+                  d={`M ${gridStep * view.k * 5} 0 L 0 0 0 ${gridStep * view.k * 5}`}
+                  fill="none"
+                  stroke="var(--grid-major)"
+                  strokeWidth="1"
+                />
               </pattern>
             </defs>
-            {showGrid && <><rect width="100%" height="100%" fill="url(#lab2d-grid)" /><rect width="100%" height="100%" fill="url(#lab2d-grid-major)" /></>}
+            {showGrid && (
+              <>
+                <rect width="100%" height="100%" fill="url(#lab2d-grid)" />
+                <rect width="100%" height="100%" fill="url(#lab2d-grid-major)" />
+              </>
+            )}
           </svg>
           <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
           {/* FLUXO CALDRA / PRÉVIA CNC — camada de UI, nunca exportada */}
@@ -1907,8 +1998,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             role="application"
             aria-label="Prancheta vetorial"
           >
-
-
             <g transform={`translate(${view.tx} ${view.ty}) scale(${view.k})`}>
               {/* CAMADA IMAGEM — referência do CHAMFER VISION (nunca vira geometria) */}
               {imageLayer && imageLayer.visible && outputMode === "completo" && (
@@ -1925,8 +2014,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               )}
 
               {/* eixos — cinza técnico discreto */}
-              <line x1={-1e4} y1={0} x2={1e4} y2={0} stroke="var(--axis-line)" strokeWidth={1 / view.k} />
-              <line x1={0} y1={-1e4} x2={0} y2={1e4} stroke="var(--axis-line)" strokeWidth={1 / view.k} />
+              <line
+                x1={-1e4}
+                y1={0}
+                x2={1e4}
+                y2={0}
+                stroke="var(--axis-line)"
+                strokeWidth={1 / view.k}
+              />
+              <line
+                x1={0}
+                y1={-1e4}
+                x2={0}
+                y2={1e4}
+                stroke="var(--axis-line)"
+                strokeWidth={1 / view.k}
+              />
 
               {/* WORKSPACE_FRAME — área de trabalho (referência, nunca exportada) */}
               {frame.visible && (
@@ -1963,7 +2066,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     );
                   })}
                   {frame.showDims && (
-                    <g fill={REFERENCE_COLOR} fillOpacity={0.9} fontFamily="ui-monospace, monospace">
+                    <g
+                      fill={REFERENCE_COLOR}
+                      fillOpacity={0.9}
+                      fontFamily="ui-monospace, monospace"
+                    >
                       <text
                         x={frame.w / 2}
                         y={-8 / view.k}
@@ -1981,7 +2088,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       >
                         {frame.h.toFixed(2)} mm
                       </text>
-                      <text x={6 / view.k} y={18 / view.k} fontSize={10 / view.k} fillOpacity={0.55}>
+                      <text
+                        x={6 / view.k}
+                        y={18 / view.k}
+                        fontSize={10 / view.k}
+                        fillOpacity={0.55}
+                      >
                         ÁREA DE TRABALHO
                       </text>
                     </g>
@@ -1990,7 +2102,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               )}
 
               {/* geometria principal: pintada no canvas sob este SVG */}
-
 
               {draft && <EntityShape e={draft} k={view.k} preview />}
 
@@ -2044,7 +2155,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   fillOpacity={0.08}
                   stroke={SELECTION_COLOR}
                   strokeWidth={1 / view.k}
-                  strokeDasharray={marquee.b.x < marquee.a.x ? `${5 / view.k} ${4 / view.k}` : undefined}
+                  strokeDasharray={
+                    marquee.b.x < marquee.a.x ? `${5 / view.k} ${4 / view.k}` : undefined
+                  }
                 />
               )}
 
@@ -2076,7 +2189,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       const p1 = `${ar.p.x + Math.cos(ar.angle + 0.25) * s},${ar.p.y + Math.sin(ar.angle + 0.25) * s}`;
                       const p2 = `${ar.p.x + Math.cos(ar.angle - 0.25) * s},${ar.p.y + Math.sin(ar.angle - 0.25) * s}`;
                       return (
-                        <polygon key={`r${i}`} points={`${ar.p.x},${ar.p.y} ${p1} ${p2}`} stroke="none" />
+                        <polygon
+                          key={`r${i}`}
+                          points={`${ar.p.x},${ar.p.y} ${p1} ${p2}`}
+                          stroke="none"
+                        />
                       );
                     })}
                     {draw.labels.map((l, i) => (
@@ -2111,7 +2228,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         x2={d.b.x}
                         y2={d.b.y}
                         strokeWidth={1 / view.k}
-                        strokeDasharray={d.kind === "radial" ? `${4 / view.k} ${3 / view.k}` : undefined}
+                        strokeDasharray={
+                          d.kind === "radial" ? `${4 / view.k} ${3 / view.k}` : undefined
+                        }
                       />
                       <text
                         x={mx}
@@ -2137,7 +2256,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     y2={m.b.y}
                     strokeWidth={1 / view.k}
                     strokeDasharray={
-                      liveMeasure && i === measures.length ? `${5 / view.k} ${4 / view.k}` : undefined
+                      liveMeasure && i === measures.length
+                        ? `${5 / view.k} ${4 / view.k}`
+                        : undefined
                     }
                   />
                   <text
@@ -2149,7 +2270,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     className="font-mono"
                   >
                     {dist(m.a, m.b).toFixed(2)} mm ·{" "}
-                    {(((Math.atan2(-(m.b.y - m.a.y), m.b.x - m.a.x) * 180) / Math.PI + 360) % 360).toFixed(1)}
+                    {(
+                      ((Math.atan2(-(m.b.y - m.a.y), m.b.x - m.a.x) * 180) / Math.PI + 360) %
+                      360
+                    ).toFixed(1)}
                     °
                   </text>
                 </g>
@@ -2171,7 +2295,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 FLUXO CALDRA e selos de sequência agora vivem no canvas de
                 overlay (`flowRef`): geometria de UI, nunca exportada.
               */}
-
 
               {shareHint && (
                 <line
@@ -2203,15 +2326,41 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           <Rulers view={view} />
 
           {clipboardMenu && clipboardRef.current && (
-            <div className="metal absolute z-40 min-w-40 rounded-xl border border-line p-1 shadow-lg" style={{ left: Math.min(clipboardMenu.x, canvasSize.w - 180), top: Math.min(clipboardMenu.y, canvasSize.h - 120) }}>
-              <MenuItem label="Colar" icon={Copy} onClick={() => {
-                const pasted = pasteClipboard(clipboardRef.current as ChamferClipboard, { x: clipboardRef.current!.anchor.x + 10, y: clipboardRef.current!.anchor.y + 10 });
-                commit((list) => [...list, ...pasted.entities]); setGroups((list) => [...list, ...pasted.groups]); setSelection(pasted.ids); setClipboardMenu(null);
-              }} />
-              <MenuItem label="Colar na posição" icon={Crosshair} onClick={() => {
-                const pasted = pasteClipboard(clipboardRef.current as ChamferClipboard, clipboardMenu.world);
-                commit((list) => [...list, ...pasted.entities]); setGroups((list) => [...list, ...pasted.groups]); setSelection(pasted.ids); setClipboardMenu(null);
-              }} />
+            <div
+              className="metal absolute z-40 min-w-40 rounded-xl border border-line p-1 shadow-lg"
+              style={{
+                left: Math.min(clipboardMenu.x, canvasSize.w - 180),
+                top: Math.min(clipboardMenu.y, canvasSize.h - 120),
+              }}
+            >
+              <MenuItem
+                label="Colar"
+                icon={Copy}
+                onClick={() => {
+                  const pasted = pasteClipboard(clipboardRef.current as ChamferClipboard, {
+                    x: clipboardRef.current!.anchor.x + 10,
+                    y: clipboardRef.current!.anchor.y + 10,
+                  });
+                  commit((list) => [...list, ...pasted.entities]);
+                  setGroups((list) => [...list, ...pasted.groups]);
+                  setSelection(pasted.ids);
+                  setClipboardMenu(null);
+                }}
+              />
+              <MenuItem
+                label="Colar na posição"
+                icon={Crosshair}
+                onClick={() => {
+                  const pasted = pasteClipboard(
+                    clipboardRef.current as ChamferClipboard,
+                    clipboardMenu.world,
+                  );
+                  commit((list) => [...list, ...pasted.entities]);
+                  setGroups((list) => [...list, ...pasted.groups]);
+                  setSelection(pasted.ids);
+                  setClipboardMenu(null);
+                }}
+              />
               <MenuItem label="Cancelar" icon={X} onClick={() => setClipboardMenu(null)} />
             </div>
           )}
@@ -2250,20 +2399,72 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       {!focus && (
         <div className="flex h-7 shrink-0 items-center gap-1.5 overflow-x-auto font-mono text-[10px] text-muted-foreground">
           {project?.plans.map((pl) => (
-            <button key={pl.id} onClick={() => {
-              if (pl.id === planId) return;
-              setProject((prev) => prev ? { ...prev, plans: prev.plans.map((x) => x.id === planId ? { ...x, entities, groups, dims } : x) } : prev);
-              setPlanId(pl.id); setEntities(pl.entities); setGroups(pl.groups ?? []); setDims(pl.dims ?? []); setSelection([]); past.current = []; future.current = [];
-            }} className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", pl.id === planId && "text-accent")}>{pl.name}</button>
+            <button
+              key={pl.id}
+              onClick={() => {
+                if (pl.id === planId) return;
+                setProject((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        plans: prev.plans.map((x) =>
+                          x.id === planId ? { ...x, entities, groups, dims } : x,
+                        ),
+                      }
+                    : prev,
+                );
+                setPlanId(pl.id);
+                setEntities(pl.entities);
+                setGroups(pl.groups ?? []);
+                setDims(pl.dims ?? []);
+                setSelection([]);
+                past.current = [];
+                future.current = [];
+              }}
+              className={cn(
+                "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
+                pl.id === planId && "text-accent",
+              )}
+            >
+              {pl.name}
+            </button>
           ))}
-          {project && <button aria-label="Novo plano" onClick={() => {
-            const plan = emptyPlan(project.plans.length); plan.name = planLabel(project.plans.length);
-            const next: Project = { ...project, plans: [...project.plans.map((x) => x.id === planId ? { ...x, entities, groups, dims } : x), plan], lastPlanId: plan.id };
-            saveProject(next); setProject(next); setPlanId(plan.id); setEntities([]); setGroups([]); setDims([]); setSelection([]); toast.success(`${plan.name} criado.`);
-          }} className="shrink-0 rounded-full bg-background/40 px-2 py-0.5 text-muted-foreground hover:text-accent">+</button>}
+          {project && (
+            <button
+              aria-label="Novo plano"
+              onClick={() => {
+                const plan = emptyPlan(project.plans.length);
+                plan.name = planLabel(project.plans.length);
+                const next: Project = {
+                  ...project,
+                  plans: [
+                    ...project.plans.map((x) =>
+                      x.id === planId ? { ...x, entities, groups, dims } : x,
+                    ),
+                    plan,
+                  ],
+                  lastPlanId: plan.id,
+                };
+                saveProject(next);
+                setProject(next);
+                setPlanId(plan.id);
+                setEntities([]);
+                setGroups([]);
+                setDims([]);
+                setSelection([]);
+                toast.success(`${plan.name} criado.`);
+              }}
+              className="shrink-0 rounded-full bg-background/40 px-2 py-0.5 text-muted-foreground hover:text-accent"
+            >
+              +
+            </button>
+          )}
           <button
             onClick={() => setShowGrid((s) => !s)}
-            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", showGrid && "text-accent")}
+            className={cn(
+              "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
+              showGrid && "text-accent",
+            )}
           >
             GRID
           </button>
@@ -2276,13 +2477,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             )}
           >
             QUADRO
-          </button>
-          <button
-            onClick={() => setSolidOpen(true)}
-            title={`Abrir o modo 3D em tela inteira — espessura ${thickness} mm`}
-            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", solidOpen && "text-accent")}
-          >
-            VISTA 3D · {thickness}MM
           </button>
 
           <select
@@ -2300,13 +2494,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           <button
             onClick={() => setShowArrows((s) => !s)}
             title="FLUXO CALDRA — direção real de corte"
-            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", showArrows && "text-accent")}
+            className={cn(
+              "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
+              showArrows && "text-accent",
+            )}
           >
             FLUXO
           </button>
           <button
             onClick={() => setShowOrder((s) => !s)}
-            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", showOrder && "text-accent")}
+            className={cn(
+              "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
+              showOrder && "text-accent",
+            )}
           >
             ORDEM
           </button>
@@ -2319,7 +2519,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 return next;
               });
             }}
-            className={cn("shrink-0 rounded-full bg-background/40 px-2 py-0.5", simOn && "text-accent")}
+            className={cn(
+              "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
+              simOn && "text-accent",
+            )}
           >
             PRÉVIA CNC
           </button>
@@ -2353,7 +2556,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 ))}
               </select>
               <span className="shrink-0 rounded-full bg-background/40 px-2 py-0.5 text-accent">
-                {simSample ? `${SIM_LABEL[simSample.kind]} · ${String(simSample.sequence).padStart(2, "0")}` : "—"}
+                {simSample
+                  ? `${SIM_LABEL[simSample.kind]} · ${String(simSample.sequence).padStart(2, "0")}`
+                  : "—"}
               </span>
             </>
           )}
@@ -2418,20 +2623,46 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
-
       <ImportDialog
         open={importOpen}
         layers={layers}
         onClose={() => setImportOpen(false)}
         onConfirm={onImportConfirm}
       />
-      <TextDialog open={textOpen} {...(editingTextId && textSpec ? { initial: textSpec } : {})} onClose={() => { setTextOpen(false); setEditingTextId(null); if (!textSpec) setTool("select"); }} onConfirm={(spec) => {
-        if (editingTextId) {
-          commit((list) => list.map((entity) => entity.id === editingTextId && entity.type === "text" ? { ...entity, text: spec.text, size: spec.height, width: spec.width, bold: spec.bold, italic: spec.italic } : entity));
-          setEditingTextId(null); setTextSpec(null); setTextOpen(false); return;
-        }
-        setTextSpec(spec); setTextOpen(false); toast.info("Toque no desenho para posicionar o texto.");
-      }} />
+      <TextDialog
+        open={textOpen}
+        {...(editingTextId && textSpec ? { initial: textSpec } : {})}
+        onClose={() => {
+          setTextOpen(false);
+          setEditingTextId(null);
+          if (!textSpec) setTool("select");
+        }}
+        onConfirm={(spec) => {
+          if (editingTextId) {
+            commit((list) =>
+              list.map((entity) =>
+                entity.id === editingTextId && entity.type === "text"
+                  ? {
+                      ...entity,
+                      text: spec.text,
+                      size: spec.height,
+                      width: spec.width,
+                      bold: spec.bold,
+                      italic: spec.italic,
+                    }
+                  : entity,
+              ),
+            );
+            setEditingTextId(null);
+            setTextSpec(null);
+            setTextOpen(false);
+            return;
+          }
+          setTextSpec(spec);
+          setTextOpen(false);
+          toast.info("Toque no desenho para posicionar o texto.");
+        }}
+      />
       <VisionDialog
         open={visionOpen}
         onOpenChange={setVisionOpen}
@@ -2443,7 +2674,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     </div>
   );
 }
-
 
 /* ------------------------------------------------------------ auxiliares */
 
@@ -2511,7 +2741,10 @@ function DimensionsPanel({
                 selected === d.id ? "bg-foreground/10" : "hover:bg-foreground/5",
               )}
             >
-              <span className="size-2 shrink-0 rounded-full" style={{ background: DIMENSION_COLOR }} />
+              <span
+                className="size-2 shrink-0 rounded-full"
+                style={{ background: DIMENSION_COLOR }}
+              />
               <span className="min-w-0 flex-1 truncate">{DIM_LABEL[d.kind]}</span>
               <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
                 {formatDimension(d, entities) ?? "—"}
@@ -2742,7 +2975,6 @@ function MenuItem({
   );
 }
 
-
 function buildDraft(tool: Tool, a: Vec2, b: Vec2, layer: string, radius: number): Entity | null {
   switch (tool) {
     case "line":
@@ -2828,7 +3060,11 @@ export function EntityShape({
     if (e.type === "circle") return <circle key={key} cx={e.cx} cy={e.cy} r={e.r} {...p} />;
     if (e.type === "polyline") {
       const d = e.pts.map((q) => `${q.x},${q.y}`).join(" ");
-      return e.closed ? <polygon key={key} points={d} {...p} /> : <polyline key={key} points={d} {...p} />;
+      return e.closed ? (
+        <polygon key={key} points={d} {...p} />
+      ) : (
+        <polyline key={key} points={d} {...p} />
+      );
     }
     if (e.type === "arc") {
       const p0 = { x: e.cx + e.r * Math.cos(e.a0), y: e.cy + e.r * Math.sin(e.a0) };
@@ -3049,9 +3285,20 @@ function DimensionEditor({
       field("X", e.x, (n) => onChange({ ...e, x: n }), "mm"),
       field("Y", e.y, (n) => onChange({ ...e, y: n }), "mm"),
       field("Altura", e.size, (n) => onChange({ ...e, size: Math.max(n, 0.5) }), "mm"),
-      field("Largura", e.width ?? Math.max(e.size, e.text.length * e.size * .6), (n) => onChange({ ...e, width: Math.max(n, .5) }), "mm"),
+      field(
+        "Largura",
+        e.width ?? Math.max(e.size, e.text.length * e.size * 0.6),
+        (n) => onChange({ ...e, width: Math.max(n, 0.5) }),
+        "mm",
+      ),
       field("Rotação", e.rotation ?? 0, (n) => onChange({ ...e, rotation: n }), "°"),
-      <button key="editar-texto" onClick={onEditText} className="w-full rounded-lg border border-line px-2 py-1.5 text-[10px] text-foreground hover:border-accent">Editar texto e estilo</button>,
+      <button
+        key="editar-texto"
+        onClick={onEditText}
+        className="w-full rounded-lg border border-line px-2 py-1.5 text-[10px] text-foreground hover:border-accent"
+      >
+        Editar texto e estilo
+      </button>,
     );
   }
 
@@ -3077,13 +3324,12 @@ function DimensionEditor({
         {layers
           .filter((l) => isUserLayer(l.id) || l.id === e.layer)
           .map((l) => (
-          <option key={l.id} value={l.id}>
-            {l.name}
-          </option>
-        ))}
+            <option key={l.id} value={l.id}>
+              {l.name}
+            </option>
+          ))}
       </select>
       {actions && <div className="flex flex-wrap gap-0.5 pt-1">{actions}</div>}
     </div>
   );
 }
-

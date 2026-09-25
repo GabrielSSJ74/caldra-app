@@ -47,7 +47,7 @@ export async function syncProjects(): Promise<SyncSummary | null> {
 
   for (const p of local) {
     const r = remote.get(p.id);
-    const remoteUpdated = r ? asProject(r).updatedAt ?? 0 : -1;
+    const remoteUpdated = r ? (asProject(r).updatedAt ?? 0) : -1;
     if (!r || p.updatedAt > remoteUpdated) {
       await pushProject(p, userId);
       summary.uploaded++;

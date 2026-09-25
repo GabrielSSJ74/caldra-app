@@ -21,16 +21,17 @@ precision highp float;
 uniform vec2  u_res;
 uniform float u_time;
 uniform float u_amp;      // amplitude global (Modo Oficina reduz)
+uniform float u_isDark;   // 1.0 = dark/amoled, 0.0 = light
 
-uniform vec3 u_baseA;     // #18181b
-uniform vec3 u_baseB;     // #111114
-uniform vec3 u_warm;      // #F59E0B
-uniform vec3 u_warmDeep;  // #B45309
-uniform vec3 u_magenta;   // #A01550
-uniform vec3 u_wine;      // #7A103C
-uniform vec3 u_fuchsia;   // #86198F
-uniform vec3 u_indigo;    // #312E81
-uniform vec3 u_violet;    // #4C1D95
+uniform vec3 u_baseA;     // base gradiente topo
+uniform vec3 u_baseB;     // base gradiente fundo
+uniform vec3 u_warm;      // massa quente topo
+uniform vec3 u_warmDeep;  // massa quente profunda
+uniform vec3 u_magenta;   // núcleo magenta
+uniform vec3 u_wine;      // núcleo vinho
+uniform vec3 u_fuchsia;   // núcleo fúcsia
+uniform vec3 u_indigo;    // massa fria cantos
+uniform vec3 u_violet;    // massa fria violeta
 
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -83,7 +84,7 @@ void main() {
 
   float f = fbm(pw + 4.0 * r);
 
-  // base radial escura
+  // base radial adaptada ao tema
   float rad = length(vec2((uv.x - 0.5) * 1.2, uv.y - 0.0));
   vec3 col = mix(u_baseA, u_baseB, smoothstep(0.0, 1.1, rad));
 
@@ -105,23 +106,36 @@ void main() {
   vec3 coldCol = mix(u_indigo, u_violet, clamp(q.x + 0.4, 0.0, 1.0));
 
   float a = u_amp;
-  // névoa: opacidade efetiva baixa — nunca blocos de cor saturada
-  col = mix(col, coldCol, cold * 0.17 * a);
-  col = mix(col, warmCol, warm * 0.15 * a);
-  col = mix(col, coreCol, core * 0.16 * a);
+  // névoa: peso das cores adaptado (suave no claro, brilhante no escuro)
+  float coldWeight = mix(0.34, 0.17, u_isDark);
+  float warmWeight = mix(0.32, 0.15, u_isDark);
+  float coreWeight = mix(0.30, 0.16, u_isDark);
 
-  // vinheta suave, mantém legibilidade das bordas
-  col *= 1.0 - 0.25 * smoothstep(0.55, 1.25, rad);
+  col = mix(col, coldCol, cold * coldWeight * a);
+  col = mix(col, warmCol, warm * warmWeight * a);
+  col = mix(col, coreCol, core * coreWeight * a);
+
+  // vinheta suave adaptada (escurece no dark; atenua suavemente no light)
+  float vigDark = 1.0 - 0.25 * smoothstep(0.55, 1.25, rad);
+  vec3 darkResult = col * vigDark;
+  vec3 lightResult = mix(col, u_baseB, 0.35 * smoothstep(0.55, 1.25, rad));
+  col = mix(lightResult, darkResult, u_isDark);
 
   // granulação de filme (elimina banding)
   float grain = hash(gl_FragCoord.xy + fract(t) * 137.0) - 0.5;
-  col += grain * 0.03;
+  col += grain * mix(0.012, 0.03, u_isDark);
 
   gl_FragColor = vec4(col, 1.0);
 }
 `;
 
-type Mount = { el: HTMLElement; animated: boolean; amp: number };
+type Mount = {
+  el: HTMLElement;
+  animated: boolean;
+  amp: number;
+  dark: boolean;
+  amoled: boolean;
+};
 
 const HEX = (h: string): [number, number, number] => [
   parseInt(h.slice(1, 3), 16) / 255,
@@ -129,7 +143,7 @@ const HEX = (h: string): [number, number, number] => [
   parseInt(h.slice(5, 7), 16) / 255,
 ];
 
-const PALETTE: Record<string, [number, number, number]> = {
+const PALETTE_DARK: Record<string, [number, number, number]> = {
   u_baseA: HEX("#18181b"),
   u_baseB: HEX("#111114"),
   u_warm: HEX("#f59e0b"),
@@ -141,12 +155,38 @@ const PALETTE: Record<string, [number, number, number]> = {
   u_violet: HEX("#4c1d95"),
 };
 
+const PALETTE_LIGHT: Record<string, [number, number, number]> = {
+  u_baseA: HEX("#ffffff"),
+  u_baseB: HEX("#f3f5f8"),
+  u_warm: HEX("#fcd9a0"),
+  u_warmDeep: HEX("#f6c67a"),
+  u_magenta: HEX("#f2dbe6"),
+  u_wine: HEX("#ebd0de"),
+  u_fuchsia: HEX("#e5d4ed"),
+  u_indigo: HEX("#d4e2f4"),
+  u_violet: HEX("#dde4ee"),
+};
+
+const PALETTE_AMOLED: Record<string, [number, number, number]> = {
+  u_baseA: HEX("#000000"),
+  u_baseB: HEX("#000000"),
+  u_warm: HEX("#925405"),
+  u_warmDeep: HEX("#662b03"),
+  u_magenta: HEX("#6b0e36"),
+  u_wine: HEX("#4f0a26"),
+  u_fuchsia: HEX("#531059"),
+  u_indigo: HEX("#1e1c50"),
+  u_violet: HEX("#2e125b"),
+};
+
 class AuroraEngine {
   private canvas: HTMLCanvasElement | null = null;
   private gl: WebGLRenderingContext | null = null;
   private program: WebGLProgram | null = null;
   private uniforms: Record<string, WebGLUniformLocation | null> = {};
   private stack: Mount[] = [];
+  private currentDark: boolean | null = null;
+  private currentAmoled: boolean | null = null;
   private raf = 0;
   private start = 0;
   private last = 0;
@@ -174,14 +214,27 @@ class AuroraEngine {
     this.listeners.forEach((l) => l(false));
   }
 
+  private applyPalette(dark: boolean, amoled: boolean) {
+    const gl = this.gl;
+    if (!gl) return;
+    const palette = !dark ? PALETTE_LIGHT : amoled ? PALETTE_AMOLED : PALETTE_DARK;
+    for (const [name, rgb] of Object.entries(palette)) {
+      const loc = this.uniforms[name];
+      if (loc) gl.uniform3f(loc, rgb[0], rgb[1], rgb[2]);
+    }
+    const darkLoc = this.uniforms["u_isDark"];
+    if (darkLoc) gl.uniform1f(darkLoc, dark ? 1.0 : 0.0);
+    this.currentDark = dark;
+    this.currentAmoled = amoled;
+  }
+
   private init(): boolean {
     if (this.failed) return false;
     if (this.gl) return true;
     try {
       const canvas = document.createElement("canvas");
       canvas.setAttribute("aria-hidden", "true");
-      canvas.style.cssText =
-        "position:absolute;inset:0;width:100%;height:100%;display:block;";
+      canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;";
       const opts: WebGLContextAttributes = {
         alpha: false,
         antialias: false,
@@ -210,21 +263,15 @@ class AuroraEngine {
 
       const buf = gl.createBuffer();
       gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-      gl.bufferData(
-        gl.ARRAY_BUFFER,
-        new Float32Array([-1, -1, 3, -1, -1, 3]),
-        gl.STATIC_DRAW,
-      );
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
       const loc = gl.getAttribLocation(prog, "a_pos");
       gl.enableVertexAttribArray(loc);
       gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
-      for (const name of ["u_res", "u_time", "u_amp", ...Object.keys(PALETTE)]) {
+      for (const name of ["u_res", "u_time", "u_amp", "u_isDark", ...Object.keys(PALETTE_DARK)]) {
         this.uniforms[name] = gl.getUniformLocation(prog, name);
       }
-      for (const [name, rgb] of Object.entries(PALETTE)) {
-        gl.uniform3f(this.uniforms[name]!, rgb[0], rgb[1], rgb[2]);
-      }
+      this.applyPalette(true, false);
 
       canvas.addEventListener("webglcontextlost", (e) => {
         // preventDefault permite a restauração; até lá, degrada para o CSS.
@@ -256,9 +303,15 @@ class AuroraEngine {
     return this.stack.length ? this.stack[this.stack.length - 1]! : null;
   }
 
-  acquire(el: HTMLElement, animated: boolean, amp: number): () => void {
+  acquire(
+    el: HTMLElement,
+    animated: boolean,
+    amp: number,
+    dark = true,
+    amoled = false,
+  ): () => void {
     if (!this.init() || !this.canvas) return () => {};
-    const mount: Mount = { el, animated, amp };
+    const mount: Mount = { el, animated, amp, dark, amoled };
     this.stack.push(mount);
     this.attach();
     return () => {
@@ -267,11 +320,13 @@ class AuroraEngine {
     };
   }
 
-  update(el: HTMLElement, animated: boolean, amp: number) {
+  update(el: HTMLElement, animated: boolean, amp: number, dark = true, amoled = false) {
     const m = this.stack.find((x) => x.el === el);
     if (!m) return;
     m.animated = animated;
     m.amp = amp;
+    m.dark = dark;
+    m.amoled = amoled;
     if (this.top() === m) this.attach();
   }
 
@@ -290,8 +345,7 @@ class AuroraEngine {
       this.ro?.observe(top.el);
     }
     this.resize();
-    const reduced =
-      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     if (top.animated && !reduced && document.visibilityState === "visible") this.play();
     else {
       this.stop();
@@ -324,6 +378,9 @@ class AuroraEngine {
     const gl = this.gl;
     const top = this.top();
     if (!gl || !top || !this.canvas) return;
+    if (top.dark !== this.currentDark || top.amoled !== this.currentAmoled) {
+      this.applyPalette(top.dark, top.amoled);
+    }
     gl.uniform2f(this.uniforms["u_res"]!, this.canvas.width, this.canvas.height);
     gl.uniform1f(this.uniforms["u_time"]!, (now - this.start) / 1000);
     gl.uniform1f(this.uniforms["u_amp"]!, top.amp);

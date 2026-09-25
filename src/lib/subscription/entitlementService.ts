@@ -56,7 +56,9 @@ export async function fetchRemotePlan(): Promise<{ plan: Plan; source: PlanSourc
 
   if (error || !data) return null;
 
-  const expired = data.plan_expires_at ? new Date(data.plan_expires_at).getTime() < Date.now() : false;
+  const expired = data.plan_expires_at
+    ? new Date(data.plan_expires_at).getTime() < Date.now()
+    : false;
   const plan = expired ? "free" : fromRemote(data.plan);
   return { plan, source: (data.plan_source as PlanSource) ?? "none" };
 }
@@ -79,7 +81,8 @@ export async function redeemActivationCode(code: string): Promise<RedeemResult> 
   const res = data as { ok: boolean; reason?: string };
   if (res.ok) return { ok: true, message: "Código aceito. CALDRA PRO liberado." };
   if (res.reason === "ja_usado") return { ok: false, message: "Este código já foi utilizado." };
-  if (res.reason === "sem_sessao") return { ok: false, message: "Entre na sua conta para ativar o código." };
+  if (res.reason === "sem_sessao")
+    return { ok: false, message: "Entre na sua conta para ativar o código." };
   return { ok: false, message: "Código inválido. Confira os caracteres." };
 }
 
@@ -92,17 +95,25 @@ export async function registerPurchase(
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return { ok: false, message: "Entre na sua conta para vincular a compra." };
 
-  await supabase
-    .from("purchases")
-    .upsert(
-      { user_id: auth.user.id, store, product_id: productId, purchase_token: token, status: "ativa" },
-      { onConflict: "purchase_token", ignoreDuplicates: false },
-    );
+  await supabase.from("purchases").upsert(
+    {
+      user_id: auth.user.id,
+      store,
+      product_id: productId,
+      purchase_token: token,
+      status: "ativa",
+    },
+    { onConflict: "purchase_token", ignoreDuplicates: false },
+  );
 
   const { error } = await supabase
     .from("profiles")
     .upsert({ id: auth.user.id, plan: "pro", plan_source: store === "play" ? "play" : "manual" });
 
-  if (error) return { ok: false, message: "Compra registrada, mas o plano não sincronizou. Toque em restaurar." };
+  if (error)
+    return {
+      ok: false,
+      message: "Compra registrada, mas o plano não sincronizou. Toque em restaurar.",
+    };
   return { ok: true, message: "CALDRA PRO ativo." };
 }

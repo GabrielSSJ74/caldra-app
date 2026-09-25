@@ -84,8 +84,7 @@ export function LearnDialog({
                   <p className="flex items-center justify-between text-[12px] font-medium">
                     <span>{f.label}</span>
                     <span className="font-mono text-accent">
-                      {formatNumber(values[f.key] ?? 0, f.integer ? 0 : precision)}{" "}
-                      {f.unit ?? "mm"}
+                      {formatNumber(values[f.key] ?? 0, f.integer ? 0 : precision)} {f.unit ?? "mm"}
                     </span>
                   </p>
                   <p className="mt-1 text-[11px] text-muted-foreground">
@@ -142,7 +141,8 @@ export function LearnDialog({
                       <div key={r.label} className="flex justify-between gap-2">
                         <span className="truncate text-muted-foreground">{r.label}</span>
                         <span>
-                          {formatNumber(r.value, r.suffix === "°" ? 2 : precision)} {r.suffix ?? "mm"}
+                          {formatNumber(r.value, r.suffix === "°" ? 2 : precision)}{" "}
+                          {r.suffix ?? "mm"}
                         </span>
                       </div>
                     ))}
@@ -199,7 +199,17 @@ export function LearnDialog({
   );
 }
 
-function Line({ k, v, muted, accent }: { k: string; v: string; muted?: boolean; accent?: boolean }) {
+function Line({
+  k,
+  v,
+  muted,
+  accent,
+}: {
+  k: string;
+  v: string;
+  muted?: boolean;
+  accent?: boolean;
+}) {
   return (
     <div className="flex gap-2">
       <span className="w-16 shrink-0 text-muted-foreground">{k}</span>

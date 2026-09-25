@@ -50,9 +50,7 @@ export function MasterModeDialog({
           <DialogHeader className="relative space-y-3">
             <ChameleonMark className="size-11" />
             <DialogTitle className="font-display text-xl">MODO MESTRE</DialogTitle>
-            <p className="text-sm text-muted-foreground">
-              Desbloqueie o laboratório completo.
-            </p>
+            <p className="text-sm text-muted-foreground">Desbloqueie o laboratório completo.</p>
           </DialogHeader>
 
           {isMestre ? (

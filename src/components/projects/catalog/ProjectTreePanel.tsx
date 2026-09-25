@@ -20,7 +20,14 @@ type Props = {
   onToggleHidden: (partKey: string) => void;
 };
 
-export function ProjectTreePanel({ result, instances, selectedId, onSelect, hidden, onToggleHidden }: Props) {
+export function ProjectTreePanel({
+  result,
+  instances,
+  selectedId,
+  onSelect,
+  hidden,
+  onToggleHidden,
+}: Props) {
   const [open, setOpen] = useState<Record<string, boolean>>({ estrutura: true, degraus: true });
   const groups = result.assemblies.map((asm) => ({
     asm,
@@ -36,7 +43,12 @@ export function ProjectTreePanel({ result, instances, selectedId, onSelect, hidd
     const active = selInst?.partKey === partKey;
     return (
       <li>
-        <div className={cn("flex items-center gap-1 rounded px-1 py-1 text-xs", active && "bg-accent/10")}>
+        <div
+          className={cn(
+            "flex items-center gap-1 rounded px-1 py-1 text-xs",
+            active && "bg-accent/10",
+          )}
+        >
           <button
             type="button"
             aria-label={isOpen ? "Recolher ocorrências" : "Expandir ocorrências"}
@@ -45,7 +57,11 @@ export function ProjectTreePanel({ result, instances, selectedId, onSelect, hidd
           >
             <ChevronRight className={cn("size-3.5 transition-transform", isOpen && "rotate-90")} />
           </button>
-          <button type="button" onClick={() => onSelect(items[0]?.id ?? null)} className="flex-1 text-left">
+          <button
+            type="button"
+            onClick={() => onSelect(items[0]?.id ?? null)}
+            className="flex-1 text-left"
+          >
             <span className="font-mono text-accent">{part.codeSuffix}</span> {part.name}
             <span className="ml-1 text-muted-foreground">×{part.quantity}</span>
           </button>
@@ -92,7 +108,9 @@ export function ProjectTreePanel({ result, instances, selectedId, onSelect, hidd
                 onClick={() => setOpen((o) => ({ ...o, [asm.key]: !o[asm.key] }))}
                 className="flex w-full items-center gap-1 rounded px-1 py-1 text-left text-xs font-medium"
               >
-                <ChevronRight className={cn("size-3.5 transition-transform", open[asm.key] && "rotate-90")} />
+                <ChevronRight
+                  className={cn("size-3.5 transition-transform", open[asm.key] && "rotate-90")}
+                />
                 {asm.name}
               </button>
               {open[asm.key] && (
@@ -135,7 +153,10 @@ export function ProjectTreePanel({ result, instances, selectedId, onSelect, hidd
               ["Quantidade", `${part.quantity} un`],
               ["Material", part.material],
               ["Espessura/perfil", `${part.thickness} mm`],
-              ["Dimensões", `${part.dimensions.length.toFixed(0)} × ${part.dimensions.width.toFixed(0)} × ${part.thickness} mm`],
+              [
+                "Dimensões",
+                `${part.dimensions.length.toFixed(0)} × ${part.dimensions.width.toFixed(0)} × ${part.thickness} mm`,
+              ],
               ["Conjunto", asm?.name ?? "—"],
               ["Subconjunto", sub?.name ?? "—"],
               ["Etapa de fabricação", `${part.stage} · ${part.process}`],

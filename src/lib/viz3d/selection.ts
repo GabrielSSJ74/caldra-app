@@ -22,7 +22,8 @@ import type { ProjectedLine, ProjectedTriangle } from "./visibility";
  */
 export function refFromTag(tag: GeratrizTag | undefined, foldCount: number): GeometryRef | null {
   if (!tag || tag.n <= 0 || foldCount <= 0) return null;
-  const divs = foldCount % tag.n === 0 ? foldCount : (foldCount - 1) % tag.n === 0 ? foldCount - 1 : 0;
+  const divs =
+    foldCount % tag.n === 0 ? foldCount : (foldCount - 1) % tag.n === 0 ? foldCount - 1 : 0;
   if (!divs) return null;
   const step = divs / tag.n;
   const k = ((tag.k % tag.n) + tag.n) % tag.n;
@@ -108,7 +109,11 @@ export function pickEdgeIndex(
  * Face mais à frente sob o ponto (x, y): percorre os triângulos na ordem de
  * desenho e devolve a prioridade (índice da face) do último que o contém.
  */
-export function pickFaceIndex(tris: readonly ProjectedTriangle[], x: number, y: number): number | null {
+export function pickFaceIndex(
+  tris: readonly ProjectedTriangle[],
+  x: number,
+  y: number,
+): number | null {
   for (let i = tris.length - 1; i >= 0; i--) {
     const [a, b, c] = tris[i]!.pts;
     if (pointInTriangle(x, y, a.x, a.y, b.x, b.y, c.x, c.y)) return tris[i]!.priority;

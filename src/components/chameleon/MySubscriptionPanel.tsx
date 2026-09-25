@@ -43,12 +43,18 @@ export function MySubscriptionPanel() {
     setBusy("restore");
     const res = await restore();
     setBusy(null);
-    res.ok ? toast.success(res.message) : toast.message(res.message);
+    if (res.ok) {
+      toast.success(res.message);
+    } else {
+      toast.message(res.message);
+    }
   };
 
   return (
     <Panel className="space-y-3 p-4">
-      <SectionLabel action={<ShieldCheck className="size-4 text-pro" />}>Minha assinatura</SectionLabel>
+      <SectionLabel action={<ShieldCheck className="size-4 text-pro" />}>
+        Minha assinatura
+      </SectionLabel>
 
       <dl className="grid gap-1.5 text-[13px] sm:grid-cols-2">
         <Row label="Acesso" value={isPro ? "CALDRA PRO" : "CALDRA FREE"} />
@@ -90,7 +96,9 @@ export function MySubscriptionPanel() {
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 rounded-lg border border-line bg-background/40 px-2.5 py-1.5">
-      <dt className="font-mono text-[10px] tracking-wider text-muted-foreground uppercase">{label}</dt>
+      <dt className="font-mono text-[10px] tracking-wider text-muted-foreground uppercase">
+        {label}
+      </dt>
       <dd className="truncate text-right text-[12px]">{value}</dd>
     </div>
   );

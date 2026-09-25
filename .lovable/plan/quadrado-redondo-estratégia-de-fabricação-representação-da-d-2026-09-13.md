@@ -25,13 +25,13 @@ A união por solda aparece na decomposição, na lista de peças e na sequência
 
 ## 2. Onde a escolha aparece
 
-| Área | Peça única | 2 partes + solda |
-| --- | --- | --- |
-| Vista 2D | uma peça | duas metades com a emenda indicada |
-| Vista 3D | corpo único | metades A e B, montadas ou separadas na explodida |
-| Planificação | um desenvolvimento | dois desenvolvimentos lado a lado |
-| Árvore / lista de peças / corte | 1 item | 2 itens + união soldada |
-| Envio ao CHAMFER | uma peça | as duas metades, geometria vetorial real |
+| Área                            | Peça única         | 2 partes + solda                                  |
+| ------------------------------- | ------------------ | ------------------------------------------------- |
+| Vista 2D                        | uma peça           | duas metades com a emenda indicada                |
+| Vista 3D                        | corpo único        | metades A e B, montadas ou separadas na explodida |
+| Planificação                    | um desenvolvimento | dois desenvolvimentos lado a lado                 |
+| Árvore / lista de peças / corte | 1 item             | 2 itens + união soldada                           |
+| Envio ao CHAMFER                | uma peça           | as duas metades, geometria vetorial real          |
 
 ## 3. Linha de dobra: geometria ≠ representação
 

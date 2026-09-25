@@ -69,7 +69,9 @@ export function MultiSelectPanel({
   }, [selected]);
 
   const visibleValue = useMemo(() => {
-    const set = new Set(selected.map((e) => layers.find((l) => l.id === e.layer)?.visible !== false));
+    const set = new Set(
+      selected.map((e) => layers.find((l) => l.id === e.layer)?.visible !== false),
+    );
     return set.size === 1 ? ([...set][0] ? "Visível" : "Oculto") : MIXED;
   }, [selected, layers]);
 
@@ -126,10 +128,10 @@ export function MultiSelectPanel({
           {layers
             .filter((l) => isUserLayer(l.id))
             .map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
-          ))}
+              <option key={l.id} value={l.id}>
+                {l.name}
+              </option>
+            ))}
         </select>
       </Row>
 
@@ -220,11 +222,7 @@ export function MultiSelectPanel({
       <div className="flex items-center gap-1">
         <NumIn label="ΔX" value={dx} set={setDx} />
         <NumIn label="ΔY" value={dy} set={setDy} />
-        <Act
-          label="Mover"
-          icon={Move}
-          onClick={() => patch((e) => translate(e, dx, dy))}
-        />
+        <Act label="Mover" icon={Move} onClick={() => patch((e) => translate(e, dx, dy))} />
       </div>
 
       {/* --------------------------------------------- selecionar contorno */}
@@ -236,7 +234,11 @@ export function MultiSelectPanel({
           <p className="font-mono text-[10px] text-muted-foreground">
             {contour.ids.length} entidades · {contour.closed ? "FECHADO" : "ABERTO"} ·{" "}
             {ORIENTATION_LABEL[contour.orientation]} ·{" "}
-            {contour.length.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} mm
+            {contour.length.toLocaleString("pt-BR", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}{" "}
+            mm
           </p>
           <Act
             label="Selecionar contorno"

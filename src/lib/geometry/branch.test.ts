@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { branchAxisLength, branchDevelopments, branchIntersection, validateBranch, type BranchInput } from "./branch";
+import {
+  branchAxisLength,
+  branchDevelopments,
+  branchIntersection,
+  validateBranch,
+  type BranchInput,
+} from "./branch";
 
 const base: BranchInput = {
   mainDiameter: 500,

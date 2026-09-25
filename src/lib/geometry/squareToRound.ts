@@ -76,8 +76,7 @@ export function validateSquareToRound(i: SquareToRoundInput): ValidationIssue[] 
   if (!(i.baseB > 0)) issues.push({ field: "baseB", message: "Lado B deve ser maior que zero." });
   if (!(i.topDiameter > 0))
     issues.push({ field: "topDiameter", message: "Diâmetro deve ser maior que zero." });
-  if (!(i.height > 0))
-    issues.push({ field: "height", message: "Altura deve ser maior que zero." });
+  if (!(i.height > 0)) issues.push({ field: "height", message: "Altura deve ser maior que zero." });
   if (!(i.divisions >= 3 && i.divisions <= 24))
     issues.push({ field: "divisions", message: "Use entre 3 e 24 divisões por quadrante." });
   if (!(i.thickness > 0))
@@ -90,8 +89,7 @@ export function validateSquareToRound(i: SquareToRoundInput): ValidationIssue[] 
   return issues;
 }
 
-const dist3 = (a: Vec3, b: Vec3) =>
-  Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+const dist3 = (a: Vec3, b: Vec3) => Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
 const dist2 = (a: Vec2, b: Vec2) => Math.hypot(a.x - b.x, a.y - b.y);
 
 /**
@@ -125,10 +123,9 @@ export type SquareToRoundModel = {
 /** Metades separadas pelo plano que cruza os centros das faces 0 e 2. */
 const pieceOf = (quadrant: number): "A" | "B" => (quadrant === 1 || quadrant === 2 ? "A" : "B");
 
-export function squareToRoundSeams(model: Pick<SquareToRoundModel, "corners" | "arcPoints">): [
-  { a: Vec3; b: Vec3 },
-  { a: Vec3; b: Vec3 },
-] {
+export function squareToRoundSeams(
+  model: Pick<SquareToRoundModel, "corners" | "arcPoints">,
+): [{ a: Vec3; b: Vec3 }, { a: Vec3; b: Vec3 }] {
   const midpoint = (a: Vec3, b: Vec3): Vec3 => ({
     x: (a.x + b.x) / 2,
     y: (a.y + b.y) / 2,
@@ -199,7 +196,11 @@ export function buildModel(i: SquareToRoundInput): SquareToRoundModel {
       const firstPiece: "A" | "B" = k === 0 ? "B" : "A";
       const secondPiece: "A" | "B" = k === 0 ? "A" : "B";
       faces.push({ id: `Q${k}-BASE-1`, piece: firstPiece, points: [corner, middle, endPoint] });
-      faces.push({ id: `Q${k}-BASE-2`, piece: secondPiece, points: [middle, nextCorner, endPoint] });
+      faces.push({
+        id: `Q${k}-BASE-2`,
+        piece: secondPiece,
+        points: [middle, nextCorner, endPoint],
+      });
     } else {
       faces.push({ id: `Q${k}-BASE`, piece: pieceOf(k), points: [corner, nextCorner, endPoint] });
     }
@@ -317,7 +318,13 @@ function developHalf(model: SquareToRoundModel, n: number, seamFace: 0 | 2): Dev
     }
     if (step === 0) {
       const nextCorner3 = corners[(k + 1) % 4]!;
-      const nextBottom = triangulatePoint(bottomPos, topPos, dist3(corner3, nextCorner3), dist3(nextCorner3, quad[n]!), -1);
+      const nextBottom = triangulatePoint(
+        bottomPos,
+        topPos,
+        dist3(corner3, nextCorner3),
+        dist3(nextCorner3, quad[n]!),
+        -1,
+      );
       outlineBottom.push(nextBottom);
       foldLines.push({ a: nextBottom, b: topPos });
       bottomPos = nextBottom;
@@ -382,11 +389,27 @@ export function calculateSquareToRound(input: SquareToRoundInput): GeometryResul
     { label: "Perímetro da base", value: basePerimeter, unitMm: true },
     { label: "Perímetro do topo", value: topPerimeter, unitMm: true },
     { label: "Altura vertical", value: input.height, unitMm: true },
-    { label: "Geratriz mínima", value: Math.min(...trueLengths.map((t) => t.length)), unitMm: true },
-    { label: "Geratriz máxima", value: Math.max(...trueLengths.map((t) => t.length)), unitMm: true },
+    {
+      label: "Geratriz mínima",
+      value: Math.min(...trueLengths.map((t) => t.length)),
+      unitMm: true,
+    },
+    {
+      label: "Geratriz máxima",
+      value: Math.max(...trueLengths.map((t) => t.length)),
+      unitMm: true,
+    },
     { label: "Contorno do desenvolvimento", value: developedPerimeter, unitMm: true },
-    { label: "Largura da planificação", value: development.bounds.maxX - development.bounds.minX, unitMm: true },
-    { label: "Altura da planificação", value: development.bounds.maxY - development.bounds.minY, unitMm: true },
+    {
+      label: "Largura da planificação",
+      value: development.bounds.maxX - development.bounds.minX,
+      unitMm: true,
+    },
+    {
+      label: "Altura da planificação",
+      value: development.bounds.maxY - development.bounds.minY,
+      unitMm: true,
+    },
     { label: "Área desenvolvida", value: areaMm2 / 1_000_000, suffix: "m²" },
     { label: "Massa estimada", value: massKg, suffix: "kg" },
     { label: "Triângulos gerados", value: 4 * (input.divisions + 1), suffix: "un" },

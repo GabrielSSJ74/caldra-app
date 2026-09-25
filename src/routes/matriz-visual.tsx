@@ -18,10 +18,7 @@ import {
 
 export const Route = createFileRoute("/matriz-visual")({
   head: () => ({
-    meta: [
-      { title: "Matriz visual — CALDRA" },
-      { name: "robots", content: "noindex" },
-    ],
+    meta: [{ title: "Matriz visual — CALDRA" }, { name: "robots", content: "noindex" }],
   }),
   component: MatrizVisual,
 });
@@ -29,7 +26,9 @@ export const Route = createFileRoute("/matriz-visual")({
 /** Amostra renderizada dentro de um contexto de tema forçado. */
 function Cell({ theme, label }: { theme: string; label: string }) {
   return (
-    <div className={`${theme} rounded-2xl border border-border/40 bg-background p-4 text-foreground`}>
+    <div
+      className={`${theme} rounded-2xl border border-border/40 bg-background p-4 text-foreground`}
+    >
       <p className="mb-3 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase">
         {label}
       </p>
@@ -41,15 +40,29 @@ function Cell({ theme, label }: { theme: string; label: string }) {
         <Caption>Legenda auxiliar · 12px</Caption>
         <Eyebrow className="block">Rótulo técnico</Eyebrow>
         <div className="flex flex-wrap gap-2">
-          <Button variant="primary" size="sm">Primário</Button>
-          <Button variant="secondary" size="sm">Secundário</Button>
-          <Button variant="ghost" size="sm">Fantasma</Button>
-          <Button variant="danger" size="sm" icon={Trash2}>Perigo</Button>
+          <Button variant="primary" size="sm">
+            Primário
+          </Button>
+          <Button variant="secondary" size="sm">
+            Secundário
+          </Button>
+          <Button variant="ghost" size="sm">
+            Fantasma
+          </Button>
+          <Button variant="danger" size="sm" icon={Trash2}>
+            Perigo
+          </Button>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button size="sm" icon={Plus}>Com ícone</Button>
-          <Button size="sm" loading>Carregando</Button>
-          <Button size="sm" disabled>Desativado</Button>
+          <Button size="sm" icon={Plus}>
+            Com ícone
+          </Button>
+          <Button size="sm" loading>
+            Carregando
+          </Button>
+          <Button size="sm" disabled>
+            Desativado
+          </Button>
         </div>
         <InlineError>Mensagem de erro inline.</InlineError>
       </div>

@@ -44,7 +44,6 @@ export function measureFirstInteraction(): () => void {
 /** Rotas de navegação essencial pré-carregadas com o navegador ocioso. */
 export const CORE_ROUTES = ["/tracagem", "/escola", "/projetos"] as const;
 
-
 type IdleWindow = Window & {
   requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
   cancelIdleCallback?: (id: number) => void;
@@ -65,9 +64,11 @@ export function onIdle(task: () => void, timeout = 2000): () => void {
 /** Conexão econômica/lenta: não gastamos dados do usuário com prefetch. */
 export function prefetchAllowed(): boolean {
   if (typeof navigator === "undefined") return false;
-  const conn = (navigator as Navigator & {
-    connection?: { saveData?: boolean; effectiveType?: string };
-  }).connection;
+  const conn = (
+    navigator as Navigator & {
+      connection?: { saveData?: boolean; effectiveType?: string };
+    }
+  ).connection;
   if (!conn) return true;
   if (conn.saveData) return false;
   return conn.effectiveType !== "slow-2g" && conn.effectiveType !== "2g";

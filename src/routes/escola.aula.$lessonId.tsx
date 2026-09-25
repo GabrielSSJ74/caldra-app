@@ -26,7 +26,9 @@ export const Route = createFileRoute("/escola/aula/$lessonId")({
   },
   head: ({ loaderData }) => {
     if (!loaderData) {
-      return { meta: [{ title: "Aula indisponível — CALDRA" }, { name: "robots", content: "noindex" }] };
+      return {
+        meta: [{ title: "Aula indisponível — CALDRA" }, { name: "robots", content: "noindex" }],
+      };
     }
     const first = knowledgeById(loaderData.lesson.knowledge[0] ?? "");
     const desc = first?.concept ?? "Aula da escola de caldeiraria do CALDRA.";
@@ -76,7 +78,12 @@ function LessonPage() {
             aria-label="Favoritar aula"
             className="ml-auto rounded-lg border border-line p-1.5"
           >
-            <Star className={cn("size-3.5", st.favorite ? "fill-accent text-accent" : "text-muted-foreground")} />
+            <Star
+              className={cn(
+                "size-3.5",
+                st.favorite ? "fill-accent text-accent" : "text-muted-foreground",
+              )}
+            />
           </button>
         </div>
         <p className="mt-1 flex items-center gap-2 font-mono text-[10px] text-muted-foreground uppercase">
@@ -128,7 +135,9 @@ function LessonPage() {
                 <Panel className="p-4">
                   <SectionLabel>Conceito</SectionLabel>
                   <p className="text-[13px] leading-relaxed text-foreground/90">{k.concept}</p>
-                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">{k.definition}</p>
+                  <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
+                    {k.definition}
+                  </p>
                   {k.state !== "verificado" && (
                     <p className="mt-3 flex items-start gap-1.5 font-mono text-[10px] text-muted-foreground uppercase">
                       <AlertTriangle className="mt-0.5 size-3 shrink-0" />
@@ -160,11 +169,15 @@ function LessonPage() {
                         ))}
                       </dl>
                       <p className="mt-3 text-[12px] leading-relaxed">
-                        <span className="font-mono text-[10px] text-accent uppercase">Por quê? </span>
+                        <span className="font-mono text-[10px] text-accent uppercase">
+                          Por quê?{" "}
+                        </span>
                         {f.why}
                       </p>
                       {f.example && (
-                        <p className="mt-2 text-[12px] text-muted-foreground">Exemplo: {f.example}</p>
+                        <p className="mt-2 text-[12px] text-muted-foreground">
+                          Exemplo: {f.example}
+                        </p>
                       )}
                       <Link
                         to="/calculadora"
@@ -200,7 +213,6 @@ function LessonPage() {
                     </ul>
                   </Panel>
                 )}
-
               </div>
             );
           })}

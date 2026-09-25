@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Eye, EyeOff, Pause, Play, RotateCcw, ChevronLeft, ChevronRight, Layers, Hand } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  Pause,
+  Play,
+  RotateCcw,
+  ChevronLeft,
+  ChevronRight,
+  Layers,
+  Hand,
+} from "lucide-react";
 import type { GeometryResult } from "@/lib/geometry/types";
 import { buildTraceSequence, TOOL_LABEL, type TraceStep } from "@/lib/tracagem/steps";
 import type { HighlightState } from "@/lib/geometry/refs";
@@ -58,21 +68,42 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
   }, [focusStepId, steps]);
 
   const step = steps[Math.min(index, steps.length - 1)]!;
-  const actions = useMemo(() => buildTraceActions(step, result.development), [step, result.development]);
+  const actions = useMemo(
+    () => buildTraceActions(step, result.development),
+    [step, result.development],
+  );
   const traceAction = actions[Math.min(actionIndex, actions.length - 1)]!;
   const resolvedAction = useMemo(
     () => resolveTraceAction(result.development, step, traceAction),
     [result.development, step, traceAction],
   );
-  const frame = useMemo(() => sampleTraceAction(resolvedAction, progress), [resolvedAction, progress]);
+  const frame = useMemo(
+    () => sampleTraceAction(resolvedAction, progress),
+    [resolvedAction, progress],
+  );
 
   const completedRefs = useMemo<GeometryRef[]>(() => {
-    if (showAll) return result.development.outline.map((_, i) => `outline:${i}`).concat(result.development.foldLines.map((_, i) => `fold:${i}`), result.development.points.map((p) => `point:${p.id}`));
+    if (showAll)
+      return result.development.outline
+        .map((_, i) => `outline:${i}`)
+        .concat(
+          result.development.foldLines.map((_, i) => `fold:${i}`),
+          result.development.points.map((p) => `point:${p.id}`),
+        );
     const refs = steps.slice(0, index).flatMap((item) => item.geometryRefs);
     refs.push(...actions.slice(0, actionIndex).flatMap((item) => item.geometryRefs));
     if (progress >= 1) refs.push(...traceAction.geometryRefs);
     return [...new Set(refs)];
-  }, [showAll, result.development, steps, index, actions, actionIndex, progress, traceAction.geometryRefs]);
+  }, [
+    showAll,
+    result.development,
+    steps,
+    index,
+    actions,
+    actionIndex,
+    progress,
+    traceAction.geometryRefs,
+  ]);
 
   const resetStep = useCallback(() => {
     setActionIndex(0);
@@ -81,10 +112,13 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
     lastFrame.current = null;
   }, []);
 
-  const moveToStep = useCallback((next: number) => {
-    setIndex(Math.max(0, Math.min(steps.length - 1, next)));
-    resetStep();
-  }, [resetStep, steps.length]);
+  const moveToStep = useCallback(
+    (next: number) => {
+      setIndex(Math.max(0, Math.min(steps.length - 1, next)));
+      resetStep();
+    },
+    [resetStep, steps.length],
+  );
 
   const advance = useCallback(() => {
     if (progress < 1) {
@@ -117,7 +151,9 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
     const tick = (now: number) => {
       const previous = lastFrame.current ?? now;
       lastFrame.current = now;
-      setProgress((value) => Math.min(1, value + ((now - previous) * speed) / Math.max(resolvedAction.duration, 1)));
+      setProgress((value) =>
+        Math.min(1, value + ((now - previous) * speed) / Math.max(resolvedAction.duration, 1)),
+      );
       raf = window.requestAnimationFrame(tick);
     };
     raf = window.requestAnimationFrame(tick);
@@ -135,7 +171,12 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
 
   const highlight: HighlightState = showAll
     ? { refs: [], level: "normal" }
-    : { refs: step.geometryRefs, level: "isolated", intensity, label: `${step.order}. ${step.title}` };
+    : {
+        refs: step.geometryRefs,
+        level: "isolated",
+        intensity,
+        label: `${step.order}. ${step.title}`,
+      };
 
   return (
     <div className="space-y-3">
@@ -150,14 +191,25 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
               completedRefs={completedRefs}
               showAll={false}
               stepLabel={`Passo ${step.order}/${steps.length} · ${step.title}`}
-              {...(mode === "with-me" ? { onTarget: (point) => {
-                const target = resolvedAction.startPoint;
-                const tolerance = Math.max(result.development.bounds.maxX - result.development.bounds.minX, result.development.bounds.maxY - result.development.bounds.minY) * 0.08;
-                if (target && Math.hypot(point.x - target.x, point.y - target.y) <= tolerance) {
-                  setPracticeMessage("Perfeito. Execute a ação indicada.");
-                  setProgress(1);
-                } else setPracticeMessage("Toque no ponto destacado para continuar.");
-              }} : {})}
+              {...(mode === "with-me"
+                ? {
+                    onTarget: (point) => {
+                      const target = resolvedAction.startPoint;
+                      const tolerance =
+                        Math.max(
+                          result.development.bounds.maxX - result.development.bounds.minX,
+                          result.development.bounds.maxY - result.development.bounds.minY,
+                        ) * 0.08;
+                      if (
+                        target &&
+                        Math.hypot(point.x - target.x, point.y - target.y) <= tolerance
+                      ) {
+                        setPracticeMessage("Perfeito. Execute a ação indicada.");
+                        setProgress(1);
+                      } else setPracticeMessage("Toque no ponto destacado para continuar.");
+                    },
+                  }
+                : {})}
             />
           )}
         </div>
@@ -187,14 +239,63 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
           {hideText ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />} Instruções
         </Ctrl>
         <Ctrl onClick={() => setPlaying((v) => !v)} active={playing}>
-          {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />} {playing ? "Pausar" : "Continuar"}
+          {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}{" "}
+          {playing ? "Pausar" : "Continuar"}
         </Ctrl>
-        <Button size="sm" variant="primary" icon={Play} onClick={() => { setMode("watch"); setShowAll(false); setIndex(0); resetStep(); setPlaying(true); }}>Ver como fazer</Button>
-        <Button size="sm" variant="secondary" icon={Hand} onClick={() => { setMode("with-me"); setShowAll(false); setPlaying(false); resetStep(); }}>Faça comigo</Button>
-        <div className="flex h-8 overflow-hidden rounded-lg border border-line" aria-label="Velocidade">
-          {([0.5, 1, 2] as const).map((value) => <button key={value} type="button" onClick={() => setSpeed(value)} className={cn("min-w-10 px-2 font-mono text-[10px]", speed === value ? "bg-accent/15 text-accent" : "text-muted-foreground")}>{value}×</button>)}
+        <Button
+          size="sm"
+          variant="primary"
+          icon={Play}
+          onClick={() => {
+            setMode("watch");
+            setShowAll(false);
+            setIndex(0);
+            resetStep();
+            setPlaying(true);
+          }}
+        >
+          Ver como fazer
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon={Hand}
+          onClick={() => {
+            setMode("with-me");
+            setShowAll(false);
+            setPlaying(false);
+            resetStep();
+          }}
+        >
+          Faça comigo
+        </Button>
+        <div
+          className="flex h-8 overflow-hidden rounded-lg border border-line"
+          aria-label="Velocidade"
+        >
+          {([0.5, 1, 2] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setSpeed(value)}
+              className={cn(
+                "min-w-10 px-2 font-mono text-[10px]",
+                speed === value ? "bg-accent/15 text-accent" : "text-muted-foreground",
+              )}
+            >
+              {value}×
+            </button>
+          ))}
         </div>
-        <Ctrl onClick={() => { setMode("step"); setPlaying(false); }} active={mode === "step"}>Passo a passo</Ctrl>
+        <Ctrl
+          onClick={() => {
+            setMode("step");
+            setPlaying(false);
+          }}
+          active={mode === "step"}
+        >
+          Passo a passo
+        </Ctrl>
         <label className="ml-auto flex items-center gap-2 font-mono text-[10px] text-muted-foreground">
           Destaque
           <input
@@ -211,17 +312,37 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
       </div>
 
       <div className="flex min-h-9 items-center justify-between gap-3 rounded-lg border border-line bg-background/50 px-3 py-2 font-mono text-[10px]">
-        <span className="text-foreground">Ação {actionIndex + 1}/{actions.length} · {traceAction.instruction}</span>
+        <span className="text-foreground">
+          Ação {actionIndex + 1}/{actions.length} · {traceAction.instruction}
+        </span>
         <span className="shrink-0 text-success">{Math.round(progress * 100)}%</span>
       </div>
-      {mode === "with-me" && <p className="rounded-lg border border-accent/30 bg-accent/[0.06] px-3 py-2 text-[12px] text-foreground">{practiceMessage ?? traceAction.instruction}</p>}
+      {mode === "with-me" && (
+        <p className="rounded-lg border border-accent/30 bg-accent/[0.06] px-3 py-2 text-[12px] text-foreground">
+          {practiceMessage ?? traceAction.instruction}
+        </p>
+      )}
 
       {index === steps.length - 1 && progress >= 1 && (
         <div className="flex flex-wrap items-center justify-between gap-2 border-y border-success/30 py-3">
-          <span className="font-mono text-[11px] tracking-wider text-success">✓ Desenvolvimento concluído</span>
+          <span className="font-mono text-[11px] tracking-wider text-success">
+            ✓ Desenvolvimento concluído
+          </span>
           <div className="flex gap-1">
-            <Button size="sm" variant="secondary" onClick={() => setShowAll(true)}>Desenvolvimento final</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setShowAll(false); setIndex(0); resetStep(); }}>Como foi construído</Button>
+            <Button size="sm" variant="secondary" onClick={() => setShowAll(true)}>
+              Desenvolvimento final
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                setShowAll(false);
+                setIndex(0);
+                resetStep();
+              }}
+            >
+              Como foi construído
+            </Button>
           </div>
         </div>
       )}

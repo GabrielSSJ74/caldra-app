@@ -115,8 +115,8 @@ export function BackupDialog({
           {info && (
             <div className="space-y-3 rounded-2xl border border-border p-3">
               <Caption>
-                Arquivo de {dateLabel(info.createdAt)} · versão {info.appVersion} ·{" "}
-                {info.projects} projeto(s), {info.materials} material(is)
+                Arquivo de {dateLabel(info.createdAt)} · versão {info.appVersion} · {info.projects}{" "}
+                projeto(s), {info.materials} material(is)
                 {info.settings && " · preferências"}
                 {info.profile && " · perfil"}
               </Caption>
@@ -124,8 +124,16 @@ export function BackupDialog({
               <div className="grid gap-2 sm:grid-cols-2">
                 {(
                   [
-                    ["mesclar", "Juntar", "Mantém o que já existe; em conflito vence o mais recente."],
-                    ["substituir", "Substituir", "Apaga os projetos atuais e usa só os do arquivo."],
+                    [
+                      "mesclar",
+                      "Juntar",
+                      "Mantém o que já existe; em conflito vence o mais recente.",
+                    ],
+                    [
+                      "substituir",
+                      "Substituir",
+                      "Apaga os projetos atuais e usa só os do arquivo.",
+                    ],
                   ] as const
                 ).map(([id, label, hint]) => (
                   <button

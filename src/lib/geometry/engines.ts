@@ -57,7 +57,6 @@ export type EngineField = {
   visibleIf?: (v: EngineValues) => boolean;
 };
 
-
 export type Engine = {
   slug: string;
   method: string;
@@ -166,7 +165,6 @@ function finalize(args: {
   };
 }
 
-
 const common: EngineField[] = [];
 
 function baseValidate(fields: EngineField[], v: EngineValues): ValidationIssue[] {
@@ -180,8 +178,7 @@ function baseValidate(fields: EngineField[], v: EngineValues): ValidationIssue[]
     const max = f.max ?? Infinity;
     if (!Number.isFinite(value) || value < min)
       issues.push({ field: f.key, message: `${f.label} deve ser ≥ ${min}.` });
-    else if (value > max)
-      issues.push({ field: f.key, message: `${f.label} deve ser ≤ ${max}.` });
+    else if (value > max) issues.push({ field: f.key, message: `${f.label} deve ser ≤ ${max}.` });
   }
   return issues;
 }
@@ -220,10 +217,12 @@ function cylinderDevelopment(
     development: pattern(
       outline,
       folds,
-      topPts.filter((_, i) => i % Math.max(1, Math.round(n / 8)) === 0).map((p, i) => ({
-        id: `P${i}`,
-        p,
-      })),
+      topPts
+        .filter((_, i) => i % Math.max(1, Math.round(n / 8)) === 0)
+        .map((p, i) => ({
+          id: `P${i}`,
+          p,
+        })),
     ),
     trueLengths,
     circumference: Math.PI * D,
@@ -312,7 +311,11 @@ function cylinderEngine(slug: string, labelD = "Diâmetro", labelH = "Altura"): 
         metrics: [
           { label: "Perímetro", value: Math.PI * D, unitMm: true },
           { label: "Altura", value: H, unitMm: true },
-          { label: "Volume interno", value: (Math.PI * D * D * H) / 4 / 1_000_000_000, suffix: "m³" },
+          {
+            label: "Volume interno",
+            value: (Math.PI * D * D * H) / 4 / 1_000_000_000,
+            suffix: "m³",
+          },
         ],
         steps: [
           {
@@ -338,7 +341,10 @@ function cylinderEngine(slug: string, labelD = "Diâmetro", labelH = "Altura"): 
   };
 }
 
-function radialEngine(slug: string, opts: { topZero?: boolean; labels?: [string, string, string] }): Engine {
+function radialEngine(
+  slug: string,
+  opts: { topZero?: boolean; labels?: [string, string, string] },
+): Engine {
   const [l1, l2, l3] = opts.labels ?? ["Diâmetro maior", "Diâmetro menor", "Altura vertical"];
   const fields: EngineField[] = opts.topZero
     ? [
@@ -440,12 +446,48 @@ function obliqueEngine(slug: string): Engine {
       ],
     },
     { key: "d", label: "Ø da derivação", tag: "Ød", min: 10, max: 3000 },
-    { key: "h1", label: "Altura menor", tag: "h₁", min: 5, max: 6000, visibleIf: (v) => !isBranch(v) },
-    { key: "h2", label: "Altura maior", tag: "h₂", min: 5, max: 6000, visibleIf: (v) => !isBranch(v) },
+    {
+      key: "h1",
+      label: "Altura menor",
+      tag: "h₁",
+      min: 5,
+      max: 6000,
+      visibleIf: (v) => !isBranch(v),
+    },
+    {
+      key: "h2",
+      label: "Altura maior",
+      tag: "h₂",
+      min: 5,
+      max: 6000,
+      visibleIf: (v) => !isBranch(v),
+    },
     { key: "dMain", label: "Ø tubo principal", tag: "ØD", min: 20, max: 4000, visibleIf: isBranch },
-    { key: "ang", label: "Ângulo da derivação", tag: "α", unit: "°", min: 10, max: 90, visibleIf: isBranch },
-    { key: "offset", label: "Excentricidade", tag: "e", min: -2000, max: 2000, visibleIf: isBranch },
-    { key: "len", label: "Comprimento do ramal", tag: "L", min: 20, max: 8000, visibleIf: isBranch },
+    {
+      key: "ang",
+      label: "Ângulo da derivação",
+      tag: "α",
+      unit: "°",
+      min: 10,
+      max: 90,
+      visibleIf: isBranch,
+    },
+    {
+      key: "offset",
+      label: "Excentricidade",
+      tag: "e",
+      min: -2000,
+      max: 2000,
+      visibleIf: isBranch,
+    },
+    {
+      key: "len",
+      label: "Comprimento do ramal",
+      tag: "L",
+      min: 20,
+      max: 8000,
+      visibleIf: isBranch,
+    },
   ];
   const toBranch = (v: EngineValues): BranchInput => ({
     mainDiameter: v["dMain"] ?? 500,
@@ -485,14 +527,25 @@ function obliqueEngine(slug: string): Engine {
           }
         : { d1: v["d"]!, d2: v["d"]!, h: v["h2"]!, e: 0, seg: 32, mode: "oblique" },
     dimKey: (k) =>
-      k === "dMain" ? "d1" : k === "d" ? "d2" : k === "len" || k === "h2" ? "h" : k === "h1" ? "d2" : null,
+      k === "dMain"
+        ? "d1"
+        : k === "d"
+          ? "d2"
+          : k === "len" || k === "h2"
+            ? "h"
+            : k === "h1"
+              ? "d2"
+              : null,
     validate: (v) => {
       const issues = baseValidate(fields, v);
       if (isBranch(v)) {
         for (const e of validateBranch(toBranch(v))) issues.push(e);
         const t = branchIntersection(toBranch(v));
         if ((v["len"] ?? 0) <= t.tMax)
-          issues.push({ field: "len", message: "O ramal precisa ser mais longo que a penetração." });
+          issues.push({
+            field: "len",
+            message: "O ramal precisa ser mais longo que a penetração.",
+          });
       } else if ((v["h2"] ?? 0) <= (v["h1"] ?? 0)) {
         issues.push({ field: "h2", message: "A altura maior deve superar a altura menor." });
       }
@@ -592,7 +645,6 @@ function obliqueEngine(slug: string): Engine {
   };
 }
 
-
 /** Derivação cilíndrica sobre tubo principal (tê, interseções, Y). */
 function branchEngine(slug: string, withAngle: boolean): Engine {
   const fields: EngineField[] = [
@@ -629,7 +681,10 @@ function branchEngine(slug: string, withAngle: boolean): Engine {
       const cut = (t: number) => {
         const y = r * Math.sin(t);
         const inside = Math.max(R * R - y * y, 0);
-        return (R - Math.sqrt(inside)) * k + (withAngle ? r * Math.cos(t) / Math.tan((ang * Math.PI) / 180) : 0);
+        return (
+          (R - Math.sqrt(inside)) * k +
+          (withAngle ? (r * Math.cos(t)) / Math.tan((ang * Math.PI) / 180) : 0)
+        );
       };
       const dev = cylinderDevelopment(d, n, (t) => H - cut(t));
       const maxCut = Math.max(...Array.from({ length: n + 1 }, (_, i) => cut((i / n) * TAU)));
@@ -659,7 +714,7 @@ function branchEngine(slug: string, withAngle: boolean): Engine {
             given: `α = ${ang}°`,
             formula: "z' = z / sen α",
             substitution: `fator = 1 / sen ${ang}° = ${k.toFixed(3)}`,
-            result: `${(maxCut).toFixed(2)} mm de recuo`,
+            result: `${maxCut.toFixed(2)} mm de recuo`,
             meaning:
               "Quanto mais inclinado o ramal, mais alongada é a boca — o fator 1/senα estica as ordenadas.",
           },
@@ -799,7 +854,10 @@ function domeEngine(slug: string): Engine {
     validate: (v) => {
       const issues = baseValidate(fields, v);
       if ((v["h"] ?? 0) > (v["d"] ?? 0) / 2)
-        issues.push({ field: "h", message: "A altura não pode exceder o raio da base (semiesfera)." });
+        issues.push({
+          field: "h",
+          message: "A altura não pode exceder o raio da base (semiesfera).",
+        });
       return issues;
     },
     calculate: (v) => {
@@ -898,7 +956,10 @@ function flangeEngine(slug: string): Engine {
       if ((v["di"] ?? 0) >= (v["de"] ?? 0))
         issues.push({ field: "di", message: "O Ø interno deve ser menor que o externo." });
       if ((v["bc"] ?? 0) >= (v["de"] ?? 0) || (v["bc"] ?? 0) <= (v["di"] ?? 0))
-        issues.push({ field: "bc", message: "O espelho de furos deve ficar entre Ø interno e externo." });
+        issues.push({
+          field: "bc",
+          message: "O espelho de furos deve ficar entre Ø interno e externo.",
+        });
       return issues;
     },
     calculate: (v) => {
@@ -929,8 +990,7 @@ function flangeEngine(slug: string): Engine {
           b: { x: (Di / 2) * Math.cos(t2), y: (Di / 2) * Math.sin(t2) },
         });
       }
-      const area =
-        (Math.PI / 4) * (De * De - Di * Di) - nf * (Math.PI / 4) * df * df;
+      const area = (Math.PI / 4) * (De * De - Di * Di) - nf * (Math.PI / 4) * df * df;
       const step = 360 / nf;
       const chord = 2 * (bc / 2) * Math.sin(Math.PI / nf);
       return finalize({
@@ -1033,9 +1093,27 @@ function capEngine(slug: string): Engine {
 /** Transições por triangulação apoiadas no motor quadrado → redondo. */
 function triangulationEngine(slug: string, inverted: boolean): Engine {
   const fields: EngineField[] = [
-    { key: "baseA", label: inverted ? "Lado A do topo" : "Lado A da base", tag: "A", min: 10, max: 5000 },
-    { key: "baseB", label: inverted ? "Lado B do topo" : "Lado B da base", tag: "B", min: 10, max: 5000 },
-    { key: "topDiameter", label: inverted ? "Ø da base" : "Ø do topo", tag: "ØD", min: 10, max: 5000 },
+    {
+      key: "baseA",
+      label: inverted ? "Lado A do topo" : "Lado A da base",
+      tag: "A",
+      min: 10,
+      max: 5000,
+    },
+    {
+      key: "baseB",
+      label: inverted ? "Lado B do topo" : "Lado B da base",
+      tag: "B",
+      min: 10,
+      max: 5000,
+    },
+    {
+      key: "topDiameter",
+      label: inverted ? "Ø da base" : "Ø do topo",
+      tag: "ØD",
+      min: 10,
+      max: 5000,
+    },
     { key: "height", label: "Altura vertical", tag: "H", min: 10, max: 6000 },
     { key: "offsetX", label: "Excentricidade X", tag: "ex", min: -3000, max: 3000 },
     { key: "offsetY", label: "Excentricidade Y", tag: "ey", min: -3000, max: 3000 },
@@ -1081,7 +1159,8 @@ function eccentricConeEngine(slug: string): Engine {
     fields,
     defaults: { d1: 500, d2: 250, h: 400, e: 100, divisions: 12, thickness: 3, density: 7.85 },
     wire: (v) => ({ d1: v["d1"]!, d2: v["d2"]!, h: v["h"]!, e: v["e"]!, seg: 32 }),
-    dimKey: (k) => (k === "d1" ? "d1" : k === "d2" ? "d2" : k === "h" ? "h" : k === "e" ? "e" : null),
+    dimKey: (k) =>
+      k === "d1" ? "d1" : k === "d2" ? "d2" : k === "h" ? "h" : k === "e" ? "e" : null,
     validate: (v) => {
       const issues = baseValidate(fields, v);
       if ((v["d2"] ?? 0) >= (v["d1"] ?? 0))
@@ -1198,7 +1277,10 @@ function eccentricConeEngine(slug: string): Engine {
 const ENGINES: Record<string, Engine> = {
   cilindro: cylinderEngine("cilindro"),
   dutos: cylinderEngine("dutos", "Diâmetro do duto", "Comprimento do trecho"),
-  cone: radialEngine("cone", { topZero: true, labels: ["Diâmetro da base", "", "Altura vertical"] }),
+  cone: radialEngine("cone", {
+    topZero: true,
+    labels: ["Diâmetro da base", "", "Altura vertical"],
+  }),
   "tronco-de-cone": radialEngine("tronco-de-cone", {}),
   "reducao-circular": radialEngine("reducao-circular", {}),
   chamines: radialEngine("chamines", {

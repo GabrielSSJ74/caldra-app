@@ -4,7 +4,10 @@ import { buildWire } from "./wire";
 
 const MODELS = [
   { mode: "cone", params: { d1: 800, d2: 0, h: 500, mode: "cone" } },
-  { mode: "curva-de-gomos", params: { d1: 400, d2: 400, h: 400, ang: 90, n: 4, mode: "curva-de-gomos" } },
+  {
+    mode: "curva-de-gomos",
+    params: { d1: 400, d2: 400, h: 400, ang: 90, n: 4, mode: "curva-de-gomos" },
+  },
   { mode: "quadrado-redondo", params: { d1: 500, d2: 300, h: 400, mode: "quadrado-redondo" } },
   { mode: "boca-de-lobo", params: { d1: 400, d2: 200, h: 400, ang: 45, mode: "boca-de-lobo" } },
   { mode: "reducao-circular", params: { d1: 600, d2: 300, h: 400, mode: "reducao-circular" } },

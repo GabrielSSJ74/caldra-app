@@ -75,7 +75,8 @@ describe("direito de acesso — servidor é a fonte de verdade", () => {
 
   it("falhas repetidas nunca acumulam rebaixamento", () => {
     let state = pro;
-    for (let i = 0; i < 20; i++) state = applySync(state, { state: "sync_failed", reason: "network" });
+    for (let i = 0; i < 20; i++)
+      state = applySync(state, { state: "sync_failed", reason: "network" });
     expect(state.plan).toBe("pro");
   });
 

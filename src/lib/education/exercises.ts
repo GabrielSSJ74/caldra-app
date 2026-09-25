@@ -240,11 +240,7 @@ const GENERATORS: Record<string, Generator> = {
       unit: "mm",
       answer: g,
       tolerance: Math.max(1, g * 0.005),
-      steps: [
-        `g = √(h² + (R − r)²)`,
-        `g = √(${h}² + (${R} − ${r})²)`,
-        `g = ${fmt(g)} mm`,
-      ],
+      steps: [`g = √(h² + (R − r)²)`, `g = √(${h}² + (${R} − ${r})²)`, `g = ${fmt(g)} mm`],
     };
   },
 
@@ -259,11 +255,7 @@ const GENERATORS: Record<string, Generator> = {
       unit: "mm",
       answer: G,
       tolerance: Math.max(1, G * 0.005),
-      steps: [
-        `G = g × R / (R − r)`,
-        `G = ${g} × ${R} / (${R} − ${r})`,
-        `G = ${fmt(G)} mm`,
-      ],
+      steps: [`G = g × R / (R − r)`, `G = ${g} × ${R} / (${R} − ${r})`, `G = ${fmt(G)} mm`],
     };
   },
 
@@ -277,11 +269,7 @@ const GENERATORS: Record<string, Generator> = {
       unit: "°",
       answer: b,
       tolerance: 0.2,
-      steps: [
-        `β = θ / (2 × (n − 1))`,
-        `β = ${theta} / (2 × (${n} − 1))`,
-        `β = ${fmt(b)}°`,
-      ],
+      steps: [`β = θ / (2 × (n − 1))`, `β = ${theta} / (2 × (${n} − 1))`, `β = ${fmt(b)}°`],
     };
   },
 
@@ -295,11 +283,7 @@ const GENERATORS: Record<string, Generator> = {
       unit: "mm",
       answer: s,
       tolerance: Math.max(0.5, s * 0.01),
-      steps: [
-        `s = (D / 2) × tg β`,
-        `s = (${D} / 2) × tg ${fmt(beta)}°`,
-        `s = ${fmt(s)} mm`,
-      ],
+      steps: [`s = (D / 2) × tg β`, `s = (${D} / 2) × tg ${fmt(beta)}°`, `s = ${fmt(s)} mm`],
     };
   },
 
@@ -313,11 +297,7 @@ const GENERATORS: Record<string, Generator> = {
       unit: "mm",
       answer: L,
       tolerance: Math.max(1, L * 0.005),
-      steps: [
-        `L = R × θ × π / 180`,
-        `L = ${R} × ${theta} × π / 180`,
-        `L = ${fmt(L)} mm`,
-      ],
+      steps: [`L = R × θ × π / 180`, `L = ${R} × ${theta} × π / 180`, `L = ${fmt(L)} mm`],
     };
   },
 
@@ -386,11 +366,7 @@ const GENERATORS: Record<string, Generator> = {
       unit: "mm",
       answer: L - t1 - t2,
       tolerance: 0.5,
-      steps: [
-        `C = L − (t₁ + t₂)`,
-        `C = ${L} − (${t1} + ${t2})`,
-        `C = ${fmt(L - t1 - t2)} mm`,
-      ],
+      steps: [`C = L − (t₁ + t₂)`, `C = ${L} − (${t1} + ${t2})`, `C = ${fmt(L - t1 - t2)} mm`],
     };
   },
 
@@ -449,7 +425,10 @@ export function generateExercise(formulaIds: string[]): Exercise | null {
 }
 
 /** Correção: aceita vírgula decimal e tolerância da própria fórmula. */
-export function checkAnswer(ex: Exercise, raw: string): { ok: boolean; value: number | null; expected: string } {
+export function checkAnswer(
+  ex: Exercise,
+  raw: string,
+): { ok: boolean; value: number | null; expected: string } {
   const value = Number(raw.replace(/\s/g, "").replace(",", "."));
   const expected = `${fmt(ex.answer)} ${ex.unit}`;
   if (!Number.isFinite(value)) return { ok: false, value: null, expected };

@@ -23,17 +23,29 @@ export function validateVector(entities: Entity[], cal: Calibration): Validation
     closed: entities.filter((e) => e.type === "polyline" && e.closed).length,
   };
 
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    minY = Infinity,
+    maxX = -Infinity,
+    maxY = -Infinity;
   const put = (x: number, y: number) => {
-    minX = Math.min(minX, x); minY = Math.min(minY, y);
-    maxX = Math.max(maxX, x); maxY = Math.max(maxY, y);
+    minX = Math.min(minX, x);
+    minY = Math.min(minY, y);
+    maxX = Math.max(maxX, x);
+    maxY = Math.max(maxY, y);
   };
   for (const e of entities) {
-    if (e.type === "line") { put(e.x1, e.y1); put(e.x2, e.y2); }
-    else if (e.type === "polyline") for (const p of e.pts) put(p.x, p.y);
-    else if (e.type === "circle" || e.type === "arc") { put(e.cx - e.r, e.cy - e.r); put(e.cx + e.r, e.cy + e.r); }
+    if (e.type === "line") {
+      put(e.x1, e.y1);
+      put(e.x2, e.y2);
+    } else if (e.type === "polyline") for (const p of e.pts) put(p.x, p.y);
+    else if (e.type === "circle" || e.type === "arc") {
+      put(e.cx - e.r, e.cy - e.r);
+      put(e.cx + e.r, e.cy + e.r);
+    }
   }
-  if (!Number.isFinite(minX)) { minX = maxX = minY = maxY = 0; }
+  if (!Number.isFinite(minX)) {
+    minX = maxX = minY = maxY = 0;
+  }
 
   const issues: ValidationIssueV[] = [];
   if (!entities.length) issues.push({ level: "warn", message: "Nenhuma geometria reconhecida." });
@@ -43,10 +55,19 @@ export function validateVector(entities: Entity[], cal: Calibration): Validation
   for (const e of entities) {
     if (e.type === "polyline" && !e.closed && e.pts.length > 2) {
       const g = dist(e.pts[0]!, e.pts[e.pts.length - 1]!);
-      if (g < 3) issues.push({ level: "warn", message: `Contorno quase fechado (${g.toFixed(2)} mm).`, entityId: e.id });
+      if (g < 3)
+        issues.push({
+          level: "warn",
+          message: `Contorno quase fechado (${g.toFixed(2)} mm).`,
+          entityId: e.id,
+        });
     }
     if (e.type === "circle" && e.r < 0.5)
-      issues.push({ level: "warn", message: "Círculo muito pequeno — possível ruído.", entityId: e.id });
+      issues.push({
+        level: "warn",
+        message: "Círculo muito pequeno — possível ruído.",
+        entityId: e.id,
+      });
   }
 
   return {

@@ -17,7 +17,8 @@ import {
   type GeometryRef,
 } from "@/lib/geometry/refs";
 
-export type TraceTool = "riscador" | "regua" | "esquadro" | "compasso" | "transferidor" | "transferir" | "marcar";
+export type TraceTool =
+  "riscador" | "regua" | "esquadro" | "compasso" | "transferidor" | "transferir" | "marcar";
 
 export const TOOL_LABEL: Record<TraceTool, string> = {
   riscador: "Riscador",
@@ -116,7 +117,8 @@ export function buildTraceSequence(slug: string, result: GeometryResult): TraceS
     return a && b ? Math.hypot(b.x - a.x, b.y - a.y) : 0;
   };
   const baseIndex = outlineAll.reduce(
-    (best, _, i) => (Math.abs(segmentLength(i) - width) < Math.abs(segmentLength(best) - width) ? i : best),
+    (best, _, i) =>
+      Math.abs(segmentLength(i) - width) < Math.abs(segmentLength(best) - width) ? i : best,
     0,
   );
   const baseLength = mm(segmentLength(baseIndex) || width);
@@ -127,7 +129,12 @@ export function buildTraceSequence(slug: string, result: GeometryResult): TraceS
     instruction: `${copy.base} Trace uma linha base de ${baseLength} mm.`,
     geometryRefs: outlineAll.length ? [outlineRef(baseIndex)] : [],
     measurements: [
-      { label: "Comprimento da base", value: baseLength, unit: "mm", origin: "Segmento real da linha de referência" },
+      {
+        label: "Comprimento da base",
+        value: baseLength,
+        unit: "mm",
+        origin: "Segmento real da linha de referência",
+      },
       { label: "Altura útil", value: height, unit: "mm", origin: "Altura do desenvolvimento" },
     ],
     tool: "riscador",
@@ -142,7 +149,12 @@ export function buildTraceSequence(slug: string, result: GeometryResult): TraceS
       instruction: `${copy.divide} São ${pointAll.length} pontos notáveis.`,
       geometryRefs: pointAll,
       measurements: [
-        { label: "Pontos de divisão", value: pointAll.length, unit: "un", origin: "Pontos do desenvolvimento" },
+        {
+          label: "Pontos de divisão",
+          value: pointAll.length,
+          unit: "un",
+          origin: "Pontos do desenvolvimento",
+        },
       ],
       tool: "compasso",
       animation: "points",
@@ -157,7 +169,12 @@ export function buildTraceSequence(slug: string, result: GeometryResult): TraceS
       instruction: `${copy.build} São ${foldAll.length} linhas de construção.`,
       geometryRefs: foldAll,
       measurements: [
-        { label: "Geratrizes", value: foldAll.length, unit: "un", origin: "Linhas de dobra do desenvolvimento" },
+        {
+          label: "Geratrizes",
+          value: foldAll.length,
+          unit: "un",
+          origin: "Linhas de dobra do desenvolvimento",
+        },
       ],
       tool: "riscador",
       animation: "line",
@@ -181,7 +198,8 @@ export function buildTraceSequence(slug: string, result: GeometryResult): TraceS
       })),
       tool: "transferir",
       animation: "transfer",
-      validation: "Confira duas medidas opostas: devem bater com a tabela de comprimentos verdadeiros.",
+      validation:
+        "Confira duas medidas opostas: devem bater com a tabela de comprimentos verdadeiros.",
     });
   }
 
@@ -192,7 +210,12 @@ export function buildTraceSequence(slug: string, result: GeometryResult): TraceS
       "Ligue as extremidades transferidas com traço contínuo e suave, fechando o contorno do desenvolvimento.",
     geometryRefs: outlineAll,
     measurements: [
-      { label: "Área desenvolvida", value: mm(result.areaMm2 / 1_000_000), unit: "m²", origin: "Área calculada" },
+      {
+        label: "Área desenvolvida",
+        value: mm(result.areaMm2 / 1_000_000),
+        unit: "m²",
+        origin: "Área calculada",
+      },
     ],
     tool: "riscador",
     animation: "curve",
@@ -206,7 +229,12 @@ export function buildTraceSequence(slug: string, result: GeometryResult): TraceS
       "Marque o contorno de corte, as linhas de dobra, os recortes e as referências de montagem antes de tirar a peça da bancada.",
     geometryRefs: [...outlineAll, ...foldAll],
     measurements: [
-      { label: "Linhas de corte", value: outlineAll.length, unit: "un", origin: "Contorno do desenvolvimento" },
+      {
+        label: "Linhas de corte",
+        value: outlineAll.length,
+        unit: "un",
+        origin: "Contorno do desenvolvimento",
+      },
       { label: "Linhas de dobra", value: foldAll.length, unit: "un", origin: "Linhas de dobra" },
     ],
     tool: "marcar",

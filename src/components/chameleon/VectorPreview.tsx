@@ -41,7 +41,8 @@ export function VectorPreview({
           };
           if (e.type === "line")
             return <line key={e.id} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} {...props} />;
-          if (e.type === "circle") return <circle key={e.id} cx={e.cx} cy={e.cy} r={e.r} {...props} />;
+          if (e.type === "circle")
+            return <circle key={e.id} cx={e.cx} cy={e.cy} r={e.r} {...props} />;
           if (e.type === "arc") {
             const x0 = e.cx + e.r * Math.cos(e.a0);
             const y0 = e.cy + e.r * Math.sin(e.a0);
@@ -49,12 +50,17 @@ export function VectorPreview({
             const y1 = e.cy + e.r * Math.sin(e.a1);
             const large = Math.abs(e.a1 - e.a0) > Math.PI ? 1 : 0;
             return (
-              <path key={e.id} d={`M ${x0} ${y0} A ${e.r} ${e.r} 0 ${large} 1 ${x1} ${y1}`} {...props} />
+              <path
+                key={e.id}
+                d={`M ${x0} ${y0} A ${e.r} ${e.r} 0 ${large} 1 ${x1} ${y1}`}
+                {...props}
+              />
             );
           }
           if (e.type === "polyline") {
             const d =
-              e.pts.map((p, i) => `${i ? "L" : "M"} ${p.x} ${p.y}`).join(" ") + (e.closed ? " Z" : "");
+              e.pts.map((p, i) => `${i ? "L" : "M"} ${p.x} ${p.y}`).join(" ") +
+              (e.closed ? " Z" : "");
             return <path key={e.id} d={d} {...props} />;
           }
           return null;

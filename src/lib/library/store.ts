@@ -49,12 +49,14 @@ function load(): State {
         favorites: Array.isArray(parsed.favorites) ? parsed.favorites : [],
         recents: Array.isArray(parsed.recents) ? parsed.recents : [],
         custom: Array.isArray(parsed.custom)
-          ? parsed.custom.map((item) => ({
+          ? (parsed.custom.map((item) => ({
               ...item,
-              modelFamily: item.modelFamily ?? (String(item.baseId).startsWith("cnc.") ? "vector" : "parametric"),
+              modelFamily:
+                item.modelFamily ??
+                (String(item.baseId).startsWith("cnc.") ? "vector" : "parametric"),
               schemaVersion: 2,
               updatedAt: item.updatedAt ?? item.createdAt ?? Date.now(),
-            })) as CustomModel[]
+            })) as CustomModel[])
           : [],
       };
     }
@@ -99,7 +101,9 @@ export function markRecent(id: string) {
   commit({ ...s, recents: [id, ...s.recents.filter((r) => r !== id)].slice(0, MAX_RECENT) });
 }
 
-export function saveCustom(model: Omit<CustomModel, "id" | "createdAt" | "updatedAt" | "schemaVersion">) {
+export function saveCustom(
+  model: Omit<CustomModel, "id" | "createdAt" | "updatedAt" | "schemaVersion">,
+) {
   const s = load();
   const item: CustomModel = {
     ...model,
@@ -114,7 +118,12 @@ export function saveCustom(model: Omit<CustomModel, "id" | "createdAt" | "update
 
 export function updateCustom(id: string, patch: Pick<CustomModel, "name" | "values">) {
   const s = load();
-  commit({ ...s, custom: s.custom.map((item) => item.id === id ? { ...item, ...patch, updatedAt: Date.now() } : item) });
+  commit({
+    ...s,
+    custom: s.custom.map((item) =>
+      item.id === id ? { ...item, ...patch, updatedAt: Date.now() } : item,
+    ),
+  });
 }
 
 export function getCustom(id: string): CustomModel | undefined {

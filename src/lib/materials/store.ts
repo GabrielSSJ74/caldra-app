@@ -43,7 +43,9 @@ function tx<T>(mode: IDBTransactionMode, fn: (s: IDBObjectStore) => IDBRequest<T
 function mergeBuiltins(rows: Material[]): Material[] {
   const byId = new Map(rows.map((r) => [r.id, r]));
   for (const b of BUILTIN_MATERIALS) if (!byId.has(b.id)) byId.set(b.id, { ...b });
-  return [...byId.values()].sort((a, b) => Number(b.builtIn) - Number(a.builtIn) || a.name.localeCompare(b.name));
+  return [...byId.values()].sort(
+    (a, b) => Number(b.builtIn) - Number(a.builtIn) || a.name.localeCompare(b.name),
+  );
 }
 
 export async function loadMaterials(): Promise<Material[]> {
@@ -52,7 +54,8 @@ export async function loadMaterials(): Promise<Material[]> {
     return mergeBuiltins(memory);
   }
   try {
-    const rows = (await tx<Material[]>("readonly", (s) => s.getAll() as IDBRequest<Material[]>)) ?? [];
+    const rows =
+      (await tx<Material[]>("readonly", (s) => s.getAll() as IDBRequest<Material[]>)) ?? [];
     const merged = mergeBuiltins(rows);
     if (rows.length === 0) for (const m of merged) await saveMaterial(m);
     return merged;

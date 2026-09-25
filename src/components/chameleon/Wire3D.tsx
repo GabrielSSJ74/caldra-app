@@ -20,12 +20,7 @@ import {
   type ProjectedTriangle,
   type VisibilityPolicy,
 } from "@/lib/viz3d/visibility";
-import {
-  entityIndexOf,
-  pickEdgeIndex,
-  pickFaceIndex,
-  refLabel,
-} from "@/lib/viz3d/selection";
+import { entityIndexOf, pickEdgeIndex, pickFaceIndex, refLabel } from "@/lib/viz3d/selection";
 import type { GeometryRef } from "@/lib/geometry/refs";
 import { cameraForView, type EdgeMode, type ViewPresetId } from "@/lib/viz3d/cameraPresets";
 import { cn } from "@/lib/utils";
@@ -79,7 +74,9 @@ export function Wire3D({
   highlightRef = null,
   onSelectRef,
 }: Props) {
-  const [cam, setCam] = useState<Camera>(() => (view ? cameraForView(view) : { yaw: 0.7, pitch: 0.4, zoom: 1 }));
+  const [cam, setCam] = useState<Camera>(() =>
+    view ? cameraForView(view) : { yaw: 0.7, pitch: 0.4, zoom: 1 },
+  );
   const drag = useRef<{ x: number; y: number } | null>(null);
   const downAt = useRef<{ x: number; y: number } | null>(null);
   const resume = useRef(0);
@@ -111,7 +108,10 @@ export function Wire3D({
   /* rotação automática 360° contínua (sem salto ao completar a volta) */
   useEffect(() => {
     if (!autoSpin || !visible) return;
-    if (typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches)
+    if (
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches
+    )
       return;
     let raf = 0;
     let last = performance.now();
@@ -237,10 +237,20 @@ export function Wire3D({
 
     const depthEpsilon = span * 1e-5;
     const e = model.edges.flatMap((edge, index) =>
-      visibleLineSegments(projectLine(`edge:${index}`, edge, cp, kk), lineVisibility, f, depthEpsilon),
+      visibleLineSegments(
+        projectLine(`edge:${index}`, edge, cp, kk),
+        lineVisibility,
+        f,
+        depthEpsilon,
+      ),
     );
     const r = (model.refLines ?? []).flatMap((edge, index) =>
-      visibleLineSegments(projectLine(`reference:${index}`, edge, cp, kk), VISIBILITY_POLICY.reference, f, depthEpsilon),
+      visibleLineSegments(
+        projectLine(`reference:${index}`, edge, cp, kk),
+        VISIBILITY_POLICY.reference,
+        f,
+        depthEpsilon,
+      ),
     );
 
     return { faces: f, edges: e, refs: r };
@@ -279,7 +289,10 @@ export function Wire3D({
     [faces, hasHighlight, highlightRefs, refForFace],
   );
   const labelAnchor = selectedEdges[0]
-    ? { x: (selectedEdges[0].x1 + selectedEdges[0].x2) / 2, y: (selectedEdges[0].y1 + selectedEdges[0].y2) / 2 }
+    ? {
+        x: (selectedEdges[0].x1 + selectedEdges[0].x2) / 2,
+        y: (selectedEdges[0].y1 + selectedEdges[0].y2) / 2,
+      }
     : selectedFaces[0]
       ? {
           x: (selectedFaces[0].pts[0]!.x + selectedFaces[0].pts[2]!.x) / 2,
@@ -338,7 +351,9 @@ export function Wire3D({
         setCam((c) => ({
           ...c,
           yaw: c.yaw + dx * 0.008,
-          pitch: interactive ? Math.max(-Math.PI / 2, Math.min(Math.PI / 2, c.pitch + dy * 0.006)) : c.pitch,
+          pitch: interactive
+            ? Math.max(-Math.PI / 2, Math.min(Math.PI / 2, c.pitch + dy * 0.006))
+            : c.pitch,
         }));
       }}
       onPointerUp={(ev) => {
@@ -441,13 +456,14 @@ export function Wire3D({
                 strokeWidth={2.2}
                 paintOrder="stroke"
               >
-                {highlightRefs.length === 1 ? refLabel(highlightRefs[0]!) : `${highlightRefs.length} entidades · ${refLabel(highlightRefs[0]!)}`}
+                {highlightRefs.length === 1
+                  ? refLabel(highlightRefs[0]!)
+                  : `${highlightRefs.length} entidades · ${refLabel(highlightRefs[0]!)}`}
               </text>
             )}
           </g>
         )}
       </g>
-
     </svg>
   );
 }

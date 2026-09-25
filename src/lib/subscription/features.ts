@@ -117,7 +117,8 @@ export const FEATURE_PITCH: Record<Feature, { title: string; benefit: string }> 
   "geometry.basic": { title: "Traçagem", benefit: "Disponível em todos os planos." },
   "geometry.advanced": {
     title: "Traçagem avançada",
-    benefit: "Transições, curvas gomadas e derivações completas, com planificação pronta para a chapa.",
+    benefit:
+      "Transições, curvas gomadas e derivações completas, com planificação pronta para a chapa.",
   },
   "calc.explanation": {
     title: "Cálculo passo a passo",
@@ -137,7 +138,8 @@ export const FEATURE_PITCH: Record<Feature, { title: string; benefit: string }> 
   },
   "export.dxf.cnc": {
     title: "DXF Laser CNC",
-    benefit: "Prepare sua geometria para o fluxo CNC, com CUT, MARK, BEND e RECORTE nos canais certos.",
+    benefit:
+      "Prepare sua geometria para o fluxo CNC, com CUT, MARK, BEND e RECORTE nos canais certos.",
   },
   "export.pdf": {
     title: "PDF técnico",
@@ -168,7 +170,8 @@ export const FEATURE_PITCH: Record<Feature, { title: string; benefit: string }> 
   },
   nesting: {
     title: "Nesting modo CHAPA",
-    benefit: "Encaixe as peças na chapa comercial, veja o aproveitamento real e quantas chapas comprar.",
+    benefit:
+      "Encaixe as peças na chapa comercial, veja o aproveitamento real e quantas chapas comprar.",
   },
   "cost.fabrication": {
     title: "Custos de fabricação",
@@ -204,7 +207,8 @@ export const FEATURE_PITCH: Record<Feature, { title: string; benefit: string }> 
   },
   "cut.plan": {
     title: "Plano de corte",
-    benefit: "Ordem de execução, sentido de corte, corte comum e entradas/saídas definidas por você.",
+    benefit:
+      "Ordem de execução, sentido de corte, corte comum e entradas/saídas definidas por você.",
   },
   "aurora.animated": {
     title: "Estilo de fundo Fluido e Suave",
@@ -212,7 +216,8 @@ export const FEATURE_PITCH: Record<Feature, { title: string; benefit: string }> 
   },
   "accent.colors": {
     title: "Cores de destaque",
-    benefit: "Personalize o CALDRA com todas as cores de destaque. No Free o Azul segue disponível.",
+    benefit:
+      "Personalize o CALDRA com todas as cores de destaque. No Free o Azul segue disponível.",
   },
 };
 

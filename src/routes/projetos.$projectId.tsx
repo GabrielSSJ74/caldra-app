@@ -61,7 +61,6 @@ import {
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
-
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
@@ -268,7 +267,6 @@ function ProjectDetail() {
       />
 
       <Panel className="p-4">
-
         <SectionLabel
           action={
             <button
@@ -338,7 +336,10 @@ function ProjectDetail() {
                       )}
                     >
                       <td className="py-2 pr-3">
-                        <button onClick={() => openPart(piece)} className="text-left hover:text-accent">
+                        <button
+                          onClick={() => openPart(piece)}
+                          className="text-left hover:text-accent"
+                        >
                           {piece.name}
                         </button>
                         <p className="font-mono text-[10px] text-muted-foreground">
@@ -434,7 +435,9 @@ function ProjectDetail() {
                                 {project.assemblies.map((asm) => (
                                   <DropdownMenuItem
                                     key={asm.id}
-                                    onSelect={() => assignPart(project.id, piece.instanceId, asm.id)}
+                                    onSelect={() =>
+                                      assignPart(project.id, piece.instanceId, asm.id)
+                                    }
                                   >
                                     {asm.name}
                                   </DropdownMenuItem>
@@ -481,7 +484,9 @@ function ProjectDetail() {
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuItem
-                              onSelect={() => setPartStatus(project.id, piece.instanceId, "entregue")}
+                              onSelect={() =>
+                                setPartStatus(project.id, piece.instanceId, "entregue")
+                              }
                             >
                               <PackageCheck className="size-3.5" /> Marcar entregue
                             </DropdownMenuItem>
@@ -503,7 +508,9 @@ function ProjectDetail() {
           </div>
         ) : (
           <div className="rounded-xl border border-dashed border-border p-8 text-center">
-            <p className="t-subtitle">Nenhuma peça {filter !== "todas" ? "neste filtro" : "ainda"}.</p>
+            <p className="t-subtitle">
+              Nenhuma peça {filter !== "todas" ? "neste filtro" : "ainda"}.
+            </p>
             <p className="t-caption mt-1">
               Toque em + para escolher um modelo da Traçagem e adicioná-lo a este serviço.
             </p>

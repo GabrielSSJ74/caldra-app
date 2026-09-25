@@ -12,16 +12,7 @@
  *    sólida com a espessura real.
  */
 
-import {
-  ArrowLeft,
-  Box,
-  Crosshair,
-  Eye,
-  Focus,
-  Layers,
-  Maximize2,
-  RotateCcw,
-} from "lucide-react";
+import { ArrowLeft, Box, Crosshair, Eye, Focus, Layers, Maximize2, RotateCcw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Model3DViewer,
@@ -37,6 +28,9 @@ import type { CanonicalProject } from "@/lib/project-catalog/types";
 import { findChamferLink } from "@/lib/projects/chamfer";
 import { getProject } from "@/lib/projects/store";
 import { cn } from "@/lib/utils";
+import { ChamferCADPanel } from "@/components/lab2d/ChamferCADPanel";
+import { ChamferKernel } from "@/lib/cad/kernel/chamferKernel";
+import type { PartDocument } from "@/lib/cad/kernel/types";
 
 const VIEWS: { id: ViewKey; label: string }[] = [
   { id: "iso", label: "ISO" },
@@ -135,6 +129,15 @@ export function Cad3DStage({
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
   const [treeOpen, setTreeOpen] = useState(false);
+  const [cadPanelOpen, setCadPanelOpen] = useState(false);
+  const [cadDoc, setCadDoc] = useState<PartDocument>(() => {
+    const d = ChamferKernel.createDocument(title, thickness, "Aço Carbono");
+    if (entities.length > 0) {
+      ChamferKernel.addSketchFromEntities(d, entities);
+      ChamferKernel.extrudeBasePlate(d, 100, 100);
+    }
+    return d;
+  });
 
   /* congelado enquanto fechado: sem rebuild nem perda de câmera ao voltar */
   const frozen = useRef<{ entities: Entity[]; thickness: number; material: SolidMaterial }>({
@@ -146,7 +149,8 @@ export function Cad3DStage({
   const src = frozen.current;
 
   const instances = useMemo(
-    () => (ctx ? buildInstances(ctx.result) : planSolids(src.entities, src.thickness, src.material)),
+    () =>
+      ctx ? buildInstances(ctx.result) : planSolids(src.entities, src.thickness, src.material),
     [ctx, src.entities, src.thickness, src.material],
   );
   const area = useMemo(() => (ctx ? 0 : planArea(src.entities)), [ctx, src.entities]);
@@ -200,8 +204,19 @@ export function Cad3DStage({
         <p className="flex-1 truncate text-center font-mono text-[11px] tracking-widest uppercase">
           {ctx ? `${ctx.name} · REV ${ctx.revision}` : title}
         </p>
-        <Btn active={treeOpen} onClick={() => setTreeOpen((t) => !t)} aria-label="Árvore de componentes">
+        <Btn
+          active={treeOpen}
+          onClick={() => setTreeOpen((t) => !t)}
+          aria-label="Árvore de componentes"
+        >
           <Layers className="inline size-3" /> ÁRVORE
+        </Btn>
+        <Btn
+          active={cadPanelOpen}
+          onClick={() => setCadPanelOpen((c) => !c)}
+          aria-label="Painel Paramétrico CAD"
+        >
+          <Box className="inline size-3 text-accent" /> CAD KERNEL
         </Btn>
       </header>
 
@@ -247,15 +262,27 @@ export function Cad3DStage({
 
         {/* SELEÇÃO / PROPRIEDADES RÁPIDAS */}
         {selInst && (
-          <div className="absolute bottom-2 left-2 max-w-[62%] rounded-xl border border-line bg-background/80 px-3 py-2 backdrop-blur">
-            <p className="font-mono text-[10px] tracking-widest text-accent">
-              {selInst.code} · {selInst.label}
-            </p>
-            <p className="font-mono text-[10px] text-muted-foreground">
-              {selInst.size.x.toFixed(0)} × {selInst.size.y.toFixed(0)} ×{" "}
+          <div className="absolute bottom-2 left-2 max-w-[70%] rounded-xl border border-line bg-background/85 px-3 py-2.5 backdrop-blur shadow-lg">
+            <div className="flex items-center gap-1.5 mb-1">
+              <span className="rounded bg-accent/15 px-1.5 py-0.2 font-mono text-[9px] font-semibold text-accent uppercase">
+                CAD CANÔNICO
+              </span>
+              <p className="font-mono text-[10px] tracking-wider text-accent truncate">
+                {selInst.code} · {selInst.label}
+              </p>
+            </div>
+            <p className="font-mono text-[10px] text-foreground/90">
+              {selInst.size.x.toFixed(1)} × {selInst.size.y.toFixed(1)} ×{" "}
               {selInst.size.z.toFixed(1)} mm ·{" "}
               {MATERIALS.find((m) => m.id === selInst.material)?.label}
             </p>
+            {area > 0 && (
+              <p className="mt-0.5 font-mono text-[9px] text-muted-foreground">
+                Área: {(area / 1e6).toFixed(3)} m² · Vol:{" "}
+                {((area * src.thickness) / 1e3).toFixed(1)} cm³ · Peso:{" "}
+                {(((area * src.thickness) / 1e6) * 7.85).toFixed(2)} kg
+              </p>
+            )}
           </div>
         )}
 
@@ -417,6 +444,13 @@ export function Cad3DStage({
           )}
         </div>
       </div>
+
+      <ChamferCADPanel
+        open={cadPanelOpen}
+        onClose={() => setCadPanelOpen(false)}
+        document={cadDoc}
+        onDocumentChange={setCadDoc}
+      />
     </div>
   );
 }

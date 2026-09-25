@@ -2,19 +2,13 @@
 
 Crie uma aplicação web responsiva, profissional e visualmente sofisticada chamada:
 
-
-
 CHAMELEON
 
 Laboratório Caldeireiro
 
-
-
 SUBTÍTULO:
 
 Traçagem • Planificação • Projetos • Conhecimento
-
-
 
 ==================================================
 
@@ -22,31 +16,17 @@ Traçagem • Planificação • Projetos • Conhecimento
 
 ==================================================
 
-
-
 O Chameleon será uma plataforma profissional voltada principalmente para caldeireiros, traçadores, soldadores, profissionais de fabricação metálica, projetistas, estudantes de caldeiraria e oficinas.
-
-
 
 NÃO quero que o produto pareça apenas uma calculadora.
 
-
-
 Quero que ele seja percebido como um verdadeiro "laboratório digital de caldeiraria": uma ferramenta utilizada para pensar, calcular, desenhar, estudar, planejar e preparar peças para fabricação.
-
-
 
 O conceito central do produto é:
 
-
-
 CALCULAR → VISUALIZAR → ENTENDER → DESENHAR → PLANIFICAR → EXPORTAR → FABRICAR
 
-
-
 O aplicativo deve ter aparência de software profissional moderno, combinando engenharia, tecnologia industrial e design premium.
-
-
 
 A identidade visual deve transmitir:
 
@@ -64,11 +44,7 @@ A identidade visual deve transmitir:
 
 - laboratório técnico
 
-
-
 Evite aparência de aplicativo genérico de calculadora.
-
-
 
 ==================================================
 
@@ -76,53 +52,31 @@ Evite aparência de aplicativo genérico de calculadora.
 
 ==================================================
 
-
-
 Nome:
 
 CHAMELEON
-
-
 
 Nome completo:
 
 CHAMELEON — Laboratório Caldeireiro
 
-
-
 Quero uma identidade visual minimalista, elegante e tecnológica.
-
-
 
 O conceito visual do "Chameleon" deve aparecer de maneira sutil, principalmente através da capacidade do sistema de mudar de aparência e adaptar-se ao usuário.
 
-
-
 Não quero um camaleão infantil ou cartunesco.
-
-
 
 Quero um símbolo abstrato, geométrico ou tecnológico que possa futuramente servir como logotipo.
 
-
-
 INTERFACE PADRÃO:
 
-
-
 O aplicativo deve possuir dois ambientes visuais:
-
-
 
 1. MODO ESCURO
 
 2. MODO CLARO
 
-
-
 Além disso, quando o usuário estiver no MODO MESTRE, a interface deverá ganhar automaticamente uma identidade visual premium.
-
-
 
 ==================================================
 
@@ -130,39 +84,23 @@ Além disso, quando o usuário estiver no MODO MESTRE, a interface deverá ganha
 
 ==================================================
 
-
-
 Criar um sistema premium denominado:
-
-
 
 MODO MESTRE
 
-
-
 O Modo Mestre representa a versão profissional completa do Chameleon.
-
-
 
 Quando ativado, a interface deve mudar visualmente para uma experiência premium.
 
-
-
 A identidade visual premium deve utilizar gradientes sofisticados e modernos, inspirados visualmente em interfaces premium contemporâneas, incluindo gradientes espectrais/RGB muito sutis.
-
-
 
 IMPORTANTE:
 
 Não criar um visual exageradamente gamer.
 
-
-
 O resultado deve ser:
 
 minimalista + tecnológico + artístico + industrial.
-
-
 
 Usar:
 
@@ -184,49 +122,29 @@ Usar:
 
 - blur apenas onde fizer sentido
 
-
-
 O Modo Mestre deve parecer imediatamente diferente da versão gratuita.
-
-
 
 Adicionar no menu Configurações:
 
-
-
 "Ativar Modo Mestre"
 
-
-
 Ao clicar, abrir um modal elegante:
-
-
 
 MODO MESTRE
 
 Desbloqueie o laboratório completo.
 
-
-
 Campo:
 
 "Digite seu código de acesso"
-
-
 
 Botão:
 
 DESBLOQUEAR
 
-
-
 Para a PRIMEIRA VERSÃO/PROTÓTIPO do projeto, aceitar:
 
-
-
 DESPERTAR
-
-
 
 Quando o código for correto:
 
@@ -242,21 +160,13 @@ Quando o código for correto:
 
 - salvar o estado da sessão/localmente para que o usuário não precise inserir o código novamente durante o protótipo.
 
-
-
 IMPORTANTE:
 
 Estruturar o sistema de forma que futuramente o código local possa ser substituído por autenticação real, banco de dados e assinatura/pagamento.
 
-
-
 Não espalhar a lógica de acesso premium pelo frontend.
 
-
-
 Criar uma camada central de controle de permissões, por exemplo:
-
-
 
 useSubscription()
 
@@ -264,11 +174,7 @@ ou
 
 useFeatureAccess()
 
-
-
 para permitir posteriormente planos Free, Pro e Oficina.
-
-
 
 ==================================================
 
@@ -276,11 +182,7 @@ para permitir posteriormente planos Free, Pro e Oficina.
 
 ==================================================
 
-
-
 Quero uma aplicação extremamente refinada visualmente.
-
-
 
 Utilizar animações para:
 
@@ -306,11 +208,7 @@ Utilizar animações para:
 
 - troca de tema
 
-
-
 As animações devem ser rápidas e elegantes.
-
-
 
 Exemplos:
 
@@ -328,15 +226,9 @@ Exemplos:
 
 - progress indicators
 
-
-
 NÃO exagerar.
 
-
-
 A interface deve continuar parecendo um software profissional de engenharia.
-
-
 
 ==================================================
 
@@ -344,87 +236,53 @@ A interface deve continuar parecendo um software profissional de engenharia.
 
 ==================================================
 
-
-
 Criar uma página inicial chamada:
-
-
 
 LABORATÓRIO
 
-
-
 No topo:
-
-
 
 CHAMELEON
 
 Laboratório Caldeireiro
 
-
-
 Mensagem:
-
-
 
 "Transforme medidas em fabricação."
 
-
-
 Criar um dashboard moderno.
 
-
-
 Seções:
-
-
 
 CONTINUAR TRABALHO
 
 Mostrar projetos recentes.
 
-
-
 CÁLCULO RÁPIDO
 
 Acesso rápido às ferramentas.
-
-
 
 TRAÇAGEM
 
 Acesso às geometrias.
 
-
-
 PLANIFICAÇÃO
 
 Acesso aos desenvolvimentos.
-
-
 
 LABORATÓRIO 2D
 
 Acesso ao software de desenho vetorial.
 
-
-
 ESCOLA
 
 Acesso às aulas teóricas.
-
-
 
 BIBLIOTECA
 
 Acesso à biblioteca técnica.
 
-
-
 O dashboard deve parecer um cockpit de software industrial moderno.
-
-
 
 ==================================================
 
@@ -432,11 +290,7 @@ O dashboard deve parecer um cockpit de software industrial moderno.
 
 ==================================================
 
-
-
 Criar uma navegação principal com:
-
-
 
 LABORATÓRIO
 
@@ -452,19 +306,11 @@ ESCOLA
 
 BIBLIOTECA
 
-
-
 Configurações no canto superior.
-
-
 
 No mobile, utilizar navegação inferior ou menu adaptativo.
 
-
-
 No desktop, utilizar sidebar elegante.
-
-
 
 ==================================================
 
@@ -472,19 +318,11 @@ No desktop, utilizar sidebar elegante.
 
 ==================================================
 
-
-
 Criar uma seção denominada:
-
-
 
 TRAÇAGEM
 
-
-
 Mostrar uma biblioteca visual de geometrias.
-
-
 
 Cada geometria deve possuir:
 
@@ -498,11 +336,7 @@ Cada geometria deve possuir:
 
 - indicador FREE ou MESTRE
 
-
-
 Primeiras geometrias:
-
-
 
 Cilindro
 
@@ -540,23 +374,13 @@ Chaminés
 
 Interseções
 
-
-
 IMPORTANTE:
-
-
 
 Não implementar matemática falsa ou aproximada apenas para parecer funcionando.
 
-
-
 Criar uma arquitetura preparada para módulos matemáticos individuais.
 
-
-
 Cada geometria deve possuir:
-
-
 
 Inputs
 
@@ -570,43 +394,27 @@ Inputs
 
 → exportação
 
-
-
 ==================================================
 
 8. INTERFACE DAS CALCULADORAS
 
 ==================================================
 
-
-
 Não criar formulários secos.
 
-
-
 A tela deve mostrar simultaneamente:
-
-
 
 LADO ESQUERDO:
 
 Desenho técnico/esquemático da peça.
 
-
-
 LADO DIREITO:
 
 Parâmetros.
 
-
-
 Exemplo:
 
-
-
 Boca de Lobo
-
-
 
 Mostrar visualização esquemática com:
 
@@ -620,15 +428,9 @@ altura
 
 espessura
 
-
-
 As linhas de cota devem ser visualmente associadas aos campos.
 
-
-
 Quando o usuário editar uma medida, atualizar o desenho imediatamente.
-
-
 
 O resultado deve parecer uma mistura entre:
 
@@ -638,11 +440,7 @@ O resultado deve parecer uma mistura entre:
 
 - CAD simplificado
 
-
-
 No mobile, reorganizar automaticamente.
-
-
 
 ==================================================
 
@@ -650,19 +448,11 @@ No mobile, reorganizar automaticamente.
 
 ==================================================
 
-
-
 Após calcular, mostrar uma área denominada:
-
-
 
 RESULTADO
 
-
-
 Dividir em:
-
-
 
 DIMENSÕES
 
@@ -675,8 +465,6 @@ DESENVOLVIMENTO
 MATERIAL
 
 EXPORTAÇÃO
-
-
 
 Mostrar claramente:
 
@@ -694,19 +482,11 @@ Mostrar claramente:
 
 - linhas de corte
 
-
-
 No Modo Mestre, disponibilizar:
-
-
 
 "ENTENDER O CÁLCULO"
 
-
-
 Ao clicar, abrir uma explicação passo a passo.
-
-
 
 ==================================================
 
@@ -714,39 +494,21 @@ Ao clicar, abrir uma explicação passo a passo.
 
 ==================================================
 
-
-
 O diferencial pedagógico do Chameleon será explicar de onde cada medida surgiu.
-
-
 
 Criar componentes como:
 
-
-
 "DE ONDE VEM ESTA MEDIDA?"
-
-
 
 "POR QUE ESTE ÂNGULO É UTILIZADO?"
 
-
-
 "QUAL É O PONTO DE REFERÊNCIA?"
-
-
 
 "COMO FOI CALCULADA ESTA GERATRIZ?"
 
-
-
 "QUAL MÉTODO DE DESENVOLVIMENTO ESTÁ SENDO UTILIZADO?"
 
-
-
 A explicação deve mostrar:
-
-
 
 1. medida conhecida
 
@@ -758,43 +520,27 @@ A explicação deve mostrar:
 
 5. interpretação geométrica
 
-
-
 Exemplo visual:
-
-
 
 Dado:
 
 Ø = 300 mm
 
-
-
 Fórmula:
 
 C = π × D
-
-
 
 Substituição:
 
 C = 3,141592 × 300
 
-
-
 Resultado:
 
 C = 942,48 mm
 
-
-
 Depois explicar visualmente o significado.
 
-
-
 A experiência deve parecer que um mestre de caldeiraria está ensinando o usuário.
-
-
 
 ==================================================
 
@@ -802,39 +548,21 @@ A experiência deve parecer que um mestre de caldeiraria está ensinando o usuá
 
 ==================================================
 
-
-
 Criar uma seção premium chamada:
-
-
 
 LABORATÓRIO 2D
 
-
-
 Este será um software vetorial integrado ao Chameleon.
-
-
 
 A referência conceitual é a experiência de softwares industriais de preparação de corte, como o CypCut, MAS NÃO copiar sua interface, identidade visual ou elementos proprietários.
 
-
-
 Criar uma experiência ORIGINAL.
-
-
 
 O Laboratório 2D deve ser inicialmente um editor vetorial 2D.
 
-
-
 Objetivo:
 
-
-
 Permitir que o usuário crie, edite e organize desenhos técnicos para fabricação.
-
-
 
 ==================================================
 
@@ -842,15 +570,9 @@ Permitir que o usuário crie, edite e organize desenhos técnicos para fabricaç
 
 ==================================================
 
-
-
 Criar uma área de trabalho ampla semelhante a um CAD simplificado.
 
-
-
 Elementos:
-
-
 
 TOPO:
 
@@ -868,13 +590,9 @@ Camadas
 
 Exportar
 
-
-
 LADO ESQUERDO:
 
 Barra de ferramentas
-
-
 
 Ferramentas:
 
@@ -916,19 +634,13 @@ Ferramentas:
 
 - refazer
 
-
-
 CENTRO:
 
 Canvas de desenho vetorial.
 
-
-
 LADO DIREITO:
 
 Painel de propriedades.
-
-
 
 Mostrar:
 
@@ -950,8 +662,6 @@ Mostrar:
 
 - propriedades geométricas
 
-
-
 CRIAR:
 
 grid
@@ -972,23 +682,15 @@ origem
 
 eixos X/Y
 
-
-
 ==================================================
 
 13. UNIDADES E PRECISÃO
 
 ==================================================
 
-
-
 Unidade principal:
 
-
-
 MILÍMETROS
-
-
 
 Permitir posteriormente:
 
@@ -998,19 +700,11 @@ m
 
 polegadas
 
-
-
 Mostrar a unidade em todos os campos.
-
-
 
 Preparar o motor geométrico para trabalhar com precisão adequada para fabricação.
 
-
-
 Evitar operações geométricas baseadas apenas em coordenadas arredondadas visualmente.
-
-
 
 ==================================================
 
@@ -1018,11 +712,7 @@ Evitar operações geométricas baseadas apenas em coordenadas arredondadas visu
 
 ==================================================
 
-
-
 O editor deve permitir:
-
-
 
 cota linear
 
@@ -1038,11 +728,7 @@ cota de raio
 
 cota de diâmetro
 
-
-
 As cotas devem ser entidades vetoriais.
-
-
 
 ==================================================
 
@@ -1050,15 +736,9 @@ As cotas devem ser entidades vetoriais.
 
 ==================================================
 
-
-
 Criar sistema de layers.
 
-
-
 Exemplo:
-
-
 
 CORTE
 
@@ -1072,8 +752,6 @@ COTA
 
 REFERÊNCIA
 
-
-
 Permitir:
 
 - criar
@@ -1086,23 +764,15 @@ Permitir:
 
 - alterar nome
 
-
-
 ==================================================
 
 16. DXF
 
 ==================================================
 
-
-
 O DXF é um dos recursos PREMIUM MAIS IMPORTANTES.
 
-
-
 Criar arquitetura para importar e exportar DXF.
-
-
 
 Na primeira versão, priorizar:
 
@@ -1116,8 +786,6 @@ Na primeira versão, priorizar:
 
 - ARC
 
-
-
 Preparar arquitetura para suporte futuro a:
 
 - SPLINE
@@ -1128,27 +796,15 @@ Preparar arquitetura para suporte futuro a:
 
 - blocks
 
-
-
 IMPORTANTE:
-
-
 
 Não apenas gerar um arquivo com extensão .dxf.
 
-
-
 O conteúdo precisa seguir uma estrutura válida de DXF.
-
-
 
 Criar uma camada de serviço chamada, por exemplo:
 
-
-
 dxfService
-
-
 
 para concentrar toda a lógica de:
 
@@ -1158,27 +814,19 @@ para concentrar toda a lógica de:
 
 - exportação
 
-
-
 ==================================================
 
 17. EXPORTAÇÃO
 
 ==================================================
 
-
-
 Permitir exportar desenhos e desenvolvimentos como:
-
-
 
 DXF
 
 PDF
 
 PNG
-
-
 
 PDF:
 
@@ -1196,19 +844,13 @@ PDF:
 
 - observações
 
-
-
 PNG:
 
 imagem de alta resolução.
 
-
-
 DXF:
 
 arquivo vetorial apropriado para fluxo CAD/CNC.
-
-
 
 ==================================================
 
@@ -1216,19 +858,11 @@ arquivo vetorial apropriado para fluxo CAD/CNC.
 
 ==================================================
 
-
-
 Criar uma seção separada:
-
-
 
 PLANIFICAÇÃO
 
-
-
 Aqui o usuário escolhe a geometria e recebe:
-
-
 
 visualização 2D
 
@@ -1246,11 +880,7 @@ geratrizes
 
 ângulos
 
-
-
 Quando possível, mostrar uma visualização 3D simplificada da peça.
-
-
 
 ==================================================
 
@@ -1258,11 +888,7 @@ Quando possível, mostrar uma visualização 3D simplificada da peça.
 
 ==================================================
 
-
-
 Criar posteriormente:
-
-
 
 área
 
@@ -1278,8 +904,6 @@ perda
 
 estimativa de custo
 
-
-
 Permitir inserir:
 
 - tipo de material
@@ -1290,27 +914,17 @@ Permitir inserir:
 
 - preço por chapa
 
-
-
 ==================================================
 
 20. PROJETOS
 
 ==================================================
 
-
-
 Criar sistema:
-
-
 
 PROJETOS
 
-
-
 Cada projeto pode conter:
-
-
 
 nome
 
@@ -1320,15 +934,9 @@ data
 
 observações
 
-
-
 Dentro:
 
-
-
 PEÇAS
-
-
 
 Cada peça pode armazenar:
 
@@ -1348,31 +956,19 @@ Cada peça pode armazenar:
 
 - quantidade
 
-
-
 ==================================================
 
 21. ESCOLA / AULAS TEÓRICAS
 
 ==================================================
 
-
-
 Criar uma seção:
-
-
 
 ESCOLA
 
-
-
 Visual moderno de plataforma educacional.
 
-
-
 Primeiros módulos:
-
-
 
 Fundamentos da Caldeiraria
 
@@ -1404,11 +1000,7 @@ Bend Allowance
 
 Bend Deduction
 
-
-
 Cada aula deverá possuir:
-
-
 
 TEORIA
 
@@ -1420,11 +1012,7 @@ APLICAÇÃO
 
 EXERCÍCIO
 
-
-
 No Modo Mestre, mostrar conteúdo completo.
-
-
 
 ==================================================
 
@@ -1432,19 +1020,11 @@ No Modo Mestre, mostrar conteúdo completo.
 
 ==================================================
 
-
-
 Criar:
-
-
 
 BIBLIOTECA
 
-
-
 Categorias:
-
-
 
 Tubos
 
@@ -1464,15 +1044,9 @@ Conversões
 
 Fórmulas
 
-
-
 Interface semelhante a um catálogo técnico.
 
-
-
 Criar busca.
-
-
 
 ==================================================
 
@@ -1480,15 +1054,9 @@ Criar busca.
 
 ==================================================
 
-
-
 Preparar a arquitetura para uma futura modalidade:
 
-
-
 OFICINA
-
-
 
 Com:
 
@@ -1510,11 +1078,7 @@ Com:
 
 - compartilhamento
 
-
-
 Não precisa implementar tudo agora, mas estruturar o código de forma que seja fácil adicionar posteriormente.
-
-
 
 ==================================================
 
@@ -1522,11 +1086,7 @@ Não precisa implementar tudo agora, mas estruturar o código de forma que seja 
 
 ==================================================
 
-
-
 Criar controle de acesso centralizado.
-
-
 
 FREE:
 
@@ -1539,8 +1099,6 @@ FREE:
 - algumas aulas
 
 - biblioteca limitada
-
-
 
 MESTRE:
 
@@ -1564,15 +1122,9 @@ MESTRE:
 
 - recursos futuros
 
-
-
 Não utilizar apenas ocultação visual como mecanismo de segurança.
 
-
-
 Criar guards de funcionalidade.
-
-
 
 ==================================================
 
@@ -1580,29 +1132,19 @@ Criar guards de funcionalidade.
 
 ==================================================
 
-
-
 Desktop:
 
 experiência completa de software.
-
-
 
 Tablet:
 
 experiência híbrida.
 
-
-
 Celular:
 
 interface simplificada, botões maiores, campos grandes, navegação adaptada.
 
-
-
 A aplicação deve continuar utilizável em ambiente de oficina.
-
-
 
 Priorizar:
 
@@ -1618,15 +1160,11 @@ Priorizar:
 
 - feedback visual imediato
 
-
-
 ==================================================
 
 26. ACESSIBILIDADE E USABILIDADE
 
 ==================================================
-
-
 
 Permitir:
 
@@ -1644,11 +1182,7 @@ Permitir:
 
 - mensagens claras
 
-
-
 Não utilizar efeitos que prejudiquem leitura.
-
-
 
 ==================================================
 
@@ -1656,15 +1190,9 @@ Não utilizar efeitos que prejudiquem leitura.
 
 ==================================================
 
-
-
 Utilizar arquitetura modular.
 
-
-
 Separar:
-
-
 
 UI
 
@@ -1688,19 +1216,11 @@ biblioteca
 
 conteúdo educacional
 
-
-
 Não colocar matemática complexa diretamente dentro dos componentes visuais.
-
-
 
 Criar funções e serviços independentes.
 
-
-
 Exemplo:
-
-
 
 /geometry
 
@@ -1718,27 +1238,17 @@ Exemplo:
 
 /library
 
-
-
 ==================================================
 
 28. PRECISÃO MATEMÁTICA
 
 ==================================================
 
-
-
 ESTA PARTE É CRÍTICA.
-
-
 
 Não inventar fórmulas.
 
-
-
 Não simplificar cálculos complexos apenas para fazer a interface parecer funcionar.
-
-
 
 Cada geometria deve possuir:
 
@@ -1752,19 +1262,11 @@ Cada geometria deve possuir:
 
 - validação
 
-
-
 Quando uma geometria ainda não estiver implementada matematicamente, deixar explicitamente como:
-
-
 
 "Em desenvolvimento"
 
-
-
 e NÃO mostrar resultados falsos.
-
-
 
 ==================================================
 
@@ -1772,23 +1274,13 @@ e NÃO mostrar resultados falsos.
 
 ==================================================
 
-
-
 Não tentar finalizar todas as geometrias de uma vez.
-
-
 
 O primeiro módulo que deve funcionar impecavelmente é:
 
-
-
 TRANSIÇÃO QUADRADO → REDONDO
 
-
-
 Implementar primeiro:
-
-
 
 entrada de medidas
 
@@ -1812,11 +1304,7 @@ exportação PDF
 
 estrutura preparada para DXF
 
-
-
 Depois que essa arquitetura estiver sólida, ela deverá servir como modelo para outras geometrias.
-
-
 
 ==================================================
 
@@ -1824,59 +1312,31 @@ Depois que essa arquitetura estiver sólida, ela deverá servir como modelo para
 
 ==================================================
 
-
-
 Não mostrar todas as opções de uma vez.
-
-
 
 A interface deve começar simples.
 
-
-
 Usuário escolhe:
-
-
 
 GEOMETRIA
 
-
-
 Depois:
-
-
 
 MEDIDAS
 
-
-
 Depois:
-
-
 
 MÉTODO
 
-
-
 Depois:
-
-
 
 RESULTADO
 
-
-
 Depois:
-
-
 
 EXPORTAÇÃO
 
-
-
 No Modo Mestre, liberar informações adicionais.
-
-
 
 ==================================================
 
@@ -1884,11 +1344,7 @@ No Modo Mestre, liberar informações adicionais.
 
 ==================================================
 
-
-
 Usar português brasileiro técnico.
-
-
 
 Tom:
 
@@ -1898,47 +1354,25 @@ direto
 
 didático
 
-
-
 Evitar linguagem infantil.
-
-
 
 Exemplos:
 
-
-
 "Defina as dimensões da peça."
-
-
 
 "Confira os parâmetros antes de gerar o desenvolvimento."
 
-
-
 "Desenvolvimento calculado."
-
-
 
 "Ver cálculo completo"
 
-
-
 "Gerar desenho"
-
-
 
 "Exportar DXF"
 
-
-
 "Exportar PDF"
 
-
-
 "Salvar no projeto"
-
-
 
 ==================================================
 
@@ -1946,15 +1380,9 @@ Exemplos:
 
 ==================================================
 
-
-
 Quero uma interface artisticamente refinada.
 
-
-
 A estética deve lembrar:
-
-
 
 engenharia industrial moderna
 
@@ -1963,8 +1391,6 @@ software CAD
 laboratório tecnológico
 
 instrumentação de precisão
-
-
 
 Misturar:
 
@@ -1982,8 +1408,6 @@ gradientes sutis
 
 animações discretas
 
-
-
 Evitar:
 
 excesso de cards
@@ -1996,15 +1420,9 @@ visual de aplicativo financeiro
 
 visual gamer
 
-
-
 O usuário precisa abrir o Chameleon e sentir:
 
-
-
 "Isso parece um software profissional."
-
-
 
 ==================================================
 
@@ -2012,19 +1430,11 @@ O usuário precisa abrir o Chameleon e sentir:
 
 ==================================================
 
-
-
 Criar:
-
-
 
 CONFIGURAÇÕES
 
-
-
 Seções:
-
-
 
 Aparência
 
@@ -2033,8 +1443,6 @@ Aparência
 - Escuro
 
 - Automático
-
-
 
 Unidades
 
@@ -2046,29 +1454,17 @@ Unidades
 
 - in
 
-
-
 Precisão
-
-
 
 Notificações
 
-
-
 Conta
-
-
 
 Modo Mestre
 
 - inserir código
 
-
-
 Sobre o Chameleon
-
-
 
 ==================================================
 
@@ -2076,21 +1472,13 @@ Sobre o Chameleon
 
 ==================================================
 
-
-
 Criar dados demonstrativos para que a aplicação não pareça vazia.
 
-
-
 Exemplo:
-
-
 
 Projeto:
 
 "Chaminé Industrial"
-
-
 
 Peças:
 
@@ -2100,8 +1488,6 @@ Peças:
 
 - Duto
 
-
-
 Histórico:
 
 - Boca de Lobo Ø400
@@ -2110,19 +1496,13 @@ Histórico:
 
 - Curva 90°
 
-
-
 Usar placeholders claramente identificados como dados demonstrativos.
-
-
 
 ==================================================
 
 35. QUALIDADE DO FRONTEND
 
 ==================================================
-
-
 
 Priorizar:
 
@@ -2144,11 +1524,7 @@ Priorizar:
 
 - validação de formulário
 
-
-
 Não criar código monolítico.
-
-
 
 ==================================================
 
@@ -2156,19 +1532,11 @@ Não criar código monolítico.
 
 ==================================================
 
-
-
 Não tente simular 100% das funcionalidades neste primeiro momento.
-
-
 
 Crie uma fundação profissional.
 
-
-
 Entregue nesta primeira implementação:
-
-
 
 1. identidade visual completa
 

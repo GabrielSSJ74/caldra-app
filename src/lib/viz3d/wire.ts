@@ -101,7 +101,6 @@ export const DEFAULT_PARAMS: WireParams = {
   t: 6,
 };
 
-
 const v = (x: number, y: number, z: number): Vec3 => ({ x, y, z });
 
 /* ------------------------------------------------------------------ */
@@ -116,8 +115,10 @@ function num(x: unknown, fallback: number): number {
 
 export function validateParameters(p: WireParams): ParamIssue[] {
   const out: ParamIssue[] = [];
-  if (!Number.isFinite(p.d1) || p.d1 <= 0) out.push({ field: "d1", message: "Diâmetro maior inválido." });
-  if (!Number.isFinite(p.d2) || p.d2 < 0) out.push({ field: "d2", message: "Diâmetro menor inválido." });
+  if (!Number.isFinite(p.d1) || p.d1 <= 0)
+    out.push({ field: "d1", message: "Diâmetro maior inválido." });
+  if (!Number.isFinite(p.d2) || p.d2 < 0)
+    out.push({ field: "d2", message: "Diâmetro menor inválido." });
   if (!Number.isFinite(p.h) || p.h <= 0) out.push({ field: "h", message: "Altura inválida." });
   return out;
 }
@@ -154,7 +155,6 @@ export function normalizeParameters(p: WireParams): Required<WireParams> {
     strategy: p.strategy === "two-weld" ? "two-weld" : "single",
   };
 }
-
 
 /* ------------------------------------------------------------------ */
 /* 2. PRIMITIVAS DE PERFIL                                             */
@@ -417,8 +417,11 @@ function finish(geo: Geo, refLines: Edge[] = []): WireModel {
   computeFaceNormals(geo.faces);
   const bounds = boundsOf(geo.faces);
   const size =
-    Math.max(bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y, bounds.max.z - bounds.min.z) ||
-    1;
+    Math.max(
+      bounds.max.x - bounds.min.x,
+      bounds.max.y - bounds.min.y,
+      bounds.max.z - bounds.min.z,
+    ) || 1;
   return {
     faces: geo.faces,
     edges: geo.edges,
@@ -551,12 +554,23 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
       // Emendas soldadas (modo 2 partes + solda): posição real das costuras J1/J2.
       const seamRefs: Edge[] = [];
       if (p.strategy === "two-weld") {
-        const midpoint = (a: typeof canonical.corners[number], b: typeof canonical.corners[number]) => ({
-          x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: 0,
+        const midpoint = (
+          a: (typeof canonical.corners)[number],
+          b: (typeof canonical.corners)[number],
+        ) => ({
+          x: (a.x + b.x) / 2,
+          y: (a.y + b.y) / 2,
+          z: 0,
         });
         seamRefs.push(
-          [cv(midpoint(canonical.corners[0]!, canonical.corners[1]!)), cv(canonical.arcPoints[0]!.at(-1)!)],
-          [cv(midpoint(canonical.corners[2]!, canonical.corners[3]!)), cv(canonical.arcPoints[2]!.at(-1)!)],
+          [
+            cv(midpoint(canonical.corners[0]!, canonical.corners[1]!)),
+            cv(canonical.arcPoints[0]!.at(-1)!),
+          ],
+          [
+            cv(midpoint(canonical.corners[2]!, canonical.corners[3]!)),
+            cv(canonical.arcPoints[2]!.at(-1)!),
+          ],
         );
       }
 
@@ -633,7 +647,11 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
           const py = q.y - s * ay;
           return Math.hypot(px, py, q.z - p.e) < rb - t * 0.25;
         };
-        const cutMain = cutOpening(main, insideBranch, bm.curve.map((c) => c.p));
+        const cutMain = cutOpening(
+          main,
+          insideBranch,
+          bm.curve.map((c) => c.p),
+        );
         return withAxis(merge([cutMain, branch]));
       }
       // cilindro cortado por plano inclinado: altura varia com z
@@ -646,7 +664,6 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
       });
       return withAxis(shell(loops, { t }));
     }
-
 
     case "te":
     case "interseccoes": {
@@ -715,7 +732,9 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
       model.centerline.forEach((c, j) => {
         const prev = model.segments[j - 1];
         const next = model.segments[j];
-        const dirs = [prev?.rotationDeg, next?.rotationDeg].filter((x) => x !== undefined) as number[];
+        const dirs = [prev?.rotationDeg, next?.rotationDeg].filter(
+          (x) => x !== undefined,
+        ) as number[];
         const φm = ((dirs.reduce((s, x) => s + x, 0) / dirs.length) * Math.PI) / 180;
         const mitred = dirs.length === 2;
         const ax = mitred ? k : 1;
@@ -730,13 +749,11 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
       return withAxis(shell(loops, { t }));
     }
 
-
     case "flanges": {
       const thick = Math.max(h * 0.12, t * 2);
-      const disc = shell(
-        [ring(r1, -thick / 2, seg), ring(r1, thick / 2, seg)],
-        { t: Math.max(r1 - r2, t) },
-      );
+      const disc = shell([ring(r1, -thick / 2, seg), ring(r1, thick / 2, seg)], {
+        t: Math.max(r1 - r2, t),
+      });
       const holes = Array.from({ length: 8 }, (_, i) => {
         const a = (i / 8) * Math.PI * 2;
         const c = (r1 + r2) / 2;
@@ -754,9 +771,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
 
     case "tampas": {
       const lip = Math.max(h * 0.18, t * 3);
-      return withAxis(
-        shell([ring(r1, y0, seg), ring(r1, y0 + lip, seg)], { t, capStart: true }),
-      );
+      return withAxis(shell([ring(r1, y0, seg), ring(r1, y0 + lip, seg)], { t, capStart: true }));
     }
 
     case "calotas": {

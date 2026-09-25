@@ -80,11 +80,15 @@ function ContaPage() {
       {user ? (
         <>
           <Panel className="space-y-3 p-4" glow>
-            <SectionLabel action={<ShieldCheck className="size-4 text-accent" />}>Sessão</SectionLabel>
+            <SectionLabel action={<ShieldCheck className="size-4 text-accent" />}>
+              Sessão
+            </SectionLabel>
             <p className="text-sm">{user.email}</p>
             <p className="font-mono text-[11px] tracking-[0.18em] text-muted-foreground uppercase">
               Plano{" "}
-              <span className={plan === "free" ? "" : "pro-surface rounded-full px-2 py-0.5 text-pro"}>
+              <span
+                className={plan === "free" ? "" : "pro-surface rounded-full px-2 py-0.5 text-pro"}
+              >
                 {PLAN_LABEL[plan]}
               </span>
             </p>

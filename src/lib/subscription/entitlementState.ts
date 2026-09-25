@@ -26,7 +26,11 @@ export function initialState(plan: Plan, source: string): EntitlementState {
 }
 
 /** Aplica o resultado de uma sincronização ao estado atual. */
-export function applySync(current: EntitlementState, input: SyncInput, now = new Date()): EntitlementState {
+export function applySync(
+  current: EntitlementState,
+  input: SyncInput,
+  now = new Date(),
+): EntitlementState {
   if (input.state === "offline") return { ...current, syncState: "offline" };
   if (input.state === "sync_failed") return { ...current, syncState: "sync_failed" };
 

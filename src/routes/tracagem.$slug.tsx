@@ -6,7 +6,12 @@ import { GeometryStudio } from "@/components/chameleon/GeometryStudio";
 import { getPart, getProject, savePartParameters } from "@/lib/projects/store";
 import { getCustom } from "@/lib/library/store";
 
-type Search = { projeto?: string | undefined; peca?: string | undefined; preset?: string | undefined; modelo?: string | undefined };
+type Search = {
+  projeto?: string | undefined;
+  peca?: string | undefined;
+  preset?: string | undefined;
+  modelo?: string | undefined;
+};
 
 /** "gomos:3,ang:90" → { gomos: 3, ang: 90 } (compatibilidade de modelos antigos). */
 function parsePreset(raw: string | undefined): Record<string, number> | undefined {
@@ -22,10 +27,10 @@ function parsePreset(raw: string | undefined): Record<string, number> | undefine
 
 export const Route = createFileRoute("/tracagem/$slug")({
   validateSearch: (raw: Record<string, unknown>): Search => ({
-    projeto: typeof raw['projeto'] === "string" ? raw['projeto'] : undefined,
-    peca: typeof raw['peca'] === "string" ? raw['peca'] : undefined,
-    preset: typeof raw['preset'] === "string" ? raw['preset'] : undefined,
-    modelo: typeof raw['modelo'] === "string" ? raw['modelo'] : undefined,
+    projeto: typeof raw["projeto"] === "string" ? raw["projeto"] : undefined,
+    peca: typeof raw["peca"] === "string" ? raw["peca"] : undefined,
+    preset: typeof raw["preset"] === "string" ? raw["preset"] : undefined,
+    modelo: typeof raw["modelo"] === "string" ? raw["modelo"] : undefined,
   }),
 
   loader: ({ params }) => {
@@ -36,7 +41,10 @@ export const Route = createFileRoute("/tracagem/$slug")({
   head: ({ loaderData }) => {
     if (!loaderData) {
       return {
-        meta: [{ title: "Geometria indisponível — CALDRA" }, { name: "robots", content: "noindex" }],
+        meta: [
+          { title: "Geometria indisponível — CALDRA" },
+          { name: "robots", content: "noindex" },
+        ],
       };
     }
     const { name, short } = loaderData.geometry;
@@ -83,7 +91,11 @@ function GeometryPage() {
       )}
       <Header name={part?.name ?? geometry.name} meta={`${geometry.level} · ${geometry.method}`} />
       {geometry.slug === "quadrado-redondo" ? (
-        <SquareToRoundStudio initialValues={custom?.values} customId={custom?.id} customName={custom?.name} />
+        <SquareToRoundStudio
+          initialValues={custom?.values}
+          customId={custom?.id}
+          customName={custom?.name}
+        />
       ) : (
         <GeometryStudio
           key={part?.instanceId ?? geometry.slug}

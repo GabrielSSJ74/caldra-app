@@ -9,7 +9,14 @@ import type { Binary } from "./imagePreprocessor";
 export type Swatch = { hex: string; r: number; g: number; b: number; share: number };
 
 const hex = (r: number, g: number, b: number) =>
-  "#" + [r, g, b].map((n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0")).join("");
+  "#" +
+  [r, g, b]
+    .map((n) =>
+      Math.max(0, Math.min(255, Math.round(n)))
+        .toString(16)
+        .padStart(2, "0"),
+    )
+    .join("");
 
 /** K-means simples sobre pixels opacos, com semente por amostragem regular. */
 export function quantize(image: ImageData, k: number, ignoreBackground = true): Swatch[] {
@@ -21,7 +28,11 @@ export function quantize(image: ImageData, k: number, ignoreBackground = true): 
       const i = (y * width + x) * 4;
       const a = data[i + 3]! / 255;
       if (a < 0.35) continue;
-      px.push([data[i]! * a + 255 * (1 - a), data[i + 1]! * a + 255 * (1 - a), data[i + 2]! * a + 255 * (1 - a)]);
+      px.push([
+        data[i]! * a + 255 * (1 - a),
+        data[i + 1]! * a + 255 * (1 - a),
+        data[i + 2]! * a + 255 * (1 - a),
+      ]);
     }
   }
   if (!px.length) return [];

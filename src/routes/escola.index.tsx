@@ -88,10 +88,7 @@ function EstudosIndex() {
       <Panel className="p-4">
         <div className="flex items-baseline justify-between gap-2">
           <SectionLabel>Mapa de competências</SectionLabel>
-          <Link
-            to="/escola/competencias"
-            className="font-mono text-[10px] text-accent uppercase"
-          >
+          <Link to="/escola/competencias" className="font-mono text-[10px] text-accent uppercase">
             Ver detalhe
           </Link>
         </div>

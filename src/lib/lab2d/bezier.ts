@@ -44,12 +44,7 @@ export function cubicAt(p0: Vec2, c1: Vec2, c2: Vec2, p1: Vec2, t: number): Vec2
 }
 
 /** Amostra o caminho em pontos (para bbox, hit-test e achatamento opcional). */
-export function samplePath(
-  start: Vec2,
-  segs: BezierSeg[],
-  closed: boolean,
-  perSeg = 12,
-): Vec2[] {
+export function samplePath(start: Vec2, segs: BezierSeg[], closed: boolean, perSeg = 12): Vec2[] {
   const out: Vec2[] = [start];
   let cur = start;
   for (const s of segs) {
@@ -65,11 +60,7 @@ export function samplePath(
 }
 
 /** Segmentos retos equivalentes — alimenta snap, trim e verificação. */
-export function pathSegments(
-  start: Vec2,
-  segs: BezierSeg[],
-  closed: boolean,
-): [Vec2, Vec2][] {
+export function pathSegments(start: Vec2, segs: BezierSeg[], closed: boolean): [Vec2, Vec2][] {
   const pts = samplePath(start, segs, closed, 8);
   const out: [Vec2, Vec2][] = [];
   for (let i = 0; i < pts.length - 1; i++) out.push([pts[i]!, pts[i + 1]!]);
@@ -103,7 +94,8 @@ export function pathToSvg(start: Vec2, segs: BezierSeg[], closed: boolean): stri
 export function pathLength(start: Vec2, segs: BezierSeg[], closed: boolean): number {
   const pts = samplePath(start, segs, closed, 16);
   let l = 0;
-  for (let i = 0; i < pts.length - 1; i++) l += Math.hypot(pts[i + 1]!.x - pts[i]!.x, pts[i + 1]!.y - pts[i]!.y);
+  for (let i = 0; i < pts.length - 1; i++)
+    l += Math.hypot(pts[i + 1]!.x - pts[i]!.x, pts[i + 1]!.y - pts[i]!.y);
   return l;
 }
 

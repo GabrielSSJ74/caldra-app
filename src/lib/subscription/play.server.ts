@@ -10,13 +10,7 @@
  */
 
 export type PlayStatus =
-  | "ACTIVE"
-  | "CANCELED"
-  | "IN_GRACE_PERIOD"
-  | "ON_HOLD"
-  | "PAUSED"
-  | "EXPIRED"
-  | "PENDING";
+  "ACTIVE" | "CANCELED" | "IN_GRACE_PERIOD" | "ON_HOLD" | "PAUSED" | "EXPIRED" | "PENDING";
 
 export type PlayVerification =
   | {
@@ -48,10 +42,7 @@ const STATE_MAP: Record<string, PlayStatus> = {
 const GRANTS: PlayStatus[] = ["ACTIVE", "CANCELED", "IN_GRACE_PERIOD", "ON_HOLD", "PAUSED"];
 
 function b64url(bytes: ArrayBuffer | string): string {
-  const raw =
-    typeof bytes === "string"
-      ? bytes
-      : String.fromCharCode(...new Uint8Array(bytes));
+  const raw = typeof bytes === "string" ? bytes : String.fromCharCode(...new Uint8Array(bytes));
   return btoa(raw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
@@ -64,7 +55,10 @@ function pemToArrayBuffer(pem: string): ArrayBuffer {
 }
 
 /** Access token OAuth2 da service account (JWT assinado com RS256). */
-async function accessToken(credentials: { client_email: string; private_key: string }): Promise<string | null> {
+async function accessToken(credentials: {
+  client_email: string;
+  private_key: string;
+}): Promise<string | null> {
   const now = Math.floor(Date.now() / 1000);
   const header = b64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const claim = b64url(
@@ -140,7 +134,11 @@ export async function verifyWithPlay(purchaseToken: string): Promise<PlayVerific
       startTime?: string;
       testPurchase?: unknown;
       linkedPurchaseToken?: string;
-      lineItems?: { productId?: string; expiryTime?: string; autoRenewingPlan?: { autoRenewEnabled?: boolean } }[];
+      lineItems?: {
+        productId?: string;
+        expiryTime?: string;
+        autoRenewingPlan?: { autoRenewEnabled?: boolean };
+      }[];
     };
 
     const status = STATE_MAP[body.subscriptionState ?? ""] ?? "PENDING";

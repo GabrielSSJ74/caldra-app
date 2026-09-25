@@ -152,10 +152,28 @@ export function buildViews(slug: string, p: WireParams): OrthoViews {
         front: [
           rect(d1, h * 0.45, 0, (h * 0.45) / 2),
           trapezoid(d1, d2 * 2.2, h * 0.55, 0, false),
-          { k: "poly", pts: [[-r1 * 0.8 - r2, h], [-r1 * 0.8 - r2, h * 0.45]], closed: false },
-          { k: "poly", pts: [[r1 * 0.8 + r2, h], [r1 * 0.8 + r2, h * 0.45]], closed: false },
+          {
+            k: "poly",
+            pts: [
+              [-r1 * 0.8 - r2, h],
+              [-r1 * 0.8 - r2, h * 0.45],
+            ],
+            closed: false,
+          },
+          {
+            k: "poly",
+            pts: [
+              [r1 * 0.8 + r2, h],
+              [r1 * 0.8 + r2, h * 0.45],
+            ],
+            closed: false,
+          },
         ],
-        plan: [circPlan(r1), circPlan(r2, -r1 * 0.8, 0, true, false), circPlan(r2, r1 * 0.8, 0, true, false)],
+        plan: [
+          circPlan(r1),
+          circPlan(r2, -r1 * 0.8, 0, true, false),
+          circPlan(r2, r1 * 0.8, 0, true, false),
+        ],
         dims: dimsFull,
       };
 

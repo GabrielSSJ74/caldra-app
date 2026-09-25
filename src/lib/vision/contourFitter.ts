@@ -202,11 +202,7 @@ function mergeCollinear(prims: Prim[], maxDev: number): Prim[] {
     ) {
       const a = { x: last.x1, y: last.y1 };
       const b = { x: p.x2, y: p.y2 };
-      const dev = Math.max(
-        perp({ x: last.x2, y: last.y2 }, a, b),
-        (last.dev ?? 0),
-        (p.dev ?? 0),
-      );
+      const dev = Math.max(perp({ x: last.x2, y: last.y2 }, a, b), last.dev ?? 0, p.dev ?? 0);
       if (dev <= maxDev) {
         out[out.length - 1] = mkLine(a, b, last.hole, dev, maxDev);
         continue;

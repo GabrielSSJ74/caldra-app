@@ -130,9 +130,7 @@ function QaPage() {
                 <td className="px-3 py-1.5 text-right">
                   {fmt(c.expected)} {c.unit}
                 </td>
-                <td
-                  className={cn("px-3 py-1.5 text-right", !c.ok && "text-destructive")}
-                >
+                <td className={cn("px-3 py-1.5 text-right", !c.ok && "text-destructive")}>
                   {fmt(c.actual)} {c.unit}
                 </td>
               </tr>

@@ -1,4 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   PROTOTYPE_MASTER_CODE,
   getFeatureLimit,
@@ -15,13 +24,13 @@ import {
   type PlanSource,
 } from "./entitlementService";
 import { buyWithPlay, hasPlayBilling, listPlayPurchases, type ProductId } from "./billing";
-import { restorePurchases, syncEntitlement, verifyPurchase, type SyncOutcome } from "./entitlement.functions";
 import {
-  applySync,
-  initialState,
-  type EntitlementState,
-  type SyncState,
-} from "./entitlementState";
+  restorePurchases,
+  syncEntitlement,
+  verifyPurchase,
+  type SyncOutcome,
+} from "./entitlement.functions";
+import { applySync, initialState, type EntitlementState, type SyncState } from "./entitlementState";
 import { useAuth } from "@/lib/auth/AuthProvider";
 
 type Result = { ok: boolean; message: string };
@@ -155,7 +164,10 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
       },
       buy: async (product) => {
         if (!hasPlayBilling()) {
-          return { ok: false, message: "Compra na loja indisponível aqui. Use o site ou um código de ativação." };
+          return {
+            ok: false,
+            message: "Compra na loja indisponível aqui. Use o site ou um código de ativação.",
+          };
         }
         try {
           const purchase = await buyWithPlay(product);
@@ -172,7 +184,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
             await registerPurchase(purchase.productId, purchase.token, "play");
             return {
               ok: false,
-              message: "Compra recebida. Estamos confirmando com a loja — toque em Verificar assinatura em instantes.",
+              message:
+                "Compra recebida. Estamos confirmando com a loja — toque em Verificar assinatura em instantes.",
             };
           }
           return { ok: false, message: "A loja ainda não confirmou esta compra." };

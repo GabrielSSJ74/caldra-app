@@ -26,7 +26,14 @@ const SYNONYMS: Record<string, string[]> = {
 
 function haystack(p: PartModel) {
   return norm(
-    [p.name, p.summary, p.family, CATEGORY_LABEL[p.category], p.specs.join(" "), p.tags.join(" ")].join(" "),
+    [
+      p.name,
+      p.summary,
+      p.family,
+      CATEGORY_LABEL[p.category],
+      p.specs.join(" "),
+      p.tags.join(" "),
+    ].join(" "),
   );
 }
 

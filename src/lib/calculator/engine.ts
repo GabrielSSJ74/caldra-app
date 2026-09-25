@@ -1,22 +1,51 @@
 export type AngleMode = "RAD" | "DEG" | "GRAD";
 
-type Token = { type: "number"; value: number } | { type: "name"; value: string } | { type: "op"; value: string } | { type: "lparen" } | { type: "rparen" };
+type Token =
+  | { type: "number"; value: number }
+  | { type: "name"; value: string }
+  | { type: "op"; value: string }
+  | { type: "lparen" }
+  | { type: "rparen" };
 
 export class CalculatorError extends Error {}
 
-const FUNCTIONS = new Set(["sin", "cos", "tan", "asin", "acos", "atan", "log", "ln", "sqrt", "cbrt", "exp"]);
+const FUNCTIONS = new Set([
+  "sin",
+  "cos",
+  "tan",
+  "asin",
+  "acos",
+  "atan",
+  "log",
+  "ln",
+  "sqrt",
+  "cbrt",
+  "exp",
+]);
 
 function tokenize(source: string): Token[] {
-  const normalized = source.replace(/√\s*([0-9.]+)/g, "sqrt($1)").replace(/√/g, "sqrt").replace(/,/g, ".").replace(/×/g, "*").replace(/÷/g, "/").replace(/−/g, "-").replace(/π/g, "pi");
+  const normalized = source
+    .replace(/√\s*([0-9.]+)/g, "sqrt($1)")
+    .replace(/√/g, "sqrt")
+    .replace(/,/g, ".")
+    .replace(/×/g, "*")
+    .replace(/÷/g, "/")
+    .replace(/−/g, "-")
+    .replace(/π/g, "pi");
   const out: Token[] = [];
   let i = 0;
   while (i < normalized.length) {
     const c = normalized[i] ?? "";
-    if (/\s/.test(c)) { i += 1; continue; }
+    if (/\s/.test(c)) {
+      i += 1;
+      continue;
+    }
     if (/[0-9.]/.test(c)) {
       let raw = "";
-      while (i < normalized.length && /[0-9.eE]/.test(normalized[i] ?? "")) raw += normalized[i++] ?? "";
-      if ((normalized[i] === "+" || normalized[i] === "-") && /[eE]$/.test(raw)) raw += normalized[i++] ?? "";
+      while (i < normalized.length && /[0-9.eE]/.test(normalized[i] ?? ""))
+        raw += normalized[i++] ?? "";
+      if ((normalized[i] === "+" || normalized[i] === "-") && /[eE]$/.test(raw))
+        raw += normalized[i++] ?? "";
       const value = Number(raw);
       if (!Number.isFinite(value)) throw new CalculatorError("Número inválido");
       out.push({ type: "number", value });
@@ -24,7 +53,8 @@ function tokenize(source: string): Token[] {
     }
     if (/[a-zA-Z]/.test(c)) {
       let value = "";
-      while (i < normalized.length && /[a-zA-Z0-9]/.test(normalized[i] ?? "")) value += normalized[i++] ?? "";
+      while (i < normalized.length && /[a-zA-Z0-9]/.test(normalized[i] ?? ""))
+        value += normalized[i++] ?? "";
       out.push({ type: "name", value: value.toLowerCase() });
       continue;
     }
@@ -80,21 +110,36 @@ export function evaluateExpression(source: string, angleMode: AngleMode): number
       if (token.value === "e") return Math.E;
       if (!FUNCTIONS.has(token.value)) throw new CalculatorError("Função desconhecida");
       let argument: number;
-      if (peek()?.type === "lparen") { take(); argument = expression(); if (take()?.type !== "rparen") throw new CalculatorError("Feche os parênteses"); }
-      else argument = unary();
+      if (peek()?.type === "lparen") {
+        take();
+        argument = expression();
+        if (take()?.type !== "rparen") throw new CalculatorError("Feche os parênteses");
+      } else argument = unary();
       switch (token.value) {
-        case "sin": return Math.sin(toRadians(argument, angleMode));
-        case "cos": return Math.cos(toRadians(argument, angleMode));
-        case "tan": return Math.tan(toRadians(argument, angleMode));
-        case "asin": return fromRadians(Math.asin(argument), angleMode);
-        case "acos": return fromRadians(Math.acos(argument), angleMode);
-        case "atan": return fromRadians(Math.atan(argument), angleMode);
-        case "log": return Math.log10(argument);
-        case "ln": return Math.log(argument);
-        case "sqrt": return Math.sqrt(argument);
-        case "cbrt": return Math.cbrt(argument);
-        case "exp": return Math.exp(argument);
-        default: throw new CalculatorError("Função inválida");
+        case "sin":
+          return Math.sin(toRadians(argument, angleMode));
+        case "cos":
+          return Math.cos(toRadians(argument, angleMode));
+        case "tan":
+          return Math.tan(toRadians(argument, angleMode));
+        case "asin":
+          return fromRadians(Math.asin(argument), angleMode);
+        case "acos":
+          return fromRadians(Math.acos(argument), angleMode);
+        case "atan":
+          return fromRadians(Math.atan(argument), angleMode);
+        case "log":
+          return Math.log10(argument);
+        case "ln":
+          return Math.log(argument);
+        case "sqrt":
+          return Math.sqrt(argument);
+        case "cbrt":
+          return Math.cbrt(argument);
+        case "exp":
+          return Math.exp(argument);
+        default:
+          throw new CalculatorError("Função inválida");
       }
     }
     throw new CalculatorError("Valor esperado");
@@ -110,7 +155,10 @@ export function evaluateExpression(source: string, angleMode: AngleMode): number
       if (token?.type !== "op" || (token.value !== "!" && token.value !== "%")) break;
       take();
       if (token.value === "!") value = factorial(value);
-      else { value /= 100; percent = true; }
+      else {
+        value /= 100;
+        percent = true;
+      }
     }
     return { value, percent };
   };
@@ -121,7 +169,10 @@ export function evaluateExpression(source: string, angleMode: AngleMode): number
   const power = (): number => {
     const left = primaryPostfix().value;
     const token = peek();
-    if (token?.type === "op" && token.value === "^") { take(); return left ** unary(); }
+    if (token?.type === "op" && token.value === "^") {
+      take();
+      return left ** unary();
+    }
     return left;
   };
 
@@ -156,7 +207,9 @@ export function evaluateExpression(source: string, angleMode: AngleMode): number
       take();
       const rightStart = index;
       const right = product();
-      const rightIsPercent = tokens.slice(rightStart, index).some((t) => t.type === "op" && t.value === "%");
+      const rightIsPercent = tokens
+        .slice(rightStart, index)
+        .some((t) => t.type === "op" && t.value === "%");
       const operand = rightIsPercent ? value * right : right;
       value = token.value === "+" ? value + operand : value - operand;
     }
@@ -173,19 +226,29 @@ export function evaluateExpression(source: string, angleMode: AngleMode): number
 
 export function formatResult(value: number, places: number) {
   const abs = Math.abs(value);
-  if ((abs >= 1e12 || (abs > 0 && abs < 1e-8))) return value.toExponential(places).replace(".", ",");
-  return value.toLocaleString("pt-BR", { minimumFractionDigits: places, maximumFractionDigits: places, useGrouping: false });
+  if (abs >= 1e12 || (abs > 0 && abs < 1e-8)) return value.toExponential(places).replace(".", ",");
+  return value.toLocaleString("pt-BR", {
+    minimumFractionDigits: places,
+    maximumFractionDigits: places,
+    useGrouping: false,
+  });
 }
 
 export function toFraction(value: number, maxDenominator = 10000) {
   if (!Number.isFinite(value)) return "—";
   const sign = value < 0 ? "−" : "";
   const target = Math.abs(value);
-  let bestN = Math.round(target), bestD = 1, bestError = Math.abs(target - bestN);
+  let bestN = Math.round(target),
+    bestD = 1,
+    bestError = Math.abs(target - bestN);
   for (let d = 1; d <= maxDenominator; d += 1) {
     const n = Math.round(target * d);
     const error = Math.abs(target - n / d);
-    if (error < bestError) { bestN = n; bestD = d; bestError = error; }
+    if (error < bestError) {
+      bestN = n;
+      bestD = d;
+      bestError = error;
+    }
     if (error < 1e-10) break;
   }
   return `${sign}${bestN}/${bestD}`;

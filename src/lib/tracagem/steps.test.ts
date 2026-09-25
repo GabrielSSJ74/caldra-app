@@ -3,7 +3,14 @@ import { getEngine } from "@/lib/geometry/engines";
 import { buildTraceSequence, validateSequence } from "./steps";
 import { developmentRefs, refExists, refsForDim, stepForDim } from "@/lib/geometry/refs";
 
-const MODELS = ["quadrado-redondo", "cone", "tronco-de-cone", "reducao-circular", "curva-de-gomos", "boca-de-lobo"];
+const MODELS = [
+  "quadrado-redondo",
+  "cone",
+  "tronco-de-cone",
+  "reducao-circular",
+  "curva-de-gomos",
+  "boca-de-lobo",
+];
 
 function compute(slug: string) {
   const engine = getEngine(slug);
@@ -31,7 +38,8 @@ describe("Traçagem Guiada", () => {
       const steps = buildTraceSequence(slug, result);
       expect(validateSequence(result, steps)).toEqual([]);
       const known = new Set(developmentRefs(result.development));
-      for (const step of steps) for (const ref of step.geometryRefs) expect(known.has(ref)).toBe(true);
+      for (const step of steps)
+        for (const ref of step.geometryRefs) expect(known.has(ref)).toBe(true);
     });
 
     it(`${slug}: cada passo traz instrução, ferramenta e conferência`, () => {
@@ -47,7 +55,10 @@ describe("Traçagem Guiada", () => {
     const engine = getEngine("cone");
     if (!engine) return;
     const base = engine.calculate(engine.defaults);
-    const changed = engine.calculate({ ...engine.defaults, h: (engine.defaults["h"] ?? 200) * 1.5 });
+    const changed = engine.calculate({
+      ...engine.defaults,
+      h: (engine.defaults["h"] ?? 200) * 1.5,
+    });
     const a = buildTraceSequence("cone", base);
     const b = buildTraceSequence("cone", changed);
     expect(JSON.stringify(a)).not.toBe(JSON.stringify(b));

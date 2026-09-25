@@ -44,7 +44,7 @@ function usePageVisible() {
   return visible;
 }
 
-/** O shader tem paleta escura fixa: no tema claro usamos a versão CSS. */
+/** Detecta se a superfície atual é escura (dark / amoled) ou clara. */
 function useDarkSurface() {
   const [dark, setDark] = useState(true);
   useEffect(() => {
@@ -56,6 +56,19 @@ function useDarkSurface() {
     return () => obs.disconnect();
   }, []);
   return dark;
+}
+
+function useAmoledSurface() {
+  const [amoled, setAmoled] = useState(false);
+  useEffect(() => {
+    const el = document.documentElement;
+    const sync = () => setAmoled(el.classList.contains("amoled"));
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(el, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+  return amoled;
 }
 
 export function AuroraBackground({
@@ -78,11 +91,12 @@ export function AuroraBackground({
      tela sem nenhum fundo. */
   const [shaderLive, setShaderLive] = useState(false);
   const darkSurface = useDarkSurface();
+  const amoledSurface = useAmoledSurface();
 
-  /* FLUIDO só liga o shader no tema escuro; no claro cai para os blobs CSS. */
-  const shaderStyle = auroraStyle === "fluido" && darkSurface;
+  /* FLUIDO ativa o shader tanto no tema escuro quanto no tema claro com paleta adaptada. */
+  const shaderStyle = auroraStyle === "fluido";
   const wantsShader = shaderStyle && glOk && shaderLive;
-  /* PRO anima; FREE vê o frame congelado do mesmo estilo. */
+  /* PRO anima; FREE vê o frame do mesmo estilo. */
   const allowed = mode === "always" || isMestre;
   const animated = allowed && active && pageVisible && !reduced;
 
@@ -94,7 +108,7 @@ export function AuroraBackground({
       ? 0.6
       : 1;
 
-  /* Empresta o container ao canvas compartilhado só no estilo FLUIDO. */
+  /* Empresta o container ao canvas compartilhado no estilo FLUIDO. */
   useEffect(() => {
     if (!shaderStyle) {
       setShaderLive(false);
@@ -111,7 +125,7 @@ export function AuroraBackground({
       setShaderLive(false);
       return;
     }
-    const release = engine.acquire(host, animated, amp);
+    const release = engine.acquire(host, animated, amp, darkSurface, amoledSurface);
     const off = engine.onStatus((ok) => {
       setGlOk(ok);
       if (!ok) setShaderLive(false);
@@ -131,8 +145,8 @@ export function AuroraBackground({
     const engine = auroraEngine();
     const host = hostRef.current;
     if (!engine || !host) return;
-    engine.update(host, animated, amp);
-  }, [shaderStyle, animated, amp]);
+    engine.update(host, animated, amp, darkSurface, amoledSurface);
+  }, [shaderStyle, animated, amp, darkSurface, amoledSurface]);
 
   /* PADRÃO: nenhuma camada — o fundo sólido do tema aparece. */
   if (auroraStyle === "padrao") return null;

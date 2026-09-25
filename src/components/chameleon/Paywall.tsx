@@ -129,7 +129,8 @@ export function PaywallBody({ onDone }: { onDone?: () => void }) {
       <div className="space-y-3">
         <PlanHeads />
         <p className="text-sm text-muted-foreground">
-          Você já está no <span className="text-pro">CALDRA {PLAN_LABEL[plan]}</span>. Tudo liberado.
+          Você já está no <span className="text-pro">CALDRA {PLAN_LABEL[plan]}</span>. Tudo
+          liberado.
         </p>
         <ComparisonTable />
       </div>

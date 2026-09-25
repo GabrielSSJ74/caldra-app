@@ -40,18 +40,22 @@ export function parseLength(raw: string): ParsedLength {
   let isInch = false;
   if (/\bin\b/i.test(s)) {
     isInch = true;
-    s = s.replace(/\bin\b/gi, " ").replace(/\s+/g, " ").trim();
+    s = s
+      .replace(/\bin\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
   if (/\bmm\b/i.test(s)) {
-    s = s.replace(/\bmm\b/gi, " ").replace(/\s+/g, " ").trim();
+    s = s
+      .replace(/\bmm\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
   if (!s) return { ok: false, error: "Digite um valor." };
 
   // fração (com ou sem parte inteira)
   // fração (parte inteira exige espaço: "2 3/8" = 60,33 mm; "23/8" = 73,03 mm)
-  const frac = s.match(
-    /^(?:(-?\d+(?:[.,]\d+)?)\s+)?(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)$/,
-  );
+  const frac = s.match(/^(?:(-?\d+(?:[.,]\d+)?)\s+)?(\d+(?:[.,]\d+)?)\s*\/\s*(\d+(?:[.,]\d+)?)$/);
   if (frac) {
     const whole = frac[1] ? toNumber(frac[1]) : 0;
     const num = toNumber(frac[2]!);

@@ -63,7 +63,10 @@ export function ProjectModel3D({
 
   const shell = clean
     ? "fixed inset-0 z-[80] bg-background"
-    : cn("relative h-[380px] rounded-xl border border-line bg-background/60 lg:h-[460px]", className);
+    : cn(
+        "relative h-[380px] rounded-xl border border-line bg-background/60 lg:h-[460px]",
+        className,
+      );
 
   return (
     <div className={shell}>
@@ -101,12 +104,61 @@ export function ProjectModel3D({
           ))}
         </div>
         <div className="pointer-events-auto flex gap-1 rounded-lg border border-line bg-background/80 p-1 backdrop-blur">
-          <Button size="icon" variant={ortho ? "default" : "ghost"} aria-label="Câmera ortográfica" onClick={() => setOrtho((o) => !o)}><Box /></Button>
-          <Button size="icon" variant="ghost" aria-label="Enquadrar modelo" onClick={() => setFitNonce((n) => n + 1)}><Maximize2 /></Button>
-          <Button size="icon" variant="ghost" aria-label="Reiniciar vista" onClick={() => { setView("iso"); setViewNonce((n) => n + 1); setExplode(0); setIsolate(false); setGhost(false); onSelect(null); }}><RotateCcw /></Button>
-          <Button size="icon" variant={isolate ? "default" : "ghost"} aria-label="Isolar peça selecionada" onClick={() => setIsolate((v) => !v)}><Focus /></Button>
-          <Button size="icon" variant={ghost ? "default" : "ghost"} aria-label="Transparência do contexto" onClick={() => setGhost((v) => !v)}><Layers /></Button>
-          <Button size="icon" variant={clean ? "default" : "ghost"} aria-label="Modo apresentação" onClick={() => setClean((v) => !v)}>{clean ? <X /> : <Expand />}</Button>
+          <Button
+            size="icon"
+            variant={ortho ? "default" : "ghost"}
+            aria-label="Câmera ortográfica"
+            onClick={() => setOrtho((o) => !o)}
+          >
+            <Box />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label="Enquadrar modelo"
+            onClick={() => setFitNonce((n) => n + 1)}
+          >
+            <Maximize2 />
+          </Button>
+          <Button
+            size="icon"
+            variant="ghost"
+            aria-label="Reiniciar vista"
+            onClick={() => {
+              setView("iso");
+              setViewNonce((n) => n + 1);
+              setExplode(0);
+              setIsolate(false);
+              setGhost(false);
+              onSelect(null);
+            }}
+          >
+            <RotateCcw />
+          </Button>
+          <Button
+            size="icon"
+            variant={isolate ? "default" : "ghost"}
+            aria-label="Isolar peça selecionada"
+            onClick={() => setIsolate((v) => !v)}
+          >
+            <Focus />
+          </Button>
+          <Button
+            size="icon"
+            variant={ghost ? "default" : "ghost"}
+            aria-label="Transparência do contexto"
+            onClick={() => setGhost((v) => !v)}
+          >
+            <Layers />
+          </Button>
+          <Button
+            size="icon"
+            variant={clean ? "default" : "ghost"}
+            aria-label="Modo apresentação"
+            onClick={() => setClean((v) => !v)}
+          >
+            {clean ? <X /> : <Expand />}
+          </Button>
         </div>
       </div>
 

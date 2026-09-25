@@ -1,6 +1,7 @@
 # Correção global 2D/3D e Quadrado → Redondo
 
 ## Objetivo
+
 Unificar a visualização de todos os modelos de Traçagem em uma única área alternável entre 2D e 3D, sem alterar nem duplicar o motor 3D existente. Reconstruir a geometria do Quadrado → Redondo a partir da mesma malha matemática usada pela planificação.
 
 ## Implementação
@@ -32,4 +33,5 @@ Unificar a visualização de todos os modelos de Traçagem em uma única área a
    - Conferir Traçagem, Planificação, CHAMFER, Projetos, Calculadora e Estudos por sinais de compilação e navegação.
 
 ## Restrição técnica
+
 O `Wire3D` e seu mecanismo de câmera/interação permanecem intactos. A mudança será limitada ao componente de apresentação compartilhado e à geometria que alimenta o motor.

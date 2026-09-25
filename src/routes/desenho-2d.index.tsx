@@ -74,7 +74,10 @@ function Explorer() {
   );
 
   const create = () => {
-    const name = window.prompt("Nome do projeto", `Projeto ${String(projects.length + 1).padStart(2, "0")}`);
+    const name = window.prompt(
+      "Nome do projeto",
+      `Projeto ${String(projects.length + 1).padStart(2, "0")}`,
+    );
     if (name === null) return;
     const p = newProject(name);
     saveProject(p);
@@ -112,7 +115,9 @@ function Explorer() {
           {filtered.map((p) => (
             <li key={p.id} className="metal group rounded-2xl p-3 transition-all hover:amber-ring">
               <button
-                onClick={() => navigate({ to: "/desenho-2d/$projectId", params: { projectId: p.id } })}
+                onClick={() =>
+                  navigate({ to: "/desenho-2d/$projectId", params: { projectId: p.id } })
+                }
                 className="flex w-full items-center gap-3 text-left"
               >
                 <FolderOpen className="size-5 shrink-0 text-accent" />
@@ -148,7 +153,8 @@ function Explorer() {
                   label="Excluir"
                   icon={Trash2}
                   onClick={() => {
-                    if (!window.confirm(`Excluir "${p.name}"? Esta ação não pode ser desfeita.`)) return;
+                    if (!window.confirm(`Excluir "${p.name}"? Esta ação não pode ser desfeita.`))
+                      return;
                     deleteProject(p.id);
                     refresh();
                     toast("Projeto excluído.");

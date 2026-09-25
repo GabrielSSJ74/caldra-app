@@ -19,7 +19,8 @@ const FIELD_MEANING: Record<string, string> = {
   e: "Excentricidade: quanto o eixo da boca menor sai do centro da boca maior.",
   thickness: "Espessura da chapa. Entra no peso e na correção da linha neutra.",
   density: "Densidade do material em kg/dm³ — define o peso do desenvolvimento.",
-  divisions: "Número de divisões do traçado. Mais divisões = contorno mais fiel e mais riscos na chapa.",
+  divisions:
+    "Número de divisões do traçado. Mais divisões = contorno mais fiel e mais riscos na chapa.",
   a: "Lado A da seção quadrada/retangular.",
   b: "Lado B da seção quadrada/retangular.",
   l: "Comprimento reto do trecho.",

@@ -56,7 +56,8 @@ export function SchematicViews({ slug, params, highlight = null, className }: Pr
     const ox = box.x + box.w / 2 - ((bb.minX + bb.maxX) / 2) * s;
     const oy = box.y + box.h / 2 + (flipY ? ((bb.minY + bb.maxY) / 2) * s : 0);
     const X = (x: number) => ox + x * s;
-    const Y = (y: number) => (flipY ? oy - y * s : box.y + box.h / 2 + (y - (bb.minY + bb.maxY) / 2) * s);
+    const Y = (y: number) =>
+      flipY ? oy - y * s : box.y + box.h / 2 + (y - (bb.minY + bb.maxY) / 2) * s;
 
     return prims.map((p, i) => {
       const common = {
@@ -65,7 +66,7 @@ export function SchematicViews({ slug, params, highlight = null, className }: Pr
         strokeOpacity: "dash" in p && p.dash ? 0.75 : 1,
         strokeDasharray: "dash" in p && p.dash ? "5 3" : undefined,
         fill:
-          ("fill" in p && p.fill) ?? false
+          (("fill" in p && p.fill) ?? false)
             ? "dash" in p && p.dash
               ? "var(--holo, #00FFEF)"
               : "var(--accent)"
@@ -79,14 +80,23 @@ export function SchematicViews({ slug, params, highlight = null, className }: Pr
             key={i}
             {...common}
             d={
-              p.pts.map((pt, j) => `${j === 0 ? "M" : "L"}${X(pt[0]).toFixed(2)} ${Y(pt[1]).toFixed(2)}`).join(" ") +
-              (p.closed === false ? "" : " Z")
+              p.pts
+                .map(
+                  (pt, j) => `${j === 0 ? "M" : "L"}${X(pt[0]).toFixed(2)} ${Y(pt[1]).toFixed(2)}`,
+                )
+                .join(" ") + (p.closed === false ? "" : " Z")
             }
           />
         );
       if (p.k === "circle")
         return (
-          <circle key={i} {...common} cx={X(p.cx).toFixed(2)} cy={Y(p.cy).toFixed(2)} r={(p.r * s).toFixed(2)} />
+          <circle
+            key={i}
+            {...common}
+            cx={X(p.cx).toFixed(2)}
+            cy={Y(p.cy).toFixed(2)}
+            r={(p.r * s).toFixed(2)}
+          />
         );
       return (
         <rect
@@ -126,18 +136,31 @@ export function SchematicViews({ slug, params, highlight = null, className }: Pr
           strokeWidth="0.6"
           strokeDasharray="6 3 1 3"
         />
-        <text x={114} y={222} fill="var(--muted-foreground)" fontSize="8" fontFamily="var(--font-mono)" textAnchor="middle">
+        <text
+          x={114}
+          y={222}
+          fill="var(--muted-foreground)"
+          fontSize="8"
+          fontFamily="var(--font-mono)"
+          textAnchor="middle"
+        >
           VISTA FRONTAL
         </text>
       </g>
 
       <g>
         {draw(views.plan, { x: 246, y: 22, w: 176, h: 168 }, false)}
-        <text x={334} y={222} fill="var(--muted-foreground)" fontSize="8" fontFamily="var(--font-mono)" textAnchor="middle">
+        <text
+          x={334}
+          y={222}
+          fill="var(--muted-foreground)"
+          fontSize="8"
+          fontFamily="var(--font-mono)"
+          textAnchor="middle"
+        >
           VISTA SUPERIOR
         </text>
       </g>
-
     </svg>
   );
 }

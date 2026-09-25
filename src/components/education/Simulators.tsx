@@ -2,7 +2,9 @@ import { useState } from "react";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 
 const num = (n: number, d = 1) =>
-  Number.isFinite(n) ? n.toLocaleString("pt-BR", { maximumFractionDigits: d, minimumFractionDigits: d }) : "—";
+  Number.isFinite(n)
+    ? n.toLocaleString("pt-BR", { maximumFractionDigits: d, minimumFractionDigits: d })
+    : "—";
 
 function Field({
   label,
@@ -56,15 +58,41 @@ export function TriangleSim() {
             stroke="var(--accent)"
             strokeWidth="1.2"
           />
-          <path d={`M${x0 + 10},${y0} L${x0 + 10},${y0 - 10} L${x0},${y0 - 10}`} fill="none" stroke="currentColor" strokeWidth=".7" opacity=".6" />
-          <text x={x0 + (a * s) / 2} y={y0 + 12} className="fill-current" fontSize="8" textAnchor="middle" opacity=".7">a</text>
-          <text x={x0 - 8} y={y0 - (b * s) / 2} className="fill-current" fontSize="8" textAnchor="middle" opacity=".7">b</text>
+          <path
+            d={`M${x0 + 10},${y0} L${x0 + 10},${y0 - 10} L${x0},${y0 - 10}`}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth=".7"
+            opacity=".6"
+          />
+          <text
+            x={x0 + (a * s) / 2}
+            y={y0 + 12}
+            className="fill-current"
+            fontSize="8"
+            textAnchor="middle"
+            opacity=".7"
+          >
+            a
+          </text>
+          <text
+            x={x0 - 8}
+            y={y0 - (b * s) / 2}
+            className="fill-current"
+            fontSize="8"
+            textAnchor="middle"
+            opacity=".7"
+          >
+            b
+          </text>
         </svg>
         <div className="space-y-3">
           <Field label="Cateto a (mm)" value={a} min={50} max={800} onChange={setA} />
           <Field label="Cateto b (mm)" value={b} min={50} max={800} onChange={setB} />
           <div className="rounded-lg border border-accent/20 bg-accent/[0.06] px-3 py-2 font-mono text-[11px] text-accent">
-            <div>d = √({num(a, 0)}² + {num(b, 0)}²)</div>
+            <div>
+              d = √({num(a, 0)}² + {num(b, 0)}²)
+            </div>
             <div className="mt-1 text-base">d = {num(h)} mm</div>
             <div className="mt-1 opacity-80">ângulo = {num(ang)}°</div>
           </div>
@@ -87,8 +115,14 @@ export function ArcSim() {
   const s = 120 / r;
   const cx = 100;
   const cy = 130;
-  const p1 = { x: cx + r * s * Math.cos(Math.PI / 2 + rad / 2), y: cy - r * s * Math.sin(Math.PI / 2 + rad / 2) };
-  const p2 = { x: cx + r * s * Math.cos(Math.PI / 2 - rad / 2), y: cy - r * s * Math.sin(Math.PI / 2 - rad / 2) };
+  const p1 = {
+    x: cx + r * s * Math.cos(Math.PI / 2 + rad / 2),
+    y: cy - r * s * Math.sin(Math.PI / 2 + rad / 2),
+  };
+  const p2 = {
+    x: cx + r * s * Math.cos(Math.PI / 2 - rad / 2),
+    y: cy - r * s * Math.sin(Math.PI / 2 - rad / 2),
+  };
 
   return (
     <Panel className="p-4">
@@ -101,8 +135,25 @@ export function ArcSim() {
             stroke="var(--accent)"
             strokeWidth="1.6"
           />
-          <line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke="currentColor" strokeWidth="1" opacity=".7" />
-          <line x1={cx} y1={cy} x2={cx} y2={cy - r * s} stroke="currentColor" strokeWidth=".6" strokeDasharray="3 3" opacity=".5" />
+          <line
+            x1={p1.x}
+            y1={p1.y}
+            x2={p2.x}
+            y2={p2.y}
+            stroke="currentColor"
+            strokeWidth="1"
+            opacity=".7"
+          />
+          <line
+            x1={cx}
+            y1={cy}
+            x2={cx}
+            y2={cy - r * s}
+            stroke="currentColor"
+            strokeWidth=".6"
+            strokeDasharray="3 3"
+            opacity=".5"
+          />
           <circle cx={cx} cy={cy} r="1.6" className="fill-current" />
         </svg>
         <div className="space-y-3">

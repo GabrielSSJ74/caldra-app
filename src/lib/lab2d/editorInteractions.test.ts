@@ -1,14 +1,32 @@
 import { describe, expect, it } from "vitest";
 import type { Entity } from "./core";
-import { copySelection, finishPolylinePoints, pasteClipboard, removeEntityOnly, shouldClosePolyline } from "./editorInteractions";
+import {
+  copySelection,
+  finishPolylinePoints,
+  pasteClipboard,
+  removeEntityOnly,
+  shouldClosePolyline,
+} from "./editorInteractions";
 
 const line = (id: string, x: number, group?: string): Entity => ({
-  id, ...(group ? { group } : {}), layer: id === "bend" ? "dobra" : "corte", type: "line", x1: x, y1: 0, x2: x + 10, y2: 0,
+  id,
+  ...(group ? { group } : {}),
+  layer: id === "bend" ? "dobra" : "corte",
+  type: "line",
+  x1: x,
+  y1: 0,
+  x2: x + 10,
+  y2: 0,
 });
 
 describe("interações do editor CHAMFER", () => {
   it("finaliza e fecha uma única polilinha sem duplicar o último vértice", () => {
-    const points = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 10, y: 10 }];
+    const points = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 10, y: 10 },
+    ];
     expect(finishPolylinePoints(points)).toHaveLength(3);
     expect(shouldClosePolyline(points.slice(0, 3), { x: 0.1, y: 0.1 }, 1)).toBe(true);
     expect(finishPolylinePoints([...points.slice(0, 3), { x: 0, y: 0 }], true)).toHaveLength(3);

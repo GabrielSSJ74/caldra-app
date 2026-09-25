@@ -35,7 +35,6 @@ export type AcademyModule = {
   lessons: AcademyLesson[];
 };
 
-
 export const CURRICULUM: AcademyModule[] = [
   {
     id: "fundamentos",
@@ -603,4 +602,5 @@ export const ALL_LESSONS: { module: AcademyModule; lesson: AcademyLesson }[] = C
 );
 
 export const findModule = (id: string) => CURRICULUM.find((m) => m.id === id) ?? null;
-export const findAcademyLesson = (id: string) => ALL_LESSONS.find((x) => x.lesson.id === id) ?? null;
+export const findAcademyLesson = (id: string) =>
+  ALL_LESSONS.find((x) => x.lesson.id === id) ?? null;

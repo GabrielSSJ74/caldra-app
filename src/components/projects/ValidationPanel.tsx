@@ -48,14 +48,12 @@ export function ValidationPanel({
       </SectionLabel>
 
       <div className="flex flex-wrap gap-1.5">
-        {(
-          [
-            { id: "todos" as const, label: `Tudo (${result.issues.length})` },
-            { id: "erro" as const, label: `Impedimentos (${result.errors})` },
-            { id: "alerta" as const, label: `Atenção (${result.warnings})` },
-            { id: "info" as const, label: `Observações (${result.infos})` },
-          ]
-        ).map((t) => (
+        {[
+          { id: "todos" as const, label: `Tudo (${result.issues.length})` },
+          { id: "erro" as const, label: `Impedimentos (${result.errors})` },
+          { id: "alerta" as const, label: `Atenção (${result.warnings})` },
+          { id: "info" as const, label: `Observações (${result.infos})` },
+        ].map((t) => (
           <button
             key={t.id}
             onClick={() => setFilter(t.id)}

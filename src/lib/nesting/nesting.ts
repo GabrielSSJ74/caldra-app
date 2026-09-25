@@ -86,7 +86,8 @@ export function nestParts(parts: NestPart[], opts: NestOptions): NestResult {
       rejected.push({ name: p.name, w: p.w, h: p.h, quantity: Math.max(1, p.quantity) });
       continue;
     }
-    for (let i = 0; i < Math.max(1, Math.round(p.quantity)); i++) queue.push({ part: p, index: i + 1 });
+    for (let i = 0; i < Math.max(1, Math.round(p.quantity)); i++)
+      queue.push({ part: p, index: i + 1 });
   }
 
   // maior primeiro: reduz buracos entre prateleiras
@@ -125,7 +126,9 @@ export function nestParts(parts: NestPart[], opts: NestOptions): NestResult {
     const shelves = shelvesPerSheet[sheetIndex]!;
     const sheet = sheets[sheetIndex]!;
 
-    const options: { w: number; h: number; rotated: boolean }[] = [{ w: p.w, h: p.h, rotated: false }];
+    const options: { w: number; h: number; rotated: boolean }[] = [
+      { w: p.w, h: p.h, rotated: false },
+    ];
     if (canRotate && Math.abs(p.w - p.h) > EPS) options.push({ w: p.h, h: p.w, rotated: true });
 
     // 1) tenta encaixar numa prateleira existente (menor desperdício de altura)

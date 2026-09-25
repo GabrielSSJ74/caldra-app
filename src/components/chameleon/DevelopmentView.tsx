@@ -31,8 +31,9 @@ export const DevelopmentView = forwardRef<SVGSVGElement, Props>(function Develop
   const w = maxX - minX + pad * 2;
   const h = maxY - minY + pad * 2;
   const path =
-    pattern.outline.map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(2)} ${(-p.y).toFixed(2)}`).join(" ") +
-    " Z";
+    pattern.outline
+      .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(2)} ${(-p.y).toFixed(2)}`)
+      .join(" ") + " Z";
 
   const dim = dimFactor(highlight);
   const boost = highlight.intensity ?? 1;

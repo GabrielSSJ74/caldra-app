@@ -75,5 +75,9 @@ export function centerOffset(b: Box, f: WorkspaceFrame): { dx: number; dy: numbe
 export function frameForBox(b: Box, f: WorkspaceFrame): WorkspaceFrame {
   const s = boxSize(b);
   const up = (v: number) => Math.ceil((v * 1.05) / 50) * 50;
-  return { ...f, w: clampSide(Math.max(up(s.w), f.w), f.w), h: clampSide(Math.max(up(s.h), f.h), f.h) };
+  return {
+    ...f,
+    w: clampSide(Math.max(up(s.w), f.w), f.w),
+    h: clampSide(Math.max(up(s.h), f.h), f.h),
+  };
 }

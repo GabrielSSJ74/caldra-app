@@ -52,7 +52,10 @@ export const CATEGORY_LABEL: Record<PartCategory, string> = {
 type CaldMeta = { family: string; tags: string[]; specs?: string[] };
 
 const CALD: Record<string, CaldMeta> = {
-  "quadrado-redondo": { family: "Transições", tags: ["transição", "quadrado", "redondo", "triangulação"] },
+  "quadrado-redondo": {
+    family: "Transições",
+    tags: ["transição", "quadrado", "redondo", "triangulação"],
+  },
   transicoes: { family: "Transições", tags: ["transição", "retangular", "especial"] },
   "redondo-quadrado": { family: "Transições", tags: ["transição", "redondo", "quadrado"] },
   cone: { family: "Cones", tags: ["cone", "radial", "setor"] },
@@ -155,7 +158,18 @@ const TUBES: TubeDef[] = [
     slug: "boca-de-lobo",
     summary: "Corte oblíquo ou derivação em tubo: o método é escolhido pelos parâmetros.",
     specs: ["Ângulo livre · tubo × tubo"],
-    tags: ["boca de lobo", "derivação", "interseção", "corte", "angular", "oblíquo", "30°", "45°", "60°", "90°"],
+    tags: [
+      "boca de lobo",
+      "derivação",
+      "interseção",
+      "corte",
+      "angular",
+      "oblíquo",
+      "30°",
+      "45°",
+      "60°",
+      "90°",
+    ],
   },
 
   {
@@ -481,7 +495,6 @@ export function findPart(id: string): PartModel | undefined {
   return BY_ID.get(id) ?? BY_ID.get(resolvePartId(id));
 }
 
-
 export const FAMILIES: Record<PartCategory, string[]> = {
   caldeiraria: ["Transições", "Cones", "Cilíndricas", "Curvas", "Interseções", "Flanges"],
   tubulacoes: ["Tubos", "Curvas", "Interseções", "Reduções", "Conexões"],
@@ -502,7 +515,8 @@ export function partHref(
   p: PartModel,
   originalId?: string,
 ): { to: string; params?: Record<string, string>; search?: Record<string, string> } {
-  if (p.kind === "vector") return { to: "/tracagem/cnc/$id", params: { id: p.id.replace("cnc.", "") } };
+  if (p.kind === "vector")
+    return { to: "/tracagem/cnc/$id", params: { id: p.id.replace("cnc.", "") } };
   const preset = originalId ? aliasValues(originalId) : undefined;
   const search = preset
     ? {

@@ -114,11 +114,7 @@ function Editor({ material, onSave }: { material: Material; onSave: (m: Material
   return (
     <div className="mt-3 space-y-2.5 border-t border-line pt-3">
       <div className="grid gap-2.5 sm:grid-cols-2">
-        <Text
-          label="Nome"
-          value={draft.name}
-          onChange={(v) => commit({ ...draft, name: v })}
-        />
+        <Text label="Nome" value={draft.name} onChange={(v) => commit({ ...draft, name: v })} />
         <Num
           label="Densidade (kg/m³)"
           value={draft.density}
@@ -144,7 +140,7 @@ function Editor({ material, onSave }: { material: Material; onSave: (m: Material
           onChange={(e) => setThick(e.target.value)}
           onBlur={() => {
             const list = thick
-              .split(/[\/,;]/)
+              .split(/[/,;]/)
               .map((s) => Number(s.trim().replace(",", ".")))
               .filter((n) => Number.isFinite(n) && n > 0)
               .sort((a, b) => a - b);

@@ -16,9 +16,7 @@ export function SectionLabel({
 }) {
   return (
     <div className="mb-2 flex items-center justify-between gap-3">
-      <h2 className={cn("t-eyebrow", className)}>
-        {children}
-      </h2>
+      <h2 className={cn("t-eyebrow", className)}>{children}</h2>
       {action}
     </div>
   );
@@ -33,9 +31,7 @@ export function Panel({
   children: React.ReactNode;
   glow?: boolean;
 }) {
-  return (
-    <div className={cn("glass rounded-2xl", glow && "glow-ring", className)}>{children}</div>
-  );
+  return <div className={cn("glass rounded-2xl", glow && "glow-ring", className)}>{children}</div>;
 }
 
 export function Metric({

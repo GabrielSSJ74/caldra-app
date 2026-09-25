@@ -43,7 +43,11 @@ const mixed = (): Entity[] => [
 describe("agrupamento nunca define a função de fabricação", () => {
   it("cada entidade preserva seu papel dentro de um grupo", () => {
     const list = mixed();
-    const g = createGroup(list, list.map((e) => e.id), [])!;
+    const g = createGroup(
+      list,
+      list.map((e) => e.id),
+      [],
+    )!;
     expect(g.entities.every((e) => e.group === g.id)).toBe(true);
     expect(roleOf(g.entities.find((e) => e.id === "b1")!)).toBe("BEND");
     expect(roleOf(g.entities.find((e) => e.id === "b2")!)).toBe("BEND");
@@ -54,7 +58,11 @@ describe("agrupamento nunca define a função de fabricação", () => {
 
   it("desagrupar preserva os papéis", () => {
     const list = mixed();
-    const g = createGroup(list, list.map((e) => e.id), [])!;
+    const g = createGroup(
+      list,
+      list.map((e) => e.id),
+      [],
+    )!;
     const d = dissolveGroup(g.entities, g.groups, g.id);
     expect(d.entities.map(roleOf)).toEqual(list.map(roleOf));
     expect(d.entities.every((e) => e.group === undefined)).toBe(true);
@@ -62,7 +70,11 @@ describe("agrupamento nunca define a função de fabricação", () => {
 
   it("seleção expandida não altera papéis", () => {
     const list = mixed();
-    const g = createGroup(list, list.map((e) => e.id), [])!;
+    const g = createGroup(
+      list,
+      list.map((e) => e.id),
+      [],
+    )!;
     const sel = expandSelection(g.entities, ["b1"]);
     expect(sel.length).toBe(list.length);
     expect(roleOf(g.entities.find((e) => e.id === "b1")!)).toBe("BEND");
@@ -70,7 +82,11 @@ describe("agrupamento nunca define a função de fabricação", () => {
 
   it("DOBRA agrupada é exportada na layer BEND, nunca MARK", () => {
     const list = mixed();
-    const g = createGroup(list, list.map((e) => e.id), [])!;
+    const g = createGroup(
+      list,
+      list.map((e) => e.id),
+      [],
+    )!;
     for (const profileId of [TECHNICAL_PROFILE_ID, LASER_PROFILE_ID]) {
       const doc = buildCncDxf(g.entities, { ...DEFAULT_CNC_OPTIONS, profileId });
       const layers = doc.entities.map((e) => e.layer);

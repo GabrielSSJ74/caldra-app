@@ -14,7 +14,11 @@ type AuthValue = {
   user: User | null;
   ready: boolean;
   signIn: (email: string, password: string) => Promise<{ ok: boolean; message: string }>;
-  signUp: (email: string, password: string, name: string) => Promise<{ ok: boolean; message: string }>;
+  signUp: (
+    email: string,
+    password: string,
+    name: string,
+  ) => Promise<{ ok: boolean; message: string }>;
   signInWithGoogle: () => Promise<{ ok: boolean; message: string }>;
   signOut: () => Promise<void>;
 };
@@ -24,7 +28,8 @@ const Ctx = createContext<AuthValue | null>(null);
 const humanize = (message: string): string => {
   const m = message.toLowerCase();
   if (m.includes("invalid login")) return "E-mail ou senha incorretos.";
-  if (m.includes("already registered")) return "Este e-mail já tem conta. Entre em vez de cadastrar.";
+  if (m.includes("already registered"))
+    return "Este e-mail já tem conta. Entre em vez de cadastrar.";
   if (m.includes("password")) return "A senha precisa de ao menos 6 caracteres.";
   if (m.includes("email")) return "Verifique o e-mail informado.";
   return message;
@@ -53,7 +58,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       ready,
       signIn: async (email, password) => {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-        return error ? { ok: false, message: humanize(error.message) } : { ok: true, message: "Bem-vindo de volta." };
+        return error
+          ? { ok: false, message: humanize(error.message) }
+          : { ok: true, message: "Bem-vindo de volta." };
       },
       signUp: async (email, password, name) => {
         const { error } = await supabase.auth.signUp({

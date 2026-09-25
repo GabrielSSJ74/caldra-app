@@ -1,4 +1,12 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { DEFAULT_REGION, regionOf, type Region, type RegionId } from "@/lib/regional/regional";
 
@@ -39,7 +47,7 @@ const DEFAULTS: Settings = {
   precision: 2,
   level: "aprendiz",
   region: DEFAULT_REGION,
-  auroraStyle: "padrao",
+  auroraStyle: "fluido",
   calcAngle: "DEG",
   calcPlaces: 4,
 };
@@ -81,9 +89,10 @@ export function readStoredSettings(): Settings {
       saved.aurora === false || saved.auroraStyle === "estatico"
         ? "padrao"
         : saved.auroraStyle && VALID.includes(saved.auroraStyle)
-          ? saved.auroraStyle
-          : // instalação nova começa no estilo Padrão (Free)
-            "padrao";
+          ? saved.theme === "light" && saved.auroraStyle === "padrao"
+            ? "fluido"
+            : saved.auroraStyle
+          : "fluido";
     // conta já existente (sem o campo) começa em MESTRE; conta nova, APRENDIZ
     const language = saved.language && LANGUAGES.includes(saved.language) ? saved.language : "pt";
     return { ...DEFAULTS, level: saved.level ?? "mestre", ...saved, language, auroraStyle };
@@ -149,7 +158,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [skin]);
 
-
   useEffect(() => {
     document.documentElement.classList.toggle("mestre", isMestre);
   }, [isMestre]);
@@ -157,7 +165,12 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<SettingsValue>(
     () => ({
       ...settings,
-      setTheme: (theme) => setSettings((s) => ({ ...s, theme })),
+      setTheme: (theme) =>
+        setSettings((s) => ({
+          ...s,
+          theme,
+          ...(theme === "light" ? { auroraStyle: "fluido" } : {}),
+        })),
       setAccent: (accent) => setSettings((s) => ({ ...s, accent })),
       setLanguage: (language) => setSettings((s) => ({ ...s, language })),
       setUnit: (unit) => setSettings((s) => ({ ...s, unit })),
@@ -176,12 +189,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     <SettingsContext.Provider value={value}>
       {children}
       {veil > 0 && (
-        <div
-          key={veil}
-          aria-hidden
-          className="theme-fade-veil"
-          onAnimationEnd={() => setVeil(0)}
-        />
+        <div key={veil} aria-hidden className="theme-fade-veil" onAnimationEnd={() => setVeil(0)} />
       )}
     </SettingsContext.Provider>
   );

@@ -14,9 +14,7 @@ export type Material = {
 };
 
 /** Espessuras comerciais padrão (mm). */
-export const DEFAULT_THICKNESSES = [
-  1.2, 1.5, 2.0, 2.5, 3.0, 4.0, 4.75, 6.0, 8.0, 10.0, 12.0,
-];
+export const DEFAULT_THICKNESSES = [1.2, 1.5, 2.0, 2.5, 3.0, 4.0, 4.75, 6.0, 8.0, 10.0, 12.0];
 
 export const BUILTIN_MATERIALS: Material[] = [
   { name: "Aço Carbono", density: 7850, pricePerKg: 9.5 },

@@ -165,8 +165,21 @@ export function proposeParametric(
                 unit: "mm",
                 min: 0,
               },
-              { key: "dc", label: "Ø da circunferência de furação", value: round1(bolt * 2), unit: "mm", min: 1 },
-              { key: "n", label: "Nº de furos", value: rest.length, unit: "un", integer: true, min: 2 },
+              {
+                key: "dc",
+                label: "Ø da circunferência de furação",
+                value: round1(bolt * 2),
+                unit: "mm",
+                min: 1,
+              },
+              {
+                key: "n",
+                label: "Nº de furos",
+                value: rest.length,
+                unit: "un",
+                integer: true,
+                min: 2,
+              },
               { key: "df", label: "Ø do furo", value: round1(same.r * 2), unit: "mm", min: 0.1 },
               { key: "ang", label: "Ângulo do 1º furo", value: round1(first), unit: "°" },
             ],
@@ -201,7 +214,14 @@ export function proposeParametric(
         fields: [
           { key: "w", label: "Largura", value: round1(rect.w), unit: "mm", min: 1 },
           { key: "h", label: "Altura", value: round1(rect.h), unit: "mm", min: 1 },
-          { key: "n", label: "Nº de furos", value: circles.length, unit: "un", integer: true, min: 0 },
+          {
+            key: "n",
+            label: "Nº de furos",
+            value: circles.length,
+            unit: "un",
+            integer: true,
+            min: 0,
+          },
           { key: "df", label: "Ø do furo", value: round1(same.r * 2), unit: "mm", min: 0.1 },
         ],
       };
@@ -224,11 +244,7 @@ export function proposalValues(p: ParametricProposal): ParamValues {
  * Gera a geometria do template a partir dos parâmetros — mesma função usada no
  * preview e na criação, para que preview e resultado nunca divirjam.
  */
-export function buildParametric(
-  p: ParametricProposal,
-  v: ParamValues,
-  layer = "corte",
-): Entity[] {
+export function buildParametric(p: ParametricProposal, v: ParamValues, layer = "corte"): Entity[] {
   const out: Entity[] = [];
   const num = (k: string, fallback = 0) => {
     const n = v[k];

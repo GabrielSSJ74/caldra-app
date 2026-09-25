@@ -20,12 +20,7 @@ import { FREE_PROJECT_LIMIT } from "@/lib/subscription/features";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { Panel } from "@/components/chameleon/ui";
 import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,7 +36,8 @@ export const Route = createFileRoute("/projetos/")({
       { title: "Catálogo de Projetos — CALDRA" },
       {
         name: "description",
-        content: "Escolha modelos paramétricos de caldeiraria ou acompanhe seus dossiês de fabricação.",
+        content:
+          "Escolha modelos paramétricos de caldeiraria ou acompanhe seus dossiês de fabricação.",
       },
       { property: "og:title", content: "Catálogo de Projetos — CALDRA" },
       {
@@ -116,8 +112,15 @@ function Projetos() {
       </header>
 
       <div className="grid grid-cols-2 rounded-lg border border-line bg-background/40 p-1">
-        <Button variant={tab === "catalogo" ? "default" : "ghost"} onClick={() => setTab("catalogo")}>Catálogo</Button>
-        <Button variant={tab === "meus" ? "default" : "ghost"} onClick={() => setTab("meus")}>Meus projetos ({projects.length})</Button>
+        <Button
+          variant={tab === "catalogo" ? "default" : "ghost"}
+          onClick={() => setTab("catalogo")}
+        >
+          Catálogo
+        </Button>
+        <Button variant={tab === "meus" ? "default" : "ghost"} onClick={() => setTab("meus")}>
+          Meus projetos ({projects.length})
+        </Button>
       </div>
 
       {tab === "catalogo" && <ProjectCatalog />}
@@ -131,115 +134,118 @@ function Projetos() {
         />
       )}
 
-      {tab === "meus" && <div className="space-y-2">
-        {list.map((p, i) => {
-          const pct = projectProgress(p);
-          const status = derivedStatus(p);
-          return (
-            <Panel key={p.id} className="metal overflow-hidden rounded-2xl">
-              <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-3">
-                <button
-                  onClick={() => open(p.id)}
-                  aria-label={`Abrir ${p.name}`}
-                  className="hairline size-12 shrink-0 rounded-xl p-1 transition-all duration-500 hover:bg-accent/8"
-                >
-                  <Thumb seed={i} />
-                </button>
-                <button onClick={() => open(p.id)} className="min-w-0 text-left">
-                  <span className="tick-label">
-                    Projeto {String(i + 1).padStart(2, "0")} · {PROJECT_STATUS_LABEL[status]}
-                  </span>
-                  <p className="truncate font-display text-[15px] font-medium">{p.name}</p>
-                  <p className="truncate font-mono text-[10px] text-muted-foreground">
-                    {p.parts.length} peças
-                    {p.client ? ` · ${p.client}` : ""} · {formatDateTime(p.updatedAt)}
-                  </p>
-                  <div className="mt-2 h-px w-full max-w-xs overflow-hidden bg-border">
-                    <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
+      {tab === "meus" && (
+        <div className="space-y-2">
+          {list.map((p, i) => {
+            const pct = projectProgress(p);
+            const status = derivedStatus(p);
+            return (
+              <Panel key={p.id} className="metal overflow-hidden rounded-2xl">
+                <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 p-3">
+                  <button
+                    onClick={() => open(p.id)}
+                    aria-label={`Abrir ${p.name}`}
+                    className="hairline size-12 shrink-0 rounded-xl p-1 transition-all duration-500 hover:bg-accent/8"
+                  >
+                    <Thumb seed={i} />
+                  </button>
+                  <button onClick={() => open(p.id)} className="min-w-0 text-left">
+                    <span className="tick-label">
+                      Projeto {String(i + 1).padStart(2, "0")} · {PROJECT_STATUS_LABEL[status]}
+                    </span>
+                    <p className="truncate font-display text-[15px] font-medium">{p.name}</p>
+                    <p className="truncate font-mono text-[10px] text-muted-foreground">
+                      {p.parts.length} peças
+                      {p.client ? ` · ${p.client}` : ""} · {formatDateTime(p.updatedAt)}
+                    </p>
+                    <div className="mt-2 h-px w-full max-w-xs overflow-hidden bg-border">
+                      <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
+                    </div>
+                  </button>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <span className="font-mono text-[11px] text-accent">{pct}%</span>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <button
+                          aria-label={`Ações de ${p.name}`}
+                          className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:text-accent"
+                        >
+                          <MoreHorizontal className="size-4" />
+                        </button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="w-52">
+                        <DropdownMenuItem onSelect={() => open(p.id)}>
+                          <FolderKanban className="size-3.5" /> Abrir
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            setRenameValue(p.name);
+                            setRenaming(p);
+                          }}
+                        >
+                          <Pencil className="size-3.5" /> Renomear
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onSelect={() => {
+                            const copy = duplicateProject(p.id);
+                            if (copy) {
+                              setRenameValue(copy.name);
+                              setRenaming(copy);
+                              toast.success("Projeto duplicado");
+                            }
+                          }}
+                        >
+                          <Copy className="size-3.5" /> Duplicar
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          onSelect={() => setDeleting(p)}
+                          className="text-destructive focus:text-destructive"
+                        >
+                          <Trash2 className="size-3.5" /> Excluir
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
-                </button>
-                <div className="flex shrink-0 flex-col items-end gap-1">
-                  <span className="font-mono text-[11px] text-accent">{pct}%</span>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        aria-label={`Ações de ${p.name}`}
-                        className="grid size-8 place-items-center rounded-lg text-muted-foreground transition-colors hover:text-accent"
-                      >
-                        <MoreHorizontal className="size-4" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-52">
-                      <DropdownMenuItem onSelect={() => open(p.id)}>
-                        <FolderKanban className="size-3.5" /> Abrir
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => {
-                          setRenameValue(p.name);
-                          setRenaming(p);
-                        }}
-                      >
-                        <Pencil className="size-3.5" /> Renomear
-                      </DropdownMenuItem>
-                      <DropdownMenuItem
-                        onSelect={() => {
-                          const copy = duplicateProject(p.id);
-                          if (copy) {
-                            setRenameValue(copy.name);
-                            setRenaming(copy);
-                            toast.success("Projeto duplicado");
-                          }
-                        }}
-                      >
-                        <Copy className="size-3.5" /> Duplicar
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onSelect={() => setDeleting(p)}
-                        className="text-destructive focus:text-destructive"
-                      >
-                        <Trash2 className="size-3.5" /> Excluir
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
                 </div>
-              </div>
-            </Panel>
-          );
-        })}
+              </Panel>
+            );
+          })}
 
-        {!list.length && (
-          <Panel className="p-8 text-center">
-            <p className="t-subtitle">
-              {projects.length ? "Nenhum projeto encontrado." : "Nenhum projeto ainda."}
-            </p>
-            <p className="t-caption mt-1">
-              Crie um projeto para reunir todas as peças de um cliente, obra ou ordem de fabricação.
-            </p>
-            <button
-              onClick={startNew}
-              className="mt-4 inline-flex items-center gap-2 rounded-xl bg-accent/12 px-4 py-2 font-mono text-[11px] tracking-wider text-accent uppercase ring-1 ring-accent/25"
-            >
-              <Plus className="size-3.5" /> Novo projeto
-            </button>
-          </Panel>
-        )}
-
-        {projects.length >= projectLimit && (
-          <Panel className="flex items-center gap-3 p-4">
-            <p className="text-[12px] text-muted-foreground">
-              Você atingiu o limite de {FREE_PROJECT_LIMIT} projetos do plano Free.{" "}
+          {!list.length && (
+            <Panel className="p-8 text-center">
+              <p className="t-subtitle">
+                {projects.length ? "Nenhum projeto encontrado." : "Nenhum projeto ainda."}
+              </p>
+              <p className="t-caption mt-1">
+                Crie um projeto para reunir todas as peças de um cliente, obra ou ordem de
+                fabricação.
+              </p>
               <button
-                onClick={() => requirePro("projects.unlimited")}
-                className="text-accent underline"
+                onClick={startNew}
+                className="mt-4 inline-flex items-center gap-2 rounded-xl bg-accent/12 px-4 py-2 font-mono text-[11px] tracking-wider text-accent uppercase ring-1 ring-accent/25"
               >
-                Ir para o PRO
-              </button>{" "}
-              — tenha projetos ilimitados no CALDRA Pro.
-            </p>
-          </Panel>
-        )}
-      </div>}
+                <Plus className="size-3.5" /> Novo projeto
+              </button>
+            </Panel>
+          )}
+
+          {projects.length >= projectLimit && (
+            <Panel className="flex items-center gap-3 p-4">
+              <p className="text-[12px] text-muted-foreground">
+                Você atingiu o limite de {FREE_PROJECT_LIMIT} projetos do plano Free.{" "}
+                <button
+                  onClick={() => requirePro("projects.unlimited")}
+                  className="text-accent underline"
+                >
+                  Ir para o PRO
+                </button>{" "}
+                — tenha projetos ilimitados no CALDRA Pro.
+              </p>
+            </Panel>
+          )}
+        </div>
+      )}
 
       <NewProjectDialog
         open={creating}

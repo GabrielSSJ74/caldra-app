@@ -88,7 +88,9 @@ export function normalizeGeometry(
 
   // 1) segmentos inválidos / minúsculos
   let list = input.filter((e) => {
-    const ok = len(e) >= minLength && entityPoints(e).every((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
+    const ok =
+      len(e) >= minLength &&
+      entityPoints(e).every((p) => Number.isFinite(p.x) && Number.isFinite(p.y));
     if (!ok) report.removedTiny++;
     return ok;
   });

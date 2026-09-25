@@ -4,7 +4,12 @@
  * (mesmo resultado, apenas sem o ganho de fluidez).
  */
 
-import { runVisionPipeline, type VisionProgress, type VisionRequest, type VisionResult } from "./pipeline";
+import {
+  runVisionPipeline,
+  type VisionProgress,
+  type VisionRequest,
+  type VisionResult,
+} from "./pipeline";
 
 let worker: Worker | null = null;
 let seq = 0;
@@ -65,11 +70,9 @@ export function runVision(
       else reject(new Error(d.message));
     };
     w.addEventListener("message", onMessage);
-    w.addEventListener(
-      "error",
-      () => reject(new Error("Falha na análise em segundo plano.")),
-      { once: true },
-    );
+    w.addEventListener("error", () => reject(new Error("Falha na análise em segundo plano.")), {
+      once: true,
+    });
     w.postMessage({ id, req });
   });
 }

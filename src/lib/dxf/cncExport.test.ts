@@ -21,7 +21,13 @@ import {
 } from "@/lib/dxf/cncExport";
 import { exportDXF } from "@/lib/dxf/exportService";
 import { uid, type Entity } from "@/lib/lab2d/core";
-import { CYPCUT_APPID, CYPCUT_CHANNEL, LASER_PROFILE_ID, roleOf, structureMap } from "@/lib/lab2d/roles";
+import {
+  CYPCUT_APPID,
+  CYPCUT_CHANNEL,
+  LASER_PROFILE_ID,
+  roleOf,
+  structureMap,
+} from "@/lib/lab2d/roles";
 
 const golden = importDxf(
   readFileSync(join(process.cwd(), "src/lib/dxf/__fixtures__/quadrado-redondo-p01.dxf"), "utf8"),
@@ -85,7 +91,16 @@ describe("papéis de fabricação", () => {
     expect(structure.get(part[0]!.id)).toBe("outer");
     expect(structure.get(part[1]!.id)).toBe("hole");
     const c = cncCounts(part);
-    expect(c).toMatchObject({ CUT: 2, RECORTE: 0, MARK: 1, BEND: 2, REFERENCE: 1, DIMENSION: 1, outer: 1, holes: 1 });
+    expect(c).toMatchObject({
+      CUT: 2,
+      RECORTE: 0,
+      MARK: 1,
+      BEND: 2,
+      REFERENCE: 1,
+      DIMENSION: 1,
+      outer: 1,
+      holes: 1,
+    });
     expect(c.unclassified).toBe(0);
   });
 
@@ -169,15 +184,33 @@ describe("versão DXF declarada", () => {
   });
 
   it("declara AC1018 quando há SPLINE", () => {
-    expect(dxfVersionFor({ layers: [], entities: [{ type: "SPLINE", layer: "CUT", closed: false, controls: [
-      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 },
-    ] }] })).toBe("AC1018");
+    expect(
+      dxfVersionFor({
+        layers: [],
+        entities: [
+          {
+            type: "SPLINE",
+            layer: "CUT",
+            closed: false,
+            controls: [
+              { x: 0, y: 0 },
+              { x: 1, y: 0 },
+              { x: 2, y: 0 },
+              { x: 3, y: 0 },
+            ],
+          },
+        ],
+      }),
+    ).toBe("AC1018");
   });
 
   it("só declara AC1009 sem LWPOLYLINE, SPLINE e sem dados estendidos", () => {
-    expect(dxfVersionFor({ layers: [], entities: [
-      { type: "LINE", layer: "CUT", start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
-    ] })).toBe("AC1009");
+    expect(
+      dxfVersionFor({
+        layers: [],
+        entities: [{ type: "LINE", layer: "CUT", start: { x: 0, y: 0 }, end: { x: 10, y: 0 } }],
+      }),
+    ).toBe("AC1009");
   });
 
   it("a conferência do arquivo confere a versão declarada", () => {
@@ -195,7 +228,9 @@ describe("estrutura CypCut (FS_CYPCUT)", () => {
 
   it("declara o APPID e marca todas as entidades", () => {
     expect(doc.appIds).toEqual([CYPCUT_APPID]);
-    expect(doc.entities.every((e) => (e.xdata ?? []).some((x) => x.appId === CYPCUT_APPID))).toBe(true);
+    expect(doc.entities.every((e) => (e.xdata ?? []).some((x) => x.appId === CYPCUT_APPID))).toBe(
+      true,
+    );
   });
 
   it("usa o canal correto por função de fabricação", () => {
@@ -267,15 +302,15 @@ describe("ponto único de exportação", () => {
     }
     // a geometria de corte é idêntica nos três perfis
     const cut = (p: string) =>
-      exportDXF({ geometry: samplePart(), profile: p }).doc.entities.filter((e) => e.layer === "CUT")
-        .length;
+      exportDXF({ geometry: samplePart(), profile: p }).doc.entities.filter(
+        (e) => e.layer === "CUT",
+      ).length;
     expect(cut("tecnico")).toBe(cut("laser-cnc"));
     // ids antigos continuam válidos e apontam para o perfil de laser
     expect(cut("cypcut")).toBe(cut("laser-cnc"));
     expect(cut("producao")).toBe(cut("laser-cnc"));
   });
 });
-
 
 describe("perfis técnico e laser", () => {
   const part = samplePart();

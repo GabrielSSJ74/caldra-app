@@ -40,12 +40,12 @@ Fallback opcional na exportação: "achatar curvas em polilinha" para máquinas 
 
 Adicionar Potrace em WASM/JS puro rodando no browser (sem servidor), expondo os parâmetros que importam:
 
-| Parâmetro | Padrão LOGO |
-|---|---|
-| `turdsize` | 3 (2–5) — remove sujeira sem comer detalhe |
-| `alphamax` | 1.0 — menor preserva cantos retos |
-| `opttolerance` | 0.2 — alta fidelidade |
-| `turnpolicy` | `minority` — bom para letras |
+| Parâmetro      | Padrão LOGO                                |
+| -------------- | ------------------------------------------ |
+| `turdsize`     | 3 (2–5) — remove sujeira sem comer detalhe |
+| `alphamax`     | 1.0 — menor preserva cantos retos          |
+| `opttolerance` | 0.2 — alta fidelidade                      |
+| `turnpolicy`   | `minority` — bom para letras               |
 
 Todos ajustáveis na UI, com prévia ao vivo.
 

@@ -44,7 +44,9 @@ export function SendToChamferDialog({
     if (!sel.size) return;
     setBusy(true);
     try {
-      const project = existingProjectId ? getProject(existingProjectId) : createCatalogProject(result);
+      const project = existingProjectId
+        ? getProject(existingProjectId)
+        : createCatalogProject(result);
       if (!project) throw new Error("projeto indisponível");
       let count = 0;
       for (const part of project.parts) {
@@ -70,8 +72,8 @@ export function SendToChamferDialog({
           <DialogTitle className="font-display text-lg">Adicionar ao CHAMFER</DialogTitle>
         </DialogHeader>
         <p className="text-xs text-muted-foreground">
-          {result.modelName} → conjuntos → subconjuntos → peças fabricáveis. Somente peças com geometria
-          real de corte são enviadas; perfis e componentes não-CNC permanecem no dossiê.
+          {result.modelName} → conjuntos → subconjuntos → peças fabricáveis. Somente peças com
+          geometria real de corte são enviadas; perfis e componentes não-CNC permanecem no dossiê.
         </p>
         <label className="mt-2 flex items-center gap-2 rounded-lg border border-line bg-background/40 p-2 text-xs">
           <Checkbox
@@ -95,7 +97,8 @@ export function SendToChamferDialog({
                         <span className="font-mono text-accent">{p.codeSuffix}</span>
                         <span className="flex-1">{p.name}</span>
                         <span className="font-mono text-muted-foreground">
-                          {p.quantity} un · {p.dimensions.length.toFixed(0)}×{p.dimensions.width.toFixed(0)} mm
+                          {p.quantity} un · {p.dimensions.length.toFixed(0)}×
+                          {p.dimensions.width.toFixed(0)} mm
                         </span>
                       </label>
                     </li>

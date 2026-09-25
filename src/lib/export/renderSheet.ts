@@ -17,10 +17,7 @@ import { SHEET_INK, techStyle } from "@/lib/lab2d/technical";
 /* --------------------------------------------------------------- geometria */
 
 export type Cmd =
-  | { c: "M"; p: Vec2 }
-  | { c: "L"; p: Vec2 }
-  | { c: "C"; c1: Vec2; c2: Vec2; p: Vec2 }
-  | { c: "Z" };
+  { c: "M"; p: Vec2 } | { c: "L"; p: Vec2 } | { c: "C"; c1: Vec2; c2: Vec2; p: Vec2 } | { c: "Z" };
 
 export type Shape = {
   color: string;
@@ -149,7 +146,15 @@ export function renderSheet(
   const dims = opts.dimensions ? autoDimensions(visible) : [];
   const probe: Entity[] = [...visible];
   for (const d of dims)
-    probe.push({ id: "d", layer: "cota", type: "line", x1: d.a.x, y1: d.a.y, x2: d.b.x, y2: d.b.y });
+    probe.push({
+      id: "d",
+      layer: "cota",
+      type: "line",
+      x1: d.a.x,
+      y1: d.a.y,
+      x2: d.b.x,
+      y2: d.b.y,
+    });
 
   const box = bbox(probe) ?? { minX: 0, minY: 0, maxX: 100, maxY: 100 };
   const pieceBox = bbox(visible) ?? box;
@@ -177,7 +182,9 @@ export function renderSheet(
   const shapes: Shape[] = [];
   const texts: SheetText[] = [];
 
-  for (const e of [...visible].sort((a, b) => techStyle(a.layer).order - techStyle(b.layer).order)) {
+  for (const e of [...visible].sort(
+    (a, b) => techStyle(a.layer).order - techStyle(b.layer).order,
+  )) {
     const style = techStyle(e.layer);
     if (e.type === "text") {
       const p = P({ x: e.x, y: e.y });
@@ -234,7 +241,15 @@ export function renderSheet(
   const dateLabel = date.toLocaleDateString("pt-BR");
 
   texts.push(
-    { x: MARGIN, y: MARGIN + 4, text: "CALDRA", sizePt: 13, color: RULE_COLOR, align: "left", bold: true },
+    {
+      x: MARGIN,
+      y: MARGIN + 4,
+      text: "CALDRA",
+      sizePt: 13,
+      color: RULE_COLOR,
+      align: "left",
+      bold: true,
+    },
     {
       x: MARGIN,
       y: MARGIN + 8.6,
@@ -252,7 +267,14 @@ export function renderSheet(
       align: "right",
       bold: true,
     },
-    { x: SHEET_W - MARGIN, y: MARGIN + 8.6, text: meta.plan, sizePt: 6.2, color: MUTED, align: "right" },
+    {
+      x: SHEET_W - MARGIN,
+      y: MARGIN + 8.6,
+      text: meta.plan,
+      sizePt: 6.2,
+      color: MUTED,
+      align: "right",
+    },
   );
 
   // régua do cabeçalho
@@ -291,7 +313,14 @@ export function renderSheet(
     texts.push({ x: fx, y: footY, text: t, sizePt: 6.5, color: MUTED, align: "left" });
     fx += 58;
   }
-  texts.push({ x: SHEET_W - MARGIN, y: footY, text: dateLabel, sizePt: 6.5, color: MUTED, align: "right" });
+  texts.push({
+    x: SHEET_W - MARGIN,
+    y: footY,
+    text: dateLabel,
+    sizePt: 6.5,
+    color: MUTED,
+    align: "right",
+  });
 
   const stamp = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, "0")}${String(
     date.getDate(),

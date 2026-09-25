@@ -149,9 +149,7 @@ export function extractContours(bin: Binary, opt: ExtractOptions = {}): Contour[
     const area = polygonArea(pts);
     // Um traço fino gera contorno externo E interno quase idênticos: o interno
     // é a outra margem da MESMA linha, não um furo. Descartamos esse caso.
-    const parent = out
-      .filter((o) => !o.hole && o.area > area)
-      .sort((a, b) => a.area - b.area)[0];
+    const parent = out.filter((o) => !o.hole && o.area > area).sort((a, b) => a.area - b.area)[0];
     if (parent && area / parent.area > 0.55) continue;
     out.push({ pts, hole: true, closed: true, area });
   }

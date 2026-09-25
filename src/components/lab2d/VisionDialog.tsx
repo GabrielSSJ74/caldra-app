@@ -26,11 +26,7 @@ import {
   type ParametricProposal,
   type ParamValues,
 } from "@/lib/vision/parametricRecognizer";
-import {
-  detectDimensions,
-  ocrKindLabel,
-  type OcrCandidate,
-} from "@/lib/vision/ocrService";
+import { detectDimensions, ocrKindLabel, type OcrCandidate } from "@/lib/vision/ocrService";
 import { uid, type Entity } from "@/lib/lab2d/core";
 
 import { CUT_COLOR, DIMENSION_COLOR, MARK_COLOR } from "@/lib/lab2d/technical";
@@ -89,7 +85,6 @@ import {
   type ManualState,
 } from "@/lib/vision/manualTracer";
 
-
 export type VisionImageLayer = {
   src: string;
   name: string;
@@ -106,7 +101,7 @@ export type VisionImageLayer = {
 type Step = "importar" | "previa" | "analisando" | "resultado";
 /** Técnico procura LINE/ARC/CIRCLE; logo preserva Bézier; traçado extrai linha central. */
 type Mode = "tecnico" | "logo" | "tracado";
-type Overlay = "original" | "vetor" | "ambos";
+type Overlay = "original" | "vetor" | "ambos" | "diferenca";
 
 /** CHAMFER VISION — imagem → vetor → geometria CAD editável. */
 export function VisionDialog({
@@ -161,7 +156,6 @@ export function VisionDialog({
   const [ocr, setOcr] = useState<OcrCandidate[]>([]);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrStage, setOcrStage] = useState<{ stage: string; pct: number } | null>(null);
-
 
   // calibração
   const [cal, setCal] = useState<Calibration>(DEFAULT_CALIBRATION);
@@ -442,7 +436,6 @@ export function VisionDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tolerance, noise, adaptive, normalize, regularize]);
 
-
   const geoRef = logo ?? analysis;
   const calibrated = cal.method !== "padrao";
 
@@ -486,7 +479,6 @@ export function VisionDialog({
     () => (analysis ? buildQuality(analysis.prims, cal.mmPerPx) : null),
     [analysis, cal],
   );
-
 
   /* A1 — proposta paramétrica: só no modo técnico, só com escala calibrada. */
   const proposal = useMemo<ParametricProposal | null>(() => {
@@ -659,7 +651,10 @@ export function VisionDialog({
 
         {step === "previa" && img && (
           <div className="flex min-h-0 flex-col gap-3">
-            <div className="relative flex aspect-[4/3] w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-white" style={{ maxHeight: "45vh" }}>
+            <div
+              className="relative flex aspect-[4/3] w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-white"
+              style={{ maxHeight: "45vh" }}
+            >
               <img
                 src={img.dataUrl}
                 alt={`Pré-visualização de ${img.name}`}
@@ -741,11 +736,7 @@ export function VisionDialog({
                       label="Aprovar todas"
                       onClick={() => setOcr((l) => l.map((c) => ({ ...c, approved: true })))}
                     />
-                    <Chip
-                      icon={Eraser}
-                      label="Limpar"
-                      onClick={() => setOcr([])}
-                    />
+                    <Chip icon={Eraser} label="Limpar" onClick={() => setOcr([])} />
                   </>
                 )}
               </div>
@@ -759,7 +750,8 @@ export function VisionDialog({
               )}
               <p className="font-mono text-[10px] leading-relaxed text-muted-foreground">
                 Leitura 100% no seu aparelho. Em foto de desenho à mão a precisão é limitada —
-                confira e corrija cada texto antes de aplicar. Nada entra no desenho sem confirmação.
+                confira e corrija cada texto antes de aplicar. Nada entra no desenho sem
+                confirmação.
               </p>
               {ocr.map((c) => (
                 <div
@@ -815,8 +807,8 @@ export function VisionDialog({
                   </li>
                   <li>
                     contraste {Math.round(profile.contrast * 100)}% · ruído{" "}
-                    {Math.round(profile.noise * 100)}% · traço médio{" "}
-                    {profile.strokePx.toFixed(1)} px
+                    {Math.round(profile.noise * 100)}% · traço médio {profile.strokePx.toFixed(1)}{" "}
+                    px
                   </li>
                   <li>
                     fundo {profile.uniformBackground ? "uniforme" : "irregular"} ·{" "}
@@ -877,7 +869,6 @@ export function VisionDialog({
           </div>
         )}
 
-
         {step === "resultado" && img && logo && (
           <>
             <p className="font-mono text-[10px] tracking-[0.2em] text-accent uppercase">
@@ -899,7 +890,6 @@ export function VisionDialog({
                 label="traçar em 1× / 2× / 4× e escolher o melhor"
               />
             </Section>
-
 
             <Section title="Escala" icon={Ruler}>
               <div className="flex items-center gap-2">
@@ -940,9 +930,17 @@ export function VisionDialog({
 
         {step === "resultado" && img && !logo && analysis && (
           <>
-            <p className="font-mono text-[10px] tracking-[0.2em] text-accent uppercase">
-              {mode === "tracado" ? "Linhas centrais" : "Geometria encontrada"}
-            </p>
+            <div className="flex items-center justify-between">
+              <p className="font-mono text-[10px] tracking-[0.2em] text-accent uppercase">
+                {mode === "tracado" ? "Linhas centrais" : "Geometria Técnica Autocorretiva"}
+              </p>
+              {analysis.auditLog && (
+                <span className="rounded-md bg-accent/15 px-2 py-0.5 font-mono text-[9px] font-medium text-accent">
+                  CALDRA VISION · {(analysis.iterations?.length ?? 1) - 1} iterações · Score{" "}
+                  {((analysis.bestScore ?? 0.95) * 100).toFixed(0)}%
+                </span>
+              )}
+            </div>
 
             <PreviewCanvas
               focus={focusBox}
@@ -965,8 +963,13 @@ export function VisionDialog({
             />
 
             <div className="flex flex-wrap items-center gap-1">
-              {(["original", "vetor", "ambos"] as Overlay[]).map((o) => (
-                <Toggle key={o} active={overlay === o} onClick={() => setOverlay(o)} label={o} />
+              {(["original", "vetor", "ambos", "diferenca"] as Overlay[]).map((o) => (
+                <Toggle
+                  key={o}
+                  active={overlay === o}
+                  onClick={() => setOverlay(o)}
+                  label={o === "ambos" ? "sobrepor" : o === "diferenca" ? "mapa de erro" : o}
+                />
               ))}
             </div>
 
@@ -1194,7 +1197,6 @@ export function VisionDialog({
                     )}
                   </Section>
                 )}
-
 
                 <Section title="Limpeza" icon={Eraser}>
                   <div className="flex flex-wrap items-center gap-1">
@@ -1552,67 +1554,81 @@ function PreviewCanvas({
 
   return (
     <div className="h-[42vh] max-h-[42vh] min-h-[200px] w-full shrink-0 overflow-hidden rounded-2xl border border-border bg-white">
-    <svg
-      ref={ref}
-      viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
-      className="block h-full w-full touch-none"
-      onPointerDown={down}
-      onPointerMove={move}
-      onPointerUp={up}
-      role="img"
-      aria-label="Pré-visualização da vetorização"
-    >
-      {overlay !== "vetor" && (
-        <image
-          href={img.dataUrl}
-          x={0}
-          y={0}
-          width={w}
-          height={h}
-          opacity={overlay === "ambos" ? 0.45 : 1}
-          transform={rotation ? `rotate(${rotation} ${w / 2} ${h / 2})` : undefined}
-          preserveAspectRatio="none"
-        />
-      )}
-      {overlay !== "original" && (
-        <g fill="none" stroke={CUT_COLOR} strokeWidth={Math.max(0.6, view.w / 500)}>
-          {analysis.prims.map((p, i) => (
-            <PrimShape key={i} p={p} />
-          ))}
-        </g>
-      )}
-      {manual && (
-        <g fill="none" stroke={MARK_COLOR} strokeWidth={Math.max(0.8, view.w / 400)}>
-          {manual.shapes.map((sh, i) => (
-            <ManualShapeView key={i} shape={sh} />
-          ))}
-          {manual.pending.length > 1 && (
-            <polyline
-              points={manual.pending.map((p) => `${p.x},${p.y}`).join(" ")}
-              strokeDasharray={`${view.w / 90} ${view.w / 90}`}
-            />
-          )}
-        </g>
-      )}
-      {manual && snapTol > 0 && (
-        <g fill="none" stroke={DIMENSION_COLOR} opacity={0.5} strokeWidth={Math.max(0.4, view.w / 900)}>
-          {targets.map((t, i) => (
-            <circle key={i} cx={t.x} cy={t.y} r={nodeR * 0.9} />
-          ))}
-        </g>
-      )}
-      {nodes.map((n, i) => (
-        <g key={i}>
-          <circle cx={n.p.x} cy={n.p.y} r={nodeR} fill={MARK_COLOR} />
-          <text x={n.p.x + nodeR * 1.4} y={n.p.y - nodeR} fontSize={nodeR * 2.6} fill={MARK_COLOR}>
-            P{i + 1}
-          </text>
-        </g>
-      ))}
-      {calPts.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r={nodeR} fill={DIMENSION_COLOR} />
-      ))}
-    </svg>
+      <svg
+        ref={ref}
+        viewBox={`${view.x} ${view.y} ${view.w} ${view.h}`}
+        className="block h-full w-full touch-none"
+        onPointerDown={down}
+        onPointerMove={move}
+        onPointerUp={up}
+        role="img"
+        aria-label="Pré-visualização da vetorização"
+      >
+        {overlay !== "vetor" && (
+          <image
+            href={img.dataUrl}
+            x={0}
+            y={0}
+            width={w}
+            height={h}
+            opacity={overlay === "ambos" ? 0.45 : overlay === "diferenca" ? 0.2 : 1}
+            transform={rotation ? `rotate(${rotation} ${w / 2} ${h / 2})` : undefined}
+            preserveAspectRatio="none"
+          />
+        )}
+        {overlay !== "original" && (
+          <g
+            fill="none"
+            stroke={overlay === "diferenca" ? "#f43f5e" : CUT_COLOR}
+            strokeWidth={Math.max(overlay === "diferenca" ? 1.2 : 0.6, view.w / 500)}
+          >
+            {analysis.prims.map((p, i) => (
+              <PrimShape key={i} p={p} />
+            ))}
+          </g>
+        )}
+        {manual && (
+          <g fill="none" stroke={MARK_COLOR} strokeWidth={Math.max(0.8, view.w / 400)}>
+            {manual.shapes.map((sh, i) => (
+              <ManualShapeView key={i} shape={sh} />
+            ))}
+            {manual.pending.length > 1 && (
+              <polyline
+                points={manual.pending.map((p) => `${p.x},${p.y}`).join(" ")}
+                strokeDasharray={`${view.w / 90} ${view.w / 90}`}
+              />
+            )}
+          </g>
+        )}
+        {manual && snapTol > 0 && (
+          <g
+            fill="none"
+            stroke={DIMENSION_COLOR}
+            opacity={0.5}
+            strokeWidth={Math.max(0.4, view.w / 900)}
+          >
+            {targets.map((t, i) => (
+              <circle key={i} cx={t.x} cy={t.y} r={nodeR * 0.9} />
+            ))}
+          </g>
+        )}
+        {nodes.map((n, i) => (
+          <g key={i}>
+            <circle cx={n.p.x} cy={n.p.y} r={nodeR} fill={MARK_COLOR} />
+            <text
+              x={n.p.x + nodeR * 1.4}
+              y={n.p.y - nodeR}
+              fontSize={nodeR * 2.6}
+              fill={MARK_COLOR}
+            >
+              P{i + 1}
+            </text>
+          </g>
+        ))}
+        {calPts.map((p, i) => (
+          <circle key={i} cx={p.x} cy={p.y} r={nodeR} fill={DIMENSION_COLOR} />
+        ))}
+      </svg>
     </div>
   );
 }
@@ -1980,9 +1996,9 @@ function Toggle({
   label: string;
 }) {
   return (
-            <button
+    <button
       onClick={onClick}
-              aria-pressed={active}
+      aria-pressed={active}
       className={`rounded-xl px-2.5 py-1.5 font-mono text-[10px] tracking-wider uppercase transition-colors ${
         active
           ? "vision-control border-accent text-accent"
@@ -2097,6 +2113,5 @@ function Slider({
     </label>
   );
 }
-
 
 export const VISION_ICONS = { ImageIcon, Scan, CircleIcon, X };

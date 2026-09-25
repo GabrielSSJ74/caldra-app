@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Entity } from "./core";
-import {
-  dimensionEntities,
-  formatDimension,
-  makeDimension,
-  measureDimension,
-} from "./dimensions";
+import { dimensionEntities, formatDimension, makeDimension, measureDimension } from "./dimensions";
 import { roleOf } from "./roles";
 
 const line = (id: string, x1: number, y1: number, x2: number, y2: number): Entity => ({
@@ -129,7 +124,14 @@ describe("cotagem associativa", () => {
     const edited = {
       ...d,
       offset: 90,
-      style: { ...d.style, precision: 0, textSize: 20, arrowSize: 12, prefix: "≈", side: -1 as const },
+      style: {
+        ...d.style,
+        precision: 0,
+        textSize: 20,
+        arrowSize: 12,
+        prefix: "≈",
+        side: -1 as const,
+      },
     };
     expect(formatDimension(edited, e)).toBe("≈500 mm");
     expect(measureDimension(edited, e)!.value).toBeCloseTo(500, 6);

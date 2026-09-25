@@ -170,8 +170,6 @@ function finish(
   height: number,
   opt: LogoOptions,
 ): LogoAnalysis {
-
-
   let segments = 0;
   let holes = 0;
   let contours = 0;

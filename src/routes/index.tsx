@@ -121,8 +121,26 @@ function MiniMath() {
 function MiniCalculator() {
   return (
     <svg viewBox="0 0 120 80" className="size-full" aria-hidden>
-      <rect x="30" y="7" width="60" height="66" rx="7" fill="none" stroke="currentColor" strokeWidth="1.2" />
-      <rect x="38" y="15" width="44" height="14" rx="2" fill="none" stroke="var(--accent2)" strokeWidth="1" />
+      <rect
+        x="30"
+        y="7"
+        width="60"
+        height="66"
+        rx="7"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.2"
+      />
+      <rect
+        x="38"
+        y="15"
+        width="44"
+        height="14"
+        rx="2"
+        fill="none"
+        stroke="var(--accent2)"
+        strokeWidth="1"
+      />
       <path d="M43 24h22l7-5" fill="none" stroke="var(--accent)" strokeWidth="1.2" />
       {[0, 1, 2, 3].map((row) =>
         [0, 1, 2, 3].map((col) => (
@@ -140,7 +158,16 @@ function MiniCalculator() {
         )),
       )}
       <path d="M95 18h12M101 12v12" stroke="var(--accent)" strokeWidth="1" opacity=".8" />
-      <text x="13" y="59" fill="currentColor" fontFamily="ui-monospace, monospace" fontSize="9" opacity=".7">sin</text>
+      <text
+        x="13"
+        y="59"
+        fill="currentColor"
+        fontFamily="ui-monospace, monospace"
+        fontSize="9"
+        opacity=".7"
+      >
+        sin
+      </text>
     </svg>
   );
 }
@@ -247,9 +274,7 @@ function Inicio() {
               <span className="tick-label">{`\n`}</span>
             </div>
             <span className="font-display text-sm font-medium tracking-wide">ESTUDOS</span>
-            <span className="font-mono text-[10px] text-muted-foreground">
-              Fórmulas e aulas
-            </span>
+            <span className="font-mono text-[10px] text-muted-foreground">Fórmulas e aulas</span>
           </div>
           <div className="pointer-events-none hidden h-20 w-28 shrink-0 text-muted-foreground/60 sm:block lg:hidden xl:block">
             <MiniMath />
@@ -266,7 +291,9 @@ function Inicio() {
               <span className="tick-label">{` `}</span>
             </div>
             <span className="font-display text-[13px] leading-tight font-medium tracking-wide">
-              CALCULADORA<br />CIENTÍFICA
+              CALCULADORA
+              <br />
+              CIENTÍFICA
             </span>
           </div>
           <div className="pointer-events-none absolute inset-y-2 right-0 w-[58%] text-muted-foreground/60 sm:relative sm:inset-auto sm:h-20 sm:w-28 sm:shrink-0 lg:absolute lg:inset-y-2 lg:right-0 lg:w-[55%] xl:relative xl:inset-auto xl:h-20 xl:w-28">

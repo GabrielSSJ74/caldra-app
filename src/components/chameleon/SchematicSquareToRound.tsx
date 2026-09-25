@@ -34,7 +34,12 @@ export function SchematicSquareToRound({
   const pr = (topDiameter * scale) / 2 / 1.15;
 
   return (
-    <svg viewBox="0 0 440 240" className="h-full w-full" role="img" aria-label="Esquema técnico da transição quadrado para redondo">
+    <svg
+      viewBox="0 0 440 240"
+      className="h-full w-full"
+      role="img"
+      aria-label="Esquema técnico da transição quadrado para redondo"
+    >
       <defs>
         <pattern id="sq-grid" width="11" height="11" patternUnits="userSpaceOnUse">
           <path d="M11 0H0v11" fill="none" stroke="var(--grid-line)" strokeWidth="1" />

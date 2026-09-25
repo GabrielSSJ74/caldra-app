@@ -59,26 +59,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
 
         {!immersive && !standalone && (
-        <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
-          <button
-            onClick={() => setMasterOpen(true)}
-            aria-label={isMestre ? "Modo Mestre ativo" : "Ativar Modo Mestre"}
-            className={cn(
-              "grid size-9 place-items-center rounded-full transition-all duration-300",
-              "metal backdrop-blur-xl hover:scale-110",
-              isMestre ? "text-accent glow-ring" : "text-muted-foreground hover:text-foreground",
-            )}
-          >
-            <Sparkles className="size-4" />
-          </button>
-          <button
-            onClick={() => setProfileOpen(true)}
-            aria-label="Abrir perfil"
-            className="rounded-full transition-transform duration-300 hover:scale-110"
-          >
-            <Avatar photo={profile.photo} size={36} className="backdrop-blur-xl" />
-          </button>
-        </div>
+          <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
+            <button
+              onClick={() => setMasterOpen(true)}
+              aria-label={isMestre ? "Modo Mestre ativo" : "Ativar Modo Mestre"}
+              className={cn(
+                "grid size-9 place-items-center rounded-full transition-all duration-300",
+                "metal backdrop-blur-xl hover:scale-110",
+                isMestre ? "text-accent glow-ring" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <Sparkles className="size-4" />
+            </button>
+            <button
+              onClick={() => setProfileOpen(true)}
+              aria-label="Abrir perfil"
+              className="rounded-full transition-transform duration-300 hover:scale-110"
+            >
+              <Avatar photo={profile.photo} size={36} className="backdrop-blur-xl" />
+            </button>
+          </div>
         )}
 
         <main
@@ -88,7 +88,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             immersive || standalone ? "p-0" : "px-4 pt-16 pb-28 lg:px-10 lg:pt-16 lg:pb-24",
           )}
         >
-          <div className={cn(immersive || standalone ? "w-full" : "mx-auto w-full max-w-6xl")}>{children}</div>
+          <div className={cn(immersive || standalone ? "w-full" : "mx-auto w-full max-w-6xl")}>
+            {children}
+          </div>
         </main>
 
         {!immersive && !standalone && <BubbleNav />}

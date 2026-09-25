@@ -110,11 +110,19 @@ export function NewProjectDialog({
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="block space-y-1">
                   <span className="t-eyebrow">Responsável</span>
-                  <input className={field} value={owner} onChange={(e) => setOwner(e.target.value)} />
+                  <input
+                    className={field}
+                    value={owner}
+                    onChange={(e) => setOwner(e.target.value)}
+                  />
                 </label>
                 <label className="block space-y-1">
                   <span className="t-eyebrow">Local</span>
-                  <input className={field} value={place} onChange={(e) => setPlace(e.target.value)} />
+                  <input
+                    className={field}
+                    value={place}
+                    onChange={(e) => setPlace(e.target.value)}
+                  />
                 </label>
               </div>
               <label className="block space-y-1">

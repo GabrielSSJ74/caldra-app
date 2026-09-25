@@ -29,7 +29,8 @@ export const Route = createFileRoute("/api/public/rtdn")({
         const provided = url.searchParams.get("token") ?? request.headers.get("x-rtdn-token") ?? "";
         if (provided.length !== secret.length) return new Response("unauthorized", { status: 401 });
         let same = 0;
-        for (let i = 0; i < secret.length; i++) same |= secret.charCodeAt(i) ^ provided.charCodeAt(i);
+        for (let i = 0; i < secret.length; i++)
+          same |= secret.charCodeAt(i) ^ provided.charCodeAt(i);
         if (same !== 0) return new Response("unauthorized", { status: 401 });
 
         let payload: RtdnPayload;

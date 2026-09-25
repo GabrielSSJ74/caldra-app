@@ -36,19 +36,17 @@ export type FabricationSnapshot = {
 };
 
 export type FabricationChange =
-  | "thickness"
-  | "method"
-  | "kFactor"
-  | "angle"
-  | "insideRadius"
-  | "bendSet";
+  "thickness" | "method" | "kFactor" | "angle" | "insideRadius" | "bendSet";
 
 function bendKey(b: Bend): string {
   return `${b.angleDeg}|${b.insideRadius}|${b.kFactor ?? "-"}`;
 }
 
 /** O que mudou entre duas revisões de fabricação. */
-export function diffFabrication(prev: FabricationSnapshot, next: FabricationSnapshot): FabricationChange[] {
+export function diffFabrication(
+  prev: FabricationSnapshot,
+  next: FabricationSnapshot,
+): FabricationChange[] {
   const changes = new Set<FabricationChange>();
   if (prev.config.thickness !== next.config.thickness) changes.add("thickness");
   if (prev.config.method !== next.config.method) changes.add("method");

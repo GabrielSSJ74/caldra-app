@@ -47,7 +47,8 @@ function segmentsFor(e: Entity): Seg[] {
   if (e.type === "polyline") {
     const out: Seg[] = [];
     const n = e.pts.length;
-    for (let i = 0; i < n - 1; i++) out.push({ eid: e.id, index: i, a: e.pts[i]!, b: e.pts[i + 1]! });
+    for (let i = 0; i < n - 1; i++)
+      out.push({ eid: e.id, index: i, a: e.pts[i]!, b: e.pts[i + 1]! });
     if (e.closed && n > 2) out.push({ eid: e.id, index: n - 1, a: e.pts[n - 1]!, b: e.pts[0]! });
     return out;
   }
@@ -150,7 +151,7 @@ export async function detectSharedCuts(
     const ang = norm(Math.atan2(s.b.y - s.a.y, s.b.x - s.a.x)) % Math.PI;
     const nrm = { x: -(s.b.y - s.a.y) / l, y: (s.b.x - s.a.x) / l };
     const c = s.a.x * nrm.x + s.a.y * nrm.y;
-    const ai = Math.round(((ang * 180) / Math.PI) / angStep);
+    const ai = Math.round((ang * 180) / Math.PI / angStep);
     const ci = Math.round(Math.abs(c) / cell);
     for (const da of [-1, 0, 1])
       for (const dc of [-1, 0, 1]) {
@@ -215,10 +216,8 @@ function subtract(e: Entity, index: number, q1: Vec2, q2: Vec2): Entity[] {
     const lo = Math.min(t1, t2);
     const hi = Math.max(t1, t2);
     const out: Entity[] = [];
-    if (lo > 0.01)
-      out.push({ ...e, id: uid(), x2: a.x + d.x * lo, y2: a.y + d.y * lo });
-    if (hi < l - 0.01)
-      out.push({ ...e, id: uid(), x1: a.x + d.x * hi, y1: a.y + d.y * hi });
+    if (lo > 0.01) out.push({ ...e, id: uid(), x2: a.x + d.x * lo, y2: a.y + d.y * lo });
+    if (hi < l - 0.01) out.push({ ...e, id: uid(), x1: a.x + d.x * hi, y1: a.y + d.y * hi });
     return out;
   }
   if (e.type === "polyline") {
@@ -251,11 +250,7 @@ function subtract(e: Entity, index: number, q1: Vec2, q2: Vec2): Entity[] {
   return [e];
 }
 
-function subtractArc(
-  e: Extract<Entity, { type: "arc" }>,
-  a0: number,
-  a1: number,
-): Entity[] {
+function subtractArc(e: Extract<Entity, { type: "arc" }>, a0: number, a1: number): Entity[] {
   const s = norm(e.a0);
   let w = norm(e.a1) - s;
   if (w <= 0) w += TAU;
@@ -275,10 +270,7 @@ export type ShareResult = {
 };
 
 /** Aplica os candidatos confirmados: o trecho comum passa a existir uma vez. */
-export function applySharedCuts(
-  entities: Entity[],
-  candidates: ShareCandidate[],
-): ShareResult {
+export function applySharedCuts(entities: Entity[], candidates: ShareCandidate[]): ShareResult {
   let list = [...entities];
   let applied = 0;
   let savedLength = 0;
@@ -357,8 +349,7 @@ export function revalidateShared(entities: Entity[], tol: ShareTol = DEFAULT_SHA
     const owners = new Set<string>();
     for (const s of segs)
       for (const p of ends)
-        if (Math.min(dist(s.a, p), dist(s.b, p)) <= Math.max(tol.gapMm * 5, 0.5))
-          owners.add(s.eid);
+        if (Math.min(dist(s.a, p), dist(s.b, p)) <= Math.max(tol.gapMm * 5, 0.5)) owners.add(s.eid);
     const invalid = owners.size < 2;
     return invalid === !!e.invalid ? e : { ...e, invalid };
   });

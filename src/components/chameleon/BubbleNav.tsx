@@ -65,7 +65,7 @@ export function BubbleNav() {
               <Link
                 key={item.to}
                 to={item.to}
-                 aria-label={translate(language, ITEM_KEYS[itemIndex]!)}
+                aria-label={translate(language, ITEM_KEYS[itemIndex]!)}
                 className={cn(
                   cell,
                   item.core ? "size-11" : "size-9",
@@ -91,7 +91,7 @@ export function BubbleNav() {
                     "group-focus-visible:translate-y-0 group-focus-visible:opacity-100",
                   )}
                 >
-                   {translate(language, ITEM_KEYS[itemIndex]!)}
+                  {translate(language, ITEM_KEYS[itemIndex]!)}
                 </span>
                 {on && (
                   <span
@@ -161,7 +161,15 @@ const MORE: Entry[] = [
   { name: "Ajuda", icon: HelpCircle, to: "/escola" },
 ];
 const MORE_KEYS = [
-  "calculator", "settings", "profile", "master", "library", "history", "favorites", "workshop", "help",
+  "calculator",
+  "settings",
+  "profile",
+  "master",
+  "library",
+  "history",
+  "favorites",
+  "workshop",
+  "help",
 ] as const;
 
 function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {

@@ -98,8 +98,12 @@
   --shadow-calc-glow: 0 0 18px color-mix(in oklab, var(--accent) 22%, transparent);
 }
 
-@utility shadow-calc { box-shadow: var(--shadow-calc); }
-@utility shadow-calc-glow { box-shadow: var(--shadow-calc-glow); }
+@utility shadow-calc {
+  box-shadow: var(--shadow-calc);
+}
+@utility shadow-calc-glow {
+  box-shadow: var(--shadow-calc-glow);
+}
 
 .calc-icon-button {
   display: grid;
@@ -110,47 +114,109 @@
   border-radius: 999px;
   color: var(--calc-muted);
   background: var(--calc-recess);
-  transition: color 160ms ease, border-color 160ms ease, transform 160ms ease;
+  transition:
+    color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
 }
 
-.calc-icon-button:hover { color: var(--calc-cyan); border-color: var(--calc-cyan); }
-.calc-icon-button:active { transform: scale(.95); }
-.calc-icon-button svg { width: 1.1rem; height: 1.1rem; }
+.calc-icon-button:hover {
+  color: var(--calc-cyan);
+  border-color: var(--calc-cyan);
+}
+.calc-icon-button:active {
+  transform: scale(0.95);
+}
+.calc-icon-button svg {
+  width: 1.1rem;
+  height: 1.1rem;
+}
 
 .calc-key {
   display: flex;
   height: clamp(3.15rem, 8dvh, 4.15rem);
   align-items: center;
   justify-content: center;
-  gap: .2rem;
+  gap: 0.2rem;
   border: 1px solid var(--calc-line);
-  border-radius: .75rem;
-  background: linear-gradient(155deg, color-mix(in oklab, var(--calc-key) 92%, white 8%), var(--calc-key));
+  border-radius: 0.75rem;
+  background: linear-gradient(
+    155deg,
+    color-mix(in oklab, var(--calc-key) 92%, white 8%),
+    var(--calc-key)
+  );
   color: var(--calc-text);
-  box-shadow: inset 0 1px 0 oklch(1 0 0 / 5%), 0 5px 10px oklch(0 0 0 / 18%);
-  transition: background 150ms ease, border-color 150ms ease, transform 80ms ease;
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 5%),
+    0 5px 10px oklch(0 0 0 / 18%);
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    transform 80ms ease;
 }
 
-.calc-key:hover { background: var(--calc-key-hover); border-color: color-mix(in oklab, var(--calc-cyan) 32%, var(--calc-line)); }
-.calc-key-main { font-family: var(--font-mono); font-size: clamp(1rem, 4.5vw, 1.3rem); }
-.calc-key-sub { align-self: flex-start; margin-top: .45rem; font-size: .55rem; color: var(--calc-muted); }
-.calc-key-operator { color: var(--calc-cyan); }
-.calc-key-shift { flex-direction: column; color: var(--calc-cyan); }
-.calc-key-shift.is-active { border-color: var(--calc-cyan); background: var(--calc-active); box-shadow: var(--shadow-calc-glow); }
-.calc-key-equals { border-color: var(--calc-cyan); background: var(--calc-cyan); color: var(--accent-foreground); box-shadow: var(--shadow-calc-glow); }
-.calc-key-equals:hover { background: color-mix(in oklab, var(--calc-cyan) 88%, white); }
+.calc-key:hover {
+  background: var(--calc-key-hover);
+  border-color: color-mix(in oklab, var(--calc-cyan) 32%, var(--calc-line));
+}
+.calc-key-main {
+  font-family: var(--font-mono);
+  font-size: clamp(1rem, 4.5vw, 1.3rem);
+}
+.calc-key-sub {
+  align-self: flex-start;
+  margin-top: 0.45rem;
+  font-size: 0.55rem;
+  color: var(--calc-muted);
+}
+.calc-key-operator {
+  color: var(--calc-cyan);
+}
+.calc-key-shift {
+  flex-direction: column;
+  color: var(--calc-cyan);
+}
+.calc-key-shift.is-active {
+  border-color: var(--calc-cyan);
+  background: var(--calc-active);
+  box-shadow: var(--shadow-calc-glow);
+}
+.calc-key-equals {
+  border-color: var(--calc-cyan);
+  background: var(--calc-cyan);
+  color: var(--accent-foreground);
+  box-shadow: var(--shadow-calc-glow);
+}
+.calc-key-equals:hover {
+  background: color-mix(in oklab, var(--calc-cyan) 88%, white);
+}
 
 @media (max-width: 420px) {
-  .calc-shell { border-radius: 1.25rem; }
-  .calc-key { border-radius: .62rem; }
+  .calc-shell {
+    border-radius: 1.25rem;
+  }
+  .calc-key {
+    border-radius: 0.62rem;
+  }
 }
 
 @media (max-height: 760px) and (orientation: landscape) {
-  .calculator-theme { padding-block: .35rem; }
-  .calc-shell { max-width: 920px; padding: .65rem; }
-  .calc-display { padding-block: .7rem; }
-  .calc-display > div:nth-child(2) { min-height: 2.5rem; }
-  .calc-key { height: 2.45rem; }
+  .calculator-theme {
+    padding-block: 0.35rem;
+  }
+  .calc-shell {
+    max-width: 920px;
+    padding: 0.65rem;
+  }
+  .calc-display {
+    padding-block: 0.7rem;
+  }
+  .calc-display > div:nth-child(2) {
+    min-height: 2.5rem;
+  }
+  .calc-key {
+    height: 2.45rem;
+  }
 }
 
 :root {
@@ -200,7 +266,8 @@
   --vision-control: color-mix(in oklab, var(--foreground) 5%, var(--background));
   --vision-control-hover: color-mix(in oklab, var(--accent) 12%, var(--background));
   --gradient-brand: linear-gradient(120deg, var(--accent), oklch(0.6 0.16 40));
-  --glow-accent: 0 0 0 1px color-mix(in oklab, var(--accent) 25%, transparent),
+  --glow-accent:
+    0 0 0 1px color-mix(in oklab, var(--accent) 25%, transparent),
     0 0 24px color-mix(in oklab, var(--accent) 12%, transparent);
 
   --sidebar: oklch(0.99 0.003 250);
@@ -295,11 +362,20 @@
   border: 1px solid var(--line);
 }
 
-.vision-control:hover { background: var(--vision-control-hover); }
-.vision-control:active { filter: brightness(.92); }
-.vision-control[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: color-mix(in oklab, var(--accent) 16%, var(--background)); }
-.vision-control:disabled { opacity: .45; }
-
+.vision-control:hover {
+  background: var(--vision-control-hover);
+}
+.vision-control:active {
+  filter: brightness(0.92);
+}
+.vision-control[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in oklab, var(--accent) 16%, var(--background));
+}
+.vision-control:disabled {
+  opacity: 0.45;
+}
 
 /* MODO MESTRE — identidade premium: espectro sutil em áreas selecionadas */
 .mestre {
@@ -311,7 +387,8 @@
     var(--accent2) 100%
   );
   --glass-border: color-mix(in oklab, var(--accent) 20%, transparent);
-  --glow-accent: 0 0 0 1px color-mix(in oklab, var(--accent) 28%, transparent),
+  --glow-accent:
+    0 0 0 1px color-mix(in oklab, var(--accent) 28%, transparent),
     0 0 30px color-mix(in oklab, var(--accent) 12%, transparent);
 }
 
@@ -345,13 +422,15 @@
 }
 
 @utility grid-bg {
-  background-image: linear-gradient(var(--grid-line) 1px, transparent 1px),
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 
 @utility grid-bg-fine {
-  background-image: linear-gradient(var(--grid-line) 1px, transparent 1px),
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
     linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 10px 10px;
 }
@@ -407,12 +486,11 @@
 
 /* superfícies metálicas técnicas — sólidas, com hairline e reflexo discreto */
 @utility metal {
-  background:
-    linear-gradient(
-      168deg,
-      color-mix(in oklab, var(--card) 92%, var(--foreground) 8%),
-      color-mix(in oklab, var(--card) 98%, transparent)
-    );
+  background: linear-gradient(
+    168deg,
+    color-mix(in oklab, var(--card) 92%, var(--foreground) 8%),
+    color-mix(in oklab, var(--card) 98%, transparent)
+  );
   border: 1px solid var(--glass-border);
   box-shadow:
     inset 0 1px 0 color-mix(in oklab, var(--foreground) 7%, transparent),
@@ -488,8 +566,6 @@
   --solid-in: oklch(0.32 0.02 240); /* superfície interna */
   --solid-rim: oklch(0.95 0.01 230); /* borda / espessura */
 }
-
-
 
 @utility holo-text {
   color: var(--holo);
@@ -644,8 +720,7 @@
 }
 
 .aurora-base {
-  background:
-    radial-gradient(120% 100% at 50% 0%, var(--aurora-base-a), var(--aurora-base-b) 70%);
+  background: radial-gradient(120% 100% at 50% 0%, var(--aurora-base-a), var(--aurora-base-b) 70%);
 }
 
 .aurora-blob {
@@ -670,7 +745,12 @@
   left: 8%;
   width: 62vmax;
   height: 48vmax;
-  background: radial-gradient(circle at 40% 40%, var(--aurora-warm), var(--aurora-warm-deep) 70%, transparent 72%);
+  background: radial-gradient(
+    circle at 40% 40%,
+    var(--aurora-warm),
+    var(--aurora-warm-deep) 70%,
+    transparent 72%
+  );
   transform: translate3d(3%, 5%, 0) scale(1.08);
   animation: aurora-drift-1 5s ease-in-out infinite alternate;
 }
@@ -680,7 +760,12 @@
   left: 26%;
   width: 56vmax;
   height: 56vmax;
-  background: radial-gradient(circle at 50% 50%, var(--aurora-magenta), var(--aurora-wine) 60%, transparent 72%);
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--aurora-magenta),
+    var(--aurora-wine) 60%,
+    transparent 72%
+  );
   transform: translate3d(-4%, -3%, 0) scale(1.06);
   animation: aurora-drift-2 5.5s ease-in-out infinite alternate;
 }
@@ -690,7 +775,12 @@
   right: -6%;
   width: 60vmax;
   height: 46vmax;
-  background: radial-gradient(circle at 50% 50%, var(--aurora-indigo), var(--aurora-violet) 62%, transparent 74%);
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--aurora-indigo),
+    var(--aurora-violet) 62%,
+    transparent 74%
+  );
   transform: translate3d(-5%, -4%, 0) scale(1.1);
   animation: aurora-drift-3 7s ease-in-out infinite alternate;
 }
@@ -700,7 +790,12 @@
   left: -14%;
   width: 44vmax;
   height: 52vmax;
-  background: radial-gradient(circle at 50% 50%, var(--aurora-fuchsia), var(--aurora-wine) 64%, transparent 74%);
+  background: radial-gradient(
+    circle at 50% 50%,
+    var(--aurora-fuchsia),
+    var(--aurora-wine) 64%,
+    transparent 74%
+  );
   transform: translate3d(6%, -5%, 0) scale(0.98);
   animation: aurora-drift-4 9s ease-in-out infinite alternate;
 }

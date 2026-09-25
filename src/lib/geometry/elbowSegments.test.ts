@@ -30,7 +30,6 @@ describe("curva de gomos — decomposição em peças", () => {
     }
   });
 
-
   it("ponta mede metade do gomo intermediário na linha de centro", () => {
     const m = elbowModel(base);
     const end = m.segments[0]!;

@@ -55,20 +55,39 @@ export type KnowledgeItem = {
 /* ---------------------------------------------------------------- competências */
 
 export type CompetencyId =
-  | "matematica"
-  | "desenho-tecnico"
-  | "tracagem"
-  | "planificacao"
-  | "tubulacao"
-  | "fabricacao";
+  "matematica" | "desenho-tecnico" | "tracagem" | "planificacao" | "tubulacao" | "fabricacao";
 
 export const COMPETENCIES: { id: CompetencyId; title: string; summary: string }[] = [
-  { id: "matematica", title: "Matemática", summary: "Unidades, geometria, Pitágoras e trigonometria aplicadas." },
-  { id: "desenho-tecnico", title: "Desenho técnico", summary: "Vistas, cotas, escalas e leitura de projeto." },
-  { id: "tracagem", title: "Traçagem", summary: "Instrumentos, referências e transferência para a chapa." },
-  { id: "planificacao", title: "Planificação", summary: "Desenvolvimento de superfícies e escolha do método." },
-  { id: "tubulacao", title: "Tubulação", summary: "Planta, elevação, isométricos e cálculos de linha." },
-  { id: "fabricacao", title: "Fabricação", summary: "Corte, dobra, calandra, montagem e conferência." },
+  {
+    id: "matematica",
+    title: "Matemática",
+    summary: "Unidades, geometria, Pitágoras e trigonometria aplicadas.",
+  },
+  {
+    id: "desenho-tecnico",
+    title: "Desenho técnico",
+    summary: "Vistas, cotas, escalas e leitura de projeto.",
+  },
+  {
+    id: "tracagem",
+    title: "Traçagem",
+    summary: "Instrumentos, referências e transferência para a chapa.",
+  },
+  {
+    id: "planificacao",
+    title: "Planificação",
+    summary: "Desenvolvimento de superfícies e escolha do método.",
+  },
+  {
+    id: "tubulacao",
+    title: "Tubulação",
+    summary: "Planta, elevação, isométricos e cálculos de linha.",
+  },
+  {
+    id: "fabricacao",
+    title: "Fabricação",
+    summary: "Corte, dobra, calandra, montagem e conferência.",
+  },
 ];
 
 /* ------------------------------------------------------------------- fórmulas */
@@ -165,9 +184,7 @@ export const FORMULAS: Formula[] = [
     computes: "Conversão entre a medida do desenho e a medida da peça.",
     whenToUse: "Leitura de projeto em escala 1:2, 1:5, 1:10 e ampliações.",
     why: "A cota manda; a escala só existe para caber no papel. Quando falta cota, é a escala que devolve a medida real.",
-    variables: [
-      { symbol: "fator", meaning: "Denominador da escala (1:5 → 5)" },
-    ],
+    variables: [{ symbol: "fator", meaning: "Denominador da escala (1:5 → 5)" }],
     example: "Traço de 38 mm em 1:10 → 380 mm na peça.",
     state: "verificado",
   },
@@ -456,7 +473,8 @@ export const KNOWLEDGE: KnowledgeItem[] = [
     id: "unidades-medida",
     title: "Unidades e conversões",
     category: "matematica",
-    concept: "Toda a fabricação metálica trabalha em milímetro; polegadas aparecem em material importado e tubulação.",
+    concept:
+      "Toda a fabricação metálica trabalha em milímetro; polegadas aparecem em material importado e tubulação.",
     definition:
       "Milímetro é a unidade de traçagem. A polegada é convertida antes de qualquer conta, nunca depois.",
     formulas: ["polegada"],
@@ -469,7 +487,8 @@ export const KNOWLEDGE: KnowledgeItem[] = [
     id: "raio-diametro-perimetro",
     title: "Raio, diâmetro e perímetro",
     category: "matematica",
-    concept: "As três medidas que descrevem qualquer seção circular e sustentam todo desenvolvimento.",
+    concept:
+      "As três medidas que descrevem qualquer seção circular e sustentam todo desenvolvimento.",
     definition:
       "Raio é do centro à borda; diâmetro é o dobro; perímetro é o contorno desenvolvido da seção.",
     formulas: ["circunferencia"],
@@ -495,7 +514,8 @@ export const KNOWLEDGE: KnowledgeItem[] = [
     title: "Triângulo retângulo e Pitágoras",
     category: "matematica",
     concept: "A ferramenta que transforma projeções em comprimento verdadeiro.",
-    definition: "Em todo triângulo retângulo a hipotenusa é a raiz da soma dos quadrados dos catetos.",
+    definition:
+      "Em todo triângulo retângulo a hipotenusa é a raiz da soma dos quadrados dos catetos.",
     formulas: ["pitagoras"],
     prerequisites: ["unidades-medida"],
     relatedTools: ["calculadora", "tracagem"],
@@ -505,7 +525,8 @@ export const KNOWLEDGE: KnowledgeItem[] = [
     id: "trigonometria-basica",
     title: "Seno, cosseno e tangente",
     category: "matematica",
-    concept: "Relações que ligam ângulos e lados — inclinações, ângulos de corte e alturas inacessíveis.",
+    concept:
+      "Relações que ligam ângulos e lados — inclinações, ângulos de corte e alturas inacessíveis.",
     definition:
       "sen = cateto oposto / hipotenusa · cos = cateto adjacente / hipotenusa · tg = oposto / adjacente.",
     formulas: ["tangente-cone", "pitagoras"],
@@ -562,7 +583,9 @@ export const KNOWLEDGE: KnowledgeItem[] = [
     definition:
       "Cota é a medida escrita no desenho e prevalece sobre qualquer medição feita no papel. Escala indica a proporção entre desenho e peça real.",
     formulas: ["escala"],
-    warnings: ["Nunca meça o desenho com régua para obter medida de fabricação quando existe cota."],
+    warnings: [
+      "Nunca meça o desenho com régua para obter medida de fabricação quando existe cota.",
+    ],
     commonErrors: ["Aplicar escala em desenho impresso fora de proporção."],
     prerequisites: ["unidades-medida"],
     relatedTools: ["calculadora"],
@@ -633,7 +656,9 @@ export const KNOWLEDGE: KnowledgeItem[] = [
       "Calcule a corda e abra o compasso nela.",
       "Percorra a circunferência; o fechamento confirma o cálculo.",
     ],
-    warnings: ["Se a última divisão não fecha, o erro está na abertura do compasso, não na fórmula."],
+    warnings: [
+      "Se a última divisão não fecha, o erro está na abertura do compasso, não na fórmula.",
+    ],
     prerequisites: ["raio-diametro-perimetro"],
     relatedTools: ["calculadora", "tracagem"],
     state: "verificado",
@@ -668,7 +693,9 @@ export const KNOWLEDGE: KnowledgeItem[] = [
       "Geratrizes que convergem a um vértice → método radial.",
       "Bocas de formatos diferentes → triangulação.",
     ],
-    commonErrors: ["Tentar usar o método radial em transição quadrado → redondo, que não tem vértice único."],
+    commonErrors: [
+      "Tentar usar o método radial em transição quadrado → redondo, que não tem vértice único.",
+    ],
     prerequisites: ["superficies-desenvolviveis"],
     relatedTools: ["tracagem", "chamfer"],
     state: "verificado",
@@ -773,7 +800,9 @@ export const KNOWLEDGE: KnowledgeItem[] = [
       "Calcule o ângulo do setor com R e G.",
       "Risque os dois arcos do mesmo centro e feche a coroa.",
     ],
-    warnings: ["Com R e r muito próximos o vértice fica longe demais: use triangulação ou traçado por cordas."],
+    warnings: [
+      "Com R e r muito próximos o vértice fica longe demais: use triangulação ou traçado por cordas.",
+    ],
     prerequisites: ["cone-completo"],
     relatedParts: ["reducao-concentrica"],
     relatedTools: ["calculadora", "chamfer"],
@@ -900,7 +929,9 @@ export const KNOWLEDGE: KnowledgeItem[] = [
       "Transporte as alturas para a virola aberta.",
       "Una os pontos e recorte o gabarito.",
     ],
-    warnings: ["Considere a espessura: o recorte é feito pela face interna que apoia no tubo maior."],
+    warnings: [
+      "Considere a espessura: o recorte é feito pela face interna que apoia no tubo maior.",
+    ],
     prerequisites: ["cilindro-boca-inclinada"],
     relatedTools: ["chamfer", "tracagem"],
     state: "verificado",
@@ -918,7 +949,9 @@ export const KNOWLEDGE: KnowledgeItem[] = [
       "Trace o recorte pela divisão de geratrizes.",
       "Prove o gabarito no tubo antes de cortar.",
     ],
-    commonErrors: ["Cortar o recorte pelo diâmetro externo do tubo maior e sobrar folga na raiz da solda."],
+    commonErrors: [
+      "Cortar o recorte pelo diâmetro externo do tubo maior e sobrar folga na raiz da solda.",
+    ],
     prerequisites: ["penetracao-tubos"],
     relatedParts: ["boca-de-lobo"],
     relatedTools: ["chamfer"],
@@ -932,7 +965,9 @@ export const KNOWLEDGE: KnowledgeItem[] = [
     definition:
       "Em derivações a 45° ou 60° a boca do tubo derivado vira uma elipse alongada, e o recorte no tubo principal deixa de ser simétrico nos dois sentidos.",
     formulas: ["derivacao-angulo", "intersecao-tubos"],
-    warnings: ["A abertura no tubo principal enfraquece a linha: reforço pode ser exigido pelo projeto."],
+    warnings: [
+      "A abertura no tubo principal enfraquece a linha: reforço pode ser exigido pelo projeto.",
+    ],
     prerequisites: ["boca-de-lobo"],
     relatedTools: ["chamfer"],
     state: "verificado",
@@ -961,7 +996,7 @@ export const KNOWLEDGE: KnowledgeItem[] = [
     definition:
       "Para um mesmo diâmetro nominal, o diâmetro externo é fixo e o schedule define a espessura da parede — logo, o diâmetro interno é o que varia.",
     formulas: ["linha-neutra"],
-    warnings: ["Tubo de 2\" não mede 50,8 mm de diâmetro externo: o nominal não é medida real."],
+    warnings: ['Tubo de 2" não mede 50,8 mm de diâmetro externo: o nominal não é medida real.'],
     commonErrors: ["Planificar usando o diâmetro nominal em vez do externo real."],
     prerequisites: ["unidades-medida"],
     relatedTools: ["calculadora"],
@@ -980,7 +1015,9 @@ export const KNOWLEDGE: KnowledgeItem[] = [
       "Leia os deslocamentos na planta e as cotas de altura na elevação.",
       "Combine as duas para obter o percurso real da linha.",
     ],
-    commonErrors: ["Medir na planta um trecho que está inclinado e tratá-lo como comprimento real."],
+    commonErrors: [
+      "Medir na planta um trecho que está inclinado e tratá-lo como comprimento real.",
+    ],
     prerequisites: ["vistas-ortograficas"],
     state: "verificado",
   },
@@ -1045,7 +1082,9 @@ export const KNOWLEDGE: KnowledgeItem[] = [
     definition:
       "O fator K localiza a fibra que não estica nem comprime dentro da espessura. Ele depende do material, do raio e do processo, e é o que separa um desenvolvimento certo de um chute.",
     formulas: ["bend-allowance"],
-    warnings: ["Fator K adotado sem prova prática gera peça fora de medida: dobre um corpo de prova."],
+    warnings: [
+      "Fator K adotado sem prova prática gera peça fora de medida: dobre um corpo de prova.",
+    ],
     prerequisites: ["linha-neutra-espessura"],
     relatedTools: ["calculadora"],
     state: "verificado",

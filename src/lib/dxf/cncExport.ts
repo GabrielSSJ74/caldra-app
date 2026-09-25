@@ -39,7 +39,6 @@ import {
   type ManufacturingRole,
 } from "@/lib/lab2d/roles";
 
-
 /** Papéis diretamente selecionáveis na exportação. */
 export type CncRole = EntityRole;
 
@@ -68,10 +67,7 @@ const m = (p: Vec2) => ({ x: p.x, y: -p.y });
  * Layer de saída de um papel, definida EXCLUSIVAMENTE pelo perfil.
  * Nenhum papel é convertido em outro: DOBRA nunca vira MARCAÇÃO.
  */
-export function exportLayerOf(
-  role: ManufacturingRole,
-  opts: CncExportOptions,
-): string | null {
+export function exportLayerOf(role: ManufacturingRole, opts: CncExportOptions): string | null {
   return profileById(opts.profileId).layerMap[role] ?? null;
 }
 
@@ -88,7 +84,9 @@ export function layerMapping(opts: CncExportOptions) {
 function geometryOf(e: Entity, layer: string, flatten: boolean): DxfEntity[] {
   switch (e.type) {
     case "line":
-      return [{ type: "LINE", layer, start: m({ x: e.x1, y: e.y1 }), end: m({ x: e.x2, y: e.y2 }) }];
+      return [
+        { type: "LINE", layer, start: m({ x: e.x1, y: e.y1 }), end: m({ x: e.x2, y: e.y2 }) },
+      ];
     case "polyline":
       return [{ type: "LWPOLYLINE", layer, closed: e.closed, points: e.pts.map(m) }];
     case "circle":
@@ -128,9 +126,7 @@ function geometryOf(e: Entity, layer: string, flatten: boolean): DxfEntity[] {
         controls.push(m(c1), m(c2), m(s.p));
         cur = s.p;
       }
-      return controls.length >= 4
-        ? [{ type: "SPLINE", layer, controls, closed: e.closed }]
-        : [];
+      return controls.length >= 4 ? [{ type: "SPLINE", layer, controls, closed: e.closed }] : [];
     }
     default:
       return [];
@@ -256,7 +252,7 @@ export function buildCncDxf(entities: Entity[], opts: CncExportOptions): DxfDocu
   const out: DxfEntity[] = [];
   const used: string[] = [];
   const cypcut = isCypcutProfile(opts);
-  const useLayer = (name: string) => {
+  const registerLayer = (name: string) => {
     if (!used.includes(name)) used.push(name);
     return name;
   };
@@ -273,7 +269,7 @@ export function buildCncDxf(entities: Entity[], opts: CncExportOptions): DxfDocu
     if (!opts.roles[role as CncRole]) continue;
     const layer = exportLayerOf(role, opts);
     if (!layer) continue;
-    useLayer(layer);
+    registerLayer(layer);
 
     const isCut = role === "CUT";
     if (opts.leads && isCut) {
@@ -282,7 +278,14 @@ export function buildCncDxf(entities: Entity[], opts: CncExportOptions): DxfDocu
       if (lin && target)
         out.push(
           ...tag(
-            [{ type: "LWPOLYLINE", layer: useLayer(target), closed: false, points: lin.map(m) }],
+            [
+              {
+                type: "LWPOLYLINE",
+                layer: registerLayer(target),
+                closed: false,
+                points: lin.map(m),
+              },
+            ],
             "LEAD_IN",
           ),
         );
@@ -294,7 +297,14 @@ export function buildCncDxf(entities: Entity[], opts: CncExportOptions): DxfDocu
       if (lout && target)
         out.push(
           ...tag(
-            [{ type: "LWPOLYLINE", layer: useLayer(target), closed: false, points: lout.map(m) }],
+            [
+              {
+                type: "LWPOLYLINE",
+                layer: registerLayer(target),
+                closed: false,
+                points: lout.map(m),
+              },
+            ],
             "LEAD_OUT",
           ),
         );
@@ -305,7 +315,6 @@ export function buildCncDxf(entities: Entity[], opts: CncExportOptions): DxfDocu
     layers: used.map((name, i) => ({ name, color: EXPORT_ACI[name] ?? i + 1 })),
     entities: out,
     ...(cypcut ? { appIds: [CYPCUT_APPID] } : {}),
-
   };
 }
 
@@ -359,7 +368,9 @@ export function validateCncExport(entities: Entity[], opts: CncExportOptions): C
   // entidades CUT duplicadas (mesma geometria, tolerância de 0,001 mm)
   const cutKeys = new Set<string>();
   for (const e of doc.entities.filter((x) => x.layer === exportLayerOf("CUT", opts))) {
-    const key = JSON.stringify(e, (k, v) => (typeof v === "number" ? Math.round(v * 1000) / 1000 : v));
+    const key = JSON.stringify(e, (k, v) =>
+      typeof v === "number" ? Math.round(v * 1000) / 1000 : v,
+    );
     if (cutKeys.has(key))
       issues.push({
         level: "warning",
@@ -432,7 +443,8 @@ export function verifyCncDxf(
         return (
           acc +
           e.points.reduce(
-            (s, p, i) => (i ? s + Math.hypot(p.x - e.points[i - 1]!.x, p.y - e.points[i - 1]!.y) : s),
+            (s, p, i) =>
+              i ? s + Math.hypot(p.x - e.points[i - 1]!.x, p.y - e.points[i - 1]!.y) : s,
             0,
           )
         );
@@ -445,7 +457,6 @@ export function verifyCncDxf(
   const declaredVersion = /\$ACADVER\n\s*1\n(\S+)/.exec(dxfText)?.[1] ?? "?";
   push("Versão DXF", expectedVersion, declaredVersion);
   push("Geometria não classificada", 0, unclassifiedOf(entities).length);
-
 
   return { ok: rows.every((r) => r.ok), rows };
 }
@@ -470,7 +481,9 @@ export function preflightCnc(entities: Entity[], opts: CncExportOptions): CncPre
   const cutKeys = new Set<string>();
   let dups = 0;
   for (const e of doc.entities.filter((x) => x.layer === exportLayerOf("CUT", opts))) {
-    const key = JSON.stringify(e, (k, v) => (typeof v === "number" ? Math.round(v * 1000) / 1000 : v));
+    const key = JSON.stringify(e, (k, v) =>
+      typeof v === "number" ? Math.round(v * 1000) / 1000 : v,
+    );
     if (cutKeys.has(key)) dups++;
     cutKeys.add(key);
   }
@@ -531,7 +544,6 @@ export function preflightCnc(entities: Entity[], opts: CncExportOptions): CncPre
   }
   return rows;
 }
-
 
 /** Comprimento total de corte do plano, em mm. */
 export const cncCutLength = (entities: Entity[]) =>

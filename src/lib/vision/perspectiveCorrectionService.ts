@@ -100,7 +100,17 @@ export function warpToRect(
 }
 
 function invert3x3(m: number[]): number[] | null {
-  const [a, b, c, d, e, f, g, h, i] = m as [number, number, number, number, number, number, number, number, number];
+  const [a, b, c, d, e, f, g, h, i] = m as [
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
   const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
   if (Math.abs(det) < 1e-12) return null;
   return [

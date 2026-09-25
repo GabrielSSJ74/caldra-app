@@ -25,8 +25,12 @@ import {
 import { buildCncDxf, cncCutLength, verifyCncDxf, DEFAULT_CNC_OPTIONS } from "@/lib/dxf/cncExport";
 import { exportDxf } from "@/lib/dxf/dxfService";
 import { CYPCT_GOLDEN_SAMPLE_01 as GOLDEN } from "@/lib/lxds/goldenSample";
-import { evaluateExpression, formatResult, toFraction, type AngleMode } from "@/lib/calculator/engine";
-
+import {
+  evaluateExpression,
+  formatResult,
+  toFraction,
+  type AngleMode,
+} from "@/lib/calculator/engine";
 
 export type QaCase = {
   group: string;
@@ -74,10 +78,20 @@ export function runQaSuite(): QaCase[] {
   const t: QaCase[] = [];
 
   /* ---- a) chapa plana ---- */
-  t.push(check("Referência", "Chapa 1000×500×3 aço — peso", 11.775, plateMassKg(1000 * 500, 3, 7850), "kg"));
+  t.push(
+    check(
+      "Referência",
+      "Chapa 1000×500×3 aço — peso",
+      11.775,
+      plateMassKg(1000 * 500, 3, 7850),
+      "kg",
+    ),
+  );
 
   /* ---- b) tubo ---- */
-  t.push(check("Referência", "Tubo Ø100×3, 1 m aço — peso", 7.18, tubeMassKg(100, 3, 1000, 7850), "kg"));
+  t.push(
+    check("Referência", "Tubo Ø100×3, 1 m aço — peso", 7.18, tubeMassKg(100, 3, 1000, 7850), "kg"),
+  );
 
   /* ---- c) circunferência ---- */
   t.push(check("Referência", "Circunferência Ø400", 1256.64, circumference(400)));
@@ -89,13 +103,28 @@ export function runQaSuite(): QaCase[] {
   t.push(check("Cone Ø500→Ø300 H400", "Raio interno do setor", 618.47, cone.innerRadius));
   t.push(check("Cone Ø500→Ø300 H400", "Ângulo do setor", 87.32, cone.angleDeg, "°"));
   const sect = devSize("tronco-de-cone", { d1: 500, d2: 300, h: 400 });
-  t.push(check("Cone Ø500→Ø300 H400", "Motor — geratriz verdadeira", 412.31, sect.r.trueLengths[0]!.length));
+  t.push(
+    check(
+      "Cone Ø500→Ø300 H400",
+      "Motor — geratriz verdadeira",
+      412.31,
+      sect.r.trueLengths[0]!.length,
+    ),
+  );
 
   /* ---- e) cilindro Ø400 × H500, esp 2 mm ---- */
   const cyl = devSize("cilindro", { d: 400, h: 500, thickness: 2, density: 7.85 });
   t.push(check("Cilindro Ø400 H500", "Planificação — largura", 1256.64, cyl.width));
   t.push(check("Cilindro Ø400 H500", "Planificação — altura", 500, cyl.height));
-  t.push(check("Cilindro Ø400 H500", "Peso esp 2 mm aço", 9.86, plateMassKg(cyl.r.areaMm2, 2, 7850), "kg"));
+  t.push(
+    check(
+      "Cilindro Ø400 H500",
+      "Peso esp 2 mm aço",
+      9.86,
+      plateMassKg(cyl.r.areaMm2, 2, 7850),
+      "kg",
+    ),
+  );
   t.push(check("Cilindro Ø400 H500", "Área desenvolvida", 628318.53, cyl.r.areaMm2, "mm²"));
 
   /* ---- f) entrada em polegada ---- */
@@ -106,10 +135,12 @@ export function runQaSuite(): QaCase[] {
   const p5 = parseLength("12.7");
   t.push(check("Unidades", '2 3/8" → mm', 60.33, p1.ok ? p1.mm : NaN));
   t.push(check("Unidades", '1/2" → mm', 12.7, p2.ok ? p2.mm : NaN));
-  t.push(check("Unidades", '23/8 → mm', 73.03, p3.ok ? p3.mm : NaN));
+  t.push(check("Unidades", "23/8 → mm", 73.03, p3.ok ? p3.mm : NaN));
   t.push(check("Unidades", '"12,7" → mm', 12.7, p4.ok ? p4.mm : NaN));
   t.push(check("Unidades", '"12.7" → mm', 12.7, p5.ok ? p5.mm : NaN));
-  t.push(check("Unidades", "Lixo rejeitado (1 = rejeitou)", 1, parseLength("abc").ok ? 0 : 1, "bool"));
+  t.push(
+    check("Unidades", "Lixo rejeitado (1 = rejeitou)", 1, parseLength("abc").ok ? 0 : 1, "bool"),
+  );
 
   /* ---- custo ---- */
   t.push(
@@ -138,7 +169,7 @@ export function runQaSuite(): QaCase[] {
       "Cone",
       "Ângulo do setor",
       coneRef.angleDeg,
-      (coneEng.r.metrics.find((m) => m.label.includes("Ângulo"))?.value ?? coneRef.angleDeg),
+      coneEng.r.metrics.find((m) => m.label.includes("Ângulo"))?.value ?? coneRef.angleDeg,
       "°",
     ),
   );
@@ -181,8 +212,7 @@ export function runQaSuite(): QaCase[] {
   /* ---- quadrado → redondo ---- */
   const sqr = calculateSquareToRound(SQUARE_TO_ROUND_DEFAULTS);
   const n = SQUARE_TO_ROUND_DEFAULTS.divisions * 4;
-  const chordSum =
-    2 * (SQUARE_TO_ROUND_DEFAULTS.topDiameter / 2) * Math.sin(Math.PI / n) * n;
+  const chordSum = 2 * (SQUARE_TO_ROUND_DEFAULTS.topDiameter / 2) * Math.sin(Math.PI / n) * n;
   t.push(check("Quadrado → Redondo", "Soma das cordas ≈ perímetro do topo", chordSum, chordSum));
   t.push(
     check(
@@ -206,7 +236,7 @@ export function runQaSuite(): QaCase[] {
       "Geratriz máxima > altura",
       1,
       (sqr.metrics.find((m) => m.label === "Geratriz máxima")?.value ?? 0) >
-      SQUARE_TO_ROUND_DEFAULTS.height
+        SQUARE_TO_ROUND_DEFAULTS.height
         ? 1
         : 0,
       "bool",
@@ -268,16 +298,40 @@ function cncCases(): QaCase[] {
   const cut = sq("q1", "corte");
   const mark = sq("q2", "marcacao");
 
-  t.push(check("CNC", "Layer de corte mapeia CUT", 1, cncLayerOf(cut.layer) === "CUT" ? 1 : 0, "bool"));
-  t.push(check("CNC", "Layer de marcação mapeia MARK", 1, cncLayerOf(mark.layer) === "MARK" ? 1 : 0, "bool"));
+  t.push(
+    check("CNC", "Layer de corte mapeia CUT", 1, cncLayerOf(cut.layer) === "CUT" ? 1 : 0, "bool"),
+  );
+  t.push(
+    check(
+      "CNC",
+      "Layer de marcação mapeia MARK",
+      1,
+      cncLayerOf(mark.layer) === "MARK" ? 1 : 0,
+      "bool",
+    ),
+  );
 
   const ori = orientationOf(cut);
   const rev = orientationOf(reverseEntity(cut));
-  t.push(check("CNC", "Inverter sentido troca a orientação", 1, ori !== rev && rev !== "open" ? 1 : 0, "bool"));
+  t.push(
+    check(
+      "CNC",
+      "Inverter sentido troca a orientação",
+      1,
+      ori !== rev && rev !== "open" ? 1 : 0,
+      "bool",
+    ),
+  );
 
   const seq = [withCnc(cut, { sequence: 1 }), withCnc(mark, { sequence: 2 })];
   t.push(
-    check("CNC", "Sequência preservada na ordem", 1, cncOf(seq[0]!).sequence === 1 && cncOf(seq[1]!).sequence === 2 ? 1 : 0, "bool"),
+    check(
+      "CNC",
+      "Sequência preservada na ordem",
+      1,
+      cncOf(seq[0]!).sequence === 1 && cncOf(seq[1]!).sequence === 2 ? 1 : 0,
+      "bool",
+    ),
   );
 
   const led = withCnc(cut, { leadIn: { ...DEFAULT_LEAD, kind: "line", length: 5 } });
@@ -298,7 +352,15 @@ function cncCases(): QaCase[] {
   const text = exportDxf(doc);
   const v = verifyCncDxf([cut, mark], opts, text);
   t.push(check("CNC", "DXF CNC relido confere", 1, v.ok ? 1 : 0, "bool"));
-  t.push(check("CNC", "Sem REFERENCE/DIMENSION por padrão", 0, doc.layers.filter((l) => l.name === "REFERENCE" || l.name === "DIMENSION").length, "un"));
+  t.push(
+    check(
+      "CNC",
+      "Sem REFERENCE/DIMENSION por padrão",
+      0,
+      doc.layers.filter((l) => l.name === "REFERENCE" || l.name === "DIMENSION").length,
+      "un",
+    ),
+  );
   t.push(check("CNC", "Comprimento de corte", 400, cncCutLength([cut, mark]), "mm"));
 
   /* ---------------------------------------- LXDS (referência do CypCut) */
@@ -326,20 +388,11 @@ function cncCases(): QaCase[] {
     ),
   );
   t.push(
-    check(
-      "LXDS",
-      "Largura da amostra",
-      910.7,
-      GOLDEN.extents.maxX - GOLDEN.extents.minX,
-      "mm",
-    ),
+    check("LXDS", "Largura da amostra", 910.7, GOLDEN.extents.maxX - GOLDEN.extents.minX, "mm"),
   );
 
   return t;
 }
-
-
-
 
 /**
  * QA da calculadora científica: o modo de ângulo é a fonte de erro clássica
@@ -384,10 +437,30 @@ function calculatorCases(): QaCase[] {
   for (const [src, mode, expected, label] of cases) {
     t.push(check("Calculadora", `${label} — ${src}`, expected, ev(src, mode), "un", 1e-9));
   }
-  t.push(check("Calculadora", "Divisão por zero é recusada", 1, Number.isNaN(ev("1/0")) ? 1 : 0, "bool"));
-  t.push(check("Calculadora", "Expressão inválida é recusada", 1, Number.isNaN(ev("2++")) ? 1 : 0, "bool"));
-  t.push(check("Calculadora", "Fatorial fracionário é recusado", 1, Number.isNaN(ev("2.5!")) ? 1 : 0, "bool"));
-  t.push(check("Calculadora", "Formata com vírgula", 1, formatResult(1.5, 2) === "1,50" ? 1 : 0, "bool"));
+  t.push(
+    check("Calculadora", "Divisão por zero é recusada", 1, Number.isNaN(ev("1/0")) ? 1 : 0, "bool"),
+  );
+  t.push(
+    check(
+      "Calculadora",
+      "Expressão inválida é recusada",
+      1,
+      Number.isNaN(ev("2++")) ? 1 : 0,
+      "bool",
+    ),
+  );
+  t.push(
+    check(
+      "Calculadora",
+      "Fatorial fracionário é recusado",
+      1,
+      Number.isNaN(ev("2.5!")) ? 1 : 0,
+      "bool",
+    ),
+  );
+  t.push(
+    check("Calculadora", "Formata com vírgula", 1, formatResult(1.5, 2) === "1,50" ? 1 : 0, "bool"),
+  );
   t.push(check("Calculadora", "Fração de 0,25", 1, toFraction(0.25) === "1/4" ? 1 : 0, "bool"));
   return t;
 }

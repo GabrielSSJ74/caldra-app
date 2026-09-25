@@ -1,16 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import {
-  deleteMaterial as dbDelete,
-  loadMaterials,
-  newMaterial,
-  saveMaterial,
-} from "./store";
-import {
-  DEFAULT_LOSS_PCT,
-  DEFAULT_MATERIAL_ID,
-  DEFAULT_THICKNESS,
-  type Material,
-} from "./types";
+import { deleteMaterial as dbDelete, loadMaterials, newMaterial, saveMaterial } from "./store";
+import { DEFAULT_LOSS_PCT, DEFAULT_MATERIAL_ID, DEFAULT_THICKNESS, type Material } from "./types";
 
 type Ctx = {
   materials: Material[];

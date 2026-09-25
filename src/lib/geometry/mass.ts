@@ -11,7 +11,7 @@ export const toKgDm3 = (kgM3: number) => kgM3 / 1000;
 
 /** Massa de uma chapa plana desenvolvida. */
 export function plateMassKg(areaMm2: number, thicknessMm: number, densityKgM3: number): number {
-  return (areaMm2 * 1e-6) * (thicknessMm * 1e-3) * densityKgM3;
+  return areaMm2 * 1e-6 * (thicknessMm * 1e-3) * densityKgM3;
 }
 
 /** Massa de tubo pelo diâmetro médio (Ø externo − espessura). */

@@ -65,13 +65,7 @@ function row(doc: jsPDF, label: string, value: string, y: number): number {
   return y + 5.4;
 }
 
-function table(
-  doc: jsPDF,
-  head: string[],
-  widths: number[],
-  rows: string[][],
-  y: number,
-): number {
+function table(doc: jsPDF, head: string[], widths: number[], rows: string[][], y: number): number {
   const step = 5.6;
   doc.setFontSize(8);
   doc.setFont("helvetica", "bold");
@@ -141,12 +135,7 @@ export async function fabricationPackagePdf(
   );
   y = row(doc, "Peças", `${bom.lines.reduce((s, l) => s + l.quantity, 0)} un`, y);
   y = row(doc, "Massa total", formatWeight(bom.totalMassKg, region), y);
-  y = row(
-    doc,
-    "Custo estimado",
-    bom.totalCost > 0 ? formatMoney(bom.totalCost, region) : "—",
-    y,
-  );
+  y = row(doc, "Custo estimado", bom.totalCost > 0 ? formatMoney(bom.totalCost, region) : "—", y);
   if (project.description) {
     const lines = doc.splitTextToSize(project.description, RIGHT - LEFT) as string[];
     doc.setTextColor(60);
@@ -158,8 +147,7 @@ export async function fabricationPackagePdf(
   // ---------- Estrutura ----------
   y = heading(doc, "Estrutura do conjunto", y + 6);
   const structure: string[][] = [];
-  const push = (level: string, name: string, info: string) =>
-    structure.push([level, name, info]);
+  const push = (level: string, name: string, info: string) => structure.push([level, name, info]);
   for (const asm of project.assemblies) {
     const partsOf = project.parts.filter((p) => p.assemblyId === asm.id && !p.subassemblyId);
     push("CONJ", asm.name, `${partsOf.length} peça(s) diretas`);
@@ -224,12 +212,7 @@ export async function fabricationPackagePdf(
       doc,
       ["Nível", "Peça", "Ponto", "Detalhe"],
       [18, 24, 52, 84],
-      validation.issues.map((i) => [
-        i.level.toUpperCase(),
-        i.partCode ?? "—",
-        i.title,
-        i.detail,
-      ]),
+      validation.issues.map((i) => [i.level.toUpperCase(), i.partCode ?? "—", i.title, i.detail]),
       y,
     );
   }
@@ -358,11 +341,7 @@ export async function partLabelsPdf(
     doc.text(`${line.quantity} un · ${line.assembly}`, x + 36, y + 32);
     doc.setTextColor(0);
     doc.setFontSize(7.5);
-    doc.text(
-      `${project.name} · ${project.code ?? "—"} REV ${project.revision}`,
-      x + 3,
-      y + 41,
-    );
+    doc.text(`${project.name} · ${project.code ?? "—"} REV ${project.revision}`, x + 3, y + 41);
     i++;
   }
 

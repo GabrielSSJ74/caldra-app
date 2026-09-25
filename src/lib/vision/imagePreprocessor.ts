@@ -30,7 +30,6 @@ export type PreprocessOptions = {
   threshold?: number;
 };
 
-
 export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
 
 export function isAcceptedImage(file: File) {
@@ -57,7 +56,7 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
 
 /** Desenha a imagem aplicando rotação/recorte e devolve os pixels RGBA. */
 export function rasterize(img: HTMLImageElement, opt: PreprocessOptions = {}) {
-  const rot = ((opt.rotationDeg ?? 0) % 360 + 360) % 360;
+  const rot = (((opt.rotationDeg ?? 0) % 360) + 360) % 360;
   const swap = rot === 90 || rot === 270;
   const rw = swap ? img.naturalHeight : img.naturalWidth;
   const rh = swap ? img.naturalWidth : img.naturalHeight;
@@ -81,7 +80,6 @@ export function rasterize(img: HTMLImageElement, opt: PreprocessOptions = {}) {
   ctx.imageSmoothingQuality = "high";
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, W, H);
-
 
   ctx.save();
   ctx.scale(scale, scale);
@@ -242,11 +240,7 @@ export function closeHoles(bin: Binary, passes = 1): Binary {
       for (let x = 1; x < w - 1; x++) {
         const i = y * w + x;
         dil[i] =
-          cur.data[i] ||
-          cur.data[i - 1] ||
-          cur.data[i + 1] ||
-          cur.data[i - w] ||
-          cur.data[i + w]
+          cur.data[i] || cur.data[i - 1] || cur.data[i + 1] || cur.data[i - w] || cur.data[i + w]
             ? 1
             : 0;
       }
@@ -254,8 +248,7 @@ export function closeHoles(bin: Binary, passes = 1): Binary {
     for (let y = 1; y < h - 1; y++)
       for (let x = 1; x < w - 1; x++) {
         const i = y * w + x;
-        ero[i] =
-          dil[i] && dil[i - 1] && dil[i + 1] && dil[i - w] && dil[i + w] ? 1 : 0;
+        ero[i] = dil[i] && dil[i - 1] && dil[i + 1] && dil[i - w] && dil[i + w] ? 1 : 0;
       }
     cur = { data: ero, width: w, height: h };
   }
@@ -300,7 +293,10 @@ export function normalizeContrast(image: ImageData): ImageData {
     }
   }
   const range = Math.max(8, hi - lo);
-  const out = new ImageData(w, h);
+  const out =
+    typeof ImageData !== "undefined"
+      ? new ImageData(w, h)
+      : ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) } as ImageData);
   for (let p = 0; p < lum.length; p++) {
     const v = Math.max(0, Math.min(255, ((lum[p]! - lo) / range) * 255));
     const i = p * 4;
@@ -349,13 +345,11 @@ export function sauvolaBinarize(
       sqr[(y + 1) * iw + x + 1] = sqr[y * iw + x + 1]! + rq;
     }
   }
-  const area = (
-    acc: Float64Array,
-    x0: number,
-    y0: number,
-    x1: number,
-    y1: number,
-  ) => acc[(y1 + 1) * iw + x1 + 1]! - acc[y0 * iw + x1 + 1]! - acc[(y1 + 1) * iw + x0]! + acc[y0 * iw + x0]!;
+  const area = (acc: Float64Array, x0: number, y0: number, x1: number, y1: number) =>
+    acc[(y1 + 1) * iw + x1 + 1]! -
+    acc[y0 * iw + x1 + 1]! -
+    acc[(y1 + 1) * iw + x0]! +
+    acc[y0 * iw + x0]!;
 
   const out = new Uint8Array(w * h);
   for (let y = 0; y < h; y++) {

@@ -54,7 +54,12 @@ const DialogContent = React.forwardRef<
           className="fixed inset-0 z-50 grid place-items-center overflow-hidden p-2 outline-none sm:p-4"
           {...props}
         >
-          <div className={cn("relative grid w-full gap-4 border bg-background p-6 shadow-lg sm:rounded-lg", className)}>
+          <div
+            className={cn(
+              "relative grid w-full gap-4 border bg-background p-6 shadow-lg sm:rounded-lg",
+              className,
+            )}
+          >
             {children}
             <DialogCloseButton />
           </div>

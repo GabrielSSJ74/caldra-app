@@ -177,7 +177,10 @@ export function suggestSequence(entities: Entity[]): Entity[] {
     const pts = segmentsOf(e).flat();
     if (e.type === "circle" || e.type === "arc")
       return { minX: e.cx - e.r, minY: e.cy - e.r, maxX: e.cx + e.r, maxY: e.cy + e.r };
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
     for (const p of pts) {
       minX = Math.min(minX, p.x);
       minY = Math.min(minY, p.y);
@@ -220,7 +223,10 @@ export function suggestSequence(entities: Entity[]): Entity[] {
     out.push(picked!);
     cur = endPointOf(picked!);
   }
-  return applyCutOrder(entities, out.map((e) => e.id));
+  return applyCutOrder(
+    entities,
+    out.map((e) => e.id),
+  );
 }
 
 export type CutStats = { paths: number; totalLength: number; pierces: number };

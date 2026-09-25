@@ -84,10 +84,19 @@ export function ProjectConfigurator({ model }: { model: CatalogModel }) {
             </label>
           ))}
         </div>
-        <Button className="mt-4" disabled={errors.length > 0 || !result} onClick={() => setGenerated(true)}>
-          <Calculator />Calcular projeto
+        <Button
+          className="mt-4"
+          disabled={errors.length > 0 || !result}
+          onClick={() => setGenerated(true)}
+        >
+          <Calculator />
+          Calcular projeto
         </Button>
-        {errors.length > 0 && <p className="mt-2 text-xs text-destructive">Revise os parâmetros fora dos limites técnicos.</p>}
+        {errors.length > 0 && (
+          <p className="mt-2 text-xs text-destructive">
+            Revise os parâmetros fora dos limites técnicos.
+          </p>
+        )}
       </Panel>
 
       {generated && result && (
@@ -109,7 +118,12 @@ export function ProjectConfigurator({ model }: { model: CatalogModel }) {
               ))}
             </div>
             {tab === "2d" && (
-              <TechnicalDrawing2D result={result} instances={instances} selectedId={selectedId} onSelect={setSelectedId} />
+              <TechnicalDrawing2D
+                result={result}
+                instances={instances}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+              />
             )}
             {(tab === "3d" || tab === "explodida" || tab === "perspectiva") && (
               <ProjectModel3D
@@ -123,7 +137,11 @@ export function ProjectConfigurator({ model }: { model: CatalogModel }) {
               />
             )}
             {tab === "detalhes" && (
-              <ProjectBreakdown result={result} selectedPartKey={selectedPartKey} onSelectPart={selectPart} />
+              <ProjectBreakdown
+                result={result}
+                selectedPartKey={selectedPartKey}
+                onSelectPart={selectPart}
+              />
             )}
           </Panel>
 
@@ -141,10 +159,20 @@ export function ProjectConfigurator({ model }: { model: CatalogModel }) {
 
           <Panel className="p-4">
             <SectionLabel>Resumo e decomposição</SectionLabel>
-            <ProjectBreakdown result={result} selectedPartKey={selectedPartKey} onSelectPart={selectPart} />
+            <ProjectBreakdown
+              result={result}
+              selectedPartKey={selectedPartKey}
+              onSelectPart={selectPart}
+            />
             <div className="mt-4 flex flex-wrap gap-2">
-              <Button onClick={save}><Save />Criar meu projeto</Button>
-              <Button variant="outline" onClick={() => setChamfer(true)}><PenTool />Adicionar ao CHAMFER</Button>
+              <Button onClick={save}>
+                <Save />
+                Criar meu projeto
+              </Button>
+              <Button variant="outline" onClick={() => setChamfer(true)}>
+                <PenTool />
+                Adicionar ao CHAMFER
+              </Button>
             </div>
           </Panel>
 

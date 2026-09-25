@@ -12,7 +12,9 @@ export const Route = createFileRoute("/escola/modulo/$moduleId")({
   },
   head: ({ loaderData }) => {
     if (!loaderData) {
-      return { meta: [{ title: "Módulo indisponível — CALDRA" }, { name: "robots", content: "noindex" }] };
+      return {
+        meta: [{ title: "Módulo indisponível — CALDRA" }, { name: "robots", content: "noindex" }],
+      };
     }
     const title = `${loaderData.title} — Estudos | CALDRA`;
     return {

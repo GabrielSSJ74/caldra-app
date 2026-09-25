@@ -16,6 +16,7 @@ O projeto já tem uma camada de permissões em `src/lib/subscription/features.ts
 Calculadora completa, Biblioteca completa (fim do bloqueio por item), os quatro temas, os três idiomas, cor Azul, fundo Padrão, traçagem básica, Meus Modelos, PNG, SVG, projetos 1 a 5, estudos introdutórios.
 
 Mudanças de padrão para instalação nova (nunca sobrescrevendo preferência já salva):
+
 - tema inicial: Claro
 - cor de destaque inicial: Azul
 - estilo de fundo inicial: Padrão
@@ -29,6 +30,7 @@ O Catálogo de Projetos Paramétricos fica fora desta tarefa, exatamente como es
 ## 4. Paywall contextual
 
 O convite por recurso já existe (`FEATURE_PITCH` + diálogo). Vou completá-lo:
+
 - textos novos para cada recurso adicionado à matriz;
 - CTA único em todo o app: **Conhecer o PRO**;
 - Oficina passa a mostrar apresentação do recurso + convite, em vez de sumir;
@@ -40,6 +42,7 @@ Sem convite para: calculadora, biblioteca, temas, idioma, azul, fundo padrão, t
 ## 5. Tela de planos
 
 `/pro` e o diálogo passam a mostrar a tabela pedida, na ordem pedida, com valores reais lidos da matriz (5 / Ilimitado, Todos, Azul / Todas, 3 / 3). Cabeçalhos:
+
 - CALDRA FREE — "O essencial para trabalhar no dia a dia." / "Comece a traçar, calcular e aprender."
 - CALDRA PRO — "O laboratório completo: da medida ao arquivo que a máquina corta." / "Projete, fabrique e leve seu trabalho até o CNC."
 

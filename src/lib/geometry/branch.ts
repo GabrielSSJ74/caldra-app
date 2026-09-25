@@ -77,10 +77,19 @@ export type BranchDevelopments = {
 function boundsOf(pts: Vec2[]) {
   const xs = pts.map((p) => p.x);
   const ys = pts.map((p) => p.y);
-  return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys),
+  };
 }
 
-function pattern(outline: Vec2[], foldLines: Segment2[], points: { id: string; p: Vec2 }[]): DevelopmentPattern {
+function pattern(
+  outline: Vec2[],
+  foldLines: Segment2[],
+  points: { id: string; p: Vec2 }[],
+): DevelopmentPattern {
   return { outline, foldLines, points, bounds: boundsOf(outline) };
 }
 
@@ -130,7 +139,10 @@ export function branchIntersection(i: BranchInput): BranchModel {
 }
 
 /** Planificações derivadas da MESMA curva de interseção. */
-export function branchDevelopments(i: BranchInput, model = branchIntersection(i)): BranchDevelopments {
+export function branchDevelopments(
+  i: BranchInput,
+  model = branchIntersection(i),
+): BranchDevelopments {
   const { R, r, curve } = model;
   const L = i.branchLength;
 

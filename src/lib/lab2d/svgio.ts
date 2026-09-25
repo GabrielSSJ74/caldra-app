@@ -15,14 +15,18 @@ const num = (v: string | null, d = 0) => {
 /** Fator de conversão unidade-de-usuário → mm a partir de width/viewBox. */
 function scaleOf(svg: SVGSVGElement): number {
   const w = svg.getAttribute("width") ?? "";
-  const vb = (svg.getAttribute("viewBox") ?? "").trim().split(/[\s,]+/).map(Number);
+  const vb = (svg.getAttribute("viewBox") ?? "")
+    .trim()
+    .split(/[\s,]+/)
+    .map(Number);
   const vbw = vb.length === 4 ? vb[2]! : 0;
   if (!vbw) return 1;
   const m = w.match(/^([\d.]+)\s*(mm|cm|in|px)?$/);
   if (!m) return 1;
   const val = Number(m[1]);
   const unit = m[2] ?? "px";
-  const mm = unit === "mm" ? val : unit === "cm" ? val * 10 : unit === "in" ? val * 25.4 : val * 0.264583;
+  const mm =
+    unit === "mm" ? val : unit === "cm" ? val * 10 : unit === "in" ? val * 25.4 : val * 0.264583;
   return mm / vbw;
 }
 
@@ -147,7 +151,14 @@ export function importSvg(text: string, layer: LayerId): Entity[] {
 
   root.querySelectorAll("circle").forEach((el) => {
     const c = P(num(el.getAttribute("cx")), num(el.getAttribute("cy")));
-    out.push({ id: uid(), layer, type: "circle", cx: c.x, cy: c.y, r: num(el.getAttribute("r")) * s });
+    out.push({
+      id: uid(),
+      layer,
+      type: "circle",
+      cx: c.x,
+      cy: c.y,
+      r: num(el.getAttribute("r")) * s,
+    });
   });
 
   root.querySelectorAll("ellipse").forEach((el) => {
@@ -163,7 +174,10 @@ export function importSvg(text: string, layer: LayerId): Entity[] {
 
   const poly = (sel: string, closed: boolean) =>
     root.querySelectorAll(sel).forEach((el) => {
-      const nums = (el.getAttribute("points") ?? "").trim().split(/[\s,]+/).map(Number);
+      const nums = (el.getAttribute("points") ?? "")
+        .trim()
+        .split(/[\s,]+/)
+        .map(Number);
       const pts: Vec2[] = [];
       for (let i = 0; i + 1 < nums.length; i += 2) pts.push(P(nums[i]!, nums[i + 1]!));
       if (pts.length > 1) out.push({ id: uid(), layer, type: "polyline", closed, pts });

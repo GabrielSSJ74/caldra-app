@@ -45,12 +45,15 @@ function cleanToken(raw: string) {
 }
 
 /** Interpreta um token do OCR como cota técnica — ou devolve `null`. */
-export function classifyToken(raw: string): { kind: OcrKind; mm: number | null; text: string } | null {
+export function classifyToken(
+  raw: string,
+): { kind: OcrKind; mm: number | null; text: string } | null {
   const t = cleanToken(raw);
   if (!t || !/\d/.test(t)) return null;
 
   const rosca = t.match(/^M\s?(\d+(?:[.,]\d+)?)(?:\s?[x×]\s?\d+(?:[.,]\d+)?)?$/i);
-  if (rosca) return { kind: "rosca", mm: Number(rosca[1]!.replace(",", ".")), text: t.toUpperCase() };
+  if (rosca)
+    return { kind: "rosca", mm: Number(rosca[1]!.replace(",", ".")), text: t.toUpperCase() };
 
   const ang = t.match(/^(\d+(?:[.,]\d+)?)\s?[°ºo]$/i);
   if (ang) {
@@ -78,7 +81,11 @@ export function classifyToken(raw: string): { kind: OcrKind; mm: number | null; 
   return null;
 }
 
-type Word = { text: string; confidence: number; bbox: { x0: number; y0: number; x1: number; y1: number } };
+type Word = {
+  text: string;
+  confidence: number;
+  bbox: { x0: number; y0: number; x1: number; y1: number };
+};
 
 export type OcrProgress = (stage: string, pct: number) => void;
 

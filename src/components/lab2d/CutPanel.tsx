@@ -131,7 +131,11 @@ export function CutPanel({
   const drop = (targetId: string) => {
     if (!dragId || dragId === targetId) return;
     const g = groupOfId(dragId);
-    const block = g ? membersOf(entities, g).filter(isCutPath).map((e) => e.id) : [dragId];
+    const block = g
+      ? membersOf(entities, g)
+          .filter(isCutPath)
+          .map((e) => e.id)
+      : [dragId];
     commit(moveCutBlock(entities, block, targetId));
     setDragId(null);
   };
@@ -145,7 +149,9 @@ export function CutPanel({
           inputMode="decimal"
           step="any"
           value={value}
-          onChange={(ev) => Number.isFinite(Number(ev.target.value)) && set(Number(ev.target.value))}
+          onChange={(ev) =>
+            Number.isFinite(Number(ev.target.value)) && set(Number(ev.target.value))
+          }
           className="w-14 rounded-lg border border-line bg-background/40 px-1 py-0.5 text-right font-mono text-[10px] outline-none"
         />
         <span className="font-mono text-[8px] text-muted-foreground">{unit}</span>
@@ -232,7 +238,9 @@ export function CutPanel({
               );
             })}
             {!paths.length && (
-              <li className="font-mono text-[10px] text-muted-foreground">Nenhum caminho de corte.</li>
+              <li className="font-mono text-[10px] text-muted-foreground">
+                Nenhum caminho de corte.
+              </li>
             )}
           </ol>
 
@@ -289,9 +297,9 @@ export function CutPanel({
               onClick={() => {
                 const res = createGroup(entities, selection, groups);
                 if (!res) {
-      toast.info("Selecione 2 ou mais entidades.");
-      return;
-    }
+                  toast.info("Selecione 2 ou mais entidades.");
+                  return;
+                }
                 commit(res.entities);
                 setGroups(res.groups);
                 toast.success("Grupo criado.");
@@ -303,9 +311,9 @@ export function CutPanel({
               onClick={() => {
                 const gid = selection.map(groupOfId).find(Boolean);
                 if (!gid) {
-      toast.info("Selecione um membro de um grupo junto das novas peças.");
-      return;
-    }
+                  toast.info("Selecione um membro de um grupo junto das novas peças.");
+                  return;
+                }
                 commit(addToGroup(entities, selection, gid));
               }}
             />
@@ -365,7 +373,15 @@ export function CutPanel({
   );
 }
 
-function TabBtn({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+function TabBtn({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
   return (
     <button
       onClick={onClick}

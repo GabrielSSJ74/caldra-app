@@ -30,7 +30,6 @@ export type Prim = (
 ) &
   PrimMeta;
 
-
 export type Tolerance = "baixa" | "media" | "alta";
 
 /** Fator de simplificação (px) por nível de tolerância, relativo ao tamanho. */
@@ -111,11 +110,26 @@ export function simplifyIndices(pts: PxPoint[], tol: number): number[] {
 export function fitCircle(pts: PxPoint[]) {
   const n = pts.length;
   if (n < 5) return null;
-  let sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0, sxxx = 0, syyy = 0, sxyy = 0, sxxy = 0;
+  let sx = 0,
+    sy = 0,
+    sxx = 0,
+    syy = 0,
+    sxy = 0,
+    sxxx = 0,
+    syyy = 0,
+    sxyy = 0,
+    sxxy = 0;
   for (const p of pts) {
     const { x, y } = p;
-    sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y;
-    sxxx += x * x * x; syyy += y * y * y; sxyy += x * y * y; sxxy += x * x * y;
+    sx += x;
+    sy += y;
+    sxx += x * x;
+    syy += y * y;
+    sxy += x * y;
+    sxxx += x * x * x;
+    syyy += y * y * y;
+    sxyy += x * y * y;
+    sxxy += x * x * y;
   }
   const C = n * sxx - sx * sx;
   const D = n * sxy - sx * sy;
@@ -163,7 +177,15 @@ function recognizeRun(run: PxPoint[], tolPx: number, hole: boolean): Prim {
   let maxDev = 0;
   for (const p of run) maxDev = Math.max(maxDev, perpDistance(p, a, b));
   if (maxDev <= tolPx)
-    return { kind: "line", x1: a.x, y1: a.y, x2: b.x, y2: b.y, hole, quality: 1 - maxDev / (tolPx || 1) };
+    return {
+      kind: "line",
+      x1: a.x,
+      y1: a.y,
+      x2: b.x,
+      y2: b.y,
+      hole,
+      quality: 1 - maxDev / (tolPx || 1),
+    };
 
   // arco?
   const fit = fitCircle(run);

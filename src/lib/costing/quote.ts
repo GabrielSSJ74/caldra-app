@@ -67,7 +67,18 @@ export function quoteTotals(q: Quote): QuoteTotals {
   const tax = taxable * (q.taxPct / 100);
   const total = taxable + tax;
   const qty = q.items.reduce((a, i) => a + i.quantity, 0);
-  return { material, fabrication, cost, margin, subtotal, discount, taxable, tax, total, unit: qty > 0 ? total / qty : 0 };
+  return {
+    material,
+    fabrication,
+    cost,
+    margin,
+    subtotal,
+    discount,
+    taxable,
+    tax,
+    total,
+    unit: qty > 0 ? total / qty : 0,
+  };
 }
 
 /** Preço final de um item, rateando margem, desconto e imposto proporcionalmente. */

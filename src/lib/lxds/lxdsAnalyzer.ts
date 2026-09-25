@@ -86,8 +86,7 @@ export async function readZip(buf: ArrayBuffer): Promise<Map<string, Uint8Array>
     const lExtraLen = v.getUint16(local + 28, true);
     const start = local + 30 + lNameLen + lExtraLen;
     const raw = new Uint8Array(buf, start, csize);
-    if (!name.endsWith("/"))
-      out.set(name, method === 0 ? raw : await inflateRaw(raw));
+    if (!name.endsWith("/")) out.set(name, method === 0 ? raw : await inflateRaw(raw));
   }
   return out;
 }
@@ -215,6 +214,4 @@ export async function analyzeLxds(buf: ArrayBuffer): Promise<LxdsAnalysis> {
 
 /** Tamanho da peça em mm segundo as extensões declaradas no Model2D. */
 export const lxdsSize = (a: LxdsAnalysis) =>
-  a.extents
-    ? { w: a.extents.maxX - a.extents.minX, h: a.extents.maxY - a.extents.minY }
-    : null;
+  a.extents ? { w: a.extents.maxX - a.extents.minX, h: a.extents.maxY - a.extents.minY } : null;

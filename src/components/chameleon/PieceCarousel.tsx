@@ -76,9 +76,7 @@ export function PieceCarousel({ className }: { className?: string }) {
   return (
     <div
       className={cn("relative touch-pan-y overflow-hidden select-none", className)}
-      onTouchStart={(e) =>
-        onDown(e.touches[0]?.clientX ?? 0, e.currentTarget.clientWidth)
-      }
+      onTouchStart={(e) => onDown(e.touches[0]?.clientX ?? 0, e.currentTarget.clientWidth)}
       onTouchMove={(e) => onMove(e.touches[0]?.clientX ?? 0)}
       onTouchEnd={onUp}
       onPointerDown={(e) => {

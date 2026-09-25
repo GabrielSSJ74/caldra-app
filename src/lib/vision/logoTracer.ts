@@ -173,7 +173,8 @@ function bmToPathlist(bin: Binary, opt: TraceOptions): Path[] {
   const src = bin.data;
   const work = Uint8Array.from(src);
   const at = (x: number, y: number) => x >= 0 && x < w && y >= 0 && y < h && work[y * w + x] === 1;
-  const atSrc = (x: number, y: number) => x >= 0 && x < w && y >= 0 && y < h && src[y * w + x] === 1;
+  const atSrc = (x: number, y: number) =>
+    x >= 0 && x < w && y >= 0 && y < h && src[y * w + x] === 1;
   const paths: Path[] = [];
 
   const findNext = (from: P): P | null => {
@@ -769,7 +770,8 @@ function optiPenalty(
     const d = ddist(curve.c[k * 3 + 2]!, curve.c[k1 * 3 + 2]!);
     if (d === 0) return 1;
     let d1 = dpara(curve.c[k * 3 + 2]!, curve.c[k1 * 3 + 2]!, q) / d;
-    let d2 = (dpara(curve.c[k * 3 + 2]!, curve.c[k1 * 3 + 2]!, vertex[k1]!) / d) * 0.75 * curve.alpha[k1]!;
+    let d2 =
+      (dpara(curve.c[k * 3 + 2]!, curve.c[k1 * 3 + 2]!, vertex[k1]!) / d) * 0.75 * curve.alpha[k1]!;
     if (d2 < 0) {
       d1 = -d1;
       d2 = -d2;
@@ -794,7 +796,9 @@ function optiCurve(path: Path, opttolerance: number) {
   const areac: number[] = new Array(m + 1);
   for (let i = 0; i < m; i++)
     convc[i] =
-      curve.tag[i] === "CURVE" ? sign(dpara(vert[mod(i - 1, m)]!, vert[i]!, vert[mod(i + 1, m)]!)) : 0;
+      curve.tag[i] === "CURVE"
+        ? sign(dpara(vert[mod(i - 1, m)]!, vert[i]!, vert[mod(i + 1, m)]!))
+        : 0;
 
   let area = 0;
   areac[0] = 0;
@@ -803,7 +807,9 @@ function optiCurve(path: Path, opttolerance: number) {
     const i1 = mod(i + 1, m);
     if (curve.tag[i1] === "CURVE") {
       const alpha = curve.alpha[i1]!;
-      area += (0.3 * alpha * (4 - alpha) * dpara(curve.c[i * 3 + 2]!, vert[i1]!, curve.c[i1 * 3 + 2]!)) / 2;
+      area +=
+        (0.3 * alpha * (4 - alpha) * dpara(curve.c[i * 3 + 2]!, vert[i1]!, curve.c[i1 * 3 + 2]!)) /
+        2;
       area += dpara(p0, curve.c[i * 3 + 2]!, curve.c[i1 * 3 + 2]!) / 2;
     }
     areac[i + 1] = area;

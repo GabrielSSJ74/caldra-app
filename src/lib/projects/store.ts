@@ -22,12 +22,7 @@ const KEY = "caldra.projects.v1";
 export type ProjectType = "cliente" | "obra" | "industrial" | "interno" | "outro";
 
 export type ProjectStatus =
-  | "rascunho"
-  | "em-desenvolvimento"
-  | "em-producao"
-  | "parcial"
-  | "concluido"
-  | "entregue";
+  "rascunho" | "em-desenvolvimento" | "em-producao" | "parcial" | "concluido" | "entregue";
 
 export type PartStatus =
   | "rascunho"
@@ -91,14 +86,16 @@ export type ProjectPart = {
   /** estrutura reservada para versionamento futuro. */
   version: number;
   /** Peça estrutural derivada de um modelo paramétrico de projeto. */
-  catalogPart?: {
-    key: string;
-    dimensions: { length: number; width: number; height: number };
-    process: string;
-    stage: number;
-    fabricable: boolean;
-    entities: Entity[];
-  } | undefined;
+  catalogPart?:
+    | {
+        key: string;
+        dimensions: { length: number; width: number; height: number };
+        process: string;
+        stage: number;
+        fabricable: boolean;
+        entities: Entity[];
+      }
+    | undefined;
 };
 
 export type HistoryEvent = { at: number; text: string };
@@ -127,23 +124,25 @@ export type Project = {
   createdAt: number;
   updatedAt: number;
   /** Origem imutável + revisão de um projeto criado pelo catálogo. */
-  catalogSource?: {
-    modelSlug: string;
-    parameters: Record<string, number>;
-    pendingParameters?: Record<string, number> | undefined;
-    fingerprint: string;
-    generatedAt: number;
-    stale: DerivedKind[];
-    steps: { key: string; title: string; detail: string; partKeys: string[] }[];
-    snapshots: {
-      revision: string;
-      at: number;
-      parameters: Record<string, number>;
-      fingerprint: string;
-      parts: ProjectPart[];
-      changed: string[];
-    }[];
-  } | undefined;
+  catalogSource?:
+    | {
+        modelSlug: string;
+        parameters: Record<string, number>;
+        pendingParameters?: Record<string, number> | undefined;
+        fingerprint: string;
+        generatedAt: number;
+        stale: DerivedKind[];
+        steps: { key: string; title: string; detail: string; partKeys: string[] }[];
+        snapshots: {
+          revision: string;
+          at: number;
+          parameters: Record<string, number>;
+          fingerprint: string;
+          parts: ProjectPart[];
+          changed: string[];
+        }[];
+      }
+    | undefined;
 };
 
 /* ------------------------------------------------------------------ */
@@ -161,7 +160,11 @@ function slugToken(text: string, size = 3): string {
     .split(/\s+/)
     .filter((w) => w && !STOP.has(w.toLowerCase()));
   if (!clean.length) return "GEN";
-  if (clean.length >= size) return clean.slice(0, size).map((w) => w[0]).join("");
+  if (clean.length >= size)
+    return clean
+      .slice(0, size)
+      .map((w) => w[0])
+      .join("");
   return clean[0]!.slice(0, size).padEnd(Math.min(size, clean[0]!.length), "");
 }
 
@@ -198,7 +201,6 @@ export function makePartCode(project: Project, assemblyId?: string): string {
   while (taken.has(`${prefix}-${seq(i)}`)) i += 1;
   return `${prefix}-${seq(i)}`;
 }
-
 
 /* ------------------------------------------------------------------ */
 /* Progresso — determinístico, ponderado pela quantidade               */
@@ -287,7 +289,8 @@ let state: State = EMPTY;
 let loaded = false;
 const listeners = new Set<() => void>();
 
-const uid = (p: string) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+const uid = (p: string) =>
+  `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
 type PartDraft = { [K in keyof ProjectPart]?: ProjectPart[K] | undefined };
 type ProjectDraft = { [K in keyof Project]?: Project[K] | undefined };
@@ -355,7 +358,6 @@ function normalizeProject(raw: ProjectDraft, takenCodes?: Set<string>): Project 
   return project;
 }
 
-
 function load(): State {
   if (loaded) return state;
   loaded = true;
@@ -365,7 +367,6 @@ function load(): State {
       const parsed = JSON.parse(raw) as Partial<State>;
       const taken = new Set<string>();
       state = { projects: (parsed.projects ?? []).map((p) => normalizeProject(p, taken)) };
-
     } else {
       state = { projects: [seedProject()] };
       persist(state);
@@ -420,7 +421,9 @@ export function getProject(id: string): Project | null {
 
 function touch(project: Project, event?: string): Project {
   const now = Date.now();
-  const history = event ? [{ at: now, text: event }, ...project.history].slice(0, 200) : project.history;
+  const history = event
+    ? [{ at: now, text: event }, ...project.history].slice(0, 200)
+    : project.history;
   const next = { ...project, updatedAt: now, history };
   return { ...next, status: derivedStatus(next) };
 }
@@ -478,27 +481,35 @@ export function createCatalogProject(result: CanonicalProject): Project {
   const now = Date.now();
   const s = load();
   const taken = new Set(s.projects.map((p) => p.code ?? "").filter(Boolean));
-  const project = normalizeProject({
-    name: result.modelName,
-    description: `Projeto paramétrico gerado pelo catálogo CALDRA.`,
-    type: "industrial",
-    status: "em-desenvolvimento",
-    history: [{ at: now, text: `${result.modelName} gerada a partir do catálogo` }],
-    createdAt: now,
-    updatedAt: now,
-    assemblies: result.assemblies.map((a) => ({ id: `as_${uid("cat")}`, code: a.code, name: a.name, order: a.order })),
-    subassemblies: [],
-    parts: [],
-    catalogSource: {
-      modelSlug: result.modelSlug,
-      parameters: result.parameters,
-      fingerprint: result.fingerprint,
-      generatedAt: now,
-      stale: [],
-      steps: result.steps,
-      snapshots: [],
+  const project = normalizeProject(
+    {
+      name: result.modelName,
+      description: `Projeto paramétrico gerado pelo catálogo CALDRA.`,
+      type: "industrial",
+      status: "em-desenvolvimento",
+      history: [{ at: now, text: `${result.modelName} gerada a partir do catálogo` }],
+      createdAt: now,
+      updatedAt: now,
+      assemblies: result.assemblies.map((a) => ({
+        id: `as_${uid("cat")}`,
+        code: a.code,
+        name: a.name,
+        order: a.order,
+      })),
+      subassemblies: [],
+      parts: [],
+      catalogSource: {
+        modelSlug: result.modelSlug,
+        parameters: result.parameters,
+        fingerprint: result.fingerprint,
+        generatedAt: now,
+        stale: [],
+        steps: result.steps,
+        snapshots: [],
+      },
     },
-  }, taken);
+    taken,
+  );
   const assemblyByKey = new Map(result.assemblies.map((a, i) => [a.key, project.assemblies[i]!]));
   project.subassemblies = result.subassemblies.map((sub) => ({
     id: `sb_${uid("cat")}`,
@@ -507,32 +518,36 @@ export function createCatalogProject(result: CanonicalProject): Project {
     name: sub.name,
     order: sub.order,
   }));
-  const subByKey = new Map(result.subassemblies.map((sub, i) => [sub.key, project.subassemblies[i]!]));
-  project.parts = result.parts.map((part) => normalizePart({
-    instanceId: `pt_${uid("cat")}`,
-    modelId: `catalog.${result.modelSlug}.${part.key}`,
-    code: `${project.code}-${part.codeSuffix}`,
-    name: part.name,
-    parameters: result.parameters,
-    material: part.material,
-    thickness: part.thickness,
-    quantity: part.quantity,
-    status: "calculada",
-    assemblyId: assemblyByKey.get(part.assemblyKey)?.id,
-    subassemblyId: part.subassemblyKey ? subByKey.get(part.subassemblyKey)?.id : undefined,
-    role: part.role,
-    position: String(part.stage),
-    catalogPart: {
-      key: part.key,
-      dimensions: part.dimensions,
-      process: part.process,
-      stage: part.stage,
-      fabricable: part.fabricable,
-      entities: structuredClone(part.entities),
-    },
-    createdAt: now,
-    updatedAt: now,
-  }));
+  const subByKey = new Map(
+    result.subassemblies.map((sub, i) => [sub.key, project.subassemblies[i]!]),
+  );
+  project.parts = result.parts.map((part) =>
+    normalizePart({
+      instanceId: `pt_${uid("cat")}`,
+      modelId: `catalog.${result.modelSlug}.${part.key}`,
+      code: `${project.code}-${part.codeSuffix}`,
+      name: part.name,
+      parameters: result.parameters,
+      material: part.material,
+      thickness: part.thickness,
+      quantity: part.quantity,
+      status: "calculada",
+      assemblyId: assemblyByKey.get(part.assemblyKey)?.id,
+      subassemblyId: part.subassemblyKey ? subByKey.get(part.subassemblyKey)?.id : undefined,
+      role: part.role,
+      position: String(part.stage),
+      catalogPart: {
+        key: part.key,
+        dimensions: part.dimensions,
+        process: part.process,
+        stage: part.stage,
+        fabricable: part.fabricable,
+        entities: structuredClone(part.entities),
+      },
+      createdAt: now,
+      updatedAt: now,
+    }),
+  );
   commit({ projects: [project, ...s.projects] });
   return project;
 }
@@ -541,7 +556,19 @@ export function createCatalogProject(result: CanonicalProject): Project {
 export function invalidateCatalogProject(id: string, parameters: Record<string, number>) {
   const project = getProject(id);
   if (!project?.catalogSource) return;
-  replace(touch({ ...project, catalogSource: { ...project.catalogSource, pendingParameters: parameters, stale: ALL_DERIVED } }, "Parâmetros alterados — derivados aguardam regeneração"));
+  replace(
+    touch(
+      {
+        ...project,
+        catalogSource: {
+          ...project.catalogSource,
+          pendingParameters: parameters,
+          stale: ALL_DERIVED,
+        },
+      },
+      "Parâmetros alterados — derivados aguardam regeneração",
+    ),
+  );
 }
 
 /** Regenera em nova revisão e arquiva integralmente a revisão anterior. */
@@ -549,22 +576,80 @@ export function regenerateCatalogProject(id: string, result: CanonicalProject) {
   const project = getProject(id);
   if (!project?.catalogSource) return;
   const now = Date.now();
-  const changed = Object.keys(result.parameters).filter((k) => result.parameters[k] !== project.catalogSource?.parameters[k]);
-  const snapshot = { revision: project.revision, at: now, parameters: project.catalogSource.parameters, fingerprint: project.catalogSource.fingerprint, parts: structuredClone(project.parts), changed };
+  const changed = Object.keys(result.parameters).filter(
+    (k) => result.parameters[k] !== project.catalogSource?.parameters[k],
+  );
+  const snapshot = {
+    revision: project.revision,
+    at: now,
+    parameters: project.catalogSource.parameters,
+    fingerprint: project.catalogSource.fingerprint,
+    parts: structuredClone(project.parts),
+    changed,
+  };
   const assemblyByKey = new Map(result.assemblies.map((a, i) => [a.key, project.assemblies[i]]));
   const oldByKey = new Map(project.parts.map((p) => [p.catalogPart?.key, p]));
   const parts = result.parts.map((part) => {
     const old = oldByKey.get(part.key);
-    return normalizePart({ ...old, instanceId: old?.instanceId ?? `pt_${uid("cat")}`, modelId: `catalog.${result.modelSlug}.${part.key}`, code: old?.code ?? `${project.code}-${part.codeSuffix}`, name: part.name, parameters: result.parameters, material: part.material, thickness: part.thickness, quantity: part.quantity, status: "calculada", chamferProjectId: undefined, assemblyId: assemblyByKey.get(part.assemblyKey)?.id, role: part.role, position: String(part.stage), revision: nextRevision(project.revision), version: (old?.version ?? 0) + 1, catalogPart: { key: part.key, dimensions: part.dimensions, process: part.process, stage: part.stage, fabricable: part.fabricable, entities: structuredClone(part.entities) }, updatedAt: now });
+    return normalizePart({
+      ...old,
+      instanceId: old?.instanceId ?? `pt_${uid("cat")}`,
+      modelId: `catalog.${result.modelSlug}.${part.key}`,
+      code: old?.code ?? `${project.code}-${part.codeSuffix}`,
+      name: part.name,
+      parameters: result.parameters,
+      material: part.material,
+      thickness: part.thickness,
+      quantity: part.quantity,
+      status: "calculada",
+      chamferProjectId: undefined,
+      assemblyId: assemblyByKey.get(part.assemblyKey)?.id,
+      role: part.role,
+      position: String(part.stage),
+      revision: nextRevision(project.revision),
+      version: (old?.version ?? 0) + 1,
+      catalogPart: {
+        key: part.key,
+        dimensions: part.dimensions,
+        process: part.process,
+        stage: part.stage,
+        fabricable: part.fabricable,
+        entities: structuredClone(part.entities),
+      },
+      updatedAt: now,
+    });
   });
-  replace(touch({ ...project, revision: nextRevision(project.revision), parts, catalogSource: { ...project.catalogSource, parameters: result.parameters, pendingParameters: undefined, fingerprint: result.fingerprint, generatedAt: now, stale: [], steps: result.steps, snapshots: [...project.catalogSource.snapshots, snapshot] } }, `Derivados regenerados — REV ${nextRevision(project.revision)}`));
+  replace(
+    touch(
+      {
+        ...project,
+        revision: nextRevision(project.revision),
+        parts,
+        catalogSource: {
+          ...project.catalogSource,
+          parameters: result.parameters,
+          pendingParameters: undefined,
+          fingerprint: result.fingerprint,
+          generatedAt: now,
+          stale: [],
+          steps: result.steps,
+          snapshots: [...project.catalogSource.snapshots, snapshot],
+        },
+      },
+      `Derivados regenerados — REV ${nextRevision(project.revision)}`,
+    ),
+  );
 }
 
 /* ------------------------------------------------------------------ */
 /* Conjuntos e subconjuntos                                            */
 /* ------------------------------------------------------------------ */
 
-export function addAssembly(projectId: string, name: string, description?: string): Assembly | null {
+export function addAssembly(
+  projectId: string,
+  name: string,
+  description?: string,
+): Assembly | null {
   const project = getProject(projectId);
   if (!project) return null;
   const clean = name.trim() || "Conjunto";
@@ -575,7 +660,9 @@ export function addAssembly(projectId: string, name: string, description?: strin
     description: description?.trim() || undefined,
     order: project.assemblies.length,
   };
-  replace(touch({ ...project, assemblies: [...project.assemblies, asm] }, `Conjunto "${clean}" criado`));
+  replace(
+    touch({ ...project, assemblies: [...project.assemblies, asm] }, `Conjunto "${clean}" criado`),
+  );
   return asm;
 }
 
@@ -588,7 +675,9 @@ export function renameAssembly(projectId: string, assemblyId: string, name: stri
     touch(
       {
         ...project,
-        assemblies: project.assemblies.map((a) => (a.id === assemblyId ? { ...a, name: clean } : a)),
+        assemblies: project.assemblies.map((a) =>
+          a.id === assemblyId ? { ...a, name: clean } : a,
+        ),
       },
       `Conjunto renomeado para "${clean}"`,
     ),
@@ -701,7 +790,6 @@ export function bumpPartRevision(projectId: string, instanceId: string, reason?:
   );
 }
 
-
 export function renameProject(id: string, name: string) {
   const p = getProject(id);
   if (!p) return;
@@ -750,10 +838,7 @@ export function markDelivered(id: string, delivered: boolean) {
   const p = getProject(id);
   if (!p) return;
   replace(
-    touch(
-      { ...p, delivered },
-      delivered ? "Projeto marcado como entregue" : "Entrega desfeita",
-    ),
+    touch({ ...p, delivered }, delivered ? "Projeto marcado como entregue" : "Entrega desfeita"),
   );
 }
 
@@ -774,7 +859,6 @@ export type NewPartInput = {
   subassemblyId?: string | undefined;
 };
 
-
 export function addPart(projectId: string, input: NewPartInput): ProjectPart | null {
   const project = getProject(projectId);
   if (!project) return null;
@@ -793,11 +877,13 @@ export function addPart(projectId: string, input: NewPartInput): ProjectPart | n
     notes: input.notes ?? "",
   });
   replace(
-    touch({ ...project, parts: [...project.parts, part] }, `Peça ${part.code} "${part.name}" adicionada`),
+    touch(
+      { ...project, parts: [...project.parts, part] },
+      `Peça ${part.code} "${part.name}" adicionada`,
+    ),
   );
   return part;
 }
-
 
 function withPart(
   projectId: string,
@@ -820,7 +906,12 @@ export function updatePart(
   patch: Partial<ProjectPart>,
   event?: string,
 ) {
-  withPart(projectId, instanceId, (p) => ({ ...p, ...patch, instanceId: p.instanceId }), () => event);
+  withPart(
+    projectId,
+    instanceId,
+    (p) => ({ ...p, ...patch, instanceId: p.instanceId }),
+    () => event,
+  );
 }
 
 /** Autosave silencioso: grava parâmetros sem inflar o histórico. */
@@ -925,7 +1016,14 @@ function seedProject(): Project {
     updatedAt: now,
     history: [{ at: now, text: "Projeto criado" }],
     parts: [
-      mk("cald.tronco-de-cone", "Cone de transição", { d1: 700, d2: 400, h: 600, thickness: 4 }, 4, 1, "calculada"),
+      mk(
+        "cald.tronco-de-cone",
+        "Cone de transição",
+        { d1: 700, d2: 400, h: 600, thickness: 4 },
+        4,
+        1,
+        "calculada",
+      ),
       mk("cald.flanges", "Flange de base", { d: 820, holes: 12, thickness: 12 }, 12, 2, "rascunho"),
       mk("cald.cilindro", "Duto reto", { d: 400, h: 1500, thickness: 3 }, 3, 3, "exportada"),
     ],

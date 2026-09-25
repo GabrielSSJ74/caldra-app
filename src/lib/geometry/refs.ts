@@ -96,7 +96,10 @@ export function dimFactor(state: HighlightState): number {
  * Entidades associadas a uma cota do desenho (h, d1, d2, e...).
  * Mapa de LEITURA: não cria geometria, apenas escolhe o que destacar.
  */
-export function refsForDim(dim: string | null | undefined, dev: DevelopmentPattern | null | undefined): GeometryRef[] {
+export function refsForDim(
+  dim: string | null | undefined,
+  dev: DevelopmentPattern | null | undefined,
+): GeometryRef[] {
   if (!dev) return [];
   const folds = dev.foldLines.map((_, i) => foldRef(i));
   const pts = dev.points;

@@ -9,7 +9,14 @@ import {
   validateTraceActions,
 } from "./animation";
 
-const MODELS = ["quadrado-redondo", "cone", "tronco-de-cone", "reducao-circular", "curva-de-gomos", "boca-de-lobo"];
+const MODELS = [
+  "quadrado-redondo",
+  "cone",
+  "tronco-de-cone",
+  "reducao-circular",
+  "curva-de-gomos",
+  "boca-de-lobo",
+];
 
 describe("animação canônica da Traçagem Guiada", () => {
   for (const slug of MODELS) {
@@ -24,7 +31,8 @@ describe("animação canônica da Traçagem Guiada", () => {
         const actions = buildTraceActions(step, result.development);
         expect(actions.length).toBeGreaterThan(0);
         for (const action of actions) {
-          for (const ref of action.geometryRefs) expect(resolveGeometryRef(result.development, ref)).not.toBeNull();
+          for (const ref of action.geometryRefs)
+            expect(resolveGeometryRef(result.development, ref)).not.toBeNull();
           const resolved = resolveTraceAction(result.development, step, action);
           for (const point of [resolved.startPoint, resolved.endPoint]) {
             if (!point) continue;
@@ -54,20 +62,31 @@ describe("animação canônica da Traçagem Guiada", () => {
     const end = sampleTraceAction(resolved, 1);
     expect(start.toolPoint).toEqual(resolved.startPoint);
     expect(end.toolPoint).toEqual(resolved.endPoint);
-    expect(half.partialEnd?.x).toBeCloseTo(((resolved.startPoint?.x ?? 0) + (resolved.endPoint?.x ?? 0)) / 2);
-    expect(half.partialEnd?.y).toBeCloseTo(((resolved.startPoint?.y ?? 0) + (resolved.endPoint?.y ?? 0)) / 2);
+    expect(half.partialEnd?.x).toBeCloseTo(
+      ((resolved.startPoint?.x ?? 0) + (resolved.endPoint?.x ?? 0)) / 2,
+    );
+    expect(half.partialEnd?.y).toBeCloseTo(
+      ((resolved.startPoint?.y ?? 0) + (resolved.endPoint?.y ?? 0)) / 2,
+    );
   });
 
   it("alterar a medida reconstrói ação e trajetória sem coordenada armazenada", () => {
     const engine = getEngine("cone");
     if (!engine) return;
     const original = engine.calculate(engine.defaults);
-    const changed = engine.calculate({ ...engine.defaults, h: (engine.defaults["h"] ?? 200) * 1.4 });
+    const changed = engine.calculate({
+      ...engine.defaults,
+      h: (engine.defaults["h"] ?? 200) * 1.4,
+    });
     const firstA = buildTraceSequence("cone", original)[0];
     const firstB = buildTraceSequence("cone", changed)[0];
     if (!firstA || !firstB) return;
-    const actionA = buildTraceActions(firstA, original.development).find((action) => action.type === "DRAW");
-    const actionB = buildTraceActions(firstB, changed.development).find((action) => action.type === "DRAW");
+    const actionA = buildTraceActions(firstA, original.development).find(
+      (action) => action.type === "DRAW",
+    );
+    const actionB = buildTraceActions(firstB, changed.development).find(
+      (action) => action.type === "DRAW",
+    );
     expect(JSON.stringify({ firstA, actionA })).not.toBe(JSON.stringify({ firstB, actionB }));
     expect(actionA).not.toHaveProperty("startPoint");
     expect(actionB).not.toHaveProperty("endPoint");

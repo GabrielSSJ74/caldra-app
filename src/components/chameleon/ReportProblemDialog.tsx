@@ -58,8 +58,8 @@ export function ReportProblemDialog({
             <Bug className="size-4 text-primary" /> Reportar um problema
           </DialogTitle>
           <DialogDescription>
-            Descreva o que aconteceu. O diagnóstico técnico é anexado automaticamente —
-            nada é enviado sem você escolher copiar ou enviar por e-mail.
+            Descreva o que aconteceu. O diagnóstico técnico é anexado automaticamente — nada é
+            enviado sem você escolher copiar ou enviar por e-mail.
           </DialogDescription>
         </DialogHeader>
 

@@ -73,8 +73,7 @@ export type DimAnchor = "center" | "start" | "end" | "mid";
 
 /** Referência: ponto livre do desenho ou vínculo real com uma entidade. */
 export type DimRef =
-  | { kind: "point"; p: Vec2 }
-  | { kind: "entity"; id: string; anchor?: DimAnchor };
+  { kind: "point"; p: Vec2 } | { kind: "entity"; id: string; anchor?: DimAnchor };
 
 export type DimStyle = {
   /** Casas decimais na apresentação (0–3). O valor interno mantém precisão total. */
@@ -137,8 +136,7 @@ const lineEnds = (e: Entity): [Vec2, Vec2] | null => {
       { x: e.x1, y: e.y1 },
       { x: e.x2, y: e.y2 },
     ];
-  if (e.type === "polyline" && e.pts.length >= 2)
-    return [e.pts[0]!, e.pts[e.pts.length - 1]!];
+  if (e.type === "polyline" && e.pts.length >= 2) return [e.pts[0]!, e.pts[e.pts.length - 1]!];
   return null;
 };
 
@@ -396,10 +394,15 @@ export function dimensionDraw(dim: Dimension, entities: Entity[]): DimDraw {
         const a = pts[i - 1];
         const b = pts[i];
         if (!a || !b) continue;
-        const seg = makeDimension("aligned", [
-          { kind: "point", p: a },
-          { kind: "point", p: b },
-        ], dim.offset, dim.style);
+        const seg = makeDimension(
+          "aligned",
+          [
+            { kind: "point", p: a },
+            { kind: "point", p: b },
+          ],
+          dim.offset,
+          dim.style,
+        );
         const d = dimensionDraw(seg, entities);
         out.lines.push(...d.lines);
         out.arrows.push(...d.arrows);

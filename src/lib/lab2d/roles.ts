@@ -245,4 +245,3 @@ export const CYPCUT_MAPPED_ROLES: ManufacturingRole[] = ["CUT", "BEND", "RECORTE
 
 /** Nome do aplicativo registrado (APPID) dos dados estendidos do CypCut. */
 export const CYPCUT_APPID = "FS_CYPCUT";
-

@@ -42,8 +42,7 @@ async function exitFullscreen() {
 
 async function lockLandscape() {
   const so = (typeof screen !== "undefined" ? screen.orientation : undefined) as
-    | OrientationLock
-    | undefined;
+    OrientationLock | undefined;
   if (!so?.lock) return false;
   try {
     await so.lock("landscape");
@@ -55,8 +54,7 @@ async function lockLandscape() {
 
 function unlockOrientation() {
   const so = (typeof screen !== "undefined" ? screen.orientation : undefined) as
-    | OrientationLock
-    | undefined;
+    OrientationLock | undefined;
   try {
     so?.unlock?.();
   } catch {

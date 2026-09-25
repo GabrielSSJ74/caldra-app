@@ -81,7 +81,9 @@ export function AssemblyTree({
                     aria-label={expanded ? `Recolher ${asm.name}` : `Expandir ${asm.name}`}
                     className="grid size-6 place-items-center text-muted-foreground"
                   >
-                    <ChevronRight className={cn("size-4 transition-transform", expanded && "rotate-90")} />
+                    <ChevronRight
+                      className={cn("size-4 transition-transform", expanded && "rotate-90")}
+                    />
                   </button>
                   <Layers className="size-3.5 text-accent" />
                   <span className="text-[13px] font-medium">{asm.name}</span>

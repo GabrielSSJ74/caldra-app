@@ -21,8 +21,7 @@ export type EntitlementSnapshot = {
 };
 
 export type SyncOutcome =
-  | { state: "sync_ok"; entitlement: EntitlementSnapshot }
-  | { state: "sync_failed"; reason: string };
+  { state: "sync_ok"; entitlement: EntitlementSnapshot } | { state: "sync_failed"; reason: string };
 
 type EntitlementRow = {
   plan?: string;
@@ -122,9 +121,11 @@ export const verifyPurchase = createServerFn({ method: "POST" })
  */
 export const restorePurchases = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((input: { tokens?: { purchaseToken: string; productId: string }[] } | undefined) => ({
-    tokens: (input?.tokens ?? []).filter((t) => t?.purchaseToken && t?.productId).slice(0, 20),
-  }))
+  .inputValidator(
+    (input: { tokens?: { purchaseToken: string; productId: string }[] } | undefined) => ({
+      tokens: (input?.tokens ?? []).filter((t) => t?.purchaseToken && t?.productId).slice(0, 20),
+    }),
+  )
   .handler(async ({ data, context }): Promise<SyncOutcome> => {
     const { verifyWithPlay } = await import("./play.server");
 

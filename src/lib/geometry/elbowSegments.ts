@@ -69,11 +69,21 @@ export type ElbowModel = {
 function boundsOf(pts: Vec2[]) {
   const xs = pts.map((p) => p.x);
   const ys = pts.map((p) => p.y);
-  return { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys),
+  };
 }
 
 /** Desenvolvimento de um cilindro cortado nas duas pontas. */
-function goreDevelopment(D: number, n: number, top: (t: number) => number, bottom: (t: number) => number) {
+function goreDevelopment(
+  D: number,
+  n: number,
+  top: (t: number) => number,
+  bottom: (t: number) => number,
+) {
   const r = D / 2;
   const topPts: Vec2[] = [];
   const botPts: Vec2[] = [];

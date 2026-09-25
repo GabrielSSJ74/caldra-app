@@ -97,7 +97,12 @@ export function toggleInstalled(projectId: string, instanceId: string, by?: stri
 
 export function addOccurrence(
   projectId: string,
-  data: { text: string; instanceId?: string | undefined; photo?: string | undefined; by?: string | undefined },
+  data: {
+    text: string;
+    instanceId?: string | undefined;
+    photo?: string | undefined;
+    by?: string | undefined;
+  },
 ) {
   const rec = recordOf(projectId);
   const occ: FieldOccurrence = {

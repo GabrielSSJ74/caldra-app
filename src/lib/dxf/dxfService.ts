@@ -123,9 +123,7 @@ function writeBody(e: DxfEntity): string {
         g(73, e.controls.length) +
         g(74, 0) +
         knots.map((k) => g(40, k.toFixed(4))).join("") +
-        e.controls
-          .map((p) => g(10, p.x.toFixed(4)) + g(20, p.y.toFixed(4)) + g(30, "0.0"))
-          .join("")
+        e.controls.map((p) => g(10, p.x.toFixed(4)) + g(20, p.y.toFixed(4)) + g(30, "0.0")).join("")
       );
     }
   }
@@ -192,7 +190,8 @@ export function exportDxf(doc: DxfDocument): string {
     g(40, "0.0");
   out += g(0, "ENDTAB");
 
-  out += g(0, "TABLE") + g(2, "LAYER") + g(5, next()) + g(100, "AcDbSymbolTable") + g(70, layers.length);
+  out +=
+    g(0, "TABLE") + g(2, "LAYER") + g(5, next()) + g(100, "AcDbSymbolTable") + g(70, layers.length);
   for (const l of layers) {
     out +=
       g(0, "LAYER") +
@@ -209,7 +208,8 @@ export function exportDxf(doc: DxfDocument): string {
   out += g(0, "ENDTAB");
 
   // APPID — sem o registro do aplicativo o XDATA é descartado na leitura
-  out += g(0, "TABLE") + g(2, "APPID") + g(5, next()) + g(100, "AcDbSymbolTable") + g(70, appIds.length);
+  out +=
+    g(0, "TABLE") + g(2, "APPID") + g(5, next()) + g(100, "AcDbSymbolTable") + g(70, appIds.length);
   for (const id of appIds) {
     out +=
       g(0, "APPID") +
@@ -226,7 +226,6 @@ export function exportDxf(doc: DxfDocument): string {
   out += g(0, "ENDSEC") + g(0, "EOF");
   return out;
 }
-
 
 type Pair = { code: number; value: string };
 
@@ -316,7 +315,6 @@ export function importDxf(text: string): DxfDocument {
   };
 
   const SUPPORTED = ["LINE", "CIRCLE", "ARC", "LWPOLYLINE", "POLYLINE", "SPLINE"];
-
 
   for (let i = 0; i < pairs.length; i++) {
     const { code, value } = pairs[i]!;

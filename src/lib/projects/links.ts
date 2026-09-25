@@ -1,10 +1,7 @@
 import { findPart } from "@/lib/library/registry";
 
 /** Resolve para qual tela de Traçagem uma peça de projeto abre. */
-export type PartTarget =
-  | { kind: "parametric"; slug: string }
-  | { kind: "cnc"; id: string }
-  | null;
+export type PartTarget = { kind: "parametric"; slug: string } | { kind: "cnc"; id: string } | null;
 
 export function partTarget(modelId: string): PartTarget {
   const model = findPart(modelId);

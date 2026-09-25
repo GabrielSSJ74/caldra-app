@@ -14,7 +14,8 @@ import type { SolidInstance } from "@/lib/project-catalog/instances";
 import { explodeDirection } from "@/lib/project-catalog/instances";
 import { cn } from "@/lib/utils";
 
-export type ViewKey = "iso" | "frontal" | "traseira" | "superior" | "inferior" | "esquerda" | "direita";
+export type ViewKey =
+  "iso" | "frontal" | "traseira" | "superior" | "inferior" | "esquerda" | "direita";
 
 const S = 0.001; // mm → m
 
@@ -69,7 +70,6 @@ export function Model3DViewer({
   resetNonce = 0,
   className,
 }: Props) {
-
   const host = useRef<HTMLDivElement>(null);
   const api = useRef<{
     renderer: THREE.WebGLRenderer;
@@ -119,14 +119,17 @@ export function Model3DViewer({
       edgeMat: new THREE.LineBasicMaterial({ color: 0x1b2026, transparent: true, opacity: 0.55 }),
       wire: new THREE.MeshBasicMaterial({ color: 0x8d979f, wireframe: true }),
     };
-
   }, []);
 
   /* montagem única do renderizador */
   useEffect(() => {
     const el = host.current;
     if (!el) return;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: "high-performance" });
+    const renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      powerPreference: "high-performance",
+    });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -144,7 +147,10 @@ export function Model3DViewer({
     key.shadow.camera.near = 0.5;
     key.shadow.camera.far = 60;
     const cam = key.shadow.camera as THREE.OrthographicCamera;
-    cam.left = -8; cam.right = 8; cam.top = 8; cam.bottom = -8;
+    cam.left = -8;
+    cam.right = 8;
+    cam.top = 8;
+    cam.bottom = -8;
     scene.add(key);
     const fill = new THREE.DirectionalLight(0xffffff, 0.5);
     fill.position.set(-5, 3, -4);
@@ -176,7 +182,13 @@ export function Model3DViewer({
     controls.screenSpacePanning = true;
 
     let raf = 0;
-    let anim: { from: THREE.Vector3; to: THREE.Vector3; t0: number; target: THREE.Vector3; fromT: THREE.Vector3 } | null = null;
+    let anim: {
+      from: THREE.Vector3;
+      to: THREE.Vector3;
+      t0: number;
+      target: THREE.Vector3;
+      fromT: THREE.Vector3;
+    } | null = null;
     const state = { camera: persp as THREE.Camera };
 
     const draw = () => {
@@ -225,19 +237,29 @@ export function Model3DViewer({
 
       const center = bb.getCenter(new THREE.Vector3());
       const radius = Math.max(0.5, bb.getBoundingSphere(new THREE.Sphere()).radius);
-      const d = new THREE.Vector3(...(dir ?? [
-        persp.position.x - controls.target.x,
-        persp.position.y - controls.target.y,
-        persp.position.z - controls.target.z,
-      ])).normalize();
-      const dist = radius / Math.sin((persp.fov * Math.PI) / 360) * 0.95;
+      const d = new THREE.Vector3(
+        ...(dir ?? [
+          persp.position.x - controls.target.x,
+          persp.position.y - controls.target.y,
+          persp.position.z - controls.target.z,
+        ]),
+      ).normalize();
+      const dist = (radius / Math.sin((persp.fov * Math.PI) / 360)) * 0.95;
       const to = center.clone().add(d.multiplyScalar(dist));
       const frustum = radius * 1.25;
-      orthoCam.left = -frustum; orthoCam.right = frustum;
-      orthoCam.top = frustum; orthoCam.bottom = -frustum;
+      orthoCam.left = -frustum;
+      orthoCam.right = frustum;
+      orthoCam.top = frustum;
+      orthoCam.bottom = -frustum;
       orthoCam.updateProjectionMatrix();
       if (animate) {
-        anim = { from: persp.position.clone(), to, t0: performance.now(), target: center, fromT: controls.target.clone() };
+        anim = {
+          from: persp.position.clone(),
+          to,
+          t0: performance.now(),
+          target: center,
+          fromT: controls.target.clone(),
+        };
         requestAnimationFrame(tickAnim);
       } else {
         persp.position.copy(to);
@@ -291,7 +313,10 @@ export function Model3DViewer({
         -((ev.clientY - r.top) / r.height) * 2 + 1,
       );
       ray.setFromCamera(pt, state.camera as THREE.PerspectiveCamera);
-      const hits = ray.intersectObjects(apiObj.meshes.filter((m) => m.visible), false);
+      const hits = ray.intersectObjects(
+        apiObj.meshes.filter((m) => m.visible),
+        false,
+      );
       const hit = hits[0]?.object as THREE.Mesh | undefined;
       onSelectRef.current(hit ? (hit.userData["id"] as string) : null);
     };
@@ -302,8 +327,16 @@ export function Model3DViewer({
     renderer.domElement.addEventListener("webglcontextlost", onLost);
 
     const apiObj = {
-      renderer, scene, persp, ortho: orthoCam, controls,
-      meshes: [] as THREE.Mesh[], ground, request, fit, setCamera,
+      renderer,
+      scene,
+      persp,
+      ortho: orthoCam,
+      controls,
+      meshes: [] as THREE.Mesh[],
+      ground,
+      request,
+      fit,
+      setCamera,
     };
     api.current = apiObj;
     draw();
@@ -337,9 +370,12 @@ export function Model3DViewer({
       let geo: THREE.BufferGeometry = shared.boxGeo;
       let own = false;
       if (inst.shape && inst.shape.outline.length > 2) {
-        const shape = new THREE.Shape(inst.shape.outline.map((p) => new THREE.Vector2(p.x * S, p.y * S)));
+        const shape = new THREE.Shape(
+          inst.shape.outline.map((p) => new THREE.Vector2(p.x * S, p.y * S)),
+        );
         for (const hole of inst.shape.holes) {
-          if (hole.length > 2) shape.holes.push(new THREE.Path(hole.map((p) => new THREE.Vector2(p.x * S, p.y * S))));
+          if (hole.length > 2)
+            shape.holes.push(new THREE.Path(hole.map((p) => new THREE.Vector2(p.x * S, p.y * S))));
         }
         const depth = Math.max(inst.size.z, 0.2) * S;
         geo = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
@@ -350,7 +386,11 @@ export function Model3DViewer({
       const mesh = new THREE.Mesh(geo, shared.mats[inst.material] ?? shared.mats["aco"]!);
       mesh.userData["own"] = own;
       if (!own)
-        mesh.scale.set(Math.max(inst.size.x, 1) * S, Math.max(inst.size.y, 1) * S, Math.max(inst.size.z, 1) * S);
+        mesh.scale.set(
+          Math.max(inst.size.x, 1) * S,
+          Math.max(inst.size.y, 1) * S,
+          Math.max(inst.size.z, 1) * S,
+        );
       mesh.rotation.z = inst.rotZ;
       mesh.userData["id"] = inst.id;
       mesh.userData["base"] = [inst.center.x * S, inst.center.y * S, inst.center.z * S];
@@ -426,7 +466,6 @@ export function Model3DViewer({
   useEffect(() => {
     if (resetNonce > 0) api.current?.fit(DIRS.iso, true);
   }, [resetNonce]);
-
 
   return <div ref={host} className={cn("relative h-full w-full overflow-hidden", className)} />;
 }

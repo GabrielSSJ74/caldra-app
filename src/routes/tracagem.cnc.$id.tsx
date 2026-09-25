@@ -8,15 +8,24 @@ import { VectorPreview } from "@/components/chameleon/VectorPreview";
 import { SmartNumberInput } from "@/components/chameleon/SmartNumberInput";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { sendToLab2D } from "@/lib/lab2d/handoff";
-import { getCustom, markRecent, saveCustom, toggleFavorite, updateCustom, useLibraryState } from "@/lib/library/store";
+import {
+  getCustom,
+  markRecent,
+  saveCustom,
+  toggleFavorite,
+  updateCustom,
+  useLibraryState,
+} from "@/lib/library/store";
 import { cn } from "@/lib/utils";
 import { getPart, getProject, savePartParameters } from "@/lib/projects/store";
 
 export const Route = createFileRoute("/tracagem/cnc/$id")({
-  validateSearch: (raw: Record<string, unknown>): { projeto?: string | undefined; peca?: string | undefined; modelo?: string | undefined } => ({
-    projeto: typeof raw['projeto'] === "string" ? raw['projeto'] : undefined,
-    peca: typeof raw['peca'] === "string" ? raw['peca'] : undefined,
-    modelo: typeof raw['modelo'] === "string" ? raw['modelo'] : undefined,
+  validateSearch: (
+    raw: Record<string, unknown>,
+  ): { projeto?: string | undefined; peca?: string | undefined; modelo?: string | undefined } => ({
+    projeto: typeof raw["projeto"] === "string" ? raw["projeto"] : undefined,
+    peca: typeof raw["peca"] === "string" ? raw["peca"] : undefined,
+    modelo: typeof raw["modelo"] === "string" ? raw["modelo"] : undefined,
   }),
   loader: ({ params }) => {
     const part = findPart(`cnc.${params.id}`);
@@ -25,7 +34,9 @@ export const Route = createFileRoute("/tracagem/cnc/$id")({
   },
   head: ({ loaderData }) => {
     if (!loaderData)
-      return { meta: [{ title: "Peça indisponível — CALDRA" }, { name: "robots", content: "noindex" }] };
+      return {
+        meta: [{ title: "Peça indisponível — CALDRA" }, { name: "robots", content: "noindex" }],
+      };
     const { name, summary } = loaderData.part;
     const title = `${name} — CNC 2D CALDRA`;
     return {
@@ -65,7 +76,6 @@ function CncPartPage() {
     const id = window.setTimeout(() => savePartParameters(projeto, peca, values), 700);
     return () => window.clearTimeout(id);
   }, [projeto, peca, values]);
-
 
   const fields = visibleFields(gen, values);
   const entities = useMemo(() => {
@@ -129,7 +139,10 @@ function CncPartPage() {
 
       <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
         <Panel className="relative aspect-[4/3] overflow-hidden p-4 lg:aspect-auto lg:min-h-[420px]">
-          <span aria-hidden className="grid-bg-fine pointer-events-none absolute inset-0 opacity-30" />
+          <span
+            aria-hidden
+            className="grid-bg-fine pointer-events-none absolute inset-0 opacity-30"
+          />
           <VectorPreview entities={entities} className="relative text-foreground" />
           <span className="absolute bottom-3 left-4 t-eyebrow">Vetor 2D · mm</span>
         </Panel>
@@ -171,13 +184,20 @@ function CncPartPage() {
             </button>
             <button
               onClick={() => {
-                const chosenName = window.prompt("Nome do modelo", custom?.name ?? `Meu ${part.name}`)?.trim();
+                const chosenName = window
+                  .prompt("Nome do modelo", custom?.name ?? `Meu ${part.name}`)
+                  ?.trim();
                 if (!chosenName) return;
                 if (custom) {
                   updateCustom(custom.id, { name: chosenName, values: { ...values } });
                   toast.success("Modelo atualizado");
                 } else {
-                  saveCustom({ baseId: part.id, name: chosenName, values: { ...values }, modelFamily: "vector" });
+                  saveCustom({
+                    baseId: part.id,
+                    name: chosenName,
+                    values: { ...values },
+                    modelFamily: "vector",
+                  });
                   toast.success("Salvo em Meus Modelos");
                 }
               }}

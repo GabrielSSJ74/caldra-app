@@ -26,7 +26,9 @@ export const WEB_CHECKOUT_URL = "https://caldra.app/planos";
 const PLAY_SERVICE_URL = "https://play.google.com/billing";
 
 type DigitalGoodsService = {
-  getDetails: (ids: string[]) => Promise<{ itemId: string; price: { value: string; currency: string } }[]>;
+  getDetails: (
+    ids: string[],
+  ) => Promise<{ itemId: string; price: { value: string; currency: string } }[]>;
   listPurchases: () => Promise<{ itemId: string; purchaseToken: string }[]>;
   consume?: (token: string) => Promise<void>;
 };
@@ -37,7 +39,10 @@ type PlayWindow = Window & {
 
 /** Verdadeiro apenas dentro da TWA publicada na Play. */
 export function hasPlayBilling(): boolean {
-  return typeof window !== "undefined" && typeof (window as PlayWindow).getDigitalGoodsService === "function";
+  return (
+    typeof window !== "undefined" &&
+    typeof (window as PlayWindow).getDigitalGoodsService === "function"
+  );
 }
 
 async function playService(): Promise<DigitalGoodsService | null> {
@@ -96,7 +101,10 @@ export async function queryProductDetails(
     for (const d of details) {
       const value = Number(d.price.value);
       const formatted = Number.isFinite(value)
-        ? new Intl.NumberFormat(undefined, { style: "currency", currency: d.price.currency }).format(value)
+        ? new Intl.NumberFormat(undefined, {
+            style: "currency",
+            currency: d.price.currency,
+          }).format(value)
         : `${d.price.currency} ${d.price.value}`;
       out[d.itemId as ProductId] = formatted;
     }

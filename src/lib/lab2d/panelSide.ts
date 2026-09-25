@@ -55,7 +55,13 @@ export function usePanelSide(
     const current = sideRef.current;
     // histerese: só sai do lado atual quando realmente falta espaço
     const next: PanelSide =
-      current === "right" ? (ratio > TO_LEFT ? "left" : "right") : ratio < TO_RIGHT ? "right" : "left";
+      current === "right"
+        ? ratio > TO_LEFT
+          ? "left"
+          : "right"
+        : ratio < TO_RIGHT
+          ? "right"
+          : "left";
     if (next === current) return;
     sideRef.current = next;
     setSide(next);

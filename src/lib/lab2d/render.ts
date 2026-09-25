@@ -132,15 +132,19 @@ function dimMarkup(d: Dimension, s: number): string {
 export type RenderResult = { svg: string; widthMm: number; heightMm: number; count: number };
 
 /** SVG autônomo, enquadrado na peça, em coordenadas reais (1 unidade = 1 mm). */
-export function renderSvg(
-  entities: Entity[],
-  layers: Layer[],
-  opts: RenderOptions,
-): RenderResult {
+export function renderSvg(entities: Entity[], layers: Layer[], opts: RenderOptions): RenderResult {
   const dims = opts.dimensions ? autoDimensions(entities) : [];
   const probe: Entity[] = [...entities];
   for (const d of dims)
-    probe.push({ id: "d", layer: "cota", type: "line", x1: d.a.x, y1: d.a.y, x2: d.b.x, y2: d.b.y });
+    probe.push({
+      id: "d",
+      layer: "cota",
+      type: "line",
+      x1: d.a.x,
+      y1: d.a.y,
+      x2: d.b.x,
+      y2: d.b.y,
+    });
   const box = bbox(probe) ?? { minX: 0, minY: 0, maxX: 100, maxY: 100 };
   const w = Math.max(box.maxX - box.minX, 1);
   const h = Math.max(box.maxY - box.minY, 1);
@@ -156,7 +160,9 @@ export function renderSvg(
       const stroke = colorFor(layer, e.layer, dark);
       if (e.type === "text") {
         const width = e.width ? ` textLength="${f(e.width)}" lengthAdjust="spacingAndGlyphs"` : "";
-        const rotate = e.rotation ? ` transform="rotate(${f(e.rotation)} ${f(e.x)} ${f(e.y)})"` : "";
+        const rotate = e.rotation
+          ? ` transform="rotate(${f(e.rotation)} ${f(e.x)} ${f(e.y)})"`
+          : "";
         return `<text x="${f(e.x)}" y="${f(e.y)}" font-size="${f(e.size)}" fill="${stroke}" font-family="Space Grotesk,ui-sans-serif,system-ui" font-weight="${e.bold ? "700" : "400"}" font-style="${e.italic ? "italic" : "normal"}"${width}${rotate}>${escapeXml(e.text)}</text>`;
       }
       const d = entityPath(e);

@@ -66,5 +66,4 @@ export type GeometryResult = {
   joints?: FabricationJoint[] | undefined;
 };
 
-
 export type ValidationIssue = { field: string; message: string };

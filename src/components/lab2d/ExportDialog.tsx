@@ -92,7 +92,18 @@ export function ExportDialog({
         ...(quantity ? { quantity } : {}),
       },
     }),
-    [entities, profile, roles, leads, flattenCurves, projectName, planName, material, thickness, quantity],
+    [
+      entities,
+      profile,
+      roles,
+      leads,
+      flattenCurves,
+      projectName,
+      planName,
+      material,
+      thickness,
+      quantity,
+    ],
   );
 
   const dxf = useMemo(
@@ -348,9 +359,8 @@ export function ExportDialog({
               </p>
               <p className="mt-1">
                 Escala 1:1 em milímetros · {dxfPreview?.widthMm.toFixed(1) ?? "—"} ×{" "}
-                {dxfPreview?.heightMm.toFixed(1) ?? "—"} mm ·{" "}
-                {dxf?.doc.entities.length ?? 0} objetos em{" "}
-                {dxf?.doc.layers.map((l) => l.name).join(", ") || "—"}.
+                {dxfPreview?.heightMm.toFixed(1) ?? "—"} mm · {dxf?.doc.entities.length ?? 0}{" "}
+                objetos em {dxf?.doc.layers.map((l) => l.name).join(", ") || "—"}.
               </p>
               <p className="mt-1">
                 Cada camada é uma operação: CORTE corta, RECORTE corta por dentro, MARCAÇÃO risca e
@@ -363,14 +373,15 @@ export function ExportDialog({
 
         {format !== "dxf" && (
           <p className="font-mono text-[10px] text-muted-foreground">
-            {projectName} · {planName} · {preview.count} objetos ·{" "}
-            {preview.widthMm.toFixed(1)} × {preview.heightMm.toFixed(1)} mm · escala 1:1
+            {projectName} · {planName} · {preview.count} objetos · {preview.widthMm.toFixed(1)} ×{" "}
+            {preview.heightMm.toFixed(1)} mm · escala 1:1
           </p>
         )}
 
         {issues.length > 0 && (
           <p className="rounded-xl border border-warn/40 bg-warn/5 px-3 py-2 text-[11px] text-warn">
-            {issues.length} aviso(s): {Array.from(new Set(issues.map((i) => i.message))).join(" · ")}
+            {issues.length} aviso(s):{" "}
+            {Array.from(new Set(issues.map((i) => i.message))).join(" · ")}
           </p>
         )}
 

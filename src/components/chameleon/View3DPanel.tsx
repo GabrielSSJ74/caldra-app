@@ -149,7 +149,11 @@ export function View3DPanel({
         />
       </Suspense>
       <div className="absolute top-2 left-2 z-10 flex flex-col gap-1">
-        <div className="flex rounded-md border border-line bg-background/85 p-0.5 shadow-sm backdrop-blur" role="group" aria-label="Vistas padrão">
+        <div
+          className="flex rounded-md border border-line bg-background/85 p-0.5 shadow-sm backdrop-blur"
+          role="group"
+          aria-label="Vistas padrão"
+        >
           {VIEW_PRESETS.map((preset) => (
             <Button
               key={preset.id}
@@ -171,7 +175,11 @@ export function View3DPanel({
             </Button>
           ))}
         </div>
-        <div className="flex rounded-md border border-line bg-background/85 p-0.5 shadow-sm backdrop-blur" role="group" aria-label="Modo de aresta">
+        <div
+          className="flex rounded-md border border-line bg-background/85 p-0.5 shadow-sm backdrop-blur"
+          role="group"
+          aria-label="Modo de aresta"
+        >
           {EDGE_MODES.map((item) => (
             <Button
               key={item.id}
@@ -203,7 +211,13 @@ export function View3DPanel({
           aria-label="Abrir peça"
           className="h-1 flex-1 accent-[var(--accent)]"
         />
-        <Button type="button" size="sm" variant="ghost" onClick={onPlanificar} className="h-7 px-2 font-mono text-[9px] text-accent uppercase shadow-none">
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={onPlanificar}
+          className="h-7 px-2 font-mono text-[9px] text-accent uppercase shadow-none"
+        >
           Planificar
         </Button>
       </div>

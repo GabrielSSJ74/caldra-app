@@ -1,12 +1,14 @@
 # Catálogo de Projetos Paramétricos
 
 ## Direção aprovada
+
 - A entrada de **PROJETOS** terá duas abas: **Catálogo** e **Meus projetos**.
 - Os dossiês existentes, seus dados e todos os painéis atuais serão preservados.
 - Serão preparados três modelos reais em sequência estrita: **Escada reta**, depois **Plataforma industrial**, depois **Suporte de tubulação**.
 - A Escada Reta é o **Golden Project**. Nenhum outro modelo será iniciado antes de seu fluxo completo e regressão serem aprovados.
 
 ## Arquitetura
+
 Cada modelo terá uma função pura única:
 
 ```text
@@ -30,6 +32,7 @@ O catálogo guarda apenas definições imutáveis. Ao salvar, o CALDRA cria atom
 O resultado canônico contém parâmetros normalizados, cálculos, componentes reais, geometrias 2D/3D, relações estruturais e etapas. Todas as telas e documentos serão projeções desse resultado, nunca recálculos paralelos.
 
 ## Entrega
+
 1. Criar o registro do catálogo, filtros, busca, favoritos e recentes, sem misturá-lo ao registro de peças da Traçagem.
 2. Transformar a tela de Projetos em duas abas, mantendo **Meus projetos** funcional e adicionando um catálogo técnico com previews vetoriais reais.
 3. Criar uma rota própria para configurar cada modelo, com formulário específico e validação por projeto.
@@ -47,6 +50,7 @@ O resultado canônico contém parâmetros normalizados, cálculos, componentes r
 15. Somente depois implementar e regredir o Suporte de Tubulação.
 
 ## Arquivos novos previstos
+
 - `src/lib/project-catalog/types.ts` — contrato único do modelo e resultado gerado.
 - `src/lib/project-catalog/registry.ts` — categorias, busca, filtros e registro dos três modelos.
 - `src/lib/project-catalog/stairs.ts` — cálculo e geometria canônica da Escada Reta.
@@ -64,6 +68,7 @@ O resultado canônico contém parâmetros normalizados, cálculos, componentes r
 - `src/routes/projetos.catalogo.$slug.tsx` — área própria do modelo paramétrico.
 
 ## Arquivos existentes a modificar
+
 - `src/routes/projetos.index.tsx` — adicionar as abas Catálogo / Meus projetos, preservando a lista atual.
 - `src/lib/projects/store.ts` — aceitar criação atômica de um dossiê gerado, origem paramétrica, revisão, snapshots e estado dos derivados, com migração aditiva.
 - `src/lib/projects/bom.ts` — reconhecer peças estruturais geradas pelo catálogo sem alterar engines atuais.
@@ -73,6 +78,7 @@ O resultado canônico contém parâmetros normalizados, cálculos, componentes r
 - `roadmap.md` — registrar e acompanhar esta evolução separadamente.
 
 ## Compatibilidade e validação
+
 - Nenhum `modelId`, projeto salvo, desenho CHAMFER ou chave local existente será removido ou reinterpretado.
 - Projeto geométrico e preparação para fabricação serão estados distintos; nenhuma peça será declarada pronta sem validação.
 - A geração geométrica não fará afirmações de segurança estrutural, cargas, tensões, estabilidade ou conformidade normativa.

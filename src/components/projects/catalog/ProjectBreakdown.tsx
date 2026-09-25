@@ -11,7 +11,8 @@ export function ProjectBreakdown({
   onSelectPart?: (key: string) => void;
 }) {
   const mass = result.parts.reduce(
-    (sum, p) => sum + (p.dimensions.length * p.dimensions.width * p.thickness) / 1e9 * 7850 * p.quantity,
+    (sum, p) =>
+      sum + ((p.dimensions.length * p.dimensions.width * p.thickness) / 1e9) * 7850 * p.quantity,
     0,
   );
   const cards: [string, string | number][] = [
@@ -33,20 +34,36 @@ export function ProjectBreakdown({
       <div className="overflow-x-auto">
         <table className="w-full text-left text-xs">
           <thead className="font-mono text-[9px] uppercase text-muted-foreground">
-            <tr><th className="py-2">Código</th><th>Peça</th><th>Qtd</th><th>Material</th><th>Dimensões</th><th>Processo</th></tr>
+            <tr>
+              <th className="py-2">Código</th>
+              <th>Peça</th>
+              <th>Qtd</th>
+              <th>Material</th>
+              <th>Dimensões</th>
+              <th>Processo</th>
+            </tr>
           </thead>
           <tbody>
             {result.parts.map((p) => (
               <tr
                 key={p.key}
                 onClick={() => onSelectPart?.(p.key)}
-                className={cn("cursor-pointer border-t border-line", selectedPartKey === p.key && "bg-accent/10")}
+                className={cn(
+                  "cursor-pointer border-t border-line",
+                  selectedPartKey === p.key && "bg-accent/10",
+                )}
               >
                 <td className="py-2 font-mono">{p.codeSuffix}</td>
-                <td>{p.name}<span className="block text-[10px] text-muted-foreground">{p.role}</span></td>
+                <td>
+                  {p.name}
+                  <span className="block text-[10px] text-muted-foreground">{p.role}</span>
+                </td>
                 <td>{p.quantity}</td>
                 <td>{p.material}</td>
-                <td className="font-mono">{p.dimensions.length.toFixed(0)} × {p.dimensions.width.toFixed(0)} × {p.thickness} mm</td>
+                <td className="font-mono">
+                  {p.dimensions.length.toFixed(0)} × {p.dimensions.width.toFixed(0)} × {p.thickness}{" "}
+                  mm
+                </td>
                 <td>{p.fabricable ? p.process : `${p.process} · não-CNC`}</td>
               </tr>
             ))}
@@ -65,7 +82,9 @@ export function ProjectBreakdown({
           ))}
         </ol>
       </div>
-      <div className="rounded-lg border border-warn/30 bg-warn/5 p-3 text-xs text-muted-foreground">{result.warnings[0]}</div>
+      <div className="rounded-lg border border-warn/30 bg-warn/5 p-3 text-xs text-muted-foreground">
+        {result.warnings[0]}
+      </div>
     </div>
   );
 }

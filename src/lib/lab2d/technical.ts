@@ -29,13 +29,7 @@ export const WARNING_COLOR = "#FB7185"; // alertas de validação (não é camad
 export const SHEET_INK = "#000000";
 
 export type TechLayerId =
-  | "corte"
-  | "recorte"
-  | "dobra"
-  | "marcacao"
-  | "construcao"
-  | "referencia"
-  | "cota";
+  "corte" | "recorte" | "dobra" | "marcacao" | "construcao" | "referencia" | "cota";
 
 /**
  * CAMADAS VISÍVEIS PARA O USUÁRIO NO CHAMFER.
@@ -51,14 +45,24 @@ export const TECHNICAL_STYLE: Record<
   TechLayerId,
   { color: string; dash: (s: number) => string | undefined; weight: number; order: number }
 > = {
-  construcao: { color: CONSTRUCTION_COLOR, dash: (s) => `${2 * s} ${2 * s}`, weight: 0.7, order: 0 },
+  construcao: {
+    color: CONSTRUCTION_COLOR,
+    dash: (s) => `${2 * s} ${2 * s}`,
+    weight: 0.7,
+    order: 0,
+  },
   referencia: {
     color: REFERENCE_COLOR,
     dash: (s) => `${8 * s} ${2 * s} ${1.5 * s} ${2 * s}`,
     weight: 0.7,
     order: 1,
   },
-  dobra: { color: BEND_COLOR, dash: (s) => `${7 * s} ${2.5 * s} ${1.5 * s} ${2.5 * s}`, weight: 1, order: 2 },
+  dobra: {
+    color: BEND_COLOR,
+    dash: (s) => `${7 * s} ${2.5 * s} ${1.5 * s} ${2.5 * s}`,
+    weight: 1,
+    order: 2,
+  },
   marcacao: { color: MARK_COLOR, dash: (s) => `${4 * s} ${2.5 * s}`, weight: 1, order: 3 },
   recorte: { color: RECORTE_COLOR, dash: () => undefined, weight: 1.2, order: 4 },
   corte: { color: CUT_COLOR, dash: () => undefined, weight: 1.4, order: 5 },
@@ -71,8 +75,7 @@ const FALLBACK = TECHNICAL_STYLE.corte;
  * A cor técnica é FIXA: corte verde, marcação azul, dobra rosa e recorte
  * âmbar, em qualquer tema. Cor é representação visual; a camada é a operação.
  */
-export const techStyle = (layerId: string) =>
-  TECHNICAL_STYLE[layerId as TechLayerId] ?? FALLBACK;
+export const techStyle = (layerId: string) => TECHNICAL_STYLE[layerId as TechLayerId] ?? FALLBACK;
 
 export const techColor = (layerId: string) => techStyle(layerId).color;
 

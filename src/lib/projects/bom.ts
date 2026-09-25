@@ -236,6 +236,18 @@ export function bomCsv(project: Project, bom: ProjectBom): string {
     `${csvCell(`Projeto: ${project.name} (${project.code ?? "—"}) REV ${project.revision}`)}`,
     head.join(";"),
     ...rows.map((r) => r.join(";")),
-    ["", "", "", "", "", "", "", "", "TOTAL", bom.totalAreaM2.toFixed(3).replace(".", ","), bom.totalMassKg.toFixed(2).replace(".", ",")].join(";"),
+    [
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
+      "TOTAL",
+      bom.totalAreaM2.toFixed(3).replace(".", ","),
+      bom.totalMassKg.toFixed(2).replace(".", ","),
+    ].join(";"),
   ].join("\n");
 }

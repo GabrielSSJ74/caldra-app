@@ -82,11 +82,24 @@ export function fabricationCost(i: FabricationInput): FabricationBreakdown {
   const setup = i.includeSetup ? i.rates.setup : 0;
   const total = cut + pierce + bend + weld + labor + setup;
 
-  return { cut, pierce, bend, weld, labor, setup, total, perPiece: qty > 0 ? (total - setup) / qty : 0 };
+  return {
+    cut,
+    pierce,
+    bend,
+    weld,
+    labor,
+    setup,
+    total,
+    perPiece: qty > 0 ? (total - setup) / qty : 0,
+  };
 }
 
 /** Tempo estimado de corte em minutos (velocidade em mm/min por espessura). */
-export function cutTimeMinutes(cutLengthMm: number, thicknessMm: number, baseSpeedMmMin = 3500): number {
+export function cutTimeMinutes(
+  cutLengthMm: number,
+  thicknessMm: number,
+  baseSpeedMmMin = 3500,
+): number {
   const speed = baseSpeedMmMin / thicknessFactor(thicknessMm);
   return speed > 0 ? cutLengthMm / speed : 0;
 }
