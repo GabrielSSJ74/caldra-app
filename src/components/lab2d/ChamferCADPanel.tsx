@@ -429,7 +429,7 @@ export function ChamferCADPanel({
                   <button
                     type="button"
                     onClick={() => {
-                      doc.featureTree.suppressFeature(feat.id, !isSuppressed);
+                      doc.featureTree.setFeatureSuppressed(feat.id, !isSuppressed);
                       onDocumentChange({ ...doc });
                     }}
                     className="p-1 text-muted-foreground hover:text-foreground"
