@@ -63,7 +63,9 @@ export function TracagemSvgRenderer({
 
   // Linhas de marcação / referência técnica
   const markLines = useMemo(() => {
-    return entities.filter((e) => e.layer === "marcacao" && e.type === "line");
+    return entities.filter((e) => e.layer === "marcacao" && e.type === "line") as Array<
+      Extract<Entity, { type: "line" }>
+    >;
   }, [entities]);
 
   // Polilinhas abertas ou linhas soltas de corte
@@ -75,7 +77,9 @@ export function TracagemSvgRenderer({
 
   const rawCutLines = useMemo(() => {
     if (shapes.length > 0) return [];
-    return entities.filter((e) => e.layer === "corte" && e.type === "line");
+    return entities.filter((e) => e.layer === "corte" && e.type === "line") as Array<
+      Extract<Entity, { type: "line" }>
+    >;
   }, [shapes, entities]);
 
   // Pontos notáveis em âmbar (vértices de contorno, furos e extremidades de dobra)

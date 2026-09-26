@@ -392,7 +392,7 @@ export function detectAllSheetMetalParts(
             isBase,
             outline: poly,
             holes: assignedHoles,
-            bend: !isBase && partBends[polyIdx - 1] ? partBends[polyIdx - 1] : partBends[0],
+            bend: (!isBase && partBends[polyIdx - 1] ? partBends[polyIdx - 1] : partBends[0])!,
           });
         });
       }
@@ -418,7 +418,7 @@ export function detectAllSheetMetalParts(
         insideRadius: r,
         center: { x: cx, y: cy },
         bends: partBends,
-        flangeRegions: flangeRegions.length > 0 ? flangeRegions : undefined,
+        ...(flangeRegions.length > 0 ? { flangeRegions } : {}),
         developedLength: bL,
         developedWidth: bW,
         blankAreaMm2: blankArea,
