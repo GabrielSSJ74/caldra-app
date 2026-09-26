@@ -392,7 +392,7 @@ export function detectAllSheetMetalParts(
             isBase,
             outline: poly,
             holes: assignedHoles,
-            bend: !isBase && partBends[polyIdx - 1] ? partBends[polyIdx - 1] : partBends[0],
+            bend: (!isBase && partBends[polyIdx - 1] ? partBends[polyIdx - 1] : partBends[0])!,
           });
         });
       }
