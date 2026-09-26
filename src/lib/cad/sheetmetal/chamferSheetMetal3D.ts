@@ -418,7 +418,7 @@ export function detectAllSheetMetalParts(
         insideRadius: r,
         center: { x: cx, y: cy },
         bends: partBends,
-        flangeRegions: flangeRegions.length > 0 ? flangeRegions : undefined,
+        ...(flangeRegions.length > 0 ? { flangeRegions } : {}),
         developedLength: bL,
         developedWidth: bW,
         blankAreaMm2: blankArea,
