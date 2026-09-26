@@ -30,6 +30,62 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
   };
 }
 
+function createMockSupabaseClient(): any {
+  const queryBuilder: any = {
+    select: () => queryBuilder,
+    insert: () => queryBuilder,
+    upsert: () => queryBuilder,
+    update: () => queryBuilder,
+    delete: () => queryBuilder,
+    eq: () => queryBuilder,
+    neq: () => queryBuilder,
+    gt: () => queryBuilder,
+    gte: () => queryBuilder,
+    lt: () => queryBuilder,
+    lte: () => queryBuilder,
+    order: () => queryBuilder,
+    limit: () => queryBuilder,
+    single: async () => ({ data: null, error: null }),
+    maybeSingle: async () => ({ data: null, error: null }),
+    then: (resolve: (val: any) => void) => resolve({ data: [], error: null }),
+  };
+
+  return {
+    auth: {
+      onAuthStateChange: () => ({
+        data: { subscription: { unsubscribe: () => {} } },
+      }),
+      getSession: async () => ({ data: { session: null }, error: null }),
+      getUser: async () => ({ data: { user: null }, error: null }),
+      signInWithPassword: async () => ({
+        data: { user: null, session: null },
+        error: { message: "Modo offline (sem credenciais do Supabase)" },
+      }),
+      signUp: async () => ({
+        data: { user: null, session: null },
+        error: { message: "Modo offline" },
+      }),
+      signOut: async () => ({ error: null }),
+      setSession: async () => ({ data: { session: null }, error: null }),
+      getClaims: async () => ({ data: { claims: null }, error: null }),
+    },
+    from: () => queryBuilder,
+    rpc: async () => ({ data: null, error: null }),
+    channel: () => ({
+      on: () => ({
+        subscribe: () => ({ unsubscribe: () => {} }),
+      }),
+    }),
+    storage: {
+      from: () => ({
+        getPublicUrl: () => ({ data: { publicUrl: "" } }),
+        upload: async () => ({ data: null, error: null }),
+        download: async () => ({ data: null, error: null }),
+      }),
+    },
+  };
+}
+
 function createSupabaseClient() {
   // Use import.meta.env for client-side (Vite build-time replacement)
   // Fall back to process.env for SSR (server-side rendering)
@@ -38,13 +94,10 @@ function createSupabaseClient() {
     import.meta.env["VITE_SUPABASE_PUBLISHABLE_KEY"] || process.env["SUPABASE_PUBLISHABLE_KEY"];
 
   if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-    const missing = [
-      ...(!SUPABASE_URL ? ["SUPABASE_URL"] : []),
-      ...(!SUPABASE_PUBLISHABLE_KEY ? ["SUPABASE_PUBLISHABLE_KEY"] : []),
-    ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(", ")}. Connect Supabase in Lovable Cloud.`;
-    console.error(`[Supabase] ${message}`);
-    throw new Error(message);
+    console.warn(
+      `[Supabase] Environment variables missing. Running in offline mock mode.`,
+    );
+    return createMockSupabaseClient() as ReturnType<typeof createClient<Database>>;
   }
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {

@@ -68,11 +68,19 @@ export class ChamferKernel {
    * Cria um novo documento de peça CAD paramétrica no CALDRA.
    */
   static createDocument(
-    name = "Nova Peça Paramétrica",
-    thickness = 2.0,
-    material = "Aço Carbono SAE 1020",
-    kFactor = 0.44,
+    nameOrOptions:
+      | string
+      | { name?: string; thickness?: number; material?: string; kFactor?: number } = "Nova Peça Paramétrica",
+    thicknessArg = 2.0,
+    materialArg = "Aço Carbono SAE 1020",
+    kFactorArg = 0.44,
   ): PartDocument {
+    const isObj = typeof nameOrOptions === "object" && nameOrOptions !== null;
+    const name = isObj ? (nameOrOptions.name || "Nova Peça Paramétrica") : nameOrOptions;
+    const thickness = isObj ? (nameOrOptions.thickness ?? 2.0) : thicknessArg;
+    const material = isObj ? (nameOrOptions.material || "Aço Carbono SAE 1020") : materialArg;
+    const kFactor = isObj ? (nameOrOptions.kFactor ?? 0.44) : kFactorArg;
+
     const featureTree = new FeatureTree(name);
     const canonicalModel = featureTree.model;
 

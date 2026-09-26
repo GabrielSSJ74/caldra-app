@@ -366,10 +366,35 @@ export function Model3DViewer({
     }
     a.meshes = [];
     for (const inst of instances) {
-      /* perfil real (desenho do CHAMFER) → extrusão; senão, caixa canônica */
+      /* perfil real (desenho do CHAMFER) → extrusão ou malha analítica 3D; senão, caixa canônica */
       let geo: THREE.BufferGeometry = shared.boxGeo;
       let own = false;
-      if (inst.shape && inst.shape.outline.length > 2) {
+      if (inst.customMesh && inst.customMesh.positions.length > 0) {
+        geo = new THREE.BufferGeometry();
+        const posArray =
+          inst.customMesh.positions instanceof Float32Array
+            ? inst.customMesh.positions
+            : new Float32Array(inst.customMesh.positions);
+        geo.setAttribute("position", new THREE.BufferAttribute(posArray, 3));
+        if (inst.customMesh.normals && inst.customMesh.normals.length > 0) {
+          const normArray =
+            inst.customMesh.normals instanceof Float32Array
+              ? inst.customMesh.normals
+              : new Float32Array(inst.customMesh.normals);
+          geo.setAttribute("normal", new THREE.BufferAttribute(normArray, 3));
+        } else {
+          geo.computeVertexNormals();
+        }
+        if (inst.customMesh.indices && inst.customMesh.indices.length > 0) {
+          const idxArray =
+            inst.customMesh.indices instanceof Uint32Array ||
+            inst.customMesh.indices instanceof Uint16Array
+              ? inst.customMesh.indices
+              : new Uint32Array(inst.customMesh.indices);
+          geo.setIndex(new THREE.BufferAttribute(idxArray, 1));
+        }
+        own = true;
+      } else if (inst.shape && inst.shape.outline.length > 2) {
         const shape = new THREE.Shape(
           inst.shape.outline.map((p) => new THREE.Vector2(p.x * S, p.y * S)),
         );
@@ -391,6 +416,8 @@ export function Model3DViewer({
           Math.max(inst.size.y, 1) * S,
           Math.max(inst.size.z, 1) * S,
         );
+      mesh.rotation.x = inst.rotX ?? 0;
+      mesh.rotation.y = inst.rotY ?? 0;
       mesh.rotation.z = inst.rotZ;
       mesh.userData["id"] = inst.id;
       mesh.userData["base"] = [inst.center.x * S, inst.center.y * S, inst.center.z * S];

@@ -238,7 +238,7 @@ export class DfmEngine {
     };
 
     return {
-      partName: doc.header.name || "Peça Caldra",
+      partName: doc.header?.name || (doc as any).name || "Peça Caldra",
       material,
       thickness,
       summary,

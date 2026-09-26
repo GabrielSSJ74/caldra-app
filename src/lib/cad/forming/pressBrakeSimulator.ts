@@ -72,6 +72,10 @@ export class PressBrakeSimulator {
   /**
    * Determina a abertura recomendada do canal V da matriz com base na espessura.
    */
+  public static recommendVDie(thicknessMm: number): number {
+    return this.getRecommendedDieOpening(thicknessMm);
+  }
+
   public static getRecommendedDieOpening(thicknessMm: number): number {
     const t = Math.max(0.5, thicknessMm);
     let targetRatio = 8;
@@ -114,8 +118,9 @@ export class PressBrakeSimulator {
     // Raio natural da conformação ao ar livre (Air Bending)
     // Para aço carbono ~ V/6, Inox ~ V/5.5, Alumínio ~ V/6.5
     let vRatio = 6.0;
-    if (input.material.startsWith("INOX")) vRatio = 5.5;
-    else if (input.material.startsWith("ALU")) vRatio = 6.5;
+    const matStr = typeof input.material === "string" ? input.material : "";
+    if (matStr.startsWith("INOX")) vRatio = 5.5;
+    else if (matStr.startsWith("ALU")) vRatio = 6.5;
 
     const naturalInsideRadius = Number((v / vRatio).toFixed(2));
     const punchRadius =

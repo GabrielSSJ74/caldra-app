@@ -12,6 +12,12 @@ import type { CanonicalPart, CanonicalProject } from "./types";
 
 export type SolidMaterial = "aco" | "aco-pintado" | "aluminio";
 
+export type SolidCustomMesh = {
+  positions: number[] | Float32Array;
+  normals?: number[] | Float32Array;
+  indices?: number[] | Uint32Array | Uint16Array;
+};
+
 export type SolidInstance = {
   /** identidade única e determinística da ocorrência */
   id: string;
@@ -26,6 +32,9 @@ export type SolidInstance = {
   size: { x: number; y: number; z: number };
   /** rotação em torno de Z (rad) — perfis inclinados */
   rotZ: number;
+  /** rotações adicionais opcionais (rad) */
+  rotX?: number;
+  rotY?: number;
   material: SolidMaterial;
   assemblyKey: string;
   fabricable: boolean;
@@ -34,6 +43,10 @@ export type SolidInstance = {
    * Quando ausente, o motor usa a caixa definida por `size`.
    */
   shape?: { outline: { x: number; y: number }[]; holes: { x: number; y: number }[][] };
+  /**
+   * Malha analítica customizada 3D (para chapas dobradas, conformação plástica e B-Rep avançado).
+   */
+  customMesh?: SolidCustomMesh;
 };
 
 const num = (p: Record<string, number>, k: string, fb: number) =>

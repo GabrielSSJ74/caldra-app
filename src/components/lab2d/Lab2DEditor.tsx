@@ -112,7 +112,8 @@ import {
   saveProject,
   type Project,
 } from "@/lib/lab2d/projects";
-import { Cad3DStage } from "@/components/lab2d/Cad3DStage";
+import { TracagemSvgRenderer } from "@/components/lab2d/TracagemSvgRenderer";
+import { downloadTracagemSvgFile } from "@/lib/cad/sheetmetal/tracagemSvgExport";
 import { takeHandoff } from "@/lib/lab2d/handoff";
 import { findChamferLink } from "@/lib/projects/chamfer";
 import { getProject as getDossier } from "@/lib/projects/store";
@@ -281,12 +282,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [startPicking, setStartPicking] = useState(false);
   const [shareHint, setShareHint] = useState<ShareCandidate | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
-  /* ESPESSURA — chapa do plano; alimenta a vista 3D (mesmo motor do CALDRA) */
+  /* ESPESSURA — chapa do plano; alimenta a vista 3D / Traçagem */
   const [thickness, setThickness] = useState(DEFAULT_PLAN_THICKNESS);
   const [solidOpen, setSolidOpen] = useState(false);
-  /* uma vez aberto, o MODO 3D fica montado: preserva câmera, seleção e estado */
-  const solidEver = useRef(false);
-  if (solidOpen) solidEver.current = true;
+  const [viewMode3D, setViewMode3D] = useState<"planificada" | "isometrica">("planificada");
+  const [showPoints3D, setShowPoints3D] = useState(true);
+  const [showFolds3D, setShowFolds3D] = useState(true);
+  const [showDims3D, setShowDims3D] = useState(true);
 
   const [outputMode, setOutputMode] = useState<OutputMode>("completo");
   const [pending, setPending] = useState<Vec2[]>([]);
@@ -703,6 +705,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (el.height !== ph) el.height = ph;
     const ctx = el.getContext("2d");
     if (!ctx) return;
+
+    if (solidOpen) {
+      // Em modo 3D Traçagem, limpa o canvas para dar lugar ao SVG vetorial nítido
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, canvasSize.w, canvasSize.h);
+      return;
+    }
+
     // pinta no MESMO quadro em que o SVG recebe a transformação: sem atraso
     // de um frame entre a geometria (canvas) e os overlays (SVG) no pinch.
     drawScene(ctx, {
@@ -714,7 +724,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       selection: selectionSet,
       lod: gesturing,
     });
-  }, [drawIndex, view, selectionSet, gesturing, canvasSize]);
+  }, [drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen]);
 
   /* ------------------------------------------------------- FLUXO CALDRA */
   /*
@@ -1712,7 +1722,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </button>
             <span className="tick-label shrink-0 text-accent">CHAMFER</span>
 
-            {/* MODO CAD CANÔNICO: 2D ESBOÇO ↔ 3D CAD */}
+            {/* MODO CAD CANÔNICO: 2D ESBOÇO ↔ 3D TRAÇAGEM */}
             <div className="flex items-center rounded-lg border border-line bg-background/50 p-0.5">
               <button
                 type="button"
@@ -1728,7 +1738,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </button>
               <button
                 type="button"
-                onClick={() => setSolidOpen(true)}
+                onClick={() => {
+                  setSolidOpen(true);
+                  if (drawable.length > 0) fitTo(drawable);
+                }}
                 className={cn(
                   "rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase transition-colors",
                   solidOpen
@@ -1736,9 +1749,90 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     : "text-muted-foreground hover:text-foreground",
                 )}
               >
-                3D CAD
+                3D TRAÇAGEM
               </button>
             </div>
+
+            {/* CONTROLES DO MODO 3D / TRAÇAGEM NA MESMA TELA */}
+            {solidOpen && (
+              <div className="flex items-center gap-1">
+                <div className="flex items-center rounded-lg border border-line bg-background/50 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setViewMode3D("planificada")}
+                    className={cn(
+                      "rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase transition-colors",
+                      viewMode3D === "planificada"
+                        ? "bg-accent/20 text-accent font-semibold"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    PLANIFICADA
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setViewMode3D("isometrica")}
+                    className={cn(
+                      "rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase transition-colors",
+                      viewMode3D === "isometrica"
+                        ? "bg-accent/20 text-accent font-semibold"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    3D ISOMÉTRICA
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPoints3D((v) => !v)}
+                  className={cn(
+                    "rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase border transition-colors",
+                    showPoints3D ? "border-amber-500/40 text-amber-400 bg-amber-500/10 font-medium" : "border-line text-muted-foreground",
+                  )}
+                  title="Pontos notáveis em âmbar"
+                >
+                  PONTOS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowFolds3D((v) => !v)}
+                  className={cn(
+                    "rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase border transition-colors",
+                    showFolds3D ? "border-violet-500/40 text-violet-400 bg-violet-500/10 font-medium" : "border-line text-muted-foreground",
+                  )}
+                  title="Linhas de dobra"
+                >
+                  DOBRAS
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDims3D((v) => !v)}
+                  className={cn(
+                    "rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase border transition-colors",
+                    showDims3D ? "border-accent/40 text-accent bg-accent/10 font-medium" : "border-line text-muted-foreground",
+                  )}
+                  title="Dimensões e etiquetas"
+                >
+                  COTAS
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    downloadTracagemSvgFile(
+                      project?.name || "peca-tracagem-chamfer",
+                      drawable,
+                      thickness,
+                      viewMode3D,
+                    )
+                  }
+                  className="flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[9px] font-semibold text-accent border border-accent/40 bg-accent/10 hover:bg-accent/20 transition-colors uppercase"
+                  title="Baixar esta peça planificada em SVG autônomo estilo Traçagem"
+                >
+                  <Download className="size-3" />
+                  BAIXAR SVG
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="min-w-0 px-1 text-center">
@@ -1922,8 +2016,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
       {/* CORPO: TOOLBAR + CANVAS + PROPRIEDADES */}
       <div className="flex min-h-0 min-w-0 flex-1 gap-2">
-        {/* REGIÃO B — TOOLBAR ESQUERDA */}
-        {!focus && (
+        {/* REGIÃO B — TOOLBAR ESQUERDA (oculta no modo 3D Traçagem) */}
+        {!focus && !solidOpen && (
           <div className="metal hairline flex w-11 shrink-0 flex-col items-center gap-0.5 overflow-y-auto rounded-2xl p-1">
             {primaryTools.map((t) => (
               <ToolBtn key={t.id} t={t} active={tool === t.id} onPick={pickTool} />
@@ -1976,7 +2070,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               </pattern>
             </defs>
-            {showGrid && (
+            {showGrid && !solidOpen && (
               <>
                 <rect width="100%" height="100%" fill="url(#lab2d-grid)" />
                 <rect width="100%" height="100%" fill="url(#lab2d-grid-major)" />
@@ -1985,7 +2079,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </svg>
           <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
           {/* FLUXO CALDRA / PRÉVIA CNC — camada de UI, nunca exportada */}
-          <canvas ref={flowRef} className="pointer-events-none absolute inset-0 size-full" />
+          {!solidOpen && <canvas ref={flowRef} className="pointer-events-none absolute inset-0 size-full" />}
 
           <svg
             ref={svgRef}
@@ -1999,8 +2093,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             aria-label="Prancheta vetorial"
           >
             <g transform={`translate(${view.tx} ${view.ty}) scale(${view.k})`}>
+              {/* RENDERIZADOR SVG ESTILO MODELOS DE TRAÇAGEM (Modo 3D / Planificada na mesma tela) */}
+              {solidOpen && (
+                <TracagemSvgRenderer
+                  entities={drawable}
+                  zoom={view.k}
+                  thickness={thickness}
+                  viewMode3D={viewMode3D}
+                  showPoints={showPoints3D}
+                  showFolds={showFolds3D}
+                  showDims={showDims3D}
+                  selectedId={selection[0] ?? null}
+                  onSelect={(id) => setSelection(id ? [id] : [])}
+                />
+              )}
+
               {/* CAMADA IMAGEM — referência do CHAMFER VISION (nunca vira geometria) */}
-              {imageLayer && imageLayer.visible && outputMode === "completo" && (
+              {imageLayer && imageLayer.visible && outputMode === "completo" && !solidOpen && (
                 <image
                   href={imageLayer.src}
                   x={imageLayer.x}
@@ -2013,26 +2122,30 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               )}
 
-              {/* eixos — cinza técnico discreto */}
-              <line
-                x1={-1e4}
-                y1={0}
-                x2={1e4}
-                y2={0}
-                stroke="var(--axis-line)"
-                strokeWidth={1 / view.k}
-              />
-              <line
-                x1={0}
-                y1={-1e4}
-                x2={0}
-                y2={1e4}
-                stroke="var(--axis-line)"
-                strokeWidth={1 / view.k}
-              />
+              {/* eixos — cinza técnico discreto (ocultos no modo 3D Traçagem) */}
+              {!solidOpen && (
+                <>
+                  <line
+                    x1={-1e4}
+                    y1={0}
+                    x2={1e4}
+                    y2={0}
+                    stroke="var(--axis-line)"
+                    strokeWidth={1 / view.k}
+                  />
+                  <line
+                    x1={0}
+                    y1={-1e4}
+                    x2={0}
+                    y2={1e4}
+                    stroke="var(--axis-line)"
+                    strokeWidth={1 / view.k}
+                  />
+                </>
+              )}
 
-              {/* WORKSPACE_FRAME — área de trabalho (referência, nunca exportada) */}
-              {frame.visible && (
+              {/* WORKSPACE_FRAME — área de trabalho (oculta no modo 3D Traçagem) */}
+              {frame.visible && !solidOpen && (
                 <g pointerEvents="none">
                   <rect
                     x={0}
@@ -2103,9 +2216,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
               {/* geometria principal: pintada no canvas sob este SVG */}
 
-              {draft && <EntityShape e={draft} k={view.k} preview />}
+              {!solidOpen && draft && <EntityShape e={draft} k={view.k} preview />}
 
-              {pending.length > 0 && tool === "polyline" && (
+              {!solidOpen && pending.length > 0 && tool === "polyline" && (
                 <polyline
                   points={pending.map((p) => `${p.x},${p.y}`).join(" ")}
                   fill="none"
@@ -2116,7 +2229,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               )}
 
               {/* nós da seleção */}
-              {(tool === "node" || tool === "select") &&
+              {!solidOpen && (tool === "node" || tool === "select") &&
                 selected.flatMap((e) =>
                   entityPoints(e).map((p, i) => (
                     <circle
@@ -2608,20 +2721,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             : drawable,
         }}
       />
-
-      {solidEver.current && (
-        <Cad3DStage
-          open={solidOpen}
-          onClose={() => setSolidOpen(false)}
-          entities={drawable}
-          thickness={thickness}
-          onThickness={setThickness}
-          title={project?.name ?? "CHAMFER"}
-          labProjectId={projectId}
-          selection={selection}
-          onSelectEntity={(id) => setSelection(id ? [id] : [])}
-        />
-      )}
 
       <ImportDialog
         open={importOpen}
