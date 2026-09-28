@@ -28,7 +28,7 @@ export class DfmCostEngine {
    */
   public static calculate(
     doc: PartDocument,
-    ratesOverride?: Partial<FabricationCostRates>
+    ratesOverride?: Partial<FabricationCostRates>,
   ): FabricationCostBreakdown {
     const rates: FabricationCostRates = { ...DEFAULT_COST_RATES, ...ratesOverride };
 
@@ -77,8 +77,7 @@ export class DfmCostEngine {
 
     // 5. Consolidação de Tempos e Custos
     const totalCycleTimeMinutes = cutTimeMinutes + bendingTimeMinutes;
-    const directCost =
-      materialCost + cuttingCost + piercingCost + bendingCost + setupCost;
+    const directCost = materialCost + cuttingCost + piercingCost + bendingCost + setupCost;
     const suggestedSellingPrice = directCost * rates.marginMultiplier;
 
     return {

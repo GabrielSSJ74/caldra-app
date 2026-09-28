@@ -148,7 +148,7 @@ const PALETTE_DARK: Record<string, [number, number, number]> = {
   u_baseB: HEX("#111114"),
   u_warm: HEX("#f59e0b"),
   u_warmDeep: HEX("#b45309"),
-  u_magenta: HEX("#a01550"),
+  u_magenta: HEX("#b22222"),
   u_wine: HEX("#7a103c"),
   u_fuchsia: HEX("#86198f"),
   u_indigo: HEX("#312e81"),

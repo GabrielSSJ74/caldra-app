@@ -11,7 +11,7 @@ import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { DEFAULT_REGION, regionOf, type Region, type RegionId } from "@/lib/regional/regional";
 
 export type ThemeMode = "light" | "dark" | "system" | "amoled";
-export type AccentColor = "default" | "amber" | "blue" | "magenta";
+export type AccentColor = "default" | "amber" | "blue" | "crimson" | "magenta";
 export type AppLanguage = "pt" | "en" | "es";
 export type Unit = "mm" | "cm" | "m" | "in";
 /** APRENDIZ mostra fórmulas e dicas; MESTRE segue direto. Só apresentação. */
@@ -41,7 +41,7 @@ export type Settings = {
 
 const DEFAULTS: Settings = {
   theme: "light",
-  accent: "blue",
+  accent: "crimson",
   language: "pt",
   unit: "mm",
   precision: 2,
@@ -82,6 +82,7 @@ export function readStoredSettings(): Settings {
     const saved = JSON.parse(raw) as Omit<Partial<Settings>, "auroraStyle"> & {
       aurora?: boolean;
       auroraStyle?: AuroraStyle | "estatico";
+      accentAppliedCrimson?: boolean;
     };
     const VALID: AuroraStyle[] = ["fluido", "suave", "padrao"];
     const LANGUAGES: AppLanguage[] = ["pt", "en", "es"];
@@ -95,7 +96,20 @@ export function readStoredSettings(): Settings {
           : "fluido";
     // conta já existente (sem o campo) começa em MESTRE; conta nova, APRENDIZ
     const language = saved.language && LANGUAGES.includes(saved.language) ? saved.language : "pt";
-    return { ...DEFAULTS, level: saved.level ?? "mestre", ...saved, language, auroraStyle };
+
+    let accent: AccentColor = (saved.accent as AccentColor) || "crimson";
+    if (accent === "magenta" || !saved.accentAppliedCrimson) {
+      accent = "crimson";
+      saved.accent = "crimson";
+      saved.accentAppliedCrimson = true;
+      try {
+        window.localStorage.setItem(KEY, JSON.stringify({ ...saved, accent: "crimson", accentAppliedCrimson: true }));
+      } catch {
+        // ignora possíveis restrições de localStorage
+      }
+    }
+
+    return { ...DEFAULTS, level: saved.level ?? "mestre", ...saved, accent, language, auroraStyle };
   } catch {
     return DEFAULTS;
   }
@@ -109,7 +123,9 @@ function applyToDom(s: Settings) {
   root.classList.toggle("amoled", s.theme === "amoled");
   root.classList.toggle("accent-default", s.accent === "default");
   root.classList.toggle("accent-blue", s.accent === "blue");
-  root.classList.toggle("accent-magenta", s.accent === "magenta");
+  const isCrimson = s.accent === "crimson" || s.accent === "magenta";
+  root.classList.toggle("accent-crimson", isCrimson);
+  root.classList.toggle("accent-magenta", isCrimson);
   root.lang = s.language === "pt" ? "pt-BR" : s.language;
 }
 

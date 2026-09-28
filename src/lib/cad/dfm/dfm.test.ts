@@ -303,7 +303,10 @@ describe("CALDRA CAD DFM & FABRICABILITY AUDIT — FASE 13", () => {
     expect(cost.bendCount).toBe(2);
     expect(cost.directCost).toBeGreaterThan(cost.materialCost);
     expect(cost.suggestedSellingPrice).toBeGreaterThan(cost.directCost);
-    expect(cost.suggestedSellingPrice).toBeCloseTo(cost.directCost * DEFAULT_COST_RATES.marginMultiplier, 1);
+    expect(cost.suggestedSellingPrice).toBeCloseTo(
+      cost.directCost * DEFAULT_COST_RATES.marginMultiplier,
+      1,
+    );
   });
 
   it("TESTE 7: DfmReportExporter gera relatório CSV completo e arquivo DXF com camada DFM_ISSUES", () => {

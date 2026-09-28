@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ArrowRight, Compass, PenTool, Sigma } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AuroraBackground } from "./Aurora";
+import { CaldraLogo } from "./Logo";
 
 const KEY = "caldra.intro.v1";
 
@@ -67,30 +68,19 @@ export function Intro({ onDone }: { onDone: () => void }) {
       />
 
       {phase === "logo" ? (
-        <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-5">
-          <svg viewBox="0 0 120 120" className="size-32" aria-hidden>
-            <g
-              fill="none"
-              stroke="var(--holo)"
-              strokeWidth="1.4"
-              strokeLinejoin="round"
-              style={{
-                strokeDasharray: 340,
-                animation: "caldra-draw 1.6s cubic-bezier(.22,1,.36,1) both",
-                filter: "drop-shadow(0 0 6px color-mix(in oklab, var(--holo) 55%, transparent))",
-              }}
-            >
-              <path d="M60 12 108 60 60 108 12 60Z" />
-              <path d="M60 30 90 60 60 90 30 60Z" opacity=".8" />
-              <path d="M60 48 72 60 60 72 48 60Z" opacity=".6" />
-            </g>
-          </svg>
-          <h1
-            className="font-display text-4xl font-semibold"
-            style={{ animation: "caldra-rise 1s .9s cubic-bezier(.22,1,.36,1) both" }}
+        <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-6">
+          <CaldraLogo size={128} animated glow />
+          <div
+            className="text-center"
+            style={{ animation: "caldra-rise 1s .8s cubic-bezier(.22,1,.36,1) both" }}
           >
-            CALDRA
-          </h1>
+            <h1 className="font-display text-4xl font-bold tracking-wider text-foreground">
+              CALDRA
+            </h1>
+            <p className="mt-1.5 font-mono text-[11px] font-semibold tracking-[0.25em] text-accent uppercase">
+              Traçado & Planificação Zero Fresta
+            </p>
+          </div>
         </div>
       ) : (
         <>

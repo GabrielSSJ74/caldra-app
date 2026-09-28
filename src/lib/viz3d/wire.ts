@@ -233,14 +233,14 @@ type ShellOpts = {
   g?: number;
 };
 
-type Geo = {
+export type Geo = {
   faces: Face[];
   edges: Edge[];
   edgeTags?: (WireTag | undefined)[] | undefined;
   faceTags?: (WireTag | undefined)[] | undefined;
 };
 
-const EMPTY: Geo = { faces: [], edges: [] };
+export const EMPTY_GEO: Geo = { faces: [], edges: [] };
 
 /** Marca todas as faces de uma parte com o grupo de casca informado. */
 function tag(geo: Geo, g: number): Geo {
@@ -373,7 +373,7 @@ function shell(loops: Vec3[][], o: ShellOpts): Geo {
   return { faces, edges, edgeTags, faceTags };
 }
 
-function boundsOf(faces: Face[]): Bounds {
+export function boundsOf(faces: Face[]): Bounds {
   const min = v(Infinity, Infinity, Infinity);
   const max = v(-Infinity, -Infinity, -Infinity);
   for (const f of faces)
@@ -394,7 +394,7 @@ function boundsOf(faces: Face[]): Bounds {
  * depois que todas as faces de todas as partes já estão definidas. Newell
  * suporta polígonos não triangulares e faces levemente não planares.
  */
-function computeFaceNormals(faces: Face[]): void {
+export function computeFaceNormals(faces: Face[]): void {
   for (const f of faces) {
     let nx = 0;
     let ny = 0;
@@ -412,7 +412,7 @@ function computeFaceNormals(faces: Face[]): void {
   }
 }
 
-function finish(geo: Geo, refLines: Edge[] = []): WireModel {
+export function finish(geo: Geo, refLines: Edge[] = []): WireModel {
   // 1. malha completa → 2. normais → 3. bounding box (nesta ordem, sempre)
   computeFaceNormals(geo.faces);
   const bounds = boundsOf(geo.faces);

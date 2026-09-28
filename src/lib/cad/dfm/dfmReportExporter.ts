@@ -18,20 +18,28 @@ export class DfmReportExporter {
     lines.push("CALDRA CAD — RELATÓRIO DE FABRICABILIDADE DFM & FORMAÇÃO DE CUSTOS");
     lines.push(`Peça;${report.partName};Data;${report.generatedAt}`);
     lines.push(`Material;${report.audit.material};Espessura;${report.audit.thickness} mm`);
-    lines.push(`Status Fabricabilidade;${report.audit.summary.isApproved ? "APROVADO" : "REPROVADO"};Índice DFM;${report.audit.summary.score}/100`);
-    lines.push(`Erros Críticos;${report.audit.summary.errorCount};Alertas;${report.audit.summary.warningCount};Informativos;${report.audit.summary.infoCount}`);
+    lines.push(
+      `Status Fabricabilidade;${report.audit.summary.isApproved ? "APROVADO" : "REPROVADO"};Índice DFM;${report.audit.summary.score}/100`,
+    );
+    lines.push(
+      `Erros Críticos;${report.audit.summary.errorCount};Alertas;${report.audit.summary.warningCount};Informativos;${report.audit.summary.infoCount}`,
+    );
     lines.push("");
 
     // Tabela de Apontamentos DFM
     lines.push("AUDITORIA TÉCNICA DE FABRICAÇÃO (DFM)");
-    lines.push("ID;SEVERIDADE;REGRA;TÍTULO;MEDIÇÃO;LIMITE;UNIDADE;POSIÇÃO (X,Y);SUGESTÃO DE CORREÇÃO");
+    lines.push(
+      "ID;SEVERIDADE;REGRA;TÍTULO;MEDIÇÃO;LIMITE;UNIDADE;POSIÇÃO (X,Y);SUGESTÃO DE CORREÇÃO",
+    );
 
     if (report.audit.issues.length === 0) {
-      lines.push("NENHUM;INFO;SEM_VIOLACOES;Peça 100% em conformidade com as regras de oficina;0;0;mm;(0, 0);Nenhuma ação necessária");
+      lines.push(
+        "NENHUM;INFO;SEM_VIOLACOES;Peça 100% em conformidade com as regras de oficina;0;0;mm;(0, 0);Nenhuma ação necessária",
+      );
     } else {
       for (const issue of report.audit.issues) {
         lines.push(
-          `${issue.id};${issue.severity};${issue.ruleId};"${issue.title}";${issue.measuredValue};${issue.thresholdValue};${issue.unit};"(${issue.location.x.toFixed(1)}, ${issue.location.y.toFixed(1)})";"${issue.suggestedFix}"`
+          `${issue.id};${issue.severity};${issue.ruleId};"${issue.title}";${issue.measuredValue};${issue.thresholdValue};${issue.unit};"(${issue.location.x.toFixed(1)}, ${issue.location.y.toFixed(1)})";"${issue.suggestedFix}"`,
         );
       }
     }

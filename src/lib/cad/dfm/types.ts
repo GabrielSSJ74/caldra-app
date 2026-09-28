@@ -12,15 +12,15 @@
 export type DfmSeverity = "ERROR" | "WARNING" | "INFO";
 
 export type DfmRuleId =
-  | "HOLE_TOO_CLOSE_TO_BEND"       // Furo na zona plástica da dobra (provoca ovalização)
-  | "HOLE_TOO_CLOSE_TO_EDGE"       // Furo muito próximo à borda (risco de estufamento perimetral)
-  | "MIN_HOLE_DIAMETER_SMALL"      // Diâmetro de furo menor que a espessura (d < t)
-  | "MIN_FLANGE_LENGTH_TOO_SHORT"  // Aba de dobra menor que o apoio na matriz V
-  | "NARROW_WEB_THERMAL_RISK"      // Istmo estreito entre cortes com risco de empenamento térmico
-  | "MISSING_CORNER_RELIEF"        // Canto interno de dobra a 90° sem alívio de rasgo
-  | "SLOT_NEAR_BEND"               // Rasgo oblongo paralelo ou oblíquo muito próximo à dobra
-  | "TONNAGE_LIMIT_EXCEEDED"       // Tonelagem necessária excede capacidade da prensa
-  | "SPRINGBACK_HIGH_ALERT";       // Ângulo de retorno elástico acentuado requer calibração especial
+  | "HOLE_TOO_CLOSE_TO_BEND" // Furo na zona plástica da dobra (provoca ovalização)
+  | "HOLE_TOO_CLOSE_TO_EDGE" // Furo muito próximo à borda (risco de estufamento perimetral)
+  | "MIN_HOLE_DIAMETER_SMALL" // Diâmetro de furo menor que a espessura (d < t)
+  | "MIN_FLANGE_LENGTH_TOO_SHORT" // Aba de dobra menor que o apoio na matriz V
+  | "NARROW_WEB_THERMAL_RISK" // Istmo estreito entre cortes com risco de empenamento térmico
+  | "MISSING_CORNER_RELIEF" // Canto interno de dobra a 90° sem alívio de rasgo
+  | "SLOT_NEAR_BEND" // Rasgo oblongo paralelo ou oblíquo muito próximo à dobra
+  | "TONNAGE_LIMIT_EXCEEDED" // Tonelagem necessária excede capacidade da prensa
+  | "SPRINGBACK_HIGH_ALERT"; // Ângulo de retorno elástico acentuado requer calibração especial
 
 export interface DfmPoint {
   x: number;

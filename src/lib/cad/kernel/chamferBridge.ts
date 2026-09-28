@@ -26,8 +26,15 @@ export class ChamferBridge {
 
     let elemIdx = 0;
 
-    for (const ent of entities) {
-      if (ent.type === "line") {
+    for (const ent of entities || []) {
+      if (!ent) continue;
+      if (
+        ent.type === "line" &&
+        Number.isFinite(ent.x1) &&
+        Number.isFinite(ent.y1) &&
+        Number.isFinite(ent.x2) &&
+        Number.isFinite(ent.y2)
+      ) {
         const id = `line_${elemIdx++}`;
         elements.push({
           id,
@@ -53,7 +60,13 @@ export class ChamferBridge {
             elementIds: [id],
           });
         }
-      } else if (ent.type === "circle") {
+      } else if (
+        ent.type === "circle" &&
+        Number.isFinite(ent.cx) &&
+        Number.isFinite(ent.cy) &&
+        Number.isFinite(ent.r) &&
+        ent.r > 0
+      ) {
         const id = `circle_${elemIdx++}`;
         elements.push({
           id,
@@ -70,8 +83,14 @@ export class ChamferBridge {
         });
       } else if (ent.type === "arc") {
         const id = `arc_${elemIdx++}`;
-        const startRad = (ent.startAngle * Math.PI) / 180;
-        const endRad = (ent.endAngle * Math.PI) / 180;
+        const arcEnt = ent as unknown as {
+          a0?: number;
+          a1?: number;
+          startAngle?: number;
+          endAngle?: number;
+        };
+        const startRad = arcEnt.a0 ?? ((arcEnt.startAngle ?? 0) * Math.PI) / 180;
+        const endRad = arcEnt.a1 ?? ((arcEnt.endAngle ?? 180) * Math.PI) / 180;
         elements.push({
           id,
           type: "ARC",
@@ -83,6 +102,27 @@ export class ChamferBridge {
           endAngleRad: endRad,
           isConstruction: ent.layer === "REFERÊNCIA",
         });
+      } else if (ent.type === "polyline" && ent.pts && ent.pts.length >= 2) {
+        for (let i = 0; i < ent.pts.length - 1; i++) {
+          const id = `poly_line_${elemIdx++}`;
+          elements.push({
+            id,
+            type: "LINE",
+            p1: { x: ent.pts[i].x, y: ent.pts[i].y },
+            p2: { x: ent.pts[i + 1].x, y: ent.pts[i + 1].y },
+            isConstruction: ent.layer === "REFERÊNCIA",
+          });
+        }
+        if (ent.closed && ent.pts.length >= 3) {
+          const id = `poly_line_${elemIdx++}`;
+          elements.push({
+            id,
+            type: "LINE",
+            p1: { x: ent.pts[ent.pts.length - 1].x, y: ent.pts[ent.pts.length - 1].y },
+            p2: { x: ent.pts[0].x, y: ent.pts[0].y },
+            isConstruction: ent.layer === "REFERÊNCIA",
+          });
+        }
       }
     }
 

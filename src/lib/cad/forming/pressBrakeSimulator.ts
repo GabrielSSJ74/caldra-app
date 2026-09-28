@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * CALDRA CAD — PRESS BRAKE SIMULATOR & TONNAGE ENGINE (FASE 12)
  *
@@ -72,10 +71,6 @@ export class PressBrakeSimulator {
   /**
    * Determina a abertura recomendada do canal V da matriz com base na espessura.
    */
-  public static recommendVDie(thicknessMm: number): number {
-    return this.getRecommendedDieOpening(thicknessMm);
-  }
-
   public static getRecommendedDieOpening(thicknessMm: number): number {
     const t = Math.max(0.5, thicknessMm);
     let targetRatio = 8;
@@ -104,13 +99,21 @@ export class PressBrakeSimulator {
   }
 
   /**
+   * Alias para recommendVDie utilizado pelo motor DFM.
+   */
+  public static recommendVDie(thicknessMm: number): number {
+    return this.getRecommendedDieOpening(thicknessMm);
+  }
+
+  /**
    * Executa a simulação completa de prensagem, cálculo de tonelagem e retorno elástico.
    */
   public static simulate(input: PressBrakeSimulationInput): PressBrakeSimulationResult {
-    const mat = MATERIAL_DATABASE[input.material] ?? MATERIAL_DATABASE.A36;
+    const matKey = input.material || "A36";
+    const mat = MATERIAL_DATABASE[matKey] ?? MATERIAL_DATABASE.A36;
     const t = Math.max(0.2, input.thicknessMm);
     const L = Math.max(1, input.bendLengthMm);
-    const targetAngle = Math.max(10, Math.min(175, input.targetAngleDeg));
+    const targetAngle = Math.max(10, Math.min(175, input.targetAngleDeg ?? 90));
 
     const recommendedV = this.getRecommendedDieOpening(t);
     const v = input.dieOpeningVMm && input.dieOpeningVMm > 0 ? input.dieOpeningVMm : recommendedV;
@@ -118,9 +121,8 @@ export class PressBrakeSimulator {
     // Raio natural da conformação ao ar livre (Air Bending)
     // Para aço carbono ~ V/6, Inox ~ V/5.5, Alumínio ~ V/6.5
     let vRatio = 6.0;
-    const matStr = typeof input.material === "string" ? input.material : "";
-    if (matStr.startsWith("INOX")) vRatio = 5.5;
-    else if (matStr.startsWith("ALU")) vRatio = 6.5;
+    if (matKey.startsWith("INOX")) vRatio = 5.5;
+    else if (matKey.startsWith("ALU")) vRatio = 6.5;
 
     const naturalInsideRadius = Number((v / vRatio).toFixed(2));
     const punchRadius =

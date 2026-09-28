@@ -3,6 +3,7 @@ import { useRef } from "react";
 import { ArrowUpRight, Calculator, FolderKanban, PenTool, Sigma } from "lucide-react";
 import { DEMO_HISTORY } from "@/lib/projects/demo-data";
 import { PieceCarousel } from "@/components/chameleon/PieceCarousel";
+import { CaldraLogo } from "@/components/chameleon/Logo";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -206,15 +207,22 @@ function Inicio() {
   return (
     <div className="relative space-y-6">
       <header className="relative pt-2">
-        <h1
-          onClick={tapLogo}
-          className="text-brand-gradient font-display cursor-default text-[clamp(2.4rem,13vw,4.5rem)] leading-[0.9] font-semibold tracking-tight select-none"
-        >
-          CALDRA
-        </h1>
+        <div className="flex items-center gap-3.5">
+          <div onClick={tapLogo} className="cursor-pointer">
+            <CaldraLogo size={48} animated glow />
+          </div>
+          <h1
+            onClick={tapLogo}
+            className="text-brand-gradient font-display cursor-default text-[clamp(2.4rem,13vw,4.5rem)] leading-[0.9] font-semibold tracking-tight select-none"
+          >
+            CALDRA
+          </h1>
+        </div>
         <div className="mt-3 flex items-center gap-3">
-          <span className="h-px flex-1 bg-gradient-to-r from-accent/60 to-transparent" />
-          <span className="tick-label">{`\n`}</span>
+          <span className="h-px w-24 bg-gradient-to-r from-accent/60 to-transparent" />
+          <span className="tick-label text-[10px] tracking-[0.2em] uppercase text-muted-foreground">
+            Traçado & Planificação Zero Fresta
+          </span>
         </div>
       </header>
 

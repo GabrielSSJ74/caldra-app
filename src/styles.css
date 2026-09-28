@@ -536,25 +536,27 @@
   --gradient-brand: linear-gradient(120deg, var(--accent), oklch(0.86 0.14 195));
 }
 
-/* Magenta #A01550 — sólido para controles; no escuro o acento clareia (#E8377F). */
+/* Vermelho Carmesim #B22222 — sólido para controles; no escuro o acento ganha luminosidade (#E53935). */
+.accent-crimson,
 .accent-magenta {
-  --primary: oklch(0.4641 0.1743 2.82);
-  --primary-foreground: oklch(1 0 0);
-  --accent: oklch(0.4641 0.1743 2.82);
-  --accent-foreground: oklch(1 0 0);
-  --accent2: oklch(0.63 0.21 5);
-  --ring: oklch(0.4641 0.1743 2.82);
-  --gradient-brand: linear-gradient(120deg, oklch(0.4641 0.1743 2.82), oklch(0.63 0.21 5));
+  --primary: #B22222;
+  --primary-foreground: #ffffff;
+  --accent: #B22222;
+  --accent-foreground: #ffffff;
+  --accent2: #D32F2F;
+  --ring: #B22222;
+  --gradient-brand: linear-gradient(120deg, #B22222, #D32F2F);
 }
 
+.dark.accent-crimson,
 .dark.accent-magenta {
-  --primary: oklch(0.4641 0.1743 2.82);
-  --primary-foreground: oklch(1 0 0);
-  --accent: oklch(0.63 0.21 5); /* #E8377F — legível como texto no escuro */
-  --accent-foreground: oklch(1 0 0);
-  --accent2: oklch(0.72 0.17 8);
-  --ring: oklch(0.63 0.21 5);
-  --gradient-brand: linear-gradient(120deg, oklch(0.4641 0.1743 2.82), oklch(0.63 0.21 5));
+  --primary: #B22222;
+  --primary-foreground: #ffffff;
+  --accent: #E53935; /* Carmesim luminoso legível como texto e realce no escuro */
+  --accent-foreground: #ffffff;
+  --accent2: #EF5350;
+  --ring: #E53935;
+  --gradient-brand: linear-gradient(120deg, #B22222, #E53935);
 }
 
 /* ——— render sólido 3D (estilo CAD) ——— */
@@ -656,6 +658,51 @@
   }
 }
 
+@keyframes caldra-laser-trace {
+  0% {
+    stroke-dashoffset: 400;
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+}
+
+@keyframes caldra-sheen {
+  0% {
+    transform: translateX(-150%) rotate(25deg);
+  }
+  100% {
+    transform: translateX(250%) rotate(25deg);
+  }
+}
+
+@keyframes caldra-pulse-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px color-mix(in oklab, var(--accent) 45%, transparent));
+  }
+  50% {
+    filter: drop-shadow(0 0 16px color-mix(in oklab, var(--accent) 85%, transparent));
+  }
+}
+
+@keyframes caldra-accent-pulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 4px var(--accent));
+    opacity: 0.95;
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 14px var(--accent));
+    opacity: 1;
+    transform: scale(1.02);
+  }
+}
+
 /* ——— identidade PRO: usa o acento da interface, nunca linguagem técnica ——— */
 @utility pro-gradient {
   background-image: var(--gradient-pro);
@@ -697,7 +744,7 @@
   --aurora-base-b: #111114;
   --aurora-warm: #f59e0b;
   --aurora-warm-deep: #b45309;
-  --aurora-magenta: #a01550;
+  --aurora-magenta: #b22222;
   --aurora-wine: #7a103c;
   --aurora-fuchsia: #86198f;
   --aurora-indigo: #312e81;

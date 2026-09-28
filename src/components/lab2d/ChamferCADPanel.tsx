@@ -23,6 +23,11 @@ import {
   Hammer,
   ShieldCheck,
   X,
+  Gauge,
+  Scale,
+  Coins,
+  AlertCircle,
+  Info,
 } from "lucide-react";
 import type { PartDocument, CADViewState } from "@/lib/cad/kernel/types";
 import { ChamferKernel } from "@/lib/cad/kernel/chamferKernel";
@@ -44,6 +49,7 @@ export function ChamferCADPanel({
   onDocumentChange,
 }: ChamferCADPanelProps) {
   const [isRebuilding, setIsRebuilding] = useState(false);
+  const [activeTab, setActiveTab] = useState<"features" | "analysis">("features");
 
   if (!open) return null;
 
@@ -52,27 +58,33 @@ export function ChamferCADPanel({
   const handleToggleState = (newState: CADViewState) => {
     if (newState === "2D_FLAT") {
       const updated = ChamferKernel.unfold(doc);
+      setActiveTab("features");
       onDocumentChange({ ...updated });
     } else if (newState === "3D_FOLDED") {
       const updated = ChamferKernel.fold(doc);
+      setActiveTab("features");
       onDocumentChange({ ...updated });
     } else if (newState === "CAM_TOOLPATH") {
       const updated = ChamferKernel.generateCAM(doc);
+      setActiveTab("analysis");
       onDocumentChange({ ...updated });
     } else if (newState === "2D_DRAWING") {
       ChamferKernel.generateTechnicalDrawing(doc);
+      setActiveTab("analysis");
       onDocumentChange({ ...doc });
     } else if (newState === "WELDMENTS") {
       if (!doc.structuralReport) {
         ChamferKernel.generateWeldmentCutList(doc);
       }
       doc.activeState = "WELDMENTS";
+      setActiveTab("analysis");
       onDocumentChange({ ...doc });
     } else if (newState === "NESTING") {
       if (!doc.nestingJob) {
         ChamferKernel.generateNesting(doc);
       }
       doc.activeState = "NESTING";
+      setActiveTab("analysis");
       onDocumentChange({ ...doc });
     } else if (newState === "FORMING") {
       if (!doc.pressBrakeSimulation) {
@@ -80,10 +92,12 @@ export function ChamferCADPanel({
       }
       ChamferKernel.rebuildForming(doc);
       doc.activeState = "FORMING";
+      setActiveTab("analysis");
       onDocumentChange({ ...doc });
     } else if (newState === "DFM") {
       ChamferKernel.auditDfm(doc);
       doc.activeState = "DFM";
+      setActiveTab("analysis");
       onDocumentChange({ ...doc });
     }
   };
@@ -374,74 +388,592 @@ export function ChamferCADPanel({
       {/* METADADOS DA PEÇA */}
       <div className="grid grid-cols-2 gap-2 border-b border-line p-3 font-mono text-[11px]">
         <div className="rounded-lg border border-line bg-card/40 p-2">
-          <span className="text-[10px] text-muted-foreground block">ESPESSURA</span>
-          <span className="font-semibold text-foreground">{doc.thickness.toFixed(2)} mm</span>
+          <span className="text-[9px] text-muted-foreground block uppercase">ESPESSURA (mm)</span>
+          <input
+            type="number"
+            min={0.2}
+            step={0.1}
+            value={doc.thickness}
+            onChange={(e) => {
+              const val = Math.max(0.2, Number(e.target.value) || 0.2);
+              doc.thickness = val;
+              doc.innerRadius = val;
+              onDocumentChange({ ...doc });
+            }}
+            className="w-full bg-transparent font-semibold text-foreground outline-none text-xs"
+          />
         </div>
         <div className="rounded-lg border border-line bg-card/40 p-2">
-          <span className="text-[10px] text-muted-foreground block">FATOR K</span>
-          <span className="font-semibold text-foreground">{doc.kFactor.toFixed(3)}</span>
+          <span className="text-[9px] text-muted-foreground block uppercase">FATOR K</span>
+          <input
+            type="number"
+            min={0.1}
+            max={0.6}
+            step={0.01}
+            value={doc.kFactor}
+            onChange={(e) => {
+              doc.kFactor = Number(e.target.value) || 0.44;
+              onDocumentChange({ ...doc });
+            }}
+            className="w-full bg-transparent font-semibold text-foreground outline-none text-xs"
+          />
         </div>
       </div>
 
-      {/* ÁRVORE PARAMÉTRICA DE RECURSOS */}
-      <div className="flex-1 overflow-y-auto p-3">
-        <div className="mb-2 flex items-center justify-between">
-          <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-            Recursos ({features.length})
-          </span>
+      {/* AÇÕES PARAMÉTRICAS: BASE FLANGE, DOBRA, CALDEIRARIA */}
+      <div className="border-b border-line p-2.5 bg-muted/10 space-y-1.5">
+        <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground font-semibold block">
+          Adicionar Operação
+        </span>
+        <div className="grid grid-cols-3 gap-1">
           <button
             type="button"
-            onClick={handleRebuild}
-            disabled={isRebuilding}
-            className="flex items-center gap-1 rounded-md border border-line px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground hover:text-foreground disabled:opacity-50"
+            onClick={() => {
+              const updated = ChamferKernel.addBaseFlange(
+                doc,
+                doc.baseWidth ?? 120,
+                doc.baseLength ?? 100,
+              );
+              onDocumentChange({ ...updated });
+            }}
+            className="flex items-center justify-center gap-1 rounded-md border border-line bg-card/60 px-2 py-1.5 font-mono text-[8.5px] hover:text-accent hover:border-accent/40 transition-colors uppercase tracking-wider"
           >
-            <RefreshCw className={cn("size-3", isRebuilding && "animate-spin")} />
-            Rebuild
+            + Base Flange
           </button>
+          <button
+            type="button"
+            onClick={() => {
+              const nextEdge =
+                !doc.flanges || doc.flanges.length === 0
+                  ? "right"
+                  : doc.flanges.length === 1
+                    ? "left"
+                    : doc.flanges.length === 2
+                      ? "top"
+                      : "bottom";
+              const updated = ChamferKernel.addFlange(doc, {
+                edgeId: nextEdge,
+                flangeLength: 50,
+                angleDeg: 90,
+                insideRadius: doc.thickness,
+              });
+              onDocumentChange({ ...updated });
+            }}
+            className="flex items-center justify-center gap-1 rounded-md border border-line bg-card/60 px-2 py-1.5 font-mono text-[8.5px] hover:text-accent hover:border-accent/40 transition-colors uppercase tracking-wider"
+          >
+            + Dobra 90°
+          </button>
+          <select
+            onChange={(e) => {
+              const val = e.target.value;
+              if (!val) return;
+              let updated: PartDocument | null = null;
+              if (val === "cone") {
+                updated = ChamferKernel.addBoilermakingFeature(doc, "cone", {
+                  D: 200,
+                  d: 100,
+                  H: 250,
+                  divisions: 32,
+                });
+              } else if (val === "square_to_round") {
+                updated = ChamferKernel.addBoilermakingFeature(doc, "square_to_round", {
+                  baseWidth: 200,
+                  baseLength: 200,
+                  topDiameter: 140,
+                  height: 220,
+                });
+              } else if (val === "elbow") {
+                updated = ChamferKernel.addBoilermakingFeature(doc, "elbow", {
+                  diameter: 150,
+                  bendRadius: 225,
+                  totalAngleDeg: 90,
+                  segmentsCount: 4,
+                });
+              } else if (val === "branch") {
+                updated = ChamferKernel.addBoilermakingFeature(doc, "branch", {
+                  mainDiameter: 200,
+                  branchDiameter: 120,
+                  angleDeg: 90,
+                  branchHeight: 180,
+                });
+              }
+              if (updated) onDocumentChange({ ...updated });
+              e.target.value = "";
+            }}
+            className="rounded-md border border-line bg-card/60 px-1 py-1.5 font-mono text-[8.5px] text-muted-foreground hover:text-foreground outline-none uppercase tracking-wider"
+            defaultValue=""
+          >
+            <option value="" disabled>
+              + Caldeiraria
+            </option>
+            <option value="cone">Cone / Redução</option>
+            <option value="square_to_round">Quadrado-Redondo</option>
+            <option value="elbow">Curva Gomos</option>
+            <option value="branch">Boca Lobo / Tê</option>
+          </select>
         </div>
+      </div>
 
-        <ul className="space-y-1.5">
-          {features.map((feat) => {
-            const isSuppressed = feat.isSuppressed;
-            return (
-              <li
-                key={feat.id}
-                className={cn(
-                  "flex items-center justify-between rounded-lg border border-line/60 bg-card/30 p-2 transition-colors",
-                  isSuppressed && "opacity-40 bg-muted/20",
-                )}
+      {/* SELETOR DE ABA INTERNA: RECURSOS VS PAINEL TÉCNICO */}
+      <div className="flex border-b border-line bg-muted/30 p-1">
+        <button
+          type="button"
+          onClick={() => setActiveTab("features")}
+          className={cn(
+            "flex-1 py-1 font-mono text-[9px] uppercase tracking-wider rounded-md transition-colors text-center",
+            activeTab === "features"
+              ? "bg-background text-accent font-semibold shadow-sm border border-line/60"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          Recursos ({features.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab("analysis")}
+          className={cn(
+            "flex-1 py-1 font-mono text-[9px] uppercase tracking-wider rounded-md transition-colors text-center flex items-center justify-center gap-1",
+            activeTab === "analysis"
+              ? "bg-background text-accent font-semibold shadow-sm border border-line/60"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <span>Painel: {doc.activeState.replace(/_/g, " ")}</span>
+        </button>
+      </div>
+
+      {/* CONTEÚDO DA ABA SELECIONADA */}
+      <div className="flex-1 overflow-y-auto p-3">
+        {activeTab === "features" ? (
+          <>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                Recursos ({features.length})
+              </span>
+              <button
+                type="button"
+                onClick={handleRebuild}
+                disabled={isRebuilding}
+                className="flex items-center gap-1 rounded-md border border-line px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground hover:text-foreground disabled:opacity-50"
               >
-                <div className="flex items-center gap-2 min-w-0">
-                  {feat.state === "VALID" ? (
-                    <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />
-                  ) : feat.state === "STALE" ? (
-                    <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
-                  ) : (
-                    <Box className="size-3.5 shrink-0 text-muted-foreground" />
-                  )}
-                  <span className="truncate font-mono text-xs text-foreground">{feat.name}</span>
-                </div>
+                <RefreshCw className={cn("size-3", isRebuilding && "animate-spin")} />
+                Rebuild
+              </button>
+            </div>
 
-                <div className="flex items-center gap-1 shrink-0">
-                  <span className="rounded bg-muted/60 px-1 py-0.5 font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
-                    {feat.type}
-                  </span>
+            <ul className="space-y-1.5">
+              {features.map((feat) => {
+                const isSuppressed = feat.isSuppressed;
+                return (
+                  <li
+                    key={feat.id}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg border border-line/60 bg-card/30 p-2 transition-colors",
+                      isSuppressed && "opacity-40 bg-muted/20",
+                    )}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {feat.state === "VALID" ? (
+                        <CheckCircle2 className="size-3.5 shrink-0 text-emerald-500" />
+                      ) : feat.state === "STALE" ? (
+                        <AlertTriangle className="size-3.5 shrink-0 text-amber-500" />
+                      ) : (
+                        <Box className="size-3.5 shrink-0 text-muted-foreground" />
+                      )}
+                      <span className="truncate font-mono text-xs text-foreground">
+                        {feat.name}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="rounded bg-muted/60 px-1 py-0.5 font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
+                        {feat.type}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          doc.featureTree.suppressFeature(feat.id, !isSuppressed);
+                          onDocumentChange({ ...doc });
+                        }}
+                        className="p-1 text-muted-foreground hover:text-foreground"
+                        title={isSuppressed ? "Ativar recurso" : "Suprimir recurso"}
+                      >
+                        {isSuppressed ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+                      </button>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
+        ) : (
+          /* ABA DO PAINEL TÉCNICO CONFORME O ESTADO ATIVO */
+          <div className="space-y-3 font-mono">
+            {doc.activeState === "DFM" && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <ShieldCheck className="size-4 text-emerald-500" />
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-foreground">
+                      Auditoria DFM & Custos
+                    </span>
+                  </div>
                   <button
                     type="button"
                     onClick={() => {
-                      doc.featureTree.setFeatureSuppressed(feat.id, !isSuppressed);
+                      ChamferKernel.auditDfm(doc);
                       onDocumentChange({ ...doc });
                     }}
-                    className="p-1 text-muted-foreground hover:text-foreground"
-                    title={isSuppressed ? "Ativar recurso" : "Suprimir recurso"}
+                    className="rounded border border-line px-1.5 py-0.5 text-[8.5px] uppercase tracking-wider hover:text-accent"
                   >
-                    {isSuppressed ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
+                    Reauditar
                   </button>
                 </div>
-              </li>
-            );
-          })}
-        </ul>
+
+                {doc.dfmReport ? (
+                  <>
+                    <div className="rounded-lg border border-line bg-card/50 p-2.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-muted-foreground uppercase">
+                          Índice DFM
+                        </span>
+                        <span
+                          className={cn(
+                            "rounded px-1.5 py-0.5 text-[10px] font-bold uppercase",
+                            doc.dfmReport.audit.summary.isApproved
+                              ? "bg-emerald-500/15 text-emerald-500"
+                              : "bg-red-500/15 text-red-500",
+                          )}
+                        >
+                          {doc.dfmReport.audit.summary.isApproved ? "Aprovado" : "Não Conforme"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1 text-center">
+                        <div className="rounded bg-muted/30 p-1">
+                          <span className="text-[8px] text-muted-foreground block">SCORE</span>
+                          <span className="text-xs font-bold text-accent">
+                            {doc.dfmReport.audit.summary.score}/100
+                          </span>
+                        </div>
+                        <div className="rounded bg-muted/30 p-1">
+                          <span className="text-[8px] text-muted-foreground block">ERROS</span>
+                          <span className="text-xs font-bold text-red-500">
+                            {doc.dfmReport.audit.summary.errorCount}
+                          </span>
+                        </div>
+                        <div className="rounded bg-muted/30 p-1">
+                          <span className="text-[8px] text-muted-foreground block">AVISOS</span>
+                          <span className="text-xs font-bold text-amber-500">
+                            {doc.dfmReport.audit.summary.warningCount}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* LISTA DE NÃO CONFORMIDADES DFM */}
+                    {doc.dfmReport.audit.issues.length > 0 && (
+                      <div className="space-y-1.5">
+                        <span className="text-[9px] text-muted-foreground uppercase font-semibold block">
+                          Apontamentos Técnicos ({doc.dfmReport.audit.issues.length})
+                        </span>
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-0.5">
+                          {doc.dfmReport.audit.issues.map((issue) => (
+                            <div
+                              key={issue.id}
+                              className={cn(
+                                "rounded-lg border p-2 text-[9px] space-y-1",
+                                issue.severity === "ERROR"
+                                  ? "border-red-500/30 bg-red-500/5 text-red-400"
+                                  : "border-amber-500/30 bg-amber-500/5 text-amber-400",
+                              )}
+                            >
+                              <div className="flex items-center gap-1 font-bold">
+                                {issue.severity === "ERROR" ? (
+                                  <AlertCircle className="size-3 shrink-0 text-red-500" />
+                                ) : (
+                                  <AlertTriangle className="size-3 shrink-0 text-amber-500" />
+                                )}
+                                <span className="truncate">{issue.title}</span>
+                              </div>
+                              <p className="text-[8.5px] text-muted-foreground leading-tight">
+                                {issue.description}
+                              </p>
+                              <p className="text-[8px] text-foreground font-sans">
+                                💡 <span className="font-semibold text-accent">Solução:</span>{" "}
+                                {issue.suggestedFix}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* ORÇAMENTO ANALÍTICO DE FABRICAÇÃO */}
+                    <div className="rounded-lg border border-line bg-card/40 p-2.5 space-y-1.5">
+                      <div className="flex items-center gap-1 text-[10px] font-bold text-foreground uppercase">
+                        <Coins className="size-3 text-accent" /> Orçamento & Tempo de Ciclo
+                      </div>
+                      <div className="grid grid-cols-2 gap-1 text-[9px]">
+                        <div className="text-muted-foreground">Massa estimada:</div>
+                        <div className="text-right font-bold text-foreground">
+                          {doc.dfmReport.cost.partWeightKg.toFixed(2)} kg
+                        </div>
+                        <div className="text-muted-foreground">Custo matéria-prima:</div>
+                        <div className="text-right text-foreground">
+                          R$ {doc.dfmReport.cost.materialCost.toFixed(2)}
+                        </div>
+                        <div className="text-muted-foreground">Corte CNC térmico:</div>
+                        <div className="text-right text-foreground">
+                          R$ {doc.dfmReport.cost.cuttingCost.toFixed(2)}
+                        </div>
+                        <div className="text-muted-foreground">Dobra em prensa:</div>
+                        <div className="text-right text-foreground">
+                          R$ {doc.dfmReport.cost.bendingCost.toFixed(2)}
+                        </div>
+                        <div className="text-muted-foreground">Tempo de ciclo:</div>
+                        <div className="text-right font-bold text-accent">
+                          {doc.dfmReport.cost.totalCycleTimeMinutes.toFixed(1)} min
+                        </div>
+                        <div className="border-t border-line pt-1 font-bold text-foreground">
+                          Preço sugerido:
+                        </div>
+                        <div className="border-t border-line pt-1 text-right font-bold text-emerald-500">
+                          R$ {doc.dfmReport.cost.suggestedSellingPrice.toFixed(2)}
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Clique em Reauditar para calcular.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {doc.activeState === "FORMING" && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <Hammer className="size-4 text-accent" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-foreground">
+                    Prensa Dobradeira & Conformação
+                  </span>
+                </div>
+                {doc.pressBrakeSimulation ? (
+                  <div className="space-y-2">
+                    <div className="rounded-lg border border-line bg-card/40 p-2.5 space-y-1.5 text-[9px]">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Tonelagem total:</span>
+                        <span className="font-bold text-accent">
+                          {doc.pressBrakeSimulation.totalTonnageTon.toFixed(1)} ton
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Força por metro:</span>
+                        <span className="text-foreground">
+                          {doc.pressBrakeSimulation.tonnagePerMeterTonM.toFixed(1)} ton/m
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Canal V recomendado:</span>
+                        <span className="text-foreground">
+                          {doc.pressBrakeSimulation.recommendedDieOpeningVMm} mm (V=
+                          {doc.pressBrakeSimulation.dieOpeningVMm} mm)
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Retorno elástico:</span>
+                        <span className="text-foreground">
+                          {doc.pressBrakeSimulation.springbackAngleDeg.toFixed(1)}°
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Sobredobra necessária:</span>
+                        <span className="text-foreground">
+                          {doc.pressBrakeSimulation.overbendAngleDeg.toFixed(1)}°
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Aba mínima de segurança:</span>
+                        <span className="font-bold text-emerald-500">
+                          {doc.pressBrakeSimulation.minFlangeLengthMm.toFixed(1)} mm
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Simulação de conformação calculada.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {doc.activeState === "NESTING" && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <LayoutGrid className="size-4 text-accent" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-foreground">
+                    Aproveitamento & Nesting
+                  </span>
+                </div>
+                {doc.nestingJob ? (
+                  <div className="rounded-lg border border-line bg-card/40 p-2.5 space-y-1.5 text-[9px]">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Eficiência de chapa:</span>
+                      <span className="font-bold text-emerald-500">
+                        {doc.nestingJob.globalEfficiency.toFixed(1)}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Peças aninhadas:</span>
+                      <span className="text-foreground">{doc.nestingJob.totalPartsNested} un</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Chapas utilizadas:</span>
+                      <span className="text-foreground">
+                        {doc.nestingJob.sheets.length} chapa(s)
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Nesting pronto para exportação.</p>
+                )}
+              </div>
+            )}
+
+            {doc.activeState === "WELDMENTS" && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <Columns className="size-4 text-accent" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-foreground">
+                    Perfis & Lista de Corte
+                  </span>
+                </div>
+                {doc.structuralReport ? (
+                  <div className="rounded-lg border border-line bg-card/40 p-2.5 space-y-1.5 text-[9px]">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Total de membros:</span>
+                      <span className="font-bold text-foreground">
+                        {doc.structuralReport.totalMembers}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Massa linear total:</span>
+                      <span className="font-bold text-accent">
+                        {doc.structuralReport.totalMassKg.toFixed(2)} kg
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Comprimento total:</span>
+                      <span className="text-foreground">
+                        {(doc.structuralReport.totalCutLengthMm / 1000).toFixed(2)} m
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Lista de corte calculada.</p>
+                )}
+              </div>
+            )}
+
+            {doc.activeState === "CAM_TOOLPATH" && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <Flame className="size-4 text-accent" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-foreground">
+                    Percurso CNC & G-Code
+                  </span>
+                </div>
+                <div className="rounded-lg border border-line bg-card/40 p-2.5 space-y-1.5 text-[9px]">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Furos térmicos (Pierces):</span>
+                    <span className="font-bold text-accent">
+                      {doc.camResult?.totalPierces ??
+                        doc.flatPatternResult?.innerLoops?.length ??
+                        0}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Comprimento de corte:</span>
+                    <span className="text-foreground">
+                      {(doc.camResult?.totalCutLengthMm ?? 0).toFixed(1)} mm
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Status do G-Code:</span>
+                    <span className="font-bold text-emerald-500">
+                      {doc.gcode ? "Gerado (.NC)" : "Pronto para gerar"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {doc.activeState === "2D_DRAWING" && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-1.5">
+                  <FileText className="size-4 text-accent" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-foreground">
+                    Folha Técnica ABNT
+                  </span>
+                </div>
+                <div className="rounded-lg border border-line bg-card/40 p-2.5 space-y-1.5 text-[9px]">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Projeção:</span>
+                    <span className="text-foreground">1º Diedro (ABNT / ISO)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Formato:</span>
+                    <span className="text-foreground">A3 Paisagem (420 x 297 mm)</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Vistas automáticas:</span>
+                    <span className="font-bold text-accent">Frontal, Superior, Lat. Esq., Iso</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {(doc.activeState === "3D_FOLDED" || doc.activeState === "2D_FLAT") && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Box className="size-4 text-accent" />
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-foreground">
+                    Estado do Modelo Paramétrico
+                  </span>
+                </div>
+                <div className="rounded-lg border border-line bg-card/40 p-2.5 space-y-1.5 text-[9px]">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Material:</span>
+                    <span className="font-bold text-foreground">{doc.material}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Espessura (t):</span>
+                    <span className="text-foreground">{doc.thickness} mm</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Raio interno (r):</span>
+                    <span className="text-foreground">{doc.innerRadius} mm</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Fator K:</span>
+                    <span className="text-foreground">{doc.kFactor}</span>
+                  </div>
+                  {doc.flatPatternResult && (
+                    <div className="flex justify-between border-t border-line/60 pt-1">
+                      <span className="text-muted-foreground">Blank Planificado:</span>
+                      <span className="font-bold text-accent">
+                        {doc.flatPatternResult.blankWidth.toFixed(1)} x{" "}
+                        {doc.flatPatternResult.blankLength.toFixed(1)} mm
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* RODAPÉ COM AÇÕES DE EXPORTAÇÃO CNC & PRANCHA TÉCNICA */}

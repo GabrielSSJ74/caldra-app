@@ -57,7 +57,7 @@ const ACCENTS: { id: AccentColor; label: string; swatch: string }[] = [
   { id: "default", label: "Preto e branco", swatch: "var(--foreground)" },
   { id: "amber", label: "Âmbar", swatch: "#F59E0B" },
   { id: "blue", label: "Azul Real", swatch: "#00CCFF" },
-  { id: "magenta", label: "Magenta", swatch: "#A01550" },
+  { id: "crimson", label: "Vermelho Carmesim", swatch: "#B22222" },
 ];
 const LANGUAGES: { id: AppLanguage; label: string }[] = [
   { id: "pt", label: "Português" },
@@ -225,29 +225,32 @@ function Configuracoes() {
           <div className="mt-3">
             <SectionLabel>Cor de destaque</SectionLabel>
             <div className="flex gap-1.5">
-              {ACCENTS.map((a) => (
-                <button
-                  key={a.id}
-                  onClick={() => {
-                    /* Azul é Free; as demais cores abrem o convite do PRO. */
-                    if (a.id !== "blue" && !requirePro("accent.colors")) return;
-                    setAccent(a.id);
-                  }}
-                  className={cn(
-                    "flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
-                    accent === a.id
-                      ? "border-accent/25 bg-accent/10 text-accent"
-                      : "border-line text-muted-foreground",
-                  )}
-                >
-                  <span
-                    aria-hidden
-                    className="size-2.5 rounded-full"
-                    style={{ background: a.swatch }}
-                  />
-                  {a.label}
-                </button>
-              ))}
+              {ACCENTS.map((a) => {
+                const isActive = accent === a.id || (a.id === "crimson" && accent === "magenta");
+                return (
+                  <button
+                    key={a.id}
+                    onClick={() => {
+                      /* Azul e Carmesim são liberados; as demais abrem o convite do PRO caso restrito */
+                      if (a.id !== "blue" && a.id !== "crimson" && !requirePro("accent.colors")) return;
+                      setAccent(a.id);
+                    }}
+                    className={cn(
+                      "flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
+                      isActive
+                        ? "border-accent/25 bg-accent/10 text-accent font-medium shadow-xs"
+                        : "border-line text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <span
+                      aria-hidden
+                      className="size-2.5 rounded-full ring-1 ring-black/10 dark:ring-white/15"
+                      style={{ background: a.swatch }}
+                    />
+                    {a.label}
+                  </button>
+                );
+              })}
             </div>
           </div>
 

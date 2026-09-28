@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * CALDRA CAD — UNIFIED KERNEL (FASE 08)
  *
@@ -60,38 +59,78 @@ import {
   type DfmRuleConfig,
   type FabricationCostRates,
 } from "../dfm";
+import { BoilermakingEngine } from "../boilermaking/boilermakingEngine";
+import type { SolidInstance, SolidMaterial } from "@/lib/project-catalog/instances";
+import { planSolids } from "@/lib/lab2d/solid3d";
 import type { Vector3D } from "../canonical";
-import type { PartDocument, RebuildKernelOptions } from "./types";
+import type {
+  PartDocument,
+  RebuildKernelOptions,
+  ParametricFlangeDef,
+  BoilermakingFeatureDef,
+} from "./types";
+import { buildSheetMetalWireModel } from "../sheetmetal/sheetMetalWireBuilder";
+import type { WireModel } from "@/lib/viz3d/wire";
 
 export class ChamferKernel {
+  /**
+   * Constrói o modelo 3D WireModel com a MESMA LINGUAGEM VISUAL DA TRAÇAGEM (Wire3D).
+   * - 0% = Totalmente planificado (Flat Pattern)
+   * - 100% = Totalmente dobrado (respeitando os eixos e ângulos reais de dobra)
+   * - Transição cinemática contínua rígida via Rodrigues
+   */
+  static buildWireModel(doc: PartDocument, foldProgress = doc.foldProgress ?? 1.0): WireModel {
+    return buildSheetMetalWireModel(doc, foldProgress);
+  }
   /**
    * Cria um novo documento de peça CAD paramétrica no CALDRA.
    */
   static createDocument(
     nameOrOptions:
       | string
-      | { name?: string; thickness?: number; material?: string; kFactor?: number } = "Nova Peça Paramétrica",
-    thicknessArg = 2.0,
-    materialArg = "Aço Carbono SAE 1020",
-    kFactorArg = 0.44,
+      | {
+          name?: string;
+          thickness?: number;
+          material?: string;
+          kFactor?: number;
+          density?: number;
+        } = "Nova Peça Paramétrica",
+    thickness = 2.0,
+    material = "Aço Carbono SAE 1020",
+    kFactor = 0.44,
   ): PartDocument {
-    const isObj = typeof nameOrOptions === "object" && nameOrOptions !== null;
-    const name = isObj ? (nameOrOptions.name || "Nova Peça Paramétrica") : nameOrOptions;
-    const thickness = isObj ? (nameOrOptions.thickness ?? 2.0) : thicknessArg;
-    const material = isObj ? (nameOrOptions.material || "Aço Carbono SAE 1020") : materialArg;
-    const kFactor = isObj ? (nameOrOptions.kFactor ?? 0.44) : kFactorArg;
+    const docName =
+      typeof nameOrOptions === "string"
+        ? nameOrOptions
+        : (nameOrOptions?.name ?? "Nova Peça Paramétrica");
+    const docThickness =
+      typeof nameOrOptions === "object" && nameOrOptions.thickness !== undefined
+        ? nameOrOptions.thickness
+        : thickness;
+    const docMaterial =
+      typeof nameOrOptions === "object" && nameOrOptions.material !== undefined
+        ? nameOrOptions.material
+        : material;
+    const docKFactor =
+      typeof nameOrOptions === "object" && nameOrOptions.kFactor !== undefined
+        ? nameOrOptions.kFactor
+        : kFactor;
+    const docDensity =
+      typeof nameOrOptions === "object" && nameOrOptions.density !== undefined
+        ? nameOrOptions.density
+        : 7.85;
 
-    const featureTree = new FeatureTree(name);
+    const featureTree = new FeatureTree(docName);
     const canonicalModel = featureTree.model;
 
     return {
       id: `doc_${Date.now()}`,
-      name,
-      thickness,
-      material,
-      density: 7.85,
-      kFactor,
-      innerRadius: thickness,
+      name: docName,
+      thickness: docThickness,
+      material: docMaterial,
+      density: docDensity,
+      kFactor: docKFactor,
+      innerRadius: docThickness,
       featureTree,
       canonicalModel,
       activeState: "3D_FOLDED",
@@ -164,41 +203,143 @@ export class ChamferKernel {
   /**
    * Adiciona uma dobra de chapa metálica com cálculo analítico de dedução/compensação.
    */
+  /**
+   * Adiciona Base Flange paramétrica (transforma contorno em chapa metálica de espessura T).
+   */
+  static addBaseFlange(
+    doc: PartDocument,
+    widthMm = 120,
+    lengthMm = 100,
+    name = "Base Flange",
+  ): PartDocument {
+    doc.baseWidth = widthMm;
+    doc.baseLength = lengthMm;
+
+    // Atualiza/Gera contorno em layer corte
+    const baseBoxEntity: Entity = {
+      id: `base_contour_${Date.now()}`,
+      type: "polyline",
+      pts: [
+        { x: 0, y: 0 },
+        { x: widthMm, y: 0 },
+        { x: widthMm, y: lengthMm },
+        { x: 0, y: lengthMm },
+      ],
+      closed: true,
+      layer: "corte",
+    };
+
+    doc.entities2D = [baseBoxEntity];
+
+    doc.featureTree.addFeature({
+      id: `base_flange_${Date.now()}`,
+      name,
+      type: "sheet_metal_part",
+      parameters: { width: widthMm, length: lengthMm, thickness: doc.thickness },
+    });
+
+    doc.updatedAt = Date.now();
+    return doc;
+  }
+
+  /**
+   * Adiciona uma dobra com suporte polimórfico a argumentos (objeto ou parâmetros posicionais).
+   */
   static addBend(
     doc: PartDocument,
-    bendParams: {
-      angleDeg: number;
-      flangeLengthMm: number;
-      bendLinePositionMm: number;
-      innerRadius?: number;
+    bendParamsOrEdge:
+      | string
+      | {
+          angleDeg?: number;
+          flangeLengthMm?: number;
+          bendLinePositionMm?: number;
+          innerRadius?: number;
+        },
+    angleDeg = 90,
+    innerRadius?: number,
+    flangeLength = 50,
+  ): PartDocument {
+    let edgeId: "top" | "bottom" | "left" | "right" = "right";
+    let angle = angleDeg;
+    let ir = innerRadius ?? doc.innerRadius;
+    let length = flangeLength;
+
+    if (typeof bendParamsOrEdge === "object") {
+      angle = bendParamsOrEdge.angleDeg ?? 90;
+      ir = bendParamsOrEdge.innerRadius ?? doc.innerRadius;
+      length = bendParamsOrEdge.flangeLengthMm ?? 50;
+    } else if (typeof bendParamsOrEdge === "string") {
+      if (bendParamsOrEdge.includes("top")) edgeId = "top";
+      else if (bendParamsOrEdge.includes("left")) edgeId = "left";
+      else if (bendParamsOrEdge.includes("bottom")) edgeId = "bottom";
+      else edgeId = "right";
+    }
+
+    return this.addFlange(doc, {
+      edgeId,
+      flangeLength: length,
+      angleDeg: angle,
+      insideRadius: ir,
+    });
+  }
+
+  /**
+   * Adiciona uma aba dobrada paramétrica (Edge Flange) ligada a uma das arestas da chapa.
+   */
+  static addFlange(
+    doc: PartDocument,
+    options: {
+      name?: string;
+      edgeId: "top" | "bottom" | "left" | "right";
+      flangeLength: number;
+      angleDeg?: number;
+      insideRadius?: number;
+      direction?: "UP" | "DOWN";
+      parentFlangeId?: string;
     },
   ): PartDocument {
-    const ir = bendParams.innerRadius ?? doc.innerRadius;
+    const angleDeg = options.angleDeg ?? 90;
+    const insideRadius = options.insideRadius ?? doc.innerRadius;
+    const direction = options.direction ?? "UP";
+    const flangeLength = options.flangeLength;
+
     const ba = SheetMetalEngine.computeBendAllowance(
-      bendParams.angleDeg,
-      ir,
+      angleDeg,
+      insideRadius,
       doc.kFactor,
       doc.thickness,
     );
     const bd = SheetMetalEngine.computeBendDeduction(
-      bendParams.angleDeg,
-      ir,
+      angleDeg,
+      insideRadius,
       doc.kFactor,
       doc.thickness,
     );
-    const ossb = SheetMetalEngine.computeOutsideSetback(bendParams.angleDeg, ir, doc.thickness);
+    const ossb = SheetMetalEngine.computeOutsideSetback(angleDeg, insideRadius, doc.thickness);
+
+    const flangeDef: ParametricFlangeDef = {
+      id: `flange_${Date.now()}_${Math.random().toString(36).slice(2, 6)}_${options.edgeId}`,
+      name: options.name || `Aba ${options.edgeId.toUpperCase()} (${angleDeg}°)`,
+      edgeId: options.edgeId,
+      parentFlangeId: options.parentFlangeId,
+      angleDeg,
+      insideRadius,
+      flangeLength,
+      direction,
+      kFactor: doc.kFactor,
+      bendAllowance: ba,
+      bendDeduction: bd,
+      outsideSetback: ossb,
+    };
+
+    if (!doc.flanges) doc.flanges = [];
+    doc.flanges.push(flangeDef);
 
     doc.featureTree.addFeature({
-      id: `bend_${Date.now()}`,
-      name: `Dobra ${bendParams.angleDeg}° R${ir}`,
+      id: flangeDef.id,
+      name: flangeDef.name,
       type: "bend",
-      parameters: {
-        ...bendParams,
-        insideRadius: ir,
-        bendAllowance: ba,
-        bendDeduction: bd,
-        outsideSetback: ossb,
-      },
+      parameters: { ...flangeDef },
       dependencies: doc.featureTree
         .getFeatures()
         .slice(-1)
@@ -210,9 +351,453 @@ export class ChamferKernel {
   }
 
   /**
-   * Desdobra o modelo em sua planificação técnica 2D (Flat Pattern).
+   * Converte uma linha selecionada do Sketch 2D em uma Linha de Dobra Paramétrica (Sketched Bend).
+   */
+  static addSketchedBend(
+    doc: PartDocument,
+    line: { x1: number; y1: number; x2: number; y2: number },
+    options: {
+      angleDeg?: number;
+      insideRadius?: number;
+      direction?: "UP" | "DOWN";
+      flangeLength?: number;
+    } = {},
+  ): PartDocument {
+    const angleDeg = options.angleDeg ?? 90;
+    const insideRadius = options.insideRadius ?? doc.innerRadius;
+    const direction = options.direction ?? "UP";
+    const length = options.flangeLength ?? 50;
+
+    const ba = SheetMetalEngine.computeBendAllowance(
+      angleDeg,
+      insideRadius,
+      doc.kFactor,
+      doc.thickness,
+    );
+    const bd = SheetMetalEngine.computeBendDeduction(
+      angleDeg,
+      insideRadius,
+      doc.kFactor,
+      doc.thickness,
+    );
+    const ossb = SheetMetalEngine.computeOutsideSetback(angleDeg, insideRadius, doc.thickness);
+
+    // Determina orientação da linha
+    const dx = Math.abs(line.x2 - line.x1);
+    const dy = Math.abs(line.y2 - line.y1);
+    const edgeId: "top" | "bottom" | "left" | "right" = dx > dy ? "top" : "right";
+
+    const flangeDef: ParametricFlangeDef = {
+      id: `sketched_bend_${Date.now()}`,
+      name: `Dobra Esboçada ${angleDeg}° R${insideRadius}`,
+      edgeId,
+      p1: { x: line.x1, y: line.y1 },
+      p2: { x: line.x2, y: line.y2 },
+      angleDeg,
+      insideRadius,
+      flangeLength: length,
+      direction,
+      kFactor: doc.kFactor,
+      bendAllowance: ba,
+      bendDeduction: bd,
+      outsideSetback: ossb,
+    };
+
+    if (!doc.flanges) doc.flanges = [];
+    doc.flanges.push(flangeDef);
+
+    doc.featureTree.addFeature({
+      id: flangeDef.id,
+      name: flangeDef.name,
+      type: "bend",
+      parameters: { ...flangeDef },
+      dependencies: doc.featureTree
+        .getFeatures()
+        .slice(-1)
+        .map((f) => f.id),
+    });
+
+    doc.updatedAt = Date.now();
+    return doc;
+  }
+
+  /**
+   * Insere um modelo paramétrico canônico de Caldeiraria no projeto CHAMFER.
+   */
+  static addBoilermakingFeature(
+    doc: PartDocument,
+    type: "cone" | "square_to_round" | "elbow" | "branch",
+    params: Record<string, unknown>,
+    name?: string,
+  ): PartDocument {
+    const featureName = name || `Caldeiraria — ${type.toUpperCase()}`;
+    doc.boilermakingFeature = {
+      type,
+      name: featureName,
+      params,
+    };
+
+    doc.featureTree.addFeature({
+      id: `boilermaking_${type}_${Date.now()}`,
+      name: featureName,
+      type: "sheet_metal_part",
+      parameters: { type, ...params },
+    });
+
+    // Se o modelo gerar entidades 2D desenvolvidas, atualiza doc.entities2D
+    try {
+      let result: { dxfEntities?: Entity[]; solid?: Solid } | null = null;
+      const p = params as Record<string, number | undefined>;
+      if (type === "cone") {
+        result = BoilermakingEngine.generateTruncatedCone({
+          D: p.D ?? 200,
+          d: p.d ?? 100,
+          H: p.H ?? 250,
+          thickness: doc.thickness,
+          material: doc.material,
+          density: doc.density,
+          divisions: p.divisions ?? 32,
+        });
+      } else if (type === "square_to_round") {
+        result = BoilermakingEngine.generateSquareToRound({
+          baseWidth: p.baseWidth ?? 200,
+          baseLength: p.baseLength ?? 200,
+          topDiameter: p.topDiameter ?? 140,
+          height: p.height ?? 220,
+          thickness: doc.thickness,
+          material: doc.material,
+          density: doc.density,
+        });
+      } else if (type === "elbow") {
+        result = BoilermakingEngine.generateSegmentedElbow({
+          diameter: p.diameter ?? 150,
+          bendRadius: p.bendRadius ?? 225,
+          totalAngleDeg: p.totalAngleDeg ?? 90,
+          segmentsCount: p.segmentsCount ?? 4,
+          thickness: doc.thickness,
+          material: doc.material,
+          density: doc.density,
+        });
+      } else if (type === "branch") {
+        result = BoilermakingEngine.generateCylindricalBranch({
+          mainDiameter: p.mainDiameter ?? 200,
+          branchDiameter: p.branchDiameter ?? 120,
+          angleDeg: p.angleDeg ?? 90,
+          branchHeight: p.branchHeight ?? 180,
+          thickness: doc.thickness,
+          material: doc.material,
+        });
+      }
+
+      if (result?.dxfEntities && result.dxfEntities.length > 0) {
+        doc.entities2D = [...result.dxfEntities];
+      }
+    } catch (err) {
+      console.warn("Aviso ao gerar entidades 2D do modelo de caldeiraria:", err);
+    }
+
+    doc.updatedAt = Date.now();
+    return doc;
+  }
+
+  /**
+   * Constrói instâncias sólidas 3D canônicas para visualização no Model3DViewer.
+   * Suporta o slider de transição contínua 3D Dobrado (0%) ↔ 2D Planificado (100%).
+   */
+  static buildSolidInstances(
+    doc: PartDocument,
+    foldProgress = doc.foldProgress ?? 0,
+    material: SolidMaterial = "aco",
+  ): SolidInstance[] {
+    const instances: SolidInstance[] = [];
+
+    // 1. Caso Caldeiraria Paramétrica Canônica
+    if (doc.boilermakingFeature) {
+      const { type, params } = doc.boilermakingFeature;
+      try {
+        let result: { dxfEntities?: Entity[]; solid?: Solid } | null = null;
+        const p = params as Record<string, number | undefined>;
+        if (type === "cone") {
+          result = BoilermakingEngine.generateTruncatedCone({
+            D: p.D ?? 200,
+            d: p.d ?? 100,
+            H: p.H ?? 250,
+            thickness: doc.thickness,
+            material: doc.material,
+            density: doc.density,
+            divisions: p.divisions ?? 32,
+          });
+        } else if (type === "square_to_round") {
+          result = BoilermakingEngine.generateSquareToRound({
+            baseWidth: p.baseWidth ?? 200,
+            baseLength: p.baseLength ?? 200,
+            topDiameter: p.topDiameter ?? 140,
+            height: p.height ?? 220,
+            thickness: doc.thickness,
+            material: doc.material,
+            density: doc.density,
+          });
+        } else if (type === "elbow") {
+          result = BoilermakingEngine.generateSegmentedElbow({
+            diameter: p.diameter ?? 150,
+            bendRadius: p.bendRadius ?? 225,
+            totalAngleDeg: p.totalAngleDeg ?? 90,
+            segmentsCount: p.segmentsCount ?? 4,
+            thickness: doc.thickness,
+            material: doc.material,
+            density: doc.density,
+          });
+        } else if (type === "branch") {
+          result = BoilermakingEngine.generateCylindricalBranch({
+            mainDiameter: p.mainDiameter ?? 200,
+            branchDiameter: p.branchDiameter ?? 120,
+            angleDeg: p.angleDeg ?? 90,
+            branchHeight: p.branchHeight ?? 180,
+            thickness: doc.thickness,
+            material: doc.material,
+          });
+        }
+
+        if (result?.solid && result.solid.vertices && result.solid.vertices.length > 0) {
+          const vertices: number[] = [];
+          const indices: number[] = [];
+          const idMap = new Map<string, number>();
+
+          result.solid.vertices.forEach((v, idx) => {
+            idMap.set(v.id, idx);
+            vertices.push(v.point.x, v.point.y, v.point.z);
+          });
+
+          // Se tiver divisões estruturadas, gera faixas de triângulos
+          const totalV = result.solid.vertices.length;
+          if (totalV >= 4) {
+            const half = Math.floor(totalV / 2);
+            for (let i = 0; i < half - 1; i++) {
+              const b0 = i;
+              const b1 = i + 1;
+              const t0 = i + half;
+              const t1 = i + 1 + half;
+              indices.push(b0, b1, t1);
+              indices.push(b0, t1, t0);
+            }
+          }
+
+          instances.push({
+            id: `boilermaking_${type}`,
+            partKey: `caldeiraria_${type}`,
+            code: `${type.toUpperCase()}-01`,
+            index: 1,
+            label: `${doc.boilermakingFeature.name || type.toUpperCase()}`,
+            center: { x: 0, y: 0, z: 0 },
+            size: { x: 200, y: 200, z: 200 },
+            rotZ: 0,
+            material,
+            assemblyKey: "main",
+            fabricable: true,
+            meshVertices: vertices,
+            meshIndices: indices.length > 0 ? indices : undefined,
+          });
+          return instances;
+        }
+      } catch (err) {
+        console.warn("Aviso ao construir malha de caldeiraria:", err);
+      }
+    }
+
+    // 2. Chapa Metálica Paramétrica (Base Flange + Abas Dobradas)
+    const W = doc.baseWidth ?? 120;
+    const L = doc.baseLength ?? 100;
+    const T = Math.max(0.5, doc.thickness);
+
+    // Chapa Base
+    instances.push({
+      id: "base_flange",
+      partKey: "base_plate",
+      code: "BASE-01",
+      index: 1,
+      label: "Chapa Base",
+      center: { x: W * 0.5, y: -L * 0.5, z: 0 },
+      size: { x: W, y: L, z: T },
+      rotZ: 0,
+      rotX: 0,
+      rotY: 0,
+      material,
+      assemblyKey: "base",
+      fabricable: true,
+    });
+
+    const flanges = doc.flanges && doc.flanges.length > 0 ? doc.flanges : [];
+
+    for (let i = 0; i < flanges.length; i++) {
+      const f = flanges[i];
+      const nominalAngle = f.angleDeg ?? 90;
+      // Cinemática da transição do slider: 0 = planificado (0°), 1 = dobrado (nominalAngle)
+      const curAngleDeg = nominalAngle * Math.max(0, Math.min(1, foldProgress));
+      const curAngleRad = (curAngleDeg * Math.PI) / 180;
+      const F = f.flangeLength ?? 50;
+      const dirSign = f.direction === "DOWN" ? -1 : 1;
+
+      if (f.edgeId === "right") {
+        const dx = F * 0.5 * Math.cos(curAngleRad);
+        const dz = F * 0.5 * Math.sin(curAngleRad) * dirSign;
+        instances.push({
+          id: f.id,
+          partKey: `flange_${f.id}`,
+          code: `FLANGE-${i + 1}`,
+          index: i + 2,
+          label: `${f.name || "Aba Direita"} (${curAngleDeg.toFixed(0)}°)`,
+          center: { x: W + dx, y: -L * 0.5, z: dz },
+          size: { x: F, y: L, z: T },
+          rotZ: 0,
+          rotY: -curAngleRad * dirSign,
+          material,
+          assemblyKey: "flange",
+          fabricable: true,
+        });
+      } else if (f.edgeId === "left") {
+        const dx = -(F * 0.5) * Math.cos(curAngleRad);
+        const dz = F * 0.5 * Math.sin(curAngleRad) * dirSign;
+        instances.push({
+          id: f.id,
+          partKey: `flange_${f.id}`,
+          code: `FLANGE-${i + 1}`,
+          index: i + 2,
+          label: `${f.name || "Aba Esquerda"} (${curAngleDeg.toFixed(0)}°)`,
+          center: { x: dx, y: -L * 0.5, z: dz },
+          size: { x: F, y: L, z: T },
+          rotZ: 0,
+          rotY: curAngleRad * dirSign,
+          material,
+          assemblyKey: "flange",
+          fabricable: true,
+        });
+      } else if (f.edgeId === "top") {
+        const dy = F * 0.5 * Math.cos(curAngleRad);
+        const dz = F * 0.5 * Math.sin(curAngleRad) * dirSign;
+        instances.push({
+          id: f.id,
+          partKey: `flange_${f.id}`,
+          code: `FLANGE-${i + 1}`,
+          index: i + 2,
+          label: `${f.name || "Aba Superior"} (${curAngleDeg.toFixed(0)}°)`,
+          center: { x: W * 0.5, y: dy, z: dz },
+          size: { x: W, y: F, z: T },
+          rotZ: 0,
+          rotX: curAngleRad * dirSign,
+          material,
+          assemblyKey: "flange",
+          fabricable: true,
+        });
+      } else if (f.edgeId === "bottom") {
+        const dy = -(F * 0.5) * Math.cos(curAngleRad);
+        const dz = F * 0.5 * Math.sin(curAngleRad) * dirSign;
+        instances.push({
+          id: f.id,
+          partKey: `flange_${f.id}`,
+          code: `FLANGE-${i + 1}`,
+          index: i + 2,
+          label: `${f.name || "Aba Inferior"} (${curAngleDeg.toFixed(0)}°)`,
+          center: { x: W * 0.5, y: -L + dy, z: dz },
+          size: { x: W, y: F, z: T },
+          rotZ: 0,
+          rotX: -curAngleRad * dirSign,
+          material,
+          assemblyKey: "flange",
+          fabricable: true,
+        });
+      }
+    }
+
+    // 3. Fallback: Se não houver dobras configuradas mas houver desenho 2D
+    if (instances.length <= 1 && doc.entities2D.length > 0) {
+      const solids = planSolids(doc.entities2D, doc.thickness, material);
+      if (solids.length > 0) return solids;
+    }
+
+    return instances;
+  }
+
+  /**
+   * Desdobra o modelo em sua planificação técnica 2D verdadeira (Flat Pattern).
    */
   static unfold(doc: PartDocument): PartDocument {
+    doc.foldProgress = 0.0;
+    doc.activeState = "2D_FLAT";
+
+    // Se houver modelo de caldeiraria, gera planificação via BoilermakingEngine
+    if (doc.boilermakingFeature) {
+      const { type, params } = doc.boilermakingFeature;
+      let result: { dxfEntities?: Entity[]; solid?: Solid } | null = null;
+      const p = params as Record<string, number | undefined>;
+      if (type === "cone") {
+        result = BoilermakingEngine.generateTruncatedCone({
+          D: p.D ?? 200,
+          d: p.d ?? 100,
+          H: p.H ?? 250,
+          thickness: doc.thickness,
+          material: doc.material,
+          density: doc.density,
+          divisions: p.divisions ?? 32,
+        });
+      } else if (type === "square_to_round") {
+        result = BoilermakingEngine.generateSquareToRound({
+          baseWidth: p.baseWidth ?? 200,
+          baseLength: p.baseLength ?? 200,
+          topDiameter: p.topDiameter ?? 140,
+          height: p.height ?? 220,
+          thickness: doc.thickness,
+          material: doc.material,
+          density: doc.density,
+        });
+      } else if (type === "elbow") {
+        result = BoilermakingEngine.generateSegmentedElbow({
+          diameter: p.diameter ?? 150,
+          bendRadius: p.bendRadius ?? 225,
+          totalAngleDeg: p.totalAngleDeg ?? 90,
+          segmentsCount: p.segmentsCount ?? 4,
+          thickness: doc.thickness,
+          material: doc.material,
+          density: doc.density,
+        });
+      } else if (type === "branch") {
+        result = BoilermakingEngine.generateCylindricalBranch({
+          mainDiameter: p.mainDiameter ?? 200,
+          branchDiameter: p.branchDiameter ?? 120,
+          angleDeg: p.angleDeg ?? 90,
+          branchHeight: p.branchHeight ?? 180,
+          thickness: doc.thickness,
+          material: doc.material,
+        });
+      }
+
+      if (result?.dxfEntities && result.dxfEntities.length > 0) {
+        doc.entities2D = [...result.dxfEntities];
+      }
+      doc.updatedAt = Date.now();
+      return doc;
+    }
+
+    const flanges =
+      doc.flanges && doc.flanges.length > 0
+        ? doc.flanges.map((f) => ({
+            id: f.id,
+            edgeId: f.edgeId ?? ("right" as const),
+            length: f.flangeLength,
+            angleDeg: f.angleDeg,
+            insideRadius: f.insideRadius,
+            materialPosition: "INSIDE" as const,
+          }))
+        : [
+            {
+              id: "flange_01",
+              edgeId: "right" as const,
+              length: 50,
+              angleDeg: 90,
+              insideRadius: doc.innerRadius,
+              materialPosition: "INSIDE" as const,
+            },
+          ];
+
     const smPart = {
       id: doc.id,
       name: doc.name,
@@ -221,18 +806,9 @@ export class ChamferKernel {
       defaultBendRadius: doc.innerRadius,
       material: doc.material,
       density: doc.density,
-      baseWidth: 100,
-      baseLength: 100,
-      flanges: [
-        {
-          id: "flange_01",
-          edgeId: "right",
-          length: 50,
-          angleDeg: 90,
-          insideRadius: doc.innerRadius,
-          materialPosition: "INSIDE" as const,
-        },
-      ],
+      baseWidth: doc.baseWidth ?? 120,
+      baseLength: doc.baseLength ?? 100,
+      flanges,
       isUnfolded: true,
     };
 
@@ -250,16 +826,31 @@ export class ChamferKernel {
 
     doc.flatPatternResult = flatResult;
     doc.entities2D = [...flatResult.contourEntities, ...bendEntities];
-    doc.activeState = "2D_FLAT";
     doc.updatedAt = Date.now();
     return doc;
   }
 
   /**
-   * Dobra o modelo de volta ao estado volumétrico tridimensional.
+   * Dobra o modelo de volta ao estado volumétrico tridimensional conformado (100%).
    */
   static fold(doc: PartDocument): PartDocument {
+    doc.foldProgress = 1.0;
     doc.activeState = "3D_FOLDED";
+    doc.updatedAt = Date.now();
+    return doc;
+  }
+
+  /**
+   * Ajusta o progresso de transição contínua entre 2D Planificado (0%) e 3D Dobrado (100%).
+   */
+  static setFoldProgress(doc: PartDocument, progress: number): PartDocument {
+    const clamped = Math.max(0, Math.min(1, progress));
+    doc.foldProgress = clamped;
+    if (clamped <= 0.001) {
+      doc.activeState = "2D_FLAT";
+    } else {
+      doc.activeState = "3D_FOLDED";
+    }
     doc.updatedAt = Date.now();
     return doc;
   }

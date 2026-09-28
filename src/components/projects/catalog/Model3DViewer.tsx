@@ -366,33 +366,18 @@ export function Model3DViewer({
     }
     a.meshes = [];
     for (const inst of instances) {
-      /* perfil real (desenho do CHAMFER) → extrusão ou malha analítica 3D; senão, caixa canônica */
+      /* malha 3D canônica customizada, perfil real extrudado ou caixa canônica */
       let geo: THREE.BufferGeometry = shared.boxGeo;
       let own = false;
-      if (inst.customMesh && inst.customMesh.positions.length > 0) {
-        geo = new THREE.BufferGeometry();
-        const posArray =
-          inst.customMesh.positions instanceof Float32Array
-            ? inst.customMesh.positions
-            : new Float32Array(inst.customMesh.positions);
-        geo.setAttribute("position", new THREE.BufferAttribute(posArray, 3));
-        if (inst.customMesh.normals && inst.customMesh.normals.length > 0) {
-          const normArray =
-            inst.customMesh.normals instanceof Float32Array
-              ? inst.customMesh.normals
-              : new Float32Array(inst.customMesh.normals);
-          geo.setAttribute("normal", new THREE.BufferAttribute(normArray, 3));
-        } else {
-          geo.computeVertexNormals();
+      if (inst.meshVertices && inst.meshVertices.length >= 9) {
+        const customGeo = new THREE.BufferGeometry();
+        const pos = new Float32Array(inst.meshVertices.map((v) => v * S));
+        customGeo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+        if (inst.meshIndices && inst.meshIndices.length >= 3) {
+          customGeo.setIndex(inst.meshIndices);
         }
-        if (inst.customMesh.indices && inst.customMesh.indices.length > 0) {
-          const idxArray =
-            inst.customMesh.indices instanceof Uint32Array ||
-            inst.customMesh.indices instanceof Uint16Array
-              ? inst.customMesh.indices
-              : new Uint32Array(inst.customMesh.indices);
-          geo.setIndex(new THREE.BufferAttribute(idxArray, 1));
-        }
+        customGeo.computeVertexNormals();
+        geo = customGeo;
         own = true;
       } else if (inst.shape && inst.shape.outline.length > 2) {
         const shape = new THREE.Shape(
@@ -416,9 +401,7 @@ export function Model3DViewer({
           Math.max(inst.size.y, 1) * S,
           Math.max(inst.size.z, 1) * S,
         );
-      mesh.rotation.x = inst.rotX ?? 0;
-      mesh.rotation.y = inst.rotY ?? 0;
-      mesh.rotation.z = inst.rotZ;
+      mesh.rotation.set(inst.rotX ?? 0, inst.rotY ?? 0, inst.rotZ ?? 0);
       mesh.userData["id"] = inst.id;
       mesh.userData["base"] = [inst.center.x * S, inst.center.y * S, inst.center.z * S];
       mesh.castShadow = true;

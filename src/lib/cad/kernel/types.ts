@@ -27,6 +27,7 @@ import type { Entity } from "@/lib/lab2d/core";
 import type { DfmFullReport } from "../dfm/types";
 
 export type CADViewState =
+  | "2D_SKETCH"
   | "3D_FOLDED"
   | "2D_FLAT"
   | "CAM_TOOLPATH"
@@ -35,6 +36,28 @@ export type CADViewState =
   | "NESTING"
   | "FORMING"
   | "DFM";
+
+export interface ParametricFlangeDef {
+  id: string;
+  name: string;
+  edgeId?: "top" | "bottom" | "left" | "right";
+  p1?: { x: number; y: number };
+  p2?: { x: number; y: number };
+  angleDeg: number;
+  insideRadius: number;
+  flangeLength: number;
+  direction: "UP" | "DOWN";
+  kFactor: number;
+  bendAllowance: number;
+  bendDeduction: number;
+  outsideSetback: number;
+}
+
+export interface BoilermakingFeatureDef {
+  type: "cone" | "square_to_round" | "elbow" | "branch";
+  name: string;
+  params: Record<string, unknown>;
+}
 
 export interface PartDocument {
   id: string;
@@ -48,10 +71,15 @@ export interface PartDocument {
   featureTree: FeatureTree;
   canonicalModel: CanonicalModel;
   activeState: CADViewState;
+  foldProgress?: number; // 0 = totalmente dobrado 3D, 1 = totalmente planificado 2D
+  flanges?: ParametricFlangeDef[];
+  boilermakingFeature?: BoilermakingFeatureDef;
+  baseWidth?: number;
+  baseLength?: number;
   activeSolid?: Solid;
   solid?: Solid;
-  sheetMetal?: any;
-  forming?: any;
+  sheetMetal?: Record<string, unknown>;
+  forming?: Record<string, unknown>;
   flatPatternResult?: FlatPatternResult;
   camResult?: ToolpathResult;
   gcode?: string;

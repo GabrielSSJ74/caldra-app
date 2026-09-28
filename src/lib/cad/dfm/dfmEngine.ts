@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * CALDRA CAD — DFM (DESIGN FOR MANUFACTURING) AUDIT ENGINE (FASE 13)
  *
@@ -12,12 +11,7 @@
  * - Ausência de alívios de canto em dobras contíguas
  */
 
-import {
-  DfmAuditResult,
-  DfmAuditSummary,
-  DfmIssue,
-  DfmRuleConfig,
-} from "./types";
+import { DfmAuditResult, DfmAuditSummary, DfmIssue, DfmRuleConfig } from "./types";
 import { PartDocument } from "../kernel/types";
 import { PressBrakeSimulator } from "../forming/pressBrakeSimulator";
 
@@ -34,10 +28,7 @@ export class DfmEngine {
   /**
    * Executa a auditoria DFM completa em um documento de peça de chapa metálica
    */
-  public static audit(
-    doc: PartDocument,
-    configOverride?: Partial<DfmRuleConfig>
-  ): DfmAuditResult {
+  public static audit(doc: PartDocument, configOverride?: Partial<DfmRuleConfig>): DfmAuditResult {
     const config: DfmRuleConfig = { ...DEFAULT_DFM_CONFIG, ...configOverride };
     const issues: DfmIssue[] = [];
 
@@ -63,7 +54,7 @@ export class DfmEngine {
           bend.start.x,
           bend.start.y,
           bend.end.x,
-          bend.end.y
+          bend.end.y,
         );
 
         const edgeOfHoleDist = distToCenter - hole.radius;
@@ -201,7 +192,8 @@ export class DfmEngine {
         const sim = PressBrakeSimulator.simulate({
           thicknessMm: thickness,
           bendLengthMm: maxBendLength,
-          materialName: material,
+          material: "A36",
+          targetAngleDeg: 90,
         });
 
         if (sim.tonnageTotal > config.maxPressBrakeTonnage) {
@@ -238,7 +230,7 @@ export class DfmEngine {
     };
 
     return {
-      partName: doc.header?.name || (doc as any).name || "Peça Caldra",
+      partName: doc.header?.name || doc.name || "Peça Caldra",
       material,
       thickness,
       summary,
@@ -249,7 +241,9 @@ export class DfmEngine {
 
   // --- Auxiliares Geométricos ---
 
-  private static extractHoles(doc: PartDocument): Array<{ id: string; x: number; y: number; radius: number }> {
+  private static extractHoles(
+    doc: PartDocument,
+  ): Array<{ id: string; x: number; y: number; radius: number }> {
     const list: Array<{ id: string; x: number; y: number; radius: number }> = [];
 
     // Furos do flatPattern se existirem
@@ -300,7 +294,12 @@ export class DfmEngine {
     return list;
   }
 
-  private static getOuterBounds(doc: PartDocument): { minX: number; maxX: number; minY: number; maxY: number } {
+  private static getOuterBounds(doc: PartDocument): {
+    minX: number;
+    maxX: number;
+    minY: number;
+    maxY: number;
+  } {
     if (doc.sheetMetal?.flatPattern) {
       return {
         minX: 0,
@@ -315,7 +314,7 @@ export class DfmEngine {
   private static distanceToBoundary(
     x: number,
     y: number,
-    bounds: { minX: number; maxX: number; minY: number; maxY: number }
+    bounds: { minX: number; maxX: number; minY: number; maxY: number },
   ): number {
     const dLeft = Math.abs(x - bounds.minX);
     const dRight = Math.abs(bounds.maxX - x);
@@ -330,7 +329,7 @@ export class DfmEngine {
     x1: number,
     y1: number,
     x2: number,
-    y2: number
+    y2: number,
   ): number {
     const dx = x2 - x1;
     const dy = y2 - y1;
