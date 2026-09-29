@@ -21,6 +21,7 @@ import { useShellActions } from "./ShellActions";
 import { cn } from "@/lib/utils";
 import { useSettings } from "@/lib/settings/SettingsProvider";
 import { translate } from "@/lib/i18n/i18n";
+import { triggerHaptic } from "@/lib/ui/haptics";
 
 type Item = {
   to: string;
@@ -49,15 +50,15 @@ export function BubbleNav() {
   const moreActive = MORE_ROUTES.some((r) => pathname.startsWith(r));
 
   const cell =
-    "group relative grid place-items-center rounded-full transition-all duration-300 [transition-timing-function:cubic-bezier(.22,1,.36,1)] hover:scale-110 active:scale-95 focus-visible:scale-110 focus-visible:outline-none";
+    "group relative grid place-items-center rounded-full touch-manipulation select-none cursor-pointer transition-all duration-180 [transition-timing-function:cubic-bezier(.16,1,.3,1)] hover:scale-105 active:scale-95 focus-visible:scale-105 focus-visible:outline-none";
 
   return (
     <>
       <nav
         aria-label="Navegação principal"
-        className="fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[calc(env(safe-area-inset-bottom)+12px)]"
+        className="fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[calc(env(safe-area-inset-bottom)+12px)] pointer-events-none"
       >
-        <div className="metal pointer-events-auto grid grid-cols-5 items-center justify-items-center gap-0.5 rounded-full p-1 backdrop-blur-xl">
+        <div className="metal pointer-events-auto grid grid-cols-5 items-center justify-items-center gap-0.5 rounded-full p-1 backdrop-blur-xl shadow-lg">
           {ITEMS.map((item, itemIndex) => {
             const Icon = item.icon as (p: { className?: string }) => React.ReactNode;
             const on = active(item.to);
@@ -65,6 +66,7 @@ export function BubbleNav() {
               <Link
                 key={item.to}
                 to={item.to}
+                onClick={() => triggerHaptic(on ? "tap" : "selection")}
                 aria-label={translate(language, ITEM_KEYS[itemIndex]!)}
                 className={cn(
                   cell,
@@ -77,16 +79,16 @@ export function BubbleNav() {
                 {item.core && (
                   <span
                     aria-hidden
-                    className="brand-gradient absolute inset-0 rounded-full opacity-20 transition-opacity duration-500 group-hover:opacity-35"
+                    className="brand-gradient absolute inset-0 rounded-full opacity-20 transition-opacity duration-300 group-hover:opacity-35"
                   />
                 )}
-                <Icon className={cn("relative", item.core ? "size-5" : "size-[17px]")} />
+                <Icon className={cn("relative transition-transform duration-180", item.core ? "size-5" : "size-[17px]")} />
                 <span
                   aria-hidden
                   className={cn(
                     "pointer-events-none absolute bottom-full mb-2 rounded-full px-2 py-0.5 font-mono text-[9px] tracking-[0.18em] whitespace-nowrap uppercase",
-                    "bg-card text-foreground hairline",
-                    "translate-y-1 scale-95 opacity-0 transition-all duration-300",
+                    "bg-card text-foreground hairline shadow-md",
+                    "translate-y-1 scale-95 opacity-0 transition-all duration-180 [transition-timing-function:cubic-bezier(.16,1,.3,1)]",
                     "group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100",
                     "group-focus-visible:translate-y-0 group-focus-visible:opacity-100",
                   )}
@@ -96,7 +98,7 @@ export function BubbleNav() {
                 {on && (
                   <span
                     aria-hidden
-                    className="absolute -bottom-0.5 h-0.5 w-4 rounded-full bg-accent"
+                    className="absolute -bottom-0.5 h-0.5 w-4 rounded-full bg-accent transition-all duration-200"
                   />
                 )}
               </Link>
@@ -105,7 +107,10 @@ export function BubbleNav() {
 
           <button
             type="button"
-            onClick={() => setMoreOpen(true)}
+            onClick={() => {
+              triggerHaptic("selection");
+              setMoreOpen(true);
+            }}
             aria-label={translate(language, "more")}
             aria-haspopup="dialog"
             aria-expanded={moreOpen}
@@ -122,8 +127,8 @@ export function BubbleNav() {
               aria-hidden
               className={cn(
                 "pointer-events-none absolute bottom-full mb-2 rounded-full px-2 py-0.5 font-mono text-[9px] tracking-[0.18em] whitespace-nowrap uppercase",
-                "bg-card text-foreground hairline",
-                "translate-y-1 scale-95 opacity-0 transition-all duration-300",
+                "bg-card text-foreground hairline shadow-md",
+                "translate-y-1 scale-95 opacity-0 transition-all duration-180 [transition-timing-function:cubic-bezier(.16,1,.3,1)]",
                 "group-hover:translate-y-0 group-hover:scale-100 group-hover:opacity-100",
                 "group-focus-visible:translate-y-0 group-focus-visible:opacity-100",
               )}
@@ -131,7 +136,7 @@ export function BubbleNav() {
               {translate(language, "more")}
             </span>
             {moreActive && (
-              <span aria-hidden className="absolute -bottom-0.5 h-0.5 w-4 rounded-full bg-accent" />
+              <span aria-hidden className="absolute -bottom-0.5 h-0.5 w-4 rounded-full bg-accent transition-all duration-200" />
             )}
           </button>
         </div>
@@ -179,6 +184,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   if (!open) return null;
 
   const go = (e: Entry) => {
+    triggerHaptic("tap");
     onClose();
     if (e.action === "profile") return openProfile();
     if (e.action === "master") return openMaster();
@@ -189,13 +195,16 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
     <div className="fixed inset-0 z-50">
       <button
         aria-label={translate(language, "closeMenu")}
-        onClick={onClose}
+        onClick={() => {
+          triggerHaptic("tap");
+          onClose();
+        }}
         className="absolute inset-0 bg-background/70 backdrop-blur-sm animate-in fade-in duration-200"
       />
       <div
         role="dialog"
         aria-label={translate(language, "moreOptions")}
-        className="metal absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+78px)] mx-auto max-w-md rounded-3xl p-4 backdrop-blur-xl animate-in fade-in slide-in-from-bottom-4 duration-300 [animation-timing-function:cubic-bezier(.22,1,.36,1)]"
+        className="metal absolute inset-x-3 bottom-[calc(env(safe-area-inset-bottom)+78px)] mx-auto max-w-md rounded-3xl p-4 backdrop-blur-xl shadow-2xl animate-in fade-in slide-in-from-bottom-4 duration-240 [animation-timing-function:cubic-bezier(.22,1,.36,1)]"
       >
         <div className="mb-3 flex items-center gap-3">
           <BookOpen className="size-3.5 text-accent" strokeWidth={1.4} />
@@ -212,9 +221,9 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
                 key={e.name}
                 type="button"
                 onClick={() => go(e)}
-                className="hairline flex min-h-[76px] flex-col items-center justify-center gap-1.5 rounded-2xl bg-background/40 p-2 text-center transition-all duration-200 hover:bg-accent/10 hover:text-accent active:scale-95"
+                className="hairline flex min-h-[76px] flex-col items-center justify-center gap-1.5 rounded-2xl bg-background/40 p-2 text-center touch-manipulation cursor-pointer transition-all duration-150 [transition-timing-function:cubic-bezier(.16,1,.3,1)] hover:bg-accent/10 hover:text-accent active:scale-95 active:brightness-95"
               >
-                <Icon className="size-4 text-accent" strokeWidth={1.4} />
+                <Icon className="size-4 text-accent transition-transform duration-150 group-hover:scale-110" strokeWidth={1.4} />
                 <span className="font-mono text-[9px] leading-tight tracking-[0.1em] uppercase">
                   {translate(language, MORE_KEYS[entryIndex]!)}
                 </span>

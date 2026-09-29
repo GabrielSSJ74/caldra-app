@@ -36,7 +36,19 @@ import {
   Unlock,
   Upload,
   X,
+  FolderOpen,
+  FolderPlus,
+  Plus,
 } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 
 import type { Vec2 } from "@/lib/geometry/types";
 import { ExportDialog } from "@/components/lab2d/ExportDialog";
@@ -108,6 +120,7 @@ import {
   DEFAULT_PLAN_THICKNESS,
   emptyPlan,
   getProject,
+  newProject,
   planLabel,
   saveProject,
   type Project,
@@ -242,6 +255,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [project, setProject] = useState<Project | null>(null);
   const [planId, setPlanId] = useState<string>("");
   const [entities, setEntities] = useState<Entity[]>([]);
+
+  /* Novo projeto no CHAMFER */
+  const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+
+  const handleCreateNewProject = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    triggerHaptic("action");
+    const name = newProjectName.trim() || `Projeto ${Date.now().toString().slice(-4)}`;
+    const p = newProject(name);
+    saveProject(p);
+    setNewProjectDialogOpen(false);
+    toast.success(`Projeto "${p.name}" criado.`);
+    void navigate({ to: "/desenho-2d/$projectId", params: { projectId: p.id } });
+  };
   const [layers, setLayers] = useState<Layer[]>(DEFAULT_LAYERS);
   const [activeLayer, setActiveLayer] = useState("corte");
   const [tool, setTool] = useState<Tool>("select");
@@ -1836,13 +1864,31 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </div>
 
           <div className="min-w-0 px-1 text-center">
-            {project && (
-              <span
-                className="tick-label block truncate text-muted-foreground"
-                title={project.name}
+            {project ? (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("tap");
+                  setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
+                  setNewProjectDialogOpen(true);
+                }}
+                className="tick-label block max-w-full truncate text-muted-foreground hover:text-accent transition-colors cursor-pointer touch-manipulation"
+                title={`Projeto: ${project.name} (clique para novo projeto)`}
               >
                 {project.name}
-              </span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("tap");
+                  setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
+                  setNewProjectDialogOpen(true);
+                }}
+                className="tick-label block max-w-full truncate text-accent hover:underline transition-colors cursor-pointer touch-manipulation"
+              >
+                + Adicionar Projeto
+              </button>
             )}
             {dossier && (
               <button
@@ -1885,7 +1931,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 active={moreOpen}
               />
               {moreOpen && (
-                <div className="metal hairline pop-in fixed top-12 right-3 z-[70] w-52 rounded-2xl p-1.5">
+                <div className="metal hairline pop-in fixed top-12 right-3 z-[70] w-56 rounded-2xl p-1.5 shadow-xl">
+                  <MenuItem
+                    label="Novo projeto CHAMFER"
+                    icon={FolderPlus}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
+                      setNewProjectDialogOpen(true);
+                    }}
+                  />
+                  <MenuItem
+                    label="Projetos salvos"
+                    icon={FolderOpen}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      leaveEditor();
+                    }}
+                  />
+                  <div className="my-1 h-px bg-line" />
                   <MenuItem
                     label="Centralizar peça"
                     icon={Crosshair}
@@ -2770,6 +2834,44 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onImportConfirm(next);
         }}
       />
+
+      {/* DIALOG: NOVO PROJETO CHAMFER A PARTIR DO EDITOR */}
+      <Dialog open={newProjectDialogOpen} onOpenChange={setNewProjectDialogOpen}>
+        <DialogContent className="w-[min(92vw,420px)] z-[95]">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">Novo Projeto CHAMFER</DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleCreateNewProject} className="space-y-4 pt-1">
+            <div className="space-y-1.5">
+              <label htmlFor="editor-new-proj-name" className="t-eyebrow text-muted-foreground">
+                Nome do projeto
+              </label>
+              <input
+                id="editor-new-proj-name"
+                autoFocus
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                placeholder="Ex.: Curva 90 Graus 500mm"
+                className="w-full rounded-xl border border-line bg-background/60 px-3 py-2 text-sm outline-none transition-all focus:border-accent focus:ring-1 focus:ring-accent/40"
+              />
+            </div>
+
+            <DialogFooter className="gap-2 pt-2 sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setNewProjectDialogOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit">
+                <Plus className="size-4" /> Criar Projeto
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

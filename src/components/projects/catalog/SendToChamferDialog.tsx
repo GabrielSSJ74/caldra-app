@@ -49,15 +49,21 @@ export function SendToChamferDialog({
         : createCatalogProject(result);
       if (!project) throw new Error("projeto indisponível");
       let count = 0;
+      let firstLabId: string | null = null;
       for (const part of project.parts) {
         const key = part.catalogPart?.key;
         if (!key || !sel.has(key) || !part.catalogPart?.fabricable) continue;
-        openPartInChamfer(getProject(project.id) ?? project, part);
+        const labId = openPartInChamfer(getProject(project.id) ?? project, part);
+        if (!firstLabId) firstLabId = labId;
         count++;
       }
       toast.success(`${count} peça(s) preparada(s) no CHAMFER`);
       onOpenChange(false);
-      nav({ to: "/projetos/$projectId", params: { projectId: project.id } });
+      if (firstLabId && count === 1) {
+        nav({ to: "/desenho-2d/$projectId", params: { projectId: firstLabId } });
+      } else {
+        nav({ to: "/projetos/$projectId", params: { projectId: project.id } });
+      }
     } catch {
       toast.error("Não foi possível preparar as peças");
     } finally {

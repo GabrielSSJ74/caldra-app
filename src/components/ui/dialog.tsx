@@ -16,7 +16,7 @@ const DialogClose = DialogPrimitive.Close;
 
 function DialogCloseButton() {
   return (
-    <DialogPrimitive.Close className="absolute right-4 top-4 cursor-pointer rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground">
+    <DialogPrimitive.Close className="absolute right-4 top-4 cursor-pointer rounded-lg p-1 opacity-70 ring-offset-background transition-all hover:opacity-100 active:scale-90 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground touch-manipulation">
       <X className="h-4 w-4" />
       <span className="sr-only">Close</span>
     </DialogPrimitive.Close>
@@ -30,7 +30,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 bg-foreground/60 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
+      "fixed inset-0 z-50 bg-black/60 backdrop-blur-[2px] duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 [animation-timing-function:cubic-bezier(0.16,1,0.3,1)]",
       className,
     )}
     {...props}
@@ -51,12 +51,12 @@ const DialogContent = React.forwardRef<
         <DialogOverlay className={overlayClassName} />
         <DialogPrimitive.Content
           ref={ref}
-          className="fixed inset-0 z-50 grid place-items-center overflow-hidden p-2 outline-none sm:p-4"
+          className="fixed inset-0 z-50 grid place-items-center overflow-hidden p-2 outline-none sm:p-4 duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
           {...props}
         >
           <div
             className={cn(
-              "relative grid w-full gap-4 border bg-background p-6 shadow-lg sm:rounded-lg",
+              "relative grid w-full gap-4 border bg-background p-6 shadow-2xl duration-200 sm:rounded-2xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:zoom-out-98 data-[state=open]:zoom-in-98 [animation-timing-function:cubic-bezier(0.16,1,0.3,1)]",
               className,
             )}
           >
@@ -74,7 +74,7 @@ const DialogContent = React.forwardRef<
       <DialogPrimitive.Content
         ref={ref}
         className={cn(
-          "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 sm:rounded-lg",
+          "fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-2xl duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-98 data-[state=open]:zoom-in-98 [animation-timing-function:cubic-bezier(0.16,1,0.3,1)] sm:rounded-2xl",
           className,
         )}
         {...props}

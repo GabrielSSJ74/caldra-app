@@ -225,6 +225,22 @@
   --font-sans-family: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-mono-family: "IBM Plex Mono", ui-monospace, monospace;
 
+  /* ——— Motion & Easing Tokens ——— */
+  --motion-fast: 140ms;
+  --motion-normal: 200ms;
+  --motion-panel: 260ms;
+  --motion-complex: 350ms;
+
+  --ease-natural: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-panel: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+
+  /* ——— Elevações Técnicas ——— */
+  --shadow-subtle: 0 1px 3px oklch(0 0 0 / 12%);
+  --shadow-panel: 0 12px 36px oklch(0 0 0 / 28%), 0 1px 3px oklch(0 0 0 / 12%);
+  --shadow-modal: 0 24px 64px oklch(0 0 0 / 38%), 0 2px 8px oklch(0 0 0 / 16%);
+
   /* modo claro */
   --background: oklch(0.982 0.004 250);
   --foreground: oklch(0.24 0.021 250);
@@ -397,11 +413,21 @@
     border-color: var(--color-border);
   }
 
+  html {
+    -webkit-tap-highlight-color: transparent;
+    text-size-adjust: 100%;
+  }
+
   body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* Elimina o tap delay de 300ms em dispositivos touch móveis */
+  :where(button, a, input, select, textarea, [role="button"], [role="tab"]) {
+    touch-action: manipulation;
   }
 
   h1,
@@ -1038,7 +1064,60 @@
   animation: ds-spin 0.7s linear infinite;
 }
 
+/* ——— MOTION SYSTEM CALDRA ———
+   FAST: 120–160ms (140ms)
+   NORMAL: 180–240ms (200ms)
+   PANEL: 220–300ms (260ms)
+   COMPLEX: max 400ms (350ms)
+   Prioridade absoluta: transform e opacity sem layout thrashing */
+
+@utility motion-fast {
+  transition-duration: var(--motion-fast);
+  transition-timing-function: var(--ease-natural);
+}
+
+@utility motion-normal {
+  transition-duration: var(--motion-normal);
+  transition-timing-function: var(--ease-natural);
+}
+
+@utility motion-panel {
+  transition-duration: var(--motion-panel);
+  transition-timing-function: var(--ease-panel);
+}
+
+@utility motion-complex {
+  transition-duration: var(--motion-complex);
+  transition-timing-function: var(--ease-natural);
+}
+
+@utility active-press {
+  transition: transform var(--motion-fast) var(--ease-natural),
+              opacity var(--motion-fast) var(--ease-natural),
+              filter var(--motion-fast) var(--ease-natural),
+              background-color var(--motion-fast) var(--ease-natural),
+              border-color var(--motion-fast) var(--ease-natural);
+
+  &:active:not(:disabled):not([aria-disabled="true"]) {
+    transform: scale(0.97);
+  }
+}
+
+@utility touch-target {
+  min-height: 44px;
+  min-width: 44px;
+}
+
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
   .ds-skeleton,
   .ds-spinner {
     animation-duration: 0s !important;

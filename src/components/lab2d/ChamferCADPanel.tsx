@@ -34,6 +34,7 @@ import { ChamferKernel } from "@/lib/cad/kernel/chamferKernel";
 import { DrawingExporter } from "@/lib/cad/drafting/drawingExporter";
 import { NestingDxfExporter } from "@/lib/cad/nesting/nestingDxfExporter";
 import { cn } from "@/lib/utils";
+import { triggerHaptic } from "@/lib/ui/haptics";
 
 interface ChamferCADPanelProps {
   open: boolean;
@@ -56,6 +57,7 @@ export function ChamferCADPanel({
   const features = doc.featureTree.getFeatures();
 
   const handleToggleState = (newState: CADViewState) => {
+    triggerHaptic("selection");
     if (newState === "2D_FLAT") {
       const updated = ChamferKernel.unfold(doc);
       setActiveTab("features");
@@ -103,6 +105,7 @@ export function ChamferCADPanel({
   };
 
   const handleRebuild = () => {
+    triggerHaptic("action");
     setIsRebuilding(true);
     setTimeout(() => {
       const { doc: updated } = ChamferKernel.rebuild(doc, {
@@ -254,7 +257,7 @@ export function ChamferCADPanel({
   return (
     <aside
       className={cn(
-        "fixed right-0 top-0 bottom-0 z-[85] flex w-80 flex-col border-l border-line bg-background/95 backdrop-blur-md shadow-2xl transition-transform duration-200",
+        "fixed right-0 top-0 bottom-0 z-[85] flex w-80 flex-col border-l border-line bg-background/95 backdrop-blur-md shadow-2xl transition-transform duration-260 [transition-timing-function:cubic-bezier(0.22,1,0.36,1)]",
         open ? "translate-x-0" : "translate-x-full",
       )}
       aria-label="Painel CAD Kernel"
@@ -269,8 +272,11 @@ export function ChamferCADPanel({
         </div>
         <button
           type="button"
-          onClick={onClose}
-          className="rounded-lg p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          onClick={() => {
+            triggerHaptic("tap");
+            onClose();
+          }}
+          className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground active:scale-90 transition-all touch-manipulation cursor-pointer"
           aria-label="Fechar painel CAD"
         >
           <X className="size-4" />
@@ -283,10 +289,10 @@ export function ChamferCADPanel({
           type="button"
           onClick={() => handleToggleState("3D_FOLDED")}
           className={cn(
-            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider transition-colors",
+            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider touch-manipulation select-none cursor-pointer transition-all duration-140 [transition-timing-function:var(--ease-natural)] active:scale-95",
             doc.activeState === "3D_FOLDED"
-              ? "bg-accent/15 text-accent font-semibold border border-accent/30"
-              : "text-muted-foreground hover:bg-muted/50",
+              ? "bg-accent/15 text-accent font-semibold border border-accent/40 shadow-xs"
+              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
           )}
         >
           <Box className="mb-1 size-3.5" />
@@ -296,10 +302,10 @@ export function ChamferCADPanel({
           type="button"
           onClick={() => handleToggleState("2D_FLAT")}
           className={cn(
-            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider transition-colors",
+            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider touch-manipulation select-none cursor-pointer transition-all duration-140 [transition-timing-function:var(--ease-natural)] active:scale-95",
             doc.activeState === "2D_FLAT"
-              ? "bg-accent/15 text-accent font-semibold border border-accent/30"
-              : "text-muted-foreground hover:bg-muted/50",
+              ? "bg-accent/15 text-accent font-semibold border border-accent/40 shadow-xs"
+              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
           )}
         >
           <Layers className="mb-1 size-3.5" />
@@ -309,10 +315,10 @@ export function ChamferCADPanel({
           type="button"
           onClick={() => handleToggleState("CAM_TOOLPATH")}
           className={cn(
-            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider transition-colors",
+            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider touch-manipulation select-none cursor-pointer transition-all duration-140 [transition-timing-function:var(--ease-natural)] active:scale-95",
             doc.activeState === "CAM_TOOLPATH"
-              ? "bg-accent/15 text-accent font-semibold border border-accent/30"
-              : "text-muted-foreground hover:bg-muted/50",
+              ? "bg-accent/15 text-accent font-semibold border border-accent/40 shadow-xs"
+              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
           )}
         >
           <Flame className="mb-1 size-3.5" />
@@ -322,10 +328,10 @@ export function ChamferCADPanel({
           type="button"
           onClick={() => handleToggleState("2D_DRAWING")}
           className={cn(
-            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider transition-colors",
+            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider touch-manipulation select-none cursor-pointer transition-all duration-140 [transition-timing-function:var(--ease-natural)] active:scale-95",
             doc.activeState === "2D_DRAWING"
-              ? "bg-accent/15 text-accent font-semibold border border-accent/30"
-              : "text-muted-foreground hover:bg-muted/50",
+              ? "bg-accent/15 text-accent font-semibold border border-accent/40 shadow-xs"
+              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
           )}
         >
           <FileText className="mb-1 size-3.5" />
@@ -335,10 +341,10 @@ export function ChamferCADPanel({
           type="button"
           onClick={() => handleToggleState("WELDMENTS")}
           className={cn(
-            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider transition-colors",
+            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider touch-manipulation select-none cursor-pointer transition-all duration-140 [transition-timing-function:var(--ease-natural)] active:scale-95",
             doc.activeState === "WELDMENTS"
-              ? "bg-accent/15 text-accent font-semibold border border-accent/30"
-              : "text-muted-foreground hover:bg-muted/50",
+              ? "bg-accent/15 text-accent font-semibold border border-accent/40 shadow-xs"
+              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
           )}
         >
           <Columns className="mb-1 size-3.5" />
@@ -348,10 +354,10 @@ export function ChamferCADPanel({
           type="button"
           onClick={() => handleToggleState("NESTING")}
           className={cn(
-            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider transition-colors",
+            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider touch-manipulation select-none cursor-pointer transition-all duration-140 [transition-timing-function:var(--ease-natural)] active:scale-95",
             doc.activeState === "NESTING"
-              ? "bg-accent/15 text-accent font-semibold border border-accent/30"
-              : "text-muted-foreground hover:bg-muted/50",
+              ? "bg-accent/15 text-accent font-semibold border border-accent/40 shadow-xs"
+              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
           )}
         >
           <LayoutGrid className="mb-1 size-3.5" />
@@ -361,10 +367,10 @@ export function ChamferCADPanel({
           type="button"
           onClick={() => handleToggleState("FORMING")}
           className={cn(
-            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider transition-colors",
+            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider touch-manipulation select-none cursor-pointer transition-all duration-140 [transition-timing-function:var(--ease-natural)] active:scale-95",
             doc.activeState === "FORMING"
-              ? "bg-accent/15 text-accent font-semibold border border-accent/30"
-              : "text-muted-foreground hover:bg-muted/50",
+              ? "bg-accent/15 text-accent font-semibold border border-accent/40 shadow-xs"
+              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
           )}
         >
           <Hammer className="mb-1 size-3.5" />
@@ -374,10 +380,10 @@ export function ChamferCADPanel({
           type="button"
           onClick={() => handleToggleState("DFM")}
           className={cn(
-            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider transition-colors",
+            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider touch-manipulation select-none cursor-pointer transition-all duration-140 [transition-timing-function:var(--ease-natural)] active:scale-95",
             doc.activeState === "DFM"
-              ? "bg-accent/15 text-accent font-semibold border border-accent/30"
-              : "text-muted-foreground hover:bg-muted/50",
+              ? "bg-accent/15 text-accent font-semibold border border-accent/40 shadow-xs"
+              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
           )}
         >
           <ShieldCheck className="mb-1 size-3.5" />
@@ -518,24 +524,30 @@ export function ChamferCADPanel({
       <div className="flex border-b border-line bg-muted/30 p-1">
         <button
           type="button"
-          onClick={() => setActiveTab("features")}
+          onClick={() => {
+            triggerHaptic("selection");
+            setActiveTab("features");
+          }}
           className={cn(
-            "flex-1 py-1 font-mono text-[9px] uppercase tracking-wider rounded-md transition-colors text-center",
+            "flex-1 py-1 font-mono text-[9px] uppercase tracking-wider rounded-md transition-all duration-140 [transition-timing-function:var(--ease-natural)] active:scale-[0.98] text-center touch-manipulation cursor-pointer",
             activeTab === "features"
-              ? "bg-background text-accent font-semibold shadow-sm border border-line/60"
-              : "text-muted-foreground hover:text-foreground",
+              ? "bg-background text-accent font-semibold shadow-xs border border-line/60"
+              : "text-muted-foreground hover:bg-background/50 hover:text-foreground",
           )}
         >
           Recursos ({features.length})
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab("analysis")}
+          onClick={() => {
+            triggerHaptic("selection");
+            setActiveTab("analysis");
+          }}
           className={cn(
-            "flex-1 py-1 font-mono text-[9px] uppercase tracking-wider rounded-md transition-colors text-center flex items-center justify-center gap-1",
+            "flex-1 py-1 font-mono text-[9px] uppercase tracking-wider rounded-md transition-all duration-140 [transition-timing-function:var(--ease-natural)] active:scale-[0.98] text-center flex items-center justify-center gap-1 touch-manipulation cursor-pointer",
             activeTab === "analysis"
-              ? "bg-background text-accent font-semibold shadow-sm border border-line/60"
-              : "text-muted-foreground hover:text-foreground",
+              ? "bg-background text-accent font-semibold shadow-xs border border-line/60"
+              : "text-muted-foreground hover:bg-background/50 hover:text-foreground",
           )}
         >
           <span>Painel: {doc.activeState.replace(/_/g, " ")}</span>

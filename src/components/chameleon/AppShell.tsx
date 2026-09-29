@@ -12,6 +12,7 @@ import { Avatar, ProfileDialog } from "./Profile";
 import { PaywallDialog } from "./Paywall";
 import { AuroraBackground } from "./Aurora";
 import { ShellActionsProvider } from "./ShellActions";
+import { triggerHaptic } from "@/lib/ui/haptics";
 
 /** Rotas com fundo AURORA. O editor CHAMFER (desenho-2d) nunca entra aqui. */
 const AURORA_ROUTES = ["/", "/tracagem", "/escola", "/projetos", "/oficina", "/configuracoes"];
@@ -61,22 +62,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {!immersive && !standalone && (
           <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
             <button
-              onClick={() => setMasterOpen(true)}
+              onClick={() => {
+                triggerHaptic("tap");
+                setMasterOpen(true);
+              }}
               aria-label={isMestre ? "Modo Mestre ativo" : "Ativar Modo Mestre"}
               className={cn(
-                "grid size-9 place-items-center rounded-full transition-all duration-300",
-                "metal backdrop-blur-xl hover:scale-110",
+                "grid size-9 place-items-center rounded-full transition-all duration-180 [transition-timing-function:var(--ease-natural)] touch-manipulation select-none cursor-pointer",
+                "metal backdrop-blur-xl hover:scale-105 active:scale-95",
                 isMestre ? "text-accent glow-ring" : "text-muted-foreground hover:text-foreground",
               )}
             >
               <Sparkles className="size-4" />
             </button>
             <button
-              onClick={() => setProfileOpen(true)}
+              onClick={() => {
+                triggerHaptic("tap");
+                setProfileOpen(true);
+              }}
               aria-label="Abrir perfil"
-              className="rounded-full transition-transform duration-300 hover:scale-110"
+              className="rounded-full transition-transform duration-180 [transition-timing-function:var(--ease-natural)] hover:scale-105 active:scale-95 touch-manipulation cursor-pointer"
             >
-              <Avatar photo={profile.photo} size={36} className="backdrop-blur-xl" />
+              <Avatar photo={profile.photo} size={36} className="backdrop-blur-xl shadow-sm" />
             </button>
           </div>
         )}

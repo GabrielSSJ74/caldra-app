@@ -1,8 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Copy, FolderOpen, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Copy, FolderOpen, FolderPlus, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { FeatureGate } from "@/components/chameleon/ui";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { triggerHaptic } from "@/lib/ui/haptics";
 import { takeHandoff } from "@/lib/lab2d/handoff";
 import {
   countEntities,
@@ -53,6 +63,15 @@ function Explorer() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [query, setQuery] = useState("");
 
+  /* Modais de interação sem dependência de window.prompt / window.confirm */
+  const [createOpen, setCreateOpen] = useState(false);
+  const [newProjectName, setNewProjectName] = useState("");
+
+  const [renaming, setRenaming] = useState<Project | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const [deleting, setDeleting] = useState<Project | null>(null);
+
   const refresh = () => setProjects(listProjects());
 
   useEffect(() => {
@@ -73,26 +92,60 @@ function Explorer() {
     [projects, query],
   );
 
-  const create = () => {
-    const name = window.prompt(
-      "Nome do projeto",
-      `Projeto ${String(projects.length + 1).padStart(2, "0")}`,
-    );
-    if (name === null) return;
+  const openCreateDialog = () => {
+    triggerHaptic("tap");
+    setNewProjectName(`Projeto ${String(projects.length + 1).padStart(2, "0")}`);
+    setCreateOpen(true);
+  };
+
+  const handleCreate = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    triggerHaptic("action");
+    const name = newProjectName.trim() || `Projeto ${String(projects.length + 1).padStart(2, "0")}`;
     const p = newProject(name);
     saveProject(p);
+    setCreateOpen(false);
+    toast.success(`Projeto "${p.name}" criado.`);
     void navigate({ to: "/desenho-2d/$projectId", params: { projectId: p.id } });
+  };
+
+  const handleRename = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!renaming) return;
+    triggerHaptic("action");
+    const name = renameValue.trim();
+    if (name) {
+      renameProject(renaming.id, name);
+      toast.success("Projeto renomeado.");
+      refresh();
+    }
+    setRenaming(null);
+  };
+
+  const handleDelete = () => {
+    if (!deleting) return;
+    triggerHaptic("warning");
+    deleteProject(deleting.id);
+    toast.success("Projeto excluído.");
+    setDeleting(null);
+    refresh();
   };
 
   return (
     <section className="space-y-4">
-      <header className="flex items-center gap-2">
-        <h1 className="font-display text-2xl font-semibold tracking-tight">Projetos</h1>
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Projetos CHAMFER</h1>
+          <p className="font-mono text-[10px] tracking-wider text-muted-foreground uppercase">
+            Prancheta vetorial CAD · Planos e Peças
+          </p>
+        </div>
         <button
-          onClick={create}
-          className="brand-gradient ml-auto flex items-center gap-1.5 rounded-2xl px-3.5 py-2 font-mono text-[10px] tracking-[0.18em] text-background uppercase transition-transform active:scale-95"
+          type="button"
+          onClick={openCreateDialog}
+          className="brand-gradient flex items-center gap-1.5 rounded-2xl px-4 py-2 font-mono text-[10px] tracking-[0.18em] text-background uppercase shadow-sm transition-transform active:scale-95 touch-manipulation cursor-pointer"
         >
-          <Plus className="size-3.5" /> Novo
+          <Plus className="size-3.5" /> Adicionar Projeto
         </button>
       </header>
 
@@ -101,15 +154,45 @@ function Explorer() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Buscar projeto"
+          placeholder="Buscar projeto no CHAMFER"
           className="w-full bg-transparent text-sm outline-none placeholder:text-muted-foreground/60"
         />
       </label>
 
       {filtered.length === 0 ? (
-        <p className="py-16 text-center font-mono text-[11px] tracking-[0.2em] text-muted-foreground uppercase">
-          Nenhum projeto
-        </p>
+        <div className="metal flex flex-col items-center justify-center rounded-3xl p-10 text-center">
+          <FolderPlus className="mb-3 size-10 text-accent/60" />
+          {projects.length === 0 ? (
+            <>
+              <h2 className="font-display text-base font-semibold">Nenhum projeto no CHAMFER ainda</h2>
+              <p className="mt-1 max-w-sm text-xs text-muted-foreground">
+                Crie um projeto para desenhar chapas, traçar peças em milímetros com snap magnético e exportar arquivos DXF para corte a laser/plasma.
+              </p>
+              <button
+                type="button"
+                onClick={openCreateDialog}
+                className="brand-gradient mt-5 flex items-center gap-2 rounded-2xl px-5 py-2.5 font-mono text-xs tracking-wider text-background uppercase shadow-md transition-transform active:scale-95 touch-manipulation cursor-pointer"
+              >
+                <Plus className="size-4" /> Adicionar Primeiro Projeto
+              </button>
+            </>
+          ) : (
+            <>
+              <h2 className="font-display text-base font-semibold">Nenhum projeto encontrado</h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Nenhum projeto corresponde ao termo de busca "{query}".
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setQuery("")}
+                className="mt-4"
+              >
+                Limpar busca
+              </Button>
+            </>
+          )}
+        </div>
       ) : (
         <ul className="grid gap-2 sm:grid-cols-2">
           {filtered.map((p) => (
@@ -118,13 +201,14 @@ function Explorer() {
                 onClick={() =>
                   navigate({ to: "/desenho-2d/$projectId", params: { projectId: p.id } })
                 }
-                className="flex w-full items-center gap-3 text-left"
+                className="flex w-full items-center gap-3 text-left touch-manipulation cursor-pointer"
               >
                 <FolderOpen className="size-5 shrink-0 text-accent" />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm">{p.name}</span>
+                  <span className="block truncate text-sm font-medium">{p.name}</span>
                   <span className="block font-mono text-[10px] tracking-wider text-muted-foreground">
-                    {p.plans.length} planos · {countEntities(p)} objetos ·{" "}
+                    {p.plans.length} {p.plans.length === 1 ? "plano" : "planos"} · {countEntities(p)} objetos ·{" "}
+                    {p.thickness ? `${p.thickness} mm · ` : ""}
                     {new Date(p.updatedAt).toLocaleDateString("pt-BR")}
                   </span>
                 </span>
@@ -134,16 +218,16 @@ function Explorer() {
                   label="Renomear"
                   icon={Pencil}
                   onClick={() => {
-                    const name = window.prompt("Novo nome", p.name);
-                    if (name === null) return;
-                    renameProject(p.id, name);
-                    refresh();
+                    triggerHaptic("tap");
+                    setRenameValue(p.name);
+                    setRenaming(p);
                   }}
                 />
                 <Action
                   label="Duplicar"
                   icon={Copy}
                   onClick={() => {
+                    triggerHaptic("tap");
                     duplicateProject(p.id);
                     refresh();
                     toast.success("Projeto duplicado.");
@@ -153,11 +237,8 @@ function Explorer() {
                   label="Excluir"
                   icon={Trash2}
                   onClick={() => {
-                    if (!window.confirm(`Excluir "${p.name}"? Esta ação não pode ser desfeita.`))
-                      return;
-                    deleteProject(p.id);
-                    refresh();
-                    toast("Projeto excluído.");
+                    triggerHaptic("warning");
+                    setDeleting(p);
                   }}
                 />
               </div>
@@ -165,6 +246,103 @@ function Explorer() {
           ))}
         </ul>
       )}
+
+      {/* DIALOG DE CRIAÇÃO DE NOVO PROJETO CHAMFER */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="w-[min(92vw,420px)]">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">Novo Projeto CHAMFER</DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleCreate} className="space-y-4 pt-1">
+            <div className="space-y-1.5">
+              <label htmlFor="chamfer-proj-name" className="t-eyebrow text-muted-foreground">
+                Nome do projeto
+              </label>
+              <input
+                id="chamfer-proj-name"
+                autoFocus
+                value={newProjectName}
+                onChange={(e) => setNewProjectName(e.target.value)}
+                placeholder="Ex.: Tubulação Caldeira 01"
+                className="w-full rounded-xl border border-line bg-background/60 px-3 py-2 text-sm outline-none transition-all focus:border-accent focus:ring-1 focus:ring-accent/40"
+              />
+            </div>
+
+            <DialogFooter className="gap-2 pt-2 sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCreateOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit">
+                <Plus className="size-4" /> Criar Projeto
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG DE RENOMEAR */}
+      <Dialog open={!!renaming} onOpenChange={(open) => !open && setRenaming(null)}>
+        <DialogContent className="w-[min(92vw,400px)]">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">Renomear Projeto</DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleRename} className="space-y-4 pt-1">
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              className="w-full rounded-xl border border-line bg-background/60 px-3 py-2 text-sm outline-none transition-all focus:border-accent focus:ring-1 focus:ring-accent/40"
+            />
+            <DialogFooter className="gap-2 sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setRenaming(null)}
+              >
+                Cancelar
+              </Button>
+              <Button type="submit">
+                Salvar
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG DE EXCLUSÃO */}
+      <Dialog open={!!deleting} onOpenChange={(open) => !open && setDeleting(null)}>
+        <DialogContent className="w-[min(92vw,420px)]">
+          <DialogHeader>
+            <DialogTitle className="font-display text-lg">Excluir Projeto?</DialogTitle>
+            <DialogDescription className="text-sm text-muted-foreground">
+              Deseja realmente excluir "{deleting?.name}"? Esta ação removerá os planos e geometrias salvas deste projeto localmente.
+            </DialogDescription>
+          </DialogHeader>
+
+          <DialogFooter className="gap-2 pt-2 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDeleting(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDelete}
+            >
+              Excluir Projeto
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
@@ -183,7 +361,7 @@ function Action({
       onClick={onClick}
       title={label}
       aria-label={label}
-      className="grid size-8 place-items-center rounded-xl text-muted-foreground transition-all hover:text-accent active:scale-90"
+      className="grid size-8 place-items-center rounded-xl text-muted-foreground transition-all hover:text-accent active:scale-90 touch-manipulation cursor-pointer"
     >
       <Icon className="size-3.5" />
     </button>

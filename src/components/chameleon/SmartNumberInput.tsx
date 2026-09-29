@@ -58,8 +58,10 @@ export function SmartNumberInput({
     <span className="block">
       <span
         className={cn(
-          "flex items-center overflow-hidden rounded-lg border bg-background/50 transition-colors",
-          invalid || error ? "border-destructive" : "border-line focus-within:border-accent",
+          "flex items-center overflow-hidden rounded-lg border bg-background/50 transition-all duration-140 [transition-timing-function:var(--ease-natural)] touch-manipulation",
+          invalid || error
+            ? "border-destructive focus-within:ring-1 focus-within:ring-destructive/50"
+            : "border-line focus-within:border-accent focus-within:ring-1 focus-within:ring-accent/40 focus-within:shadow-xs",
           className,
         )}
       >
@@ -80,7 +82,7 @@ export function SmartNumberInput({
             setText(String(value));
             onBlur?.();
           }}
-          className="w-full min-w-0 bg-transparent px-2.5 py-2.5 font-mono text-[15px] outline-none"
+          className="w-full min-w-0 bg-transparent px-2.5 py-2.5 font-mono text-[15px] outline-none touch-manipulation"
         />
         <span className="border-l border-line px-2 font-mono text-[10px] text-muted-foreground">
           {unit}

@@ -182,7 +182,7 @@ export function runQaSuite(): QaCase[] {
   }
 
   /* ---- boca de lobo (corte oblíquo) ---- */
-  const bl = devSize("boca-de-lobo");
+  const bl = devSize("boca-de-lobo", { metodo: 0, d: 350, h1: 200, h2: 520 });
   t.push(check("Boca de lobo", "Largura = πØ350", circumference(350), bl.width));
   t.push(check("Boca de lobo", "Altura = h₂ − 0", 520, bl.height));
 

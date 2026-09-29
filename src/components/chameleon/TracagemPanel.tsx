@@ -21,6 +21,7 @@ import { TraceAnimationStage } from "./TraceAnimationStage";
 import { buildTraceActions, resolveTraceAction, sampleTraceAction } from "@/lib/tracagem/animation";
 import type { GeometryRef } from "@/lib/geometry/refs";
 import { Button } from "./ds";
+import { triggerHaptic } from "@/lib/ui/haptics";
 
 type Props = {
   slug: string;
@@ -277,10 +278,13 @@ export function TracagemPanel({ slug, result, focusStepId }: Props) {
             <button
               key={value}
               type="button"
-              onClick={() => setSpeed(value)}
+              onClick={() => {
+                triggerHaptic("selection");
+                setSpeed(value);
+              }}
               className={cn(
-                "min-w-10 px-2 font-mono text-[10px]",
-                speed === value ? "bg-accent/15 text-accent" : "text-muted-foreground",
+                "min-w-10 px-2 font-mono text-[10px] touch-manipulation cursor-pointer transition-all duration-140 active:scale-95",
+                speed === value ? "bg-accent/15 text-accent font-semibold" : "text-muted-foreground hover:text-foreground",
               )}
             >
               {value}×
@@ -415,16 +419,23 @@ function Ctrl({
   disabled?: boolean;
   active?: boolean;
 }) {
+  const handleClick = () => {
+    triggerHaptic(active ? "tap" : "selection");
+    onClick();
+  };
+
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={handleClick}
       disabled={disabled}
       className={cn(
-        "flex items-center gap-1 rounded-lg border px-2.5 py-1.5 font-mono text-[10px] tracking-wider uppercase transition-colors disabled:opacity-40",
+        "flex min-h-[34px] items-center gap-1.5 rounded-lg border px-3 py-1.5 font-mono text-[10px] tracking-wider uppercase touch-manipulation select-none cursor-pointer",
+        "transition-all duration-140 [transition-timing-function:var(--ease-natural)] active:scale-[0.97]",
+        "disabled:opacity-40 disabled:pointer-events-none disabled:cursor-not-allowed",
         active
-          ? "border-accent/60 bg-accent/10 text-accent"
-          : "border-line text-muted-foreground hover:text-foreground",
+          ? "border-accent/60 bg-accent/15 text-accent shadow-xs"
+          : "border-line text-muted-foreground hover:bg-muted/40 hover:text-foreground",
       )}
     >
       {children}
