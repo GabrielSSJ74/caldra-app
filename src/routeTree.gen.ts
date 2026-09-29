@@ -15,6 +15,7 @@ import { Route as CalculadoraRouteImport } from './routes/calculadora'
 import { Route as ConfiguracoesRouteImport } from './routes/configuracoes'
 import { Route as ContaRouteImport } from './routes/conta'
 import { Route as MatrizVisualRouteImport } from './routes/matriz-visual'
+import { Route as MusicaRouteImport } from './routes/musica'
 import { Route as NovidadesRouteImport } from './routes/novidades'
 import { Route as OficinaRouteImport } from './routes/oficina'
 import { Route as PlanificacaoRouteImport } from './routes/planificacao'
@@ -22,6 +23,7 @@ import { Route as PrivacidadeRouteImport } from './routes/privacidade'
 import { Route as ProRouteImport } from './routes/pro'
 import { Route as QaRouteImport } from './routes/qa'
 import { Route as TermosRouteImport } from './routes/termos'
+import { Route as ApiMusicRouteImport } from './routes/api/music'
 import { Route as Desenho2dIndexRouteImport } from './routes/desenho-2d.index'
 import { Route as Desenho2dProjectIdRouteImport } from './routes/desenho-2d.$projectId'
 import { Route as EscolaIndexRouteImport } from './routes/escola.index'
@@ -68,6 +70,11 @@ const MatrizVisualRoute = MatrizVisualRouteImport.update({
   path: '/matriz-visual',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MusicaRoute = MusicaRouteImport.update({
+  id: '/musica',
+  path: '/musica',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NovidadesRoute = NovidadesRouteImport.update({
   id: '/novidades',
   path: '/novidades',
@@ -101,6 +108,11 @@ const QaRoute = QaRouteImport.update({
 const TermosRoute = TermosRouteImport.update({
   id: '/termos',
   path: '/termos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiMusicRoute = ApiMusicRouteImport.update({
+  id: '/api/music',
+  path: '/api/music',
   getParentRoute: () => rootRouteImport,
 } as any)
 const Desenho2dIndexRoute = Desenho2dIndexRouteImport.update({
@@ -186,6 +198,7 @@ export interface FileRoutesByFullPath {
   '/configuracoes': typeof ConfiguracoesRoute
   '/conta': typeof ContaRoute
   '/matriz-visual': typeof MatrizVisualRoute
+  '/musica': typeof MusicaRoute
   '/novidades': typeof NovidadesRoute
   '/oficina': typeof OficinaRoute
   '/planificacao': typeof PlanificacaoRoute
@@ -193,6 +206,7 @@ export interface FileRoutesByFullPath {
   '/pro': typeof ProRoute
   '/qa': typeof QaRoute
   '/termos': typeof TermosRoute
+  '/api/music': typeof ApiMusicRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/escola/competencias': typeof EscolaCompetenciasRoute
@@ -216,6 +230,7 @@ export interface FileRoutesByTo {
   '/configuracoes': typeof ConfiguracoesRoute
   '/conta': typeof ContaRoute
   '/matriz-visual': typeof MatrizVisualRoute
+  '/musica': typeof MusicaRoute
   '/novidades': typeof NovidadesRoute
   '/oficina': typeof OficinaRoute
   '/planificacao': typeof PlanificacaoRoute
@@ -223,6 +238,7 @@ export interface FileRoutesByTo {
   '/pro': typeof ProRoute
   '/qa': typeof QaRoute
   '/termos': typeof TermosRoute
+  '/api/music': typeof ApiMusicRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/escola/competencias': typeof EscolaCompetenciasRoute
@@ -247,6 +263,7 @@ export interface FileRoutesById {
   '/configuracoes': typeof ConfiguracoesRoute
   '/conta': typeof ContaRoute
   '/matriz-visual': typeof MatrizVisualRoute
+  '/musica': typeof MusicaRoute
   '/novidades': typeof NovidadesRoute
   '/oficina': typeof OficinaRoute
   '/planificacao': typeof PlanificacaoRoute
@@ -254,6 +271,7 @@ export interface FileRoutesById {
   '/pro': typeof ProRoute
   '/qa': typeof QaRoute
   '/termos': typeof TermosRoute
+  '/api/music': typeof ApiMusicRoute
   '/desenho-2d/$projectId': typeof Desenho2dProjectIdRoute
   '/escola/$slug': typeof EscolaSlugRoute
   '/escola/competencias': typeof EscolaCompetenciasRoute
@@ -279,6 +297,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/conta'
     | '/matriz-visual'
+    | '/musica'
     | '/novidades'
     | '/oficina'
     | '/planificacao'
@@ -286,6 +305,7 @@ export interface FileRouteTypes {
     | '/pro'
     | '/qa'
     | '/termos'
+    | '/api/music'
     | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/escola/competencias'
@@ -309,6 +329,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/conta'
     | '/matriz-visual'
+    | '/musica'
     | '/novidades'
     | '/oficina'
     | '/planificacao'
@@ -316,6 +337,7 @@ export interface FileRouteTypes {
     | '/pro'
     | '/qa'
     | '/termos'
+    | '/api/music'
     | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/escola/competencias'
@@ -339,6 +361,7 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/conta'
     | '/matriz-visual'
+    | '/musica'
     | '/novidades'
     | '/oficina'
     | '/planificacao'
@@ -346,6 +369,7 @@ export interface FileRouteTypes {
     | '/pro'
     | '/qa'
     | '/termos'
+    | '/api/music'
     | '/desenho-2d/$projectId'
     | '/escola/$slug'
     | '/escola/competencias'
@@ -370,6 +394,7 @@ export interface RootRouteChildren {
   ConfiguracoesRoute: typeof ConfiguracoesRoute
   ContaRoute: typeof ContaRoute
   MatrizVisualRoute: typeof MatrizVisualRoute
+  MusicaRoute: typeof MusicaRoute
   NovidadesRoute: typeof NovidadesRoute
   OficinaRoute: typeof OficinaRoute
   PlanificacaoRoute: typeof PlanificacaoRoute
@@ -377,6 +402,7 @@ export interface RootRouteChildren {
   ProRoute: typeof ProRoute
   QaRoute: typeof QaRoute
   TermosRoute: typeof TermosRoute
+  ApiMusicRoute: typeof ApiMusicRoute
   Desenho2dProjectIdRoute: typeof Desenho2dProjectIdRoute
   EscolaSlugRoute: typeof EscolaSlugRoute
   EscolaCompetenciasRoute: typeof EscolaCompetenciasRoute
@@ -438,6 +464,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MatrizVisualRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/musica': {
+      id: '/musica'
+      path: '/musica'
+      fullPath: '/musica'
+      preLoaderRoute: typeof MusicaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/novidades': {
       id: '/novidades'
       path: '/novidades'
@@ -485,6 +518,13 @@ declare module '@tanstack/react-router' {
       path: '/termos'
       fullPath: '/termos'
       preLoaderRoute: typeof TermosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/music': {
+      id: '/api/music'
+      path: '/api/music'
+      fullPath: '/api/music'
+      preLoaderRoute: typeof ApiMusicRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/desenho-2d/': {
@@ -602,6 +642,7 @@ const rootRouteChildren: RootRouteChildren = {
   ConfiguracoesRoute: ConfiguracoesRoute,
   ContaRoute: ContaRoute,
   MatrizVisualRoute: MatrizVisualRoute,
+  MusicaRoute: MusicaRoute,
   NovidadesRoute: NovidadesRoute,
   OficinaRoute: OficinaRoute,
   PlanificacaoRoute: PlanificacaoRoute,
@@ -609,6 +650,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProRoute: ProRoute,
   QaRoute: QaRoute,
   TermosRoute: TermosRoute,
+  ApiMusicRoute: ApiMusicRoute,
   Desenho2dProjectIdRoute: Desenho2dProjectIdRoute,
   EscolaSlugRoute: EscolaSlugRoute,
   EscolaCompetenciasRoute: EscolaCompetenciasRoute,
