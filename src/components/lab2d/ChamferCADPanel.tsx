@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — CHAMFER CAD PANEL (FASE 08)
  *

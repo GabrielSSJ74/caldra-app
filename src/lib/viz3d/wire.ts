@@ -304,7 +304,7 @@ function loopEdges(pts: Vec3[]): Edge[] {
  */
 function shell(loops: Vec3[][], o: ShellOpts): Geo {
   const valid = loops.filter((l) => l.length >= 3);
-  if (valid.length < 2) return EMPTY;
+  if (valid.length < 2) return EMPTY_GEO;
   const inner = valid.map((l) => offsetLoop(l, o.t));
   const faces: Face[] = [];
   const edges: Edge[] = [];

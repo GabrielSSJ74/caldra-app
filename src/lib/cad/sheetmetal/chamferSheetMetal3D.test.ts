@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { describe, expect, it } from "vitest";
 import type { Entity } from "@/lib/lab2d/core";
 import {

@@ -10,7 +10,7 @@ export const Route = createFileRoute("/api/music")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        const key = process.env.ELEVENLABS_API_KEY;
+        const key = process.env["ELEVENLABS_API_KEY"];
         if (!key) return new Response("Serviço de música não conectado.", { status: 500 });
         const parsed = Body.safeParse(await request.json().catch(() => null));
         if (!parsed.success) return new Response("Descrição inválida.", { status: 400 });

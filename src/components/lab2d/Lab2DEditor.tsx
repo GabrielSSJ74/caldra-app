@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
+import { triggerHaptic } from "@/lib/ui/haptics";
 import {
   ArrowLeft,
   Circle as CircleIcon,

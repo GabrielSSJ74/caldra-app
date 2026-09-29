@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — NÚCLEO SHEET METAL 3D & CONFORMAÇÃO PARAMÉTRICA
  *

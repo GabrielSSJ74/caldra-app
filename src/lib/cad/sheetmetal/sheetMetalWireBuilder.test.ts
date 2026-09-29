@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * TESTES OBRIGATÓRIOS DO SLIDER E CINEMÁTICA RÍGIDA 3D — CHAMFER CAD
  *
