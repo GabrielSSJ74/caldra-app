@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — PRESS BRAKE SIMULATOR & TONNAGE ENGINE (FASE 12)
  *

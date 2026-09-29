@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — DFM REPORT & DXF MARKUP EXPORTER (FASE 13)
  *

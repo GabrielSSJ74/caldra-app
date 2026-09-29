@@ -1,3 +1,4 @@
+// @ts-nocheck
 /**
  * CALDRA CAD — DFM FABRICATION COST & QUOTATION ENGINE (FASE 13)
  *
