@@ -17,7 +17,7 @@ import {
   type SquareToRoundInput,
 } from "@/lib/geometry/squareToRound";
 import { downloadDxf, type DxfEntity } from "@/lib/dxf/dxfService";
-import { exportSvgAsPdf } from "@/lib/export/exporters";
+import { TechnicalSheetDialog } from "@/components/caldra/TechnicalSheetDialog";
 import { downloadTracagemPng } from "@/lib/export/tracagemSheet";
 import { MATERIALS } from "@/lib/projects/demo-data";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
@@ -172,23 +172,11 @@ export function SquareToRoundStudio({
     toast.success("PNG exportado.");
   };
 
+  const [showTechnicalSheet, setShowTechnicalSheet] = useState(false);
+
   const exportPdf = () => {
-    if (!svgRef.current || !result) return;
-    exportSvgAsPdf(
-      svgRef.current,
-      {
-        pieceName: "Transição Quadrado → Redondo",
-        project: "CALDRA",
-        material,
-        thickness: `${input.thickness} mm`,
-        quantity: "1",
-        notes: result.warnings.join(" "),
-      },
-      result.metrics.map((m) => [
-        m.label,
-        `${formatNumber(m.value, precision)} ${m.suffix ?? "mm"}`,
-      ]),
-    );
+    if (!result) return;
+    setShowTechnicalSheet(true);
   };
 
   const exportDxfFile = () => {
@@ -224,7 +212,7 @@ export function SquareToRoundStudio({
         ],
         entities,
       },
-      "caldra-quadrado-redondo",
+      "chameleon-quadrado-redondo",
     );
     toast.success("DXF exportado.");
   };
@@ -747,6 +735,28 @@ export function SquareToRoundStudio({
             )}
           </div>
         </Panel>
+      )}
+
+      {result && (
+        <TechnicalSheetDialog
+          open={showTechnicalSheet}
+          onClose={() => setShowTechnicalSheet(false)}
+          slug="quadrado-redondo"
+          pieceName="Quadrado → Redondo"
+          values={{
+            baseA: input.baseA,
+            baseB: input.baseB,
+            topDiameter: input.topDiameter,
+            height: input.height,
+            eccentricity: input.eccentricity,
+            thickness: input.thickness,
+          }}
+          result={result}
+          material={material}
+          thickness={input.thickness}
+          quantity={input.strategy === "two-weld" ? 2 : 1}
+          projectName="CALDRA — Traçagem"
+        />
       )}
     </div>
   );

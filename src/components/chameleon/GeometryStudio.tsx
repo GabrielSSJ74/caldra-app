@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { getEngine, type EngineValues } from "@/lib/geometry/engines";
 import { downloadDxf, type DxfEntity } from "@/lib/dxf/dxfService";
-import { exportSvgAsPdf } from "@/lib/export/exporters";
+import { TechnicalSheetDialog } from "@/components/caldra/TechnicalSheetDialog";
 import { downloadTracagemPng } from "@/lib/export/tracagemSheet";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
@@ -154,6 +154,7 @@ export function GeometryStudio({
     setSelRef(null);
   }, [slug]);
   const [pulse, setPulse] = useState<string | null>(null);
+  const [showTechnicalSheet, setShowTechnicalSheet] = useState(false);
   const inputs = useRef<Record<string, HTMLInputElement | null>>({});
   const pulseTimer = useRef<number | null>(null);
 
@@ -301,22 +302,8 @@ export function GeometryStudio({
   };
 
   const exportPdf = () => {
-    if (!svgRef.current || !result) return;
-    exportSvgAsPdf(
-      svgRef.current,
-      {
-        pieceName: name,
-        project: "CALDRA",
-        material,
-        thickness: `${values["thickness"] ?? 3} mm`,
-        quantity: "1",
-        notes: result.warnings.join(" "),
-      },
-      result.metrics.map((m) => [
-        m.label,
-        `${formatNumber(m.value, precision)} ${m.suffix ?? "mm"}`,
-      ]),
-    );
+    if (!result) return;
+    setShowTechnicalSheet(true);
   };
 
   const exportDxfFile = () => {
@@ -928,6 +915,21 @@ export function GeometryStudio({
             )}
           </div>
         </Panel>
+      )}
+
+      {result && (
+        <TechnicalSheetDialog
+          open={showTechnicalSheet}
+          onClose={() => setShowTechnicalSheet(false)}
+          slug={slug}
+          pieceName={name}
+          values={values}
+          result={result}
+          material={material}
+          thickness={values["thickness"] ?? values["t"] ?? 3}
+          quantity={quantity}
+          projectName="CALDRA — Traçagem"
+        />
       )}
     </div>
   );
