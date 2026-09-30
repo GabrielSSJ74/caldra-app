@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Check, RefreshCw, X } from "lucide-react";
-import { Panel, SectionLabel } from "@/components/chameleon/ui";
+import { Panel, SectionLabel } from "@/components/caldra/ui";
 import { checkAnswer, generateExercise, type Exercise } from "@/lib/education/exercises";
 import { lessonState, recordExercise } from "@/lib/education/progress";
 import { cn } from "@/lib/utils";

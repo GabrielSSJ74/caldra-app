@@ -208,6 +208,8 @@ export function buildModel(i: SquareToRoundInput): SquareToRoundModel {
   return { corners, arcPoints, circle, faces, generatrices };
 }
 
+export { buildModel as buildSquareToRoundModel };
+
 function polygonArea(points: Vec2[]): number {
   let s = 0;
   for (let i = 0; i < points.length; i++) {

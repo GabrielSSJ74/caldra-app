@@ -147,6 +147,7 @@ export function GeometryStudio({
   const [viewMode, setViewMode] = useState<VisualizationMode>("2d");
   /* Seleção 3D ↔ 2D (Fase F): referência canônica escolhida no modelo. */
   const [selRef, setSelRef] = useState<GeometryRef | null>(null);
+  const [showGeneratrices, setShowGeneratrices] = useState(true);
   /* Trocar de peça sempre volta para o 2D e limpa a seleção. */
   useEffect(() => {
     setViewMode("2d");
@@ -368,6 +369,8 @@ export function GeometryStudio({
                 highlightRef: highlightRef3d,
                 onSelectRef: setSelRef,
               }}
+              showGeneratrices={showGeneratrices}
+              onToggleGeneratrices={() => setShowGeneratrices((v) => !v)}
               onPlanificar={() => {
                 setUnfold(1);
                 window.setTimeout(() => {
@@ -387,8 +390,11 @@ export function GeometryStudio({
                   inputs.current[key]?.focus();
                   inputs.current[key]?.select();
                 }}
+                showGeneratrices={showGeneratrices}
+                selectedRef={selRef}
+                onSelectRef={setSelRef}
               />
-              <span className="absolute top-2 left-2.5 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase">
+              <span className="pointer-events-none absolute top-2 left-2.5 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase">
                 Vista 2D · mm
               </span>
             </VisualizationViewport>

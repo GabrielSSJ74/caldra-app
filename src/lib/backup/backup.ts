@@ -135,7 +135,7 @@ export function parseBackup(text: string): ParseResult {
   };
 }
 
-const PROJECTS_KEY = "chameleon.lab2d.projects";
+const PROJECTS_KEY = "caldra.lab2d.projects";
 
 /**
  * Aplica o backup.

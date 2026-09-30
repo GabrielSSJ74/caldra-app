@@ -26,4 +26,5 @@ export * as Weldments from "./weldments";
 export * as Nesting from "./nesting";
 export * as Forming from "./forming";
 export * as DFM from "./dfm";
+export * as Metrology from "./metrology";
 export * from "./kernel";

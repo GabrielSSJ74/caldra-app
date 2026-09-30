@@ -60,6 +60,12 @@ import {
   type DfmRuleConfig,
   type FabricationCostRates,
 } from "../dfm";
+import {
+  InspectionEngine,
+  FaiReportExporter,
+  type FirstArticleInspectionReport,
+  type MetrologyOptions,
+} from "../metrology";
 import { BoilermakingEngine } from "../boilermaking/boilermakingEngine";
 import type { SolidInstance, SolidMaterial } from "@/lib/project-catalog/instances";
 import { planSolids } from "@/lib/lab2d/solid3d";
@@ -1225,5 +1231,35 @@ export class ChamferKernel {
   static exportDfmDxf(doc: PartDocument): string {
     const report = doc.dfmReport || this.auditDfm(doc);
     return DfmReportExporter.generateDxfWithDfmLayer(doc, report.audit);
+  }
+
+  /**
+   * Executa o plano de inspeção de metrologia dimensional e GD&T (Fase 14).
+   */
+  static generateMetrology(
+    doc: PartDocument,
+    options?: MetrologyOptions,
+  ): FirstArticleInspectionReport {
+    const report = InspectionEngine.generateInspectionPlan(doc, options);
+    doc.metrologyReport = report;
+    doc.activeState = "METROLOGY";
+    doc.updatedAt = Date.now();
+    return report;
+  }
+
+  /**
+   * Exporta o relatório FAI / PPAP de Metrologia em CSV.
+   */
+  static exportMetrologyCsv(doc: PartDocument): string {
+    const report = doc.metrologyReport || this.generateMetrology(doc);
+    return FaiReportExporter.exportToCSV(report);
+  }
+
+  /**
+   * Exporta a prancha de inspeção baloneada em SVG.
+   */
+  static exportMetrologySvg(doc: PartDocument, width?: number, height?: number): string {
+    const report = doc.metrologyReport || this.generateMetrology(doc);
+    return FaiReportExporter.exportToInspectionSVG(report, width, height);
   }
 }

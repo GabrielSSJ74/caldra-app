@@ -10,7 +10,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Vec3 } from "@/lib/geometry/types";
 import { centerOf, fitRadius, type Camera, type WireModel } from "@/lib/viz3d/wire";
-import { FACE_MATERIALS, FILL_LIGHT, KEY_LIGHT } from "@/lib/viz3d/shading";
+import { FACE_MATERIALS } from "@/lib/viz3d/shading";
+import { TECHNICAL_LIGHTING } from "@/lib/viz3d/technicalConfig";
 import {
   VISIBILITY_POLICY,
   compareSurfaceDepth,
@@ -30,6 +31,8 @@ type Props = {
   className?: string;
   interactive?: boolean;
   autoSpin?: boolean;
+  /** Modo de arraste primário: 'orbit' (rotação 3D) ou 'pan' (translação espacial) */
+  mode?: "orbit" | "pan";
   /** progresso 0..1 de "abertura" da peça (3D → planificação) */
   unfold?: number;
   /** padrão técnico persistente; oclusão espacial é opt-in */
@@ -40,6 +43,8 @@ type Props = {
   viewNonce?: number;
   /** modo de aresta — apenas apresentação */
   edgeMode?: EdgeMode;
+  /** Linhas de referência (eixos pontilhados de centro/geratriz). Default: true, exceto quando edgeMode === 'shaded'. */
+  showRefLines?: boolean;
   /**
    * SELEÇÃO (Fase F): resolve o índice de uma aresta/face para a referência
    * canônica de origem. Quando ausente, a peça não é selecionável.
@@ -54,9 +59,9 @@ type Props = {
 
 const VB = 200;
 
-/** Rotação yaw/pitch → espaço de câmera (z cresce em direção ao observador). */
-const KEY = KEY_LIGHT;
-const FILL = FILL_LIGHT;
+/** Iluminação técnica uniforme baseada na normal física real */
+const KEY = TECHNICAL_LIGHTING.keyLight;
+const FILL = TECHNICAL_LIGHTING.fillLight;
 const MAT = FACE_MATERIALS;
 
 export function Wire3D({
@@ -64,20 +69,23 @@ export function Wire3D({
   className,
   interactive = false,
   autoSpin = false,
+  mode = "orbit",
   unfold = 0,
   lineVisibility = "technical-persistent",
   view,
   viewNonce = 0,
   edgeMode = "shaded-edges",
+  showRefLines,
   refForEdge,
   refForFace,
   highlightRef = null,
   onSelectRef,
 }: Props) {
   const [cam, setCam] = useState<Camera>(() =>
-    view ? cameraForView(view) : { yaw: 0.7, pitch: 0.4, zoom: 1 },
+    view ? cameraForView(view) : { yaw: 0.7, pitch: 0.4, zoom: 1, panX: 0, panY: 0 },
   );
   const drag = useRef<{ x: number; y: number } | null>(null);
+  const dragMode = useRef<"orbit" | "pan">("orbit");
   const downAt = useRef<{ x: number; y: number } | null>(null);
   const resume = useRef(0);
 
@@ -132,7 +140,7 @@ export function Wire3D({
     const onWheel = (ev: WheelEvent) => {
       ev.preventDefault();
       const dy = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 100 : 1);
-      setCam((c) => ({ ...c, zoom: Math.min(4, Math.max(0.35, c.zoom * Math.exp(-dy * 0.0015))) }));
+      setCam((c) => ({ ...c, zoom: Math.min(4.5, Math.max(0.35, c.zoom * Math.exp(-dy * 0.0015))) }));
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -140,13 +148,22 @@ export function Wire3D({
 
   /* enquadramento automático a partir do bounding box real (mm) */
   const fit = useMemo(() => {
+    if (!model || !model.bounds) {
+      return { center: { x: 0, y: 0, z: 0 }, scale: 1 };
+    }
     const c = centerOf(model.bounds);
-    return { center: c, scale: (VB * 0.4) / fitRadius(model.bounds) };
+    const r = fitRadius(model.bounds);
+    return { center: c, scale: (VB * 0.4) / (r > 1e-6 ? r : 1) };
   }, [model]);
 
   const k = 1 - unfold * 0.9;
   const { faces, edges, refs } = useMemo(() => {
+    if (!model || !model.faces || !model.bounds) {
+      return { faces: [], edges: [], refs: [] };
+    }
     const kk = fit.scale * cam.zoom;
+    const panX = cam.panX ?? 0;
+    const panY = cam.panY ?? 0;
     const cache = new Map<string, Vec3>();
     const cp = (p: Vec3) => {
       const key = `${p.x}|${p.y}|${p.z}`;
@@ -194,7 +211,7 @@ export function Wire3D({
       const rim = Math.pow(1 - Math.abs(nz), 3);
       const m = MAT[face.kind] ?? MAT["outer"]!;
       // difuso + preenchimento + reflexo especular discreto (metal semiacetinado)
-      const spec = Math.pow(key, 14) * 0.3;
+      const spec = Math.pow(key, 16) * 0.25;
       const lum = m.amb + m.gain * (0.82 * Math.pow(key, 0.85) + 0.22 * fill) + spec + 0.12 * rim;
       const pct = Math.max(0, Math.min(100, lum * 100));
       const paint = `color-mix(in oklab, ${m.hi} ${pct.toFixed(1)}%, ${m.base})`;
@@ -212,21 +229,25 @@ export function Wire3D({
       const maxDepth = Math.max(...depths);
       const centerDepth = depths.reduce((acc, depth) => acc + depth, 0) / depths.length;
       const a = cs[0]!;
+      const passIndex = face.kind === "inner" ? 0 : face.kind === "cap" ? 1 : face.kind === "outer" ? 2 : 3;
+
       for (let i = 1; i + 1 < cs.length; i++) {
         const b = cs[i]!;
         const c = cs[i + 1]!;
         f.push({
           id: `face:${idx}:${i - 1}`,
-          d: [a, b, c].map((p) => `${(p.x * kk).toFixed(2)},${(-p.y * kk).toFixed(2)}`).join(" "),
+          d: [a, b, c].map((p) => `${(p.x * kk + panX).toFixed(2)},${(-p.y * kk + panY).toFixed(2)}`).join(" "),
           pts: [
-            { x: a.x * kk, y: -a.y * kk, z: a.z + bias },
-            { x: b.x * kk, y: -b.y * kk, z: b.z + bias },
-            { x: c.x * kk, y: -c.y * kk, z: c.z + bias },
+            { x: a.x * kk + panX, y: -a.y * kk + panY, z: a.z + bias },
+            { x: b.x * kk + panX, y: -b.y * kk + panY, z: b.z + bias },
+            { x: c.x * kk + panX, y: -c.y * kk + panY, z: c.z + bias },
           ],
           minDepth,
           maxDepth,
           centerDepth,
           priority: idx,
+          pass: passIndex,
+          kind: face.kind,
           fill: paint,
         });
       }
@@ -238,7 +259,7 @@ export function Wire3D({
     const depthEpsilon = span * 1e-5;
     const e = model.edges.flatMap((edge, index) =>
       visibleLineSegments(
-        projectLine(`edge:${index}`, edge, cp, kk),
+        projectLine(`edge:${index}`, edge, cp, kk, panX, panY),
         lineVisibility,
         f,
         depthEpsilon,
@@ -246,7 +267,7 @@ export function Wire3D({
     );
     const r = (model.refLines ?? []).flatMap((edge, index) =>
       visibleLineSegments(
-        projectLine(`reference:${index}`, edge, cp, kk),
+        projectLine(`reference:${index}`, edge, cp, kk, panX, panY),
         VISIBILITY_POLICY.reference,
         f,
         depthEpsilon,
@@ -293,21 +314,23 @@ export function Wire3D({
         x: (selectedEdges[0].x1 + selectedEdges[0].x2) / 2,
         y: (selectedEdges[0].y1 + selectedEdges[0].y2) / 2,
       }
-    : selectedFaces[0]
+    : selectedFaces[0]?.pts && selectedFaces[0].pts.length >= 3
       ? {
-          x: (selectedFaces[0].pts[0]!.x + selectedFaces[0].pts[2]!.x) / 2,
-          y: (selectedFaces[0].pts[0]!.y + selectedFaces[0].pts[2]!.y) / 2,
-        }
-      : null;
+        x: ((selectedFaces[0].pts[0]?.x ?? 0) + (selectedFaces[0].pts[2]?.x ?? 0)) / 2,
+        y: ((selectedFaces[0].pts[0]?.y ?? 0) + (selectedFaces[0].pts[2]?.y ?? 0)) / 2,
+      }
+    : null;
 
   const onDragStart = (ev: React.PointerEvent<SVGSVGElement>) => {
     if (!interactive && ev.pointerType === "touch") return; // toque continua servindo ao card
+    const isPan = ev.button === 1 || ev.button === 2 || ev.shiftKey || ev.ctrlKey || mode === "pan";
+    dragMode.current = isPan ? "pan" : "orbit";
     drag.current = { x: ev.clientX, y: ev.clientY };
     downAt.current = { x: ev.clientX, y: ev.clientY };
     ev.currentTarget.setPointerCapture(ev.pointerId);
   };
 
-  /* Toque/clique SEM arraste = seleção; arraste continua sendo rotação. */
+  /* Toque/clique SEM arraste = seleção; arraste continua sendo rotação ou pan. */
   const onTapSelect = (ev: React.PointerEvent<SVGSVGElement>) => {
     if (!onSelectRef || !downAt.current) return;
     const moved = Math.hypot(ev.clientX - downAt.current.x, ev.clientY - downAt.current.y);
@@ -315,20 +338,24 @@ export function Wire3D({
     if (moved > 8) return;
     const svg = host.current;
     if (!svg) return;
-    const ctm = svg.getScreenCTM();
-    if (!ctm) return;
-    const pt = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(ctm.inverse());
-    const faceIdx = refForFace ? pickFaceIndex(faces, pt.x, pt.y) : null;
-    if (faceIdx !== null) {
-      const ref = refForFace!(faceIdx);
-      if (ref) {
-        onSelectRef(ref);
-        return;
+    try {
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return;
+      const pt = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(ctm.inverse());
+      const faceIdx = refForFace ? pickFaceIndex(faces, pt.x, pt.y) : null;
+      if (faceIdx !== null) {
+        const ref = refForFace!(faceIdx);
+        if (ref) {
+          onSelectRef(ref);
+          return;
+        }
       }
+      const edgeIdx = refForEdge ? pickEdgeIndex(edges, pt.x, pt.y, 4) : null;
+      const ref = edgeIdx !== null ? refForEdge!(edgeIdx) : null;
+      onSelectRef(ref);
+    } catch {
+      // ignore
     }
-    const edgeIdx = refForEdge ? pickEdgeIndex(edges, pt.x, pt.y, 4) : null;
-    const ref = edgeIdx !== null ? refForEdge!(edgeIdx) : null;
-    onSelectRef(ref);
   };
 
   return (
@@ -337,24 +364,47 @@ export function Wire3D({
       viewBox={`${-VB / 2} ${-VB / 2} ${VB} ${VB}`}
       className={cn(
         "select-none",
-        interactive ? "touch-none cursor-grab active:cursor-grabbing" : "touch-auto",
+        interactive
+          ? mode === "pan"
+            ? "touch-none cursor-move"
+            : "touch-none cursor-grab active:cursor-grabbing"
+          : "touch-auto",
         className,
       )}
       role="img"
       aria-label="Modelo tridimensional paramétrico da peça"
+      onContextMenu={(ev) => {
+        if (interactive) ev.preventDefault();
+      }}
+      onDoubleClick={() => {
+        if (!interactive) return;
+        setCam((c) => ({ ...c, panX: 0, panY: 0, zoom: 1 }));
+      }}
       onPointerDown={onDragStart}
       onPointerMove={(ev) => {
         if (!drag.current) return;
         const dx = ev.clientX - drag.current.x;
         const dy = ev.clientY - drag.current.y;
         drag.current = { x: ev.clientX, y: ev.clientY };
-        setCam((c) => ({
-          ...c,
-          yaw: c.yaw + dx * 0.008,
-          pitch: interactive
-            ? Math.max(-Math.PI / 2, Math.min(Math.PI / 2, c.pitch + dy * 0.006))
-            : c.pitch,
-        }));
+
+        if (dragMode.current === "pan") {
+          const svg = host.current;
+          const rect = svg?.getBoundingClientRect();
+          const factor = rect && rect.width > 0 ? VB / rect.width : 1;
+          setCam((c) => ({
+            ...c,
+            panX: (c.panX ?? 0) + dx * factor,
+            panY: (c.panY ?? 0) + dy * factor,
+          }));
+        } else {
+          setCam((c) => ({
+            ...c,
+            yaw: c.yaw + dx * 0.008,
+            pitch: interactive
+              ? Math.max(-Math.PI / 2, Math.min(Math.PI / 2, c.pitch + dy * 0.006))
+              : c.pitch,
+          }));
+        }
       }}
       onPointerUp={(ev) => {
         drag.current = null;
@@ -380,21 +430,22 @@ export function Wire3D({
               strokeLinejoin="round"
             />
           ))}
-        {refs.map((e) => (
-          <line
-            key={e.id}
-            data-entity-id={e.id}
-            data-category="reference"
-            x1={e.x1.toFixed(2)}
-            y1={e.y1.toFixed(2)}
-            x2={e.x2.toFixed(2)}
-            y2={e.y2.toFixed(2)}
-            stroke="var(--solid-edge)"
-            strokeWidth={0.5}
-            strokeOpacity={0.45}
-            strokeDasharray="4 3 1 3"
-          />
-        ))}
+        {(showRefLines ?? (edgeMode !== "shaded")) &&
+          refs.map((e) => (
+            <line
+              key={e.id}
+              data-entity-id={e.id}
+              data-category="reference"
+              x1={e.x1.toFixed(2)}
+              y1={e.y1.toFixed(2)}
+              x2={e.x2.toFixed(2)}
+              y2={e.y2.toFixed(2)}
+              stroke="var(--solid-edge)"
+              strokeWidth={0.5}
+              strokeOpacity={0.45}
+              strokeDasharray="4 3 1 3"
+            />
+          ))}
         {edgeMode !== "shaded" &&
           edges.map((e) => (
             <line
@@ -457,8 +508,8 @@ export function Wire3D({
                 paintOrder="stroke"
               >
                 {highlightRefs.length === 1
-                  ? refLabel(highlightRefs[0]!)
-                  : `${highlightRefs.length} entidades · ${refLabel(highlightRefs[0]!)}`}
+                  ? (highlightRefs[0] ? refLabel(highlightRefs[0]) : "")
+                  : `${highlightRefs.length} entidades · ${highlightRefs[0] ? refLabel(highlightRefs[0]) : ""}`}
               </text>
             )}
           </g>

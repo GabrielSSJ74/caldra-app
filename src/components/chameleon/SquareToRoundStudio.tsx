@@ -23,7 +23,7 @@ import { MATERIALS } from "@/lib/projects/demo-data";
 import { formatNumber, useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { buildWire } from "@/lib/viz3d/wire";
-import { edgeRefAt } from "@/lib/viz3d/selection";
+import { edgeRefAt, faceRefAt } from "@/lib/viz3d/selection";
 import type { GeometryRef } from "@/lib/geometry/refs";
 import { developmentToEntities, piecesToEntities, sendToLab2D } from "@/lib/lab2d/handoff";
 import { cn } from "@/lib/utils";
@@ -134,9 +134,14 @@ export function SquareToRoundStudio({
 
   /* Seleção 3D ↔ ref canônica (Fase F): geratrizes da malha facetada. */
   const [selRef, setSelRef] = useState<GeometryRef | null>(null);
+  const [showGeneratrices, setShowGeneratrices] = useState(true);
   const foldCount = result?.development.foldLines.length ?? 0;
   const refForEdge = useMemo(
     () => (index: number) => edgeRefAt(wireModel, foldCount, index),
+    [wireModel, foldCount],
+  );
+  const refForFace = useMemo(
+    () => (index: number) => faceRefAt(wireModel, foldCount, index),
     [wireModel, foldCount],
   );
 
@@ -236,7 +241,9 @@ export function SquareToRoundStudio({
               model={wireModel}
               unfold={unfold}
               onUnfold={setUnfold}
-              selection={{ refForEdge, highlightRef: selRef, onSelectRef: setSelRef }}
+              selection={{ refForEdge, refForFace, highlightRef: selRef, onSelectRef: setSelRef }}
+              showGeneratrices={showGeneratrices}
+              onToggleGeneratrices={() => setShowGeneratrices((v) => !v)}
               onPlanificar={() => {
                 setUnfold(1);
                 window.setTimeout(() => {
@@ -246,37 +253,14 @@ export function SquareToRoundStudio({
                 }, 420);
               }}
             >
-              <SchematicSquareToRound input={input} highlight={focused} />
-              {FIELDS.map((f, i) => (
-                <button
-                  key={f.key}
-                  type="button"
-                  onClick={() => {
-                    setFocused(f.key);
-                    inputs.current[f.key]?.focus();
-                    inputs.current[f.key]?.select();
-                  }}
-                  style={
-                    f.key === "height"
-                      ? { left: "2%", top: "44%" }
-                      : f.key === "topDiameter"
-                        ? { left: "6%", top: "8%" }
-                        : f.key === "baseA"
-                          ? { left: "6%", bottom: "22%" }
-                          : { right: "3%", top: `${8 + i * 13}%` }
-                  }
-                  className={cn(
-                    "absolute rounded-full border px-2 py-1 font-mono text-[10px] whitespace-nowrap backdrop-blur-sm transition-all duration-300",
-                    focused === f.key || pulse === f.key
-                      ? "border-accent/50 bg-accent/15 text-accent shadow-[0_0_14px_-2px_var(--accent)]"
-                      : "border-line bg-background/70 text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {f.tag} {Number(Number(input[f.key]).toFixed(2))}
-                  <span className="opacity-60"> mm</span>
-                </button>
-              ))}
-              <span className="absolute top-2 left-2.5 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase">
+              <SchematicSquareToRound
+                input={input}
+                highlight={focused}
+                showGeneratrices={showGeneratrices}
+                selectedRef={selRef}
+                onSelectRef={setSelRef}
+              />
+              <span className="pointer-events-none absolute top-2 left-2.5 font-mono text-[9px] tracking-[0.16em] text-muted-foreground uppercase">
                 Vista 2D · mm
               </span>
             </VisualizationViewport>

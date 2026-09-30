@@ -1,9 +1,9 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { ArrowUpRight, Calculator, FolderKanban, PenTool, Sigma } from "lucide-react";
 import { DEMO_HISTORY } from "@/lib/projects/demo-data";
-import { PieceCarousel } from "@/components/chameleon/PieceCarousel";
-import { CaldraLogo } from "@/components/chameleon/Logo";
+import { PieceCarousel, type CarouselPieceInfo } from "@/components/caldra/PieceCarousel";
+import { CaldraLogo } from "@/components/caldra/Logo";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -187,6 +187,13 @@ function MiniFolders() {
 }
 
 function Inicio() {
+  const [activePiece, setActivePiece] = useState<CarouselPieceInfo>({
+    slug: "quadrado-redondo",
+    name: "Quadrado → Redondo",
+    category: "Transição Paramétrica",
+    index: 0,
+    total: 10,
+  });
   const last = DEMO_HISTORY[0];
   const navigate = useNavigate();
   const taps = useRef<{ count: number; at: number }>({ count: 0, at: 0 });
@@ -229,18 +236,38 @@ function Inicio() {
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3 lg:grid-rows-2">
         <Link
           to="/tracagem"
-          className="metal group relative col-span-2 row-span-2 flex min-h-[240px] flex-col justify-between overflow-hidden rounded-3xl p-5 transition-all duration-500 hover:amber-ring lg:min-h-[340px]"
+          className="metal group relative col-span-2 row-span-2 flex min-h-[250px] flex-col justify-between overflow-hidden rounded-3xl p-5 transition-all duration-500 hover:amber-ring lg:min-h-[350px]"
         >
-          <div className="relative z-10">
+          <div className="relative z-10 pointer-events-none">
             <span className="tick-label text-accent"></span>
             <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight lg:text-3xl">
               TRAÇAGEM
             </h2>
           </div>
-          <PieceCarousel className="absolute -right-6 -bottom-4 size-[86%]" />
-          <div className="relative z-10 flex items-center gap-2 text-accent">
-            <span className="tick-label text-accent">Abrir biblioteca</span>
-            <ArrowUpRight className="size-4 transition-transform group-hover:-translate-y-0.5" />
+
+          {/* Demonstração 3D de modelos com área de swipe contínua */}
+          <PieceCarousel
+            className="absolute inset-x-0 top-0 bottom-14"
+            onPieceChange={setActivePiece}
+          />
+
+          {/* Texto descritivo do modelo ativo no lugar de 'Abrir biblioteca', garantido na tela */}
+          <div className="relative z-10 flex items-center justify-between gap-3 pt-3 border-t border-line/40 backdrop-blur-xs">
+            <div
+              key={activePiece.slug}
+              className="animate-in fade-in slide-in-from-bottom-1 duration-300 min-w-0 flex flex-col"
+            >
+              <span className="font-mono text-xs sm:text-sm font-semibold tracking-wide text-foreground group-hover:text-accent transition-colors truncate">
+                {activePiece.name}
+              </span>
+              <span className="font-mono text-[9px] sm:text-[10px] tracking-wider uppercase text-muted-foreground truncate">
+                {activePiece.category}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0 text-accent">
+              <ArrowUpRight className="size-4.5 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+            </div>
           </div>
         </Link>
 

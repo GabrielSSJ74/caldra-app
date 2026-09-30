@@ -87,7 +87,7 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 
 - [x] Parte 3.0 — CHAMFER em tela cheia + paisagem obrigatória + modais contidos
 - [x] Parte 1 — WORKSPACE_FRAME 1500x3000 paramétrico, auto-fit da Traçagem, Centralizar Peça
-- [x] Parte 2 — Design System CALDRA (escala tipográfica, foco/desabilitado, botões, skeleton/spinner, estados de erro) em `src/components/chameleon/ds.tsx` + tokens em `styles.css`
+- [x] Parte 2 — Design System CALDRA (escala tipográfica, foco/desabilitado, botões, skeleton/spinner, estados de erro) em `src/components/caldra/ds.tsx` + tokens em `styles.css`
 - [x] Parte 3 — Feedback de instrumento técnico (barra GEOMETRIA · PLANIFICAÇÃO · FABRICAÇÃO nos estúdios)
 - [x] Parte 4 — Cold start (splash pré-JS), ícone/splash (favicon + manifest + apple-touch), matriz visual (/matriz-visual), changelog (/novidades), reportar problema (diagnóstico + copiar/e-mail)
 
@@ -258,3 +258,20 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [ ] Estado técnico da dobra entregue ao CHAMFER.
 - [ ] Invalidação de derivados por espessura, raio, ângulo, K ou método.
 - [ ] Testes: sem dobra, uma dobra, múltiplas dobras, espessura, K, raio e ângulo.
+
+## Núcleo CAD Industrial do CHAMFER (Evolução Contínua)
+
+- [x] Fase 01 — B-Rep Canônico, Topologia Sólida e Validadores (`src/lib/cad/canonical.ts`)
+- [x] Fase 02 — Esboço Paramétrico e Solucionador de Restrições Geométricas (`src/lib/cad/sketch/`)
+- [x] Fase 03 — Árvore de Recursos Paramétrica DAG e Rebuild Engine (`src/lib/cad/features/`)
+- [x] Fase 04 — Núcleo de Chapa Metálica, Dobras Analíticas e Planificação Técnica (`src/lib/cad/sheetmetal/`)
+- [x] Fase 05 — Caldeiraria 3D e Superfícies Transicionais Desenvolvíveis (`src/lib/cad/boilermaking/`)
+- [x] Fase 06 — Multicorpos, Operações Booleanas CSG, Mates e BOM Hierárquica (`src/lib/cad/assembly/`)
+- [x] Fase 07 — Manufatura CNC, Leads, Micro-juntas e Pós-Processador G-Code (`src/lib/cad/cam/`)
+- [x] Fase 08 — Núcleo Mestre Unificado e Painel CAD Chamfer (`src/lib/cad/kernel/`, `ChamferCADPanel.tsx`)
+- [x] Fase 09 — Folhas Técnicas 2D, Projeções Ortográficas e Bloco de Título (`src/lib/cad/drafting/`)
+- [x] Fase 10 — Perfis Estruturais e Estruturas Soldadas Weldments (`src/lib/cad/weldments/`)
+- [x] Fase 11 — Nesting Industrial Multichapas e Aproveitamento de Sobras (`src/lib/cad/nesting/`)
+- [x] Fase 12 — Ferramentas de Estampagem, Alívios e Simulação de Prensa Dobradeira (`src/lib/cad/forming/`)
+- [x] Fase 13 — DFM (Design for Manufacturing), Auditoria de Fabricabilidade e Orçamento (`src/lib/cad/dfm/`)
+- [x] Fase 14 — Metrologia Industrial, GD&T (ASME Y14.5 / ISO 1101), Relatório FAI e Prancha Baloneada (`src/lib/cad/metrology/`)

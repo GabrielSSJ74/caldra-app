@@ -2,19 +2,14 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   BookOpen,
-  Calculator,
   Compass,
   Factory,
   FolderKanban,
   HelpCircle,
-  History,
   LayoutGrid,
   Library,
-  Settings,
   Sigma,
   Sparkles,
-  Star,
-  User,
 } from "lucide-react";
 import { ChameleonMark } from "./Logo";
 import { useShellActions } from "./ShellActions";
@@ -39,7 +34,7 @@ const ITEMS: Item[] = [
 ];
 const ITEM_KEYS = ["tracing", "studies", "home", "projects"] as const;
 
-const MORE_ROUTES = ["/configuracoes", "/biblioteca", "/oficina", "/conta", "/calculadora"];
+const MORE_ROUTES = ["/biblioteca", "/oficina"];
 
 /** Cápsula flutuante: ícones discretos, nome revelado só na interação. */
 export function BubbleNav() {
@@ -155,38 +150,27 @@ type Entry = {
 };
 
 const MORE: Entry[] = [
-  { name: "Calculadora", icon: Calculator, to: "/calculadora" },
-  { name: "Configurações", icon: Settings, to: "/configuracoes" },
-  { name: "Perfil", icon: User, action: "profile" },
-  { name: "Modo Mestre", icon: Sparkles, action: "master" },
   { name: "Biblioteca", icon: Library, to: "/biblioteca" },
-  { name: "Histórico", icon: History, to: "/projetos" },
-  { name: "Favoritos", icon: Star, to: "/biblioteca" },
   { name: "Oficina", icon: Factory, to: "/oficina" },
+  { name: "Modo Mestre", icon: Sparkles, action: "master" },
   { name: "Ajuda", icon: HelpCircle, to: "/escola" },
 ];
 const MORE_KEYS = [
-  "calculator",
-  "settings",
-  "profile",
-  "master",
   "library",
-  "history",
-  "favorites",
   "workshop",
+  "master",
   "help",
 ] as const;
 
 function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
   const { language } = useSettings();
-  const { openProfile, openMaster } = useShellActions();
+  const { openMaster } = useShellActions();
   if (!open) return null;
 
   const go = (e: Entry) => {
     triggerHaptic("tap");
     onClose();
-    if (e.action === "profile") return openProfile();
     if (e.action === "master") return openMaster();
     if (e.to) void navigate({ to: e.to });
   };
@@ -213,7 +197,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
           </span>
           <span className="h-px flex-1 bg-gradient-to-r from-accent/40 to-transparent" />
         </div>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {MORE.map((e, entryIndex) => {
             const Icon = e.icon;
             return (

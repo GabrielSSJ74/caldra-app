@@ -1,0 +1,169 @@
+/**
+ * AURORA CALDRA 2.0 — fundo do aplicativo em três estilos.
+ *
+ *  FLUIDO   → shader WebGL (domain warping sobre FBM), contexto ÚNICO
+ *             compartilhado por todo o app (`auroraEngine`).
+ *  SUAVE    → blobs CSS (transform/opacity), pausados em background.
+ *  ESTÁTICO → um frame congelado do estilo escolhido.
+ *
+ * `mode="auto"` → animado só no PRO, sem prefers-reduced-motion e com a
+ * aba visível. `mode="always"` (paywall) anima em qualquer plano.
+ * `active={false}` (rota sem Aurora) pausa sem desmontar — a animação
+ * continua contínua ao navegar.
+ */
+
+import { useEffect, useRef, useState } from "react";
+import { cn } from "@/lib/utils";
+import { useSettings } from "@/lib/settings/SettingsProvider";
+import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
+import { auroraEngine } from "@/lib/aurora/auroraEngine";
+
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReduced(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+  return reduced;
+}
+
+function usePageVisible() {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const sync = () => setVisible(document.visibilityState === "visible");
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => document.removeEventListener("visibilitychange", sync);
+  }, []);
+  return visible;
+}
+
+/** Detecta se a superfície atual é escura (dark / amoled) ou clara. */
+function useDarkSurface() {
+  const [dark, setDark] = useState(true);
+  useEffect(() => {
+    const el = document.documentElement;
+    const sync = () => setDark(el.classList.contains("dark"));
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(el, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+  return dark;
+}
+
+function useAmoledSurface() {
+  const [amoled, setAmoled] = useState(false);
+  useEffect(() => {
+    const el = document.documentElement;
+    const sync = () => setAmoled(el.classList.contains("amoled"));
+    sync();
+    const obs = new MutationObserver(sync);
+    obs.observe(el, { attributes: true, attributeFilter: ["class"] });
+    return () => obs.disconnect();
+  }, []);
+  return amoled;
+}
+
+export function AuroraBackground({
+  mode = "auto",
+  active = true,
+  className,
+}: {
+  mode?: "auto" | "always";
+  active?: boolean;
+  className?: string;
+}) {
+  const { auroraStyle } = useSettings();
+  const { isMestre } = useFeatureAccess();
+  const reduced = useReducedMotion();
+  const pageVisible = usePageVisible();
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [glOk, setGlOk] = useState(true);
+  /* Só escondemos os blobs CSS quando o canvas do shader está REALMENTE
+     montado e desenhando. Sem isto, uma falha silenciosa do WebGL deixa a
+     tela sem nenhum fundo. */
+  const [shaderLive, setShaderLive] = useState(false);
+  const darkSurface = useDarkSurface();
+  const amoledSurface = useAmoledSurface();
+
+  /* FLUIDO ativa o shader tanto no tema escuro quanto no tema claro com paleta adaptada. */
+  const shaderStyle = auroraStyle === "fluido";
+  const wantsShader = shaderStyle && glOk && shaderLive;
+  /* FLUIDO anima continuamente para entregar a experiência de fundo vivo de alta fidelidade. */
+  const allowed = mode === "always" || isMestre || auroraStyle === "fluido";
+  const animated = allowed && active && pageVisible && !reduced;
+
+  /* Modo Oficina / alto contraste recuam a amplitude do fundo. */
+  const amp =
+    typeof document !== "undefined" &&
+    (document.documentElement.classList.contains("oficina") ||
+      document.documentElement.classList.contains("high-contrast"))
+      ? 0.6
+      : 1;
+
+  /* Empresta o container ao canvas compartilhado no estilo FLUIDO. */
+  useEffect(() => {
+    if (!shaderStyle) {
+      setShaderLive(false);
+      return;
+    }
+    const engine = auroraEngine();
+    const host = hostRef.current;
+    if (!engine || !host) {
+      setShaderLive(false);
+      return;
+    }
+    if (!engine.supported()) {
+      setGlOk(false);
+      setShaderLive(false);
+      return;
+    }
+    const release = engine.acquire(host, animated, amp, darkSurface, amoledSurface);
+    const off = engine.onStatus((ok) => {
+      setGlOk(ok);
+      if (!ok) setShaderLive(false);
+    });
+    /* Confirmação factual: o canvas foi mesmo anexado a este container. */
+    setShaderLive(!!host.querySelector("canvas"));
+    return () => {
+      off();
+      release();
+      setShaderLive(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shaderStyle]);
+
+  useEffect(() => {
+    if (!shaderStyle) return;
+    const engine = auroraEngine();
+    const host = hostRef.current;
+    if (!engine || !host) return;
+    engine.update(host, animated, amp, darkSurface, amoledSurface);
+  }, [shaderStyle, animated, amp, darkSurface, amoledSurface]);
+
+  /* PADRÃO: nenhuma camada — o fundo sólido do tema aparece. */
+  if (auroraStyle === "padrao") return null;
+
+  return (
+    <div
+      aria-hidden
+      className={cn("aurora-root pointer-events-none absolute inset-0 overflow-hidden", className)}
+      data-animated={animated ? "on" : "off"}
+      data-active={active ? "on" : "off"}
+      data-style={wantsShader ? "fluido" : "suave"}
+    >
+      <div ref={hostRef} className="aurora-gl absolute inset-0" />
+      <div className="aurora-css absolute inset-0">
+        <div className="aurora-base absolute inset-0" />
+        <div className="aurora-blob aurora-blob-1" />
+        <div className="aurora-blob aurora-blob-2" />
+        <div className="aurora-blob aurora-blob-3" />
+        <div className="aurora-blob aurora-blob-4" />
+      </div>
+    </div>
+  );
+}

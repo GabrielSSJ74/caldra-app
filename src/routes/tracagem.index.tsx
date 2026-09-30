@@ -323,6 +323,8 @@ function Preview({ part }: { part: PartModel }) {
   return (
     <Wire3D
       model={buildWire(part.preview.slug, { ...DEFAULT_PARAMS, seg: 32 })}
+      edgeMode="shaded"
+      showRefLines={false}
       className="size-full text-foreground/85 transition-transform duration-700 group-hover:scale-110"
     />
   );

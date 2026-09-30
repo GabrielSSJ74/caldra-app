@@ -2,7 +2,7 @@
 
 Crie uma aplicação web responsiva, profissional e visualmente sofisticada chamada:
 
-CHAMELEON
+CALDRA
 
 Laboratório Caldeireiro
 
@@ -16,7 +16,7 @@ Traçagem • Planificação • Projetos • Conhecimento
 
 ==================================================
 
-O Chameleon será uma plataforma profissional voltada principalmente para caldeireiros, traçadores, soldadores, profissionais de fabricação metálica, projetistas, estudantes de caldeiraria e oficinas.
+O Caldra será uma plataforma profissional voltada principalmente para caldeireiros, traçadores, soldadores, profissionais de fabricação metálica, projetistas, estudantes de caldeiraria e oficinas.
 
 NÃO quero que o produto pareça apenas uma calculadora.
 
@@ -54,15 +54,15 @@ Evite aparência de aplicativo genérico de calculadora.
 
 Nome:
 
-CHAMELEON
+CALDRA
 
 Nome completo:
 
-CHAMELEON — Laboratório Caldeireiro
+CALDRA — Laboratório Caldeireiro
 
 Quero uma identidade visual minimalista, elegante e tecnológica.
 
-O conceito visual do "Chameleon" deve aparecer de maneira sutil, principalmente através da capacidade do sistema de mudar de aparência e adaptar-se ao usuário.
+O conceito visual do "Caldra" deve aparecer de maneira sutil, principalmente através da capacidade do sistema de mudar de aparência e adaptar-se ao usuário.
 
 Não quero um camaleão infantil ou cartunesco.
 
@@ -88,7 +88,7 @@ Criar um sistema premium denominado:
 
 MODO MESTRE
 
-O Modo Mestre representa a versão profissional completa do Chameleon.
+O Modo Mestre representa a versão profissional completa do Caldra.
 
 Quando ativado, a interface deve mudar visualmente para uma experiência premium.
 
@@ -242,7 +242,7 @@ LABORATÓRIO
 
 No topo:
 
-CHAMELEON
+CALDRA
 
 Laboratório Caldeireiro
 
@@ -494,7 +494,7 @@ Ao clicar, abrir uma explicação passo a passo.
 
 ==================================================
 
-O diferencial pedagógico do Chameleon será explicar de onde cada medida surgiu.
+O diferencial pedagógico do Caldra será explicar de onde cada medida surgiu.
 
 Criar componentes como:
 
@@ -552,7 +552,7 @@ Criar uma seção premium chamada:
 
 LABORATÓRIO 2D
 
-Este será um software vetorial integrado ao Chameleon.
+Este será um software vetorial integrado ao Caldra.
 
 A referência conceitual é a experiência de softwares industriais de preparação de corte, como o CypCut, MAS NÃO copiar sua interface, identidade visual ou elementos proprietários.
 
@@ -1420,7 +1420,7 @@ visual de aplicativo financeiro
 
 visual gamer
 
-O usuário precisa abrir o Chameleon e sentir:
+O usuário precisa abrir o Caldra e sentir:
 
 "Isso parece um software profissional."
 
@@ -1464,7 +1464,7 @@ Modo Mestre
 
 - inserir código
 
-Sobre o Chameleon
+Sobre o Caldra
 
 ==================================================
 

@@ -67,64 +67,61 @@ void main() {
 
   float t = u_time;
 
-  // respiração orgânica (95% – 115%) com períodos primos entre si
-  float breath = 1.0 + 0.10 * sin(t * 0.0703) + 0.05 * sin(t * 0.1131 + 1.7);
+  // Respiração orgânica fluida (96% – 112%)
+  float breath = 1.0 + 0.08 * sin(t * 0.082) + 0.04 * sin(t * 0.124 + 1.7);
   vec2 pw = p * breath;
 
-  // domain warping em duas camadas (Inigo Quilez)
+  // Domain warping fluido em camadas duplas (Inigo Quilez)
   vec2 q = vec2(
-    fbm(pw + vec2(0.0, 0.0) + vec2(t * 0.031, t * -0.019)),
-    fbm(pw + vec2(5.2, 1.3) + vec2(t * -0.023, t * 0.027))
+    fbm(pw + vec2(0.0, 0.0) + vec2(t * 0.038, t * -0.024)),
+    fbm(pw + vec2(5.2, 1.3) + vec2(t * -0.028, t * 0.032))
   );
 
   vec2 r = vec2(
-    fbm(pw + 4.0 * q + vec2(1.7, 9.2) + vec2(t * 0.017, t * 0.011)),
-    fbm(pw + 4.0 * q + vec2(8.3, 2.8) + vec2(t * -0.013, t * 0.021))
+    fbm(pw + 3.8 * q + vec2(1.7, 9.2) + vec2(t * 0.022, t * 0.016)),
+    fbm(pw + 3.8 * q + vec2(8.3, 2.8) + vec2(t * -0.016, t * 0.024))
   );
 
   float f = fbm(pw + 4.0 * r);
 
-  // base radial adaptada ao tema
+  // Base radial pura adaptada ao tema
   float rad = length(vec2((uv.x - 0.5) * 1.2, uv.y - 0.0));
-  vec3 col = mix(u_baseA, u_baseB, smoothstep(0.0, 1.1, rad));
+  vec3 col = mix(u_baseA, u_baseB, smoothstep(0.0, 1.15, rad));
 
-  // massa quente — quadrante superior, deformada pelo campo
-  float warmField = f + 0.35 * r.x + (1.0 - uv.y) * -0.30 + 0.18;
-  float warm = smoothstep(0.42, 0.86, warmField) * smoothstep(0.05, 0.75, uv.y);
-  vec3 warmCol = mix(u_warmDeep, u_warm, clamp(r.y, 0.0, 1.0));
+  // Massa quente — quadrante superior, deformada pelo campo de fluxo
+  float warmField = f + 0.40 * r.x + (1.0 - uv.y) * -0.32 + 0.20;
+  float warm = smoothstep(0.38, 0.88, warmField) * smoothstep(0.04, 0.82, uv.y);
+  vec3 warmCol = mix(u_warmDeep, u_warm, clamp(r.y * 1.1, 0.0, 1.0));
 
-  // núcleo magenta pulsante — centro
-  float pulse = 0.85 + 0.15 * sin(t * 0.62);
+  // Núcleo magenta pulsante — centro
+  float pulse = 0.86 + 0.14 * sin(t * 0.65);
   float coreD = length(vec2((uv.x - 0.5) * 1.15, (uv.y - 0.48))) / pulse;
-  float core = smoothstep(0.62, 0.06, coreD) * smoothstep(0.30, 0.80, f + 0.25 * q.y);
-  vec3 coreCol = mix(u_wine, u_magenta, clamp(f * 1.4, 0.0, 1.0));
-  coreCol = mix(coreCol, u_fuchsia, clamp(r.y * 0.9, 0.0, 1.0));
+  float core = smoothstep(0.64, 0.05, coreD) * smoothstep(0.28, 0.82, f + 0.28 * q.y);
+  vec3 coreCol = mix(u_wine, u_magenta, clamp(f * 1.5, 0.0, 1.0));
+  coreCol = mix(coreCol, u_fuchsia, clamp(r.y * 0.95, 0.0, 1.0));
 
-  // massa fria — cantos opostos
-  float coldField = f * 0.9 + 0.4 * q.x + (uv.y * 0.35);
-  float cold = smoothstep(0.75, 0.28, coldField) * smoothstep(0.95, 0.25, uv.y);
-  vec3 coldCol = mix(u_indigo, u_violet, clamp(q.x + 0.4, 0.0, 1.0));
+  // Massa fria — cantos e base
+  float coldField = f * 0.95 + 0.42 * q.x + (uv.y * 0.36);
+  float cold = smoothstep(0.76, 0.26, coldField) * smoothstep(0.96, 0.22, uv.y);
+  vec3 coldCol = mix(u_indigo, u_violet, clamp(q.x + 0.45, 0.0, 1.0));
 
   float a = u_amp;
-  // névoa: peso das cores adaptado (suave no claro, brilhante no escuro)
-  float coldWeight = mix(0.34, 0.17, u_isDark);
-  float warmWeight = mix(0.32, 0.15, u_isDark);
-  float coreWeight = mix(0.30, 0.16, u_isDark);
+  // Pesos cromáticos calibrados: vibrantes e fluidos no claro (0.38 / 0.36 / 0.34), brilhantes no escuro (0.24 / 0.22 / 0.22)
+  float coldWeight = mix(0.38, 0.22, u_isDark);
+  float warmWeight = mix(0.36, 0.20, u_isDark);
+  float coreWeight = mix(0.34, 0.20, u_isDark);
 
   col = mix(col, coldCol, cold * coldWeight * a);
   col = mix(col, warmCol, warm * warmWeight * a);
   col = mix(col, coreCol, core * coreWeight * a);
 
-  // vinheta suave adaptada (escurece no dark; atenua suavemente no light)
+  // Vinheta suave adaptada (escurece no dark; atenua suavemente no light sem escurecer)
   float vigDark = 1.0 - 0.25 * smoothstep(0.55, 1.25, rad);
   vec3 darkResult = col * vigDark;
-  vec3 lightResult = mix(col, u_baseB, 0.35 * smoothstep(0.55, 1.25, rad));
+  vec3 lightResult = mix(col, u_baseB, 0.16 * smoothstep(0.55, 1.25, rad));
   col = mix(lightResult, darkResult, u_isDark);
 
-  // granulação de filme (elimina banding)
-  float grain = hash(gl_FragCoord.xy + fract(t) * 137.0) - 0.5;
-  col += grain * mix(0.012, 0.03, u_isDark);
-
+  // 100% puro e sedoso — zero ruído de granulação / tv de tubo
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -155,16 +152,17 @@ const PALETTE_DARK: Record<string, [number, number, number]> = {
   u_violet: HEX("#4c1d95"),
 };
 
+/** Versão clara e luminosa do FLUIDO: cores vivas e fluidas sobre base luminosa de cristal e alta legibilidade */
 const PALETTE_LIGHT: Record<string, [number, number, number]> = {
   u_baseA: HEX("#ffffff"),
-  u_baseB: HEX("#f3f5f8"),
-  u_warm: HEX("#fcd9a0"),
-  u_warmDeep: HEX("#f6c67a"),
-  u_magenta: HEX("#f2dbe6"),
-  u_wine: HEX("#ebd0de"),
-  u_fuchsia: HEX("#e5d4ed"),
-  u_indigo: HEX("#d4e2f4"),
-  u_violet: HEX("#dde4ee"),
+  u_baseB: HEX("#f1f5f9"),
+  u_warm: HEX("#f59e0b"),
+  u_warmDeep: HEX("#fb923c"),
+  u_magenta: HEX("#f43f5e"),
+  u_wine: HEX("#e11d48"),
+  u_fuchsia: HEX("#d946ef"),
+  u_indigo: HEX("#4f46e5"),
+  u_violet: HEX("#7c3aed"),
 };
 
 const PALETTE_AMOLED: Record<string, [number, number, number]> = {

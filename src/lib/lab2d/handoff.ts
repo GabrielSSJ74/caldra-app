@@ -1,7 +1,8 @@
 import type { DevelopmentPattern } from "@/lib/geometry/types";
 import { uid, type Entity } from "./core";
 
-const KEY = "chameleon.lab2d.handoff";
+const KEY = "caldra.lab2d.handoff";
+const LEGACY_KEY = "chameleon.lab2d.handoff";
 
 export type Handoff = { name: string; entities: Entity[] };
 
@@ -39,9 +40,10 @@ export function sendToLab2D(payload: Handoff) {
 
 export function takeHandoff(): Handoff | null {
   try {
-    const raw = window.localStorage.getItem(KEY);
+    const raw = window.localStorage.getItem(KEY) ?? window.localStorage.getItem(LEGACY_KEY);
     if (!raw) return null;
     window.localStorage.removeItem(KEY);
+    window.localStorage.removeItem(LEGACY_KEY);
     return JSON.parse(raw) as Handoff;
   } catch {
     return null;

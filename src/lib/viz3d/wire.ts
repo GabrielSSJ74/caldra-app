@@ -14,6 +14,7 @@ import { branchAxisLength, branchIntersection } from "@/lib/geometry/branch";
 import { elbowModel } from "@/lib/geometry/elbowSegments";
 import { buildModel as buildSquareToRoundModel } from "@/lib/geometry/squareToRound";
 import type { Vec2, Vec3 } from "@/lib/geometry/types";
+import { getModelShadingStyle } from "@/lib/viz3d/technicalConfig";
 
 export type Edge = [Vec3, Vec3];
 export type FaceKind = "outer" | "inner" | "rim" | "cap";
@@ -43,6 +44,8 @@ export type WireModel = {
   /** maior extensão do bounding box (mm) — usada para enquadramento */
   size: number;
   bounds: Bounds;
+  slug?: string;
+  shadingStyle?: "faceted" | "smooth" | "hybrid";
   /**
    * Vínculo 3D ↔ geometria canônica: marca arestas/faces geradas por uma
    * geratriz da superfície (ordinal `k` de `n` geratrizes espaçadas). Apenas
@@ -408,11 +411,27 @@ export function computeFaceNormals(faces: Face[]): void {
       nz += (a.x - b.x) * (a.y + b.y);
     }
     const len = Math.hypot(nx, ny, nz);
-    f.n = len > 1e-9 ? v(nx / len, ny / len, nz / len) : v(0, 1, 0);
+    f.n = len > 1e-9 ? v(nx / len, ny / len, nz / len) : undefined;
   }
 }
 
 export function finish(geo: Geo, refLines: Edge[] = []): WireModel {
+  // Rejeita faces degeneradas (<3 pontos ou área praticamente nula) em vez de atribuir normais artificiais
+  geo.faces = geo.faces.filter((f) => {
+    if (!f.pts || f.pts.length < 3) return false;
+    let nx = 0;
+    let ny = 0;
+    let nz = 0;
+    for (let i = 0; i < f.pts.length; i++) {
+      const a = f.pts[i]!;
+      const b = f.pts[(i + 1) % f.pts.length]!;
+      nx += (a.y - b.y) * (a.z + b.z);
+      ny += (a.z - b.z) * (a.x + b.x);
+      nz += (a.x - b.x) * (a.y + b.y);
+    }
+    return Math.hypot(nx, ny, nz) > 1e-9;
+  });
+
   // 1. malha completa → 2. normais → 3. bounding box (nesta ordem, sempre)
   computeFaceNormals(geo.faces);
   const bounds = boundsOf(geo.faces);
@@ -464,9 +483,15 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
   const y0 = -h / 2;
   const y1 = h / 2;
 
+
   const withAxis = (geo: Geo, extraRefs: Edge[] = []) => {
     const m = finish(geo);
-    return { ...m, refLines: [...axisLines(m.bounds), ...extraRefs] };
+    return {
+      ...m,
+      slug,
+      shadingStyle: getModelShadingStyle(slug),
+      refLines: [...axisLines(m.bounds), ...extraRefs],
+    };
   };
 
   switch (slug) {
@@ -792,9 +817,15 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
 /* 5. CÂMERA (apresentação — nunca altera a geometria)                 */
 /* ------------------------------------------------------------------ */
 
-export type Camera = { yaw: number; pitch: number; zoom: number };
+export type Camera = {
+  yaw: number;
+  pitch: number;
+  zoom: number;
+  panX?: number;
+  panY?: number;
+};
 
-/** Projeção ortográfica com rotação yaw/pitch. Retorna coordenadas de tela. */
+/** Projeção ortográfica com rotação yaw/pitch e translação pan. Retorna coordenadas de tela. */
 export function project(pt: Vec3, cam: Camera, scale: number): Vec2 & { depth: number } {
   const cy = Math.cos(cam.yaw);
   const sy = Math.sin(cam.yaw);
@@ -805,7 +836,11 @@ export function project(pt: Vec3, cam: Camera, scale: number): Vec2 & { depth: n
   const y1 = pt.y * cp - z1 * sp;
   const z2 = pt.y * sp + z1 * cp;
   const k = scale * cam.zoom;
-  return { x: x1 * k, y: -y1 * k, depth: z2 };
+  return {
+    x: x1 * k + (cam.panX ?? 0),
+    y: -y1 * k + (cam.panY ?? 0),
+    depth: z2,
+  };
 }
 
 /**

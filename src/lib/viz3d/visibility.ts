@@ -10,10 +10,18 @@ import type { Vec3 } from "@/lib/geometry/types";
 import type { Camera, Edge } from "./wire";
 
 export type RenderCategory =
-  "surface" | "edge" | "technical" | "reference" | "dimension" | "selection";
+  | "surface"
+  | "edge"
+  | "technical"
+  | "reference"
+  | "dimension"
+  | "selection";
 
 export type VisibilityPolicy =
-  "surface-depth" | "real-occlusion" | "technical-persistent" | "overlay";
+  | "surface-depth"
+  | "real-occlusion"
+  | "technical-persistent"
+  | "overlay";
 
 export const VISIBILITY_POLICY: Readonly<Record<RenderCategory, VisibilityPolicy>> = {
   surface: "surface-depth",
@@ -25,6 +33,7 @@ export const VISIBILITY_POLICY: Readonly<Record<RenderCategory, VisibilityPolicy
 };
 
 export type CameraPoint = Vec3;
+
 export type ProjectedLine = {
   id: string;
   x1: number;
@@ -34,6 +43,7 @@ export type ProjectedLine = {
   z1: number;
   z2: number;
 };
+
 export type ProjectedTriangle = {
   id: string;
   pts: readonly [CameraPoint, CameraPoint, CameraPoint];
@@ -41,6 +51,12 @@ export type ProjectedTriangle = {
   maxDepth: number;
   centerDepth: number;
   priority: number;
+  pass?: number; // 0: inner, 1: cap, 2: outer, 3: rim
+  kind?: string;
+  minX?: number;
+  maxX?: number;
+  minY?: number;
+  maxY?: number;
 };
 
 export function toCameraPoint(p: Vec3, cam: Camera): CameraPoint {
@@ -62,26 +78,38 @@ export function projectLine(
   edge: Edge,
   project: (p: Vec3) => CameraPoint,
   scale: number,
+  panX: number = 0,
+  panY: number = 0,
 ): ProjectedLine {
   const a = project(edge[0]);
   const b = project(edge[1]);
   return {
     id,
-    x1: a.x * scale,
-    y1: -a.y * scale,
-    x2: b.x * scale,
-    y2: -b.y * scale,
+    x1: a.x * scale + panX,
+    y1: -a.y * scale + panY,
+    x2: b.x * scale + panX,
+    y2: -b.y * scale + panY,
     z1: a.z,
     z2: b.z,
   };
 }
 
 /**
- * Painter estável para superfícies SVG. Intervalos separados são resolvidos
- * exatamente; somente intervalos sobrepostos recorrem ao centro, seguido por
- * prioridade técnica e ID estável. A profundidade média nunca decide sozinha.
+ * Painter estável e determinístico para superfícies SVG.
+ * 1. Prioriza o passe topológico estrito (inner < cap < outer < rim).
+ * 2. Intervalos de profundidade completamente separados são resolvidos estritamente.
+ * 3. Intervalos sobrepostos usam centróide, prioridade de entidade e ID determinístico.
  */
 export function compareSurfaceDepth(a: ProjectedTriangle, b: ProjectedTriangle): number {
+  if (a.pass !== undefined && b.pass !== undefined && a.pass !== b.pass) {
+    return a.pass - b.pass;
+  }
+
+  // Intervalos completamente disjuntos em Z (menor z = mais ao fundo = desenhado primeiro)
+  const eps = 1e-4;
+  if (a.maxDepth < b.minDepth - eps) return -1;
+  if (b.maxDepth < a.minDepth - eps) return 1;
+
   return (
     a.minDepth - b.minDepth ||
     a.maxDepth - b.maxDepth ||
@@ -100,7 +128,7 @@ function depthAtPoint(x: number, y: number, triangle: ProjectedTriangle): number
   const wa = ((b.y - c.y) * (x - c.x) + (c.x - b.x) * (y - c.y)) / den;
   const wb = ((c.y - a.y) * (x - c.x) + (a.x - c.x) * (y - c.y)) / den;
   const wc = 1 - wa - wb;
-  const epsilon = -1e-7;
+  const epsilon = -1e-6;
   if (wa < epsilon || wb < epsilon || wc < epsilon) return undefined;
   return wa * a.z + wb * b.z + wc * c.z;
 }
@@ -120,6 +148,17 @@ function occludedAt(
 ): boolean {
   for (const triangle of triangles) {
     if (triangle.maxDepth <= point.z + depthEpsilon) continue;
+    // Bounding box rápido em tela 2D
+    if (triangle.minX !== undefined && triangle.maxX !== undefined) {
+      if (
+        point.x < triangle.minX - 0.5 ||
+        point.x > triangle.maxX + 0.5 ||
+        point.y < triangle.minY! - 0.5 ||
+        point.y > triangle.maxY! + 0.5
+      ) {
+        continue;
+      }
+    }
     const surfaceDepth = depthAtPoint(point.x, point.y, triangle);
     if (surfaceDepth !== undefined && surfaceDepth > point.z + depthEpsilon) return true;
   }
@@ -127,8 +166,9 @@ function occludedAt(
 }
 
 /**
- * Segmentação adaptativa e limitada. No padrão técnico devolve exatamente um
- * segmento, independentemente de orientação, comprimento aparente ou depth.
+ * Segmentação adaptativa e limitada para oclusão de linhas.
+ * No padrão técnico devolve exatamente um segmento sem degradação.
+ * Em oclusão real, corta com precisão somente o trecho coberto por superfícies frontais.
  */
 export function visibleLineSegments(
   line: ProjectedLine,

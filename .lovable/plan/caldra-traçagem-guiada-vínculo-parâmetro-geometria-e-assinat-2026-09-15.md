@@ -68,8 +68,8 @@ measurements[], tool, order, animation, validation }` + `buildTraceSequence(slug
   `steps`). Um provider por modelo em `src/lib/tracagem/models/*.ts`.
 - `src/lib/geometry/refs.ts`: `GeometryRef` estável (`line:<i>`, `point:<id>`, `dim:<field>`)
   - `linkFieldToRefs(slug, values)`; consumido por Traçagem, cotas e realce.
-- UI: `src/components/chameleon/TracagemPanel.tsx` (passos + controles + Modo Bancada) e
-  `src/components/chameleon/BenchTools.tsx`. Aba adicionada em `GeometryStudio` e
+- UI: `src/components/caldra/TracagemPanel.tsx` (passos + controles + Modo Bancada) e
+  `src/components/caldra/BenchTools.tsx`. Aba adicionada em `GeometryStudio` e
   `SquareToRoundStudio` sem mexer nas abas existentes.
 - Realce: `HighlightProvider` (contexto leve) + prop `highlight` já existente em
   `SchematicViews`/`ParametricDiagram` estendida para `{ refs, level: normal|focus|isolated }`.

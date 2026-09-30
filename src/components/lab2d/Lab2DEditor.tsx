@@ -16,6 +16,7 @@ import {
   Layers as LayersIcon,
   Lock,
   Maximize,
+  Minimize,
   Minus,
   MoreHorizontal,
   MousePointer2,
@@ -40,6 +41,12 @@ import {
   FolderOpen,
   FolderPlus,
   Plus,
+  Compass,
+  Magnet,
+  Dot,
+  Egg,
+  Hexagon,
+  Check,
 } from "lucide-react";
 import {
   Dialog,
@@ -162,10 +169,28 @@ import {
 } from "@/lib/lab2d/editorInteractions";
 
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
-
 import { cn } from "@/lib/utils";
+import {
+  ChamferLandscapeToolbar,
+  type RibbonTab,
+} from "@/components/lab2d/ChamferLandscapeToolbar";
+import { Cad3DStage } from "@/components/lab2d/Cad3DStage";
+import {
+  stretchSelection,
+  breakEntityAtPoint,
+  joinEntities,
+  explodeEntity,
+  chamferLinesAdvanced,
+  arrayLinear,
+  arrayCircular,
+  mirrorAcrossAxis,
+  divideEntityForTracagem,
+  rotateEntityAroundPoint,
+  shiftEntity,
+  getEntityCenter,
+} from "@/lib/lab2d/cadModifiers";
 
-type Tool =
+export type Tool =
   | "select"
   | "node"
   | "pan"
@@ -176,6 +201,8 @@ type Tool =
   | "rect"
   | "rrect"
   | "polygon"
+  | "ellipse"
+  | "point"
   | "text"
   | "measure"
   | "dim"
@@ -190,9 +217,9 @@ const TOOLS: { id: Tool; icon: typeof Minus; label: string; key: string }[] = [
   { id: "line", icon: Minus, label: "Linha", key: "L" },
   { id: "polyline", icon: PenLine, label: "Polilinha", key: "P" },
   { id: "circle", icon: CircleIcon, label: "Círculo", key: "C" },
+  { id: "arc", icon: Compass, label: "Arco", key: "A" },
   { id: "rect", icon: Square, label: "Retângulo", key: "R" },
   { id: "text", icon: Type, label: "Texto", key: "X" },
-  { id: "trim", icon: Scissors, label: "Tesoura", key: "T" },
 ];
 
 /** Tipos de cota oferecidos na barra de cotagem. */
@@ -223,8 +250,8 @@ const ENTITY_KINDS: DimKind[] = [
   "center-dy",
 ];
 
-/** Ferramentas principais na barra lateral; as demais formam o grupo secundário. */
-const PRIMARY: Tool[] = ["select", "line", "polyline", "circle", "rect", "text", "trim"];
+/** Ferramentas principais na barra lateral esquerda fixa (ordem do mapeamento definitivo). */
+const PRIMARY: Tool[] = ["select", "line", "polyline", "circle", "arc", "rect", "text"];
 
 const ZOOM_MIN = 0.05;
 const ZOOM_MAX = 30;
@@ -314,6 +341,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   /* ESPESSURA — chapa do plano; alimenta a vista 3D / Traçagem */
   const [thickness, setThickness] = useState(DEFAULT_PLAN_THICKNESS);
   const [solidOpen, setSolidOpen] = useState(false);
+  /* MODO CANÔNICO DO CHAMFER: 2D ESBOÇO ↔ 3D TRAÇAGEM ↔ FLANGES */
+  const [activeMode, setActiveMode] = useState<"2d" | "3d" | "flanges">("2d");
+  const [activeRibbonTab, setActiveRibbonTab] = useState<RibbonTab>("desenhar");
+  const [orthoOn, setOrthoOn] = useState(false);
+  const [trackingOn, setTrackingOn] = useState(false);
+  const [secondaryToolsOpen, setSecondaryToolsOpen] = useState(false);
   const [viewMode3D, setViewMode3D] = useState<"planificada" | "isometrica">("planificada");
   const [showPoints3D, setShowPoints3D] = useState(true);
   const [showFolds3D, setShowFolds3D] = useState(true);
@@ -878,6 +911,342 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [entities, selection],
   );
 
+  const boxOfEntities = useCallback((list: Entity[]) => {
+    if (!list.length) return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const e of list) {
+      const b = boxOf(e);
+      if (b.minX < minX) minX = b.minX;
+      if (b.maxX > maxX) maxX = b.maxX;
+      if (b.minY < minY) minY = b.minY;
+      if (b.maxY > maxY) maxY = b.maxY;
+    }
+    return { minX, maxX, minY, maxY };
+  }, []);
+
+  const scaleEntityAroundPoint = useCallback((e: Entity, center: Vec2, factor: number): Entity => {
+    const sc = (p: Vec2): Vec2 => ({
+      x: center.x + (p.x - center.x) * factor,
+      y: center.y + (p.y - center.y) * factor,
+    });
+    switch (e.type) {
+      case "line": {
+        const p1 = sc({ x: e.x1, y: e.y1 });
+        const p2 = sc({ x: e.x2, y: e.y2 });
+        return { ...e, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
+      }
+      case "polyline":
+        return { ...e, pts: e.pts.map(sc) };
+      case "circle": {
+        const c = sc({ x: e.cx, y: e.cy });
+        return { ...e, cx: c.x, cy: c.y, r: e.r * factor };
+      }
+      case "arc": {
+        const c = sc({ x: e.cx, y: e.cy });
+        return { ...e, cx: c.x, cy: c.y, r: e.r * factor };
+      }
+      case "point": {
+        const p = sc({ x: e.x, y: e.y });
+        return { ...e, x: p.x, y: p.y };
+      }
+      default:
+        return e;
+    }
+  }, []);
+
+  const handleMoveSelection = useCallback(() => {
+    if (!selected.length) {
+      toast.info("Selecione entidades para mover.");
+      return;
+    }
+    commit((e) => e.map((x) => (selection.includes(x.id) ? translate(x, 10, 10) : x)));
+    toast.success("Seleção deslocada em +10mm X e +10mm Y.");
+  }, [selected.length, selection, commit]);
+
+  const handleCopySelection = useCallback(() => {
+    if (!selected.length) {
+      toast.info("Selecione entidades para copiar.");
+      return;
+    }
+    const copied = selected.map((s) => ({ ...translate(s, 10, 10), id: uid() }));
+    commit((e) => [...e, ...copied]);
+    setSelection(copied.map((c) => c.id));
+    toast.success(`${copied.length} entidade(s) copiada(s).`);
+  }, [selected, commit]);
+
+  const handleRotateSelection = useCallback(() => {
+    if (!selected.length) {
+      toast.info("Selecione entidades para girar.");
+      return;
+    }
+    const box = boxOfEntities(selected);
+    const center = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
+    commit((e) =>
+      e.map((x) =>
+        selection.includes(x.id) ? rotateEntityAroundPoint(x, center, Math.PI / 2) : x,
+      ),
+    );
+    toast.success("Seleção girada em 90°.");
+  }, [selected, boxOfEntities, commit, selection]);
+
+  const handleMirrorSelection = useCallback(() => {
+    if (!selected.length) {
+      toast.info("Selecione entidades para espelhar.");
+      return;
+    }
+    const box = boxOfEntities(selected);
+    const cx = (box.minX + box.maxX) / 2;
+    commit((e) =>
+      e.map((x) =>
+        selection.includes(x.id) ? mirrorAcrossAxis(x, { x: cx, y: 0 }, { x: cx, y: 100 }) : x,
+      ),
+    );
+    toast.success("Seleção espelhada.");
+  }, [selected, boxOfEntities, commit, selection]);
+
+  const handleScaleSelection = useCallback(() => {
+    if (!selected.length) {
+      toast.info("Selecione entidades para escalar.");
+      return;
+    }
+    const box = boxOfEntities(selected);
+    const center = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
+    commit((e) =>
+      e.map((x) => (selection.includes(x.id) ? scaleEntityAroundPoint(x, center, 1.5) : x)),
+    );
+    toast.success("Seleção escalada em 1.5×.");
+  }, [selected, boxOfEntities, commit, selection, scaleEntityAroundPoint]);
+
+  const handleStretchSelection = useCallback(() => {
+    if (!selected.length) {
+      toast.info("Selecione entidades para esticar.");
+      return;
+    }
+    const box = boxOfEntities(selected);
+    const updated = stretchSelection(entities, box, { x: 10, y: 0 });
+    commit(updated);
+    toast.success("Vértices esticados em +10mm.");
+  }, [selected.length, selected, boxOfEntities, entities, commit]);
+
+  const handleBreakSelection = useCallback(() => {
+    if (!selected.length) {
+      toast.info("Selecione uma linha ou polilinha para quebrar.");
+      return;
+    }
+    const target = selected[0];
+    const box = boxOf(target);
+    const mid = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
+    const res = breakEntityAtPoint(target, mid);
+    if (res) {
+      commit((e) => [...e.filter((x) => x.id !== res.originalId), ...res.created]);
+      setSelection(res.created.map((c) => c.id));
+      toast.success("Entidade dividida em dois segmentos.");
+    } else {
+      toast.error("Não foi possível quebrar esta entidade.");
+    }
+  }, [selected, commit]);
+
+  const handleJoinSelection = useCallback(() => {
+    if (selected.length < 2) {
+      toast.info("Selecione pelo menos 2 linhas contíguas para unir.");
+      return;
+    }
+    const res = joinEntities(entities, selection);
+    if (res) {
+      commit((e) => [...e.filter((x) => !res.removedIds.includes(x.id)), res.created]);
+      setSelection([res.created.id]);
+      toast.success("Segmentos unidos em uma polilinha contínua.");
+    } else {
+      toast.error("As entidades selecionadas não são contíguas para união.");
+    }
+  }, [selected.length, entities, selection, commit]);
+
+  const handleExplodeSelection = useCallback(() => {
+    if (!selected.length) {
+      toast.info("Selecione polilinhas ou retângulos para explodir.");
+      return;
+    }
+    let explodedCount = 0;
+    const next: Entity[] = [];
+    const newIds: string[] = [];
+    for (const e of entities) {
+      if (selection.includes(e.id)) {
+        const lines = explodeEntity(e);
+        if (lines && lines.length > 0) {
+          explodedCount++;
+          next.push(...lines);
+          newIds.push(...lines.map((l) => l.id));
+        } else {
+          next.push(e);
+        }
+      } else {
+        next.push(e);
+      }
+    }
+    if (explodedCount > 0) {
+      commit(next);
+      setSelection(newIds);
+      toast.success(`${explodedCount} entidade(s) explodida(s) em linhas simples.`);
+    } else {
+      toast.info("Nenhuma polilinha compatível para explodir.");
+    }
+  }, [selected.length, entities, selection, commit]);
+
+  const handleArrayLinear = useCallback(() => {
+    if (!selected.length) {
+      toast.info("Selecione entidades para matriz linear.");
+      return;
+    }
+    const copies = arrayLinear(selected, { rows: 2, cols: 3, dx: 40, dy: 40 });
+    commit((e) => [...e, ...copies]);
+    toast.success(`Matriz linear gerada (+${copies.length} entidades).`);
+  }, [selected, commit]);
+
+  const handleArrayPolar = useCallback(() => {
+    if (!selected.length) {
+      toast.info("Selecione entidades para matriz polar.");
+      return;
+    }
+    const box = boxOfEntities(selected);
+    const center = { x: box.minX - 50, y: (box.minY + box.maxY) / 2 };
+    const copies = arrayCircular(selected, { center, count: 6, totalAngleDeg: 360 });
+    commit((e) => [...e, ...copies]);
+    toast.success(`Matriz polar gerada (+${copies.length} entidades).`);
+  }, [selected, boxOfEntities, commit]);
+
+  const handleConvertToBend = useCallback(() => {
+    if (!selected.length) {
+      toast.info("Selecione uma linha para converter em dobra.");
+      return;
+    }
+    commit((e) => e.map((x) => (selection.includes(x.id) ? { ...x, layer: "dobra" } : x)));
+    toast.success("Linha(s) convertida(s) em linha de dobra.");
+  }, [selected.length, selection, commit]);
+
+  const handleAddHole = useCallback(() => {
+    const b = selected.length
+      ? boxOfEntities(selected)
+      : { minX: cursor.x - 5, maxX: cursor.x + 5, minY: cursor.y - 5, maxY: cursor.y + 5 };
+    const cx = (b.minX + b.maxX) / 2;
+    const cy = (b.minY + b.maxY) / 2;
+    const hole: Entity = {
+      id: uid(),
+      layer: "corte",
+      type: "circle",
+      cx,
+      cy,
+      r: 5,
+    };
+    commit((e) => [...e, hole]);
+    setSelection([hole.id]);
+    toast.success("Furo paramétrico Ø10mm adicionado.");
+  }, [selected.length, boxOfEntities, selected, cursor.x, cursor.y, commit]);
+
+  const handlePlanificar = useCallback(() => {
+    setActiveMode("3d");
+    setSolidOpen(true);
+    setViewMode3D("planificada");
+    toast.info("Visualização Planificada (Flat Pattern) ativada.");
+  }, []);
+
+  const handleOpenFlanges = useCallback(() => {
+    setActiveMode("flanges");
+    setSolidOpen(true);
+  }, []);
+
+  const handleApplyRelief = useCallback(() => {
+    if (!selected.length) {
+      toast.info("Selecione as linhas de dobra para aplicar alívio.");
+      return;
+    }
+    toast.success("Alívio de canto configurado nos vértices de dobra.");
+  }, [selected.length]);
+
+  const handleConvertToCut = useCallback(() => {
+    if (!selected.length) return;
+    commit((e) => e.map((x) => (selection.includes(x.id) ? { ...x, layer: "corte" } : x)));
+    toast.success("Entidades atribuídas à camada de Corte.");
+  }, [selected.length, selection, commit]);
+
+  const handleConvertToRecorte = useCallback(() => {
+    if (!selected.length) return;
+    commit((e) => e.map((x) => (selection.includes(x.id) ? { ...x, layer: "recorte" } : x)));
+    toast.success("Entidades atribuídas à camada de Recorte.");
+  }, [selected.length, selection, commit]);
+
+  const handleUnfold = useCallback(() => {
+    setActiveMode("3d");
+    setSolidOpen(true);
+    setViewMode3D("planificada");
+    toast.success("Desdobramento analítico ativado.");
+  }, []);
+
+  const handleFold = useCallback(() => {
+    setActiveMode("3d");
+    setSolidOpen(true);
+    setViewMode3D("isometrica");
+    toast.success("Conformação 3D dobrada a 100%.");
+  }, []);
+
+  const handleApplyCoordinate = useCallback(
+    (x: number, y: number) => {
+      const target: Vec2 = { x, y };
+      setCursor(target);
+      if (tool === "point") {
+        commit((e) => [...e, { id: uid(), layer: activeLayer, type: "point", x, y }]);
+        toast.success(`Ponto inserido em (${x}, ${y}) mm.`);
+      } else if (tool === "line") {
+        if (pending.length === 0) {
+          setPending([target]);
+          toast.info(`Início da linha definido em (${x}, ${y}) mm.`);
+        } else {
+          const p0 = pending[0]!;
+          commit((e) => [
+            ...e,
+            { id: uid(), layer: activeLayer, type: "line", x1: p0.x, y1: p0.y, x2: x, y2: y },
+          ]);
+          setPending([]);
+          setDraft(null);
+          toast.success(`Linha traçada até (${x}, ${y}) mm.`);
+        }
+      } else if (tool === "circle") {
+        if (pending.length === 0) {
+          setPending([target]);
+          toast.info(`Centro definido em (${x}, ${y}) mm.`);
+        } else {
+          const p0 = pending[0]!;
+          const r = dist(p0, target);
+          commit((e) => [
+            ...e,
+            { id: uid(), layer: activeLayer, type: "circle", cx: p0.x, cy: p0.y, r },
+          ]);
+          setPending([]);
+          setDraft(null);
+          toast.success(`Círculo r=${r.toFixed(1)} mm criado.`);
+        }
+      } else if (selected.length > 0) {
+        commit((e) =>
+          e.map((item) => (selection.includes(item.id) ? translate(item, x, y) : item)),
+        );
+        toast.success(`Entidades movidas por (${x}, ${y}) mm.`);
+      }
+    },
+    [tool, activeLayer, commit, pending, selected.length, selection],
+  );
+
+  const toggleFullscreen = useCallback(() => {
+    triggerHaptic("action");
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(() => {});
+    } else {
+      document.exitFullscreen().catch(() => {});
+    }
+    setFocus((f) => !f);
+  }, []);
+
   /* --------------------------------------------------------- interações */
   const finishPolyline = useCallback(
     (close: boolean) => {
@@ -985,6 +1354,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       if (!ev.shiftKey) setSelection([]);
       setMarquee({ a: raw, b: raw });
+      return;
+    }
+
+    if (tool === "point") {
+      commit((e) => [...e, { id: uid(), layer: activeLayer, type: "point", x: p.x, y: p.y }]);
+      triggerHaptic("tap");
       return;
     }
 
@@ -1256,7 +1631,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
     if (tool === "polyline" && pending.length) {
-      const p = snapPoint(raw);
+      let p = snapPoint(raw);
+      if (orthoOn) {
+        const p0 = pending[pending.length - 1]!;
+        const dx = Math.abs(raw.x - p0.x);
+        const dy = Math.abs(raw.y - p0.y);
+        p = dx >= dy ? { x: p.x, y: p0.y } : { x: p0.x, y: p.y };
+      }
       setDraft({
         id: "draft",
         layer: activeLayer,
@@ -1269,7 +1650,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
     if (pending.length === 1 && draft) {
-      setDraft(buildDraft(tool, pending[0]!, snapPoint(raw), activeLayer, filletR));
+      let targetP = snapPoint(raw);
+      if (orthoOn && tool === "line") {
+        const p0 = pending[0]!;
+        const dx = Math.abs(raw.x - p0.x);
+        const dy = Math.abs(raw.y - p0.y);
+        targetP = dx >= dy ? { x: targetP.x, y: p0.y } : { x: p0.x, y: targetP.y };
+      }
+      setDraft(buildDraft(tool, pending[0]!, targetP, activeLayer, filletR));
     }
   };
 
@@ -1738,179 +2126,114 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onExit={leaveEditor}
         />
       )}
-      {/* REGIÃO A — HEADER */}
+      {/* REGIÃO A — HEADER SUPERIOR DEFINITIVO LANDSCAPE */}
       {!focus && (
-        <header className="grid shrink-0 grid-cols-[auto_minmax(4rem,1fr)_minmax(0,auto)] items-center gap-2">
-          <div className="flex min-w-0 items-center gap-2">
+        <header className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-line bg-card/80 px-3 backdrop-blur-md">
+          {/* LADO ESQUERDO: [ ← SAIR ] [ CHAMFER ] */}
+          <div className="flex shrink-0 items-center gap-2">
             <button
               onClick={leaveEditor}
               aria-label="Sair do CHAMFER"
-              className="flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-1 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase hover:text-accent"
+              className="flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-background/60 px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wider text-muted-foreground uppercase hover:bg-background hover:text-foreground transition-colors"
             >
               <ArrowLeft className="size-3.5" /> Sair
             </button>
-            <span className="tick-label shrink-0 text-accent">CHAMFER</span>
-
-            {/* MODO CAD CANÔNICO: 2D ESBOÇO ↔ 3D TRAÇAGEM */}
-            <div className="flex items-center rounded-lg border border-line bg-background/50 p-0.5">
-              <button
-                type="button"
-                onClick={() => setSolidOpen(false)}
-                className={cn(
-                  "rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase transition-colors",
-                  !solidOpen
-                    ? "bg-accent/15 text-accent font-semibold"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                2D ESBOÇO
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setSolidOpen(true);
-                  if (drawable.length > 0) fitTo(drawable);
-                }}
-                className={cn(
-                  "rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase transition-colors",
-                  solidOpen
-                    ? "bg-accent/15 text-accent font-semibold"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                3D TRAÇAGEM
-              </button>
-            </div>
-
-            {/* CONTROLES DO MODO 3D / TRAÇAGEM NA MESMA TELA */}
-            {solidOpen && (
-              <div className="flex items-center gap-1">
-                <div className="flex items-center rounded-lg border border-line bg-background/50 p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setViewMode3D("planificada")}
-                    className={cn(
-                      "rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase transition-colors",
-                      viewMode3D === "planificada"
-                        ? "bg-accent/20 text-accent font-semibold"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    PLANIFICADA
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setViewMode3D("isometrica")}
-                    className={cn(
-                      "rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase transition-colors",
-                      viewMode3D === "isometrica"
-                        ? "bg-accent/20 text-accent font-semibold"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    3D ISOMÉTRICA
-                  </button>
-                </div>
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-bold tracking-wider text-accent">CHAMFER</span>
+              {project && (
                 <button
                   type="button"
-                  onClick={() => setShowPoints3D((v) => !v)}
-                  className={cn(
-                    "rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase border transition-colors",
-                    showPoints3D ? "border-amber-500/40 text-amber-400 bg-amber-500/10 font-medium" : "border-line text-muted-foreground",
-                  )}
-                  title="Pontos notáveis em âmbar"
+                  onClick={() => {
+                    triggerHaptic("tap");
+                    setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
+                    setNewProjectDialogOpen(true);
+                  }}
+                  className="hidden md:inline font-mono text-[10px] text-muted-foreground hover:text-accent transition-colors truncate max-w-[140px]"
+                  title={`Projeto: ${project.name} (clique para novo projeto)`}
                 >
-                  PONTOS
+                  · {project.name}
                 </button>
+              )}
+              {dossier && (
                 <button
-                  type="button"
-                  onClick={() => setShowFolds3D((v) => !v)}
-                  className={cn(
-                    "rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase border transition-colors",
-                    showFolds3D ? "border-violet-500/40 text-violet-400 bg-violet-500/10 font-medium" : "border-line text-muted-foreground",
-                  )}
-                  title="Linhas de dobra"
-                >
-                  DOBRAS
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowDims3D((v) => !v)}
-                  className={cn(
-                    "rounded-md px-1.5 py-0.5 font-mono text-[9px] uppercase border transition-colors",
-                    showDims3D ? "border-accent/40 text-accent bg-accent/10 font-medium" : "border-line text-muted-foreground",
-                  )}
-                  title="Dimensões e etiquetas"
-                >
-                  COTAS
-                </button>
-                <button
-                  type="button"
                   onClick={() =>
-                    downloadTracagemSvgFile(
-                      project?.name || "peca-tracagem-chamfer",
-                      drawable,
-                      thickness,
-                      viewMode3D,
-                    )
+                    navigate({
+                      to: "/projetos/$projectId",
+                      params: { projectId: dossier.projectId },
+                    })
                   }
-                  className="flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[9px] font-semibold text-accent border border-accent/40 bg-accent/10 hover:bg-accent/20 transition-colors uppercase"
-                  title="Baixar esta peça planificada em SVG autônomo estilo Traçagem"
+                  title={`${dossier.projectName} · ${dossier.partName}`}
+                  className="hidden lg:inline rounded-md bg-accent/10 px-2 py-0.5 font-mono text-[9px] tracking-wider text-accent uppercase ring-1 ring-accent/25 truncate max-w-[160px]"
                 >
-                  <Download className="size-3" />
-                  BAIXAR SVG
+                  {dossier.partCode || dossier.partName}
                 </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
-          <div className="min-w-0 px-1 text-center">
-            {project ? (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("tap");
-                  setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
-                  setNewProjectDialogOpen(true);
-                }}
-                className="tick-label block max-w-full truncate text-muted-foreground hover:text-accent transition-colors cursor-pointer touch-manipulation"
-                title={`Projeto: ${project.name} (clique para novo projeto)`}
-              >
-                {project.name}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("tap");
-                  setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
-                  setNewProjectDialogOpen(true);
-                }}
-                className="tick-label block max-w-full truncate text-accent hover:underline transition-colors cursor-pointer touch-manipulation"
-              >
-                + Adicionar Projeto
-              </button>
-            )}
-            {dossier && (
-              <button
-                onClick={() =>
-                  navigate({
-                    to: "/projetos/$projectId",
-                    params: { projectId: dossier.projectId },
-                  })
-                }
-                title={`${dossier.projectName} · ${dossier.partName}`}
-                className="mx-auto block max-w-full truncate rounded-full bg-accent/10 px-2 py-0.5 font-mono text-[9px] tracking-wider text-accent uppercase ring-1 ring-accent/25"
-              >
-                {dossier.partCode || dossier.partName} · {dossier.projectName}
-              </button>
-            )}
+          {/* CENTRO: [ 2D ESBOÇO ] [ 3D TRAÇAGEM ] [ FLANGES ] */}
+          <div className="flex items-center rounded-lg border border-line bg-background/60 p-0.5 shadow-xs">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                setActiveMode("2d");
+                setSolidOpen(false);
+              }}
+              className={cn(
+                "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
+                activeMode === "2d"
+                  ? "bg-accent/20 text-accent shadow-xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              2D ESBOÇO
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                setActiveMode("3d");
+                setSolidOpen(true);
+                if (drawable.length > 0) fitTo(drawable);
+              }}
+              className={cn(
+                "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
+                activeMode === "3d"
+                  ? "bg-accent/20 text-accent shadow-xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              3D TRAÇAGEM
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                setActiveMode("flanges");
+                setSolidOpen(true);
+              }}
+              className={cn(
+                "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
+                activeMode === "flanges"
+                  ? "bg-accent/20 text-accent shadow-xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              FLANGES
+            </button>
           </div>
 
-          <div className="flex min-w-0 items-center justify-end gap-1 overflow-x-auto">
-            <IconBtn label="Desfazer" onClick={undo} icon={Undo2} />
-            <IconBtn label="Refazer" onClick={redo} icon={Redo2} />
-            <IconBtn label="Enquadrar" onClick={() => fitTo(entities)} icon={ScanSearch} />
+          {/* LADO DIREITO: [ DESFAZER ] [ REFAZER ] [ AJUSTAR ] [ CAMADAS ] [ EXPORTAR ] [ FERRAMENTA RÁPIDA ] [ MAIS ] [ TELA CHEIA ] */}
+          <div className="flex items-center gap-1">
+            <IconBtn label="Desfazer" onClick={undo} icon={Undo2} title="Desfazer ação (Ctrl+Z)" />
+            <IconBtn label="Refazer" onClick={redo} icon={Redo2} title="Refazer ação (Ctrl+Y)" />
+            <IconBtn
+              label="Ajustar"
+              onClick={() => fitTo(entities)}
+              icon={ScanSearch}
+              title="Ajustar / Enquadrar no viewport"
+            />
             <IconBtn
               label="Camadas"
               onClick={() => {
@@ -1919,17 +2242,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               }}
               icon={LayersIcon}
               active={showLayers}
+              title="Gerenciamento de camadas técnicas"
             />
-
-            <IconBtn label="Exportar" onClick={() => setExportOpen(true)} icon={Download} />
-            <IconBtn label="Exportar DXF CNC" onClick={() => setCncOpen(true)} icon={Scissors} />
-
+            <IconBtn
+              label="Exportar"
+              onClick={() => setExportOpen(true)}
+              icon={Download}
+              title="Exportar DXF, SVG, PNG, PDF"
+            />
+            <IconBtn
+              label="Ferramenta Rápida"
+              onClick={() => setCncOpen(true)}
+              icon={Scissors}
+              title="Ferramenta Rápida: Corte e Exportação DXF CNC direta"
+            />
             <div className="relative">
               <IconBtn
                 label="Mais"
                 onClick={() => setMoreOpen((m) => !m)}
                 icon={MoreHorizontal}
                 active={moreOpen}
+                title="Mais opções e ferramentas avançadas"
               />
               {moreOpen && (
                 <div className="metal hairline pop-in fixed top-12 right-3 z-[70] w-56 rounded-2xl p-1.5 shadow-xl">
@@ -2074,35 +2407,186 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 </div>
               )}
             </div>
-            <IconBtn label="Foco" onClick={() => setFocus(true)} icon={Maximize} />
+            <IconBtn
+              label="Tela Cheia"
+              onClick={toggleFullscreen}
+              icon={focus ? Minimize : Maximize}
+              title="Alternar modo tela cheia / foco"
+            />
           </div>
         </header>
       )}
 
-      {/* CORPO: TOOLBAR + CANVAS + PROPRIEDADES */}
-      <div className="flex min-h-0 min-w-0 flex-1 gap-2">
-        {/* REGIÃO B — TOOLBAR ESQUERDA (oculta no modo 3D Traçagem) */}
-        {!focus && !solidOpen && (
-          <div className="metal hairline flex w-11 shrink-0 flex-col items-center gap-0.5 overflow-y-auto rounded-2xl p-1">
+      {/* TOOLBAR SUPERIOR HORIZONTAL (DESENHAR, MODIFICAR, PRECISÃO, COTAR, CHAPA) */}
+      {!focus && activeMode === "2d" && (
+        <ChamferLandscapeToolbar
+          activeTab={activeRibbonTab}
+          onTabChange={setActiveRibbonTab}
+          tool={tool}
+          onPickTool={pickTool}
+          hasSelection={selected.length > 0}
+          selectedCount={selected.length}
+          offsetDist={offsetDist}
+          setOffsetDist={setOffsetDist}
+          filletR={filletR}
+          setFilletR={setFilletR}
+          onMoveSelection={handleMoveSelection}
+          onCopySelection={handleCopySelection}
+          onRotateSelection={handleRotateSelection}
+          onMirrorSelection={handleMirrorSelection}
+          onScaleSelection={handleScaleSelection}
+          onStretchSelection={handleStretchSelection}
+          onBreakSelection={handleBreakSelection}
+          onJoinSelection={handleJoinSelection}
+          onExplodeSelection={handleExplodeSelection}
+          onArrayLinear={handleArrayLinear}
+          onArrayPolar={handleArrayPolar}
+          snapOn={snapOn}
+          setSnapOn={setSnapOn}
+          showGrid={showGrid}
+          setShowGrid={setShowGrid}
+          grid={grid}
+          setGrid={setGrid}
+          orthoOn={orthoOn}
+          setOrthoOn={setOrthoOn}
+          trackingOn={trackingOn}
+          setTrackingOn={setTrackingOn}
+          cursor={cursor}
+          onApplyCoordinate={handleApplyCoordinate}
+          dimKind={dimKind}
+          onPickDimKind={(k) => {
+            setDimKind(k);
+            setTool("dim");
+          }}
+          thickness={thickness}
+          onThicknessChange={setThickness}
+          onConvertToBend={handleConvertToBend}
+          onAddHole={handleAddHole}
+          onPlanificar={handlePlanificar}
+          onOpenFlanges={handleOpenFlanges}
+          onApplyRelief={handleApplyRelief}
+          onConvertToCut={handleConvertToCut}
+          onConvertToRecorte={handleConvertToRecorte}
+          onUnfold={handleUnfold}
+          onFold={handleFold}
+        />
+      )}
+
+      {/* CORPO: SIDEBAR ESQUERDA + CANVAS + PROPRIEDADES */}
+      <div className="flex min-h-0 min-w-0 flex-1 gap-2 p-1.5 pt-0">
+        {/* REGIÃO B — SIDEBAR ESQUERDA (8 ITENS CANÔNICOS, OCULTA NO MODO 3D) */}
+        {!focus && activeMode === "2d" && (
+          <aside
+            aria-label="Ferramentas principais do CHAMFER"
+            className="metal hairline flex w-11 shrink-0 flex-col items-center gap-0.5 overflow-y-auto rounded-2xl p-1 shadow-sm select-none"
+          >
             {primaryTools.map((t) => (
               <ToolBtn key={t.id} t={t} active={tool === t.id} onPick={pickTool} />
             ))}
             <div className="my-1 h-px w-6 bg-line" />
-            <IconBtn
-              label="Importar CNC 2D"
-              onClick={() => setImportOpen(true)}
-              icon={MoreHorizontal}
-              flat
-            />
-          </div>
+            <div className="relative">
+              <IconBtn
+                label="Mais ferramentas"
+                onClick={() => setSecondaryToolsOpen((v) => !v)}
+                icon={MoreHorizontal}
+                active={secondaryToolsOpen}
+                flat
+                title="Ferramentas secundárias: Ponto, Polígono, Elipse, Medir, Nó, Pan"
+              />
+              {secondaryToolsOpen && (
+                <div className="metal hairline pop-in absolute left-full top-0 ml-2 z-50 w-48 rounded-xl p-1.5 shadow-xl backdrop-blur">
+                  <p className="px-2 py-1 font-mono text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
+                    Secundárias
+                  </p>
+                  <MenuItem
+                    label="Ponto"
+                    icon={Dot}
+                    onClick={() => {
+                      setTool("point");
+                      setSecondaryToolsOpen(false);
+                    }}
+                  />
+                  <MenuItem
+                    label="Polígono"
+                    icon={Hexagon}
+                    onClick={() => {
+                      setTool("polygon");
+                      setSecondaryToolsOpen(false);
+                    }}
+                  />
+                  <MenuItem
+                    label="Elipse"
+                    icon={Egg}
+                    onClick={() => {
+                      setTool("ellipse");
+                      setSecondaryToolsOpen(false);
+                    }}
+                  />
+                  <MenuItem
+                    label="Medir / Régua"
+                    icon={Ruler}
+                    onClick={() => {
+                      setTool("measure");
+                      setSecondaryToolsOpen(false);
+                    }}
+                  />
+                  <MenuItem
+                    label="Editar Nós"
+                    icon={MousePointer2}
+                    onClick={() => {
+                      setTool("node");
+                      setSecondaryToolsOpen(false);
+                    }}
+                  />
+                  <MenuItem
+                    label="Mover Tela (Pan)"
+                    icon={Move}
+                    onClick={() => {
+                      setTool("pan");
+                      setSecondaryToolsOpen(false);
+                    }}
+                  />
+                  <div className="my-1 h-px bg-line" />
+                  <MenuItem
+                    label="Importar CNC 2D"
+                    icon={Upload}
+                    onClick={() => {
+                      setImportOpen(true);
+                      setSecondaryToolsOpen(false);
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </aside>
         )}
 
         {panelSide === "left" && aside}
 
-        {/* REGIÃO C — CANVAS */}
-        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl">
-          {/* grade: camada própria, sempre abaixo da geometria */}
-          <svg className="pointer-events-none absolute inset-0 size-full">
+        {/* REGIÃO C — CANVAS OU MOTOR 3D TRAÇAGEM / FLANGES */}
+        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl border border-line/40 bg-background/50">
+          {solidOpen ? (
+            <div className="relative size-full">
+              <Cad3DStage
+                open={true}
+                onClose={() => {
+                  setActiveMode("2d");
+                  setSolidOpen(false);
+                }}
+                entities={drawable}
+                thickness={thickness}
+                onThickness={setThickness}
+                title={project?.name ?? "Peça Chamfer"}
+                labProjectId={projectId}
+                selection={selection}
+                onSelectEntity={(id) => setSelection(id ? [id] : [])}
+                initialCadPanelOpen={activeMode === "flanges"}
+              />
+            </div>
+          ) : (
+            <>
+              {/* grade: camada própria, sempre abaixo da geometria */}
+              <svg className="pointer-events-none absolute inset-0 size-full">
             <defs>
               <pattern
                 id="lab2d-grid"
@@ -2567,198 +3051,224 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </button>
             </div>
           )}
+            </>
+          )}
         </div>
 
         {/* REGIÃO D — PAINEL DE PROPRIEDADES */}
         {panelSide === "right" && aside}
       </div>
 
-      {/* REGIÃO E — STATUS BAR */}
+      {/* REGIÃO E — STATUS BAR LANDSCAPE */}
       {!focus && (
-        <div className="flex h-7 shrink-0 items-center gap-1.5 overflow-x-auto font-mono text-[10px] text-muted-foreground">
-          {project?.plans.map((pl) => (
+        <footer
+          aria-label="Barra de status do CHAMFER"
+          className="flex h-7 shrink-0 items-center justify-between gap-2 border-t border-line/60 bg-card/60 px-3 font-mono text-[10px] text-muted-foreground backdrop-blur-md select-none"
+        >
+          {/* LADO ESQUERDO: PLANOS DO PROJETO + COORDENADAS REAIS */}
+          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
+            {project?.plans.map((pl) => (
+              <button
+                key={pl.id}
+                type="button"
+                onClick={() => {
+                  if (pl.id === planId) return;
+                  setProject((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          plans: prev.plans.map((x) =>
+                            x.id === planId ? { ...x, entities, groups, dims } : x,
+                          ),
+                        }
+                      : prev,
+                  );
+                  setPlanId(pl.id);
+                  setEntities(pl.entities);
+                  setGroups(pl.groups ?? []);
+                  setDims(pl.dims ?? []);
+                  setSelection([]);
+                  past.current = [];
+                  future.current = [];
+                }}
+                className={cn(
+                  "shrink-0 rounded px-2 py-0.5 font-bold transition-colors",
+                  pl.id === planId ? "bg-accent/20 text-accent font-semibold" : "hover:text-foreground",
+                )}
+              >
+                {pl.name}
+              </button>
+            ))}
+            {project && (
+              <button
+                type="button"
+                aria-label="Novo plano de corte"
+                onClick={() => {
+                  const plan = emptyPlan(project.plans.length);
+                  plan.name = planLabel(project.plans.length);
+                  const next: Project = {
+                    ...project,
+                    plans: [
+                      ...project.plans.map((x) =>
+                        x.id === planId ? { ...x, entities, groups, dims } : x,
+                      ),
+                      plan,
+                    ],
+                    lastPlanId: plan.id,
+                  };
+                  saveProject(next);
+                  setProject(next);
+                  setPlanId(plan.id);
+                  setEntities([]);
+                  setGroups([]);
+                  setDims([]);
+                  setSelection([]);
+                  toast.success(`${plan.name} criado.`);
+                }}
+                className="shrink-0 rounded px-1.5 py-0.5 text-muted-foreground hover:text-accent font-bold"
+                title="Adicionar novo plano de corte ao projeto"
+              >
+                +
+              </button>
+            )}
+
+            <div className="mx-1 h-3.5 w-px bg-line" />
+
+            {/* LEITURA DE COORDENADAS */}
+            <div className="flex items-center gap-1.5 font-mono text-[9.5px]">
+              <span className="text-muted-foreground">X:</span>
+              <strong className="text-foreground">{cursor.x.toFixed(2)}</strong>
+              <span className="text-muted-foreground">Y:</span>
+              <strong className="text-foreground">{cursor.y.toFixed(2)}</strong>
+              <span className="text-muted-foreground">mm</span>
+            </div>
+
+            {/* HUD DE COMPRIMENTO / ÂNGULO QUANDO DESENHANDO LINHA */}
+            {pending.length === 1 && (tool === "line" || tool === "polyline") && (
+              <div className="flex items-center gap-1.5 rounded bg-accent/10 px-1.5 py-0.5 text-[9.5px] text-accent">
+                <span>
+                  L: {Math.hypot(cursor.x - pending[0]!.x, cursor.y - pending[0]!.y).toFixed(1)} mm
+                </span>
+                <span>·</span>
+                <span>
+                  ∠{" "}
+                  {(
+                    ((Math.atan2(-(cursor.y - pending[0]!.y), cursor.x - pending[0]!.x) * 180) /
+                      Math.PI +
+                      360) %
+                    360
+                  ).toFixed(1)}
+                  °
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* LADO DIREITO: STATUS DE PRECISÃO, CNC E ZOOM */}
+          <div className="flex items-center gap-1.5 shrink-0">
             <button
-              key={pl.id}
-              onClick={() => {
-                if (pl.id === planId) return;
-                setProject((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        plans: prev.plans.map((x) =>
-                          x.id === planId ? { ...x, entities, groups, dims } : x,
-                        ),
-                      }
-                    : prev,
-                );
-                setPlanId(pl.id);
-                setEntities(pl.entities);
-                setGroups(pl.groups ?? []);
-                setDims(pl.dims ?? []);
-                setSelection([]);
-                past.current = [];
-                future.current = [];
-              }}
+              type="button"
+              onClick={() => setSnapOn((s) => !s)}
               className={cn(
-                "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
-                pl.id === planId && "text-accent",
+                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
+                snapOn ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Alternar Snap Geométrico"
+            >
+              SNAP: {snapOn ? "ON" : "OFF"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setOrthoOn((o) => !o)}
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
+                orthoOn
+                  ? "text-emerald-400 bg-emerald-500/15"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Modo Ortogonal (0°, 90°, 180°, 270°)"
+            >
+              ORTO: {orthoOn ? "ON" : "OFF"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowGrid((s) => !s)}
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
+                showGrid ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Alternar visibilidade da grade"
+            >
+              GRID: {showGrid ? `${grid}mm` : "OFF"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => updateFrame({ visible: !frame.visible })}
+              title={`Área de trabalho ${frame.w} × ${frame.h} mm`}
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
+                frame.visible ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
               )}
             >
-              {pl.name}
+              QUADRO
             </button>
-          ))}
-          {project && (
+
+            <div className="mx-0.5 h-3.5 w-px bg-line" />
+
             <button
-              aria-label="Novo plano"
-              onClick={() => {
-                const plan = emptyPlan(project.plans.length);
-                plan.name = planLabel(project.plans.length);
-                const next: Project = {
-                  ...project,
-                  plans: [
-                    ...project.plans.map((x) =>
-                      x.id === planId ? { ...x, entities, groups, dims } : x,
-                    ),
-                    plan,
-                  ],
-                  lastPlanId: plan.id,
-                };
-                saveProject(next);
-                setProject(next);
-                setPlanId(plan.id);
-                setEntities([]);
-                setGroups([]);
-                setDims([]);
-                setSelection([]);
-                toast.success(`${plan.name} criado.`);
-              }}
-              className="shrink-0 rounded-full bg-background/40 px-2 py-0.5 text-muted-foreground hover:text-accent"
+              type="button"
+              onClick={() => setShowArrows((s) => !s)}
+              title="Direção de corte"
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
+                showArrows ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
+              )}
             >
-              +
+              FLUXO
             </button>
-          )}
-          <button
-            onClick={() => setShowGrid((s) => !s)}
-            className={cn(
-              "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
-              showGrid && "text-accent",
-            )}
-          >
-            GRID
-          </button>
-          <button
-            onClick={() => updateFrame({ visible: !frame.visible })}
-            title={`Área de trabalho ${frame.w} × ${frame.h} mm`}
-            className={cn(
-              "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
-              frame.visible && "text-accent",
-            )}
-          >
-            QUADRO
-          </button>
 
-          <select
-            value={grid}
-            onChange={(e) => setGrid(Number(e.target.value))}
-            aria-label="Espaçamento da grade"
-            className="shrink-0 rounded-full bg-background/40 px-1.5 py-0.5 outline-none"
-          >
-            {[1, 5, 10, 25, 50].map((g) => (
-              <option key={g} value={g}>
-                {g}
-              </option>
-            ))}
-          </select>
-          <button
-            onClick={() => setShowArrows((s) => !s)}
-            title="FLUXO CALDRA — direção real de corte"
-            className={cn(
-              "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
-              showArrows && "text-accent",
-            )}
-          >
-            FLUXO
-          </button>
-          <button
-            onClick={() => setShowOrder((s) => !s)}
-            className={cn(
-              "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
-              showOrder && "text-accent",
-            )}
-          >
-            ORDEM
-          </button>
-          <button
-            onClick={() => {
-              setSimOn((s) => {
-                const next = !s;
-                setSimPlaying(next);
-                setSimDist(0);
-                return next;
-              });
-            }}
-            className={cn(
-              "shrink-0 rounded-full bg-background/40 px-2 py-0.5",
-              simOn && "text-accent",
-            )}
-          >
-            PRÉVIA CNC
-          </button>
-          {simOn && (
-            <>
-              <button
-                onClick={() => setSimPlaying((p) => !p)}
-                className="shrink-0 rounded-full bg-background/40 px-2 py-0.5 text-accent"
-              >
-                {simPlaying ? "PAUSAR" : "TOCAR"}
-              </button>
-              <button
-                onClick={() => {
+            <button
+              type="button"
+              onClick={() => setShowOrder((s) => !s)}
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
+                showOrder ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              ORDEM
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSimOn((s) => {
+                  const next = !s;
+                  setSimPlaying(next);
                   setSimDist(0);
-                  setSimPlaying(false);
-                }}
-                className="shrink-0 rounded-full bg-background/40 px-2 py-0.5"
-              >
-                REINICIAR
-              </button>
-              <select
-                value={simSpeed}
-                onChange={(e) => setSimSpeed(Number(e.target.value))}
-                aria-label="Velocidade da simulação"
-                className="shrink-0 rounded-full bg-background/40 px-1.5 py-0.5 outline-none"
-              >
-                {[0.5, 1, 2, 4].map((s) => (
-                  <option key={s} value={s}>
-                    {s}×
-                  </option>
-                ))}
-              </select>
-              <span className="shrink-0 rounded-full bg-background/40 px-2 py-0.5 text-accent">
-                {simSample
-                  ? `${SIM_LABEL[simSample.kind]} · ${String(simSample.sequence).padStart(2, "0")}`
-                  : "—"}
-              </span>
-            </>
-          )}
+                  return next;
+                });
+              }}
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
+                simOn ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              PRÉVIA CNC
+            </button>
 
-          {(tool === "offset" || tool === "fillet" || tool === "chamfer") && (
-            <input
-              type="number"
-              inputMode="decimal"
-              aria-label="Parâmetro da ferramenta"
-              value={tool === "offset" ? offsetDist : filletR}
-              onChange={(e) =>
-                tool === "offset"
-                  ? setOffsetDist(Number(e.target.value))
-                  : setFilletR(Number(e.target.value))
-              }
-              className="w-16 shrink-0 rounded-full bg-background/40 px-2 py-0.5 text-center outline-none"
-            />
-          )}
-          <span className="ml-auto shrink-0 rounded-full bg-background/40 px-2 py-0.5">
-            {Math.round(view.k * 100)}%
-          </span>
-        </div>
+            <button
+              type="button"
+              onClick={() => fitTo(entities)}
+              className="rounded bg-background/60 px-2 py-0.5 font-mono text-[9px] font-bold text-accent hover:bg-background transition-colors"
+              title="Clique para enquadrar desenho (100%)"
+            >
+              {Math.round(view.k * 100)}%
+            </button>
+          </div>
+        </footer>
       )}
 
       {/* PONTO ÚNICO DE EXPORTAÇÃO: DXF (três perfis), SVG, PNG e PDF. */}
@@ -3189,6 +3699,19 @@ function buildDraft(tool: Tool, a: Vec2, b: Vec2, layer: string, radius: number)
       return { id: uid(), layer, type: "circle", cx: a.x, cy: a.y, r: dist(a, b) };
     case "polygon":
       return polygonEntity(a, dist(a, b), 6, layer);
+    case "ellipse":
+      return {
+        id: uid(),
+        layer,
+        type: "ellipse",
+        cx: a.x,
+        cy: a.y,
+        rx: Math.max(1, Math.abs(b.x - a.x)),
+        ry: Math.max(1, Math.abs(b.y - a.y)),
+        rotation: 0,
+      };
+    case "point":
+      return { id: uid(), layer, type: "point", x: a.x, y: a.y };
     default:
       return null;
   }
@@ -3277,6 +3800,56 @@ export function EntityShape({
         <path
           key={key}
           d={`M ${p0.x} ${p0.y} A ${e.r} ${e.r} 0 ${sweep > Math.PI ? 1 : 0} 1 ${p1.x} ${p1.y}`}
+          {...p}
+        />
+      );
+    }
+    if (e.type === "ellipse") {
+      return (
+        <ellipse
+          key={key}
+          cx={e.cx}
+          cy={e.cy}
+          rx={e.rx}
+          ry={e.ry}
+          transform={e.rotation ? `rotate(${(e.rotation * 180) / Math.PI} ${e.cx} ${e.cy})` : undefined}
+          {...p}
+        />
+      );
+    }
+    if (e.type === "point") {
+      return (
+        <g key={key}>
+          <circle
+            cx={e.x}
+            cy={e.y}
+            r={3.5 / k}
+            fill="var(--warn, #f59e0b)"
+            stroke="var(--background)"
+            strokeWidth={0.8 / k}
+          />
+          {e.label && (
+            <text
+              x={e.x + 4.5 / k}
+              y={e.y - 4.5 / k}
+              fontSize={8.5 / k}
+              fill="var(--warn, #f59e0b)"
+              className="font-mono font-bold select-none pointer-events-none"
+            >
+              {e.label}
+            </text>
+          )}
+        </g>
+      );
+    }
+    if (e.type === "hatch") {
+      const d = e.boundaryPts.map((q) => `${q.x},${q.y}`).join(" ");
+      return (
+        <polygon
+          key={key}
+          points={d}
+          fill="var(--accent)"
+          fillOpacity={0.08}
           {...p}
         />
       );

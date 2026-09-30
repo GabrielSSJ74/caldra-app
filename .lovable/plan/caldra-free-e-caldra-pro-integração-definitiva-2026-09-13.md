@@ -62,4 +62,4 @@ Suíte nova em `src/lib/subscription/entitlements.test.ts` cobrindo a matriz Fre
 
 ## Detalhes técnicos
 
-Arquivos principais tocados: `src/lib/subscription/features.ts`, `SubscriptionProvider.tsx`, `entitlementService.ts`, `src/components/chameleon/Paywall.tsx` e `ui.tsx`, `src/lib/settings/SettingsProvider.tsx`, `src/routes/configuracoes.tsx`, `oficina.tsx`, `projetos.index.tsx`, `biblioteca.tsx`, rotas de escola e os pontos de exportação em `GeometryStudio.tsx` / diálogos do CHAMFER. Motores de geometria, 3D, DXF e cálculo não são modificados.
+Arquivos principais tocados: `src/lib/subscription/features.ts`, `SubscriptionProvider.tsx`, `entitlementService.ts`, `src/components/caldra/Paywall.tsx` e `ui.tsx`, `src/lib/settings/SettingsProvider.tsx`, `src/routes/configuracoes.tsx`, `oficina.tsx`, `projetos.index.tsx`, `biblioteca.tsx`, rotas de escola e os pontos de exportação em `GeometryStudio.tsx` / diálogos do CHAMFER. Motores de geometria, 3D, DXF e cálculo não são modificados.

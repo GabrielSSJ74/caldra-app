@@ -23,6 +23,8 @@ import {
   LayoutGrid,
   Hammer,
   ShieldCheck,
+  Target,
+  CheckCheck,
   X,
   Gauge,
   Scale,
@@ -100,6 +102,13 @@ export function ChamferCADPanel({
     } else if (newState === "DFM") {
       ChamferKernel.auditDfm(doc);
       doc.activeState = "DFM";
+      setActiveTab("analysis");
+      onDocumentChange({ ...doc });
+    } else if (newState === "METROLOGY") {
+      if (!doc.metrologyReport) {
+        ChamferKernel.generateMetrology(doc);
+      }
+      doc.activeState = "METROLOGY";
       setActiveTab("analysis");
       onDocumentChange({ ...doc });
     }
@@ -255,6 +264,28 @@ export function ChamferCADPanel({
     URL.revokeObjectURL(url);
   };
 
+  const handleDownloadMetrologyCSV = () => {
+    const csv = ChamferKernel.exportMetrologyCsv(doc);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = window.document.createElement("a");
+    link.href = url;
+    link.download = `inspecao_fai_${doc.name.toLowerCase().replace(/\s+/g, "_")}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleDownloadMetrologySVG = () => {
+    const svg = ChamferKernel.exportMetrologySvg(doc);
+    const blob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = window.document.createElement("a");
+    link.href = url;
+    link.download = `prancha_baloneada_${doc.name.toLowerCase().replace(/\s+/g, "_")}.svg`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <aside
       className={cn(
@@ -284,8 +315,8 @@ export function ChamferCADPanel({
         </button>
       </div>
 
-      {/* SELETOR DE MODO DE VISUALIZAÇÃO */}
-      <div className="grid grid-cols-4 gap-1 border-b border-line bg-muted/20 p-1.5">
+      {/* SELETOR DE MODO DE VISUALIZAÇÃO (9 ESTADOS CAD) */}
+      <div className="grid grid-cols-3 gap-1 border-b border-line bg-muted/20 p-1.5">
         <button
           type="button"
           onClick={() => handleToggleState("3D_FOLDED")}
@@ -389,6 +420,19 @@ export function ChamferCADPanel({
         >
           <ShieldCheck className="mb-1 size-3.5" />
           DFM
+        </button>
+        <button
+          type="button"
+          onClick={() => handleToggleState("METROLOGY")}
+          className={cn(
+            "flex flex-col items-center justify-center rounded-lg p-1.5 font-mono text-[7.5px] tracking-wider touch-manipulation select-none cursor-pointer transition-all duration-140 [transition-timing-function:var(--ease-natural)] active:scale-95",
+            doc.activeState === "METROLOGY"
+              ? "bg-accent/15 text-accent font-semibold border border-accent/40 shadow-xs"
+              : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+          )}
+        >
+          <Target className="mb-1 size-3.5" />
+          QUALIDADE
         </button>
       </div>
 
@@ -764,6 +808,150 @@ export function ChamferCADPanel({
               </div>
             )}
 
+            {doc.activeState === "METROLOGY" && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Target className="size-4 text-accent" />
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-foreground">
+                      Metrologia, GD&T & FAI
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      ChamferKernel.generateMetrology(doc);
+                      onDocumentChange({ ...doc });
+                    }}
+                    className="rounded border border-line px-1.5 py-0.5 text-[8.5px] uppercase tracking-wider hover:text-accent"
+                  >
+                    Reinspecionar
+                  </button>
+                </div>
+
+                {doc.metrologyReport ? (
+                  <>
+                    <div className="rounded-lg border border-line bg-card/50 p-2.5 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-muted-foreground uppercase">
+                          Veredito FAI
+                        </span>
+                        <span
+                          className={cn(
+                            "rounded px-1.5 py-0.5 text-[10px] font-bold uppercase",
+                            doc.metrologyReport.summary.overallVerdict === "APPROVED"
+                              ? "bg-emerald-500/15 text-emerald-500"
+                              : doc.metrologyReport.summary.overallVerdict === "CONDITIONALLY_APPROVED"
+                                ? "bg-amber-500/15 text-amber-500"
+                                : doc.metrologyReport.summary.overallVerdict === "REJECTED"
+                                  ? "bg-red-500/15 text-red-500"
+                                  : "bg-muted text-muted-foreground",
+                          )}
+                        >
+                          {doc.metrologyReport.summary.overallVerdict === "APPROVED"
+                            ? "Aprovado"
+                            : doc.metrologyReport.summary.overallVerdict === "CONDITIONALLY_APPROVED"
+                              ? "Aprov. Condicional"
+                              : doc.metrologyReport.summary.overallVerdict === "REJECTED"
+                                ? "Reprovado"
+                                : "Em Inspeção"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1 text-center">
+                        <div className="rounded bg-muted/30 p-1">
+                          <span className="text-[8px] text-muted-foreground block">COTAS</span>
+                          <span className="text-xs font-bold text-accent">
+                            {doc.metrologyReport.summary.totalDimensions}
+                          </span>
+                        </div>
+                        <div className="rounded bg-muted/30 p-1">
+                          <span className="text-[8px] text-muted-foreground block">CONFORME</span>
+                          <span className="text-xs font-bold text-emerald-500">
+                            {doc.metrologyReport.summary.passed}
+                          </span>
+                        </div>
+                        <div className="rounded bg-muted/30 p-1">
+                          <span className="text-[8px] text-muted-foreground block">TAXA</span>
+                          <span className="text-xs font-bold text-foreground">
+                            {doc.metrologyReport.summary.conformanceRate}%
+                          </span>
+                        </div>
+                      </div>
+                      {doc.metrologyReport.capability && (
+                        <div className="flex justify-between border-t border-line/60 pt-1.5 text-[9px]">
+                          <span className="text-muted-foreground">Capabilidade do Processo:</span>
+                          <span className="font-mono font-bold text-accent">
+                            Cp = {doc.metrologyReport.capability.cp} | Cpk = {doc.metrologyReport.capability.cpk}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* LISTA DE PONTOS DE INSPEÇÃO BALONEADOS */}
+                    <div className="space-y-1.5">
+                      <span className="text-[9px] text-muted-foreground uppercase font-semibold block">
+                        Cotas Baloneadas ({doc.metrologyReport.points.length}) · ISO 2768
+                      </span>
+                      <div className="space-y-1.5 max-h-44 overflow-y-auto pr-0.5">
+                        {doc.metrologyReport.points.map((pt) => (
+                          <div
+                            key={pt.id}
+                            className="rounded-lg border border-line bg-card/40 p-2 text-[9px] space-y-1"
+                          >
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <span className="flex size-4 items-center justify-center rounded-full bg-accent/20 font-bold text-[8.5px] text-accent">
+                                  #{pt.balloonNumber}
+                                </span>
+                                <span className="font-semibold text-foreground truncate max-w-[140px]">
+                                  {pt.label}
+                                </span>
+                              </div>
+                              <span className="font-mono text-[8.5px] text-muted-foreground">
+                                {pt.nominal} (+{pt.upperTol}/{pt.lowerTol})
+                              </span>
+                            </div>
+                            {pt.notes && (
+                              <p className="font-mono text-[8px] text-accent/90 bg-muted/30 px-1.5 py-0.5 rounded">
+                                {pt.notes}
+                              </p>
+                            )}
+                            <div className="flex items-center justify-between text-[8px] text-muted-foreground pt-0.5">
+                              <span>Inst: {pt.instrument}</span>
+                              <span
+                                className={cn(
+                                  "font-bold uppercase",
+                                  pt.status === "PASS"
+                                    ? "text-emerald-500"
+                                    : pt.status === "WARNING"
+                                      ? "text-amber-500"
+                                      : pt.status === "FAIL"
+                                        ? "text-red-500"
+                                        : "text-muted-foreground",
+                                )}
+                              >
+                                {pt.status === "PASS"
+                                  ? "Aprovado"
+                                  : pt.status === "WARNING"
+                                    ? "Atenção"
+                                    : pt.status === "FAIL"
+                                      ? "Reprovado"
+                                      : "Pendente"}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Clique em Reinspecionar para gerar o plano FAI.
+                  </p>
+                )}
+              </div>
+            )}
+
             {doc.activeState === "FORMING" && (
               <div className="space-y-3">
                 <div className="flex items-center gap-1.5">
@@ -1073,6 +1261,25 @@ export function ChamferCADPanel({
           >
             <Download className="size-3 text-emerald-500" />
             DFM (DXF)
+          </button>
+        </div>
+
+        <div className="grid grid-cols-2 gap-1.5">
+          <button
+            type="button"
+            onClick={handleDownloadMetrologyCSV}
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-line bg-card/60 px-2 py-1.5 font-mono text-[9px] font-semibold text-foreground uppercase tracking-wider hover:bg-muted transition-colors"
+          >
+            <Target className="size-3 text-accent" />
+            FAI (CSV)
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadMetrologySVG}
+            className="flex items-center justify-center gap-1.5 rounded-xl border border-line bg-card/60 px-2 py-1.5 font-mono text-[9px] font-semibold text-foreground uppercase tracking-wider hover:bg-muted transition-colors"
+          >
+            <Download className="size-3 text-accent" />
+            Balões (SVG)
           </button>
         </div>
       </div>

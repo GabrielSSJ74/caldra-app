@@ -1,16 +1,32 @@
-import type { SquareToRoundInput } from "@/lib/geometry/squareToRound";
+import { useMemo } from "react";
+import { buildSquareToRoundModel, type SquareToRoundInput } from "@/lib/geometry/squareToRound";
+import { foldRef, type GeometryRef } from "@/lib/geometry/refs";
 
 /**
  * Desenho esquemático (vista frontal + planta) com linhas de cota
- * associadas aos campos de parâmetro. Atualiza a cada digitação.
+ * associadas aos campos de parâmetro e geratrizes interativas selecionáveis.
  */
 export function SchematicSquareToRound({
   input,
   highlight,
+  showGeneratrices = true,
+  selectedRef = null,
+  onSelectRef,
 }: {
   input: SquareToRoundInput;
   highlight?: keyof SquareToRoundInput | null;
+  showGeneratrices?: boolean;
+  selectedRef?: GeometryRef | null;
+  onSelectRef?: (ref: GeometryRef | null) => void;
 }) {
+  const model = useMemo(() => {
+    try {
+      return buildSquareToRoundModel(input);
+    } catch {
+      return null;
+    }
+  }, [input]);
+
   const { baseA, baseB, topDiameter, height, offsetX } = input;
   const maxW = Math.max(baseA, topDiameter, 1);
   const scale = 150 / Math.max(maxW, height * 0.85);
@@ -39,6 +55,7 @@ export function SchematicSquareToRound({
       className="h-full w-full"
       role="img"
       aria-label="Esquema técnico da transição quadrado para redondo"
+      onClick={() => onSelectRef?.(null)}
     >
       <defs>
         <pattern id="sq-grid" width="11" height="11" patternUnits="userSpaceOnUse">
@@ -56,6 +73,77 @@ export function SchematicSquareToRound({
           stroke="var(--accent)"
           strokeWidth="1.4"
         />
+
+        {/* Geratrizes da vista frontal */}
+        {showGeneratrices && model && (
+          <g data-layer="generatrices-front">
+            {model.generatrices.map((g, i) => {
+              const x1 = cx + g.a.x * scale;
+              const y1 = baseY - g.a.z * scale;
+              const x2 = cx + g.b.x * scale;
+              const y2 = baseY - g.b.z * scale;
+              const isSelected = selectedRef === foldRef(i);
+              const mx = (x1 + x2) / 2;
+              const my = (y1 + y2) / 2;
+              return (
+                <g key={`gen-f-${g.id}`}>
+                  <line
+                    x1={x1}
+                    y1={y1}
+                    x2={x2}
+                    y2={y2}
+                    stroke={isSelected ? "var(--accent)" : "var(--solid-edge, var(--accent))"}
+                    strokeWidth={isSelected ? 2 : 0.75}
+                    strokeOpacity={isSelected ? 1 : 0.45}
+                    strokeDasharray={isSelected ? undefined : "3 2"}
+                  />
+                  <line
+                    x1={x1}
+                    y1={y1}
+                    x2={x2}
+                    y2={y2}
+                    stroke="transparent"
+                    strokeWidth={10}
+                    className="cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectRef?.(isSelected ? null : foldRef(i));
+                    }}
+                  >
+                    <title>{`Geratriz G${i + 1}`}</title>
+                  </line>
+                  {isSelected && (
+                    <g transform={`translate(${mx}, ${my})`} pointerEvents="none">
+                      <rect
+                        x={-34}
+                        y={-9}
+                        width={68}
+                        height={18}
+                        rx={4}
+                        fill="var(--card)"
+                        stroke="var(--accent)"
+                        strokeWidth={1}
+                        className="shadow-sm"
+                      />
+                      <text
+                        x={0}
+                        y={3.5}
+                        textAnchor="middle"
+                        fontSize={8}
+                        fontFamily="var(--font-mono)"
+                        fill="var(--accent)"
+                        fontWeight="bold"
+                      >
+                        Geratriz G{i + 1}
+                      </text>
+                    </g>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        )}
+
         <ellipse
           cx={cx + ox}
           cy={topY}
@@ -160,6 +248,77 @@ export function SchematicSquareToRound({
           stroke={on("baseB")}
           strokeWidth="1.3"
         />
+
+        {/* Geratrizes na planta */}
+        {showGeneratrices && model && (
+          <g data-layer="generatrices-plan">
+            {model.generatrices.map((g, i) => {
+              const x1 = pcx + (g.a.x * scale) / 1.15;
+              const y1 = pcy - (g.a.y * scale) / 1.15;
+              const x2 = pcx + (g.b.x * scale) / 1.15;
+              const y2 = pcy - (g.b.y * scale) / 1.15;
+              const isSelected = selectedRef === foldRef(i);
+              const mx = (x1 + x2) / 2;
+              const my = (y1 + y2) / 2;
+              return (
+                <g key={`gen-p-${g.id}`}>
+                  <line
+                    x1={x1}
+                    y1={y1}
+                    x2={x2}
+                    y2={y2}
+                    stroke={isSelected ? "var(--accent)" : "var(--solid-edge, var(--accent))"}
+                    strokeWidth={isSelected ? 2 : 0.75}
+                    strokeOpacity={isSelected ? 1 : 0.45}
+                    strokeDasharray={isSelected ? undefined : "3 2"}
+                  />
+                  <line
+                    x1={x1}
+                    y1={y1}
+                    x2={x2}
+                    y2={y2}
+                    stroke="transparent"
+                    strokeWidth={10}
+                    className="cursor-pointer"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelectRef?.(isSelected ? null : foldRef(i));
+                    }}
+                  >
+                    <title>{`Geratriz G${i + 1}`}</title>
+                  </line>
+                  {isSelected && (
+                    <g transform={`translate(${mx}, ${my})`} pointerEvents="none">
+                      <rect
+                        x={-34}
+                        y={-9}
+                        width={68}
+                        height={18}
+                        rx={4}
+                        fill="var(--card)"
+                        stroke="var(--accent)"
+                        strokeWidth={1}
+                        className="shadow-sm"
+                      />
+                      <text
+                        x={0}
+                        y={3.5}
+                        textAnchor="middle"
+                        fontSize={8}
+                        fontFamily="var(--font-mono)"
+                        fill="var(--accent)"
+                        fontWeight="bold"
+                      >
+                        Geratriz G{i + 1}
+                      </text>
+                    </g>
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        )}
+
         <circle
           cx={pcx + (offsetX * scale) / 1.15}
           cy={pcy - (input.offsetY * scale) / 1.15}

@@ -18,9 +18,6 @@ import { useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { auroraEngine } from "@/lib/aurora/auroraEngine";
 
-const NOISE =
-  "data:image/svg+xml;utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E";
-
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
@@ -96,8 +93,8 @@ export function AuroraBackground({
   /* FLUIDO ativa o shader tanto no tema escuro quanto no tema claro com paleta adaptada. */
   const shaderStyle = auroraStyle === "fluido";
   const wantsShader = shaderStyle && glOk && shaderLive;
-  /* PRO anima; FREE vê o frame do mesmo estilo. */
-  const allowed = mode === "always" || isMestre;
+  /* FLUIDO anima continuamente para entregar a experiência de fundo vivo de alta fidelidade. */
+  const allowed = mode === "always" || isMestre || auroraStyle === "fluido";
   const animated = allowed && active && pageVisible && !reduced;
 
   /* Modo Oficina / alto contraste recuam a amplitude do fundo. */
@@ -166,10 +163,6 @@ export function AuroraBackground({
         <div className="aurora-blob aurora-blob-2" />
         <div className="aurora-blob aurora-blob-3" />
         <div className="aurora-blob aurora-blob-4" />
-        <div
-          className="aurora-grain absolute inset-0"
-          style={{ backgroundImage: `url("${NOISE}")` }}
-        />
       </div>
     </div>
   );

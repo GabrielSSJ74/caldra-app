@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { Camera, User, X } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Camera, Settings, User, X } from "lucide-react";
 import { toast } from "sonner";
 import { fileToSquareDataUrl, useProfile } from "@/lib/profile/ProfileProvider";
 import { cn } from "@/lib/utils";
@@ -139,6 +140,14 @@ export function ProfileDialog({
               {role || "Caldeireiro"}
             </p>
           </div>
+          <Link
+            to="/configuracoes"
+            onClick={() => onOpenChange(false)}
+            className="mt-2 inline-flex items-center gap-1.5 rounded-xl border border-line bg-background/50 px-4 py-2 font-mono text-xs uppercase text-muted-foreground transition-colors hover:border-accent/40 hover:text-accent"
+          >
+            <Settings className="size-3.5" />
+            Configurações
+          </Link>
         </div>
       </div>
     </div>

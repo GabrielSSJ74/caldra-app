@@ -67,6 +67,19 @@ function traceEntity(ctx: CanvasRenderingContext2D, e: Entity, lod: boolean) {
       if (e.closed) ctx.closePath();
       break;
     }
+    case "ellipse": {
+      ctx.ellipse(e.cx, e.cy, e.rx, e.ry, e.rotation ?? 0, 0, Math.PI * 2);
+      break;
+    }
+    case "point": {
+      ctx.moveTo(e.x + 2, e.y);
+      ctx.arc(e.x, e.y, 2, 0, Math.PI * 2);
+      break;
+    }
+    case "hatch": {
+      tracePolyline(ctx, e.boundaryPts, true, 1);
+      break;
+    }
     case "text":
       break;
   }

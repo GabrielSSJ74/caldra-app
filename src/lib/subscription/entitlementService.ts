@@ -15,7 +15,8 @@
 import { supabase } from "@/integrations/supabase/client";
 import { normalizePlan, type Plan } from "./features";
 
-const CACHE_KEY = "chameleon.plan";
+const CACHE_KEY = "caldra.plan";
+const LEGACY_CACHE_KEY = "chameleon.plan";
 const SOURCE_KEY = "caldra.plan.source";
 
 export type PlanSource = "none" | "code" | "play" | "manual" | "local";
@@ -25,7 +26,7 @@ const fromRemote = (remote: string): Plan => normalizePlan(remote);
 
 export function readCache(): { plan: Plan; source: PlanSource } {
   try {
-    const plan = window.localStorage.getItem(CACHE_KEY);
+    const plan = window.localStorage.getItem(CACHE_KEY) ?? window.localStorage.getItem(LEGACY_CACHE_KEY);
     const source = window.localStorage.getItem(SOURCE_KEY) as PlanSource | null;
     if (normalizePlan(plan) === "pro") return { plan: "pro", source: source ?? "local" };
   } catch {

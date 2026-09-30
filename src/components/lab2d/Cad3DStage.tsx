@@ -16,7 +16,7 @@
 
 import { ArrowLeft, Box, Layers, RotateCcw, Play, Pause } from "lucide-react";
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Wire3D } from "@/components/chameleon/Wire3D";
+import { Wire3D } from "@/components/caldra/Wire3D";
 import {
   VIEW_PRESETS,
   EDGE_MODES,
@@ -149,6 +149,7 @@ export function Cad3DStage({
   onSelectEntity: (id: string | null) => void;
   cadDoc?: PartDocument;
   onCadDocChange?: (doc: PartDocument) => void;
+  initialCadPanelOpen?: boolean;
 }) {
   const ctx = useProjectContext(labProjectId);
 
@@ -159,7 +160,11 @@ export function Cad3DStage({
 
   // Painéis auxiliares
   const [treeOpen, setTreeOpen] = useState(false);
-  const [cadPanelOpen, setCadPanelOpen] = useState(false);
+  const [cadPanelOpen, setCadPanelOpen] = useState(initialCadPanelOpen);
+
+  useEffect(() => {
+    if (initialCadPanelOpen) setCadPanelOpen(true);
+  }, [initialCadPanelOpen]);
 
   // Documento CAD unificado com fallback seguro
   const [internalCadDoc, setInternalCadDoc] = useState<PartDocument>(() => {

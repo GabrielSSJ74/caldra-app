@@ -63,6 +63,27 @@ export type Entity =
   | (Base & { type: "circle"; cx: number; cy: number; r: number })
   | (Base & { type: "arc"; cx: number; cy: number; r: number; a0: number; a1: number })
   | (Base & {
+      type: "ellipse";
+      cx: number;
+      cy: number;
+      rx: number;
+      ry: number;
+      rotation?: number;
+    })
+  | (Base & {
+      type: "point";
+      x: number;
+      y: number;
+      label?: string;
+    })
+  | (Base & {
+      type: "hatch";
+      pattern: "ansi31" | "cross" | "solid" | "dots";
+      angle: number;
+      scale: number;
+      boundaryPts: Vec2[];
+    })
+  | (Base & {
       /** Curva de Bézier cúbica — fidelidade máxima com poucos pontos. */
       type: "path";
       start: Vec2;
@@ -116,6 +137,18 @@ export function entityPoints(e: Entity): Vec2[] {
         { x: e.cx + e.r * Math.cos(e.a0), y: e.cy + e.r * Math.sin(e.a0) },
         { x: e.cx + e.r * Math.cos(e.a1), y: e.cy + e.r * Math.sin(e.a1) },
       ];
+    case "ellipse":
+      return [
+        { x: e.cx, y: e.cy },
+        { x: e.cx + e.rx, y: e.cy },
+        { x: e.cx - e.rx, y: e.cy },
+        { x: e.cx, y: e.cy + e.ry },
+        { x: e.cx, y: e.cy - e.ry },
+      ];
+    case "point":
+      return [{ x: e.x, y: e.y }];
+    case "hatch":
+      return e.boundaryPts;
     case "path":
       return pathAnchors(e.start, e.segs);
     case "text":
@@ -128,10 +161,28 @@ export function entityPoints(e: Entity): Vec2[] {
 
 /** Pontos usados para enquadramento e hit-test (curvas entram amostradas). */
 export function outlinePoints(e: Entity): Vec2[] {
-  return e.type === "path" ? samplePath(e.start, e.segs, e.closed, 10) : entityPoints(e);
+  if (e.type === "path") return samplePath(e.start, e.segs, e.closed, 10);
+  if (e.type === "ellipse") {
+    const rot = e.rotation ?? 0;
+    const cosR = Math.cos(rot);
+    const sinR = Math.sin(rot);
+    return Array.from({ length: 32 }, (_, i) => {
+      const a = (i / 32) * Math.PI * 2;
+      const px = e.rx * Math.cos(a);
+      const py = e.ry * Math.sin(a);
+      return {
+        x: e.cx + px * cosR - py * sinR,
+        y: e.cy + px * sinR + py * cosR,
+      };
+    });
+  }
+  return entityPoints(e);
 }
 
-export type Snap = { p: Vec2; kind: "grid" | "end" | "mid" | "center" | "cross" | "near" };
+export type Snap = {
+  p: Vec2;
+  kind: "grid" | "end" | "mid" | "center" | "cross" | "near" | "quadrant" | "perp" | "tangent" | "origin";
+};
 
 export function segmentsOf(e: Entity): [Vec2, Vec2][] {
   if (e.type === "line")
@@ -145,6 +196,21 @@ export function segmentsOf(e: Entity): [Vec2, Vec2][] {
     const out: [Vec2, Vec2][] = [];
     for (let i = 0; i < e.pts.length - 1; i++) out.push([e.pts[i]!, e.pts[i + 1]!]);
     if (e.closed && e.pts.length > 2) out.push([e.pts[e.pts.length - 1]!, e.pts[0]!]);
+    return out;
+  }
+  if (e.type === "ellipse") {
+    const pts = outlinePoints(e);
+    const out: [Vec2, Vec2][] = [];
+    for (let i = 0; i < pts.length; i++) {
+      out.push([pts[i]!, pts[(i + 1) % pts.length]!]);
+    }
+    return out;
+  }
+  if (e.type === "hatch") {
+    const out: [Vec2, Vec2][] = [];
+    for (let i = 0; i < e.boundaryPts.length; i++) {
+      out.push([e.boundaryPts[i]!, e.boundaryPts[(i + 1) % e.boundaryPts.length]!]);
+    }
     return out;
   }
   if (e.type === "path") return pathSegments(e.start, e.segs, e.closed);
@@ -179,14 +245,52 @@ export function findSnap(
   tol: number,
   grid: number,
   enabled: { grid: boolean; object: boolean },
+  activeStartPoint: Vec2 | null = null,
 ): Snap | null {
   const cands: Snap[] = [];
   if (enabled.object) {
+    // 0. Origem (0, 0)
+    cands.push({ p: { x: 0, y: 0 }, kind: "origin" });
+
     const segs = entities.flatMap(segmentsOf);
     for (const e of entities) {
-      if (e.type === "circle" || e.type === "arc")
+      if (e.type === "circle" || e.type === "arc") {
         cands.push({ p: { x: e.cx, y: e.cy }, kind: "center" });
-      for (const p of entityPoints(e)) if (e.type !== "circle") cands.push({ p, kind: "end" });
+        if (e.type === "circle") {
+          // Quadrantes
+          cands.push(
+            { p: { x: e.cx + e.r, y: e.cy }, kind: "quadrant" },
+            { p: { x: e.cx - e.r, y: e.cy }, kind: "quadrant" },
+            { p: { x: e.cx, y: e.cy + e.r }, kind: "quadrant" },
+            { p: { x: e.cx, y: e.cy - e.r }, kind: "quadrant" },
+          );
+        }
+      }
+      if (e.type === "ellipse") {
+        cands.push(
+          { p: { x: e.cx, y: e.cy }, kind: "center" },
+          { p: { x: e.cx + e.rx, y: e.cy }, kind: "quadrant" },
+          { p: { x: e.cx - e.rx, y: e.cy }, kind: "quadrant" },
+          { p: { x: e.cx, y: e.cy + e.ry }, kind: "quadrant" },
+          { p: { x: e.cx, y: e.cy - e.ry }, kind: "quadrant" },
+        );
+      }
+      for (const p of entityPoints(e)) {
+        if (e.type !== "circle" && e.type !== "ellipse") cands.push({ p, kind: "end" });
+      }
+
+      // Perpendicular ao segmento a partir de activeStartPoint
+      if (activeStartPoint && e.type === "line") {
+        const dx = e.x2 - e.x1;
+        const dy = e.y2 - e.y1;
+        const l2 = dx * dx + dy * dy;
+        if (l2 > 1e-4) {
+          const t = ((activeStartPoint.x - e.x1) * dx + (activeStartPoint.y - e.y1) * dy) / l2;
+          if (t >= 0 && t <= 1) {
+            cands.push({ p: { x: e.x1 + t * dx, y: e.y1 + t * dy }, kind: "perp" });
+          }
+        }
+      }
     }
     for (const s of segs)
       cands.push({ p: { x: (s[0].x + s[1].x) / 2, y: (s[0].y + s[1].y) / 2 }, kind: "mid" });
@@ -207,9 +311,13 @@ export function findSnap(
     end: 0,
     cross: 1,
     center: 2,
-    mid: 3,
-    near: 5,
-    grid: 4,
+    quadrant: 3,
+    mid: 4,
+    perp: 5,
+    tangent: 6,
+    origin: 7,
+    near: 9,
+    grid: 8,
   };
   const hit = cands
     .filter((c) => dist(c.p, cursor) <= tol)
@@ -235,6 +343,17 @@ export function mapEntity(e: Entity, f: (p: Vec2) => Vec2, scale = 1): Entity {
     case "arc": {
       const c = f({ x: e.cx, y: e.cy });
       return { ...e, cx: c.x, cy: c.y, r: e.r * Math.abs(scale) };
+    }
+    case "ellipse": {
+      const c = f({ x: e.cx, y: e.cy });
+      return { ...e, cx: c.x, cy: c.y, rx: e.rx * Math.abs(scale), ry: e.ry * Math.abs(scale) };
+    }
+    case "point": {
+      const c = f({ x: e.x, y: e.y });
+      return { ...e, x: c.x, y: c.y };
+    }
+    case "hatch": {
+      return { ...e, boundaryPts: e.boundaryPts.map(f) };
     }
     case "path": {
       const m = mapPath(e.start, e.segs, f);
@@ -352,6 +471,8 @@ export const polygonEntity = (c: Vec2, r: number, sides: number, layer: LayerId)
 
 export function offsetEntity(e: Entity, d: number): Entity | null {
   if (e.type === "circle") return e.r + d > 0 ? { ...e, id: uid(), r: e.r + d } : null;
+  if (e.type === "ellipse") return e.rx + d > 0 && e.ry + d > 0 ? { ...e, id: uid(), rx: e.rx + d, ry: e.ry + d } : null;
+  if (e.type === "point" || e.type === "hatch") return null;
   const shift = (pts: Vec2[], closed: boolean): Vec2[] => {
     const out: Vec2[] = [];
     const n = pts.length;

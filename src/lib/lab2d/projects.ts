@@ -8,7 +8,8 @@ import type { GroupDef } from "./groups";
 import type { Dimension } from "./dimensions";
 import { techColor } from "./technical";
 
-const KEY = "chameleon.lab2d.projects";
+const KEY = "caldra.lab2d.projects";
+const LEGACY_KEY = "chameleon.lab2d.projects";
 
 export type Plan = {
   id: string;
@@ -65,7 +66,17 @@ export function newProject(name: string, entities: Entity[] = []): Project {
 
 export function listProjects(): Project[] {
   try {
-    const raw = window.localStorage.getItem(KEY);
+    let raw = window.localStorage.getItem(KEY);
+    if (!raw) {
+      raw = window.localStorage.getItem(LEGACY_KEY);
+      if (raw) {
+        try {
+          window.localStorage.setItem(KEY, raw);
+        } catch {
+          /* armazenamento indisponível */
+        }
+      }
+    }
     if (!raw) return [];
     const list = JSON.parse(raw) as Project[];
     if (!Array.isArray(list)) return [];
