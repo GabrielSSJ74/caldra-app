@@ -2204,7 +2204,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
-              3D TRAÇAGEM
+              3D SÓLIDO
             </button>
             <button
               type="button"
@@ -3960,8 +3960,8 @@ function DimensionEditor({
     </label>
   );
 
-  const info = (text: string) => (
-    <p className="font-mono text-[10px] text-muted-foreground">{text}</p>
+  const info = (text: string, key?: string) => (
+    <p key={key ?? text} className="font-mono text-[10px] text-muted-foreground">{text}</p>
   );
 
   const body: React.ReactNode[] = [];

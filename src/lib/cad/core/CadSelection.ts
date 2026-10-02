@@ -1,0 +1,56 @@
+/**
+ * CALDRA CAD CORE — TOPOLOGICAL SELECTION & INSPECTION TYPES (FASE 04)
+ *
+ * Estruturas para seleção determinística de entidades CAD 3D:
+ * Solid, Face, Edge, Vertex.
+ * IDs e fingerprints estáveis desacoplados de índices voláteis de triangulação.
+ */
+
+import type { CadVector3D } from "./CadTopology";
+
+export type CadSelectionType = "solid" | "face" | "edge" | "vertex";
+
+export interface CadSelectedEntity {
+  id: string;
+  type: CadSelectionType;
+  index: number;
+  handle?: number;
+  fingerprint?: string;
+
+  // Propriedades geométricas de metrologia
+  area?: number; // mm² (se Face)
+  length?: number; // mm (se Aresta)
+  surfaceType?: string; // plane, cylinder, cone, etc.
+  curveType?: string; // line, circle, etc.
+  point?: CadVector3D; // Ponto de contato ou vértice XYZ
+  centerOfMass?: CadVector3D; // Centro geométrico da entidade
+  normal?: CadVector3D; // Normal na face
+  adjacentFaceIndices?: number[];
+  connectedEdgeIndices?: number[];
+
+  metadata?: Record<string, unknown>;
+}
+
+export interface CadMeasurementResult {
+  distance: number; // mm (distância euclidiana mínima analítica calculada pelo kernel)
+  deltaX: number;
+  deltaY: number;
+  deltaZ: number;
+  entityA: CadSelectedEntity;
+  entityB: CadSelectedEntity;
+  type: "face-face" | "edge-edge" | "vertex-vertex" | "vertex-face" | "edge-face" | "generic";
+}
+
+export interface CadSelectionState {
+  type: CadSelectionType | null;
+  selectedEntity: CadSelectedEntity | null;
+  multiSelection: CadSelectedEntity[];
+  measurement: CadMeasurementResult | null;
+}
+
+export const INITIAL_CAD_SELECTION: CadSelectionState = {
+  type: null,
+  selectedEntity: null,
+  multiSelection: [],
+  measurement: null,
+};

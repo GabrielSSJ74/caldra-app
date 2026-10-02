@@ -90,11 +90,17 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "CALDRA — Traçado e Planificação Zero Fresta" },
+      { title: "CALDRA - Metal Lab Suite" },
       {
         name: "description",
         content:
-          "Traçagem, planificação, projetos e conhecimento para caldeiraria. Transforme medidas em fabricação.",
+          "Traçagem, planificação, cálculo técnico e projetos paramétricos para caldeiraria industrial.",
+      },
+      { property: "og:title", content: "CALDRA - Metal Lab Suite" },
+      {
+        property: "og:description",
+        content:
+          "Traçagem, planificação, cálculo técnico e projetos paramétricos para caldeiraria industrial.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
