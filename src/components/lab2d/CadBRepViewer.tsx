@@ -1,20 +1,21 @@
 /**
- * CALDRA CHAMFER — 3D CAD CORE AMBIENTE DEFINITIVO (REPRODUÇÃO DA IMAGEM DE REFERÊNCIA)
+ * CALDRA CHAMFER — 3D CAD CORE AMBIENTE DEFINITIVO (REPRODUÇÃO DA IMAGEM 1 & ADAPTAÇÃO ESTRUTURAL)
  *
- * Arquitetura de 3 Níveis:
+ * Arquitetura Definitiva de 3 Níveis:
  * NÍVEL 1 — SEMPRE VISÍVEL:
- *   - Header Superior (2D Projeto, 2D Sketch, 3D Sólido, Título CONE, Wire3D, CAD Core 3D, CAD Kernel)
- *   - Viewport 3D Central com peça enquadrada, iluminação suave e cotas técnicas sobrepostas
- *   - Barra de Vistas flutuante (ISO, FR, LAT, SUP | SOMB, SOMB+AR, ARAME + Enquadrar)
- *   - Barra de Status Inferior persistente (Espessura, Material, Dobras, Dimensões, Peso, Reset)
+ *   - Header com vistas principais ISO/FR/LAT/SUP centralizadas (sem o nome da peça no centro)
+ *   - Viewport 3D com modelo real (Cone, Quadrado->Redondo, Curva, Boca de Lobo, etc. — PROIBIDO CONE PADRÃO)
+ *   - Barra de Vistas e Modos (ISO, FR, LAT, SUP | SOMB, SOMB+AR, ARAME + Enquadrar)
+ *   - Grid 3D de chão adaptativo (Tema Escuro: #051833 e grid branco; Tema Claro: grid escuro)
+ *   - Barra de Status inferior persistente
  *
  * NÍVEL 2 — ACESSO RÁPIDO:
- *   - Barra de Manipulação Rápida (Gizmo, Mover, Girar, Undo, Redo, Fullscreen)
- *   - Ações Principais no Chão do Viewport (Planificar, Prancha 2D, Estruturas, CNC / DXF)
+ *   - Manipulação Rápida (Gizmo, Mover, Girar, Undo, Redo, Fullscreen)
+ *   - Ações Principais no Chão do Viewport (Planificar, Prancha 2D, Estruturas, CNC/DXF)
  *
  * NÍVEL 3 — CONTEXTUAL / SMART FLYOUT:
- *   - Barra Lateral Esquerda de Categorias (Criar, Modificar, Detalhes, Chapa, Estruturas, Medir, Exportar)
- *   - Painel Contextual Direito (Parâmetros com mini-diagrama esquemático, Inspeção B-Rep, Filtro)
+ *   - Barra Lateral Esquerda com categorias e flyouts sem sobreposição da peça
+ *   - Painel Contextual Direito (Parâmetros com mini-diagrama esquemático dinâmico, Inspeção B-Rep, Filtro)
  */
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
@@ -46,16 +47,16 @@ import {
   ChevronRight,
   Crosshair,
   RefreshCw,
+  AlertTriangle,
 } from "lucide-react";
 import { ThreeBRepRenderer, type CadGizmoMode } from "@/lib/cad/renderer/ThreeBRepRenderer";
 import { getCadKernel } from "@/lib/cad/core";
 import { CadFeatureTree } from "@/lib/cad/features/CadFeatureTree";
 import { CadBRepEditor } from "@/lib/cad/core/CadBRepEditor";
-import type { CadFeatureNode } from "@/lib/cad/features/CadFeatureModel";
+import type { CadFeatureNode, CadFeatureType } from "@/lib/cad/features/CadFeatureModel";
 import type { CadShape } from "@/lib/cad/core/CadShape";
 import type { CadTessellatedShape } from "@/lib/cad/core/CadMesh";
 import type { MassProperties } from "@/lib/cad/core/CadKernel";
-import type { CadFace, CadEdge, CadVertex } from "@/lib/cad/core/CadTopology";
 import type {
   CadSelectedEntity,
   CadSelectionType,
@@ -66,14 +67,20 @@ import { CaldraBoilermakingDialog } from "@/components/lab2d/CaldraBoilermakingD
 import { CaldraFlatPatternDialog } from "@/components/lab2d/CaldraFlatPatternDialog";
 import { CaldraDraftingDialog } from "@/components/lab2d/CaldraDraftingDialog";
 import { CaldraWeldmentDialog } from "@/components/lab2d/CaldraWeldmentDialog";
+import { useSettings } from "@/lib/settings/SettingsProvider";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 interface CadBRepViewerProps {
   className?: string;
+  initialModelType?: string;
+  initialModelTitle?: string;
+  initialParams?: Record<string, any>;
   initialWidth?: number;
   initialLength?: number;
   initialThickness?: number;
+  activeViewPreset?: ViewPresetId;
+  onViewPresetChange?: (preset: ViewPresetId) => void;
 }
 
 type LeftCategory =
@@ -90,12 +97,44 @@ type RightPanelTab = "parametros" | "inspecao" | "filtro";
 
 export function CadBRepViewer({
   className,
+  initialModelType = "boilermaking_cone",
+  initialModelTitle = "Cone",
+  initialParams,
   initialWidth = 200,
   initialLength = 200,
   initialThickness = 3,
+  activeViewPreset = "iso",
+  onViewPresetChange,
 }: CadBRepViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<ThreeBRepRenderer | null>(null);
+  const { settings } = useSettings();
+
+  // Detecta tema escuro ou claro (Seção 24 & 25)
+  const isDarkTheme = useMemo(() => {
+    return (
+      settings?.theme === "dark" ||
+      settings?.theme === "amoled" ||
+      (typeof document !== "undefined" && document.documentElement.classList.contains("dark"))
+    );
+  }, [settings?.theme]);
+
+  // Modelo Ativo (PROIBIDO CONE PADRÃO)
+  const [modelType, setModelType] = useState<string>(initialModelType);
+  const [modelTitle, setModelTitle] = useState<string>(initialModelTitle);
+
+  // Parâmetros Dinâmicos
+  const [paramA, setParamA] = useState<number>(initialParams?.width || initialParams?.D || initialWidth);
+  const [paramB, setParamB] = useState<number>(initialParams?.length || initialParams?.d || initialLength);
+  const [paramC, setParamC] = useState<number>(initialParams?.height || initialParams?.H || 100);
+  const [paramD, setParamD] = useState<number>(initialParams?.diameter || 120);
+  const [thickness, setThickness] = useState<number>(initialThickness);
+  const [material, setMaterial] = useState<string>("Aço Carbono");
+
+  // Opções Paramétricas
+  const [optHole, setOptHole] = useState(false);
+  const [optFillet, setOptFillet] = useState(false);
+  const [optChamfer, setOptChamfer] = useState(false);
 
   // Motor da Árvore de Recursos e Editor B-Rep
   const treeRef = useRef<CadFeatureTree>(new CadFeatureTree());
@@ -106,8 +145,8 @@ export function CadBRepViewer({
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
-  // Estados de Manipulação e Vistas (Nível 1 & 2)
-  const [viewPreset, setViewPreset] = useState<ViewPresetId>("iso");
+  // Estados de Manipulação e Vistas
+  const [viewPreset, setViewPreset] = useState<ViewPresetId>(activeViewPreset);
   const [edgeMode, setEdgeMode] = useState<EdgeMode>("shaded-edges");
   const [gizmoMode, setGizmoMode] = useState<CadGizmoMode>("off");
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -118,26 +157,14 @@ export function CadBRepViewer({
   const [multiSelection, setMultiSelection] = useState<CadSelectedEntity[]>([]);
   const [measurement, setMeasurement] = useState<CadMeasurementResult | null>(null);
 
-  // Painel Esquerdo: Categoria Aberta (Subpainel Flyout que não cobre a peça)
-  const [activeLeftCat, setActiveLeftCat] = useState<LeftCategory>("criar");
-
-  // Painel Direito: Abas Contextuais
+  // Painéis Flutuantes
+  const [activeLeftCat, setActiveLeftCat] = useState<LeftCategory>("none");
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [rightTab, setRightTab] = useState<RightPanelTab>("parametros");
 
-  // Parâmetros Paramétricos do Cone (Modelo Principal da Imagem)
-  const [baseDiameterX, setBaseDiameterX] = useState(200);
-  const [heightZ, setHeightZ] = useState(100);
-  const [thickness, setThickness] = useState(3);
-  const [material, setMaterial] = useState("Aço Carbono");
-
-  // Opções Paramétricas
-  const [optHole, setOptHole] = useState(false);
-  const [optFillet, setOptFillet] = useState(false);
-  const [optChamfer, setOptChamfer] = useState(false);
-
   // Estado do Kernel e Geometria Ativa
   const [loading, setLoading] = useState(true);
+  const [conversionError, setConversionError] = useState<string | null>(null);
   const [activeShape, setActiveShape] = useState<CadShape | null>(null);
   const [massProps, setMassProps] = useState<MassProperties | null>(null);
   const [tessData, setTessData] = useState<CadTessellatedShape | null>(null);
@@ -148,6 +175,16 @@ export function CadBRepViewer({
   const [draftingDialogOpen, setDraftingDialogOpen] = useState(false);
   const [weldmentDialogOpen, setWeldmentDialogOpen] = useState(false);
 
+  // Sincroniza viewPreset com o Stage pai
+  useEffect(() => {
+    setViewPreset(activeViewPreset);
+  }, [activeViewPreset]);
+
+  const handleViewPresetChange = (preset: ViewPresetId) => {
+    setViewPreset(preset);
+    onViewPresetChange?.(preset);
+  };
+
   // Atualiza flags de histórico
   const refreshHistoryFlags = useCallback(() => {
     setCanUndo(editorRef.current.canUndo());
@@ -157,6 +194,7 @@ export function CadBRepViewer({
   // Reconstrução via Feature Tree
   const rebuildFromTree = useCallback(async () => {
     setLoading(true);
+    setConversionError(null);
     try {
       const res = await treeRef.current.rebuild();
       if (res.success && res.activeShape && res.tessellation) {
@@ -164,12 +202,16 @@ export function CadBRepViewer({
         setTessData(res.tessellation);
         setMassProps(res.massProperties);
         rendererRef.current?.setShape(res.tessellation);
+        rendererRef.current?.fitView(false);
+      } else {
+        throw new Error(res.errors?.join("; ") || "Falha na geração do sólido B-Rep.");
       }
       setFeaturesList(treeRef.current.getFeatures());
       refreshHistoryFlags();
     } catch (err: unknown) {
       console.error("[CadBRepViewer] Erro ao reconstruir árvore:", err);
-      toast.error("Erro na reconstrução da Árvore B-Rep.");
+      // NUNCA substituir silenciosamente por Cone (Seção 22)
+      setConversionError((err as Error)?.message || "Não foi possível converter este modelo para CAD 3D.");
     } finally {
       setLoading(false);
     }
@@ -191,13 +233,21 @@ export function CadBRepViewer({
       },
     });
 
+    // Aplica o tema imediatamente
+    renderer.setTheme(isDarkTheme ? "dark" : "light");
+
     rendererRef.current = renderer;
 
     return () => {
       renderer.dispose();
       rendererRef.current = null;
     };
-  }, [gizmoMode]);
+  }, [gizmoMode, isDarkTheme]);
+
+  // Sincroniza tema quando alterado pelo usuário (Seção 24 & 25)
+  useEffect(() => {
+    rendererRef.current?.setTheme(isDarkTheme ? "dark" : "light");
+  }, [isDarkTheme]);
 
   // Sincroniza modo de visualização e arestas
   useEffect(() => {
@@ -222,61 +272,159 @@ export function CadBRepViewer({
     rendererRef.current?.setGizmoMode(gizmoMode);
   }, [gizmoMode]);
 
-  // Constrói o Cone B-Rep Paramétrico
+  // Constrói o Sólido B-Rep com base no Tipo Real da Peça (PROIBIDO CONE PADRÃO)
   const applyParametersAndRebuild = useCallback(async () => {
     const tree = treeRef.current;
     tree.dispose();
 
-    // 1. Cone Base de Caldeiraria
-    tree.addFeature({
-      name: "Cone Truncado Base",
-      type: "boilermaking_cone",
-      parameters: {
-        D: baseDiameterX,
-        d: 2, // Quase cônico pontual / cone truncado de alta definição
-        height: heightZ,
-        thickness,
-        material,
-      },
-    });
+    try {
+      switch (modelType) {
+        // 1. Transição Quadrado para Redondo
+        case "boilermaking_transition":
+          tree.addFeature({
+            name: "Transição Quadrado-Redondo",
+            type: "boilermaking_transition",
+            parameters: {
+              width: paramA,
+              length: paramB,
+              diameter: paramD,
+              height: paramC,
+              thickness,
+              material,
+            },
+          });
+          break;
 
-    // 2. Furo Central (se ativado nas opções)
-    if (optHole) {
-      tree.addFeature({
-        name: "Furo Central Ø25 mm",
-        type: "hole_cut",
-        parameters: {
-          diameter: 25,
-          depth: heightZ + 40,
-          isThrough: true,
-          position: { x: 0, y: 0, z: -heightZ / 2 },
-        },
-      });
+        // 2. Curva de Gomos / Cotovelo Segmentado
+        case "boilermaking_elbow":
+          tree.addFeature({
+            name: "Curva de Gomos",
+            type: "boilermaking_elbow",
+            parameters: {
+              diameter: paramA,
+              radius: paramB,
+              angleDeg: 90,
+              segments: 4,
+              thickness,
+              material,
+            },
+          });
+          break;
+
+        // 3. Boca de Lobo / Derivação Cilíndrica
+        case "boilermaking_branch":
+          tree.addFeature({
+            name: "Boca de Lobo / Tê",
+            type: "boilermaking_branch",
+            parameters: {
+              mainDiameter: paramA,
+              branchDiameter: paramB,
+              mainLength: Math.max(300, paramA * 2),
+              branchHeight: paramC,
+              thickness,
+              material,
+            },
+          });
+          break;
+
+        // 4. Chapéu Chinês / Coifa
+        case "boilermaking_hood":
+          tree.addFeature({
+            name: "Chapéu Chinês",
+            type: "boilermaking_hood",
+            parameters: {
+              baseDiameter: paramA,
+              topDiameter: paramB,
+              height: paramC,
+              thickness,
+              material,
+            },
+          });
+          break;
+
+        // 5. Cilindro Industrial
+        case "base_cylinder":
+          tree.addFeature({
+            name: "Cilindro Industrial",
+            type: "base_cylinder",
+            parameters: {
+              radius: paramA / 2,
+              height: paramC,
+              thickness,
+              material,
+            },
+          });
+          break;
+
+        // 6. Cone Truncado
+        case "boilermaking_cone":
+        default:
+          tree.addFeature({
+            name: "Cone Truncado Base",
+            type: "boilermaking_cone",
+            parameters: {
+              D: paramA,
+              d: Math.max(2, paramB),
+              height: paramC,
+              thickness,
+              material,
+            },
+          });
+          break;
+      }
+
+      // Adições Paramétricas (Furos, Filetes, Chanfros)
+      if (optHole) {
+        tree.addFeature({
+          name: "Furo Central Ø25 mm",
+          type: "hole_cut",
+          parameters: {
+            diameter: 25,
+            depth: paramC + 40,
+            isThrough: true,
+            position: { x: 0, y: 0, z: -paramC / 2 },
+          },
+        });
+      }
+
+      if (optFillet) {
+        tree.addFeature({
+          name: "Filete R4 mm",
+          type: "fillet",
+          parameters: { radius: 4, edgeIndices: [0] },
+        });
+      }
+
+      if (optChamfer) {
+        tree.addFeature({
+          name: "Chanfro 3 mm",
+          type: "chamfer",
+          parameters: { distance: 3, edgeIndices: [1] },
+        });
+      }
+
+      await rebuildFromTree();
+      toast.success(`Modelo "${modelTitle}" reconstruído em B-Rep.`);
+    } catch (err: unknown) {
+      console.error("[CadBRepViewer] Erro na criação da geometria:", err);
+      setConversionError((err as Error)?.message || "Não foi possível converter este modelo para CAD 3D.");
     }
+  }, [
+    modelType,
+    modelTitle,
+    paramA,
+    paramB,
+    paramC,
+    paramD,
+    thickness,
+    material,
+    optHole,
+    optFillet,
+    optChamfer,
+    rebuildFromTree,
+  ]);
 
-    // 3. Filete nas Arestas (se ativado)
-    if (optFillet) {
-      tree.addFeature({
-        name: "Filete R4 mm",
-        type: "fillet",
-        parameters: { radius: 4, edgeIndices: [0] },
-      });
-    }
-
-    // 4. Chanfro (se ativado)
-    if (optChamfer) {
-      tree.addFeature({
-        name: "Chanfro 3 mm",
-        type: "chamfer",
-        parameters: { distance: 3, edgeIndices: [1] },
-      });
-    }
-
-    await rebuildFromTree();
-    toast.success("Geometria B-Rep reconstruída com sucesso!");
-  }, [baseDiameterX, heightZ, thickness, material, optHole, optFillet, optChamfer, rebuildFromTree]);
-
-  // Constrói o cone inicial ao montar o componente
+  // Carrega a primeira geometria ao montar
   useEffect(() => {
     void applyParametersAndRebuild();
   }, [applyParametersAndRebuild]);
@@ -307,65 +455,88 @@ export function CadBRepViewer({
   return (
     <div
       className={cn(
-        "relative size-full overflow-hidden select-none bg-gradient-to-b from-[#f8fafc] via-[#f1f5f9] to-[#e2e8f0]",
+        "relative size-full overflow-hidden select-none transition-colors",
+        isDarkTheme ? "bg-[#051833]" : "bg-gradient-to-b from-[#f8fafc] via-[#f1f5f9] to-[#e2e8f0]",
         className,
       )}
     >
       {/* 3D WEBGL CANVAS VIEWPORT */}
       <div ref={containerRef} className="size-full absolute inset-0 cursor-grab active:cursor-grabbing" />
 
-      {/* ========================================================================= */}
-      {/* COTAS TÉCNICAS SOBREPOSTAS AO VIEWPORT (EXATAMENTE COMO NA IMAGEM)       */}
-      {/* ========================================================================= */}
-      <div className="absolute inset-0 pointer-events-none z-10">
-        {/* COTA VERTICAL DE ALTURA (100 mm) */}
-        <div className="absolute left-[34%] top-[30%] -translate-y-1/2 flex items-center gap-1.5 font-mono text-[11px] font-bold text-slate-800">
-          <div className="flex flex-col items-center">
-            {/* Linha vertical com setas e traços */}
-            <div className="h-44 w-px bg-slate-400 relative">
-              <span className="absolute -top-1 -left-1 text-[8px] text-slate-600">▲</span>
-              <span className="absolute -bottom-1 -left-1 text-[8px] text-slate-600">▼</span>
-              {/* Linhas de extensão horizontais */}
-              <div className="absolute top-0 right-0 w-8 h-px bg-slate-400" />
-              <div className="absolute bottom-0 right-0 w-8 h-px bg-slate-400" />
+      {/* ESTADO DE ERRO TÉCNICO (SEÇÃO 22: NUNCA FALLBACK SILENCIOSO PARA CONE) */}
+      {conversionError && (
+        <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-xs p-6">
+          <div className="max-w-md rounded-2xl border border-red-300 bg-white p-6 shadow-2xl text-center font-mono">
+            <AlertTriangle className="size-10 text-red-600 mx-auto mb-3" />
+            <h3 className="text-sm font-bold text-slate-900 uppercase">
+              Não foi possível converter este modelo para CAD 3D
+            </h3>
+            <p className="mt-2 text-xs text-slate-600">{conversionError}</p>
+            <div className="mt-4 flex justify-center gap-2">
+              <button
+                type="button"
+                onClick={() => applyParametersAndRebuild()}
+                className="rounded-full bg-red-600 px-4 py-1.5 text-xs font-bold text-white hover:bg-red-700"
+              >
+                Tentar Novamente
+              </button>
             </div>
           </div>
-          <span className="bg-white/80 px-1 py-0.5 rounded shadow-2xs -rotate-90 origin-center text-[10px] text-slate-800 font-bold whitespace-nowrap">
-            {heightZ.toFixed(0)} mm
-          </span>
         </div>
-
-        {/* COTA HORIZONTAL DA BASE (Ø 200 mm) */}
-        <div className="absolute left-[47%] bottom-[24%] -translate-x-1/2 flex flex-col items-center font-mono text-[11px] font-bold text-slate-800">
-          <div className="w-56 h-px bg-slate-400 relative">
-            <span className="absolute -left-1 -top-1.5 text-[8px] text-slate-600">◀</span>
-            <span className="absolute -right-1 -top-1.5 text-[8px] text-slate-600">▶</span>
-            {/* Linhas de extensão verticais */}
-            <div className="absolute left-0 bottom-0 h-6 w-px bg-slate-400" />
-            <div className="absolute right-0 bottom-0 h-6 w-px bg-slate-400" />
-          </div>
-          <span className="mt-1 bg-white/80 px-1.5 py-0.5 rounded shadow-2xs text-[10px] text-slate-800 font-bold">
-            Ø {baseDiameterX.toFixed(0)} mm
-          </span>
-        </div>
-
-        {/* BÚSSOLA DE COORDENADAS 3D (CANTO SUPERIOR DIREITO DO VIEWPORT) */}
-        <div className="absolute top-16 right-[370px] pointer-events-none flex flex-col items-center">
-          <div className="relative size-12 flex items-center justify-center">
-            {/* Cubo e eixos esquemáticos */}
-            <div className="size-6 border border-slate-300 bg-white/70 rounded-xs shadow-2xs opacity-80" />
-            <span className="absolute -top-3 text-[10px] font-bold text-blue-600 font-mono">Z</span>
-            <span className="absolute -right-3 text-[10px] font-bold text-red-600 font-mono">X</span>
-            <span className="absolute -top-1.5 right-6 text-[10px] font-bold text-emerald-600 font-mono">Y</span>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* ========================================================================= */}
-      {/* 1. BARRA DE VISTAS E MODOS DE VISUALIZAÇÃO (ELEMENTO 1 NA IMAGEM)         */}
+      {/* COTAS TÉCNICAS SOBREPOSTAS AO VIEWPORT (DINÂMICAS POR MODELO)            */}
       {/* ========================================================================= */}
-      <div className="absolute top-3 left-[200px] z-20 flex items-center gap-1.5 pointer-events-auto">
-        <div className="flex items-center gap-1 rounded-2xl border border-slate-200/90 bg-white p-1 shadow-md">
+      {!conversionError && (
+        <div className="absolute inset-0 pointer-events-none z-10">
+          {/* COTA VERTICAL DE ALTURA */}
+          <div className="absolute left-[33%] top-[38%] -translate-y-1/2 flex items-center gap-0.5 font-mono text-[9px] font-bold text-slate-800">
+            <div className="flex flex-col items-center">
+              <div className="h-28 w-px bg-slate-400 relative">
+                <span className="absolute -top-1 -left-1 text-[6.5px] text-slate-600">▲</span>
+                <span className="absolute -bottom-1 -left-1 text-[6.5px] text-slate-600">▼</span>
+                <div className="absolute top-0 right-0 w-5 h-px bg-slate-400" />
+                <div className="absolute bottom-0 right-0 w-5 h-px bg-slate-400" />
+              </div>
+            </div>
+            <span className="bg-white/90 px-1 py-0.2 rounded shadow-2xs -rotate-90 origin-center text-[9px] text-slate-800 font-bold whitespace-nowrap">
+              {paramC.toFixed(0)} mm
+            </span>
+          </div>
+
+          {/* COTA HORIZONTAL DA BASE */}
+          <div className="absolute left-[48%] bottom-[20%] -translate-x-1/2 flex flex-col items-center font-mono text-[9px] font-bold text-slate-800">
+            <div className="w-36 h-px bg-slate-400 relative">
+              <span className="absolute -left-1 -top-1.5 text-[6.5px] text-slate-600">◀</span>
+              <span className="absolute -right-1 -top-1.5 text-[6.5px] text-slate-600">▶</span>
+              <div className="absolute left-0 bottom-0 h-3.5 w-px bg-slate-400" />
+              <div className="absolute right-0 bottom-0 h-3.5 w-px bg-slate-400" />
+            </div>
+            <span className="mt-0.5 bg-white/90 px-1 py-0.2 rounded shadow-2xs text-[9px] text-slate-800 font-bold">
+              {modelType === "boilermaking_transition"
+                ? `${paramA.toFixed(0)} × ${paramB.toFixed(0)} mm`
+                : `Ø ${paramA.toFixed(0)} mm`}
+            </span>
+          </div>
+
+          {/* BÚSSOLA DE COORDENADAS 3D DISCRETA (SEÇÃO 31) */}
+          <div className="absolute top-2.5 right-[335px] pointer-events-none flex flex-col items-center">
+            <div className="relative size-6 flex items-center justify-center">
+              <div className="size-3.5 border border-slate-300 bg-white/60 rounded-xs shadow-2xs opacity-80" />
+              <span className="absolute -top-2 text-[8px] font-bold text-blue-600 font-mono">Z</span>
+              <span className="absolute -right-2 text-[8px] font-bold text-red-600 font-mono">X</span>
+              <span className="absolute -top-0.5 right-3 text-[8px] font-bold text-emerald-600 font-mono">Y</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 1. BARRA DE VISTAS E MODOS DE VISUALIZAÇÃO (COMPACTA, 38px)               */}
+      {/* ========================================================================= */}
+      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 pointer-events-auto">
+        <div className="flex h-[38px] items-center gap-0.5 rounded-full border border-slate-200/90 bg-white px-1 shadow-md">
           {/* VISTAS ORTOGRÁFICAS */}
           {(
             [
@@ -378,15 +549,15 @@ export function CadBRepViewer({
             <button
               key={v.id}
               type="button"
-              onClick={() => setViewPreset(v.id)}
+              onClick={() => handleViewPresetChange(v.id)}
               className={cn(
-                "flex h-7 items-center gap-1 rounded-xl px-2.5 font-mono text-[9.5px] font-bold uppercase transition-all",
+                "flex h-[28px] items-center gap-1 rounded-full px-2.5 font-mono text-[10px] font-bold uppercase transition-all",
                 viewPreset === v.id
                   ? "bg-red-50 text-red-600 border border-red-200 shadow-2xs"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-50",
               )}
             >
-              <Box className="size-3" /> {v.label}
+              <Box className="size-3.5" /> {v.label}
             </button>
           ))}
 
@@ -405,13 +576,13 @@ export function CadBRepViewer({
               type="button"
               onClick={() => setEdgeMode(m.id)}
               className={cn(
-                "flex h-7 items-center gap-1 rounded-xl px-2.5 font-mono text-[9.5px] font-bold uppercase transition-all",
+                "flex h-[28px] items-center gap-1 rounded-full px-2.5 font-mono text-[10px] font-bold uppercase transition-all",
                 edgeMode === m.id
                   ? "bg-red-50 text-red-600 border border-red-200 shadow-2xs"
                   : "text-slate-600 hover:text-slate-900 hover:bg-slate-50",
               )}
             >
-              <Box className="size-3" /> {m.label}
+              <Box className="size-3.5" /> {m.label}
             </button>
           ))}
         </div>
@@ -420,7 +591,7 @@ export function CadBRepViewer({
         <button
           type="button"
           onClick={handleFitToModel}
-          className="flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-200/90 bg-white text-slate-700 shadow-md hover:bg-slate-50 transition-colors"
+          className="flex h-[38px] w-[38px] items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 shadow-md hover:bg-slate-50 transition-colors"
           title="Centralizar e enquadrar no modelo 3D (Fit)"
         >
           <Maximize2 className="size-3.5" />
@@ -428,23 +599,22 @@ export function CadBRepViewer({
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. FERRAMENTAS DE MANIPULAÇÃO RÁPIDA (ELEMENTO 2 NA IMAGEM)               */}
+      {/* 2. FERRAMENTAS DE MANIPULAÇÃO RÁPIDA (ELEMENTO 2 — TOPO DIREITO, 38px)    */}
       {/* ========================================================================= */}
-      <div className="absolute top-3 right-4 z-20 flex items-center gap-1.5 pointer-events-auto">
-        {/* GRUPO GIZMO | MOVER | GIRAR */}
-        <div className="flex items-center gap-1 rounded-2xl border border-slate-200/90 bg-white p-1 shadow-md font-mono text-[9.5px] font-bold">
+      <div className="absolute top-2 right-3 z-20 flex items-center gap-1 pointer-events-auto">
+        <div className="flex h-[38px] items-center gap-0.5 rounded-full border border-slate-200/90 bg-white px-1 shadow-md font-mono text-[10px] font-bold">
           <button
             type="button"
             onClick={() => setGizmoMode((m) => (m === "off" ? "translate" : "off"))}
             className={cn(
-              "flex h-7 items-center gap-1 rounded-xl px-2.5 uppercase transition-colors",
+              "flex h-[28px] items-center gap-1 rounded-full px-2.5 uppercase transition-colors",
               gizmoMode !== "off"
                 ? "bg-red-50 text-red-600 border border-red-200"
                 : "text-slate-700 hover:bg-slate-50",
             )}
             title="Alternar manipulador 3D (Gizmo)"
           >
-            <Crosshair className="size-3" /> GIZMO {gizmoMode !== "off" ? "ON" : "▾"}
+            <Crosshair className="size-3.5" /> GIZMO {gizmoMode !== "off" ? "ON" : "▾"}
           </button>
 
           <span className="h-4 w-px bg-slate-200" />
@@ -453,7 +623,7 @@ export function CadBRepViewer({
             type="button"
             onClick={() => setGizmoMode("translate")}
             className={cn(
-              "flex h-7 items-center gap-1 rounded-xl px-2.5 uppercase transition-colors",
+              "flex h-[28px] items-center gap-1 rounded-full px-2 uppercase transition-colors",
               gizmoMode === "translate"
                 ? "bg-red-50 text-red-600 border border-red-200"
                 : "text-slate-700 hover:bg-slate-50",
@@ -467,7 +637,7 @@ export function CadBRepViewer({
             type="button"
             onClick={() => setGizmoMode("rotate")}
             className={cn(
-              "flex h-7 items-center gap-1 rounded-xl px-2.5 uppercase transition-colors",
+              "flex h-[28px] items-center gap-1 rounded-full px-2 uppercase transition-colors",
               gizmoMode === "rotate"
                 ? "bg-red-50 text-red-600 border border-red-200"
                 : "text-slate-700 hover:bg-slate-50",
@@ -479,13 +649,13 @@ export function CadBRepViewer({
         </div>
 
         {/* HISTÓRICO UNDO / REDO */}
-        <div className="flex items-center rounded-2xl border border-slate-200/90 bg-white p-1 shadow-md">
+        <div className="flex h-[38px] items-center rounded-full border border-slate-200/90 bg-white px-0.5 shadow-md">
           <button
             type="button"
             disabled={!canUndo}
             onClick={handleUndo}
             className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-xl transition-colors",
+              "flex h-[28px] w-[28px] items-center justify-center rounded-full transition-colors",
               canUndo ? "text-slate-700 hover:bg-slate-50" : "text-slate-300 cursor-not-allowed",
             )}
             title="Desfazer alteração (Undo)"
@@ -497,7 +667,7 @@ export function CadBRepViewer({
             disabled={!canRedo}
             onClick={handleRedo}
             className={cn(
-              "flex h-7 w-7 items-center justify-center rounded-xl transition-colors",
+              "flex h-[28px] w-[28px] items-center justify-center rounded-full transition-colors",
               canRedo ? "text-slate-700 hover:bg-slate-50" : "text-slate-300 cursor-not-allowed",
             )}
             title="Refazer alteração (Redo)"
@@ -510,7 +680,7 @@ export function CadBRepViewer({
         <button
           type="button"
           onClick={() => setIsFullscreen((f) => !f)}
-          className="flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-200/90 bg-white text-slate-700 shadow-md hover:bg-slate-50 transition-colors"
+          className="flex h-[38px] w-[38px] items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 shadow-md hover:bg-slate-50 transition-colors"
           title="Alternar tela cheia"
         >
           {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
@@ -518,22 +688,22 @@ export function CadBRepViewer({
       </div>
 
       {/* ========================================================================= */}
-      {/* 3. BARRA LATERAL DE FERRAMENTAS ESQUERDA (ELEMENTO 3 NA IMAGEM)           */}
+      {/* 3. BARRA LATERAL ESQUERDA (LARGURA 180-200px, COMPACTA)                   */}
       {/* ========================================================================= */}
-      <div className="absolute top-3 left-4 z-20 flex flex-col gap-1.5 w-44 pointer-events-auto">
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-2 shadow-lg backdrop-blur-xs flex flex-col gap-1.5">
-          {/* CATEGORIA 1: CRIAR (SELECIONADA NA IMAGEM COM FUNDO VERMELHO SÓLIDO) */}
+      <div className="absolute top-2 left-2.5 z-20 flex flex-col gap-1 w-[180px] pointer-events-auto">
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-1 shadow-lg backdrop-blur-xs flex flex-col gap-0.5">
+          {/* CATEGORIA 1: CRIAR */}
           <button
             type="button"
             onClick={() => setActiveLeftCat((c) => (c === "criar" ? "none" : "criar"))}
             className={cn(
-              "flex h-9 w-full items-center justify-between rounded-xl px-3 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
+              "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
               activeLeftCat === "criar"
                 ? "bg-[#dc2626] text-white shadow-xs"
                 : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
             )}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Box className="size-3.5" /> CRIAR
             </div>
             <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "criar" && "rotate-180")} />
@@ -544,13 +714,13 @@ export function CadBRepViewer({
             type="button"
             onClick={() => setActiveLeftCat((c) => (c === "modificar" ? "none" : "modificar"))}
             className={cn(
-              "flex h-9 w-full items-center justify-between rounded-xl px-3 font-mono text-[10px] font-bold uppercase transition-all",
+              "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
               activeLeftCat === "modificar"
                 ? "bg-red-50 text-red-600 border border-red-200"
                 : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
             )}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Scissors className="size-3.5" /> MODIFICAR
             </div>
             <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "modificar" && "rotate-180")} />
@@ -561,13 +731,13 @@ export function CadBRepViewer({
             type="button"
             onClick={() => setActiveLeftCat((c) => (c === "detalhes" ? "none" : "detalhes"))}
             className={cn(
-              "flex h-9 w-full items-center justify-between rounded-xl px-3 font-mono text-[10px] font-bold uppercase transition-all",
+              "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
               activeLeftCat === "detalhes"
                 ? "bg-red-50 text-red-600 border border-red-200"
                 : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
             )}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Settings className="size-3.5" /> DETALHES
             </div>
             <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "detalhes" && "rotate-180")} />
@@ -578,13 +748,13 @@ export function CadBRepViewer({
             type="button"
             onClick={() => setActiveLeftCat((c) => (c === "chapa" ? "none" : "chapa"))}
             className={cn(
-              "flex h-9 w-full items-center justify-between rounded-xl px-3 font-mono text-[10px] font-bold uppercase transition-all",
+              "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
               activeLeftCat === "chapa"
                 ? "bg-red-50 text-red-600 border border-red-200"
                 : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
             )}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Layers className="size-3.5" /> CHAPA
             </div>
             <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "chapa" && "rotate-180")} />
@@ -595,13 +765,13 @@ export function CadBRepViewer({
             type="button"
             onClick={() => setActiveLeftCat((c) => (c === "estruturas" ? "none" : "estruturas"))}
             className={cn(
-              "flex h-9 w-full items-center justify-between rounded-xl px-3 font-mono text-[10px] font-bold uppercase transition-all",
+              "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
               activeLeftCat === "estruturas"
                 ? "bg-red-50 text-red-600 border border-red-200"
                 : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
             )}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Boxes className="size-3.5" /> ESTRUTURAS
             </div>
             <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "estruturas" && "rotate-180")} />
@@ -612,13 +782,13 @@ export function CadBRepViewer({
             type="button"
             onClick={() => setActiveLeftCat((c) => (c === "medir" ? "none" : "medir"))}
             className={cn(
-              "flex h-9 w-full items-center justify-between rounded-xl px-3 font-mono text-[10px] font-bold uppercase transition-all",
+              "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
               activeLeftCat === "medir"
                 ? "bg-red-50 text-red-600 border border-red-200"
                 : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
             )}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Ruler className="size-3.5" /> MEDIR
             </div>
             <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "medir" && "rotate-180")} />
@@ -629,23 +799,23 @@ export function CadBRepViewer({
             type="button"
             onClick={() => setActiveLeftCat((c) => (c === "exportar" ? "none" : "exportar"))}
             className={cn(
-              "flex h-9 w-full items-center justify-between rounded-xl px-3 font-mono text-[10px] font-bold uppercase transition-all",
+              "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
               activeLeftCat === "exportar"
                 ? "bg-red-50 text-red-600 border border-red-200"
                 : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
             )}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Download className="size-3.5" /> EXPORTAR
             </div>
             <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "exportar" && "rotate-180")} />
           </button>
         </div>
 
-        {/* SUBPAINEL CONTEXTUAL FLYOUT ADJACENTE (NÃO COBRE A PEÇA) */}
+        {/* SUBPAINEL FLYOUT ADJACENTE (NÃO COBRE A PEÇA) */}
         {activeLeftCat !== "none" && (
-          <div className="absolute left-[184px] top-0 w-48 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-xl backdrop-blur-xs flex flex-col gap-1 font-mono text-[9px]">
-            <div className="flex items-center justify-between pb-1 border-b border-slate-100 font-bold text-slate-800 uppercase">
+          <div className="absolute left-[184px] top-0 w-38 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-xl backdrop-blur-xs flex flex-col gap-0.5 font-mono text-[9.5px]">
+            <div className="flex items-center justify-between pb-0.5 border-b border-slate-100 font-bold text-slate-800 uppercase">
               <span>{activeLeftCat}</span>
               <button
                 type="button"
@@ -660,28 +830,68 @@ export function CadBRepViewer({
               <>
                 <button
                   type="button"
-                  onClick={() => setTemplatesDialogOpen(true)}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                  onClick={() => {
+                    setModelType("boilermaking_cone");
+                    setModelTitle("Cone Truncado");
+                    setParamA(200);
+                    setParamB(2);
+                    setParamC(100);
+                  }}
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
                 >
-                  <Flame className="size-3" /> Cone / Caldeiraria
+                  <Flame className="size-3" /> Cone Truncado
                 </button>
                 <button
                   type="button"
                   onClick={() => {
-                    setBaseDiameterX(120);
-                    setHeightZ(80);
-                    void applyParametersAndRebuild();
+                    setModelType("boilermaking_transition");
+                    setModelTitle("Quadrado para Redondo");
+                    setParamA(200);
+                    setParamB(200);
+                    setParamD(120);
+                    setParamC(150);
                   }}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
                 >
-                  <Box className="size-3" /> Caixa Sólida
+                  <Layers className="size-3" /> Quadrado → Redondo
                 </button>
                 <button
                   type="button"
-                  onClick={() => setWeldmentDialogOpen(true)}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                  onClick={() => {
+                    setModelType("boilermaking_elbow");
+                    setModelTitle("Curva de Gomos");
+                    setParamA(150);
+                    setParamB(225);
+                    setParamC(90);
+                  }}
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
                 >
-                  <Boxes className="size-3" /> Perfis / Vigas
+                  <Box className="size-3" /> Curva de Gomos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModelType("boilermaking_branch");
+                    setModelTitle("Boca de Lobo");
+                    setParamA(200);
+                    setParamB(150);
+                    setParamC(180);
+                  }}
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Crosshair className="size-3" /> Boca de Lobo / Tê
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setModelType("base_cylinder");
+                    setModelTitle("Cilindro Industrial");
+                    setParamA(160);
+                    setParamC(220);
+                  }}
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Box className="size-3" /> Cilindro / Tubo
                 </button>
               </>
             )}
@@ -691,28 +901,28 @@ export function CadBRepViewer({
                 <button
                   type="button"
                   onClick={() => setGizmoMode("translate")}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
                 >
                   <Move className="size-3" /> Mover / Transladar
                 </button>
                 <button
                   type="button"
                   onClick={() => setOptHole((h) => !h)}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
                 >
                   <Crosshair className="size-3" /> Furo Passante
                 </button>
                 <button
                   type="button"
                   onClick={() => setOptFillet((f) => !f)}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
                 >
                   <Scissors className="size-3" /> Filete nas Arestas
                 </button>
                 <button
                   type="button"
                   onClick={() => setOptChamfer((c) => !c)}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
                 >
                   <Scissors className="size-3" /> Chanfro 45°
                 </button>
@@ -724,14 +934,14 @@ export function CadBRepViewer({
                 <button
                   type="button"
                   onClick={() => setFlatPatternDialogOpen(true)}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-red-600 font-bold hover:bg-red-50"
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-red-600 font-bold hover:bg-red-50"
                 >
                   <Compass className="size-3" /> Planificar Sólido
                 </button>
                 <button
                   type="button"
                   onClick={() => setDraftingDialogOpen(true)}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
                 >
                   <FileText className="size-3" /> Prancha 2D ABNT
                 </button>
@@ -743,7 +953,7 @@ export function CadBRepViewer({
                 <button
                   type="button"
                   onClick={() => setWeldmentDialogOpen(true)}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600 font-bold"
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600 font-bold"
                 >
                   <Boxes className="size-3" /> Perfis & Cut-List
                 </button>
@@ -758,7 +968,7 @@ export function CadBRepViewer({
                     setRightTab("inspecao");
                     setRightPanelOpen(true);
                   }}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
                 >
                   <Ruler className="size-3" /> Metrologia B-Rep
                 </button>
@@ -770,14 +980,14 @@ export function CadBRepViewer({
                 <button
                   type="button"
                   onClick={() => setFlatPatternDialogOpen(true)}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
                 >
                   <Download className="size-3" /> DXF / Código G
                 </button>
                 <button
                   type="button"
                   onClick={() => setDraftingDialogOpen(true)}
-                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
                 >
                   <Download className="size-3" /> Prancha Técnica DXF
                 </button>
@@ -788,18 +998,18 @@ export function CadBRepViewer({
       </div>
 
       {/* ========================================================================= */}
-      {/* 4. PAINEL CONTEXTUAL DE PROPRIEDADES DIREITO (REPRODUÇÃO EXATA DA IMAGEM)   */}
+      {/* 4. PAINEL CONTEXTUAL DIREITO (LARGURA 320px, COMPACTO)                    */}
       {/* ========================================================================= */}
       {rightPanelOpen && (
-        <div className="absolute top-14 right-4 z-20 w-84 rounded-2xl border border-slate-200/90 bg-white p-3.5 shadow-xl backdrop-blur-xs flex flex-col gap-2.5 font-mono text-[10px] text-slate-800 pointer-events-auto">
-          {/* BARRA DE ABAS SUPERIORES */}
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+        <div className="absolute top-14 right-3 z-20 w-[320px] rounded-2xl border border-slate-200/90 bg-white p-2.5 shadow-xl backdrop-blur-xs flex flex-col gap-2 font-mono text-[10px] text-slate-800 pointer-events-auto">
+          {/* ABAS DO PAINEL */}
+          <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => setRightTab("parametros")}
                 className={cn(
-                  "flex items-center gap-1 rounded-full px-2.5 py-1 font-bold uppercase transition-colors",
+                  "flex items-center gap-1 rounded-full px-2 py-0.5 font-bold uppercase transition-colors text-[9.5px]",
                   rightTab === "parametros"
                     ? "bg-red-50 text-red-600 border border-red-200"
                     : "text-slate-600 hover:text-slate-900",
@@ -812,7 +1022,7 @@ export function CadBRepViewer({
                 type="button"
                 onClick={() => setRightTab("inspecao")}
                 className={cn(
-                  "rounded-full px-2.5 py-1 font-bold uppercase transition-colors",
+                  "rounded-full px-2 py-0.5 font-bold uppercase transition-colors text-[9.5px]",
                   rightTab === "inspecao"
                     ? "bg-red-50 text-red-600 border border-red-200"
                     : "text-slate-600 hover:text-slate-900",
@@ -825,7 +1035,7 @@ export function CadBRepViewer({
                 type="button"
                 onClick={() => setRightTab("filtro")}
                 className={cn(
-                  "rounded-full px-2.5 py-1 font-bold uppercase transition-colors",
+                  "rounded-full px-2 py-0.5 font-bold uppercase transition-colors text-[9.5px]",
                   rightTab === "filtro"
                     ? "bg-red-50 text-red-600 border border-red-200"
                     : "text-slate-600 hover:text-slate-900",
@@ -838,141 +1048,197 @@ export function CadBRepViewer({
             <button
               type="button"
               onClick={() => setRightPanelOpen(false)}
-              className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              className="rounded-full p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
               title="Fechar painel"
             >
-              <X className="size-3.5" />
+              <X className="size-3" />
             </button>
           </div>
 
-          {/* ABA 1: PARÂMETROS COM MINI-DIAGRAMA TÉCNICO VETORIAL */}
+          {/* ABA 1: PARÂMETROS COM MINI-DIAGRAMA TÉCNICO VETORIAL DINÂMICO */}
           {rightTab === "parametros" && (
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col gap-2">
               {/* NOME DA PEÇA */}
-              <div className="flex items-center gap-1.5 font-bold text-slate-900 uppercase">
-                <Box className="size-3.5 text-red-600" /> CONE
+              <div className="flex items-center gap-1.5 font-bold text-slate-900 uppercase text-[12px]">
+                <Box className="size-3.5 text-red-600" /> {modelTitle.toUpperCase()}
               </div>
 
-              {/* CAMPOS DE ENTRADA + DIAGRAMA TÉCNICO LADO A LADO */}
+              {/* INPUTS + DIAGRAMA ESQUEMÁTICO ESPECÍFICO DA PEÇA */}
               <div className="grid grid-cols-2 gap-2 items-center">
                 {/* COLUNA ESQUERDA: INPUTS NUMÉRICOS */}
-                <div className="flex flex-col gap-2">
-                  <div>
-                    <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
-                      DIÂMETRO DA BASE (X)
-                    </label>
-                    <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 mt-0.5">
-                      <input
-                        type="number"
-                        value={baseDiameterX}
-                        onChange={(e) => setBaseDiameterX(Number(e.target.value))}
-                        className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
-                      />
-                      <span className="text-[9px] text-slate-400">mm</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
-                      ALTURA (Z)
-                    </label>
-                    <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 mt-0.5">
-                      <input
-                        type="number"
-                        value={heightZ}
-                        onChange={(e) => setHeightZ(Number(e.target.value))}
-                        className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
-                      />
-                      <span className="text-[9px] text-slate-400">mm</span>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
-                      ESPESSURA
-                    </label>
-                    <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 mt-0.5">
-                      <input
-                        type="number"
-                        value={thickness}
-                        onChange={(e) => setThickness(Number(e.target.value))}
-                        className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
-                      />
-                      <span className="text-[9px] text-slate-400">mm</span>
-                    </div>
-                  </div>
+                <div className="flex flex-col gap-1">
+                  {modelType === "boilermaking_transition" ? (
+                    <>
+                      <div>
+                        <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
+                          BASE (X)
+                        </label>
+                        <div className="flex h-[28px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 mt-0.5">
+                          <input
+                            type="number"
+                            value={paramA}
+                            onChange={(e) => setParamA(Number(e.target.value))}
+                            className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
+                          />
+                          <span className="text-[8.5px] text-slate-400">mm</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
+                          DIÂMETRO (Ø)
+                        </label>
+                        <div className="flex h-[28px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 mt-0.5">
+                          <input
+                            type="number"
+                            value={paramD}
+                            onChange={(e) => setParamD(Number(e.target.value))}
+                            className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
+                          />
+                          <span className="text-[8.5px] text-slate-400">mm</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
+                          ALTURA (Z)
+                        </label>
+                        <div className="flex h-[28px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 mt-0.5">
+                          <input
+                            type="number"
+                            value={paramC}
+                            onChange={(e) => setParamC(Number(e.target.value))}
+                            className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
+                          />
+                          <span className="text-[8.5px] text-slate-400">mm</span>
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div>
+                        <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
+                          DIÂMETRO BASE (X)
+                        </label>
+                        <div className="flex h-[28px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 mt-0.5">
+                          <input
+                            type="number"
+                            value={paramA}
+                            onChange={(e) => setParamA(Number(e.target.value))}
+                            className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
+                          />
+                          <span className="text-[8.5px] text-slate-400">mm</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
+                          ALTURA (Z)
+                        </label>
+                        <div className="flex h-[28px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 mt-0.5">
+                          <input
+                            type="number"
+                            value={paramC}
+                            onChange={(e) => setParamC(Number(e.target.value))}
+                            className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
+                          />
+                          <span className="text-[8.5px] text-slate-400">mm</span>
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
+                          ESPESSURA
+                        </label>
+                        <div className="flex h-[28px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 mt-0.5">
+                          <input
+                            type="number"
+                            value={thickness}
+                            onChange={(e) => setThickness(Number(e.target.value))}
+                            className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
+                          />
+                          <span className="text-[8.5px] text-slate-400">mm</span>
+                        </div>
+                      </div>
+                    </>
+                  )}
                 </div>
 
-                {/* COLUNA DIREITA: MINI-DIAGRAMA TÉCNICO VETORIAL DO CONE (IGUAL À IMAGEM) */}
-                <div className="flex items-center justify-center p-1 border border-slate-100 bg-slate-50/50 rounded-xl">
-                  <svg viewBox="0 0 100 90" className="w-full h-24">
-                    {/* Cota Z lateral */}
-                    <line x1="12" y1="10" x2="12" y2="70" stroke="#94a3b8" strokeWidth="0.75" />
-                    <line x1="8" y1="10" x2="16" y2="10" stroke="#94a3b8" strokeWidth="0.75" />
-                    <line x1="8" y1="70" x2="16" y2="70" stroke="#94a3b8" strokeWidth="0.75" />
-                    <text x="6" y="42" fontSize="7" fill="#475569" fontWeight="bold" textAnchor="end">Z</text>
+                {/* COLUNA DIREITA: MINI-DIAGRAMA TÉCNICO VETORIAL ESPECÍFICO */}
+                <div className="flex items-center justify-center p-1 border border-slate-100 bg-slate-50/70 rounded-xl h-full">
+                  {modelType === "boilermaking_transition" ? (
+                    <svg viewBox="0 0 100 80" className="w-full h-18">
+                      {/* Diagrama Quadrado -> Redondo */}
+                      <line x1="12" y1="15" x2="12" y2="60" stroke="#94a3b8" strokeWidth="0.75" />
+                      <text x="6" y="38" fontSize="6" fill="#475569" fontWeight="bold" textAnchor="end">H</text>
+                      <polygon points="35,18 65,18 85,60 15,60" fill="#fee2e2" stroke="#dc2626" strokeWidth="0.8" />
+                      <ellipse cx="50" cy="18" rx="15" ry="3.5" fill="#fecaca" stroke="#dc2626" strokeWidth="0.75" />
+                      <line x1="15" y1="70" x2="85" y2="70" stroke="#94a3b8" strokeWidth="0.75" />
+                      <text x="50" y="76" fontSize="6" fill="#475569" fontWeight="bold" textAnchor="middle">A</text>
+                    </svg>
+                  ) : (
+                    <svg viewBox="0 0 100 80" className="w-full h-18">
+                      {/* Cota Z lateral */}
+                      <line x1="12" y1="10" x2="12" y2="60" stroke="#94a3b8" strokeWidth="0.75" />
+                      <line x1="8" y1="10" x2="16" y2="10" stroke="#94a3b8" strokeWidth="0.75" />
+                      <line x1="8" y1="60" x2="16" y2="60" stroke="#94a3b8" strokeWidth="0.75" />
+                      <text x="6" y="36" fontSize="6" fill="#475569" fontWeight="bold" textAnchor="end">Z</text>
 
-                    {/* Sombra / Preenchimento do Cone */}
-                    <polygon points="55,10 25,70 85,70" fill="#fee2e2" stroke="#dc2626" strokeWidth="1" />
-                    {/* Elipse da base */}
-                    <ellipse cx="55" cy="70" rx="30" ry="7" fill="#fecaca" stroke="#dc2626" strokeWidth="1" />
-                    <path d="M 25 70 A 30 7 0 0 1 85 70" fill="none" stroke="#dc2626" strokeWidth="0.75" strokeDasharray="2,2" />
+                      {/* Sombra / Preenchimento do Cone */}
+                      <polygon points="55,10 25,60 85,60" fill="#fee2e2" stroke="#dc2626" strokeWidth="0.8" />
+                      <ellipse cx="55" cy="60" rx="30" ry="5.5" fill="#fecaca" stroke="#dc2626" strokeWidth="0.8" />
+                      <path d="M 25 60 A 30 5.5 0 0 1 85 60" fill="none" stroke="#dc2626" strokeWidth="0.75" strokeDasharray="2,2" />
 
-                    {/* Cota X inferior */}
-                    <line x1="25" y1="82" x2="85" y2="82" stroke="#94a3b8" strokeWidth="0.75" />
-                    <line x1="25" y1="75" x2="25" y2="85" stroke="#94a3b8" strokeWidth="0.75" />
-                    <line x1="85" y1="75" x2="85" y2="85" stroke="#94a3b8" strokeWidth="0.75" />
-                    <polygon points="25,82 28,80.5 28,83.5" fill="#475569" />
-                    <polygon points="85,82 82,80.5 82,83.5" fill="#475569" />
-                    <text x="55" y="87" fontSize="7" fill="#475569" fontWeight="bold" textAnchor="middle">X</text>
-                  </svg>
+                      {/* Cota X inferior */}
+                      <line x1="25" y1="70" x2="85" y2="70" stroke="#94a3b8" strokeWidth="0.75" />
+                      <line x1="25" y1="65" x2="25" y2="73" stroke="#94a3b8" strokeWidth="0.75" />
+                      <line x1="85" y1="65" x2="85" y2="73" stroke="#94a3b8" strokeWidth="0.75" />
+                      <text x="55" y="77" fontSize="6" fill="#475569" fontWeight="bold" textAnchor="middle">X</text>
+                    </svg>
+                  )}
                 </div>
               </div>
 
-              {/* SEÇÃO DE OPÇÕES COM CHECKBOXES */}
-              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
-                <div className="flex flex-col gap-1.5">
+              {/* OPÇÕES E MATERIAL */}
+              <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-100">
+                <div className="flex flex-col gap-1">
                   <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
                     OPÇÕES
                   </span>
-                  <label className="flex items-center gap-1.5 text-[9px] text-slate-700 cursor-pointer">
+                  <label className="flex items-center gap-1 text-[8.5px] text-slate-700 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={optHole}
                       onChange={(e) => setOptHole(e.target.checked)}
-                      className="rounded text-red-600 focus:ring-red-500"
+                      className="rounded text-red-600 focus:ring-red-500 size-2.5"
                     />
                     FURO CENTRAL
                   </label>
-                  <label className="flex items-center gap-1.5 text-[9px] text-slate-700 cursor-pointer">
+                  <label className="flex items-center gap-1 text-[8.5px] text-slate-700 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={optFillet}
                       onChange={(e) => setOptFillet(e.target.checked)}
-                      className="rounded text-red-600 focus:ring-red-500"
+                      className="rounded text-red-600 focus:ring-red-500 size-2.5"
                     />
-                    FILETE NAS ARESTAS
+                    FILETE ARESTAS
                   </label>
-                  <label className="flex items-center gap-1.5 text-[9px] text-slate-700 cursor-pointer">
+                  <label className="flex items-center gap-1 text-[8.5px] text-slate-700 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={optChamfer}
                       onChange={(e) => setOptChamfer(e.target.checked)}
-                      className="rounded text-red-600 focus:ring-red-500"
+                      className="rounded text-red-600 focus:ring-red-500 size-2.5"
                     />
                     CHANFRO
                   </label>
                 </div>
 
-                {/* SELEÇÃO DE MATERIAL */}
-                <div className="flex flex-col gap-1.5">
+                {/* MATERIAL */}
+                <div className="flex flex-col gap-1">
                   <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
                     MATERIAL
                   </span>
                   <select
                     value={material}
                     onChange={(e) => setMaterial(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[9.5px] font-bold text-slate-900 outline-none"
+                    className="w-full h-[28px] rounded-lg border border-slate-200 bg-slate-50 px-1.5 font-mono text-[9.5px] font-bold text-slate-900 outline-none"
                   >
                     <option value="Aço Carbono">Aço Carbono</option>
                     <option value="Inox 304">Inox 304</option>
@@ -981,29 +1247,29 @@ export function CadBRepViewer({
                 </div>
               </div>
 
-              {/* BOTÃO PRINCIPAL APLICAR (VERMELHO CALDRA SÓLIDO) */}
+              {/* BOTÃO PRINCIPAL APLICAR (VERMELHO SÓLIDO CALDRA — 34px) */}
               <button
                 type="button"
                 onClick={applyParametersAndRebuild}
-                className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-[#dc2626] py-2.5 font-mono text-[11px] font-bold tracking-wider text-white shadow-xs hover:bg-[#b91c1c] active:scale-[0.99] transition-all uppercase"
+                className="mt-0.5 flex h-[34px] w-full items-center justify-center gap-1.5 rounded-xl bg-[#dc2626] font-mono text-[10.5px] font-bold tracking-wider text-white shadow-xs hover:bg-[#b91c1c] active:scale-[0.99] transition-all uppercase"
               >
-                <Settings className="size-4" /> APLICAR
+                <Settings className="size-3.5" /> APLICAR
               </button>
             </div>
           )}
 
           {/* ABA 2: INSPEÇÃO B-REP */}
           {rightTab === "inspecao" && (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-                <span className="font-bold text-slate-900">INSPEÇÃO B-REP</span>
+                <span className="font-bold text-slate-900 text-[10.5px]">INSPEÇÃO B-REP</span>
                 <span className="flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[8px] font-bold text-emerald-600">
-                  <span className="size-1.5 rounded-full bg-emerald-500" /> OCCT VALID
+                  <span className="size-1 rounded-full bg-emerald-500" /> OCCT VALID
                 </span>
               </div>
 
-              <div className="flex flex-col gap-1 text-[9px] text-slate-600">
-                <div>Dimensões: <strong className="text-slate-900">{baseDiameterX} × {baseDiameterX} × {heightZ} mm</strong></div>
+              <div className="flex flex-col gap-1 text-[9.5px] text-slate-600">
+                <div>Dimensões: <strong className="text-slate-900">{paramA.toFixed(0)} × {paramB.toFixed(0)} × {paramC.toFixed(0)} mm</strong></div>
                 <div>Volume: <strong className="text-slate-900">{massProps ? massProps.volume.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) : "30.000"} mm³</strong></div>
                 <div>Massa Est.: <strong className="text-red-600">{massProps ? massProps.mass.toFixed(3) : "9.030"} kg</strong></div>
                 <div>Área Total: <strong className="text-slate-900">{massProps ? massProps.surfaceArea.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) : "21.200"} mm²</strong></div>
@@ -1012,9 +1278,9 @@ export function CadBRepViewer({
             </div>
           )}
 
-          {/* ABA 3: FILTRO DE SELEÇÃO TOPOLÓGICA */}
+          {/* ABA 3: FILTRO DE SELEÇÃO */}
           {rightTab === "filtro" && (
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-1.5">
               <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
                 FILTRO DE ENTIDADE
               </span>
@@ -1025,7 +1291,7 @@ export function CadBRepViewer({
                     type="button"
                     onClick={() => setSelectionType(t)}
                     className={cn(
-                      "rounded-lg border px-2 py-1.5 text-center font-bold uppercase transition-colors text-[9px]",
+                      "rounded-lg border px-1 py-1 text-center font-bold uppercase transition-colors text-[9px]",
                       selectionType === t
                         ? "border-red-200 bg-red-50 text-red-600 shadow-2xs"
                         : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
@@ -1037,16 +1303,16 @@ export function CadBRepViewer({
               </div>
 
               {selectedEntity ? (
-                <div className="mt-1 rounded-lg border border-slate-200 bg-slate-50 p-2 text-[8.5px]">
+                <div className="mt-0.5 rounded-lg border border-slate-200 bg-slate-50 p-1.5 text-[9px]">
                   <div className="font-bold text-slate-800">
                     {selectedEntity.type.toUpperCase()} #{selectedEntity.index}
                   </div>
                   <div className="text-slate-500">
-                    Posição: ({selectedEntity.point.x.toFixed(1)}, {selectedEntity.point.y.toFixed(1)}, {selectedEntity.point.z.toFixed(1)})
+                    Posição: ({selectedEntity.point?.x.toFixed(1)}, {selectedEntity.point?.y.toFixed(1)}, {selectedEntity.point?.z.toFixed(1)})
                   </div>
                 </div>
               ) : (
-                <div className="mt-1 rounded-lg border border-dashed border-slate-200 p-2 text-center text-[8.5px] text-slate-400">
+                <div className="mt-0.5 rounded-lg border border-dashed border-slate-200 p-1.5 text-center text-[9px] text-slate-400">
                   Clique na peça para selecionar uma {selectionType}
                 </div>
               )}
@@ -1056,47 +1322,47 @@ export function CadBRepViewer({
       )}
 
       {/* ========================================================================= */}
-      {/* 5. AÇÕES PRINCIPAIS (APARECEM NO CHÃO DO VIEWPORT — ELEMENTO 4 NA IMAGEM) */}
+      {/* 5. AÇÕES PRINCIPAIS (APARECEM NO CHÃO DO VIEWPORT — 36px)                 */}
       {/* ========================================================================= */}
-      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 rounded-2xl border border-slate-200/90 bg-white px-2 py-1.5 shadow-lg backdrop-blur-xs pointer-events-auto">
-        {/* PLANIFICAR (DESTAQUE VERMELHO SUAVE) */}
+      <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 rounded-full border border-slate-200/90 bg-white p-0.5 shadow-lg backdrop-blur-xs pointer-events-auto">
+        {/* PLANIFICAR */}
         <button
           type="button"
           onClick={() => setFlatPatternDialogOpen(true)}
-          className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1 font-mono text-[10px] font-bold text-red-600 shadow-2xs hover:bg-red-100 transition-colors uppercase"
+          className="flex h-[36px] items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3.5 font-mono text-[10px] font-bold text-red-600 shadow-2xs hover:bg-red-100 transition-colors uppercase"
           title="Planificar sólido 3D"
         >
-          <Compass className="size-3 text-red-600" /> PLANIFICAR
+          <Compass className="size-3.5 text-red-600" /> PLANIFICAR
         </button>
 
         {/* PRANCHA 2D */}
         <button
           type="button"
           onClick={() => setDraftingDialogOpen(true)}
-          className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+          className="flex h-[36px] items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
           title="Desenho técnico 2D ABNT com vistas ortográficas e carimbo"
         >
-          <FileText className="size-3 text-slate-600" /> PRANCHA 2D
+          <FileText className="size-3.5 text-slate-600" /> PRANCHA 2D
         </button>
 
         {/* ESTRUTURAS */}
         <button
           type="button"
           onClick={() => setWeldmentDialogOpen(true)}
-          className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+          className="flex h-[36px] items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
           title="Estruturas metálicas, perfis industriais e lista de corte"
         >
-          <Boxes className="size-3 text-slate-600" /> ESTRUTURAS
+          <Boxes className="size-3.5 text-slate-600" /> ESTRUTURAS
         </button>
 
         {/* CNC / DXF */}
         <button
           type="button"
           onClick={() => setFlatPatternDialogOpen(true)}
-          className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+          className="flex h-[36px] items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
           title="Exportar código G CNC e DXF para máquinas de corte"
         >
-          <Crosshair className="size-3 text-slate-600" /> CNC / DXF
+          <Crosshair className="size-3.5 text-slate-600" /> CNC / DXF
         </button>
       </div>
 
@@ -1114,7 +1380,7 @@ export function CadBRepViewer({
         open={flatPatternDialogOpen}
         onClose={() => setFlatPatternDialogOpen(false)}
         features={featuresList}
-        fallbackDimensions={{ width: baseDiameterX, length: baseDiameterX, thickness }}
+        fallbackDimensions={{ width: paramA, length: paramB, thickness }}
       />
 
       <CaldraDraftingDialog
@@ -1122,7 +1388,7 @@ export function CadBRepViewer({
         onClose={() => setDraftingDialogOpen(false)}
         features={featuresList}
         massProps={massProps}
-        dimensions={{ width: baseDiameterX, length: baseDiameterX, height: heightZ }}
+        dimensions={{ width: paramA, length: paramB, height: paramC }}
       />
 
       <CaldraWeldmentDialog

@@ -53,6 +53,8 @@ export class ThreeBRepRenderer {
   private verticesGroup: THREE.Group;
   private selectionOverlayGroup: THREE.Group;
   private measurementGroup: THREE.Group;
+  private gridHelper: THREE.GridHelper | null = null;
+  private currentTheme: "light" | "dark" = "light";
 
   // Dados do Sólido Carregado
   private currentShape: CadTessellatedShape | null = null;
@@ -357,6 +359,7 @@ export class ThreeBRepRenderer {
 
     this.updateVisibilityByEdgeMode();
     this.fitView(false);
+    this.updateGridAndBackground();
   }
 
   private clearGeometry(): void {
@@ -768,6 +771,64 @@ export class ThreeBRepRenderer {
     this.fitView(animate);
   }
 
+  public setTheme(theme: "light" | "dark"): void {
+    this.currentTheme = theme;
+    this.updateGridAndBackground();
+  }
+
+  public updateGridAndBackground(): void {
+    const isDark = this.currentTheme === "dark";
+    // Viewport background: exactly #051833 for dark theme (Prompt Sec. 24)
+    this.scene.background = new THREE.Color(isDark ? 0x051833 : 0xf8fafc);
+
+    if (this.gridHelper) {
+      this.scene.remove(this.gridHelper);
+      this.gridHelper.geometry.dispose();
+      if (Array.isArray(this.gridHelper.material)) {
+        this.gridHelper.material.forEach((m) => m.dispose());
+      } else {
+        this.gridHelper.material.dispose();
+      }
+      this.gridHelper = null;
+    }
+
+    let maxDim = 300;
+    let floorY = 0;
+    if (this.currentShape?.bounds) {
+      const b = this.currentShape.bounds;
+      const dx = b.max.x - b.min.x;
+      const dy = b.max.y - b.min.y;
+      const dz = b.max.z - b.min.z;
+      maxDim = Math.max(dx, dy, dz);
+      floorY = b.min.y - 0.5;
+    }
+
+    // Escala adaptativa em mm coerente com o modelo (Prompt Sec. 29 & 30)
+    const gridSize = Math.max(600, Math.ceil((maxDim * 3) / 100) * 100);
+    const divisions = Math.min(100, Math.max(20, Math.round(gridSize / 20)));
+
+    // Tema Escuro: Grid branco (0.18 principal, 0.08 secundária) (Sec. 24)
+    // Tema Claro: Grid escuro (0.16 principal, 0.07 secundária) (Sec. 25)
+    const mainColor = isDark ? 0xffffff : 0x0f172a;
+    const subColor = isDark ? 0xffffff : 0x334155;
+
+    const grid = new THREE.GridHelper(gridSize, divisions, mainColor, subColor);
+    grid.position.set(0, floorY, 0);
+
+    if (Array.isArray(grid.material)) {
+      grid.material[0].transparent = true;
+      grid.material[0].opacity = isDark ? 0.18 : 0.16;
+      grid.material[1].transparent = true;
+      grid.material[1].opacity = isDark ? 0.08 : 0.07;
+    } else {
+      grid.material.transparent = true;
+      grid.material.opacity = isDark ? 0.12 : 0.10;
+    }
+
+    this.gridHelper = grid;
+    this.scene.add(grid);
+  }
+
   public fitView(animate = true, dir?: [number, number, number]): void {
     const box = new THREE.Box3();
     if (this.currentShape?.bounds) {
@@ -993,6 +1054,12 @@ export class ThreeBRepRenderer {
     window.removeEventListener("resize", this.onWindowResize);
 
     this.clearGeometry();
+
+    if (this.gridHelper) {
+      this.scene.remove(this.gridHelper);
+      this.gridHelper.geometry.dispose();
+      this.gridHelper = null;
+    }
 
     this.baseSolidMaterial.dispose();
     this.primaryFaceMaterial.dispose();
