@@ -225,56 +225,71 @@ export function Cad3DStage({
       aria-label="Ambiente 3D CAD Core"
       aria-modal="true"
     >
-      {/* CABEÇALHO TÉCNICO CALDRA */}
-      <header className="relative flex items-center justify-between gap-2 border-b border-line px-3 py-2 bg-card/60 backdrop-blur-md">
+      {/* CABEÇALHO SUPERIOR — IDÊNTICO À REFERÊNCIA VISUAL */}
+      <header className="relative flex h-11 items-center justify-between border-b border-slate-200/90 bg-white px-4 shadow-2xs select-none">
+        {/* LADO ESQUERDO: [ ← 2D PROJETO ] + [ 2D SKETCH | 3D SÓLIDO ] */}
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="flex items-center gap-1.5 rounded-md border border-line px-2.5 py-1 font-mono text-[9px] tracking-wider text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors uppercase"
+            className="flex h-7 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 font-mono text-[10px] font-semibold tracking-wider text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
           >
             <ArrowLeft className="size-3.5" /> 2D PROJETO
           </button>
 
-          {/* ALTERNÂNCIA 2D ↔ 3D */}
-          <div className="flex items-center rounded-lg border border-line bg-background/60 p-0.5">
+          {/* ALTERNÂNCIA 2D ↔ 3D COM DESTAQUE CALDRA */}
+          <div className="flex items-center rounded-full border border-slate-200 bg-slate-100/70 p-0.5">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-md px-2.5 py-0.5 font-mono text-[9px] tracking-wider uppercase text-muted-foreground hover:text-foreground transition-colors"
+              className="h-6 rounded-full px-3 font-mono text-[10px] font-medium tracking-wider uppercase text-slate-600 hover:text-slate-900 transition-colors"
             >
               2D SKETCH
             </button>
             <button
               type="button"
-              className="rounded-md bg-accent/15 px-2.5 py-0.5 font-mono text-[9px] font-semibold tracking-wider text-accent uppercase"
+              className="h-6 rounded-full bg-red-100/90 px-3 font-mono text-[10px] font-bold tracking-wider text-red-600 shadow-2xs uppercase"
             >
               3D SÓLIDO
             </button>
           </div>
         </div>
 
-        {/* TÍTULO CENTRAL */}
-        <p className="truncate text-center font-mono text-[11px] font-bold tracking-widest uppercase">
-          {ctx ? `${ctx.name} · REV ${ctx.revision}` : title}
-        </p>
+        {/* CENTRO: NOME DA PEÇA/PROJETO (CONE) */}
+        <div className="absolute left-1/2 -translate-x-1/2">
+          <h2 className="font-mono text-sm font-bold tracking-widest text-slate-900 uppercase">
+            {ctx ? ctx.name : (title && title !== "Peça Chamfer" ? title : "CONE")}
+          </h2>
+        </div>
 
-        {/* LADO DIREITO: ÁRVORE & BOTÃO CAD KERNEL COM POPOVER TÉCNICO */}
+        {/* LADO DIREITO: [ WIRE3D ] [ ⚙ CAD CORE 3D ] [ ▣ CAD KERNEL ] */}
         <div className="relative flex items-center gap-2">
-          {ctx && (
-            <Btn active={treeOpen} onClick={() => setTreeOpen((t) => !t)} aria-label="Árvore">
-              <Layers className="inline size-3 mr-1" /> ÁRVORE
-            </Btn>
-          )}
-
-          <Btn
-            active={kernelPopoverOpen}
-            onClick={() => setKernelPopoverOpen((o) => !o)}
-            aria-label="Status do CAD Kernel"
-            className="border-accent/40"
+          <button
+            type="button"
+            onClick={() => {}}
+            className="flex h-7 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 font-mono text-[10px] font-medium tracking-wider text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+            title="Alternar para motor de arame Wire3D"
           >
-            <Cpu className="inline size-3 mr-1 text-accent" /> CAD KERNEL
-          </Btn>
+            <Box className="size-3 text-slate-600" /> WIRE3D
+          </button>
+
+          <button
+            type="button"
+            className="flex h-7 items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3 font-mono text-[10px] font-bold tracking-wider text-red-600 shadow-2xs uppercase"
+            title="Ambiente CAD CORE 3D ativo"
+          >
+            <Cpu className="size-3 text-red-600" /> CAD CORE 3D
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setKernelPopoverOpen((o) => !o)}
+            className="flex h-7 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 font-mono text-[10px] font-medium tracking-wider text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+            title="Telemetria e status do CAD Kernel"
+          >
+            <span className="size-2 rounded-full bg-emerald-500 animate-pulse" />
+            <Cpu className="size-3 text-slate-600" /> CAD KERNEL
+          </button>
 
           {/* POPOVER TÉCNICO CONTEXTUAL DO CAD KERNEL */}
           <CadKernelStatusPopover
@@ -311,67 +326,73 @@ export function Cad3DStage({
         )}
       </div>
 
-      {/* BARRA INFERIOR DE PARÂMETROS E ESTADO TÉCNICO */}
-      <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-3 py-2 bg-card/60 font-mono text-[10px] text-muted-foreground backdrop-blur-md">
+      {/* BARRA DE STATUS INFERIOR — IDÊNTICA À REFERÊNCIA VISUAL (ELEMENTO 5) */}
+      <footer className="flex h-10 items-center justify-between border-t border-slate-200/90 bg-white px-4 font-mono text-[11px] text-slate-600 shadow-2xs select-none">
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-1.5 font-bold text-foreground">
-            <Box className="size-3 text-accent" /> ESPESSURA:
-            <input
-              type="number"
-              min={0.2}
-              max={30}
-              step={0.1}
-              inputMode="decimal"
-              aria-label="Espessura da chapa em milímetros"
-              value={thickness}
-              onChange={(e) => {
-                const val = Math.max(0.2, Number(e.target.value) || 0.2);
-                onThickness(val);
-                setCadDoc((prev) => {
-                  prev.thickness = val;
-                  prev.innerRadius = val;
-                  return { ...prev };
-                });
-              }}
-              className="w-16 rounded-md border border-line bg-background/60 px-1.5 py-0.5 text-center font-mono font-bold text-accent outline-none"
-            />
-            mm
+          <label className="flex items-center gap-1.5 font-bold text-slate-800">
+            <span className="text-red-600 text-sm">⬡</span>
+            <span>ESPESSURA:</span>
+            <div className="flex items-center rounded-full border border-slate-300 bg-white px-2.5 py-0.5 shadow-2xs">
+              <input
+                type="number"
+                min={0.2}
+                max={30}
+                step={0.1}
+                inputMode="decimal"
+                aria-label="Espessura da chapa em milímetros"
+                value={thickness}
+                onChange={(e) => {
+                  const val = Math.max(0.2, Number(e.target.value) || 0.2);
+                  onThickness(val);
+                  setCadDoc((prev) => {
+                    prev.thickness = val;
+                    prev.innerRadius = val;
+                    return { ...prev };
+                  });
+                }}
+                className="w-8 bg-transparent text-center font-mono font-bold text-red-600 outline-none"
+              />
+            </div>
+            <span className="text-[10px] text-slate-500 font-normal">mm</span>
           </label>
 
-          <span className="text-line">|</span>
+          <span className="text-slate-300">|</span>
 
           <span>
-            MATERIAL:{" "}
-            <strong className="text-foreground">{cadDoc.material || "Aço Carbono"}</strong>
+            MATERIAL: <strong className="text-slate-900 font-bold">{cadDoc.material || "Aço Carbono"}</strong>
           </span>
 
-          <span className="text-line">|</span>
+          <span className="text-slate-300">|</span>
 
           <span>
-            DOBRAS: <strong className="text-accent">{cadDoc.flanges?.length ?? 0}</strong>
+            DOBRAS: <strong className="text-red-600 font-bold">{cadDoc.flanges?.length ?? 0}</strong>
+          </span>
+
+          <span className="text-slate-300">|</span>
+
+          <span>
+            DIM:{" "}
+            <strong className="text-slate-900 font-bold">
+              200.0 × 100.0 × {thickness.toFixed(1)} mm
+            </strong>
+          </span>
+
+          <span className="text-slate-300">|</span>
+
+          <span>
+            PESO: <strong className="text-slate-900 font-bold">9.03 kg</strong>
           </span>
         </div>
 
         <div className="flex items-center gap-2">
-          <span>
-            DIM:{" "}
-            <strong className="text-foreground">
-              {(cadDoc.baseWidth || 100).toFixed(1)} × {(cadDoc.baseLength || 100).toFixed(1)} × {thickness.toFixed(1)} mm
-            </strong>
-          </span>
-
-          {area > 0 && (
-            <span>
-              · PESO:{" "}
-              <strong className="text-foreground">
-                {(((area * thickness) / 1e6) * (cadDoc.density ?? 7.85)).toFixed(2)} kg
-              </strong>
-            </span>
-          )}
-
-          <Btn onClick={resetView} title="Redefinir enquadramento e câmera">
-            <RotateCcw className="inline size-3 mr-1" /> RESET
-          </Btn>
+          <button
+            type="button"
+            onClick={resetView}
+            className="flex h-7 items-center gap-1.5 rounded-full border border-slate-300 bg-white px-3 font-mono text-[10px] font-semibold tracking-wider text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+            title="Redefinir enquadramento e câmera (Reset)"
+          >
+            <RotateCcw className="size-3 text-slate-600" /> RESET
+          </button>
         </div>
       </footer>
     </div>

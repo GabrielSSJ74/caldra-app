@@ -760,6 +760,14 @@ export class ThreeBRepRenderer {
     this.fitView(animate, dir);
   }
 
+  public setViewPreset(view: ViewPresetId, animate = true): void {
+    this.setView(view, animate);
+  }
+
+  public fitToModel(animate = true): void {
+    this.fitView(animate);
+  }
+
   public fitView(animate = true, dir?: [number, number, number]): void {
     const box = new THREE.Box3();
     if (this.currentShape?.bounds) {

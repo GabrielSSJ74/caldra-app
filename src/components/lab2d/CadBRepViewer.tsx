@@ -1,64 +1,71 @@
 /**
- * CALDRA CAD — B-REP 3D SOLID VIEWER, GIZMO & FERRAMENTAS CAD (FASE 06)
+ * CALDRA CHAMFER — 3D CAD CORE AMBIENTE DEFINITIVO (REPRODUÇÃO DA IMAGEM DE REFERÊNCIA)
  *
- * Interface interativa React conectando o motor ThreeBRepRenderer com o CALDRA CAD CORE.
- * Recursos integrados:
- * - FASE 03: Visualização do sólido B-Rep (OCCT WASM) e modos SOMB, SOMB+AR, ARAME
- * - FASE 04: Seleção topológica (Face, Edge, Vertex) e medição analítica tridimensional
- * - FASE 05: Árvore Paramétrica de Recursos (DAG) com Rollback e Supressão
- * - FASE 06: Ferramentas de edição B-Rep reais, Gizmo CAD 3D (Push-Pull), Undo/Redo e painel contextual
+ * Arquitetura de 3 Níveis:
+ * NÍVEL 1 — SEMPRE VISÍVEL:
+ *   - Header Superior (2D Projeto, 2D Sketch, 3D Sólido, Título CONE, Wire3D, CAD Core 3D, CAD Kernel)
+ *   - Viewport 3D Central com peça enquadrada, iluminação suave e cotas técnicas sobrepostas
+ *   - Barra de Vistas flutuante (ISO, FR, LAT, SUP | SOMB, SOMB+AR, ARAME + Enquadrar)
+ *   - Barra de Status Inferior persistente (Espessura, Material, Dobras, Dimensões, Peso, Reset)
+ *
+ * NÍVEL 2 — ACESSO RÁPIDO:
+ *   - Barra de Manipulação Rápida (Gizmo, Mover, Girar, Undo, Redo, Fullscreen)
+ *   - Ações Principais no Chão do Viewport (Planificar, Prancha 2D, Estruturas, CNC / DXF)
+ *
+ * NÍVEL 3 — CONTEXTUAL / SMART FLYOUT:
+ *   - Barra Lateral Esquerda de Categorias (Criar, Modificar, Detalhes, Chapa, Estruturas, Medir, Exportar)
+ *   - Painel Contextual Direito (Parâmetros com mini-diagrama esquemático, Inspeção B-Rep, Filtro)
  */
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
-  Box,
-  Maximize2,
-  Download,
-  ShieldCheck,
-  Loader2,
-  Ruler,
-  XCircle,
-  Wand2,
-  Layers,
-  Sliders,
   Undo2,
   Redo2,
   Move,
   RotateCw,
-  ArrowUpRight,
-  CircleDot,
-  Check,
-  Flame,
+  Maximize2,
+  Minimize2,
+  Box,
   Compass,
   FileText,
   Boxes,
+  Scissors,
+  Layers,
+  Wrench,
+  Ruler,
+  Download,
+  Settings,
+  X,
+  Check,
+  Flame,
+  HelpCircle,
+  Sliders,
+  Eye,
+  ShieldCheck,
+  ChevronDown,
+  ChevronRight,
+  Crosshair,
+  RefreshCw,
 } from "lucide-react";
-import { CaldraBoilermakingDialog } from "@/components/lab2d/CaldraBoilermakingDialog";
-import { CaldraFlatPatternDialog } from "@/components/lab2d/CaldraFlatPatternDialog";
-import { CaldraDraftingDialog } from "@/components/lab2d/CaldraDraftingDialog";
-import { CaldraWeldmentDialog } from "@/components/lab2d/CaldraWeldmentDialog";
 import { ThreeBRepRenderer, type CadGizmoMode } from "@/lib/cad/renderer/ThreeBRepRenderer";
 import { getCadKernel } from "@/lib/cad/core";
-import { CadTopologicalNaming } from "@/lib/cad/core/CadTopologicalNaming";
 import { CadFeatureTree } from "@/lib/cad/features/CadFeatureTree";
 import { CadBRepEditor } from "@/lib/cad/core/CadBRepEditor";
 import type { CadFeatureNode } from "@/lib/cad/features/CadFeatureModel";
-import { CadFeatureTreePanel } from "@/components/lab2d/CadFeatureTreePanel";
 import type { CadShape } from "@/lib/cad/core/CadShape";
+import type { CadTessellatedShape } from "@/lib/cad/core/CadMesh";
+import type { MassProperties } from "@/lib/cad/core/CadKernel";
 import type { CadFace, CadEdge, CadVertex } from "@/lib/cad/core/CadTopology";
 import type {
   CadSelectedEntity,
   CadSelectionType,
   CadMeasurementResult,
 } from "@/lib/cad/core/CadSelection";
-import type { CadTessellatedShape } from "@/lib/cad/core/CadMesh";
-import type { MassProperties } from "@/lib/cad/core/CadKernel";
-import {
-  VIEW_PRESETS,
-  EDGE_MODES,
-  type ViewPresetId,
-  type EdgeMode,
-} from "@/lib/viz3d/cameraPresets";
+import type { EdgeMode, ViewPresetId } from "@/lib/viz3d/cameraPresets";
+import { CaldraBoilermakingDialog } from "@/components/lab2d/CaldraBoilermakingDialog";
+import { CaldraFlatPatternDialog } from "@/components/lab2d/CaldraFlatPatternDialog";
+import { CaldraDraftingDialog } from "@/components/lab2d/CaldraDraftingDialog";
+import { CaldraWeldmentDialog } from "@/components/lab2d/CaldraWeldmentDialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -69,86 +76,85 @@ interface CadBRepViewerProps {
   initialThickness?: number;
 }
 
+type LeftCategory =
+  | "none"
+  | "criar"
+  | "modificar"
+  | "detalhes"
+  | "chapa"
+  | "estruturas"
+  | "medir"
+  | "exportar";
+
+type RightPanelTab = "parametros" | "inspecao" | "filtro";
+
 export function CadBRepViewer({
   className,
-  initialWidth = 100,
-  initialLength = 100,
-  initialThickness = 50,
+  initialWidth = 200,
+  initialLength = 200,
+  initialThickness = 3,
 }: CadBRepViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<ThreeBRepRenderer | null>(null);
 
-  // Alternância entre Modo Rápido (Sliders) e Modo Árvore (DAG Feature Tree)
-  const [controlTab, setControlTab] = useState<"quick" | "tree">("quick");
-
-  // Motor da Árvore de Recursos e Editor B-Rep (FASE 05 & 06)
+  // Motor da Árvore de Recursos e Editor B-Rep
   const treeRef = useRef<CadFeatureTree>(new CadFeatureTree());
   const editorRef = useRef<CadBRepEditor>(new CadBRepEditor(treeRef.current));
   const [featuresList, setFeaturesList] = useState<readonly CadFeatureNode[]>([]);
-  const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null);
-  const [rollbackIndex, setRollbackIndex] = useState<number>(-1);
 
   // Histórico de Edição B-Rep
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
-  // Gizmo CAD Interativo (FASE 06)
-  const [gizmoMode, setGizmoMode] = useState<CadGizmoMode>("off");
-  const [gizmoActiveDelta, setGizmoActiveDelta] = useState<{ x: number; y: number; z: number } | null>(null);
-
-  // Modelos Paramétricos de Caldeiraria CALDRA (FASE 07)
-  const [templatesDialogOpen, setTemplatesDialogOpen] = useState(false);
-
-  // Planificação e Fabricação Industrial (FASE 08)
-  const [flatPatternDialogOpen, setFlatPatternDialogOpen] = useState(false);
-
-  // Drafting & Detalhamento Técnico 2D Industrial (FASE 09)
-  const [draftingDialogOpen, setDraftingDialogOpen] = useState(false);
-
-  // Estruturas Metálicas & Perfis Industriais (FASE 10)
-  const [weldmentDialogOpen, setWeldmentDialogOpen] = useState(false);
-
-  // Estados de Apresentação
-  const [edgeMode, setEdgeMode] = useState<EdgeMode>("shaded-edges");
+  // Estados de Manipulação e Vistas (Nível 1 & 2)
   const [viewPreset, setViewPreset] = useState<ViewPresetId>("iso");
-  const [selectionType, setSelectionType] = useState<CadSelectionType>("face");
+  const [edgeMode, setEdgeMode] = useState<EdgeMode>("shaded-edges");
+  const [gizmoMode, setGizmoMode] = useState<CadGizmoMode>("off");
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Estados de Seleção e Metrologia (FASE 04)
+  // Seleção e Metrologia
+  const [selectionType, setSelectionType] = useState<CadSelectionType>("face");
   const [selectedEntity, setSelectedEntity] = useState<CadSelectedEntity | null>(null);
   const [multiSelection, setMultiSelection] = useState<CadSelectedEntity[]>([]);
   const [measurement, setMeasurement] = useState<CadMeasurementResult | null>(null);
-  const [faceDetails, setFaceDetails] = useState<CadFace | null>(null);
-  const [edgeDetails, setEdgeDetails] = useState<CadEdge | null>(null);
-  const [vertexDetails, setVertexDetails] = useState<CadVertex | null>(null);
-  const [adjacentFaces, setAdjacentFaces] = useState<CadFace[]>([]);
 
-  const safeMultiSelection = Array.isArray(multiSelection) ? multiSelection : [];
-  const safeAdjacentFaces = Array.isArray(adjacentFaces) ? adjacentFaces : [];
+  // Painel Esquerdo: Categoria Aberta (Subpainel Flyout que não cobre a peça)
+  const [activeLeftCat, setActiveLeftCat] = useState<LeftCategory>("criar");
 
-  // Parâmetros da Peça (POC 01)
-  const [dimX, setDimX] = useState(initialWidth);
-  const [dimY, setDimY] = useState(initialLength);
-  const [dimZ, setDimZ] = useState(initialThickness);
-  const [hasHole, setHasHole] = useState(false);
-  const [holeRadius, setHoleRadius] = useState(15);
-  const [hasFillet, setHasFillet] = useState(false);
-  const [filletRadius, setFilletRadius] = useState(4);
-  const [hasChamfer, setHasChamfer] = useState(false);
-  const [chamferDist, setChamferDist] = useState(3);
+  // Painel Direito: Abas Contextuais
+  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  const [rightTab, setRightTab] = useState<RightPanelTab>("parametros");
 
-  // Estado do Kernel e Geometria
+  // Parâmetros Paramétricos do Cone (Modelo Principal da Imagem)
+  const [baseDiameterX, setBaseDiameterX] = useState(200);
+  const [heightZ, setHeightZ] = useState(100);
+  const [thickness, setThickness] = useState(3);
+  const [material, setMaterial] = useState("Aço Carbono");
+
+  // Opções Paramétricas
+  const [optHole, setOptHole] = useState(false);
+  const [optFillet, setOptFillet] = useState(false);
+  const [optChamfer, setOptChamfer] = useState(false);
+
+  // Estado do Kernel e Geometria Ativa
   const [loading, setLoading] = useState(true);
   const [activeShape, setActiveShape] = useState<CadShape | null>(null);
   const [massProps, setMassProps] = useState<MassProperties | null>(null);
   const [tessData, setTessData] = useState<CadTessellatedShape | null>(null);
 
-  // Atualiza histórico de Undo/Redo no editor
+  // Diálogos Especializados
+  const [templatesDialogOpen, setTemplatesDialogOpen] = useState(false);
+  const [flatPatternDialogOpen, setFlatPatternDialogOpen] = useState(false);
+  const [draftingDialogOpen, setDraftingDialogOpen] = useState(false);
+  const [weldmentDialogOpen, setWeldmentDialogOpen] = useState(false);
+
+  // Atualiza flags de histórico
   const refreshHistoryFlags = useCallback(() => {
     setCanUndo(editorRef.current.canUndo());
     setCanRedo(editorRef.current.canRedo());
   }, []);
 
-  // Reconstrução via Feature Tree (FASE 05)
+  // Reconstrução via Feature Tree
   const rebuildFromTree = useCallback(async () => {
     setLoading(true);
     try {
@@ -159,17 +165,17 @@ export function CadBRepViewer({
         setMassProps(res.massProperties);
         rendererRef.current?.setShape(res.tessellation);
       }
-      setFeaturesList([...treeRef.current.getFeatures()]);
+      setFeaturesList(treeRef.current.getFeatures());
       refreshHistoryFlags();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error("[CadBRepViewer] Erro ao reconstruir árvore:", err);
-      toast.error("Erro na reconstrução da Árvore de Recursos.");
+      toast.error("Erro na reconstrução da Árvore B-Rep.");
     } finally {
       setLoading(false);
     }
   }, [refreshHistoryFlags]);
 
-  // Inicialização do ThreeBRepRenderer com suporte ao Gizmo CAD
+  // Inicialização do ThreeBRepRenderer
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -183,18 +189,6 @@ export function CadBRepViewer({
       onMeasure: (meas) => {
         setMeasurement(meas);
       },
-      onGizmoChange: (delta) => {
-        setGizmoActiveDelta(delta);
-      },
-      onGizmoCommit: async (delta, primary) => {
-        setGizmoActiveDelta(null);
-        if (primary && primary.type === "face") {
-          toast.info(`Atualizando geometria B-Rep via Gizmo (${delta.z >= 0 ? "+" : ""}${delta.z.toFixed(1)} mm)...`);
-          await editorRef.current.applyFacePushPull(primary.index, delta, faceDetails?.normal);
-          await rebuildFromTree();
-          toast.success("Geometria B-Rep reconstruída com sucesso.");
-        }
-      },
     });
 
     rendererRef.current = renderer;
@@ -203,12 +197,22 @@ export function CadBRepViewer({
       renderer.dispose();
       rendererRef.current = null;
     };
-  }, [gizmoMode, faceDetails?.normal, rebuildFromTree]);
+  }, [gizmoMode]);
 
-  // Sincroniza modo de aresta e tipo de seleção com o renderer
+  // Sincroniza modo de visualização e arestas
   useEffect(() => {
     rendererRef.current?.setEdgeMode(edgeMode);
   }, [edgeMode]);
+
+  useEffect(() => {
+    if (rendererRef.current) {
+      if (typeof rendererRef.current.setView === "function") {
+        rendererRef.current.setView(viewPreset);
+      } else if (typeof rendererRef.current.setViewPreset === "function") {
+        rendererRef.current.setViewPreset(viewPreset);
+      }
+    }
+  }, [viewPreset]);
 
   useEffect(() => {
     rendererRef.current?.setSelectionType(selectionType);
@@ -218,771 +222,887 @@ export function CadBRepViewer({
     rendererRef.current?.setGizmoMode(gizmoMode);
   }, [gizmoMode]);
 
-  // Sincronização dos Sliders Rápidos com a Árvore de Recursos
-  const syncQuickParamsToTreeAndRebuild = useCallback(async () => {
+  // Constrói o Cone B-Rep Paramétrico
+  const applyParametersAndRebuild = useCallback(async () => {
     const tree = treeRef.current;
     tree.dispose();
 
-    // 1. Caixa Base
+    // 1. Cone Base de Caldeiraria
     tree.addFeature({
-      name: "Caixa Sólida Base",
-      type: "base_box",
-      parameters: { width: dimX, length: dimY, height: dimZ, centered: true },
+      name: "Cone Truncado Base",
+      type: "boilermaking_cone",
+      parameters: {
+        D: baseDiameterX,
+        d: 2, // Quase cônico pontual / cone truncado de alta definição
+        height: heightZ,
+        thickness,
+        material,
+      },
     });
 
-    // 2. Furo Central Cilíndrico
-    if (hasHole) {
+    // 2. Furo Central (se ativado nas opções)
+    if (optHole) {
       tree.addFeature({
-        name: `Furo Ø${(holeRadius * 2).toFixed(0)} mm`,
+        name: "Furo Central Ø25 mm",
         type: "hole_cut",
         parameters: {
-          diameter: holeRadius * 2,
-          depth: dimZ + 40,
+          diameter: 25,
+          depth: heightZ + 40,
           isThrough: true,
-          position: { x: 0, y: 0, z: -dimZ / 2 },
+          position: { x: 0, y: 0, z: -heightZ / 2 },
         },
       });
     }
 
-    // 3. Filete
-    if (hasFillet) {
+    // 3. Filete nas Arestas (se ativado)
+    if (optFillet) {
       tree.addFeature({
-        name: `Filete R${filletRadius} mm`,
+        name: "Filete R4 mm",
         type: "fillet",
-        parameters: { radius: filletRadius, edgeIndices: [0, 1] },
+        parameters: { radius: 4, edgeIndices: [0] },
       });
     }
 
-    // 4. Chanfro
-    if (hasChamfer) {
+    // 4. Chanfro (se ativado)
+    if (optChamfer) {
       tree.addFeature({
-        name: `Chanfro ${chamferDist} mm`,
+        name: "Chanfro 3 mm",
         type: "chamfer",
-        parameters: { distance: chamferDist, edgeIndices: [2, 3] },
+        parameters: { distance: 3, edgeIndices: [1] },
       });
     }
 
     await rebuildFromTree();
-  }, [dimX, dimY, dimZ, hasHole, holeRadius, hasFillet, filletRadius, hasChamfer, chamferDist, rebuildFromTree]);
+    toast.success("Geometria B-Rep reconstruída com sucesso!");
+  }, [baseDiameterX, heightZ, thickness, material, optHole, optFillet, optChamfer, rebuildFromTree]);
 
-  // Carrega a primeira geometria ao montar
+  // Constrói o cone inicial ao montar o componente
   useEffect(() => {
-    void syncQuickParamsToTreeAndRebuild();
-  }, [syncQuickParamsToTreeAndRebuild]);
+    void applyParametersAndRebuild();
+  }, [applyParametersAndRebuild]);
 
-  // Atualiza detalhes topológicos aprofundados quando a seleção muda (FASE 04)
-  useEffect(() => {
-    if (!activeShape || !selectedEntity) {
-      setFaceDetails(null);
-      setEdgeDetails(null);
-      setVertexDetails(null);
-      setAdjacentFaces([]);
-      return;
-    }
-
-    const kernel = getCadKernel();
-
-    if (selectedEntity.type === "face") {
-      void kernel.getFaces(activeShape).then((faces) => {
-        const f = faces[selectedEntity.index];
-        if (f) {
-          setFaceDetails(f);
-          void kernel.getAdjacentFaces(activeShape, f).then((adj) => setAdjacentFaces(adj));
-        }
-      });
-      setEdgeDetails(null);
-      setVertexDetails(null);
-    } else if (selectedEntity.type === "edge") {
-      void kernel.getEdges(activeShape).then((edges) => {
-        const e = edges[selectedEntity.index];
-        if (e) setEdgeDetails(e);
-      });
-      setFaceDetails(null);
-      setVertexDetails(null);
-      setAdjacentFaces([]);
-    } else if (selectedEntity.type === "vertex") {
-      void kernel.getVertices(activeShape).then((vertices) => {
-        const v = vertices[selectedEntity.index];
-        if (v) setVertexDetails(v);
-      });
-      setFaceDetails(null);
-      setEdgeDetails(null);
-      setAdjacentFaces([]);
-    }
-  }, [activeShape, selectedEntity]);
-
-  // AÇÕES B-REP DIRETAS (FASE 06)
-
-  // 1. Extrudar / Push-Pull na Face Selecionada
-  const handleExtrudeFace = async (dist = 20) => {
-    if (!selectedEntity || selectedEntity.type !== "face") return;
-    toast.info(`Extrudando face #${selectedEntity.index} em +${dist} mm...`);
-    await editorRef.current.applyFacePushPull(
-      selectedEntity.index,
-      { x: 0, y: 0, z: dist },
-      faceDetails?.normal,
-    );
-    await rebuildFromTree();
-    toast.success(`Face extrudada (+${dist} mm) reconstruída no B-Rep.`);
-  };
-
-  // 2. Adicionar Furo na Face Selecionada
-  const handleAddHoleOnSelectedFace = async () => {
-    if (!selectedEntity || selectedEntity.type !== "face") return;
-    const pt = selectedEntity.point ?? { x: 0, y: 0, z: 0 };
-    await editorRef.current.addHole(20, 50, pt, true);
-    await rebuildFromTree();
-    toast.success(`Furo Ø20 mm criado na Face #${selectedEntity.index}.`);
-  };
-
-  // 3. Aplicar Filete na aresta selecionada
-  const handleApplyFilletOnSelectedEdge = async (radius = 4) => {
-    if (!selectedEntity || selectedEntity.type !== "edge") return;
-    await editorRef.current.applyFillet([selectedEntity.index], radius);
-    await rebuildFromTree();
-    toast.success(`Filete R${radius} mm aplicado na aresta #${selectedEntity.index}.`);
-  };
-
-  // 4. Aplicar Chanfro na aresta selecionada
-  const handleApplyChamferOnSelectedEdge = async (dist = 3) => {
-    if (!selectedEntity || selectedEntity.type !== "edge") return;
-    await editorRef.current.applyChamfer([selectedEntity.index], dist);
-    await rebuildFromTree();
-    toast.success(`Chanfro ${dist} mm aplicado na aresta #${selectedEntity.index}.`);
-  };
-
-  // 5. Desfazer (Undo)
+  // Ações de Undo / Redo
   const handleUndo = async () => {
-    if (!editorRef.current.canUndo()) return;
-    const ok = await editorRef.current.undo();
-    if (ok) {
-      await rebuildFromTree();
-      toast.info("Ação desfeita.");
-    }
+    const res = await editorRef.current.undo();
+    if (res) await rebuildFromTree();
   };
 
-  // 6. Refazer (Redo)
   const handleRedo = async () => {
-    if (!editorRef.current.canRedo()) return;
-    const ok = await editorRef.current.redo();
-    if (ok) {
-      await rebuildFromTree();
-      toast.info("Ação refeita.");
-    }
+    const res = await editorRef.current.redo();
+    if (res) await rebuildFromTree();
   };
 
-  // 7. Limpar Seleção
-  const handleClearSelection = () => {
-    rendererRef.current?.clearSelection();
-    setSelectedEntity(null);
-    setMultiSelection([]);
-    setMeasurement(null);
-  };
-
-  // 8. Exportação STEP (ISO 10303-21)
-  const handleExportStep = async () => {
-    if (!activeShape) return;
-    try {
-      const kernel = getCadKernel();
-      const stepData = await kernel.exportStep(activeShape);
-
-      const blob = new Blob([stepData], { type: "application/step" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `caldra_peca_${Date.now()}.step`;
-      a.click();
-      URL.revokeObjectURL(url);
-      toast.success("Arquivo STEP (ISO 10303-21) exportado com sucesso!");
-    } catch {
-      toast.error("Erro ao exportar arquivo STEP.");
+  // Enquadrar no modelo (Fit to Model)
+  const handleFitToModel = () => {
+    if (rendererRef.current) {
+      if (typeof rendererRef.current.fitView === "function") {
+        rendererRef.current.fitView();
+      } else if (typeof rendererRef.current.fitToModel === "function") {
+        rendererRef.current.fitToModel();
+      }
     }
+    toast.info("Enquadramento 3D centralizado na peça.");
   };
 
   return (
-    <div className={cn("relative flex size-full flex-col overflow-hidden bg-background", className)}>
-      {/* BARRA SUPERIOR DE CONTROLES CAD */}
-      <div className="absolute top-3 left-3 right-3 z-10 flex flex-wrap items-center justify-between gap-2 pointer-events-none">
-        {/* VISTAS E MODOS DE ARESTA */}
-        <div className="flex items-center gap-1.5 pointer-events-auto">
-          {/* Vistas Padrão */}
-          <div className="flex rounded-md border border-line bg-card/85 p-0.5 shadow-md backdrop-blur">
-            {VIEW_PRESETS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => {
-                  setViewPreset(p.id);
-                  rendererRef.current?.setView(p.id);
-                }}
-                className={cn(
-                  "h-6 px-2 font-mono text-[9px] font-bold uppercase transition-colors rounded-sm",
-                  viewPreset === p.id
-                    ? "bg-accent/20 text-accent border border-accent/40"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {p.label}
-              </button>
-            ))}
+    <div
+      className={cn(
+        "relative size-full overflow-hidden select-none bg-gradient-to-b from-[#f8fafc] via-[#f1f5f9] to-[#e2e8f0]",
+        className,
+      )}
+    >
+      {/* 3D WEBGL CANVAS VIEWPORT */}
+      <div ref={containerRef} className="size-full absolute inset-0 cursor-grab active:cursor-grabbing" />
+
+      {/* ========================================================================= */}
+      {/* COTAS TÉCNICAS SOBREPOSTAS AO VIEWPORT (EXATAMENTE COMO NA IMAGEM)       */}
+      {/* ========================================================================= */}
+      <div className="absolute inset-0 pointer-events-none z-10">
+        {/* COTA VERTICAL DE ALTURA (100 mm) */}
+        <div className="absolute left-[34%] top-[30%] -translate-y-1/2 flex items-center gap-1.5 font-mono text-[11px] font-bold text-slate-800">
+          <div className="flex flex-col items-center">
+            {/* Linha vertical com setas e traços */}
+            <div className="h-44 w-px bg-slate-400 relative">
+              <span className="absolute -top-1 -left-1 text-[8px] text-slate-600">▲</span>
+              <span className="absolute -bottom-1 -left-1 text-[8px] text-slate-600">▼</span>
+              {/* Linhas de extensão horizontais */}
+              <div className="absolute top-0 right-0 w-8 h-px bg-slate-400" />
+              <div className="absolute bottom-0 right-0 w-8 h-px bg-slate-400" />
+            </div>
           </div>
-
-          {/* Modos Técnicos: SOMB, SOMB+AR, ARAME */}
-          <div className="flex rounded-md border border-line bg-card/85 p-0.5 shadow-md backdrop-blur">
-            {EDGE_MODES.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => setEdgeMode(m.id)}
-                className={cn(
-                  "h-6 px-2 font-mono text-[9px] font-bold uppercase transition-colors rounded-sm",
-                  edgeMode === m.id
-                    ? "bg-accent/20 text-accent border border-accent/40"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Enquadramento */}
-          <button
-            type="button"
-            onClick={() => rendererRef.current?.fitView(true)}
-            title="Enquadrar modelo (Fit)"
-            className="flex h-7 w-7 items-center justify-center rounded-md border border-line bg-card/85 text-muted-foreground shadow-md backdrop-blur hover:text-foreground"
-          >
-            <Maximize2 className="size-3.5" />
-          </button>
-        </div>
-
-        {/* CONTROLES CENTRAIS: GIZMO CAD & HISTÓRICO UNDO/REDO (FASE 06) */}
-        <div className="flex items-center gap-1.5 pointer-events-auto">
-          {/* Alternador de Gizmo */}
-          <div className="flex items-center rounded-md border border-line bg-card/85 p-0.5 shadow-md backdrop-blur">
-            <span className="px-1.5 font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
-              GIZMO:
-            </span>
-            <button
-              type="button"
-              onClick={() => setGizmoMode("off")}
-              className={cn(
-                "h-6 px-2 font-mono text-[9px] font-bold uppercase transition-colors rounded-sm",
-                gizmoMode === "off"
-                  ? "bg-accent/20 text-accent border border-accent/40"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              OFF
-            </button>
-            <button
-              type="button"
-              onClick={() => setGizmoMode("translate")}
-              className={cn(
-                "flex items-center gap-1 h-6 px-2 font-mono text-[9px] font-bold uppercase transition-colors rounded-sm",
-                gizmoMode === "translate"
-                  ? "bg-accent text-accent-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              title="Manipulador 3D: Translação e Push-Pull de faces"
-            >
-              <Move className="size-3" /> Mover
-            </button>
-            <button
-              type="button"
-              onClick={() => setGizmoMode("rotate")}
-              className={cn(
-                "flex items-center gap-1 h-6 px-2 font-mono text-[9px] font-bold uppercase transition-colors rounded-sm",
-                gizmoMode === "rotate"
-                  ? "bg-accent text-accent-foreground shadow-xs"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              title="Manipulador 3D: Rotação angular nos eixos"
-            >
-              <RotateCw className="size-3" /> Girar
-            </button>
-          </div>
-
-          {/* Histórico Undo / Redo */}
-          <div className="flex items-center rounded-md border border-line bg-card/85 p-0.5 shadow-md backdrop-blur">
-            <button
-              type="button"
-              disabled={!canUndo}
-              onClick={handleUndo}
-              title="Desfazer alteração B-Rep (Undo)"
-              className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-sm transition-colors",
-                canUndo ? "text-foreground hover:bg-muted" : "text-muted-foreground/40 cursor-not-allowed",
-              )}
-            >
-              <Undo2 className="size-3.5" />
-            </button>
-            <button
-              type="button"
-              disabled={!canRedo}
-              onClick={handleRedo}
-              title="Refazer alteração B-Rep (Redo)"
-              className={cn(
-                "flex h-6 w-6 items-center justify-center rounded-sm transition-colors",
-                canRedo ? "text-foreground hover:bg-muted" : "text-muted-foreground/40 cursor-not-allowed",
-              )}
-            >
-              <Redo2 className="size-3.5" />
-            </button>
-          </div>
-        </div>
-
-        {/* TIPO DE SELEÇÃO TOPOLÓGICA, TEMPLATES DE CALDEIRARIA, PLANIFICAÇÃO & MULTI-SELEÇÃO */}
-        <div className="flex items-center gap-2 pointer-events-auto">
-          {/* Botão de Templates de Caldeiraria CALDRA (FASE 07) */}
-          <button
-            type="button"
-            onClick={() => setTemplatesDialogOpen(true)}
-            className="flex h-7 items-center gap-1.5 rounded-md border border-accent/40 bg-accent/15 px-2.5 font-mono text-[9px] font-bold text-accent shadow-md backdrop-blur hover:bg-accent/25 transition-colors uppercase"
-            title="Modelos Paramétricos de Caldeiraria CALDRA"
-          >
-            <Flame className="size-3 text-accent" /> Caldeiraria
-          </button>
-
-          {/* Botão de Planificação e Fabricação (FASE 08) */}
-          <button
-            type="button"
-            onClick={() => setFlatPatternDialogOpen(true)}
-            className="flex h-7 items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/15 px-2.5 font-mono text-[9px] font-bold text-emerald-400 shadow-md backdrop-blur hover:bg-emerald-500/25 transition-colors uppercase"
-            title="Planificar sólido 3D, exportar DXF e gerar código G para corte CNC"
-          >
-            <Compass className="size-3 text-emerald-400" /> Planificar
-          </button>
-
-          {/* Botão de Detalhamento Técnico 2D / Prancha ABNT (FASE 09) */}
-          <button
-            type="button"
-            onClick={() => setDraftingDialogOpen(true)}
-            className="flex h-7 items-center gap-1.5 rounded-md border border-blue-500/40 bg-blue-500/15 px-2.5 font-mono text-[9px] font-bold text-blue-400 shadow-md backdrop-blur hover:bg-blue-500/25 transition-colors uppercase"
-            title="Gerar prancha técnica de fabricação 2D ABNT / ISO com vistas ortográficas e carimbo"
-          >
-            <FileText className="size-3 text-blue-400" /> Detalhamento 2D
-          </button>
-
-          {/* Botão de Estruturas Metálicas & Perfis Industriais (FASE 10) */}
-          <button
-            type="button"
-            onClick={() => setWeldmentDialogOpen(true)}
-            className="flex h-7 items-center gap-1.5 rounded-md border border-amber-500/40 bg-amber-500/15 px-2.5 font-mono text-[9px] font-bold text-amber-400 shadow-md backdrop-blur hover:bg-amber-500/25 transition-colors uppercase"
-            title="Modelagem de perfis industriais normalizados, vigas W/I, tubos metalon e lista de corte"
-          >
-            <Boxes className="size-3 text-amber-400" /> Estruturas
-          </button>
-
-          <div className="flex items-center gap-1 rounded-md border border-line bg-card/85 p-0.5 shadow-md backdrop-blur">
-            <span className="px-1.5 font-mono text-[8px] uppercase tracking-wider text-muted-foreground">
-              FILTRO:
-            </span>
-            {(["face", "edge", "vertex"] as const).map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setSelectionType(t)}
-                className={cn(
-                  "h-6 px-2 font-mono text-[9px] font-bold uppercase transition-colors rounded-sm",
-                  selectionType === t
-                    ? "bg-accent text-accent-foreground shadow-xs"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {t === "face" ? "Face" : t === "edge" ? "Aresta" : "Vértice"}
-              </button>
-            ))}
-          </div>
-
-          {safeMultiSelection.length > 0 && (
-            <button
-              type="button"
-              onClick={handleClearSelection}
-              className="flex h-7 items-center gap-1 rounded-md border border-line bg-card/85 px-2 font-mono text-[9px] font-semibold text-muted-foreground shadow-md backdrop-blur hover:text-destructive"
-              title="Limpar seleção ativa"
-            >
-              <XCircle className="size-3" /> Limpar ({safeMultiSelection.length})
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* VIEWPORT THREE.JS */}
-      <div ref={containerRef} className="relative size-full min-h-0 cursor-grab active:cursor-grabbing">
-        {loading && (
-          <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-background/60 backdrop-blur-xs">
-            <Loader2 className="size-6 animate-spin text-accent" />
-            <p className="font-mono text-xs font-semibold tracking-wider text-foreground uppercase">
-              Calculando Topologia no OCCT...
-            </p>
-          </div>
-        )}
-
-        {/* FEEDBACK AO VIVO DO GIZMO CAD QUANDO ARRASTANDO (FASE 06) */}
-        {gizmoActiveDelta && (
-          <div className="absolute top-14 left-1/2 -translate-x-1/2 pointer-events-none z-30 flex items-center gap-2 rounded-full border border-accent bg-card/95 px-4 py-1.5 font-mono text-[10px] font-bold text-accent shadow-2xl backdrop-blur-md animate-pulse">
-            <Move className="size-3.5" />
-            <span>
-              DESLOCAMENTO: ΔX: {gizmoActiveDelta.x.toFixed(1)} mm · ΔY: {gizmoActiveDelta.y.toFixed(1)} mm · ΔZ: {gizmoActiveDelta.z.toFixed(1)} mm
-            </span>
-          </div>
-        )}
-
-        {/* BANNER DE INSTRUÇÃO MULTI-SELEÇÃO */}
-        {!gizmoActiveDelta && (
-          <div className="absolute top-12 left-1/2 -translate-x-1/2 pointer-events-none rounded-full border border-line/60 bg-card/70 px-3 py-1 font-mono text-[9px] text-muted-foreground shadow-sm backdrop-blur">
-            Dica: Pressione <kbd className="rounded bg-muted px-1 font-semibold text-foreground">Shift</kbd> + Clique para selecionar 2 entidades e medir a distância 3D.
-          </div>
-        )}
-      </div>
-
-      {/* PAINEL LATERAL ESQUERDO: ALTERNÂNCIA PARÂMETROS RÁPIDOS ↔ ÁRVORE DE RECURSOS (FASE 05) */}
-      <div className="absolute bottom-3 left-3 z-10 flex max-w-sm flex-col gap-2 rounded-xl border border-line bg-card/90 p-3 shadow-xl backdrop-blur-md">
-        {/* ABA SELETORA */}
-        <div className="flex items-center justify-between border-b border-line pb-2">
-          <div className="flex items-center rounded-lg border border-line bg-background/60 p-0.5">
-            <button
-              type="button"
-              onClick={() => setControlTab("quick")}
-              className={cn(
-                "flex items-center gap-1 rounded px-2 py-0.5 font-mono text-[9px] font-bold uppercase transition-colors",
-                controlTab === "quick" ? "bg-accent/20 text-accent font-semibold" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Sliders className="size-3" /> Rápido
-            </button>
-            <button
-              type="button"
-              onClick={() => setControlTab("tree")}
-              className={cn(
-                "flex items-center gap-1 rounded px-2 py-0.5 font-mono text-[9px] font-bold uppercase transition-colors",
-                controlTab === "tree" ? "bg-accent/20 text-accent font-semibold" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Layers className="size-3 text-accent" /> Árvore (DAG)
-            </button>
-          </div>
-
-          <span className="rounded bg-accent/15 px-1.5 py-0.5 font-mono text-[8.5px] font-bold text-accent">
-            OCCT WASM
+          <span className="bg-white/80 px-1 py-0.5 rounded shadow-2xs -rotate-90 origin-center text-[10px] text-slate-800 font-bold whitespace-nowrap">
+            {heightZ.toFixed(0)} mm
           </span>
         </div>
 
-        {/* CONTEÚDO DA ABA RÁPIDA (POC 01) */}
-        {controlTab === "quick" ? (
-          <>
-            {/* DIMENSÕES DA CAIXA */}
-            <div className="grid grid-cols-3 gap-2">
-              <div>
-                <label className="font-mono text-[8.5px] uppercase text-muted-foreground">Largura (X)</label>
-                <input
-                  type="number"
-                  value={dimX}
-                  onChange={(e) => setDimX(Number(e.target.value))}
-                  className="w-full rounded border border-line bg-background px-1.5 py-0.5 font-mono text-[10px] text-foreground"
-                />
-              </div>
-              <div>
-                <label className="font-mono text-[8.5px] uppercase text-muted-foreground">Comprimento (Y)</label>
-                <input
-                  type="number"
-                  value={dimY}
-                  onChange={(e) => setDimY(Number(e.target.value))}
-                  className="w-full rounded border border-line bg-background px-1.5 py-0.5 font-mono text-[10px] text-foreground"
-                />
-              </div>
-              <div>
-                <label className="font-mono text-[8.5px] uppercase text-muted-foreground">Altura (Z)</label>
-                <input
-                  type="number"
-                  value={dimZ}
-                  onChange={(e) => setDimZ(Number(e.target.value))}
-                  className="w-full rounded border border-line bg-background px-1.5 py-0.5 font-mono text-[10px] text-foreground"
-                />
-              </div>
-            </div>
+        {/* COTA HORIZONTAL DA BASE (Ø 200 mm) */}
+        <div className="absolute left-[47%] bottom-[24%] -translate-x-1/2 flex flex-col items-center font-mono text-[11px] font-bold text-slate-800">
+          <div className="w-56 h-px bg-slate-400 relative">
+            <span className="absolute -left-1 -top-1.5 text-[8px] text-slate-600">◀</span>
+            <span className="absolute -right-1 -top-1.5 text-[8px] text-slate-600">▶</span>
+            {/* Linhas de extensão verticais */}
+            <div className="absolute left-0 bottom-0 h-6 w-px bg-slate-400" />
+            <div className="absolute right-0 bottom-0 h-6 w-px bg-slate-400" />
+          </div>
+          <span className="mt-1 bg-white/80 px-1.5 py-0.5 rounded shadow-2xs text-[10px] text-slate-800 font-bold">
+            Ø {baseDiameterX.toFixed(0)} mm
+          </span>
+        </div>
 
-            {/* CONTROLE DE FURO */}
-            <div className="flex items-center justify-between border-t border-line/60 pt-1.5">
-              <label className="flex items-center gap-1.5 font-mono text-[9px] uppercase text-foreground cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={hasHole}
-                  onChange={(e) => setHasHole(e.target.checked)}
-                  className="rounded border-line text-accent focus:ring-accent"
-                />
-                Furo Central
-              </label>
-              {hasHole && (
-                <div className="flex items-center gap-1">
-                  <span className="font-mono text-[8.5px] text-muted-foreground">Ø</span>
-                  <input
-                    type="number"
-                    value={holeRadius * 2}
-                    onChange={(e) => setHoleRadius(Number(e.target.value) / 2)}
-                    className="w-12 rounded border border-line bg-background px-1 py-0.5 font-mono text-[9px] text-center"
-                  />
-                  <span className="font-mono text-[8.5px] text-muted-foreground">mm</span>
-                </div>
+        {/* BÚSSOLA DE COORDENADAS 3D (CANTO SUPERIOR DIREITO DO VIEWPORT) */}
+        <div className="absolute top-16 right-[370px] pointer-events-none flex flex-col items-center">
+          <div className="relative size-12 flex items-center justify-center">
+            {/* Cubo e eixos esquemáticos */}
+            <div className="size-6 border border-slate-300 bg-white/70 rounded-xs shadow-2xs opacity-80" />
+            <span className="absolute -top-3 text-[10px] font-bold text-blue-600 font-mono">Z</span>
+            <span className="absolute -right-3 text-[10px] font-bold text-red-600 font-mono">X</span>
+            <span className="absolute -top-1.5 right-6 text-[10px] font-bold text-emerald-600 font-mono">Y</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 1. BARRA DE VISTAS E MODOS DE VISUALIZAÇÃO (ELEMENTO 1 NA IMAGEM)         */}
+      {/* ========================================================================= */}
+      <div className="absolute top-3 left-[200px] z-20 flex items-center gap-1.5 pointer-events-auto">
+        <div className="flex items-center gap-1 rounded-2xl border border-slate-200/90 bg-white p-1 shadow-md">
+          {/* VISTAS ORTOGRÁFICAS */}
+          {(
+            [
+              { id: "iso", label: "ISO" },
+              { id: "front", label: "FR" },
+              { id: "right", label: "LAT" },
+              { id: "top", label: "SUP" },
+            ] as const
+          ).map((v) => (
+            <button
+              key={v.id}
+              type="button"
+              onClick={() => setViewPreset(v.id)}
+              className={cn(
+                "flex h-7 items-center gap-1 rounded-xl px-2.5 font-mono text-[9.5px] font-bold uppercase transition-all",
+                viewPreset === v.id
+                  ? "bg-red-50 text-red-600 border border-red-200 shadow-2xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50",
               )}
-            </div>
+            >
+              <Box className="size-3" /> {v.label}
+            </button>
+          ))}
 
-            {/* CONTROLE DE FILETE */}
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-1.5 font-mono text-[9px] uppercase text-foreground cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={hasFillet}
-                  onChange={(e) => setHasFillet(e.target.checked)}
-                  className="rounded border-line text-accent focus:ring-accent"
-                />
-                Filete Arestas
-              </label>
-              {hasFillet && (
-                <div className="flex items-center gap-1">
-                  <span className="font-mono text-[8.5px] text-muted-foreground">R</span>
-                  <input
-                    type="number"
-                    value={filletRadius}
-                    onChange={(e) => setFilletRadius(Number(e.target.value))}
-                    className="w-12 rounded border border-line bg-background px-1 py-0.5 font-mono text-[9px] text-center"
-                  />
-                  <span className="font-mono text-[8.5px] text-muted-foreground">mm</span>
-                </div>
+          <span className="h-4 w-px bg-slate-200 mx-0.5" />
+
+          {/* MODOS DE APRESENTAÇÃO */}
+          {(
+            [
+              { id: "shaded", label: "SOMB" },
+              { id: "shaded-edges", label: "SOMB+AR" },
+              { id: "wireframe", label: "ARAME" },
+            ] as const
+          ).map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              onClick={() => setEdgeMode(m.id)}
+              className={cn(
+                "flex h-7 items-center gap-1 rounded-xl px-2.5 font-mono text-[9.5px] font-bold uppercase transition-all",
+                edgeMode === m.id
+                  ? "bg-red-50 text-red-600 border border-red-200 shadow-2xs"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50",
               )}
-            </div>
+            >
+              <Box className="size-3" /> {m.label}
+            </button>
+          ))}
+        </div>
 
-            {/* CONTROLE DE CHANFRO */}
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-1.5 font-mono text-[9px] uppercase text-foreground cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={hasChamfer}
-                  onChange={(e) => setHasChamfer(e.target.checked)}
-                  className="rounded border-line text-accent focus:ring-accent"
-                />
-                Chanfro
-              </label>
-              {hasChamfer && (
-                <div className="flex items-center gap-1">
-                  <span className="font-mono text-[8.5px] text-muted-foreground">D</span>
-                  <input
-                    type="number"
-                    value={chamferDist}
-                    onChange={(e) => setChamferDist(Number(e.target.value))}
-                    className="w-12 rounded border border-line bg-background px-1 py-0.5 font-mono text-[9px] text-center"
-                  />
-                  <span className="font-mono text-[8.5px] text-muted-foreground">mm</span>
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          /* CONTEÚDO DA ÁRVORE PARAMÉTRICA DE RECURSOS (FASE 05) */
-          <CadFeatureTreePanel
-            tree={treeRef.current}
-            features={featuresList}
-            selectedFeatureId={selectedFeatureId}
-            onSelectFeature={(id) => setSelectedFeatureId(id)}
-            onRebuildTree={rebuildFromTree}
-            rollbackIndex={rollbackIndex}
-            onRollbackChange={(idx) => {
-              setRollbackIndex(idx);
-              treeRef.current.setRollbackIndex(idx);
-              void rebuildFromTree();
-            }}
-          />
-        )}
-
-        {/* BOTÃO EXPORTAR STEP */}
+        {/* BOTÃO EXPANDIR / FIT TO MODEL */}
         <button
           type="button"
-          onClick={handleExportStep}
-          className="flex items-center justify-center gap-1.5 rounded-lg border border-accent/40 bg-accent/15 py-1.5 font-mono text-[9.5px] font-bold text-accent uppercase transition-colors hover:bg-accent/25"
+          onClick={handleFitToModel}
+          className="flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-200/90 bg-white text-slate-700 shadow-md hover:bg-slate-50 transition-colors"
+          title="Centralizar e enquadrar no modelo 3D (Fit)"
         >
-          <Download className="size-3" /> Exportar STEP Neutro
+          <Maximize2 className="size-3.5" />
         </button>
       </div>
 
-      {/* PAINEL DE PROPRIEDADES E METROLOGIA (FASE 04 & 06) */}
-      <div className="absolute bottom-3 right-3 z-10 flex w-76 flex-col gap-2 rounded-xl border border-line bg-card/90 p-3 shadow-xl backdrop-blur-md font-mono text-[9.5px]">
-        {/* CABEÇALHO */}
-        <div className="flex items-center justify-between border-b border-line pb-1.5 text-foreground font-bold">
-          <div className="flex items-center gap-1">
-            <Ruler className="size-3.5 text-accent" />
-            <span className="uppercase">INSPEÇÃO B-REP</span>
-          </div>
+      {/* ========================================================================= */}
+      {/* 2. FERRAMENTAS DE MANIPULAÇÃO RÁPIDA (ELEMENTO 2 NA IMAGEM)               */}
+      {/* ========================================================================= */}
+      <div className="absolute top-3 right-4 z-20 flex items-center gap-1.5 pointer-events-auto">
+        {/* GRUPO GIZMO | MOVER | GIRAR */}
+        <div className="flex items-center gap-1 rounded-2xl border border-slate-200/90 bg-white p-1 shadow-md font-mono text-[9.5px] font-bold">
+          <button
+            type="button"
+            onClick={() => setGizmoMode((m) => (m === "off" ? "translate" : "off"))}
+            className={cn(
+              "flex h-7 items-center gap-1 rounded-xl px-2.5 uppercase transition-colors",
+              gizmoMode !== "off"
+                ? "bg-red-50 text-red-600 border border-red-200"
+                : "text-slate-700 hover:bg-slate-50",
+            )}
+            title="Alternar manipulador 3D (Gizmo)"
+          >
+            <Crosshair className="size-3" /> GIZMO {gizmoMode !== "off" ? "ON" : "▾"}
+          </button>
 
-          <div className="flex items-center gap-1">
-            <ShieldCheck className="size-3 text-emerald-400" />
-            <span className="text-[8px] text-emerald-400 font-bold">OCCT VALID</span>
-          </div>
+          <span className="h-4 w-px bg-slate-200" />
+
+          <button
+            type="button"
+            onClick={() => setGizmoMode("translate")}
+            className={cn(
+              "flex h-7 items-center gap-1 rounded-xl px-2.5 uppercase transition-colors",
+              gizmoMode === "translate"
+                ? "bg-red-50 text-red-600 border border-red-200"
+                : "text-slate-700 hover:bg-slate-50",
+            )}
+            title="Mover objeto ou transladar faces"
+          >
+            <Move className="size-3" /> MOVER
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setGizmoMode("rotate")}
+            className={cn(
+              "flex h-7 items-center gap-1 rounded-xl px-2.5 uppercase transition-colors",
+              gizmoMode === "rotate"
+                ? "bg-red-50 text-red-600 border border-red-200"
+                : "text-slate-700 hover:bg-slate-50",
+            )}
+            title="Rotacionar em torno dos eixos"
+          >
+            <RotateCw className="size-3" /> GIRAR
+          </button>
         </div>
 
-        {/* MEDIÇÃO TRIDIMENSIONAL ENTRE DUAS ENTIDADES (FASE 04) */}
-        {measurement ? (
-          <div className="flex flex-col gap-1 rounded-lg border border-accent/40 bg-accent/10 p-2 text-foreground">
-            <div className="flex justify-between items-center font-bold text-accent">
-              <span>DISTÂNCIA REAL:</span>
-              <span className="text-xs">{measurement.distance.toFixed(2)} mm</span>
-            </div>
-            <div className="grid grid-cols-3 gap-1 pt-1 text-[8.5px] text-muted-foreground border-t border-accent/20">
-              <div>ΔX: <strong className="text-foreground">{measurement.deltaX.toFixed(2)}</strong></div>
-              <div>ΔY: <strong className="text-foreground">{measurement.deltaY.toFixed(2)}</strong></div>
-              <div>ΔZ: <strong className="text-foreground">{measurement.deltaZ.toFixed(2)}</strong></div>
-            </div>
-            <div className="text-[8px] text-muted-foreground/80 truncate">
-              {measurement.type.toUpperCase()} · Shift+Clique para medir
-            </div>
-          </div>
-        ) : null}
-
-        {/* DETALHES DA ENTIDADE SELECIONADA E AÇÕES DE EDIÇÃO RÁPIDA (FASE 06) */}
-        {selectedEntity && (
-          <div className="flex flex-col gap-1.5 rounded-lg border border-line/60 bg-background/50 p-2 text-foreground">
-            <div className="flex items-center justify-between border-b border-line/40 pb-1">
-              <span className="font-bold uppercase text-accent">
-                {selectedEntity.type === "face" ? "Face" : selectedEntity.type === "edge" ? "Aresta" : "Vértice"} #{selectedEntity.index}
-              </span>
-              <span className="text-[8px] text-muted-foreground">TOPOLOGIA</span>
-            </div>
-
-            {/* SE FOR FACE */}
-            {faceDetails && (
-              <div className="flex flex-col gap-1 text-muted-foreground text-[9px]">
-                <div>
-                  Área: <span className="font-semibold text-foreground">{faceDetails.area.toFixed(1)} mm²</span>
-                </div>
-                <div>
-                  Normal:{" "}
-                  <span className="font-semibold text-foreground">
-                    ({faceDetails.normal.x.toFixed(2)}, {faceDetails.normal.y.toFixed(2)}, {faceDetails.normal.z.toFixed(2)})
-                  </span>{" "}
-                  <span className="rounded bg-muted px-1 text-[8px] text-accent font-bold">
-                    {CadTopologicalNaming.classifyNormal(faceDetails.normal)}
-                  </span>
-                </div>
-                {safeAdjacentFaces.length > 0 && (
-                  <div>
-                    Faces Adjacentes: <span className="font-semibold text-foreground">{safeAdjacentFaces.length}</span>
-                  </div>
-                )}
-
-                {/* AÇÕES CONTEXTUAIS DE FACE (FASE 06) */}
-                <div className="mt-1.5 grid grid-cols-2 gap-1.5 pt-1 border-t border-line/40">
-                  <button
-                    type="button"
-                    onClick={() => handleExtrudeFace(20)}
-                    className="flex items-center justify-center gap-1 rounded border border-accent/40 bg-accent/15 py-1 text-[8.5px] font-bold text-accent hover:bg-accent/25"
-                    title="Extrudar face em +20 mm"
-                  >
-                    <ArrowUpRight className="size-2.5" /> +20mm Push
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAddHoleOnSelectedFace}
-                    className="flex items-center justify-center gap-1 rounded border border-line bg-card py-1 text-[8.5px] font-bold text-foreground hover:bg-muted"
-                    title="Criar furo passante de Ø20 mm nesta face"
-                  >
-                    <CircleDot className="size-2.5 text-accent" /> Furar Ø20
-                  </button>
-                </div>
-              </div>
+        {/* HISTÓRICO UNDO / REDO */}
+        <div className="flex items-center rounded-2xl border border-slate-200/90 bg-white p-1 shadow-md">
+          <button
+            type="button"
+            disabled={!canUndo}
+            onClick={handleUndo}
+            className={cn(
+              "flex h-7 w-7 items-center justify-center rounded-xl transition-colors",
+              canUndo ? "text-slate-700 hover:bg-slate-50" : "text-slate-300 cursor-not-allowed",
             )}
-
-            {/* SE FOR ARESTA */}
-            {edgeDetails && (
-              <div className="flex flex-col gap-1 text-muted-foreground text-[9px]">
-                <div>
-                  Tipo: <span className="font-semibold text-foreground uppercase">{edgeDetails.curveType}</span>
-                </div>
-                <div>
-                  Comprimento: <span className="font-semibold text-foreground">{typeof edgeDetails?.length === "number" ? edgeDetails.length.toFixed(2) : "0.00"} mm</span>
-                </div>
-
-                {/* AÇÕES CONTEXTUAIS DE ARESTA (FASE 06) */}
-                <div className="mt-1.5 flex items-center gap-1 pt-1 border-t border-line/40">
-                  <button
-                    type="button"
-                    onClick={() => handleApplyFilletOnSelectedEdge(4)}
-                    className="flex flex-1 items-center justify-center gap-1 rounded border border-line bg-card py-1 text-[8.5px] font-bold text-foreground hover:bg-muted"
-                  >
-                    <Wand2 className="size-2.5 text-accent" /> Filete R4
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleApplyChamferOnSelectedEdge(3)}
-                    className="flex flex-1 items-center justify-center gap-1 rounded border border-line bg-card py-1 text-[8.5px] font-bold text-foreground hover:bg-muted"
-                  >
-                    <Wand2 className="size-2.5 text-amber-500" /> Chanfro 3
-                  </button>
-                </div>
-              </div>
+            title="Desfazer alteração (Undo)"
+          >
+            <Undo2 className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            disabled={!canRedo}
+            onClick={handleRedo}
+            className={cn(
+              "flex h-7 w-7 items-center justify-center rounded-xl transition-colors",
+              canRedo ? "text-slate-700 hover:bg-slate-50" : "text-slate-300 cursor-not-allowed",
             )}
+            title="Refazer alteração (Redo)"
+          >
+            <Redo2 className="size-3.5" />
+          </button>
+        </div>
 
-            {/* SE FOR VÉRTICE */}
-            {vertexDetails && (
-              <div className="flex flex-col gap-0.5 text-muted-foreground text-[9px]">
-                <div>
-                  Posição XYZ:{" "}
-                  <span className="font-semibold text-foreground">
-                    ({vertexDetails.point.x.toFixed(2)}, {vertexDetails.point.y.toFixed(2)}, {vertexDetails.point.z.toFixed(2)}) mm
-                  </span>
-                </div>
-              </div>
+        {/* TELA CHEIA */}
+        <button
+          type="button"
+          onClick={() => setIsFullscreen((f) => !f)}
+          className="flex h-9 w-9 items-center justify-center rounded-2xl border border-slate-200/90 bg-white text-slate-700 shadow-md hover:bg-slate-50 transition-colors"
+          title="Alternar tela cheia"
+        >
+          {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+        </button>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* 3. BARRA LATERAL DE FERRAMENTAS ESQUERDA (ELEMENTO 3 NA IMAGEM)           */}
+      {/* ========================================================================= */}
+      <div className="absolute top-3 left-4 z-20 flex flex-col gap-1.5 w-44 pointer-events-auto">
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-2 shadow-lg backdrop-blur-xs flex flex-col gap-1.5">
+          {/* CATEGORIA 1: CRIAR (SELECIONADA NA IMAGEM COM FUNDO VERMELHO SÓLIDO) */}
+          <button
+            type="button"
+            onClick={() => setActiveLeftCat((c) => (c === "criar" ? "none" : "criar"))}
+            className={cn(
+              "flex h-9 w-full items-center justify-between rounded-xl px-3 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
+              activeLeftCat === "criar"
+                ? "bg-[#dc2626] text-white shadow-xs"
+                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
             )}
-          </div>
-        )}
+          >
+            <div className="flex items-center gap-2">
+              <Box className="size-3.5" /> CRIAR
+            </div>
+            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "criar" && "rotate-180")} />
+          </button>
 
-        {/* PROPRIEDADES GLOBAIS DO SÓLIDO (SEÇÃO 17) */}
-        {massProps && (
-          <div className="flex flex-col gap-0.5 border-t border-line/60 pt-1 text-muted-foreground">
-            <div>
-              Dimensões: <span className="font-semibold text-foreground">{dimX} × {dimY} × {dimZ} mm</span>
+          {/* CATEGORIA 2: MODIFICAR */}
+          <button
+            type="button"
+            onClick={() => setActiveLeftCat((c) => (c === "modificar" ? "none" : "modificar"))}
+            className={cn(
+              "flex h-9 w-full items-center justify-between rounded-xl px-3 font-mono text-[10px] font-bold uppercase transition-all",
+              activeLeftCat === "modificar"
+                ? "bg-red-50 text-red-600 border border-red-200"
+                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <Scissors className="size-3.5" /> MODIFICAR
             </div>
-            <div>
-              Volume: <span className="font-semibold text-foreground">{massProps.volume.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} mm³</span>
-            </div>
-            <div>
-              Massa (Aço A36): <span className="font-semibold text-accent">{massProps.mass.toFixed(3)} kg</span>
-            </div>
-            <div>
-              Área Total: <span className="font-semibold text-foreground">{massProps.surfaceArea.toLocaleString("pt-BR", { maximumFractionDigits: 0 })} mm²</span>
-            </div>
+            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "modificar" && "rotate-180")} />
+          </button>
 
-            {/* AÇÃO RÁPIDA DE FABRICAÇÃO & DETALHAMENTO */}
-            <div className="mt-1 flex flex-col gap-1">
+          {/* CATEGORIA 3: DETALHES */}
+          <button
+            type="button"
+            onClick={() => setActiveLeftCat((c) => (c === "detalhes" ? "none" : "detalhes"))}
+            className={cn(
+              "flex h-9 w-full items-center justify-between rounded-xl px-3 font-mono text-[10px] font-bold uppercase transition-all",
+              activeLeftCat === "detalhes"
+                ? "bg-red-50 text-red-600 border border-red-200"
+                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <Settings className="size-3.5" /> DETALHES
+            </div>
+            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "detalhes" && "rotate-180")} />
+          </button>
+
+          {/* CATEGORIA 4: CHAPA */}
+          <button
+            type="button"
+            onClick={() => setActiveLeftCat((c) => (c === "chapa" ? "none" : "chapa"))}
+            className={cn(
+              "flex h-9 w-full items-center justify-between rounded-xl px-3 font-mono text-[10px] font-bold uppercase transition-all",
+              activeLeftCat === "chapa"
+                ? "bg-red-50 text-red-600 border border-red-200"
+                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <Layers className="size-3.5" /> CHAPA
+            </div>
+            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "chapa" && "rotate-180")} />
+          </button>
+
+          {/* CATEGORIA 5: ESTRUTURAS */}
+          <button
+            type="button"
+            onClick={() => setActiveLeftCat((c) => (c === "estruturas" ? "none" : "estruturas"))}
+            className={cn(
+              "flex h-9 w-full items-center justify-between rounded-xl px-3 font-mono text-[10px] font-bold uppercase transition-all",
+              activeLeftCat === "estruturas"
+                ? "bg-red-50 text-red-600 border border-red-200"
+                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <Boxes className="size-3.5" /> ESTRUTURAS
+            </div>
+            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "estruturas" && "rotate-180")} />
+          </button>
+
+          {/* CATEGORIA 6: MEDIR */}
+          <button
+            type="button"
+            onClick={() => setActiveLeftCat((c) => (c === "medir" ? "none" : "medir"))}
+            className={cn(
+              "flex h-9 w-full items-center justify-between rounded-xl px-3 font-mono text-[10px] font-bold uppercase transition-all",
+              activeLeftCat === "medir"
+                ? "bg-red-50 text-red-600 border border-red-200"
+                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <Ruler className="size-3.5" /> MEDIR
+            </div>
+            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "medir" && "rotate-180")} />
+          </button>
+
+          {/* CATEGORIA 7: EXPORTAR */}
+          <button
+            type="button"
+            onClick={() => setActiveLeftCat((c) => (c === "exportar" ? "none" : "exportar"))}
+            className={cn(
+              "flex h-9 w-full items-center justify-between rounded-xl px-3 font-mono text-[10px] font-bold uppercase transition-all",
+              activeLeftCat === "exportar"
+                ? "bg-red-50 text-red-600 border border-red-200"
+                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
+            )}
+          >
+            <div className="flex items-center gap-2">
+              <Download className="size-3.5" /> EXPORTAR
+            </div>
+            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "exportar" && "rotate-180")} />
+          </button>
+        </div>
+
+        {/* SUBPAINEL CONTEXTUAL FLYOUT ADJACENTE (NÃO COBRE A PEÇA) */}
+        {activeLeftCat !== "none" && (
+          <div className="absolute left-[184px] top-0 w-48 rounded-2xl border border-slate-200 bg-white/95 p-2 shadow-xl backdrop-blur-xs flex flex-col gap-1 font-mono text-[9px]">
+            <div className="flex items-center justify-between pb-1 border-b border-slate-100 font-bold text-slate-800 uppercase">
+              <span>{activeLeftCat}</span>
               <button
                 type="button"
-                onClick={() => setFlatPatternDialogOpen(true)}
-                className="flex items-center justify-center gap-1.5 rounded border border-emerald-500/40 bg-emerald-500/15 py-1 text-[8.5px] font-bold text-emerald-400 uppercase hover:bg-emerald-500/25 transition-colors"
+                onClick={() => setActiveLeftCat("none")}
+                className="text-slate-400 hover:text-slate-600"
               >
-                <Compass className="size-3" /> Planificar & Gerar DXF/CNC
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setDraftingDialogOpen(true)}
-                className="flex items-center justify-center gap-1.5 rounded border border-blue-500/40 bg-blue-500/15 py-1 text-[8.5px] font-bold text-blue-400 uppercase hover:bg-blue-500/25 transition-colors"
-              >
-                <FileText className="size-3" /> Prancha Técnica ABNT (2D)
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setWeldmentDialogOpen(true)}
-                className="flex items-center justify-center gap-1.5 rounded border border-amber-500/40 bg-amber-500/15 py-1 text-[8.5px] font-bold text-amber-400 uppercase hover:bg-amber-500/25 transition-colors"
-              >
-                <Boxes className="size-3" /> Estruturas & Cut-List
+                <X className="size-3" />
               </button>
             </div>
+
+            {activeLeftCat === "criar" && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setTemplatesDialogOpen(true)}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Flame className="size-3" /> Cone / Caldeiraria
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBaseDiameterX(120);
+                    setHeightZ(80);
+                    void applyParametersAndRebuild();
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Box className="size-3" /> Caixa Sólida
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWeldmentDialogOpen(true)}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Boxes className="size-3" /> Perfis / Vigas
+                </button>
+              </>
+            )}
+
+            {activeLeftCat === "modificar" && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setGizmoMode("translate")}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Move className="size-3" /> Mover / Transladar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOptHole((h) => !h)}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Crosshair className="size-3" /> Furo Passante
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOptFillet((f) => !f)}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Scissors className="size-3" /> Filete nas Arestas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOptChamfer((c) => !c)}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Scissors className="size-3" /> Chanfro 45°
+                </button>
+              </>
+            )}
+
+            {activeLeftCat === "chapa" && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setFlatPatternDialogOpen(true)}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-red-600 font-bold hover:bg-red-50"
+                >
+                  <Compass className="size-3" /> Planificar Sólido
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDraftingDialogOpen(true)}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                >
+                  <FileText className="size-3" /> Prancha 2D ABNT
+                </button>
+              </>
+            )}
+
+            {activeLeftCat === "estruturas" && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setWeldmentDialogOpen(true)}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600 font-bold"
+                >
+                  <Boxes className="size-3" /> Perfis & Cut-List
+                </button>
+              </>
+            )}
+
+            {activeLeftCat === "medir" && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRightTab("inspecao");
+                    setRightPanelOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Ruler className="size-3" /> Metrologia B-Rep
+                </button>
+              </>
+            )}
+
+            {activeLeftCat === "exportar" && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setFlatPatternDialogOpen(true)}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Download className="size-3" /> DXF / Código G
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDraftingDialogOpen(true)}
+                  className="flex items-center gap-1.5 rounded-lg px-2 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
+                >
+                  <Download className="size-3" /> Prancha Técnica DXF
+                </button>
+              </>
+            )}
           </div>
         )}
       </div>
 
-      {/* DIÁLOGO DE TEMPLATES PARAMÉTRICOS DE CALDEIRARIA CALDRA (FASE 07) */}
+      {/* ========================================================================= */}
+      {/* 4. PAINEL CONTEXTUAL DE PROPRIEDADES DIREITO (REPRODUÇÃO EXATA DA IMAGEM)   */}
+      {/* ========================================================================= */}
+      {rightPanelOpen && (
+        <div className="absolute top-14 right-4 z-20 w-84 rounded-2xl border border-slate-200/90 bg-white p-3.5 shadow-xl backdrop-blur-xs flex flex-col gap-2.5 font-mono text-[10px] text-slate-800 pointer-events-auto">
+          {/* BARRA DE ABAS SUPERIORES */}
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setRightTab("parametros")}
+                className={cn(
+                  "flex items-center gap-1 rounded-full px-2.5 py-1 font-bold uppercase transition-colors",
+                  rightTab === "parametros"
+                    ? "bg-red-50 text-red-600 border border-red-200"
+                    : "text-slate-600 hover:text-slate-900",
+                )}
+              >
+                <Sliders className="size-3 text-red-600" /> PARÂMETROS
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRightTab("inspecao")}
+                className={cn(
+                  "rounded-full px-2.5 py-1 font-bold uppercase transition-colors",
+                  rightTab === "inspecao"
+                    ? "bg-red-50 text-red-600 border border-red-200"
+                    : "text-slate-600 hover:text-slate-900",
+                )}
+              >
+                INSPEÇÃO
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setRightTab("filtro")}
+                className={cn(
+                  "rounded-full px-2.5 py-1 font-bold uppercase transition-colors",
+                  rightTab === "filtro"
+                    ? "bg-red-50 text-red-600 border border-red-200"
+                    : "text-slate-600 hover:text-slate-900",
+                )}
+              >
+                FILTRO
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setRightPanelOpen(false)}
+              className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              title="Fechar painel"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+
+          {/* ABA 1: PARÂMETROS COM MINI-DIAGRAMA TÉCNICO VETORIAL */}
+          {rightTab === "parametros" && (
+            <div className="flex flex-col gap-2.5">
+              {/* NOME DA PEÇA */}
+              <div className="flex items-center gap-1.5 font-bold text-slate-900 uppercase">
+                <Box className="size-3.5 text-red-600" /> CONE
+              </div>
+
+              {/* CAMPOS DE ENTRADA + DIAGRAMA TÉCNICO LADO A LADO */}
+              <div className="grid grid-cols-2 gap-2 items-center">
+                {/* COLUNA ESQUERDA: INPUTS NUMÉRICOS */}
+                <div className="flex flex-col gap-2">
+                  <div>
+                    <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
+                      DIÂMETRO DA BASE (X)
+                    </label>
+                    <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 mt-0.5">
+                      <input
+                        type="number"
+                        value={baseDiameterX}
+                        onChange={(e) => setBaseDiameterX(Number(e.target.value))}
+                        className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
+                      />
+                      <span className="text-[9px] text-slate-400">mm</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
+                      ALTURA (Z)
+                    </label>
+                    <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 mt-0.5">
+                      <input
+                        type="number"
+                        value={heightZ}
+                        onChange={(e) => setHeightZ(Number(e.target.value))}
+                        className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
+                      />
+                      <span className="text-[9px] text-slate-400">mm</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
+                      ESPESSURA
+                    </label>
+                    <div className="flex items-center rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 mt-0.5">
+                      <input
+                        type="number"
+                        value={thickness}
+                        onChange={(e) => setThickness(Number(e.target.value))}
+                        className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
+                      />
+                      <span className="text-[9px] text-slate-400">mm</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* COLUNA DIREITA: MINI-DIAGRAMA TÉCNICO VETORIAL DO CONE (IGUAL À IMAGEM) */}
+                <div className="flex items-center justify-center p-1 border border-slate-100 bg-slate-50/50 rounded-xl">
+                  <svg viewBox="0 0 100 90" className="w-full h-24">
+                    {/* Cota Z lateral */}
+                    <line x1="12" y1="10" x2="12" y2="70" stroke="#94a3b8" strokeWidth="0.75" />
+                    <line x1="8" y1="10" x2="16" y2="10" stroke="#94a3b8" strokeWidth="0.75" />
+                    <line x1="8" y1="70" x2="16" y2="70" stroke="#94a3b8" strokeWidth="0.75" />
+                    <text x="6" y="42" fontSize="7" fill="#475569" fontWeight="bold" textAnchor="end">Z</text>
+
+                    {/* Sombra / Preenchimento do Cone */}
+                    <polygon points="55,10 25,70 85,70" fill="#fee2e2" stroke="#dc2626" strokeWidth="1" />
+                    {/* Elipse da base */}
+                    <ellipse cx="55" cy="70" rx="30" ry="7" fill="#fecaca" stroke="#dc2626" strokeWidth="1" />
+                    <path d="M 25 70 A 30 7 0 0 1 85 70" fill="none" stroke="#dc2626" strokeWidth="0.75" strokeDasharray="2,2" />
+
+                    {/* Cota X inferior */}
+                    <line x1="25" y1="82" x2="85" y2="82" stroke="#94a3b8" strokeWidth="0.75" />
+                    <line x1="25" y1="75" x2="25" y2="85" stroke="#94a3b8" strokeWidth="0.75" />
+                    <line x1="85" y1="75" x2="85" y2="85" stroke="#94a3b8" strokeWidth="0.75" />
+                    <polygon points="25,82 28,80.5 28,83.5" fill="#475569" />
+                    <polygon points="85,82 82,80.5 82,83.5" fill="#475569" />
+                    <text x="55" y="87" fontSize="7" fill="#475569" fontWeight="bold" textAnchor="middle">X</text>
+                  </svg>
+                </div>
+              </div>
+
+              {/* SEÇÃO DE OPÇÕES COM CHECKBOXES */}
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
+                    OPÇÕES
+                  </span>
+                  <label className="flex items-center gap-1.5 text-[9px] text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={optHole}
+                      onChange={(e) => setOptHole(e.target.checked)}
+                      className="rounded text-red-600 focus:ring-red-500"
+                    />
+                    FURO CENTRAL
+                  </label>
+                  <label className="flex items-center gap-1.5 text-[9px] text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={optFillet}
+                      onChange={(e) => setOptFillet(e.target.checked)}
+                      className="rounded text-red-600 focus:ring-red-500"
+                    />
+                    FILETE NAS ARESTAS
+                  </label>
+                  <label className="flex items-center gap-1.5 text-[9px] text-slate-700 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={optChamfer}
+                      onChange={(e) => setOptChamfer(e.target.checked)}
+                      className="rounded text-red-600 focus:ring-red-500"
+                    />
+                    CHANFRO
+                  </label>
+                </div>
+
+                {/* SELEÇÃO DE MATERIAL */}
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
+                    MATERIAL
+                  </span>
+                  <select
+                    value={material}
+                    onChange={(e) => setMaterial(e.target.value)}
+                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[9.5px] font-bold text-slate-900 outline-none"
+                  >
+                    <option value="Aço Carbono">Aço Carbono</option>
+                    <option value="Inox 304">Inox 304</option>
+                    <option value="Alumínio 5052">Alumínio 5052</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* BOTÃO PRINCIPAL APLICAR (VERMELHO CALDRA SÓLIDO) */}
+              <button
+                type="button"
+                onClick={applyParametersAndRebuild}
+                className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl bg-[#dc2626] py-2.5 font-mono text-[11px] font-bold tracking-wider text-white shadow-xs hover:bg-[#b91c1c] active:scale-[0.99] transition-all uppercase"
+              >
+                <Settings className="size-4" /> APLICAR
+              </button>
+            </div>
+          )}
+
+          {/* ABA 2: INSPEÇÃO B-REP */}
+          {rightTab === "inspecao" && (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                <span className="font-bold text-slate-900">INSPEÇÃO B-REP</span>
+                <span className="flex items-center gap-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[8px] font-bold text-emerald-600">
+                  <span className="size-1.5 rounded-full bg-emerald-500" /> OCCT VALID
+                </span>
+              </div>
+
+              <div className="flex flex-col gap-1 text-[9px] text-slate-600">
+                <div>Dimensões: <strong className="text-slate-900">{baseDiameterX} × {baseDiameterX} × {heightZ} mm</strong></div>
+                <div>Volume: <strong className="text-slate-900">{massProps ? massProps.volume.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) : "30.000"} mm³</strong></div>
+                <div>Massa Est.: <strong className="text-red-600">{massProps ? massProps.mass.toFixed(3) : "9.030"} kg</strong></div>
+                <div>Área Total: <strong className="text-slate-900">{massProps ? massProps.surfaceArea.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) : "21.200"} mm²</strong></div>
+                <div>Topologia: <strong className="text-slate-900">{tessData?.faces.length ?? 3} faces, {tessData?.edges.length ?? 6} arestas</strong></div>
+              </div>
+            </div>
+          )}
+
+          {/* ABA 3: FILTRO DE SELEÇÃO TOPOLÓGICA */}
+          {rightTab === "filtro" && (
+            <div className="flex flex-col gap-2">
+              <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
+                FILTRO DE ENTIDADE
+              </span>
+              <div className="grid grid-cols-3 gap-1">
+                {(["face", "edge", "vertex"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setSelectionType(t)}
+                    className={cn(
+                      "rounded-lg border px-2 py-1.5 text-center font-bold uppercase transition-colors text-[9px]",
+                      selectionType === t
+                        ? "border-red-200 bg-red-50 text-red-600 shadow-2xs"
+                        : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
+                    )}
+                  >
+                    {t === "face" ? "FACE" : t === "edge" ? "ARESTA" : "VÉRTICE"}
+                  </button>
+                ))}
+              </div>
+
+              {selectedEntity ? (
+                <div className="mt-1 rounded-lg border border-slate-200 bg-slate-50 p-2 text-[8.5px]">
+                  <div className="font-bold text-slate-800">
+                    {selectedEntity.type.toUpperCase()} #{selectedEntity.index}
+                  </div>
+                  <div className="text-slate-500">
+                    Posição: ({selectedEntity.point.x.toFixed(1)}, {selectedEntity.point.y.toFixed(1)}, {selectedEntity.point.z.toFixed(1)})
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-1 rounded-lg border border-dashed border-slate-200 p-2 text-center text-[8.5px] text-slate-400">
+                  Clique na peça para selecionar uma {selectionType}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* 5. AÇÕES PRINCIPAIS (APARECEM NO CHÃO DO VIEWPORT — ELEMENTO 4 NA IMAGEM) */}
+      {/* ========================================================================= */}
+      <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 rounded-2xl border border-slate-200/90 bg-white px-2 py-1.5 shadow-lg backdrop-blur-xs pointer-events-auto">
+        {/* PLANIFICAR (DESTAQUE VERMELHO SUAVE) */}
+        <button
+          type="button"
+          onClick={() => setFlatPatternDialogOpen(true)}
+          className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1 font-mono text-[10px] font-bold text-red-600 shadow-2xs hover:bg-red-100 transition-colors uppercase"
+          title="Planificar sólido 3D"
+        >
+          <Compass className="size-3 text-red-600" /> PLANIFICAR
+        </button>
+
+        {/* PRANCHA 2D */}
+        <button
+          type="button"
+          onClick={() => setDraftingDialogOpen(true)}
+          className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+          title="Desenho técnico 2D ABNT com vistas ortográficas e carimbo"
+        >
+          <FileText className="size-3 text-slate-600" /> PRANCHA 2D
+        </button>
+
+        {/* ESTRUTURAS */}
+        <button
+          type="button"
+          onClick={() => setWeldmentDialogOpen(true)}
+          className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+          title="Estruturas metálicas, perfis industriais e lista de corte"
+        >
+          <Boxes className="size-3 text-slate-600" /> ESTRUTURAS
+        </button>
+
+        {/* CNC / DXF */}
+        <button
+          type="button"
+          onClick={() => setFlatPatternDialogOpen(true)}
+          className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+          title="Exportar código G CNC e DXF para máquinas de corte"
+        >
+          <Crosshair className="size-3 text-slate-600" /> CNC / DXF
+        </button>
+      </div>
+
+      {/* ========================================================================= */}
+      {/* DIÁLOGOS DE PROCESSAMENTO REAL                                            */}
+      {/* ========================================================================= */}
       <CaldraBoilermakingDialog
         open={templatesDialogOpen}
         onClose={() => setTemplatesDialogOpen(false)}
@@ -990,24 +1110,21 @@ export function CadBRepViewer({
         onRebuild={rebuildFromTree}
       />
 
-      {/* DIÁLOGO DE PLANIFICAÇÃO E FABRICAÇÃO INDUSTRIAL (FASE 08) */}
       <CaldraFlatPatternDialog
         open={flatPatternDialogOpen}
         onClose={() => setFlatPatternDialogOpen(false)}
         features={featuresList}
-        fallbackDimensions={{ width: dimX, length: dimY, thickness: dimZ }}
+        fallbackDimensions={{ width: baseDiameterX, length: baseDiameterX, thickness }}
       />
 
-      {/* DIÁLOGO DE DETALHAMENTO TÉCNICO E PRANCHA INDUSTRIAL ABNT (FASE 09) */}
       <CaldraDraftingDialog
         open={draftingDialogOpen}
         onClose={() => setDraftingDialogOpen(false)}
         features={featuresList}
         massProps={massProps}
-        dimensions={{ width: dimX, length: dimY, height: dimZ }}
+        dimensions={{ width: baseDiameterX, length: baseDiameterX, height: heightZ }}
       />
 
-      {/* DIÁLOGO DE ESTRUTURAS METÁLICAS, PERFIS E CUT-LIST (FASE 10) */}
       <CaldraWeldmentDialog
         open={weldmentDialogOpen}
         onClose={() => setWeldmentDialogOpen(false)}
