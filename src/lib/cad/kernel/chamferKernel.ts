@@ -66,6 +66,12 @@ import {
   type FirstArticleInspectionReport,
   type MetrologyOptions,
 } from "../metrology";
+import {
+  FeaEngine,
+  FeaReportExporter,
+  type FeaAnalysisResult,
+  type FeaSimulationOptions,
+} from "../fea";
 import { BoilermakingEngine } from "../boilermaking/boilermakingEngine";
 import type { SolidInstance, SolidMaterial } from "@/lib/project-catalog/instances";
 import { planSolids } from "@/lib/lab2d/solid3d";
@@ -1261,5 +1267,35 @@ export class ChamferKernel {
   static exportMetrologySvg(doc: PartDocument, width?: number, height?: number): string {
     const report = doc.metrologyReport || this.generateMetrology(doc);
     return FaiReportExporter.exportToInspectionSVG(report, width, height);
+  }
+
+  /**
+   * Executa a análise estrutural por elementos finitos FEA / CAE (Fase 15).
+   */
+  static runFeaSimulation(
+    doc: PartDocument,
+    options?: FeaSimulationOptions,
+  ): FeaAnalysisResult {
+    const report = FeaEngine.solve(doc, options);
+    doc.feaReport = report;
+    doc.activeState = "FEA";
+    doc.updatedAt = Date.now();
+    return report;
+  }
+
+  /**
+   * Exporta o Memorial de Cálculo FEA em CSV.
+   */
+  static exportFeaCsv(doc: PartDocument): string {
+    const report = doc.feaReport || this.runFeaSimulation(doc);
+    return FeaReportExporter.exportToCSV(report);
+  }
+
+  /**
+   * Exporta o Mapa de Calor de Tensões de Von Mises em SVG.
+   */
+  static exportFeaHeatmapSvg(doc: PartDocument, width?: number, height?: number): string {
+    const report = doc.feaReport || this.runFeaSimulation(doc);
+    return FeaReportExporter.exportToStressHeatmapSVG(report, width, height);
   }
 }

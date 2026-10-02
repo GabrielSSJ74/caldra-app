@@ -99,12 +99,17 @@ export class AudioManager {
   private settings: AudioSettingsState = { ...DEFAULT_AUDIO_SETTINGS };
   private listeners: Set<(s: AudioSettingsState) => void> = new Set();
 
-  // Motor da Trilha Sonora Ambiente (Generative Pad Synthesizer)
+  // Motor da Nova Trilha Sonora — "CALDRA HORIZON" (Mistério, Curiosidade & Exploração)
   private isMusicPlaying = false;
   private ambientTimer: number | null = null;
+  private pulseTimer: number | null = null;
+  private pulseStep = 0;
   private currentChordIndex = 0;
-  private activeVoices: { oscs: OscillatorNode[]; gain: GainNode }[] = [];
-  private noiseNode: AudioBufferSourceNode | null = null;
+  private activeVoices: { oscs: (OscillatorNode | AudioBufferSourceNode)[]; gain: GainNode }[] = [];
+  private musicDelayNode: DelayNode | null = null;
+  private musicFeedbackGain: GainNode | null = null;
+  private musicReverbNode: ConvolverNode | null = null;
+  private musicReverbGain: GainNode | null = null;
 
   private constructor() {
     this.loadSettings();
@@ -187,6 +192,43 @@ export class AudioManager {
         this.uiGain.connect(this.masterGain);
         this.masterGain.connect(this.ctx.destination);
 
+        // Barramento de delay estéreo espacial para a música de exploração
+        try {
+          this.musicDelayNode = this.ctx.createDelay();
+          this.musicDelayNode.delayTime.setValueAtTime(0.32, this.ctx.currentTime);
+          this.musicFeedbackGain = this.ctx.createGain();
+          this.musicFeedbackGain.gain.setValueAtTime(0.25, this.ctx.currentTime);
+
+          const delayFilter = this.ctx.createBiquadFilter();
+          delayFilter.type = "lowpass";
+          delayFilter.frequency.setValueAtTime(2600, this.ctx.currentTime);
+
+          this.musicDelayNode.connect(delayFilter);
+          delayFilter.connect(this.musicFeedbackGain);
+          this.musicFeedbackGain.connect(this.musicDelayNode);
+          delayFilter.connect(this.musicGain);
+        } catch (delayErr) {
+          void delayErr;
+        }
+
+        // Barramento de Reverb Espacial Algorítmico (cauda longa e aveludada ~3.8s)
+        try {
+          this.musicReverbNode = this.ctx.createConvolver();
+          this.musicReverbNode.buffer = this.buildImpulseResponse(this.ctx, 3.8, 2.3);
+          this.musicReverbGain = this.ctx.createGain();
+          this.musicReverbGain.gain.setValueAtTime(0.40, this.ctx.currentTime);
+
+          const reverbFilter = this.ctx.createBiquadFilter();
+          reverbFilter.type = "lowpass";
+          reverbFilter.frequency.setValueAtTime(3400, this.ctx.currentTime);
+
+          this.musicReverbNode.connect(reverbFilter);
+          reverbFilter.connect(this.musicReverbGain);
+          this.musicReverbGain.connect(this.musicGain);
+        } catch (revErr) {
+          void revErr;
+        }
+
         // Aplica volumes salvos
         this.updateGainNodes();
       } catch (err) {
@@ -199,6 +241,22 @@ export class AudioManager {
     }
 
     return this.ctx;
+  }
+
+  /** Gera buffer de resposta ao impulso procedural para reverb acústico de cauda longa */
+  private buildImpulseResponse(ctx: AudioContext, duration: number, decay: number): AudioBuffer {
+    const rate = ctx.sampleRate;
+    const length = Math.floor(rate * duration);
+    const buffer = ctx.createBuffer(2, length, rate);
+    for (let c = 0; c < 2; c++) {
+      const channelData = buffer.getChannelData(c);
+      for (let i = 0; i < length; i++) {
+        const t = i / length;
+        // Decaimento exponencial com difusão estéreo orgânica
+        channelData[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay);
+      }
+    }
+    return buffer;
   }
 
   // =========================================================================
@@ -222,7 +280,9 @@ export class AudioManager {
     if (typeof window === "undefined") return;
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(this.settings));
-    } catch {}
+    } catch (err) {
+      void err;
+    }
     this.notify();
     this.updateGainNodes();
   }
@@ -1110,13 +1170,16 @@ export class AudioManager {
   }
 
   // =========================================================================
-  // TRILHA SONORA AMBIENTE PROCEDURAL ("CALDRA SPATIAL ATMOSPHERE")
+  // TRILHA SONORA PRINCIPAL — "CALDRA: EXPLORAÇÃO, MISTÉRIO & CONTEMPLAÇÃO"
+  // Dois Mundos Integrados:
+  // Mundo 1: Tecnologia, CAD, Síntese Digital Discreta, Espaço Estéreo Amplo
+  // Mundo 2: Exploração Orgânica, Criatividade, Timbres Acústicos de Felt Piano,
+  //          Contemplação de Construção (estilo exploração/sandbox sereno)
+  // Zero Melancolia | Zero Tristeza | Harmonia Aberta, Curiosa e Esperançosa
   // =========================================================================
-  // Sintetizador de pads polifônicos lentos com filtros ressonantes,
-  // espacialidade estéreo e harmonia minimalista nostálgica (estilo PS2).
-  // Sem cortes perceptíveis, loop perfeito contínuo entre telas.
 
   public playMusic(trackId = "caldra_main"): void {
+    void trackId;
     if (this.isMusicPlaying) return;
     if (!this.settings.musicEnabled || this.settings.isMuted) return;
 
@@ -1133,6 +1196,10 @@ export class AudioManager {
       window.clearInterval(this.ambientTimer);
       this.ambientTimer = null;
     }
+    if (this.pulseTimer !== null) {
+      window.clearInterval(this.pulseTimer);
+      this.pulseTimer = null;
+    }
 
     // Suaviza e cessa vozes ativas
     if (this.ctx) {
@@ -1143,11 +1210,17 @@ export class AudioManager {
           window.setTimeout(() => {
             v.oscs.forEach((o) => {
               try {
-                o.stop();
-              } catch {}
+                if ("stop" in o && typeof o.stop === "function") {
+                  o.stop();
+                }
+              } catch (e) {
+                void e;
+              }
             });
           }, 800);
-        } catch {}
+        } catch (e) {
+          void e;
+        }
       });
       this.activeVoices = [];
     }
@@ -1156,89 +1229,1050 @@ export class AudioManager {
   private startAmbientEngine(): void {
     if (!this.ctx || !this.isMusicPlaying) return;
 
-    // Progressão harmônica minimalista espacial (acordes amplos e limpos)
-    // Dm9 -> Bbmaj7#11 -> Fsus2 -> Asus4/7
-    const chords: number[][] = [
-      [146.83, 220.0, 261.63, 329.63, 349.23], // D3, A3, C4, E4, F4
-      [116.54, 174.61, 220.0, 261.63, 329.63], // Bb2, F3, A3, C4, E4
-      [87.31, 130.81, 196.0, 220.0, 261.63],  // F2, C3, G3, A3, C4
-      [110.0, 164.81, 196.0, 293.66, 329.63],  // A2, E3, G3, D4, E4
+    // -----------------------------------------------------------------------
+    // CALDRA ORIGINAL CINEMATIC AMBIENT SOUNDTRACK
+    // "Steel, Geometry & Human Craftsmanship"
+    //
+    // Sonic Signature:
+    // Hybrid Metallic-String Acoustic Instrument (Resonant wooden body, bright
+    // metallic strings, low tuning, finger-picked touch, subtle fret/finger noise).
+    //
+    // Supporting Orchestration:
+    // Felt piano, low cello & double bass, soft viola/cello sustains, sparse harp,
+    // subtle low wooden flute, celesta, warm analog synth, granular ambient
+    // textures, and restrained resonant metallic percussion.
+    //
+    // Emotional Arc (6 Progressive Movements with Seamless Infinite Loop):
+    // 1. CURIOSITY    — Extremely sparse hybrid metallic string solo in quiet space
+    // 2. EXPLORATION  — Felt piano joins, low double bass anchors, stereo opens
+    // 3. DISCOVERY    — Low wooden flute breath melody, celesta points like light on steel
+    // 4. CONCENTRATION— Chamber viola & cello sustains, felt piano, focused craftsmanship
+    // 5. VASTNESS     — Restrained cinematic climax: synth swell, bowed basses, bronze chime
+    // 6. SERENITY     — Dissolving gently back into space, suspended resolution & loop
+    // -----------------------------------------------------------------------
+
+    const cinematicMovements = [
+      // =====================================================================
+      // MOVEMENT 1: CURIOSITY (Extreme sparseness, vast quiet space)
+      // "Entering an enormous engineered space made of steel and geometry."
+      // Open harmony: Dadd9(no3) — Ancient, technological, expectant.
+      // =====================================================================
+      {
+        movement: 1,
+        title: "curiosity",
+        bassFreq: 73.42, // D2 (subtle acoustic anchor)
+        bassType: "double_bass" as const,
+        synthPad: [],
+        chamberStrings: [],
+        hybridStrings: [
+          { f: 73.42, delay: 1.6, pan: -0.12, vel: 0.88, fretNoise: 0.65 },  // Low D2 (deep steel wound string)
+          { f: 110.00, delay: 4.8, pan: 0.18, vel: 0.82, fretNoise: 0.55 },  // A2
+          { f: 146.83, delay: 7.9, pan: -0.05, vel: 0.90, fretNoise: 0.70 }, // D3
+          { f: 220.00, delay: 11.2, pan: 0.15, vel: 0.85, fretNoise: 0.60 }, // A3 (open question)
+        ],
+        feltPiano: [],
+        woodenFlute: [],
+        celesta: [],
+        harp: [],
+        metallicChime: null,
+        granularTexture: { f: 880.0, delay: 6.0, pan: 0.3 },
+      },
+
+      // =====================================================================
+      // MOVEMENT 2: EXPLORATION (Felt piano enters, spatial width expands)
+      // "Stepping forward, exploring the perimeter of the digital workshop."
+      // Open harmony: Gmaj9/D (Low D2 bass, G2, B2, D3, F#3, A3)
+      // =====================================================================
+      {
+        movement: 2,
+        title: "exploration",
+        bassFreq: 73.42, // D2 bass pedal
+        bassType: "double_bass" as const,
+        synthPad: [98.00, 146.83, 185.00, 220.00], // G2, D3, F#3, A3 (very quiet warm analog air)
+        chamberStrings: [],
+        hybridStrings: [
+          { f: 98.00, delay: 2.0, pan: -0.22, vel: 0.85, fretNoise: 0.6 },  // G2
+          { f: 185.00, delay: 5.6, pan: 0.25, vel: 0.88, fretNoise: 0.55 }, // F#3
+          { f: 220.00, delay: 9.4, pan: -0.18, vel: 0.92, fretNoise: 0.6 }, // A3
+        ],
+        feltPiano: [
+          { f: 293.66, delay: 3.4, pan: 0.18, vel: 0.82 }, // D4 (intimate felt strike)
+          { f: 369.99, delay: 7.2, pan: -0.15, vel: 0.85 }, // F#4
+          { f: 440.00, delay: 11.0, pan: 0.12, vel: 0.80 }, // A4
+        ],
+        woodenFlute: [],
+        celesta: [],
+        harp: [],
+        metallicChime: null,
+        granularTexture: { f: 1174.66, delay: 4.5, pan: -0.35 },
+      },
+
+      // =====================================================================
+      // MOVEMENT 3: DISCOVERY (Low wooden flute melody & celesta spark)
+      // "Discovering an unexpected geometric possibility; light hitting steel."
+      // Open harmony: Bm11 (B1, F#2, D3, A3, E4)
+      // =====================================================================
+      {
+        movement: 3,
+        title: "discovery",
+        bassFreq: 61.74, // B1
+        bassType: "cello_bowed" as const,
+        synthPad: [123.47, 185.00, 220.00, 329.63], // B2, F#3, A3, E4
+        chamberStrings: [146.83, 220.00, 329.63],     // D3, A3, E4 (soft viola sustain)
+        hybridStrings: [
+          { f: 123.47, delay: 1.8, pan: -0.25, vel: 0.90, fretNoise: 0.65 }, // B2
+          { f: 293.66, delay: 8.5, pan: 0.20, vel: 0.86, fretNoise: 0.55 },  // D4
+        ],
+        feltPiano: [
+          { f: 220.00, delay: 6.8, pan: -0.18, vel: 0.84 }, // A3
+          { f: 329.63, delay: 10.5, pan: 0.15, vel: 0.80 }, // E4
+        ],
+        woodenFlute: [
+          { f: 293.66, delay: 3.0, pan: -0.20, vel: 0.88 }, // D4 (breath tone melody)
+          { f: 329.63, delay: 5.2, pan: -0.15, vel: 0.85 }, // E4
+          { f: 369.99, delay: 7.5, pan: -0.22, vel: 0.92 }, // F#4
+        ],
+        celesta: [
+          { f: 1174.66, delay: 4.4, pan: 0.38 }, // D6 (crystalline precision)
+          { f: 1479.98, delay: 8.8, pan: -0.32 }, // F#6
+        ],
+        harp: [],
+        metallicChime: null,
+        granularTexture: null,
+      },
+
+      // =====================================================================
+      // MOVEMENT 4: CONCENTRATION (Chamber strings, felt piano, focused craft)
+      // "Deep engineering focus, meticulous calculations, craftsmanship in action."
+      // Open harmony: Em9(add11) (E2, B2, G3, D4, F#4, A4)
+      // =====================================================================
+      {
+        movement: 4,
+        title: "concentration",
+        bassFreq: 82.41, // E2
+        bassType: "cello_bowed" as const,
+        synthPad: [164.81, 196.00, 246.94, 293.66], // E3, G3, B3, D4
+        chamberStrings: [196.00, 293.66, 369.99, 440.00], // G3, D4, F#4, A4 (cello/viola sustains)
+        hybridStrings: [
+          { f: 82.41, delay: 2.2, pan: 0.22, vel: 0.88, fretNoise: 0.58 },  // Low E2
+          { f: 164.81, delay: 6.4, pan: -0.20, vel: 0.85, fretNoise: 0.62 }, // E3
+          { f: 293.66, delay: 10.8, pan: 0.18, vel: 0.90, fretNoise: 0.55 }, // D4
+        ],
+        feltPiano: [
+          { f: 369.99, delay: 3.8, pan: -0.12, vel: 0.86 }, // F#4
+          { f: 440.00, delay: 7.8, pan: 0.14, vel: 0.88 },  // A4
+          { f: 246.94, delay: 11.5, pan: -0.10, vel: 0.82 }, // B3
+        ],
+        woodenFlute: [],
+        celesta: [],
+        // Sparse harp: delicate cascaded texture
+        harp: [164.81, 246.94, 369.99, 440.00], // E3, B3, F#4, A4
+        metallicChime: null,
+        granularTexture: { f: 739.99, delay: 5.5, pan: 0.3 },
+      },
+
+      // =====================================================================
+      // MOVEMENT 5: VASTNESS (The Restrained Climax — Monumental Steel World)
+      // "Awe and grandeur; the monumental 3D geometry fully revealed."
+      // Open harmony: Amaj7sus2/C# -> Dmaj9#11 (C#2 -> D2, A2, E3, G#3, C#4, F#4)
+      // =====================================================================
+      {
+        movement: 5,
+        title: "vastness",
+        bassFreq: 69.30, // C#2 evolving to D2
+        bassType: "double_bass" as const,
+        synthPad: [138.59, 220.00, 277.18, 329.63, 415.30], // C#3, A3, C#4, E4, G#4
+        chamberStrings: [220.00, 277.18, 369.99, 440.00],    // A3, C#4, F#4, A4 (full warm sustain)
+        hybridStrings: [
+          { f: 146.83, delay: 1.8, pan: -0.22, vel: 0.95, fretNoise: 0.70 }, // D3
+          { f: 220.00, delay: 4.8, pan: 0.25, vel: 0.92, fretNoise: 0.65 },  // A3
+          { f: 369.99, delay: 8.2, pan: -0.15, vel: 0.96, fretNoise: 0.72 }, // F#4
+          { f: 415.30, delay: 11.5, pan: 0.20, vel: 0.88, fretNoise: 0.58 }, // G#4 (#11 lídia)
+        ],
+        feltPiano: [
+          { f: 554.37, delay: 3.2, pan: 0.15, vel: 0.92 }, // C#5
+          { f: 739.99, delay: 6.8, pan: -0.18, vel: 0.90 }, // F#5
+          { f: 440.00, delay: 10.4, pan: 0.12, vel: 0.86 }, // A4
+        ],
+        woodenFlute: [
+          { f: 369.99, delay: 5.5, pan: -0.25, vel: 0.85 }, // F#4 (long noble breath)
+        ],
+        celesta: [
+          { f: 1661.22, delay: 7.2, pan: 0.35 }, // G#6 (luminous shimmer)
+        ],
+        harp: [146.83, 220.00, 329.63, 415.30, 554.37], // D3, A3, E4, G#4, C#5
+        // Single restrained tuned bronze/anvil chime strike with long spatial tail
+        metallicChime: { f: 880.0, delay: 2.2, pan: 0.05 },
+        granularTexture: { f: 1318.51, delay: 4.0, pan: -0.3 },
+      },
+
+      // =====================================================================
+      // MOVEMENT 6: SERENITY (Dissolve back into silence & perfect loop)
+      // "The project takes shape; quiet peace and contemplation under open skies."
+      // Open harmony: Asus4(add9) -> Dadd9 (A1, E2, A2, B2, D3, F#3)
+      // Loops seamlessly back to Movement 1 (Dadd9).
+      // =====================================================================
+      {
+        movement: 6,
+        title: "serenity",
+        bassFreq: 55.00, // A1 resolving gently
+        bassType: "double_bass" as const,
+        synthPad: [110.00, 164.81, 220.00, 246.94], // A2, E3, A3, B3 (whispering analog air)
+        chamberStrings: [], // Strings have faded away
+        hybridStrings: [
+          { f: 110.00, delay: 2.0, pan: 0.18, vel: 0.84, fretNoise: 0.55 },  // A2
+          { f: 146.83, delay: 5.8, pan: -0.15, vel: 0.88, fretNoise: 0.60 }, // D3
+          { f: 185.00, delay: 9.6, pan: 0.10, vel: 0.80, fretNoise: 0.50 },  // F#3 (serene conclusion)
+        ],
+        feltPiano: [
+          { f: 293.66, delay: 3.5, pan: -0.12, vel: 0.80 }, // D4 (distant, intimate)
+          { f: 220.00, delay: 7.8, pan: 0.15, vel: 0.78 },  // A3
+        ],
+        woodenFlute: [],
+        celesta: [],
+        harp: [],
+        metallicChime: null,
+        granularTexture: null,
+      },
     ];
 
-    const CHORD_DURATION = 9.0; // 9 segundos por acorde com 3.5s de crossfade
+    const MOVEMENT_DURATION = 14.8; // Duração de cada movimento com cauda longa de decaimento
+    const MOVEMENT_INTERVAL = 11.5; // Intervalo para o próximo movimento (~3.3s de crossfade natural)
     this.currentChordIndex = 0;
 
-    const playNextChord = () => {
+    const playNextMovement = () => {
       if (!this.isMusicPlaying || !this.ctx) return;
 
-      const chordNotes = chords[this.currentChordIndex];
-      this.currentChordIndex = (this.currentChordIndex + 1) % chords.length;
+      const current = cinematicMovements[this.currentChordIndex];
+      this.currentChordIndex = (this.currentChordIndex + 1) % cinematicMovements.length;
 
-      this.triggerAmbientChord(chordNotes, CHORD_DURATION);
+      this.triggerCinematicMovement(current, MOVEMENT_DURATION);
     };
 
-    // Toca o primeiro imediatamente
-    playNextChord();
+    // Inicia imediatamente o Movimento 1 (Curiosity)
+    playNextMovement();
 
-    // Agenda os próximos suavemente
-    this.ambientTimer = window.setInterval(playNextChord, (CHORD_DURATION - 2.8) * 1000);
+    // Agenda os próximos movimentos em ciclo contínuo sem cortes
+    this.ambientTimer = window.setInterval(playNextMovement, MOVEMENT_INTERVAL * 1000);
+
+    // Pulso muito sutil e contemplativo em 74 BPM (~1.62s = 2 tempos)
+    this.pulseStep = 0;
+    const PULSE_INTERVAL_MS = Math.round((60 / 74) * 2 * 1000);
+    this.pulseTimer = window.setInterval(() => {
+      if (!this.isMusicPlaying || !this.ctx) return;
+      this.triggerTechPulse();
+    }, PULSE_INTERVAL_MS);
   }
 
-  private triggerAmbientChord(frequencies: number[], duration: number): void {
+  private triggerCinematicMovement(
+    m: {
+      movement: number;
+      title: string;
+      bassFreq: number;
+      bassType: "double_bass" | "cello_bowed";
+      synthPad: number[];
+      chamberStrings: number[];
+      hybridStrings: { f: number; delay: number; pan: number; vel: number; fretNoise: number }[];
+      feltPiano: { f: number; delay: number; pan: number; vel: number }[];
+      woodenFlute: { f: number; delay: number; pan: number; vel: number }[];
+      celesta: { f: number; delay: number; pan: number }[];
+      harp: number[];
+      metallicChime: { f: number; delay: number; pan: number } | null;
+      granularTexture: { f: number; delay: number; pan: number } | null;
+    },
+    duration: number,
+  ): void {
     if (!this.ctx || !this.musicGain) return;
 
-    const now = this.ctx.currentTime;
-    const oscs: OscillatorNode[] = [];
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const oscs: (OscillatorNode | AudioBufferSourceNode)[] = [];
 
-    // Nó de ganho geral deste acorde
-    const chordGain = this.ctx.createGain();
-    const filter = this.ctx.createBiquadFilter();
+    // 1. BAIXO ACÚSTICO / CELLO / DOUBLE BASS (Profundidade orgânica e ancoragem)
+    if (m.bassFreq > 0) {
+      this.triggerBowedCelloBass(m.bassFreq, now, duration, m.bassType === "double_bass");
+    }
 
-    // Filtro analógico passa-baixas com abertura lenta
-    filter.type = "lowpass";
-    filter.frequency.setValueAtTime(450, now);
-    filter.frequency.linearRampToValueAtTime(1400, now + duration * 0.4);
-    filter.frequency.exponentialRampToValueAtTime(500, now + duration);
-    filter.Q.setValueAtTime(2.5, now);
+    // 2. SYNTH PAD ANALÓGICO QUENTE (Ar respirante atrás dos instrumentos acústicos)
+    if (m.synthPad.length > 0) {
+      this.triggerAnalogWarmSynth(m.synthPad, now, duration, oscs);
+    }
 
-    // Envelope de ganho lento e suave (sem cliques)
-    chordGain.gain.setValueAtTime(0.0001, now);
-    chordGain.gain.linearRampToValueAtTime(0.22, now + 2.8);
-    chordGain.gain.setValueAtTime(0.22, now + duration - 2.8);
-    chordGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    // 3. CORDAS DE CÂMARA (VIOLA & CELLO SUSTAINS)
+    if (m.chamberStrings.length > 0) {
+      this.triggerChamberStringSustain(m.chamberStrings, now, duration, oscs);
+    }
 
-    filter.connect(chordGain);
-    chordGain.connect(this.musicGain);
-
-    // Osciladores para cada nota do acorde
-    frequencies.forEach((freq, idx) => {
-      if (!this.ctx) return;
-
-      const osc = this.ctx.createOscillator();
-      // Alterna entre senoidal pura e triângulo para dar calor analógico
-      osc.type = idx % 2 === 0 ? "sine" : "triangle";
-
-      // Micro detune estéreo para espacialidade
-      const detune = (idx - 2) * 5;
-      osc.frequency.setValueAtTime(freq, now);
-      osc.detune.setValueAtTime(detune, now);
-
-      osc.connect(filter);
-      osc.start(now);
-      osc.stop(now + duration + 0.1);
-      oscs.push(osc);
+    // 4. INSTRUMENTO PRINCIPAL: HYBRID METALLIC-STRING ACOUSTIC (Assinatura Sonora CALDRA)
+    m.hybridStrings.forEach((s) => {
+      this.triggerHybridAcousticString(s.f, now + s.delay, s.pan, s.vel, s.fretNoise);
     });
 
-    const voice = { oscs, gain: chordGain };
-    this.activeVoices.push(voice);
+    // 5. FELT PIANO (Íntimo, martelo suave de feltro sobre cordas)
+    m.feltPiano.forEach((p) => {
+      this.triggerFeltPianoNote(p.f, now + p.delay, p.pan, p.vel);
+    });
 
-    // Limpeza após o fim do acorde
-    window.setTimeout(() => {
-      const idx = this.activeVoices.indexOf(voice);
-      if (idx !== -1) {
-        this.activeVoices.splice(idx, 1);
+    // 6. LOW WOODEN FLUTE (Flauta baixa de madeira com ar e respiração sutil)
+    m.woodenFlute.forEach((wf) => {
+      this.triggerWoodenFlute(wf.f, now + wf.delay, wf.pan, wf.vel);
+    });
+
+    // 7. CELESTA / GLOCKENSPIEL (Pontos de luz pura e descoberta)
+    m.celesta.forEach((c) => {
+      this.triggerCelestaNote(c.f, now + c.delay, c.pan);
+    });
+
+    // 8. SPARSE HARP (Dedilhado em cascata orgânica)
+    if (m.harp.length > 0) {
+      this.triggerSparseHarp(m.harp, now + 3.2, 0.22);
+    }
+
+    // 9. RESSONÂNCIA METÁLICA RESTRITA (Bronze / Bigorna Afinada com cauda longa)
+    if (m.metallicChime) {
+      this.triggerResonantMetallicPercussion(m.metallicChime.f, now + m.metallicChime.delay, m.metallicChime.pan);
+    }
+
+    // 10. TEXTURA GRANULAR & REFLEXOS DE AÇO
+    if (m.granularTexture) {
+      this.triggerGranularAmbientTexture(m.granularTexture.f, now + m.granularTexture.delay, m.granularTexture.pan);
+    }
+
+    // Limpeza de vozes contínuas
+    if (oscs.length > 0) {
+      window.setTimeout(() => {
+        oscs.forEach((o) => {
+          try {
+            if ("stop" in o && typeof o.stop === "function") o.stop();
+          } catch (e) {
+            void e;
+          }
+        });
+      }, (duration + 1.2) * 1000);
+    }
+  }
+
+  // =========================================================================
+  // INSTRUMENTOS CINEMATOGRÁFICOS DA CALDRA (SÍNTESE FÍSICO-ACÚSTICA NATIVA)
+  // =========================================================================
+
+  /**
+   * 1. ASSINATURA SONORA DA CALDRA: HYBRID METALLIC-STRING ACOUSTIC INSTRUMENT
+   * - Caixa de ressonância de madeira nobre (formantes duplos de corpo em 125 Hz e 420 Hz)
+   * - Cordas metálicas de afinação baixa (wound steel strings) com brilho nobre
+   * - Transiente de atrito tátil do dedo e ruído de traste (fret/finger noise)
+   * - Afinação baixa, micro-imperfeições humanas e decaimento sustentado de 4.2s
+   */
+  private triggerHybridAcousticString(
+    frequency: number,
+    startTime: number,
+    pan: number,
+    velocity = 1.0,
+    fretNoise = 0.6,
+  ): void {
+    if (!this.ctx || !this.musicGain || !this.isMusicPlaying) return;
+
+    try {
+      const ctx = this.ctx;
+      const noteGain = ctx.createGain();
+
+      // Oscilador 1: Fundamental da corda metálica (senóide quente e densa)
+      const oscFundamental = ctx.createOscillator();
+      oscFundamental.type = "sine";
+      oscFundamental.frequency.setValueAtTime(frequency, startTime);
+
+      // Oscilador 2: Segundo harmônico metálico (triângulo ligeiramente desarmônico, típico de corda de aço grossa)
+      const oscMetallicOvertones = ctx.createOscillator();
+      oscMetallicOvertones.type = "triangle";
+      oscMetallicOvertones.frequency.setValueAtTime(frequency * 2.003, startTime);
+
+      // Oscilador 3: Terceiro harmônico cantante (brilho do enrolamento de bronze/aço)
+      const oscHarmonic3 = ctx.createOscillator();
+      oscHarmonic3.type = "sine";
+      oscHarmonic3.frequency.setValueAtTime(frequency * 3.008, startTime);
+
+      // Filtro de Ressonância da Caixa de Madeira (Cavidade acústica e tampo harmônico)
+      const bodyFilter = ctx.createBiquadFilter();
+      bodyFilter.type = "bandpass";
+      bodyFilter.frequency.setValueAtTime(Math.max(125, frequency * 1.05), startTime);
+      bodyFilter.Q.setValueAtTime(2.8, startTime);
+
+      // Filtro de Brilho da Corda Metálica (abre no ataque do dedilhado e assenta na madeira)
+      const stringFilter = ctx.createBiquadFilter();
+      stringFilter.type = "lowpass";
+      stringFilter.frequency.setValueAtTime(3200 * velocity, startTime);
+      stringFilter.frequency.exponentialRampToValueAtTime(
+        Math.max(450, frequency * 2.2),
+        startTime + 0.45,
+      );
+      stringFilter.frequency.exponentialRampToValueAtTime(
+        Math.max(220, frequency * 1.1),
+        startTime + 3.2,
+      );
+      stringFilter.Q.setValueAtTime(1.5, startTime);
+
+      // Ganhos balanceados das parciais metálicas
+      const metallicGain = ctx.createGain();
+      metallicGain.gain.setValueAtTime(0.35, startTime);
+      oscMetallicOvertones.connect(metallicGain);
+
+      const harmonic3Gain = ctx.createGain();
+      harmonic3Gain.gain.setValueAtTime(0.18, startTime);
+      oscHarmonic3.connect(harmonic3Gain);
+
+      // Conexão dos harmônicos através dos filtros de corpo de madeira
+      oscFundamental.connect(stringFilter);
+      metallicGain.connect(stringFilter);
+      harmonic3Gain.connect(stringFilter);
+      stringFilter.connect(bodyFilter);
+      bodyFilter.connect(noteGain);
+      stringFilter.connect(noteGain); // Linha direta para preservar definição metálica limpa
+
+      // TRANSIENTE TÁTIL DE DEDILHADO E RUÍDO DE TRASTE (Fret / Finger Scrape)
+      // Produz o som físico do dedo desferindo a corda de aço e raspando o traste de metal
+      if (fretNoise > 0.1) {
+        const scrapeOsc = ctx.createOscillator();
+        const scrapeGain = ctx.createGain();
+        const scrapeFilter = ctx.createBiquadFilter();
+
+        scrapeOsc.type = "sawtooth";
+        scrapeOsc.frequency.setValueAtTime(2800, startTime);
+        scrapeOsc.frequency.exponentialRampToValueAtTime(1100, startTime + 0.022);
+
+        scrapeFilter.type = "bandpass";
+        scrapeFilter.frequency.setValueAtTime(2200, startTime);
+        scrapeFilter.Q.setValueAtTime(4.0, startTime);
+
+        scrapeGain.gain.setValueAtTime(0.0001, startTime);
+        scrapeGain.gain.linearRampToValueAtTime(0.038 * fretNoise, startTime + 0.004);
+        scrapeGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.026);
+
+        scrapeOsc.connect(scrapeFilter);
+        scrapeFilter.connect(scrapeGain);
+        scrapeGain.connect(noteGain);
+
+        scrapeOsc.start(startTime);
+        scrapeOsc.stop(startTime + 0.035);
       }
-    }, (duration + 0.5) * 1000);
+
+      // Envelope dinâmico de corda dedilhada com cauda longa e relaxante (4.2 segundos)
+      const peakGain = 0.096 * velocity;
+      noteGain.gain.setValueAtTime(0.0001, startTime);
+      noteGain.gain.linearRampToValueAtTime(peakGain, startTime + 0.018);
+      noteGain.gain.exponentialRampToValueAtTime(peakGain * 0.48, startTime + 0.8);
+      noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 4.2);
+
+      // Panorâmica estéreo imersiva e envios espaciais (Dolby Atmos / 3D Space)
+      if (typeof ctx.createStereoPanner === "function") {
+        const panner = ctx.createStereoPanner();
+        panner.pan.setValueAtTime(pan, startTime);
+        noteGain.connect(panner);
+        panner.connect(this.musicGain);
+
+        if (this.musicReverbNode) {
+          const revSend = ctx.createGain();
+          revSend.gain.setValueAtTime(0.44, startTime);
+          panner.connect(revSend);
+          revSend.connect(this.musicReverbNode);
+        }
+        if (this.musicDelayNode) {
+          const delSend = ctx.createGain();
+          delSend.gain.setValueAtTime(0.22, startTime);
+          panner.connect(delSend);
+          delSend.connect(this.musicDelayNode);
+        }
+      } else {
+        noteGain.connect(this.musicGain);
+        if (this.musicReverbNode) noteGain.connect(this.musicReverbNode);
+      }
+
+      oscFundamental.start(startTime);
+      oscMetallicOvertones.start(startTime);
+      oscHarmonic3.start(startTime);
+
+      oscFundamental.stop(startTime + 4.4);
+      oscMetallicOvertones.stop(startTime + 4.4);
+      oscHarmonic3.stop(startTime + 4.4);
+    } catch (e) {
+      void e;
+    }
+  }
+
+  /**
+   * 2. FELT PIANO (Piano com Martelo de Feltro Macio)
+   * Timbre íntimo, quente e aveludado, com espaço generoso entre notas.
+   */
+  private triggerFeltPianoNote(
+    frequency: number,
+    startTime: number,
+    pan: number,
+    velocity = 1.0,
+  ): void {
+    if (!this.ctx || !this.musicGain || !this.isMusicPlaying) return;
+
+    try {
+      const ctx = this.ctx;
+      const noteGain = ctx.createGain();
+
+      const osc1 = ctx.createOscillator();
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(frequency, startTime);
+
+      const osc2 = ctx.createOscillator();
+      osc2.type = "triangle";
+      osc2.frequency.setValueAtTime(frequency * 2, startTime);
+
+      const feltFilter = ctx.createBiquadFilter();
+      feltFilter.type = "lowpass";
+      feltFilter.frequency.setValueAtTime(420, startTime);
+      feltFilter.frequency.exponentialRampToValueAtTime(
+        Math.min(1800, frequency * 2.5),
+        startTime + 0.04,
+      );
+      feltFilter.frequency.exponentialRampToValueAtTime(
+        Math.max(300, frequency * 1.05),
+        startTime + 2.0,
+      );
+      feltFilter.Q.setValueAtTime(1.2, startTime);
+
+      const osc2Gain = ctx.createGain();
+      osc2Gain.gain.setValueAtTime(0.24, startTime);
+      osc2.connect(osc2Gain);
+      osc2Gain.connect(feltFilter);
+
+      osc1.connect(feltFilter);
+      feltFilter.connect(noteGain);
+
+      const peakGain = 0.088 * velocity;
+      noteGain.gain.setValueAtTime(0.0001, startTime);
+      noteGain.gain.linearRampToValueAtTime(peakGain, startTime + 0.026);
+      noteGain.gain.exponentialRampToValueAtTime(peakGain * 0.40, startTime + 0.7);
+      noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 3.6);
+
+      if (typeof ctx.createStereoPanner === "function") {
+        const panner = ctx.createStereoPanner();
+        panner.pan.setValueAtTime(pan, startTime);
+        noteGain.connect(panner);
+        panner.connect(this.musicGain);
+
+        if (this.musicReverbNode) {
+          const revSend = ctx.createGain();
+          revSend.gain.setValueAtTime(0.48, startTime);
+          panner.connect(revSend);
+          revSend.connect(this.musicReverbNode);
+        }
+      } else {
+        noteGain.connect(this.musicGain);
+      }
+
+      osc1.start(startTime);
+      osc2.start(startTime);
+      osc1.stop(startTime + 3.8);
+      osc2.stop(startTime + 3.8);
+    } catch (e) {
+      void e;
+    }
+  }
+
+  /**
+   * 3. LOW CELLO & DOUBLE BASS (Arco Acústico Lento & Ressonância de Madeira)
+   * Fricção suave de crina de cavalo no arco, vibrato tardio expressivo e ancoragem nobre.
+   */
+  private triggerBowedCelloBass(
+    frequency: number,
+    startTime: number,
+    duration: number,
+    isDoubleBass = false,
+  ): void {
+    if (!this.ctx || !this.musicGain || !this.isMusicPlaying) return;
+
+    try {
+      const ctx = this.ctx;
+      const bassGain = ctx.createGain();
+      const bodyFilter = ctx.createBiquadFilter();
+
+      const oscBody = ctx.createOscillator();
+      oscBody.type = "sawtooth";
+      oscBody.frequency.setValueAtTime(frequency, startTime);
+
+      // Micro-vibrato tardio (entra suavemente após 0.9s de arco sustentado)
+      const vibratoOsc = ctx.createOscillator();
+      const vibratoGain = ctx.createGain();
+      vibratoOsc.frequency.setValueAtTime(4.6, startTime);
+      vibratoGain.gain.setValueAtTime(0.0001, startTime);
+      vibratoGain.gain.linearRampToValueAtTime(1.8, startTime + 1.2);
+      vibratoOsc.connect(vibratoGain);
+      vibratoGain.connect(oscBody.frequency);
+      vibratoOsc.start(startTime);
+      vibratoOsc.stop(startTime + duration);
+
+      // Formante de caixa de cello / contrabaixo acústico
+      bodyFilter.type = "lowpass";
+      bodyFilter.frequency.setValueAtTime(isDoubleBass ? 280 : 420, startTime);
+      bodyFilter.Q.setValueAtTime(1.8, startTime);
+
+      // Ataque de arco lento e orgânico (1.4s de crescendo)
+      const peak = isDoubleBass ? 0.082 : 0.075;
+      bassGain.gain.setValueAtTime(0.0001, startTime);
+      bassGain.gain.linearRampToValueAtTime(peak, startTime + 1.4);
+      bassGain.gain.setValueAtTime(peak, startTime + duration - 2.8);
+      bassGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+      oscBody.connect(bodyFilter);
+      bodyFilter.connect(bassGain);
+      bassGain.connect(this.musicGain);
+
+      if (this.musicReverbNode) {
+        const revSend = ctx.createGain();
+        revSend.gain.setValueAtTime(0.38, startTime);
+        bassGain.connect(revSend);
+        revSend.connect(this.musicReverbNode);
+      }
+
+      oscBody.start(startTime);
+      oscBody.stop(startTime + duration + 0.1);
+    } catch (e) {
+      void e;
+    }
+  }
+
+  /**
+   * 4. SOFT VIOLA & CELLO SUSTAINS (Chamber Strings)
+   * Cordas de câmara suaves, quentes e respirantes sem tom dramático ou piegas.
+   */
+  private triggerChamberStringSustain(
+    chord: number[],
+    startTime: number,
+    duration: number,
+    voiceCollector: (OscillatorNode | AudioBufferSourceNode)[],
+  ): void {
+    if (!this.ctx || !this.musicGain || !this.isMusicPlaying) return;
+
+    try {
+      const ctx = this.ctx;
+      const stringsGain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(620, startTime);
+      filter.Q.setValueAtTime(1.1, startTime);
+
+      stringsGain.gain.setValueAtTime(0.0001, startTime);
+      stringsGain.gain.linearRampToValueAtTime(0.062, startTime + 2.8);
+      stringsGain.gain.setValueAtTime(0.062, startTime + duration - 3.2);
+      stringsGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+      filter.connect(stringsGain);
+      stringsGain.connect(this.musicGain);
+
+      if (this.musicReverbNode) {
+        const revSend = ctx.createGain();
+        revSend.gain.setValueAtTime(0.50, startTime);
+        stringsGain.connect(revSend);
+        revSend.connect(this.musicReverbNode);
+      }
+
+      chord.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(freq, startTime);
+        const detune = (idx % 2 === 0 ? 1 : -1) * 3.8;
+        osc.detune.setValueAtTime(detune, startTime);
+
+        osc.connect(filter);
+        osc.start(startTime);
+        osc.stop(startTime + duration + 0.1);
+        voiceCollector.push(osc);
+      });
+    } catch (e) {
+      void e;
+    }
+  }
+
+  /**
+   * 5. LOW WOODEN FLUTE (Flauta Baixa de Madeira)
+   * Timbre ancestral e suave com ruído de ar e ataque expressivo.
+   */
+  private triggerWoodenFlute(
+    frequency: number,
+    startTime: number,
+    pan: number,
+    velocity = 1.0,
+  ): void {
+    if (!this.ctx || !this.musicGain || !this.isMusicPlaying) return;
+
+    try {
+      const ctx = this.ctx;
+      const fluteGain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+
+      // Oscilador de onda triangular suave
+      const osc = ctx.createOscillator();
+      osc.type = "triangle";
+      // Micro-slide ascendente na embocadura típico de flauta de madeira
+      osc.frequency.setValueAtTime(frequency * 0.985, startTime);
+      osc.frequency.exponentialRampToValueAtTime(frequency, startTime + 0.09);
+
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(frequency, startTime);
+      filter.Q.setValueAtTime(2.8, startTime);
+
+      // Ruído de sopro de ar (Breath noise)
+      const noiseOsc = ctx.createOscillator();
+      const noiseGain = ctx.createGain();
+      noiseOsc.type = "sine";
+      noiseOsc.frequency.setValueAtTime(frequency * 3.1, startTime);
+      noiseGain.gain.setValueAtTime(0.015, startTime);
+      noiseOsc.connect(noiseGain);
+      noiseGain.connect(filter);
+
+      const peak = 0.065 * velocity;
+      fluteGain.gain.setValueAtTime(0.0001, startTime);
+      fluteGain.gain.linearRampToValueAtTime(peak, startTime + 0.35);
+      fluteGain.gain.setValueAtTime(peak, startTime + 1.8);
+      fluteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 2.8);
+
+      osc.connect(filter);
+      filter.connect(fluteGain);
+
+      if (typeof ctx.createStereoPanner === "function") {
+        const panner = ctx.createStereoPanner();
+        panner.pan.setValueAtTime(pan, startTime);
+        fluteGain.connect(panner);
+        panner.connect(this.musicGain);
+
+        if (this.musicReverbNode) {
+          const revSend = ctx.createGain();
+          revSend.gain.setValueAtTime(0.55, startTime);
+          panner.connect(revSend);
+          revSend.connect(this.musicReverbNode);
+        }
+      } else {
+        fluteGain.connect(this.musicGain);
+      }
+
+      osc.start(startTime);
+      noiseOsc.start(startTime);
+      osc.stop(startTime + 3.0);
+      noiseOsc.stop(startTime + 3.0);
+    } catch (e) {
+      void e;
+    }
+  }
+
+  /**
+   * 6. CELESTA (Cristalina & Precisa)
+   */
+  private triggerCelestaNote(frequency: number, startTime: number, pan: number): void {
+    if (!this.ctx || !this.musicGain || !this.isMusicPlaying) return;
+
+    try {
+      const ctx = this.ctx;
+      const noteGain = ctx.createGain();
+
+      const bellOsc1 = ctx.createOscillator();
+      bellOsc1.type = "sine";
+      bellOsc1.frequency.setValueAtTime(frequency, startTime);
+
+      const bellOsc2 = ctx.createOscillator();
+      bellOsc2.type = "sine";
+      bellOsc2.frequency.setValueAtTime(frequency * 2.01, startTime);
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = "highpass";
+      filter.frequency.setValueAtTime(600, startTime);
+
+      noteGain.gain.setValueAtTime(0.0001, startTime);
+      noteGain.gain.linearRampToValueAtTime(0.052, startTime + 0.006);
+      noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 2.5);
+
+      bellOsc1.connect(filter);
+      bellOsc2.connect(filter);
+      filter.connect(noteGain);
+
+      if (typeof ctx.createStereoPanner === "function") {
+        const panner = ctx.createStereoPanner();
+        panner.pan.setValueAtTime(pan, startTime);
+        noteGain.connect(panner);
+        panner.connect(this.musicGain);
+
+        if (this.musicReverbNode) {
+          const revSend = ctx.createGain();
+          revSend.gain.setValueAtTime(0.65, startTime);
+          panner.connect(revSend);
+          revSend.connect(this.musicReverbNode);
+        }
+      } else {
+        noteGain.connect(this.musicGain);
+      }
+
+      bellOsc1.start(startTime);
+      bellOsc2.start(startTime);
+      bellOsc1.stop(startTime + 2.6);
+      bellOsc2.stop(startTime + 2.6);
+    } catch (e) {
+      void e;
+    }
+  }
+
+  /**
+   * 7. SPARSE HARP (Harpa Dedilhada Discreta)
+   */
+  private triggerSparseHarp(notes: number[], startTime: number, panBase: number): void {
+    if (!this.ctx || !this.musicGain || !this.isMusicPlaying) return;
+
+    notes.forEach((freq, idx) => {
+      try {
+        const ctx = this.ctx!;
+        const noteTime = startTime + idx * 0.09;
+        const osc = ctx.createOscillator();
+        const noteGain = ctx.createGain();
+        const filter = ctx.createBiquadFilter();
+
+        osc.type = "triangle";
+        osc.frequency.setValueAtTime(freq, noteTime);
+
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(1350, noteTime);
+        filter.Q.setValueAtTime(1.6, noteTime);
+
+        noteGain.gain.setValueAtTime(0.0001, noteTime);
+        noteGain.gain.linearRampToValueAtTime(0.040, noteTime + 0.012);
+        noteGain.gain.exponentialRampToValueAtTime(0.0001, noteTime + 1.8);
+
+        osc.connect(filter);
+        filter.connect(noteGain);
+
+        if (typeof ctx.createStereoPanner === "function") {
+          const panner = ctx.createStereoPanner();
+          const pan = panBase + (idx - notes.length / 2) * 0.14;
+          panner.pan.setValueAtTime(Math.max(-0.6, Math.min(0.6, pan)), noteTime);
+          noteGain.connect(panner);
+          panner.connect(this.musicGain);
+
+          if (this.musicReverbNode) {
+            const revSend = ctx.createGain();
+            revSend.gain.setValueAtTime(0.48, noteTime);
+            panner.connect(revSend);
+            revSend.connect(this.musicReverbNode);
+          }
+        } else {
+          noteGain.connect(this.musicGain);
+        }
+
+        osc.start(noteTime);
+        osc.stop(noteTime + 1.9);
+      } catch (e) {
+        void e;
+      }
+    });
+  }
+
+  /**
+   * 8. WARM ANALOG SYNTHESIZER (Pad Quente & Acolhedor)
+   */
+  private triggerAnalogWarmSynth(
+    chord: number[],
+    startTime: number,
+    duration: number,
+    voiceCollector: (OscillatorNode | AudioBufferSourceNode)[],
+  ): void {
+    if (!this.ctx || !this.musicGain || !this.isMusicPlaying) return;
+
+    try {
+      const ctx = this.ctx;
+      const padGain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(500, startTime);
+      filter.frequency.linearRampToValueAtTime(1250, startTime + duration * 0.45);
+      filter.frequency.exponentialRampToValueAtTime(450, startTime + duration);
+      filter.Q.setValueAtTime(1.5, startTime);
+
+      padGain.gain.setValueAtTime(0.0001, startTime);
+      padGain.gain.linearRampToValueAtTime(0.10, startTime + 2.6);
+      padGain.gain.setValueAtTime(0.10, startTime + duration - 3.2);
+      padGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+      filter.connect(padGain);
+      padGain.connect(this.musicGain);
+
+      if (this.musicReverbNode) {
+        const revSend = ctx.createGain();
+        revSend.gain.setValueAtTime(0.36, startTime);
+        padGain.connect(revSend);
+        revSend.connect(this.musicReverbNode);
+      }
+
+      chord.forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        osc.type = idx % 2 === 0 ? "sine" : "triangle";
+        osc.frequency.setValueAtTime(freq, startTime);
+        const detune = (idx - chord.length / 2) * 3.5;
+        osc.detune.setValueAtTime(detune, startTime);
+
+        osc.connect(filter);
+        osc.start(startTime);
+        osc.stop(startTime + duration + 0.1);
+        voiceCollector.push(osc);
+      });
+    } catch (e) {
+      void e;
+    }
+  }
+
+  /**
+   * 9. RESTRAINED RESONANT METALLIC PERCUSSION (Tuned Bronze / Anvil Chime)
+   * Toque único e majestoso que ecoa longamente no espaço tridimensional.
+   */
+  private triggerResonantMetallicPercussion(frequency: number, startTime: number, pan: number): void {
+    if (!this.ctx || !this.musicGain || !this.isMusicPlaying) return;
+
+    try {
+      const ctx = this.ctx;
+      const chimeGain = ctx.createGain();
+
+      const oscMode1 = ctx.createOscillator();
+      oscMode1.type = "sine";
+      oscMode1.frequency.setValueAtTime(frequency, startTime);
+
+      const oscMode2 = ctx.createOscillator();
+      oscMode2.type = "sine";
+      oscMode2.frequency.setValueAtTime(frequency * 2.756, startTime); // modo inharmônico de metal
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(frequency * 1.5, startTime);
+      filter.Q.setValueAtTime(4.5, startTime);
+
+      chimeGain.gain.setValueAtTime(0.0001, startTime);
+      chimeGain.gain.linearRampToValueAtTime(0.052, startTime + 0.008);
+      chimeGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 4.8); // cauda longa
+
+      oscMode1.connect(chimeGain);
+      oscMode2.connect(filter);
+      filter.connect(chimeGain);
+
+      if (typeof ctx.createStereoPanner === "function") {
+        const panner = ctx.createStereoPanner();
+        panner.pan.setValueAtTime(pan, startTime);
+        chimeGain.connect(panner);
+        panner.connect(this.musicGain);
+
+        if (this.musicReverbNode) {
+          const revSend = ctx.createGain();
+          revSend.gain.setValueAtTime(0.70, startTime); // envio generoso para o reverb
+          panner.connect(revSend);
+          revSend.connect(this.musicReverbNode);
+        }
+      } else {
+        chimeGain.connect(this.musicGain);
+      }
+
+      oscMode1.start(startTime);
+      oscMode2.start(startTime);
+      oscMode1.stop(startTime + 5.0);
+      oscMode2.stop(startTime + 5.0);
+    } catch (e) {
+      void e;
+    }
+  }
+
+  /**
+   * 10. GRANULAR AMBIENT TEXTURE (Reflexos Sutis de Luz em Aço)
+   */
+  private triggerGranularAmbientTexture(frequency: number, startTime: number, pan: number): void {
+    if (!this.ctx || !this.musicGain || !this.isMusicPlaying) return;
+
+    try {
+      const ctx = this.ctx;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(frequency, startTime);
+
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(frequency, startTime);
+      filter.Q.setValueAtTime(4.2, startTime);
+
+      gain.gain.setValueAtTime(0.0001, startTime);
+      gain.gain.linearRampToValueAtTime(0.022, startTime + 0.8);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startTime + 3.0);
+
+      osc.connect(filter);
+      filter.connect(gain);
+
+      if (typeof ctx.createStereoPanner === "function") {
+        const panner = ctx.createStereoPanner();
+        panner.pan.setValueAtTime(pan, startTime);
+        gain.connect(panner);
+        panner.connect(this.musicGain);
+
+        if (this.musicReverbNode) {
+          const revSend = ctx.createGain();
+          revSend.gain.setValueAtTime(0.55, startTime);
+          panner.connect(revSend);
+          revSend.connect(this.musicReverbNode);
+        }
+      } else {
+        gain.connect(this.musicGain);
+      }
+
+      osc.start(startTime);
+      osc.stop(startTime + 3.2);
+    } catch (e) {
+      void e;
+    }
+  }
+
+  /**
+   * Pulso Tecnológico de Precisão (Clock de Engenharia Discreto)
+   */
+  private triggerTechPulse(): void {
+    if (!this.ctx || !this.musicGain || !this.isMusicPlaying) return;
+
+    try {
+      const ctx = this.ctx;
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+
+      this.pulseStep++;
+      const pan = this.pulseStep % 2 === 0 ? -0.18 : 0.18;
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(1300, now);
+      osc.frequency.exponentialRampToValueAtTime(650, now + 0.022);
+
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(1050, now);
+      filter.Q.setValueAtTime(2.8, now);
+
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.linearRampToValueAtTime(0.016, now + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.028);
+
+      osc.connect(filter);
+      filter.connect(gain);
+
+      if (typeof ctx.createStereoPanner === "function") {
+        const panner = ctx.createStereoPanner();
+        panner.pan.setValueAtTime(pan, now);
+        gain.connect(panner);
+        panner.connect(this.musicGain);
+      } else {
+        gain.connect(this.musicGain);
+      }
+
+      osc.start(now);
+      osc.stop(now + 0.035);
+    } catch (e) {
+      void e;
+    }
   }
 }
 

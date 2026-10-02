@@ -13,6 +13,7 @@ import { PaywallDialog } from "./Paywall";
 import { AuroraBackground } from "./Aurora";
 import { ShellActionsProvider } from "./ShellActions";
 import { triggerHaptic } from "@/lib/ui/haptics";
+import { AudioQuickControl } from "@/components/audio/AudioQuickControl";
 
 /** Rotas com fundo AURORA. O editor CHAMFER (desenho-2d) nunca entra aqui. */
 const AURORA_ROUTES = ["/", "/tracagem", "/escola", "/projetos", "/oficina", "/configuracoes"];
@@ -61,6 +62,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         {!immersive && !standalone && (
           <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
+            <AudioQuickControl />
             <button
               onClick={() => {
                 triggerHaptic("tap");

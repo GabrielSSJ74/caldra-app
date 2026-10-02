@@ -15,6 +15,8 @@ import { TECHNICAL_LIGHTING } from "@/lib/viz3d/technicalConfig";
 import {
   VISIBILITY_POLICY,
   compareSurfaceDepth,
+  deduplicateEdges,
+  filterEdgesForMode,
   projectLine,
   toCameraPoint,
   visibleLineSegments,
@@ -234,14 +236,19 @@ export function Wire3D({
       for (let i = 1; i + 1 < cs.length; i++) {
         const b = cs[i]!;
         const c = cs[i + 1]!;
+        const pA = { x: a.x * kk + panX, y: -a.y * kk + panY, z: a.z + bias };
+        const pB = { x: b.x * kk + panX, y: -b.y * kk + panY, z: b.z + bias };
+        const pC = { x: c.x * kk + panX, y: -c.y * kk + panY, z: c.z + bias };
+        const xs = [pA.x, pB.x, pC.x];
+        const ys = [pA.y, pB.y, pC.y];
         f.push({
           id: `face:${idx}:${i - 1}`,
           d: [a, b, c].map((p) => `${(p.x * kk + panX).toFixed(2)},${(-p.y * kk + panY).toFixed(2)}`).join(" "),
-          pts: [
-            { x: a.x * kk + panX, y: -a.y * kk + panY, z: a.z + bias },
-            { x: b.x * kk + panX, y: -b.y * kk + panY, z: b.z + bias },
-            { x: c.x * kk + panX, y: -c.y * kk + panY, z: c.z + bias },
-          ],
+          pts: [pA, pB, pC],
+          minX: Math.min(...xs),
+          maxX: Math.max(...xs),
+          minY: Math.min(...ys),
+          maxY: Math.max(...ys),
           minDepth,
           maxDepth,
           centerDepth,
@@ -256,26 +263,62 @@ export function Wire3D({
     // ordenação estável: empates resolvidos pelo índice, sem cintilação
     f.sort(compareSurfaceDepth);
 
-    const depthEpsilon = span * 1e-5;
-    const e = model.edges.flatMap((edge, index) =>
-      visibleLineSegments(
-        projectLine(`edge:${index}`, edge, cp, kk, panX, panY),
-        lineVisibility,
-        f,
-        depthEpsilon,
-      ),
-    );
-    const r = (model.refLines ?? []).flatMap((edge, index) =>
-      visibleLineSegments(
-        projectLine(`reference:${index}`, edge, cp, kk, panX, panY),
-        VISIBILITY_POLICY.reference,
-        f,
-        depthEpsilon,
-      ),
+    // 1. Filtragem global por modo de visualização 3D (Seções 4, 5, 6, 7):
+    // SOMB: 0 arestas (superfície contínua limpa)
+    // SOMB+AR: somente arestas reais/tecnicamente significativas (sem triangulação interna)
+    // ARAME: estrutura completa, incluindo malha matemática
+    const filtered = filterEdgesForMode(
+      model.edges,
+      model.edgeKinds,
+      model.edgeTags,
+      edgeMode,
     );
 
+    // 2. Deduplicação na camada de apresentação (Seção 14):
+    // Elimina arestas duplicadas, coincidentes ou sobrepostas geradas por faces adjacentes
+    const deduped = deduplicateEdges(
+      filtered.edges,
+      filtered.kinds,
+      filtered.tags,
+      filtered.originalIndices,
+      span * 1e-4,
+    );
+
+    // 3. Oclusão de profundidade e projeção (Seção 16):
+    // No modo SOMB+AR, a superfície frontal metálica oclui arestas traseiras (elimina linhas flutuantes)
+    const effectiveVisibility =
+      lineVisibility ?? (edgeMode === "shaded-edges" ? "real-occlusion" : "technical-persistent");
+
+    // Apenas faces externas e de borda atuam como oclusores para as linhas
+    const occluders = f.filter(
+      (tri) => (tri.pass === 2 || tri.pass === 3) && tri.pts[0] && tri.pts[1] && tri.pts[2],
+    );
+
+    const depthEpsilon = span * 1e-4;
+    const e = deduped.edges.flatMap((edge, index) => {
+      const origIndex = deduped.originalIndices[index] ?? index;
+      return visibleLineSegments(
+        projectLine(`edge:${origIndex}`, edge, cp, kk, panX, panY),
+        effectiveVisibility,
+        occluders,
+        depthEpsilon,
+      );
+    });
+
+    const shouldShowRefs = showRefLines ?? (edgeMode !== "shaded");
+    const r = shouldShowRefs
+      ? (model.refLines ?? []).flatMap((edge, index) =>
+          visibleLineSegments(
+            projectLine(`reference:${index}`, edge, cp, kk, panX, panY),
+            VISIBILITY_POLICY.reference,
+            occluders,
+            depthEpsilon,
+          ),
+        )
+      : [];
+
     return { faces: f, edges: e, refs: r };
-  }, [model, cam, fit, k, lineVisibility]);
+  }, [model, cam, fit, k, lineVisibility, edgeMode, showRefLines]);
 
   const maxDepth = Math.max(1, ...edges.flatMap((e) => [Math.abs(e.z1), Math.abs(e.z2)]));
 

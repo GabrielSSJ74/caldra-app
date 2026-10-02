@@ -21,6 +21,7 @@ import { Button } from "@/components/chameleon/ds";
 import { ReportProblemDialog } from "@/components/chameleon/ReportProblemDialog";
 import { BackupDialog } from "@/components/chameleon/BackupDialog";
 import { MySubscriptionPanel } from "@/components/chameleon/MySubscriptionPanel";
+import { AudioSettingsPanel } from "@/components/audio/AudioSettingsPanel";
 import { APP_VERSION, APP_BUILD } from "@/lib/app/version";
 import { cn } from "@/lib/utils";
 
@@ -196,6 +197,8 @@ function Configuracoes() {
 
       <ReportProblemDialog open={reportOpen} onOpenChange={setReportOpen} />
       <BackupDialog open={backupOpen} onOpenChange={setBackupOpen} />
+
+      <AudioSettingsPanel />
 
       <Panel className="space-y-4 p-4">
         <div>

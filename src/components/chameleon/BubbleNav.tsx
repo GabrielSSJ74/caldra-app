@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { useSettings } from "@/lib/settings/SettingsProvider";
 import { translate } from "@/lib/i18n/i18n";
 import { triggerHaptic } from "@/lib/ui/haptics";
+import { AudioManager } from "@/lib/audio/AudioManager";
 
 type Item = {
   to: string;
@@ -61,7 +62,10 @@ export function BubbleNav() {
               <Link
                 key={item.to}
                 to={item.to}
-                onClick={() => triggerHaptic(on ? "tap" : "selection")}
+                onClick={() => {
+                  triggerHaptic(on ? "tap" : "selection");
+                  AudioManager.play("ui_nav");
+                }}
                 aria-label={translate(language, ITEM_KEYS[itemIndex]!)}
                 className={cn(
                   cell,
@@ -104,6 +108,7 @@ export function BubbleNav() {
             type="button"
             onClick={() => {
               triggerHaptic("selection");
+              AudioManager.play("ui_nav");
               setMoreOpen(true);
             }}
             aria-label={translate(language, "more")}
@@ -170,6 +175,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
 
   const go = (e: Entry) => {
     triggerHaptic("tap");
+    AudioManager.play("ui_nav");
     onClose();
     if (e.action === "master") return openMaster();
     if (e.to) void navigate({ to: e.to });

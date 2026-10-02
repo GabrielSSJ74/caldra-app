@@ -17,6 +17,7 @@ import { SubscriptionProvider } from "@/lib/subscription/SubscriptionProvider";
 import { SettingsProvider } from "@/lib/settings/SettingsProvider";
 import { ProfileProvider } from "@/lib/profile/ProfileProvider";
 import { MaterialsProvider } from "@/lib/materials/MaterialsProvider";
+import { AudioProvider } from "@/lib/audio/AudioProvider";
 import { AppShell } from "@/components/chameleon/AppShell";
 import {
   CORE_ROUTES,
@@ -227,10 +228,12 @@ function RootComponent() {
           <SettingsProvider>
             <ProfileProvider>
               <MaterialsProvider>
-                <AppShell>
-                  <Outlet />
-                </AppShell>
-                <Toaster position="top-center" />
+                <AudioProvider>
+                  <AppShell>
+                    <Outlet />
+                  </AppShell>
+                  <Toaster position="top-center" />
+                </AudioProvider>
               </MaterialsProvider>
             </ProfileProvider>
           </SettingsProvider>

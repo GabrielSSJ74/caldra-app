@@ -189,6 +189,7 @@ import {
   shiftEntity,
   getEntityCenter,
 } from "@/lib/lab2d/cadModifiers";
+import { AudioManager } from "@/lib/audio/AudioManager";
 
 export type Tool =
   | "select"
@@ -279,6 +280,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
+
+  // Inicialização sonora CAD do CHAMFER (Seção 5)
+  useEffect(() => {
+    AudioManager.play("chamfer_init");
+  }, []);
 
   const [project, setProject] = useState<Project | null>(null);
   const [planId, setPlanId] = useState<string>("");
@@ -404,6 +411,81 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     gestureTimer.current = setTimeout(() => setGesturing(false), 140);
   }, []);
 
+  /* ------------------------------------------------------------ viewport e zoom */
+  const viewRef = useRef(view);
+  const pendingView = useRef<{ tx: number; ty: number; k: number } | null>(null);
+  const rafView = useRef(0);
+  if (!pendingView.current) viewRef.current = view;
+
+  /** Aplica a viewport no máximo uma vez por quadro — evita render por evento. */
+  const applyView = useCallback((nv: { tx: number; ty: number; k: number }) => {
+    viewRef.current = nv;
+    pendingView.current = nv;
+    if (rafView.current) return;
+    rafView.current = requestAnimationFrame(() => {
+      rafView.current = 0;
+      const next = pendingView.current;
+      pendingView.current = null;
+      if (next) setView(next);
+    });
+  }, []);
+
+  /* --------------------------------------------------------- coordenadas */
+  const toWorld = useCallback((ev: { clientX: number; clientY: number }): Vec2 => {
+    const r = svgRef.current?.getBoundingClientRect();
+    if (!r) return { x: 0, y: 0 };
+    const v = viewRef.current;
+    return {
+      x: (ev.clientX - r.left - v.tx) / v.k,
+      y: (ev.clientY - r.top - v.ty) / v.k,
+    };
+  }, []);
+
+  /** Enquadra uma caixa do desenho na viewport com escala proporcional, centralização exata e limites seguros. */
+  const fitBox = useCallback((box: Box | null) => {
+    if (!box) return;
+    if (
+      !Number.isFinite(box.minX) ||
+      !Number.isFinite(box.maxX) ||
+      !Number.isFinite(box.minY) ||
+      !Number.isFinite(box.maxY)
+    ) {
+      return;
+    }
+
+    const el = svgRef.current;
+    const r = el?.getBoundingClientRect();
+    const rw = canvasSize.w > 20 ? canvasSize.w : r?.width || el?.clientWidth || window.innerWidth || 800;
+    const rh = canvasSize.h > 20 ? canvasSize.h : r?.height || el?.clientHeight || window.innerHeight || 600;
+    if (rw <= 0 || rh <= 0) return;
+
+    const margin = Math.min(rw, rh) * 0.08 + 24;
+    const w = Math.max(box.maxX - box.minX, 1);
+    const h = Math.max(box.maxY - box.minY, 1);
+    const availW = Math.max(rw - margin * 2, 40);
+    const availH = Math.max(rh - margin * 2, 40);
+
+    const rawK = Math.min(availW / w, availH / h);
+    const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, rawK));
+
+    const cx = (box.minX + box.maxX) / 2;
+    const cy = (box.minY + box.maxY) / 2;
+
+    const nextView = {
+      k,
+      tx: rw / 2 - cx * k,
+      ty: rh / 2 - cy * k,
+    };
+
+    viewRef.current = nextView;
+    setView(nextView);
+  }, [canvasSize.w, canvasSize.h]);
+
+  const fitTo = useCallback((list: Entity[]) => fitBox(bbox(list)), [fitBox]);
+
+  /** Enquadra a moldura de trabalho inteira. */
+  const fitFrame = useCallback(() => fitBox(frameBox(frame)), [fitBox, frame]);
+
   /* ------------------------------------------- projeto, planos e autosave */
   useEffect(() => {
     if (!projectId) return;
@@ -419,7 +501,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setThickness(p.thickness ?? DEFAULT_PLAN_THICKNESS);
     past.current = [];
     future.current = [];
-  }, [projectId]);
+
+    // Auto-fit garantido na abertura do projeto ou plano
+    requestAnimationFrame(() => {
+      const b = bbox(plan.entities);
+      if (b && Number.isFinite(b.minX) && b.maxX - b.minX > 1) {
+        fitBox(b);
+      } else {
+        fitBox(frameBox(loadFrame()));
+      }
+    });
+  }, [projectId, fitBox]);
 
   /* MODO PROJETO — desenho vinculado a uma peça do dossiê */
   const [dossier, setDossier] = useState<{
@@ -577,37 +669,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /* --------------------------------------------------------- coordenadas */
-  const toWorld = useCallback((ev: { clientX: number; clientY: number }): Vec2 => {
-    const r = svgRef.current!.getBoundingClientRect();
-    // CÂMERA ÚNICA: durante um gesto o estado React fica um quadro atrás;
-    // o hit-test precisa usar exatamente a mesma câmera que desenhou.
-    const v = viewRef.current;
-    return {
-      x: (ev.clientX - r.left - v.tx) / v.k,
-      y: (ev.clientY - r.top - v.ty) / v.k,
-    };
-  }, []);
 
-  /** Enquadra uma caixa do desenho na viewport (margem visual, escala 1:1 preservada). */
-  const fitBox = useCallback((box: Box | null) => {
-    const el = svgRef.current;
-    if (!box || !el) return;
-    const r = el.getBoundingClientRect();
-    const w = Math.max(box.maxX - box.minX, 1);
-    const h = Math.max(box.maxY - box.minY, 1);
-    const k = Math.min((r.width - 80) / w, (r.height - 80) / h);
-    setView({
-      k,
-      tx: r.width / 2 - ((box.minX + box.maxX) / 2) * k,
-      ty: r.height / 2 - ((box.minY + box.maxY) / 2) * k,
-    });
-  }, []);
-
-  const fitTo = useCallback((list: Entity[]) => fitBox(bbox(list)), [fitBox]);
-
-  /** Enquadra a moldura de trabalho inteira. */
-  const fitFrame = useCallback(() => fitBox(frameBox(frame)), [fitBox, frame]);
 
   /**
    * CENTRALIZAR PEÇA — por padrão move somente a visualização; com `moveGeometry`
@@ -633,24 +695,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   );
 
   /* ------------------------------------------------------------ zoom roda */
-  const viewRef = useRef(view);
-  /* durante um gesto o ref é a fonte da verdade (React só acompanha por quadro) */
-  const pendingView = useRef<{ tx: number; ty: number; k: number } | null>(null);
-  const rafView = useRef(0);
-  if (!pendingView.current) viewRef.current = view;
-
-  /** Aplica a viewport no máximo uma vez por quadro — evita render por evento. */
-  const applyView = useCallback((nv: { tx: number; ty: number; k: number }) => {
-    viewRef.current = nv;
-    pendingView.current = nv;
-    if (rafView.current) return;
-    rafView.current = requestAnimationFrame(() => {
-      rafView.current = 0;
-      const next = pendingView.current;
-      pendingView.current = null;
-      if (next) setView(next);
-    });
-  }, []);
 
   const flashZoom = useCallback((k: number) => {
     setZoomHud(k);
@@ -743,17 +787,59 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   );
 
   /* ---------------------------------------- pintura em canvas (por sujidade) */
-  const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
+  const initialFitDoneRef = useRef(false);
+
   useLayoutEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
     const ro = new ResizeObserver(([entry]) => {
       const r = entry?.contentRect;
-      if (r) setCanvasSize({ w: Math.round(r.width), h: Math.round(r.height) });
+      if (r && r.width > 20 && r.height > 20) {
+        const nextW = Math.round(r.width);
+        const nextH = Math.round(r.height);
+        setCanvasSize({ w: nextW, h: nextH });
+        if (!initialFitDoneRef.current) {
+          initialFitDoneRef.current = true;
+          requestAnimationFrame(() => {
+            const b = entities.length > 0 ? bbox(entities) : null;
+            if (b && Number.isFinite(b.minX) && b.maxX - b.minX > 1) {
+              fitBox(b);
+            } else {
+              fitBox(frameBox(loadFrame()));
+            }
+          });
+        }
+      }
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [entities, fitBox]);
+
+  // Diagnóstico técnico 2D (Seção 5 do prompt — controlado, sem poluição de log contínua)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    (window as any).__CALDRA_2D_DIAGNOSTIC__ = () => {
+      const b = bbox(entities);
+      const cx = b ? (b.minX + b.maxX) / 2 : 0;
+      const cy = b ? (b.minY + b.maxY) / 2 : 0;
+      const diag = {
+        entityCount: entities.length,
+        boundingBox: b,
+        centerX: cx,
+        centerY: cy,
+        zoom: view.k,
+        panX: view.tx,
+        panY: view.ty,
+        canvasWidth: canvasSize.w,
+        canvasHeight: canvasSize.h,
+        devicePixelRatio: window.devicePixelRatio || 1,
+        originScreen: { x: view.tx, y: view.ty },
+        systemCoords: "World (mm), screen (px)",
+      };
+      console.info("[CALDRA 2D DIAGNOSTIC]", diag);
+      return diag;
+    };
+  }, [entities, view, canvasSize]);
 
   const selectionSet = useMemo(() => new Set(selection), [selection]);
 

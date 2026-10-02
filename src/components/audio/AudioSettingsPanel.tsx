@@ -36,6 +36,7 @@ export function AudioSettingsPanel({ className }: { className?: string }) {
     toggleMusic,
     toggleSelectionSounds,
     play,
+    playMusic,
   } = useAudio();
 
   return (
@@ -73,8 +74,9 @@ export function AudioSettingsPanel({ className }: { className?: string }) {
       </div>
 
       <p className="text-[12.5px] text-muted-foreground">
-        Identidade sonora com ambiência espacial e resposta tátil inspirada nos menus tecnológicos
-        dos clássicos consoles industriais dos anos 2000.
+        Trilha sonora cinematográfica da CALDRA: instrumento híbrido acústico de cordas metálicas (assinatura sonora),
+        piano de feltro, cello e contrabaixo, flauta baixa de madeira, celesta, harpa, sintetizador analógico e ressonância de aço.
+        Vastidão, engenharia e serenidade.
       </p>
 
       {/* PRESETS DE VOLUME RÁPIDOS */}
@@ -291,6 +293,16 @@ export function AudioSettingsPanel({ className }: { className?: string }) {
           className="rounded-lg border border-line bg-card px-2 py-1 font-mono text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
         >
           Planificar
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            play("ui_click");
+            playMusic("caldra_main");
+          }}
+          className="rounded-lg border border-accent/40 bg-accent/10 px-2 py-1 font-mono text-[10px] text-accent hover:bg-accent/20 transition-colors font-semibold"
+        >
+          Tocar Trilha Cinematográfica
         </button>
       </div>
     </Panel>

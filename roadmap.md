@@ -275,3 +275,4 @@ Regra do usuário: **executar uma fase inteira por vez**, na ordem.
 - [x] Fase 12 — Ferramentas de Estampagem, Alívios e Simulação de Prensa Dobradeira (`src/lib/cad/forming/`)
 - [x] Fase 13 — DFM (Design for Manufacturing), Auditoria de Fabricabilidade e Orçamento (`src/lib/cad/dfm/`)
 - [x] Fase 14 — Metrologia Industrial, GD&T (ASME Y14.5 / ISO 1101), Relatório FAI e Prancha Baloneada (`src/lib/cad/metrology/`)
+- [x] Fase 15 — CAE: Análise Estrutural por Elementos Finitos (FEA), Tensões de Von Mises, Deflexão e Fator de Segurança (`src/lib/cad/fea/`)

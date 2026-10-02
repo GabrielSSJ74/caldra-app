@@ -7,7 +7,13 @@
  */
 
 import type { Vec3 } from "@/lib/geometry/types";
-import type { Camera, Edge } from "./wire";
+import {
+  type Camera,
+  type Edge,
+  type EntityKind,
+  type WireTag,
+  isSignificantTechnicalEdge,
+} from "./wire";
 
 export type RenderCategory =
   | "surface"
@@ -209,3 +215,126 @@ export function visibleLineSegments(
   }
   return out;
 }
+
+const KIND_PRIORITY: Record<EntityKind, number> = {
+  INTERSECTION: 10,
+  JOINT: 9,
+  BEND_EDGE: 8,
+  REAL_BOUNDARY: 7,
+  REAL_EDGE: 6,
+  TRANSITION_GENERATOR: 5,
+  TRIANGULATION_INTERNAL: 4,
+  CONSTRUCTION: 3,
+  REFERENCE: 2,
+  DIMENSION: 1,
+  SELECTION: 0,
+};
+
+/**
+ * Filtra as arestas do modelo de acordo com o modo de visualização 3D:
+ * - "shaded" (SOMB): Nenhuma aresta (apenas superfícies sombreadas limpas)
+ * - "shaded-edges" (SOMB+AR): Apenas arestas reais e tecnicamente significativas
+ * - "wireframe" (ARAME): Estrutura completa, incluindo triangulação interna
+ */
+export function filterEdgesForMode(
+  edges: readonly Edge[],
+  kinds: readonly EntityKind[] | undefined,
+  tags: readonly (WireTag | undefined)[] | undefined,
+  edgeMode: "shaded" | "shaded-edges" | "wireframe",
+): {
+  edges: Edge[];
+  kinds: EntityKind[];
+  tags: (WireTag | undefined)[];
+  originalIndices: number[];
+} {
+  if (edgeMode === "shaded") {
+    return { edges: [], kinds: [], tags: [], originalIndices: [] };
+  }
+
+  const outEdges: Edge[] = [];
+  const outKinds: EntityKind[] = [];
+  const outTags: (WireTag | undefined)[] = [];
+  const originalIndices: number[] = [];
+
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i]!;
+    const k: EntityKind = kinds && kinds[i] ? kinds[i]! : "REAL_EDGE";
+    const tag = tags ? tags[i] : undefined;
+
+    if (edgeMode === "shaded-edges") {
+      if (!isSignificantTechnicalEdge(k)) continue;
+    }
+
+    outEdges.push(e);
+    outKinds.push(k);
+    outTags.push(tag);
+    originalIndices.push(i);
+  }
+
+  return { edges: outEdges, kinds: outKinds, tags: outTags, originalIndices };
+}
+
+/**
+ * Deduplica arestas coincidentes ou quase coincidentes na camada de apresentação (Seção 14).
+ * Preserva a entidade com maior relevância técnica (ex: INTERSECTION > JOINT > REAL_BOUNDARY).
+ */
+export function deduplicateEdges(
+  edges: readonly Edge[],
+  kinds?: readonly EntityKind[],
+  tags?: readonly (WireTag | undefined)[],
+  originalIndices?: readonly number[],
+  tolerance = 0.5,
+): {
+  edges: Edge[];
+  kinds: EntityKind[];
+  tags: (WireTag | undefined)[];
+  originalIndices: number[];
+} {
+  const map = new Map<
+    string,
+    { edge: Edge; kind: EntityKind; tag: WireTag | undefined; originalIndex: number }
+  >();
+
+  const quant = (p: Vec3) =>
+    `${Math.round(p.x / tolerance)}_${Math.round(p.y / tolerance)}_${Math.round(p.z / tolerance)}`;
+
+  for (let i = 0; i < edges.length; i++) {
+    const e = edges[i]!;
+    const k: EntityKind = kinds && kinds[i] ? kinds[i]! : "REAL_EDGE";
+    const t = tags ? tags[i] : undefined;
+    const origIdx = originalIndices ? originalIndices[i]! : i;
+
+    const kA = quant(e[0]);
+    const kB = quant(e[1]);
+    if (kA === kB) continue; // segmento degenerado de comprimento zero
+
+    const key = kA < kB ? `${kA}:${kB}` : `${kB}:${kA}`;
+    const existing = map.get(key);
+
+    if (!existing) {
+      map.set(key, { edge: e, kind: k, tag: t, originalIndex: origIdx });
+    } else {
+      // Se a nova aresta tem maior prioridade técnica, substitui a classificação
+      const currentPrio = KIND_PRIORITY[existing.kind] ?? 0;
+      const newPrio = KIND_PRIORITY[k] ?? 0;
+      if (newPrio > currentPrio) {
+        map.set(key, { edge: e, kind: k, tag: t ?? existing.tag, originalIndex: origIdx });
+      }
+    }
+  }
+
+  const outEdges: Edge[] = [];
+  const outKinds: EntityKind[] = [];
+  const outTags: (WireTag | undefined)[] = [];
+  const outIndices: number[] = [];
+
+  for (const item of map.values()) {
+    outEdges.push(item.edge);
+    outKinds.push(item.kind);
+    outTags.push(item.tag);
+    outIndices.push(item.originalIndex);
+  }
+
+  return { edges: outEdges, kinds: outKinds, tags: outTags, originalIndices: outIndices };
+}
+

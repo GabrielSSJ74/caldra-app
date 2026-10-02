@@ -70,6 +70,8 @@ import { CaldraWeldmentDialog } from "@/components/lab2d/CaldraWeldmentDialog";
 import { useSettings } from "@/lib/settings/SettingsProvider";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { AudioManager } from "@/lib/audio/AudioManager";
+import { AudioQuickControl } from "@/components/audio/AudioQuickControl";
 
 interface CadBRepViewerProps {
   className?: string;
@@ -191,10 +193,16 @@ export function CadBRepViewer({
     setCanRedo(editorRef.current.canRedo());
   }, []);
 
+  // Som de inicialização do CAD CORE 3D ao abrir o módulo (Seção 6)
+  useEffect(() => {
+    AudioManager.play("cad_core_init");
+  }, []);
+
   // Reconstrução via Feature Tree
   const rebuildFromTree = useCallback(async () => {
     setLoading(true);
     setConversionError(null);
+    AudioManager.play("kernel_loading");
     try {
       const res = await treeRef.current.rebuild();
       if (res.success && res.activeShape && res.tessellation) {
@@ -203,6 +211,7 @@ export function CadBRepViewer({
         setMassProps(res.massProperties);
         rendererRef.current?.setShape(res.tessellation);
         rendererRef.current?.fitView(false);
+        AudioManager.play("kernel_success");
       } else {
         throw new Error(res.errors?.join("; ") || "Falha na geração do sólido B-Rep.");
       }
@@ -210,6 +219,7 @@ export function CadBRepViewer({
       refreshHistoryFlags();
     } catch (err: unknown) {
       console.error("[CadBRepViewer] Erro ao reconstruir árvore:", err);
+      AudioManager.play("kernel_error");
       // NUNCA substituir silenciosamente por Cone (Seção 22)
       setConversionError((err as Error)?.message || "Não foi possível converter este modelo para CAD 3D.");
     } finally {
@@ -227,9 +237,21 @@ export function CadBRepViewer({
       onSelect: (entity, multi) => {
         setSelectedEntity(entity);
         setMultiSelection(Array.isArray(multi) ? multi : entity ? [entity] : []);
+        if (entity) {
+          if (entity.type === "face") {
+            AudioManager.play("cad_select_face");
+          } else if (entity.type === "edge") {
+            AudioManager.play("cad_select_edge");
+          } else if (entity.type === "vertex") {
+            AudioManager.play("cad_select_vertex");
+          }
+        }
       },
       onMeasure: (meas) => {
         setMeasurement(meas);
+        if (meas) {
+          AudioManager.play("cad_measure");
+        }
       },
     });
 
@@ -431,17 +453,20 @@ export function CadBRepViewer({
 
   // Ações de Undo / Redo
   const handleUndo = async () => {
+    AudioManager.play("cad_undo");
     const res = await editorRef.current.undo();
     if (res) await rebuildFromTree();
   };
 
   const handleRedo = async () => {
+    AudioManager.play("cad_redo");
     const res = await editorRef.current.redo();
     if (res) await rebuildFromTree();
   };
 
-  // Enquadrar no modelo (Fit to Model)
+  // Enquadrar no modelo / Restaurar vista (Fit to Model) (Seção 14 - Reset)
   const handleFitToModel = () => {
+    AudioManager.play("cad_reset");
     if (rendererRef.current) {
       if (typeof rendererRef.current.fitView === "function") {
         rendererRef.current.fitView();
@@ -605,7 +630,10 @@ export function CadBRepViewer({
         <div className="flex h-[38px] items-center gap-0.5 rounded-full border border-slate-200/90 bg-white px-1 shadow-md font-mono text-[10px] font-bold">
           <button
             type="button"
-            onClick={() => setGizmoMode((m) => (m === "off" ? "translate" : "off"))}
+            onClick={() => {
+              AudioManager.play("cad_gizmo");
+              setGizmoMode((m) => (m === "off" ? "translate" : "off"));
+            }}
             className={cn(
               "flex h-[28px] items-center gap-1 rounded-full px-2.5 uppercase transition-colors",
               gizmoMode !== "off"
@@ -621,7 +649,10 @@ export function CadBRepViewer({
 
           <button
             type="button"
-            onClick={() => setGizmoMode("translate")}
+            onClick={() => {
+              AudioManager.play("cad_move");
+              setGizmoMode("translate");
+            }}
             className={cn(
               "flex h-[28px] items-center gap-1 rounded-full px-2 uppercase transition-colors",
               gizmoMode === "translate"
@@ -635,7 +666,10 @@ export function CadBRepViewer({
 
           <button
             type="button"
-            onClick={() => setGizmoMode("rotate")}
+            onClick={() => {
+              AudioManager.play("cad_rotate");
+              setGizmoMode("rotate");
+            }}
             className={cn(
               "flex h-[28px] items-center gap-1 rounded-full px-2 uppercase transition-colors",
               gizmoMode === "rotate"
@@ -676,6 +710,9 @@ export function CadBRepViewer({
           </button>
         </div>
 
+        {/* CONTROLE RÁPIDO DE ÁUDIO NO CAD */}
+        <AudioQuickControl />
+
         {/* TELA CHEIA */}
         <button
           type="button"
@@ -695,7 +732,13 @@ export function CadBRepViewer({
           {/* CATEGORIA 1: CRIAR */}
           <button
             type="button"
-            onClick={() => setActiveLeftCat((c) => (c === "criar" ? "none" : "criar"))}
+            onClick={() => {
+              setActiveLeftCat((c) => {
+                const next = c === "criar" ? "none" : "criar";
+                AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");
+                return next;
+              });
+            }}
             className={cn(
               "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
               activeLeftCat === "criar"
@@ -712,7 +755,13 @@ export function CadBRepViewer({
           {/* CATEGORIA 2: MODIFICAR */}
           <button
             type="button"
-            onClick={() => setActiveLeftCat((c) => (c === "modificar" ? "none" : "modificar"))}
+            onClick={() => {
+              setActiveLeftCat((c) => {
+                const next = c === "modificar" ? "none" : "modificar";
+                AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");
+                return next;
+              });
+            }}
             className={cn(
               "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
               activeLeftCat === "modificar"
@@ -729,7 +778,13 @@ export function CadBRepViewer({
           {/* CATEGORIA 3: DETALHES */}
           <button
             type="button"
-            onClick={() => setActiveLeftCat((c) => (c === "detalhes" ? "none" : "detalhes"))}
+            onClick={() => {
+              setActiveLeftCat((c) => {
+                const next = c === "detalhes" ? "none" : "detalhes";
+                AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");
+                return next;
+              });
+            }}
             className={cn(
               "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
               activeLeftCat === "detalhes"
@@ -746,7 +801,13 @@ export function CadBRepViewer({
           {/* CATEGORIA 4: CHAPA */}
           <button
             type="button"
-            onClick={() => setActiveLeftCat((c) => (c === "chapa" ? "none" : "chapa"))}
+            onClick={() => {
+              setActiveLeftCat((c) => {
+                const next = c === "chapa" ? "none" : "chapa";
+                AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");
+                return next;
+              });
+            }}
             className={cn(
               "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
               activeLeftCat === "chapa"
@@ -763,7 +824,13 @@ export function CadBRepViewer({
           {/* CATEGORIA 5: ESTRUTURAS */}
           <button
             type="button"
-            onClick={() => setActiveLeftCat((c) => (c === "estruturas" ? "none" : "estruturas"))}
+            onClick={() => {
+              setActiveLeftCat((c) => {
+                const next = c === "estruturas" ? "none" : "estruturas";
+                AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");
+                return next;
+              });
+            }}
             className={cn(
               "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
               activeLeftCat === "estruturas"
@@ -780,7 +847,13 @@ export function CadBRepViewer({
           {/* CATEGORIA 6: MEDIR */}
           <button
             type="button"
-            onClick={() => setActiveLeftCat((c) => (c === "medir" ? "none" : "medir"))}
+            onClick={() => {
+              setActiveLeftCat((c) => {
+                const next = c === "medir" ? "none" : "medir";
+                AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");
+                return next;
+              });
+            }}
             className={cn(
               "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
               activeLeftCat === "medir"
@@ -797,7 +870,13 @@ export function CadBRepViewer({
           {/* CATEGORIA 7: EXPORTAR */}
           <button
             type="button"
-            onClick={() => setActiveLeftCat((c) => (c === "exportar" ? "none" : "exportar"))}
+            onClick={() => {
+              setActiveLeftCat((c) => {
+                const next = c === "exportar" ? "none" : "exportar";
+                AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");
+                return next;
+              });
+            }}
             className={cn(
               "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
               activeLeftCat === "exportar"
@@ -819,7 +898,10 @@ export function CadBRepViewer({
               <span>{activeLeftCat}</span>
               <button
                 type="button"
-                onClick={() => setActiveLeftCat("none")}
+                onClick={() => {
+                  setActiveLeftCat("none");
+                  AudioManager.play("ui_toggle_close");
+                }}
                 className="text-slate-400 hover:text-slate-600"
               >
                 <X className="size-3" />
@@ -1328,7 +1410,10 @@ export function CadBRepViewer({
         {/* PLANIFICAR */}
         <button
           type="button"
-          onClick={() => setFlatPatternDialogOpen(true)}
+          onClick={() => {
+            AudioManager.play("planify_sequence");
+            setFlatPatternDialogOpen(true);
+          }}
           className="flex h-[36px] items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3.5 font-mono text-[10px] font-bold text-red-600 shadow-2xs hover:bg-red-100 transition-colors uppercase"
           title="Planificar sólido 3D"
         >

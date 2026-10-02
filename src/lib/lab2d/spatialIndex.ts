@@ -72,6 +72,14 @@ export function buildIndex(entities: Entity[]): SpatialIndex {
   }
 
   const query = (q: Box): Entity[] => {
+    // Para desenhos técnicos com até 150 entidades, teste direto de overlaps sem quantização de células
+    if (entities.length <= 150) {
+      return entities.filter((e) => {
+        const b = boxes.get(e.id);
+        return b ? overlaps(b, q) : true;
+      });
+    }
+
     const x0 = clamp(Math.floor((q.minX - minX) / cw));
     const x1 = clamp(Math.floor((q.maxX - minX) / cw));
     const y0 = clamp(Math.floor((q.minY - minY) / ch));
@@ -85,7 +93,8 @@ export function buildIndex(entities: Entity[]): SpatialIndex {
         for (const e of bucket) {
           if (seen.has(e.id)) continue;
           seen.add(e.id);
-          if (overlaps(boxes.get(e.id)!, q)) out.push(e);
+          const b = boxes.get(e.id);
+          if (b && overlaps(b, q)) out.push(e);
         }
       }
     return out;

@@ -36,6 +36,57 @@ export type Face = {
 };
 export type Bounds = { min: Vec3; max: Vec3 };
 
+/**
+ * CLASSIFICAÇÃO GLOBAL DE ENTIDADES 3D (CALDRA)
+ *
+ * Separa a malha matemática de renderização das arestas técnicas reais:
+ * - REAL_BOUNDARY: Contornos livres, bordas de aberturas e bocas
+ * - REAL_EDGE: Arestas vivas, cantos vivos com ângulo diedro real
+ * - TRANSITION_GENERATOR: Geratrizes cardinais principais da geometria
+ * - BEND_EDGE: Linhas de dobra física da chapa metálica
+ * - JOINT: Juntas reais de corte/solda (ex: junções de gomos em curvas, costuras)
+ * - INTERSECTION: Curva de interseção 3D calculada entre corpos penetrantes
+ * - CONSTRUCTION: Linhas auxiliares de construção e layout
+ * - REFERENCE: Eixos de centro e planos de referência
+ * - TRIANGULATION_INTERNAL: Diagonais internas da malha matemática (ocultas em SOMB e SOMB+AR)
+ * - DIMENSION: Linhas de cota
+ * - SELECTION: Entidades destacadas temporariamente
+ */
+export type EntityKind =
+  | "REAL_BOUNDARY"
+  | "REAL_EDGE"
+  | "TRANSITION_GENERATOR"
+  | "BEND_EDGE"
+  | "JOINT"
+  | "INTERSECTION"
+  | "CONSTRUCTION"
+  | "REFERENCE"
+  | "TRIANGULATION_INTERNAL"
+  | "DIMENSION"
+  | "SELECTION";
+
+/**
+ * Determina se a aresta é tecnicamente significativa para o modo SOMB+AR.
+ * Diagonais de triangulação interna e linhas auxiliares de construção retornam false.
+ */
+export function isSignificantTechnicalEdge(kind: EntityKind): boolean {
+  switch (kind) {
+    case "REAL_BOUNDARY":
+    case "REAL_EDGE":
+    case "TRANSITION_GENERATOR":
+    case "BEND_EDGE":
+    case "JOINT":
+    case "INTERSECTION":
+      return true;
+    case "TRIANGULATION_INTERNAL":
+    case "CONSTRUCTION":
+    case "REFERENCE":
+    case "DIMENSION":
+    case "SELECTION":
+      return false;
+  }
+}
+
 export type WireModel = {
   faces: Face[];
   edges: Edge[];
@@ -54,6 +105,12 @@ export type WireModel = {
    */
   edgeTags?: readonly (WireTag | undefined)[] | undefined;
   faceTags?: readonly (WireTag | undefined)[] | undefined;
+  /**
+   * Classificação explícita de cada aresta de `edges`.
+   * Permite que o renderer exiba apenas arestas significativas em SOMB+AR
+   * e preserve as triangulações completas em ARAME.
+   */
+  edgeKinds?: readonly EntityKind[] | undefined;
 };
 
 /** Geratriz ordinal k de n igualmente espaçadas ao redor da seção. */
@@ -234,6 +291,10 @@ type ShellOpts = {
   gen?: number;
   /** grupo de casca (corpos que se cruzam) */
   g?: number;
+  /** Função predicado indicando se o loop s (1 .. length-2) é uma junta real/gomo */
+  isJointLoop?: (s: number) => boolean;
+  /** Se todas as geratrizes desenhadas devem ser tratadas como geratrizes de transição */
+  allGeneratorsAreTransition?: boolean;
 };
 
 export type Geo = {
@@ -241,6 +302,7 @@ export type Geo = {
   edges: Edge[];
   edgeTags?: (WireTag | undefined)[] | undefined;
   faceTags?: (WireTag | undefined)[] | undefined;
+  edgeKinds?: (EntityKind | undefined)[] | undefined;
 };
 
 export const EMPTY_GEO: Geo = { faces: [], edges: [] };
@@ -256,7 +318,7 @@ function tag(geo: Geo, g: number): Geo {
  * Remove do corpo cortado as faces INTEIRAMENTE dentro do volume do corpo
  * penetrante (nenhum vértice é movido — a malha canônica é preservada) e
  * suprime as arestas que cruzariam o vão. A linha de interseção real, quando
- * fornecida, é adicionada como aresta do contorno do furo.
+ * fornecida, é adicionada como aresta do contorno do furo com identidade INTERSECTION.
  */
 function cutOpening(geo: Geo, inside: (p: Vec3) => boolean, curve?: Vec3[]): Geo {
   const mid = (a: Vec3, b: Vec3): Vec3 => v((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2);
@@ -266,13 +328,15 @@ function cutOpening(geo: Geo, inside: (p: Vec3) => boolean, curve?: Vec3[]): Geo
   const edges = keepE.map(({ e }) => e);
   const faceTags = geo.faceTags ? keepF.map(({ i }) => geo.faceTags![i]) : undefined;
   const edgeTags = geo.edgeTags ? keepE.map(({ i }) => geo.edgeTags![i]) : undefined;
+  const edgeKinds = geo.edgeKinds ? keepE.map(({ i }) => geo.edgeKinds![i]) : undefined;
   if (curve && curve.length > 1) {
     for (let i = 0; i < curve.length - 1; i++) {
       edges.push([curve[i]!, curve[i + 1]!]);
       edgeTags?.push(undefined);
+      edgeKinds?.push("INTERSECTION");
     }
   }
-  return { faces, edges, edgeTags, faceTags };
+  return { faces, edges, edgeTags, faceTags, edgeKinds };
 }
 
 function merge(parts: Geo[]): Geo {
@@ -280,6 +344,7 @@ function merge(parts: Geo[]): Geo {
   const edges = parts.flatMap((p) => p.edges);
   const hasET = parts.some((p) => p.edgeTags);
   const hasFT = parts.some((p) => p.faceTags);
+  const hasEK = parts.some((p) => p.edgeKinds);
   return {
     faces,
     edges,
@@ -293,6 +358,11 @@ function merge(parts: Geo[]): Geo {
           (p) => p.faceTags ?? Array<WireTag | undefined>(p.faces.length).fill(undefined),
         )
       : undefined,
+    edgeKinds: hasEK
+      ? parts.flatMap(
+          (p) => p.edgeKinds ?? Array<EntityKind | undefined>(p.edges.length).fill("REAL_EDGE"),
+        )
+      : undefined,
   };
 }
 
@@ -303,7 +373,7 @@ function loopEdges(pts: Vec3[]): Edge[] {
 /**
  * Casca de parede fina a partir de uma sequência de contornos.
  * Gera superfície externa, superfície interna, bordas (rim) das aberturas,
- * tampas quando pedidas, e as arestas técnicas correspondentes.
+ * tampas quando pedidas, e as arestas técnicas devidamente classificadas.
  */
 function shell(loops: Vec3[][], o: ShellOpts): Geo {
   const valid = loops.filter((l) => l.length >= 3);
@@ -313,6 +383,7 @@ function shell(loops: Vec3[][], o: ShellOpts): Geo {
   const edges: Edge[] = [];
   const faceTags: (WireTag | undefined)[] = [];
   const edgeTags: (WireTag | undefined)[] = [];
+  const edgeKinds: (EntityKind | undefined)[] = [];
   const n = valid[0]!.length;
   const gen = Math.max(1, o.gen ?? Math.round(n / 8));
   /* geratrizes traçadas: i = 0, gen, 2·gen … → ordinal k = i/gen de G */
@@ -333,26 +404,58 @@ function shell(loops: Vec3[][], o: ShellOpts): Geo {
     }
   }
 
-  // arestas: contornos extremos + geratrizes reais da superfície
+  // arestas: contornos extremos (REAL_BOUNDARY)
   const first = valid[0]!;
   const last = valid[valid.length - 1]!;
   edges.push(...loopEdges(first));
   edgeTags.push(...Array<WireTag | undefined>(n).fill({ rim: "base" }));
+  edgeKinds.push(...Array<EntityKind>(n).fill("REAL_BOUNDARY"));
+
   edges.push(...loopEdges(last));
   edgeTags.push(...Array<WireTag | undefined>(n).fill({ rim: "top" }));
+  edgeKinds.push(...Array<EntityKind>(n).fill("REAL_BOUNDARY"));
+
   if (!o.capStart) {
     edges.push(...loopEdges(inner[0]!));
     edgeTags.push(...Array<WireTag | undefined>(n).fill(undefined));
+    edgeKinds.push(...Array<EntityKind>(n).fill("REAL_BOUNDARY"));
   }
   if (!o.capEnd) {
     edges.push(...loopEdges(inner[inner.length - 1]!));
     edgeTags.push(...Array<WireTag | undefined>(n).fill(undefined));
+    edgeKinds.push(...Array<EntityKind>(n).fill("REAL_BOUNDARY"));
   }
+
+  // Juntas de corte/solda entre gomos intermediários (JOINT)
+  if (o.isJointLoop) {
+    for (let s = 1; s < valid.length - 1; s++) {
+      if (o.isJointLoop(s)) {
+        edges.push(...loopEdges(valid[s]!));
+        edgeTags.push(...Array<WireTag | undefined>(n).fill(undefined));
+        edgeKinds.push(...Array<EntityKind>(n).fill("JOINT"));
+      }
+    }
+  }
+
+  // Geratrizes longitudinais:
+  // Cardinais principais (0, n/4, n/2, 3n/4) são TRANSITION_GENERATOR
+  // Demais subdivisões de malha são TRIANGULATION_INTERNAL (ocultas em SOMB+AR)
+  const q1 = Math.round(n / 4);
+  const q2 = Math.round(n / 2);
+  const q3 = Math.round((3 * n) / 4);
   for (let i = 0; i < n; i += gen) {
+    const isCardinal =
+      o.allGeneratorsAreTransition ||
+      i === 0 ||
+      Math.abs(i - q1) <= 1 ||
+      Math.abs(i - q2) <= 1 ||
+      Math.abs(i - q3) <= 1;
+    const kind: EntityKind = isCardinal ? "TRANSITION_GENERATOR" : "TRIANGULATION_INTERNAL";
     const t0: GeratrizTag = { k: i / gen, n: G };
     for (let s = 0; s < valid.length - 1; s++) {
       edges.push([valid[s]![i]!, valid[s + 1]![i]!]);
       edgeTags.push(t0);
+      edgeKinds.push(kind);
     }
   }
 
@@ -373,7 +476,7 @@ function shell(loops: Vec3[][], o: ShellOpts): Geo {
     faceTags.push(undefined);
   } else rim(last, inner[inner.length - 1]!);
 
-  return { faces, edges, edgeTags, faceTags };
+  return { faces, edges, edgeTags, faceTags, edgeKinds };
 }
 
 export function boundsOf(faces: Face[]): Bounds {
@@ -441,6 +544,19 @@ export function finish(geo: Geo, refLines: Edge[] = []): WireModel {
       bounds.max.y - bounds.min.y,
       bounds.max.z - bounds.min.z,
     ) || 1;
+
+  const edgeKinds: EntityKind[] = geo.edges.map((_, idx) => {
+    if (geo.edgeKinds && geo.edgeKinds[idx]) return geo.edgeKinds[idx]!;
+    const tag = geo.edgeTags ? geo.edgeTags[idx] : undefined;
+    if (tag && "rim" in tag) return "REAL_BOUNDARY";
+    if (tag && "k" in tag) {
+      const gTag = tag as GeratrizTag;
+      const isCardinal = gTag.k % Math.max(1, Math.round(gTag.n / 4)) === 0;
+      return isCardinal ? "TRANSITION_GENERATOR" : "TRIANGULATION_INTERNAL";
+    }
+    return "REAL_EDGE";
+  });
+
   return {
     faces: geo.faces,
     edges: geo.edges,
@@ -449,6 +565,7 @@ export function finish(geo: Geo, refLines: Edge[] = []): WireModel {
     bounds,
     edgeTags: geo.edgeTags,
     faceTags: geo.faceTags,
+    edgeKinds,
   };
 }
 
@@ -543,6 +660,7 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
       const faces: Face[] = [];
       const edges: Edge[] = [];
       const edgeTags: (WireTag | undefined)[] = [];
+      const edgeKinds: EntityKind[] = [];
       const genN = canonical.generatrices.length;
       for (const face of canonical.faces) {
         const outer = face.points.map(cv);
@@ -550,11 +668,21 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
         faces.push({ pts: outer, kind: "outer" });
         faces.push({ pts: inner.slice().reverse(), kind: "inner" });
       }
+
+      // 1. Geratrizes: as que dividem as faces planas dos cantos curvos (as 4 dobras principais dos cantos)
+      // são BEND_EDGE. As internas de subdivisão do quadrante são TRIANGULATION_INTERNAL.
+      const divisionsPerQuadrant = p.divisions ?? 6;
       canonical.generatrices.forEach((line, i) => {
         edges.push([cv(line.a), cv(line.b)]);
         edgeTags.push({ k: i, n: genN });
+        // O início e fim de cada quadrante (onde a face plana triangular toca o setor de transição curva)
+        // é a linha de dobra física (BEND_EDGE). Os raios internos são triangulação matemática (TRIANGULATION_INTERNAL).
+        const mod = i % (divisionsPerQuadrant + 1);
+        const isBend = mod === 0 || mod === divisionsPerQuadrant;
+        edgeKinds.push(isBend ? "BEND_EDGE" : "TRIANGULATION_INTERNAL");
       });
 
+      // 2. Base retangular: 4 arestas externas (REAL_BOUNDARY)
       for (let k = 0; k < canonical.corners.length; k++) {
         const a = canonical.corners[k];
         const b = canonical.corners[(k + 1) % canonical.corners.length];
@@ -563,8 +691,11 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
         const bo = cv(b);
         faces.push({ pts: [ao, bo, inset(b), inset(a)], kind: "rim" });
         edges.push([ao, bo]);
-        edgeTags.push(undefined);
+        edgeTags.push({ rim: "base" });
+        edgeKinds.push("REAL_BOUNDARY");
       }
+
+      // 3. Topo circular: aro superior (REAL_BOUNDARY)
       for (let k = 0; k < canonical.circle.length; k++) {
         const a = canonical.circle[k];
         const b = canonical.circle[(k + 1) % canonical.circle.length];
@@ -573,7 +704,8 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
         const bo = cv(b);
         faces.push({ pts: [ao, bo, inset(b), inset(a)], kind: "rim" });
         edges.push([ao, bo]);
-        edgeTags.push(undefined);
+        edgeTags.push({ rim: "top" });
+        edgeKinds.push("REAL_BOUNDARY");
       }
 
       // Emendas soldadas (modo 2 partes + solda): posição real das costuras J1/J2.
@@ -587,19 +719,21 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
           y: (a.y + b.y) / 2,
           z: 0,
         });
-        seamRefs.push(
-          [
-            cv(midpoint(canonical.corners[0]!, canonical.corners[1]!)),
-            cv(canonical.arcPoints[0]!.at(-1)!),
-          ],
-          [
-            cv(midpoint(canonical.corners[2]!, canonical.corners[3]!)),
-            cv(canonical.arcPoints[2]!.at(-1)!),
-          ],
-        );
+        const s1: Edge = [
+          cv(midpoint(canonical.corners[0]!, canonical.corners[1]!)),
+          cv(canonical.arcPoints[0]!.at(-1)!),
+        ];
+        const s2: Edge = [
+          cv(midpoint(canonical.corners[2]!, canonical.corners[3]!)),
+          cv(canonical.arcPoints[2]!.at(-1)!),
+        ];
+        seamRefs.push(s1, s2);
+        edges.push(s1, s2);
+        edgeTags.push(undefined, undefined);
+        edgeKinds.push("JOINT", "JOINT");
       }
 
-      return withAxis({ faces, edges, edgeTags }, seamRefs);
+      return withAxis({ faces, edges, edgeTags, edgeKinds }, seamRefs);
     }
 
     case "redondo-quadrado": {
@@ -771,7 +905,8 @@ export function buildWire(slug: string, raw: WireParams): WireModel {
           }),
         );
       });
-      return withAxis(shell(loops, { t }));
+      // Loops intermediários são as juntas de corte/solda entre os gomos: JOINT
+      return withAxis(shell(loops, { t, isJointLoop: (s) => s > 0 && s < loops.length - 1 }));
     }
 
     case "flanges": {

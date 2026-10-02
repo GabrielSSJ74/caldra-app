@@ -26,6 +26,7 @@ import type {
 import type { Entity } from "@/lib/lab2d/core";
 import type { DfmFullReport } from "../dfm/types";
 import type { FirstArticleInspectionReport } from "../metrology/types";
+import type { FeaAnalysisResult } from "../fea/types";
 
 export type CADViewState =
   | "2D_SKETCH"
@@ -37,7 +38,8 @@ export type CADViewState =
   | "NESTING"
   | "FORMING"
   | "DFM"
-  | "METROLOGY";
+  | "METROLOGY"
+  | "FEA";
 
 export interface ParametricFlangeDef {
   id: string;
@@ -98,6 +100,7 @@ export interface PartDocument {
   formingResult?: FormingEngineResult;
   dfmReport?: DfmFullReport;
   metrologyReport?: FirstArticleInspectionReport;
+  feaReport?: FeaAnalysisResult;
   entities2D: Entity[]; // Entidades no plano para o canvas do CHAMFER
   createdAt: number;
   updatedAt: number;

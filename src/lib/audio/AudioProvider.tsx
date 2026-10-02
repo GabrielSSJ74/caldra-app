@@ -42,6 +42,59 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Delegação global para sons de botões e toques táteis
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    let lastClickTime = 0;
+
+    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+      const now = performance.now();
+      if (now - lastClickTime < 35) return;
+
+      const target = (e.target as HTMLElement | null)?.closest(
+        "button, a, [role='button'], input[type='button'], input[type='submit']",
+      ) as HTMLElement | null;
+
+      if (!target) return;
+      if (target.dataset.noAudio === "true") return;
+
+      lastClickTime = now;
+
+      const customSound = target.dataset.audio as SoundEffectId | undefined;
+      if (customSound) {
+        audioManager.play(customSound);
+        return;
+      }
+
+      const isAction =
+        target.getAttribute("type") === "submit" ||
+        target.classList.contains("brand-gradient") ||
+        target.classList.contains("bg-primary") ||
+        target.classList.contains("pro-surface");
+
+      const isSelected =
+        target.getAttribute("aria-pressed") === "true" ||
+        target.getAttribute("aria-selected") === "true" ||
+        target.dataset.selected === "true" ||
+        target.classList.contains("amber-ring") ||
+        target.classList.contains("glow-ring");
+
+      if (isAction) {
+        audioManager.play("ui_action");
+      } else if (isSelected) {
+        audioManager.play("ui_select");
+      } else {
+        audioManager.play("ui_click");
+      }
+    };
+
+    window.addEventListener("pointerdown", handlePointerDown, { passive: true, capture: true });
+    return () => {
+      window.removeEventListener("pointerdown", handlePointerDown, { capture: true });
+    };
+  }, []);
+
   const play = useCallback((soundId: SoundEffectId) => {
     audioManager.play(soundId);
   }, []);
