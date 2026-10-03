@@ -9,10 +9,20 @@ import {
   Crosshair,
   Volume,
   Check,
+  Play,
+  Pause,
+  Compass,
+  Disc,
 } from "lucide-react";
 import { useAudio } from "@/lib/audio/AudioProvider";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { cn } from "@/lib/utils";
+
+function formatTime(sec: number): string {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
 
 export function AudioSettingsPanel({ className }: { className?: string }) {
   const {
@@ -25,6 +35,12 @@ export function AudioSettingsPanel({ className }: { className?: string }) {
     cadEffectsEnabled,
     musicEnabled,
     selectionSoundsEnabled,
+    currentMovementIndex = 0,
+    currentMovementName = "Intro — Curiosidade",
+    musicTimeSeconds = 0,
+    totalSuiteDuration = 250,
+    movements = [],
+    seekMovement,
     setMasterVolume,
     setMusicVolume,
     setEffectsVolume,
@@ -37,6 +53,9 @@ export function AudioSettingsPanel({ className }: { className?: string }) {
     toggleSelectionSounds,
     play,
   } = useAudio();
+
+  const isMusicActive = musicEnabled && !isMuted;
+  const currentMovement = movements[currentMovementIndex] || movements[0];
 
   return (
     <Panel className={cn("space-y-4 p-4", className)}>
@@ -72,10 +91,112 @@ export function AudioSettingsPanel({ className }: { className?: string }) {
         </button>
       </div>
 
-      <p className="text-[12.5px] text-muted-foreground">
-        Identidade sonora com ambiência espacial e resposta tátil inspirada nos menus tecnológicos
-        dos clássicos consoles industriais dos anos 2000.
-      </p>
+      {/* =================================================================== */}
+      {/* REPRODUTOR DA TRILHA SONORA ORIGINAL — "THE GEOMETRY OF DISCOVERY"   */}
+      {/* =================================================================== */}
+      <div className="rounded-2xl border border-accent/25 bg-accent/[0.04] p-3.5 space-y-3 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <Disc className={cn("size-4 text-accent", isMusicActive && "animate-spin text-accent")} style={{ animationDuration: "12s" }} />
+              <span className="font-semibold text-xs text-foreground tracking-tight">
+                CALDRA — The Geometry of Discovery
+              </span>
+              <span className="rounded-full bg-accent/15 px-2 py-0.5 font-mono text-[9.5px] font-bold text-accent">
+                Original 4:10
+              </span>
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Suíte instrumental em 7 movimentos narrativos: Piano de Feltro, Violoncelo, Harpa, Celesta, Handpan e Eletrônica Espacial.
+            </p>
+          </div>
+
+          {/* BOTÃO PLAY / PAUSE TRILHA */}
+          <button
+            type="button"
+            onClick={() => {
+              toggleMusic();
+              play("ui_action");
+            }}
+            className={cn(
+              "flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-mono text-[11px] font-bold tracking-wider uppercase transition-all shadow-xs",
+              isMusicActive
+                ? "bg-accent text-accent-foreground hover:opacity-90"
+                : "border border-line bg-card hover:bg-muted text-foreground",
+            )}
+          >
+            {isMusicActive ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
+            <span>{isMusicActive ? "Pausar Trilha" : "Tocar Trilha"}</span>
+          </button>
+        </div>
+
+        {/* MOVIMENTO ATUAL & TEMPO */}
+        <div className="rounded-xl border border-line/80 bg-background/60 p-2.5 space-y-1.5">
+          <div className="flex items-center justify-between font-mono text-[11px]">
+            <div className="flex items-center gap-1.5 text-accent font-bold">
+              <Compass className="size-3.5 text-accent" />
+              <span>
+                Movimento {currentMovement ? currentMovement.index + 1 : 1}/7: {currentMovementName}
+              </span>
+            </div>
+            <span className="text-muted-foreground font-mono">
+              {formatTime(musicTimeSeconds)} / {formatTime(totalSuiteDuration)}
+            </span>
+          </div>
+
+          {/* BARRA DE PROGRESSO COM MARCADORES DOS 7 MOVIMENTOS */}
+          <div className="relative w-full h-2 rounded-full bg-muted overflow-hidden">
+            <div
+              className="h-full bg-accent transition-all duration-300"
+              style={{
+                width: `${Math.min(100, Math.max(0, (musicTimeSeconds / totalSuiteDuration) * 100))}%`,
+              }}
+            />
+          </div>
+
+          {currentMovement && (
+            <p className="text-[11.5px] text-muted-foreground italic">
+              &ldquo;{currentMovement.description}&rdquo;
+            </p>
+          )}
+        </div>
+
+        {/* NAVEGAÇÃO RÁPIDA ENTRE OS 7 MOVIMENTOS NARRATIVOS */}
+        <div className="space-y-1">
+          <span className="font-mono text-[10px] uppercase font-bold tracking-wider text-muted-foreground">
+            Saltar para Movimento Narrativo:
+          </span>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-1">
+            {movements.map((mov) => {
+              const isCurrent = isMusicActive && currentMovementIndex === mov.index;
+              return (
+                <button
+                  key={mov.index}
+                  type="button"
+                  onClick={() => {
+                    seekMovement(mov.index);
+                    play("ui_click");
+                  }}
+                  title={`${mov.name}: ${mov.description}`}
+                  className={cn(
+                    "flex flex-col items-center justify-center p-1.5 rounded-lg border font-mono text-center transition-all",
+                    isCurrent
+                      ? "border-accent bg-accent/20 text-accent font-bold shadow-2xs scale-[1.02]"
+                      : "border-line bg-card/70 hover:bg-muted text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <span className="text-[9px] font-bold text-accent">
+                    {formatTime(mov.startTime)}
+                  </span>
+                  <span className="text-[9.5px] truncate max-w-full font-medium">
+                    {mov.narrative}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
 
       {/* PRESETS DE VOLUME RÁPIDOS */}
       <div>
@@ -150,7 +271,7 @@ export function AudioSettingsPanel({ className }: { className?: string }) {
         <div className="space-y-1">
           <div className="flex justify-between items-center text-[11px] font-mono">
             <span className="flex items-center gap-1.5 text-foreground font-semibold">
-              <Music className="size-3.5 text-accent" /> Música Ambiente
+              <Music className="size-3.5 text-accent" /> Trilha Sonora (Suíte)
             </span>
             <span className="text-muted-foreground">{Math.round(musicVolume * 100)}%</span>
           </div>
@@ -238,7 +359,7 @@ export function AudioSettingsPanel({ className }: { className?: string }) {
               onChange={toggleMusic}
               className="size-4 rounded accent-[var(--accent)]"
             />
-            <span className="text-foreground">Música ambiente</span>
+            <span className="text-foreground">Trilha Sonora CALDRA</span>
           </label>
 
           {/* SONS DE SELEÇÃO */}
@@ -256,7 +377,7 @@ export function AudioSettingsPanel({ className }: { className?: string }) {
 
       {/* BOTÕES DE AMOSTRA SONORA */}
       <div className="pt-2 border-t border-line/60 flex flex-wrap gap-2 items-center">
-        <span className="font-mono text-[10px] text-muted-foreground">Testar:</span>
+        <span className="font-mono text-[10px] text-muted-foreground">Testar Efeitos:</span>
         <button
           type="button"
           onClick={() => play("ui_click")}
@@ -270,6 +391,13 @@ export function AudioSettingsPanel({ className }: { className?: string }) {
           className="rounded-lg border border-line bg-card px-2 py-1 font-mono text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
         >
           Ação
+        </button>
+        <button
+          type="button"
+          onClick={() => play("handpan_ding")}
+          className="rounded-lg border border-accent/30 bg-accent/10 px-2 py-1 font-mono text-[10px] text-accent hover:bg-accent/20 transition-colors font-medium"
+        >
+          Handpan
         </button>
         <button
           type="button"
@@ -296,3 +424,4 @@ export function AudioSettingsPanel({ className }: { className?: string }) {
     </Panel>
   );
 }
+

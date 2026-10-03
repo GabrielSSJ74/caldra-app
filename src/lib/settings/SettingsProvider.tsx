@@ -47,7 +47,7 @@ const DEFAULTS: Settings = {
   precision: 2,
   level: "aprendiz",
   region: DEFAULT_REGION,
-  auroraStyle: "fluido",
+  auroraStyle: "suave",
   calcAngle: "DEG",
   calcPlaces: 4,
 };

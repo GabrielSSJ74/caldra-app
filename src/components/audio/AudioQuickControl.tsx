@@ -9,12 +9,16 @@ export function AudioQuickControl({ className }: { className?: string }) {
     masterVolume,
     musicVolume,
     musicEnabled,
+    currentMovementName,
+    currentMovementIndex = 0,
     toggleMute,
     setMasterVolume,
     toggleMusic,
     play,
   } = useAudio();
   const [open, setOpen] = useState(false);
+
+  const isMusicActive = musicEnabled && !isMuted;
 
   return (
     <div className={cn("relative inline-flex items-center", className)}>
@@ -98,25 +102,32 @@ export function AudioQuickControl({ className }: { className?: string }) {
             </div>
 
             {/* TOGGLE MÚSICA AMBIENTE */}
-            <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-              <span className="flex items-center gap-1 text-[9.5px] text-slate-600">
-                <Music className="size-3 text-slate-500" /> Trilha Ambiente
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  toggleMusic();
-                  play("ui_click");
-                }}
-                className={cn(
-                  "rounded-full px-2 py-0.5 text-[9px] font-bold uppercase transition-colors",
-                  musicEnabled && !isMuted
-                    ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
-                    : "bg-slate-100 text-slate-400",
-                )}
-              >
-                {musicEnabled && !isMuted ? "Ligada" : "Desligada"}
-              </button>
+            <div className="pt-1 border-t border-slate-100 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1 text-[9.5px] text-slate-600 font-semibold">
+                  <Music className="size-3 text-red-600" /> Trilha Sonora CALDRA
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    toggleMusic();
+                    play("ui_click");
+                  }}
+                  className={cn(
+                    "rounded-full px-2 py-0.5 text-[9px] font-bold uppercase transition-colors",
+                    isMusicActive
+                      ? "bg-emerald-50 text-emerald-600 border border-emerald-200"
+                      : "bg-slate-100 text-slate-400",
+                  )}
+                >
+                  {isMusicActive ? "Ligada" : "Desligada"}
+                </button>
+              </div>
+              {isMusicActive && (
+                <div className="rounded bg-slate-50 border border-slate-100 p-1.5 text-[9px] text-slate-600 truncate">
+                  <span className="font-bold text-slate-800">M{currentMovementIndex + 1}:</span> {currentMovementName}
+                </div>
+              )}
             </div>
           </div>
         </>
