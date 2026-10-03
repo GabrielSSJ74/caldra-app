@@ -51,7 +51,7 @@ const THEMES: { id: ThemeMode; label: string }[] = [
 ];
 const AURORA_STYLES: { id: AuroraStyle; label: string; hint: string }[] = [
   { id: "fluido", label: "Fluido", hint: "Shader líquido em movimento contínuo" },
-  { id: "suave", label: "Fluid Aurora", hint: "Massas fluidas e vivas de aurora boreal no céu noturno" },
+  { id: "suave", label: "Fluid Aurora", hint: "Cortinas sedosas de aurora boreal no céu noturno" },
   { id: "padrao", label: "PADRÃO", hint: "Sem fundo animado — só a cor sólida do tema" },
 ];
 const ACCENTS: { id: AccentColor; label: string; swatch: string }[] = [

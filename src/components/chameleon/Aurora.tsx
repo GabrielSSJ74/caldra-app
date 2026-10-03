@@ -153,45 +153,46 @@ export function AuroraBackground({
           {/* Resplendor atmosférico ionoférico (brilho difuso e dispersão ambiental) */}
           <div className="fluid-aurora-glow absolute inset-0" />
 
-          {/* 1. Verde Zênite Amplo (Oxigênio atômico superior dominante) */}
-          <div className="fluid-aurora-mass fluid-mass-high-emerald">
-            <div className="fluid-mass-core fluid-core-high-emerald" />
+          {/* Camada 1: Arco Distante em azul profundo, índigo e violeta */}
+          <div className="fluid-aurora-curtain fluid-curtain-distant">
+            <div className="fluid-curtain-core fluid-core-distant" />
           </div>
 
-          {/* 2. Vermelho Carmesim Raro (Evento excepcional da alta ionosfera em ciclo longo) */}
-          <div className="fluid-aurora-mass fluid-mass-high-crimson">
-            <div className="fluid-mass-core fluid-core-high-crimson" />
+          {/* Camada 2: Grande Cortina Diagonal Esquerda (faixas em leque esmeralda e ciano) */}
+          <div className="fluid-aurora-curtain fluid-curtain-left-sweep">
+            <div className="fluid-curtain-core fluid-core-left" />
           </div>
 
-          {/* 3. Grande Massa Verde Esmeralda Central (Identidade dominante da aurora) */}
-          <div className="fluid-aurora-mass fluid-mass-mid-emerald">
-            <div className="fluid-mass-core fluid-core-mid-emerald" />
+          {/* Camada 3: Grande Cortina Sedosa Verde Esmeralda Central */}
+          <div className="fluid-aurora-curtain fluid-curtain-emerald-main">
+            <div className="fluid-curtain-core fluid-core-emerald" />
           </div>
 
-          {/* 4. Pluma Ciano & Turquesa Intermediária (Luz ativa e transição) */}
-          <div className="fluid-aurora-mass fluid-mass-mid-cyan">
-            <div className="fluid-mass-core fluid-core-mid-cyan" />
+          {/* Camada 4: Fita Serpentine Central — A cortina vertical mais luminosa da foto */}
+          <div className="fluid-aurora-curtain fluid-curtain-center-ribbon">
+            <div className="fluid-curtain-core fluid-core-cyan" />
           </div>
 
-          {/* 5. Vórtice Azul Safira Discreto (Profundidade e contraste frio) */}
-          <div className="fluid-aurora-mass fluid-mass-mid-blue">
-            <div className="fluid-mass-core fluid-core-mid-blue" />
+          {/* Camada 5: Cortina de Magenta, Fúcsia e Vinho da Direita (chamas ionizadas da referência) */}
+          <div className="fluid-aurora-curtain fluid-curtain-magenta-flame">
+            <div className="fluid-curtain-core fluid-core-magenta" />
           </div>
 
-          {/* 6. Pluma Rosa e Magenta na Base (Segunda camada de importância) */}
-          <div className="fluid-aurora-mass fluid-mass-low-magenta">
-            <div className="fluid-mass-core fluid-core-low-magenta" />
+          {/* Camada 6: Dobra Frontal Ativa com coroa turquesa e verde vivo */}
+          <div className="fluid-aurora-curtain fluid-curtain-cyan-crest">
+            <div className="fluid-curtain-core fluid-core-crest" />
           </div>
 
-          {/* 7. Massa Violeta e Púrpura Inferior (Transição discreta) */}
-          <div className="fluid-aurora-mass fluid-mass-low-violet">
-            <div className="fluid-mass-core fluid-core-low-violet" />
+          {/* Camada 7: Estrias e Raios Verticais Polares (Rayed Band / filamentos de luz) */}
+          <div className="fluid-aurora-curtain fluid-curtain-rays" />
+
+          {/* Camada 8: Franja Superior Ionizada em Violeta e Magenta Suave */}
+          <div className="fluid-aurora-curtain fluid-curtain-violet-crown">
+            <div className="fluid-curtain-core fluid-core-violet" />
           </div>
 
-          {/* 8. Zona de Confluência Âmbar/Dourada (Mistura orgânica onde verde e rosa se tocam) */}
-          <div className="fluid-aurora-mass fluid-mass-low-amber">
-            <div className="fluid-mass-core fluid-core-low-amber" />
-          </div>
+          {/* Camada 9: Véu Secundário em Deriva e Brilho Residual Suave */}
+          <div className="fluid-aurora-curtain fluid-curtain-subtle-veil" />
 
           {/* Vinheta atmosférica preservando legibilidade e contraste absoluto de UI */}
           <div className="fluid-aurora-vignette absolute inset-0 pointer-events-none" />
