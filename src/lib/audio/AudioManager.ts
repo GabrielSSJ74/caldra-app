@@ -1330,6 +1330,7 @@ export class AudioManager {
         this.triggerCello(event.frequencies, scheduleTime, event.velocity, event.duration, pan);
         break;
       case "double_bass":
+      case "sub_bass":
         this.triggerDoubleBass(event.frequencies, scheduleTime, event.velocity, event.duration, pan);
         break;
       case "strings":
@@ -1341,6 +1342,7 @@ export class AudioManager {
       case "celesta":
         this.triggerCelesta(event.frequencies, scheduleTime, event.velocity, event.duration, pan);
         break;
+      case "kalimba":
       case "handpan":
         this.triggerHandpanNote(event.frequencies[0], scheduleTime, pan, event.velocity, event.duration);
         break;
@@ -1349,6 +1351,9 @@ export class AudioManager {
         break;
       case "analog_pad":
         this.triggerAnalogPad(event.frequencies, scheduleTime, event.velocity, event.duration, pan);
+        break;
+      case "synth_texture":
+        this.triggerAnalogPad(event.frequencies, scheduleTime, event.velocity * 0.7, event.duration, pan);
         break;
       case "ancient_choir":
         this.triggerAncientChoir(event.frequencies, scheduleTime, event.velocity, event.duration, pan);
@@ -1361,8 +1366,8 @@ export class AudioManager {
   // =========================================================================
 
   /**
-   * 1. PIANO DE FELTRO ÍNTIMO (NARRADOR PRINCIPAL)
-   * Ataque aveludado, inarmonicidade de cordas, filtro corporal e soundboard
+   * 1. PIANO DE FELTRO ÍNTIMO (NARRADOR PRINCIPAL COM RIQUEZA HARMÔNICA)
+   * Ataque aveludado, voicings abertos, acordes polifônicos, inarmonicidade de cordas e soundboard
    */
   public triggerFeltPiano(
     frequencies: number[],
@@ -1379,29 +1384,40 @@ export class AudioManager {
       const soundboardFilter = ctx.createBiquadFilter();
 
       soundboardFilter.type = "lowpass";
-      const baseCutoff = Math.min(2600, 1100 + velocity * 18000);
+      const baseCutoff = Math.min(2800, 1100 + velocity * 18000);
       soundboardFilter.frequency.setValueAtTime(baseCutoff, startTime);
-      soundboardFilter.frequency.exponentialRampToValueAtTime(700, startTime + duration);
-      soundboardFilter.Q.setValueAtTime(1.3, startTime);
+      soundboardFilter.frequency.exponentialRampToValueAtTime(680, startTime + duration);
+      soundboardFilter.Q.setValueAtTime(1.2, startTime);
 
-      const humanVel = Math.max(0.02, Math.min(0.08, velocity * (1 + (Math.random() - 0.5) * 0.08)));
+      // Escalonamento harmônico para acordes de múltiplas notas (preserva o calor aveludado sem clipping)
+      const count = Math.max(1, frequencies.length);
+      const polyScalar = 1 / Math.pow(count, 0.40);
+      const humanVel = Math.max(
+        0.02,
+        Math.min(0.08, velocity * polyScalar * (1 + (Math.random() - 0.5) * 0.06)),
+      );
+
       noteGain.gain.setValueAtTime(0.0001, startTime);
-      noteGain.gain.linearRampToValueAtTime(humanVel, startTime + 0.018);
-      noteGain.gain.exponentialRampToValueAtTime(humanVel * 0.45, startTime + 0.9);
+      noteGain.gain.linearRampToValueAtTime(humanVel, startTime + 0.022);
+      noteGain.gain.exponentialRampToValueAtTime(humanVel * 0.48, startTime + 0.95);
       noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
-      frequencies.forEach((freq) => {
+      // Micro-deslocamento humano para notas dentro de um acorde (efeito de dedilhado natural de 12ms a 22ms)
+      frequencies.forEach((freq, idx) => {
+        const noteOffset = idx > 0 ? (idx * 0.012 * (1 + (Math.random() - 0.5) * 0.2)) : 0;
+        const noteStart = startTime + noteOffset;
+
         const osc1 = ctx.createOscillator();
         osc1.type = "sine";
-        osc1.frequency.setValueAtTime(freq, startTime);
+        osc1.frequency.setValueAtTime(freq, noteStart);
         osc1.connect(soundboardFilter);
         oscs.push(osc1);
 
         const osc2 = ctx.createOscillator();
         const g2 = ctx.createGain();
         osc2.type = "sine";
-        osc2.frequency.setValueAtTime(freq * 2.0015, startTime);
-        g2.gain.setValueAtTime(0.48, startTime);
+        osc2.frequency.setValueAtTime(freq * 2.0015, noteStart);
+        g2.gain.setValueAtTime(0.46, noteStart);
         osc2.connect(g2);
         g2.connect(soundboardFilter);
         oscs.push(osc2);
@@ -1409,8 +1425,8 @@ export class AudioManager {
         const osc3 = ctx.createOscillator();
         const g3 = ctx.createGain();
         osc3.type = "triangle";
-        osc3.frequency.setValueAtTime(freq * 3.003, startTime);
-        g3.gain.setValueAtTime(0.2, startTime);
+        osc3.frequency.setValueAtTime(freq * 3.003, noteStart);
+        g3.gain.setValueAtTime(0.18, noteStart);
         osc3.connect(g3);
         g3.connect(soundboardFilter);
         oscs.push(osc3);
