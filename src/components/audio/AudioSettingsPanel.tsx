@@ -130,7 +130,7 @@ export function AudioSettingsPanel({ className }: { className?: string }) {
             <span className="flex items-center gap-1.5 text-foreground font-semibold">
               <Volume2 className="size-3.5 text-accent" /> Volume Geral (SOM)
             </span>
-            <span className="text-muted-foreground">
+            <span className="text-muted-foreground" suppressHydrationWarning>
               {isMuted ? "0%" : `${Math.round(masterVolume * 100)}%`}
             </span>
           </div>

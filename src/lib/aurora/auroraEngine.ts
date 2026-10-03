@@ -1,13 +1,12 @@
 /**
- * AURORA CALDRA 2.0 — motor de shader WebGL1 (domain warping sobre FBM).
+ * AURORA CALDRA 2.0 — Motor WebGL do tema FLUIDO (Shader Líquido).
  *
- * Regras de engenharia:
- *  - UM único contexto WebGL para todo o app. O canvas é movido (appendChild)
- *    entre os pontos de montagem; nunca recriado.
- *  - Render em meia resolução (lado maior ≤ 1280px) esticado por CSS.
- *  - Cap de 30fps, RAF parado com a aba em background.
- *  - prefers-reduced-motion / estático → um frame e para.
- *  - Degradação adaptativa e fallback CSS se WebGL falhar.
+ * Características:
+ *  - Domain warping sobre FBM contínuo (Inigo Quilez).
+ *  - Cores líquidas quentes (âmbar, magenta, vinho, fúcsia) e frias (índigo, violeta).
+ *  - Instância única de canvas persistente.
+ *  - Interpolação de tempo monotônica estrita: sem congelamentos e sem saltos.
+ *  - Resolução calibrada com DPR mobile amigável e sem piscadas.
  */
 
 const VERT = `
@@ -71,7 +70,7 @@ void main() {
   float breath = 1.0 + 0.08 * sin(t * 0.082) + 0.04 * sin(t * 0.124 + 1.7);
   vec2 pw = p * breath;
 
-  // Domain warping fluido em camadas duplas (Inigo Quilez)
+  // Domain warping fluido em camadas duplas
   vec2 q = vec2(
     fbm(pw + vec2(0.0, 0.0) + vec2(t * 0.038, t * -0.024)),
     fbm(pw + vec2(5.2, 1.3) + vec2(t * -0.028, t * 0.032))
@@ -106,7 +105,6 @@ void main() {
   vec3 coldCol = mix(u_indigo, u_violet, clamp(q.x + 0.45, 0.0, 1.0));
 
   float a = u_amp;
-  // Pesos cromáticos calibrados: vibrantes e fluidos no claro (0.38 / 0.36 / 0.34), brilhantes no escuro (0.24 / 0.22 / 0.22)
   float coldWeight = mix(0.38, 0.22, u_isDark);
   float warmWeight = mix(0.36, 0.20, u_isDark);
   float coreWeight = mix(0.34, 0.20, u_isDark);
@@ -115,13 +113,12 @@ void main() {
   col = mix(col, warmCol, warm * warmWeight * a);
   col = mix(col, coreCol, core * coreWeight * a);
 
-  // Vinheta suave adaptada (escurece no dark; atenua suavemente no light sem escurecer)
+  // Vinheta suave adaptada
   float vigDark = 1.0 - 0.25 * smoothstep(0.55, 1.25, rad);
   vec3 darkResult = col * vigDark;
   vec3 lightResult = mix(col, u_baseB, 0.16 * smoothstep(0.55, 1.25, rad));
   col = mix(lightResult, darkResult, u_isDark);
 
-  // 100% puro e sedoso — zero ruído de granulação / tv de tubo
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -152,7 +149,6 @@ const PALETTE_DARK: Record<string, [number, number, number]> = {
   u_violet: HEX("#4c1d95"),
 };
 
-/** Versão clara e luminosa do FLUIDO: cores vivas e fluidas sobre base luminosa de cristal e alta legibilidade */
 const PALETTE_LIGHT: Record<string, [number, number, number]> = {
   u_baseA: HEX("#ffffff"),
   u_baseB: HEX("#f1f5f9"),
@@ -186,11 +182,8 @@ class AuroraEngine {
   private currentDark: boolean | null = null;
   private currentAmoled: boolean | null = null;
   private raf = 0;
-  private start = 0;
-  private last = 0;
-  private scale = 0.5;
-  private slowSince = 0;
-  private degraded = 0;
+  private lastFrameTime = 0;
+  private elapsedAnimTime = 0;
   private failed = false;
   private ro: ResizeObserver | null = null;
   private listeners = new Set<(ok: boolean) => void>();
@@ -228,17 +221,18 @@ class AuroraEngine {
 
   private init(): boolean {
     if (this.failed) return false;
-    if (this.gl) return true;
+    if (this.gl && this.canvas) return true;
     try {
       const canvas = document.createElement("canvas");
       canvas.setAttribute("aria-hidden", "true");
-      canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block;";
+      canvas.style.cssText =
+        "position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;";
       const opts: WebGLContextAttributes = {
         alpha: false,
         antialias: false,
         depth: false,
         stencil: false,
-        preserveDrawingBuffer: false,
+        preserveDrawingBuffer: true,
         powerPreference: "low-power",
       };
       const gl = (canvas.getContext("webgl", opts) ||
@@ -249,14 +243,15 @@ class AuroraEngine {
         const sh = gl.createShader(type)!;
         gl.shaderSource(sh, src);
         gl.compileShader(sh);
-        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error("shader");
+        if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) throw new Error("shader compile failed");
         return sh;
       };
+
       const prog = gl.createProgram()!;
       gl.attachShader(prog, compile(gl.VERTEX_SHADER, VERT));
       gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, FRAG));
       gl.linkProgram(prog);
-      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error("link");
+      if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error("link failed");
       gl.useProgram(prog);
 
       const buf = gl.createBuffer();
@@ -266,13 +261,19 @@ class AuroraEngine {
       gl.enableVertexAttribArray(loc);
       gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
-      for (const name of ["u_res", "u_time", "u_amp", "u_isDark", ...Object.keys(PALETTE_DARK)]) {
+      const uniformNames = [
+        "u_res",
+        "u_time",
+        "u_amp",
+        "u_isDark",
+        ...Object.keys(PALETTE_DARK),
+      ];
+      for (const name of uniformNames) {
         this.uniforms[name] = gl.getUniformLocation(prog, name);
       }
       this.applyPalette(true, false);
 
       canvas.addEventListener("webglcontextlost", (e) => {
-        // preventDefault permite a restauração; até lá, degrada para o CSS.
         e.preventDefault();
         this.stop();
         this.listeners.forEach((l) => l(false));
@@ -288,7 +289,8 @@ class AuroraEngine {
       this.canvas = canvas;
       this.gl = gl;
       this.program = prog;
-      this.start = performance.now();
+      this.lastFrameTime = performance.now();
+      this.elapsedAnimTime = 0;
       this.ro = new ResizeObserver(() => this.resize());
       return true;
     } catch {
@@ -343,11 +345,13 @@ class AuroraEngine {
       this.ro?.observe(top.el);
     }
     this.resize();
-    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    if (top.animated && !reduced && document.visibilityState === "visible") this.play();
-    else {
+    const reduced = typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (top.animated && !reduced && document.visibilityState === "visible") {
+      this.play();
+    } else {
       this.stop();
-      this.draw(performance.now());
+      this.draw(this.elapsedAnimTime);
     }
   }
 
@@ -357,22 +361,21 @@ class AuroraEngine {
     const rect = top.el.getBoundingClientRect();
     const w = Math.max(1, rect.width);
     const h = Math.max(1, rect.height);
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    let bw = w * dpr * this.scale;
-    let bh = h * dpr * this.scale;
-    const maxSide = 1280;
-    const k = Math.min(1, maxSide / Math.max(bw, bh));
-    bw = Math.max(1, Math.round(bw * k));
-    bh = Math.max(1, Math.round(bh * k));
+    const isMobile = typeof window !== "undefined" && window.innerWidth <= 768;
+    const maxDpr = isMobile ? 1.15 : 1.35;
+    const dpr = Math.min(window.devicePixelRatio || 1, maxDpr);
+    const bw = Math.max(32, Math.round((w * dpr * 0.6) / 8) * 8);
+    const bh = Math.max(32, Math.round((h * dpr * 0.6) / 8) * 8);
+
     if (this.canvas.width !== bw || this.canvas.height !== bh) {
       this.canvas.width = bw;
       this.canvas.height = bh;
       this.gl.viewport(0, 0, bw, bh);
-      this.draw(performance.now());
+      this.draw(this.elapsedAnimTime);
     }
   }
 
-  private draw(now: number) {
+  private draw(animTime: number) {
     const gl = this.gl;
     const top = this.top();
     if (!gl || !top || !this.canvas) return;
@@ -380,38 +383,31 @@ class AuroraEngine {
       this.applyPalette(top.dark, top.amoled);
     }
     gl.uniform2f(this.uniforms["u_res"]!, this.canvas.width, this.canvas.height);
-    gl.uniform1f(this.uniforms["u_time"]!, (now - this.start) / 1000);
+    gl.uniform1f(this.uniforms["u_time"]!, animTime);
     gl.uniform1f(this.uniforms["u_amp"]!, top.amp);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
 
   private play() {
     if (this.raf) return;
-    this.last = 0;
+    this.lastFrameTime = performance.now();
     const loop = (now: number) => {
       this.raf = requestAnimationFrame(loop);
-      if (this.last && now - this.last < 33) return;
-      const frameGap = this.last ? now - this.last : 0;
-      this.last = now;
-      const t0 = performance.now();
-      this.draw(now);
-      const cost = performance.now() - t0;
-      // degradação adaptativa
-      if (frameGap > 33 && cost > 12) {
-        if (!this.slowSince) this.slowSince = now;
-        else if (now - this.slowSince > 2000) {
-          this.slowSince = 0;
-          this.degraded += 1;
-          if (this.degraded === 1) {
-            this.scale = 0.35;
-            this.resize();
-          } else {
-            this.stop();
-          }
-        }
-      } else {
-        this.slowSince = 0;
+      if (document.visibilityState !== "visible") {
+        this.lastFrameTime = now;
+        return;
       }
+      if (this.lastFrameTime === 0) {
+        this.lastFrameTime = now;
+      }
+      const dt = (now - this.lastFrameTime) * 0.001;
+      this.lastFrameTime = now;
+
+      // Incremento contínuo e suave
+      const clampedDt = Math.min(Math.max(dt, 0), 0.06);
+      this.elapsedAnimTime += clampedDt;
+
+      this.draw(this.elapsedAnimTime);
     };
     this.raf = requestAnimationFrame(loop);
   }
@@ -419,10 +415,28 @@ class AuroraEngine {
   private stop() {
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
+    this.lastFrameTime = 0;
   }
 
   handleVisibility() {
-    this.attach();
+    const top = this.top();
+    if (!top) return;
+    if (document.visibilityState === "visible") {
+      this.lastFrameTime = performance.now();
+      const reduced = typeof window !== "undefined" &&
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      if (top.animated && !reduced) {
+        this.play();
+      } else {
+        this.draw(this.elapsedAnimTime);
+      }
+    } else {
+      this.stop();
+    }
+  }
+
+  handleWindowResize() {
+    this.resize();
   }
 }
 
@@ -433,7 +447,7 @@ export function auroraEngine(): AuroraEngine | null {
   if (!engine) {
     engine = new AuroraEngine();
     document.addEventListener("visibilitychange", () => engine?.handleVisibility());
-    window.addEventListener("resize", () => engine?.handleVisibility());
+    window.addEventListener("resize", () => engine?.handleWindowResize());
   }
   return engine;
 }

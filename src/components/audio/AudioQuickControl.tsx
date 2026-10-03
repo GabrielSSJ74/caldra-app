@@ -20,6 +20,7 @@ export function AudioQuickControl({ className }: { className?: string }) {
     <div className={cn("relative inline-flex items-center", className)}>
       <button
         type="button"
+        suppressHydrationWarning
         onClick={() => {
           toggleMute();
           if (isMuted) play("ui_click");
@@ -41,7 +42,7 @@ export function AudioQuickControl({ className }: { className?: string }) {
         ) : (
           <Volume2 className="size-3 text-slate-600" />
         )}
-        <span className="hidden sm:inline">
+        <span className="hidden sm:inline" suppressHydrationWarning>
           {isMuted ? "MUDO" : `${Math.round(masterVolume * 100)}%`}
         </span>
       </button>

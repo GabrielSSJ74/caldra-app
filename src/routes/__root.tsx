@@ -6,6 +6,7 @@ import {
   useRouter,
   HeadContent,
   Scripts,
+  ScriptOnce,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
@@ -157,7 +158,7 @@ function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="pt-BR" className="dark" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_BOOT }} />
+        <ScriptOnce>{THEME_BOOT}</ScriptOnce>
         <style dangerouslySetInnerHTML={{ __html: BOOT_SPLASH_STYLE }} />
         <HeadContent />
       </head>

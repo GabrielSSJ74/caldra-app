@@ -61,6 +61,7 @@ export function BubbleNav() {
               <Link
                 key={item.to}
                 to={item.to}
+                data-audio="ui_nav"
                 onClick={() => triggerHaptic(on ? "tap" : "selection")}
                 aria-label={translate(language, ITEM_KEYS[itemIndex]!)}
                 className={cn(
@@ -102,6 +103,7 @@ export function BubbleNav() {
 
           <button
             type="button"
+            data-audio={moreOpen ? "ui_toggle_close" : "ui_toggle_open"}
             onClick={() => {
               triggerHaptic("selection");
               setMoreOpen(true);
@@ -204,6 +206,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
               <button
                 key={e.name}
                 type="button"
+                data-audio="ui_nav"
                 onClick={() => go(e)}
                 className="hairline flex min-h-[76px] flex-col items-center justify-center gap-1.5 rounded-2xl bg-background/40 p-2 text-center touch-manipulation cursor-pointer transition-all duration-150 [transition-timing-function:cubic-bezier(.16,1,.3,1)] hover:bg-accent/10 hover:text-accent active:scale-95 active:brightness-95"
               >

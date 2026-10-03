@@ -83,18 +83,14 @@ export function AuroraBackground({
   const pageVisible = usePageVisible();
   const hostRef = useRef<HTMLDivElement>(null);
   const [glOk, setGlOk] = useState(true);
-  /* Só escondemos os blobs CSS quando o canvas do shader está REALMENTE
-     montado e desenhando. Sem isto, uma falha silenciosa do WebGL deixa a
-     tela sem nenhum fundo. */
-  const [shaderLive, setShaderLive] = useState(false);
   const darkSurface = useDarkSurface();
   const amoledSurface = useAmoledSurface();
 
   /* FLUIDO ativa o shader tanto no tema escuro quanto no tema claro com paleta adaptada. */
   const shaderStyle = auroraStyle === "fluido";
-  const wantsShader = shaderStyle && glOk && shaderLive;
-  /* FLUIDO anima continuamente para entregar a experiência de fundo vivo de alta fidelidade. */
-  const allowed = mode === "always" || isMestre || auroraStyle === "fluido";
+  const wantsShader = shaderStyle && glOk;
+  /* FLUIDO e FLUID AURORA animam continuamente para entregar a experiência viva */
+  const allowed = mode === "always" || isMestre || auroraStyle === "fluido" || auroraStyle === "suave";
   const animated = allowed && active && pageVisible && !reduced;
 
   /* Modo Oficina / alto contraste recuam a amplitude do fundo. */
@@ -107,32 +103,21 @@ export function AuroraBackground({
 
   /* Empresta o container ao canvas compartilhado no estilo FLUIDO. */
   useEffect(() => {
-    if (!shaderStyle) {
-      setShaderLive(false);
-      return;
-    }
+    if (!shaderStyle) return;
     const engine = auroraEngine();
     const host = hostRef.current;
-    if (!engine || !host) {
-      setShaderLive(false);
-      return;
-    }
+    if (!engine || !host) return;
     if (!engine.supported()) {
       setGlOk(false);
-      setShaderLive(false);
       return;
     }
     const release = engine.acquire(host, animated, amp, darkSurface, amoledSurface);
     const off = engine.onStatus((ok) => {
       setGlOk(ok);
-      if (!ok) setShaderLive(false);
     });
-    /* Confirmação factual: o canvas foi mesmo anexado a este container. */
-    setShaderLive(!!host.querySelector("canvas"));
     return () => {
       off();
       release();
-      setShaderLive(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shaderStyle]);
@@ -157,13 +142,61 @@ export function AuroraBackground({
       data-style={wantsShader ? "fluido" : "suave"}
     >
       <div ref={hostRef} className="aurora-gl absolute inset-0" />
-      <div className="aurora-css absolute inset-0">
-        <div className="aurora-base absolute inset-0" />
-        <div className="aurora-blob aurora-blob-1" />
-        <div className="aurora-blob aurora-blob-2" />
-        <div className="aurora-blob aurora-blob-3" />
-        <div className="aurora-blob aurora-blob-4" />
-      </div>
+      {!wantsShader && (
+        <div className="aurora-css fluid-aurora-container absolute inset-0">
+          {/* Céu noturno profundo (#05070C → #0A0F18) */}
+          <div className="fluid-aurora-sky absolute inset-0" />
+
+          {/* Céu estrelado astronômico ultra discreto (pontos estelares finos como na foto de referência) */}
+          <div className="fluid-aurora-stars absolute inset-0 pointer-events-none" />
+
+          {/* Resplendor atmosférico ionoférico (brilho difuso e dispersão ambiental) */}
+          <div className="fluid-aurora-glow absolute inset-0" />
+
+          {/* 1. Verde Zênite Amplo (Oxigênio atômico superior dominante) */}
+          <div className="fluid-aurora-mass fluid-mass-high-emerald">
+            <div className="fluid-mass-core fluid-core-high-emerald" />
+          </div>
+
+          {/* 2. Vermelho Carmesim Raro (Evento excepcional da alta ionosfera em ciclo longo) */}
+          <div className="fluid-aurora-mass fluid-mass-high-crimson">
+            <div className="fluid-mass-core fluid-core-high-crimson" />
+          </div>
+
+          {/* 3. Grande Massa Verde Esmeralda Central (Identidade dominante da aurora) */}
+          <div className="fluid-aurora-mass fluid-mass-mid-emerald">
+            <div className="fluid-mass-core fluid-core-mid-emerald" />
+          </div>
+
+          {/* 4. Pluma Ciano & Turquesa Intermediária (Luz ativa e transição) */}
+          <div className="fluid-aurora-mass fluid-mass-mid-cyan">
+            <div className="fluid-mass-core fluid-core-mid-cyan" />
+          </div>
+
+          {/* 5. Vórtice Azul Safira Discreto (Profundidade e contraste frio) */}
+          <div className="fluid-aurora-mass fluid-mass-mid-blue">
+            <div className="fluid-mass-core fluid-core-mid-blue" />
+          </div>
+
+          {/* 6. Pluma Rosa e Magenta na Base (Segunda camada de importância) */}
+          <div className="fluid-aurora-mass fluid-mass-low-magenta">
+            <div className="fluid-mass-core fluid-core-low-magenta" />
+          </div>
+
+          {/* 7. Massa Violeta e Púrpura Inferior (Transição discreta) */}
+          <div className="fluid-aurora-mass fluid-mass-low-violet">
+            <div className="fluid-mass-core fluid-core-low-violet" />
+          </div>
+
+          {/* 8. Zona de Confluência Âmbar/Dourada (Mistura orgânica onde verde e rosa se tocam) */}
+          <div className="fluid-aurora-mass fluid-mass-low-amber">
+            <div className="fluid-mass-core fluid-core-low-amber" />
+          </div>
+
+          {/* Vinheta atmosférica preservando legibilidade e contraste absoluto de UI */}
+          <div className="fluid-aurora-vignette absolute inset-0 pointer-events-none" />
+        </div>
+      )}
     </div>
   );
 }

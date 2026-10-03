@@ -16,7 +16,7 @@ export type AppLanguage = "pt" | "en" | "es";
 export type Unit = "mm" | "cm" | "m" | "in";
 /** APRENDIZ mostra fórmulas e dicas; MESTRE segue direto. Só apresentação. */
 export type Level = "aprendiz" | "mestre";
-/** Estilo do fundo AURORA: shader WebGL, blobs CSS ou frame congelado. */
+/** Estilo do fundo AURORA: shader WebGL (fluido), Fluid Aurora luz líquida viva (suave) ou sólido (padrao). */
 /** PADRÃO = nenhuma camada Aurora (fundo sólido do tema). Só por escolha explícita. */
 export type AuroraStyle = "fluido" | "suave" | "padrao";
 
@@ -47,7 +47,7 @@ const DEFAULTS: Settings = {
   precision: 2,
   level: "aprendiz",
   region: DEFAULT_REGION,
-  auroraStyle: "fluido",
+  auroraStyle: "suave",
   calcAngle: "DEG",
   calcPlaces: 4,
 };

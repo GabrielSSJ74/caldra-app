@@ -71,7 +71,7 @@ export interface AudioSettingsState {
 
 const STORAGE_KEY = "caldra.audio_settings";
 
-const DEFAULT_AUDIO_SETTINGS: AudioSettingsState = {
+export const DEFAULT_AUDIO_SETTINGS: AudioSettingsState = {
   masterVolume: 0.8,
   musicVolume: 0.2, // 20%
   effectsVolume: 0.25, // 25%
@@ -1293,13 +1293,12 @@ export class AudioManager {
     // Agenda os próximos acordes em ciclo perpétuo sem costuras
     this.ambientTimer = window.setInterval(playNextChord, CHORD_INTERVAL * 1000);
 
-    // Inicia o pulso tecnológico sutil em 82 BPM (a cada ~1.46s = 2 tempos)
+    // Pulso espacial sutil sincronizado com a evolução harmônica (a cada 6s)
     this.pulseStep = 0;
-    const PULSE_INTERVAL_MS = Math.round((60 / 82) * 2 * 1000); // ~1463 ms
     this.pulseTimer = window.setInterval(() => {
       if (!this.isMusicPlaying || !this.ctx) return;
       this.triggerTechPulse();
-    }, PULSE_INTERVAL_MS);
+    }, CHORD_INTERVAL * 1000);
   }
 
   private triggerAmbientSection(
@@ -1345,6 +1344,7 @@ export class AudioManager {
     subOsc.frequency.setValueAtTime(section.bass, now);
     subGain.gain.setValueAtTime(0.0001, now);
     subGain.gain.linearRampToValueAtTime(0.12, now + 2.0);
+    subGain.gain.setValueAtTime(0.12, now + duration - 2.4);
     subGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
     subOsc.connect(subGain);
     subGain.connect(this.musicGain);

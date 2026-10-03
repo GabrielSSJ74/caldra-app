@@ -10,6 +10,7 @@ import {
 import {
   audioManager,
   AudioManager,
+  DEFAULT_AUDIO_SETTINGS,
   type AudioSettingsState,
   type SoundEffectId,
 } from "./AudioManager";
@@ -34,9 +35,12 @@ interface AudioContextValue extends AudioSettingsState {
 const AudioContext = createContext<AudioContextValue | null>(null);
 
 export function AudioProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AudioSettingsState>(() => audioManager.getSettings());
+  // Inicialização estável idêntica entre SSR e hidratação do cliente
+  const [state, setState] = useState<AudioSettingsState>(DEFAULT_AUDIO_SETTINGS);
 
   useEffect(() => {
+    // Sincroniza configurações salvas no cliente após hidratação completa
+    setState(audioManager.getSettings());
     return audioManager.subscribe((newSettings) => {
       setState(newSettings);
     });

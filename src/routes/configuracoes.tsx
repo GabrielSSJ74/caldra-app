@@ -51,7 +51,7 @@ const THEMES: { id: ThemeMode; label: string }[] = [
 ];
 const AURORA_STYLES: { id: AuroraStyle; label: string; hint: string }[] = [
   { id: "fluido", label: "Fluido", hint: "Shader líquido em movimento contínuo" },
-  { id: "suave", label: "Suave", hint: "Massas de luz leves, menor custo" },
+  { id: "suave", label: "Fluid Aurora", hint: "Massas fluidas e vivas de aurora boreal no céu noturno" },
   { id: "padrao", label: "PADRÃO", hint: "Sem fundo animado — só a cor sólida do tema" },
 ];
 const ACCENTS: { id: AccentColor; label: string; swatch: string }[] = [
@@ -287,7 +287,7 @@ function Configuracoes() {
               {AURORA_STYLES.find((a) => a.id === auroraStyle)?.hint ??
                 (isMestre
                   ? ""
-                  : "Fluido e Suave fazem parte do CALDRA PRO. O estilo Padrão segue disponível.")}
+                  : "Fluido e Fluid Aurora fazem parte do CALDRA PRO. O estilo Padrão segue disponível.")}
             </p>
           </div>
         </div>
@@ -399,6 +399,9 @@ function Configuracoes() {
           </div>
         </div>
       </Panel>
+
+      {/* ÁUDIO & IDENTIDADE SONORA (SEÇÃO 16 DO PROMPT) */}
+      <AudioSettingsPanel />
 
       <Panel className="space-y-3 p-4">
         <SectionLabel>Backup</SectionLabel>
