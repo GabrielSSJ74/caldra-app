@@ -11,14 +11,6 @@
  *   - Efeitos táteis de alta precisão para botões, navegação, operações CAD, B-Rep e metrologia.
  */
 
-import {
-  CALDRA_MOVEMENTS,
-  CALDRA_SCORE,
-  TOTAL_SUITE_DURATION,
-  type MovementDescriptor,
-  type ScoreEvent,
-} from "./CaldraSuite";
-
 export type AudioCategory = "ui" | "cad" | "music" | "selection";
 
 export type SoundEffectId =
@@ -29,8 +21,6 @@ export type SoundEffectId =
   | "ui_nav"
   | "ui_toggle_open"
   | "ui_toggle_close"
-  // Handpan Acústico (Nova camada sonora orgânica)
-  | "handpan_ding"
   // CHAMFER & CAD Core
   | "chamfer_init"
   | "cad_core_init"
@@ -77,10 +67,6 @@ export interface AudioSettingsState {
   cadEffectsEnabled: boolean;
   musicEnabled: boolean;
   selectionSoundsEnabled: boolean;
-  currentMovementIndex?: number;
-  currentMovementName?: string;
-  musicTimeSeconds?: number;
-  totalSuiteDuration?: number;
 }
 
 const STORAGE_KEY = "caldra.audio_settings";
@@ -95,10 +81,6 @@ export const DEFAULT_AUDIO_SETTINGS: AudioSettingsState = {
   cadEffectsEnabled: true,
   musicEnabled: true,
   selectionSoundsEnabled: true,
-  currentMovementIndex: 0,
-  currentMovementName: "Intro — Curiosidade",
-  musicTimeSeconds: 0,
-  totalSuiteDuration: TOTAL_SUITE_DURATION,
 };
 
 export class AudioManager {
@@ -117,16 +99,15 @@ export class AudioManager {
   private settings: AudioSettingsState = { ...DEFAULT_AUDIO_SETTINGS };
   private listeners: Set<(s: AudioSettingsState) => void> = new Set();
 
-  // Motor da Trilha Sonora Original CALDRA ("The Geometry of Discovery")
+  // Motor da Nova Trilha Sonora — "CALDRA HORIZON" (Mistério, Curiosidade & Exploração)
   private isMusicPlaying = false;
-  private suiteStartTime = 0;
-  private suiteUpdateTimer: number | null = null;
-  private suiteLoopTimer: number | null = null;
+  private ambientTimer: number | null = null;
+  private pulseTimer: number | null = null;
+  private pulseStep = 0;
+  private currentChordIndex = 0;
   private activeVoices: { oscs: (OscillatorNode | AudioBufferSourceNode)[]; gain: GainNode }[] = [];
   private musicDelayNode: DelayNode | null = null;
   private musicFeedbackGain: GainNode | null = null;
-  private handpanReverbNode: DelayNode | null = null;
-  private handpanFeedbackGain: GainNode | null = null;
 
   private constructor() {
     this.loadSettings();
@@ -146,23 +127,13 @@ export class AudioManager {
   }
 
   /** Atalho estático para iniciar trilha ambiente */
-  public static playMusic(trackId = "caldra_suite"): void {
+  public static playMusic(trackId = "caldra_main"): void {
     AudioManager.getInstance().playMusic(trackId);
   }
 
   /** Atalho estático para parar a trilha ambiente */
   public static stopMusic(): void {
     AudioManager.getInstance().stopMusic();
-  }
-
-  /** Atalho estático para saltar para um movimento da suíte (0 a 6) */
-  public static seekMovement(index: number): void {
-    AudioManager.getInstance().seekMovement(index);
-  }
-
-  /** Retorna os movimentos narrativos da suíte */
-  public static getMovements(): MovementDescriptor[] {
-    return CALDRA_MOVEMENTS;
   }
 
   // =========================================================================
@@ -236,26 +207,6 @@ export class AudioManager {
           delayFilter.connect(this.musicGain);
         } catch (delayErr) {
           void delayErr;
-        }
-
-        // Barramento de ressonância acústica espacial para o Handpan (reverb quente, orgânico e celestial)
-        try {
-          this.handpanReverbNode = this.ctx.createDelay();
-          this.handpanReverbNode.delayTime.setValueAtTime(0.38, this.ctx.currentTime);
-          this.handpanFeedbackGain = this.ctx.createGain();
-          this.handpanFeedbackGain.gain.setValueAtTime(0.36, this.ctx.currentTime);
-
-          const handpanDampingFilter = this.ctx.createBiquadFilter();
-          handpanDampingFilter.type = "lowpass";
-          handpanDampingFilter.frequency.setValueAtTime(2200, this.ctx.currentTime);
-          handpanDampingFilter.Q.setValueAtTime(0.7, this.ctx.currentTime);
-
-          this.handpanReverbNode.connect(handpanDampingFilter);
-          handpanDampingFilter.connect(this.handpanFeedbackGain);
-          this.handpanFeedbackGain.connect(this.handpanReverbNode);
-          handpanDampingFilter.connect(this.musicGain);
-        } catch (reverbErr) {
-          void reverbErr;
         }
 
         // Aplica volumes salvos
@@ -614,14 +565,6 @@ export class AudioManager {
           gain.connect(targetBus);
           osc.start(now);
           osc.stop(now + 0.06);
-          break;
-        }
-
-        // ---------------------------------------------------------------
-        // HANDPAN ACÚSTICO — Toque quente, profundo, ressonante e natural
-        // ---------------------------------------------------------------
-        case "handpan_ding": {
-          this.triggerHandpanNote(246.94, now, 0, 0.052, 4.2, targetBus);
           break;
         }
 
@@ -1191,18 +1134,12 @@ export class AudioManager {
   }
 
   // =========================================================================
-  // TRILHA SONORA INSTRUMENTAL ORIGINAL CALDRA — "THE GEOMETRY OF DISCOVERY"
-  // Suíte Narrativa em 7 Movimentos (4:10 / 250s):
-  // 1. INTRO [0:00 - 0:30] — CURIOSIDADE (Felt piano solo, amplo espaço)
-  // 2. EXPLORAÇÃO [0:30 - 1:10] — SISTEMAS (Violoncelo, eletrônica sutil, handpan)
-  // 3. DESCOBERTA [1:10 - 1:50] — LUZ & GEOMETRIA (Lídia aberta, harpa, celesta)
-  // 4. INCERTEZA [1:50 - 2:30] — O LABIRINTO SUSPENSO (Tensão modal, madeira)
-  // 5. COMPREENSÃO [2:30 - 3:10] — A FORMA REVELADA (Harmonia plena integrada)
-  // 6. MARAVILHA SERENA [3:10 - 3:45] — O CLÍMAX NOBRE (Ápice sem bombast)
-  // 7. SERENIDADE [3:45 - 4:10] — RETORNO & PAZ (Desvanecimento e silêncio pleno)
+  // NOVA TRILHA SONORA PRINCIPAL — "CALDRA HORIZON" (COMPOSIÇÃO ORIGINAL)
+  // Mistério Tecnológico, Curiosidade, Descoberta, Exploração e Precisão
+  // Zero melancolia, harmonia aberta/lídia/add9, motivo interrogativo cristalino
   // =========================================================================
 
-  public playMusic(trackId = "caldra_suite"): void {
+  public playMusic(trackId = "caldra_main"): void {
     void trackId;
     if (this.isMusicPlaying) return;
     if (!this.settings.musicEnabled || this.settings.isMuted) return;
@@ -1211,19 +1148,18 @@ export class AudioManager {
     if (!ctx) return;
 
     this.isMusicPlaying = true;
-    this.startSuite(0);
+    this.startAmbientEngine();
   }
 
   public stopMusic(): void {
     this.isMusicPlaying = false;
-
-    if (this.suiteUpdateTimer !== null) {
-      window.clearInterval(this.suiteUpdateTimer);
-      this.suiteUpdateTimer = null;
+    if (this.ambientTimer !== null) {
+      window.clearInterval(this.ambientTimer);
+      this.ambientTimer = null;
     }
-    if (this.suiteLoopTimer !== null) {
-      window.clearTimeout(this.suiteLoopTimer);
-      this.suiteLoopTimer = null;
+    if (this.pulseTimer !== null) {
+      window.clearInterval(this.pulseTimer);
+      this.pulseTimer = null;
     }
 
     // Suaviza e cessa vozes ativas
@@ -1231,7 +1167,7 @@ export class AudioManager {
       const now = this.ctx.currentTime;
       this.activeVoices.forEach((v) => {
         try {
-          v.gain.gain.setTargetAtTime(0.0001, now, 0.35);
+          v.gain.gain.setTargetAtTime(0.0001, now, 0.4);
           window.setTimeout(() => {
             v.oscs.forEach((o) => {
               try {
@@ -1242,820 +1178,205 @@ export class AudioManager {
                 void e;
               }
             });
-          }, 600);
+          }, 800);
         } catch (e) {
           void e;
         }
       });
       this.activeVoices = [];
     }
-
-    this.notify();
   }
 
-  /** Pula diretamente para um movimento da suíte (0 a 6) */
-  public seekMovement(index: number): void {
-    if (index < 0 || index >= CALDRA_MOVEMENTS.length) return;
-    const movement = CALDRA_MOVEMENTS[index];
-
-    if (!this.settings.musicEnabled || this.settings.isMuted) {
-      this.settings.musicEnabled = true;
-      this.settings.isMuted = false;
-      this.saveSettings();
-    }
-
-    this.stopMusic();
-    this.isMusicPlaying = true;
-    this.startSuite(movement.startTime);
-  }
-
-  public getMovements(): MovementDescriptor[] {
-    return CALDRA_MOVEMENTS;
-  }
-
-  private startSuite(fromSecond = 0): void {
+  private startAmbientEngine(): void {
     if (!this.ctx || !this.isMusicPlaying) return;
 
-    const ctx = this.ensureAudioContext();
-    if (!ctx) return;
+    // -----------------------------------------------------------------------
+    // HARMONIA: Mistério Aberto, Curiosidade e Exploração Tecnológica
+    // (Zero melancolia, zero tristeza, acordes abertos, suspensos e lídios)
+    // -----------------------------------------------------------------------
+    const chordProgressions = [
+      // 1. "Despertar do Espaço" — Eadd9 / Esus2 (Aberto, limpo, curioso)
+      {
+        bass: 82.41, // E2
+        pad: [164.81, 246.94, 293.66, 329.63, 415.30, 493.88], // E3, B3, D4, E4, G#4, B4
+        filterBase: 650,
+        filterPeak: 1750,
+        melody: [
+          { f: 493.88, delay: 1.8, pan: -0.25 }, // B4
+          { f: 739.99, delay: 3.1, pan: 0.3 },   // F#5
+          { f: 830.61, delay: 4.3, pan: -0.15 }, // G#5
+          { f: 659.25, delay: 5.5, pan: 0.2 },   // E5 (pergunta melódica: "o que há aqui?")
+        ],
+      },
+      // 2. "O Enigma Lídio / Descoberta" — Amaj9#11 (Mágico, luminoso, futurista)
+      {
+        bass: 110.00, // A2
+        pad: [164.81, 207.65, 246.94, 311.13, 329.63, 415.30], // E3, G#3, B3, D#4 (#11 lídia!), E4, G#4
+        filterBase: 700,
+        filterPeak: 2100,
+        melody: [
+          { f: 659.25, delay: 1.7, pan: 0.25 },  // E5
+          { f: 987.77, delay: 2.9, pan: -0.3 },  // B5
+          { f: 1244.51, delay: 4.1, pan: 0.35 }, // D#6
+          { f: 830.61, delay: 5.2, pan: -0.2 },  // G#5 (fascínio e admiração)
+        ],
+      },
+      // 3. "Precisão & Engenharia" — C#m7(add11) / Bsus (Foco, geometria limpa)
+      {
+        bass: 65.41, // C#2
+        pad: [123.47, 164.81, 246.94, 277.18, 369.99, 415.30], // B2, E3, B3, C#4, F#4, G#4
+        filterBase: 600,
+        filterPeak: 1650,
+        melody: [
+          { f: 739.99, delay: 1.9, pan: -0.3 },  // F#5
+          { f: 830.61, delay: 3.1, pan: 0.25 },  // G#5
+          { f: 622.25, delay: 4.4, pan: -0.1 },  // D#5 (precisão cristalina)
+        ],
+      },
+      // 4. "Impulso de Criação" — F#7sus4(add9) (Atração, movimento contínuo)
+      {
+        bass: 92.50, // F#2
+        pad: [138.59, 164.81, 207.65, 277.18, 329.63, 369.99], // C#3, E3, G#3, C#4, E4, F#4
+        filterBase: 750,
+        filterPeak: 1950,
+        melody: [
+          { f: 554.37, delay: 1.8, pan: 0.2 },   // C#5
+          { f: 659.25, delay: 3.0, pan: -0.25 }, // E5
+          { f: 830.61, delay: 4.2, pan: 0.3 },   // G#5
+          { f: 987.77, delay: 5.3, pan: -0.1 },  // B5 (impulso de explorar ferramentas)
+        ],
+      },
+      // 5. "O Horizonte Revelado" — Dmaj7#11 (Brilho e amplitude máxima, clímax sutil)
+      {
+        bass: 73.42, // D2
+        pad: [146.83, 207.65, 277.18, 293.66, 329.63, 440.00], // D3, G#3 (#11), C#4, D4, E4, A4
+        filterBase: 800,
+        filterPeak: 2200,
+        melody: [
+          { f: 830.61, delay: 1.7, pan: -0.2 },  // G#5
+          { f: 659.25, delay: 2.9, pan: 0.3 },   // E5
+          { f: 739.99, delay: 4.1, pan: -0.3 },  // F#5
+          { f: 987.77, delay: 5.3, pan: 0.25 },  // B5 (visão ampla de design 3D)
+        ],
+      },
+      // 6. "Conexão e Loop Infinito" — Badd9(sus4) (Resolução suspensa aberta)
+      {
+        bass: 61.74, // B1
+        pad: [123.47, 164.81, 185.00, 246.94, 277.18, 369.99], // B2, E3, F#3, B3, C#4, F#4
+        filterBase: 650,
+        filterPeak: 1700,
+        melody: [
+          { f: 739.99, delay: 1.8, pan: 0.2 },   // F#5
+          { f: 659.25, delay: 3.0, pan: -0.2 },  // E5
+          { f: 493.88, delay: 4.2, pan: 0.15 },  // B4
+          { f: 369.99, delay: 5.4, pan: -0.25 }, // F#4 (conecta naturalmente de volta ao início)
+        ],
+      },
+    ];
 
-    const now = ctx.currentTime;
-    this.suiteStartTime = now - fromSecond;
+    const CHORD_DURATION = 8.4; // Duração total de cada acorde com fade out
+    const CHORD_INTERVAL = 6.0; // Intervalo para o próximo acorde (2.4s de crossfade perfeito)
+    this.currentChordIndex = 0;
 
-    // Agenda os eventos da partitura a partir de fromSecond
-    CALDRA_SCORE.forEach((event) => {
-      if (event.t >= fromSecond && event.t < TOTAL_SUITE_DURATION) {
-        const scheduleTime = this.suiteStartTime + event.t;
-        this.dispatchScoreEvent(event, scheduleTime);
-      }
-    });
-
-    // Agenda o próximo ciclo completo sem costuras
-    const remainingTime = TOTAL_SUITE_DURATION - fromSecond;
-    this.suiteLoopTimer = window.setTimeout(() => {
-      if (!this.isMusicPlaying) return;
-      this.startSuite(0);
-    }, Math.max(100, remainingTime * 1000));
-
-    // Timer de atualização do progresso e movimento para a interface do usuário
-    if (this.suiteUpdateTimer) {
-      window.clearInterval(this.suiteUpdateTimer);
-    }
-    this.suiteUpdateTimer = window.setInterval(() => {
+    const playNextChord = () => {
       if (!this.isMusicPlaying || !this.ctx) return;
-      const elapsed = (this.ctx.currentTime - this.suiteStartTime) % TOTAL_SUITE_DURATION;
-      const curM =
-        CALDRA_MOVEMENTS.find((m) => elapsed >= m.startTime && elapsed < m.endTime) ||
-        CALDRA_MOVEMENTS[0];
 
-      if (
-        this.settings.currentMovementIndex !== curM.index ||
-        this.settings.musicTimeSeconds !== Math.floor(elapsed)
-      ) {
-        this.settings.currentMovementIndex = curM.index;
-        this.settings.currentMovementName = curM.name;
-        this.settings.musicTimeSeconds = Math.floor(elapsed);
-        this.notify();
-      }
-    }, 500);
+      const current = chordProgressions[this.currentChordIndex];
+      this.currentChordIndex = (this.currentChordIndex + 1) % chordProgressions.length;
+
+      this.triggerAmbientSection(current, CHORD_DURATION);
+    };
+
+    // Toca o primeiro acorde imediatamente
+    playNextChord();
+
+    // Agenda os próximos acordes em ciclo perpétuo sem costuras
+    this.ambientTimer = window.setInterval(playNextChord, CHORD_INTERVAL * 1000);
+
+    // Pulso espacial sutil sincronizado com a evolução harmônica (a cada 6s)
+    this.pulseStep = 0;
+    this.pulseTimer = window.setInterval(() => {
+      if (!this.isMusicPlaying || !this.ctx) return;
+      this.triggerTechPulse();
+    }, CHORD_INTERVAL * 1000);
   }
 
-  private dispatchScoreEvent(event: ScoreEvent, scheduleTime: number): void {
-    const pan = event.pan ?? 0;
-    switch (event.instrument) {
-      case "felt_piano":
-        this.triggerFeltPiano(event.frequencies, scheduleTime, event.velocity, event.duration, pan);
-        break;
-      case "cello":
-        this.triggerCello(event.frequencies, scheduleTime, event.velocity, event.duration, pan);
-        break;
-      case "double_bass":
-      case "sub_bass":
-        this.triggerDoubleBass(event.frequencies, scheduleTime, event.velocity, event.duration, pan);
-        break;
-      case "strings":
-        this.triggerStrings(event.frequencies, scheduleTime, event.velocity, event.duration, pan);
-        break;
-      case "harp":
-        this.triggerHarp(event.frequencies, scheduleTime, event.velocity, event.duration, pan);
-        break;
-      case "celesta":
-        this.triggerCelesta(event.frequencies, scheduleTime, event.velocity, event.duration, pan);
-        break;
-      case "kalimba":
-      case "handpan":
-        this.triggerHandpanNote(event.frequencies[0], scheduleTime, pan, event.velocity, event.duration);
-        break;
-      case "woodwind":
-        this.triggerWoodwind(event.frequencies, scheduleTime, event.velocity, event.duration, pan);
-        break;
-      case "analog_pad":
-        this.triggerAnalogPad(event.frequencies, scheduleTime, event.velocity, event.duration, pan);
-        break;
-      case "synth_texture":
-        this.triggerAnalogPad(event.frequencies, scheduleTime, event.velocity * 0.7, event.duration, pan);
-        break;
-      case "ancient_choir":
-        this.triggerAncientChoir(event.frequencies, scheduleTime, event.velocity, event.duration, pan);
-        break;
-    }
-  }
-
-  // =========================================================================
-  // MODELOS DE SÍNTESE ACÚSTICA PROCEDURAL DOS INSTRUMENTOS
-  // =========================================================================
-
-  /**
-   * 1. PIANO DE FELTRO ÍNTIMO (NARRADOR PRINCIPAL COM RIQUEZA HARMÔNICA)
-   * Ataque aveludado, voicings abertos, acordes polifônicos, inarmonicidade de cordas e soundboard
-   */
-  public triggerFeltPiano(
-    frequencies: number[],
-    startTime: number,
-    velocity = 0.055,
-    duration = 4.0,
-    pan = 0,
-  ): void {
-    if (!this.ctx || !this.musicGain) return;
-    try {
-      const ctx = this.ctx;
-      const oscs: OscillatorNode[] = [];
-      const noteGain = ctx.createGain();
-      const soundboardFilter = ctx.createBiquadFilter();
-
-      soundboardFilter.type = "lowpass";
-      const baseCutoff = Math.min(2800, 1100 + velocity * 18000);
-      soundboardFilter.frequency.setValueAtTime(baseCutoff, startTime);
-      soundboardFilter.frequency.exponentialRampToValueAtTime(680, startTime + duration);
-      soundboardFilter.Q.setValueAtTime(1.2, startTime);
-
-      // Escalonamento harmônico para acordes de múltiplas notas (preserva o calor aveludado sem clipping)
-      const count = Math.max(1, frequencies.length);
-      const polyScalar = 1 / Math.pow(count, 0.40);
-      const humanVel = Math.max(
-        0.02,
-        Math.min(0.08, velocity * polyScalar * (1 + (Math.random() - 0.5) * 0.06)),
-      );
-
-      noteGain.gain.setValueAtTime(0.0001, startTime);
-      noteGain.gain.linearRampToValueAtTime(humanVel, startTime + 0.022);
-      noteGain.gain.exponentialRampToValueAtTime(humanVel * 0.48, startTime + 0.95);
-      noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-      // Micro-deslocamento humano para notas dentro de um acorde (efeito de dedilhado natural de 12ms a 22ms)
-      frequencies.forEach((freq, idx) => {
-        const noteOffset = idx > 0 ? (idx * 0.012 * (1 + (Math.random() - 0.5) * 0.2)) : 0;
-        const noteStart = startTime + noteOffset;
-
-        const osc1 = ctx.createOscillator();
-        osc1.type = "sine";
-        osc1.frequency.setValueAtTime(freq, noteStart);
-        osc1.connect(soundboardFilter);
-        oscs.push(osc1);
-
-        const osc2 = ctx.createOscillator();
-        const g2 = ctx.createGain();
-        osc2.type = "sine";
-        osc2.frequency.setValueAtTime(freq * 2.0015, noteStart);
-        g2.gain.setValueAtTime(0.46, noteStart);
-        osc2.connect(g2);
-        g2.connect(soundboardFilter);
-        oscs.push(osc2);
-
-        const osc3 = ctx.createOscillator();
-        const g3 = ctx.createGain();
-        osc3.type = "triangle";
-        osc3.frequency.setValueAtTime(freq * 3.003, noteStart);
-        g3.gain.setValueAtTime(0.18, noteStart);
-        osc3.connect(g3);
-        g3.connect(soundboardFilter);
-        oscs.push(osc3);
-      });
-
-      // Transiente tátil de impacto de feltro
-      try {
-        const bufSize = Math.floor(ctx.sampleRate * 0.022);
-        const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
-        const data = buf.getChannelData(0);
-        for (let i = 0; i < bufSize; i++) {
-          data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.3));
-        }
-        const noise = ctx.createBufferSource();
-        noise.buffer = buf;
-        const nFilter = ctx.createBiquadFilter();
-        nFilter.type = "bandpass";
-        nFilter.frequency.setValueAtTime(480, startTime);
-        nFilter.Q.setValueAtTime(2.0, startTime);
-        const nGain = ctx.createGain();
-        nGain.gain.setValueAtTime(0.014, startTime);
-        nGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.022);
-        noise.connect(nFilter);
-        nFilter.connect(nGain);
-        nGain.connect(noteGain);
-        noise.start(startTime);
-        noise.stop(startTime + 0.025);
-      } catch {
-        // Fallback
-      }
-
-      soundboardFilter.connect(noteGain);
-      this.routeToSpatialMix(noteGain, pan, startTime, duration);
-
-      oscs.forEach((o) => {
-        o.start(startTime);
-        o.stop(startTime + duration + 0.1);
-      });
-
-      this.registerVoice(oscs, noteGain, duration);
-    } catch (e) {
-      void e;
-    }
-  }
-
-  /**
-   * 2. VIOLONCELO EXPRESSIVO PROFUNDO
-   * Arco acústico lento, formantes de caixa de madeira (220Hz, 540Hz) e vibrato orgânico
-   */
-  public triggerCello(
-    frequencies: number[],
-    startTime: number,
-    velocity = 0.05,
-    duration = 6.0,
-    pan = -0.2,
-  ): void {
-    if (!this.ctx || !this.musicGain) return;
-    try {
-      const ctx = this.ctx;
-      const oscs: OscillatorNode[] = [];
-      const noteGain = ctx.createGain();
-
-      const formant1 = ctx.createBiquadFilter();
-      formant1.type = "peaking";
-      formant1.frequency.setValueAtTime(220, startTime);
-      formant1.Q.setValueAtTime(3.2, startTime);
-      formant1.gain.setValueAtTime(6.0, startTime);
-
-      const formant2 = ctx.createBiquadFilter();
-      formant2.type = "peaking";
-      formant2.frequency.setValueAtTime(540, startTime);
-      formant2.Q.setValueAtTime(2.5, startTime);
-      formant2.gain.setValueAtTime(4.5, startTime);
-
-      const lowpass = ctx.createBiquadFilter();
-      lowpass.type = "lowpass";
-      lowpass.frequency.setValueAtTime(2200, startTime);
-
-      noteGain.gain.setValueAtTime(0.0001, startTime);
-      noteGain.gain.linearRampToValueAtTime(velocity, startTime + 0.35);
-      noteGain.gain.setValueAtTime(velocity, startTime + duration - 0.8);
-      noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-      frequencies.forEach((freq) => {
-        const oscSaw = ctx.createOscillator();
-        const oscTri = ctx.createOscillator();
-        const gTri = ctx.createGain();
-
-        oscSaw.type = "sawtooth";
-        oscSaw.frequency.setValueAtTime(freq, startTime);
-
-        oscTri.type = "triangle";
-        oscTri.frequency.setValueAtTime(freq * 1.002, startTime);
-        gTri.gain.setValueAtTime(0.5, startTime);
-
-        // LFO de vibrato humano
-        const vibrato = ctx.createOscillator();
-        const vibratoGain = ctx.createGain();
-        vibrato.frequency.setValueAtTime(4.7, startTime);
-        vibratoGain.gain.setValueAtTime(0.0, startTime);
-        vibratoGain.gain.linearRampToValueAtTime(freq * 0.004, startTime + 0.6);
-        vibrato.connect(vibratoGain);
-        vibratoGain.connect(oscSaw.frequency);
-        vibratoGain.connect(oscTri.frequency);
-        vibrato.start(startTime);
-        vibrato.stop(startTime + duration + 0.1);
-        oscs.push(vibrato);
-
-        oscSaw.connect(formant1);
-        oscTri.connect(gTri);
-        gTri.connect(formant1);
-
-        oscs.push(oscSaw, oscTri);
-      });
-
-      formant1.connect(formant2);
-      formant2.connect(lowpass);
-      lowpass.connect(noteGain);
-
-      this.routeToSpatialMix(noteGain, pan, startTime, duration);
-
-      oscs.forEach((o) => {
-        try {
-          o.start(startTime);
-          o.stop(startTime + duration + 0.1);
-        } catch {
-          // ignore
-        }
-      });
-
-      this.registerVoice(oscs, noteGain, duration);
-    } catch (e) {
-      void e;
-    }
-  }
-
-  /**
-   * 3. CONTRABAIXO ACÚSTICO SUAVE
-   * Fundamentação grave de madeira quente
-   */
-  public triggerDoubleBass(
-    frequencies: number[],
-    startTime: number,
-    velocity = 0.045,
-    duration = 7.0,
-    pan = 0,
-  ): void {
-    if (!this.ctx || !this.musicGain) return;
-    try {
-      const ctx = this.ctx;
-      const oscs: OscillatorNode[] = [];
-      const noteGain = ctx.createGain();
-      const filter = ctx.createBiquadFilter();
-
-      filter.type = "lowpass";
-      filter.frequency.setValueAtTime(240, startTime);
-
-      noteGain.gain.setValueAtTime(0.0001, startTime);
-      noteGain.gain.linearRampToValueAtTime(velocity, startTime + 0.08);
-      noteGain.gain.exponentialRampToValueAtTime(velocity * 0.5, startTime + 2.0);
-      noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-      frequencies.forEach((freq) => {
-        const osc = ctx.createOscillator();
-        osc.type = "sine";
-        osc.frequency.setValueAtTime(freq, startTime);
-        osc.connect(filter);
-        oscs.push(osc);
-
-        const osc2 = ctx.createOscillator();
-        const g2 = ctx.createGain();
-        osc2.type = "triangle";
-        osc2.frequency.setValueAtTime(freq * 2, startTime);
-        g2.gain.setValueAtTime(0.35, startTime);
-        osc2.connect(g2);
-        g2.connect(filter);
-        oscs.push(osc2);
-      });
-
-      filter.connect(noteGain);
-      this.routeToSpatialMix(noteGain, pan, startTime, duration);
-
-      oscs.forEach((o) => {
-        o.start(startTime);
-        o.stop(startTime + duration + 0.1);
-      });
-
-      this.registerVoice(oscs, noteGain, duration);
-    } catch (e) {
-      void e;
-    }
-  }
-
-  /**
-   * 4. VIOLA E CORDAS SUSTENTADAS
-   * Ambiência estereofônica ampla com chorus analógico e filtro sedoso
-   */
-  public triggerStrings(
-    frequencies: number[],
-    startTime: number,
-    velocity = 0.035,
-    duration = 10.0,
-    pan = 0,
-  ): void {
-    if (!this.ctx || !this.musicGain) return;
-    try {
-      const ctx = this.ctx;
-      const oscs: OscillatorNode[] = [];
-      const noteGain = ctx.createGain();
-      const filter = ctx.createBiquadFilter();
-
-      filter.type = "lowpass";
-      filter.frequency.setValueAtTime(1400, startTime);
-      filter.Q.setValueAtTime(1.0, startTime);
-
-      noteGain.gain.setValueAtTime(0.0001, startTime);
-      noteGain.gain.linearRampToValueAtTime(velocity, startTime + 1.8);
-      noteGain.gain.setValueAtTime(velocity, startTime + duration - 2.2);
-      noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-      frequencies.forEach((freq, idx) => {
-        [-4, 0, 4].forEach((detune) => {
-          const osc = ctx.createOscillator();
-          osc.type = idx % 2 === 0 ? "sawtooth" : "triangle";
-          osc.frequency.setValueAtTime(freq, startTime);
-          osc.detune.setValueAtTime(detune, startTime);
-          osc.connect(filter);
-          oscs.push(osc);
-        });
-      });
-
-      filter.connect(noteGain);
-      this.routeToSpatialMix(noteGain, pan, startTime, duration);
-
-      oscs.forEach((o) => {
-        o.start(startTime);
-        o.stop(startTime + duration + 0.1);
-      });
-
-      this.registerVoice(oscs, noteGain, duration);
-    } catch (e) {
-      void e;
-    }
-  }
-
-  /**
-   * 5. HARPA DEDILHADA DELICADA
-   * Beliscão de náilon/tripa acústico, arpejos luminosos
-   */
-  public triggerHarp(
-    frequencies: number[],
-    startTime: number,
-    velocity = 0.04,
-    duration = 3.5,
-    pan = 0.25,
-  ): void {
-    if (!this.ctx || !this.musicGain) return;
-    try {
-      const ctx = this.ctx;
-      const oscs: OscillatorNode[] = [];
-      const noteGain = ctx.createGain();
-      const filter = ctx.createBiquadFilter();
-
-      filter.type = "lowpass";
-      filter.frequency.setValueAtTime(2800, startTime);
-
-      noteGain.gain.setValueAtTime(0.0001, startTime);
-      noteGain.gain.linearRampToValueAtTime(velocity, startTime + 0.006);
-      noteGain.gain.exponentialRampToValueAtTime(velocity * 0.35, startTime + 0.5);
-      noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-      frequencies.forEach((freq) => {
-        const osc1 = ctx.createOscillator();
-        osc1.type = "sine";
-        osc1.frequency.setValueAtTime(freq, startTime);
-        osc1.connect(filter);
-        oscs.push(osc1);
-
-        const osc2 = ctx.createOscillator();
-        const g2 = ctx.createGain();
-        osc2.type = "triangle";
-        osc2.frequency.setValueAtTime(freq * 2.001, startTime);
-        g2.gain.setValueAtTime(0.3, startTime);
-        osc2.connect(g2);
-        g2.connect(filter);
-        oscs.push(osc2);
-      });
-
-      // Transiente sutil de beliscão
-      try {
-        const bufSize = Math.floor(ctx.sampleRate * 0.015);
-        const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
-        const data = buf.getChannelData(0);
-        for (let i = 0; i < bufSize; i++) {
-          data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.25));
-        }
-        const noise = ctx.createBufferSource();
-        noise.buffer = buf;
-        const nFilter = ctx.createBiquadFilter();
-        nFilter.type = "bandpass";
-        nFilter.frequency.setValueAtTime(1600, startTime);
-        nFilter.Q.setValueAtTime(3.0, startTime);
-        const nGain = ctx.createGain();
-        nGain.gain.setValueAtTime(0.01, startTime);
-        nGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.015);
-        noise.connect(nFilter);
-        nFilter.connect(nGain);
-        nGain.connect(noteGain);
-        noise.start(startTime);
-        noise.stop(startTime + 0.02);
-      } catch {
-        // Fallback
-      }
-
-      filter.connect(noteGain);
-      this.routeToSpatialMix(noteGain, pan, startTime, duration);
-
-      oscs.forEach((o) => {
-        o.start(startTime);
-        o.stop(startTime + duration + 0.1);
-      });
-
-      this.registerVoice(oscs, noteGain, duration);
-    } catch (e) {
-      void e;
-    }
-  }
-
-  /**
-   * 6. CELESTA CRISTALINA PONTUAL
-   * Brilho de sino prismático com ressonância pura
-   */
-  public triggerCelesta(
-    frequencies: number[],
-    startTime: number,
-    velocity = 0.035,
-    duration = 2.8,
-    pan = 0.3,
-  ): void {
-    if (!this.ctx || !this.musicGain) return;
-    try {
-      const ctx = this.ctx;
-      const oscs: OscillatorNode[] = [];
-      const noteGain = ctx.createGain();
-
-      noteGain.gain.setValueAtTime(0.0001, startTime);
-      noteGain.gain.linearRampToValueAtTime(velocity, startTime + 0.004);
-      noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-      frequencies.forEach((freq) => {
-        const osc1 = ctx.createOscillator();
-        osc1.type = "sine";
-        osc1.frequency.setValueAtTime(freq, startTime);
-        osc1.connect(noteGain);
-        oscs.push(osc1);
-
-        const osc2 = ctx.createOscillator();
-        const g2 = ctx.createGain();
-        osc2.type = "sine";
-        osc2.frequency.setValueAtTime(freq * 4.0, startTime);
-        g2.gain.setValueAtTime(0.22, startTime);
-        osc2.connect(g2);
-        g2.connect(noteGain);
-        oscs.push(osc2);
-
-        const osc3 = ctx.createOscillator();
-        const g3 = ctx.createGain();
-        osc3.type = "sine";
-        osc3.frequency.setValueAtTime(freq * 8.12, startTime);
-        g3.gain.setValueAtTime(0.08, startTime);
-        osc3.connect(g3);
-        g3.connect(noteGain);
-        oscs.push(osc3);
-      });
-
-      this.routeToSpatialMix(noteGain, pan, startTime, duration);
-
-      oscs.forEach((o) => {
-        o.start(startTime);
-        o.stop(startTime + duration + 0.1);
-      });
-
-      this.registerVoice(oscs, noteGain, duration);
-    } catch (e) {
-      void e;
-    }
-  }
-
-  /**
-   * 7. SOPRO DE MADEIRA SUAVE / FLAUTA GRAVE
-   * Ar, chiff e calor de coluna de ressonância
-   */
-  public triggerWoodwind(
-    frequencies: number[],
-    startTime: number,
-    velocity = 0.035,
-    duration = 4.0,
-    pan = -0.15,
-  ): void {
-    if (!this.ctx || !this.musicGain) return;
-    try {
-      const ctx = this.ctx;
-      const oscs: OscillatorNode[] = [];
-      const noteGain = ctx.createGain();
-      const filter = ctx.createBiquadFilter();
-
-      filter.type = "lowpass";
-      filter.frequency.setValueAtTime(1600, startTime);
-
-      noteGain.gain.setValueAtTime(0.0001, startTime);
-      noteGain.gain.linearRampToValueAtTime(velocity, startTime + 0.25);
-      noteGain.gain.setValueAtTime(velocity, startTime + duration - 0.6);
-      noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-      frequencies.forEach((freq) => {
-        const osc = ctx.createOscillator();
-        osc.type = "triangle";
-        osc.frequency.setValueAtTime(freq, startTime);
-
-        const vib = ctx.createOscillator();
-        const vGain = ctx.createGain();
-        vib.frequency.setValueAtTime(5.0, startTime);
-        vGain.gain.setValueAtTime(freq * 0.003, startTime);
-        vib.connect(vGain);
-        vGain.connect(osc.frequency);
-        vib.start(startTime);
-        vib.stop(startTime + duration + 0.1);
-        oscs.push(vib);
-
-        osc.connect(filter);
-        oscs.push(osc);
-      });
-
-      // Ar sutil
-      try {
-        const bufSize = Math.floor(ctx.sampleRate * 0.04);
-        const buf = ctx.createBuffer(1, bufSize, ctx.sampleRate);
-        const data = buf.getChannelData(0);
-        for (let i = 0; i < bufSize; i++) {
-          data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufSize * 0.4));
-        }
-        const noise = ctx.createBufferSource();
-        noise.buffer = buf;
-        const bFilter = ctx.createBiquadFilter();
-        bFilter.type = "bandpass";
-        bFilter.frequency.setValueAtTime(950, startTime);
-        bFilter.Q.setValueAtTime(2.0, startTime);
-        const bGain = ctx.createGain();
-        bGain.gain.setValueAtTime(0.008, startTime);
-        bGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.04);
-        noise.connect(bFilter);
-        bFilter.connect(bGain);
-        bGain.connect(noteGain);
-        noise.start(startTime);
-        noise.stop(startTime + 0.05);
-      } catch {
-        // Fallback
-      }
-
-      filter.connect(noteGain);
-      this.routeToSpatialMix(noteGain, pan, startTime, duration);
-
-      oscs.forEach((o) => {
-        try {
-          o.start(startTime);
-          o.stop(startTime + duration + 0.1);
-        } catch {
-          // ignore
-        }
-      });
-
-      this.registerVoice(oscs, noteGain, duration);
-    } catch (e) {
-      void e;
-    }
-  }
-
-  /**
-   * 8. PAD ANALÓGICO QUENTE & TEXTURAS DIGITAIS SUTIS
-   * Camada eletrônica sofisticada com respiração de filtro (zero drone permanente)
-   */
-  public triggerAnalogPad(
-    frequencies: number[],
-    startTime: number,
-    velocity = 0.028,
-    duration = 11.0,
-    pan = 0,
-  ): void {
-    if (!this.ctx || !this.musicGain) return;
-    try {
-      const ctx = this.ctx;
-      const oscs: OscillatorNode[] = [];
-      const noteGain = ctx.createGain();
-      const filter = ctx.createBiquadFilter();
-
-      filter.type = "lowpass";
-      filter.frequency.setValueAtTime(600, startTime);
-      filter.frequency.linearRampToValueAtTime(1400, startTime + duration * 0.45);
-      filter.frequency.exponentialRampToValueAtTime(550, startTime + duration);
-      filter.Q.setValueAtTime(1.8, startTime);
-
-      noteGain.gain.setValueAtTime(0.0001, startTime);
-      noteGain.gain.linearRampToValueAtTime(velocity, startTime + 2.0);
-      noteGain.gain.setValueAtTime(velocity, startTime + duration - 2.5);
-      noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-      frequencies.forEach((freq, idx) => {
-        const osc1 = ctx.createOscillator();
-        osc1.type = "triangle";
-        osc1.frequency.setValueAtTime(freq, startTime);
-        osc1.detune.setValueAtTime(idx % 2 === 0 ? -3 : 3, startTime);
-        osc1.connect(filter);
-        oscs.push(osc1);
-
-        const osc2 = ctx.createOscillator();
-        const g2 = ctx.createGain();
-        osc2.type = "sawtooth";
-        osc2.frequency.setValueAtTime(freq * 1.001, startTime);
-        g2.gain.setValueAtTime(0.2, startTime);
-        osc2.connect(g2);
-        g2.connect(filter);
-        oscs.push(osc2);
-      });
-
-      filter.connect(noteGain);
-      this.routeToSpatialMix(noteGain, pan, startTime, duration);
-
-      oscs.forEach((o) => {
-        o.start(startTime);
-        o.stop(startTime + duration + 0.1);
-      });
-
-      this.registerVoice(oscs, noteGain, duration);
-    } catch (e) {
-      void e;
-    }
-  }
-
-  /**
-   * 9. CAMADA DE CORAL/VOGAIS ANTIGAS ATEMPORAIS
-   * Formantes vocais acústicos sagrados (Ah/Oh em 740Hz e 1160Hz) sem letras
-   */
-  public triggerAncientChoir(
-    frequencies: number[],
-    startTime: number,
-    velocity = 0.025,
-    duration = 12.0,
-    pan = 0,
-  ): void {
-    if (!this.ctx || !this.musicGain) return;
-    try {
-      const ctx = this.ctx;
-      const oscs: OscillatorNode[] = [];
-      const noteGain = ctx.createGain();
-
-      const f1 = ctx.createBiquadFilter();
-      f1.type = "bandpass";
-      f1.frequency.setValueAtTime(740, startTime);
-      f1.Q.setValueAtTime(3.2, startTime);
-
-      const f2 = ctx.createBiquadFilter();
-      f2.type = "bandpass";
-      f2.frequency.setValueAtTime(1160, startTime);
-      f2.Q.setValueAtTime(3.5, startTime);
-
-      noteGain.gain.setValueAtTime(0.0001, startTime);
-      noteGain.gain.linearRampToValueAtTime(velocity, startTime + 2.4);
-      noteGain.gain.setValueAtTime(velocity, startTime + duration - 2.8);
-      noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-      frequencies.forEach((freq) => {
-        const osc = ctx.createOscillator();
-        osc.type = "sawtooth";
-        osc.frequency.setValueAtTime(freq, startTime);
-        osc.detune.setValueAtTime((Math.random() - 0.5) * 4, startTime);
-
-        osc.connect(f1);
-        osc.connect(f2);
-        oscs.push(osc);
-      });
-
-      f1.connect(noteGain);
-      f2.connect(noteGain);
-      this.routeToSpatialMix(noteGain, pan, startTime, duration);
-
-      oscs.forEach((o) => {
-        o.start(startTime);
-        o.stop(startTime + duration + 0.1);
-      });
-
-      this.registerVoice(oscs, noteGain, duration);
-    } catch (e) {
-      void e;
-    }
-  }
-
-  /** Roteamento espacial de mixagem para o barramento estéreo e reverb de catedral */
-  private routeToSpatialMix(node: GainNode, pan: number, startTime: number, duration: number): void {
-    void duration;
-    if (!this.ctx || !this.musicGain) return;
-    if (typeof this.ctx.createStereoPanner === "function") {
-      const panner = this.ctx.createStereoPanner();
-      panner.pan.setValueAtTime(Math.max(-0.8, Math.min(0.8, pan)), startTime);
-      node.connect(panner);
-      panner.connect(this.musicGain);
-
-      if (this.handpanReverbNode) {
-        panner.connect(this.handpanReverbNode);
-      } else if (this.musicDelayNode) {
-        panner.connect(this.musicDelayNode);
-      }
-    } else {
-      node.connect(this.musicGain);
-      if (this.handpanReverbNode) {
-        node.connect(this.handpanReverbNode);
-      } else if (this.musicDelayNode) {
-        node.connect(this.musicDelayNode);
-      }
-    }
-  }
-
-  /** Registro e descarte seguro de vozes ativas para cancelamento e transições limpas */
-  private registerVoice(
-    oscs: (OscillatorNode | AudioBufferSourceNode)[],
-    gain: GainNode,
+  private triggerAmbientSection(
+    section: {
+      bass: number;
+      pad: number[];
+      filterBase: number;
+      filterPeak: number;
+      melody: { f: number; delay: number; pan: number }[];
+    },
     duration: number,
   ): void {
-    const voice = { oscs, gain };
+    if (!this.ctx || !this.musicGain) return;
+
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const oscs: (OscillatorNode | AudioBufferSourceNode)[] = [];
+
+    // Master bus local deste acorde
+    const chordGain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+
+    // Filtro analógico passa-baixas com curva orgânica de abertura e respiração
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(section.filterBase, now);
+    filter.frequency.linearRampToValueAtTime(section.filterPeak, now + duration * 0.45);
+    filter.frequency.exponentialRampToValueAtTime(section.filterBase + 120, now + duration);
+    filter.Q.setValueAtTime(2.2, now);
+
+    // Envelope de ganho do pad: ataque sedoso de 2.2s, sustentação e decaimento exponencial
+    chordGain.gain.setValueAtTime(0.0001, now);
+    chordGain.gain.linearRampToValueAtTime(0.18, now + 2.2);
+    chordGain.gain.setValueAtTime(0.18, now + duration - 2.4);
+    chordGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+    filter.connect(chordGain);
+    chordGain.connect(this.musicGain);
+
+    // Subgrave fundamental limpo (senóide quente e estável)
+    const subOsc = ctx.createOscillator();
+    const subGain = ctx.createGain();
+    subOsc.type = "sine";
+    subOsc.frequency.setValueAtTime(section.bass, now);
+    subGain.gain.setValueAtTime(0.0001, now);
+    subGain.gain.linearRampToValueAtTime(0.12, now + 2.0);
+    subGain.gain.setValueAtTime(0.12, now + duration - 2.4);
+    subGain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+    subOsc.connect(subGain);
+    subGain.connect(this.musicGain);
+    subOsc.start(now);
+    subOsc.stop(now + duration + 0.1);
+    oscs.push(subOsc);
+
+    // Camada polifônica do pad (combinando senóides e triângulos com micro-detune)
+    section.pad.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      osc.type = idx % 2 === 0 ? "sine" : "triangle";
+
+      // Micro detune estéreo para espacialidade ampla
+      const detune = (idx - section.pad.length / 2) * 4.5;
+      osc.frequency.setValueAtTime(freq, now);
+      osc.detune.setValueAtTime(detune, now);
+
+      osc.connect(filter);
+      osc.start(now);
+      osc.stop(now + duration + 0.1);
+      oscs.push(osc);
+    });
+
+    const voice = { oscs, gain: chordGain };
     this.activeVoices.push(voice);
+
+    // Dispara o motivo melódico de curiosidade ("A Pergunta Musical") com gotas cristalinas
+    section.melody.forEach((note) => {
+      this.triggerCrystalNote(note.f, now + note.delay, note.pan);
+    });
+
+    // Limpeza após o fim do acorde
     window.setTimeout(() => {
       const idx = this.activeVoices.indexOf(voice);
       if (idx !== -1) {
@@ -2064,170 +1385,102 @@ export class AudioManager {
     }, (duration + 0.5) * 1000);
   }
 
-  /**
-   * HANDPAN ACÚSTICO — NOVA CAMADA MUSICAL
-   * Timbre: quente, profundo, ressonante, natural, etéreo e celestial.
-   * Acústica física e modelagem procedural:
-   * - Fundamental (f0): senóide orgânica pura com ataque suave de polegar e longo sustain.
-   * - Harmônico Oitava (2 * f0): eixo longitudinal da cúpula do handpan, brilho aveludado.
-   * - Harmônico Quinta Composta (2.996 * f0): eixo transversal, canto harmônico etéreo.
-   * - Cavidade Gu / Helmholtz: ressonância corporal quente em notas graves/médias.
-   * - Transiente de toque: ruído orgânico micro-filtrado sem aspereza metálica.
-   * - Reverb espacial dedicado: cauda de difusão natural de 3.2 a 4.5 segundos.
-   * - Hierarquia de mixagem: nível sutil logo atrás do piano (preenche sem competir).
-   */
-  public triggerHandpanNote(
-    frequency: number,
-    startTime: number,
-    pan = 0,
-    velocity = 0.045,
-    sustainDuration = 3.8,
-    outputBus?: GainNode,
-  ): void {
-    if (!this.ctx) return;
-    const targetBus = outputBus || this.musicGain;
-    if (!targetBus) return;
-    // Se não for teste direto via outputBus, respeita o estado da música
-    if (!outputBus && !this.isMusicPlaying) return;
+  private triggerCrystalNote(frequency: number, startTime: number, pan: number): void {
+    if (!this.ctx || !this.musicGain || !this.isMusicPlaying) return;
 
     try {
       const ctx = this.ctx;
-      const oscs: OscillatorNode[] = [];
-
-      // Barramento de ganho e filtro tonal da nota do handpan
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
       const noteGain = ctx.createGain();
-      const toneFilter = ctx.createBiquadFilter();
+      const filter = ctx.createBiquadFilter();
 
-      // Filtro de calor acústico: remove arestas e confere caráter metálico sedoso
-      toneFilter.type = "lowpass";
-      toneFilter.frequency.setValueAtTime(2600, startTime);
-      toneFilter.frequency.exponentialRampToValueAtTime(1400, startTime + sustainDuration);
-      toneFilter.Q.setValueAtTime(1.1, startTime);
+      // Timbre cristalino tecnológico (onda senoidal com segundo harmônico sutil)
+      osc1.type = "sine";
+      osc1.frequency.setValueAtTime(frequency, startTime);
 
-      // Execução humana com pequenas variações orgânicas de intensidade e ataque
-      const humanVelocity = Math.max(0.02, Math.min(0.08, velocity * (1 + (Math.random() - 0.5) * 0.1)));
-      const attackTime = 0.024 + (Math.random() - 0.5) * 0.006; // Ataque humano (18ms - 30ms)
+      osc2.type = "triangle";
+      osc2.frequency.setValueAtTime(frequency * 2, startTime); // oitava acima
 
+      filter.type = "lowpass";
+      filter.frequency.setValueAtTime(3400, startTime);
+      filter.Q.setValueAtTime(1.5, startTime);
+
+      // Envelope rápido com decaimento longo (som de gota digital iluminada)
       noteGain.gain.setValueAtTime(0.0001, startTime);
-      noteGain.gain.linearRampToValueAtTime(humanVelocity, startTime + attackTime);
-      // Decaimento natural em duas etapas: corpo presente e longa ressonância que se prolonga
-      noteGain.gain.exponentialRampToValueAtTime(humanVelocity * 0.42, startTime + 1.3);
-      noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + sustainDuration);
+      noteGain.gain.linearRampToValueAtTime(0.075, startTime + 0.025);
+      noteGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 1.6);
 
-      // 1. FUNDAMENTAL (f0) — Corpo quente e sustentação principal
-      const oscFund = ctx.createOscillator();
-      const gainFund = ctx.createGain();
-      oscFund.type = "sine";
-      oscFund.frequency.setValueAtTime(frequency, startTime);
-      // Micro-detune orgânico sutil (ar em vibração)
-      oscFund.detune.setValueAtTime((Math.random() - 0.5) * 2.2, startTime);
-      gainFund.gain.setValueAtTime(1.0, startTime);
+      osc1.connect(filter);
+      osc2.connect(filter);
+      filter.connect(noteGain);
 
-      oscFund.connect(gainFund);
-      gainFund.connect(toneFilter);
-      oscs.push(oscFund);
-
-      // 2. HARMÔNICO OITAVA (2 * f0) — Eixo longitudinal da cúpula
-      const oscOct = ctx.createOscillator();
-      const gainOct = ctx.createGain();
-      oscOct.type = "sine";
-      oscOct.frequency.setValueAtTime(frequency * 2.001, startTime);
-      gainOct.gain.setValueAtTime(0.36, startTime);
-      gainOct.gain.exponentialRampToValueAtTime(0.0001, startTime + sustainDuration * 0.72);
-
-      oscOct.connect(gainOct);
-      gainOct.connect(toneFilter);
-      oscs.push(oscOct);
-
-      // 3. QUINTA COMPOSTA (2.996 * f0) — Eixo transversal (o "canto" do handpan)
-      const oscFifth = ctx.createOscillator();
-      const gainFifth = ctx.createGain();
-      oscFifth.type = "sine";
-      oscFifth.frequency.setValueAtTime(frequency * 2.996, startTime);
-      gainFifth.gain.setValueAtTime(0.19, startTime);
-      gainFifth.gain.exponentialRampToValueAtTime(0.0001, startTime + sustainDuration * 0.58);
-
-      oscFifth.connect(gainFifth);
-      gainFifth.connect(toneFilter);
-      oscs.push(oscFifth);
-
-      // 4. RESSONÂNCIA CAVITÁRIA CORPO GU (HELMHOLTZ) — Profundidade acústica
-      if (frequency < 420) {
-        const bodyOsc = ctx.createOscillator();
-        const bodyGain = ctx.createGain();
-        bodyOsc.type = "sine";
-        bodyOsc.frequency.setValueAtTime(Math.min(frequency * 0.5, 115), startTime);
-        bodyGain.gain.setValueAtTime(0.22, startTime);
-        bodyGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.38);
-
-        bodyOsc.connect(bodyGain);
-        bodyGain.connect(toneFilter);
-        oscs.push(bodyOsc);
-
-        bodyOsc.start(startTime);
-        bodyOsc.stop(startTime + 0.42);
-      }
-
-      // 5. TRANSIENTE DE CONTATO (Toque aveludado do polegar, sem clique digital)
-      try {
-        const bufferSize = Math.floor(ctx.sampleRate * 0.025);
-        const noiseBuffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-        const data = noiseBuffer.getChannelData(0);
-        for (let i = 0; i < bufferSize; i++) {
-          data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.28));
-        }
-        const noiseNode = ctx.createBufferSource();
-        noiseNode.buffer = noiseBuffer;
-
-        const touchFilter = ctx.createBiquadFilter();
-        touchFilter.type = "bandpass";
-        touchFilter.frequency.setValueAtTime(540, startTime);
-        touchFilter.Q.setValueAtTime(2.6, startTime);
-
-        const touchGain = ctx.createGain();
-        touchGain.gain.setValueAtTime(0.012, startTime);
-        touchGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.025);
-
-        noiseNode.connect(touchFilter);
-        touchFilter.connect(touchGain);
-        touchGain.connect(noteGain);
-
-        noiseNode.start(startTime);
-        noiseNode.stop(startTime + 0.028);
-      } catch {
-        // Fallback gracioso
-      }
-
-      toneFilter.connect(noteGain);
-
-      // Panorâmica estéreo & Envio ao Reverb Natural e Espaçoso do Handpan
+      // Panorâmica estéreo se suportado
       if (typeof ctx.createStereoPanner === "function") {
         const panner = ctx.createStereoPanner();
         panner.pan.setValueAtTime(Math.max(-0.8, Math.min(0.8, pan)), startTime);
         noteGain.connect(panner);
-        panner.connect(targetBus);
-
-        if (this.handpanReverbNode) {
-          panner.connect(this.handpanReverbNode);
-        } else if (this.musicDelayNode) {
+        panner.connect(this.musicGain);
+        if (this.musicDelayNode) {
           panner.connect(this.musicDelayNode);
         }
       } else {
-        noteGain.connect(targetBus);
-        if (this.handpanReverbNode) {
-          noteGain.connect(this.handpanReverbNode);
-        } else if (this.musicDelayNode) {
+        noteGain.connect(this.musicGain);
+        if (this.musicDelayNode) {
           noteGain.connect(this.musicDelayNode);
         }
       }
 
-      // Disparo coordenado dos osciladores
-      oscs.forEach((osc) => {
-        osc.start(startTime);
-        osc.stop(startTime + sustainDuration + 0.15);
-      });
+      osc1.start(startTime);
+      osc2.start(startTime);
+      osc1.stop(startTime + 1.7);
+      osc2.stop(startTime + 1.7);
+    } catch (e) {
+      void e;
+    }
+  }
 
-      this.registerVoice(oscs, noteGain, sustainDuration);
+  private triggerTechPulse(): void {
+    if (!this.ctx || !this.musicGain || !this.isMusicPlaying) return;
+
+    try {
+      const ctx = this.ctx;
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const filter = ctx.createBiquadFilter();
+
+      this.pulseStep++;
+      // Alterna panorâmica sutilmente a cada pulso
+      const pan = this.pulseStep % 2 === 0 ? -0.22 : 0.22;
+
+      // Micro pulso digital com timbre de sonar tecnológico / clock de precisão
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(1900, now);
+      osc.frequency.exponentialRampToValueAtTime(950, now + 0.028);
+
+      filter.type = "bandpass";
+      filter.frequency.setValueAtTime(1500, now);
+      filter.Q.setValueAtTime(3.8, now);
+
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.linearRampToValueAtTime(0.032, now + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.035);
+
+      osc.connect(filter);
+      filter.connect(gain);
+
+      if (typeof ctx.createStereoPanner === "function") {
+        const panner = ctx.createStereoPanner();
+        panner.pan.setValueAtTime(pan, now);
+        gain.connect(panner);
+        panner.connect(this.musicGain);
+      } else {
+        gain.connect(this.musicGain);
+      }
+
+      osc.start(now);
+      osc.stop(now + 0.04);
     } catch (e) {
       void e;
     }

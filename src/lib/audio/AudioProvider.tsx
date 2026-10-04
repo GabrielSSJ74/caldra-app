@@ -14,14 +14,11 @@ import {
   type AudioSettingsState,
   type SoundEffectId,
 } from "./AudioManager";
-import { CALDRA_MOVEMENTS, type MovementDescriptor } from "./CaldraSuite";
 
 interface AudioContextValue extends AudioSettingsState {
   play: (soundId: SoundEffectId) => void;
   playMusic: (trackId?: string) => void;
   stopMusic: () => void;
-  seekMovement: (index: number) => void;
-  movements: MovementDescriptor[];
   setMasterVolume: (val: number) => void;
   setMusicVolume: (val: number) => void;
   setEffectsVolume: (val: number) => void;
@@ -38,11 +35,9 @@ interface AudioContextValue extends AudioSettingsState {
 const AudioContext = createContext<AudioContextValue | null>(null);
 
 export function AudioProvider({ children }: { children: ReactNode }) {
-  // Inicialização estável idêntica entre SSR e hidratação do cliente
   const [state, setState] = useState<AudioSettingsState>(DEFAULT_AUDIO_SETTINGS);
 
   useEffect(() => {
-    // Sincroniza configurações salvas no cliente após hidratação completa
     setState(audioManager.getSettings());
     return audioManager.subscribe((newSettings) => {
       setState(newSettings);
@@ -158,18 +153,12 @@ export function AudioProvider({ children }: { children: ReactNode }) {
     audioManager.toggleSelectionSounds();
   }, []);
 
-  const seekMovement = useCallback((index: number) => {
-    audioManager.seekMovement(index);
-  }, []);
-
   const value = useMemo(
     () => ({
       ...state,
       play,
       playMusic,
       stopMusic,
-      seekMovement,
-      movements: CALDRA_MOVEMENTS,
       setMasterVolume,
       setMusicVolume,
       setEffectsVolume,
@@ -187,7 +176,6 @@ export function AudioProvider({ children }: { children: ReactNode }) {
       play,
       playMusic,
       stopMusic,
-      seekMovement,
       setMasterVolume,
       setMusicVolume,
       setEffectsVolume,
@@ -219,15 +207,9 @@ export function useAudio(): AudioContextValue {
       cadEffectsEnabled: true,
       musicEnabled: true,
       selectionSoundsEnabled: true,
-      currentMovementIndex: 0,
-      currentMovementName: "Intro — Curiosidade",
-      musicTimeSeconds: 0,
-      totalSuiteDuration: 250,
-      movements: CALDRA_MOVEMENTS,
       play: (id) => AudioManager.play(id),
       playMusic: (t) => AudioManager.playMusic(t),
       stopMusic: () => AudioManager.stopMusic(),
-      seekMovement: (idx) => AudioManager.seekMovement(idx),
       setMasterVolume: (v) => audioManager.setMasterVolume(v),
       setMusicVolume: (v) => audioManager.setMusicVolume(v),
       setEffectsVolume: (v) => audioManager.setEffectsVolume(v),

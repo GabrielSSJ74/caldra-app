@@ -6,7 +6,6 @@ import {
   useRouter,
   HeadContent,
   Scripts,
-  ScriptOnce,
 } from "@tanstack/react-router";
 import { useEffect, type ReactNode } from "react";
 
@@ -87,6 +86,32 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
+/** Tema aplicado SINCRONAMENTE antes do primeiro paint — sem flash. */
+const THEME_BOOT = `(function(){try{
+var s=JSON.parse(localStorage.getItem("caldra.settings")||"{}");
+var t=s.theme||"light";var a=s.accent||"crimson";if(!s.accentAppliedCrimson||a==="magenta"){a="crimson";}
+var r=document.documentElement;
+var prefersDark=!window.matchMedia||window.matchMedia("(prefers-color-scheme: dark)").matches;
+var dark=t==="dark"||t==="amoled"||(t==="system"&&prefersDark);
+r.classList.toggle("dark",dark);r.classList.toggle("amoled",t==="amoled");
+r.classList.toggle("accent-default",a==="default");r.classList.toggle("accent-blue",a==="blue");
+var isCrimson=a==="crimson"||a==="magenta";
+r.classList.toggle("accent-crimson",isCrimson);r.classList.toggle("accent-magenta",isCrimson);
+r.lang=s.language==="en"?"en":s.language==="es"?"es":"pt-BR";
+}catch(e){}})();`;
+
+/** Splash de abertura: pinta antes do JS e some com fade após a montagem. */
+const BOOT_SPLASH_STYLE = `
+#caldra-boot{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0B0B0C;transition:opacity .35s ease;font-family:'Space Grotesk',system-ui,sans-serif}
+#caldra-boot .mark{width:76px;height:76px;border-radius:22px;background:#141416;border:1px solid rgba(245,158,11,0.3);box-shadow:0 0 24px rgba(245,158,11,0.2);display:grid;place-items:center;animation:caldra-boot-pulse 2s ease-in-out infinite}
+#caldra-boot .mark svg{width:50px;height:50px}
+#caldra-boot p{color:#F4F4F5;font-size:16px;font-weight:700;letter-spacing:.15em;margin:0}
+#caldra-boot span{color:#A1A1AA;font-size:10px;letter-spacing:.22em;text-transform:uppercase}
+#caldra-boot.done{opacity:0;pointer-events:none}
+@keyframes caldra-boot-pulse{0%,100%{transform:scale(1);box-shadow:0 0 20px rgba(245,158,11,0.15)}50%{transform:scale(1.05);box-shadow:0 0 36px rgba(245,158,11,0.38)}}
+`;
+const BOOT_SPLASH_HTML = `<div class="mark"><svg viewBox="0 0 100 100" fill="none" aria-hidden="true"><path d="M 38 18 L 82 18 L 66.5 33.5 L 50 33.5 L 33.5 50 L 50 66.5 L 82 66.5 L 66.5 82 L 38 82 L 18 62 L 18 38 Z" fill="#EDEDF2" stroke="#EDEDF2" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/><path d="M 43 42.5 L 60 42.5 L 75.5 58 L 58.5 58 Z" fill="#007AFF" stroke="#007AFF" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/></svg></div><p>CALDRA</p><span>Traçado · Planificação Zero Fresta</span>`;
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
     meta: [
@@ -119,6 +144,16 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { rel: "apple-touch-icon", href: "/icons/apple-touch-icon.png" },
       { rel: "manifest", href: "/site.webmanifest" },
     ],
+    scripts: [
+      {
+        children: THEME_BOOT,
+      },
+    ],
+    styles: [
+      {
+        children: BOOT_SPLASH_STYLE,
+      },
+    ],
   }),
   shellComponent: RootShell,
   component: RootComponent,
@@ -126,40 +161,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   errorComponent: ErrorComponent,
 });
 
-/** Tema aplicado SINCRONAMENTE antes do primeiro paint — sem flash. */
-const THEME_BOOT = `(function(){try{
-var s=JSON.parse(localStorage.getItem("caldra.settings")||"{}");
-var t=s.theme||"light";var a=s.accent||"crimson";if(!s.accentAppliedCrimson||a==="magenta"){a="crimson";}
-var r=document.documentElement;
-var prefersDark=!window.matchMedia||window.matchMedia("(prefers-color-scheme: dark)").matches;
-var dark=t==="dark"||t==="amoled"||(t==="system"&&prefersDark);
-r.classList.toggle("dark",dark);r.classList.toggle("amoled",t==="amoled");
-r.classList.toggle("accent-default",a==="default");r.classList.toggle("accent-blue",a==="blue");
-var isCrimson=a==="crimson"||a==="magenta";
-r.classList.toggle("accent-crimson",isCrimson);r.classList.toggle("accent-magenta",isCrimson);
-r.lang=s.language==="en"?"en":s.language==="es"?"es":"pt-BR";
-}catch(e){}})();`;
-
-/** Splash de abertura: pinta antes do JS e some com fade após a montagem. */
-const BOOT_SPLASH_STYLE = `
-#caldra-boot{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#0B0B0C;transition:opacity .35s ease;font-family:'Space Grotesk',system-ui,sans-serif}
-#caldra-boot .mark{width:76px;height:76px;border-radius:22px;background:#141416;border:1px solid rgba(245,158,11,0.3);box-shadow:0 0 24px rgba(245,158,11,0.2);display:grid;place-items:center;animation:caldra-boot-pulse 2s ease-in-out infinite}
-#caldra-boot .mark svg{width:50px;height:50px}
-#caldra-boot p{color:#F4F4F5;font-size:16px;font-weight:700;letter-spacing:.15em;margin:0}
-#caldra-boot span{color:#A1A1AA;font-size:10px;letter-spacing:.22em;text-transform:uppercase}
-#caldra-boot.done{opacity:0;pointer-events:none}
-@keyframes caldra-boot-pulse{0%,100%{transform:scale(1);box-shadow:0 0 20px rgba(245,158,11,0.15)}50%{transform:scale(1.05);box-shadow:0 0 36px rgba(245,158,11,0.38)}}
-`;
-const BOOT_SPLASH_HTML = `<div class="mark"><svg viewBox="0 0 100 100" fill="none" aria-hidden="true"><path d="M 38 18 L 82 18 L 66.5 33.5 L 50 33.5 L 33.5 50 L 50 66.5 L 82 66.5 L 66.5 82 L 38 82 L 18 62 L 18 38 Z" fill="#EDEDF2" stroke="#EDEDF2" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/><path d="M 43 42.5 L 60 42.5 L 75.5 58 L 58.5 58 Z" fill="#007AFF" stroke="#007AFF" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/></svg></div><p>CALDRA</p><span>Traçado · Planificação Zero Fresta</span>`;
-
 function RootShell({ children }: { children: ReactNode }) {
-  // O script pré-paint troca as classes de tema; a diferença com o HTML do
-  // servidor é esperada e não deve virar aviso de hidratação.
   return (
     <html lang="pt-BR" className="dark" suppressHydrationWarning>
       <head>
-        <ScriptOnce>{THEME_BOOT}</ScriptOnce>
-        <style dangerouslySetInnerHTML={{ __html: BOOT_SPLASH_STYLE }} />
         <HeadContent />
       </head>
       <body>

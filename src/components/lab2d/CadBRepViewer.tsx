@@ -74,9 +74,8 @@ import { useSettings } from "@/lib/settings/SettingsProvider";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { AudioManager } from "@/lib/audio/AudioManager";
-import { AudioQuickControl } from "@/components/audio/AudioQuickControl";
 
-interface CadBRepViewerProps {
+export interface CadBRepViewerProps {
   className?: string;
   initialModelType?: string;
   initialModelTitle?: string;
@@ -86,6 +85,13 @@ interface CadBRepViewerProps {
   initialThickness?: number;
   activeViewPreset?: ViewPresetId;
   onViewPresetChange?: (preset: ViewPresetId) => void;
+  // Integração com o Workspace CAD CHAMFER
+  onBack?: () => void;
+  onToggleMode?: (mode: "2d" | "3d") => void;
+  documentTitle?: string;
+  onTitleChange?: (newTitle: string) => void;
+  onSave?: () => void;
+  isSaved?: boolean;
 }
 
 type LeftCategory =
@@ -110,6 +116,12 @@ export function CadBRepViewer({
   initialThickness = 3,
   activeViewPreset = "iso",
   onViewPresetChange,
+  onBack,
+  onToggleMode,
+  documentTitle,
+  onTitleChange,
+  onSave,
+  isSaved = true,
 }: CadBRepViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<ThreeBRepRenderer | null>(null);
