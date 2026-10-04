@@ -17,6 +17,8 @@ import { cn } from "@/lib/utils";
 import { useSettings } from "@/lib/settings/SettingsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { auroraEngine } from "@/lib/aurora/auroraEngine";
+import { startAutonomousField } from "@/lib/aurora/autonomousFieldEngine";
+import { useAIProcessing } from "@/lib/ai/aiProcessingContext";
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false);
@@ -82,6 +84,13 @@ export function AuroraBackground({
   const reduced = useReducedMotion();
   const pageVisible = usePageVisible();
   const hostRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const deltaRef = useRef<HTMLDivElement>(null);
+  const betaRef = useRef<HTMLDivElement>(null);
+  const alphaRef = useRef<HTMLDivElement>(null);
+  const gamaRef = useRef<HTMLDivElement>(null);
+  const epsilonRef = useRef<HTMLDivElement>(null);
+
   const [glOk, setGlOk] = useState(true);
   const darkSurface = useDarkSurface();
   const amoledSurface = useAmoledSurface();
@@ -130,6 +139,28 @@ export function AuroraBackground({
     engine.update(host, animated, amp, darkSurface, amoledSurface);
   }, [shaderStyle, animated, amp, darkSurface, amoledSurface]);
 
+  const { isProcessing, statusText } = useAIProcessing();
+
+  /* Motor Autônomo de Massas de Luz Vivas (Organic Light Field) */
+  useEffect(() => {
+    if (wantsShader || auroraStyle !== "suave") return;
+    const cleanup = startAutonomousField(
+      {
+        container: containerRef.current,
+        delta: deltaRef.current,
+        beta: betaRef.current,
+        alpha: alphaRef.current,
+        gama: gamaRef.current,
+        epsilon: epsilonRef.current,
+      },
+      {
+        isAnimated: animated,
+        isProcessing,
+      }
+    );
+    return cleanup;
+  }, [wantsShader, auroraStyle, animated, isProcessing]);
+
   /* PADRÃO: nenhuma camada — o fundo sólido do tema aparece. */
   if (auroraStyle === "padrao") return null;
 
@@ -140,47 +171,88 @@ export function AuroraBackground({
       data-animated={animated ? "on" : "off"}
       data-active={active ? "on" : "off"}
       data-style={wantsShader ? "fluido" : "suave"}
+      data-processing={isProcessing ? "active" : "idle"}
     >
       <div ref={hostRef} className="aurora-gl absolute inset-0" />
       {!wantsShader && (
-        <div className="aurora-css deep-space-container absolute inset-0">
+        <div
+          ref={containerRef}
+          className="aurora-css organic-field-container absolute inset-0"
+          data-processing={isProcessing ? "active" : "idle"}
+        >
           {/* Fundo base escuro e fosco (#04060A → #070B13 → #0C1424) */}
-          <div className="deep-space-base absolute inset-0" />
+          <div className="organic-field-base absolute inset-0" />
 
           {/* Iluminação ambiente permanente (anti-flicker garantido) */}
-          <div className="deep-space-ambient absolute inset-0" />
+          <div className="organic-field-ambient absolute inset-0" />
 
-          {/* 1. CAMADA DISTANTE — ampla, profunda e serena (azul cobalto / índigo) */}
-          <div className="deep-space-field field-distant">
-            <div className="field-inner field-inner-distant" />
+          {/* Crista e ondas de energia luminosa superior ativas em modo de processamento */}
+          <div className="ai-processing-crest absolute inset-x-0 top-0 h-[48vh] pointer-events-none" />
+          <div className="ai-processing-waves absolute inset-0 pointer-events-none" />
+
+          {/* Quatro pequenos pontos luminosos superiores discretos — Indicador de atividade de IA */}
+          <div
+            className="ai-activity-indicator absolute top-4 inset-x-0 flex flex-col justify-center items-center gap-1.5 pointer-events-none"
+            aria-hidden="true"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="ai-dot ai-dot-1" />
+              <div className="ai-dot ai-dot-2" />
+              <div className="ai-dot ai-dot-3" />
+              <div className="ai-dot ai-dot-4" />
+            </div>
+            {statusText && (
+              <span className="ai-status-text font-mono text-[9px] uppercase tracking-[0.25em] text-cyan-300/80 drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]">
+                {statusText}
+              </span>
+            )}
           </div>
 
-          {/* 2. CAMADA INTERMEDIÁRIA — índigo para violeta com pulso cromático */}
-          <div className="deep-space-field field-mid">
-            <div className="field-inner field-inner-mid" />
-            <div className="field-core field-core-mid" />
+          {/* 1. ENTIDADE DELTA — O Oceano Abissal (profundidade atmosférica constante) */}
+          <div ref={deltaRef} className="organic-mass mass-delta">
+            <div className="mass-body body-delta">
+              <div className="mass-inner inner-delta" />
+              <div className="mass-core core-delta" />
+            </div>
           </div>
 
-          {/* 3. CAMADA PRINCIPAL — ponto focal dinâmico com núcleo de luz viva */}
-          <div className="deep-space-field field-main">
-            <div className="field-inner field-inner-main" />
-            <div className="field-core field-core-main" />
+          {/* 2. ENTIDADE BETA — A Nebulosa Violeta (dança de aproximação e fusão com Alfa) */}
+          <div ref={betaRef} className="organic-mass mass-beta">
+            <div className="mass-body body-beta">
+              <div className="mass-inner inner-beta" />
+              <div className="mass-core core-beta-1" />
+              <div className="mass-core core-beta-2" />
+            </div>
           </div>
 
-          {/* 4. CAMADA DE TRANSIÇÃO — violeta para magenta discreto e acetinado */}
-          <div className="deep-space-field field-trans">
-            <div className="field-inner field-inner-trans" />
-            <div className="field-core field-core-trans" />
+          {/* 3. ENTIDADE ALFA — O Coração Ciano-Azul (cruza do noroeste para o centro e funde com Beta) */}
+          <div ref={alphaRef} className="organic-mass mass-alpha">
+            <div className="mass-body body-alpha">
+              <div className="mass-inner inner-alpha" />
+              <div className="mass-core core-alpha-1" />
+              <div className="mass-core core-alpha-2" />
+            </div>
           </div>
 
-          {/* 5. CAMADA DE DETALHE — halo celestial ágil e concentrado */}
-          <div className="deep-space-field field-detail">
-            <div className="field-inner field-inner-detail" />
-            <div className="field-core field-core-detail" />
+          {/* 4. ENTIDADE GAMA — O Véu Carmesim/Rosa (cruza a faixa sul, interage com Beta) */}
+          <div ref={gamaRef} className="organic-mass mass-gama">
+            <div className="mass-body body-gama">
+              <div className="mass-inner inner-gama" />
+              <div className="mass-core core-gama-1" />
+              <div className="mass-core core-gama-2" />
+            </div>
           </div>
 
-          {/* Vinheta suave cinematográfica preservando contraste e legibilidade impecável */}
-          <div className="deep-space-vignette absolute inset-0 pointer-events-none" />
+          {/* 5. ENTIDADE ÉPSILON — A Centelha Dourada/Celeste (centelha ágil em voo livre) */}
+          <div ref={epsilonRef} className="organic-mass mass-epsilon">
+            <div className="mass-body body-epsilon">
+              <div className="mass-inner inner-epsilon" />
+              <div className="mass-core core-epsilon" />
+            </div>
+          </div>
+
+          {/* Vinheta cinematográfica preservando contraste e legibilidade impecável */}
+          <div className="organic-field-vignette absolute inset-0 pointer-events-none" />
         </div>
       )}
     </div>

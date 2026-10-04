@@ -863,7 +863,77 @@
   );
 }
 
-/* Campos de luz persistentes no DOM */
+/* Campos de luz persistentes no DOM — ORGANIC LIGHT FIELD ESTÁVEL
+   Fórmula Anti-Flicker Absoluta:
+   1. Zero destruição/recriação de camadas (opacidade sempre estável e positiva).
+   2. Zero mix-blend-mode sobre blurs pesados (alpha blending padrão no GPU).
+   3. Blurs suaves e otimizados (gradientes radiais com difusão natural de 5 stops).
+   4. Cores 100% contínuas via aceleração GPU: VERDE, VERMELHO, ROSA, ROXO, AZUL, AMARELO.
+   5. Coordenadas de translação seguras dentro do cache do compositor.
+   ========================================================================= */
+
+.organic-field-container,
+.deep-space-container {
+  overflow: hidden;
+  background-color: #04060a;
+  isolation: isolate;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+  opacity: var(--space-opacity-mult, 0.88);
+  transition: opacity 0.4s ease;
+}
+
+.organic-field-base,
+.deep-space-base {
+  background: radial-gradient(
+    140% 120% at 50% 15%,
+    #0c1424 0%,
+    #070b13 45%,
+    #04060a 100%
+  );
+}
+
+.amoled .organic-field-base,
+.amoled .deep-space-base {
+  background: #000000;
+}
+
+:root:not(.dark) .organic-field-base,
+:root:not(.dark) .deep-space-base {
+  background: radial-gradient(
+    140% 120% at 50% 15%,
+    #ffffff 0%,
+    #f4f6fa 45%,
+    #e6ebf2 100%
+  );
+}
+
+.organic-field-ambient,
+.deep-space-ambient {
+  background: radial-gradient(
+    95% 75% at 50% 45%,
+    rgba(24, 45, 105, 0.20) 0%,
+    rgba(12, 18, 36, 0.10) 55%,
+    transparent 85%
+  );
+  opacity: 0.85;
+  transition: opacity 2s ease, transform 2.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root:not(.dark) .organic-field-ambient,
+:root:not(.dark) .deep-space-ambient {
+  background: radial-gradient(
+    95% 75% at 50% 45%,
+    rgba(191, 219, 254, 0.35) 0%,
+    rgba(224, 231, 255, 0.18) 55%,
+    transparent 85%
+  );
+}
+
+/* Massas orgânicas persistentes no DOM */
+.organic-mass,
 .deep-space-field {
   position: absolute;
   pointer-events: none;
@@ -873,358 +943,383 @@
   backface-visibility: hidden;
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
+  transition: top 2.6s cubic-bezier(0.16, 1, 0.3, 1),
+              left 2.6s cubic-bezier(0.16, 1, 0.3, 1),
+              width 2.6s cubic-bezier(0.16, 1, 0.3, 1),
+              height 2.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Movimento Interno da Luz: o centro luminoso migra, expande e respira organicamente */
+/* Corpo da massa: deforma organicamente e interpola as 6 cores */
+.mass-body,
+.field-body {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: 50%;
+  will-change: transform, filter;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+  -webkit-transform: translate3d(0, 0, 0);
+}
+
+/* Respiração e migração fluida do centro interno */
+.mass-inner,
 .field-inner {
   position: absolute;
-  inset: -14%;
+  inset: -12%;
   border-radius: 50%;
   pointer-events: none;
+  will-change: transform;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
+  transition: filter 2.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Núcleos de luz viva — pontos focais marcantes com migração elíptica desacoplada */
-.field-core {
+/* Núcleos de luz viva — pontos focais com micro-deslocamento */
+.mass-core,
+.field-core-primary,
+.field-core-secondary {
   position: absolute;
   border-radius: 50%;
   pointer-events: none;
+  will-change: transform;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
+  transition: filter 2.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* 1. CAMADA DISTANTE — ampla, profunda e serena (azul cobalto / índigo abissal) */
-/* Personalidade: O Oceano Abissal — majestosa, vasta (22.4s), colchão de segurança de profundidade */
-.field-distant {
-  top: -18%;
-  left: -12%;
-  width: 78vmax;
+/* =========================================================================
+   1. ENTIDADE DELTA — O Oceano Abissal (Fundo Perene Azul & Verde Esmeralda)
+   Tamanho: 76vmax, período: 44s. Ancoragem de profundidade atmosférica estável.
+   ========================================================================= */
+.mass-delta,
+.field-entity-delta {
+  top: 0;
+  left: 0;
+  width: 76vmax;
   height: 62vmax;
+}
+
+.body-delta,
+.field-body-delta {
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(28, 64, 175, 0.36) 0%,
-    rgba(20, 38, 105, 0.22) 38%,
-    rgba(14, 16, 48, 0.08) 68%,
-    transparent 84%
+    rgba(29, 78, 216, 0.40) 0%,     /* Azul Real */
+    rgba(14, 165, 233, 0.30) 28%,    /* Azul */
+    rgba(16, 185, 129, 0.18) 55%,    /* Verde */
+    rgba(12, 20, 50, 0.08) 78%,      /* Profundidade */
+    transparent 86%
   );
-  filter: blur(82px);
-  animation: space-drift-distant 22.4s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
+  filter: blur(28px);
+  animation:
+    organic-morph-delta 44s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite,
+    chroma-delta 54s linear infinite;
 }
 
-.field-inner-distant {
+.inner-delta,
+.field-inner-delta {
   background: radial-gradient(
     ellipse at 52% 48%,
-    rgba(40, 88, 200, 0.22) 0%,
-    rgba(22, 40, 100, 0.10) 48%,
+    rgba(29, 78, 216, 0.24) 0%,     /* Azul Real */
+    rgba(14, 165, 233, 0.12) 48%,    /* Azul */
     transparent 70%
   );
-  animation: space-inner-distant 16.8s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
+  animation: organic-inner-delta 18s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
 }
 
-:root:not(.dark) .field-distant {
+.core-delta,
+.field-core-delta {
+  top: 30%;
+  left: 30%;
+  width: 40%;
+  height: 40%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(147, 197, 253, 0.38) 0%,
-    rgba(199, 210, 254, 0.22) 45%,
-    transparent 82%
+    rgba(96, 165, 250, 0.32) 0%,
+    rgba(30, 64, 175, 0.14) 40%,
+    transparent 70%
   );
-  filter: blur(66px);
+  filter: blur(16px);
+  animation: organic-core-delta 12s cubic-bezier(0.40, 0.05, 0.60, 0.95) infinite;
 }
 
-:root:not(.dark) .field-inner-distant {
-  background: radial-gradient(
-    ellipse at 52% 48%,
-    rgba(191, 219, 254, 0.28) 0%,
-    transparent 72%
-  );
-}
-
-/* 2. CAMADA INTERMEDIÁRIA — índigo para violeta imperial */
-/* Personalidade: A Nebulosa Violeta — cadência ondulante (14.8s), expansões assimétricas */
-.field-mid {
-  bottom: -16%;
-  right: -10%;
-  width: 64vmax;
+/* =========================================================================
+   2. ENTIDADE BETA — A Nebulosa Violeta & Magenta (Roxo, Magenta, Carmesim, Rosa)
+   Tamanho: 60vmax. Sobe, funde dinamicamente e explora todo o campo.
+   ========================================================================= */
+.mass-beta,
+.field-entity-beta {
+  top: 0;
+  left: 0;
+  width: 60vmax;
   height: 50vmax;
-  background: radial-gradient(
-    ellipse at 46% 54%,
-    rgba(95, 38, 180, 0.40) 0%,
-    rgba(60, 30, 135, 0.24) 42%,
-    rgba(28, 14, 70, 0.08) 72%,
-    transparent 85%
-  );
-  filter: blur(64px);
-  animation: space-drift-mid 14.8s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite;
 }
 
-.field-inner-mid {
+.body-beta,
+.field-body-beta {
+  background: radial-gradient(
+    ellipse at 48% 52%,
+    rgba(124, 58, 237, 0.45) 0%,    /* Roxo */
+    rgba(217, 70, 239, 0.34) 28%,   /* Magenta */
+    rgba(153, 27, 27, 0.22) 54%,    /* Vermelho Carmesim */
+    rgba(244, 63, 94, 0.12) 72%,    /* Rosa */
+    transparent 86%
+  );
+  filter: blur(22px);
+  animation:
+    organic-morph-beta 32s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite,
+    chroma-beta 42s linear infinite;
+}
+
+.inner-beta,
+.field-inner-beta {
   background: radial-gradient(
     ellipse at 44% 56%,
-    rgba(130, 75, 215, 0.26) 0%,
-    rgba(75, 45, 155, 0.12) 46%,
+    rgba(232, 121, 249, 0.28) 0%,   /* Magenta Claro */
+    rgba(147, 51, 234, 0.14) 44%,   /* Roxo */
     transparent 68%
   );
-  animation: space-inner-mid 11.2s cubic-bezier(0.45, 0.04, 0.55, 0.96) infinite;
+  animation: organic-inner-beta 10.5s cubic-bezier(0.45, 0.04, 0.55, 0.96) infinite;
 }
 
-.field-core-mid {
+.core-beta-1,
+.field-core-beta-1 {
   top: 28%;
   left: 28%;
   width: 44%;
   height: 44%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(192, 132, 252, 0.34) 0%,
-    rgba(124, 58, 237, 0.18) 38%,
+    rgba(244, 114, 182, 0.40) 0%,   /* Rosa */
+    rgba(168, 85, 247, 0.20) 38%,   /* Roxo */
     transparent 70%
   );
-  filter: blur(24px);
-  animation: space-core-mid 8.6s cubic-bezier(0.40, 0.06, 0.60, 0.94) infinite;
+  filter: blur(14px);
+  animation: organic-core-beta-1 7.6s cubic-bezier(0.40, 0.06, 0.60, 0.94) infinite;
 }
 
-:root:not(.dark) .field-mid {
-  background: radial-gradient(
-    ellipse at 46% 54%,
-    rgba(196, 181, 253, 0.40) 0%,
-    rgba(167, 139, 250, 0.20) 48%,
-    transparent 82%
-  );
-  filter: blur(54px);
-}
-
-:root:not(.dark) .field-inner-mid {
-  background: radial-gradient(
-    ellipse at 44% 56%,
-    rgba(216, 180, 254, 0.26) 0%,
-    transparent 72%
-  );
-}
-
-:root:not(.dark) .field-core-mid {
-  background: radial-gradient(
-    ellipse at 50% 50%,
-    rgba(224, 215, 255, 0.36) 0%,
-    rgba(167, 139, 250, 0.16) 38%,
-    transparent 70%
-  );
-}
-
-/* 3. CAMADA PRINCIPAL — ponto focal vivo com núcleo de plasma cintilante */
-/* Personalidade: O Coração Radiante — a mais rica e viva (11.4s), núcleo ciano-plasma desacoplado */
-.field-main {
-  top: 8%;
-  left: 18%;
-  width: 56vmax;
-  height: 46vmax;
-  background: radial-gradient(
-    ellipse at 50% 50%,
-    rgba(6, 140, 175, 0.44) 0%,
-    rgba(26, 74, 190, 0.36) 34%,
-    rgba(18, 42, 115, 0.14) 64%,
-    transparent 85%
-  );
-  filter: blur(50px);
-  animation: space-drift-main 11.4s cubic-bezier(0.40, 0.02, 0.60, 0.98) infinite;
-}
-
-.field-inner-main {
-  background: radial-gradient(
-    ellipse at 50% 50%,
-    rgba(98, 225, 245, 0.36) 0%,
-    rgba(12, 110, 170, 0.18) 36%,
-    transparent 70%
-  );
-  animation: space-inner-main 7.6s cubic-bezier(0.40, 0.02, 0.60, 0.98) infinite;
-}
-
-.field-core-main {
+.core-beta-2,
+.field-core-beta-2 {
   top: 25%;
   left: 25%;
-  width: 50%;
-  height: 50%;
+  width: 36%;
+  height: 36%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(147, 240, 255, 0.42) 0%,
-    rgba(14, 165, 233, 0.26) 35%,
-    transparent 72%
-  );
-  filter: blur(22px);
-  animation: space-core-main 5.8s cubic-bezier(0.42, 0.05, 0.58, 0.95) infinite;
-}
-
-:root:not(.dark) .field-main {
-  background: radial-gradient(
-    ellipse at 50% 50%,
-    rgba(56, 189, 248, 0.42) 0%,
-    rgba(147, 197, 253, 0.32) 36%,
-    transparent 82%
-  );
-  filter: blur(44px);
-}
-
-:root:not(.dark) .field-inner-main {
-  background: radial-gradient(
-    ellipse at 50% 50%,
-    rgba(186, 230, 253, 0.30) 0%,
+    rgba(217, 70, 239, 0.38) 0%,    /* Magenta */
+    rgba(153, 27, 27, 0.18) 36%,    /* Vermelho Carmesim */
     transparent 70%
   );
+  filter: blur(12px);
+  animation: organic-core-beta-2 32s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
 }
 
-:root:not(.dark) .field-core-main {
+/* =========================================================================
+   3. ENTIDADE ALFA — O Coração Azul Real & Ciano (Azul Real, Azul, Verde, Amarelo)
+   Tamanho: 56vmax. Grandes travessias transversais e diagonais completas.
+   ========================================================================= */
+.mass-alpha,
+.field-entity-alpha {
+  top: 0;
+  left: 0;
+  width: 56vmax;
+  height: 46vmax;
+}
+
+.body-alpha,
+.field-body-alpha {
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(186, 230, 253, 0.42) 0%,
-    rgba(56, 189, 248, 0.22) 35%,
+    rgba(0, 102, 255, 0.46) 0%,     /* Azul Real */
+    rgba(14, 165, 233, 0.35) 30%,   /* Azul */
+    rgba(16, 185, 129, 0.20) 58%,   /* Verde */
+    rgba(250, 204, 21, 0.10) 74%,   /* Amarelo */
+    transparent 86%
+  );
+  filter: blur(20px);
+  animation:
+    organic-morph-alpha 32s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite,
+    chroma-alpha 46s linear infinite;
+}
+
+.inner-alpha,
+.field-inner-alpha {
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(56, 189, 248, 0.36) 0%,    /* Azul */
+    rgba(0, 102, 255, 0.18) 36%,    /* Azul Real */
     transparent 70%
   );
+  animation: organic-inner-alpha 10.2s cubic-bezier(0.40, 0.02, 0.60, 0.98) infinite;
 }
 
-/* 4. CAMADA DE TRANSIÇÃO — violeta para magenta acetinado com núcleo nobre */
-/* Personalidade: O Véu de Magenta Noturno — misteriosa (16.2s), contra-ponto térmico discreto */
-.field-trans {
-  bottom: 8%;
-  left: 6%;
-  width: 50vmax;
-  height: 42vmax;
-  background: radial-gradient(
-    ellipse at 50% 50%,
-    rgba(140, 26, 120, 0.36) 0%,
-    rgba(105, 32, 140, 0.22) 40%,
-    rgba(50, 14, 70, 0.06) 72%,
-    transparent 85%
-  );
-  filter: blur(56px);
-  animation: space-drift-trans 16.2s cubic-bezier(0.42, 0.03, 0.58, 0.97) infinite;
-}
-
-.field-inner-trans {
-  background: radial-gradient(
-    ellipse at 48% 52%,
-    rgba(185, 42, 150, 0.22) 0%,
-    rgba(125, 38, 155, 0.10) 46%,
-    transparent 68%
-  );
-  animation: space-inner-trans 12.4s cubic-bezier(0.42, 0.05, 0.58, 0.95) infinite;
-}
-
-.field-core-trans {
+.core-alpha-1,
+.field-core-alpha-1 {
   top: 26%;
   left: 26%;
   width: 48%;
   height: 48%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(236, 72, 153, 0.30) 0%,
-    rgba(162, 28, 125, 0.16) 38%,
-    transparent 70%
+    rgba(165, 243, 252, 0.45) 0%,   /* Ciano */
+    rgba(14, 165, 233, 0.25) 38%,   /* Azul */
+    transparent 72%
   );
-  filter: blur(20px);
-  animation: space-core-trans 9.4s cubic-bezier(0.44, 0.05, 0.56, 0.95) infinite;
+  filter: blur(14px);
+  animation: organic-core-alpha-1 6.8s cubic-bezier(0.42, 0.05, 0.58, 0.95) infinite;
 }
 
-:root:not(.dark) .field-trans {
+.core-alpha-2,
+.field-core-alpha-2 {
+  top: 30%;
+  left: 30%;
+  width: 38%;
+  height: 38%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(244, 114, 182, 0.32) 0%,
-    rgba(216, 180, 254, 0.22) 46%,
-    transparent 80%
-  );
-  filter: blur(46px);
-}
-
-:root:not(.dark) .field-inner-trans {
-  background: radial-gradient(
-    ellipse at 48% 52%,
-    rgba(244, 175, 215, 0.24) 0%,
+    rgba(52, 211, 153, 0.38) 0%,    /* Verde Esmeralda */
+    rgba(250, 204, 21, 0.18) 36%,   /* Amarelo */
     transparent 70%
   );
+  filter: blur(12px);
+  animation: organic-core-alpha-2 32s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
 }
 
-:root:not(.dark) .field-core-trans {
+/* =========================================================================
+   4. ENTIDADE GAMA — O Manto Carmesim, Rosa & Âmbar (Vermelho Carmesim, Âmbar, Rosa)
+   Tamanho: 50vmax. Viagens completas borda a borda e diagonais livres.
+   ========================================================================= */
+.mass-gama,
+.field-entity-gama {
+  top: 0;
+  left: 0;
+  width: 50vmax;
+  height: 42vmax;
+}
+
+.body-gama,
+.field-body-gama {
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(251, 207, 232, 0.32) 0%,
-    rgba(244, 114, 182, 0.16) 38%,
-    transparent 70%
+    rgba(153, 27, 27, 0.46) 0%,     /* Vermelho Carmesim */
+    rgba(239, 68, 68, 0.32) 28%,    /* Vermelho */
+    rgba(245, 158, 11, 0.24) 52%,   /* Âmbar */
+    rgba(244, 63, 94, 0.16) 72%,    /* Rosa */
+    transparent 86%
   );
+  filter: blur(22px);
+  animation:
+    organic-morph-gama 36s cubic-bezier(0.42, 0.03, 0.58, 0.97) infinite,
+    chroma-gama 40s linear infinite;
 }
 
-/* 5. CAMADA DE DETALHE — halo celestial ágil e concentrado */
-/* Personalidade: A Centelha Celeste — a mais ágil (8.6s), centelha que viaja sem peso visual */
-.field-detail {
-  top: 10%;
-  right: 14%;
-  width: 38vmax;
-  height: 32vmax;
+.inner-gama,
+.field-inner-gama {
   background: radial-gradient(
     ellipse at 48% 52%,
-    rgba(38, 135, 205, 0.42) 0%,
-    rgba(42, 80, 180, 0.22) 40%,
-    rgba(75, 65, 170, 0.08) 72%,
+    rgba(251, 113, 133, 0.26) 0%,   /* Rosa */
+    rgba(153, 27, 27, 0.14) 46%,    /* Vermelho Carmesim */
+    transparent 68%
+  );
+  animation: organic-inner-gama 12s cubic-bezier(0.42, 0.05, 0.58, 0.95) infinite;
+}
+
+.core-gama-1,
+.field-core-gama-1 {
+  top: 26%;
+  left: 26%;
+  width: 46%;
+  height: 46%;
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(253, 164, 175, 0.36) 0%,   /* Rosa claro */
+    rgba(239, 68, 68, 0.18) 38%,    /* Vermelho */
+    transparent 70%
+  );
+  filter: blur(14px);
+  animation: organic-core-gama-1 9.2s cubic-bezier(0.44, 0.05, 0.56, 0.95) infinite;
+}
+
+.core-gama-2,
+.field-core-gama-2 {
+  top: 28%;
+  left: 28%;
+  width: 38%;
+  height: 38%;
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(245, 158, 11, 0.34) 0%,    /* Âmbar */
+    rgba(250, 204, 21, 0.18) 36%,   /* Amarelo */
+    transparent 70%
+  );
+  filter: blur(12px);
+  animation: organic-core-gama-2 36s cubic-bezier(0.42, 0.03, 0.58, 0.97) infinite;
+}
+
+/* =========================================================================
+   5. ENTIDADE ÉPSILON — A Centelha Dourada & Celeste (Âmbar, Amarelo, Magenta, Azul Real)
+   Tamanho: 34vmax. Voo livre transversal ágil e luminoso.
+   ========================================================================= */
+.mass-epsilon,
+.field-entity-epsilon {
+  top: 0;
+  left: 0;
+  width: 34vmax;
+  height: 28vmax;
+}
+
+.body-epsilon,
+.field-body-epsilon {
+  background: radial-gradient(
+    ellipse at 48% 52%,
+    rgba(245, 158, 11, 0.50) 0%,    /* Âmbar */
+    rgba(250, 204, 21, 0.36) 26%,   /* Amarelo */
+    rgba(217, 70, 239, 0.24) 50%,   /* Magenta */
+    rgba(29, 78, 216, 0.16) 72%,    /* Azul Real */
     transparent 85%
   );
-  filter: blur(38px);
-  animation: space-drift-detail 8.6s cubic-bezier(0.44, 0.04, 0.56, 0.96) infinite;
+  filter: blur(16px);
+  animation:
+    organic-morph-epsilon 22s cubic-bezier(0.44, 0.04, 0.56, 0.96) infinite,
+    chroma-epsilon 28s linear infinite;
 }
 
-.field-inner-detail {
+.inner-epsilon,
+.field-inner-epsilon {
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(147, 197, 253, 0.30) 0%,
-    rgba(38, 135, 205, 0.14) 38%,
+    rgba(254, 240, 138, 0.34) 0%,   /* Amarelo claro */
+    rgba(245, 158, 11, 0.16) 38%,   /* Âmbar */
     transparent 65%
   );
-  animation: space-inner-detail 6.2s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
+  animation: organic-inner-epsilon 6.2s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
 }
 
-.field-core-detail {
+.core-epsilon,
+.field-core-epsilon {
   top: 24%;
   left: 24%;
   width: 52%;
   height: 52%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(186, 230, 253, 0.38) 0%,
-    rgba(56, 189, 248, 0.20) 36%,
+    rgba(254, 240, 138, 0.44) 0%,
+    rgba(56, 189, 248, 0.24) 36%,   /* Azul */
     transparent 70%
   );
-  filter: blur(16px);
-  animation: space-core-detail 4.8s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
+  filter: blur(10px);
+  animation: organic-core-epsilon 4.8s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
 }
 
-:root:not(.dark) .field-detail {
-  background: radial-gradient(
-    ellipse at 48% 52%,
-    rgba(125, 211, 252, 0.42) 0%,
-    rgba(195, 210, 254, 0.20) 45%,
-    transparent 78%
-  );
-  filter: blur(34px);
-}
-
-:root:not(.dark) .field-inner-detail {
-  background: radial-gradient(
-    ellipse at 50% 50%,
-    rgba(195, 210, 254, 0.22) 0%,
-    transparent 68%
-  );
-}
-
-:root:not(.dark) .field-core-detail {
-  background: radial-gradient(
-    ellipse at 50% 50%,
-    rgba(224, 242, 254, 0.36) 0%,
-    rgba(125, 211, 252, 0.18) 36%,
-    transparent 70%
-  );
-}
-
-/* Vinheta suave cinematográfica — preserva alto contraste e legibilidade impecável */
+/* =========================================================================
+   VINHETA CINEMATOGRÁFICA DE ALTO CONTRASTE E LEGIBILIDADE
+   ========================================================================= */
+.organic-field-vignette,
 .deep-space-vignette {
   background: radial-gradient(
     ellipse 115% 95% at 50% 50%,
@@ -1235,6 +1330,7 @@
   z-index: 2;
 }
 
+:root:not(.dark) .organic-field-vignette,
 :root:not(.dark) .deep-space-vignette {
   background: radial-gradient(
     ellipse 115% 95% at 50% 50%,
@@ -1244,6 +1340,7 @@
   );
 }
 
+.amoled .organic-field-vignette,
 .amoled .deep-space-vignette {
   background: radial-gradient(
     ellipse 115% 95% at 50% 50%,
@@ -1254,420 +1351,872 @@
 }
 
 /* =========================================================================
-   KEYFRAMES MACRO — TRAJETÓRIAS CURVAS ORGÂNICAS E PERSONALIDADES DISTINTAS
-   0% e 100% RIGOROSAMENTE IDÊNTICOS (Loop imperceptível, sem saltos)
-   Hierarquia de iluminação: pontos focais alternados sem sobrecarga simultânea.
+   ESTADO HÍBRIDO DE PROCESSAMENTO DE IA (ORGANIC LIGHT FIELD IA MODE)
+   Transição contínua entre massas orgânicas livres e estado de concentração
+   superior com ondas, halos vivos e respiração profunda de processamento.
    ========================================================================= */
 
-/* Massa 1: Oceano Abissal (22.4s) — deriva fluida contínua em curva elíptica suave */
-@keyframes space-drift-distant {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.80;
-  }
-  18% {
-    transform: translate3d(3.8%, 2.2%, 0) scale(1.04, 0.97);
-    opacity: 0.84;
-  }
-  35% {
-    transform: translate3d(6.2%, 4.5%, 0) scale(1.07, 0.94);
-    opacity: 0.86;
-  }
-  52% {
-    transform: translate3d(3.2%, 7.0%, 0) scale(0.98, 1.04);
-    opacity: 0.78;
-  }
-  68% {
-    transform: translate3d(-2.4%, 5.6%, 0) scale(0.95, 1.06);
-    opacity: 0.75;
-  }
-  84% {
-    transform: translate3d(-4.0%, 2.4%, 0) scale(1.03, 0.98);
-    opacity: 0.82;
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.80;
-  }
+/* 1. Crista luminosa superior e ondas de energia */
+.ai-processing-crest {
+  opacity: 0;
+  background: radial-gradient(
+    115% 90% at 50% -12%,
+    rgba(56, 189, 248, 0.28) 0%,
+    rgba(129, 140, 248, 0.18) 36%,
+    rgba(168, 85, 247, 0.10) 65%,
+    transparent 90%
+  );
+  filter: blur(28px);
+  transform: translateY(-24px) scale(0.96);
+  transition: opacity 2.4s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 2.8s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 1;
 }
 
-/* Massa 2: Nebulosa Violeta (14.8s) — ondulação elíptica ascendente com torção suave */
-@keyframes space-drift-mid {
+:root:not(.dark) .ai-processing-crest {
+  background: radial-gradient(
+    115% 90% at 50% -12%,
+    rgba(147, 197, 253, 0.35) 0%,
+    rgba(199, 210, 254, 0.22) 36%,
+    rgba(233, 213, 255, 0.12) 65%,
+    transparent 90%
+  );
+}
+
+.amoled .ai-processing-crest {
+  background: radial-gradient(
+    115% 90% at 50% -12%,
+    rgba(14, 165, 233, 0.32) 0%,
+    rgba(99, 102, 241, 0.20) 36%,
+    rgba(147, 51, 234, 0.10) 65%,
+    transparent 90%
+  );
+}
+
+.organic-field-container[data-processing="active"] .ai-processing-crest {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  animation: ai-crest-respiration 6.4s ease-in-out infinite alternate;
+}
+
+.ai-processing-waves {
+  opacity: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(56, 189, 248, 0.08) 0%,
+    rgba(139, 92, 246, 0.05) 28%,
+    rgba(30, 58, 138, 0.02) 55%,
+    transparent 80%
+  );
+  mix-blend-mode: screen;
+  transition: opacity 2.2s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 1;
+}
+
+.organic-field-container[data-processing="active"] .ai-processing-waves {
+  opacity: 1;
+  animation: ai-energy-drift 8.4s ease-in-out infinite alternate;
+}
+
+/* 2. Indicador sutil superior com 4 pontos discretos de atividade */
+.ai-activity-indicator {
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 1.4s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 3;
+}
+
+.organic-field-container[data-processing="active"] .ai-activity-indicator {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.ai-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.7);
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.75), 0 0 16px rgba(129, 140, 248, 0.4);
+  transition: transform 0.6s ease, opacity 0.6s ease;
+}
+
+.organic-field-container[data-processing="active"] .ai-dot-1 {
+  animation: ai-dot-breathe 2.4s ease-in-out infinite 0s;
+}
+
+.organic-field-container[data-processing="active"] .ai-dot-2 {
+  animation: ai-dot-breathe 2.4s ease-in-out infinite 0.35s;
+}
+
+.organic-field-container[data-processing="active"] .ai-dot-3 {
+  animation: ai-dot-breathe 2.4s ease-in-out infinite 0.7s;
+}
+
+.organic-field-container[data-processing="active"] .ai-dot-4 {
+  animation: ai-dot-breathe 2.4s ease-in-out infinite 1.05s;
+}
+
+/* 3. Despertar luminoso gradual e expansão de halos (sem flash brusco) */
+.organic-field-container[data-processing="active"] {
+  --space-opacity-mult: 0.96;
+}
+
+.organic-field-container[data-processing="active"] .organic-field-ambient {
+  opacity: 1;
+  transform: scale(1.05) translateY(-8%);
+}
+
+.organic-field-container[data-processing="active"] .mass-inner {
+  filter: brightness(1.22);
+}
+
+.organic-field-container[data-processing="active"] .mass-core {
+  filter: brightness(1.35) drop-shadow(0 0 16px rgba(125, 211, 252, 0.5));
+}
+
+/* 4. Concentração superior harmônica das massas de luz */
+.organic-field-container[data-processing="active"] .mass-alpha {
+  width: 62vmax;
+  height: 50vmax;
+}
+
+.organic-field-container[data-processing="active"] .mass-beta {
+  width: 64vmax;
+  height: 54vmax;
+}
+
+.organic-field-container[data-processing="active"] .mass-epsilon {
+  width: 40vmax;
+  height: 34vmax;
+}
+
+/* 5. Keyframes de respiração profunda e ondas de energia */
+@keyframes ai-crest-respiration {
   0% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.76;
-  }
-  16% {
-    transform: translate3d(-4.8%, -3.2%, 0) scale(0.95, 1.06);
-    opacity: 0.72;
-  }
-  34% {
-    transform: translate3d(-8.6%, -5.8%, 0) scale(0.91, 1.12);
-    opacity: 0.70;
+    opacity: 0.82;
+    transform: translateY(0) scale(1);
+    filter: blur(28px) brightness(1);
   }
   50% {
-    transform: translate3d(-11.2%, 1.2%, 0) scale(1.04, 0.98);
-    opacity: 0.82;
-  }
-  68% {
-    transform: translate3d(-8.8%, 6.5%, 0) scale(1.14, 0.88);
-    opacity: 0.86;
-  }
-  85% {
-    transform: translate3d(-3.6%, 4.8%, 0) scale(1.02, 1.02);
-    opacity: 0.80;
+    opacity: 1;
+    transform: translateY(6px) scale(1.03);
+    filter: blur(32px) brightness(1.18);
   }
   100% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.76;
-  }
-}
-
-/* Massa 3: Coração Radiante (11.4s) — trajetória dinâmica multi-harmônica em curva oval */
-@keyframes space-drift-main {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.80;
-  }
-  14% {
-    transform: translate3d(4.8%, -4.0%, 0) scale(1.08, 0.93);
     opacity: 0.88;
-  }
-  28% {
-    transform: translate3d(9.2%, -6.8%, 0) scale(1.16, 0.86);
-    opacity: 0.92;
-  }
-  46% {
-    transform: translate3d(7.4%, 1.8%, 0) scale(1.02, 1.02);
-    opacity: 0.82;
-  }
-  62% {
-    transform: translate3d(3.2%, 6.8%, 0) scale(0.86, 1.16);
-    opacity: 0.72;
-  }
-  78% {
-    transform: translate3d(-3.8%, 4.2%, 0) scale(0.94, 1.08);
-    opacity: 0.78;
-  }
-  90% {
-    transform: translate3d(-5.6%, -1.8%, 0) scale(1.05, 0.96);
-    opacity: 0.84;
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.80;
+    transform: translateY(-2px) scale(1.01);
+    filter: blur(29px) brightness(1.08);
   }
 }
 
-/* Massa 4: Véu de Magenta (16.2s) — facho elíptico compassado em arco descendente */
-@keyframes space-drift-trans {
+@keyframes ai-energy-drift {
   0% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.74;
+    transform: translateY(0);
+    opacity: 0.65;
+  }
+  50% {
+    transform: translateY(5vh);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 0.65;
+  }
+}
+
+@keyframes ai-dot-breathe {
+  0%, 100% {
+    transform: scale(0.85);
+    opacity: 0.45;
+    box-shadow: 0 0 6px rgba(56, 189, 248, 0.45);
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 1;
+    box-shadow: 0 0 12px rgba(125, 211, 252, 0.95), 0 0 20px rgba(168, 85, 247, 0.6);
+  }
+}
+
+/* =========================================================================
+   KEYFRAMES DE INTERPOLAÇÃO CROMÁTICA CONTÍNUA (10 CORES VIVAS E ORGÂNICAS)
+   100% Acelerado no Fragment Shader GPU via hue-rotate contínuo (zero flicker).
+   Paleta: VERDE, AZUL, AZUL REAL, ROXO, MAGENTA, ROSA, VERMELHO,
+           VERMELHO CARMESIM, AMARELO, ÂMBAR.
+   ========================================================================= */
+
+@keyframes chroma-alpha {
+  0% {
+    /* AZUL REAL & AZUL */
+    filter: hue-rotate(0deg) blur(20px);
   }
   18% {
-    transform: translate3d(-4.2%, 3.5%, 0) scale(1.06, 0.95);
-    opacity: 0.80;
+    /* AZUL → AZUL REAL → ROXO */
+    filter: hue-rotate(36deg) blur(20px);
   }
-  36% {
-    transform: translate3d(-8.2%, 6.8%, 0) scale(1.12, 0.90);
-    opacity: 0.84;
+  38% {
+    /* ROXO → MAGENTA → ROSA */
+    filter: hue-rotate(96deg) blur(20px);
   }
-  54% {
-    transform: translate3d(-3.4%, 8.2%, 0) scale(1.02, 1.02);
-    opacity: 0.76;
+  56% {
+    /* VERMELHO → VERMELHO CARMESIM */
+    filter: hue-rotate(152deg) blur(20px);
   }
-  72% {
-    transform: translate3d(4.5%, 5.2%, 0) scale(0.91, 1.12);
-    opacity: 0.68;
+  74% {
+    /* AMARELO → ÂMBAR */
+    filter: hue-rotate(224deg) blur(20px);
   }
   88% {
-    transform: translate3d(5.2%, 1.8%, 0) scale(0.96, 1.05);
-    opacity: 0.72;
+    /* ÂMBAR → VERDE */
+    filter: hue-rotate(300deg) blur(20px);
   }
   100% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.74;
+    filter: hue-rotate(360deg) blur(20px);
   }
 }
 
-/* Massa 5: Centelha Celeste (8.6s) — halo ágil em órbita suave assimétrica */
-@keyframes space-drift-detail {
+@keyframes chroma-beta {
   0% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
+    /* ROXO & MAGENTA */
+    filter: hue-rotate(0deg) blur(22px);
+  }
+  20% {
+    /* ROXO → MAGENTA → ROSA */
+    filter: hue-rotate(42deg) blur(22px);
+  }
+  42% {
+    /* VERMELHO → VERMELHO CARMESIM → MAGENTA */
+    filter: hue-rotate(90deg) blur(22px);
+  }
+  62% {
+    /* AMARELO → ÂMBAR → VERMELHO */
+    filter: hue-rotate(164deg) blur(22px);
+  }
+  82% {
+    /* VERDE → AMARELO → ÂMBAR */
+    filter: hue-rotate(264deg) blur(22px);
+  }
+  100% {
+    filter: hue-rotate(360deg) blur(22px);
+  }
+}
+
+@keyframes chroma-gama {
+  0% {
+    /* VERMELHO CARMESIM & ÂMBAR */
+    filter: hue-rotate(0deg) blur(22px);
+  }
+  22% {
+    /* VERMELHO → VERMELHO CARMESIM → MAGENTA */
+    filter: hue-rotate(48deg) blur(22px);
+  }
+  44% {
+    /* VERDE → AMARELO → ÂMBAR */
+    filter: hue-rotate(114deg) blur(22px);
+  }
+  66% {
+    /* AZUL → AZUL REAL → ROXO */
+    filter: hue-rotate(204deg) blur(22px);
+  }
+  86% {
+    /* ROXO → MAGENTA → ROSA */
+    filter: hue-rotate(292deg) blur(22px);
+  }
+  100% {
+    filter: hue-rotate(360deg) blur(22px);
+  }
+}
+
+@keyframes chroma-delta {
+  0% {
+    /* AZUL REAL & AZUL profundo */
+    filter: hue-rotate(0deg) blur(26px);
+  }
+  30% {
+    /* AZUL REAL → ROXO */
+    filter: hue-rotate(52deg) blur(26px);
+  }
+  60% {
+    /* VERDE esmeralda & ÂMBAR abissal */
+    filter: hue-rotate(178deg) blur(26px);
+  }
+  84% {
+    /* AZUL & AZUL REAL oceânico */
+    filter: hue-rotate(290deg) blur(26px);
+  }
+  100% {
+    filter: hue-rotate(360deg) blur(26px);
+  }
+}
+
+@keyframes chroma-epsilon {
+  0% {
+    /* ÂMBAR & AMARELO radiante */
+    filter: hue-rotate(0deg) blur(16px);
+  }
+  22% {
+    /* VERDE → AMARELO → ÂMBAR */
+    filter: hue-rotate(58deg) blur(16px);
+  }
+  44% {
+    /* AZUL → AZUL REAL → ROXO */
+    filter: hue-rotate(144deg) blur(16px);
+  }
+  66% {
+    /* ROXO → MAGENTA → ROSA */
+    filter: hue-rotate(234deg) blur(16px);
+  }
+  85% {
+    /* VERMELHO → VERMELHO CARMESIM */
+    filter: hue-rotate(312deg) blur(16px);
+  }
+  100% {
+    filter: hue-rotate(360deg) blur(16px);
+  }
+}
+
+/* =========================================================================
+   KEYFRAMES MACRO DE TRAJETÓRIAS — VIAJAM POR TODA A TELA (COORDENADAS SEGURAS)
+   Zero perda de tiles, zero tela preta, zero resets bruscos.
+   ========================================================================= */
+
+/* ALFA (32s): noroeste -> centro (FUSÃO COM BETA) -> nordeste -> borda superior */
+@keyframes organic-voyage-alpha {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.82;
+  }
+  16% {
+    transform: translate3d(7vw, 5vh, 0);
+    opacity: 0.85;
+  }
+  26% {
+    /* Aproximação de Beta no centro */
+    transform: translate3d(14vw, 13vh, 0);
+    opacity: 0.88;
+  }
+  36% {
+    /* Contato e Fusão com Beta no Centro da tela */
+    transform: translate3d(19vw, 20vh, 0);
+    opacity: 0.94;
+  }
+  48% {
+    /* Supermassa unificada */
+    transform: translate3d(20vw, 21vh, 0);
+    opacity: 0.94;
+  }
+  58% {
+    /* Início da separação para o nordeste */
+    transform: translate3d(25vw, 10vh, 0);
+    opacity: 0.86;
+  }
+  72% {
+    /* Viagem livre pela orla superior/nordeste */
+    transform: translate3d(22vw, -4vh, 0);
+    opacity: 0.78;
+  }
+  86% {
+    /* Curva descendente de retorno */
+    transform: translate3d(9vw, -2vh, 0);
+    opacity: 0.80;
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.82;
+  }
+}
+
+/* DEFORMAÇÃO E MORFOLOGIA DE FUSÃO DE ALFA (32s) */
+@keyframes organic-morph-alpha {
+  0% {
+    transform: scale(1, 1);
+  }
+  16% {
+    transform: scale(1.05, 0.96);
+  }
+  26% {
+    /* Tensão fluida de aproximação: estica na direção de Beta */
+    transform: scale(1.24, 0.82);
+  }
+  36%, 46% {
+    /* Expansão compartilhada na supermassa */
+    transform: scale(1.36, 1.28);
+  }
+  54% {
+    /* Estiramento elástico na separação */
+    transform: scale(0.84, 1.28);
+  }
+  68% {
+    /* Recoil pós-separação */
+    transform: scale(1.12, 0.92);
+  }
+  84% {
+    transform: scale(0.96, 1.05);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+/* BETA (32s): sudeste -> centro (FUSÃO COM ALFA) -> sudoeste -> encontro com Gama */
+@keyframes organic-voyage-beta {
+  0% {
+    transform: translate3d(0, 0, 0);
     opacity: 0.78;
   }
   16% {
-    transform: translate3d(4.2%, 4.8%, 0) scale(0.92, 1.10);
-    opacity: 0.85;
-  }
-  32% {
-    transform: translate3d(7.2%, 7.8%, 0) scale(0.85, 1.18);
-    opacity: 0.88;
-  }
-  52% {
-    transform: translate3d(0.8%, 4.5%, 0) scale(1.04, 0.98);
-    opacity: 0.78;
-  }
-  70% {
-    transform: translate3d(-6.8%, -3.2%, 0) scale(1.16, 0.85);
-    opacity: 0.72;
-  }
-  86% {
-    transform: translate3d(-3.2%, 2.2%, 0) scale(1.05, 0.97);
+    transform: translate3d(-5vw, -6vh, 0);
     opacity: 0.82;
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.78;
-  }
-}
-
-/* =========================================================================
-   KEYFRAMES INTERNOS — MIGRAÇÃO DO CENTRO LUMINOSO E RESPIRAÇÃO DE VOLUME
-   O centro de luz viaja dentro do envelope em cadência assíncrona (desacoplada).
-   ========================================================================= */
-
-@keyframes space-inner-distant {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.76;
-  }
-  25% {
-    transform: translate3d(-5%, 4%, 0) scale(1.08, 0.95);
-    opacity: 0.82;
-  }
-  50% {
-    transform: translate3d(-11%, 9%, 0) scale(1.16, 0.88);
-    opacity: 0.86;
-  }
-  75% {
-    transform: translate3d(6%, -5%, 0) scale(0.92, 1.10);
-    opacity: 0.78;
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.76;
-  }
-}
-
-@keyframes space-inner-mid {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.78;
-  }
-  22% {
-    transform: translate3d(6%, -5%, 0) scale(1.10, 0.92);
-    opacity: 0.84;
-  }
-  48% {
-    transform: translate3d(12%, -10%, 0) scale(1.20, 0.84);
-    opacity: 0.88;
-  }
-  72% {
-    transform: translate3d(-8%, 7%, 0) scale(0.86, 1.16);
-    opacity: 0.72;
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.78;
-  }
-}
-
-@keyframes space-inner-main {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.80;
-  }
-  20% {
-    transform: translate3d(-7%, 6%, 0) scale(1.14, 0.90);
-    opacity: 0.88;
-  }
-  42% {
-    transform: translate3d(-14%, 11%, 0) scale(1.24, 0.82);
-    opacity: 0.92;
-  }
-  68% {
-    transform: translate3d(8%, -7%, 0) scale(0.84, 1.20);
-    opacity: 0.74;
-  }
-  86% {
-    transform: translate3d(4%, -2%, 0) scale(0.96, 1.06);
-    opacity: 0.82;
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.80;
-  }
-}
-
-@keyframes space-inner-trans {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.74;
   }
   26% {
-    transform: translate3d(5%, 4%, 0) scale(1.08, 0.94);
-    opacity: 0.80;
-  }
-  52% {
-    transform: translate3d(11%, 10%, 0) scale(1.18, 0.86);
+    /* Aproximação de Alfa */
+    transform: translate3d(-12vw, -13vh, 0);
     opacity: 0.86;
   }
-  76% {
-    transform: translate3d(-7%, -6%, 0) scale(0.88, 1.15);
-    opacity: 0.70;
+  36% {
+    /* Contato no centro */
+    transform: translate3d(-17vw, -18vh, 0);
+    opacity: 0.94;
+  }
+  48% {
+    /* Supermassa unificada */
+    transform: translate3d(-18vw, -19vh, 0);
+    opacity: 0.94;
+  }
+  58% {
+    /* Separação para a direção oposta (sudoeste) */
+    transform: translate3d(-24vw, -8vh, 0);
+    opacity: 0.86;
+  }
+  72% {
+    /* Encontro tangencial com a Entidade Gama no sul */
+    transform: translate3d(-20vw, 4vh, 0);
+    opacity: 0.88;
+  }
+  86% {
+    /* Retorno suave em arco pelo sul */
+    transform: translate3d(-8vw, 2vh, 0);
+    opacity: 0.80;
   }
   100% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.74;
+    transform: translate3d(0, 0, 0);
+    opacity: 0.78;
   }
 }
 
-@keyframes space-inner-detail {
+/* DEFORMAÇÃO E MORFOLOGIA DE FUSÃO DE BETA (32s) */
+@keyframes organic-morph-beta {
   0% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.78;
+    transform: scale(1, 1);
   }
-  24% {
-    transform: translate3d(-7%, -4%, 0) scale(1.14, 0.88);
-    opacity: 0.86;
+  16% {
+    transform: scale(0.96, 1.05);
   }
-  48% {
-    transform: translate3d(-15%, -9%, 0) scale(1.26, 0.80);
-    opacity: 0.90;
+  26% {
+    /* Tensão fluida vertical de atração */
+    transform: scale(0.82, 1.24);
+  }
+  36%, 46% {
+    /* Expansão compartilhada na supermassa */
+    transform: scale(1.34, 1.30);
+  }
+  54% {
+    /* Estiramento no eixo de fuga */
+    transform: scale(1.26, 0.84);
   }
   72% {
-    transform: translate3d(10%, 8%, 0) scale(0.82, 1.22);
-    opacity: 0.72;
+    /* Deformação ao cruzar com Gama */
+    transform: scale(1.15, 0.88);
+  }
+  86% {
+    transform: scale(0.96, 1.05);
   }
   100% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
+    transform: scale(1, 1);
+  }
+}
+
+/* GAMA (36s): travessia sul oeste -> leste -> tangência com Beta -> centro */
+@keyframes organic-voyage-gama {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.76;
+  }
+  20% {
+    transform: translate3d(12vw, -2vh, 0);
+    opacity: 0.80;
+  }
+  38% {
+    /* Interação com Beta no sul */
+    transform: translate3d(24vw, 3vh, 0);
+    opacity: 0.88;
+  }
+  56% {
+    /* Subida diagonal pelo centro-leste */
+    transform: translate3d(18vw, -16vh, 0);
+    opacity: 0.80;
+  }
+  76% {
+    /* Travessia pelo centro-norte */
+    transform: translate3d(6vw, -12vh, 0);
+    opacity: 0.74;
+  }
+  88% {
+    transform: translate3d(-2vw, -4vh, 0);
+    opacity: 0.76;
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.76;
+  }
+}
+
+@keyframes organic-morph-gama {
+  0% {
+    transform: scale(1, 1);
+  }
+  20% {
+    transform: scale(1.08, 0.94);
+  }
+  38% {
+    /* Deformação de confluência ao tocar a passagem de Beta */
+    transform: scale(1.24, 0.82);
+  }
+  56% {
+    transform: scale(0.92, 1.10);
+  }
+  76% {
+    transform: scale(1.08, 0.94);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+/* DELTA (44s): O Oceano Abissal — ampla, serena e atmosférica */
+@keyframes organic-voyage-delta {
+  0% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.82;
+  }
+  24% {
+    transform: translate3d(5vw, 4vh, 0);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translate3d(8vw, 6vh, 0);
+    opacity: 0.88;
+  }
+  74% {
+    transform: translate3d(3vw, 9vh, 0);
+    opacity: 0.82;
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.82;
+  }
+}
+
+@keyframes organic-morph-delta {
+  0% {
+    transform: scale(1, 1);
+  }
+  28% {
+    transform: scale(1.05, 0.96);
+  }
+  54% {
+    transform: scale(0.96, 1.05);
+  }
+  78% {
+    transform: scale(1.04, 0.97);
+  }
+  100% {
+    transform: scale(1, 1);
+  }
+}
+
+/* ÉPSILON (22s): Centelha Celeste ágil em voo livre */
+@keyframes organic-voyage-epsilon {
+  0% {
+    transform: translate3d(0, 0, 0);
     opacity: 0.78;
+  }
+  22% {
+    /* Mergulha na orla de Alfa */
+    transform: translate3d(-14vw, 10vh, 0);
+    opacity: 0.86;
+  }
+  44% {
+    /* Corta o centro da tela */
+    transform: translate3d(-24vw, 26vh, 0);
+    opacity: 0.80;
+  }
+  68% {
+    /* Sobe para o oeste */
+    transform: translate3d(-34vw, 12vh, 0);
+    opacity: 0.84;
+  }
+  86% {
+    transform: translate3d(-15vw, -4vh, 0);
+    opacity: 0.82;
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 0.78;
+  }
+}
+
+@keyframes organic-morph-epsilon {
+  0% {
+    transform: scale(1, 1);
+  }
+  25% {
+    transform: scale(1.15, 0.86);
+  }
+  50% {
+    transform: scale(0.88, 1.18);
+  }
+  75% {
+    transform: scale(1.10, 0.92);
+  }
+  100% {
+    transform: scale(1, 1);
   }
 }
 
 /* =========================================================================
-   KEYFRAMES DOS NÚCLEOS FOCAIS — PONTOS DE LUZ VIVA NÃO SINCRONIZADOS
-   Movimento orbital orgânico dos corações de luz interna.
+   KEYFRAMES DE LUZ INTERNA — RESPIRAÇÃO ORGÂNICA E ÓRBITA DE NÚCLEOS
    ========================================================================= */
 
-@keyframes space-core-main {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.68;
+@keyframes organic-inner-alpha {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.80;
   }
-  18% {
-    transform: translate3d(8%, -6%, 0) scale(1.10, 0.92);
-    opacity: 0.82;
-  }
-  36% {
-    transform: translate3d(16%, -14%, 0) scale(1.22, 0.82);
+  35% {
+    transform: translate3d(7%, 6%, 0) scale(1.14, 0.90);
     opacity: 0.90;
   }
-  58% {
-    transform: translate3d(-6%, 8%, 0) scale(0.92, 1.10);
-    opacity: 0.72;
+  70% {
+    transform: translate3d(-5%, -4%, 0) scale(0.90, 1.12);
+    opacity: 0.76;
   }
-  76% {
-    transform: translate3d(-12%, 14%, 0) scale(0.82, 1.20);
-    opacity: 0.62;
+}
+
+@keyframes organic-inner-beta {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.78;
   }
-  90% {
-    transform: translate3d(4%, 3%, 0) scale(1.05, 0.95);
+  38% {
+    transform: translate3d(-6%, -7%, 0) scale(1.12, 0.88);
+    opacity: 0.88;
+  }
+  72% {
+    transform: translate3d(7%, 5%, 0) scale(0.88, 1.15);
     opacity: 0.74;
   }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.68;
-  }
 }
 
-@keyframes space-core-mid {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.64;
+@keyframes organic-inner-gama {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.76;
   }
-  22% {
-    transform: translate3d(-6%, 5%, 0) scale(0.94, 1.08);
-    opacity: 0.74;
-  }
-  44% {
-    transform: translate3d(-14%, 12%, 0) scale(0.85, 1.18);
+  42% {
+    transform: translate3d(6%, 5%, 0) scale(1.12, 0.90);
     opacity: 0.84;
   }
-  68% {
-    transform: translate3d(6%, -4%, 0) scale(1.08, 0.94);
-    opacity: 0.70;
-  }
-  84% {
-    transform: translate3d(12%, -9%, 0) scale(1.18, 0.86);
-    opacity: 0.58;
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.64;
-  }
-}
-
-@keyframes space-core-trans {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.58;
-  }
-  25% {
-    transform: translate3d(7%, 8%, 0) scale(1.14, 0.88);
+  78% {
+    transform: translate3d(-5%, -4%, 0) scale(0.92, 1.12);
     opacity: 0.72;
   }
-  50% {
-    transform: translate3d(13%, 14%, 0) scale(1.22, 0.82);
-    opacity: 0.84;
-  }
-  75% {
-    transform: translate3d(-9%, -7%, 0) scale(0.86, 1.16);
-    opacity: 0.60;
-  }
-  100% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.58;
-  }
 }
 
-@keyframes space-core-detail {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
-    opacity: 0.62;
-  }
-  24% {
-    transform: translate3d(-8%, -6%, 0) scale(1.16, 0.86);
+@keyframes organic-inner-delta {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
     opacity: 0.78;
   }
   50% {
-    transform: translate3d(-15%, -11%, 0) scale(1.24, 0.80);
-    opacity: 0.86;
+    transform: translate3d(-6%, 5%, 0) scale(1.10, 0.92);
+    opacity: 0.85;
   }
-  76% {
-    transform: translate3d(9%, 7%, 0) scale(0.84, 1.20);
+}
+
+@keyframes organic-inner-epsilon {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.80;
+  }
+  45% {
+    transform: translate3d(-8%, -5%, 0) scale(1.18, 0.85);
+    opacity: 0.88;
+  }
+}
+
+/* ÓRBITAS DOS NÚCLEOS INTERNOS */
+@keyframes organic-core-alpha-1 {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.75;
+  }
+  36% {
+    transform: translate3d(10%, 8%, 0) scale(1.15);
+    opacity: 0.88;
+  }
+  68% {
+    transform: translate3d(-6%, -5%, 0) scale(0.90);
+    opacity: 0.68;
+  }
+}
+
+/* Núcleo Alfa 2 migra para o ponto de fusão com Beta */
+@keyframes organic-core-alpha-2 {
+  0%, 20% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.68;
+  }
+  36%, 48% {
+    transform: translate3d(20%, 18%, 0) scale(1.20);
+    opacity: 0.88;
+  }
+  60% {
+    transform: translate3d(3%, 2%, 0) scale(0.92);
     opacity: 0.65;
   }
   100% {
-    transform: translate3d(0, 0, 0) scale(1, 1);
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.68;
+  }
+}
+
+@keyframes organic-core-beta-1 {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.72;
+  }
+  40% {
+    transform: translate3d(-8%, -6%, 0) scale(1.14);
+    opacity: 0.85;
+  }
+  75% {
+    transform: translate3d(6%, 5%, 0) scale(0.90);
+    opacity: 0.65;
+  }
+}
+
+/* Núcleo Beta 2 migra para a zona de fusão com Alfa */
+@keyframes organic-core-beta-2 {
+  0%, 20% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.68;
+  }
+  36%, 48% {
+    transform: translate3d(-18%, -15%, 0) scale(1.20);
+    opacity: 0.88;
+  }
+  60% {
+    transform: translate3d(-3%, -2%, 0) scale(0.92);
+    opacity: 0.65;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.68;
+  }
+}
+
+@keyframes organic-core-gama-1 {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.68;
+  }
+  42% {
+    transform: translate3d(8%, 6%, 0) scale(1.12);
+    opacity: 0.80;
+  }
+  76% {
+    transform: translate3d(-6%, -5%, 0) scale(0.90);
     opacity: 0.62;
   }
 }
 
+@keyframes organic-core-gama-2 {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.65;
+  }
+  36% {
+    transform: translate3d(-10%, -6%, 0) scale(1.14);
+    opacity: 0.78;
+  }
+  72% {
+    transform: translate3d(7%, 5%, 0) scale(0.88);
+    opacity: 0.58;
+  }
+}
+
+@keyframes organic-core-delta {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.68;
+  }
+  50% {
+    transform: translate3d(6%, 5%, 0) scale(1.12);
+    opacity: 0.80;
+  }
+}
+
+@keyframes organic-core-epsilon {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.72;
+  }
+  48% {
+    transform: translate3d(-10%, -6%, 0) scale(1.18);
+    opacity: 0.86;
+  }
+}
+
+/* =========================================================================
+   CONTROLE DE ACESSIBILIDADE E ECONOMIA DE RECURSOS
+   ========================================================================= */
 @media (prefers-reduced-motion: reduce) {
+  .organic-mass,
   .deep-space-field,
+  .mass-body,
+  .field-body,
+  .mass-inner,
   .field-inner,
-  .field-core {
+  .mass-core,
+  .field-core-primary,
+  .field-core-secondary,
+  .ai-processing-crest,
+  .ai-processing-waves,
+  .ai-dot-1,
+  .ai-dot-2,
+  .ai-dot-3,
+  .ai-dot-4 {
     animation: none !important;
     will-change: auto;
   }
 }
 
+.aurora-root[data-animated="off"] .organic-mass,
 .aurora-root[data-animated="off"] .deep-space-field,
+.aurora-root[data-animated="off"] .mass-body,
+.aurora-root[data-animated="off"] .field-body,
+.aurora-root[data-animated="off"] .mass-inner,
 .aurora-root[data-animated="off"] .field-inner,
-.aurora-root[data-animated="off"] .field-core {
+.aurora-root[data-animated="off"] .mass-core,
+.aurora-root[data-animated="off"] .field-core-primary,
+.aurora-root[data-animated="off"] .field-core-secondary,
+.aurora-root[data-animated="off"] .ai-processing-crest,
+.aurora-root[data-animated="off"] .ai-processing-waves,
+.aurora-root[data-animated="off"] .ai-dot-1,
+.aurora-root[data-animated="off"] .ai-dot-2,
+.aurora-root[data-animated="off"] .ai-dot-3,
+.aurora-root[data-animated="off"] .ai-dot-4 {
   animation: none !important;
   will-change: auto;
 }

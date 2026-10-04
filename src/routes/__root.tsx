@@ -18,6 +18,7 @@ import { SettingsProvider } from "@/lib/settings/SettingsProvider";
 import { ProfileProvider } from "@/lib/profile/ProfileProvider";
 import { MaterialsProvider } from "@/lib/materials/MaterialsProvider";
 import { AudioProvider } from "@/lib/audio/AudioProvider";
+import { AIProcessingProvider } from "@/lib/ai/aiProcessingContext";
 import { AppShell } from "@/components/chameleon/AppShell";
 import {
   CORE_ROUTES,
@@ -235,10 +236,12 @@ function RootComponent() {
             <ProfileProvider>
               <MaterialsProvider>
                 <AudioProvider>
-                  <AppShell>
-                    <Outlet />
-                  </AppShell>
-                  <Toaster position="top-center" />
+                  <AIProcessingProvider>
+                    <AppShell>
+                      <Outlet />
+                    </AppShell>
+                    <Toaster position="top-center" />
+                  </AIProcessingProvider>
                 </AudioProvider>
               </MaterialsProvider>
             </ProfileProvider>

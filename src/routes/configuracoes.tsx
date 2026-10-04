@@ -2,9 +2,21 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { readConsent, setConsent } from "@/lib/analytics/consent";
 import { toast } from "sonner";
-import { Sparkles, Bug, HardDriveDownload } from "lucide-react";
+import {
+  Sparkles,
+  Bug,
+  HardDriveDownload,
+  PenTool,
+  Save,
+  Clock,
+  ShieldCheck,
+  Grid,
+  RotateCcw,
+  Check,
+} from "lucide-react";
 import { PLAN_LABEL } from "@/lib/subscription/features";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
+import { useAIProcessing } from "@/lib/ai/aiProcessingContext";
 import {
   useSettings,
   type AccentColor,
@@ -13,6 +25,12 @@ import {
   type AuroraStyle,
   type AppLanguage,
 } from "@/lib/settings/SettingsProvider";
+import {
+  getChamferSettings,
+  saveChamferSettings,
+  DEFAULT_CHAMFER_SETTINGS,
+  type ChamferSettings,
+} from "@/lib/lab2d/projectSettings";
 import { REGIONS, type RegionId } from "@/lib/regional/regional";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
 import { PhotoPicker } from "@/components/chameleon/Profile";
@@ -93,6 +111,32 @@ function Configuracoes() {
   const [consent, setConsentState] = useState(false);
   useEffect(() => setConsentState(readConsent()), []);
   const { photo, displayName, role, name, update } = useProfile();
+  const { isProcessing, statusText, triggerProcessing, stopProcessing, setProcessing } = useAIProcessing();
+
+  const [chamferSettings, setChamferSettings] = useState<ChamferSettings>(DEFAULT_CHAMFER_SETTINGS);
+
+  useEffect(() => {
+    setChamferSettings(getChamferSettings());
+    const onSettingsChanged = () => {
+      setChamferSettings(getChamferSettings());
+    };
+    window.addEventListener("chamfer-settings-changed", onSettingsChanged);
+    return () => {
+      window.removeEventListener("chamfer-settings-changed", onSettingsChanged);
+    };
+  }, []);
+
+  const updateChamfer = (patch: Partial<ChamferSettings>) => {
+    const updated = saveChamferSettings(patch);
+    setChamferSettings(updated);
+    toast.success("Configurações do CHAMFER atualizadas.");
+  };
+
+  const resetChamfer = () => {
+    const updated = saveChamferSettings(DEFAULT_CHAMFER_SETTINGS);
+    setChamferSettings(updated);
+    toast.success("Configurações do CHAMFER restauradas.");
+  };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -288,6 +332,58 @@ function Configuracoes() {
                   : "Fluido e Suave fazem parte do CALDRA PRO. O estilo Padrão segue disponível.")}
             </p>
           </div>
+
+          {/* Controle do Estado Híbrido de IA do Organic Light Field */}
+          <div className="mt-3.5 rounded-2xl border border-line/60 bg-surface/30 p-3.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="font-mono text-[11px] font-medium uppercase tracking-wider text-foreground">
+                  Estado de IA do Organic Light Field
+                </span>
+                <p className="text-[10px] text-muted-foreground">
+                  Híbrido de ondas, crista superior e pulsação quando a IA está processando.
+                </p>
+              </div>
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-mono text-[9px] uppercase tracking-wider border",
+                  isProcessing
+                    ? "border-accent/40 bg-accent/15 text-accent animate-pulse"
+                    : "border-line bg-surface text-muted-foreground"
+                )}
+              >
+                <span className={cn("size-1.5 rounded-full", isProcessing ? "bg-accent" : "bg-muted-foreground/50")} />
+                {isProcessing ? (statusText ?? "Processando IA") : "Ocioso"}
+              </span>
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  if (isProcessing) {
+                    stopProcessing();
+                  } else {
+                    triggerProcessing(8000, "Calculando Traçado & Malha IA");
+                  }
+                }}
+                className={cn(
+                  "flex-1 rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
+                  isProcessing
+                    ? "border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
+                    : "border-accent/30 bg-accent/10 text-accent hover:bg-accent/20"
+                )}
+              >
+                {isProcessing ? "Encerrar Simulação" : "Simular Processamento (8s)"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setProcessing(!isProcessing, isProcessing ? undefined : "Em Processamento")}
+                className="rounded-xl border border-line px-3 py-2 font-mono text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {isProcessing ? "Desativar" : "Modo Contínuo"}
+              </button>
+            </div>
+          </div>
         </div>
 
         <div>
@@ -394,6 +490,241 @@ function Configuracoes() {
               className="h-1 flex-1 accent-[var(--accent)]"
             />
             <span className="w-6 text-right font-mono text-sm">{precision}</span>
+          </div>
+        </div>
+      </Panel>
+
+      {/* CONFIGURAÇÕES DO CHAMFER CAD & AUTOSAVE */}
+      <Panel className="space-y-4 p-4">
+        <div className="flex items-center justify-between border-b border-line/50 pb-3">
+          <div className="flex items-center gap-2.5">
+            <div className="grid size-8 place-items-center rounded-xl bg-accent/15 text-accent border border-accent/25">
+              <PenTool className="size-4" />
+            </div>
+            <div>
+              <h2 className="font-display text-base font-semibold leading-tight">
+                CHAMFER CAD · Autosave & Prancheta
+              </h2>
+              <p className="text-[11px] text-muted-foreground">
+                Salvamento automático, proteção contra perdas e preferências do editor
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={resetChamfer}
+            title="Restaurar padrões do CHAMFER"
+            className="flex items-center gap-1 rounded-lg border border-line px-2 py-1 font-mono text-[10px] text-muted-foreground hover:text-foreground hover:border-line/80 transition-colors"
+          >
+            <RotateCcw className="size-3" />
+            Padrão
+          </button>
+        </div>
+
+        {/* 1. AUTOSAVE ON/OFF */}
+        <div className="flex items-center justify-between rounded-xl border border-line/60 bg-card/40 p-3">
+          <div className="flex items-center gap-2.5">
+            <Save className="size-4 text-accent" />
+            <div>
+              <span className="font-display text-sm font-medium">Salvamento Automático (Autosave)</span>
+              <p className="text-[11px] text-muted-foreground">
+                Gravação contínua em segundo plano no armazenamento local do navegador
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center rounded-lg border border-line bg-background p-0.5">
+            <button
+              type="button"
+              onClick={() => updateChamfer({ autoSave: true })}
+              className={cn(
+                "px-3 py-1 rounded-md text-[10px] font-bold uppercase transition-all",
+                chamferSettings.autoSave
+                  ? "bg-accent text-accent-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              ON
+            </button>
+            <button
+              type="button"
+              onClick={() => updateChamfer({ autoSave: false })}
+              className={cn(
+                "px-3 py-1 rounded-md text-[10px] font-bold uppercase transition-all",
+                !chamferSettings.autoSave
+                  ? "bg-muted text-foreground shadow-xs"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+            >
+              OFF
+            </button>
+          </div>
+        </div>
+
+        {/* 2. INTERVALO DE GRAVAÇÃO */}
+        <div
+          className={cn(
+            "space-y-2 transition-opacity",
+            !chamferSettings.autoSave && "opacity-45 pointer-events-none",
+          )}
+        >
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-xs text-foreground font-medium">
+              <Clock className="size-3.5 text-accent" />
+              Intervalo do Autosave
+            </span>
+            <span className="font-mono text-xs font-semibold text-accent">
+              {chamferSettings.autoSaveIntervalSec < 60
+                ? `${chamferSettings.autoSaveIntervalSec} segundos`
+                : `${chamferSettings.autoSaveIntervalSec / 60} min`}
+            </span>
+          </div>
+          <div className="grid grid-cols-5 gap-1.5">
+            {[
+              { sec: 10, label: "10s" },
+              { sec: 15, label: "15s" },
+              { sec: 30, label: "30s" },
+              { sec: 60, label: "1 min" },
+              { sec: 120, label: "2 min" },
+            ].map((item) => (
+              <button
+                key={item.sec}
+                type="button"
+                onClick={() => updateChamfer({ autoSaveIntervalSec: item.sec })}
+                className={cn(
+                  "rounded-xl border py-1.5 text-center font-mono text-[10px] font-bold transition-all",
+                  chamferSettings.autoSaveIntervalSec === item.sec
+                    ? "border-accent/40 bg-accent/15 text-accent shadow-xs"
+                    : "border-line bg-card/40 text-muted-foreground hover:border-line/80 hover:text-foreground",
+                )}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 3. RECUPERAÇÃO DE PROJETOS (CRASH RECOVERY) */}
+        <div className="flex items-center justify-between rounded-xl border border-line/60 bg-card/40 p-3">
+          <div className="flex items-center gap-2.5">
+            <ShieldCheck className="size-4 text-emerald-500" />
+            <div>
+              <span className="font-display text-sm font-medium">
+                Recuperação de Projetos & Sessão
+              </span>
+              <p className="text-[11px] text-muted-foreground">
+                Restaura o estado exato da prancheta em caso de fechamento acidental ou recarga
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() =>
+              updateChamfer({ recoveryEnabled: !chamferSettings.recoveryEnabled })
+            }
+            className={cn(
+              "size-6 rounded-lg grid place-items-center border transition-all",
+              chamferSettings.recoveryEnabled
+                ? "border-emerald-500 bg-emerald-500/20 text-emerald-500"
+                : "border-line bg-background text-transparent",
+            )}
+          >
+            <Check className="size-3.5" />
+          </button>
+        </div>
+
+        {/* 4. PREFERÊNCIAS DE INTERFACE DO CHAMFER */}
+        <div className="space-y-3 pt-1">
+          <SectionLabel>Preferências de Interface do Editor</SectionLabel>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => updateChamfer({ showGridOnLoad: !chamferSettings.showGridOnLoad })}
+              className={cn(
+                "flex items-center justify-between rounded-xl border p-2.5 font-mono text-[11px] transition-colors",
+                chamferSettings.showGridOnLoad
+                  ? "border-accent/25 bg-accent/10 text-accent font-medium"
+                  : "border-line text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <span className="flex items-center gap-1.5">
+                <Grid className="size-3.5" />
+                Grade CAD ao inicializar
+              </span>
+              <span className="text-[10px] font-bold uppercase">
+                {chamferSettings.showGridOnLoad ? "ON" : "OFF"}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => updateChamfer({ snapOnLoad: !chamferSettings.snapOnLoad })}
+              className={cn(
+                "flex items-center justify-between rounded-xl border p-2.5 font-mono text-[11px] transition-colors",
+                chamferSettings.snapOnLoad
+                  ? "border-accent/25 bg-accent/10 text-accent font-medium"
+                  : "border-line text-muted-foreground hover:text-foreground",
+              )}
+            >
+              <span className="flex items-center gap-1.5">
+                <Check className="size-3.5" />
+                Snap Magnético ativo
+              </span>
+              <span className="text-[10px] font-bold uppercase">
+                {chamferSettings.snapOnLoad ? "ON" : "OFF"}
+              </span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3 pt-2">
+            <div>
+              <span className="block font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">
+                Unidade do CHAMFER
+              </span>
+              <div className="grid grid-cols-3 gap-1">
+                {(["mm", "cm", "pol"] as const).map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => updateChamfer({ unit: u })}
+                    className={cn(
+                      "rounded-lg border py-1.5 text-center font-mono text-[10px] font-bold uppercase transition-all",
+                      chamferSettings.unit === u
+                        ? "border-accent/30 bg-accent/15 text-accent"
+                        : "border-line bg-card/40 text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {u}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <span className="block font-mono text-[10px] text-muted-foreground uppercase tracking-wider mb-1.5">
+                Precisão de Cotagem
+              </span>
+              <div className="grid grid-cols-3 gap-1">
+                {[
+                  { val: 0, label: "0 (1mm)" },
+                  { val: 1, label: "1 (0.1)" },
+                  { val: 2, label: "2 (0.01)" },
+                ].map((p) => (
+                  <button
+                    key={p.val}
+                    type="button"
+                    onClick={() => updateChamfer({ dimPrecision: p.val })}
+                    className={cn(
+                      "rounded-lg border py-1.5 text-center font-mono text-[10px] font-bold uppercase transition-all",
+                      chamferSettings.dimPrecision === p.val
+                        ? "border-accent/30 bg-accent/15 text-accent"
+                        : "border-line bg-card/40 text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </Panel>

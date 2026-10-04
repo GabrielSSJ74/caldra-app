@@ -8,6 +8,7 @@ import {
   HelpCircle,
   LayoutGrid,
   Library,
+  Settings,
   Sigma,
   Sparkles,
 } from "lucide-react";
@@ -34,7 +35,7 @@ const ITEMS: Item[] = [
 ];
 const ITEM_KEYS = ["tracing", "studies", "home", "projects"] as const;
 
-const MORE_ROUTES = ["/biblioteca", "/oficina"];
+const MORE_ROUTES = ["/configuracoes", "/biblioteca", "/oficina"];
 
 /** Cápsula flutuante: ícones discretos, nome revelado só na interação. */
 export function BubbleNav() {
@@ -152,12 +153,14 @@ type Entry = {
 };
 
 const MORE: Entry[] = [
+  { name: "Configurações", icon: Settings, to: "/configuracoes" },
   { name: "Biblioteca", icon: Library, to: "/biblioteca" },
   { name: "Oficina", icon: Factory, to: "/oficina" },
   { name: "Modo Mestre", icon: Sparkles, action: "master" },
   { name: "Ajuda", icon: HelpCircle, to: "/escola" },
 ];
 const MORE_KEYS = [
+  "settings",
   "library",
   "workshop",
   "master",
@@ -199,7 +202,7 @@ function MoreSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
           </span>
           <span className="h-px flex-1 bg-gradient-to-r from-accent/40 to-transparent" />
         </div>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
           {MORE.map((e, entryIndex) => {
             const Icon = e.icon;
             return (
