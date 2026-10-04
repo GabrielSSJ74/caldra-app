@@ -23,6 +23,8 @@ export type SceneOptions = {
   selection: Set<string>;
   /** Durante pan/zoom: versão simplificada (sem tracejado, sem detalhes < 1px). */
   lod: boolean;
+  /** Tema claro ativo para contraste da seleção */
+  isLight?: boolean;
 };
 
 /** Ordena por camada técnica sem alocar novos objetos de entidade. */
@@ -124,8 +126,8 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
   // halo de seleção — destaque temporário, nunca substitui a cor técnica
   if (selection.size) {
     ctx.setLineDash([]);
-    ctx.strokeStyle = SELECTION_COLOR;
-    ctx.globalAlpha = 0.5;
+    ctx.strokeStyle = opts.isLight ? "#DC2626" : SELECTION_COLOR;
+    ctx.globalAlpha = opts.isLight ? 0.75 : 0.5;
     ctx.lineWidth = 5 * inv;
     for (const e of list) {
       if (!selection.has(e.id) || e.type === "text") continue;

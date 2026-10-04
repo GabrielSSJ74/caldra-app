@@ -125,6 +125,11 @@ export class OcctKernelAdapter implements CadKernel {
         code: "DEGENERATE_GEOMETRY",
       });
     }
+
+    if (Math.abs(radius1 - radius2) < 1e-3) {
+      return await this.createCylinder(radius1, height, name);
+    }
+
     try {
       const handle = this.kernel.makeCone(radius1, radius2, height);
       return new CadShape({

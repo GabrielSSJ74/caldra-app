@@ -50,9 +50,53 @@ export function emptyPlan(index = 0): Plan {
   };
 }
 
+export function sanitizeProject(p: Project): Project {
+  const seenPlanIds = new Set<string>();
+  const plans = (p.plans && p.plans.length > 0 ? p.plans : [emptyPlan(0)]).map((pl, idx) => {
+    let planId = pl.id;
+    if (!planId || planId === "draft" || planId.startsWith("draft-") || seenPlanIds.has(planId)) {
+      planId = uid();
+    }
+    seenPlanIds.add(planId);
+
+    const seenEntIds = new Set<string>();
+    const entities = (pl.entities ?? []).map((ent) => {
+      let entId = ent.id;
+      if (!entId || entId === "draft" || entId.startsWith("draft-") || seenEntIds.has(entId)) {
+        entId = uid();
+      }
+      seenEntIds.add(entId);
+      return ent.id === entId ? ent : { ...ent, id: entId };
+    });
+
+    return {
+      ...pl,
+      id: planId,
+      name: pl.name || planLabel(idx),
+      entities,
+    };
+  });
+
+  return {
+    ...p,
+    id: !p.id || p.id === "draft" || p.id.startsWith("draft-") ? uid() : p.id,
+    plans,
+    lastPlanId: plans.some((x) => x.id === p.lastPlanId) ? p.lastPlanId : plans[0]!.id,
+    layers: (p.layers ?? DEFAULT_LAYERS).map((l) => ({ ...l, color: techColor(l.id) })),
+  };
+}
+
 export function newProject(name: string, entities: Entity[] = []): Project {
   const plan = emptyPlan(0);
-  plan.entities = entities;
+  const seenEntIds = new Set<string>();
+  plan.entities = entities.map((ent) => {
+    let entId = ent.id;
+    if (!entId || entId === "draft" || entId.startsWith("draft-") || seenEntIds.has(entId)) {
+      entId = uid();
+    }
+    seenEntIds.add(entId);
+    return ent.id === entId ? ent : { ...ent, id: entId };
+  });
   return {
     id: uid(),
     name: name.trim() || "Projeto",
@@ -80,12 +124,8 @@ export function listProjects(): Project[] {
     if (!raw) return [];
     const list = JSON.parse(raw) as Project[];
     if (!Array.isArray(list)) return [];
-    // migração única: projetos antigos guardam a cor da camada; a paleta técnica manda
     return list
-      .map((p) => ({
-        ...p,
-        layers: (p.layers ?? DEFAULT_LAYERS).map((l) => ({ ...l, color: techColor(l.id) })),
-      }))
+      .map(sanitizeProject)
       .sort((a, b) => b.updatedAt - a.updatedAt);
   } catch {
     return [];

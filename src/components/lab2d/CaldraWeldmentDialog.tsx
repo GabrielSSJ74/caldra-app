@@ -158,7 +158,7 @@ export function CaldraWeldmentDialog({
         aria-hidden="true"
       />
 
-      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 flex w-[min(96vw,860px)] flex-col gap-3 rounded-2xl border border-line bg-card/95 p-4 shadow-2xl backdrop-blur-md font-mono text-[10px] text-foreground">
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 flex w-[min(96vw,860px)] max-h-[min(92vh,560px)] overflow-y-auto flex-col gap-3 rounded-2xl border border-line bg-card/95 p-4 shadow-2xl backdrop-blur-md font-mono text-[10px] text-foreground">
         {/* CABEÇALHO */}
         <div className="flex items-center justify-between border-b border-line pb-2.5">
           <div className="flex items-center gap-2">

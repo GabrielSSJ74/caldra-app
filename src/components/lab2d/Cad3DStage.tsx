@@ -109,6 +109,7 @@ export function Cad3DStage({
   onSelectEntity,
   cadDoc: externalDoc,
   onCadDocChange: externalDocChange,
+  embedded = true,
 }: {
   open: boolean;
   onClose: () => void;
@@ -121,6 +122,7 @@ export function Cad3DStage({
   onSelectEntity: (id: string | null) => void;
   cadDoc?: PartDocument;
   onCadDocChange?: (doc: PartDocument) => void;
+  embedded?: boolean;
 }) {
   const ctx = useProjectContext(labProjectId);
 
@@ -328,45 +330,72 @@ export function Cad3DStage({
 
   if (!open) return null;
 
+  if (embedded) {
+    return (
+      <div
+        className="relative size-full flex flex-col bg-[#0b0f17] select-none overflow-hidden"
+        role="region"
+        aria-label="Ambiente 3D CAD Core"
+      >
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-[#0b0f17]">
+          <Stage3DErrorBoundary onReset={resetView}>
+            <CadBRepViewer
+              key={`${resetNonce}_${resolvedModel.type}`}
+              className="size-full"
+              initialModelType={resolvedModel.type}
+              initialModelTitle={resolvedModel.name}
+              initialParams={resolvedModel.params}
+              initialThickness={thickness}
+              initialWidth={cadDoc.baseWidth || 200}
+              initialLength={cadDoc.baseLength || 200}
+              activeViewPreset={viewPreset}
+              onViewPresetChange={setViewPreset}
+            />
+          </Stage3DErrorBoundary>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-background select-none"
+      className="fixed inset-0 z-50 flex flex-col bg-[#0b0f17] select-none"
       role="dialog"
       aria-label="Ambiente 3D CAD Core"
       aria-modal="true"
     >
-      {/* CABEÇALHO SUPERIOR — ALTURA COMPACTA (48-54px) CONFORME REGRA DO PROMPT */}
-      <header className="relative flex h-[48px] items-center justify-between border-b border-slate-200/90 bg-white px-3 shadow-2xs select-none z-30">
+      {/* CABEÇALHO SUPERIOR — ALTURA COMPACTA (44px) PADRÃO CAD MODERNO */}
+      <header className="relative flex h-[44px] items-center justify-between border-b border-slate-800 bg-slate-950 px-3 shadow-lg select-none z-30">
         {/* LADO ESQUERDO: [ ← 2D PROJETO ] + [ 2D SKETCH | 3D SÓLIDO ] */}
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="flex h-[32px] items-center gap-1 rounded-full border border-slate-300 bg-white px-3 font-mono text-[10.5px] font-semibold tracking-wider text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+            className="flex h-[28px] items-center gap-1.5 rounded-lg border border-slate-700/80 bg-slate-900/90 px-2.5 font-mono text-[10px] font-semibold tracking-wider text-slate-300 shadow-2xs hover:bg-slate-800 hover:text-white transition-colors uppercase"
           >
             <ArrowLeft className="size-3.5" /> 2D PROJETO
           </button>
 
           {/* ALTERNÂNCIA 2D ↔ 3D COM DESTAQUE CALDRA */}
-          <div className="flex items-center rounded-full border border-slate-200 bg-slate-100/70 p-0.5">
+          <div className="flex items-center rounded-lg border border-slate-800 bg-slate-900/90 p-0.5">
             <button
               type="button"
               onClick={onClose}
-              className="h-[24px] rounded-full px-2.5 font-mono text-[10px] font-medium tracking-wider uppercase text-slate-600 hover:text-slate-900 transition-colors"
+              className="h-[24px] rounded-md px-2.5 font-mono text-[9.5px] font-medium tracking-wider uppercase text-slate-400 hover:text-slate-200 transition-colors"
             >
               2D SKETCH
             </button>
             <button
               type="button"
-              className="h-[24px] rounded-full bg-red-100/90 px-3 font-mono text-[10px] font-bold tracking-wider text-red-600 shadow-2xs uppercase"
+              className="h-[24px] rounded-md bg-red-600 px-3 font-mono text-[9.5px] font-bold tracking-wider text-white shadow-xs uppercase"
             >
               3D SÓLIDO
             </button>
           </div>
         </div>
 
-        {/* CENTRO: VISTAS PRINCIPAIS (ISO | FR | LAT | SUP) — NOME DA PEÇA REMOVIDO DO HEADER */}
-        <div className="flex items-center rounded-full border border-slate-200 bg-slate-100/80 p-0.5 shadow-2xs">
+        {/* CENTRO: VISTAS PRINCIPAIS (ISO | FR | LAT | SUP) */}
+        <div className="flex items-center rounded-lg border border-slate-800 bg-slate-900/90 p-0.5 shadow-2xs">
           {(
             [
               { id: "iso", label: "ISO" },
@@ -380,10 +409,10 @@ export function Cad3DStage({
               type="button"
               onClick={() => setViewPreset(v.id)}
               className={cn(
-                "flex h-[24px] items-center gap-0.5 rounded-full px-2.5 font-mono text-[10px] font-bold uppercase transition-colors",
+                "flex h-[24px] items-center gap-0.5 rounded-md px-2.5 font-mono text-[9.5px] font-bold uppercase transition-colors",
                 viewPreset === v.id
-                  ? "bg-red-50 text-red-600 border border-red-200 shadow-2xs"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-white/80",
+                  ? "bg-red-600 text-white shadow-xs"
+                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800",
               )}
             >
               <Box className="size-3" /> {v.label}
@@ -396,28 +425,28 @@ export function Cad3DStage({
           <button
             type="button"
             onClick={() => {}}
-            className="flex h-[32px] items-center gap-1 rounded-full border border-slate-300 bg-white px-2.5 font-mono text-[10px] font-medium tracking-wider text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+            className="flex h-[28px] items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/90 px-2.5 font-mono text-[9.5px] font-medium tracking-wider text-slate-300 shadow-2xs hover:bg-slate-800 hover:text-white transition-colors uppercase"
             title="Alternar para motor de arame Wire3D"
           >
-            <Box className="size-3.5 text-slate-600" /> WIRE3D
+            <Box className="size-3 text-slate-400" /> WIRE3D
           </button>
 
           <button
             type="button"
-            className="flex h-[32px] items-center gap-1 rounded-full border border-red-200 bg-red-50 px-3 font-mono text-[10px] font-bold tracking-wider text-red-600 shadow-2xs uppercase"
+            className="flex h-[28px] items-center gap-1 rounded-lg border border-red-500/40 bg-red-950/60 px-3 font-mono text-[9.5px] font-bold tracking-wider text-red-300 shadow-xs uppercase"
             title="Ambiente CAD CORE 3D ativo"
           >
-            <Cpu className="size-3.5 text-red-600" /> CAD CORE 3D
+            <Cpu className="size-3 text-red-400" /> CAD CORE 3D
           </button>
 
           <button
             type="button"
             onClick={() => setKernelPopoverOpen((o) => !o)}
-            className="flex h-[32px] items-center gap-1 rounded-full border border-slate-300 bg-white px-2.5 font-mono text-[10px] font-medium tracking-wider text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+            className="flex h-[28px] items-center gap-1 rounded-lg border border-slate-700/80 bg-slate-900/90 px-2.5 font-mono text-[9.5px] font-medium tracking-wider text-slate-300 shadow-2xs hover:bg-slate-800 hover:text-white transition-colors uppercase"
             title="Telemetria e status do CAD Kernel"
           >
-            <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            <Cpu className="size-3.5 text-slate-600" /> CAD KERNEL
+            <span className="size-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <Cpu className="size-3 text-slate-400" /> CAD KERNEL
           </button>
 
           {/* POPOVER TÉCNICO CONTEXTUAL DO CAD KERNEL */}
@@ -446,13 +475,13 @@ export function Cad3DStage({
         </Stage3DErrorBoundary>
       </div>
 
-      {/* BARRA DE STATUS INFERIOR — ALTURA COMPACTA (40-46px), DENSIDADE TÉCNICA (SEÇÃO 12) */}
-      <footer className="flex h-[40px] items-center justify-between border-t border-slate-200/90 bg-white px-3 font-mono text-[10.5px] text-slate-600 shadow-2xs select-none z-30">
+      {/* BARRA DE STATUS INFERIOR — ALTURA COMPACTA (36px), DENSIDADE TÉCNICA (SEÇÃO 12) */}
+      <footer className="flex h-[36px] items-center justify-between border-t border-slate-800 bg-slate-950 px-3 font-mono text-[10px] text-slate-400 shadow-lg select-none z-30">
         <div className="flex items-center gap-2.5">
-          <label className="flex items-center gap-1 font-bold text-slate-800">
-            <span className="text-red-600 text-[10px]">⬡</span>
+          <label className="flex items-center gap-1 font-bold text-slate-200">
+            <span className="text-red-500 text-[10px]">⬡</span>
             <span>ESPESSURA:</span>
-            <div className="flex items-center rounded-full border border-slate-300 bg-white px-2 py-0.5 shadow-2xs">
+            <div className="flex items-center rounded-md border border-slate-700 bg-slate-900 px-1.5 py-0.2 shadow-2xs">
               <input
                 type="number"
                 min={0.2}
@@ -470,37 +499,37 @@ export function Cad3DStage({
                     return { ...prev };
                   });
                 }}
-                className="w-6 bg-transparent text-center font-mono font-bold text-red-600 outline-none text-[10.5px]"
+                className="w-8 bg-transparent text-center font-mono font-bold text-red-400 outline-none text-[10px]"
               />
             </div>
-            <span className="text-[10px] text-slate-500 font-normal">mm</span>
+            <span className="text-[9.5px] text-slate-500 font-normal">mm</span>
           </label>
 
-          <span className="text-slate-300">|</span>
+          <span className="text-slate-700">|</span>
 
           <span>
-            MATERIAL: <strong className="text-slate-900 font-bold">{cadDoc.material || "Aço Carbono"}</strong>
+            MATERIAL: <strong className="text-slate-200 font-bold">{cadDoc.material || "Aço Carbono"}</strong>
           </span>
 
-          <span className="text-slate-300">|</span>
+          <span className="text-slate-700">|</span>
 
           <span>
-            DOBRAS: <strong className="text-red-600 font-bold">{cadDoc.flanges?.length ?? 0}</strong>
+            DOBRAS: <strong className="text-red-400 font-bold">{cadDoc.flanges?.length ?? 0}</strong>
           </span>
 
-          <span className="text-slate-300">|</span>
+          <span className="text-slate-700">|</span>
 
           <span>
             DIM:{" "}
-            <strong className="text-slate-900 font-bold">
+            <strong className="text-slate-200 font-bold">
               {(resolvedModel.params.width || resolvedModel.params.D || 200).toFixed(1)} × {(resolvedModel.params.length || resolvedModel.params.D || 200).toFixed(1)} × {thickness.toFixed(1)} mm
             </strong>
           </span>
 
-          <span className="text-slate-300">|</span>
+          <span className="text-slate-700">|</span>
 
           <span>
-            PESO: <strong className="text-slate-900 font-bold">{(((area * thickness) / 1e6) * (cadDoc.density ?? 7.85)).toFixed(2)} kg</strong>
+            PESO: <strong className="text-slate-200 font-bold">{(((area * thickness) / 1e6) * (cadDoc.density ?? 7.85)).toFixed(2)} kg</strong>
           </span>
         </div>
 
@@ -508,10 +537,10 @@ export function Cad3DStage({
           <button
             type="button"
             onClick={resetView}
-            className="flex h-[26px] items-center gap-1 rounded-full border border-slate-300 bg-white px-2.5 font-mono text-[10px] font-semibold tracking-wider text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+            className="flex h-[24px] items-center gap-1 rounded-md border border-slate-700/80 bg-slate-900/90 px-2 font-mono text-[9.5px] font-semibold tracking-wider text-slate-300 shadow-2xs hover:bg-slate-800 hover:text-white transition-colors uppercase"
             title="Redefinir enquadramento e câmera (Reset)"
           >
-            <RotateCcw className="size-2.5 text-slate-600" /> RESET
+            <RotateCcw className="size-2.5 text-slate-400" /> RESET
           </button>
         </div>
       </footer>

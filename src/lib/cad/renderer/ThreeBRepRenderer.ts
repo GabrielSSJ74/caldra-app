@@ -35,6 +35,7 @@ export interface ThreeBRepRendererOptions {
   onMeasure?: (measurement: CadMeasurementResult | null) => void;
   onGizmoChange?: (delta: { x: number; y: number; z: number }) => void;
   onGizmoCommit?: (delta: { x: number; y: number; z: number }, entity: CadSelectedEntity | null) => void;
+  onCameraRotate?: (rot: { x: number; y: number; z: number }) => void;
 }
 
 export class ThreeBRepRenderer {
@@ -82,6 +83,7 @@ export class ThreeBRepRenderer {
   private onMeasureCallback?: (measurement: CadMeasurementResult | null) => void;
   private onGizmoChangeCallback?: (delta: { x: number; y: number; z: number }) => void;
   private onGizmoCommitCallback?: (delta: { x: number; y: number; z: number }, entity: CadSelectedEntity | null) => void;
+  private onCameraRotateCallback?: (rot: { x: number; y: number; z: number }) => void;
 
   // Gizmo CAD Interativo (FASE 06)
   private transformControls: TransformControls | null = null;
@@ -114,6 +116,7 @@ export class ThreeBRepRenderer {
     this.onSelectCallback = options.onSelect;
     this.onHoverCallback = options.onHover;
     this.onMeasureCallback = options.onMeasure;
+    this.onCameraRotateCallback = options.onCameraRotate;
 
     // 1. Cena Three.js
     this.scene = new THREE.Scene();
@@ -872,6 +875,67 @@ export class ThreeBRepRenderer {
     }
   }
 
+  public zoomIn(factor = 0.8): void {
+    if (this.isOrtho) {
+      this.orthoCamera.zoom = Math.min(this.orthoCamera.zoom / factor, 15);
+      this.orthoCamera.updateProjectionMatrix();
+    } else {
+      const offset = this.camera.position.clone().sub(this.controls.target);
+      this.camera.position.copy(this.controls.target.clone().add(offset.multiplyScalar(factor)));
+    }
+    this.controls.update();
+  }
+
+  public zoomOut(factor = 1.25): void {
+    if (this.isOrtho) {
+      this.orthoCamera.zoom = Math.max(this.orthoCamera.zoom / factor, 0.1);
+      this.orthoCamera.updateProjectionMatrix();
+    } else {
+      const offset = this.camera.position.clone().sub(this.controls.target);
+      this.camera.position.copy(this.controls.target.clone().add(offset.multiplyScalar(factor)));
+    }
+    this.controls.update();
+  }
+
+  public panCamera(deltaX: number, deltaY: number): void {
+    const eye = this.activeCamera.position.clone().sub(this.controls.target);
+    const right = new THREE.Vector3().crossVectors(this.activeCamera.up, eye).normalize();
+    const up = new THREE.Vector3().crossVectors(eye, right).normalize();
+    const panOffset = right.multiplyScalar(deltaX).add(up.multiplyScalar(deltaY));
+    this.camera.position.add(panOffset);
+    this.orthoCamera.position.add(panOffset);
+    this.controls.target.add(panOffset);
+    this.controls.update();
+  }
+
+  public orbitCamera(angleH: number, angleV: number): void {
+    const offset = this.camera.position.clone().sub(this.controls.target);
+    const radius = offset.length();
+    let theta = Math.atan2(offset.x, offset.z);
+    let phi = Math.acos(Math.max(-1, Math.min(1, offset.y / radius)));
+    theta += angleH;
+    phi = Math.max(0.01, Math.min(Math.PI - 0.01, phi + angleV));
+    offset.x = radius * Math.sin(phi) * Math.sin(theta);
+    offset.y = radius * Math.cos(phi);
+    offset.z = radius * Math.sin(phi) * Math.cos(theta);
+    this.camera.position.copy(this.controls.target.clone().add(offset));
+    this.orthoCamera.position.copy(this.camera.position);
+    this.controls.update();
+  }
+
+  public setCameraProjection(isOrtho: boolean): void {
+    this.isOrtho = isOrtho;
+    this.activeCamera = isOrtho ? this.orthoCamera : this.camera;
+    this.activeCamera.position.copy(isOrtho ? this.camera.position : this.orthoCamera.position);
+    this.controls.object = this.activeCamera;
+    this.controls.update();
+    this.onWindowResize();
+  }
+
+  public isOrthographic(): boolean {
+    return this.isOrtho;
+  }
+
   // ==========================================
   // EVENTOS E INTERAÇÃO
   // ==========================================
@@ -1031,6 +1095,11 @@ export class ThreeBRepRenderer {
         }
       } else {
         this.controls.update();
+      }
+
+      if (this.onCameraRotateCallback) {
+        const euler = new THREE.Euler().setFromQuaternion(this.activeCamera.quaternion, "YXZ");
+        this.onCameraRotateCallback({ x: euler.x, y: euler.y, z: euler.z });
       }
 
       this.renderer.render(this.scene, this.activeCamera);

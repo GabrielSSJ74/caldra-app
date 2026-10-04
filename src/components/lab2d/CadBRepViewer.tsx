@@ -48,7 +48,10 @@ import {
   Crosshair,
   RefreshCw,
   AlertTriangle,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
+import { CadViewCube } from "./CadViewCube";
 import { ThreeBRepRenderer, type CadGizmoMode } from "@/lib/cad/renderer/ThreeBRepRenderer";
 import { getCadKernel } from "@/lib/cad/core";
 import { CadFeatureTree } from "@/lib/cad/features/CadFeatureTree";
@@ -152,6 +155,8 @@ export function CadBRepViewer({
   const [edgeMode, setEdgeMode] = useState<EdgeMode>("shaded-edges");
   const [gizmoMode, setGizmoMode] = useState<CadGizmoMode>("off");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [cameraRotation, setCameraRotation] = useState<{ x: number; y: number; z: number } | undefined>(undefined);
+  const [isOrtho, setIsOrtho] = useState(false);
 
   // Seleção e Metrologia
   const [selectionType, setSelectionType] = useState<CadSelectionType>("face");
@@ -213,7 +218,8 @@ export function CadBRepViewer({
         rendererRef.current?.fitView(false);
         AudioManager.play("kernel_success");
       } else {
-        throw new Error(res.errors?.join("; ") || "Falha na geração do sólido B-Rep.");
+        const errorMsg = res.errors?.join("; ") || (res as unknown as { error?: string })?.error || "Falha na geração do sólido B-Rep.";
+        throw new Error(errorMsg);
       }
       setFeaturesList(treeRef.current.getFeatures());
       refreshHistoryFlags();
@@ -252,6 +258,9 @@ export function CadBRepViewer({
         if (meas) {
           AudioManager.play("cad_measure");
         }
+      },
+      onCameraRotate: (rot) => {
+        setCameraRotation(rot);
       },
     });
 
@@ -301,6 +310,20 @@ export function CadBRepViewer({
 
     try {
       switch (modelType) {
+        // 0. Chapa Extrudada / Geometria 2D Sketch
+        case "extrude_sketch":
+          tree.addFeature({
+            name: modelTitle && modelTitle !== "Cone" ? modelTitle : "Chapa Planificada",
+            type: "extrude_sketch",
+            parameters: {
+              depth: thickness,
+              width: paramA || 200,
+              length: paramB || 200,
+              material,
+            },
+          });
+          break;
+
         // 1. Transição Quadrado para Redondo
         case "boilermaking_transition":
           tree.addFeature({
@@ -386,7 +409,7 @@ export function CadBRepViewer({
             type: "boilermaking_cone",
             parameters: {
               D: paramA,
-              d: Math.max(2, paramB),
+              d: Math.max(2, Math.abs(paramB - paramA) < 1 ? paramA * 0.5 : paramB),
               height: paramC,
               thickness,
               material,
@@ -477,6 +500,13 @@ export function CadBRepViewer({
     toast.info("Enquadramento 3D centralizado na peça.");
   };
 
+  const handleToggleOrtho = () => {
+    const next = !isOrtho;
+    setIsOrtho(next);
+    rendererRef.current?.setCameraProjection(next);
+    toast.info(next ? "Câmera Ortográfica (CAD)" : "Câmera em Perspectiva");
+  };
+
   return (
     <div
       className={cn(
@@ -558,11 +588,11 @@ export function CadBRepViewer({
       )}
 
       {/* ========================================================================= */}
-      {/* 1. BARRA DE VISTAS E MODOS DE VISUALIZAÇÃO (COMPACTA, 38px)               */}
+      {/* 1. BARRA DE VISTAS, REPRESENTAÇÃO E NAVEGAÇÃO 3D (COMPACTA, PADRÃO CAD)  */}
       {/* ========================================================================= */}
-      <div className="absolute top-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 pointer-events-auto">
-        <div className="flex h-[38px] items-center gap-0.5 rounded-full border border-slate-200/90 bg-white px-1 shadow-md">
-          {/* VISTAS ORTOGRÁFICAS */}
+      <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 pointer-events-auto">
+        <div className="flex h-[36px] items-center gap-0.5 rounded-xl border border-slate-700/80 bg-slate-900/90 p-0.5 shadow-xl backdrop-blur-md">
+          {/* VISTAS RÁPIDAS: ISO | FR | LAT | SUP */}
           {(
             [
               { id: "iso", label: "ISO" },
@@ -576,19 +606,20 @@ export function CadBRepViewer({
               type="button"
               onClick={() => handleViewPresetChange(v.id)}
               className={cn(
-                "flex h-[28px] items-center gap-1 rounded-full px-2.5 font-mono text-[10px] font-bold uppercase transition-all",
+                "flex h-[26px] items-center gap-1 rounded-lg px-2 font-mono text-[10px] font-bold uppercase transition-all",
                 viewPreset === v.id
-                  ? "bg-red-50 text-red-600 border border-red-200 shadow-2xs"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50",
+                  ? "bg-red-600 text-white shadow-xs"
+                  : "text-slate-300 hover:text-white hover:bg-slate-800",
               )}
+              title={`Vista ${v.label}`}
             >
-              <Box className="size-3.5" /> {v.label}
+              <Box className="size-3" /> {v.label}
             </button>
           ))}
 
-          <span className="h-4 w-px bg-slate-200 mx-0.5" />
+          <span className="h-3.5 w-px bg-slate-700 mx-1" />
 
-          {/* MODOS DE APRESENTAÇÃO */}
+          {/* REPRESENTAÇÃO TÉCNICA: SOMB | SOMB + AR | ARAME */}
           {(
             [
               { id: "shaded", label: "SOMB" },
@@ -601,33 +632,81 @@ export function CadBRepViewer({
               type="button"
               onClick={() => setEdgeMode(m.id)}
               className={cn(
-                "flex h-[28px] items-center gap-1 rounded-full px-2.5 font-mono text-[10px] font-bold uppercase transition-all",
+                "flex h-[26px] items-center gap-1 rounded-lg px-2 font-mono text-[10px] font-bold uppercase transition-all",
                 edgeMode === m.id
-                  ? "bg-red-50 text-red-600 border border-red-200 shadow-2xs"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50",
+                  ? "bg-red-600 text-white shadow-xs"
+                  : "text-slate-300 hover:text-white hover:bg-slate-800",
               )}
+              title={`Modo de renderização: ${m.label}`}
             >
-              <Box className="size-3.5" /> {m.label}
+              {m.label}
             </button>
           ))}
-        </div>
 
-        {/* BOTÃO EXPANDIR / FIT TO MODEL */}
-        <button
-          type="button"
-          onClick={handleFitToModel}
-          className="flex h-[38px] w-[38px] items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 shadow-md hover:bg-slate-50 transition-colors"
-          title="Centralizar e enquadrar no modelo 3D (Fit)"
-        >
-          <Maximize2 className="size-3.5" />
-        </button>
+          <span className="h-3.5 w-px bg-slate-700 mx-1" />
+
+          {/* PROJEÇÃO: PERSPECTIVA / ORTOGRÁFICO */}
+          <button
+            type="button"
+            onClick={handleToggleOrtho}
+            className={cn(
+              "flex h-[26px] items-center gap-1 rounded-lg px-2 font-mono text-[10px] font-bold uppercase transition-all",
+              isOrtho
+                ? "bg-emerald-600 text-white shadow-xs"
+                : "text-slate-300 hover:text-white hover:bg-slate-800",
+            )}
+            title={isOrtho ? "Câmera Ortográfica (clique para Perspectiva)" : "Câmera em Perspectiva (clique para Ortográfica)"}
+          >
+            {isOrtho ? "ORTO" : "PERSP"}
+          </button>
+
+          <span className="h-3.5 w-px bg-slate-700 mx-1" />
+
+          {/* CONTROLES DE NAVEGAÇÃO: ZOOM +, ZOOM -, GIRAR, ENQUADRAR */}
+          <button
+            type="button"
+            onClick={() => rendererRef.current?.zoomIn()}
+            className="flex size-[26px] items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+            title="Aproximar Zoom (Zoom In)"
+          >
+            <ZoomIn className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => rendererRef.current?.zoomOut()}
+            className="flex size-[26px] items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+            title="Afastar Zoom (Zoom Out)"
+          >
+            <ZoomOut className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => rendererRef.current?.orbitCamera(0.25, 0)}
+            className="flex size-[26px] items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+            title="Rotacionar Câmera (Orbit)"
+          >
+            <RotateCw className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={handleFitToModel}
+            className="flex size-[26px] items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+            title="Enquadrar Modelo Centralizado (Fit to Model)"
+          >
+            <Maximize2 className="size-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. FERRAMENTAS DE MANIPULAÇÃO RÁPIDA (ELEMENTO 2 — TOPO DIREITO, 38px)    */}
+      {/* 2. TOPO DIREITO: FERRAMENTAS DE MANIPULAÇÃO & VIEW CUBE                   */}
       {/* ========================================================================= */}
-      <div className="absolute top-2 right-3 z-20 flex items-center gap-1 pointer-events-auto">
-        <div className="flex h-[38px] items-center gap-0.5 rounded-full border border-slate-200/90 bg-white px-1 shadow-md font-mono text-[10px] font-bold">
+      <div className={cn(
+        "absolute top-2.5 z-20 flex items-center gap-2 pointer-events-auto transition-all",
+        rightPanelOpen ? "right-[335px]" : "right-3",
+      )}>
+        {/* BARRA DE MANIPULAÇÃO & HISTÓRICO */}
+        <div className="flex h-[36px] items-center gap-0.5 rounded-xl border border-slate-700/80 bg-slate-900/90 p-0.5 shadow-xl backdrop-blur-md font-mono text-[10px] font-bold">
           <button
             type="button"
             onClick={() => {
@@ -635,62 +714,26 @@ export function CadBRepViewer({
               setGizmoMode((m) => (m === "off" ? "translate" : "off"));
             }}
             className={cn(
-              "flex h-[28px] items-center gap-1 rounded-full px-2.5 uppercase transition-colors",
+              "flex h-[26px] items-center gap-1 rounded-lg px-2 uppercase transition-colors",
               gizmoMode !== "off"
-                ? "bg-red-50 text-red-600 border border-red-200"
-                : "text-slate-700 hover:bg-slate-50",
+                ? "bg-red-600 text-white"
+                : "text-slate-300 hover:bg-slate-800 hover:text-white",
             )}
             title="Alternar manipulador 3D (Gizmo)"
           >
-            <Crosshair className="size-3.5" /> GIZMO {gizmoMode !== "off" ? "ON" : "▾"}
+            <Crosshair className="size-3" /> GIZMO {gizmoMode !== "off" ? "ON" : "▾"}
           </button>
 
-          <span className="h-4 w-px bg-slate-200" />
+          <span className="h-3.5 w-px bg-slate-700 mx-0.5" />
 
-          <button
-            type="button"
-            onClick={() => {
-              AudioManager.play("cad_move");
-              setGizmoMode("translate");
-            }}
-            className={cn(
-              "flex h-[28px] items-center gap-1 rounded-full px-2 uppercase transition-colors",
-              gizmoMode === "translate"
-                ? "bg-red-50 text-red-600 border border-red-200"
-                : "text-slate-700 hover:bg-slate-50",
-            )}
-            title="Mover objeto ou transladar faces"
-          >
-            <Move className="size-3" /> MOVER
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              AudioManager.play("cad_rotate");
-              setGizmoMode("rotate");
-            }}
-            className={cn(
-              "flex h-[28px] items-center gap-1 rounded-full px-2 uppercase transition-colors",
-              gizmoMode === "rotate"
-                ? "bg-red-50 text-red-600 border border-red-200"
-                : "text-slate-700 hover:bg-slate-50",
-            )}
-            title="Rotacionar em torno dos eixos"
-          >
-            <RotateCw className="size-3" /> GIRAR
-          </button>
-        </div>
-
-        {/* HISTÓRICO UNDO / REDO */}
-        <div className="flex h-[38px] items-center rounded-full border border-slate-200/90 bg-white px-0.5 shadow-md">
+          {/* UNDO / REDO */}
           <button
             type="button"
             disabled={!canUndo}
             onClick={handleUndo}
             className={cn(
-              "flex h-[28px] w-[28px] items-center justify-center rounded-full transition-colors",
-              canUndo ? "text-slate-700 hover:bg-slate-50" : "text-slate-300 cursor-not-allowed",
+              "flex size-[26px] items-center justify-center rounded-lg transition-colors",
+              canUndo ? "text-slate-300 hover:bg-slate-800 hover:text-white" : "text-slate-600 cursor-not-allowed",
             )}
             title="Desfazer alteração (Undo)"
           >
@@ -701,27 +744,35 @@ export function CadBRepViewer({
             disabled={!canRedo}
             onClick={handleRedo}
             className={cn(
-              "flex h-[28px] w-[28px] items-center justify-center rounded-full transition-colors",
-              canRedo ? "text-slate-700 hover:bg-slate-50" : "text-slate-300 cursor-not-allowed",
+              "flex size-[26px] items-center justify-center rounded-lg transition-colors",
+              canRedo ? "text-slate-300 hover:bg-slate-800 hover:text-white" : "text-slate-600 cursor-not-allowed",
             )}
             title="Refazer alteração (Redo)"
           >
             <Redo2 className="size-3.5" />
           </button>
+
+          <span className="h-3.5 w-px bg-slate-700 mx-0.5" />
+
+          {/* ÁUDIO & FULLSCREEN */}
+          <AudioQuickControl />
+
+          <button
+            type="button"
+            onClick={() => setIsFullscreen((f) => !f)}
+            className="flex size-[26px] items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            title="Alternar tela cheia"
+          >
+            {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+          </button>
         </div>
 
-        {/* CONTROLE RÁPIDO DE ÁUDIO NO CAD */}
-        <AudioQuickControl />
-
-        {/* TELA CHEIA */}
-        <button
-          type="button"
-          onClick={() => setIsFullscreen((f) => !f)}
-          className="flex h-[38px] w-[38px] items-center justify-center rounded-full border border-slate-200/90 bg-white text-slate-700 shadow-md hover:bg-slate-50 transition-colors"
-          title="Alternar tela cheia"
-        >
-          {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-        </button>
+        {/* VIEW CUBE CAD INTERATIVO COMPACTO */}
+        <CadViewCube
+          activePreset={viewPreset}
+          onSelectPreset={handleViewPresetChange}
+          cameraRotation={cameraRotation}
+        />
       </div>
 
       {/* ========================================================================= */}

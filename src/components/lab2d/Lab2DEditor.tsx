@@ -47,7 +47,12 @@ import {
   Egg,
   Hexagon,
   Check,
+  Loader2,
+  Sun,
+  Moon,
 } from "lucide-react";
+import { getChamferSettings, type ChamferSettings } from "@/lib/lab2d/projectSettings";
+import { useSettings } from "@/lib/settings/SettingsProvider";
 import {
   Dialog,
   DialogContent,
@@ -174,6 +179,7 @@ import {
   ChamferLandscapeToolbar,
   type RibbonTab,
 } from "@/components/lab2d/ChamferLandscapeToolbar";
+import { ChamferCadToolbar } from "@/components/lab2d/ChamferCadToolbar";
 import { Cad3DStage } from "@/components/lab2d/Cad3DStage";
 import {
   stretchSelection,
@@ -268,8 +274,179 @@ const SNAP_GLYPH: Record<Snap["kind"], string> = {
   grid: "+",
 };
 
+/** Instruções em tempo real do próximo passo CAD para feedback visual contínuo (Seção 5) */
+function getOperationFeedback(
+  tool: Tool,
+  pendingCount: number,
+  selectedCount: number,
+): { command: string; instruction: string } {
+  switch (tool) {
+    case "select":
+      if (selectedCount === 0) {
+        return {
+          command: "SELECIONAR",
+          instruction: "Clique em uma entidade ou arraste para seleção em janela",
+        };
+      }
+      return {
+        command: "SELEÇÃO",
+        instruction: `${selectedCount} ${selectedCount === 1 ? "entidade selecionada" : "entidades selecionadas"} — altere propriedades à direita`,
+      };
+    case "line":
+      if (pendingCount === 0) {
+        return {
+          command: "LINHA",
+          instruction: "Passo 1: Clique para definir o ponto inicial (ou Shift para modo ortogonal)",
+        };
+      }
+      return {
+        command: "LINHA",
+        instruction: "Passo 2: Clique no ponto final ou digite o comprimento no teclado",
+      };
+    case "polyline":
+      if (pendingCount === 0) {
+        return {
+          command: "POLILINHA",
+          instruction: "Passo 1: Clique no primeiro vértice do contorno contínuo",
+        };
+      }
+      return {
+        command: "POLILINHA",
+        instruction: "Passo 2: Clique no próximo vértice (duplo clique ou Enter para finalizar)",
+      };
+    case "circle":
+      if (pendingCount === 0) {
+        return {
+          command: "CÍRCULO",
+          instruction: "Passo 1: Clique para posicionar o centro do círculo",
+        };
+      }
+      return {
+        command: "CÍRCULO",
+        instruction: "Passo 2: Mova o cursor para definir o raio e clique para confirmar",
+      };
+    case "arc":
+      if (pendingCount === 0) {
+        return {
+          command: "ARCO",
+          instruction: "Passo 1: Clique no ponto inicial do arco circular",
+        };
+      }
+      if (pendingCount === 1) {
+        return {
+          command: "ARCO",
+          instruction: "Passo 2: Clique no ponto intermediário / raio de curvatura",
+        };
+      }
+      return {
+        command: "ARCO",
+        instruction: "Passo 3: Clique no ponto final do arco para concluir",
+      };
+    case "rect":
+      if (pendingCount === 0) {
+        return {
+          command: "RETÂNGULO",
+          instruction: "Passo 1: Clique no primeiro vértice do retângulo",
+        };
+      }
+      return {
+        command: "RETÂNGULO",
+        instruction: "Passo 2: Clique no canto oposto diagonal em milímetros",
+      };
+    case "polygon":
+      return {
+        command: "POLÍGONO",
+        instruction: "Clique no centro e defina a dimensão do polígono regular",
+      };
+    case "ellipse":
+      return {
+        command: "ELIPSE",
+        instruction: "Clique no centro e defina os eixos horizontal e vertical",
+      };
+    case "point":
+      return {
+        command: "PONTO",
+        instruction: "Clique na coordenada desejada para criar ponto de referência",
+      };
+    case "text":
+      return {
+        command: "TEXTO",
+        instruction: "Clique onde deseja posicionar o texto técnico de marcação",
+      };
+    case "trim":
+      return {
+        command: "APARAR (TRIM)",
+        instruction: "Clique no segmento ou trecho de linha que deseja cortar",
+      };
+    case "extend":
+      return {
+        command: "ESTENDER",
+        instruction: "Clique na extremidade da linha a ser prolongada até o limite",
+      };
+    case "offset":
+      return {
+        command: "OFFSET",
+        instruction: "Clique na entidade e indique o lado para deslocamento paralelo",
+      };
+    case "fillet":
+      return {
+        command: "FILETE (RAIO)",
+        instruction: "Clique na primeira e na segunda linha do canto a arredondar",
+      };
+    case "chamfer":
+      return {
+        command: "CHANFRO",
+        instruction: "Clique nas duas linhas concorrentes para aplicar o corte chanfrado",
+      };
+    case "measure":
+      return {
+        command: "MEDIR",
+        instruction: "Clique no ponto de origem para medir distância e ângulo",
+      };
+    case "dim":
+      return {
+        command: "COTAR",
+        instruction: "Selecione a entidade ou dois pontos para inserir cota técnica",
+      };
+    case "node":
+      return {
+        command: "EDITAR NÓS",
+        instruction: "Arraste os nós de controle para ajustar a geometria",
+      };
+    case "pan":
+      return {
+        command: "PAN",
+        instruction: "Arraste a prancheta para navegar pelo espaço de trabalho",
+      };
+    default:
+      return {
+        command: "PRONTO",
+        instruction: "Selecione uma ferramenta na barra esquerda para iniciar",
+      };
+  }
+}
+
 export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const { isMestre } = useFeatureAccess();
+  const { theme: appTheme, setTheme: setAppTheme } = useSettings();
+  const isDark = useMemo(() => {
+    return (
+      appTheme === "dark" ||
+      appTheme === "amoled" ||
+      (appTheme === "system" &&
+        (typeof window !== "undefined"
+          ? window.matchMedia?.("(prefers-color-scheme: dark)").matches
+          : true)) ||
+      (typeof document !== "undefined" && document.documentElement.classList.contains("dark"))
+    );
+  }, [appTheme]);
+
+  const toggleTheme = useCallback(() => {
+    triggerHaptic("tap");
+    const nextTheme = isDark ? "light" : "dark";
+    setAppTheme(nextTheme);
+  }, [isDark, setAppTheme]);
+
   const navigate = useNavigate();
   const { needsRotate, request: requestLandscape, release } = useImmersiveLandscape(true);
   useDeclareImmersive(true);
@@ -290,6 +467,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [project, setProject] = useState<Project | null>(null);
   const [planId, setPlanId] = useState<string>("");
   const [entities, setEntities] = useState<Entity[]>([]);
+
+  // Configurações do CHAMFER para o projeto atual
+  const [chamferSettings, setChamferSettings] = useState<ChamferSettings>(() =>
+    getChamferSettings(projectId),
+  );
+
+  useEffect(() => {
+    setChamferSettings(getChamferSettings(projectId));
+    const handleSettingsChange = (e: Event) => {
+      const custom = e as CustomEvent<{ projectId?: string; settings: ChamferSettings }>;
+      if (!custom.detail?.projectId || custom.detail.projectId === projectId) {
+        setChamferSettings(getChamferSettings(projectId));
+      }
+    };
+    window.addEventListener("chamfer-settings-changed", handleSettingsChange);
+    return () => window.removeEventListener("chamfer-settings-changed", handleSettingsChange);
+  }, [projectId]);
+
+  // Estado visual do documento: "salvo" | "salvando" | "pendente"
+  const [saveStatus, setSaveStatus] = useState<"salvo" | "salvando" | "pendente">("salvo");
+  const isInitialLoad = useRef(true);
 
   /* Novo projeto no CHAMFER */
   const [newProjectDialogOpen, setNewProjectDialogOpen] = useState(false);
@@ -495,12 +693,26 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setLayers(p.layers ?? DEFAULT_LAYERS);
     const plan = p.plans.find((x) => x.id === p.lastPlanId) ?? p.plans[0]!;
     setPlanId(plan.id);
-    setEntities(plan.entities);
+    const seenIds = new Set<string>();
+    const sanitizedEntities = (plan.entities ?? []).map((ent) => {
+      let entId = ent.id;
+      if (!entId || entId === "draft" || entId.startsWith("draft-") || seenIds.has(entId)) {
+        entId = uid();
+      }
+      seenIds.add(entId);
+      return ent.id === entId ? ent : { ...ent, id: entId };
+    });
+    setEntities(sanitizedEntities);
     setGroups(plan.groups ?? []);
     setDims(plan.dims ?? []);
     setThickness(p.thickness ?? DEFAULT_PLAN_THICKNESS);
     past.current = [];
     future.current = [];
+    isInitialLoad.current = true;
+    setSaveStatus("salvo");
+    setTimeout(() => {
+      isInitialLoad.current = false;
+    }, 400);
 
     // Auto-fit garantido na abertura do projeto ou plano
     requestAnimationFrame(() => {
@@ -545,41 +757,80 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     );
   }, [projectId]);
 
-  /* autosave fora do caminho crítico: debounce + tempo ocioso do navegador */
-  useEffect(() => {
+  /* GRAVAÇÃO DO PROJETO COM GESTÃO DE ESTADO (SALVO / SALVANDO / PENDENTE) */
+  const performSave = useCallback(() => {
     if (!project || !planId) return;
-    let idle = 0;
-    const t = setTimeout(() => {
-      const run = () => {
-        const live = pruneGroups(entities, groups);
-        const next: Project = {
-          ...project,
-          layers,
-          thickness,
-          lastPlanId: planId,
-          plans: project.plans.map((pl) =>
-            pl.id === planId
-              ? { ...pl, entities, groups: live, dims: pruneDimensions(dims, entities) }
-              : pl,
-          ),
-        };
-        saveProject(next);
-        setProject(next);
-      };
-      const ric = (
-        window as unknown as { requestIdleCallback?: (cb: () => void, o?: object) => number }
-      ).requestIdleCallback;
-      if (ric) idle = ric(run, { timeout: 1000 });
-      else run();
-    }, 1500);
-    return () => {
-      clearTimeout(t);
-      const cic = (window as unknown as { cancelIdleCallback?: (id: number) => void })
-        .cancelIdleCallback;
-      if (idle && cic) cic(idle);
+    setSaveStatus("salvando");
+    const live = pruneGroups(entities, groups);
+    const next: Project = {
+      ...project,
+      layers,
+      thickness,
+      lastPlanId: planId,
+      plans: project.plans.map((pl) =>
+        pl.id === planId
+          ? { ...pl, entities, groups: live, dims: pruneDimensions(dims, entities) }
+          : pl,
+      ),
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entities, layers, planId, groups, dims, thickness]);
+    saveProject(next);
+    setProject(next);
+    setTimeout(() => {
+      setSaveStatus("salvo");
+    }, 400);
+  }, [project, planId, entities, groups, layers, thickness, dims]);
+
+  const handleManualSave = useCallback(() => {
+    triggerHaptic("action");
+    performSave();
+    toast.success("Projeto salvo com sucesso!");
+  }, [performSave]);
+
+  /* SALVAMENTO AUTOMÁTICO CONFORME CONFIGURAÇÃO DO CHAMFER */
+  useEffect(() => {
+    if (isInitialLoad.current || !project || !planId) return;
+
+    // Sinaliza que há alterações não salvas
+    setSaveStatus("pendente");
+
+    // Se salvamento automático estiver OFF, aguarda ação manual do usuário
+    if (!chamferSettings.autoSave) {
+      return;
+    }
+
+    // Intervalo configurado pelo usuário no projeto
+    const intervalMs = Math.max(5000, (chamferSettings.autoSaveIntervalSec || 30) * 1000);
+    const t = setTimeout(() => {
+      performSave();
+    }, intervalMs);
+
+    return () => clearTimeout(t);
+  }, [
+    project,
+    entities,
+    layers,
+    planId,
+    groups,
+    dims,
+    thickness,
+    chamferSettings.autoSave,
+    chamferSettings.autoSaveIntervalSec,
+    performSave,
+  ]);
+
+  /* Proteção contra fechamento acidental com alterações pendentes */
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (
+        saveStatus === "pendente" &&
+        (chamferSettings.autoSave || chamferSettings.recoveryEnabled)
+      ) {
+        performSave();
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [saveStatus, chamferSettings.autoSave, chamferSettings.recoveryEnabled, performSave]);
 
   /* --------------------------------- paisagem automática no celular */
   useEffect(() => {
@@ -602,7 +853,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setEntities((prev) => {
       past.current = [...past.current.slice(-49), prev];
       future.current = [];
-      return typeof next === "function" ? next(prev) : next;
+      const updated = typeof next === "function" ? next(prev) : next;
+      const seenIds = new Set<string>();
+      return updated.map((ent) => {
+        let entId = ent.id;
+        if (!entId || entId === "draft" || entId.startsWith("draft-") || seenIds.has(entId)) {
+          entId = uid();
+        }
+        seenIds.add(entId);
+        return ent.id === entId ? ent : { ...ent, id: entId };
+      });
     });
   }, []);
 
@@ -871,8 +1131,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       dpr,
       selection: selectionSet,
       lod: gesturing,
+      isLight: !isDark,
     });
-  }, [drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen]);
+  }, [drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isDark]);
 
   /* ------------------------------------------------------- FLUXO CALDRA */
   /*
@@ -992,10 +1253,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (n > 0) setEntities(stressEntities(n));
   }, []);
 
-  const selected = useMemo(
-    () => entities.filter((e) => selection.includes(e.id)),
-    [entities, selection],
-  );
+  const selected = useMemo(() => {
+    const selSet = new Set(selection);
+    const seen = new Set<string>();
+    return entities.filter((e) => {
+      if (!selSet.has(e.id) || seen.has(e.id)) return false;
+      seen.add(e.id);
+      return true;
+    });
+  }, [entities, selection]);
 
   const boxOfEntities = useCallback((list: Entity[]) => {
     if (!list.length) return { minX: 0, maxX: 0, minY: 0, maxY: 0 };
@@ -1701,7 +1967,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const [a, b] = pending;
       if (pending.length === 1 && a)
         setDraft({
-          id: "draft",
+          id: uid(),
           layer: activeLayer,
           type: "line",
           x1: a.x,
@@ -1725,7 +1991,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         p = dx >= dy ? { x: p.x, y: p0.y } : { x: p0.x, y: p.y };
       }
       setDraft({
-        id: "draft",
+        id: uid(),
         layer: activeLayer,
         type: "line",
         x1: pending[pending.length - 1]!.x,
@@ -1795,7 +2061,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (draft && pending.length === 1) {
       const box = boxOf(draft);
       const empty = box.maxX - box.minX < 0.01 && box.maxY - box.minY < 0.01;
-      if (!empty) commit((e) => [...e, draft]);
+      if (!empty) {
+        const finalEntity: Entity =
+          !draft.id || draft.id === "draft" || draft.id.startsWith("draft-")
+            ? { ...draft, id: uid() }
+            : draft;
+        commit((e) => [...e, finalEntity]);
+      }
       setDraft(null);
       setPending([]);
     }
@@ -1814,6 +2086,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         } else {
           undo();
         }
+        return;
+      }
+      if (meta && ev.key.toLowerCase() === "s") {
+        ev.preventDefault();
+        handleManualSave();
         return;
       }
       if (meta && ev.key.toLowerCase() === "y") return redo();
@@ -1893,6 +2170,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     entities,
     groups,
     cursor,
+    handleManualSave,
   ]);
 
   /* ------------------------------------------------------------- ações */
@@ -1970,7 +2248,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     return gid ? (groups.find((g) => g.id === gid) ?? null) : null;
   }, [selected, groups]);
 
-  const gridStep = grid * view.k < 6 ? grid * 10 : grid;
+  const gridStep = grid;
 
   const panelOpen = !focus && (selected.length > 0 || showLayers || showCut || showDims2);
 
@@ -1998,7 +2276,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const primaryTools = TOOLS.filter((t) => PRIMARY.includes(t.id));
 
   const aside = panelOpen ? (
-    <aside className="metal hairline flex w-56 shrink-0 flex-col overflow-y-auto rounded-2xl p-2">
+    <aside
+      className={cn(
+        "flex w-56 shrink-0 flex-col overflow-y-auto rounded-2xl border p-2 shadow-lg transition-colors select-none",
+        isDark
+          ? "border-slate-800 bg-slate-950/95 text-slate-200"
+          : "border-slate-200 bg-white/95 text-slate-800 shadow-md",
+      )}
+    >
       <div className="mb-2 flex items-center gap-1">
         <PanelTab
           active={!showLayers && !showCut && !showDims2}
@@ -2197,11 +2482,43 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     </aside>
   ) : null;
 
+  const selectionText = useMemo(() => {
+    if (selected.length === 0) return "Nenhuma seleção";
+    if (selected.length === 1) {
+      const ent = entities.find((e) => e.id === selected[0]);
+      if (!ent) return "1 entidade selecionada";
+      switch (ent.type) {
+        case "line": {
+          const len = Math.hypot(ent.b.x - ent.a.x, ent.b.y - ent.a.y).toFixed(1);
+          return `Linha (L: ${len} mm)`;
+        }
+        case "circle":
+          return `Círculo (Ø ${(ent.r * 2).toFixed(1)} mm)`;
+        case "arc":
+          return `Arco (R ${ent.r.toFixed(1)} mm)`;
+        case "rect":
+          return `Retângulo (${ent.w.toFixed(1)} × ${ent.h.toFixed(1)} mm)`;
+        case "polyline":
+          return `Polilinha (${ent.pts.length} vértices)`;
+        case "text":
+          return `Texto ("${ent.text}")`;
+        default:
+          return "1 entidade selecionada";
+      }
+    }
+    return `${selected.length} entidades selecionadas`;
+  }, [selected, entities]);
+
+  const operationFeedback = useMemo(() => {
+    return getOperationFeedback(tool, pending.length, selected.length);
+  }, [tool, pending.length, selected.length]);
+
   return (
     <div
       ref={wrapRef}
       className={cn(
-        "metal fixed inset-0 z-50 flex h-[100dvh] w-[100vw] max-w-none flex-col gap-2 overflow-hidden rounded-none p-2",
+        "fixed inset-0 z-50 flex h-[100dvh] w-[100vw] max-w-none flex-col gap-1 overflow-hidden rounded-none p-1 transition-colors select-none",
+        isDark ? "bg-[#0b0f17] text-slate-100" : "bg-[#f1f5f9] text-slate-900",
         isMestre && "glow-ring",
       )}
     >
@@ -2212,20 +2529,43 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onExit={leaveEditor}
         />
       )}
-      {/* REGIÃO A — HEADER SUPERIOR DEFINITIVO LANDSCAPE */}
+      {/* REGIÃO A — HEADER SUPERIOR DEFINITIVO CAD (TOPO CANÔNICO) */}
       {!focus && (
-        <header className="flex h-11 shrink-0 items-center justify-between gap-3 border-b border-line bg-card/80 px-3 backdrop-blur-md">
-          {/* LADO ESQUERDO: [ ← SAIR ] [ CHAMFER ] */}
+        <header
+          className={cn(
+            "flex h-10 shrink-0 items-center justify-between gap-2 border-b px-2.5 shadow-xs backdrop-blur-md select-none transition-colors",
+            isDark
+              ? "border-slate-800 bg-slate-950/95 text-slate-100"
+              : "border-slate-200 bg-white/95 text-slate-800 shadow-xs",
+          )}
+        >
+          {/* LADO ESQUERDO: [ ← VOLTAR ] + [ CHAMFER · NOME DO PROJETO ] + [ DOSSIÊ ] */}
           <div className="flex shrink-0 items-center gap-2">
             <button
-              onClick={leaveEditor}
-              aria-label="Sair do CHAMFER"
-              className="flex shrink-0 items-center gap-1.5 rounded-md border border-line bg-background/60 px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wider text-muted-foreground uppercase hover:bg-background hover:text-foreground transition-colors"
+              onClick={() => {
+                if (
+                  saveStatus === "pendente" &&
+                  (chamferSettings.autoSave || chamferSettings.recoveryEnabled)
+                ) {
+                  performSave();
+                }
+                leaveEditor();
+              }}
+              aria-label="Voltar para a tela anterior"
+              className={cn(
+                "flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors",
+                isDark
+                  ? "border-slate-700/80 bg-slate-900/90 text-slate-300 hover:bg-slate-800 hover:text-white"
+                  : "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900",
+              )}
             >
-              <ArrowLeft className="size-3.5" /> Sair
+              <ArrowLeft className="size-3.5" /> Voltar
             </button>
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-xs font-bold tracking-wider text-accent">CHAMFER</span>
+
+            <span className={cn("h-4 w-px", isDark ? "bg-slate-800" : "bg-slate-200")} />
+
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-xs font-bold tracking-wider text-red-600">CHAMFER</span>
               {project && (
                 <button
                   type="button"
@@ -2234,8 +2574,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
                     setNewProjectDialogOpen(true);
                   }}
-                  className="hidden md:inline font-mono text-[10px] text-muted-foreground hover:text-accent transition-colors truncate max-w-[140px]"
-                  title={`Projeto: ${project.name} (clique para novo projeto)`}
+                  className={cn(
+                    "hidden md:inline font-mono text-[11px] font-semibold transition-colors truncate max-w-[140px]",
+                    isDark ? "text-slate-200 hover:text-white" : "text-slate-800 hover:text-slate-950",
+                  )}
+                  title={`Documento: ${project.name} (clique para alternar/criar)`}
                 >
                   · {project.name}
                 </button>
@@ -2249,7 +2592,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     })
                   }
                   title={`${dossier.projectName} · ${dossier.partName}`}
-                  className="hidden lg:inline rounded-md bg-accent/10 px-2 py-0.5 font-mono text-[9px] tracking-wider text-accent uppercase ring-1 ring-accent/25 truncate max-w-[160px]"
+                  className={cn(
+                    "hidden lg:inline rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase border truncate max-w-[120px]",
+                    isDark
+                      ? "bg-red-950/50 text-red-300 border-red-500/30"
+                      : "bg-red-50 text-red-700 border-red-200",
+                  )}
                 >
                   {dossier.partCode || dossier.partName}
                 </button>
@@ -2257,69 +2605,198 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           </div>
 
-          {/* CENTRO: [ 2D ESBOÇO ] [ 3D TRAÇAGEM ] [ FLANGES ] */}
-          <div className="flex items-center rounded-lg border border-line bg-background/60 p-0.5 shadow-xs">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                setActiveMode("2d");
-                setSolidOpen(false);
-              }}
+          {/* REGIÃO CENTRAL: CONTROLE PRINCIPAL DE MUDANÇA DE AMBIENTE [ 2D SKETCH | 3D SÓLIDO | FLANGES ] */}
+          <div className="flex shrink-0 items-center justify-center">
+            <div
               className={cn(
-                "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
-                activeMode === "2d"
-                  ? "bg-accent/20 text-accent shadow-xs"
-                  : "text-muted-foreground hover:text-foreground",
+                "flex items-center rounded-lg border p-0.5 shadow-xs",
+                isDark ? "border-slate-800 bg-slate-900/90" : "border-slate-200 bg-slate-100",
               )}
             >
-              2D ESBOÇO
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                setActiveMode("3d");
-                setSolidOpen(true);
-                if (drawable.length > 0) fitTo(drawable);
-              }}
-              className={cn(
-                "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
-                activeMode === "3d"
-                  ? "bg-accent/20 text-accent shadow-xs"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              3D SÓLIDO
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                setActiveMode("flanges");
-                setSolidOpen(true);
-              }}
-              className={cn(
-                "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
-                activeMode === "flanges"
-                  ? "bg-accent/20 text-accent shadow-xs"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              FLANGES
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setActiveMode("2d");
+                  setSolidOpen(false);
+                }}
+                className={cn(
+                  "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
+                  activeMode === "2d"
+                    ? "bg-red-600 text-white shadow-xs"
+                    : isDark
+                      ? "text-slate-400 hover:text-slate-200"
+                      : "text-slate-600 hover:text-slate-900",
+                )}
+              >
+                2D SKETCH
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setActiveMode("3d");
+                  setSolidOpen(true);
+                  if (drawable.length > 0) fitTo(drawable);
+                }}
+                className={cn(
+                  "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
+                  activeMode === "3d"
+                    ? "bg-red-600 text-white shadow-xs"
+                    : isDark
+                      ? "text-slate-400 hover:text-slate-200"
+                      : "text-slate-600 hover:text-slate-900",
+                )}
+              >
+                3D SÓLIDO
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setActiveMode("flanges");
+                  setSolidOpen(true);
+                }}
+                className={cn(
+                  "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
+                  activeMode === "flanges"
+                    ? "bg-red-600 text-white shadow-xs"
+                    : isDark
+                      ? "text-slate-400 hover:text-slate-200"
+                      : "text-slate-600 hover:text-slate-900",
+                )}
+              >
+                FLANGES
+              </button>
+            </div>
           </div>
 
-          {/* LADO DIREITO: [ DESFAZER ] [ REFAZER ] [ AJUSTAR ] [ CAMADAS ] [ EXPORTAR ] [ FERRAMENTA RÁPIDA ] [ MAIS ] [ TELA CHEIA ] */}
-          <div className="flex items-center gap-1">
-            <IconBtn label="Desfazer" onClick={undo} icon={Undo2} title="Desfazer ação (Ctrl+Z)" />
-            <IconBtn label="Refazer" onClick={redo} icon={Redo2} title="Refazer ação (Ctrl+Y)" />
-            <IconBtn
-              label="Ajustar"
-              onClick={() => fitTo(entities)}
-              icon={ScanSearch}
-              title="Ajustar / Enquadrar no viewport"
-            />
+          {/* LADO DIREITO: HISTÓRICO + SALVAMENTO/STATUS + FERRAMENTAS GLOBAIS */}
+          <div className="flex shrink-0 items-center gap-1.5">
+            {/* HISTÓRICO: [ DESFAZER | REFAZER ] */}
+            <div
+              className={cn(
+                "flex items-center rounded-lg border p-0.5",
+                isDark ? "border-slate-800 bg-slate-900/90" : "border-slate-200 bg-slate-100",
+              )}
+            >
+              <button
+                type="button"
+                onClick={undo}
+                title="Desfazer ação (Ctrl+Z)"
+                className={cn(
+                  "flex size-7 items-center justify-center rounded-md transition-colors",
+                  isDark ? "text-slate-300 hover:bg-slate-800 hover:text-white" : "text-slate-700 hover:bg-slate-200 hover:text-slate-900",
+                )}
+              >
+                <Undo2 className="size-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={redo}
+                title="Refazer ação (Ctrl+Y)"
+                className={cn(
+                  "flex size-7 items-center justify-center rounded-md transition-colors",
+                  isDark ? "text-slate-300 hover:bg-slate-800 hover:text-white" : "text-slate-700 hover:bg-slate-200 hover:text-slate-900",
+                )}
+              >
+                <Redo2 className="size-3.5" />
+              </button>
+            </div>
+
+            {/* BOTÃO SALVAR E INDICADOR DE ESTADO RESPEITANDO A CONFIGURAÇÃO */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={handleManualSave}
+                title="Salvar documento agora (Ctrl+S)"
+                className={cn(
+                  "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold transition-all shadow-xs",
+                  saveStatus === "pendente"
+                    ? isDark
+                      ? "border-amber-500/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60"
+                      : "border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                    : isDark
+                      ? "border-slate-700/80 bg-slate-900/90 text-slate-200 hover:bg-slate-800 hover:text-white"
+                      : "border-slate-200 bg-slate-100 text-slate-800 hover:bg-slate-200 hover:text-slate-950",
+                )}
+              >
+                {saveStatus === "salvando" ? (
+                  <Loader2 className="size-3 animate-spin text-amber-500" />
+                ) : (
+                  <Check className="size-3 text-emerald-500" />
+                )}
+                <span>Salvar</span>
+              </button>
+
+              {/* INDICADOR DISCRETO DO ESTADO DO DOCUMENTO */}
+              <span
+                className={cn(
+                  "hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[9px] font-mono border font-semibold uppercase tracking-wider transition-colors",
+                  saveStatus === "salvo" &&
+                    (isDark
+                      ? "text-emerald-400 bg-emerald-950/60 border-emerald-500/30"
+                      : "text-emerald-700 bg-emerald-50 border-emerald-300"),
+                  saveStatus === "salvando" &&
+                    (isDark
+                      ? "text-amber-400 bg-amber-950/60 border-amber-500/30"
+                      : "text-amber-800 bg-amber-50 border-amber-300"),
+                  saveStatus === "pendente" &&
+                    (isDark
+                      ? "text-amber-300 bg-amber-950/60 border-amber-500/50 animate-pulse"
+                      : "text-amber-900 bg-amber-100/90 border-amber-400"),
+                )}
+                title={
+                  chamferSettings.autoSave
+                    ? `Salvamento automático ativo (a cada ${chamferSettings.autoSaveIntervalSec}s)`
+                    : "Salvamento manual ativado nas configurações do projeto"
+                }
+              >
+                {saveStatus === "salvo" && (
+                  <>
+                    <span className="size-1.5 rounded-full bg-emerald-500" />
+                    <span>Salvo</span>
+                  </>
+                )}
+                {saveStatus === "salvando" && (
+                  <>
+                    <Loader2 className="size-2.5 animate-spin text-amber-500" />
+                    <span>Salvando...</span>
+                  </>
+                )}
+                {saveStatus === "pendente" && (
+                  <>
+                    <span className="size-1.5 rounded-full bg-amber-500 animate-ping" />
+                    <span className="hidden md:inline">Alterações não salvas</span>
+                    <span className="md:hidden">Não salvo</span>
+                  </>
+                )}
+              </span>
+            </div>
+
+            <span className={cn("h-4 w-px", isDark ? "bg-slate-800" : "bg-slate-200")} />
+
+            {/* FERRAMENTAS GLOBAIS */}
+            {/* CHAMFER VISION — FERRAMENTA OFICIAL DO CHAMFER COM ÍCONE OFICIAL */}
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("action");
+                setVisionOpen(true);
+              }}
+              title="CHAMFER VISION — Reconhecimento e vetorização inteligente de peças"
+              aria-label="Abrir CHAMFER VISION"
+              className={cn(
+                "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
+                isDark
+                  ? "border-red-500/40 bg-red-950/40 text-red-300 hover:bg-red-900/60 hover:text-white hover:border-red-400"
+                  : "border-red-300 bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-950 hover:border-red-400",
+              )}
+            >
+              <ScanEye className="size-3.5 text-red-500" />
+              <span className="hidden xl:inline">CHAMFER VISION</span>
+              <span className="xl:hidden">VISION</span>
+            </button>
             <IconBtn
               label="Camadas"
               onClick={() => {
@@ -2337,10 +2814,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               title="Exportar DXF, SVG, PNG, PDF"
             />
             <IconBtn
-              label="Ferramenta Rápida"
+              label="Corte CNC"
               onClick={() => setCncOpen(true)}
               icon={Scissors}
-              title="Ferramenta Rápida: Corte e Exportação DXF CNC direta"
+              title="Ferramenta de Corte e Exportação DXF CNC direta"
             />
             <div className="relative">
               <IconBtn
@@ -2494,6 +2971,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               )}
             </div>
             <IconBtn
+              label={isDark ? "Tema Claro" : "Tema Escuro"}
+              onClick={toggleTheme}
+              icon={isDark ? Sun : Moon}
+              title={isDark ? "Mudar para Tema Claro" : "Mudar para Tema Escuro"}
+            />
+            <IconBtn
               label="Tela Cheia"
               onClick={toggleFullscreen}
               icon={focus ? Minimize : Maximize}
@@ -2503,154 +2986,78 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </header>
       )}
 
-      {/* TOOLBAR SUPERIOR HORIZONTAL (DESENHAR, MODIFICAR, PRECISÃO, COTAR, CHAPA) */}
-      {!focus && activeMode === "2d" && (
-        <ChamferLandscapeToolbar
-          activeTab={activeRibbonTab}
-          onTabChange={setActiveRibbonTab}
-          tool={tool}
-          onPickTool={pickTool}
-          hasSelection={selected.length > 0}
-          selectedCount={selected.length}
-          offsetDist={offsetDist}
-          setOffsetDist={setOffsetDist}
-          filletR={filletR}
-          setFilletR={setFilletR}
-          onMoveSelection={handleMoveSelection}
-          onCopySelection={handleCopySelection}
-          onRotateSelection={handleRotateSelection}
-          onMirrorSelection={handleMirrorSelection}
-          onScaleSelection={handleScaleSelection}
-          onStretchSelection={handleStretchSelection}
-          onBreakSelection={handleBreakSelection}
-          onJoinSelection={handleJoinSelection}
-          onExplodeSelection={handleExplodeSelection}
-          onArrayLinear={handleArrayLinear}
-          onArrayPolar={handleArrayPolar}
-          snapOn={snapOn}
-          setSnapOn={setSnapOn}
-          showGrid={showGrid}
-          setShowGrid={setShowGrid}
-          grid={grid}
-          setGrid={setGrid}
-          orthoOn={orthoOn}
-          setOrthoOn={setOrthoOn}
-          trackingOn={trackingOn}
-          setTrackingOn={setTrackingOn}
-          cursor={cursor}
-          onApplyCoordinate={handleApplyCoordinate}
-          dimKind={dimKind}
-          onPickDimKind={(k) => {
-            setDimKind(k);
-            setTool("dim");
-          }}
-          thickness={thickness}
-          onThicknessChange={setThickness}
-          onConvertToBend={handleConvertToBend}
-          onAddHole={handleAddHole}
-          onPlanificar={handlePlanificar}
-          onOpenFlanges={handleOpenFlanges}
-          onApplyRelief={handleApplyRelief}
-          onConvertToCut={handleConvertToCut}
-          onConvertToRecorte={handleConvertToRecorte}
-          onUnfold={handleUnfold}
-          onFold={handleFold}
-        />
-      )}
-
-      {/* CORPO: SIDEBAR ESQUERDA + CANVAS + PROPRIEDADES */}
-      <div className="flex min-h-0 min-w-0 flex-1 gap-2 p-1.5 pt-0">
-        {/* REGIÃO B — SIDEBAR ESQUERDA (8 ITENS CANÔNICOS, OCULTA NO MODO 3D) */}
-        {!focus && activeMode === "2d" && (
-          <aside
-            aria-label="Ferramentas principais do CHAMFER"
-            className="metal hairline flex w-11 shrink-0 flex-col items-center gap-0.5 overflow-y-auto rounded-2xl p-1 shadow-sm select-none"
-          >
-            {primaryTools.map((t) => (
-              <ToolBtn key={t.id} t={t} active={tool === t.id} onPick={pickTool} />
-            ))}
-            <div className="my-1 h-px w-6 bg-line" />
-            <div className="relative">
-              <IconBtn
-                label="Mais ferramentas"
-                onClick={() => setSecondaryToolsOpen((v) => !v)}
-                icon={MoreHorizontal}
-                active={secondaryToolsOpen}
-                flat
-                title="Ferramentas secundárias: Ponto, Polígono, Elipse, Medir, Nó, Pan"
-              />
-              {secondaryToolsOpen && (
-                <div className="metal hairline pop-in absolute left-full top-0 ml-2 z-50 w-48 rounded-xl p-1.5 shadow-xl backdrop-blur">
-                  <p className="px-2 py-1 font-mono text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
-                    Secundárias
-                  </p>
-                  <MenuItem
-                    label="Ponto"
-                    icon={Dot}
-                    onClick={() => {
-                      setTool("point");
-                      setSecondaryToolsOpen(false);
-                    }}
-                  />
-                  <MenuItem
-                    label="Polígono"
-                    icon={Hexagon}
-                    onClick={() => {
-                      setTool("polygon");
-                      setSecondaryToolsOpen(false);
-                    }}
-                  />
-                  <MenuItem
-                    label="Elipse"
-                    icon={Egg}
-                    onClick={() => {
-                      setTool("ellipse");
-                      setSecondaryToolsOpen(false);
-                    }}
-                  />
-                  <MenuItem
-                    label="Medir / Régua"
-                    icon={Ruler}
-                    onClick={() => {
-                      setTool("measure");
-                      setSecondaryToolsOpen(false);
-                    }}
-                  />
-                  <MenuItem
-                    label="Editar Nós"
-                    icon={MousePointer2}
-                    onClick={() => {
-                      setTool("node");
-                      setSecondaryToolsOpen(false);
-                    }}
-                  />
-                  <MenuItem
-                    label="Mover Tela (Pan)"
-                    icon={Move}
-                    onClick={() => {
-                      setTool("pan");
-                      setSecondaryToolsOpen(false);
-                    }}
-                  />
-                  <div className="my-1 h-px bg-line" />
-                  <MenuItem
-                    label="Importar CNC 2D"
-                    icon={Upload}
-                    onClick={() => {
-                      setImportOpen(true);
-                      setSecondaryToolsOpen(false);
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          </aside>
+      {/* CORPO DO WORKSPACE CAD: TOOLBAR VERTICAL (ESQUERDA) + CANVAS (CENTRO) + PROPRIEDADES (DIREITA) */}
+      <div className="flex min-h-0 min-w-0 flex-1 gap-1.5 p-1 pt-0">
+        {/* REGIÃO B — TOOLBAR VERTICAL ESQUERDA (8 GRUPOS CANÔNICOS CAD) */}
+        {!focus && (
+          <ChamferCadToolbar
+            tool={tool}
+            onPickTool={pickTool}
+            activeMode={activeMode}
+            onModeChange={(m) => {
+              triggerHaptic("selection");
+              setActiveMode(m);
+              if (m === "3d" || m === "flanges") {
+                setSolidOpen(true);
+                if (drawable.length > 0) fitTo(drawable);
+              } else {
+                setSolidOpen(false);
+              }
+            }}
+            hasSelection={selected.length > 0}
+            selectedCount={selected.length}
+            offsetDist={offsetDist}
+            setOffsetDist={setOffsetDist}
+            filletR={filletR}
+            setFilletR={setFilletR}
+            onMoveSelection={handleMoveSelection}
+            onCopySelection={handleCopySelection}
+            onRotateSelection={handleRotateSelection}
+            onMirrorSelection={handleMirrorSelection}
+            onScaleSelection={handleScaleSelection}
+            onStretchSelection={handleStretchSelection}
+            onBreakSelection={handleBreakSelection}
+            onJoinSelection={handleJoinSelection}
+            onExplodeSelection={handleExplodeSelection}
+            onArrayLinear={handleArrayLinear}
+            onArrayPolar={handleArrayPolar}
+            snapOn={snapOn}
+            setSnapOn={setSnapOn}
+            showGrid={showGrid}
+            setShowGrid={setShowGrid}
+            grid={grid}
+            setGrid={setGrid}
+            orthoOn={orthoOn}
+            setOrthoOn={setOrthoOn}
+            trackingOn={trackingOn}
+            setTrackingOn={setTrackingOn}
+            dimKind={dimKind}
+            onPickDimKind={(k) => {
+              setDimKind(k);
+              setTool("dim");
+            }}
+            thickness={thickness}
+            onThicknessChange={setThickness}
+            onConvertToBend={handleConvertToBend}
+            onAddHole={handleAddHole}
+            onPlanificar={handlePlanificar}
+            onOpenFlanges={handleOpenFlanges}
+            onApplyRelief={handleApplyRelief}
+            onUnfold={handleUnfold}
+            onFold={handleFold}
+            isDark={isDark}
+          />
         )}
 
-        {panelSide === "left" && aside}
-
-        {/* REGIÃO C — CANVAS OU MOTOR 3D TRAÇAGEM / FLANGES */}
-        <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl border border-line/40 bg-background/50">
+        {/* REGIÃO C — CANVAS CAD PRINCIPAL (DOMINANTE, OCUPANDO A MAIOR ÁREA POSSÍVEL) */}
+        <div
+          className={cn(
+            "relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border shadow-inner transition-colors",
+            isDark
+              ? "border-slate-800 bg-[#0d121c]"
+              : "border-slate-200 bg-[#ffffff]",
+          )}
+        >
           {solidOpen ? (
             <div className="relative size-full">
               <Cad3DStage
@@ -2671,47 +3078,45 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           ) : (
             <>
-              {/* grade: camada própria, sempre abaixo da geometria */}
-              <svg className="pointer-events-none absolute inset-0 size-full">
-            <defs>
-              <pattern
-                id="lab2d-grid"
-                width={gridStep * view.k}
-                height={gridStep * view.k}
-                patternUnits="userSpaceOnUse"
-                x={view.tx}
-                y={view.ty}
-              >
-                <path
-                  d={`M ${gridStep * view.k} 0 L 0 0 0 ${gridStep * view.k}`}
-                  fill="none"
-                  stroke="var(--grid-minor)"
-                  strokeWidth="1"
-                />
-              </pattern>
-              <pattern
-                id="lab2d-grid-major"
-                width={gridStep * view.k * 5}
-                height={gridStep * view.k * 5}
-                patternUnits="userSpaceOnUse"
-                x={view.tx}
-                y={view.ty}
-              >
-                <path
-                  d={`M ${gridStep * view.k * 5} 0 L 0 0 0 ${gridStep * view.k * 5}`}
-                  fill="none"
-                  stroke="var(--grid-major)"
-                  strokeWidth="1"
-                />
-              </pattern>
-            </defs>
-            {showGrid && !solidOpen && (
-              <>
-                <rect width="100%" height="100%" fill="url(#lab2d-grid)" />
-                <rect width="100%" height="100%" fill="url(#lab2d-grid-major)" />
-              </>
-            )}
-          </svg>
+              {/* GRADE CAD REAL E FUNCIONAL (ACOMPANHA ZOOM, PAN E ORIGEM DE COORDENADAS) */}
+              {showGrid && !solidOpen && (
+                <svg className="pointer-events-none absolute inset-0 size-full">
+                  <defs>
+                    <pattern
+                      id="lab2d-grid"
+                      width={Math.max(0.1, gridStep * view.k)}
+                      height={Math.max(0.1, gridStep * view.k)}
+                      patternUnits="userSpaceOnUse"
+                      x={((view.tx % (gridStep * view.k)) + (gridStep * view.k)) % (gridStep * view.k)}
+                      y={((view.ty % (gridStep * view.k)) + (gridStep * view.k)) % (gridStep * view.k)}
+                    >
+                      <path
+                        d={`M ${gridStep * view.k} 0 H 0 V ${gridStep * view.k}`}
+                        fill="none"
+                        stroke={isDark ? "rgba(255, 255, 255, 0.16)" : "rgba(15, 23, 42, 0.16)"}
+                        strokeWidth="1"
+                      />
+                    </pattern>
+                    <pattern
+                      id="lab2d-grid-major"
+                      width={Math.max(0.1, gridStep * view.k * 5)}
+                      height={Math.max(0.1, gridStep * view.k * 5)}
+                      patternUnits="userSpaceOnUse"
+                      x={((view.tx % (gridStep * view.k * 5)) + (gridStep * view.k * 5)) % (gridStep * view.k * 5)}
+                      y={((view.ty % (gridStep * view.k * 5)) + (gridStep * view.k * 5)) % (gridStep * view.k * 5)}
+                    >
+                      <path
+                        d={`M ${gridStep * view.k * 5} 0 H 0 V ${gridStep * view.k * 5}`}
+                        fill="none"
+                        stroke={isDark ? "rgba(255, 255, 255, 0.35)" : "rgba(15, 23, 42, 0.38)"}
+                        strokeWidth="1.25"
+                      />
+                    </pattern>
+                  </defs>
+                  {gridStep * view.k >= 4 && <rect width="100%" height="100%" fill="url(#lab2d-grid)" />}
+                  {gridStep * view.k * 5 >= 6 && <rect width="100%" height="100%" fill="url(#lab2d-grid-major)" />}
+                </svg>
+              )}
           <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
           {/* FLUXO CALDRA / PRÉVIA CNC — camada de UI, nunca exportada */}
           {!solidOpen && <canvas ref={flowRef} className="pointer-events-none absolute inset-0 size-full" />}
@@ -2757,26 +3162,47 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               )}
 
-              {/* eixos — cinza técnico discreto (ocultos no modo 3D Traçagem) */}
-              {!solidOpen && (
-                <>
+              {/* Eixos do Sistema de Coordenadas CAD (alinhados a (0,0) - visíveis quando showGrid está ativo) */}
+              {!solidOpen && showGrid && (
+                <g pointerEvents="none" aria-label="Eixos do sistema CAD">
+                  {/* Eixo X: Vermelho técnico */}
                   <line
-                    x1={-1e4}
+                    x1={-1e5}
                     y1={0}
-                    x2={1e4}
+                    x2={1e5}
                     y2={0}
-                    stroke="var(--axis-line)"
-                    strokeWidth={1 / view.k}
+                    stroke={isDark ? "rgba(239, 68, 68, 0.85)" : "rgba(220, 38, 38, 0.9)"}
+                    strokeWidth={1.5 / view.k}
                   />
+                  {/* Eixo Y: Verde técnico */}
                   <line
                     x1={0}
-                    y1={-1e4}
+                    y1={-1e5}
                     x2={0}
-                    y2={1e4}
-                    stroke="var(--axis-line)"
+                    y2={1e5}
+                    stroke={isDark ? "rgba(34, 197, 94, 0.85)" : "rgba(22, 163, 74, 0.9)"}
+                    strokeWidth={1.5 / view.k}
+                  />
+                  {/* Ponto e Rótulo de Origem (0,0) */}
+                  <circle
+                    cx={0}
+                    cy={0}
+                    r={3.5 / view.k}
+                    fill={isDark ? "#ef4444" : "#dc2626"}
+                    stroke={isDark ? "#ffffff" : "#0f172a"}
                     strokeWidth={1 / view.k}
                   />
-                </>
+                  <text
+                    x={6 / view.k}
+                    y={-6 / view.k}
+                    fontSize={10 / view.k}
+                    fontFamily="ui-monospace, monospace"
+                    fontWeight="bold"
+                    fill={isDark ? "rgba(239, 68, 68, 0.9)" : "rgba(220, 38, 38, 0.95)"}
+                  >
+                    (0,0)
+                  </text>
+                </g>
               )}
 
               {/* WORKSPACE_FRAME — área de trabalho (oculta no modo 3D Traçagem) */}
@@ -2857,7 +3283,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 <polyline
                   points={pending.map((p) => `${p.x},${p.y}`).join(" ")}
                   fill="none"
-                  stroke={PREVIEW_COLOR}
+                  stroke={isDark ? PREVIEW_COLOR : "#475569"}
                   strokeWidth={1.4 / view.k}
                   strokeDasharray={`${4 / view.k} ${3 / view.k}`}
                 />
@@ -2865,16 +3291,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
               {/* nós da seleção */}
               {!solidOpen && (tool === "node" || tool === "select") &&
-                selected.flatMap((e) =>
+                selected.flatMap((e, eIdx) =>
                   entityPoints(e).map((p, i) => (
                     <circle
-                      key={`${e.id}-${i}`}
+                      key={`node-${e.id || "ent"}-${eIdx}-${i}`}
                       cx={p.x}
                       cy={p.y}
                       r={3.2 / view.k}
-                      className="fill-background"
-                      stroke={SELECTION_COLOR}
-                      strokeWidth={1.4 / view.k}
+                      fill={isDark ? "#090d14" : "#ffffff"}
+                      stroke={isDark ? SELECTION_COLOR : "#DC2626"}
+                      strokeWidth={1.5 / view.k}
                     />
                   )),
                 )}
@@ -2886,8 +3312,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   width={selBox.maxX - selBox.minX}
                   height={selBox.maxY - selBox.minY}
                   fill="none"
-                  stroke={SELECTION_COLOR}
-                  strokeOpacity={0.55}
+                  stroke={isDark ? SELECTION_COLOR : "#DC2626"}
+                  strokeOpacity={0.65}
                   strokeWidth={1 / view.k}
                   strokeDasharray={`${5 / view.k} ${4 / view.k}`}
                 />
@@ -2899,9 +3325,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   y={Math.min(marquee.a.y, marquee.b.y)}
                   width={Math.abs(marquee.b.x - marquee.a.x)}
                   height={Math.abs(marquee.b.y - marquee.a.y)}
-                  fill={SELECTION_COLOR}
+                  fill={isDark ? SELECTION_COLOR : "#DC2626"}
                   fillOpacity={0.08}
-                  stroke={SELECTION_COLOR}
+                  stroke={isDark ? SELECTION_COLOR : "#DC2626"}
                   strokeWidth={1 / view.k}
                   strokeDasharray={
                     marquee.b.x < marquee.a.x ? `${5 / view.k} ${4 / view.k}` : undefined
@@ -2996,7 +3422,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 })}
 
               {[...measures, ...(liveMeasure ? [liveMeasure] : [])].map((m, i) => (
-                <g key={i} stroke={DIMENSION_COLOR} fill={DIMENSION_COLOR}>
+                <g key={`measure-${i}`} stroke={DIMENSION_COLOR} fill={DIMENSION_COLOR}>
                   <line
                     x1={m.a.x}
                     y1={m.a.y}
@@ -3029,7 +3455,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
               {issues?.map((is, i) => (
                 <circle
-                  key={i}
+                  key={`issue-${i}`}
                   cx={is.p.x}
                   cy={is.p.y}
                   r={6 / view.k}
@@ -3113,6 +3539,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           )}
 
+          {/* BARRA FLUTUANTE DE COMANDO / FEEDBACK CAD TÉCNICO (CANVAS 2D) */}
+          <div
+            className={cn(
+              "pointer-events-none absolute bottom-3 left-4 z-20 hidden md:flex items-center gap-2 rounded-xl border px-3 py-1.5 font-mono text-[10px] shadow-lg backdrop-blur-md transition-colors",
+              isDark
+                ? "border-slate-800/80 bg-slate-950/90 text-slate-300"
+                : "border-slate-200 bg-white/95 text-slate-700 shadow-md",
+            )}
+          >
+            <span className={cn("font-bold uppercase tracking-wider", isDark ? "text-red-400" : "text-red-600")}>
+              {operationFeedback.command}
+            </span>
+            <span className={isDark ? "text-slate-600" : "text-slate-300"}>|</span>
+            <span className={isDark ? "text-slate-300" : "text-slate-700"}>{operationFeedback.instruction}</span>
+          </div>
+
           {zoomHud !== null && (
             <div className="metal pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 font-mono text-[11px] text-accent tabular-nums">
               {Math.round(zoomHud * 100)}%
@@ -3142,14 +3584,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </div>
 
         {/* REGIÃO D — PAINEL DE PROPRIEDADES */}
-        {panelSide === "right" && aside}
+        {panelOpen && aside}
       </div>
 
       {/* REGIÃO E — STATUS BAR LANDSCAPE */}
       {!focus && (
         <footer
           aria-label="Barra de status do CHAMFER"
-          className="flex h-7 shrink-0 items-center justify-between gap-2 border-t border-line/60 bg-card/60 px-3 font-mono text-[10px] text-muted-foreground backdrop-blur-md select-none"
+          className={cn(
+            "flex h-7 shrink-0 items-center justify-between gap-2 border-t px-2.5 font-mono text-[10px] backdrop-blur-md select-none transition-colors",
+            isDark
+              ? "border-slate-800/80 bg-slate-950/90 text-slate-400"
+              : "border-slate-200 bg-white/95 text-slate-600 shadow-xs",
+          )}
         >
           {/* LADO ESQUERDO: PLANOS DO PROJETO + COORDENADAS REAIS */}
           <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
@@ -3170,7 +3617,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       : prev,
                   );
                   setPlanId(pl.id);
-                  setEntities(pl.entities);
+                  const seenPlanIds = new Set<string>();
+                  const sanitizedPlanEntities = (pl.entities ?? []).map((ent) => {
+                    let entId = ent.id;
+                    if (!entId || entId === "draft" || entId.startsWith("draft-") || seenPlanIds.has(entId)) {
+                      entId = uid();
+                    }
+                    seenPlanIds.add(entId);
+                    return ent.id === entId ? ent : { ...ent, id: entId };
+                  });
+                  setEntities(sanitizedPlanEntities);
                   setGroups(pl.groups ?? []);
                   setDims(pl.dims ?? []);
                   setSelection([]);
@@ -3179,7 +3635,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 }}
                 className={cn(
                   "shrink-0 rounded px-2 py-0.5 font-bold transition-colors",
-                  pl.id === planId ? "bg-accent/20 text-accent font-semibold" : "hover:text-foreground",
+                  pl.id === planId
+                    ? isDark
+                      ? "bg-red-950/60 text-red-400 border border-red-500/30"
+                      : "bg-red-50 text-red-600 border border-red-200"
+                    : "hover:text-foreground",
                 )}
               >
                 {pl.name}
@@ -3218,20 +3678,32 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </button>
             )}
 
-            <div className="mx-1 h-3.5 w-px bg-line" />
+            <div className={cn("mx-1 h-3.5 w-px", isDark ? "bg-slate-800" : "bg-slate-200")} />
+
+            {/* UNIDADE DE MEDIDA CANÔNICA */}
+            <span
+              className={cn(
+                "flex items-center px-1.5 py-0.2 rounded border font-mono font-bold text-[9px] tracking-wider",
+                isDark
+                  ? "border-slate-700/80 bg-slate-900 text-slate-200"
+                  : "border-slate-300 bg-slate-100 text-slate-700",
+              )}
+              title="Unidade de medida: Milímetros (mm)"
+            >
+              MM
+            </span>
 
             {/* LEITURA DE COORDENADAS */}
-            <div className="flex items-center gap-1.5 font-mono text-[9.5px]">
-              <span className="text-muted-foreground">X:</span>
-              <strong className="text-foreground">{cursor.x.toFixed(2)}</strong>
-              <span className="text-muted-foreground">Y:</span>
-              <strong className="text-foreground">{cursor.y.toFixed(2)}</strong>
-              <span className="text-muted-foreground">mm</span>
+            <div className="flex items-center gap-1 font-mono text-[9.5px]">
+              <span className={isDark ? "text-slate-500" : "text-slate-400"}>X:</span>
+              <strong className={isDark ? "text-slate-200" : "text-slate-800"}>{cursor.x.toFixed(2)}</strong>
+              <span className={isDark ? "text-slate-500" : "text-slate-400"}>Y:</span>
+              <strong className={isDark ? "text-slate-200" : "text-slate-800"}>{cursor.y.toFixed(2)}</strong>
             </div>
 
             {/* HUD DE COMPRIMENTO / ÂNGULO QUANDO DESENHANDO LINHA */}
             {pending.length === 1 && (tool === "line" || tool === "polyline") && (
-              <div className="flex items-center gap-1.5 rounded bg-accent/10 px-1.5 py-0.5 text-[9.5px] text-accent">
+              <div className="flex items-center gap-1.5 rounded bg-red-950/60 border border-red-500/30 px-1.5 py-0.5 text-[9.5px] text-red-300">
                 <span>
                   L: {Math.hypot(cursor.x - pending[0]!.x, cursor.y - pending[0]!.y).toFixed(1)} mm
                 </span>
@@ -3248,6 +3720,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 </span>
               </div>
             )}
+
+            <div className={cn("mx-0.5 h-3.5 w-px", isDark ? "bg-slate-800" : "bg-slate-200")} />
+
+            {/* ESTADO DA OPERAÇÃO CAD */}
+            <div className="hidden lg:flex items-center gap-1.5 text-[9.5px] truncate max-w-[260px]">
+              <span className="size-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+              <strong className="text-red-500 uppercase">{operationFeedback.command}:</strong>
+              <span className={cn("truncate", isDark ? "text-slate-400" : "text-slate-600")}>{operationFeedback.instruction}</span>
+            </div>
+
+            <div className={cn("mx-0.5 h-3.5 w-px hidden sm:block", isDark ? "bg-slate-800" : "bg-slate-200")} />
+
+            {/* INFORMAÇÕES DA SELEÇÃO */}
+            <div className="hidden sm:flex items-center gap-1 text-[9.5px]">
+              <span className={isDark ? "text-slate-500" : "text-slate-400"}>SEL:</span>
+              <strong className={cn(selected.length > 0 ? (isDark ? "text-cyan-400 font-bold" : "text-red-600 font-bold") : (isDark ? "text-slate-400 font-normal" : "text-slate-500 font-normal"))}>
+                {selectionText}
+              </strong>
+            </div>
           </div>
 
           {/* LADO DIREITO: STATUS DE PRECISÃO, CNC E ZOOM */}
@@ -3283,11 +3774,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               onClick={() => setShowGrid((s) => !s)}
               className={cn(
                 "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
-                showGrid ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
+                showGrid
+                  ? isDark
+                    ? "text-red-400 bg-red-950/50 border border-red-500/30"
+                    : "text-red-600 bg-red-50 border border-red-300 font-bold"
+                  : "text-muted-foreground hover:text-foreground",
               )}
               title="Alternar visibilidade da grade"
             >
-              GRID: {showGrid ? `${grid}mm` : "OFF"}
+              GRID: {showGrid ? `${grid}MM` : "OFF"}
             </button>
 
             <button

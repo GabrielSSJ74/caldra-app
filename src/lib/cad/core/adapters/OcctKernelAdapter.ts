@@ -181,6 +181,12 @@ export class OcctKernelAdapter implements ICadKernel {
       });
     }
 
+    // OpenCascade MakeCone proíbe r1 == r2 (Abs(r1 - r2) < Confusion lança DomainError).
+    // Se r1 == r2, delega transparentemente para criação de cilindro correspondente.
+    if (Math.abs(r1 - r2) < 1e-3) {
+      return await this.createCylinder(r1, height, false, name);
+    }
+
     try {
       const handle = k.makeCone(r1, r2, height);
       return createCadShape({

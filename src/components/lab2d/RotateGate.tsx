@@ -30,23 +30,23 @@ export function RotateGate({
           <RotateCw className="size-10 animate-spin text-accent [animation-duration:2.6s]" />
         </div>
         <div className="space-y-1">
-          <p className="font-display text-xl font-semibold tracking-tight">Gire o celular</p>
+          <p className="font-display text-xl font-semibold tracking-tight">Gire o dispositivo</p>
           <p className="font-mono text-[11px] tracking-[0.18em] text-muted-foreground uppercase">
-            O CHAMFER trabalha em paisagem
+            CHAMFER opera exclusivamente em modo paisagem (Landscape)
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-2">
           <button
             onClick={onRetry}
-            className="rounded-xl border border-line px-3 py-2 font-mono text-[10px] tracking-[0.18em] text-foreground uppercase hover:border-accent hover:text-accent"
+            className="rounded-xl border border-red-500/50 bg-red-600 px-4 py-2 font-mono text-[10px] font-bold tracking-[0.18em] text-white uppercase shadow-md hover:bg-red-500"
           >
-            Tentar girar
+            Girar Tela
           </button>
           <button
-            onClick={onContinue}
-            className="rounded-xl px-3 py-2 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase hover:text-foreground"
+            onClick={onExit}
+            className="rounded-xl border border-line px-3 py-2 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase hover:text-foreground"
           >
-            Continuar em retrato
+            Voltar
           </button>
         </div>
       </div>

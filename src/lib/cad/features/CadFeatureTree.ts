@@ -281,16 +281,27 @@ export class CadFeatureTree {
 
       this.activeFinalShape = currentShape;
 
-      // Se temos um sólido final avaliado, extrai a tesselação e massa
-      let tess = null;
-      let mass = null;
-
-      if (currentShape) {
-        [tess, mass] = await Promise.all([
-          this.kernel.tessellate(currentShape, { linearDeflection: 0.1, angularDeflection: 0.4 }),
-          this.kernel.getMassProperties(currentShape, 7.85),
-        ]);
+      if (!currentShape) {
+        const firstError = this.features.find((f) => f.state === "ERROR");
+        const errMsg = firstError?.errorMessage || "Nenhum sólido B-Rep válido foi gerado a partir dos recursos.";
+        return {
+          success: false,
+          activeShape: null,
+          tessellation: null,
+          massProperties: null,
+          features: [...this.features],
+          rebuiltCount,
+          cachedCount,
+          durationMs: performance.now() - startTime,
+          error: errMsg,
+        };
       }
+
+      // Extrai a tesselação e massa do sólido ativo
+      const [tess, mass] = await Promise.all([
+        this.kernel.tessellate(currentShape, { linearDeflection: 0.1, angularDeflection: 0.4 }),
+        this.kernel.getMassProperties(currentShape, 7.85),
+      ]);
 
       const durationMs = performance.now() - startTime;
 
@@ -442,8 +453,10 @@ export class CadFeatureTree {
           return extruded;
         }
 
-        // Fallback: extrusão retangular de 80x80 mm
-        const extruded = await this.kernel.createBox(80, 80, depth, true, node.name);
+        // Parâmetros de largura/comprimento explícitos ou dimensões padrão
+        const w = Math.max(1, (p as unknown as { width?: number }).width ?? 120);
+        const l = Math.max(1, (p as unknown as { length?: number }).length ?? 100);
+        const extruded = await this.kernel.createBox(w, l, depth, true, node.name);
         if (inputSolid && p.operation === "union") {
           return await this.kernel.fuse(inputSolid, extruded, node.name);
         }

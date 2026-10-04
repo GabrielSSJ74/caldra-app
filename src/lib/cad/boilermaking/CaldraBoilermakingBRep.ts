@@ -80,6 +80,18 @@ export class CaldraBoilermakingBRep {
     const r1Inner = Math.max(1, r1Outer - t);
     const r2Inner = Math.max(0.5, r2Outer - t);
 
+    // Se D e d forem iguais ou quase iguais, constrói cilindro oco diretamente
+    if (Math.abs(D - d) < 1) {
+      const outerCyl = await kernel.createCylinder(r1Outer, H, true, "Cilindro_Externo");
+      const innerCyl = await kernel.createCylinder(r1Inner, H + 4, true, "Cilindro_Interno");
+      const positionedInner = await kernel.translate(innerCyl, params.ex ?? 0, params.ey ?? 0, -2);
+      kernel.release(innerCyl);
+      const hollowCyl = await kernel.cut(outerCyl, positionedInner, "Cilindro_Oco_Caldeiraria");
+      kernel.release(outerCyl);
+      kernel.release(positionedInner);
+      return hollowCyl;
+    }
+
     // Cone sólido externo
     const outerCone = await kernel.createCone(r1Outer, r2Outer, H, "Cone_Externo");
 

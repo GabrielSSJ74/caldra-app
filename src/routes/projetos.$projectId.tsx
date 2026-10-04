@@ -12,9 +12,11 @@ import {
   PackageCheck,
   PenTool,
   Plus,
+  Sliders,
   Trash2,
   Undo2,
 } from "lucide-react";
+import { ChamferProjectSettingsDialog } from "@/components/lab2d/ChamferProjectSettingsDialog";
 
 import {
   addPart,
@@ -119,6 +121,7 @@ function ProjectDetail() {
   const [renaming, setRenaming] = useState<ProjectPart | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [removing, setRemoving] = useState<ProjectPart | null>(null);
+  const [chamferSettingsOpen, setChamferSettingsOpen] = useState(false);
 
   const parts = project?.parts ?? [];
   const visible = useMemo(() => {
@@ -193,6 +196,13 @@ function ProjectDetail() {
             {project.name}
           </h1>
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setChamferSettingsOpen(true)}
+              className="flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 font-mono text-[10px] tracking-wider uppercase hover:border-accent hover:text-accent transition-colors"
+              title="Configurações do CHAMFER para este projeto (salvamento, unidades, preferências)"
+            >
+              <Sliders className="size-3.5 text-accent" /> Configurações
+            </button>
             <button
               onClick={() => markDelivered(project.id, !project.delivered)}
               className="flex items-center gap-2 rounded-xl border border-line px-3 py-2 font-mono text-[10px] tracking-wider uppercase"
@@ -623,6 +633,13 @@ function ProjectDetail() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <ChamferProjectSettingsDialog
+        open={chamferSettingsOpen}
+        onOpenChange={setChamferSettingsOpen}
+        projectId={project.id}
+        projectName={project.name}
+      />
     </div>
   );
 }

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Copy, FolderOpen, FolderPlus, Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Copy, FolderOpen, FolderPlus, Pencil, Plus, Search, Sliders, Trash2 } from "lucide-react";
 import { FeatureGate } from "@/components/chameleon/ui";
+import { ChamferProjectSettingsDialog } from "@/components/lab2d/ChamferProjectSettingsDialog";
 import {
   Dialog,
   DialogContent,
@@ -71,6 +72,8 @@ function Explorer() {
   const [renameValue, setRenameValue] = useState("");
 
   const [deleting, setDeleting] = useState<Project | null>(null);
+  const [settingsProject, setSettingsProject] = useState<Project | null>(null);
+  const [globalSettingsOpen, setGlobalSettingsOpen] = useState(false);
 
   const refresh = () => setProjects(listProjects());
 
@@ -140,13 +143,26 @@ function Explorer() {
             Prancheta vetorial CAD · Planos e Peças
           </p>
         </div>
-        <button
-          type="button"
-          onClick={openCreateDialog}
-          className="brand-gradient flex items-center gap-1.5 rounded-2xl px-4 py-2 font-mono text-[10px] tracking-[0.18em] text-background uppercase shadow-sm transition-transform active:scale-95 touch-manipulation cursor-pointer"
-        >
-          <Plus className="size-3.5" /> Adicionar Projeto
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("tap");
+              setGlobalSettingsOpen(true);
+            }}
+            className="flex items-center gap-1.5 rounded-2xl border border-line bg-background/60 px-3 py-2 font-mono text-[10px] tracking-wider text-muted-foreground uppercase hover:text-foreground transition-colors cursor-pointer"
+            title="Configurações gerais do CHAMFER (salvamento automático, unidades, visualização)"
+          >
+            <Sliders className="size-3.5 text-accent" /> Configurações
+          </button>
+          <button
+            type="button"
+            onClick={openCreateDialog}
+            className="brand-gradient flex items-center gap-1.5 rounded-2xl px-4 py-2 font-mono text-[10px] tracking-[0.18em] text-background uppercase shadow-sm transition-transform active:scale-95 touch-manipulation cursor-pointer"
+          >
+            <Plus className="size-3.5" /> Adicionar Projeto
+          </button>
+        </div>
       </header>
 
       <label className="metal flex items-center gap-2 rounded-2xl px-3 py-2.5">
@@ -214,6 +230,14 @@ function Explorer() {
                 </span>
               </button>
               <div className="mt-2 flex justify-end gap-1">
+                <Action
+                  label="Configurações do Projeto"
+                  icon={Sliders}
+                  onClick={() => {
+                    triggerHaptic("tap");
+                    setSettingsProject(p);
+                  }}
+                />
                 <Action
                   label="Renomear"
                   icon={Pencil}
@@ -343,6 +367,18 @@ function Explorer() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ChamferProjectSettingsDialog
+        open={globalSettingsOpen || !!settingsProject}
+        onOpenChange={(v) => {
+          if (!v) {
+            setGlobalSettingsOpen(false);
+            setSettingsProject(null);
+          }
+        }}
+        projectId={settingsProject?.id}
+        projectName={settingsProject?.name}
+      />
     </section>
   );
 }
