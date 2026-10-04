@@ -143,77 +143,44 @@ export function AuroraBackground({
     >
       <div ref={hostRef} className="aurora-gl absolute inset-0" />
       {!wantsShader && (
-        <div className="aurora-css fluid-aurora-container absolute inset-0">
-          {/* Céu noturno profundo (#05070C → #0A0F18) */}
-          <div className="fluid-aurora-sky absolute inset-0" />
+        <div className="aurora-css deep-space-container absolute inset-0">
+          {/* Fundo base escuro e fosco (#04060A → #070B13 → #0C1424) */}
+          <div className="deep-space-base absolute inset-0" />
 
-          {/* Céu estrelado astronômico ultra discreto (pontos estelares finos como na foto de referência) */}
-          <div className="fluid-aurora-stars absolute inset-0 pointer-events-none" />
+          {/* Iluminação ambiente permanente (anti-flicker garantido) */}
+          <div className="deep-space-ambient absolute inset-0" />
 
-          {/* Resplendor atmosférico ionoférico (brilho difuso e dispersão ambiental) */}
-          <div className="fluid-aurora-glow absolute inset-0" />
-
-          {/* 1. Verde Zênite Amplo (Oxigênio atômico superior dominante) */}
-          <div className="fluid-aurora-mass fluid-mass-high-emerald">
-            <div className="fluid-mass-flow fluid-flow-high-emerald" />
-            <div className="fluid-mass-filament fluid-filament-high-emerald" />
-            <div className="fluid-mass-core fluid-core-high-emerald" />
+          {/* 1. CAMADA DISTANTE — ampla, profunda e serena (azul cobalto / índigo) */}
+          <div className="deep-space-field field-distant">
+            <div className="field-inner field-inner-distant" />
           </div>
 
-          {/* 2. Vermelho Carmesim Raro (Evento excepcional da alta ionosfera em ciclo longo) */}
-          <div className="fluid-aurora-mass fluid-mass-high-crimson">
-            <div className="fluid-mass-flow fluid-flow-high-crimson" />
-            <div className="fluid-mass-core fluid-core-high-crimson" />
+          {/* 2. CAMADA INTERMEDIÁRIA — índigo para violeta com pulso cromático */}
+          <div className="deep-space-field field-mid">
+            <div className="field-inner field-inner-mid" />
+            <div className="field-core field-core-mid" />
           </div>
 
-          {/* 3. Grande Massa Verde Esmeralda Central (Identidade dominante da aurora) */}
-          <div className="fluid-aurora-mass fluid-mass-mid-emerald">
-            <div className="fluid-mass-flow fluid-flow-mid-emerald" />
-            <div className="fluid-mass-filament fluid-filament-mid-emerald" />
-            <div className="fluid-mass-core fluid-core-mid-emerald" />
+          {/* 3. CAMADA PRINCIPAL — ponto focal dinâmico com núcleo de luz viva */}
+          <div className="deep-space-field field-main">
+            <div className="field-inner field-inner-main" />
+            <div className="field-core field-core-main" />
           </div>
 
-          {/* 4. Pluma Ciano & Turquesa Intermediária (Luz ativa e transição) */}
-          <div className="fluid-aurora-mass fluid-mass-mid-cyan">
-            <div className="fluid-mass-flow fluid-flow-mid-cyan" />
-            <div className="fluid-mass-filament fluid-filament-mid-cyan" />
-            <div className="fluid-mass-core fluid-core-mid-cyan" />
+          {/* 4. CAMADA DE TRANSIÇÃO — violeta para magenta discreto e acetinado */}
+          <div className="deep-space-field field-trans">
+            <div className="field-inner field-inner-trans" />
+            <div className="field-core field-core-trans" />
           </div>
 
-          {/* 5. Vórtice Azul Safira Discreto (Profundidade e contraste frio) */}
-          <div className="fluid-aurora-mass fluid-mass-mid-blue">
-            <div className="fluid-mass-flow fluid-flow-mid-blue" />
-            <div className="fluid-mass-core fluid-core-mid-blue" />
+          {/* 5. CAMADA DE DETALHE — halo celestial ágil e concentrado */}
+          <div className="deep-space-field field-detail">
+            <div className="field-inner field-inner-detail" />
+            <div className="field-core field-core-detail" />
           </div>
 
-          {/* 6. Pluma Rosa e Magenta na Base (Segunda camada de importância) */}
-          <div className="fluid-aurora-mass fluid-mass-low-magenta">
-            <div className="fluid-mass-flow fluid-flow-low-magenta" />
-            <div className="fluid-mass-filament fluid-filament-low-magenta" />
-            <div className="fluid-mass-core fluid-core-low-magenta" />
-          </div>
-
-          {/* 7. Massa Violeta e Púrpura Inferior (Transição discreta) */}
-          <div className="fluid-aurora-mass fluid-mass-low-violet">
-            <div className="fluid-mass-flow fluid-flow-low-violet" />
-            <div className="fluid-mass-core fluid-core-low-violet" />
-          </div>
-
-          {/* 8. Zona de Confluência Âmbar/Dourada (Mistura orgânica onde verde e rosa se tocam) */}
-          <div className="fluid-aurora-mass fluid-mass-low-amber">
-            <div className="fluid-mass-flow fluid-flow-low-amber" />
-            <div className="fluid-mass-core fluid-core-low-amber" />
-          </div>
-
-          {/* 9. Massa Inferior de Base Verde/Ciano (Presença luminosa no rodapé de ponta a ponta) */}
-          <div className="fluid-aurora-mass fluid-mass-bottom-emerald">
-            <div className="fluid-mass-flow fluid-flow-bottom-emerald" />
-            <div className="fluid-mass-filament fluid-filament-bottom-emerald" />
-            <div className="fluid-mass-core fluid-core-bottom-emerald" />
-          </div>
-
-          {/* Vinheta atmosférica preservando legibilidade e contraste absoluto de UI */}
-          <div className="fluid-aurora-vignette absolute inset-0 pointer-events-none" />
+          {/* Vinheta suave cinematográfica preservando contraste e legibilidade impecável */}
+          <div className="deep-space-vignette absolute inset-0 pointer-events-none" />
         </div>
       )}
     </div>

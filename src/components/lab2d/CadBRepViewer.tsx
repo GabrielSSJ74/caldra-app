@@ -74,6 +74,7 @@ import { useSettings } from "@/lib/settings/SettingsProvider";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { AudioManager } from "@/lib/audio/AudioManager";
+import { AudioQuickControl } from "@/components/audio/AudioQuickControl";
 
 export interface CadBRepViewerProps {
   className?: string;
