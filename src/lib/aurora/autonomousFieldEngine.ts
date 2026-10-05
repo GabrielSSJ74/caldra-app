@@ -50,6 +50,8 @@ interface MassVoyage {
   noiseAmp: number;
   // Expansão elástica suave durante fusão com outra massa
   proximityScale: number;
+  // Escala gradual do estado de processamento de IA (sem saltos de layout)
+  aiScale: number;
   // Elemento DOM
   element: HTMLElement;
 }
@@ -64,9 +66,9 @@ function pickNextWaypoint(
   let targetY = 0;
 
   if (isProcessing && (entityId === "alpha" || entityId === "beta" || entityId === "epsilon")) {
-    // Modo de processamento: massas superiores viajam pela metade superior
-    targetX = -0.06 + Math.random() * 1.12;
-    targetY = -0.08 + Math.random() * 0.44;
+    // Modo de processamento: massas superiores viajam suavemente pela metade superior
+    targetX = -0.04 + Math.random() * 1.08;
+    targetY = -0.06 + Math.random() * 0.40;
   } else {
     // Deslocamento de longo alcance livre por toda a tela [-0.12 a 1.14]
     // Garante que o destino P2 fique a uma distância real e substancial de P0
@@ -114,12 +116,22 @@ function pickNextWaypoint(
   return { p2x: targetX, p2y: targetY, p1x, p1y, duration, linger };
 }
 
+export interface AutonomousFieldController {
+  stop: () => void;
+  update: (opts: { isAnimated?: boolean; isProcessing?: boolean }) => void;
+}
+
 export function startAutonomousField(
   refs: AutonomousFieldRefs,
   options: { isAnimated: boolean; isProcessing: boolean }
-): () => void {
+): AutonomousFieldController {
   const container = refs.container;
-  if (!container) return () => {};
+  if (!container) {
+    return {
+      stop: () => {},
+      update: () => {},
+    };
+  }
 
   const elementsMap: Record<string, HTMLElement | null> = {
     delta: refs.delta,
@@ -128,6 +140,9 @@ export function startAutonomousField(
     gama: refs.gama,
     epsilon: refs.epsilon,
   };
+
+  let currentIsAnimated = options.isAnimated;
+  let currentIsProcessing = options.isProcessing;
 
   const voyages: MassVoyage[] = [];
 
@@ -144,7 +159,7 @@ export function startAutonomousField(
     const el = elementsMap[s.id];
     if (!el) continue;
 
-    const wp = pickNextWaypoint(s.startX, s.startY, options.isProcessing, s.id);
+    const wp = pickNextWaypoint(s.startX, s.startY, currentIsProcessing, s.id);
 
     voyages.push({
       id: s.id,
@@ -168,11 +183,17 @@ export function startAutonomousField(
       noiseSpeed: s.noiseSpeed,
       noiseAmp: s.noiseAmp,
       proximityScale: 1.0,
+      aiScale: 1.0,
       element: el,
     });
   }
 
-  if (voyages.length === 0) return () => {};
+  if (voyages.length === 0) {
+    return {
+      stop: () => {},
+      update: () => {},
+    };
+  }
 
   let animId = 0;
   let lastTime = performance.now();
@@ -194,7 +215,7 @@ export function startAutonomousField(
     const height = container.clientHeight || window.innerHeight || 800;
     const vmax = Math.max(width, height);
 
-    if (options.isAnimated) {
+    if (currentIsAnimated) {
       // 1. Atualizar trajetórias Bézier de cada massa
       for (const v of voyages) {
         if (v.isLingering) {
@@ -211,7 +232,7 @@ export function startAutonomousField(
             v.isLingering = false;
             v.p0x = v.p2x;
             v.p0y = v.p2y;
-            const nextWp = pickNextWaypoint(v.p0x, v.p0y, options.isProcessing, v.id);
+            const nextWp = pickNextWaypoint(v.p0x, v.p0y, currentIsProcessing, v.id);
             v.p1x = nextWp.p1x;
             v.p1y = nextWp.p1y;
             v.p2x = nextWp.p2x;
@@ -265,9 +286,11 @@ export function startAutonomousField(
         }
       }
 
-      // 3. Relaxamento elástico da escala após separação
+      // 3. Relaxamento elástico da escala após separação e escala gradual de IA (sem layout jump)
       for (const v of voyages) {
         v.proximityScale += (1.0 - v.proximityScale) * Math.min(1.0, dt * 1.8);
+        const targetAi = (currentIsProcessing && (v.id === "alpha" || v.id === "beta" || v.id === "epsilon")) ? 1.08 : 1.0;
+        v.aiScale += (targetAi - v.aiScale) * Math.min(1.0, dt * 1.4);
       }
     }
 
@@ -279,7 +302,7 @@ export function startAutonomousField(
       const px = v.currentX * width - massW * 0.5;
       const py = v.currentY * height - massH * 0.5;
 
-      const scale = v.proximityScale.toFixed(3);
+      const scale = (v.proximityScale * v.aiScale).toFixed(3);
 
       // Translação pura e escala orgânica: NENHUM rotate(...) aplicado
       v.element.style.transform = `translate3d(${px.toFixed(1)}px, ${py.toFixed(1)}px, 0) scale(${scale})`;
@@ -290,8 +313,33 @@ export function startAutonomousField(
 
   animId = requestAnimationFrame(frame);
 
-  return () => {
-    isRunning = false;
-    cancelAnimationFrame(animId);
+  return {
+    stop: () => {
+      isRunning = false;
+      cancelAnimationFrame(animId);
+    },
+    update: (opts: { isAnimated?: boolean; isProcessing?: boolean }) => {
+      if (opts.isAnimated !== undefined) {
+        currentIsAnimated = opts.isAnimated;
+      }
+      if (opts.isProcessing !== undefined && opts.isProcessing !== currentIsProcessing) {
+        currentIsProcessing = opts.isProcessing;
+
+        // Redirecionamento suave e contínuo sem nenhum salto ou teleportação
+        for (const v of voyages) {
+          v.p0x = v.currentX;
+          v.p0y = v.currentY;
+          const nextWp = pickNextWaypoint(v.p0x, v.p0y, currentIsProcessing, v.id);
+          v.p1x = nextWp.p1x;
+          v.p1y = nextWp.p1y;
+          v.p2x = nextWp.p2x;
+          v.p2y = nextWp.p2y;
+          v.legElapsed = 0;
+          v.legDuration = currentIsProcessing ? nextWp.duration * 0.75 : nextWp.duration;
+          v.lingerDuration = nextWp.linger;
+          v.isLingering = false;
+        }
+      }
+    },
   };
 }

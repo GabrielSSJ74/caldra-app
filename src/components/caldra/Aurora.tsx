@@ -139,12 +139,13 @@ export function AuroraBackground({
     engine.update(host, animated, amp, darkSurface, amoledSurface);
   }, [shaderStyle, animated, amp, darkSurface, amoledSurface]);
 
-  const { isProcessing, statusText } = useAIProcessing();
+  const { isProcessing } = useAIProcessing();
+  const engineRef = useRef<ReturnType<typeof startAutonomousField> | null>(null);
 
-  /* Motor Autônomo de Massas de Luz Vivas (Organic Light Field) */
+  /* Motor Autônomo de Massas de Luz Vivas (Organic Light Field) — Persistente, sem reset */
   useEffect(() => {
     if (wantsShader || auroraStyle !== "suave") return;
-    const cleanup = startAutonomousField(
+    const controller = startAutonomousField(
       {
         container: containerRef.current,
         delta: deltaRef.current,
@@ -158,8 +159,21 @@ export function AuroraBackground({
         isProcessing,
       }
     );
-    return cleanup;
-  }, [wantsShader, auroraStyle, animated, isProcessing]);
+    engineRef.current = controller;
+    return () => {
+      controller.stop();
+      engineRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantsShader, auroraStyle]);
+
+  /* Atualização suave de parâmetros sem interromper a navegação contínua das massas */
+  useEffect(() => {
+    engineRef.current?.update({
+      isAnimated: animated,
+      isProcessing,
+    });
+  }, [animated, isProcessing]);
 
   /* PADRÃO: nenhuma camada — o fundo sólido do tema aparece. */
   if (auroraStyle === "padrao") return null;
@@ -187,26 +201,8 @@ export function AuroraBackground({
           <div className="organic-field-ambient absolute inset-0" />
 
           {/* Crista e ondas de energia luminosa superior ativas em modo de processamento */}
-          <div className="ai-processing-crest absolute inset-x-0 top-0 h-[48vh] pointer-events-none" />
+          <div className="ai-processing-crest absolute inset-x-0 top-0 h-[46vh] pointer-events-none" />
           <div className="ai-processing-waves absolute inset-0 pointer-events-none" />
-
-          {/* Quatro pequenos pontos luminosos superiores discretos — Indicador de atividade de IA */}
-          <div
-            className="ai-activity-indicator absolute top-4 inset-x-0 flex flex-col justify-center items-center gap-1.5 pointer-events-none"
-            aria-hidden="true"
-          >
-            <div className="flex items-center gap-2.5">
-              <div className="ai-dot ai-dot-1" />
-              <div className="ai-dot ai-dot-2" />
-              <div className="ai-dot ai-dot-3" />
-              <div className="ai-dot ai-dot-4" />
-            </div>
-            {statusText && (
-              <span className="ai-status-text font-mono text-[9px] uppercase tracking-[0.25em] text-cyan-300/80 drop-shadow-[0_0_8px_rgba(56,189,248,0.5)]">
-                {statusText}
-              </span>
-            )}
-          </div>
 
           {/* 1. ENTIDADE DELTA — O Oceano Abissal (profundidade atmosférica constante) */}
           <div ref={deltaRef} className="organic-mass mass-delta">

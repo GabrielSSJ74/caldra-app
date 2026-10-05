@@ -111,7 +111,14 @@ function Configuracoes() {
   const [consent, setConsentState] = useState(false);
   useEffect(() => setConsentState(readConsent()), []);
   const { photo, displayName, role, name, update } = useProfile();
-  const { isProcessing, statusText, triggerProcessing, stopProcessing, setProcessing } = useAIProcessing();
+  const {
+    isProcessing,
+    isContinuous,
+    statusText,
+    triggerProcessing,
+    stopProcessing,
+    toggleContinuous,
+  } = useAIProcessing();
 
   const [chamferSettings, setChamferSettings] = useState<ChamferSettings>(DEFAULT_CHAMFER_SETTINGS);
 
@@ -347,20 +354,35 @@ function Configuracoes() {
               <span
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 font-mono text-[9px] uppercase tracking-wider border",
-                  isProcessing
-                    ? "border-accent/40 bg-accent/15 text-accent animate-pulse"
+                  isContinuous
+                    ? "border-cyan-500/40 bg-cyan-500/10 text-cyan-400"
+                    : isProcessing
+                    ? "border-accent/40 bg-accent/15 text-accent"
                     : "border-line bg-surface text-muted-foreground"
                 )}
               >
-                <span className={cn("size-1.5 rounded-full", isProcessing ? "bg-accent" : "bg-muted-foreground/50")} />
-                {isProcessing ? (statusText ?? "Processando IA") : "Ocioso"}
+                <span
+                  className={cn(
+                    "size-1.5 rounded-full",
+                    isContinuous
+                      ? "bg-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.8)]"
+                      : isProcessing
+                      ? "bg-accent shadow-[0_0_8px_rgba(245,158,11,0.6)]"
+                      : "bg-muted-foreground/50"
+                  )}
+                />
+                {isContinuous
+                  ? (statusText ?? "Modo Contínuo Ativo")
+                  : isProcessing
+                  ? (statusText ?? "Simulação IA Ativa")
+                  : "Ocioso"}
               </span>
             </div>
             <div className="flex gap-2 pt-1">
               <button
                 type="button"
                 onClick={() => {
-                  if (isProcessing) {
+                  if (isProcessing && !isContinuous) {
                     stopProcessing();
                   } else {
                     triggerProcessing(8000, "Calculando Traçado & Malha IA");
@@ -368,19 +390,24 @@ function Configuracoes() {
                 }}
                 className={cn(
                   "flex-1 rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
-                  isProcessing
+                  isProcessing && !isContinuous
                     ? "border-rose-500/40 bg-rose-500/10 text-rose-400 hover:bg-rose-500/20"
                     : "border-accent/30 bg-accent/10 text-accent hover:bg-accent/20"
                 )}
               >
-                {isProcessing ? "Encerrar Simulação" : "Simular Processamento (8s)"}
+                {isProcessing && !isContinuous ? "Encerrar Simulação" : "Simular Processamento (8s)"}
               </button>
               <button
                 type="button"
-                onClick={() => setProcessing(!isProcessing, isProcessing ? undefined : "Em Processamento")}
-                className="rounded-xl border border-line px-3 py-2 font-mono text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => toggleContinuous()}
+                className={cn(
+                  "rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
+                  isContinuous
+                    ? "border-cyan-500/50 bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 font-medium"
+                    : "border-line text-muted-foreground hover:text-foreground hover:border-line/80"
+                )}
               >
-                {isProcessing ? "Desativar" : "Modo Contínuo"}
+                {isContinuous ? "Modo Contínuo (Ativo)" : "Modo Contínuo"}
               </button>
             </div>
           </div>

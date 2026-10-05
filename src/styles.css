@@ -1352,33 +1352,42 @@
 
 /* =========================================================================
    ESTADO HÍBRIDO DE PROCESSAMENTO DE IA (ORGANIC LIGHT FIELD IA MODE)
-   Transição contínua entre massas orgânicas livres e estado de concentração
-   superior com ondas, halos vivos e respiração profunda de processamento.
+   Transição contínua e serena para estado de concentração superior com
+   ondas lentas e crista luminosa. ZERO FLICKER / ZERO PISCADA.
    ========================================================================= */
 
-/* 1. Crista luminosa superior e ondas de energia */
+/* 1. Crista luminosa superior — difusão ampla e profunda */
 .ai-processing-crest {
+  position: absolute;
+  top: 0;
+  inset-x: 0;
+  height: 46vh;
+  pointer-events: none;
   opacity: 0;
   background: radial-gradient(
     115% 90% at 50% -12%,
-    rgba(56, 189, 248, 0.28) 0%,
-    rgba(129, 140, 248, 0.18) 36%,
-    rgba(168, 85, 247, 0.10) 65%,
+    rgba(56, 189, 248, 0.24) 0%,
+    rgba(129, 140, 248, 0.16) 36%,
+    rgba(168, 85, 247, 0.08) 65%,
     transparent 90%
   );
-  filter: blur(28px);
-  transform: translateY(-24px) scale(0.96);
-  transition: opacity 2.4s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 2.8s cubic-bezier(0.16, 1, 0.3, 1);
+  filter: blur(32px);
+  -webkit-filter: blur(32px);
+  transform: translate3d(0, -16px, 0);
+  will-change: opacity, transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transition: opacity 2.8s cubic-bezier(0.16, 1, 0.3, 1),
+              transform 3.2s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 1;
 }
 
 :root:not(.dark) .ai-processing-crest {
   background: radial-gradient(
     115% 90% at 50% -12%,
-    rgba(147, 197, 253, 0.35) 0%,
-    rgba(199, 210, 254, 0.22) 36%,
-    rgba(233, 213, 255, 0.12) 65%,
+    rgba(147, 197, 253, 0.30) 0%,
+    rgba(199, 210, 254, 0.18) 36%,
+    rgba(233, 213, 255, 0.10) 65%,
     transparent 90%
   );
 }
@@ -1386,155 +1395,79 @@
 .amoled .ai-processing-crest {
   background: radial-gradient(
     115% 90% at 50% -12%,
-    rgba(14, 165, 233, 0.32) 0%,
-    rgba(99, 102, 241, 0.20) 36%,
-    rgba(147, 51, 234, 0.10) 65%,
+    rgba(14, 165, 233, 0.28) 0%,
+    rgba(99, 102, 241, 0.18) 36%,
+    rgba(147, 51, 234, 0.08) 65%,
     transparent 90%
   );
 }
 
 .organic-field-container[data-processing="active"] .ai-processing-crest {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  animation: ai-crest-respiration 6.4s ease-in-out infinite alternate;
+  opacity: 0.88;
+  transform: translate3d(0, 0, 0);
+  animation: ai-crest-respiration 12s ease-in-out infinite alternate;
 }
 
+/* 2. Ondas suaves de energia no terço superior */
 .ai-processing-waves {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
   opacity: 0;
   background: linear-gradient(
     180deg,
-    rgba(56, 189, 248, 0.08) 0%,
-    rgba(139, 92, 246, 0.05) 28%,
+    rgba(56, 189, 248, 0.07) 0%,
+    rgba(139, 92, 246, 0.04) 28%,
     rgba(30, 58, 138, 0.02) 55%,
     transparent 80%
   );
-  mix-blend-mode: screen;
-  transition: opacity 2.2s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transition: opacity 3s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 1;
 }
 
 .organic-field-container[data-processing="active"] .ai-processing-waves {
-  opacity: 1;
-  animation: ai-energy-drift 8.4s ease-in-out infinite alternate;
+  opacity: 0.65;
+  animation: ai-energy-drift 16s ease-in-out infinite alternate;
 }
 
-/* 2. Indicador sutil superior com 4 pontos discretos de atividade */
-.ai-activity-indicator {
-  opacity: 0;
-  transform: translateY(-8px);
-  transition: opacity 1.2s cubic-bezier(0.16, 1, 0.3, 1),
-              transform 1.4s cubic-bezier(0.16, 1, 0.3, 1);
-  z-index: 3;
-}
-
-.organic-field-container[data-processing="active"] .ai-activity-indicator {
-  opacity: 1;
-  transform: translateY(0);
-}
-
-.ai-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.7);
-  box-shadow: 0 0 8px rgba(56, 189, 248, 0.75), 0 0 16px rgba(129, 140, 248, 0.4);
-  transition: transform 0.6s ease, opacity 0.6s ease;
-}
-
-.organic-field-container[data-processing="active"] .ai-dot-1 {
-  animation: ai-dot-breathe 2.4s ease-in-out infinite 0s;
-}
-
-.organic-field-container[data-processing="active"] .ai-dot-2 {
-  animation: ai-dot-breathe 2.4s ease-in-out infinite 0.35s;
-}
-
-.organic-field-container[data-processing="active"] .ai-dot-3 {
-  animation: ai-dot-breathe 2.4s ease-in-out infinite 0.7s;
-}
-
-.organic-field-container[data-processing="active"] .ai-dot-4 {
-  animation: ai-dot-breathe 2.4s ease-in-out infinite 1.05s;
-}
-
-/* 3. Despertar luminoso gradual e expansão de halos (sem flash brusco) */
-.organic-field-container[data-processing="active"] {
-  --space-opacity-mult: 0.96;
-}
-
+/* 3. Despertar luminoso gradual e expansão de halos (sem piscar nem cortar filtros) */
 .organic-field-container[data-processing="active"] .organic-field-ambient {
   opacity: 1;
-  transform: scale(1.05) translateY(-8%);
+}
+
+.organic-field-container[data-processing="active"] .mass-body {
+  opacity: 1;
 }
 
 .organic-field-container[data-processing="active"] .mass-inner {
-  filter: brightness(1.22);
+  opacity: 0.95;
 }
 
-.organic-field-container[data-processing="active"] .mass-core {
-  filter: brightness(1.35) drop-shadow(0 0 16px rgba(125, 211, 252, 0.5));
-}
-
-/* 4. Concentração superior harmônica das massas de luz */
-.organic-field-container[data-processing="active"] .mass-alpha {
-  width: 62vmax;
-  height: 50vmax;
-}
-
-.organic-field-container[data-processing="active"] .mass-beta {
-  width: 64vmax;
-  height: 54vmax;
-}
-
-.organic-field-container[data-processing="active"] .mass-epsilon {
-  width: 40vmax;
-  height: 34vmax;
-}
-
-/* 5. Keyframes de respiração profunda e ondas de energia */
+/* 4. Keyframes majestosos sem modulação de blur e sem saltos de opacidade */
 @keyframes ai-crest-respiration {
   0% {
-    opacity: 0.82;
-    transform: translateY(0) scale(1);
-    filter: blur(28px) brightness(1);
+    transform: translate3d(0, 0, 0) scale(1);
   }
   50% {
-    opacity: 1;
-    transform: translateY(6px) scale(1.03);
-    filter: blur(32px) brightness(1.18);
+    transform: translate3d(0, 8px, 0) scale(1.025);
   }
   100% {
-    opacity: 0.88;
-    transform: translateY(-2px) scale(1.01);
-    filter: blur(29px) brightness(1.08);
+    transform: translate3d(0, -4px, 0) scale(1.01);
   }
 }
 
 @keyframes ai-energy-drift {
   0% {
-    transform: translateY(0);
-    opacity: 0.65;
+    transform: translate3d(0, 0, 0);
   }
   50% {
-    transform: translateY(5vh);
-    opacity: 0.95;
+    transform: translate3d(0, 2.5vh, 0);
   }
   100% {
-    transform: translateY(0);
-    opacity: 0.65;
-  }
-}
-
-@keyframes ai-dot-breathe {
-  0%, 100% {
-    transform: scale(0.85);
-    opacity: 0.45;
-    box-shadow: 0 0 6px rgba(56, 189, 248, 0.45);
-  }
-  50% {
-    transform: scale(1.35);
-    opacity: 1;
-    box-shadow: 0 0 12px rgba(125, 211, 252, 0.95), 0 0 20px rgba(168, 85, 247, 0.6);
+    transform: translate3d(0, 0, 0);
   }
 }
 
@@ -2192,11 +2125,7 @@
   .field-core-primary,
   .field-core-secondary,
   .ai-processing-crest,
-  .ai-processing-waves,
-  .ai-dot-1,
-  .ai-dot-2,
-  .ai-dot-3,
-  .ai-dot-4 {
+  .ai-processing-waves {
     animation: none !important;
     will-change: auto;
   }
@@ -2212,11 +2141,7 @@
 .aurora-root[data-animated="off"] .field-core-primary,
 .aurora-root[data-animated="off"] .field-core-secondary,
 .aurora-root[data-animated="off"] .ai-processing-crest,
-.aurora-root[data-animated="off"] .ai-processing-waves,
-.aurora-root[data-animated="off"] .ai-dot-1,
-.aurora-root[data-animated="off"] .ai-dot-2,
-.aurora-root[data-animated="off"] .ai-dot-3,
-.aurora-root[data-animated="off"] .ai-dot-4 {
+.aurora-root[data-animated="off"] .ai-processing-waves {
   animation: none !important;
   will-change: auto;
 }
