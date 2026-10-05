@@ -813,6 +813,14 @@ function Configuracoes() {
           Versão {APP_VERSION} · compilação {APP_BUILD}
         </p>
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Sparkles}
+            onClick={() => window.dispatchEvent(new CustomEvent("caldra:open-intro"))}
+          >
+            Apresentação da CALDRA
+          </Button>
           <Button variant="secondary" size="sm" icon={Bug} onClick={() => setReportOpen(true)}>
             Reportar um problema
           </Button>
