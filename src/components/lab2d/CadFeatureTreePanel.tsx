@@ -22,6 +22,7 @@ import {
   AlertCircle,
   History,
   RotateCcw,
+  Download,
 } from "lucide-react";
 import type { CadFeatureNode, CadFeatureType } from "@/lib/cad/features/CadFeatureModel";
 import type { CadFeatureTree } from "@/lib/cad/features/CadFeatureTree";
@@ -147,6 +148,27 @@ export function CadFeatureTreePanel({
           <span>Árvore de Recursos (DAG)</span>
         </div>
         <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                const doc = await tree.toCadDocument();
+                const blob = doc.toBlob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `${doc.name || "modelo_paramétrico"}.chamfer`;
+                a.click();
+                URL.revokeObjectURL(a.href);
+              } catch (err) {
+                console.error("Falha ao exportar .chamfer:", err);
+              }
+            }}
+            className="flex items-center gap-1 rounded bg-secondary px-1.5 py-0.5 text-[9px] font-bold text-foreground transition-colors hover:bg-muted"
+            title="Exportar Formato Nativo Paramétrico (.chamfer)"
+          >
+            <Download className="size-2.5 text-accent" /> .CHAMFER
+          </button>
           <button
             type="button"
             onClick={() => onRebuild()}

@@ -505,6 +505,24 @@ export class CadFeatureTree {
   }
 
   // ==========================================
+  // INTEGRAÇÃO COM CAD DOCUMENT PARAMÉTRICO
+  // ==========================================
+
+  public async toCadDocument(docName = "Modelo_Parametrico"): Promise<any> {
+    const { CadDocument } = await import("../document/CadDocument");
+    const doc = new CadDocument({ name: docName, kernel: this.kernel });
+    for (const f of this.features) {
+      doc.addFeature({
+        name: f.name,
+        type: f.type,
+        parameters: f.parameters,
+        dependencies: f.dependencies,
+      });
+    }
+    return doc;
+  }
+
+  // ==========================================
   // DISPOSE
   // ==========================================
 

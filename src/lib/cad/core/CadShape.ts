@@ -83,6 +83,18 @@ export class CadShape {
     this.createdAt = Date.now();
   }
 
+  get faces(): CadFace[] {
+    return this._cachedFaces ?? [];
+  }
+
+  get edges(): CadEdge[] {
+    return this._cachedEdges ?? [];
+  }
+
+  get vertices(): CadVertex[] {
+    return this._cachedVertices ?? [];
+  }
+
   getCachedFaces(): CadFace[] | undefined {
     return this._cachedFaces;
   }

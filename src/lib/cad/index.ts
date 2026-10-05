@@ -29,5 +29,7 @@ export * as DFM from "./dfm";
 export * as Metrology from "./metrology";
 export * from "./kernel";
 export * as CadCore from "./core";
+export * as CadDocument from "./document";
+export * from "./document";
 export * as CadAdapters from "./adapters";
 export * as CadRenderer from "./renderer/ThreeRenderer";

@@ -159,3 +159,18 @@ if (fs.existsSync(viteCache)) {
     console.warn("Could not clear .vite cache:", err.message);
   }
 }
+
+// Copy occt-wasm.wasm to public/ if missing or out of date
+const occtWasmSrc = path.join(__dirname, "../node_modules/occt-wasm/dist/occt-wasm.wasm");
+const occtWasmDest = path.join(__dirname, "../public/occt-wasm.wasm");
+if (fs.existsSync(occtWasmSrc)) {
+  try {
+    if (!fs.existsSync(occtWasmDest) || fs.statSync(occtWasmSrc).size !== fs.statSync(occtWasmDest).size) {
+      fs.copyFileSync(occtWasmSrc, occtWasmDest);
+      console.log("Copied occt-wasm.wasm to public/");
+    }
+  } catch (err) {
+    console.warn("Could not copy occt-wasm.wasm:", err.message);
+  }
+}
+
