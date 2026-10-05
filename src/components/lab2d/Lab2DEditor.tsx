@@ -159,7 +159,6 @@ import { drawScene } from "@/lib/lab2d/canvasScene";
 import { stressEntities } from "@/lib/lab2d/stress";
 import { CutPanel } from "@/components/lab2d/CutPanel";
 import { MultiSelectPanel } from "@/components/lab2d/MultiSelectPanel";
-import { usePanelSide } from "@/lib/lab2d/panelSide";
 import { drawFlow, drawSim } from "@/lib/lab2d/flow";
 import { buildSimPath, sampleSim, SIM_LABEL } from "@/lib/lab2d/simulation";
 import { expandSelection, pruneGroups, type GroupDef } from "@/lib/lab2d/groups";
@@ -182,6 +181,11 @@ import {
 } from "@/components/lab2d/ChamferLandscapeToolbar";
 import { ChamferCadToolbar } from "@/components/lab2d/ChamferCadToolbar";
 import { Cad3DStage } from "@/components/lab2d/Cad3DStage";
+import { ChamferMobileContextualEditor } from "@/components/lab2d/mobileEdit/ChamferMobileContextualEditor";
+import { ChamferCompactNumericEditor } from "@/components/lab2d/mobileEdit/ChamferCompactNumericEditor";
+import { ChamferRightSidebar, type ChamferSidebarTab } from "@/components/lab2d/sidebar";
+import { useSmartFraming } from "@/components/lab2d/mobileEdit/useSmartFraming";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   stretchSelection,
   breakEntityAtPoint,
@@ -2470,30 +2474,66 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
   }, [isDark, gridConfig]);
 
-  const panelOpen = !focus && (selected.length > 0 || showLayers || showCut || showDims2);
+  const isMobile = useIsMobile();
+  const [isLandscape, setIsLandscape] = useState(
+    typeof window !== "undefined" ? window.innerWidth > window.innerHeight : true
+  );
 
-  /*
-   * PANEL POSITION MANAGER — fonte única do lado do painel.
-   * A assinatura muda só em evento significativo (abertura, nova seleção,
-   * mudança de tipo de seleção, troca de aba). `view` NÃO entra aqui: era
-   * exatamente isso que provocava o vaivém esquerda/direita.
-   */
-  const panelSignature = `${showLayers ? "L" : showCut ? "C" : "P"}|${
-    selected.length === 0 ? "none" : selected.length === 1 ? `one:${selected[0]!.id}` : "multi"
-  }`;
-  const measurePanel = useCallback(() => {
-    const el = svgRef.current;
-    const width = el?.getBoundingClientRect().width ?? 0;
-    const b = selBoxRef.current;
-    const v = viewRef.current;
-    return {
-      width,
-      centerX: b ? v.tx + ((b.minX + b.maxX) / 2) * v.k : null,
+  useEffect(() => {
+    const handleResize = () => {
+      setIsLandscape(window.innerWidth > window.innerHeight);
     };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
   }, []);
-  const panelSide = usePanelSide(panelOpen, panelSignature, measurePanel);
 
-  const primaryTools = TOOLS.filter((t) => PRIMARY.includes(t.id));
+  const [mobileEditorOpenManual, setMobileEditorOpenManual] = useState(false);
+  const [activeEditingProp, setActiveEditingProp] = useState<{
+    key: string;
+    label: string;
+    value: number;
+    unit: string;
+  } | null>(null);
+
+  // Entidade única selecionada para o editor contextual mobile
+  const selectedEntity = useMemo(() => {
+    if (selected.length === 1) {
+      return entities.find((e) => e.id === selected[0]) ?? null;
+    }
+    return null;
+  }, [selected, entities]);
+
+  // Editor contextual móvel aberto quando 1 entidade está selecionada OU manualmente (Regra 2)
+  const mobileEditorOpen = !solidOpen && (
+    (selected.length === 1 && (isMobile || (typeof window !== "undefined" && window.innerWidth < 1024))) ||
+    mobileEditorOpenManual
+  );
+
+  // Enquadramento Inteligente do CAD (Regra 7)
+  useSmartFraming({
+    isOpen: mobileEditorOpen,
+    selectedEntity,
+    view,
+    setView,
+    canvasWidth: canvasSize.w,
+    canvasHeight: canvasSize.h,
+  });
+
+  // Janela lateral direita estruturada do CHAMFER (Propriedades / Camadas / Corte / Cotas)
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(
+    typeof window !== "undefined" ? window.innerWidth >= 1024 : true
+  );
+  const [activeSidebarTab, setActiveSidebarTab] = useState<ChamferSidebarTab>("propriedades");
+
+  // Contextual CAD: ao selecionar entidade(s), foca na aba Propriedades
+  useEffect(() => {
+    if (selected.length > 0) {
+      setActiveSidebarTab("propriedades");
+    }
+  }, [selected.length]);
+
+  // A janela lateral direita do CHAMFER agora é gerenciada por ChamferRightSidebar (Região D)
+  const panelOpen = false;
 
   const aside = panelOpen ? (
     <aside
@@ -3032,11 +3072,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             <IconBtn
               label="Camadas"
               onClick={() => {
-                setShowLayers((s) => !s);
-                setShowCut(false);
+                if (rightSidebarOpen && activeSidebarTab === "camadas") {
+                  setRightSidebarOpen(false);
+                } else {
+                  setActiveSidebarTab("camadas");
+                  setRightSidebarOpen(true);
+                }
               }}
               icon={LayersIcon}
-              active={showLayers}
+              active={rightSidebarOpen && activeSidebarTab === "camadas"}
               title="Gerenciamento de camadas técnicas"
             />
             <IconBtn
@@ -3628,6 +3672,91 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               )}
 
+              {/* FEEDBACK VISUAL TEMPORÁRIO DURANTE EDIÇÃO MOBILE (REGRA 15) */}
+              {activeEditingProp && selectedEntity && (
+                <g pointerEvents="none" className="transition-opacity duration-150">
+                  {selectedEntity.type === "circle" && (
+                    <circle
+                      cx={selectedEntity.cx}
+                      cy={selectedEntity.cy}
+                      r={selectedEntity.r}
+                      fill="rgba(239, 68, 68, 0.08)"
+                      stroke="#EF4444"
+                      strokeWidth={2.2 / view.k}
+                      strokeDasharray={`${6 / view.k} ${4 / view.k}`}
+                    />
+                  )}
+                  {selectedEntity.type === "arc" && (
+                    <circle
+                      cx={selectedEntity.cx}
+                      cy={selectedEntity.cy}
+                      r={selectedEntity.r}
+                      fill="none"
+                      stroke="#EF4444"
+                      strokeWidth={2.2 / view.k}
+                      strokeDasharray={`${6 / view.k} ${4 / view.k}`}
+                    />
+                  )}
+                  {selectedEntity.type === "line" && (
+                    <line
+                      x1={selectedEntity.x1}
+                      y1={selectedEntity.y1}
+                      x2={selectedEntity.x2}
+                      y2={selectedEntity.y2}
+                      stroke="#EF4444"
+                      strokeWidth={3 / view.k}
+                      strokeOpacity={0.8}
+                    />
+                  )}
+                  <g
+                    transform={`translate(${
+                      selectedEntity.type === "circle"
+                        ? selectedEntity.cx
+                        : selectedEntity.type === "arc"
+                        ? selectedEntity.cx
+                        : selectedEntity.type === "line"
+                        ? (selectedEntity.x1 + selectedEntity.x2) / 2
+                        : selectedEntity.type === "point"
+                        ? selectedEntity.x
+                        : 0
+                    } ${
+                      selectedEntity.type === "circle"
+                        ? selectedEntity.cy - selectedEntity.r - 12 / view.k
+                        : selectedEntity.type === "arc"
+                        ? selectedEntity.cy - selectedEntity.r - 12 / view.k
+                        : selectedEntity.type === "line"
+                        ? (selectedEntity.y1 + selectedEntity.y2) / 2 - 12 / view.k
+                        : selectedEntity.type === "point"
+                        ? selectedEntity.y - 12 / view.k
+                        : 0
+                    })`}
+                  >
+                    <rect
+                      x={-45 / view.k}
+                      y={-11 / view.k}
+                      width={90 / view.k}
+                      height={22 / view.k}
+                      rx={6 / view.k}
+                      fill="rgba(15, 23, 42, 0.95)"
+                      stroke="#EF4444"
+                      strokeWidth={1.2 / view.k}
+                    />
+                    <text
+                      x={0}
+                      y={0}
+                      fontSize={9.5 / view.k}
+                      fontFamily="ui-monospace, monospace"
+                      fontWeight="bold"
+                      fill="#FFFFFF"
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                    >
+                      {activeEditingProp.label}: {activeEditingProp.value.toFixed(2)} {activeEditingProp.unit}
+                    </text>
+                  </g>
+                </g>
+              )}
+
               {/* COTAS ASSOCIATIVAS — âmbar técnico, sempre medidas na geometria */}
               {dims.map((d) => {
                 const draw = dimensionDraw(d, entities);
@@ -3879,12 +4008,113 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </button>
             </div>
           )}
+
+          {/* NOVO SISTEMA DE EDIÇÃO CONTEXTUAL MOBILE DO CHAMFER (REGRAS 1 A 18) */}
+          {mobileEditorOpen && (
+            <div
+              className={cn(
+                "absolute z-40 transition-all",
+                isLandscape
+                  ? "top-3 right-3 max-h-[calc(100%-24px)] overflow-y-auto"
+                  : "bottom-3 right-3 sm:top-3 max-h-[calc(100%-24px)] overflow-y-auto"
+              )}
+            >
+              <ChamferMobileContextualEditor
+                entity={selectedEntity}
+                onUpdateEntity={(updated) => {
+                  commit((list) => list.map((x) => (x.id === updated.id ? updated : x)));
+                }}
+                onDeleteEntity={(id) => {
+                  commit((list) => list.filter((x) => x.id !== id));
+                  setSelection([]);
+                }}
+                onDuplicateEntity={(ent) => {
+                  const dup = translate(ent, 10, 10);
+                  const dupWithNewId = { ...dup, id: crypto.randomUUID() };
+                  commit((list) => [...list, dupWithNewId]);
+                  setSelection([dupWithNewId.id]);
+                }}
+                onClose={() => {
+                  setSelection([]);
+                  setMobileEditorOpenManual(false);
+                }}
+                layers={layers}
+                projectName={project?.name ?? "Suporte lateral"}
+                onUpdateProjectName={(name) => {
+                  setProject((prev) => (prev ? { ...prev, name } : prev));
+                }}
+                material={project?.settings?.material ?? "Aço carbono (1020)"}
+                onUpdateMaterial={(mat) => {
+                  setProject((prev) =>
+                    prev ? { ...prev, settings: { ...prev.settings, material: mat } } : prev
+                  );
+                }}
+                thickness={thickness}
+                onUpdateThickness={(th) => setThickness(th)}
+                onActivePropertyChange={setActiveEditingProp}
+              />
+            </div>
+          )}
             </>
           )}
         </div>
 
-        {/* REGIÃO D — PAINEL DE PROPRIEDADES */}
-        {panelOpen && aside}
+        {/* REGIÃO D — JANELA LATERAL DIREITA DO CHAMFER 2D (PROPRIEDADES / CAMADAS / CORTE) */}
+        {!solidOpen && !focus && (
+          <ChamferRightSidebar
+            open={rightSidebarOpen}
+            onToggleOpen={() => setRightSidebarOpen((v) => !v)}
+            activeTab={activeSidebarTab}
+            onTabChange={setActiveSidebarTab}
+            entities={entities}
+            selection={selection}
+            setSelection={setSelection}
+            commit={commit}
+            layers={layers}
+            setLayers={setLayers}
+            activeLayer={activeLayer}
+            setActiveLayer={setActiveLayer}
+            thickness={thickness}
+            onThicknessChange={setThickness}
+            projectName={project?.name ?? "Peça Chamfer"}
+            onProjectNameChange={(name) => {
+              setProject((prev) => (prev ? { ...prev, name } : prev));
+            }}
+            material={project?.settings?.material ?? "Aço carbono (1020)"}
+            onMaterialChange={(mat) => {
+              setProject((prev) =>
+                prev ? { ...prev, settings: { ...prev.settings, material: mat } } : prev
+              );
+            }}
+            dims={dims}
+            onDimsChange={setDims}
+            dimKind={dimKind}
+            onDimKindChange={setDimKind}
+            dimSel={dimSel}
+            onDimSelect={setDimSel}
+            renderCotas={() => (
+              <DimensionsPanel
+                dims={dims}
+                entities={entities}
+                kind={dimKind}
+                onKind={(k) => {
+                  setDimKind(k);
+                  setDimPicks([]);
+                  setTool("dim");
+                }}
+                selected={dimSel}
+                onSelect={setDimSel}
+                onChange={(d) => setDims((list) => list.map((x) => (x.id === d.id ? d : x)))}
+                onDelete={(id) => {
+                  setDims((list) => list.filter((x) => x.id !== id));
+                  setDimSel(null);
+                }}
+              />
+            )}
+            onHighlightCut={setShareHint}
+            isDark={isDark}
+          />
+        )}
       </div>
 
       {/* REGIÃO E — STATUS BAR LANDSCAPE */}
@@ -3992,6 +4222,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             >
               MM
             </span>
+
+            {/* BOTÃO PROPRIEDADES DA PEÇA / CHAPA CONTEXTUAL (REGRAS 2 & 5) */}
+            <button
+              type="button"
+              onClick={() => {
+                setMobileEditorOpenManual((prev) => !prev);
+              }}
+              title="Abrir editor contextual de chapa e projeto"
+              className={cn(
+                "flex items-center gap-1 px-2 py-0.5 rounded border font-mono font-bold text-[9px] tracking-wider transition-colors cursor-pointer",
+                mobileEditorOpenManual
+                  ? "border-red-500 bg-red-600 text-white shadow-xs"
+                  : isDark
+                  ? "border-slate-700/80 bg-slate-900 text-slate-300 hover:text-white hover:border-slate-600"
+                  : "border-slate-300 bg-slate-100 text-slate-700 hover:text-slate-900"
+              )}
+            >
+              <span>CHAPA {thickness.toFixed(1)}MM</span>
+            </button>
 
             {/* LEITURA DE COORDENADAS */}
             <div className="flex items-center gap-1 font-mono text-[9.5px]">
@@ -4933,7 +5182,7 @@ function DimensionNumberField({
   label,
   value,
   onChange,
-  unit,
+  unit = "mm",
   min,
   allowZero = false,
 }: {
@@ -4944,58 +5193,48 @@ function DimensionNumberField({
   min?: number;
   allowZero?: boolean;
 }) {
-  const [text, setText] = useState<string>(() =>
-    Number.isFinite(value) ? Number(value.toFixed(2)).toString() : "0",
-  );
-
-  useEffect(() => {
-    if (Number.isFinite(value)) {
-      setText(Number(value.toFixed(2)).toString());
-    }
-  }, [value]);
-
-  const commit = (strVal: string) => {
-    const trimmed = strVal.trim();
-    if (!trimmed) {
-      setText(Number.isFinite(value) ? Number(value.toFixed(2)).toString() : "0");
-      return;
-    }
-    const parsed = parseFloat(trimmed);
-    if (!Number.isFinite(parsed)) {
-      setText(Number.isFinite(value) ? Number(value.toFixed(2)).toString() : "0");
-      return;
-    }
-    if (!allowZero && parsed <= 0 && min !== undefined && min > 0) {
-      setText(Number.isFinite(value) ? Number(value.toFixed(2)).toString() : "0");
-      return;
-    }
-    const finalVal = min !== undefined ? Math.max(min, parsed) : parsed;
-    setText(Number(finalVal.toFixed(2)).toString());
-    onChange(finalVal);
-  };
+  const [editorOpen, setEditorOpen] = useState(false);
 
   return (
-    <label className="flex items-center justify-between gap-2 py-0.5">
-      <span className="font-mono text-[9px] text-muted-foreground uppercase">{label}</span>
-      <span className="flex items-center gap-1">
-        <input
-          type="number"
-          inputMode="decimal"
-          step="any"
-          value={text}
-          onChange={(ev) => setText(ev.target.value)}
-          onBlur={(ev) => commit(ev.target.value)}
-          onKeyDown={(ev) => {
-            if (ev.key === "Enter") {
-              commit(ev.currentTarget.value);
-              ev.currentTarget.blur();
-            }
-          }}
-          className="w-20 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-right font-mono text-[11px] outline-none focus:border-accent focus:ring-1 focus:ring-accent/40"
-        />
-        {unit && <span className="font-mono text-[8px] text-muted-foreground">{unit}</span>}
-      </span>
-    </label>
+    <div className="relative py-0.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-mono text-[9px] text-muted-foreground uppercase">{label}</span>
+        <button
+          type="button"
+          onClick={() => setEditorOpen((prev) => !prev)}
+          title={`Editar medida de ${label}`}
+          className={cn(
+            "flex items-center gap-1.5 rounded-lg border px-2 py-1 font-mono text-[11px] font-semibold transition-colors cursor-pointer",
+            editorOpen
+              ? "border-red-500 bg-red-950/30 text-white ring-1 ring-red-500"
+              : "border-line bg-background/60 text-foreground hover:border-accent hover:bg-background"
+          )}
+        >
+          <span>{Number.isFinite(value) ? value.toFixed(2) : "0.00"}</span>
+          {unit && <span className="text-[9px] text-muted-foreground font-normal">{unit}</span>}
+        </button>
+      </div>
+
+      {editorOpen && (
+        <div className="absolute right-0 top-full mt-1.5 z-50">
+          <ChamferCompactNumericEditor
+            property={{
+              key: label,
+              label,
+              value: Number.isFinite(value) ? value : 0,
+              unit: (unit as any) ?? "mm",
+              min: allowZero ? 0 : min,
+            }}
+            onChange={(newVal) => onChange(newVal)}
+            onConfirm={(finalVal) => {
+              onChange(finalVal);
+              setEditorOpen(false);
+            }}
+            onCancel={() => setEditorOpen(false)}
+          />
+        </div>
+      )}
+    </div>
   );
 }
 

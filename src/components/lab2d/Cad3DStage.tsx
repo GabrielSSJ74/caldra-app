@@ -10,7 +10,7 @@
  * - Barra de status inferior de alta densidade técnica
  */
 
-import { ArrowLeft, Box, Cpu, RotateCcw } from "lucide-react";
+import { ArrowLeft, Box, Cpu, RotateCcw, Sliders } from "lucide-react";
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   VIEW_PRESETS,
@@ -30,6 +30,7 @@ import { ChamferKernel } from "@/lib/cad/kernel/chamferKernel";
 import type { PartDocument } from "@/lib/cad/kernel/types";
 import { CadBRepViewer } from "@/components/lab2d/CadBRepViewer";
 import { CadKernelStatusPopover } from "@/components/lab2d/CadKernelStatusPopover";
+import { ChamferMobileContextualEditor } from "@/components/lab2d/mobileEdit/ChamferMobileContextualEditor";
 
 /** Projeto canônico do dossiê vinculado (quando vem do catálogo de projetos) */
 function useProjectContext(labProjectId: string | undefined) {
@@ -324,6 +325,23 @@ export function Cad3DStage({
     return planArea(entities);
   }, [entities, cadDoc.baseWidth, cadDoc.baseLength]);
 
+  // Estado de parâmetros dinâmicos 3D em tempo real (Regra 14)
+  const [liveParams, setLiveParams] = useState<Record<string, number>>(() => ({
+    ...resolvedModel.params,
+  }));
+  const [editor3DOpen, setEditor3DOpen] = useState(false);
+
+  useEffect(() => {
+    setLiveParams({ ...resolvedModel.params });
+  }, [resolvedModel]);
+
+  const handleUpdate3DParam = useCallback((key: string, val: number) => {
+    setLiveParams((prev) => ({ ...prev, [key]: val }));
+    if (key === "thickness") {
+      onThickness(val);
+    }
+  }, [onThickness]);
+
   const resetView = useCallback(() => {
     setResetNonce((n) => n + 1);
   }, []);
@@ -340,18 +358,55 @@ export function Cad3DStage({
         <div className="relative min-h-0 flex-1 overflow-hidden bg-[#0b0f17]">
           <Stage3DErrorBoundary onReset={resetView}>
             <CadBRepViewer
-              key={`${resetNonce}_${resolvedModel.type}`}
+              key={`${resetNonce}_${resolvedModel.type}_${JSON.stringify(liveParams)}`}
               className="size-full"
               initialModelType={resolvedModel.type}
               initialModelTitle={resolvedModel.name}
-              initialParams={resolvedModel.params}
-              initialThickness={thickness}
+              initialParams={liveParams}
+              initialThickness={liveParams.thickness ?? thickness}
               initialWidth={cadDoc.baseWidth || 200}
               initialLength={cadDoc.baseLength || 200}
               activeViewPreset={viewPreset}
               onViewPresetChange={setViewPreset}
             />
           </Stage3DErrorBoundary>
+
+          {/* Botão de alternância do Editor 3D Contextual (Regra 14) */}
+          <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setEditor3DOpen((prev) => !prev)}
+              aria-label="Alternar parâmetros 3D"
+              className={cn(
+                "flex h-8 items-center gap-1.5 rounded-xl border px-3 font-mono text-[11px] font-bold shadow-lg backdrop-blur-md transition-all cursor-pointer",
+                editor3DOpen
+                  ? "border-red-500 bg-red-600 text-white shadow-red-900/40"
+                  : "border-slate-700 bg-slate-900/90 text-slate-200 hover:bg-slate-800"
+              )}
+            >
+              <Sliders className="size-3.5" />
+              <span>Parâmetros 3D</span>
+            </button>
+          </div>
+
+          {/* Editor Contextual 3D Mobile / CAD */}
+          {editor3DOpen && (
+            <div className="absolute top-13 right-3 z-40 max-h-[calc(100%-60px)] overflow-y-auto">
+              <ChamferMobileContextualEditor
+                is3DMode={true}
+                model3D={{
+                  type: resolvedModel.type,
+                  name: resolvedModel.name,
+                  params: liveParams,
+                }}
+                onUpdate3DParam={handleUpdate3DParam}
+                thickness={liveParams.thickness ?? thickness}
+                onUpdateThickness={(th) => handleUpdate3DParam("thickness", th)}
+                onClose={() => setEditor3DOpen(false)}
+                projectName={title}
+              />
+            </div>
+          )}
         </div>
       </div>
     );
