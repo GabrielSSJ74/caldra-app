@@ -428,7 +428,7 @@ function getOperationFeedback(
 
 export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const { isMestre } = useFeatureAccess();
-  const { theme: appTheme, setTheme: setAppTheme } = useSettings();
+  const { theme: appTheme, setTheme: setAppTheme, unit } = useSettings();
   const isDark = useMemo(() => {
     return (
       appTheme === "dark" ||
@@ -2248,7 +2248,113 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     return gid ? (groups.find((g) => g.id === gid) ?? null) : null;
   }, [selected, groups]);
 
-  const gridStep = grid;
+  /**
+   * HIERARQUIA VISUAL DINÂMICA DO GRID (CHAMFER CAD)
+   * Nível 1: GRID SECUNDÁRIO — subdivisões finas para orientação, baixa opacidade (~10-18% Dark / 10-15% Light)
+   * Nível 2: GRID PRINCIPAL — divisões intermediárias regulares, ex: 50mm, opacidade ~25-35% Dark / 22-32% Light
+   * Nível 3: GRID MACRO — linhas principais de referência espacial, ex: 100mm, opacidade ~35-40%
+   * Nível 4: EIXOS X e Y — alinhados a (0,0), vermelho e verde técnicos com destaque 70-90%
+   *
+   * O SNAP preserva 100% da precisão configurada pelo usuário (independente das linhas ocultadas pelo zoom).
+   */
+  const gridConfig = useMemo(() => {
+    const g = Math.max(0.1, grid);
+    const k = view.k;
+
+    // Escala métrica progressiva com passos harmoniosos baseados no grid ativo
+    const rawSteps = [
+      g * 0.1,
+      g * 0.2,
+      g * 0.5,
+      g,
+      g * 5,
+      g * 10,
+      g * 50,
+      g * 100,
+      g * 500,
+      g * 1000,
+      g * 5000,
+    ];
+
+    const steps = rawSteps.filter((s) => s >= 0.1);
+
+    // Encontra o passo secundário ideal (onde o espaçamento em pixels fique entre 8px e 40px)
+    let subIndex = 0;
+    for (let i = 0; i < steps.length - 2; i++) {
+      if (steps[i] * k >= 8) {
+        subIndex = i;
+        break;
+      }
+      subIndex = i;
+    }
+
+    const subStep = steps[subIndex];
+    const majorStep = steps[subIndex + 1] ?? subStep * 5;
+    const macroStep = steps[subIndex + 2] ?? majorStep * 2;
+
+    const subPx = subStep * k;
+    // Fade progressivo para o grid secundário entre 8px e 16px (evita corte abrupto ao dar zoom)
+    const subFade = Math.min(1, Math.max(0, (subPx - 8) / 8));
+
+    const majorPx = majorStep * k;
+    const majorFade = Math.min(1, Math.max(0, (majorPx - 8) / 8));
+
+    return {
+      subStep,
+      majorStep,
+      macroStep,
+      subFade,
+      majorFade,
+    };
+  }, [grid, view.k]);
+
+  const gridStyles = useMemo(() => {
+    if (isDark) {
+      // TEMA ESCURO — Fundo escuro (#0b0f17 / #090d14)
+      // Paleta técnica em tons ardósia fria (slate-400/300) que evita cansaço visual
+      const secOpacity = Math.max(0, Math.min(0.16, 0.14 * gridConfig.subFade));
+      const majOpacity = Math.max(0, Math.min(0.32, 0.28 * gridConfig.majorFade));
+      const macOpacity = 0.38;
+
+      return {
+        secondaryStroke: `rgba(148, 163, 184, ${secOpacity.toFixed(3)})`,
+        secondaryWidth: 0.75,
+        majorStroke: `rgba(148, 163, 184, ${majOpacity.toFixed(3)})`,
+        majorWidth: 1.0,
+        macroStroke: `rgba(203, 213, 225, ${macOpacity.toFixed(3)})`,
+        macroWidth: 1.35,
+        // Eixos do sistema CAD (X vermelho técnico, Y verde técnico, destaque 85%)
+        axisX: "rgba(239, 68, 68, 0.88)",
+        axisY: "rgba(34, 197, 94, 0.88)",
+        axisWidth: 1.75,
+        originFill: "#ef4444",
+        originRing: "rgba(255, 255, 255, 0.90)",
+        originText: "rgba(239, 68, 68, 0.95)",
+      };
+    } else {
+      // TEMA CLARO — Fundo claro (#f1f5f9 / papel técnico de engenharia)
+      // Linhas em ardósia neutra (slate-600/700) com contraste equilibrado sem competir com a geometria
+      const secOpacity = Math.max(0, Math.min(0.14, 0.12 * gridConfig.subFade));
+      const majOpacity = Math.max(0, Math.min(0.28, 0.24 * gridConfig.majorFade));
+      const macOpacity = 0.34;
+
+      return {
+        secondaryStroke: `rgba(71, 85, 105, ${secOpacity.toFixed(3)})`,
+        secondaryWidth: 0.75,
+        majorStroke: `rgba(51, 65, 85, ${majOpacity.toFixed(3)})`,
+        majorWidth: 1.0,
+        macroStroke: `rgba(30, 41, 59, ${macOpacity.toFixed(3)})`,
+        macroWidth: 1.35,
+        // Eixos do sistema CAD (destaque 80%)
+        axisX: "rgba(220, 38, 38, 0.85)",
+        axisY: "rgba(22, 163, 74, 0.85)",
+        axisWidth: 1.75,
+        originFill: "#dc2626",
+        originRing: "rgba(15, 23, 42, 0.85)",
+        originText: "rgba(220, 38, 38, 0.95)",
+      };
+    }
+  }, [isDark, gridConfig]);
 
   const panelOpen = !focus && (selected.length > 0 || showLayers || showCut || showDims2);
 
@@ -3082,39 +3188,75 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               {showGrid && !solidOpen && (
                 <svg className="pointer-events-none absolute inset-0 size-full">
                   <defs>
+                    {/* 1. GRID SECUNDÁRIO — subdivisões finas (10-18% Dark / 10-15% Light, adaptável ao zoom) */}
+                    {gridConfig.subFade > 0.02 && (
+                      <pattern
+                        id="chamfer-grid-secondary"
+                        width={Math.max(0.1, gridConfig.subStep * view.k)}
+                        height={Math.max(0.1, gridConfig.subStep * view.k)}
+                        patternUnits="userSpaceOnUse"
+                        x={((view.tx % (gridConfig.subStep * view.k)) + (gridConfig.subStep * view.k)) % (gridConfig.subStep * view.k)}
+                        y={((view.ty % (gridConfig.subStep * view.k)) + (gridConfig.subStep * view.k)) % (gridConfig.subStep * view.k)}
+                      >
+                        <path
+                          d={`M ${gridConfig.subStep * view.k} 0 H 0 V ${gridConfig.subStep * view.k}`}
+                          fill="none"
+                          stroke={gridStyles.secondaryStroke}
+                          strokeWidth={gridStyles.secondaryWidth}
+                          shapeRendering="crispEdges"
+                        />
+                      </pattern>
+                    )}
+
+                    {/* 2. GRID PRINCIPAL — divisões intermediárias (25-35% Dark / 22-32% Light, ex: 50mm) */}
+                    {gridConfig.majorFade > 0.02 && (
+                      <pattern
+                        id="chamfer-grid-major"
+                        width={Math.max(0.1, gridConfig.majorStep * view.k)}
+                        height={Math.max(0.1, gridConfig.majorStep * view.k)}
+                        patternUnits="userSpaceOnUse"
+                        x={((view.tx % (gridConfig.majorStep * view.k)) + (gridConfig.majorStep * view.k)) % (gridConfig.majorStep * view.k)}
+                        y={((view.ty % (gridConfig.majorStep * view.k)) + (gridConfig.majorStep * view.k)) % (gridConfig.majorStep * view.k)}
+                      >
+                        <path
+                          d={`M ${gridConfig.majorStep * view.k} 0 H 0 V ${gridConfig.majorStep * view.k}`}
+                          fill="none"
+                          stroke={gridStyles.majorStroke}
+                          strokeWidth={gridStyles.majorWidth}
+                          shapeRendering="crispEdges"
+                        />
+                      </pattern>
+                    )}
+
+                    {/* 3. GRID MACRO / LINHA PRINCIPAL DE REFERÊNCIA — intervalos maiores (~35-40%, ex: 100mm) */}
                     <pattern
-                      id="lab2d-grid"
-                      width={Math.max(0.1, gridStep * view.k)}
-                      height={Math.max(0.1, gridStep * view.k)}
+                      id="chamfer-grid-macro"
+                      width={Math.max(0.1, gridConfig.macroStep * view.k)}
+                      height={Math.max(0.1, gridConfig.macroStep * view.k)}
                       patternUnits="userSpaceOnUse"
-                      x={((view.tx % (gridStep * view.k)) + (gridStep * view.k)) % (gridStep * view.k)}
-                      y={((view.ty % (gridStep * view.k)) + (gridStep * view.k)) % (gridStep * view.k)}
+                      x={((view.tx % (gridConfig.macroStep * view.k)) + (gridConfig.macroStep * view.k)) % (gridConfig.macroStep * view.k)}
+                      y={((view.ty % (gridConfig.macroStep * view.k)) + (gridConfig.macroStep * view.k)) % (gridConfig.macroStep * view.k)}
                     >
                       <path
-                        d={`M ${gridStep * view.k} 0 H 0 V ${gridStep * view.k}`}
+                        d={`M ${gridConfig.macroStep * view.k} 0 H 0 V ${gridConfig.macroStep * view.k}`}
                         fill="none"
-                        stroke={isDark ? "rgba(255, 255, 255, 0.16)" : "rgba(15, 23, 42, 0.16)"}
-                        strokeWidth="1"
-                      />
-                    </pattern>
-                    <pattern
-                      id="lab2d-grid-major"
-                      width={Math.max(0.1, gridStep * view.k * 5)}
-                      height={Math.max(0.1, gridStep * view.k * 5)}
-                      patternUnits="userSpaceOnUse"
-                      x={((view.tx % (gridStep * view.k * 5)) + (gridStep * view.k * 5)) % (gridStep * view.k * 5)}
-                      y={((view.ty % (gridStep * view.k * 5)) + (gridStep * view.k * 5)) % (gridStep * view.k * 5)}
-                    >
-                      <path
-                        d={`M ${gridStep * view.k * 5} 0 H 0 V ${gridStep * view.k * 5}`}
-                        fill="none"
-                        stroke={isDark ? "rgba(255, 255, 255, 0.35)" : "rgba(15, 23, 42, 0.38)"}
-                        strokeWidth="1.25"
+                        stroke={gridStyles.macroStroke}
+                        strokeWidth={gridStyles.macroWidth}
+                        shapeRendering="crispEdges"
                       />
                     </pattern>
                   </defs>
-                  {gridStep * view.k >= 4 && <rect width="100%" height="100%" fill="url(#lab2d-grid)" />}
-                  {gridStep * view.k * 5 >= 6 && <rect width="100%" height="100%" fill="url(#lab2d-grid-major)" />}
+
+                  {/* Renderização em camadas ordenadas de profundidade e contraste */}
+                  {gridConfig.subFade > 0.02 && (
+                    <rect width="100%" height="100%" fill="url(#chamfer-grid-secondary)" />
+                  )}
+                  {gridConfig.majorFade > 0.02 && (
+                    <rect width="100%" height="100%" fill="url(#chamfer-grid-major)" />
+                  )}
+                  {gridConfig.macroStep * view.k >= 8 && (
+                    <rect width="100%" height="100%" fill="url(#chamfer-grid-macro)" />
+                  )}
                 </svg>
               )}
           <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
@@ -3163,34 +3305,58 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               )}
 
               {/* Eixos do Sistema de Coordenadas CAD (alinhados a (0,0) - visíveis quando showGrid está ativo) */}
+              {/* Eixos do Sistema de Coordenadas CAD (alinhados a (0,0) - visíveis quando showGrid está ativo) */}
               {!solidOpen && showGrid && (
                 <g pointerEvents="none" aria-label="Eixos do sistema CAD">
-                  {/* Eixo X: Vermelho técnico */}
+                  {/* Eixo X: Vermelho técnico com destaque nítido sobre a grade */}
                   <line
                     x1={-1e5}
                     y1={0}
                     x2={1e5}
                     y2={0}
-                    stroke={isDark ? "rgba(239, 68, 68, 0.85)" : "rgba(220, 38, 38, 0.9)"}
-                    strokeWidth={1.5 / view.k}
+                    stroke={gridStyles.axisX}
+                    strokeWidth={gridStyles.axisWidth / view.k}
                   />
-                  {/* Eixo Y: Verde técnico */}
+                  {/* Eixo Y: Verde técnico com destaque nítido sobre a grade */}
                   <line
                     x1={0}
                     y1={-1e5}
                     x2={0}
                     y2={1e5}
-                    stroke={isDark ? "rgba(34, 197, 94, 0.85)" : "rgba(22, 163, 74, 0.9)"}
-                    strokeWidth={1.5 / view.k}
+                    stroke={gridStyles.axisY}
+                    strokeWidth={gridStyles.axisWidth / view.k}
                   />
+
+                  {/* Marcadores discretos de orientação positiva +X e +Y */}
+                  <text
+                    x={40 / view.k}
+                    y={-5 / view.k}
+                    fontSize={8.5 / view.k}
+                    fontFamily="ui-monospace, monospace"
+                    fontWeight="700"
+                    fill={gridStyles.axisX}
+                  >
+                    +X
+                  </text>
+                  <text
+                    x={6 / view.k}
+                    y={40 / view.k}
+                    fontSize={8.5 / view.k}
+                    fontFamily="ui-monospace, monospace"
+                    fontWeight="700"
+                    fill={gridStyles.axisY}
+                  >
+                    +Y
+                  </text>
+
                   {/* Ponto e Rótulo de Origem (0,0) */}
                   <circle
                     cx={0}
                     cy={0}
-                    r={3.5 / view.k}
-                    fill={isDark ? "#ef4444" : "#dc2626"}
-                    stroke={isDark ? "#ffffff" : "#0f172a"}
-                    strokeWidth={1 / view.k}
+                    r={3.8 / view.k}
+                    fill={gridStyles.originFill}
+                    stroke={gridStyles.originRing}
+                    strokeWidth={1.2 / view.k}
                   />
                   <text
                     x={6 / view.k}
@@ -3198,7 +3364,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     fontSize={10 / view.k}
                     fontFamily="ui-monospace, monospace"
                     fontWeight="bold"
-                    fill={isDark ? "rgba(239, 68, 68, 0.9)" : "rgba(220, 38, 38, 0.95)"}
+                    fill={gridStyles.originText}
                   >
                     (0,0)
                   </text>
@@ -3497,7 +3663,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </g>
           </svg>
 
-          <Rulers view={view} />
+          <Rulers
+            view={view}
+            isDark={isDark}
+            majorStep={gridConfig.majorStep}
+            unit={unit}
+            width={canvasSize.w}
+            height={canvasSize.h}
+          />
 
           {clipboardMenu && clipboardRef.current && (
             <div
@@ -4455,38 +4628,160 @@ export function EntityShape({
   );
 }
 
-function Rulers({ view }: { view: { tx: number; ty: number; k: number } }) {
-  const step = view.k > 2 ? 10 : view.k > 0.5 ? 50 : 200;
-  const ticks = Array.from({ length: 80 }, (_, i) => (i - 40) * step);
+function Rulers({
+  view,
+  isDark,
+  majorStep,
+  unit = "mm",
+  width,
+  height,
+}: {
+  view: { tx: number; ty: number; k: number };
+  isDark: boolean;
+  majorStep: number;
+  unit?: string;
+  width: number;
+  height: number;
+}) {
+  const vw = width || (typeof window !== "undefined" ? window.innerWidth : 1920);
+  const vh = height || (typeof window !== "undefined" ? window.innerHeight : 1080);
+
+  // Passo dos rótulos numéricos principais (ex: 50, 100, 200, 500...)
+  // Mantém rótulos espaçados por no mínimo 65 pixels para evitar aglomeração de texto
+  let labelStep = Math.max(1, majorStep);
+  while (labelStep * view.k < 65) {
+    labelStep *= 2;
+  }
+
+  // Subdivisão intermediária de entalhes (notches de 3px)
+  const tickStep = labelStep / 5;
+
+  // Limites em coordenadas mundiais (CAD mm) visíveis na tela
+  const minWorldX = -view.tx / view.k;
+  const maxWorldX = (vw - view.tx) / view.k;
+  const minWorldY = -view.ty / view.k;
+  const maxWorldY = (vh - view.ty) / view.k;
+
+  const startTickX = Math.floor(minWorldX / tickStep) * tickStep;
+  const endTickX = Math.ceil(maxWorldX / tickStep) * tickStep;
+
+  const startTickY = Math.floor(minWorldY / tickStep) * tickStep;
+  const endTickY = Math.ceil(maxWorldY / tickStep) * tickStep;
+
+  const ticksX: { val: number; isMajor: boolean; screenX: number }[] = [];
+  for (let x = startTickX; x <= endTickX; x += tickStep) {
+    const screenX = view.tx + x * view.k;
+    if (screenX >= 20 && screenX <= vw) {
+      const isMajor = Math.abs(Math.round(x / labelStep) * labelStep - x) < 0.001;
+      ticksX.push({ val: Math.round(x), isMajor, screenX });
+    }
+  }
+
+  const ticksY: { val: number; isMajor: boolean; screenY: number }[] = [];
+  for (let y = startTickY; y <= endTickY; y += tickStep) {
+    const screenY = view.ty + y * view.k;
+    if (screenY >= 20 && screenY <= vh) {
+      const isMajor = Math.abs(Math.round(y / labelStep) * labelStep - y) < 0.001;
+      ticksY.push({ val: Math.round(y), isMajor, screenY });
+    }
+  }
+
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0">
-      <div className="absolute inset-x-0 top-0 h-4 border-b border-line/40 bg-background/30 backdrop-blur-sm">
-        {ticks.map((t) => {
-          const x = view.tx + t * view.k;
-          return x < 0 || x > 4000 ? null : (
-            <span
-              key={t}
-              style={{ left: x }}
-              className="absolute top-0 font-mono text-[7px] text-muted-foreground/60"
-            >
-              {t}
-            </span>
-          );
-        })}
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+      {/* Canto superior esquerdo: badge técnico de unidade */}
+      <div
+        className={cn(
+          "absolute left-0 top-0 z-10 flex size-5 items-center justify-center border-b border-r font-mono text-[8px] font-bold uppercase",
+          isDark
+            ? "border-slate-800 bg-slate-950/80 text-slate-400"
+            : "border-slate-300 bg-slate-100/90 text-slate-600"
+        )}
+      >
+        {unit}
       </div>
-      <div className="absolute inset-y-0 left-0 w-4 border-r border-line/40 bg-background/30 backdrop-blur-sm">
-        {ticks.map((t) => {
-          const y = view.ty + t * view.k;
-          return y < 16 || y > 4000 ? null : (
-            <span
-              key={t}
-              style={{ top: y }}
-              className="absolute left-0 font-mono text-[7px] text-muted-foreground/60"
-            >
-              {t}
-            </span>
-          );
-        })}
+
+      {/* Régua Horizontal Superior */}
+      <div
+        className={cn(
+          "absolute inset-x-0 top-0 h-5 border-b backdrop-blur-sm",
+          isDark
+            ? "border-slate-800/80 bg-slate-950/60 text-slate-400"
+            : "border-slate-300/80 bg-slate-100/75 text-slate-600"
+        )}
+      >
+        {ticksX.map((t, idx) => (
+          <div
+            key={`rx-${idx}-${t.val}`}
+            style={{ left: t.screenX }}
+            className="absolute bottom-0 flex flex-col items-center"
+          >
+            {/* Notch / Entalhe */}
+            <div
+              className={cn(
+                "w-px",
+                t.isMajor
+                  ? isDark ? "h-2.5 bg-slate-400" : "h-2.5 bg-slate-600"
+                  : isDark ? "h-1 bg-slate-700" : "h-1 bg-slate-300"
+              )}
+            />
+            {/* Rótulo Numérico nas Divisões Principais */}
+            {t.isMajor && (
+              <span
+                style={{ transform: "translateX(-50%)" }}
+                className={cn(
+                  "absolute top-0.5 font-mono text-[7.5px] tracking-tight",
+                  t.val === 0
+                    ? isDark ? "text-red-400 font-bold" : "text-red-600 font-bold"
+                    : isDark ? "text-slate-400" : "text-slate-600"
+                )}
+              >
+                {t.val}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Régua Vertical Esquerda */}
+      <div
+        className={cn(
+          "absolute inset-y-0 left-0 w-5 border-r backdrop-blur-sm",
+          isDark
+            ? "border-slate-800/80 bg-slate-950/60 text-slate-400"
+            : "border-slate-300/80 bg-slate-100/75 text-slate-600"
+        )}
+      >
+        {ticksY.map((t, idx) => (
+          <div
+            key={`ry-${idx}-${t.val}`}
+            style={{ top: t.screenY }}
+            className="absolute right-0 flex items-center"
+          >
+            {/* Rótulo Numérico */}
+            {t.isMajor && (
+              <span
+                style={{ transform: "translateY(-50%)" }}
+                className={cn(
+                  "absolute right-3 font-mono text-[7.5px] tracking-tight",
+                  t.val === 0
+                    ? isDark ? "text-green-400 font-bold" : "text-green-600 font-bold"
+                    : isDark ? "text-slate-400" : "text-slate-600"
+                )}
+              >
+                {t.val}
+              </span>
+            )}
+            {/* Notch / Entalhe */}
+            <div
+              className={cn(
+                "h-px",
+                t.isMajor
+                  ? isDark ? "w-2.5 bg-slate-400" : "w-2.5 bg-slate-600"
+                  : isDark ? "w-1 bg-slate-700" : "w-1 bg-slate-300"
+              )}
+            />
+          </div>
+        ))}
       </div>
     </div>
   );
