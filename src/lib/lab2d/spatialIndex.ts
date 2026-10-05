@@ -110,12 +110,22 @@ export function viewportBox(
   height: number,
   marginPx = 64,
 ): Box {
-  const toWorldX = (px: number) => (px - view.tx) / view.k;
-  const toWorldY = (py: number) => (py - view.ty) / view.k;
+  const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+  const safeTx = Number.isFinite(view.tx) ? view.tx : 0;
+  const safeTy = Number.isFinite(view.ty) ? view.ty : 0;
+  const safeW = Number.isFinite(width) && width > 0 ? width : 800;
+  const safeH = Number.isFinite(height) && height > 0 ? height : 600;
+
+  const toWorldX = (px: number) => (px - safeTx) / safeK;
+  const toWorldY = (py: number) => (py - safeTy) / safeK;
+  const x1 = toWorldX(-marginPx);
+  const x2 = toWorldX(safeW + marginPx);
+  const y1 = toWorldY(-marginPx);
+  const y2 = toWorldY(safeH + marginPx);
   return {
-    minX: toWorldX(-marginPx),
-    minY: toWorldY(-marginPx),
-    maxX: toWorldX(width + marginPx),
-    maxY: toWorldY(height + marginPx),
+    minX: Math.min(x1, x2),
+    minY: Math.min(y1, y2),
+    maxX: Math.max(x1, x2),
+    maxY: Math.max(y1, y2),
   };
 }

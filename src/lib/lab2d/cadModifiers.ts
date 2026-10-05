@@ -507,7 +507,6 @@ export function mirrorAcrossAxis(
     case "line":
       return {
         ...e,
-        id: uid(),
         x1: reflect({ x: e.x1, y: e.y1 }).x,
         y1: reflect({ x: e.x1, y: e.y1 }).y,
         x2: reflect({ x: e.x2, y: e.y2 }).x,
@@ -516,23 +515,43 @@ export function mirrorAcrossAxis(
     case "polyline":
       return {
         ...e,
-        id: uid(),
         pts: e.pts.map(reflect),
       };
     case "circle": {
       const refC = reflect({ x: e.cx, y: e.cy });
-      return { ...e, id: uid(), cx: refC.x, cy: refC.y };
+      return { ...e, cx: refC.x, cy: refC.y };
+    }
+    case "arc": {
+      const refC = reflect({ x: e.cx, y: e.cy });
+      const p0 = reflect({ x: e.cx + e.r * Math.cos(e.a0), y: e.cy + e.r * Math.sin(e.a0) });
+      const p1 = reflect({ x: e.cx + e.r * Math.cos(e.a1), y: e.cy + e.r * Math.sin(e.a1) });
+      return {
+        ...e,
+        cx: refC.x,
+        cy: refC.y,
+        a0: Math.atan2(p1.y - refC.y, p1.x - refC.x),
+        a1: Math.atan2(p0.y - refC.y, p0.x - refC.x),
+      };
+    }
+    case "ellipse": {
+      const refC = reflect({ x: e.cx, y: e.cy });
+      const lineAngle = Math.atan2(dy, dx);
+      const newRot = 2 * lineAngle - (e.rotation ?? 0);
+      return { ...e, cx: refC.x, cy: refC.y, rotation: newRot };
     }
     case "point": {
       const refP = reflect({ x: e.x, y: e.y });
-      return { ...e, id: uid(), x: refP.x, y: refP.y };
+      return { ...e, x: refP.x, y: refP.y };
     }
     case "text": {
       const refP = reflect({ x: e.x, y: e.y });
-      return { ...e, id: uid(), x: refP.x, y: refP.y };
+      return { ...e, x: refP.x, y: refP.y };
+    }
+    case "hatch": {
+      return { ...e, boundaryPts: e.boundaryPts.map(reflect) };
     }
     default:
-      return { ...e, id: uid() };
+      return e;
   }
 }
 
@@ -746,6 +765,17 @@ export function rotateEntityAroundPoint(e: Entity, center: Vec2, angleRad: numbe
     case "point": {
       const p = rot({ x: e.x, y: e.y });
       return { ...e, x: p.x, y: p.y };
+    }
+    case "ellipse": {
+      const c = rot({ x: e.cx, y: e.cy });
+      return { ...e, cx: c.x, cy: c.y, rotation: (e.rotation ?? 0) + angleRad };
+    }
+    case "text": {
+      const p = rot({ x: e.x, y: e.y });
+      return { ...e, x: p.x, y: p.y, rotation: (e.rotation ?? 0) + (angleRad * 180) / Math.PI };
+    }
+    case "hatch": {
+      return { ...e, boundaryPts: e.boundaryPts.map(rot) };
     }
     default:
       return e;

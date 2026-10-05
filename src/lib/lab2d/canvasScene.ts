@@ -94,15 +94,22 @@ const screenSize = (b: Box | undefined, k: number) =>
 export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
   const { view, width, height, dpr, index, selection, lod } = opts;
 
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, width, height);
-  ctx.setTransform(dpr * view.k, 0, 0, dpr * view.k, dpr * view.tx, dpr * view.ty);
+  const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+  const safeTx = Number.isFinite(view.tx) ? view.tx : 0;
+  const safeTy = Number.isFinite(view.ty) ? view.ty : 0;
+  const safeW = Number.isFinite(width) && width > 0 ? width : 800;
+  const safeH = Number.isFinite(height) && height > 0 ? height : 600;
+  const safeDpr = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
+
+  ctx.setTransform(safeDpr, 0, 0, safeDpr, 0, 0);
+  ctx.clearRect(0, 0, safeW, safeH);
+  ctx.setTransform(safeDpr * safeK, 0, 0, safeDpr * safeK, safeDpr * safeTx, safeDpr * safeTy);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  const box = viewportBox(view, width, height);
+  const box = viewportBox({ k: safeK, tx: safeTx, ty: safeTy }, safeW, safeH);
   const list = paintOrder(index.query(box));
-  const inv = 1 / view.k;
+  const inv = 1 / safeK;
 
   // agrupa por estilo para minimizar trocas de estado do contexto
   let currentLayer = "";

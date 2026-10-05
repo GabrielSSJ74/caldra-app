@@ -86,6 +86,7 @@ import {
   offsetEntity,
   optimize,
   overlaps,
+  pointInPoly,
   polygonEntity,
   rectPolyline,
   rotate,
@@ -457,6 +458,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const canvasViewportRef = useRef<HTMLDivElement>(null);
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
 
   // Inicialização sonora CAD do CHAMFER (Seção 5)
@@ -593,7 +595,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const past = useRef<Entity[][]>([]);
   const future = useRef<Entity[][]>([]);
   const panRef = useRef<{ x: number; y: number } | null>(null);
-  const moveRef = useRef<{ from: Vec2; ids: string[]; base: Entity[] } | null>(null);
+  const moveRef = useRef<{ from: Vec2; ids: string[]; base: Entity[]; moved?: boolean } | null>(null);
   /* ponteiros ativos (toque/caneta/mouse) para gesto de pinça */
   const ptrsRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef<{ dist: number; mx: number; my: number } | null>(null);
@@ -630,12 +632,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   /* --------------------------------------------------------- coordenadas */
   const toWorld = useCallback((ev: { clientX: number; clientY: number }): Vec2 => {
-    const r = svgRef.current?.getBoundingClientRect();
+    const el = canvasViewportRef.current ?? svgRef.current;
+    const r = el?.getBoundingClientRect();
     if (!r) return { x: 0, y: 0 };
     const v = viewRef.current;
+    const safeK = v && Number.isFinite(v.k) && v.k > 0 ? v.k : 1;
+    const safeTx = v && Number.isFinite(v.tx) ? v.tx : 0;
+    const safeTy = v && Number.isFinite(v.ty) ? v.ty : 0;
     return {
-      x: (ev.clientX - r.left - v.tx) / v.k,
-      y: (ev.clientY - r.top - v.ty) / v.k,
+      x: (ev.clientX - r.left - safeTx) / safeK,
+      y: (ev.clientY - r.top - safeTy) / safeK,
     };
   }, []);
 
@@ -651,7 +657,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
-    const el = svgRef.current;
+    const el = canvasViewportRef.current ?? svgRef.current;
     const r = el?.getBoundingClientRect();
     const rw = canvasSize.w > 20 ? canvasSize.w : r?.width || el?.clientWidth || window.innerWidth || 800;
     const rh = canvasSize.h > 20 ? canvasSize.h : r?.height || el?.clientHeight || window.innerHeight || 600;
@@ -675,8 +681,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       ty: rh / 2 - cy * k,
     };
 
-    viewRef.current = nextView;
-    setView(nextView);
+    if (Number.isFinite(nextView.k) && Number.isFinite(nextView.tx) && Number.isFinite(nextView.ty)) {
+      viewRef.current = nextView;
+      setView(nextView);
+    }
   }, [canvasSize.w, canvasSize.h]);
 
   const fitTo = useCallback((list: Entity[]) => fitBox(bbox(list)), [fitBox]);
@@ -684,9 +692,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   /** Enquadra a moldura de trabalho inteira. */
   const fitFrame = useCallback(() => fitBox(frameBox(frame)), [fitBox, frame]);
 
+  const fitBoxRef = useRef(fitBox);
+  fitBoxRef.current = fitBox;
+  const entitiesRef = useRef(entities);
+  entitiesRef.current = entities;
+  const loadedProjectIdRef = useRef<string | null>(null);
+
   /* ------------------------------------------- projeto, planos e autosave */
   useEffect(() => {
     if (!projectId) return;
+    if (loadedProjectIdRef.current === projectId) return;
+    loadedProjectIdRef.current = projectId;
+
     const p = getProject(projectId);
     if (!p) return;
     setProject(p);
@@ -718,12 +735,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     requestAnimationFrame(() => {
       const b = bbox(plan.entities);
       if (b && Number.isFinite(b.minX) && b.maxX - b.minX > 1) {
-        fitBox(b);
+        fitBoxRef.current(b);
       } else {
-        fitBox(frameBox(loadFrame()));
+        fitBoxRef.current(frameBox(loadFrame()));
       }
     });
-  }, [projectId, fitBox]);
+  }, [projectId]);
 
   /* MODO PROJETO — desenho vinculado a uma peça do dossiê */
   const [dossier, setDossier] = useState<{
@@ -798,8 +815,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
-    // Intervalo configurado pelo usuário no projeto
-    const intervalMs = Math.max(5000, (chamferSettings.autoSaveIntervalSec || 30) * 1000);
+    // Intervalo configurado pelo usuário no projeto (salvamento ágil para garantir persistência)
+    const intervalMs = Math.max(1000, Math.min(3000, (chamferSettings.autoSaveIntervalSec || 2) * 1000));
     const t = setTimeout(() => {
       performSave();
     }, intervalMs);
@@ -966,26 +983,54 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const zoomAt = useCallback(
     (factor: number, px: number, py: number) => {
       const v = viewRef.current;
-      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * factor));
-      const ratio = next / v.k;
-      const nv = { k: next, tx: px - (px - v.tx) * ratio, ty: py - (py - v.ty) * ratio };
-      applyView(nv);
-      markGesture();
-      return nv;
+      const curK = v && Number.isFinite(v.k) && v.k > 0 ? v.k : 1;
+      const curTx = v && Number.isFinite(v.tx) ? v.tx : 0;
+      const curTy = v && Number.isFinite(v.ty) ? v.ty : 0;
+
+      const safeFactor = Number.isFinite(factor) && factor > 0 ? factor : 1;
+      const safePx = Number.isFinite(px)
+        ? px
+        : canvasSize.w > 0
+          ? canvasSize.w / 2
+          : window.innerWidth / 2;
+      const safePy = Number.isFinite(py)
+        ? py
+        : canvasSize.h > 0
+          ? canvasSize.h / 2
+          : window.innerHeight / 2;
+
+      const next = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, curK * safeFactor));
+      const ratio = next / curK;
+      const nv = {
+        k: next,
+        tx: safePx - (safePx - curTx) * ratio,
+        ty: safePy - (safePy - curTy) * ratio,
+      };
+      if (Number.isFinite(nv.k) && Number.isFinite(nv.tx) && Number.isFinite(nv.ty)) {
+        applyView(nv);
+        markGesture();
+        return nv;
+      }
+      return { k: curK, tx: curTx, ty: curTy };
     },
-    [applyView, markGesture],
+    [applyView, markGesture, canvasSize.w, canvasSize.h],
   );
 
   useEffect(() => {
-    const el = svgRef.current;
+    const el = canvasViewportRef.current ?? svgRef.current;
     if (!el) return;
     const onWheel = (ev: WheelEvent) => {
       ev.preventDefault();
+      ev.stopPropagation();
       const dy = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 100 : 1);
+      if (!Number.isFinite(dy) || dy === 0) return;
       const r = el.getBoundingClientRect();
-      // ctrlKey = pinça de trackpad: mesma equação, ancorada no cursor
       const intensity = ev.ctrlKey ? 0.01 : 0.0015;
-      const v = zoomAt(Math.exp(-dy * intensity), ev.clientX - r.left, ev.clientY - r.top);
+      const clampedDy = Math.max(-800, Math.min(800, dy));
+      const factor = Math.exp(-clampedDy * intensity);
+      const px = ev.clientX - r.left;
+      const py = ev.clientY - r.top;
+      const v = zoomAt(factor, px, py);
       flashZoom(v.k);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
@@ -1020,15 +1065,46 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const hitTest = useCallback(
     (p: Vec2): Entity | null => {
-      const tol = 6 / view.k;
+      const tol = 8 / view.k;
       let best: { e: Entity; d: number } | null = null;
-      for (const e of near(p, tol)) {
+      for (const e of near(p, Math.max(tol, 25 / view.k))) {
         if (layerOf(e.layer)?.locked) continue;
         let d = Infinity;
-        if (e.type === "circle" || e.type === "arc")
+        if (e.type === "circle") {
+          const cd = dist(p, { x: e.cx, y: e.cy });
+          if (cd <= e.r) {
+            d = 0; // clique na área interna do círculo
+          } else {
+            d = Math.abs(cd - e.r);
+          }
+        } else if (e.type === "arc") {
           d = Math.abs(dist(p, { x: e.cx, y: e.cy }) - e.r);
-        else if (e.type === "text") d = dist(p, { x: e.x, y: e.y });
-        else for (const s of segmentsOf(e)) d = Math.min(d, dist(p, closestOnSegment(p, s)));
+        } else if (e.type === "ellipse") {
+          const dx = p.x - e.cx;
+          const dy = p.y - e.cy;
+          const rot = e.rotation ?? 0;
+          const cosR = Math.cos(-rot);
+          const sinR = Math.sin(-rot);
+          const ux = dx * cosR - dy * sinR;
+          const uy = dx * sinR + dy * cosR;
+          const rx = Math.max(e.rx, 1e-4);
+          const ry = Math.max(e.ry, 1e-4);
+          const normD = (ux / rx) ** 2 + (uy / ry) ** 2;
+          if (normD <= 1) {
+            d = 0; // clique na área interna da elipse
+          } else {
+            d = Math.abs(Math.sqrt(normD) - 1) * Math.min(rx, ry);
+          }
+        } else if (e.type === "text") {
+          d = dist(p, { x: e.x, y: e.y });
+        } else {
+          for (const s of segmentsOf(e)) d = Math.min(d, dist(p, closestOnSegment(p, s)));
+          if (e.type === "polyline" && e.closed && e.pts.length >= 3) {
+            if (pointInPoly(p, e.pts)) {
+              d = 0; // clique na área interna da polilinha/retângulo/polígono fechado
+            }
+          }
+        }
         if (d <= tol && (!best || d < best.d)) best = { e, d };
       }
       return best?.e ?? null;
@@ -1061,11 +1137,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         if (!initialFitDoneRef.current) {
           initialFitDoneRef.current = true;
           requestAnimationFrame(() => {
-            const b = entities.length > 0 ? bbox(entities) : null;
+            const list = entitiesRef.current;
+            const b = list.length > 0 ? bbox(list) : null;
             if (b && Number.isFinite(b.minX) && b.maxX - b.minX > 1) {
-              fitBox(b);
+              fitBoxRef.current(b);
             } else {
-              fitBox(frameBox(loadFrame()));
+              fitBoxRef.current(frameBox(loadFrame()));
             }
           });
         }
@@ -1073,7 +1150,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [entities, fitBox]);
+  }, []);
 
   // Diagnóstico técnico 2D (Seção 5 do prompt — controlado, sem poluição de log contínua)
   useEffect(() => {
@@ -1294,15 +1371,32 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         return { ...e, pts: e.pts.map(sc) };
       case "circle": {
         const c = sc({ x: e.cx, y: e.cy });
-        return { ...e, cx: c.x, cy: c.y, r: e.r * factor };
+        return { ...e, cx: c.x, cy: c.y, r: Math.max(0.1, e.r * factor) };
       }
       case "arc": {
         const c = sc({ x: e.cx, y: e.cy });
-        return { ...e, cx: c.x, cy: c.y, r: e.r * factor };
+        return { ...e, cx: c.x, cy: c.y, r: Math.max(0.1, e.r * factor) };
       }
       case "point": {
         const p = sc({ x: e.x, y: e.y });
         return { ...e, x: p.x, y: p.y };
+      }
+      case "ellipse": {
+        const c = sc({ x: e.cx, y: e.cy });
+        return {
+          ...e,
+          cx: c.x,
+          cy: c.y,
+          rx: Math.max(0.1, e.rx * factor),
+          ry: Math.max(0.1, e.ry * factor),
+        };
+      }
+      case "text": {
+        const p = sc({ x: e.x, y: e.y });
+        return { ...e, x: p.x, y: p.y, size: Math.max(0.5, e.size * factor) };
+      }
+      case "hatch": {
+        return { ...e, boundaryPts: e.boundaryPts.map(sc) };
       }
       default:
         return e;
@@ -1603,11 +1697,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const finishPolyline = useCallback(
     (close: boolean) => {
       const points = finishPolylinePoints(pending, close);
-      if (points.length > 1)
+      if (points.length > 1) {
+        const polyId = uid();
         commit((p) => [
           ...p,
-          { id: uid(), layer: activeLayer, type: "polyline", pts: points, closed: close },
+          { id: polyId, layer: activeLayer, type: "polyline", pts: points, closed: close },
         ]);
+        setSelection([polyId]);
+        setTool("select");
+      }
       setPending([]);
       setDraft(null);
     },
@@ -1672,23 +1770,26 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
 
     if (tool === "select" || tool === "node") {
-      const hit = hitTest(raw);
-      if (tool === "node" && hit && selection.includes(hit.id)) {
-        const pts = entityPoints(hit);
-        let idx = -1;
-        let bd = 8 / view.k;
-        pts.forEach((q, i) => {
-          const d = dist(q, raw);
-          if (d < bd) {
-            bd = d;
-            idx = i;
-          }
-        });
-        if (idx >= 0) {
-          setDragNode({ id: hit.id, index: idx });
+      // Se clicou sobre um dos nós da seleção ativa (grip node), inicia edição direta do vértice
+      if (selection.length > 0) {
+        let bestNode: { id: string; index: number; dist: number } | null = null;
+        const bd = 10 / view.k;
+        for (const selEnt of selected) {
+          const pts = entityPoints(selEnt);
+          pts.forEach((q, i) => {
+            const d = dist(q, raw);
+            if (d < bd && (!bestNode || d < bestNode.dist)) {
+              bestNode = { id: selEnt.id, index: i, dist: d };
+            }
+          });
+        }
+        if (bestNode) {
+          setDragNode({ id: bestNode.id, index: bestNode.index });
           return;
         }
       }
+
+      const hit = hitTest(raw);
       if (hit) {
         // clique num membro seleciona o GRUPO inteiro; Ctrl/⌘ isola o membro
         const solo = ev.ctrlKey || ev.metaKey;
@@ -1701,7 +1802,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             ? selection
             : target;
         setSelection(nextSel);
-        if (tool === "select") moveRef.current = { from: raw, ids: nextSel, base: entities };
+        if (tool === "select") moveRef.current = { from: raw, ids: nextSel, base: entities, moved: false };
         return;
       }
       if (!ev.shiftKey) setSelection([]);
@@ -1752,7 +1853,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (q.length === 3) {
         const [a, b, c] = q as [Vec2, Vec2, Vec2];
         const arc = arcFrom3(a, b, c, activeLayer);
-        if (arc) commit((e) => [...e, arc]);
+        if (arc) {
+          commit((e) => [...e, arc]);
+          setSelection([arc.id]);
+          setTool("select");
+        }
         setPending([]);
         setDraft(null);
       } else setPending(q);
@@ -1954,7 +2059,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const p = snapPoint(raw);
       const dx = p.x - from.x;
       const dy = p.y - from.y;
-      setEntities(base.map((e) => (ids.includes(e.id) ? translate(e, dx, dy) : e)));
+      if (Math.hypot(dx, dy) > 0.5) {
+        moveRef.current.moved = true;
+        setEntities(base.map((e) => (ids.includes(e.id) ? translate(e, dx, dy) : e)));
+      }
       return;
     }
     if (marquee) {
@@ -2036,11 +2144,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
     if (moveRef.current) {
+      const wasMoved = moveRef.current.moved;
       const base = moveRef.current.base;
       moveRef.current = null;
-      past.current = [...past.current, base];
-      // mover pode invalidar um trecho comum ligado a peça fora do grupo
-      setEntities((list) => revalidateShared(list));
+      if (wasMoved) {
+        past.current = [...past.current, base];
+        // mover pode invalidar um trecho comum ligado a peça fora do grupo
+        setEntities((list) => revalidateShared(list));
+      }
       return;
     }
     if (marquee) {
@@ -2067,6 +2178,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             ? { ...draft, id: uid() }
             : draft;
         commit((e) => [...e, finalEntity]);
+        setSelection([finalEntity.id]);
+        setTool("select");
       }
       setDraft(null);
       setPending([]);
@@ -2126,6 +2239,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setDraft(null);
         setSelection([]);
         setMeasures([]);
+        setTool("select");
       }
       if (ev.key === "Enter" && tool === "polyline") finishPolyline(false);
       if (ev.key === "F3") {
@@ -2591,29 +2705,41 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const selectionText = useMemo(() => {
     if (selected.length === 0) return "Nenhuma seleção";
     if (selected.length === 1) {
-      const ent = entities.find((e) => e.id === selected[0]);
+      const ent = selected[0];
       if (!ent) return "1 entidade selecionada";
       switch (ent.type) {
         case "line": {
-          const len = Math.hypot(ent.b.x - ent.a.x, ent.b.y - ent.a.y).toFixed(1);
+          const len = Math.hypot(ent.x2 - ent.x1, ent.y2 - ent.y1).toFixed(1);
           return `Linha (L: ${len} mm)`;
         }
         case "circle":
           return `Círculo (Ø ${(ent.r * 2).toFixed(1)} mm)`;
         case "arc":
           return `Arco (R ${ent.r.toFixed(1)} mm)`;
-        case "rect":
-          return `Retângulo (${ent.w.toFixed(1)} × ${ent.h.toFixed(1)} mm)`;
-        case "polyline":
-          return `Polilinha (${ent.pts.length} vértices)`;
+        case "polyline": {
+          const b = boxOf(ent);
+          const w = (b.maxX - b.minX).toFixed(1);
+          const h = (b.maxY - b.minY).toFixed(1);
+          return ent.closed
+            ? `Retângulo/Polilinha (${w} × ${h} mm)`
+            : `Polilinha (${ent.pts.length} vértices)`;
+        }
+        case "ellipse":
+          return `Elipse (${(ent.rx * 2).toFixed(1)} × ${(ent.ry * 2).toFixed(1)} mm)`;
+        case "point":
+          return `Ponto (${ent.x.toFixed(1)}, ${ent.y.toFixed(1)})`;
         case "text":
           return `Texto ("${ent.text}")`;
+        case "path":
+          return `Curva Bézier`;
+        case "hatch":
+          return `Hachura`;
         default:
           return "1 entidade selecionada";
       }
     }
     return `${selected.length} entidades selecionadas`;
-  }, [selected, entities]);
+  }, [selected]);
 
   const operationFeedback = useMemo(() => {
     return getOperationFeedback(tool, pending.length, selected.length);
@@ -3157,6 +3283,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
         {/* REGIÃO C — CANVAS CAD PRINCIPAL (DOMINANTE, OCUPANDO A MAIOR ÁREA POSSÍVEL) */}
         <div
+          ref={canvasViewportRef}
           className={cn(
             "relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border shadow-inner transition-colors",
             isDark
@@ -4703,7 +4830,7 @@ function Rulers({
       {/* Régua Horizontal Superior */}
       <div
         className={cn(
-          "absolute inset-x-0 top-0 h-5 border-b backdrop-blur-sm",
+          "pointer-events-none absolute inset-x-0 top-0 h-5 border-b backdrop-blur-sm",
           isDark
             ? "border-slate-800/80 bg-slate-950/60 text-slate-400"
             : "border-slate-300/80 bg-slate-100/75 text-slate-600"
@@ -4745,7 +4872,7 @@ function Rulers({
       {/* Régua Vertical Esquerda */}
       <div
         className={cn(
-          "absolute inset-y-0 left-0 w-5 border-r backdrop-blur-sm",
+          "pointer-events-none absolute inset-y-0 left-0 w-5 border-r backdrop-blur-sm",
           isDark
             ? "border-slate-800/80 bg-slate-950/60 text-slate-400"
             : "border-slate-300/80 bg-slate-100/75 text-slate-600"
@@ -4794,14 +4921,87 @@ const TYPE_LABEL: Record<Entity["type"], string> = {
   arc: "Arco",
   path: "Curva",
   text: "Texto",
+  point: "Ponto Técnico",
+  ellipse: "Elipse",
+  hatch: "Hachura",
 };
 
 const deg = (r: number) => (r * 180) / Math.PI;
 const rad = (d: number) => (d * Math.PI) / 180;
 
+function DimensionNumberField({
+  label,
+  value,
+  onChange,
+  unit,
+  min,
+  allowZero = false,
+}: {
+  label: string;
+  value: number;
+  onChange: (val: number) => void;
+  unit?: string;
+  min?: number;
+  allowZero?: boolean;
+}) {
+  const [text, setText] = useState<string>(() =>
+    Number.isFinite(value) ? Number(value.toFixed(2)).toString() : "0",
+  );
+
+  useEffect(() => {
+    if (Number.isFinite(value)) {
+      setText(Number(value.toFixed(2)).toString());
+    }
+  }, [value]);
+
+  const commit = (strVal: string) => {
+    const trimmed = strVal.trim();
+    if (!trimmed) {
+      setText(Number.isFinite(value) ? Number(value.toFixed(2)).toString() : "0");
+      return;
+    }
+    const parsed = parseFloat(trimmed);
+    if (!Number.isFinite(parsed)) {
+      setText(Number.isFinite(value) ? Number(value.toFixed(2)).toString() : "0");
+      return;
+    }
+    if (!allowZero && parsed <= 0 && min !== undefined && min > 0) {
+      setText(Number.isFinite(value) ? Number(value.toFixed(2)).toString() : "0");
+      return;
+    }
+    const finalVal = min !== undefined ? Math.max(min, parsed) : parsed;
+    setText(Number(finalVal.toFixed(2)).toString());
+    onChange(finalVal);
+  };
+
+  return (
+    <label className="flex items-center justify-between gap-2 py-0.5">
+      <span className="font-mono text-[9px] text-muted-foreground uppercase">{label}</span>
+      <span className="flex items-center gap-1">
+        <input
+          type="number"
+          inputMode="decimal"
+          step="any"
+          value={text}
+          onChange={(ev) => setText(ev.target.value)}
+          onBlur={(ev) => commit(ev.target.value)}
+          onKeyDown={(ev) => {
+            if (ev.key === "Enter") {
+              commit(ev.currentTarget.value);
+              ev.currentTarget.blur();
+            }
+          }}
+          className="w-20 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-right font-mono text-[11px] outline-none focus:border-accent focus:ring-1 focus:ring-accent/40"
+        />
+        {unit && <span className="font-mono text-[8px] text-muted-foreground">{unit}</span>}
+      </span>
+    </label>
+  );
+}
+
 /**
  * DimensionEditor — painel universal de propriedades e dimensões.
- * Funciona para qualquer entidade: edição numérica atualiza a geometria na hora.
+ * Funciona para qualquer entidade: edição numérica atualiza a geometria na hora sem perda.
  */
 function DimensionEditor({
   e,
@@ -4816,24 +5016,23 @@ function DimensionEditor({
   actions?: React.ReactNode;
   onEditText?: () => void;
 }) {
-  const field = (label: string, value: number, set: (n: number) => void, unit?: string) => (
-    <label key={label} className="flex items-center justify-between gap-2 py-0.5">
-      <span className="font-mono text-[9px] text-muted-foreground uppercase">{label}</span>
-      <span className="flex items-center gap-1">
-        <input
-          type="number"
-          inputMode="decimal"
-          step="any"
-          value={Number(value.toFixed(2))}
-          onChange={(ev) => {
-            const n = Number(ev.target.value);
-            if (Number.isFinite(n)) set(n);
-          }}
-          className="w-20 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-right font-mono text-[11px] outline-none"
-        />
-        {unit && <span className="font-mono text-[8px] text-muted-foreground">{unit}</span>}
-      </span>
-    </label>
+  const field = (
+    label: string,
+    value: number,
+    set: (n: number) => void,
+    unit?: string,
+    min?: number,
+    allowZero = false,
+  ) => (
+    <DimensionNumberField
+      key={label}
+      label={label}
+      value={value}
+      onChange={set}
+      unit={unit}
+      min={min}
+      allowZero={allowZero}
+    />
   );
 
   const info = (text: string, key?: string) => (
@@ -4844,10 +5043,10 @@ function DimensionEditor({
 
   if (e.type === "circle") {
     body.push(
-      field("X", e.cx, (n) => onChange({ ...e, cx: n }), "mm"),
-      field("Y", e.cy, (n) => onChange({ ...e, cy: n }), "mm"),
-      field("R", e.r, (n) => onChange({ ...e, r: Math.max(n, 0.01) }), "mm"),
-      field("Ø", e.r * 2, (n) => onChange({ ...e, r: Math.max(n / 2, 0.01) }), "mm"),
+      field("X", e.cx, (n) => onChange({ ...e, cx: n }), "mm", undefined, true),
+      field("Y", e.cy, (n) => onChange({ ...e, cy: n }), "mm", undefined, true),
+      field("R", e.r, (n) => { if (n > 0.05) onChange({ ...e, r: n }); }, "mm", 0.1),
+      field("Ø", e.r * 2, (n) => { if (n > 0.1) onChange({ ...e, r: n / 2 }); }, "mm", 0.2),
     );
   }
 
@@ -4857,12 +5056,12 @@ function DimensionEditor({
     const setPolar = (l: number, a: number) =>
       onChange({ ...e, x2: e.x1 + l * Math.cos(a), y2: e.y1 + l * Math.sin(a) });
     body.push(
-      field("X1", e.x1, (n) => onChange({ ...e, x1: n }), "mm"),
-      field("Y1", e.y1, (n) => onChange({ ...e, y1: n }), "mm"),
-      field("X2", e.x2, (n) => onChange({ ...e, x2: n }), "mm"),
-      field("Y2", e.y2, (n) => onChange({ ...e, y2: n }), "mm"),
-      field("Compr.", len, (n) => setPolar(Math.max(n, 0.01), ang), "mm"),
-      field("Ângulo", deg(ang), (n) => setPolar(len, rad(n)), "°"),
+      field("X1", e.x1, (n) => onChange({ ...e, x1: n }), "mm", undefined, true),
+      field("Y1", e.y1, (n) => onChange({ ...e, y1: n }), "mm", undefined, true),
+      field("X2", e.x2, (n) => onChange({ ...e, x2: n }), "mm", undefined, true),
+      field("Y2", e.y2, (n) => onChange({ ...e, y2: n }), "mm", undefined, true),
+      field("Compr.", len, (n) => { if (n > 0.05) setPolar(n, ang); }, "mm", 0.1),
+      field("Ângulo", deg(ang), (n) => setPolar(len, rad(n)), "°", undefined, true),
     );
   }
 
@@ -4870,12 +5069,12 @@ function DimensionEditor({
     let sweep = e.a1 - e.a0;
     while (sweep < 0) sweep += Math.PI * 2;
     body.push(
-      field("X", e.cx, (n) => onChange({ ...e, cx: n }), "mm"),
-      field("Y", e.cy, (n) => onChange({ ...e, cy: n }), "mm"),
-      field("R", e.r, (n) => onChange({ ...e, r: Math.max(n, 0.01) }), "mm"),
-      field("Ø", e.r * 2, (n) => onChange({ ...e, r: Math.max(n / 2, 0.01) }), "mm"),
-      field("Âng. ini.", deg(e.a0), (n) => onChange({ ...e, a0: rad(n) }), "°"),
-      field("Âng. fim", deg(e.a1), (n) => onChange({ ...e, a1: rad(n) }), "°"),
+      field("X", e.cx, (n) => onChange({ ...e, cx: n }), "mm", undefined, true),
+      field("Y", e.cy, (n) => onChange({ ...e, cy: n }), "mm", undefined, true),
+      field("R", e.r, (n) => { if (n > 0.05) onChange({ ...e, r: n }); }, "mm", 0.1),
+      field("Ø", e.r * 2, (n) => { if (n > 0.1) onChange({ ...e, r: n / 2 }); }, "mm", 0.2),
+      field("Âng. ini.", deg(e.a0), (n) => onChange({ ...e, a0: rad(n) }), "°", undefined, true),
+      field("Âng. fim", deg(e.a1), (n) => onChange({ ...e, a1: rad(n) }), "°", undefined, true),
       info(`Arco ${(e.r * sweep).toFixed(2)} mm · ${deg(sweep).toFixed(1)}°`),
     );
   }
@@ -4899,31 +5098,60 @@ function DimensionEditor({
           }, 0) / 2,
         )
       : 0;
-    const scaleTo = (sx: number, sy: number) =>
+    const scaleTo = (sx: number, sy: number) => {
+      if (!Number.isFinite(sx) || !Number.isFinite(sy) || sx <= 0 || sy <= 0) return;
       onChange({
         ...e,
         pts: e.pts.map((p) => ({ x: minX + (p.x - minX) * sx, y: minY + (p.y - minY) * sy })),
       });
-    const moveTo = (x: number, y: number) =>
+    };
+    const moveTo = (x: number, y: number) => {
+      if (!Number.isFinite(x) || !Number.isFinite(y)) return;
       onChange({ ...e, pts: e.pts.map((p) => ({ x: p.x - minX + x, y: p.y - minY + y })) });
-    const rotateBy = (d: number) => {
+    };
+    const rotateBy = (angleRad: number) => {
       const cx = minX + w / 2;
       const cy = minY + h / 2;
-      const a = rad(d);
+      const cosA = Math.cos(angleRad);
+      const sinA = Math.sin(angleRad);
       onChange({
         ...e,
         pts: e.pts.map((p) => ({
-          x: cx + (p.x - cx) * Math.cos(a) - (p.y - cy) * Math.sin(a),
-          y: cy + (p.x - cx) * Math.sin(a) + (p.y - cy) * Math.cos(a),
+          x: cx + (p.x - cx) * cosA - (p.y - cy) * sinA,
+          y: cy + (p.x - cx) * sinA + (p.y - cy) * cosA,
         })),
       });
     };
     body.push(
-      field("X", minX, (n) => moveTo(n, minY), "mm"),
-      field("Y", minY, (n) => moveTo(minX, n), "mm"),
-      field("Largura", w, (n) => scaleTo(w > 0.001 ? Math.max(n, 0.01) / w : 1, 1), "mm"),
-      field("Altura", h, (n) => scaleTo(1, h > 0.001 ? Math.max(n, 0.01) / h : 1), "mm"),
-      field("Rotação", 0, (n) => rotateBy(n), "°"),
+      field("X", minX, (n) => moveTo(n, minY), "mm", undefined, true),
+      field("Y", minY, (n) => moveTo(minX, n), "mm", undefined, true),
+      field("Largura", w, (n) => {
+        if (n > 0.05 && w > 0.001) scaleTo(n / w, 1);
+      }, "mm", 0.1),
+      field("Altura", h, (n) => {
+        if (n > 0.05 && h > 0.001) scaleTo(1, n / h);
+      }, "mm", 0.1),
+      <div key="girar-btns" className="flex items-center justify-between gap-1 py-1">
+        <span className="font-mono text-[9px] text-muted-foreground uppercase">Girar</span>
+        <div className="flex gap-1">
+          <button
+            type="button"
+            onClick={() => rotateBy(-Math.PI / 2)}
+            className="rounded border border-line bg-background/50 px-2 py-0.5 font-mono text-[9.5px] hover:bg-muted"
+            title="Girar 90° anti-horário"
+          >
+            -90°
+          </button>
+          <button
+            type="button"
+            onClick={() => rotateBy(Math.PI / 2)}
+            className="rounded border border-line bg-background/50 px-2 py-0.5 font-mono text-[9.5px] hover:bg-muted"
+            title="Girar 90° horário"
+          >
+            +90°
+          </button>
+        </div>
+      </div>,
       info(
         `${e.pts.length} vértices · ${e.closed ? "fechada" : "aberta"} · ${perim.toFixed(1)} mm` +
           (area ? ` · ${(area / 100).toFixed(1)} cm²` : ""),
@@ -4931,18 +5159,38 @@ function DimensionEditor({
     );
   }
 
+  if (e.type === "ellipse") {
+    body.push(
+      field("Centro X", e.cx, (n) => onChange({ ...e, cx: n }), "mm", undefined, true),
+      field("Centro Y", e.cy, (n) => onChange({ ...e, cy: n }), "mm", undefined, true),
+      field("Raio X (Rx)", e.rx, (n) => { if (n > 0.05) onChange({ ...e, rx: n }); }, "mm", 0.1),
+      field("Raio Y (Ry)", e.ry, (n) => { if (n > 0.05) onChange({ ...e, ry: n }); }, "mm", 0.1),
+      field("Diâmetro X", e.rx * 2, (n) => { if (n > 0.1) onChange({ ...e, rx: n / 2 }); }, "mm", 0.2),
+      field("Diâmetro Y", e.ry * 2, (n) => { if (n > 0.1) onChange({ ...e, ry: n / 2 }); }, "mm", 0.2),
+      field("Rotação", ((e.rotation ?? 0) * 180) / Math.PI, (n) => onChange({ ...e, rotation: (n * Math.PI) / 180 }), "°", undefined, true),
+    );
+  }
+
+  if (e.type === "point") {
+    body.push(
+      field("X", e.x, (n) => onChange({ ...e, x: n }), "mm", undefined, true),
+      field("Y", e.y, (n) => onChange({ ...e, y: n }), "mm", undefined, true),
+    );
+  }
+
   if (e.type === "text") {
     body.push(
-      field("X", e.x, (n) => onChange({ ...e, x: n }), "mm"),
-      field("Y", e.y, (n) => onChange({ ...e, y: n }), "mm"),
-      field("Altura", e.size, (n) => onChange({ ...e, size: Math.max(n, 0.5) }), "mm"),
+      field("X", e.x, (n) => onChange({ ...e, x: n }), "mm", undefined, true),
+      field("Y", e.y, (n) => onChange({ ...e, y: n }), "mm", undefined, true),
+      field("Altura", e.size, (n) => { if (n > 0.1) onChange({ ...e, size: n }); }, "mm", 0.5),
       field(
         "Largura",
         e.width ?? Math.max(e.size, e.text.length * e.size * 0.6),
-        (n) => onChange({ ...e, width: Math.max(n, 0.5) }),
+        (n) => { if (n > 0.1) onChange({ ...e, width: n }); },
         "mm",
+        0.5,
       ),
-      field("Rotação", e.rotation ?? 0, (n) => onChange({ ...e, rotation: n }), "°"),
+      field("Rotação", e.rotation ?? 0, (n) => onChange({ ...e, rotation: n }), "°", undefined, true),
       <button
         key="editar-texto"
         onClick={onEditText}
@@ -4953,6 +5201,25 @@ function DimensionEditor({
     );
   }
 
+  if (e.type === "path") {
+    body.push(
+      field("Início X", e.start.x, (n) => onChange({ ...e, start: { ...e.start, x: n } }), "mm", undefined, true),
+      field("Início Y", e.start.y, (n) => onChange({ ...e, start: { ...e.start, y: n } }), "mm", undefined, true),
+      info(`Curva Bézier (${e.segs.length} segmentos · ${e.closed ? "fechada" : "aberta"})`),
+    );
+  }
+
+  if (e.type === "hatch") {
+    body.push(
+      field("Ângulo", e.angle, (n) => onChange({ ...e, angle: n }), "°", undefined, true),
+      field("Escala", e.scale, (n) => { if (n > 0.01) onChange({ ...e, scale: n }); }, "", 0.1),
+      info(`Hachura ${e.pattern} (${e.boundaryPts.length} vértices)`),
+    );
+  }
+
+  const isRect = e.type === "polyline" && e.closed && e.pts.length === 4;
+  const typeTitle = isRect ? "Retângulo" : (TYPE_LABEL[e.type] ?? e.type);
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-1.5">
@@ -4962,7 +5229,7 @@ function DimensionEditor({
           aria-hidden
         />
         <p className="font-mono text-[9px] tracking-[0.2em] text-foreground uppercase">
-          {TYPE_LABEL[e.type]}
+          {typeTitle}
         </p>
       </div>
       <div className="rounded-xl bg-background/30 p-1.5">{body}</div>

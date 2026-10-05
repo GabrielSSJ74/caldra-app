@@ -373,17 +373,49 @@ export const rotate = (e: Entity, o: Vec2, deg: number) => {
   const a = (deg * Math.PI) / 180;
   const c = Math.cos(a);
   const s = Math.sin(a);
-  return mapEntity(e, (p) => ({
+  const rot = (p: Vec2) => ({
     x: o.x + (p.x - o.x) * c - (p.y - o.y) * s,
     y: o.y + (p.x - o.x) * s + (p.y - o.y) * c,
-  }));
+  });
+  if (e.type === "arc") {
+    const cp = rot({ x: e.cx, y: e.cy });
+    return { ...e, cx: cp.x, cy: cp.y, a0: e.a0 + a, a1: e.a1 + a };
+  }
+  if (e.type === "ellipse") {
+    const cp = rot({ x: e.cx, y: e.cy });
+    return { ...e, cx: cp.x, cy: cp.y, rotation: (e.rotation ?? 0) + a };
+  }
+  if (e.type === "text") {
+    const cp = rot({ x: e.x, y: e.y });
+    return { ...e, x: cp.x, y: cp.y, rotation: (e.rotation ?? 0) + deg };
+  }
+  return mapEntity(e, rot);
 };
 
 export const scaleEntity = (e: Entity, o: Vec2, k: number) =>
   mapEntity(e, (p) => ({ x: o.x + (p.x - o.x) * k, y: o.y + (p.y - o.y) * k }), k);
 
-export const mirror = (e: Entity, o: Vec2, axis: "x" | "y") =>
-  mapEntity(e, (p) => (axis === "x" ? { x: 2 * o.x - p.x, y: p.y } : { x: p.x, y: 2 * o.y - p.y }));
+export const mirror = (e: Entity, o: Vec2, axis: "x" | "y") => {
+  const ref = (p: Vec2) => (axis === "x" ? { x: 2 * o.x - p.x, y: p.y } : { x: p.x, y: 2 * o.y - p.y });
+  if (e.type === "arc") {
+    const cp = ref({ x: e.cx, y: e.cy });
+    const p0 = ref({ x: e.cx + e.r * Math.cos(e.a0), y: e.cy + e.r * Math.sin(e.a0) });
+    const p1 = ref({ x: e.cx + e.r * Math.cos(e.a1), y: e.cy + e.r * Math.sin(e.a1) });
+    return {
+      ...e,
+      cx: cp.x,
+      cy: cp.y,
+      a0: Math.atan2(p1.y - cp.y, p1.x - cp.x),
+      a1: Math.atan2(p0.y - cp.y, p0.x - cp.x),
+    };
+  }
+  if (e.type === "ellipse") {
+    const cp = ref({ x: e.cx, y: e.cy });
+    const rot = e.rotation ?? 0;
+    return { ...e, cx: cp.x, cy: cp.y, rotation: axis === "x" ? Math.PI - rot : -rot };
+  }
+  return mapEntity(e, ref);
+};
 
 /* ------------------------------------------------------------ bounding box */
 
@@ -414,6 +446,19 @@ export function inside(b: Box, o: Box) {
 }
 export function overlaps(b: Box, o: Box) {
   return !(b.minX > o.maxX || b.maxX < o.minX || b.minY > o.maxY || b.maxY < o.minY);
+}
+
+/** Verifica se um ponto 2D está estritamente dentro de um polígono fechado (ray-casting). */
+export function pointInPoly(p: Vec2, poly: Vec2[]): boolean {
+  if (poly.length < 3) return false;
+  let isInside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i]!.x, yi = poly[i]!.y;
+    const xj = poly[j]!.x, yj = poly[j]!.y;
+    const intersect = yi > p.y !== yj > p.y && p.x < ((xj - xi) * (p.y - yi)) / (yj - yi) + xi;
+    if (intersect) isInside = !isInside;
+  }
+  return isInside;
 }
 
 /* ------------------------------------------------------------- construção */

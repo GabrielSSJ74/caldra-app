@@ -32,6 +32,9 @@ const TYPE_LABEL: Record<Entity["type"], string> = {
   arc: "ARC",
   path: "CURVA",
   text: "TEXTO",
+  point: "PONTO",
+  ellipse: "ELIPSE",
+  hatch: "HACHURA",
 };
 
 const MIXED = "MISTO";
