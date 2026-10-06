@@ -47,6 +47,7 @@ import {
   Sparkles,
   Split,
   Combine,
+  Divide,
   Grid,
   Magnet,
   Check,
@@ -102,6 +103,7 @@ interface ChamferCadToolbarProps {
   onBreakSelection: () => void;
   onJoinSelection: () => void;
   onExplodeSelection: () => void;
+  onDivideSelection?: () => void;
   onArrayLinear: () => void;
   onArrayPolar: () => void;
 
@@ -156,6 +158,7 @@ export function ChamferCadToolbar({
   onBreakSelection,
   onJoinSelection,
   onExplodeSelection,
+  onDivideSelection,
   onArrayLinear,
   onArrayPolar,
   snapOn,
@@ -294,7 +297,8 @@ export function ChamferCadToolbar({
           tool === "trim" ||
           tool === "extend" ||
           tool === "fillet" ||
-          tool === "chamfer"
+          tool === "chamfer" ||
+          tool === "divide"
         );
       case "precisao":
         return snapOn || orthoOn;
@@ -738,6 +742,21 @@ export function ChamferCadToolbar({
                       active={tool === "chamfer"}
                       onClick={() => handleSelectTool("chamfer", "modificar")}
                       desc="Corte chanfrado em quinas vivas"
+                    />
+                    <FlyoutItem
+                      label="Dividir em Partes"
+                      keyLabel="DIV"
+                      icon={Divide}
+                      active={tool === "divide"}
+                      onClick={() => {
+                        if (onDivideSelection && hasSelection) {
+                          onDivideSelection();
+                          setOpenCat("none");
+                        } else {
+                          handleSelectTool("divide", "modificar");
+                        }
+                      }}
+                      desc="Dividir peça ou contorno em N partes iguais"
                     />
 
                     <div className="my-1 h-px bg-slate-800" />

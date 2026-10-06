@@ -34,6 +34,7 @@ import {
   Square,
   Trash2,
   Triangle,
+  Divide,
   Undo2,
   Unlock,
   Upload,
@@ -184,6 +185,8 @@ import { Cad3DStage } from "@/components/lab2d/Cad3DStage";
 import { ChamferMobileContextualEditor } from "@/components/lab2d/mobileEdit/ChamferMobileContextualEditor";
 import { ChamferCompactNumericEditor } from "@/components/lab2d/mobileEdit/ChamferCompactNumericEditor";
 import { ChamferRightSidebar, type ChamferSidebarTab } from "@/components/lab2d/sidebar";
+import { ChamferDivideEditor } from "./ChamferDivideEditor";
+import { canDivideEntity, divideEntity, type DivideOptions } from "@/lib/lab2d/cadDivide";
 import { useSmartFraming } from "@/components/lab2d/mobileEdit/useSmartFraming";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -222,7 +225,8 @@ export type Tool =
   | "trim"
   | "extend"
   | "fillet"
-  | "chamfer";
+  | "chamfer"
+  | "divide";
 
 const TOOLS: { id: Tool; icon: typeof Minus; label: string; key: string }[] = [
   { id: "select", icon: MousePointer2, label: "Selecionar", key: "V" },
@@ -402,6 +406,11 @@ function getOperationFeedback(
       return {
         command: "CHANFRO",
         instruction: "Clique nas duas linhas concorrentes para aplicar o corte chanfrado",
+      };
+    case "divide":
+      return {
+        command: "DIVIDIR",
+        instruction: "Selecione a peça, contorno ou linha para dividir em partes iguais (2 a 50)",
       };
     case "measure":
       return {
@@ -583,10 +592,65 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [issues, setIssues] = useState<{ message: string; p: Vec2 }[] | null>(null);
   const [offsetDist, setOffsetDist] = useState(5);
   const [filletR, setFilletR] = useState(10);
+  /* FERRAMENTA DIVIDIR */
+  const [divideEditorOpen, setDivideEditorOpen] = useState(false);
+  const [divideParts, setDivideParts] = useState(2);
+  const [divideOptions, setDivideOptions] = useState<DivideOptions>({
+    rectMode: "plate",
+    rectAxis: "auto",
+  });
+  const [divideTargetEntity, setDivideTargetEntity] = useState<Entity | null>(null);
   const [dragNode, setDragNode] = useState<{ id: string; index: number } | null>(null);
   const [textOpen, setTextOpen] = useState(false);
   const [textSpec, setTextSpec] = useState<TextSpec | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
+
+  /* BARRA SUPERIOR — NAVEGAÇÃO POR SWIPE HORIZONTAL (TOUCH + MOUSE DRAG) */
+  const topBarRef = useRef<HTMLElement>(null);
+  const topBarSwipeRef = useRef<{
+    isDragging: boolean;
+    startX: number;
+    scrollLeft: number;
+  }>({
+    isDragging: false,
+    startX: 0,
+    scrollLeft: 0,
+  });
+
+  const handleTopBarPointerDown = useCallback((e: React.PointerEvent) => {
+    // Permite clique padrão em touch ou botão principal do mouse
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest("input, select")) return;
+
+    if (!topBarRef.current) return;
+    topBarSwipeRef.current = {
+      isDragging: true,
+      startX: e.clientX,
+      scrollLeft: topBarRef.current.scrollLeft,
+    };
+  }, []);
+
+  const handleTopBarPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!topBarSwipeRef.current.isDragging || !topBarRef.current) return;
+    const dx = e.clientX - topBarSwipeRef.current.startX;
+    if (Math.abs(dx) > 3) {
+      topBarRef.current.scrollLeft = topBarSwipeRef.current.scrollLeft - dx;
+    }
+  }, []);
+
+  const handleTopBarPointerUp = useCallback(() => {
+    topBarSwipeRef.current.isDragging = false;
+  }, []);
+
+  const handleTopBarWheel = useCallback((e: React.WheelEvent) => {
+    if (!topBarRef.current) return;
+    // Converte scroll vertical do mouse/trackpad em swipe horizontal natural na barra
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      topBarRef.current.scrollLeft += e.deltaY;
+    }
+  }, []);
+
   const clipboardRef = useRef<ChamferClipboard | null>(null);
   const [clipboardMenu, setClipboardMenu] = useState<{ x: number; y: number; world: Vec2 } | null>(
     null,
@@ -1481,7 +1545,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const updated = stretchSelection(entities, box, { x: 10, y: 0 });
     commit(updated);
     toast.success("Vértices esticados em +10mm.");
-  }, [selected.length, selected, boxOfEntities, entities, commit]);
+  }, [selected, boxOfEntities, entities, commit]);
 
   const handleBreakSelection = useCallback(() => {
     if (!selected.length) {
@@ -1502,7 +1566,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [selected, commit]);
 
   const handleJoinSelection = useCallback(() => {
-    if (selected.length < 2) {
+    if (selection.length < 2) {
       toast.info("Selecione pelo menos 2 linhas contíguas para unir.");
       return;
     }
@@ -1514,10 +1578,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     } else {
       toast.error("As entidades selecionadas não são contíguas para união.");
     }
-  }, [selected.length, entities, selection, commit]);
+  }, [entities, selection, commit]);
 
   const handleExplodeSelection = useCallback(() => {
-    if (!selected.length) {
+    if (!selection.length) {
       toast.info("Selecione polilinhas ou retângulos para explodir.");
       return;
     }
@@ -1545,7 +1609,54 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     } else {
       toast.info("Nenhuma polilinha compatível para explodir.");
     }
-  }, [selected.length, entities, selection, commit]);
+  }, [entities, selection, commit]);
+
+  /* FERRAMENTA DIVIDIR EM PARTES IGUAIS (2 a 50) */
+  const handleOpenDivide = useCallback(
+    (entityToDivide?: Entity) => {
+      const target = entityToDivide ?? selected[0] ?? null;
+      if (target && canDivideEntity(target)) {
+        triggerHaptic("selection");
+        setDivideTargetEntity(target);
+        setDivideEditorOpen(true);
+        if (!selection.includes(target.id)) {
+          setSelection([target.id]);
+        }
+      } else if (target) {
+        toast.info("A entidade selecionada não suporta divisão geométrica.");
+      } else {
+        setTool("divide");
+        toast.info("Clique na peça ou contorno que deseja dividir em partes iguais.");
+      }
+    },
+    [selected, selection],
+  );
+
+  const previewDividedEntities = useMemo(() => {
+    if (!divideEditorOpen || !divideTargetEntity) return [];
+    return divideEntity(divideTargetEntity, divideParts, divideOptions);
+  }, [divideEditorOpen, divideTargetEntity, divideParts, divideOptions]);
+
+  const handleConfirmDivide = useCallback(() => {
+    if (!divideTargetEntity || previewDividedEntities.length === 0) return;
+    triggerHaptic("action");
+    commit((prev) => [
+      ...prev.filter((e) => e.id !== divideTargetEntity.id),
+      ...previewDividedEntities,
+    ]);
+    setSelection(previewDividedEntities.map((e) => e.id));
+    setDivideEditorOpen(false);
+    setDivideTargetEntity(null);
+    setTool("select");
+    toast.success(`Peça dividida em ${divideParts} partes iguais!`);
+  }, [divideTargetEntity, previewDividedEntities, divideParts, commit]);
+
+  const handleCancelDivide = useCallback(() => {
+    triggerHaptic("tap");
+    setDivideEditorOpen(false);
+    setDivideTargetEntity(null);
+    setTool("select");
+  }, []);
 
   const handleArrayLinear = useCallback(() => {
     if (!selected.length) {
@@ -1595,7 +1706,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     commit((e) => [...e, hole]);
     setSelection([hole.id]);
     toast.success("Furo paramétrico Ø10mm adicionado.");
-  }, [selected.length, boxOfEntities, selected, cursor.x, cursor.y, commit]);
+  }, [boxOfEntities, selected, cursor.x, cursor.y, commit]);
 
   const handlePlanificar = useCallback(() => {
     setActiveMode("3d");
@@ -1985,6 +2096,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setSelection([]);
       return;
     }
+    if (tool === "divide") {
+      const hit = hitTest(raw);
+      if (hit && canDivideEntity(hit)) {
+        triggerHaptic("selection");
+        setSelection([hit.id]);
+        setDivideTargetEntity(hit);
+        setDivideEditorOpen(true);
+      } else if (!hit) {
+        toast.info("Clique sobre uma linha, arco, círculo, polilinha ou chapa para dividir.");
+      } else {
+        toast.info("Esta entidade não suporta divisão geométrica.");
+      }
+      return;
+    }
 
     // ferramentas de arrasto
     setPending([p]);
@@ -2310,12 +2435,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     requestAnimationFrame(() => fitTo([...entities, ...next]));
   };
 
-  const pickTool = useCallback((id: Tool) => {
-    if (id === "text") setTextOpen(true);
-    setTool(id);
-    setPending([]);
-    setDraft(null);
-  }, []);
+  const pickTool = useCallback(
+    (id: Tool) => {
+      if (id === "text") setTextOpen(true);
+      if (id === "divide") {
+        if (selected.length >= 1 && canDivideEntity(selected[0])) {
+          setDivideTargetEntity(selected[0]);
+          setDivideEditorOpen(true);
+        }
+      }
+      setTool(id);
+      setPending([]);
+      setDraft(null);
+    },
+    [selected],
+  );
 
   const copySelected = useCallback(() => {
     clipboardRef.current = copySelection(entities, selection, groups);
@@ -2326,6 +2460,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const selectionActions = (
     <>
       <IconBtn label="Copiar" onClick={copySelected} icon={Copy} flat />
+      <IconBtn
+        label="Dividir em N Partes"
+        onClick={() => handleOpenDivide()}
+        icon={Divide}
+        flat
+      />
       <IconBtn
         label="Girar 90°"
         onClick={() => applySelection((e) => rotate(e, center, 90))}
@@ -2506,7 +2646,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [selected]);
 
   // Editor contextual móvel aberto quando 1 entidade está selecionada OU manualmente (Regra 2)
-  const mobileEditorOpen = !solidOpen && (
+  const mobileEditorOpen = !solidOpen && !divideEditorOpen && (
     (selected.length === 1 && (isMobile || (typeof window !== "undefined" && window.innerWidth < 1024))) ||
     mobileEditorOpenManual
   );
@@ -2803,11 +2943,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onExit={leaveEditor}
         />
       )}
-      {/* REGIÃO A — HEADER SUPERIOR DEFINITIVO CAD (TOPO CANÔNICO) */}
+      {/* REGIÃO A — HEADER SUPERIOR DEFINITIVO CAD (BARRA FIXA COM SWIPE HORIZONTAL) */}
       {!focus && (
         <header
+          ref={topBarRef}
+          onPointerDown={handleTopBarPointerDown}
+          onPointerMove={handleTopBarPointerMove}
+          onPointerUp={handleTopBarPointerUp}
+          onPointerCancel={handleTopBarPointerUp}
+          onWheel={handleTopBarWheel}
           className={cn(
-            "flex h-10 shrink-0 items-center justify-between gap-2 border-b px-2.5 shadow-xs backdrop-blur-md select-none transition-colors",
+            "flex h-10 shrink-0 w-full items-center justify-between gap-3 border-b px-2.5 shadow-xs backdrop-blur-md transition-colors select-none",
+            "overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing",
             isDark
               ? "border-slate-800 bg-slate-950/95 text-slate-100"
               : "border-slate-200 bg-white/95 text-slate-800 shadow-xs",
@@ -3248,6 +3395,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 </div>
               )}
             </div>
+
             <IconBtn
               label={isDark ? "Tema Claro" : "Tema Escuro"}
               onClick={toggleTheme}
@@ -3297,6 +3445,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             onBreakSelection={handleBreakSelection}
             onJoinSelection={handleJoinSelection}
             onExplodeSelection={handleExplodeSelection}
+            onDivideSelection={() => handleOpenDivide()}
             onArrayLinear={handleArrayLinear}
             onArrayPolar={handleArrayPolar}
             snapOn={snapOn}
@@ -3617,6 +3766,32 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               {/* geometria principal: pintada no canvas sob este SVG */}
 
               {!solidOpen && draft && <EntityShape e={draft} k={view.k} preview />}
+
+              {/* Pré-visualização da ferramenta DIVIDIR */}
+              {!solidOpen && divideEditorOpen && previewDividedEntities.length > 0 && (
+                <g className="pointer-events-none">
+                  {previewDividedEntities.map((pe, idx) => (
+                    <EntityShape
+                      key={`preview-div-${pe.id || idx}`}
+                      e={pe}
+                      k={view.k}
+                      preview
+                    />
+                  ))}
+                  {/* Pontos nodais de divisão destacados */}
+                  {previewDividedEntities.flatMap((pe) => entityPoints(pe)).map((pt, pIdx) => (
+                    <circle
+                      key={`preview-div-pt-${pIdx}`}
+                      cx={pt.x}
+                      cy={pt.y}
+                      r={3.8 / view.k}
+                      fill="#ef4444"
+                      stroke="#ffffff"
+                      strokeWidth={1.4 / view.k}
+                    />
+                  ))}
+                </g>
+              )}
 
               {!solidOpen && pending.length > 0 && tool === "polyline" && (
                 <polyline
@@ -4088,6 +4263,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 prev ? { ...prev, settings: { ...prev.settings, material: mat } } : prev
               );
             }}
+            onDivideEntity={handleOpenDivide}
             dims={dims}
             onDimsChange={setDims}
             dimKind={dimKind}
@@ -4428,6 +4604,70 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             : drawable,
         }}
       />
+
+      {/* FERRAMENTA DIVIDIR: EDITOR COMPACTO EM N PARTES IGUAIS */}
+      <ChamferDivideEditor
+        open={divideEditorOpen}
+        selectedEntity={divideTargetEntity}
+        parts={divideParts}
+        onPartsChange={setDivideParts}
+        options={divideOptions}
+        onOptionsChange={setDivideOptions}
+        onConfirm={handleConfirmDivide}
+        onCancel={handleCancelDivide}
+        isDark={isDark}
+      />
+
+      {/* BARRA FLUTUANTE DE CONFIRMAÇÃO DA FERRAMENTA DIVIDIR (GARANTIA TOTAL EM MODO PAISAGEM) */}
+      {divideEditorOpen && divideTargetEntity && (
+        <div
+          role="region"
+          aria-label="Confirmar divisão geométrica"
+          className={cn(
+            "fixed bottom-3 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2.5 rounded-2xl border px-3.5 py-2 shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2 select-none",
+            isDark
+              ? "border-red-600/60 bg-slate-950/95 text-white shadow-black/80"
+              : "border-red-500/50 bg-white/95 text-slate-900 shadow-xl",
+          )}
+        >
+          <div className="flex items-center gap-2 pr-2.5 border-r border-slate-700/60">
+            <div className="flex size-7 items-center justify-center rounded-lg bg-red-600/20 text-red-500">
+              <Divide className="size-4 stroke-[2.5]" />
+            </div>
+            <div className="text-left">
+              <div className="font-mono text-[11px] font-bold text-red-500 uppercase tracking-wide">
+                Dividir em {divideParts} Partes
+              </div>
+              <div className="text-[9px] text-muted-foreground truncate max-w-[180px]">
+                Enter para confirmar • Esc cancela
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleCancelDivide}
+              className={cn(
+                "flex items-center gap-1 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-colors cursor-pointer active:scale-95",
+                isDark
+                  ? "border-slate-800 bg-slate-900 text-slate-300 hover:bg-slate-800 hover:text-white"
+                  : "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200",
+              )}
+            >
+              <X className="size-3.5" />
+              <span>Cancelar</span>
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmDivide}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-500 active:scale-95 text-white text-xs font-bold shadow-lg shadow-red-600/40 transition-all cursor-pointer"
+            >
+              <Check className="size-4 stroke-[3]" />
+              <span>Confirmar ({divideParts})</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       <ImportDialog
         open={importOpen}

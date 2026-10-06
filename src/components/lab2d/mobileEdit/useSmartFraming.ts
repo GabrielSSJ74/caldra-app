@@ -48,7 +48,7 @@ export function useSmartFraming({
   useEffect(() => {
     // 1. QUANDO O EDITOR ABRE: VERIFICA SE HÁ SOBREPOSIÇÃO COM A ENTIDADE
     if (isOpen && selectedEntity && canvasWidth > 0 && canvasHeight > 0) {
-      if (lastEntityIdRef.current === selectedEntity.id && isShiftedRef.current) {
+      if (lastEntityIdRef.current === selectedEntity.id) {
         return;
       }
       lastEntityIdRef.current = selectedEntity.id;

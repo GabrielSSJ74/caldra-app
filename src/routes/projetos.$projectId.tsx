@@ -123,7 +123,7 @@ function ProjectDetail() {
   const [removing, setRemoving] = useState<ProjectPart | null>(null);
   const [chamferSettingsOpen, setChamferSettingsOpen] = useState(false);
 
-  const parts = project?.parts ?? [];
+  const parts = useMemo(() => project?.parts ?? [], [project?.parts]);
   const visible = useMemo(() => {
     const filtered = parts.filter((p) => {
       if (filter === "todas") return true;

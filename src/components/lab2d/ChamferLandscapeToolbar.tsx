@@ -36,6 +36,7 @@ import {
   Sparkles,
   Split,
   Combine,
+  Divide,
   Grid,
   Magnet,
   Crosshair,
@@ -81,6 +82,7 @@ interface ChamferLandscapeToolbarProps {
   onBreakSelection: () => void;
   onJoinSelection: () => void;
   onExplodeSelection: () => void;
+  onDivideSelection?: () => void;
   onArrayLinear: () => void;
   onArrayPolar: () => void;
   // Precisão
@@ -133,6 +135,7 @@ export function ChamferLandscapeToolbar({
   onBreakSelection,
   onJoinSelection,
   onExplodeSelection,
+  onDivideSelection,
   onArrayLinear,
   onArrayPolar,
   snapOn,
@@ -431,6 +434,19 @@ export function ChamferLandscapeToolbar({
               icon={Grid}
               label="Explodir"
               title="Explode polilinha ou retângulo em linhas avulsas"
+            />
+            <RibbonBtn
+              active={tool === "divide"}
+              onClick={() => {
+                if (onDivideSelection && hasSelection) {
+                  onDivideSelection();
+                } else {
+                  onPickTool("divide");
+                }
+              }}
+              icon={Divide}
+              label="Dividir"
+              title="Divide peça ou contorno em N partes iguais (2 a 50)"
             />
 
             {/* ARRAY */}

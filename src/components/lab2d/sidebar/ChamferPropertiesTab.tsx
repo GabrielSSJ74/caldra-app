@@ -26,6 +26,7 @@ import {
   ChevronRight,
   Copy,
   Trash2,
+  Divide,
   Maximize2,
   Box,
   Ruler,
@@ -51,6 +52,7 @@ interface ChamferPropertiesTabProps {
   onUpdateEntity: (e: Entity) => void;
   onDeleteEntity: (id: string) => void;
   onDuplicateEntity: (e: Entity) => void;
+  onDivideEntity?: (e: Entity) => void;
   projectName: string;
   onProjectNameChange: (name: string) => void;
   material: string;
@@ -72,6 +74,7 @@ export function ChamferPropertiesTab({
   onUpdateEntity,
   onDeleteEntity,
   onDuplicateEntity,
+  onDivideEntity,
   projectName,
   onProjectNameChange,
   material,
@@ -547,8 +550,21 @@ export function ChamferPropertiesTab({
               </div>
             </div>
 
-            {/* Ações Rápidas: Duplicar e Excluir */}
+            {/* Ações Rápidas: Duplicar, Dividir e Excluir */}
             <div className="flex items-center gap-1">
+              {onDivideEntity && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onDivideEntity(selectedEntity);
+                  }}
+                  title="Dividir em partes iguais (2 a 50)"
+                  className="rounded-lg p-1 text-slate-400 hover:bg-red-500/20 hover:text-red-400 transition-colors cursor-pointer"
+                >
+                  <Divide className="size-3.5" />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {

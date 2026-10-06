@@ -73,6 +73,7 @@ interface ChamferRightSidebarProps {
   dimSel?: string | null;
   onDimSelect?: (id: string | null) => void;
   renderCotas?: () => React.ReactNode;
+  onDivideEntity?: (e: Entity) => void;
   // Callbacks de corte
   onHighlightCut?: (cand: ShareCandidate | null) => void;
   isDark?: boolean;
@@ -111,6 +112,7 @@ export function ChamferRightSidebar({
   dimSel = null,
   onDimSelect,
   renderCotas,
+  onDivideEntity,
   onHighlightCut,
   isDark = true,
   className,
@@ -351,6 +353,7 @@ export function ChamferRightSidebar({
             onDuplicateEntity={(ent) => {
               commit((list) => [...list, ent]);
             }}
+            onDivideEntity={onDivideEntity}
             projectName={projectName}
             onProjectNameChange={onProjectNameChange}
             material={material}
