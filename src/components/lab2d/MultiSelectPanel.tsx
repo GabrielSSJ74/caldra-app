@@ -5,7 +5,7 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeftRight, Boxes, Copy, Eye, Layers, Move, Trash2, Waypoints } from "lucide-react";
+import { ArrowLeftRight, Boxes, Copy, Eye, Layers, Move, Trash2, Waypoints, AlignCenter } from "lucide-react";
 
 import type { Entity, Layer } from "@/lib/lab2d/core";
 import { translate, uid } from "@/lib/lab2d/core";
@@ -47,6 +47,7 @@ export function MultiSelectPanel({
   layers,
   groups,
   setGroups,
+  onOpenCenterDialog,
 }: {
   entities: Entity[];
   selected: Entity[];
@@ -55,6 +56,7 @@ export function MultiSelectPanel({
   layers: Layer[];
   groups: GroupDef[];
   setGroups: (g: GroupDef[]) => void;
+  onOpenCenterDialog?: () => void;
 }) {
   const ids = useMemo(() => selected.map((e) => e.id), [selected]);
   const [dx, setDx] = useState(0);
@@ -195,6 +197,13 @@ export function MultiSelectPanel({
             setGroups(res.groups);
           }}
         />
+        {onOpenCenterDialog && (
+          <Act
+            label="Centralizar"
+            icon={AlignCenter}
+            onClick={onOpenCenterDialog}
+          />
+        )}
         <Act
           label="Duplicar"
           icon={Copy}

@@ -62,6 +62,7 @@ import {
   ShieldCheck,
   Pin,
   PinOff,
+  AlignCenter,
 } from "lucide-react";
 import type { Tool } from "./Lab2DEditor";
 import type { DimKind } from "@/lib/lab2d/dimensions";
@@ -104,6 +105,7 @@ interface ChamferCadToolbarProps {
   onJoinSelection: () => void;
   onExplodeSelection: () => void;
   onDivideSelection?: () => void;
+  onCenterSelection?: () => void;
   onArrayLinear: () => void;
   onArrayPolar: () => void;
 
@@ -159,6 +161,7 @@ export function ChamferCadToolbar({
   onJoinSelection,
   onExplodeSelection,
   onDivideSelection,
+  onCenterSelection,
   onArrayLinear,
   onArrayPolar,
   snapOn,
@@ -718,6 +721,30 @@ export function ChamferCadToolbar({
                       active={tool === "trim"}
                       onClick={() => handleSelectTool("trim", "modificar")}
                       desc="Cortar linha em interseção com outra"
+                    />
+                    <FlyoutItem
+                      label="Aparar até Encontro"
+                      keyLabel="ATE"
+                      icon={Scissors}
+                      active={tool === "smart_trim"}
+                      onClick={() => handleSelectTool("smart_trim", "modificar")}
+                      desc="Aparar direto até a primeira interseção limite"
+                    />
+                    <FlyoutItem
+                      label="Centralizar Formas"
+                      keyLabel="CTR"
+                      icon={AlignCenter}
+                      active={tool === "center"}
+                      disabled={!hasSelection}
+                      onClick={() => {
+                        if (onCenterSelection) {
+                          onCenterSelection();
+                          setOpenCat("none");
+                        } else {
+                          handleSelectTool("center", "modificar");
+                        }
+                      }}
+                      desc="Centralizar seleção por centro geométrico ou limites"
                     />
                     <FlyoutItem
                       label="Estender (Extend)"

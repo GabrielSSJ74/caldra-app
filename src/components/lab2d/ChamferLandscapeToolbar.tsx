@@ -53,6 +53,7 @@ import {
   Flame,
   ArrowRightLeft,
   CircleDot,
+  AlignCenter,
 } from "lucide-react";
 import type { Tool } from "./Lab2DEditor";
 import type { DimKind } from "@/lib/lab2d/dimensions";
@@ -83,6 +84,7 @@ interface ChamferLandscapeToolbarProps {
   onJoinSelection: () => void;
   onExplodeSelection: () => void;
   onDivideSelection?: () => void;
+  onCenterSelection?: () => void;
   onArrayLinear: () => void;
   onArrayPolar: () => void;
   // Precisão
@@ -136,6 +138,7 @@ export function ChamferLandscapeToolbar({
   onJoinSelection,
   onExplodeSelection,
   onDivideSelection,
+  onCenterSelection,
   onArrayLinear,
   onArrayPolar,
   snapOn,
@@ -367,14 +370,21 @@ export function ChamferLandscapeToolbar({
               onClick={() => onPickTool("trim")}
               icon={Scissors}
               label="Aparar"
-              shortcut="T"
+              shortcut="TR"
+            />
+            <RibbonBtn
+              active={tool === "smart_trim"}
+              onClick={() => onPickTool("smart_trim")}
+              icon={Scissors}
+              label="Aparar Encontro"
+              title="Apara automaticamente no primeiro limite ou encontro geométrico"
             />
             <RibbonBtn
               active={tool === "extend"}
               onClick={() => onPickTool("extend")}
               icon={CornerDownRight}
               label="Estender"
-              shortcut="E"
+              shortcut="EX"
             />
             <RibbonBtn
               onClick={onStretchSelection}
@@ -447,6 +457,20 @@ export function ChamferLandscapeToolbar({
               icon={Divide}
               label="Dividir"
               title="Divide peça ou contorno em N partes iguais (2 a 50)"
+            />
+            <RibbonBtn
+              active={tool === "center"}
+              disabled={!hasSelection || selectedCount < 2}
+              onClick={() => {
+                if (onCenterSelection) {
+                  onCenterSelection();
+                } else {
+                  onPickTool("center");
+                }
+              }}
+              icon={AlignCenter}
+              label="Centralizar"
+              title="Centraliza formas geometricamente (centroide ou bounding box)"
             />
 
             {/* ARRAY */}

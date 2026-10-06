@@ -186,7 +186,27 @@ import { ChamferMobileContextualEditor } from "@/components/lab2d/mobileEdit/Cha
 import { ChamferCompactNumericEditor } from "@/components/lab2d/mobileEdit/ChamferCompactNumericEditor";
 import { ChamferRightSidebar, type ChamferSidebarTab } from "@/components/lab2d/sidebar";
 import { ChamferDivideEditor } from "./ChamferDivideEditor";
+import { ChamferSmartSnapOverlay } from "./ChamferSmartSnapOverlay";
+import {
+  ChamferSmartTrimSvgOverlay,
+  ChamferSmartTrimControlBar,
+} from "./ChamferSmartTrimOverlay";
+import { ChamferCenterDialog } from "./ChamferCenterDialog";
 import { canDivideEntity, divideEntity, type DivideOptions } from "@/lib/lab2d/cadDivide";
+import {
+  findSmartSnap,
+  extractEntitySmartReferences,
+  type SmartReferencePoint,
+} from "@/lib/lab2d/cadReferenceSnaps";
+import {
+  centerShapes,
+  type CenterOptions,
+} from "@/lib/lab2d/cadCenterShapes";
+import {
+  computeSmartTrim,
+  type SmartTrimPreview,
+  type TrimBoundaryMode,
+} from "@/lib/lab2d/cadSmartTrim";
 import { useSmartFraming } from "@/components/lab2d/mobileEdit/useSmartFraming";
 import { useIsMobile } from "@/hooks/use-mobile";
 import {
@@ -223,10 +243,12 @@ export type Tool =
   | "dim"
   | "offset"
   | "trim"
+  | "smart_trim"
   | "extend"
   | "fillet"
   | "chamfer"
-  | "divide";
+  | "divide"
+  | "center";
 
 const TOOLS: { id: Tool; icon: typeof Minus; label: string; key: string }[] = [
   { id: "select", icon: MousePointer2, label: "Selecionar", key: "V" },
@@ -650,6 +672,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       topBarRef.current.scrollLeft += e.deltaY;
     }
   }, []);
+
+  /* RECURSOS CAD INTELIGENTES: SMART SNAP, SMART TRIM E CENTRALIZAR */
+  const [smartSnap, setSmartSnap] = useState<SmartReferencePoint | null>(null);
+  const [smartTrimMode, setSmartTrimMode] = useState<TrimBoundaryMode>("real");
+  const [smartTrimPreview, setSmartTrimPreview] = useState<SmartTrimPreview | null>(null);
+  const [centerDialogOpen, setCenterDialogOpen] = useState(false);
+  const [centerOptions, setCenterOptions] = useState<CenterOptions>({
+    axis: "both",
+    method: "centroid",
+    grouping: "block",
+    referenceEntityId: null,
+    targetPoint: null,
+  });
 
   const clipboardRef = useRef<ChamferClipboard | null>(null);
   const [clipboardMenu, setClipboardMenu] = useState<{ x: number; y: number; world: Vec2 } | null>(
@@ -1183,11 +1218,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const snapPoint = useCallback(
     (p: Vec2): Vec2 => {
       if (!snapOn) return p;
-      const tol = 10 / view.k;
+      const tol = 12 / view.k;
+      const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
+      const smart = findSmartSnap(p, entities, tol, activeStart ?? null, tool, selection);
+      if (smart) return smart.p;
       const s = findSnap(p, near(p, tol * 2), tol, grid, { grid: showGrid, object: true });
       return s ? s.p : p;
     },
-    [snapOn, near, view.k, grid, showGrid],
+    [snapOn, view.k, pending, entities, tool, selection, near, grid, showGrid],
   );
 
   /* ---------------------------------------- pintura em canvas (por sujidade) */
@@ -1610,6 +1648,91 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       toast.info("Nenhuma polilinha compatível para explodir.");
     }
   }, [entities, selection, commit]);
+
+  /* FERRAMENTA CENTRALIZAR FORMAS */
+  const handleOpenCenterDialog = useCallback(() => {
+    if (selected.length < 2) {
+      toast.info("Selecione 2 ou mais formas para centralizar (use Shift+Clique).");
+      return;
+    }
+    setCenterDialogOpen(true);
+  }, [selected.length]);
+
+  const handleConfirmCenter = useCallback(() => {
+    const selEnts = entities.filter((e) => e && selection.includes(e.id));
+    if (selEnts.length < 2) {
+      setCenterDialogOpen(false);
+      return;
+    }
+    const result = centerShapes(selEnts, entities, centerOptions);
+    commit((list) =>
+      list.map((e) => {
+        const match = result.transformed.find((t) => t.id === e.id);
+        return match ?? e;
+      }),
+    );
+    triggerHaptic("action");
+    const dx = result.shiftVector.x >= 0 ? `+${result.shiftVector.x.toFixed(1)}` : result.shiftVector.x.toFixed(1);
+    const dy = result.shiftVector.y >= 0 ? `+${result.shiftVector.y.toFixed(1)}` : result.shiftVector.y.toFixed(1);
+    toast.success(`Formas centralizadas com sucesso (ΔX: ${dx} mm, ΔY: ${dy} mm)`);
+    setCenterDialogOpen(false);
+  }, [entities, selection, centerOptions, commit]);
+
+  const handleCancelCenter = useCallback(() => {
+    setCenterDialogOpen(false);
+  }, []);
+
+  const centerPreview = useMemo(() => {
+    if (!centerDialogOpen) return null;
+    const selEnts = entities.filter((e) => e && selection.includes(e.id));
+    if (selEnts.length < 2) return null;
+    return centerShapes(selEnts, entities, centerOptions);
+  }, [centerDialogOpen, entities, selection, centerOptions]);
+
+  /* PONTOS DE REFERÊNCIA INTELIGENTES (OSNAP CAD DINÂMICO) */
+  const relevantRefs = useMemo(() => {
+    if (!snapOn) return [];
+    const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
+    const isCreating = [
+      "line",
+      "polyline",
+      "circle",
+      "arc",
+      "rect",
+      "rrect",
+      "polygon",
+      "dim",
+      "measure",
+    ].includes(tool);
+    const isModifying = selection.length > 0 || tool === "smart_trim" || tool === "offset" || tool === "trim";
+
+    if (!isCreating && !isModifying) {
+      if (!cursor) return [];
+      const nearEnt = hitTest(cursor) ?? near(cursor, 30 / view.k)[0];
+      if (nearEnt) return extractEntitySmartReferences(nearEnt, null, 12);
+      return [];
+    }
+
+    const refs: SmartReferencePoint[] = [];
+    if (selection.length > 0) {
+      for (const id of selection) {
+        const ent = entities.find((e) => e && e.id === id);
+        if (ent) refs.push(...extractEntitySmartReferences(ent, activeStart ?? null, 12));
+      }
+    }
+
+    const probe = activeStart ?? cursor;
+    if (probe) {
+      const nearby = near(probe, 80 / view.k);
+      for (const item of nearby) {
+        if (item && !selection.includes(item.id)) {
+          refs.push(...extractEntitySmartReferences(item, activeStart ?? null, 12));
+        }
+      }
+    }
+
+    return refs.slice(0, 32);
+  }, [snapOn, selection, tool, pending, cursor, view.k, entities, hitTest, near]);
 
   /* FERRAMENTA DIVIDIR EM PARTES IGUAIS (2 a 50) */
   const handleOpenDivide = useCallback(
@@ -2058,6 +2181,40 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       return;
     }
+    if (tool === "smart_trim") {
+      const hit = hitTest(raw);
+      if (hit) {
+        const preview = computeSmartTrim(hit, entities, raw, smartTrimMode);
+        if (preview && preview.activeCandidate) {
+          const cand = preview.activeCandidate;
+          triggerHaptic("action");
+          commit((list) => {
+            const filtered = list.filter((e) => e.id !== preview.targetEntity.id);
+            const additions = [cand.trimmedEntity];
+            if (cand.extraTrimmedEntities) {
+              additions.push(...cand.extraTrimmedEntities);
+            }
+            return [...filtered, ...additions];
+          });
+          toast.success("Geometria aparada até o encontro.");
+          setSmartTrimPreview(null);
+        } else {
+          toast.info("Nenhum limite ou interseção válida encontrada.");
+        }
+      }
+      return;
+    }
+    if (tool === "center") {
+      const hit = hitTest(raw);
+      if (hit) {
+        const nextSel = selection.includes(hit.id) ? selection : [...selection, hit.id];
+        setSelection(nextSel);
+        if (nextSel.length >= 2) {
+          setCenterDialogOpen(true);
+        }
+      }
+      return;
+    }
     if (tool === "extend") {
       const hit = hitTest(raw);
       if (hit)
@@ -2163,8 +2320,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
     if (snapOn) {
-      const tol = 10 / view.k;
-      setSnapHit(findSnap(raw, near(raw, tol * 2), tol, grid, { grid: showGrid, object: true }));
+      const tol = 12 / view.k;
+      const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
+      const smart = findSmartSnap(raw, entities, tol, activeStart ?? null, tool, selection);
+      setSmartSnap(smart);
+      if (smart) {
+        setSnapHit(null);
+      } else {
+        setSnapHit(findSnap(raw, near(raw, tol * 2), tol, grid, { grid: showGrid, object: true }));
+      }
+    } else {
+      setSmartSnap(null);
+      setSnapHit(null);
+    }
+
+    if (tool === "smart_trim") {
+      const hit = hitTest(raw);
+      if (hit) {
+        const preview = computeSmartTrim(hit, entities, raw, smartTrimMode);
+        setSmartTrimPreview(preview);
+      } else {
+        setSmartTrimPreview(null);
+      }
     }
 
     if (dragNode) {
@@ -2877,6 +3054,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             layers={layers}
             groups={groups}
             setGroups={setGroups}
+            onOpenCenterDialog={handleOpenCenterDialog}
           />
           <div className="flex flex-wrap gap-1 border-t border-line pt-2">{selectionActions}</div>
         </div>
@@ -3446,6 +3624,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             onJoinSelection={handleJoinSelection}
             onExplodeSelection={handleExplodeSelection}
             onDivideSelection={() => handleOpenDivide()}
+            onCenterSelection={handleOpenCenterDialog}
             onArrayLinear={handleArrayLinear}
             onArrayPolar={handleArrayPolar}
             snapOn={snapOn}
@@ -4093,6 +4272,72 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   {SNAP_GLYPH[snapHit.kind]}
                 </text>
               )}
+
+              {/* SMART SNAP OVERLAY CAD DE PRECISÃO */}
+              {snapOn && (
+                <ChamferSmartSnapOverlay
+                  activeSnap={smartSnap}
+                  referencePoints={relevantRefs}
+                  viewK={view.k}
+                  unit={unit}
+                  isDark={isDark}
+                />
+              )}
+
+              {/* SMART TRIM SVG PREVIEW */}
+              {tool === "smart_trim" && (
+                <ChamferSmartTrimSvgOverlay
+                  preview={smartTrimPreview}
+                  viewK={view.k}
+                />
+              )}
+
+              {/* PRÉ-VISUALIZAÇÃO DE CENTRALIZAR FORMAS */}
+              {centerDialogOpen && centerPreview && (
+                <g pointerEvents="none" aria-label="Pré-visualização de centralização">
+                  {centerPreview.transformed.map((e) => {
+                    const segs = segmentsOf(e);
+                    return segs.map((s, idx) => (
+                      <line
+                        key={`cprev-${e.id}-${idx}`}
+                        x1={s[0].x}
+                        y1={s[0].y}
+                        x2={s[1].x}
+                        y2={s[1].y}
+                        stroke="#06b6d4"
+                        strokeWidth={2 / view.k}
+                        strokeDasharray={`${6 / view.k},${3 / view.k}`}
+                        strokeOpacity={0.85}
+                      />
+                    ));
+                  })}
+                  {/* Centro Alvo */}
+                  <circle
+                    cx={centerPreview.targetCenter.x}
+                    cy={centerPreview.targetCenter.y}
+                    r={7 / view.k}
+                    fill="none"
+                    stroke="#06b6d4"
+                    strokeWidth={1.5 / view.k}
+                  />
+                  <line
+                    x1={centerPreview.targetCenter.x - 10 / view.k}
+                    y1={centerPreview.targetCenter.y}
+                    x2={centerPreview.targetCenter.x + 10 / view.k}
+                    y2={centerPreview.targetCenter.y}
+                    stroke="#06b6d4"
+                    strokeWidth={1.2 / view.k}
+                  />
+                  <line
+                    x1={centerPreview.targetCenter.x}
+                    y1={centerPreview.targetCenter.y - 10 / view.k}
+                    x2={centerPreview.targetCenter.x}
+                    y2={centerPreview.targetCenter.y + 10 / view.k}
+                    stroke="#06b6d4"
+                    strokeWidth={1.2 / view.k}
+                  />
+                </g>
+              )}
             </g>
           </svg>
 
@@ -4667,6 +4912,32 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </button>
           </div>
         </div>
+      )}
+
+      {/* FERRAMENTA CENTRALIZAR FORMAS */}
+      <ChamferCenterDialog
+        open={centerDialogOpen}
+        selectedEntities={entities.filter((e) => e && selection.includes(e.id))}
+        allEntities={entities}
+        options={centerOptions}
+        onOptionsChange={setCenterOptions}
+        onConfirm={handleConfirmCenter}
+        onCancel={handleCancelCenter}
+        isDark={isDark}
+      />
+
+      {/* CONTROLE FLUTUANTE DA FERRAMENTA APARAR ATÉ ENCONTRO */}
+      {tool === "smart_trim" && (
+        <ChamferSmartTrimControlBar
+          preview={smartTrimPreview}
+          mode={smartTrimMode}
+          onToggleMode={setSmartTrimMode}
+          onExit={() => {
+            setTool("select");
+            setSmartTrimPreview(null);
+          }}
+          isDark={isDark}
+        />
       )}
 
       <ImportDialog

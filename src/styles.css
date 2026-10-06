@@ -5,6 +5,17 @@
 @custom-variant dark (&:is(.dark *));
 @custom-variant mestre (&:is(.mestre *));
 
+/* Utilitários de rolagem CAD limpa sem barras nativas poluídas */
+.scrollbar-none::-webkit-scrollbar,
+.no-scrollbar::-webkit-scrollbar {
+  display: none !important;
+}
+.scrollbar-none,
+.no-scrollbar {
+  -ms-overflow-style: none !important;
+  scrollbar-width: none !important;
+}
+
 /*
  * CALDRA — Traçado e Planificação Zero Fresta
  * Design system: "Engineering Glass"
