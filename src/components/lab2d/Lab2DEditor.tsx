@@ -1137,7 +1137,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (r && r.width > 20 && r.height > 20) {
         const nextW = Math.round(r.width);
         const nextH = Math.round(r.height);
-        setCanvasSize({ w: nextW, h: nextH });
+        setCanvasSize((prev) =>
+          prev.w === nextW && prev.h === nextH ? prev : { w: nextW, h: nextH }
+        );
         if (!initialFitDoneRef.current) {
           initialFitDoneRef.current = true;
           requestAnimationFrame(() => {
@@ -2498,10 +2500,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   // Entidade única selecionada para o editor contextual mobile
   const selectedEntity = useMemo(() => {
     if (selected.length === 1) {
-      return entities.find((e) => e.id === selected[0]) ?? null;
+      return selected[0] ?? null;
     }
     return null;
-  }, [selected, entities]);
+  }, [selected]);
 
   // Editor contextual móvel aberto quando 1 entidade está selecionada OU manualmente (Regra 2)
   const mobileEditorOpen = !solidOpen && (
@@ -2528,7 +2530,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   // Contextual CAD: ao selecionar entidade(s), foca na aba Propriedades
   useEffect(() => {
     if (selected.length > 0) {
-      setActiveSidebarTab("propriedades");
+      setActiveSidebarTab((prev) => (prev === "propriedades" ? prev : "propriedades"));
     }
   }, [selected.length]);
 

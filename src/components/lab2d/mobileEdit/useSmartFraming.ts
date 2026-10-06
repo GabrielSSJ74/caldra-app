@@ -43,10 +43,16 @@ export function useSmartFraming({
   // Armazena a posição original do pan para restauração precisa ao fechar
   const originalPanRef = useRef<{ tx: number; ty: number } | null>(null);
   const isShiftedRef = useRef(false);
+  const lastEntityIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     // 1. QUANDO O EDITOR ABRE: VERIFICA SE HÁ SOBREPOSIÇÃO COM A ENTIDADE
     if (isOpen && selectedEntity && canvasWidth > 0 && canvasHeight > 0) {
+      if (lastEntityIdRef.current === selectedEntity.id && isShiftedRef.current) {
+        return;
+      }
+      lastEntityIdRef.current = selectedEntity.id;
+
       if (!originalPanRef.current) {
         originalPanRef.current = { tx: view.tx, ty: view.ty };
       }
@@ -116,13 +122,14 @@ export function useSmartFraming({
     // 2. QUANDO O EDITOR FECHA: RESTAURA O ENQUADRAMENTO ANTERIOR
     if (!isOpen && isShiftedRef.current && originalPanRef.current) {
       const restored = originalPanRef.current;
+      isShiftedRef.current = false;
+      originalPanRef.current = null;
+      lastEntityIdRef.current = null;
       setView((prev) => ({
         ...prev,
         tx: restored.tx,
         ty: restored.ty,
       }));
-      isShiftedRef.current = false;
-      originalPanRef.current = null;
     }
   }, [isOpen, selectedEntity, canvasWidth, canvasHeight, view.k, setView]);
 }

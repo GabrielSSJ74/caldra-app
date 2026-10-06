@@ -332,7 +332,15 @@ export function Cad3DStage({
   const [editor3DOpen, setEditor3DOpen] = useState(false);
 
   useEffect(() => {
-    setLiveParams({ ...resolvedModel.params });
+    setLiveParams((prev) => {
+      const next = resolvedModel.params;
+      const keysPrev = Object.keys(prev);
+      const keysNext = Object.keys(next);
+      if (keysPrev.length === keysNext.length && keysPrev.every((k) => prev[k] === next[k])) {
+        return prev;
+      }
+      return { ...next };
+    });
   }, [resolvedModel]);
 
   const handleUpdate3DParam = useCallback((key: string, val: number) => {

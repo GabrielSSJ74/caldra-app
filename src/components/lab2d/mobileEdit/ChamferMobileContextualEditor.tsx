@@ -14,7 +14,7 @@
  * sem abrir o teclado virtual nativo do sistema, mantendo a peça 100% visível!
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   X,
   ChevronRight,
@@ -103,7 +103,12 @@ export function ChamferMobileContextualEditor({
   }, []);
 
   // Notifica o canvas sobre a propriedade em edição para feedback visual (Regra 15)
+  const prevPropKeyRef = useRef<string | null>(null);
   useEffect(() => {
+    const curKey = activeNumericProp?.key ?? null;
+    if (prevPropKeyRef.current === curKey) return;
+    prevPropKeyRef.current = curKey;
+
     if (activeNumericProp && onActivePropertyChange) {
       onActivePropertyChange({
         key: activeNumericProp.key,

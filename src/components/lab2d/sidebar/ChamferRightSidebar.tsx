@@ -115,13 +115,6 @@ export function ChamferRightSidebar({
   isDark = true,
   className,
 }: ChamferRightSidebarProps) {
-  // Quando uma entidade é selecionada, garante visualização relevante
-  useEffect(() => {
-    if (selection.length > 0 && !open) {
-      // Abre automaticamente se desejar, ou mantém recolhido conforme preferência
-    }
-  }, [selection, open]);
-
   // Se a barra estiver fechada / recolhida, exibe o mini-dock lateral
   if (!open) {
     return (
