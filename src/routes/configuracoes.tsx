@@ -13,6 +13,7 @@ import {
   Grid,
   RotateCcw,
   Check,
+  Compass,
 } from "lucide-react";
 import { PLAN_LABEL } from "@/lib/subscription/features";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
@@ -820,6 +821,17 @@ function Configuracoes() {
             onClick={() => window.dispatchEvent(new CustomEvent("caldra:open-intro"))}
           >
             Apresentação da CALDRA
+          </Button>
+          <Button
+            variant="secondary"
+            size="sm"
+            icon={Compass}
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent("caldra:open-intro"));
+              window.dispatchEvent(new CustomEvent("caldra:open-preintro"));
+            }}
+          >
+            Gênese da Marca
           </Button>
           <Button variant="secondary" size="sm" icon={Bug} onClick={() => setReportOpen(true)}>
             Reportar um problema

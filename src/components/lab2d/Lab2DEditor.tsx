@@ -1190,7 +1190,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   /* ---------------------------------------------------------- utilidades */
   const visible = useMemo(
-    () => entities.filter((e) => layerOf(e.layer)?.visible !== false),
+    () => entities.filter((e) => Boolean(e && e.id) && layerOf(e.layer)?.visible !== false),
     [entities, layerOf],
   );
 
@@ -1490,7 +1490,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const selSet = new Set(selection);
     const seen = new Set<string>();
     return entities.filter((e) => {
-      if (!selSet.has(e.id) || seen.has(e.id)) return false;
+      if (!e || !e.id || !selSet.has(e.id) || seen.has(e.id)) return false;
       seen.add(e.id);
       return true;
     });

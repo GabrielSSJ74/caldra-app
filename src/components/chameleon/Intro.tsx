@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowRight, PenTool, Box, Settings } from "lucide-react";
+import { ArrowRight, PenTool, Box, Settings, Compass } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CaldraGenesisPreIntro } from "@/components/caldra/CaldraGenesisPreIntro";
 import {
   IntroLogoHero,
   IntroChamfer2DVisual,
@@ -51,7 +52,22 @@ const SLIDES: SlideData[] = [
 export function Intro({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(0);
   const [leaving, setLeaving] = useState(false);
+  const [showPreIntro, setShowPreIntro] = useState(() => {
+    if (typeof window !== "undefined") {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.has("skip_preintro")) return false;
+    }
+    return true;
+  });
   const touch = useRef<number | null>(null);
+
+  useEffect(() => {
+    const handleReopenPreIntro = () => {
+      setShowPreIntro(true);
+    };
+    window.addEventListener("caldra:open-preintro", handleReopenPreIntro);
+    return () => window.removeEventListener("caldra:open-preintro", handleReopenPreIntro);
+  }, []);
 
   const finish = () => {
     setLeaving(true);
@@ -82,22 +98,28 @@ export function Intro({ onDone }: { onDone: () => void }) {
   });
 
   return (
-    <div
-      className={cn(
-        "fixed inset-0 z-[100] flex items-center justify-center overflow-hidden transition-opacity duration-300",
-        "bg-[#FAF9F6] text-zinc-900 select-none",
-        leaving ? "opacity-0 pointer-events-none" : "opacity-100",
+    <>
+      {showPreIntro && (
+        <CaldraGenesisPreIntro
+          onComplete={() => setShowPreIntro(false)}
+        />
       )}
-      onTouchStart={(e) => (touch.current = e.touches[0]?.clientX ?? null)}
-      onTouchEnd={(e) => {
-        const start = touch.current;
-        touch.current = null;
-        const end = e.changedTouches[0]?.clientX;
-        if (start == null || end == null) return;
-        if (start - end > 45) next();
-        if (end - start > 45 && step > 0) prev();
-      }}
-    >
+      <div
+        className={cn(
+          "fixed inset-0 z-[100] flex items-center justify-center overflow-hidden transition-opacity duration-500",
+          "bg-[#FAF9F6] text-zinc-900 select-none",
+          leaving ? "opacity-0 pointer-events-none" : "opacity-100",
+        )}
+        onTouchStart={(e) => (touch.current = e.touches[0]?.clientX ?? null)}
+        onTouchEnd={(e) => {
+          const start = touch.current;
+          touch.current = null;
+          const end = e.changedTouches[0]?.clientX;
+          if (start == null || end == null) return;
+          if (start - end > 45) next();
+          if (end - start > 45 && step > 0) prev();
+        }}
+      >
       {/* ============================================================== */}
       {/* FUNDO CLARO TÉCNICO COM ILUMINAÇÃO ORGÂNICA (DIREÇÃO VISUAL)  */}
       {/* ============================================================== */}
@@ -158,8 +180,17 @@ export function Intro({ onDone }: { onDone: () => void }) {
             {/* -------------------------------------------------------- */}
             <div className="flex h-full w-full shrink-0 flex-col justify-between pt-2 pb-4">
               {/* Visual Superior: Logotipo CALDRA oficial 3D */}
-              <div className="flex-1 flex items-center justify-center">
+              <div className="flex-1 flex flex-col items-center justify-center">
                 <IntroLogoHero />
+                <button
+                  type="button"
+                  onClick={() => setShowPreIntro(true)}
+                  className="mt-1 inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-mono text-zinc-500 hover:text-zinc-900 bg-zinc-100/90 hover:bg-zinc-200/90 border border-zinc-200 transition-all cursor-pointer shadow-xs active:scale-95"
+                  title="Rever animação técnica de abertura da marca CALDRA"
+                >
+                  <Compass className="size-3.5 text-rose-600" />
+                  <span>Ver gênese da marca</span>
+                </button>
               </div>
 
               {/* Bloco de Texto Inferior */}
@@ -292,8 +323,11 @@ export function Intro({ onDone }: { onDone: () => void }) {
         </div>
       </div>
     </div>
-  );
+  </>
+);
 }
+
+export { CaldraGenesisPreIntro };
 
 export function useIntro() {
   const [show, setShow] = useState(false);
