@@ -174,3 +174,86 @@ export function centerShapes(
     shiftVector: { x: targetCenter.x - originalCenter.x, y: targetCenter.y - originalCenter.y },
   };
 }
+
+export type AlignDirection = "left" | "right" | "top" | "bottom" | "centerX" | "centerY";
+
+/**
+ * Alinha um grupo de entidades pela borda esquerda, direita, topo, base ou centro.
+ */
+export function alignEntities(
+  entities: Entity[],
+  direction: AlignDirection,
+): Entity[] {
+  if (entities.length <= 1) return entities;
+  const collectiveBox = computeBoundingBox(entities);
+
+  return entities.map((e) => {
+    const box = computeBoundingBox([e]);
+    let dx = 0;
+    let dy = 0;
+
+    switch (direction) {
+      case "left":
+        dx = collectiveBox.minX - box.minX;
+        break;
+      case "right":
+        dx = collectiveBox.maxX - box.maxX;
+        break;
+      case "top":
+        dy = collectiveBox.maxY - box.maxY;
+        break;
+      case "bottom":
+        dy = collectiveBox.minY - box.minY;
+        break;
+      case "centerX":
+        dx = collectiveBox.center.x - box.center.x;
+        break;
+      case "centerY":
+        dy = collectiveBox.center.y - box.center.y;
+        break;
+    }
+
+    return translate(e, dx, dy);
+  });
+}
+
+/**
+ * Distribui entidades selecionadas com espaçamento uniforme ao longo de um eixo.
+ */
+export function distributeEntities(
+  entities: Entity[],
+  direction: "horizontal" | "vertical",
+): Entity[] {
+  if (entities.length <= 2) return entities;
+
+  const boxesWithEntities = entities.map((e) => ({
+    entity: e,
+    box: computeBoundingBox([e]),
+  }));
+
+  if (direction === "horizontal") {
+    // Ordena por X
+    boxesWithEntities.sort((a, b) => a.box.center.x - b.box.center.x);
+    const minX = boxesWithEntities[0]!.box.center.x;
+    const maxX = boxesWithEntities[boxesWithEntities.length - 1]!.box.center.x;
+    const step = (maxX - minX) / (boxesWithEntities.length - 1);
+
+    return boxesWithEntities.map((item, idx) => {
+      const targetX = minX + idx * step;
+      const dx = targetX - item.box.center.x;
+      return translate(item.entity, dx, 0);
+    });
+  } else {
+    // Ordena por Y
+    boxesWithEntities.sort((a, b) => a.box.center.y - b.box.center.y);
+    const minY = boxesWithEntities[0]!.box.center.y;
+    const maxY = boxesWithEntities[boxesWithEntities.length - 1]!.box.center.y;
+    const step = (maxY - minY) / (boxesWithEntities.length - 1);
+
+    return boxesWithEntities.map((item, idx) => {
+      const targetY = minY + idx * step;
+      const dy = targetY - item.box.center.y;
+      return translate(item.entity, 0, dy);
+    });
+  }
+}

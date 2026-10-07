@@ -43,8 +43,10 @@ export function startPointOf(e: Entity): Vec2 {
       return { x: e.cx + e.r, y: e.cy };
     case "arc":
       return { x: e.cx + e.r * Math.cos(e.a0), y: e.cy + e.r * Math.sin(e.a0) };
-    default:
+    case "point":
       return { x: e.x, y: e.y };
+    default:
+      return { x: 0, y: 0 };
   }
 }
 

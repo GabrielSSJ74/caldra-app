@@ -28,8 +28,8 @@ import { cn } from "@/lib/utils";
 interface ChamferProjectSettingsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  projectId?: string;
-  projectName?: string;
+  projectId?: string | undefined;
+  projectName?: string | undefined;
 }
 
 export function ChamferProjectSettingsDialog({

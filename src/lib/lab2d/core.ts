@@ -11,6 +11,8 @@ import {
   type BezierSeg,
 } from "@/lib/lab2d/bezier";
 import {
+  ANOTACOES_COLOR,
+  AUXILIAR_COLOR,
   BEND_COLOR,
   CONSTRUCTION_COLOR,
   CUT_COLOR,
@@ -42,6 +44,8 @@ export const DEFAULT_LAYERS: Layer[] = [
   { id: "recorte", name: "Recorte", color: RECORTE_COLOR, visible: true, locked: false },
   { id: "corte", name: "Corte", color: CUT_COLOR, visible: true, locked: false },
   { id: "cota", name: "Cota", color: DIMENSION_COLOR, visible: true, locked: false },
+  { id: "anotacoes", name: "Anotações", color: ANOTACOES_COLOR, visible: true, locked: false },
+  { id: "auxiliar", name: "Auxiliar", color: AUXILIAR_COLOR, visible: true, locked: false },
 ];
 
 type Base = {
@@ -55,6 +59,14 @@ type Base = {
   invalid?: boolean;
   /** Dados semânticos de fabricação (sequência, contorno, lead-in/out). */
   cnc?: CncMeta;
+  /** Estado de construção (geometria auxiliar/projeção) */
+  isConstruction?: boolean;
+  /** Parâmetros paramétricos associados */
+  params?: Record<string, unknown>;
+  /** IDs de entidades dependentes */
+  dependencies?: string[];
+  /** Feature correspondente no grafo CAD */
+  featureId?: string;
 };
 
 export type Entity =

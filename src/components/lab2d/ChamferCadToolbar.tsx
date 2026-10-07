@@ -63,6 +63,10 @@ import {
   Pin,
   PinOff,
   AlignCenter,
+  Search,
+  FileText,
+  Activity,
+  Zap,
 } from "lucide-react";
 import type { Tool } from "./Lab2DEditor";
 import type { DimKind } from "@/lib/lab2d/dimensions";
@@ -108,6 +112,13 @@ interface ChamferCadToolbarProps {
   onCenterSelection?: () => void;
   onArrayLinear: () => void;
   onArrayPolar: () => void;
+
+  // Novos comandos e ferramentas profissionais
+  onOpenQuickCommand?: () => void;
+  onOpenTopologyHealth?: () => void;
+  onOpenPresets?: () => void;
+  onOpenTechnicalSheet?: () => void;
+  onOpenVariables?: () => void;
 
   // Precisão
   snapOn: boolean;
@@ -164,6 +175,11 @@ export function ChamferCadToolbar({
   onCenterSelection,
   onArrayLinear,
   onArrayPolar,
+  onOpenQuickCommand,
+  onOpenTopologyHealth,
+  onOpenPresets,
+  onOpenTechnicalSheet,
+  onOpenVariables,
   snapOn,
   setSnapOn,
   showGrid,
@@ -617,6 +633,36 @@ export function ChamferCadToolbar({
                       onClick={() => handleSelectTool("text", "criar")}
                       desc="Gravação a laser ou marcação técnica"
                     />
+                    <FlyoutItem
+                      label="Rasgo Oblongo (Slot)"
+                      keyLabel="SL"
+                      icon={Minus}
+                      active={tool === "slot"}
+                      onClick={() => handleSelectTool("slot", "criar")}
+                      desc="Rasgo oblongo com centros e raio"
+                    />
+                    {onOpenPresets && (
+                      <FlyoutItem
+                        label="Presets Paramétricos"
+                        icon={Boxes}
+                        onClick={() => {
+                          onOpenPresets();
+                          setOpenCat("none");
+                        }}
+                        desc="Flanges DIN/ANSI, bases e tubos"
+                      />
+                    )}
+                    {onOpenTechnicalSheet && (
+                      <FlyoutItem
+                        label="Folha e Legenda Técnica"
+                        icon={FileText}
+                        onClick={() => {
+                          onOpenTechnicalSheet();
+                          setOpenCat("none");
+                        }}
+                        desc="Prancha A4/A3/A2 com carimbo CALDRA"
+                      />
+                    )}
 
                     <div className="my-1 h-px bg-slate-800" />
 
@@ -818,6 +864,43 @@ export function ChamferCadToolbar({
                       }}
                       desc="Desmembrar polilinha ou bloco"
                     />
+
+                    <div className="my-1 h-px bg-slate-800" />
+
+                    {onOpenTopologyHealth && (
+                      <FlyoutItem
+                        label="Topologia & Auto-Heal"
+                        icon={Activity}
+                        onClick={() => {
+                          onOpenTopologyHealth();
+                          setOpenCat("none");
+                        }}
+                        desc="Diagnóstico de frestas, aberturas e duplicatas"
+                      />
+                    )}
+                    {onOpenVariables && (
+                      <FlyoutItem
+                        label="Tabela de Variáveis"
+                        icon={Sliders}
+                        onClick={() => {
+                          onOpenVariables();
+                          setOpenCat("none");
+                        }}
+                        desc="Fórmulas e dimensões paramétricas do projeto"
+                      />
+                    )}
+                    {onOpenQuickCommand && (
+                      <FlyoutItem
+                        label="Comando Rápido"
+                        keyLabel="Q"
+                        icon={Search}
+                        onClick={() => {
+                          onOpenQuickCommand();
+                          setOpenCat("none");
+                        }}
+                        desc="Busca instantânea de comandos e operações"
+                      />
+                    )}
                   </div>
                 )}
 

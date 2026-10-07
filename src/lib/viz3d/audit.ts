@@ -166,7 +166,7 @@ export function auditModel(model: WireModel): MeshAudit {
   const byKind: Record<string, number> = {};
   const seen = new Set<string>();
   const verts = new Set<string>();
-  const centroids: { c: Vec3; n?: Vec3; kind: string }[] = [];
+  const centroids: { c: Vec3; n?: Vec3 | undefined; kind: string }[] = [];
 
   let degenerate = 0;
   let duplicates = 0;

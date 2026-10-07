@@ -28,15 +28,26 @@ export const WARNING_COLOR = "#FB7185"; // alertas de validação (não é camad
 /** Tinta única da folha exportada (PDF/PNG): sempre preto puro. */
 export const SHEET_INK = "#000000";
 
+export const ANOTACOES_COLOR = "#38BDF8"; // ciano técnico — anotações
+export const AUXILIAR_COLOR = "#A855F7"; // roxo técnico — auxiliar
+
 export type TechLayerId =
-  "corte" | "recorte" | "dobra" | "marcacao" | "construcao" | "referencia" | "cota";
+  | "corte"
+  | "recorte"
+  | "dobra"
+  | "marcacao"
+  | "construcao"
+  | "referencia"
+  | "cota"
+  | "anotacoes"
+  | "auxiliar";
 
 /**
  * CAMADAS VISÍVEIS PARA O USUÁRIO NO CHAMFER.
  * Apenas estas quatro representam operações de fabricação escolhidas por quem
  * desenha. Construção, referência e cota continuam existindo internamente.
  */
-export const USER_LAYER_IDS: TechLayerId[] = ["corte", "marcacao", "dobra", "recorte"];
+export const USER_LAYER_IDS: TechLayerId[] = ["corte", "marcacao", "dobra", "recorte", "anotacoes", "auxiliar"];
 
 export const isUserLayer = (layerId: string) => USER_LAYER_IDS.includes(layerId as TechLayerId);
 
@@ -67,6 +78,8 @@ export const TECHNICAL_STYLE: Record<
   recorte: { color: RECORTE_COLOR, dash: () => undefined, weight: 1.2, order: 4 },
   corte: { color: CUT_COLOR, dash: () => undefined, weight: 1.4, order: 5 },
   cota: { color: DIMENSION_COLOR, dash: () => undefined, weight: 0.8, order: 6 },
+  anotacoes: { color: ANOTACOES_COLOR, dash: () => undefined, weight: 0.8, order: 7 },
+  auxiliar: { color: AUXILIAR_COLOR, dash: (s) => `${3 * s} ${3 * s}`, weight: 0.7, order: 8 },
 };
 
 const FALLBACK = TECHNICAL_STYLE.corte;

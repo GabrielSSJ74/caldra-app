@@ -5,12 +5,31 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ArrowLeftRight, Boxes, Copy, Eye, Layers, Move, Trash2, Waypoints, AlignCenter } from "lucide-react";
+import {
+  ArrowLeftRight,
+  Boxes,
+  Copy,
+  Eye,
+  Layers,
+  Move,
+  Trash2,
+  Waypoints,
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  AlignVerticalJustifyCenter,
+  AlignHorizontalJustifyCenter,
+  Combine,
+  Split,
+  Sparkles,
+} from "lucide-react";
 
 import type { Entity, Layer } from "@/lib/lab2d/core";
 import { translate, uid } from "@/lib/lab2d/core";
 import { reverseEntity } from "@/lib/lab2d/cutPlan";
 import { createGroup, type GroupDef } from "@/lib/lab2d/groups";
+import { alignEntities, distributeEntities, type AlignDirection } from "@/lib/lab2d/cadCenterShapes";
+import { execute2DBoolean } from "@/lib/lab2d/cadBooleans2D";
 import {
   DEFAULT_LEAD,
   ORIENTATION_LABEL,
@@ -230,6 +249,119 @@ export function MultiSelectPanel({
           }}
         />
       </div>
+
+      {/* Alinhamento Rápido */}
+      <div className="border-t border-line pt-1.5">
+        <p className="tick-label mb-1 text-muted-foreground">Alinhamento & Distribuição</p>
+        <div className="flex flex-wrap gap-1">
+          <Act
+            label="Esq."
+            icon={AlignLeft}
+            onClick={() => {
+              const aligned = alignEntities(selected, "left");
+              commit((list) => list.map((e) => aligned.find((a) => a.id === e.id) ?? e));
+              toast.success("Alinhado pela esquerda.");
+            }}
+          />
+          <Act
+            label="Centro X"
+            icon={AlignHorizontalJustifyCenter}
+            onClick={() => {
+              const aligned = alignEntities(selected, "centerX");
+              commit((list) => list.map((e) => aligned.find((a) => a.id === e.id) ?? e));
+              toast.success("Centralizado horizontalmente.");
+            }}
+          />
+          <Act
+            label="Dir."
+            icon={AlignRight}
+            onClick={() => {
+              const aligned = alignEntities(selected, "right");
+              commit((list) => list.map((e) => aligned.find((a) => a.id === e.id) ?? e));
+              toast.success("Alinhado pela direita.");
+            }}
+          />
+          <Act
+            label="Topo"
+            icon={AlignVerticalJustifyCenter}
+            onClick={() => {
+              const aligned = alignEntities(selected, "top");
+              commit((list) => list.map((e) => aligned.find((a) => a.id === e.id) ?? e));
+              toast.success("Alinhado pelo topo.");
+            }}
+          />
+          <Act
+            label="Base"
+            icon={AlignVerticalJustifyCenter}
+            onClick={() => {
+              const aligned = alignEntities(selected, "bottom");
+              commit((list) => list.map((e) => aligned.find((a) => a.id === e.id) ?? e));
+              toast.success("Alinhado pela base.");
+            }}
+          />
+          {selected.length >= 3 && (
+            <>
+              <Act
+                label="Dist. Horiz."
+                icon={AlignHorizontalJustifyCenter}
+                onClick={() => {
+                  const dist = distributeEntities(selected, "horizontal");
+                  commit((list) => list.map((e) => dist.find((a) => a.id === e.id) ?? e));
+                  toast.success("Distribuído horizontalmente com espaçamento uniforme.");
+                }}
+              />
+              <Act
+                label="Dist. Vert."
+                icon={AlignVerticalJustifyCenter}
+                onClick={() => {
+                  const dist = distributeEntities(selected, "vertical");
+                  commit((list) => list.map((e) => dist.find((a) => a.id === e.id) ?? e));
+                  toast.success("Distribuído verticalmente com espaçamento uniforme.");
+                }}
+              />
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Operações Booleanas 2D (se 2 entidades selecionadas) */}
+      {selected.length === 2 && (
+        <div className="border-t border-line pt-1.5">
+          <p className="tick-label mb-1 text-muted-foreground">Booleana 2D</p>
+          <div className="flex flex-wrap gap-1">
+            <Act
+              label="União"
+              icon={Combine}
+              onClick={() => {
+                const res = execute2DBoolean(selected[0]!, selected[1]!, "union");
+                commit((list) => [...list.filter((e) => !ids.includes(e.id)), ...res]);
+                setSelection(res.map((e) => e.id));
+                toast.success("União booleana executada com sucesso.");
+              }}
+            />
+            <Act
+              label="Subtrair"
+              icon={Split}
+              onClick={() => {
+                const res = execute2DBoolean(selected[0]!, selected[1]!, "subtract");
+                commit((list) => [...list.filter((e) => !ids.includes(e.id)), ...res]);
+                setSelection(res.map((e) => e.id));
+                toast.success("Subtração de região executada.");
+              }}
+            />
+            <Act
+              label="Interseção"
+              icon={Sparkles}
+              onClick={() => {
+                const res = execute2DBoolean(selected[0]!, selected[1]!, "intersect");
+                commit((list) => [...list.filter((e) => !ids.includes(e.id)), ...res]);
+                setSelection(res.map((e) => e.id));
+                toast.success("Interseção booleana executada.");
+              }}
+            />
+          </div>
+        </div>
+      )}
 
       <div className="flex items-center gap-1">
         <NumIn label="ΔX" value={dx} set={setDx} />

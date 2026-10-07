@@ -51,6 +51,14 @@ import {
   Loader2,
   Sun,
   Moon,
+  Activity,
+  AlignCenter,
+  Boxes,
+  FileText,
+  Search,
+  Sliders,
+  Sparkles,
+  Zap,
 } from "lucide-react";
 import { getChamferSettings, type ChamferSettings } from "@/lib/lab2d/projectSettings";
 import { useSettings } from "@/lib/settings/SettingsProvider";
@@ -224,6 +232,29 @@ import {
   getEntityCenter,
 } from "@/lib/lab2d/cadModifiers";
 import { AudioManager } from "@/lib/audio/AudioManager";
+import {
+  ChamferQuickCommandModal,
+  type QuickCommandItem,
+} from "./ChamferQuickCommandModal";
+import { ChamferPrecisionLoupeOverlay } from "./ChamferPrecisionLoupeOverlay";
+import { ChamferDualToolHUD } from "./ChamferDualToolHUD";
+import { ChamferTopologyHealthModal } from "./ChamferTopologyHealthModal";
+import { ChamferVariablesModal } from "./ChamferVariablesModal";
+import { ChamferPresetsModal } from "./ChamferPresetsModal";
+import { ChamferTechnicalSheetModal } from "./ChamferTechnicalSheetModal";
+import { DUAL_TOOL_PRESETS } from "@/lib/lab2d/cadDualToolManager";
+import {
+  evaluateGeometricIntent,
+  type GeometricSuggestion,
+} from "@/lib/lab2d/cadSmartInference";
+import { globalParametricStore } from "@/lib/lab2d/cadParametricVariables";
+import { createSlotPolyline } from "@/lib/lab2d/cadGeometryCore";
+import { execute2DBoolean } from "@/lib/lab2d/cadBooleans2D";
+import { alignEntities, distributeEntities } from "@/lib/lab2d/cadCenterShapes";
+import {
+  analyzeTopology,
+  autoHealEntities,
+} from "@/lib/lab2d/cadTopologyDiagnostics";
 
 export type Tool =
   | "select"
@@ -248,7 +279,8 @@ export type Tool =
   | "fillet"
   | "chamfer"
   | "divide"
-  | "center";
+  | "center"
+  | "slot";
 
 const TOOLS: { id: Tool; icon: typeof Minus; label: string; key: string }[] = [
   { id: "select", icon: MousePointer2, label: "Selecionar", key: "V" },
@@ -685,6 +717,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     referenceEntityId: null,
     targetPoint: null,
   });
+
+  /* COMANDOS E MODAIS AVANÇADOS DO CAD */
+  const [quickCommandOpen, setQuickCommandOpen] = useState(false);
+  const [topologyHealthOpen, setTopologyHealthOpen] = useState(false);
+  const [variablesModalOpen, setVariablesModalOpen] = useState(false);
+  const [presetsModalOpen, setPresetsModalOpen] = useState(false);
+  const [technicalSheetModalOpen, setTechnicalSheetModalOpen] = useState(false);
+
+  /* DUAL TOOL & FERRAMENTA COMPOSTA */
+  const [dualToolSecondary, setDualToolSecondary] = useState<Tool | null>(null);
+  const [dualToolPinned, setDualToolPinned] = useState(false);
+
+  /* LUPA DE PRECISÃO & CURSOR VIRTUAL MOBILE */
+  const [loupeVisible, setLoupeVisible] = useState(false);
+  const [loupeScreenPos, setLoupeScreenPos] = useState<Vec2>({ x: 0, y: 0 });
+  const [loupeCadPos, setLoupeCadPos] = useState<Vec2>({ x: 0, y: 0 });
 
   const clipboardRef = useRef<ChamferClipboard | null>(null);
   const [clipboardMenu, setClipboardMenu] = useState<{ x: number; y: number; world: Vec2 } | null>(
@@ -1689,6 +1737,166 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     return centerShapes(selEnts, entities, centerOptions);
   }, [centerDialogOpen, entities, selection, centerOptions]);
 
+  /* CHAMFER INTELLIGENCE — INFERÊNCIAS E SUGESTÕES GEOMÉTRICAS CONTEXTUAIS */
+  const suggestions = useMemo(() => {
+    if (selected.length < 2) return [];
+    return evaluateGeometricIntent(selected, entities, (type, entityIds) => {
+      if (type === "parallel" && selected.length === 2 && selected[0]!.type === "line" && selected[1]!.type === "line") {
+        const l1 = selected[0] as Extract<Entity, { type: "line" }>;
+        const l2 = selected[1] as Extract<Entity, { type: "line" }>;
+        const ang = Math.atan2(l1.y2 - l1.y1, l1.x2 - l1.x1);
+        const len2 = Math.hypot(l2.x2 - l2.x1, l2.y2 - l2.y1);
+        const mid2 = { x: (l2.x1 + l2.x2) / 2, y: (l2.y1 + l2.y2) / 2 };
+        const updated2: Entity = {
+          ...l2,
+          x1: mid2.x - (len2 / 2) * Math.cos(ang),
+          y1: mid2.y - (len2 / 2) * Math.sin(ang),
+          x2: mid2.x + (len2 / 2) * Math.cos(ang),
+          y2: mid2.y + (len2 / 2) * Math.sin(ang),
+        };
+        commit((list) => list.map((e) => (e.id === l2.id ? updated2 : e)));
+        toast.success("Linhas ajustadas para paralelismo perfeito.");
+      } else if (type === "perpendicular" && selected.length === 2 && selected[0]!.type === "line" && selected[1]!.type === "line") {
+        const l1 = selected[0] as Extract<Entity, { type: "line" }>;
+        const l2 = selected[1] as Extract<Entity, { type: "line" }>;
+        const ang = Math.atan2(l1.y2 - l1.y1, l1.x2 - l1.x1) + Math.PI / 2;
+        const len2 = Math.hypot(l2.x2 - l2.x1, l2.y2 - l2.y1);
+        const mid2 = { x: (l2.x1 + l2.x2) / 2, y: (l2.y1 + l2.y2) / 2 };
+        const updated2: Entity = {
+          ...l2,
+          x1: mid2.x - (len2 / 2) * Math.cos(ang),
+          y1: mid2.y - (len2 / 2) * Math.sin(ang),
+          x2: mid2.x + (len2 / 2) * Math.cos(ang),
+          y2: mid2.y + (len2 / 2) * Math.sin(ang),
+        };
+        commit((list) => list.map((e) => (e.id === l2.id ? updated2 : e)));
+        toast.success("Linhas ajustadas para 90° (ortogonais).");
+      } else if (type === "center_align") {
+        setCenterDialogOpen(true);
+      } else if (type === "join_polyline") {
+        const joined = joinEntities(selected, 1.5);
+        commit((list) => [...list.filter((e) => !entityIds.includes(e.id)), ...joined]);
+        setSelection(joined.map((e) => e.id));
+        toast.success("Segmentos unidos em polilinha contínua.");
+      }
+    });
+  }, [selected, entities, commit]);
+
+  /* QUICK COMMANDS DO CHAMFER CAD */
+  const quickCommands: QuickCommandItem[] = useMemo(() => [
+    {
+      id: "smart_trim",
+      title: "Aparar até o Encontro (Smart Trim)",
+      keywords: ["trim", "aparar", "cortar", "limite", "encontro"],
+      category: "modificar",
+      description: "Localiza automaticamente o limite e apara até o encontro real.",
+      icon: Scissors,
+      action: () => setTool("smart_trim"),
+    },
+    {
+      id: "center_shapes",
+      title: "Centralizar Formas",
+      keywords: ["centralizar", "alinhar centro", "colocar no meio", "meio"],
+      category: "modificar",
+      description: "Centraliza seleção em bloco ou individualmente na origem ou referência.",
+      icon: AlignCenter,
+      action: () => setCenterDialogOpen(true),
+    },
+    {
+      id: "divide",
+      title: "Dividir em Partes Iguais",
+      keywords: ["dividir", "traçagem", "geratriz", "partes", "caldeiraria"],
+      category: "modificar",
+      description: "Divide linhas, arcos ou círculos de 2 a 50 partes com marcações.",
+      icon: Divide,
+      action: () => setTool("divide"),
+    },
+    {
+      id: "slot",
+      title: "Criar Rasgo Oblongo (Slot)",
+      keywords: ["slot", "rasgo", "oblongo", "furo oblongo"],
+      category: "criar",
+      description: "Desenha rasgo oblongo com centros e raio paramétricos.",
+      icon: Minus,
+      action: () => setTool("slot"),
+    },
+    {
+      id: "topology_health",
+      title: "Analisar Topologia & Auto-Heal",
+      keywords: ["analisar", "diagnóstico", "frestas", "gaps", "limpar desenho", "heal"],
+      category: "analise",
+      description: "Detecta microfrestas, contornos abertos e duplicatas com reparo em 1 clique.",
+      icon: Sparkles,
+      action: () => setTopologyHealthOpen(true),
+    },
+    {
+      id: "presets",
+      title: "Catálogo de Presets Paramétricos",
+      keywords: ["preset", "flange", "sapata", "base", "tubo", "metalon", "chapa"],
+      category: "criar",
+      description: "Insere flanges DIN/ANSI, bases de fixação e tubos com geometria editável.",
+      icon: Boxes,
+      action: () => setPresetsModalOpen(true),
+    },
+    {
+      id: "tech_sheet",
+      title: "Gerar Folha e Legenda Técnica",
+      keywords: ["folha", "prancha", "a3", "a4", "a2", "carimbo", "legenda", "documentação"],
+      category: "documento",
+      description: "Insere prancha normalizada A4/A3/A2 e carimbo técnico da CALDRA.",
+      icon: FileText,
+      action: () => setTechnicalSheetModalOpen(true),
+    },
+    {
+      id: "variables",
+      title: "Tabela de Variáveis e Fórmulas",
+      keywords: ["variáveis", "equações", "parâmetros", "fórmulas", "largura", "altura"],
+      category: "analise",
+      description: "Gerencia variáveis globais e relações dimensionais paramétricas.",
+      icon: Sliders,
+      action: () => setVariablesModalOpen(true),
+    },
+    {
+      id: "dual_line_dim",
+      title: "Dual Tool: Linha + Cota",
+      keywords: ["dual", "composta", "linha cota", "dimensão"],
+      category: "dual_tool",
+      description: "Desenha linha acompanhada de cota técnica em tempo real.",
+      icon: Zap,
+      action: () => {
+        setTool("line");
+        setDualToolSecondary("dim");
+        toast.success("Dual Tool ativada: Linha + Cotagem.");
+      },
+    },
+    {
+      id: "dual_offset_trim",
+      title: "Dual Tool: Offset + Aparar",
+      keywords: ["dual", "composta", "offset trim", "paralela"],
+      category: "dual_tool",
+      description: "Gera offset e apara automaticamente nos encontros.",
+      icon: Zap,
+      action: () => {
+        setTool("offset");
+        setDualToolSecondary("smart_trim");
+        toast.success("Dual Tool ativada: Offset + Smart Trim.");
+      },
+    },
+    {
+      id: "dual_move_align",
+      title: "Dual Tool: Mover + Centralizar",
+      keywords: ["dual", "composta", "mover alinhar", "centralizar"],
+      category: "dual_tool",
+      description: "Move geometrias com alinhamento e centralização magnéticos.",
+      icon: Zap,
+      action: () => {
+        setTool("select");
+        setDualToolSecondary("center");
+        toast.success("Dual Tool ativada: Mover + Centralizar.");
+      },
+    },
+  ], []);
+
   /* PONTOS DE REFERÊNCIA INTELIGENTES (OSNAP CAD DINÂMICO) */
   const relevantRefs = useMemo(() => {
     if (!snapOn) return [];
@@ -2310,6 +2518,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     const raw = toWorld(ev);
     setCursor(raw);
+
+    // Visor ampliado magnético / Lupa de precisão para toque móvel
+    if (ev.pointerType === "touch") {
+      setLoupeVisible(true);
+      setLoupeScreenPos({ x: ev.clientX, y: ev.clientY });
+      setLoupeCadPos(raw);
+    }
+
     if (panRef.current) {
       const dx = ev.clientX - panRef.current.x;
       const dy = ev.clientY - panRef.current.y;
@@ -2430,6 +2646,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   };
 
   const onPointerUp = (ev?: React.PointerEvent) => {
+    setLoupeVisible(false);
     if (longPressRef.current) clearTimeout(longPressRef.current.timer);
     longPressRef.current = null;
     if (ev) ptrsRef.current.delete(ev.pointerId);
@@ -2487,7 +2704,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             : draft;
         commit((e) => [...e, finalEntity]);
         setSelection([finalEntity.id]);
-        setTool("select");
+
+        // INTEGRAÇÃO DUAL TOOL
+        if (dualToolSecondary === "dim") {
+          const dim = makeDimension("aligned", [{ kind: "entity", id: finalEntity.id }], 20);
+          setDims((list) => [...list, dim]);
+          toast.success("Cota técnica gerada automaticamente via Dual Tool.");
+          if (!dualToolPinned) setDualToolSecondary(null);
+        } else if (dualToolSecondary === "smart_trim") {
+          setTool("smart_trim");
+          toast.info("Dual Tool: selecione o trecho a aparar.");
+        } else {
+          setTool("select");
+        }
       }
       setDraft(null);
       setPending([]);
@@ -2500,6 +2729,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const t = ev.target as HTMLElement;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
       const meta = ev.ctrlKey || ev.metaKey;
+      if ((meta && ev.key.toLowerCase() === "k") || ev.key.toLowerCase() === "q") {
+        ev.preventDefault();
+        setQuickCommandOpen((v) => !v);
+        return;
+      }
       if (meta && ev.key.toLowerCase() === "z") {
         ev.preventDefault();
         if (ev.shiftKey) {
@@ -3422,6 +3656,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               icon={Scissors}
               title="Ferramenta de Corte e Exportação DXF CNC direta"
             />
+            <IconBtn
+              label="Comando (Q)"
+              onClick={() => setQuickCommandOpen(true)}
+              icon={Search}
+              title="Busca rápida de comandos CAD (Atalho: Q ou Ctrl+K)"
+            />
+            <IconBtn
+              label="Topologia"
+              onClick={() => setTopologyHealthOpen(true)}
+              icon={Activity}
+              title="Auditoria de topologia e Auto-Heal (saúde do desenho)"
+            />
+            <IconBtn
+              label="Presets"
+              onClick={() => setPresetsModalOpen(true)}
+              icon={Boxes}
+              title="Catálogo de presets paramétricos (Flanges, tubos, sapatas)"
+            />
             <div className="relative">
               <IconBtn
                 label="Mais"
@@ -3432,6 +3684,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               />
               {moreOpen && (
                 <div className="metal hairline pop-in fixed top-12 right-3 z-[70] w-56 rounded-2xl p-1.5 shadow-xl">
+                  <MenuItem
+                    label="Folha Técnica e Legenda"
+                    icon={FileText}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setTechnicalSheetModalOpen(true);
+                    }}
+                  />
+                  <MenuItem
+                    label="Tabela de Variáveis"
+                    icon={Sliders}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setVariablesModalOpen(true);
+                    }}
+                  />
                   <MenuItem
                     label="Novo projeto CHAMFER"
                     icon={FolderPlus}
@@ -3627,6 +3895,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             onCenterSelection={handleOpenCenterDialog}
             onArrayLinear={handleArrayLinear}
             onArrayPolar={handleArrayPolar}
+            onOpenQuickCommand={() => setQuickCommandOpen(true)}
+            onOpenTopologyHealth={() => setTopologyHealthOpen(true)}
+            onOpenPresets={() => setPresetsModalOpen(true)}
+            onOpenTechnicalSheet={() => setTechnicalSheetModalOpen(true)}
+            onOpenVariables={() => setVariablesModalOpen(true)}
             snapOn={snapOn}
             setSnapOn={setSnapOn}
             showGrid={showGrid}
@@ -5355,6 +5628,12 @@ function buildDraft(tool: Tool, a: Vec2, b: Vec2, layer: string, radius: number)
       };
     case "point":
       return { id: uid(), layer, type: "point", x: a.x, y: a.y };
+    case "slot": {
+      const len = dist(a, b);
+      const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+      const width = Math.max(12, len / 2.5);
+      return createSlotPolyline(a, len, width, angle, layer);
+    }
     default:
       return null;
   }

@@ -61,6 +61,8 @@ export function entityPath(e: Entity): string {
       return pathToSvg(e.start, e.segs, e.closed);
     case "text":
       return "";
+    default:
+      return "";
   }
 }
 

@@ -101,9 +101,10 @@ export function solveChamferSketch(
   result: SolveResult;
 } {
   const { points, segments } = extractSketchData(entities);
-  const solver = new ConstraintSolver();
-
-  const result = solver.solve(points, segments, constraints, {});
+  const ptsArray = Array.from(points.values());
+  const segsArray = Array.from(segments.values());
+  const { points: solvedPts, result } = ConstraintSolver.solve(ptsArray, segsArray, constraints, []);
+  solvedPts.forEach((p) => points.set(p.id, p));
 
   // Mapeia os pontos resolvidos de volta para as entidades do Chamfer
   const solvedEntities = entities.map((e) => {

@@ -8,7 +8,7 @@ import {
   bbox,
   boxOf,
   type Entity,
-} from "./src/lib/lab2d/core";
+} from "./core";
 import {
   rotateEntityAroundPoint,
   mirrorAcrossAxis,
@@ -16,10 +16,10 @@ import {
   breakEntityAtPoint,
   joinEntities,
   stretchSelection,
-} from "./src/lib/lab2d/cadModifiers";
-import { buildIndex, viewportBox } from "./src/lib/lab2d/spatialIndex";
-import { drawScene } from "./src/lib/lab2d/canvasScene";
-import { revalidateShared } from "./src/lib/lab2d/sharedCut";
+} from "./cadModifiers";
+import { buildIndex, viewportBox } from "./spatialIndex";
+import { drawScene } from "./canvasScene";
+import { revalidateShared } from "./sharedCut";
 
 describe("Test all modify actions on rectPolyline", () => {
   const rect = rectPolyline({ x: 50, y: 50 }, { x: 200, y: 150 }, "corte");

@@ -26,7 +26,7 @@ export type FaceKind = "outer" | "inner" | "rim" | "cap";
 export type Face = {
   pts: Vec3[];
   kind: FaceKind;
-  n?: Vec3;
+  n?: Vec3 | undefined;
   /**
    * Grupo de casca (corpos que se cruzam, ex.: tubo principal = 0, ramal = 1).
    * Usado apenas como desempate de profundidade na apresentação; nunca altera

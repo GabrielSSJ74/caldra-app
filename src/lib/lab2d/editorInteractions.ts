@@ -38,7 +38,9 @@ export function copySelection(
     if (entity.type === "polyline") return entity.pts;
     if (entity.type === "circle" || entity.type === "arc") return [{ x: entity.cx, y: entity.cy }];
     if (entity.type === "path") return [entity.start];
-    return [{ x: entity.x, y: entity.y }];
+    if (entity.type === "ellipse") return [{ x: entity.cx, y: entity.cy }];
+    if (entity.type === "point") return [{ x: entity.x, y: entity.y }];
+    return [{ x: 0, y: 0 }];
   });
   const minX = Math.min(...points.map((point) => point.x));
   const minY = Math.min(...points.map((point) => point.y));
@@ -90,7 +92,13 @@ export function pasteClipboard(
         ),
       };
     }
-    return { ...base, x: base.x + dx, y: base.y + dy };
+    if (base.type === "ellipse") {
+      return { ...base, cx: base.cx + dx, cy: base.cy + dy };
+    }
+    if (base.type === "point") {
+      return { ...base, x: base.x + dx, y: base.y + dy };
+    }
+    return base;
   });
   const groups = [...groupIds].map(([oldId, id]) => ({
     id,
