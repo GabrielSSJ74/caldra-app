@@ -5299,6 +5299,77 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </form>
         </DialogContent>
       </Dialog>
+      {/* COMANDOS E MODAIS AVANÇADOS DO CAD */}
+      <ChamferQuickCommandModal
+        open={quickCommandOpen}
+        onClose={() => setQuickCommandOpen(false)}
+        commands={quickCommands}
+      />
+
+      <ChamferTopologyHealthModal
+        open={topologyHealthOpen}
+        onClose={() => setTopologyHealthOpen(false)}
+        entities={entities}
+        onApplyHeal={(healed) => {
+          commit(healed);
+          setTopologyHealthOpen(false);
+          toast.success("Correção topológica aplicada com sucesso!");
+        }}
+      />
+
+      <ChamferPresetsModal
+        open={presetsModalOpen}
+        onClose={() => setPresetsModalOpen(false)}
+        insertPosition={{ x: 0, y: 0 }}
+        onInsertEntities={(newEntities) => {
+          commit((prev) => [...prev, ...newEntities]);
+          setSelection(newEntities.map((e) => e.id));
+          toast.success(`${newEntities.length} entidade(s) inserida(s) no projeto.`);
+        }}
+        isDark={isDark}
+      />
+
+      <ChamferTechnicalSheetModal
+        open={technicalSheetModalOpen}
+        onClose={() => setTechnicalSheetModalOpen(false)}
+        suggestedOrigin={{ x: 0, y: 0 }}
+        onInsertSheet={(sheetEntities) => {
+          commit((prev) => [...prev, ...sheetEntities]);
+          toast.success("Folha técnica e legenda inseridas.");
+        }}
+      />
+
+      <ChamferVariablesModal
+        open={variablesModalOpen}
+        onClose={() => setVariablesModalOpen(false)}
+        onVariablesChange={() => {
+          toast.info("Tabela de variáveis atualizada.");
+        }}
+      />
+
+      {/* DUAL TOOL HUD */}
+      {dualToolSecondary && (
+        <ChamferDualToolHUD
+          primaryTool={tool}
+          secondaryTool={dualToolSecondary}
+          isPinned={dualToolPinned}
+          onSwapTools={() => {
+            const old = tool;
+            setTool(dualToolSecondary);
+            setDualToolSecondary(old);
+          }}
+          onClearSecondary={() => setDualToolSecondary(null)}
+          onTogglePin={() => setDualToolPinned((p) => !p)}
+        />
+      )}
+
+      {/* CURSOR MAGNÉTICO E LUPA DE PRECISÃO TOUCH */}
+      <ChamferPrecisionLoupeOverlay
+        visible={loupeVisible}
+        screenPos={loupeScreenPos}
+        cadPos={loupeCadPos}
+        isDark={isDark}
+      />
     </div>
   );
 }
