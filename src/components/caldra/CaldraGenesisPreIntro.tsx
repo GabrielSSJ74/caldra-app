@@ -1,13 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { useSettings, type ThemeMode, type AccentColor } from "@/lib/settings/SettingsProvider";
 
 interface CaldraGenesisPreIntroProps {
-  /** Chamado quando a animação termina naturalmente ou o usuário pula */
+  /** Chamado quando a animação termina após exatamente 5,000 segundos */
   onComplete: () => void;
-  /** Se deve permitir pular a animação (padrão true) */
-  allowSkip?: boolean;
-  /** Duração total da animação em milissegundos (padrão 5800ms para 5.8s a 6.0s) */
-  durationMs?: number;
+  /** Força o uso da composição original de cores da marca se true */
+  forceOriginalColors?: boolean;
   className?: string;
 }
 
@@ -16,33 +15,35 @@ interface Vec2 {
   y: number;
 }
 
+const FIRST_RUN_KEY = "caldra.genesis.played_first";
+
 /* ========================================================================== */
-/* GEOMETRIA CANÔNICA EXATA DA LOGO CALDRA (VIEWBOX 0 0 100 100)              */
+/* GEOMETRIA CANÔNICA DA LOGO CALDRA (VIEWBOX 0 0 100 100)                    */
 /* ========================================================================== */
 
-// Vértices do corpo "C" com chanfros a 45°
+// Vértices do corpo "C" com chanfros e diagonais a 45°
 const OUTER_C_VERTICES: Vec2[] = [
-  { x: 38, y: 18 }, // V0: Início topo chanfrado
-  { x: 82, y: 18 }, // V1: Ponta superior direita
-  { x: 66.5, y: 33.5 }, // V2: Diagonal interna 45°
-  { x: 50, y: 33.5 }, // V3: Patamar horizontal superior
-  { x: 33.5, y: 50 }, // V4: Entalhe central a 45°
-  { x: 50, y: 66.5 }, // V5: Patamar horizontal inferior
-  { x: 82, y: 66.5 }, // V6: Ponta inferior direita
-  { x: 66.5, y: 82 }, // V7: Diagonal inferior 45°
-  { x: 38, y: 82 }, // V8: Base horizontal
-  { x: 18, y: 62 }, // V9: Chanfro inferior esquerdo
-  { x: 18, y: 38 }, // V10: Aresta vertical esquerda
-  { x: 38, y: 18 }, // V11: Retorno ao início (fechamento)
+  { x: 38, y: 18 },
+  { x: 82, y: 18 },
+  { x: 66.5, y: 33.5 },
+  { x: 50, y: 33.5 },
+  { x: 33.5, y: 50 },
+  { x: 50, y: 66.5 },
+  { x: 82, y: 66.5 },
+  { x: 66.5, y: 82 },
+  { x: 38, y: 82 },
+  { x: 18, y: 62 },
+  { x: 18, y: 38 },
+  { x: 38, y: 18 },
 ];
 
 // Vértices da pastilha paralelogramo interna (Azul CALDRA a 45°)
 const INNER_BLUE_VERTICES: Vec2[] = [
-  { x: 43, y: 42.5 }, // I0: Canto superior esquerdo
-  { x: 60, y: 42.5 }, // I1: Canto superior direito
-  { x: 75.5, y: 58 }, // I2: Canto inferior direito
-  { x: 58.5, y: 58 }, // I3: Canto inferior esquerdo
-  { x: 43, y: 42.5 }, // I4: Retorno ao início (fechamento)
+  { x: 43, y: 42.5 },
+  { x: 60, y: 42.5 },
+  { x: 75.5, y: 58 },
+  { x: 58.5, y: 58 },
+  { x: 43, y: 42.5 },
 ];
 
 /** Interpolação paramétrica contínua ao longo de um polígono vetorial */
@@ -91,37 +92,437 @@ function mapRange(t: number, start: number, end: number): number {
   return easeInOutCubic(norm);
 }
 
+/* ========================================================================== */
+/* PALETA DINÂMICA DE CORES (ORIGINAL VS TEMA / DESTAQUE DINÂMICOS)           */
+/* ========================================================================== */
+
+interface GenesisPalette {
+  isDark: boolean;
+  background: string;
+  gridBaseColor: string;
+  gridBaseOpacity: number;
+  gridMajorColor: string;
+  gridMajorOpacity: number;
+  gridBrightColor: string;
+  axesColor: string;
+  raysColor: string;
+  crossesColor: string;
+  compassCircleColor: string;
+  outerPenColor: string;
+  cursorOuterCore: string;
+  cursorOuterGlow: string;
+  innerPenColor: string;
+  cursorInnerCore: string;
+  cursorInnerGlow: string;
+  cBodyGradient: [string, string, string, string];
+  cBodyStroke: string;
+  innerGradient: [string, string, string];
+  innerStroke: string;
+  innerTopEdge: string;
+  specularGradient: [string, string, string, string];
+}
+
+function computePalette(
+  isFirstRun: boolean,
+  theme: ThemeMode,
+  accent: AccentColor,
+): GenesisPalette {
+  // 1. PRIMEIRA ABERTURA DO APLICATIVO: Composição original de cores canônica
+  if (isFirstRun) {
+    return {
+      isDark: true,
+      background: "#051833",
+      gridBaseColor: "#FB7185",
+      gridBaseOpacity: 0.14,
+      gridMajorColor: "#F43F5E",
+      gridMajorOpacity: 0.26,
+      gridBrightColor: "#FDA4AF",
+      axesColor: "#38BDF8",
+      raysColor: "#94A3B8",
+      crossesColor: "#F8FAFC",
+      compassCircleColor: "#38BDF8",
+      outerPenColor: "#FFFFFF",
+      cursorOuterCore: "#FFFFFF",
+      cursorOuterGlow: "#38BDF8",
+      innerPenColor: "#007AFF",
+      cursorInnerCore: "#FFFFFF",
+      cursorInnerGlow: "#60A5FA",
+      cBodyGradient: ["#FFFFFF", "#F8FAFC", "#E2E8F0", "#CBD5E1"],
+      cBodyStroke: "#FFFFFF",
+      innerGradient: ["#38BDF8", "#007AFF", "#0052CC"],
+      innerStroke: "#38BDF8",
+      innerTopEdge: "#93C5FD",
+      specularGradient: [
+        "rgba(255,255,255,0.40)",
+        "rgba(255,255,255,0.05)",
+        "rgba(5,24,51,0.25)",
+        "rgba(0,0,0,0.35)",
+      ],
+    };
+  }
+
+  // 2. ABERTURAS POSTERIORES: Adaptação ao Tema (Escuro / Claro) e Cor de Destaque
+  const isDark =
+    theme === "dark" ||
+    theme === "amoled" ||
+    (theme === "system" &&
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(prefers-color-scheme: dark)").matches);
+
+  if (isDark) {
+    // MODO ESCURO
+    const bg = theme === "amoled" ? "#000000" : "#070B14";
+    const cBodyGrad: [string, string, string, string] = [
+      "#FFFFFF",
+      "#F8FAFC",
+      "#E2E8F0",
+      "#CBD5E1",
+    ];
+    const cStroke = "#FFFFFF";
+
+    switch (accent) {
+      case "amber":
+        return {
+          isDark: true,
+          background: bg,
+          gridBaseColor: "#F59E0B",
+          gridBaseOpacity: 0.12,
+          gridMajorColor: "#D97706",
+          gridMajorOpacity: 0.24,
+          gridBrightColor: "#FDE68A",
+          axesColor: "#F59E0B",
+          raysColor: "#78716C",
+          crossesColor: "#FDE68A",
+          compassCircleColor: "#FBBF24",
+          outerPenColor: "#FFFFFF",
+          cursorOuterCore: "#FFFFFF",
+          cursorOuterGlow: "#F59E0B",
+          innerPenColor: "#F59E0B",
+          cursorInnerCore: "#FFFFFF",
+          cursorInnerGlow: "#FBBF24",
+          cBodyGradient: cBodyGrad,
+          cBodyStroke: cStroke,
+          innerGradient: ["#FDE68A", "#F59E0B", "#B45309"],
+          innerStroke: "#FDE68A",
+          innerTopEdge: "#FEF08A",
+          specularGradient: [
+            "rgba(255,255,255,0.35)",
+            "rgba(255,255,255,0.05)",
+            "rgba(0,0,0,0.25)",
+            "rgba(0,0,0,0.40)",
+          ],
+        };
+
+      case "crimson":
+      case "magenta":
+        return {
+          isDark: true,
+          background: bg,
+          gridBaseColor: "#FB7185",
+          gridBaseOpacity: 0.12,
+          gridMajorColor: "#E11D48",
+          gridMajorOpacity: 0.24,
+          gridBrightColor: "#FECDD3",
+          axesColor: "#E11D48",
+          raysColor: "#78716C",
+          crossesColor: "#FDA4AF",
+          compassCircleColor: "#F43F5E",
+          outerPenColor: "#FFFFFF",
+          cursorOuterCore: "#FFFFFF",
+          cursorOuterGlow: "#E11D48",
+          innerPenColor: "#E11D48",
+          cursorInnerCore: "#FFFFFF",
+          cursorInnerGlow: "#FB7185",
+          cBodyGradient: cBodyGrad,
+          cBodyStroke: cStroke,
+          innerGradient: ["#FB7185", "#E11D48", "#9F1239"],
+          innerStroke: "#FB7185",
+          innerTopEdge: "#FDA4AF",
+          specularGradient: [
+            "rgba(255,255,255,0.35)",
+            "rgba(255,255,255,0.05)",
+            "rgba(0,0,0,0.25)",
+            "rgba(0,0,0,0.40)",
+          ],
+        };
+
+      case "default":
+        // Preto & Branco no modo escuro -> Branco dominante
+        return {
+          isDark: true,
+          background: bg,
+          gridBaseColor: "#FFFFFF",
+          gridBaseOpacity: 0.09,
+          gridMajorColor: "#E2E8F0",
+          gridMajorOpacity: 0.20,
+          gridBrightColor: "#FFFFFF",
+          axesColor: "#FFFFFF",
+          raysColor: "#94A3B8",
+          crossesColor: "#FFFFFF",
+          compassCircleColor: "#E2E8F0",
+          outerPenColor: "#FFFFFF",
+          cursorOuterCore: "#FFFFFF",
+          cursorOuterGlow: "#E2E8F0",
+          innerPenColor: "#E2E8F0",
+          cursorInnerCore: "#FFFFFF",
+          cursorInnerGlow: "#CBD5E1",
+          cBodyGradient: cBodyGrad,
+          cBodyStroke: cStroke,
+          innerGradient: ["#FFFFFF", "#E2E8F0", "#94A3B8"],
+          innerStroke: "#FFFFFF",
+          innerTopEdge: "#FFFFFF",
+          specularGradient: [
+            "rgba(255,255,255,0.40)",
+            "rgba(255,255,255,0.05)",
+            "rgba(0,0,0,0.25)",
+            "rgba(0,0,0,0.40)",
+          ],
+        };
+
+      case "blue":
+      default:
+        // AZUL REAL no escuro
+        return {
+          isDark: true,
+          background: bg,
+          gridBaseColor: "#38BDF8",
+          gridBaseOpacity: 0.12,
+          gridMajorColor: "#0284C7",
+          gridMajorOpacity: 0.24,
+          gridBrightColor: "#BAE6FD",
+          axesColor: "#007AFF",
+          raysColor: "#64748B",
+          crossesColor: "#93C5FD",
+          compassCircleColor: "#38BDF8",
+          outerPenColor: "#FFFFFF",
+          cursorOuterCore: "#FFFFFF",
+          cursorOuterGlow: "#38BDF8",
+          innerPenColor: "#007AFF",
+          cursorInnerCore: "#FFFFFF",
+          cursorInnerGlow: "#60A5FA",
+          cBodyGradient: cBodyGrad,
+          cBodyStroke: cStroke,
+          innerGradient: ["#60A5FA", "#007AFF", "#0047AB"],
+          innerStroke: "#60A5FA",
+          innerTopEdge: "#93C5FD",
+          specularGradient: [
+            "rgba(255,255,255,0.35)",
+            "rgba(255,255,255,0.05)",
+            "rgba(0,0,0,0.25)",
+            "rgba(0,0,0,0.40)",
+          ],
+        };
+    }
+  } else {
+    // MODO CLARO
+    const bg = "#FAF9F6";
+    // No modo claro, corpo C em grafite/aço carbono garante alto contraste
+    const cBodyGrad: [string, string, string, string] = [
+      "#27272A",
+      "#18181B",
+      "#18181B",
+      "#09090B",
+    ];
+    const cStroke = "#18181B";
+
+    switch (accent) {
+      case "amber":
+        return {
+          isDark: false,
+          background: bg,
+          gridBaseColor: "#D97706",
+          gridBaseOpacity: 0.12,
+          gridMajorColor: "#B45309",
+          gridMajorOpacity: 0.24,
+          gridBrightColor: "#92400E",
+          axesColor: "#B45309",
+          raysColor: "#78716C",
+          crossesColor: "#B45309",
+          compassCircleColor: "#D97706",
+          outerPenColor: "#18181B",
+          cursorOuterCore: "#18181B",
+          cursorOuterGlow: "#D97706",
+          innerPenColor: "#B45309",
+          cursorInnerCore: "#FFFFFF",
+          cursorInnerGlow: "#D97706",
+          cBodyGradient: cBodyGrad,
+          cBodyStroke: cStroke,
+          innerGradient: ["#FBBF24", "#F59E0B", "#B45309"],
+          innerStroke: "#FBBF24",
+          innerTopEdge: "#FDE68A",
+          specularGradient: [
+            "rgba(255,255,255,0.35)",
+            "rgba(255,255,255,0.05)",
+            "rgba(0,0,0,0.25)",
+            "rgba(0,0,0,0.45)",
+          ],
+        };
+
+      case "crimson":
+      case "magenta":
+        return {
+          isDark: false,
+          background: bg,
+          gridBaseColor: "#E11D48",
+          gridBaseOpacity: 0.12,
+          gridMajorColor: "#BE123C",
+          gridMajorOpacity: 0.24,
+          gridBrightColor: "#9F1239",
+          axesColor: "#BE123C",
+          raysColor: "#78716C",
+          crossesColor: "#BE123C",
+          compassCircleColor: "#E11D48",
+          outerPenColor: "#18181B",
+          cursorOuterCore: "#18181B",
+          cursorOuterGlow: "#BE123C",
+          innerPenColor: "#BE123C",
+          cursorInnerCore: "#FFFFFF",
+          cursorInnerGlow: "#E11D48",
+          cBodyGradient: cBodyGrad,
+          cBodyStroke: cStroke,
+          innerGradient: ["#FB7185", "#E11D48", "#9F1239"],
+          innerStroke: "#FB7185",
+          innerTopEdge: "#FDA4AF",
+          specularGradient: [
+            "rgba(255,255,255,0.35)",
+            "rgba(255,255,255,0.05)",
+            "rgba(0,0,0,0.25)",
+            "rgba(0,0,0,0.45)",
+          ],
+        };
+
+      case "default":
+        // Preto & Branco no modo claro -> Preto dominante
+        return {
+          isDark: false,
+          background: bg,
+          gridBaseColor: "#52525B",
+          gridBaseOpacity: 0.12,
+          gridMajorColor: "#27272A",
+          gridMajorOpacity: 0.24,
+          gridBrightColor: "#09090B",
+          axesColor: "#18181B",
+          raysColor: "#71717A",
+          crossesColor: "#18181B",
+          compassCircleColor: "#27272A",
+          outerPenColor: "#09090B",
+          cursorOuterCore: "#09090B",
+          cursorOuterGlow: "#52525B",
+          innerPenColor: "#27272A",
+          cursorInnerCore: "#FFFFFF",
+          cursorInnerGlow: "#52525B",
+          cBodyGradient: cBodyGrad,
+          cBodyStroke: cStroke,
+          innerGradient: ["#3F3F46", "#27272A", "#18181B"],
+          innerStroke: "#3F3F46",
+          innerTopEdge: "#71717A",
+          specularGradient: [
+            "rgba(255,255,255,0.35)",
+            "rgba(255,255,255,0.05)",
+            "rgba(0,0,0,0.25)",
+            "rgba(0,0,0,0.45)",
+          ],
+        };
+
+      case "blue":
+      default:
+        // AZUL REAL no claro
+        return {
+          isDark: false,
+          background: bg,
+          gridBaseColor: "#0284C7",
+          gridBaseOpacity: 0.12,
+          gridMajorColor: "#0369A1",
+          gridMajorOpacity: 0.24,
+          gridBrightColor: "#075985",
+          axesColor: "#0284C7",
+          raysColor: "#64748B",
+          crossesColor: "#0284C7",
+          compassCircleColor: "#0369A1",
+          outerPenColor: "#18181B",
+          cursorOuterCore: "#18181B",
+          cursorOuterGlow: "#0284C7",
+          innerPenColor: "#007AFF",
+          cursorInnerCore: "#FFFFFF",
+          cursorInnerGlow: "#0284C7",
+          cBodyGradient: cBodyGrad,
+          cBodyStroke: cStroke,
+          innerGradient: ["#38BDF8", "#007AFF", "#0052CC"],
+          innerStroke: "#38BDF8",
+          innerTopEdge: "#93C5FD",
+          specularGradient: [
+            "rgba(255,255,255,0.35)",
+            "rgba(255,255,255,0.05)",
+            "rgba(0,0,0,0.25)",
+            "rgba(0,0,0,0.45)",
+          ],
+        };
+    }
+  }
+}
+
 /**
- * GÊNESE VISUAL CALDRA — MOTION DESIGN PREMIUM CAD/ENGENHARIA
+ * GÊNESE VISUAL CALDRA — MOTION DESIGN DE ENGENHARIA / CAD
  *
- * RITMO REFINADO (5 a 6 segundos):
- * - 0.0s – 0.5s: Fundo técnico #051833 e ponto luminoso germinal.
- * - 0.5s – 1.1s: Grid milimetrado e eixos construídos com traçado progressivo.
- * - 1.1s – 2.2s: Linhas e arcos auxiliares (45°, compasso R32, cotas) desenhados em tempo real.
- * - 2.2s – 3.5s: A geometria da logo é traçada pelo cursor técnico deixando o contorno atrás.
- * - 3.5s – 4.4s: Morph das linhas técnicas para a superfície sólida da logo.
- * - 4.4s – 5.0s: Logo completamente formada e dissolução suave das guias e grid.
- * - 5.0s – 5.5s: Breve pausa para a marca respirar com iluminação límpida.
- * - 5.5s – 6.0s: Transição suave para a introdução existente.
+ * REGRAS RIGOROSAS:
+ * 1. Zero números, zero cotas, zero textos numéricos ou rótulos. Somente desenho geométrico puro.
+ * 2. Na primeira abertura: composição canônica original da marca (#051833, azul CALDRA, aço prata).
+ * 3. Em aberturas posteriores: adaptação dinâmica ao tema (Escuro/Claro) e cor de destaque salva.
+ * 4. Duração: EXATAMENTE 5,000 SEGUNDOS entre o primeiro frame e o início do aplicativo.
+ * 5. Bloqueio de interação durante os 5 segundos; transição suave no fim exato.
  */
 export function CaldraGenesisPreIntro({
   onComplete,
-  allowSkip = true,
-  durationMs = 5800,
+  forceOriginalColors = false,
   className,
 }: CaldraGenesisPreIntroProps) {
+  // Consulta configurações visuais salvas
+  let currentTheme: ThemeMode = "light";
+  let currentAccent: AccentColor = "crimson";
+  try {
+    const settings = useSettings();
+    currentTheme = settings.theme;
+    currentAccent = settings.accent;
+  } catch {
+    /* fallback seguro se montado fora de contexto */
+  }
+
+  // Identifica primeira abertura do app
+  const [isFirstRun] = useState(() => {
+    if (forceOriginalColors) return true;
+    if (typeof window === "undefined") return false;
+    try {
+      return !localStorage.getItem(FIRST_RUN_KEY);
+    } catch {
+      return false;
+    }
+  });
+
+  const palette = computePalette(isFirstRun, currentTheme, currentAccent);
+
   const [progress, setProgress] = useState(0);
   const [isExiting, setIsExiting] = useState(false);
+
   const startTimeRef = useRef<number | null>(null);
   const rafRef = useRef<number | null>(null);
+  const isExitingRef = useRef(false);
+  const finishedRef = useRef(false);
+
+  /* DURAÇÃO EXATA: 5,000 SEGUNDOS (5000ms cravados) */
+  const TOTAL_DURATION_MS = 5000;
+  const FADE_OUT_MS = 400;
+  const PLAY_DURATION_MS = TOTAL_DURATION_MS - FADE_OUT_MS; // 4600ms
 
   const handleFinish = useCallback(() => {
-    if (isExiting) return;
-    setIsExiting(true);
-    window.setTimeout(() => {
-      onComplete();
-    }, 480);
-  }, [isExiting, onComplete]);
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    try {
+      localStorage.setItem(FIRST_RUN_KEY, "true");
+    } catch {
+      /* ignore */
+    }
+    onComplete();
+  }, [onComplete]);
 
   useEffect(() => {
     let active = true;
@@ -132,18 +533,24 @@ export function CaldraGenesisPreIntro({
         startTimeRef.current = timestamp;
       }
       const elapsed = timestamp - startTimeRef.current;
-      const rawP = Math.min(1, elapsed / durationMs);
 
+      // Progresso da construção geométrica (0 a 1 em 4600ms)
+      const rawP = Math.min(1, elapsed / PLAY_DURATION_MS);
       setProgress(rawP);
 
-      if (rawP < 1) {
-        rafRef.current = requestAnimationFrame(frame);
-      } else {
-        // Pausa de respiro e transição final (5.5s - 6.0s)
-        window.setTimeout(() => {
-          if (active) handleFinish();
-        }, 150);
+      // Inicia o fade out suave em 4600ms
+      if (elapsed >= PLAY_DURATION_MS && !isExitingRef.current) {
+        isExitingRef.current = true;
+        setIsExiting(true);
       }
+
+      // Ao completar exatamente 5000ms (5,000s), executa a transição imediata
+      if (elapsed >= TOTAL_DURATION_MS) {
+        handleFinish();
+        return;
+      }
+
+      rafRef.current = requestAnimationFrame(frame);
     };
 
     rafRef.current = requestAnimationFrame(frame);
@@ -152,52 +559,41 @@ export function CaldraGenesisPreIntro({
       active = false;
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [durationMs, handleFinish]);
-
-  // Suporte a teclado
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" || e.key === " " || e.key === "Enter") {
-        handleFinish();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [handleFinish]);
+  }, [handleFinish, PLAY_DURATION_MS, TOTAL_DURATION_MS]);
 
   /* -------------------------------------------------------------------------- */
-  /* CRONOGRAMA DE ETAPAS (NORMALIZADO PARA DURAÇÃO TOTAL T = 5.8s)             */
+  /* CRONOGRAMA DE ETAPAS (NORMALIZADO PARA T = 4.6s DE CONSTRUÇÃO)             */
   /* -------------------------------------------------------------------------- */
-  const T = 5.8;
+  const T = 4.6;
 
-  // 0.0s – 0.5s: Fundo e Ponto Germinal
-  const pBackground = mapRange(progress, 0.0, 0.5 / T);
-  const pDotPulse = mapRange(progress, 0.05 / T, 0.35 / T);
+  // 0.0s – 0.4s: Fundo e Ponto Germinal Inicial
+  const pBackground = mapRange(progress, 0.0, 0.4 / T);
+  const pDotPulse = mapRange(progress, 0.05 / T, 0.32 / T);
 
-  // 0.5s – 1.1s: Grid e Eixos
-  const pGridExpand = mapRange(progress, 0.5 / T, 1.1 / T);
-  const pAxes = mapRange(progress, 0.65 / T, 1.15 / T);
+  // 0.4s – 0.9s: Grid e Eixos
+  const pGridExpand = mapRange(progress, 0.4 / T, 0.9 / T);
+  const pAxes = mapRange(progress, 0.55 / T, 0.95 / T);
 
-  // 1.1s – 2.2s: Linhas e Arcos de Construção CAD
-  const pRays45 = mapRange(progress, 1.1 / T, 1.6 / T);
-  const pCompassCircle = mapRange(progress, 1.3 / T, 1.95 / T);
-  const pAuxTangents = mapRange(progress, 1.65 / T, 2.2 / T);
-  const pCadAnnotations = mapRange(progress, 1.8 / T, 2.3 / T);
+  // 0.9s – 1.8s: Linhas e Arcos de Construção CAD
+  const pRays45 = mapRange(progress, 0.9 / T, 1.35 / T);
+  const pCompassCircle = mapRange(progress, 1.1 / T, 1.65 / T);
+  const pAuxTangents = mapRange(progress, 1.4 / T, 1.85 / T);
+  const pCrossNodes = mapRange(progress, 1.5 / T, 1.95 / T);
 
-  // 2.2s – 3.5s: A Própria Geometria da Logo Sendo Construída
-  const pDrawOuterC = mapRange(progress, 2.2 / T, 3.25 / T);
-  const pDrawInnerBlue = mapRange(progress, 2.65 / T, 3.5 / T);
+  // 1.8s – 3.0s: Traçado da Geometria da Logo em Tempo Real
+  const pDrawOuterC = mapRange(progress, 1.8 / T, 2.75 / T);
+  const pDrawInnerBlue = mapRange(progress, 2.2 / T, 3.0 / T);
 
-  // 3.5s – 4.4s: Preenchimento / Morph das Linhas Técnicas para a Superfície Sólida
-  const pMorphC = mapRange(progress, 3.5 / T, 4.35 / T);
-  const pMorphBlue = mapRange(progress, 3.65 / T, 4.4 / T);
+  // 3.0s – 3.8s: Preenchimento / Morph das Linhas Técnicas para a Superfície Sólida
+  const pMorphC = mapRange(progress, 3.0 / T, 3.75 / T);
+  const pMorphBlue = mapRange(progress, 3.15 / T, 3.8 / T);
 
-  // 4.4s – 5.0s: Dissolução Suave das Guias e Grid
-  const pGuidesFadeOut = 1 - mapRange(progress, 4.35 / T, 4.95 / T);
-  const pGridFadeOut = 1 - mapRange(progress, 4.5 / T, 5.1 / T);
+  // 3.8s – 4.3s: Dissolução Suave das Guias e Grid
+  const pGuidesFadeOut = 1 - mapRange(progress, 3.8 / T, 4.25 / T);
+  const pGridFadeOut = 1 - mapRange(progress, 3.9 / T, 4.35 / T);
 
-  // 5.0s – 5.5s: Pausa para a Marca Respirar + Reflexo Especular
-  const pFinalSheen = mapRange(progress, 4.8 / T, 5.5 / T);
+  // 4.3s – 4.6s: Pausa para a Marca Respirar + Reflexo Especular
+  const pFinalSheen = mapRange(progress, 4.1 / T, 4.6 / T);
 
   /* -------------------------------------------------------------------------- */
   /* CURSORES TÉCNICOS EM TEMPO REAL                                            */
@@ -213,14 +609,14 @@ export function CaldraGenesisPreIntro({
   // Posição exata do cursor na pastilha azul interna
   const innerCursor = getPolyPoint(INNER_BLUE_VERTICES, pDrawInnerBlue);
 
-  // Cursor do compasso traçando o círculo R32 durante 1.3s - 1.95s
+  // Cursor do compasso traçando o círculo R32
   const compassAngle = pCompassCircle * Math.PI * 2 - Math.PI / 2;
   const compassCursor: Vec2 = {
     x: 50 + 32 * Math.cos(compassAngle),
     y: 50 + 32 * Math.sin(compassAngle),
   };
 
-  // Cursor ativo mais relevante para guiar a reação luminosa do grid
+  // Cursor ativo que ilumina sutilmente a malha técnica
   let activeCursor: Vec2 = { x: 50, y: 50 };
   let hasActiveCursor = false;
 
@@ -235,54 +631,32 @@ export function CaldraGenesisPreIntro({
     hasActiveCursor = true;
   }
 
-  // Caminhos SVG canônicos
+  // Caminhos canônicos das formas
   const pathDataOuterC =
     "M 38 18 L 82 18 L 66.5 33.5 L 50 33.5 L 33.5 50 L 50 66.5 L 82 66.5 L 66.5 82 L 38 82 L 18 62 L 18 38 Z";
   const pathDataInnerBlue =
     "M 43 42.5 L 60 42.5 L 75.5 58 L 58.5 58 Z";
 
   return (
-    <aside
+    <div
       aria-label="Abertura técnica Caldra"
+      role="dialog"
+      aria-modal="true"
       className={cn(
-        "fixed inset-0 z-[120] flex flex-col items-center justify-center overflow-hidden select-none",
-        "bg-[#051833] text-white transition-opacity duration-500 ease-out",
+        "fixed inset-0 z-[120] flex flex-col items-center justify-center overflow-hidden select-none pointer-events-auto",
+        "transition-opacity duration-400 ease-out",
         isExiting ? "opacity-0 pointer-events-none" : "opacity-100",
         className,
       )}
       style={{
+        backgroundColor: palette.background,
         opacity: isExiting ? 0 : Math.min(1, pBackground * 1.5),
       }}
     >
-      {/* Botão sutil para pular (discreto, no canto superior) */}
-      {allowSkip && (
-        <button
-          type="button"
-          onClick={handleFinish}
-          className="absolute top-5 right-6 z-30 font-mono text-[11px] tracking-widest uppercase text-sky-200/50 hover:text-white transition-colors duration-200 px-3 py-1.5 rounded-full border border-sky-400/15 hover:border-sky-400/40 backdrop-blur-sm cursor-pointer"
-        >
-          Pular
-        </button>
-      )}
-
-      {/* Indicador discreto de fase de construção CAD no rodapé */}
-      <footer className="absolute bottom-6 inset-x-0 z-30 flex items-center justify-between px-8 text-sky-300/40 font-mono text-[9px] tracking-[0.25em] pointer-events-none">
-        <span className="hidden sm:inline">CALDRA CAD · KERNEL 2D</span>
-        <span className="mx-auto sm:mx-0">
-          {progress < 0.5 / T && "CALIBRANDO COORDENADAS"}
-          {progress >= 0.5 / T && progress < 1.1 / T && "CONSTRUINDO EIXOS E GRID"}
-          {progress >= 1.1 / T && progress < 2.2 / T && "TRAÇANDO RAIO E TANGENTES"}
-          {progress >= 2.2 / T && progress < 3.5 / T && "COMPUTANDO GEOMETRIA CANÔNICA"}
-          {progress >= 3.5 / T && progress < 4.4 / T && "EXPANDINDO SUPERFÍCIES"}
-          {progress >= 4.4 / T && "SÍMBOLO CONCLUÍDO"}
-        </span>
-        <span className="hidden sm:inline">PRECISÃO ZERO FRESTA</span>
-      </footer>
-
       {/* ====================================================================== */}
-      {/* CANVAS VETORIAL PRINCIPAL SVG (100% ESCALÁVEL E ULTRA PRECISO)         */}
+      {/* CANVAS VETORIAL SVG (SEM QUALQUER TEXTO, NÚMERO OU COTA)               */}
       {/* ====================================================================== */}
-      <div className="relative flex items-center justify-center w-full h-full max-w-[92vw] max-h-[85vh] aspect-square">
+      <div className="relative flex items-center justify-center w-full h-full max-w-[92vw] max-h-[85vh] aspect-square pointer-events-none">
         <svg
           viewBox="-45 -45 190 190"
           fill="none"
@@ -291,7 +665,7 @@ export function CaldraGenesisPreIntro({
           aria-hidden="true"
         >
           <defs>
-            {/* 1. MALHA MILIMETRADA TÉCNICA BASE (rosada suave sobre #051833) */}
+            {/* 1. MALHA MILIMETRADA TÉCNICA BASE */}
             <pattern
               id="genesis-subgrid"
               width="5"
@@ -301,9 +675,9 @@ export function CaldraGenesisPreIntro({
               <path
                 d="M 5 0 L 0 0 0 5"
                 fill="none"
-                stroke="#FB7185"
+                stroke={palette.gridBaseColor}
                 strokeWidth="0.22"
-                strokeOpacity="0.12"
+                strokeOpacity={palette.gridBaseOpacity}
               />
             </pattern>
 
@@ -317,9 +691,9 @@ export function CaldraGenesisPreIntro({
               <path
                 d="M 25 0 L 0 0 0 25"
                 fill="none"
-                stroke="#F43F5E"
+                stroke={palette.gridMajorColor}
                 strokeWidth="0.45"
-                strokeOpacity="0.24"
+                strokeOpacity={palette.gridMajorOpacity}
               />
             </pattern>
 
@@ -334,7 +708,7 @@ export function CaldraGenesisPreIntro({
               <path
                 d="M 25 0 L 0 0 0 25"
                 fill="none"
-                stroke="#FDA4AF"
+                stroke={palette.gridBrightColor}
                 strokeWidth="0.75"
                 strokeOpacity="0.85"
               />
@@ -349,7 +723,7 @@ export function CaldraGenesisPreIntro({
               <path
                 d="M 5 0 L 0 0 0 5"
                 fill="none"
-                stroke="#FDA4AF"
+                stroke={palette.gridBrightColor}
                 strokeWidth="0.38"
                 strokeOpacity="0.55"
               />
@@ -398,27 +772,27 @@ export function CaldraGenesisPreIntro({
               <path d={pathDataInnerBlue} />
             </clipPath>
 
-            {/* Gradiente da chapa de aço/prata metálica da CALDRA */}
+            {/* Gradiente do corpo metálico da CALDRA */}
             <linearGradient id="c-sheen" x1="18" y1="18" x2="82" y2="82" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#FFFFFF" />
-              <stop offset="35%" stopColor="#F8FAFC" />
-              <stop offset="70%" stopColor="#E2E8F0" />
-              <stop offset="100%" stopColor="#CBD5E1" />
+              <stop offset="0%" stopColor={palette.cBodyGradient[0]} />
+              <stop offset="35%" stopColor={palette.cBodyGradient[1]} />
+              <stop offset="70%" stopColor={palette.cBodyGradient[2]} />
+              <stop offset="100%" stopColor={palette.cBodyGradient[3]} />
             </linearGradient>
 
-            {/* Gradiente azul royal icônico oficial da CALDRA */}
+            {/* Gradiente da pastilha interna */}
             <linearGradient id="blue-chevron" x1="43" y1="42.5" x2="75.5" y2="58" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#38BDF8" />
-              <stop offset="35%" stopColor="#007AFF" />
-              <stop offset="100%" stopColor="#0052CC" />
+              <stop offset="0%" stopColor={palette.innerGradient[0]} />
+              <stop offset="35%" stopColor={palette.innerGradient[1]} />
+              <stop offset="100%" stopColor={palette.innerGradient[2]} />
             </linearGradient>
 
             {/* Reflexo chanfrado especular sobre o logo final */}
             <linearGradient id="specular-reflection" x1="20" y1="20" x2="80" y2="80" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.4" />
-              <stop offset="40%" stopColor="#FFFFFF" stopOpacity="0.05" />
-              <stop offset="75%" stopColor="#051833" stopOpacity="0.25" />
-              <stop offset="100%" stopColor="#000000" stopOpacity="0.35" />
+              <stop offset="0%" stopColor={palette.specularGradient[0]} />
+              <stop offset="40%" stopColor={palette.specularGradient[1]} />
+              <stop offset="75%" stopColor={palette.specularGradient[2]} />
+              <stop offset="100%" stopColor={palette.specularGradient[3]} />
             </linearGradient>
           </defs>
 
@@ -458,33 +832,33 @@ export function CaldraGenesisPreIntro({
             </g>
           )}
 
-          {/* Eixos Cartesianos X e Y Centrais (Origem 50, 50) */}
+          {/* Eixos Cartesianos X e Y Centrais (sem numerais) */}
           {pAxes > 0 && pGuidesFadeOut > 0 && (
             <g opacity={pAxes * pGuidesFadeOut}>
-              {/* Eixo X traçado a partir do centro */}
+              {/* Eixo X */}
               <line
                 x1={50 - 75 * pAxes}
                 y1="50"
                 x2={50 + 75 * pAxes}
                 y2="50"
-                stroke="#38BDF8"
+                stroke={palette.axesColor}
                 strokeWidth="0.55"
                 strokeDasharray="4 2"
-                strokeOpacity="0.7"
+                strokeOpacity="0.75"
               />
-              {/* Eixo Y traçado a partir do centro */}
+              {/* Eixo Y */}
               <line
                 x1="50"
                 y1={50 - 75 * pAxes}
                 x2="50"
                 y2={50 + 75 * pAxes}
-                stroke="#38BDF8"
+                stroke={palette.axesColor}
                 strokeWidth="0.55"
                 strokeDasharray="4 2"
-                strokeOpacity="0.7"
+                strokeOpacity="0.75"
               />
 
-              {/* Ticks milimétricos calibrados nos eixos */}
+              {/* Ticks milimétricos calibrados nos eixos (sem números) */}
               {[-30, -20, -10, 10, 20, 30].map((delta) => (
                 <g key={`tick-${delta}`} opacity={pAxes * 0.85}>
                   <line
@@ -492,7 +866,7 @@ export function CaldraGenesisPreIntro({
                     y1={48.8}
                     x2={50 + delta}
                     y2={51.2}
-                    stroke="#F43F5E"
+                    stroke={palette.gridMajorColor}
                     strokeWidth="0.4"
                     strokeOpacity="0.75"
                   />
@@ -501,20 +875,20 @@ export function CaldraGenesisPreIntro({
                     y1={50 + delta}
                     x2={51.2}
                     y2={50 + delta}
-                    stroke="#F43F5E"
+                    stroke={palette.gridMajorColor}
                     strokeWidth="0.4"
                     strokeOpacity="0.75"
                   />
                 </g>
               ))}
 
-              {/* Origem técnica (0, 0) */}
+              {/* Origem geométrica central (0, 0) */}
               <circle
                 cx="50"
                 cy="50"
                 r="1.6"
                 fill="none"
-                stroke="#38BDF8"
+                stroke={palette.axesColor}
                 strokeWidth="0.5"
                 strokeOpacity="0.85"
               />
@@ -528,25 +902,25 @@ export function CaldraGenesisPreIntro({
                 cx="50"
                 cy="50"
                 r="4.2"
-                fill="#38BDF8"
+                fill={palette.cursorOuterGlow}
                 fillOpacity="0.25"
               />
               <circle
                 cx="50"
                 cy="50"
                 r="1.2"
-                fill="#FFFFFF"
+                fill={palette.outerPenColor}
               />
             </g>
           )}
 
           {/* ================================================================== */}
-          {/* ETAPA 3: LINHAS E ARCOS DE CONSTRUÇÃO CAD (TRAÇADOS EM TEMPO REAL)  */}
+          {/* ETAPA 3: LINHAS E ARCOS DE CONSTRUÇÃO CAD (SEM COTA/NÚMEROS)        */}
           {/* ================================================================== */}
 
           {pGuidesFadeOut > 0 && (
             <g opacity={pGuidesFadeOut}>
-              {/* Raios fundamentais de caldeiraria a 45° */}
+              {/* Raios fundamentais a 45° */}
               {pRays45 > 0 && (
                 <g opacity={pRays45}>
                   <line
@@ -554,7 +928,7 @@ export function CaldraGenesisPreIntro({
                     y1={50 - 55 * pRays45}
                     x2={50 + 55 * pRays45}
                     y2={50 + 55 * pRays45}
-                    stroke="#94A3B8"
+                    stroke={palette.raysColor}
                     strokeWidth="0.4"
                     strokeDasharray="3 3"
                     strokeOpacity="0.6"
@@ -564,7 +938,7 @@ export function CaldraGenesisPreIntro({
                     y1={50 + 55 * pRays45}
                     x2={50 + 55 * pRays45}
                     y2={50 - 55 * pRays45}
-                    stroke="#94A3B8"
+                    stroke={palette.raysColor}
                     strokeWidth="0.4"
                     strokeDasharray="3 3"
                     strokeOpacity="0.6"
@@ -580,19 +954,19 @@ export function CaldraGenesisPreIntro({
                     cy="50"
                     r="32"
                     fill="none"
-                    stroke="#38BDF8"
+                    stroke={palette.compassCircleColor}
                     strokeWidth="0.45"
                     strokeDasharray={`${2 * Math.PI * 32}`}
                     strokeDashoffset={`${2 * Math.PI * 32 * (1 - pCompassCircle)}`}
                     strokeOpacity="0.55"
                   />
-                  {/* Círculo do entalhe central R23.33 */}
+                  {/* Círculo concêntrico do entalhe central */}
                   <circle
                     cx="50"
                     cy="50"
                     r="23.33"
                     fill="none"
-                    stroke="#94A3B8"
+                    stroke={palette.raysColor}
                     strokeWidth="0.35"
                     strokeDasharray="2 3"
                     strokeOpacity={0.45 * pCompassCircle}
@@ -603,14 +977,14 @@ export function CaldraGenesisPreIntro({
               {/* Reticulado delimitador e tangentes auxiliares */}
               {pAuxTangents > 0 && (
                 <g opacity={pAuxTangents}>
-                  {/* Caixa 64x64 mm de 18 a 82 */}
+                  {/* Caixa delimitadora de 18 a 82 */}
                   <rect
                     x="18"
                     y="18"
                     width="64"
                     height="64"
                     fill="none"
-                    stroke="#64748B"
+                    stroke={palette.raysColor}
                     strokeWidth="0.35"
                     strokeDasharray="2 3"
                     strokeOpacity="0.45"
@@ -622,7 +996,7 @@ export function CaldraGenesisPreIntro({
                     y1="18"
                     x2="90"
                     y2="18"
-                    stroke="#38BDF8"
+                    stroke={palette.axesColor}
                     strokeWidth="0.32"
                     strokeDasharray="4 4"
                     strokeOpacity="0.4"
@@ -632,7 +1006,7 @@ export function CaldraGenesisPreIntro({
                     y1="82"
                     x2="90"
                     y2="82"
-                    stroke="#38BDF8"
+                    stroke={palette.axesColor}
                     strokeWidth="0.32"
                     strokeDasharray="4 4"
                     strokeOpacity="0.4"
@@ -643,7 +1017,7 @@ export function CaldraGenesisPreIntro({
                     y1="10"
                     x2="18"
                     y2="90"
-                    stroke="#38BDF8"
+                    stroke={palette.axesColor}
                     strokeWidth="0.32"
                     strokeDasharray="4 4"
                     strokeOpacity="0.4"
@@ -655,7 +1029,7 @@ export function CaldraGenesisPreIntro({
                     y1="33.5"
                     x2="75"
                     y2="33.5"
-                    stroke="#94A3B8"
+                    stroke={palette.raysColor}
                     strokeWidth="0.3"
                     strokeDasharray="2 2"
                     strokeOpacity="0.5"
@@ -665,7 +1039,7 @@ export function CaldraGenesisPreIntro({
                     y1="66.5"
                     x2="85"
                     y2="66.5"
-                    stroke="#94A3B8"
+                    stroke={palette.raysColor}
                     strokeWidth="0.3"
                     strokeDasharray="2 2"
                     strokeOpacity="0.5"
@@ -677,7 +1051,7 @@ export function CaldraGenesisPreIntro({
                     y1="42.5"
                     x2="68"
                     y2="42.5"
-                    stroke="#38BDF8"
+                    stroke={palette.axesColor}
                     strokeWidth="0.28"
                     strokeDasharray="1 2"
                     strokeOpacity="0.45"
@@ -687,7 +1061,7 @@ export function CaldraGenesisPreIntro({
                     y1="58"
                     x2="82"
                     y2="58"
-                    stroke="#38BDF8"
+                    stroke={palette.axesColor}
                     strokeWidth="0.28"
                     strokeDasharray="1 2"
                     strokeOpacity="0.45"
@@ -695,9 +1069,9 @@ export function CaldraGenesisPreIntro({
                 </g>
               )}
 
-              {/* Cruzes de centro nos nós principais e cotas técnicas CAD */}
-              {pCadAnnotations > 0 && (
-                <g opacity={pCadAnnotations}>
+              {/* Cruzes de centro nos nós principais (+) */}
+              {pCrossNodes > 0 && (
+                <g opacity={pCrossNodes}>
                   {[
                     { x: 38, y: 18 },
                     { x: 82, y: 18 },
@@ -715,13 +1089,13 @@ export function CaldraGenesisPreIntro({
                     { x: 75.5, y: 58 },
                     { x: 58.5, y: 58 },
                   ].map((pt, i) => (
-                    <g key={`cross-${i}`} opacity={pCadAnnotations * 0.75}>
+                    <g key={`cross-${i}`} opacity={pCrossNodes * 0.75}>
                       <line
                         x1={pt.x - 1.2}
                         y1={pt.y}
                         x2={pt.x + 1.2}
                         y2={pt.y}
-                        stroke="#F8FAFC"
+                        stroke={palette.crossesColor}
                         strokeWidth="0.32"
                       />
                       <line
@@ -729,52 +1103,11 @@ export function CaldraGenesisPreIntro({
                         y1={pt.y - 1.2}
                         x2={pt.x}
                         y2={pt.y + 1.2}
-                        stroke="#F8FAFC"
+                        stroke={palette.crossesColor}
                         strokeWidth="0.32"
                       />
                     </g>
                   ))}
-
-                  <text
-                    x="84"
-                    y="16"
-                    fill="#38BDF8"
-                    fontSize="2.8"
-                    fontFamily="monospace"
-                    opacity="0.75"
-                  >
-                    (82, 18)
-                  </text>
-                  <text
-                    x="8"
-                    y="86"
-                    fill="#38BDF8"
-                    fontSize="2.8"
-                    fontFamily="monospace"
-                    opacity="0.75"
-                  >
-                    (18, 82)
-                  </text>
-                  <text
-                    x="48"
-                    y="14"
-                    fill="#94A3B8"
-                    fontSize="2.6"
-                    fontFamily="monospace"
-                    opacity="0.65"
-                  >
-                    R32.0 · 45°
-                  </text>
-                  <text
-                    x="68"
-                    y="52"
-                    fill="#38BDF8"
-                    fontSize="2.4"
-                    fontFamily="monospace"
-                    opacity="0.65"
-                  >
-                    CAD·REF
-                  </text>
                 </g>
               )}
             </g>
@@ -787,7 +1120,6 @@ export function CaldraGenesisPreIntro({
           {/* Superfície do Corpo C nascendo diretamente do traçado */}
           {pMorphC > 0 && (
             <g clipPath="url(#c-silhouette-clip)">
-              {/* O traçado se expande para o interior preenchendo a chapa */}
               <path
                 d={pathDataOuterC}
                 fill="url(#c-sheen)"
@@ -799,7 +1131,7 @@ export function CaldraGenesisPreIntro({
             </g>
           )}
 
-          {/* Superfície da Pastilha Azul nascendo diretamente do traçado */}
+          {/* Superfície da Pastilha nascendo diretamente do traçado */}
           {pMorphBlue > 0 && (
             <g clipPath="url(#blue-silhouette-clip)">
               <path
@@ -822,7 +1154,7 @@ export function CaldraGenesisPreIntro({
             <path
               d={pathDataOuterC}
               fill="none"
-              stroke="#FFFFFF"
+              stroke={palette.outerPenColor}
               strokeWidth="2.8"
               strokeLinejoin="round"
               strokeLinecap="round"
@@ -832,12 +1164,12 @@ export function CaldraGenesisPreIntro({
             />
           )}
 
-          {/* Traçado do contorno da pastilha azul */}
+          {/* Traçado do contorno da pastilha interna */}
           {pDrawInnerBlue > 0 && (
             <path
               d={pathDataInnerBlue}
               fill="none"
-              stroke="#007AFF"
+              stroke={palette.innerPenColor}
               strokeWidth="2.8"
               strokeLinejoin="round"
               strokeLinecap="round"
@@ -857,25 +1189,57 @@ export function CaldraGenesisPreIntro({
               transform={`translate(${outerCursor.x}, ${outerCursor.y})`}
               className="pointer-events-none"
             >
-              <circle r="3.2" fill="#38BDF8" fillOpacity="0.25" />
-              <circle r="1.6" fill="#38BDF8" fillOpacity="0.65" />
-              <circle r="0.8" fill="#FFFFFF" />
-              <line x1="-2.6" y1="0" x2="2.6" y2="0" stroke="#FFFFFF" strokeWidth="0.32" strokeOpacity="0.9" />
-              <line x1="0" y1="-2.6" x2="0" y2="2.6" stroke="#FFFFFF" strokeWidth="0.32" strokeOpacity="0.9" />
+              <circle r="3.2" fill={palette.cursorOuterGlow} fillOpacity="0.30" />
+              <circle r="1.6" fill={palette.cursorOuterGlow} fillOpacity="0.75" />
+              <circle r="0.8" fill={palette.cursorOuterCore} />
+              <line
+                x1="-2.6"
+                y1="0"
+                x2="2.6"
+                y2="0"
+                stroke={palette.cursorOuterCore}
+                strokeWidth="0.32"
+                strokeOpacity="0.9"
+              />
+              <line
+                x1="0"
+                y1="-2.6"
+                x2="0"
+                y2="2.6"
+                stroke={palette.cursorOuterCore}
+                strokeWidth="0.32"
+                strokeOpacity="0.9"
+              />
             </g>
           )}
 
-          {/* Cursor da pastilha azul */}
+          {/* Cursor da pastilha interna */}
           {pDrawInnerBlue > 0 && pDrawInnerBlue < 1 && (
             <g
               transform={`translate(${innerCursor.x}, ${innerCursor.y})`}
               className="pointer-events-none"
             >
-              <circle r="3.0" fill="#60A5FA" fillOpacity="0.3" />
-              <circle r="1.5" fill="#60A5FA" fillOpacity="0.75" />
-              <circle r="0.75" fill="#FFFFFF" />
-              <line x1="-2.4" y1="0" x2="2.4" y2="0" stroke="#60A5FA" strokeWidth="0.32" strokeOpacity="0.9" />
-              <line x1="0" y1="-2.4" x2="0" y2="2.4" stroke="#60A5FA" strokeWidth="0.32" strokeOpacity="0.9" />
+              <circle r="3.0" fill={palette.cursorInnerGlow} fillOpacity="0.35" />
+              <circle r="1.5" fill={palette.cursorInnerGlow} fillOpacity="0.8" />
+              <circle r="0.75" fill={palette.cursorInnerCore} />
+              <line
+                x1="-2.4"
+                y1="0"
+                x2="2.4"
+                y2="0"
+                stroke={palette.cursorInnerGlow}
+                strokeWidth="0.32"
+                strokeOpacity="0.9"
+              />
+              <line
+                x1="0"
+                y1="-2.4"
+                x2="0"
+                y2="2.4"
+                stroke={palette.cursorInnerGlow}
+                strokeWidth="0.32"
+                strokeOpacity="0.9"
+              />
             </g>
           )}
 
@@ -885,8 +1249,8 @@ export function CaldraGenesisPreIntro({
               transform={`translate(${compassCursor.x}, ${compassCursor.y})`}
               className="pointer-events-none"
             >
-              <circle r="2.4" fill="#38BDF8" fillOpacity="0.3" />
-              <circle r="1.0" fill="#FFFFFF" />
+              <circle r="2.4" fill={palette.axesColor} fillOpacity="0.35" />
+              <circle r="1.0" fill={palette.outerPenColor} />
             </g>
           )}
 
@@ -905,11 +1269,11 @@ export function CaldraGenesisPreIntro({
                 className="pointer-events-none"
               />
 
-              {/* Aresta límpida de brilho superior no elemento azul */}
+              {/* Aresta límpida de brilho superior no elemento interno */}
               <path
                 d="M 43 42.5 L 60 42.5 L 75.5 58"
                 fill="none"
-                stroke="#93C5FD"
+                stroke={palette.innerTopEdge}
                 strokeWidth="0.9"
                 strokeLinecap="round"
                 opacity="0.85"
@@ -918,6 +1282,6 @@ export function CaldraGenesisPreIntro({
           )}
         </svg>
       </div>
-    </aside>
+    </div>
   );
 }

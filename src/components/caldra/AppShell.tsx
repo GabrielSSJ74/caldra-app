@@ -13,6 +13,7 @@ import { PaywallDialog } from "./Paywall";
 import { AuroraBackground } from "./Aurora";
 import { ShellActionsProvider } from "./ShellActions";
 import { triggerHaptic } from "@/lib/ui/haptics";
+import { CaldraGenesisPreIntro } from "./CaldraGenesisPreIntro";
 
 /** Rotas com fundo AURORA. O editor CHAMFER (desenho-2d) nunca entra aqui. */
 const AURORA_ROUTES = ["/", "/tracagem", "/escola", "/projetos", "/oficina", "/configuracoes"];
@@ -33,7 +34,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const intro = useIntro();
   const profile = useProfile();
-  const showOnboarding = profile.ready && !intro.show && !profile.onboarded;
+
+  // Executa na abertura do aplicativo por exatamente 5,000 segundos
+  const [startupGenesis, setStartupGenesis] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const sp = new URLSearchParams(window.location.search);
+    if (sp.has("genesis") || sp.has("abertura") || sp.has("preintro")) return true;
+    if (window.sessionStorage.getItem("caldra.genesis_session_done")) return false;
+    return true;
+  });
+
+  useEffect(() => {
+    const handleReopen = () => setStartupGenesis(true);
+    window.addEventListener("caldra:open-preintro", handleReopen);
+    return () => window.removeEventListener("caldra:open-preintro", handleReopen);
+  }, []);
+
+  const showOnboarding = profile.ready && !intro.show && !profile.onboarded && !startupGenesis;
   const editorPath = immersiveRoute(pathname);
   const immersive = editorPath;
   const standalone = pathname.startsWith("/calculadora");
@@ -104,8 +121,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <MasterModeDialog open={masterOpen} onOpenChange={setMasterOpen} />
         <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
         <PaywallDialog />
-        {intro.show && <Intro onDone={intro.done} />}
+        {intro.show && !startupGenesis && <Intro onDone={intro.done} />}
         {showOnboarding && <Onboarding />}
+        {startupGenesis && (
+          <CaldraGenesisPreIntro
+            onComplete={() => {
+              setStartupGenesis(false);
+              try {
+                window.sessionStorage.setItem("caldra.genesis_session_done", "1");
+              } catch {
+                /* ignore */
+              }
+            }}
+          />
+        )}
       </div>
     </ShellActionsProvider>
   );

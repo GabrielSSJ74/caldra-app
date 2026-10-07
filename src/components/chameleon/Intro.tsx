@@ -52,13 +52,7 @@ const SLIDES: SlideData[] = [
 export function Intro({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(0);
   const [leaving, setLeaving] = useState(false);
-  const [showPreIntro, setShowPreIntro] = useState(() => {
-    if (typeof window !== "undefined") {
-      const sp = new URLSearchParams(window.location.search);
-      if (sp.has("skip_preintro")) return false;
-    }
-    return true;
-  });
+  const [showPreIntro, setShowPreIntro] = useState(false);
   const touch = useRef<number | null>(null);
 
   useEffect(() => {
