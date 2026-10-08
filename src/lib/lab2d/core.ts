@@ -1,4 +1,4 @@
-import type { Vec2 } from "@/lib/geometry/types";
+export type { Vec2 } from "@/lib/geometry/types";
 import type { CncMeta } from "@/lib/lab2d/cncTypes";
 import type { DxfDocument, DxfEntity } from "@/lib/dxf/dxfService";
 
@@ -614,66 +614,208 @@ export function extendLine(target: Entity, other: Entity): Entity | null {
   return null;
 }
 
-/** Concordância entre duas linhas: encurta ambas e devolve o arco de raio R. */
+/** Concordância entre duas linhas: encurta ambas e devolve o arco de raio R tangente com sweep correto. */
 export function filletLines(
   a: Entity,
   b: Entity,
   r: number,
 ): { a: Entity; b: Entity; arc: Entity } | null {
   if (a.type !== "line" || b.type !== "line") return null;
-  const sa = segmentsOf(a)[0]!;
-  const sb = segmentsOf(b)[0]!;
-  const x = lineIntersection(sa, sb, false);
+  const sa: [Vec2, Vec2] = [{ x: a.x1, y: a.y1 }, { x: a.x2, y: a.y2 }];
+  const sb: [Vec2, Vec2] = [{ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 }];
+
+  let x = lineIntersection(sa, sb, false);
   if (!x) return null;
-  const dirTo = (s: [Vec2, Vec2]) => {
-    const far = dist(x, s[0]) > dist(x, s[1]) ? s[0] : s[1];
-    const l = dist(x, far) || 1;
-    return { x: (far.x - x.x) / l, y: (far.y - x.y) / l };
-  };
-  const da = dirTo(sa);
-  const db = dirTo(sb);
-  const ang = Math.acos(Math.max(-1, Math.min(1, da.x * db.x + da.y * db.y)));
-  if (ang < 0.05 || ang > Math.PI - 0.05) return null;
-  const t = r / Math.tan(ang / 2);
+
+  // Se houver um ponto de canto compartilhado (ex: quina conexa), usa com prioridade
+  const sharedCorners: Vec2[] = [];
+  if (dist(sa[0], sb[0]) < 1.0) sharedCorners.push(sa[0]);
+  if (dist(sa[0], sb[1]) < 1.0) sharedCorners.push(sa[0]);
+  if (dist(sa[1], sb[0]) < 1.0) sharedCorners.push(sa[1]);
+  if (dist(sa[1], sb[1]) < 1.0) sharedCorners.push(sa[1]);
+  if (sharedCorners.length > 0) {
+    x = sharedCorners[0]!;
+  }
+
+  const farA = dist(x, sa[0]) > dist(x, sa[1]) ? sa[0] : sa[1];
+  const farB = dist(x, sb[0]) > dist(x, sb[1]) ? sb[0] : sb[1];
+
+  const lenA = dist(x, farA);
+  const lenB = dist(x, farB);
+  if (lenA < 0.05 || lenB < 0.05) return null;
+
+  const da = { x: (farA.x - x.x) / lenA, y: (farA.y - x.y) / lenA };
+  const db = { x: (farB.x - x.x) / lenB, y: (farB.y - x.y) / lenB };
+
+  const dot = Math.max(-1, Math.min(1, da.x * db.x + da.y * db.y));
+  const ang = Math.acos(dot);
+  if (ang < 0.04 || ang > Math.PI - 0.04) return null; // Colineares ou paralelas
+
+  const tanHalf = Math.tan(ang / 2);
+  const sinHalf = Math.sin(ang / 2);
+  if (tanHalf <= 1e-4 || sinHalf <= 1e-4) return null;
+
+  // Limite de raio admissível pelos comprimentos das linhas
+  const maxAllowableR = Math.min(lenA, lenB) * tanHalf * 0.98;
+  const effR = Math.max(0.1, Math.min(r, maxAllowableR));
+
+  const t = effR / tanHalf;
   const pa = { x: x.x + da.x * t, y: x.y + da.y * t };
   const pb = { x: x.x + db.x * t, y: x.y + db.y * t };
+
   const bis = { x: da.x + db.x, y: da.y + db.y };
   const bl = Math.hypot(bis.x, bis.y) || 1;
-  const cd = r / Math.sin(ang / 2);
+  const cd = effR / sinHalf;
   const c = { x: x.x + (bis.x / bl) * cd, y: x.y + (bis.y / bl) * cd };
+
   const setNear = (e: Entity, s: [Vec2, Vec2], p: Vec2): Entity => {
     if (e.type !== "line") return e;
-    return dist(x, s[0]) < dist(x, s[1]) ? { ...e, x1: p.x, y1: p.y } : { ...e, x2: p.x, y2: p.y };
+    return dist(x, s[0]) < dist(x, s[1])
+      ? { ...e, x1: p.x, y1: p.y }
+      : { ...e, x2: p.x, y2: p.y };
   };
-  const a0 = Math.atan2(pa.y - c.y, pa.x - c.x);
-  const a1 = Math.atan2(pb.y - c.y, pb.x - c.x);
+
+  const a0Raw = Math.atan2(pa.y - c.y, pa.x - c.x);
+  const a1Raw = Math.atan2(pb.y - c.y, pb.x - c.x);
+
+  // Garante que o arco desenhado no SVG (que usa sweep positivo) seja o arco MENOR (< 180°)
+  let dTheta = a1Raw - a0Raw;
+  while (dTheta <= -Math.PI) dTheta += 2 * Math.PI;
+  while (dTheta > Math.PI) dTheta -= 2 * Math.PI;
+
+  const a0 = dTheta > 0 ? a0Raw : a1Raw;
+  const a1 = dTheta > 0 ? a1Raw : a0Raw;
+
   return {
     a: setNear(a, sa, pa),
     b: setNear(b, sb, pb),
-    arc: { id: uid(), layer: a.layer, type: "arc", cx: c.x, cy: c.y, r, a0, a1 },
+    arc: {
+      id: uid(),
+      layer: a.layer,
+      type: "arc",
+      cx: c.x,
+      cy: c.y,
+      r: effR,
+      a0,
+      a1,
+    },
   };
 }
 
-/** Chanfro: corta o canto entre duas linhas com um segmento reto. */
-export function chamferLines(a: Entity, b: Entity, d1: number, d2: number) {
-  const res = filletLines(a, b, Math.min(d1, d2));
-  if (!res) return null;
-  const arc = res.arc as Extract<Entity, { type: "arc" }>;
-  const p1 = { x: arc.cx + arc.r * Math.cos(arc.a0), y: arc.cy + arc.r * Math.sin(arc.a0) };
-  const p2 = { x: arc.cx + arc.r * Math.cos(arc.a1), y: arc.cy + arc.r * Math.sin(arc.a1) };
+/** Chanfro: corta o canto entre duas linhas com um segmento reto conectando os pontos de corte. */
+export function chamferLines(
+  a: Entity,
+  b: Entity,
+  d1: number,
+  d2?: number,
+): { a: Entity; b: Entity; seg: Entity } | null {
+  if (a.type !== "line" || b.type !== "line") return null;
+  const sa: [Vec2, Vec2] = [{ x: a.x1, y: a.y1 }, { x: a.x2, y: a.y2 }];
+  const sb: [Vec2, Vec2] = [{ x: b.x1, y: b.y1 }, { x: b.x2, y: b.y2 }];
+
+  let x = lineIntersection(sa, sb, false);
+  if (!x) return null;
+
+  const sharedCorners: Vec2[] = [];
+  if (dist(sa[0], sb[0]) < 1.0) sharedCorners.push(sa[0]);
+  if (dist(sa[0], sb[1]) < 1.0) sharedCorners.push(sa[0]);
+  if (dist(sa[1], sb[0]) < 1.0) sharedCorners.push(sa[1]);
+  if (dist(sa[1], sb[1]) < 1.0) sharedCorners.push(sa[1]);
+  if (sharedCorners.length > 0) {
+    x = sharedCorners[0]!;
+  }
+
+  const farA = dist(x, sa[0]) > dist(x, sa[1]) ? sa[0] : sa[1];
+  const farB = dist(x, sb[0]) > dist(x, sb[1]) ? sb[0] : sb[1];
+
+  const lenA = dist(x, farA);
+  const lenB = dist(x, farB);
+  if (lenA < 0.05 || lenB < 0.05) return null;
+
+  const da = { x: (farA.x - x.x) / lenA, y: (farA.y - x.y) / lenA };
+  const db = { x: (farB.x - x.x) / lenB, y: (farB.y - x.y) / lenB };
+
+  const dot = Math.max(-1, Math.min(1, da.x * db.x + da.y * db.y));
+  const ang = Math.acos(dot);
+  if (ang < 0.04 || ang > Math.PI - 0.04) return null;
+
+  const effD1 = Math.min(Math.max(0.1, d1), lenA * 0.95);
+  const effD2 = Math.min(Math.max(0.1, d2 ?? d1), lenB * 0.95);
+
+  const pa = { x: x.x + da.x * effD1, y: x.y + da.y * effD1 };
+  const pb = { x: x.x + db.x * effD2, y: x.y + db.y * effD2 };
+
+  const setNear = (e: Entity, s: [Vec2, Vec2], p: Vec2): Entity => {
+    if (e.type !== "line") return e;
+    return dist(x, s[0]) < dist(x, s[1])
+      ? { ...e, x1: p.x, y1: p.y }
+      : { ...e, x2: p.x, y2: p.y };
+  };
+
   return {
-    a: res.a,
-    b: res.b,
+    a: setNear(a, sa, pa),
+    b: setNear(b, sb, pb),
     seg: {
       id: uid(),
       layer: a.layer,
       type: "line",
-      x1: p1.x,
-      y1: p1.y,
-      x2: p2.x,
-      y2: p2.y,
-    } as Entity,
+      x1: pa.x,
+      y1: pa.y,
+      x2: pb.x,
+      y2: pb.y,
+    },
   };
+}
+
+/** Localiza dois segmentos lineares que formam um canto próximo ao ponto fornecido. */
+export function findCornerNearPoint(
+  p: Vec2,
+  entities: Entity[],
+  tol: number,
+): { corner: Vec2; a: Entity; b: Entity } | null {
+  const lines = entities.filter((e): e is Extract<Entity, { type: "line" }> => e.type === "line");
+
+  // 1. Procura primeiro vértice compartilhado entre duas linhas dentro da tolerância
+  for (let i = 0; i < lines.length; i++) {
+    const la = lines[i]!;
+    const ptsA = [{ x: la.x1, y: la.y1 }, { x: la.x2, y: la.y2 }];
+    for (let j = i + 1; j < lines.length; j++) {
+      const lb = lines[j]!;
+      const ptsB = [{ x: lb.x1, y: lb.y1 }, { x: lb.x2, y: lb.y2 }];
+
+      for (const pa of ptsA) {
+        for (const pb of ptsB) {
+          if (dist(pa, pb) <= Math.max(1.5, tol * 0.5)) {
+            const mid = { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
+            if (dist(p, mid) <= tol) {
+              return { corner: mid, a: la, b: lb };
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // 2. Procura interseção geométrica de duas linhas próximas ao ponto
+  for (let i = 0; i < lines.length; i++) {
+    const la = lines[i]!;
+    const sa: [Vec2, Vec2] = [{ x: la.x1, y: la.y1 }, { x: la.x2, y: la.y2 }];
+    for (let j = i + 1; j < lines.length; j++) {
+      const lb = lines[j]!;
+      const sb: [Vec2, Vec2] = [{ x: lb.x1, y: lb.y1 }, { x: lb.x2, y: lb.y2 }];
+      const inter = lineIntersection(sa, sb, false);
+      if (inter && dist(p, inter) <= tol) {
+        // Verifica se o ponto de interseção está razoavelmente próximo aos segmentos reais
+        const distToA = Math.min(dist(inter, sa[0]), dist(inter, sa[1]));
+        const distToB = Math.min(dist(inter, sb[0]), dist(inter, sb[1]));
+        if (distToA <= tol * 2.5 && distToB <= tol * 2.5) {
+          return { corner: inter, a: la, b: lb };
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 /* ------------------------------------------------------------- otimização */

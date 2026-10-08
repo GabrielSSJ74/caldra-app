@@ -168,7 +168,7 @@ function RootShell({ children }: { children: ReactNode }) {
       <head>
         <HeadContent />
       </head>
-      <body>
+      <body suppressHydrationWarning>
         <div id="caldra-boot" dangerouslySetInnerHTML={{ __html: BOOT_SPLASH_HTML }} />
         {children}
         <Scripts />

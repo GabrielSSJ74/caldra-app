@@ -2,7 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 function patchFile(filePath, transforms) {
-  if (!fs.existsSync(filePath)) return;
+  if (!fs.existsSync(filePath)) return false;
   let content = fs.readFileSync(filePath, "utf8");
   let modified = false;
 
@@ -24,6 +24,7 @@ function patchFile(filePath, transforms) {
     fs.writeFileSync(filePath, content, "utf8");
     console.log(`Successfully patched: ${filePath}`);
   }
+  return modified;
 }
 
 const transforms = [
@@ -145,18 +146,23 @@ const targetFiles = [
   path.join(__dirname, "../node_modules/@tanstack/router-core/dist/cjs/ssr/ssr-client.cjs"),
 ];
 
+let anyModified = false;
 for (const f of targetFiles) {
-  patchFile(f, transforms);
+  if (patchFile(f, transforms)) {
+    anyModified = true;
+  }
 }
 
-// Remove vite prebundle cache so vite re-bundles @tanstack/router-core with the patch
-const viteCache = path.join(__dirname, "../node_modules/.vite");
-if (fs.existsSync(viteCache)) {
-  try {
-    fs.rmSync(viteCache, { recursive: true, force: true });
-    console.log("Cleared node_modules/.vite cache");
-  } catch (err) {
-    console.warn("Could not clear .vite cache:", err.message);
+// Remove vite prebundle cache only if files were newly patched so vite re-bundles @tanstack/router-core
+if (anyModified) {
+  const viteCache = path.join(__dirname, "../node_modules/.vite");
+  if (fs.existsSync(viteCache)) {
+    try {
+      fs.rmSync(viteCache, { recursive: true, force: true });
+      console.log("Cleared node_modules/.vite cache");
+    } catch (err) {
+      console.warn("Could not clear .vite cache:", err.message);
+    }
   }
 }
 

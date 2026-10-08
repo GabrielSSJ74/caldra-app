@@ -36,13 +36,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const profile = useProfile();
 
   // Executa na abertura do aplicativo por exatamente 5,000 segundos
-  const [startupGenesis, setStartupGenesis] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const sp = new URLSearchParams(window.location.search);
-    if (sp.has("genesis") || sp.has("abertura") || sp.has("preintro")) return true;
-    if (window.sessionStorage.getItem("caldra.genesis_session_done")) return false;
-    return true;
-  });
+  const [startupGenesis, setStartupGenesis] = useState(false);
+
+  useEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.has("genesis") || sp.has("abertura") || sp.has("preintro")) {
+        setStartupGenesis(true);
+        return;
+      }
+      if (!window.sessionStorage.getItem("caldra.genesis_session_done")) {
+        setStartupGenesis(true);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     const handleReopen = () => setStartupGenesis(true);

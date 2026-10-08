@@ -200,6 +200,19 @@ import {
   ChamferSmartTrimControlBar,
 } from "./ChamferSmartTrimOverlay";
 import { ChamferCenterDialog } from "./ChamferCenterDialog";
+import { ChamferScaleDialog, type ScaleBasePointType } from "./ChamferScaleDialog";
+import { ChamferFilletChamferHUD } from "./ChamferFilletChamferHUD";
+import {
+  findCornerAtPoint,
+  findAllCornersInEntities,
+  applyFilletToCorner,
+  applyChamferToCorner,
+  calculateFillet,
+  calculateChamfer,
+  type DetectedCorner,
+  type FilletCalculation,
+  type ChamferCalculation,
+} from "@/lib/lab2d/cadFilletChamfer";
 import { canDivideEntity, divideEntity, type DivideOptions } from "@/lib/lab2d/cadDivide";
 import {
   findSmartSnap,
@@ -646,6 +659,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [issues, setIssues] = useState<{ message: string; p: Vec2 }[] | null>(null);
   const [offsetDist, setOffsetDist] = useState(5);
   const [filletR, setFilletR] = useState(10);
+  const [scaleDialogOpen, setScaleDialogOpen] = useState(false);
+  const [filletPreview, setFilletPreview] = useState<{
+    corner: DetectedCorner;
+    calc: FilletCalculation;
+  } | null>(null);
+  const [chamferPreview, setChamferPreview] = useState<{
+    corner: DetectedCorner;
+    calc: ChamferCalculation;
+  } | null>(null);
   /* FERRAMENTA DIVIDIR */
   const [divideEditorOpen, setDivideEditorOpen] = useState(false);
   const [divideParts, setDivideParts] = useState(2);
@@ -1614,13 +1636,44 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       toast.info("Selecione entidades para escalar.");
       return;
     }
-    const box = boxOfEntities(selected);
-    const center = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
-    commit((e) =>
-      e.map((x) => (selection.includes(x.id) ? scaleEntityAroundPoint(x, center, 1.5) : x)),
-    );
-    toast.success("Seleção escalada em 1.5×.");
-  }, [selected, boxOfEntities, commit, selection, scaleEntityAroundPoint]);
+    setScaleDialogOpen(true);
+  }, [selected.length]);
+
+  const handleConfirmScale = useCallback(
+    (factor: number, basePointType: ScaleBasePointType) => {
+      if (!selected.length) {
+        setScaleDialogOpen(false);
+        return;
+      }
+      const box = boxOfEntities(selected);
+      let basePoint: Vec2;
+      switch (basePointType) {
+        case "origin":
+          basePoint = { x: 0, y: 0 };
+          break;
+        case "min":
+          basePoint = { x: box.minX, y: box.minY };
+          break;
+        case "max":
+          basePoint = { x: box.maxX, y: box.maxY };
+          break;
+        case "center":
+        default:
+          basePoint = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
+          break;
+      }
+
+      commit((list) =>
+        list.map((x) =>
+          selection.includes(x.id) ? scaleEntityAroundPoint(x, basePoint, factor) : x,
+        ),
+      );
+      triggerHaptic("action");
+      toast.success(`Seleção escalada em ${factor.toFixed(2)}×.`);
+      setScaleDialogOpen(false);
+    },
+    [selected, boxOfEntities, commit, selection, scaleEntityAroundPoint],
+  );
 
   const handleStretchSelection = useCallback(() => {
     if (!selected.length) {
@@ -1736,6 +1789,51 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (selEnts.length < 2) return null;
     return centerShapes(selEnts, entities, centerOptions);
   }, [centerDialogOpen, entities, selection, centerOptions]);
+
+  /* CANTOS IDENTIFICADOS NA SELEÇÃO PARA FILETE E CHANFRO */
+  const selectedCorners = useMemo(() => {
+    if (!selected.length) return [];
+    return findAllCornersInEntities(selected);
+  }, [selected]);
+
+  const handleApplyAllSelectionCorners = useCallback(() => {
+    if (!selectedCorners.length) {
+      toast.info("Nenhum canto detectado nas formas selecionadas.");
+      return;
+    }
+    let currentEntities = [...entities];
+    let appliedCount = 0;
+
+    for (const c of selectedCorners) {
+      if (tool === "fillet") {
+        const res = applyFilletToCorner(c, filletR, currentEntities);
+        if (res.success) {
+          currentEntities = res.updatedEntities;
+          appliedCount++;
+        }
+      } else if (tool === "chamfer") {
+        const res = applyChamferToCorner(c, filletR, filletR, currentEntities);
+        if (res.success) {
+          currentEntities = res.updatedEntities;
+          appliedCount++;
+        }
+      }
+    }
+
+    if (appliedCount > 0) {
+      commit(currentEntities);
+      triggerHaptic("action");
+      toast.success(
+        tool === "fillet"
+          ? `Filete R${filletR} mm aplicado em ${appliedCount} cantos!`
+          : `Chanfro ${filletR} mm aplicado em ${appliedCount} cantos!`,
+      );
+      setFilletPreview(null);
+      setChamferPreview(null);
+    } else {
+      toast.info("Não foi possível concordar os cantos selecionados.");
+    }
+  }, [selectedCorners, entities, tool, filletR, commit]);
 
   /* CHAMFER INTELLIGENCE — INFERÊNCIAS E SUGESTÕES GEOMÉTRICAS CONTEXTUAIS */
   const suggestions = useMemo(() => {
@@ -2437,28 +2535,77 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
     if (tool === "fillet" || tool === "chamfer") {
+      const tol = 16 / view.k;
+      const corner = findCornerAtPoint(raw, entities, tol);
+      if (corner) {
+        if (tool === "fillet") {
+          const res = applyFilletToCorner(corner, filletR, entities);
+          if (res.success) {
+            commit(res.updatedEntities);
+            triggerHaptic("action");
+            toast.success(`Filete R${filletR} mm aplicado no canto.`);
+            setFilletPreview(null);
+            setSelection([]);
+            return;
+          }
+        } else {
+          const res = applyChamferToCorner(corner, filletR, filletR, entities);
+          if (res.success) {
+            commit(res.updatedEntities);
+            triggerHaptic("action");
+            toast.success(`Chanfro ${filletR} mm aplicado no canto.`);
+            setChamferPreview(null);
+            setSelection([]);
+            return;
+          }
+        }
+      }
+
+      // Permite também seleção sequencial de 2 linhas concorrentes
       const hit = hitTest(raw);
       if (!hit) return;
       if (!selection.length) {
         setSelection([hit.id]);
+        toast.info("1ª linha selecionada. Clique na 2ª linha do canto.");
         return;
       }
       const first = entities.find((e) => e.id === selection[0]);
       if (!first || first.id === hit.id) return;
-      const res =
-        tool === "fillet"
-          ? filletLines(first, hit, filletR)
-          : chamferLines(first, hit, filletR, filletR);
-      if (!res) {
-        toast.error("Não foi possível concordar estas entidades.");
-        return;
+
+      if (first.type === "line" && hit.type === "line") {
+        const cornerLines = findCornerAtPoint(raw, [first, hit], 1000) ?? {
+          kind: "lines" as const,
+          corner: { x: first.x1, y: first.y1 },
+          entityA: first,
+          entityB: hit,
+          farA: { x: first.x2, y: first.y2 },
+          farB: { x: hit.x2, y: hit.y2 },
+        };
+
+        if (tool === "fillet") {
+          const res = applyFilletToCorner(cornerLines, filletR, entities);
+          if (res.success) {
+            commit(res.updatedEntities);
+            triggerHaptic("action");
+            toast.success(`Filete R${filletR} mm aplicado entre as linhas.`);
+            setSelection([]);
+            setFilletPreview(null);
+            return;
+          }
+        } else {
+          const res = applyChamferToCorner(cornerLines, filletR, filletR, entities);
+          if (res.success) {
+            commit(res.updatedEntities);
+            triggerHaptic("action");
+            toast.success(`Chanfro ${filletR} mm aplicado entre as linhas.`);
+            setSelection([]);
+            setChamferPreview(null);
+            return;
+          }
+        }
       }
-      const extra = "arc" in res ? res.arc : res.seg;
-      commit((e) => [
-        ...e.map((x) => (x.id === res.a.id ? res.a : x.id === res.b.id ? res.b : x)),
-        extra,
-      ]);
-      setSelection([]);
+
+      toast.error("Não foi possível concordar estas entidades.");
       return;
     }
     if (tool === "divide") {
@@ -2557,6 +2704,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setSmartTrimPreview(preview);
       } else {
         setSmartTrimPreview(null);
+      }
+    }
+
+    if (tool === "fillet" || tool === "chamfer") {
+      const tol = 16 / view.k;
+      const corner = findCornerAtPoint(raw, entities, tol);
+      if (corner) {
+        if (tool === "fillet") {
+          const calc = calculateFillet(corner.corner, corner.farA, corner.farB, filletR);
+          setFilletPreview(calc ? { corner, calc } : null);
+          setChamferPreview(null);
+        } else {
+          const calc = calculateChamfer(corner.corner, corner.farA, corner.farB, filletR, filletR);
+          setChamferPreview(calc ? { corner, calc } : null);
+          setFilletPreview(null);
+        }
+      } else {
+        setFilletPreview(null);
+        setChamferPreview(null);
       }
     }
 
@@ -2781,6 +2947,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setDraft(null);
         setSelection([]);
         setMeasures([]);
+        setFilletPreview(null);
+        setChamferPreview(null);
+        setScaleDialogOpen(false);
+        setCenterDialogOpen(false);
         setTool("select");
       }
       if (ev.key === "Enter" && tool === "polyline") finishPolyline(false);
@@ -4611,6 +4781,70 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   />
                 </g>
               )}
+
+              {/* PRÉ-VISUALIZAÇÃO DE FILETE */}
+              {tool === "fillet" && filletPreview && (
+                <g pointerEvents="none" aria-label="Pré-visualização do filete">
+                  <circle
+                    cx={filletPreview.corner.corner.x}
+                    cy={filletPreview.corner.corner.y}
+                    r={7 / view.k}
+                    fill="#06b6d4"
+                    fillOpacity={0.25}
+                    stroke="#06b6d4"
+                    strokeWidth={1.8 / view.k}
+                  />
+                  {(() => {
+                    const c = filletPreview.calc;
+                    const f = (n: number) => n.toFixed(3);
+                    const p0 = {
+                      x: c.arcCenter.x + c.radius * Math.cos(c.startAngle),
+                      y: c.arcCenter.y + c.radius * Math.sin(c.startAngle),
+                    };
+                    const p1 = {
+                      x: c.arcCenter.x + c.radius * Math.cos(c.endAngle),
+                      y: c.arcCenter.y + c.radius * Math.sin(c.endAngle),
+                    };
+                    let sweep = c.endAngle - c.startAngle;
+                    while (sweep < 0) sweep += Math.PI * 2;
+                    const large = sweep > Math.PI ? 1 : 0;
+                    const d = `M ${f(p0.x)} ${f(p0.y)} A ${f(c.radius)} ${f(c.radius)} 0 ${large} 1 ${f(p1.x)} ${f(p1.y)}`;
+                    return (
+                      <path
+                        d={d}
+                        fill="none"
+                        stroke="#06b6d4"
+                        strokeWidth={2.5 / view.k}
+                        strokeDasharray={`${6 / view.k},${3 / view.k}`}
+                      />
+                    );
+                  })()}
+                </g>
+              )}
+
+              {/* PRÉ-VISUALIZAÇÃO DE CHANFRO */}
+              {tool === "chamfer" && chamferPreview && (
+                <g pointerEvents="none" aria-label="Pré-visualização do chanfro">
+                  <circle
+                    cx={chamferPreview.corner.corner.x}
+                    cy={chamferPreview.corner.corner.y}
+                    r={7 / view.k}
+                    fill="#f59e0b"
+                    fillOpacity={0.25}
+                    stroke="#f59e0b"
+                    strokeWidth={1.8 / view.k}
+                  />
+                  <line
+                    x1={chamferPreview.calc.cutPointA.x}
+                    y1={chamferPreview.calc.cutPointA.y}
+                    x2={chamferPreview.calc.cutPointB.x}
+                    y2={chamferPreview.calc.cutPointB.y}
+                    stroke="#f59e0b"
+                    strokeWidth={2.5 / view.k}
+                    strokeDasharray={`${6 / view.k},${3 / view.k}`}
+                  />
+                </g>
+              )}
             </g>
           </svg>
 
@@ -5197,7 +5431,35 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         onConfirm={handleConfirmCenter}
         onCancel={handleCancelCenter}
         isDark={isDark}
+        view={view}
       />
+
+      {/* FERRAMENTA ESCALAR SELEÇÃO */}
+      <ChamferScaleDialog
+        open={scaleDialogOpen}
+        selectedEntities={entities.filter((e) => e && selection.includes(e.id))}
+        onConfirm={handleConfirmScale}
+        onCancel={() => setScaleDialogOpen(false)}
+        isDark={isDark}
+        view={view}
+      />
+
+      {/* CONTROLE FLUTUANTE DE FILETE E CHANFRO */}
+      {(tool === "fillet" || tool === "chamfer") && (
+        <ChamferFilletChamferHUD
+          tool={tool}
+          value={filletR}
+          onChangeValue={setFilletR}
+          selectionCornersCount={selectedCorners.length}
+          onApplySelectionCorners={handleApplyAllSelectionCorners}
+          onClose={() => {
+            setTool("select");
+            setFilletPreview(null);
+            setChamferPreview(null);
+          }}
+          isDark={isDark}
+        />
+      )}
 
       {/* CONTROLE FLUTUANTE DA FERRAMENTA APARAR ATÉ ENCONTRO */}
       {tool === "smart_trim" && (
