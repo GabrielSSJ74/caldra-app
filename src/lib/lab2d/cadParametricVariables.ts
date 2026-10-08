@@ -54,13 +54,41 @@ export class ParametricVariableStore {
   }
 
   /**
-   * Avalia expressão com suporte a nomes de variáveis e operadores básicos (+, -, *, /, ^, parênteses)
+   * Avalia expressão com suporte a:
+   * - Nomes de variáveis do projeto
+   * - Operadores: +, -, *, /, ^, parênteses
+   * - Funções: sqrt, sin, cos, tan, atan2, abs, min, max, round, ceil, floor, if
+   * - Unidades: mm, in, pol, ", cm, m, deg, °
+   * - Separador decimal: vírgula ou ponto (ex: "1,5 in", "500 mm")
    */
   public evaluateExpression(expr: string): number {
-    const clean = expr.trim();
+    let clean = (expr || "").trim();
     if (!clean) return 0;
 
-    // Se for número puro
+    // Normalização de unidades técnicas comuns
+    clean = clean.replace(/([0-9]+(?:[.,][0-9]+)?)\s*(?:in|pol|")\b/gi, (_, val) => {
+      const v = parseFloat(val.replace(",", "."));
+      return String(v * 25.4);
+    });
+    clean = clean.replace(/([0-9]+(?:[.,][0-9]+)?)\s*cm\b/gi, (_, val) => {
+      const v = parseFloat(val.replace(",", "."));
+      return String(v * 10);
+    });
+    clean = clean.replace(/([0-9]+(?:[.,][0-9]+)?)\s*m\b/gi, (_, val) => {
+      const v = parseFloat(val.replace(",", "."));
+      return String(v * 1000);
+    });
+    clean = clean.replace(/([0-9]+(?:[.,][0-9]+)?)\s*mm\b/gi, (_, val) => {
+      return val.replace(",", ".");
+    });
+    clean = clean.replace(/([0-9]+(?:[.,][0-9]+)?)\s*(?:deg|°)\b/gi, (_, val) => {
+      return val.replace(",", ".");
+    });
+
+    // Se houver vírgula entre números (ex: 12,5 + 2,3), converte para ponto
+    clean = clean.replace(/(\d+),(\d+)/g, "$1.$2");
+
+    // Se for número puro direto
     const num = Number(clean);
     if (!isNaN(num)) return num;
 
@@ -75,12 +103,48 @@ export class ParametricVariableStore {
       parsed = parsed.replace(regex, `(${v.value})`);
     }
 
+    // Mapeamento de funções matemáticas suportadas
+    parsed = parsed.toLowerCase();
+    const mathMap: Record<string, string> = {
+      sqrt: "Math.sqrt",
+      sin: "Math.sin",
+      cos: "Math.cos",
+      tan: "Math.tan",
+      atan2: "Math.atan2",
+      abs: "Math.abs",
+      min: "Math.min",
+      max: "Math.max",
+      round: "Math.round",
+      ceil: "Math.ceil",
+      floor: "Math.floor",
+      pi: "Math.PI",
+    };
+
+    for (const [fn, mathFn] of Object.entries(mathMap)) {
+      const regex = new RegExp(`\\b${fn}\\b`, "g");
+      parsed = parsed.replace(regex, mathFn);
+    }
+
+    // Suporte a if(cond, a, b) -> (cond ? a : b)
+    parsed = parsed.replace(/\bif\s*\(([^,]+),([^,]+),([^)]+)\)/g, "($1 ? $2 : $3)");
+
     try {
-      // Avaliação segura via Function isolada com escopo restrito (somente Math e números)
-      // Remove qualquer caractere que não seja número, operador matemático, Math.* ou parênteses
-      const sanitized = parsed.replace(/[^0-9+\-*/().^eE\s]/g, "");
-      const result = new Function(`return (${sanitized.replace(/\^/g, "**")});`)();
-      return typeof result === "number" && !isNaN(result) ? result : 0;
+      // Verifica se a expressão contém apenas tokens seguros (números, operadores, Math.*, parênteses e ternários)
+      const sanitized = parsed.replace(/[^0-9a-zA-Z_+\-*/().^eE\s,?:<>=!]/g, "");
+      // Garante que qualquer palavra usada seja ou 'Math' ou membro de Math ou operador seguro
+      const tokens = sanitized.match(/[a-zA-Z_]+/g) || [];
+      const allowedTokens = new Set([
+        "Math", "sqrt", "sin", "cos", "tan", "atan2", "abs", "min", "max",
+        "round", "ceil", "floor", "PI", "E"
+      ]);
+      for (const tok of tokens) {
+        if (!allowedTokens.has(tok)) {
+          return 0; // Rejeita qualquer símbolo não permitido
+        }
+      }
+      const runnable = sanitized.replace(/\^/g, "**");
+      const result = new Function("Math", `return (${runnable});`)(Math);
+      return typeof result === "number" && !isNaN(result) && isFinite(result) ? result : 0;
     } catch {
       return 0;
     }

@@ -104,22 +104,25 @@ export function ChamferMobileContextualEditor({
 
   // Notifica o canvas sobre a propriedade em edição para feedback visual (Regra 15)
   const prevPropKeyRef = useRef<string | null>(null);
+  const onActivePropertyChangeRef = useRef(onActivePropertyChange);
+  onActivePropertyChangeRef.current = onActivePropertyChange;
+
   useEffect(() => {
     const curKey = activeNumericProp?.key ?? null;
     if (prevPropKeyRef.current === curKey) return;
     prevPropKeyRef.current = curKey;
 
-    if (activeNumericProp && onActivePropertyChange) {
-      onActivePropertyChange({
+    if (activeNumericProp && onActivePropertyChangeRef.current) {
+      onActivePropertyChangeRef.current({
         key: activeNumericProp.key,
         label: activeNumericProp.label,
         value: activeNumericProp.value,
         unit: activeNumericProp.unit,
       });
-    } else if (onActivePropertyChange) {
-      onActivePropertyChange(null);
+    } else if (onActivePropertyChangeRef.current) {
+      onActivePropertyChangeRef.current(null);
     }
-  }, [activeNumericProp, onActivePropertyChange]);
+  }, [activeNumericProp]);
 
   // Identificação do tipo da entidade
   const isRect = entity?.type === "polyline" && entity.closed && entity.pts.length === 4;

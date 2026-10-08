@@ -143,9 +143,10 @@ export function ChamferCenterDialog({
 
   // Sincroniza smartDock quando o diálogo abre ou seleção muda
   useEffect(() => {
-    setDock(smartDock);
-    setDragOffset(null);
-  }, [smartDock]);
+    if (!open) return;
+    setDock((prev) => (prev === smartDock ? prev : smartDock));
+    setDragOffset((prev) => (prev === null ? prev : null));
+  }, [open, smartDock]);
 
   const cycleDock = () => {
     triggerHaptic("selection");

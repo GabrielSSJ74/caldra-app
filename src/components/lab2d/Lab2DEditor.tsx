@@ -249,6 +249,11 @@ import {
   ChamferQuickCommandModal,
   type QuickCommandItem,
 } from "./ChamferQuickCommandModal";
+import { ChamferSemanticPalette } from "./ChamferSemanticPalette";
+import { ChamferRadialMenu } from "./ChamferRadialMenu";
+import { ChamferVirtualCursor } from "./ChamferVirtualCursor";
+import { ChamferFabricationPassportModal } from "./ChamferFabricationPassportModal";
+import { ChamferDirectDimensionEditor } from "./ChamferDirectDimensionEditor";
 import { ChamferPrecisionLoupeOverlay } from "./ChamferPrecisionLoupeOverlay";
 import { ChamferDualToolHUD } from "./ChamferDualToolHUD";
 import { ChamferTopologyHealthModal } from "./ChamferTopologyHealthModal";
@@ -751,10 +756,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [dualToolSecondary, setDualToolSecondary] = useState<Tool | null>(null);
   const [dualToolPinned, setDualToolPinned] = useState(false);
 
-  /* LUPA DE PRECISÃO & CURSOR VIRTUAL MOBILE */
+  /* LUPA DE PRECISÃO & CURSOR VIRTUAL MOBILE (SEÇÕES 10 E 11) */
   const [loupeVisible, setLoupeVisible] = useState(false);
   const [loupeScreenPos, setLoupeScreenPos] = useState<Vec2>({ x: 0, y: 0 });
   const [loupeCadPos, setLoupeCadPos] = useState<Vec2>({ x: 0, y: 0 });
+  const [virtualCursorVisible, setVirtualCursorVisible] = useState(false);
+
+  /* MENU RADIAL CONTEXTUAL (SEÇÃO 16) */
+  const [radialMenuOpen, setRadialMenuOpen] = useState(false);
+  const [radialMenuPos, setRadialMenuPos] = useState<Vec2>({ x: 0, y: 0 });
+
+  /* PASSAPORTE DE FABRICAÇÃO (SEÇÕES 34 & 35) */
+  const [fabricationPassportOpen, setFabricationPassportOpen] = useState(false);
+
+  /* EDIÇÃO DIRETA DE COTAS NO CANVAS (SEÇÃO 14) */
+  const [directDimEditor, setDirectDimEditor] = useState<{
+    open: boolean;
+    dimId: string;
+    pos: { x: number; y: number };
+    value: number;
+    label: string;
+  } | null>(null);
 
   const clipboardRef = useRef<ChamferClipboard | null>(null);
   const [clipboardMenu, setClipboardMenu] = useState<{ x: number; y: number; world: Vec2 } | null>(
@@ -1993,7 +2015,142 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         toast.success("Dual Tool ativada: Mover + Centralizar.");
       },
     },
+    {
+      id: "fabrication_passport",
+      title: "Passaporte da Peça e Tabela de Furações",
+      keywords: ["passaporte", "fabricação", "peso", "massa", "furos", "tabela", "cnc", "bom"],
+      category: "documento",
+      description: "Gera especificações de corte, peso calculado e coordenadas dos furos para CNC.",
+      icon: FileText,
+      action: () => setFabricationPassportOpen(true),
+    },
   ], []);
+
+  const handleRadialAction = (actionId: string) => {
+    switch (actionId) {
+      case "radius":
+      case "measure":
+        setTool("measure");
+        break;
+      case "move":
+        setTool("select");
+        break;
+      case "copy":
+        if (selected.length > 0) {
+          copySelection(selected);
+          toast.success("Geometria copiada.");
+        }
+        break;
+      case "mirror":
+        if (selected.length > 0) {
+          const c = getEntityCenter(selected[0]);
+          commit((prev) => prev.map((e) => selection.includes(e.id) ? mirrorAcrossAxis(e, "y", c.x) : e));
+          toast.success("Geometria espelhada horizontalmente.");
+        }
+        break;
+      case "array":
+        if (selected.length > 0) {
+          const c = getEntityCenter(selected[0]);
+          const arr = arrayCircular(selected[0], c, 6, 360);
+          commit((prev) => [...prev, ...arr]);
+          toast.success("Matriz polar circular de 6 itens criada.");
+        }
+        break;
+      case "delete":
+        if (selected.length > 0) {
+          commit((prev) => prev.filter((e) => !selection.includes(e.id)));
+          setSelection([]);
+          toast.success("Entidade(s) removida(s).");
+        }
+        break;
+      case "fillet":
+        setTool("fillet");
+        break;
+      case "chamfer":
+        setTool("chamfer");
+        break;
+      case "trim":
+        setTool("smart_trim");
+        break;
+      case "extend":
+        setTool("extend");
+        break;
+      case "offset":
+        setTool("offset");
+        break;
+      case "area":
+        toast.info("Cálculo de área: utilize o Passaporte de Fabricação.");
+        setFabricationPassportOpen(true);
+        break;
+      case "passport":
+        setFabricationPassportOpen(true);
+        break;
+      case "validate":
+        setTopologyHealthOpen(true);
+        break;
+      case "scale":
+        setScaleDialogOpen(true);
+        break;
+      case "tool-line":
+        setTool("line");
+        break;
+      case "tool-rect":
+        setTool("rect");
+        break;
+      case "tool-circle":
+        setTool("circle");
+        break;
+      case "tool-trim":
+        setTool("smart_trim");
+        break;
+      case "palette":
+        setQuickCommandOpen(true);
+        break;
+      case "loupe":
+        setLoupeVisible((v) => !v);
+        break;
+      case "undo":
+        undo();
+        break;
+      default:
+        break;
+    }
+  };
+
+  const handleDirectDimUpdate = (newVal: number) => {
+    if (!directDimEditor) return;
+    const { dimId } = directDimEditor;
+    const dim = dims.find((d) => d.id === dimId);
+    if (!dim) return;
+
+    if (dim.refA.kind === "entity") {
+      const entId = dim.refA.entityId;
+      commit((prev) =>
+        prev.map((e) => {
+          if (e.id !== entId) return e;
+          if (e.type === "circle") {
+            const newR = dim.kind === "diameter" ? newVal / 2 : newVal;
+            return { ...e, r: newR };
+          }
+          if (e.type === "line") {
+            const curLen = Math.hypot(e.x2 - e.x1, e.y2 - e.y1) || 1;
+            const factor = newVal / curLen;
+            return {
+              ...e,
+              x2: e.x1 + (e.x2 - e.x1) * factor,
+              y2: e.y1 + (e.y2 - e.y1) * factor,
+            };
+          }
+          return e;
+        })
+      );
+    }
+    setDims((prev) =>
+      prev.map((d) => (d.id === dimId ? { ...d, label: `${newVal.toFixed(2)} mm` } : d))
+    );
+    toast.success(`Cota atualizada para ${newVal.toFixed(2)} mm e geometria recalculada.`);
+    setDirectDimEditor(null);
+  };
 
   /* PONTOS DE REFERÊNCIA INTELIGENTES (OSNAP CAD DINÂMICO) */
   const relevantRefs = useMemo(() => {
@@ -2284,15 +2441,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const p = snapPoint(raw);
 
     if (ev.pointerType === "touch") {
+      setVirtualCursorVisible(true);
+      setLoupeScreenPos({ x: ev.clientX, y: ev.clientY });
+      setLoupeCadPos(p);
+
       if (longPressRef.current) clearTimeout(longPressRef.current.timer);
       longPressRef.current = {
         x: ev.clientX,
         y: ev.clientY,
         timer: setTimeout(() => {
-          if (clipboardRef.current)
-            setClipboardMenu({ x: ev.clientX, y: ev.clientY, world: toWorld(ev) });
+          // Ativa o Menu Radial Contextual Touch (Seção 16)
+          setRadialMenuPos({ x: ev.clientX, y: ev.clientY });
+          setRadialMenuOpen(true);
+          triggerHaptic("medium");
           longPressRef.current = null;
-        }, 520),
+        }, 460),
       };
     }
 
@@ -2813,6 +2976,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const onPointerUp = (ev?: React.PointerEvent) => {
     setLoupeVisible(false);
+    setVirtualCursorVisible(false);
     if (longPressRef.current) clearTimeout(longPressRef.current.timer);
     longPressRef.current = null;
     if (ev) ptrsRef.current.delete(ev.pointerId);
@@ -4591,19 +4755,36 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         />
                       );
                     })}
-                    {draw.labels.map((l, i) => (
-                      <text
-                        key={`t${i}`}
-                        x={l.p.x}
-                        y={l.p.y - 3 / view.k}
-                        fontSize={d.style.textSize / view.k}
-                        textAnchor="middle"
-                        stroke="none"
-                        className="font-mono"
-                      >
-                        {l.text}
-                      </text>
-                    ))}
+                    {draw.labels.map((l, i) => {
+                      const parsedVal =
+                        parseFloat(l.text.replace(/[^0-9.,]/g, "").replace(",", ".")) || 0;
+                      return (
+                        <text
+                          key={`t${i}`}
+                          x={l.p.x}
+                          y={l.p.y - 3 / view.k}
+                          fontSize={d.style.textSize / view.k}
+                          textAnchor="middle"
+                          stroke="none"
+                          className="font-mono cursor-pointer hover:font-bold hover:fill-accent select-none"
+                          onPointerDown={(ev) => {
+                            ev.stopPropagation();
+                            const r = svgRef.current?.getBoundingClientRect();
+                            const screenX = l.p.x * view.k + (r?.left ?? 0) + view.tx;
+                            const screenY = l.p.y * view.k + (r?.top ?? 0) + view.ty;
+                            setDirectDimEditor({
+                              open: true,
+                              dimId: d.id,
+                              pos: { x: screenX, y: screenY },
+                              value: parsedVal,
+                              label: l.text,
+                            });
+                          }}
+                        >
+                          {l.text}
+                        </text>
+                      );
+                    })}
                   </g>
                 );
               })}
@@ -5561,11 +5742,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </form>
         </DialogContent>
       </Dialog>
-      {/* COMANDOS E MODAIS AVANÇADOS DO CAD */}
-      <ChamferQuickCommandModal
+      {/* COMANDOS E MODAIS AVANÇADOS DO CAD COM IA & SEMÂNTICA */}
+      <ChamferSemanticPalette
         open={quickCommandOpen}
         onClose={() => setQuickCommandOpen(false)}
         commands={quickCommands}
+        existingEntities={entities}
+        activeLayer={activeLayer}
+        onExecutePlan={(plan) => {
+          commit((prev) => [...prev, ...plan.generatedEntities]);
+          if (plan.generatedDimensions && plan.generatedDimensions.length > 0) {
+            setDims((prev) => [...prev, ...plan.generatedDimensions!]);
+          }
+          setSelection(plan.generatedEntities.map((e) => e.id));
+          toast.success(`${plan.title} executado e inserido no modelo.`);
+        }}
       />
 
       <ChamferTopologyHealthModal
@@ -5631,6 +5822,48 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         screenPos={loupeScreenPos}
         cadPos={loupeCadPos}
         isDark={isDark}
+      />
+
+      {/* MENU RADIAL CONTEXTUAL TOUCH (SEÇÃO 16) */}
+      <ChamferRadialMenu
+        open={radialMenuOpen}
+        onClose={() => setRadialMenuOpen(false)}
+        position={radialMenuPos}
+        selectedEntities={selected}
+        onAction={handleRadialAction}
+        isDark={isDark}
+      />
+
+      {/* CURSOR GEOMÉTRICO VIRTUAL COM FINGER OFFSET (SEÇÃO 11) */}
+      <ChamferVirtualCursor
+        visible={virtualCursorVisible && !radialMenuOpen}
+        screenPos={loupeScreenPos}
+        cadPos={loupeCadPos}
+        activeSnap={smartSnap?.point ? { ...smartSnap, kind: smartSnap.kind, pt: smartSnap.point } : snapHit}
+        basePoint={pending.length > 0 ? pending[pending.length - 1] : null}
+        fingerOffsetEnabled={true}
+      />
+
+      {/* EDIÇÃO DIRETA DE COTAS NO CANVAS (SEÇÃO 14) */}
+      {directDimEditor && (
+        <ChamferDirectDimensionEditor
+          open={directDimEditor.open}
+          onClose={() => setDirectDimEditor(null)}
+          screenPos={directDimEditor.pos}
+          currentValue={directDimEditor.value}
+          label={directDimEditor.label}
+          onConfirm={handleDirectDimUpdate}
+        />
+      )}
+
+      {/* PASSAPORTE DA PEÇA E PRONTIDÃO DE FABRICAÇÃO (SEÇÕES 34 & 35) */}
+      <ChamferFabricationPassportModal
+        open={fabricationPassportOpen}
+        onClose={() => setFabricationPassportOpen(false)}
+        entities={entities}
+        projectName={project?.name ?? "Projeto Chamfer"}
+        onExportDxf={() => setExportOpen(true)}
+        onExportSvg={() => downloadTracagemSvgFile(entities, project?.name ?? "Projeto Chamfer")}
       />
     </div>
   );

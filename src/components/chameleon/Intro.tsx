@@ -89,7 +89,7 @@ export function Intro({ onDone }: { onDone: () => void }) {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  });
+  }, [step]);
 
   return (
     <>

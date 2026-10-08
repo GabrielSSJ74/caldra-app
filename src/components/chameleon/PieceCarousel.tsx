@@ -90,11 +90,14 @@ export function PieceCarousel({
     PIECES.forEach((p) => getCachedWire(p.slug));
   }, []);
 
+  const onPieceChangeRef = useRef(onPieceChange);
+  onPieceChangeRef.current = onPieceChange;
+
   // Notifica o componente pai sobre o modelo ativo
   useEffect(() => {
-    if (onPieceChange) {
+    if (onPieceChangeRef.current) {
       const p = PIECES[currentIndex]!;
-      onPieceChange({
+      onPieceChangeRef.current({
         slug: p.slug,
         name: p.name,
         category: p.category,
@@ -102,7 +105,7 @@ export function PieceCarousel({
         total: PIECES.length,
       });
     }
-  }, [currentIndex, onPieceChange]);
+  }, [currentIndex]);
 
   const triggerTransition = useCallback(
     (targetIndex: number, direction: 1 | -1) => {

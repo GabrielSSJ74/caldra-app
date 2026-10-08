@@ -69,7 +69,7 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
   const [ready, setReady] = useState(false);
   const [gatedFeature, setGatedFeature] = useState<Feature | null>(null);
   const { session, ready: authReady } = useAuth();
-  const closeGate = useCallback(() => setGatedFeature(null), []);
+  const closeGate = useCallback(() => setGatedFeature((prev) => (prev ? null : prev)), []);
 
   const plan = ent.plan;
   const planSource = ent.source as PlanSource;

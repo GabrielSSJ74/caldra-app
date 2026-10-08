@@ -549,6 +549,9 @@ export function CaldraGenesisPreIntro({
   const FADE_OUT_MS = 250;
   const EXIT_START_MS = TOTAL_DURATION_MS - FADE_OUT_MS; // 4750ms
 
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
   const handleFinish = useCallback(() => {
     if (finishedRef.current) return;
     finishedRef.current = true;
@@ -557,8 +560,8 @@ export function CaldraGenesisPreIntro({
     } catch {
       /* ignore */
     }
-    onComplete();
-  }, [onComplete]);
+    onCompleteRef.current();
+  }, []);
 
   useEffect(() => {
     let active = true;
