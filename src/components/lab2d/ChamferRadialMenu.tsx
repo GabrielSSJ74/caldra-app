@@ -65,8 +65,6 @@ export function ChamferRadialMenu({
   onAction,
   isDark = true,
 }: ChamferRadialMenuProps) {
-  if (!open) return null;
-
   // Determina itens com base na geometria selecionada
   const items: RadialMenuItem[] = useMemo(() => {
     // 1. Um Círculo selecionado
@@ -125,11 +123,13 @@ export function ChamferRadialMenu({
     ];
   }, [selectedEntities, onAction]);
 
+  if (!open) return null;
+
   // Posicionamento com clamp para não sair da tela
   const radius = 80; // raio do menu circular em px
   const count = items.length;
-  const clampedX = Math.max(90, Math.min(window.innerWidth - 90, position.x));
-  const clampedY = Math.max(90, Math.min(window.innerHeight - 90, position.y));
+  const clampedX = Math.max(90, Math.min(typeof window !== "undefined" ? window.innerWidth - 90 : 800, position.x));
+  const clampedY = Math.max(90, Math.min(typeof window !== "undefined" ? window.innerHeight - 90 : 600, position.y));
 
   const handleItemClick = (item: RadialMenuItem) => {
     triggerHaptic("selection");

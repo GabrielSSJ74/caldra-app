@@ -34,7 +34,17 @@ export function ChamferVirtualCursor({
   fingerOffsetEnabled = true,
   fingerOffsetY = -65,
 }: ChamferVirtualCursorProps) {
-  if (!visible) return null;
+  if (
+    !visible ||
+    !screenPos ||
+    !cadPos ||
+    !Number.isFinite(screenPos.x) ||
+    !Number.isFinite(screenPos.y) ||
+    !Number.isFinite(cadPos.x) ||
+    !Number.isFinite(cadPos.y)
+  ) {
+    return null;
+  }
 
   // Posição do retículo com compensação de oclusão do dedo
   const targetX = screenPos.x;

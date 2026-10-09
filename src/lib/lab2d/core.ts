@@ -439,18 +439,28 @@ export function bbox(entities: Entity[]): Box | null {
     minY = Infinity,
     maxX = -Infinity,
     maxY = -Infinity;
-  for (const e of entities)
-    for (const p of outlinePoints(e)) {
-      minX = Math.min(minX, p.x);
-      minY = Math.min(minY, p.y);
-      maxX = Math.max(maxX, p.x);
-      maxY = Math.max(maxY, p.y);
+  let count = 0;
+  for (const e of entities) {
+    const pts = outlinePoints(e);
+    if (!pts || !Array.isArray(pts)) continue;
+    for (const p of pts) {
+      if (p && Number.isFinite(p.x) && Number.isFinite(p.y)) {
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x);
+        maxY = Math.max(maxY, p.y);
+        count++;
+      }
     }
+  }
+  if (count === 0 || !Number.isFinite(minX) || !Number.isFinite(minY) || !Number.isFinite(maxX) || !Number.isFinite(maxY)) {
+    return null;
+  }
   return { minX, minY, maxX, maxY };
 }
 
 export function boxOf(e: Entity): Box {
-  return bbox([e])!;
+  return bbox([e]) ?? { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 }
 
 export function inside(b: Box, o: Box) {

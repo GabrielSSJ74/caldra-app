@@ -17,8 +17,9 @@ interface ChamferPrecisionLoupeOverlayProps {
   visible: boolean;
   screenPos: Vec2; // Posição do toque do dedo na tela (px)
   cadPos: Vec2;    // Coordenada geométrica real do desenho (mm)
-  activeSnap: Snap | null;
+  activeSnap?: Snap | null;
   baseCadPoint?: Vec2 | null;
+  isDark?: boolean;
 }
 
 export function ChamferPrecisionLoupeOverlay({
@@ -28,7 +29,17 @@ export function ChamferPrecisionLoupeOverlay({
   activeSnap,
   baseCadPoint,
 }: ChamferPrecisionLoupeOverlayProps) {
-  if (!visible) return null;
+  if (
+    !visible ||
+    !screenPos ||
+    !cadPos ||
+    !Number.isFinite(screenPos.x) ||
+    !Number.isFinite(screenPos.y) ||
+    !Number.isFinite(cadPos.x) ||
+    !Number.isFinite(cadPos.y)
+  ) {
+    return null;
+  }
 
   // Distância calculada da base (se estiver desenhando linha/arco)
   let distMm = 0;

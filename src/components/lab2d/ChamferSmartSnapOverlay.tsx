@@ -34,7 +34,8 @@ export function ChamferSmartSnapOverlay({
   unit = "mm",
   isDark = true,
 }: ChamferSmartSnapOverlayProps) {
-  const markerSize = Math.max(10, 14 / viewK);
+  const safeK = Number.isFinite(viewK) && viewK > 0 ? viewK : 1;
+  const markerSize = Math.max(10, 14 / safeK);
   const half = markerSize / 2;
 
   // Cor característica de snap CAD profissional (verde-esmeralda vibrante ou amarelo técnico)
@@ -43,7 +44,9 @@ export function ChamferSmartSnapOverlay({
   const geratrizColor = isDark ? "#f59e0b" : "#d97706"; // Amber 500/600
 
   const renderGlyph = (kind: SmartSnapKind, p: Vec2, size: number, color: string, isActive: boolean) => {
-    const h = size / 2;
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return null;
+    const safeSize = Number.isFinite(size) && size > 0 ? size : 14;
+    const h = safeSize / 2;
     switch (kind) {
       case "end":
         // Quadrado canônico de extremidade
@@ -51,11 +54,11 @@ export function ChamferSmartSnapOverlay({
           <rect
             x={p.x - h}
             y={p.y - h}
-            width={size}
-            height={size}
+            width={safeSize}
+            height={safeSize}
             fill="none"
             stroke={color}
-            strokeWidth={isActive ? 2.2 / viewK : 1.5 / viewK}
+            strokeWidth={isActive ? 2.2 / safeK : 1.5 / safeK}
           />
         );
 
@@ -80,7 +83,7 @@ export function ChamferSmartSnapOverlay({
               r={h}
               fill="none"
               stroke={color}
-              strokeWidth={isActive ? 2.2 / viewK : 1.5 / viewK}
+              strokeWidth={isActive ? 2.2 / safeK : 1.5 / safeK}
             />
             <line
               x1={p.x - h * 1.3}
@@ -88,7 +91,7 @@ export function ChamferSmartSnapOverlay({
               x2={p.x + h * 1.3}
               y2={p.y}
               stroke={color}
-              strokeWidth={1.2 / viewK}
+              strokeWidth={1.2 / safeK}
             />
             <line
               x1={p.x}
@@ -96,7 +99,7 @@ export function ChamferSmartSnapOverlay({
               x2={p.x}
               y2={p.y + h * 1.3}
               stroke={color}
-              strokeWidth={1.2 / viewK}
+              strokeWidth={1.2 / safeK}
             />
           </g>
         );
@@ -108,7 +111,7 @@ export function ChamferSmartSnapOverlay({
             points={`${p.x},${p.y - h} ${p.x + h},${p.y} ${p.x},${p.y + h} ${p.x - h},${p.y}`}
             fill="none"
             stroke={color}
-            strokeWidth={isActive ? 2.2 / viewK : 1.5 / viewK}
+            strokeWidth={isActive ? 2.2 / safeK : 1.5 / safeK}
           />
         );
 
@@ -123,8 +126,8 @@ export function ChamferSmartSnapOverlay({
               x2={p.x + h}
               y2={p.y + h}
               stroke={color}
-              strokeWidth={isActive ? 2.2 / viewK : 1.5 / viewK}
-              strokeDasharray={kind === "proj_inter" ? `${2 / viewK},${2 / viewK}` : undefined}
+              strokeWidth={isActive ? 2.2 / safeK : 1.5 / safeK}
+              strokeDasharray={kind === "proj_inter" ? `${2 / safeK},${2 / safeK}` : undefined}
             />
             <line
               x1={p.x + h}
@@ -132,8 +135,8 @@ export function ChamferSmartSnapOverlay({
               x2={p.x - h}
               y2={p.y + h}
               stroke={color}
-              strokeWidth={isActive ? 2.2 / viewK : 1.5 / viewK}
-              strokeDasharray={kind === "proj_inter" ? `${2 / viewK},${2 / viewK}` : undefined}
+              strokeWidth={isActive ? 2.2 / safeK : 1.5 / safeK}
+              strokeDasharray={kind === "proj_inter" ? `${2 / safeK},${2 / safeK}` : undefined}
             />
           </g>
         );
@@ -148,7 +151,7 @@ export function ChamferSmartSnapOverlay({
               r={h * 0.8}
               fill="none"
               stroke={color}
-              strokeWidth={isActive ? 2.2 / viewK : 1.5 / viewK}
+              strokeWidth={isActive ? 2.2 / safeK : 1.5 / safeK}
             />
             <line
               x1={p.x - h}
@@ -156,7 +159,7 @@ export function ChamferSmartSnapOverlay({
               x2={p.x + h}
               y2={p.y - h * 0.6}
               stroke={color}
-              strokeWidth={1.8 / viewK}
+              strokeWidth={1.8 / safeK}
             />
           </g>
         );
@@ -165,8 +168,8 @@ export function ChamferSmartSnapOverlay({
         // Símbolo de esquadro perpendicular
         return (
           <g>
-            <line x1={p.x - h} y1={p.y} x2={p.x} y2={p.y} stroke={color} strokeWidth={1.8 / viewK} />
-            <line x1={p.x} y1={p.y} x2={p.x} y2={p.y - h} stroke={color} strokeWidth={1.8 / viewK} />
+            <line x1={p.x - h} y1={p.y} x2={p.x} y2={p.y} stroke={color} strokeWidth={1.8 / safeK} />
+            <line x1={p.x} y1={p.y} x2={p.x} y2={p.y - h} stroke={color} strokeWidth={1.8 / safeK} />
             <rect
               x={p.x - h * 0.45}
               y={p.y - h * 0.45}
@@ -174,7 +177,7 @@ export function ChamferSmartSnapOverlay({
               height={h * 0.45}
               fill="none"
               stroke={color}
-              strokeWidth={1.2 / viewK}
+              strokeWidth={1.2 / safeK}
             />
           </g>
         );
@@ -189,9 +192,9 @@ export function ChamferSmartSnapOverlay({
               r={h * 0.7}
               fill="none"
               stroke={geratrizColor}
-              strokeWidth={1.5 / viewK}
+              strokeWidth={1.5 / safeK}
             />
-            <circle cx={p.x} cy={p.y} r={1.5 / viewK} fill={geratrizColor} />
+            <circle cx={p.x} cy={p.y} r={1.5 / safeK} fill={geratrizColor} />
           </g>
         );
 
@@ -207,9 +210,9 @@ export function ChamferSmartSnapOverlay({
               r={h * 0.6}
               fill="none"
               stroke={color}
-              strokeWidth={1.5 / viewK}
+              strokeWidth={1.5 / safeK}
             />
-            <circle cx={p.x} cy={p.y} r={1.8 / viewK} fill={color} />
+            <circle cx={p.x} cy={p.y} r={1.8 / safeK} fill={color} />
           </g>
         );
     }
@@ -218,21 +221,27 @@ export function ChamferSmartSnapOverlay({
   return (
     <g className="pointer-events-none select-none">
       {/* 1. Pontos de referência contextuais passivos (visíveis durante comandos para orientação) */}
-      {referencePoints.map((ref, idx) => {
-        const isCurrentlyActive =
-          activeSnap && Math.hypot(activeSnap.p.x - ref.p.x, activeSnap.p.y - ref.p.y) < 1e-3;
-        if (isCurrentlyActive) return null; // Será renderizado pelo activeSnap
+      {referencePoints
+        .filter((ref) => ref && ref.p && Number.isFinite(ref.p.x) && Number.isFinite(ref.p.y))
+        .map((ref, idx) => {
+          const isCurrentlyActive =
+            activeSnap &&
+            activeSnap.p &&
+            Number.isFinite(activeSnap.p.x) &&
+            Number.isFinite(activeSnap.p.y) &&
+            Math.hypot(activeSnap.p.x - ref.p.x, activeSnap.p.y - ref.p.y) < 1e-3;
+          if (isCurrentlyActive) return null;
 
-        const color = ref.kind === "geratriz" ? geratrizColor : isDark ? "#64748b" : "#94a3b8";
-        return (
-          <g key={`ref-${idx}`} opacity={0.65}>
-            {renderGlyph(ref.kind, ref.p, markerSize * 0.8, color, false)}
-          </g>
-        );
-      })}
+          const color = ref.kind === "geratriz" ? geratrizColor : isDark ? "#64748b" : "#94a3b8";
+          return (
+            <g key={`ref-${idx}`} opacity={0.65}>
+              {renderGlyph(ref.kind, ref.p, markerSize * 0.8, color, false)}
+            </g>
+          );
+        })}
 
       {/* 2. Ponto de Snap Ativo sob o cursor com Glifo Destacado e Tooltip */}
-      {activeSnap && (
+      {activeSnap && activeSnap.p && Number.isFinite(activeSnap.p.x) && Number.isFinite(activeSnap.p.y) && (
         <g>
           {/* Halo de destaque pulsante */}
           <circle
@@ -242,8 +251,8 @@ export function ChamferSmartSnapOverlay({
             fill={activeColor}
             fillOpacity={0.15}
             stroke={activeColor}
-            strokeWidth={1 / viewK}
-            strokeDasharray={`${3 / viewK},${3 / viewK}`}
+            strokeWidth={1 / safeK}
+            strokeDasharray={`${3 / safeK},${3 / safeK}`}
           />
 
           {/* Glifo principal com cor de precisão */}
@@ -254,31 +263,31 @@ export function ChamferSmartSnapOverlay({
             {/* Fundo do Tooltip */}
             <rect
               x={0}
-              y={-14 / viewK}
-              width={Math.max(80, 110 / viewK)}
-              height={20 / viewK}
-              rx={4 / viewK}
+              y={-14 / safeK}
+              width={Math.max(80, 110 / safeK)}
+              height={20 / safeK}
+              rx={4 / safeK}
               fill={isDark ? "rgba(2, 6, 23, 0.92)" : "rgba(255, 255, 255, 0.95)"}
               stroke={snapColor}
-              strokeWidth={1 / viewK}
+              strokeWidth={1 / safeK}
               filter="drop-shadow(0px 2px 4px rgba(0,0,0,0.5))"
             />
             {/* Texto do Tooltip */}
             <text
-              x={5 / viewK}
-              y={-1 / viewK}
+              x={5 / safeK}
+              y={-1 / safeK}
               fill={isDark ? "#f8fafc" : "#0f172a"}
-              fontSize={8.5 / viewK}
+              fontSize={8.5 / safeK}
               fontFamily="ui-monospace, monospace"
               fontWeight="bold"
             >
               {activeSnap.label}
             </text>
             <text
-              x={60 / viewK}
-              y={-1 / viewK}
+              x={60 / safeK}
+              y={-1 / safeK}
               fill={snapColor}
-              fontSize={7.5 / viewK}
+              fontSize={7.5 / safeK}
               fontFamily="ui-monospace, monospace"
               fontWeight="normal"
             >

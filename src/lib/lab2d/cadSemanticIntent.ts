@@ -86,16 +86,26 @@ export class CadSemanticIntentEngine {
 
       // Cotas condutoras do conjunto
       dimensions.push(
-        makeDimension("horizontal", { kind: "point", pt: { x: 0, y: 0 } }, { kind: "point", pt: { x: width, y: 0 } }, {
-          label: `${width} mm`,
-          layer: "cota",
-        })
+        makeDimension(
+          "horizontal",
+          [
+            { kind: "point", p: { x: 0, y: 0 } },
+            { kind: "point", p: { x: width, y: 0 } },
+          ],
+          25,
+          { suffix: " mm" }
+        )
       );
       dimensions.push(
-        makeDimension("vertical", { kind: "point", pt: { x: 0, y: 0 } }, { kind: "point", pt: { x: 0, y: height } }, {
-          label: `${height} mm`,
-          layer: "cota",
-        })
+        makeDimension(
+          "vertical",
+          [
+            { kind: "point", p: { x: 0, y: 0 } },
+            { kind: "point", p: { x: 0, y: height } },
+          ],
+          25,
+          { suffix: " mm" }
+        )
       );
 
       return {
@@ -172,10 +182,12 @@ export class CadSemanticIntentEngine {
       }
 
       dimensions.push(
-        makeDimension("diameter", { kind: "entity", entityId: entities[0].id }, null, {
-          label: `Ø${dExt} mm EXT`,
-          layer: "cota",
-        })
+        makeDimension(
+          "diameter",
+          [{ kind: "entity", id: entities[0].id }],
+          35,
+          { suffix: " mm EXT" }
+        )
       );
 
       return {

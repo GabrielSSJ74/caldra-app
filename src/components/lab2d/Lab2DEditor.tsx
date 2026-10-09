@@ -3171,9 +3171,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   /* leitura fora do ciclo de render: medir nunca dispara novo render */
   const selBoxRef = useRef<Box | null>(null);
   selBoxRef.current = selBox;
-  const center: Vec2 = selBox
-    ? { x: (selBox.minX + selBox.maxX) / 2, y: (selBox.minY + selBox.maxY) / 2 }
-    : { x: 0, y: 0 };
+  const center: Vec2 =
+    selBox &&
+    Number.isFinite(selBox.minX) &&
+    Number.isFinite(selBox.maxX) &&
+    Number.isFinite(selBox.minY) &&
+    Number.isFinite(selBox.maxY)
+      ? { x: (selBox.minX + selBox.maxX) / 2, y: (selBox.minY + selBox.maxY) / 2 }
+      : { x: 0, y: 0 };
 
   const onImportConfirm = (next: Entity[]) => {
     commit((e) => [...e, ...next]);
@@ -4480,7 +4485,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               )}
 
               {/* WORKSPACE_FRAME — área de trabalho (oculta no modo 3D Traçagem) */}
-              {frame.visible && !solidOpen && (
+              {frame.visible && !solidOpen && Number.isFinite(frame.w) && Number.isFinite(frame.h) && frame.w > 0 && frame.h > 0 && (
                 <g pointerEvents="none">
                   <rect
                     x={0}
@@ -4490,7 +4495,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     fill="none"
                     stroke={REFERENCE_COLOR}
                     strokeOpacity={0.85}
-                    strokeWidth={1.6 / view.k}
+                    strokeWidth={1.6 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
                   />
                   {/* diagonais de canto que fecham a moldura */}
                   {(
@@ -4592,20 +4597,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               {/* nós da seleção */}
               {!solidOpen && (tool === "node" || tool === "select") &&
                 selected.flatMap((e, eIdx) =>
-                  entityPoints(e).map((p, i) => (
-                    <circle
-                      key={`node-${e.id || "ent"}-${eIdx}-${i}`}
-                      cx={p.x}
-                      cy={p.y}
-                      r={3.2 / view.k}
-                      fill={isDark ? "#090d14" : "#ffffff"}
-                      stroke={isDark ? SELECTION_COLOR : "#DC2626"}
-                      strokeWidth={1.5 / view.k}
-                    />
-                  )),
+                  entityPoints(e)
+                    .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+                    .map((p, i) => (
+                      <circle
+                        key={`node-${e.id || "ent"}-${eIdx}-${i}`}
+                        cx={p.x}
+                        cy={p.y}
+                        r={3.2 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
+                        fill={isDark ? "#090d14" : "#ffffff"}
+                        stroke={isDark ? SELECTION_COLOR : "#DC2626"}
+                        strokeWidth={1.5 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
+                      />
+                    )),
                 )}
 
-              {selBox && (
+              {selBox &&
+                Number.isFinite(selBox.minX) &&
+                Number.isFinite(selBox.minY) &&
+                Number.isFinite(selBox.maxX) &&
+                Number.isFinite(selBox.maxY) &&
+                selBox.maxX >= selBox.minX &&
+                selBox.maxY >= selBox.minY && (
                 <rect
                   x={selBox.minX}
                   y={selBox.minY}
@@ -4614,12 +4627,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   fill="none"
                   stroke={isDark ? SELECTION_COLOR : "#DC2626"}
                   strokeOpacity={0.65}
-                  strokeWidth={1 / view.k}
-                  strokeDasharray={`${5 / view.k} ${4 / view.k}`}
+                  strokeWidth={1 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
+                  strokeDasharray={`${5 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)} ${4 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}`}
                 />
               )}
 
-              {marquee && (
+              {marquee &&
+                marquee.a &&
+                marquee.b &&
+                Number.isFinite(marquee.a.x) &&
+                Number.isFinite(marquee.a.y) &&
+                Number.isFinite(marquee.b.x) &&
+                Number.isFinite(marquee.b.y) && (
                 <rect
                   x={Math.min(marquee.a.x, marquee.b.x)}
                   y={Math.min(marquee.a.y, marquee.b.y)}
@@ -4628,123 +4647,163 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   fill={isDark ? SELECTION_COLOR : "#DC2626"}
                   fillOpacity={0.08}
                   stroke={isDark ? SELECTION_COLOR : "#DC2626"}
-                  strokeWidth={1 / view.k}
+                  strokeWidth={1 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
                   strokeDasharray={
-                    marquee.b.x < marquee.a.x ? `${5 / view.k} ${4 / view.k}` : undefined
+                    marquee.b.x < marquee.a.x
+                      ? `${5 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)} ${4 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}`
+                      : undefined
                   }
                 />
               )}
 
               {/* FEEDBACK VISUAL TEMPORÁRIO DURANTE EDIÇÃO MOBILE (REGRA 15) */}
-              {activeEditingProp && selectedEntity && (
-                <g pointerEvents="none" className="transition-opacity duration-150">
-                  {selectedEntity.type === "circle" && (
-                    <circle
-                      cx={selectedEntity.cx}
-                      cy={selectedEntity.cy}
-                      r={selectedEntity.r}
-                      fill="rgba(239, 68, 68, 0.08)"
-                      stroke="#EF4444"
-                      strokeWidth={2.2 / view.k}
-                      strokeDasharray={`${6 / view.k} ${4 / view.k}`}
-                    />
-                  )}
-                  {selectedEntity.type === "arc" && (
-                    <circle
-                      cx={selectedEntity.cx}
-                      cy={selectedEntity.cy}
-                      r={selectedEntity.r}
-                      fill="none"
-                      stroke="#EF4444"
-                      strokeWidth={2.2 / view.k}
-                      strokeDasharray={`${6 / view.k} ${4 / view.k}`}
-                    />
-                  )}
-                  {selectedEntity.type === "line" && (
-                    <line
-                      x1={selectedEntity.x1}
-                      y1={selectedEntity.y1}
-                      x2={selectedEntity.x2}
-                      y2={selectedEntity.y2}
-                      stroke="#EF4444"
-                      strokeWidth={3 / view.k}
-                      strokeOpacity={0.8}
-                    />
-                  )}
-                  <g
-                    transform={`translate(${
-                      selectedEntity.type === "circle"
-                        ? selectedEntity.cx
-                        : selectedEntity.type === "arc"
-                        ? selectedEntity.cx
-                        : selectedEntity.type === "line"
-                        ? (selectedEntity.x1 + selectedEntity.x2) / 2
-                        : selectedEntity.type === "point"
-                        ? selectedEntity.x
-                        : 0
-                    } ${
-                      selectedEntity.type === "circle"
-                        ? selectedEntity.cy - selectedEntity.r - 12 / view.k
-                        : selectedEntity.type === "arc"
-                        ? selectedEntity.cy - selectedEntity.r - 12 / view.k
-                        : selectedEntity.type === "line"
-                        ? (selectedEntity.y1 + selectedEntity.y2) / 2 - 12 / view.k
-                        : selectedEntity.type === "point"
-                        ? selectedEntity.y - 12 / view.k
-                        : 0
-                    })`}
-                  >
-                    <rect
-                      x={-45 / view.k}
-                      y={-11 / view.k}
-                      width={90 / view.k}
-                      height={22 / view.k}
-                      rx={6 / view.k}
-                      fill="rgba(15, 23, 42, 0.95)"
-                      stroke="#EF4444"
-                      strokeWidth={1.2 / view.k}
-                    />
-                    <text
-                      x={0}
-                      y={0}
-                      fontSize={9.5 / view.k}
-                      fontFamily="ui-monospace, monospace"
-                      fontWeight="bold"
-                      fill="#FFFFFF"
-                      textAnchor="middle"
-                      dominantBaseline="central"
-                    >
-                      {activeEditingProp.label}: {activeEditingProp.value.toFixed(2)} {activeEditingProp.unit}
-                    </text>
+              {activeEditingProp && selectedEntity && (() => {
+                const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                let badgeX = 0;
+                let badgeY = 0;
+                if (selectedEntity.type === "circle" || selectedEntity.type === "arc") {
+                  badgeX = selectedEntity.cx;
+                  badgeY = selectedEntity.cy - selectedEntity.r - 12 / safeK;
+                } else if (selectedEntity.type === "line") {
+                  badgeX = (selectedEntity.x1 + selectedEntity.x2) / 2;
+                  badgeY = (selectedEntity.y1 + selectedEntity.y2) / 2 - 12 / safeK;
+                } else if (selectedEntity.type === "point") {
+                  badgeX = selectedEntity.x;
+                  badgeY = selectedEntity.y - 12 / safeK;
+                }
+                const hasValidBadge = Number.isFinite(badgeX) && Number.isFinite(badgeY);
+
+                return (
+                  <g pointerEvents="none" className="transition-opacity duration-150">
+                    {selectedEntity.type === "circle" &&
+                      Number.isFinite(selectedEntity.cx) &&
+                      Number.isFinite(selectedEntity.cy) &&
+                      Number.isFinite(selectedEntity.r) && (
+                        <circle
+                          cx={selectedEntity.cx}
+                          cy={selectedEntity.cy}
+                          r={selectedEntity.r}
+                          fill="rgba(239, 68, 68, 0.08)"
+                          stroke="#EF4444"
+                          strokeWidth={2.2 / safeK}
+                          strokeDasharray={`${6 / safeK} ${4 / safeK}`}
+                        />
+                      )}
+                    {selectedEntity.type === "arc" &&
+                      Number.isFinite(selectedEntity.cx) &&
+                      Number.isFinite(selectedEntity.cy) &&
+                      Number.isFinite(selectedEntity.r) && (
+                        <circle
+                          cx={selectedEntity.cx}
+                          cy={selectedEntity.cy}
+                          r={selectedEntity.r}
+                          fill="none"
+                          stroke="#EF4444"
+                          strokeWidth={2.2 / safeK}
+                          strokeDasharray={`${6 / safeK} ${4 / safeK}`}
+                        />
+                      )}
+                    {selectedEntity.type === "line" &&
+                      Number.isFinite(selectedEntity.x1) &&
+                      Number.isFinite(selectedEntity.y1) &&
+                      Number.isFinite(selectedEntity.x2) &&
+                      Number.isFinite(selectedEntity.y2) && (
+                        <line
+                          x1={selectedEntity.x1}
+                          y1={selectedEntity.y1}
+                          x2={selectedEntity.x2}
+                          y2={selectedEntity.y2}
+                          stroke="#EF4444"
+                          strokeWidth={3 / safeK}
+                          strokeOpacity={0.8}
+                        />
+                      )}
+                    {hasValidBadge && (
+                      <g transform={`translate(${badgeX} ${badgeY})`}>
+                        <rect
+                          x={-45 / safeK}
+                          y={-11 / safeK}
+                          width={90 / safeK}
+                          height={22 / safeK}
+                          rx={6 / safeK}
+                          fill="rgba(15, 23, 42, 0.95)"
+                          stroke="#EF4444"
+                          strokeWidth={1.2 / safeK}
+                        />
+                        <text
+                          x={0}
+                          y={0}
+                          fontSize={9.5 / safeK}
+                          fontFamily="ui-monospace, monospace"
+                          fontWeight="bold"
+                          fill="#FFFFFF"
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                        >
+                          {activeEditingProp.label}: {activeEditingProp.value.toFixed(2)} {activeEditingProp.unit}
+                        </text>
+                      </g>
+                    )}
                   </g>
-                </g>
-              )}
+                );
+              })()}
 
               {/* COTAS ASSOCIATIVAS — âmbar técnico, sempre medidas na geometria */}
               {dims.map((d) => {
                 const draw = dimensionDraw(d, entities);
                 const on = dimSel === d.id;
+                const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
                 return (
                   <g
                     key={d.id}
                     stroke={DIMENSION_COLOR}
                     fill={DIMENSION_COLOR}
-                    strokeWidth={(on ? 1.8 : 1) / view.k}
+                    strokeWidth={(on ? 1.8 : 1) / safeK}
                     opacity={on ? 1 : 0.9}
                     onPointerDown={() => setDimSel(d.id)}
                   >
-                    {draw.lines.map((l, i) => (
-                      <line key={`l${i}`} x1={l[0].x} y1={l[0].y} x2={l[1].x} y2={l[1].y} />
-                    ))}
-                    {draw.arcs.map((a, i) => (
-                      <path
-                        key={`a${i}`}
-                        fill="none"
-                        d={`M ${a.c.x + a.r * Math.cos(a.a0)} ${a.c.y + a.r * Math.sin(a.a0)} A ${a.r} ${a.r} 0 ${Math.abs(a.a1 - a.a0) > Math.PI ? 1 : 0} 1 ${a.c.x + a.r * Math.cos(a.a1)} ${a.c.y + a.r * Math.sin(a.a1)}`}
-                      />
-                    ))}
+                    {draw.lines.map((l, i) => {
+                      if (
+                        !l ||
+                        !l[0] ||
+                        !l[1] ||
+                        !Number.isFinite(l[0].x) ||
+                        !Number.isFinite(l[0].y) ||
+                        !Number.isFinite(l[1].x) ||
+                        !Number.isFinite(l[1].y)
+                      )
+                        return null;
+                      return <line key={`l${i}`} x1={l[0].x} y1={l[0].y} x2={l[1].x} y2={l[1].y} />;
+                    })}
+                    {draw.arcs.map((a, i) => {
+                      if (
+                        !a ||
+                        !a.c ||
+                        !Number.isFinite(a.c.x) ||
+                        !Number.isFinite(a.c.y) ||
+                        !Number.isFinite(a.r) ||
+                        !Number.isFinite(a.a0) ||
+                        !Number.isFinite(a.a1)
+                      )
+                        return null;
+                      return (
+                        <path
+                          key={`a${i}`}
+                          fill="none"
+                          d={`M ${a.c.x + a.r * Math.cos(a.a0)} ${a.c.y + a.r * Math.sin(a.a0)} A ${a.r} ${a.r} 0 ${Math.abs(a.a1 - a.a0) > Math.PI ? 1 : 0} 1 ${a.c.x + a.r * Math.cos(a.a1)} ${a.c.y + a.r * Math.sin(a.a1)}`}
+                        />
+                      );
+                    })}
                     {draw.arrows.map((ar, i) => {
-                      const s = d.style.arrowSize / view.k;
+                      if (
+                        !ar ||
+                        !ar.p ||
+                        !Number.isFinite(ar.p.x) ||
+                        !Number.isFinite(ar.p.y) ||
+                        !Number.isFinite(ar.angle)
+                      )
+                        return null;
+                      const s = (d.style.arrowSize || 6) / safeK;
                       const p1 = `${ar.p.x + Math.cos(ar.angle + 0.25) * s},${ar.p.y + Math.sin(ar.angle + 0.25) * s}`;
                       const p2 = `${ar.p.x + Math.cos(ar.angle - 0.25) * s},${ar.p.y + Math.sin(ar.angle - 0.25) * s}`;
                       return (
@@ -4756,22 +4815,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       );
                     })}
                     {draw.labels.map((l, i) => {
+                      if (!l || !l.p || !Number.isFinite(l.p.x) || !Number.isFinite(l.p.y)) return null;
                       const parsedVal =
                         parseFloat(l.text.replace(/[^0-9.,]/g, "").replace(",", ".")) || 0;
                       return (
                         <text
                           key={`t${i}`}
                           x={l.p.x}
-                          y={l.p.y - 3 / view.k}
-                          fontSize={d.style.textSize / view.k}
+                          y={l.p.y - 3 / safeK}
+                          fontSize={(d.style.textSize || 11) / safeK}
                           textAnchor="middle"
                           stroke="none"
                           className="font-mono cursor-pointer hover:font-bold hover:fill-accent select-none"
                           onPointerDown={(ev) => {
                             ev.stopPropagation();
                             const r = svgRef.current?.getBoundingClientRect();
-                            const screenX = l.p.x * view.k + (r?.left ?? 0) + view.tx;
-                            const screenY = l.p.y * view.k + (r?.top ?? 0) + view.ty;
+                            const screenX = l.p.x * safeK + (r?.left ?? 0) + view.tx;
+                            const screenY = l.p.y * safeK + (r?.top ?? 0) + view.ty;
                             setDirectDimEditor({
                               open: true,
                               dimId: d.id,
@@ -4792,6 +4852,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               {/* cotas automáticas de apoio */}
               {showDims &&
                 autoDimensions(drawable).map((d, i) => {
+                  if (
+                    !d ||
+                    !d.a ||
+                    !d.b ||
+                    !Number.isFinite(d.a.x) ||
+                    !Number.isFinite(d.a.y) ||
+                    !Number.isFinite(d.b.x) ||
+                    !Number.isFinite(d.b.y)
+                  )
+                    return null;
+                  const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
                   const mx = (d.a.x + d.b.x) / 2;
                   const my = (d.a.y + d.b.y) / 2;
                   const ang = (Math.atan2(d.b.y - d.a.y, d.b.x - d.a.x) * 180) / Math.PI;
@@ -4803,16 +4874,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         y1={d.a.y}
                         x2={d.b.x}
                         y2={d.b.y}
-                        strokeWidth={1 / view.k}
+                        strokeWidth={1 / safeK}
                         strokeDasharray={
-                          d.kind === "radial" ? `${4 / view.k} ${3 / view.k}` : undefined
+                          d.kind === "radial" ? `${4 / safeK} ${3 / safeK}` : undefined
                         }
                       />
                       <text
                         x={mx}
-                        y={my - 3 / view.k}
+                        y={my - 3 / safeK}
                         transform={`rotate(${ang + flip} ${mx} ${my})`}
-                        fontSize={10 / view.k}
+                        fontSize={10 / safeK}
                         textAnchor="middle"
                         stroke="none"
                         className="font-mono"
@@ -4823,67 +4894,88 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   );
                 })}
 
-              {[...measures, ...(liveMeasure ? [liveMeasure] : [])].map((m, i) => (
-                <g key={`measure-${i}`} stroke={DIMENSION_COLOR} fill={DIMENSION_COLOR}>
-                  <line
-                    x1={m.a.x}
-                    y1={m.a.y}
-                    x2={m.b.x}
-                    y2={m.b.y}
-                    strokeWidth={1 / view.k}
-                    strokeDasharray={
-                      liveMeasure && i === measures.length
-                        ? `${5 / view.k} ${4 / view.k}`
-                        : undefined
-                    }
-                  />
-                  <text
-                    x={(m.a.x + m.b.x) / 2}
-                    y={(m.a.y + m.b.y) / 2 - 6 / view.k}
-                    fontSize={11 / view.k}
-                    textAnchor="middle"
-                    stroke="none"
-                    className="font-mono"
-                  >
-                    {dist(m.a, m.b).toFixed(2)} mm ·{" "}
-                    {(
-                      ((Math.atan2(-(m.b.y - m.a.y), m.b.x - m.a.x) * 180) / Math.PI + 360) %
-                      360
-                    ).toFixed(1)}
-                    °
-                  </text>
-                </g>
-              ))}
+              {[...measures, ...(liveMeasure ? [liveMeasure] : [])].map((m, i) => {
+                if (
+                  !m ||
+                  !m.a ||
+                  !m.b ||
+                  !Number.isFinite(m.a.x) ||
+                  !Number.isFinite(m.a.y) ||
+                  !Number.isFinite(m.b.x) ||
+                  !Number.isFinite(m.b.y)
+                )
+                  return null;
+                const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                return (
+                  <g key={`measure-${i}`} stroke={DIMENSION_COLOR} fill={DIMENSION_COLOR}>
+                    <line
+                      x1={m.a.x}
+                      y1={m.a.y}
+                      x2={m.b.x}
+                      y2={m.b.y}
+                      strokeWidth={1 / safeK}
+                      strokeDasharray={
+                        liveMeasure && i === measures.length
+                          ? `${5 / safeK} ${4 / safeK}`
+                          : undefined
+                      }
+                    />
+                    <text
+                      x={(m.a.x + m.b.x) / 2}
+                      y={(m.a.y + m.b.y) / 2 - 6 / safeK}
+                      fontSize={11 / safeK}
+                      textAnchor="middle"
+                      stroke="none"
+                      className="font-mono"
+                    >
+                      {dist(m.a, m.b).toFixed(2)} mm ·{" "}
+                      {(
+                        ((Math.atan2(-(m.b.y - m.a.y), m.b.x - m.a.x) * 180) / Math.PI + 360) %
+                        360
+                      ).toFixed(1)}
+                      °
+                    </text>
+                  </g>
+                );
+              })}
 
-              {issues?.map((is, i) => (
-                <circle
-                  key={`issue-${i}`}
-                  cx={is.p.x}
-                  cy={is.p.y}
-                  r={6 / view.k}
-                  fill="none"
-                  stroke={WARNING_COLOR}
-                  strokeWidth={1.5 / view.k}
-                />
-              ))}
+              {issues?.map((is, i) => {
+                if (!is || !is.p || !Number.isFinite(is.p.x) || !Number.isFinite(is.p.y)) return null;
+                const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                return (
+                  <circle
+                    key={`issue-${i}`}
+                    cx={is.p.x}
+                    cy={is.p.y}
+                    r={6 / safeK}
+                    fill="none"
+                    stroke={WARNING_COLOR}
+                    strokeWidth={1.5 / safeK}
+                  />
+                );
+              })}
 
               {/*
                 FLUXO CALDRA e selos de sequência agora vivem no canvas de
                 overlay (`flowRef`): geometria de UI, nunca exportada.
               */}
 
-              {shareHint && (
-                <line
-                  x1={shareHint.p1.x}
-                  y1={shareHint.p1.y}
-                  x2={shareHint.p2.x}
-                  y2={shareHint.p2.y}
-                  stroke={SELECTION_COLOR}
-                  strokeWidth={5 / view.k}
-                  strokeOpacity={0.6}
-                  strokeLinecap="round"
-                />
-              )}
+              {shareHint &&
+                Number.isFinite(shareHint.p1?.x) &&
+                Number.isFinite(shareHint.p1?.y) &&
+                Number.isFinite(shareHint.p2?.x) &&
+                Number.isFinite(shareHint.p2?.y) && (
+                  <line
+                    x1={shareHint.p1.x}
+                    y1={shareHint.p1.y}
+                    x2={shareHint.p2.x}
+                    y2={shareHint.p2.y}
+                    stroke={SELECTION_COLOR}
+                    strokeWidth={5 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
+                    strokeOpacity={0.6}
+                    strokeLinecap="round"
+                  />
+                )}
 
               {snapHit && (
                 <text
@@ -4917,115 +5009,146 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               )}
 
               {/* PRÉ-VISUALIZAÇÃO DE CENTRALIZAR FORMAS */}
-              {centerDialogOpen && centerPreview && (
-                <g pointerEvents="none" aria-label="Pré-visualização de centralização">
-                  {centerPreview.transformed.map((e) => {
-                    const segs = segmentsOf(e);
-                    return segs.map((s, idx) => (
-                      <line
-                        key={`cprev-${e.id}-${idx}`}
-                        x1={s[0].x}
-                        y1={s[0].y}
-                        x2={s[1].x}
-                        y2={s[1].y}
-                        stroke="#06b6d4"
-                        strokeWidth={2 / view.k}
-                        strokeDasharray={`${6 / view.k},${3 / view.k}`}
-                        strokeOpacity={0.85}
-                      />
-                    ));
-                  })}
-                  {/* Centro Alvo */}
-                  <circle
-                    cx={centerPreview.targetCenter.x}
-                    cy={centerPreview.targetCenter.y}
-                    r={7 / view.k}
-                    fill="none"
-                    stroke="#06b6d4"
-                    strokeWidth={1.5 / view.k}
-                  />
-                  <line
-                    x1={centerPreview.targetCenter.x - 10 / view.k}
-                    y1={centerPreview.targetCenter.y}
-                    x2={centerPreview.targetCenter.x + 10 / view.k}
-                    y2={centerPreview.targetCenter.y}
-                    stroke="#06b6d4"
-                    strokeWidth={1.2 / view.k}
-                  />
-                  <line
-                    x1={centerPreview.targetCenter.x}
-                    y1={centerPreview.targetCenter.y - 10 / view.k}
-                    x2={centerPreview.targetCenter.x}
-                    y2={centerPreview.targetCenter.y + 10 / view.k}
-                    stroke="#06b6d4"
-                    strokeWidth={1.2 / view.k}
-                  />
-                </g>
-              )}
-
-              {/* PRÉ-VISUALIZAÇÃO DE FILETE */}
-              {tool === "fillet" && filletPreview && (
-                <g pointerEvents="none" aria-label="Pré-visualização do filete">
-                  <circle
-                    cx={filletPreview.corner.corner.x}
-                    cy={filletPreview.corner.corner.y}
-                    r={7 / view.k}
-                    fill="#06b6d4"
-                    fillOpacity={0.25}
-                    stroke="#06b6d4"
-                    strokeWidth={1.8 / view.k}
-                  />
-                  {(() => {
-                    const c = filletPreview.calc;
-                    const f = (n: number) => n.toFixed(3);
-                    const p0 = {
-                      x: c.arcCenter.x + c.radius * Math.cos(c.startAngle),
-                      y: c.arcCenter.y + c.radius * Math.sin(c.startAngle),
-                    };
-                    const p1 = {
-                      x: c.arcCenter.x + c.radius * Math.cos(c.endAngle),
-                      y: c.arcCenter.y + c.radius * Math.sin(c.endAngle),
-                    };
-                    let sweep = c.endAngle - c.startAngle;
-                    while (sweep < 0) sweep += Math.PI * 2;
-                    const large = sweep > Math.PI ? 1 : 0;
-                    const d = `M ${f(p0.x)} ${f(p0.y)} A ${f(c.radius)} ${f(c.radius)} 0 ${large} 1 ${f(p1.x)} ${f(p1.y)}`;
-                    return (
-                      <path
-                        d={d}
+              {centerDialogOpen &&
+                centerPreview &&
+                centerPreview.targetCenter &&
+                Number.isFinite(centerPreview.targetCenter.x) &&
+                Number.isFinite(centerPreview.targetCenter.y) && (() => {
+                  const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                  return (
+                    <g pointerEvents="none" aria-label="Pré-visualização de centralização">
+                      {centerPreview.transformed.map((e) => {
+                        const segs = segmentsOf(e);
+                        return segs.map((s, idx) => {
+                          if (!s || !s[0] || !s[1] || !Number.isFinite(s[0].x) || !Number.isFinite(s[0].y) || !Number.isFinite(s[1].x) || !Number.isFinite(s[1].y)) return null;
+                          return (
+                            <line
+                              key={`cprev-${e.id}-${idx}`}
+                              x1={s[0].x}
+                              y1={s[0].y}
+                              x2={s[1].x}
+                              y2={s[1].y}
+                              stroke="#06b6d4"
+                              strokeWidth={2 / safeK}
+                              strokeDasharray={`${6 / safeK},${3 / safeK}`}
+                              strokeOpacity={0.85}
+                            />
+                          );
+                        });
+                      })}
+                      {/* Centro Alvo */}
+                      <circle
+                        cx={centerPreview.targetCenter.x}
+                        cy={centerPreview.targetCenter.y}
+                        r={7 / safeK}
                         fill="none"
                         stroke="#06b6d4"
-                        strokeWidth={2.5 / view.k}
-                        strokeDasharray={`${6 / view.k},${3 / view.k}`}
+                        strokeWidth={1.5 / safeK}
                       />
-                    );
-                  })()}
-                </g>
-              )}
+                      <line
+                        x1={centerPreview.targetCenter.x - 10 / safeK}
+                        y1={centerPreview.targetCenter.y}
+                        x2={centerPreview.targetCenter.x + 10 / safeK}
+                        y2={centerPreview.targetCenter.y}
+                        stroke="#06b6d4"
+                        strokeWidth={1.2 / safeK}
+                      />
+                      <line
+                        x1={centerPreview.targetCenter.x}
+                        y1={centerPreview.targetCenter.y - 10 / safeK}
+                        x2={centerPreview.targetCenter.x}
+                        y2={centerPreview.targetCenter.y + 10 / safeK}
+                        stroke="#06b6d4"
+                        strokeWidth={1.2 / safeK}
+                      />
+                    </g>
+                  );
+                })()}
+
+              {/* PRÉ-VISUALIZAÇÃO DE FILETE */}
+              {tool === "fillet" &&
+                filletPreview &&
+                filletPreview.corner?.corner &&
+                Number.isFinite(filletPreview.corner.corner.x) &&
+                Number.isFinite(filletPreview.corner.corner.y) && (() => {
+                  const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                  return (
+                    <g pointerEvents="none" aria-label="Pré-visualização do filete">
+                      <circle
+                        cx={filletPreview.corner.corner.x}
+                        cy={filletPreview.corner.corner.y}
+                        r={7 / safeK}
+                        fill="#06b6d4"
+                        fillOpacity={0.25}
+                        stroke="#06b6d4"
+                        strokeWidth={1.8 / safeK}
+                      />
+                      {(() => {
+                        const c = filletPreview.calc;
+                        if (!c || !c.arcCenter || !Number.isFinite(c.arcCenter.x) || !Number.isFinite(c.arcCenter.y) || !Number.isFinite(c.radius)) return null;
+                        const f = (n: number) => n.toFixed(3);
+                        const p0 = {
+                          x: c.arcCenter.x + c.radius * Math.cos(c.startAngle),
+                          y: c.arcCenter.y + c.radius * Math.sin(c.startAngle),
+                        };
+                        const p1 = {
+                          x: c.arcCenter.x + c.radius * Math.cos(c.endAngle),
+                          y: c.arcCenter.y + c.radius * Math.sin(c.endAngle),
+                        };
+                        let sweep = c.endAngle - c.startAngle;
+                        while (sweep < 0) sweep += Math.PI * 2;
+                        const large = sweep > Math.PI ? 1 : 0;
+                        const d = `M ${f(p0.x)} ${f(p0.y)} A ${f(c.radius)} ${f(c.radius)} 0 ${large} 1 ${f(p1.x)} ${f(p1.y)}`;
+                        return (
+                          <path
+                            d={d}
+                            fill="none"
+                            stroke="#06b6d4"
+                            strokeWidth={2.5 / safeK}
+                            strokeDasharray={`${6 / safeK},${3 / safeK}`}
+                          />
+                        );
+                      })()}
+                    </g>
+                  );
+                })()}
 
               {/* PRÉ-VISUALIZAÇÃO DE CHANFRO */}
-              {tool === "chamfer" && chamferPreview && (
-                <g pointerEvents="none" aria-label="Pré-visualização do chanfro">
-                  <circle
-                    cx={chamferPreview.corner.corner.x}
-                    cy={chamferPreview.corner.corner.y}
-                    r={7 / view.k}
-                    fill="#f59e0b"
-                    fillOpacity={0.25}
-                    stroke="#f59e0b"
-                    strokeWidth={1.8 / view.k}
-                  />
-                  <line
-                    x1={chamferPreview.calc.cutPointA.x}
-                    y1={chamferPreview.calc.cutPointA.y}
-                    x2={chamferPreview.calc.cutPointB.x}
-                    y2={chamferPreview.calc.cutPointB.y}
-                    stroke="#f59e0b"
-                    strokeWidth={2.5 / view.k}
-                    strokeDasharray={`${6 / view.k},${3 / view.k}`}
-                  />
-                </g>
-              )}
+              {tool === "chamfer" &&
+                chamferPreview &&
+                chamferPreview.corner?.corner &&
+                Number.isFinite(chamferPreview.corner.corner.x) &&
+                Number.isFinite(chamferPreview.corner.corner.y) &&
+                chamferPreview.calc?.cutPointA &&
+                Number.isFinite(chamferPreview.calc.cutPointA.x) &&
+                Number.isFinite(chamferPreview.calc.cutPointA.y) &&
+                chamferPreview.calc?.cutPointB &&
+                Number.isFinite(chamferPreview.calc.cutPointB.x) &&
+                Number.isFinite(chamferPreview.calc.cutPointB.y) && (() => {
+                  const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                  return (
+                    <g pointerEvents="none" aria-label="Pré-visualização do chanfro">
+                      <circle
+                        cx={chamferPreview.corner.corner.x}
+                        cy={chamferPreview.corner.corner.y}
+                        r={7 / safeK}
+                        fill="#f59e0b"
+                        fillOpacity={0.25}
+                        stroke="#f59e0b"
+                        strokeWidth={1.8 / safeK}
+                      />
+                      <line
+                        x1={chamferPreview.calc.cutPointA.x}
+                        y1={chamferPreview.calc.cutPointA.y}
+                        x2={chamferPreview.calc.cutPointB.x}
+                        y2={chamferPreview.calc.cutPointB.y}
+                        stroke="#f59e0b"
+                        strokeWidth={2.5 / safeK}
+                        strokeDasharray={`${6 / safeK},${3 / safeK}`}
+                      />
+                    </g>
+                  );
+                })()}
             </g>
           </svg>
 
@@ -6269,10 +6392,18 @@ export function EntityShape({
     : null;
 
   const shape = (p: Record<string, unknown>, key?: string) => {
-    if (e.type === "line") return <line key={key} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} {...p} />;
-    if (e.type === "circle") return <circle key={key} cx={e.cx} cy={e.cy} r={e.r} {...p} />;
+    if (e.type === "line") {
+      if (!Number.isFinite(e.x1) || !Number.isFinite(e.y1) || !Number.isFinite(e.x2) || !Number.isFinite(e.y2)) return null;
+      return <line key={key} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} {...p} />;
+    }
+    if (e.type === "circle") {
+      if (!Number.isFinite(e.cx) || !Number.isFinite(e.cy) || !Number.isFinite(e.r) || e.r <= 0) return null;
+      return <circle key={key} cx={e.cx} cy={e.cy} r={e.r} {...p} />;
+    }
     if (e.type === "polyline") {
-      const d = e.pts.map((q) => `${q.x},${q.y}`).join(" ");
+      const validPts = e.pts.filter((q) => q && Number.isFinite(q.x) && Number.isFinite(q.y));
+      if (validPts.length < 2) return null;
+      const d = validPts.map((q) => `${q.x},${q.y}`).join(" ");
       return e.closed ? (
         <polygon key={key} points={d} {...p} />
       ) : (
@@ -6280,8 +6411,18 @@ export function EntityShape({
       );
     }
     if (e.type === "arc") {
+      if (
+        !Number.isFinite(e.cx) ||
+        !Number.isFinite(e.cy) ||
+        !Number.isFinite(e.r) ||
+        !Number.isFinite(e.a0) ||
+        !Number.isFinite(e.a1) ||
+        e.r <= 0
+      )
+        return null;
       const p0 = { x: e.cx + e.r * Math.cos(e.a0), y: e.cy + e.r * Math.sin(e.a0) };
       const p1 = { x: e.cx + e.r * Math.cos(e.a1), y: e.cy + e.r * Math.sin(e.a1) };
+      if (!Number.isFinite(p0.x) || !Number.isFinite(p0.y) || !Number.isFinite(p1.x) || !Number.isFinite(p1.y)) return null;
       let sweep = e.a1 - e.a0;
       while (sweep < 0) sweep += Math.PI * 2;
       return (
@@ -6293,6 +6434,15 @@ export function EntityShape({
       );
     }
     if (e.type === "ellipse") {
+      if (
+        !Number.isFinite(e.cx) ||
+        !Number.isFinite(e.cy) ||
+        !Number.isFinite(e.rx) ||
+        !Number.isFinite(e.ry) ||
+        e.rx <= 0 ||
+        e.ry <= 0
+      )
+        return null;
       return (
         <ellipse
           key={key}
@@ -6306,21 +6456,22 @@ export function EntityShape({
       );
     }
     if (e.type === "point") {
+      if (!Number.isFinite(e.x) || !Number.isFinite(e.y)) return null;
       return (
         <g key={key}>
           <circle
             cx={e.x}
             cy={e.y}
-            r={3.5 / k}
+            r={3.5 / (Number.isFinite(k) && k > 0 ? k : 1)}
             fill="var(--warn, #f59e0b)"
             stroke="var(--background)"
-            strokeWidth={0.8 / k}
+            strokeWidth={0.8 / (Number.isFinite(k) && k > 0 ? k : 1)}
           />
           {e.label && (
             <text
-              x={e.x + 4.5 / k}
-              y={e.y - 4.5 / k}
-              fontSize={8.5 / k}
+              x={e.x + 4.5 / (Number.isFinite(k) && k > 0 ? k : 1)}
+              y={e.y - 4.5 / (Number.isFinite(k) && k > 0 ? k : 1)}
+              fontSize={8.5 / (Number.isFinite(k) && k > 0 ? k : 1)}
               fill="var(--warn, #f59e0b)"
               className="font-mono font-bold select-none pointer-events-none"
             >
@@ -6331,7 +6482,9 @@ export function EntityShape({
       );
     }
     if (e.type === "hatch") {
-      const d = e.boundaryPts.map((q) => `${q.x},${q.y}`).join(" ");
+      const validBoundary = e.boundaryPts.filter((q) => q && Number.isFinite(q.x) && Number.isFinite(q.y));
+      if (validBoundary.length < 3) return null;
+      const d = validBoundary.map((q) => `${q.x},${q.y}`).join(" ");
       return (
         <polygon
           key={key}
@@ -6342,8 +6495,10 @@ export function EntityShape({
         />
       );
     }
-    if (e.type === "path")
+    if (e.type === "path") {
+      if (!e.start || !Number.isFinite(e.start.x) || !Number.isFinite(e.start.y)) return null;
       return <path key={key} d={pathToSvg(e.start, e.segs, e.closed)} fill="none" {...p} />;
+    }
     return null;
   };
 
