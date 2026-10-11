@@ -41,8 +41,15 @@ export function measureFirstInteraction(): () => void {
   return () => window.removeEventListener("pointerdown", onPointer, { capture: true });
 }
 
-/** Rotas de navegação essencial pré-carregadas com o navegador ocioso. */
-export const CORE_ROUTES = ["/tracagem", "/escola", "/projetos"] as const;
+export const CORE_ROUTES = [
+  "/projetar",
+  "/produzir",
+  "/aprenda",
+  "/perfil",
+  "/tracagem",
+  "/escola",
+  "/projetos",
+] as const;
 
 type IdleWindow = Window & {
   requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;

@@ -16,8 +16,18 @@ import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioQuickControl } from "@/components/audio/AudioQuickControl";
 import { CaldraGenesisPreIntro } from "@/components/caldra/CaldraGenesisPreIntro";
 
-/** Rotas com fundo AURORA. O editor CHAMFER (desenho-2d) nunca entra aqui. */
-const AURORA_ROUTES = ["/", "/tracagem", "/escola", "/projetos", "/oficina", "/configuracoes"];
+const AURORA_ROUTES = [
+  "/",
+  "/projetar",
+  "/produzir",
+  "/aprenda",
+  "/perfil",
+  "/tracagem",
+  "/escola",
+  "/projetos",
+  "/oficina",
+  "/configuracoes",
+];
 
 function auroraVisible(pathname: string) {
   return AURORA_ROUTES.some((r) => (r === "/" ? pathname === "/" : pathname.startsWith(r)));
