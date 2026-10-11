@@ -14,6 +14,9 @@ import {
   RotateCcw,
   Check,
   Compass,
+  Sun,
+  Moon,
+  Monitor,
 } from "lucide-react";
 import { PLAN_LABEL } from "@/lib/subscription/features";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
@@ -56,7 +59,7 @@ export const Route = createFileRoute("/configuracoes")({
       },
       { property: "og:title", content: "Configurações — CALDRA" },
       {
-        property: "og:description",
+        name: "description",
         content: "Preferências do laboratório e ativação do Modo Mestre.",
       },
     ],
@@ -64,11 +67,11 @@ export const Route = createFileRoute("/configuracoes")({
   component: Configuracoes,
 });
 
-const THEMES: { id: ThemeMode; label: string }[] = [
-  { id: "dark", label: "Escuro" },
-  { id: "light", label: "Claro" },
-  { id: "system", label: "Sistema" },
-  { id: "amoled", label: "AMOLED" },
+const THEMES: { id: ThemeMode; label: string; icon: typeof Sun }[] = [
+  { id: "light", label: "Claro", icon: Sun },
+  { id: "dark", label: "Escuro", icon: Moon },
+  { id: "system", label: "Sistema", icon: Monitor },
+  { id: "amoled", label: "AMOLED", icon: Sparkles },
 ];
 const AURORA_STYLES: { id: AuroraStyle; label: string; hint: string }[] = [
   { id: "fluido", label: "Fluido", hint: "Shader líquido em movimento contínuo" },
@@ -111,6 +114,7 @@ function Configuracoes() {
     setCardOpacity,
     bubbleOpacity,
     setBubbleOpacity,
+    resetAppearance,
   } = useSettings();
   const [code, setCode] = useState("");
   const [reportOpen, setReportOpen] = useState(false);
@@ -257,192 +261,237 @@ function Configuracoes() {
       <BackupDialog open={backupOpen} onOpenChange={setBackupOpen} />
 
       <Panel className="space-y-4 p-4">
-        <div>
-          <SectionLabel>Tema</SectionLabel>
-          <div className="flex gap-1.5">
-            {THEMES.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => {
-                  setTheme(t.id);
-                  if (t.id === "light") {
-                    setAuroraStyle("fluido");
-                  }
-                }}
-                className={cn(
-                  "flex-1 rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
-                  theme === t.id
-                    ? "border-accent/25 bg-accent/10 text-accent"
-                    : "border-line text-muted-foreground",
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-3">
-            <SectionLabel>Cor de destaque</SectionLabel>
-            <div className="flex gap-1.5">
-              {ACCENTS.map((a) => {
-                const isActive = accent === a.id || (a.id === "crimson" && accent === "magenta");
-                return (
-                  <button
-                    key={a.id}
-                    onClick={() => {
-                      /* Azul e Carmesim são liberados; as demais abrem o convite do PRO caso restrito */
-                      if (a.id !== "blue" && a.id !== "crimson" && !requirePro("accent.colors")) return;
-                      setAccent(a.id);
-                    }}
-                    className={cn(
-                      "flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
-                      isActive
-                        ? "border-accent/25 bg-accent/10 text-accent font-medium shadow-xs"
-                        : "border-line text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    <span
-                      aria-hidden
-                      className="size-2.5 rounded-full ring-1 ring-black/10 dark:ring-white/15"
-                      style={{ background: a.swatch }}
-                    />
-                    {a.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="mt-3">
-            <SectionLabel>Estilo do fundo</SectionLabel>
-            <div className="grid grid-cols-3 gap-1.5">
-              {AURORA_STYLES.map((a) => {
-                const locked = !isMestre && a.id === "suave";
-                return (
-                  <button
-                    key={a.id}
-                    onClick={() => {
-                      if (locked && !requirePro("aurora.animated")) return;
-                      setAuroraStyle(a.id);
-                    }}
-                    aria-pressed={auroraStyle === a.id}
-                    className={cn(
-                      "flex-1 rounded-xl border px-3 py-2 font-mono text-[11px] uppercase transition-colors",
-                      locked && "cursor-not-allowed opacity-45",
-                      auroraStyle === a.id
-                        ? "border-accent/25 bg-accent/10 text-accent"
-                        : "border-line text-muted-foreground",
-                    )}
-                  >
-                    {a.label}
-                  </button>
-                );
-              })}
-            </div>
-            <p className="mt-2 text-[11px] text-muted-foreground">
-              {AURORA_STYLES.find((a) => a.id === auroraStyle)?.hint ??
-                (isMestre
-                  ? ""
-                  : "Fluido e Suave fazem parte do CALDRA PRO. O estilo Padrão segue disponível.")}
+        {/* Cabeçalho da Seção de Aparência */}
+        <div className="flex items-start justify-between gap-2 border-b border-line/60 pb-3">
+          <div>
+            <h2 className="font-display text-base font-bold uppercase tracking-wider text-foreground">
+              APARÊNCIA
+            </h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Personalize o visual da sua oficina.
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => {
+              resetAppearance();
+              toast.success("Aparência restaurada para o padrão do CALDRA.");
+            }}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground hover:text-foreground hover:border-line/80 active:scale-95 transition-all cursor-pointer shrink-0"
+            title="Restaurar aparência padrão (Tema Escuro, 90% cartões, 35% bolhas)"
+          >
+            <RotateCcw className="size-3 text-muted-foreground" />
+            <span>Restaurar padrão</span>
+          </button>
+        </div>
 
-          {/* Personalização da Transparência de Cartões e Bolhas */}
-          <div className="mt-4 rounded-2xl border border-line/70 bg-surface/40 p-4 space-y-4">
+        {/* A. Seleção de Tema */}
+        <div className="space-y-2">
+          <SectionLabel>Modo de exibição</SectionLabel>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+            {THEMES.map((t) => {
+              const Icon = t.icon;
+              const isSelected = theme === t.id;
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => {
+                    setTheme(t.id);
+                    if (t.id === "light") {
+                      setAuroraStyle("fluido");
+                    }
+                  }}
+                  className={cn(
+                    "relative flex items-center justify-between rounded-xl border px-3 py-2.5 font-mono text-xs transition-all cursor-pointer",
+                    isSelected
+                      ? "border-amber-500 bg-amber-500/10 text-amber-500 dark:text-amber-400 font-semibold shadow-xs ring-1 ring-amber-500/30"
+                      : "border-line text-muted-foreground hover:text-foreground hover:border-line/80",
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <Icon className="size-3.5" />
+                    <span>{t.label}</span>
+                  </div>
+                  {isSelected && (
+                    <span className="flex size-4 items-center justify-center rounded-full bg-amber-500 text-black">
+                      <Check className="size-2.5 stroke-[3]" />
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* B & C. Controles Deslizantes de Transparência (Cartões e Bolhas) */}
+        <div className="rounded-2xl border border-line/70 bg-surface/40 p-4 space-y-4">
+          {/* B. Opacidade dos cartões */}
+          <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <div>
-                <SectionLabel>Opacidade & Transparência da Interface</SectionLabel>
-                <p className="text-[11px] text-muted-foreground mt-0.5">
-                  Ajuste a transparência das superfícies e dos botões circulares para realçar o plano de fundo.
-                </p>
+                <span className="font-display text-xs font-bold text-foreground block">
+                  Opacidade dos cartões
+                </span>
+                <span className="text-[11px] text-muted-foreground block">
+                  Ajuste a transparência dos painéis para destacar o fundo da sua oficina.
+                </span>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setCardOpacity(DEFAULT_CARD_OPACITY);
-                  setBubbleOpacity(DEFAULT_BUBBLE_OPACITY);
-                  toast.success("Opacidades restauradas para o padrão recomendado.");
-                }}
-                className="inline-flex items-center gap-1 rounded-lg border border-line px-2.5 py-1 font-mono text-[10px] text-muted-foreground hover:text-foreground hover:border-line/80 active:scale-95 transition-all cursor-pointer"
-                title="Restaurar valores recomendados (90% cartões, 35% bolhas)"
-              >
-                <RotateCcw className="size-3" />
-                Padrão
-              </button>
-            </div>
-
-            {/* Slider 1: Opacidade dos Cartões */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs font-mono">
-                <span className="text-foreground">Superfície dos Cartões</span>
-                <span className="font-semibold text-accent">{cardOpacity}%</span>
-              </div>
-              <input
-                type="range"
-                min="35"
-                max="100"
-                step="1"
-                value={cardOpacity}
-                onChange={(e) => setCardOpacity(Number(e.target.value))}
-                aria-label="Opacidade da superfície dos cartões"
-                className="w-full accent-amber-500 h-1.5 bg-line rounded-lg cursor-pointer"
-              />
-              <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                <span>Translúcido (35%)</span>
-                <span>Recomendado ({DEFAULT_CARD_OPACITY}%)</span>
-                <span>Sólido (100%)</span>
-              </div>
-            </div>
-
-            {/* Slider 2: Opacidade das Bolhas e Ícones */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between text-xs font-mono">
-                <span className="text-foreground">Bolhas e Círculos de Ícones</span>
-                <span className="font-semibold text-accent">{bubbleOpacity}%</span>
-              </div>
-              <input
-                type="range"
-                min="20"
-                max="100"
-                step="1"
-                value={bubbleOpacity}
-                onChange={(e) => setBubbleOpacity(Number(e.target.value))}
-                aria-label="Opacidade das bolhas e círculos de ícones"
-                className="w-full accent-amber-500 h-1.5 bg-line rounded-lg cursor-pointer"
-              />
-              <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
-                <span>Suave (20%)</span>
-                <span>Recomendado ({DEFAULT_BUBBLE_OPACITY}%)</span>
-                <span>Opaco (100%)</span>
-              </div>
-            </div>
-
-            {/* Pré-visualização instantânea do cartão e bolha */}
-            <div className="pt-1">
-              <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground block mb-2">
-                Pré-visualização em tempo real
+              <span className="font-mono text-xs font-bold text-amber-500 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md">
+                {cardOpacity}%
               </span>
-              <div className="caldra-card rounded-2xl p-3.5 flex items-center justify-between transition-all">
-                <div className="flex items-center gap-3">
-                  <div className="caldra-bubble-base caldra-bubble-amber size-10">
-                    <Compass className="size-5" />
-                  </div>
-                  <div>
-                    <span className="font-display text-xs font-bold text-foreground block">
-                      Cartão de Demonstração
-                    </span>
-                    <span className="text-[11px] text-muted-foreground block">
-                      Reage imediatamente às suas configurações de tema e opacidade
-                    </span>
-                  </div>
+            </div>
+            <input
+              type="range"
+              min="20"
+              max="100"
+              step="5"
+              value={cardOpacity}
+              onChange={(e) => setCardOpacity(Number(e.target.value))}
+              aria-label="Opacidade dos cartões"
+              className="w-full accent-amber-500 h-2 bg-line rounded-lg cursor-pointer"
+            />
+            <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+              <span>Translúcido (20%)</span>
+              <span>Intermediário (60%)</span>
+              <span>Padrão (90%)</span>
+              <span>Opaco (100%)</span>
+            </div>
+          </div>
+
+          {/* C. Opacidade das bolhas */}
+          <div className="space-y-1.5 pt-1 border-t border-line/40">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="font-display text-xs font-bold text-foreground block">
+                  Opacidade das bolhas
+                </span>
+                <span className="text-[11px] text-muted-foreground block">
+                  Ajuste a transparência dos círculos e dos elementos arredondados da interface.
+                </span>
+              </div>
+              <span className="font-mono text-xs font-bold text-amber-500 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md">
+                {bubbleOpacity}%
+              </span>
+            </div>
+            <input
+              type="range"
+              min="20"
+              max="100"
+              step="5"
+              value={bubbleOpacity}
+              onChange={(e) => setBubbleOpacity(Number(e.target.value))}
+              aria-label="Opacidade das bolhas"
+              className="w-full accent-amber-500 h-2 bg-line rounded-lg cursor-pointer"
+            />
+            <div className="flex justify-between text-[10px] font-mono text-muted-foreground">
+              <span>Suave (20%)</span>
+              <span>Recomendado (35%)</span>
+              <span>Intermediário (60%)</span>
+              <span>Opaco (100%)</span>
+            </div>
+          </div>
+
+          {/* D. Pré-visualização imediata */}
+          <div className="pt-2">
+            <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground block mb-2">
+              Pré-visualização em tempo real
+            </span>
+            <div className="caldra-card rounded-2xl p-3.5 flex items-center justify-between transition-all">
+              <div className="flex items-center gap-3">
+                <div className="caldra-bubble-base caldra-bubble-amber size-10 shrink-0">
+                  <Compass className="size-5" />
                 </div>
-                <div className="flex gap-1.5">
-                  <div className="caldra-bubble-base caldra-bubble-red size-7 text-[10px] font-bold">C</div>
-                  <div className="caldra-bubble-base caldra-bubble-sky size-7 text-[10px] font-bold">2D</div>
+                <div>
+                  <span className="font-display text-xs font-bold text-foreground block">
+                    Cartão de Demonstração
+                  </span>
+                  <span className="text-[11px] text-muted-foreground block">
+                    Reage imediatamente às suas configurações de tema e opacidade
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="caldra-bubble-base caldra-bubble-red size-7 text-[10px] font-bold">
+                  C
+                </div>
+                <div className="caldra-bubble-base caldra-bubble-sky size-7 text-[10px] font-bold">
+                  2D
+                </div>
+                <div className="caldra-bubble-base caldra-bubble-center size-7 text-[10px] font-bold border border-amber-500/50 text-amber-500">
+                  ✦
                 </div>
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Cor de destaque e Estilo do Fundo */}
+        <div className="mt-3">
+          <SectionLabel>Cor de destaque</SectionLabel>
+          <div className="flex gap-1.5">
+            {ACCENTS.map((a) => {
+              const isActive = accent === a.id || (a.id === "crimson" && accent === "magenta");
+              return (
+                <button
+                  key={a.id}
+                  onClick={() => {
+                    /* Azul e Carmesim são liberados; as demais abrem o convite do PRO caso restrito */
+                    if (a.id !== "blue" && a.id !== "crimson" && !requirePro("accent.colors")) return;
+                    setAccent(a.id);
+                  }}
+                  className={cn(
+                    "flex flex-1 items-center justify-center gap-2 rounded-xl border px-3 py-2 font-mono text-[11px] transition-colors",
+                    isActive
+                      ? "border-accent/25 bg-accent/10 text-accent font-medium shadow-xs"
+                      : "border-line text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <span
+                    aria-hidden
+                    className="size-2.5 rounded-full ring-1 ring-black/10 dark:ring-white/15"
+                    style={{ background: a.swatch }}
+                  />
+                  {a.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="mt-3">
+          <SectionLabel>Estilo do fundo</SectionLabel>
+          <div className="grid grid-cols-3 gap-1.5">
+            {AURORA_STYLES.map((a) => {
+              const locked = !isMestre && a.id === "suave";
+              return (
+                <button
+                  key={a.id}
+                  onClick={() => {
+                    if (locked && !requirePro("aurora.animated")) return;
+                    setAuroraStyle(a.id);
+                  }}
+                  aria-pressed={auroraStyle === a.id}
+                  className={cn(
+                    "flex-1 rounded-xl border px-3 py-2 font-mono text-[11px] uppercase transition-colors",
+                    locked && "cursor-not-allowed opacity-45",
+                    auroraStyle === a.id
+                      ? "border-accent/25 bg-accent/10 text-accent"
+                      : "border-line text-muted-foreground",
+                  )}
+                >
+                  {a.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            {AURORA_STYLES.find((a) => a.id === auroraStyle)?.hint ??
+              (isMestre
+                ? ""
+                : "Fluido e Suave fazem parte do CALDRA PRO. O estilo Padrão segue disponível.")}
+          </p>
+        </div>
 
           {/* Controle do Estado Híbrido de IA do Organic Light Field */}
           <div className="mt-3.5 rounded-2xl border border-line/60 bg-surface/30 p-3.5 space-y-2">
@@ -515,7 +564,6 @@ function Configuracoes() {
               </button>
             </div>
           </div>
-        </div>
 
         <div>
           <SectionLabel>Unidade de exibição</SectionLabel>

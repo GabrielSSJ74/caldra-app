@@ -123,7 +123,7 @@ export function readStoredSettings(): Settings {
 
     const cardOpacity =
       typeof saved.cardOpacity === "number" && !isNaN(saved.cardOpacity)
-        ? Math.min(100, Math.max(35, saved.cardOpacity))
+        ? Math.min(100, Math.max(20, saved.cardOpacity))
         : DEFAULT_CARD_OPACITY;
     const bubbleOpacity =
       typeof saved.bubbleOpacity === "number" && !isNaN(saved.bubbleOpacity)
@@ -161,7 +161,7 @@ function applyToDom(s: Settings) {
   const cardOp =
     Math.min(
       100,
-      Math.max(35, typeof s.cardOpacity === "number" ? s.cardOpacity : DEFAULT_CARD_OPACITY),
+      Math.max(20, typeof s.cardOpacity === "number" ? s.cardOpacity : DEFAULT_CARD_OPACITY),
     ) / 100;
   const bubbleOp =
     Math.min(
@@ -232,7 +232,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setCalcAngle: (calcAngle) => setSettings((s) => ({ ...s, calcAngle })),
       setCalcPlaces: (calcPlaces) => setSettings((s) => ({ ...s, calcPlaces })),
       setCardOpacity: (cardOpacity) => {
-        const val = Math.min(100, Math.max(35, cardOpacity));
+        const val = Math.min(100, Math.max(20, cardOpacity));
         setSettings((s) => ({ ...s, cardOpacity: val }));
       },
       setBubbleOpacity: (bubbleOpacity) => {

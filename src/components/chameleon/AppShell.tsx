@@ -17,12 +17,16 @@ import { AudioQuickControl } from "@/components/audio/AudioQuickControl";
 import { CaldraGenesisPreIntro } from "@/components/caldra/CaldraGenesisPreIntro";
 
 const AURORA_ROUTES = [
+  "/",
   "/perfil",
   "/tracagem",
   "/escola",
   "/projetos",
   "/oficina",
   "/configuracoes",
+  "/projetar",
+  "/produzir",
+  "/aprenda",
 ];
 
 function auroraVisible(pathname: string) {
@@ -81,12 +85,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <ShellActionsProvider
       value={{ openProfile: () => setProfileOpen(true), openMaster: () => setMasterOpen(true) }}
     >
-      <div
-        className={cn(
-          "relative flex min-h-screen flex-col overflow-x-hidden text-foreground",
-          pathname === "/" || pathname === "/projetar" ? "bg-[#0A0B0E]" : "bg-background",
-        )}
-      >
+      <div className="relative flex min-h-screen flex-col overflow-x-hidden text-foreground bg-background">
         <AuroraBackground active={auroraVisible(pathname)} className="fixed inset-0 z-0" />
         {/* iluminação ambiente (desativada na Home, Projetar, Produzir e Aprenda para preservar fundo industrial preto) */}
         {pathname !== "/" && pathname !== "/projetar" && pathname !== "/produzir" && pathname !== "/aprenda" && (

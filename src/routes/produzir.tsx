@@ -398,7 +398,7 @@ function ProduzirPage() {
   }, [allProjects]);
 
   return (
-    <div className="relative w-full min-h-screen bg-[#0A0B0E] text-white flex flex-col items-center overflow-x-hidden selection:bg-amber-500/30 selection:text-amber-200">
+    <div className="relative w-full min-h-screen bg-transparent text-foreground flex flex-col items-center overflow-x-hidden selection:bg-amber-500/30 selection:text-amber-200">
       {/* Container centralizado com proporções estritamente sem bordas brancas laterais */}
       <div className="relative w-full max-w-md space-y-4 px-3 pb-[calc(6rem+env(safe-area-inset-bottom,20px))] pt-1">
         
@@ -407,7 +407,7 @@ function ProduzirPage() {
             - Marca de módulo: "ORCE E FABRIQUE — PRODUÇÃO & OFICINA"
             - Identidade industrial com LED pulsante verde/esmeralda
             ========================================================================= */}
-        <section className="flex items-center justify-between border-b border-zinc-800/80 pb-2.5 pt-1">
+        <section className="flex items-center justify-between border-b border-border/80 pb-2.5 pt-1">
           <div className="flex items-center gap-2">
             <span className="relative flex size-2">
               <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -415,14 +415,14 @@ function ProduzirPage() {
             </span>
             <div className="flex flex-col">
               <div className="flex items-center gap-2">
-                <span className="font-mono text-[9px] font-bold tracking-[0.22em] uppercase text-zinc-400">
+                <span className="font-mono text-[9px] font-bold tracking-[0.22em] uppercase text-muted-foreground">
                   OFICINA & FABRICAÇÃO
                 </span>
-                <span className="rounded bg-emerald-500/10 px-1 py-0.2 font-mono text-[8px] font-bold text-emerald-400 border border-emerald-500/30">
+                <span className="rounded bg-emerald-500/10 px-1 py-0.2 font-mono text-[8px] font-bold text-emerald-500 border border-emerald-500/30">
                   CALDRA SHOP
                 </span>
               </div>
-              <h1 className="font-display text-lg font-bold tracking-tight text-zinc-100">
+              <h1 className="font-display text-lg font-bold tracking-tight text-foreground">
                 Orce e Fabrique
               </h1>
             </div>

@@ -98,7 +98,7 @@ r.classList.toggle("dark",dark);r.classList.toggle("amoled",t==="amoled");
 r.classList.toggle("accent-default",a==="default");r.classList.toggle("accent-blue",a==="blue");
 var isCrimson=a==="crimson"||a==="magenta";
 r.classList.toggle("accent-crimson",isCrimson);r.classList.toggle("accent-magenta",isCrimson);
-var co=typeof s.cardOpacity==="number"?Math.min(100,Math.max(35,s.cardOpacity)):90;
+var co=typeof s.cardOpacity==="number"?Math.min(100,Math.max(20,s.cardOpacity)):90;
 var bo=typeof s.bubbleOpacity==="number"?Math.min(100,Math.max(20,s.bubbleOpacity)):35;
 r.style.setProperty("--card-opacity",(co/100).toFixed(2));
 r.style.setProperty("--bubble-opacity",(bo/100).toFixed(2));
@@ -168,11 +168,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="pt-BR" className="dark bg-[#0A0B0E]" suppressHydrationWarning>
+    <html lang="pt-BR" className="dark bg-background" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
-      <body className="bg-[#0A0B0E] text-foreground min-h-screen overflow-x-hidden m-0 p-0" suppressHydrationWarning>
+      <body className="bg-background text-foreground min-h-screen overflow-x-hidden m-0 p-0" suppressHydrationWarning>
         <div id="caldra-boot" dangerouslySetInnerHTML={{ __html: BOOT_SPLASH_HTML }} />
         {children}
         <Scripts />

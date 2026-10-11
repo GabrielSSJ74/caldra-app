@@ -122,7 +122,7 @@ export function BubbleNav() {
               }}
               aria-label="Página inicial (Home)"
               className={cn(
-                "group relative flex size-13 items-center justify-center rounded-full border-2 bg-card dark:bg-[#16181D] shadow-lg transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer touch-manipulation",
+                "group relative flex size-13 items-center justify-center rounded-full border-2 caldra-bubble-center shadow-lg transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer touch-manipulation",
                 isHome
                   ? "border-amber-500 shadow-amber-500/30 ring-2 ring-amber-500/20"
                   : "border-amber-500/60 shadow-amber-500/15 hover:border-amber-500",

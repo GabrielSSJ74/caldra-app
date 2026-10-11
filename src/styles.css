@@ -285,8 +285,8 @@
 
   --glass-bg: linear-gradient(
     165deg,
-    color-mix(in oklab, var(--foreground) 4%, transparent),
-    color-mix(in oklab, var(--foreground) 1%, transparent)
+    color-mix(in oklab, var(--card) calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, var(--card) calc(var(--card-opacity, 0.90) * 85%), transparent)
   );
   --glass-border: color-mix(in oklab, var(--foreground) 12%, transparent);
   --grid-line: color-mix(in oklab, var(--foreground) 7%, transparent);
@@ -338,7 +338,11 @@
 
   --gradient-pro: var(--gradient-brand);
 
-  --glass-bg: linear-gradient(165deg, oklch(1 0 0 / 5.5%), oklch(1 0 0 / 1.5%));
+  --glass-bg: linear-gradient(
+    165deg,
+    color-mix(in oklab, var(--card) calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, var(--card) calc(var(--card-opacity, 0.90) * 75%), transparent)
+  );
   --glass-border: oklch(1 0 0 / 8%);
   --grid-line: oklch(1 0 0 / 3.2%);
   --grid-minor: oklch(1 0 0 / 9%);
@@ -2556,3 +2560,17 @@
   background-color: color-mix(in oklab, #111114 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
   border: 1px solid oklch(1 0 0 / 14%);
 }
+
+/* Bolha Central do Logotipo CALDRA (Botão Home na barra inferior) */
+.caldra-bubble-center {
+  background-color: color-mix(in oklab, #FFFFFF calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.dark .caldra-bubble-center {
+  background-color: color-mix(in oklab, #16181D calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+}
+.amoled .caldra-bubble-center {
+  background-color: color-mix(in oklab, #000000 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+}
+

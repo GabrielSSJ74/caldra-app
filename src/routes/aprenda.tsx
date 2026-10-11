@@ -317,7 +317,7 @@ function AprendaPage() {
   const progressPct = Math.min(100, Math.round((totalCompleted / Math.max(1, totalLessonsCount)) * 100));
 
   return (
-    <div className="w-full bg-[#0A0D12] text-zinc-100 min-h-screen selection:bg-amber-500/30 selection:text-amber-200">
+    <div className="w-full bg-transparent text-foreground min-h-screen selection:bg-amber-500/30 selection:text-amber-200">
       {/* =========================================================================
           CABEÇALHO DA SEÇÃO CENTRAL (SEM DUPLICAR CABEÇALHO GLOBAL)
           Título obrigatório: "Aprenda & Domine"
@@ -333,11 +333,11 @@ function AprendaPage() {
               <span className="font-mono text-[10px] font-bold tracking-[0.22em] uppercase text-amber-500">
                 FORMAÇÃO & ACADEMIA TÉCNICA
               </span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-800 text-zinc-400 border border-zinc-700/60">
+              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border">
                 PRO CALDRA
               </span>
             </div>
-            <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-white mt-1">
+            <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-foreground mt-1">
               Aprenda & Domine
             </h1>
             <p className="text-xs sm:text-sm text-zinc-400 mt-1 max-w-2xl leading-relaxed">

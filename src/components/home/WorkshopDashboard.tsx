@@ -9,6 +9,7 @@ import {
   FileSpreadsheet,
   History,
   Layers,
+  Plus,
   Search,
   Sparkles,
   TrendingUp,
@@ -132,7 +133,7 @@ function HeroMachinedConeGraphic({ className }: { className?: string }) {
         <polygon points="86,17 89,16 89,18" fill="#9CA3AF" />
         <polygon points="124,17 121,16 121,18" fill="#9CA3AF" />
       </g>
-      <text x="105" y="13" fill="#E2E8F0" fontSize="7.5" fontFamily="monospace" fontWeight="600" textAnchor="middle">
+      <text x="105" y="13" className="fill-slate-800 dark:fill-[#E2E8F0]" fontSize="7.5" fontFamily="monospace" fontWeight="600" textAnchor="middle">
         Ø 60
       </text>
 
@@ -144,7 +145,7 @@ function HeroMachinedConeGraphic({ className }: { className?: string }) {
         <polygon points="62,116 65,115 65,117" fill="#9CA3AF" />
         <polygon points="148,116 145,115 145,117" fill="#9CA3AF" />
       </g>
-      <text x="105" y="128" fill="#E2E8F0" fontSize="7.5" fontFamily="monospace" fontWeight="600" textAnchor="middle">
+      <text x="105" y="128" className="fill-slate-800 dark:fill-[#E2E8F0]" fontSize="7.5" fontFamily="monospace" fontWeight="600" textAnchor="middle">
         Ø 120
       </text>
 
@@ -156,7 +157,7 @@ function HeroMachinedConeGraphic({ className }: { className?: string }) {
         <polygon points="164,30 163,33 165,33" fill="#9CA3AF" />
         <polygon points="164,101 163,98 165,98" fill="#9CA3AF" />
       </g>
-      <text x="171" y="67" fill="#E2E8F0" fontSize="7" fontFamily="monospace" fontWeight="600" transform="rotate(-90 171 67)" textAnchor="middle">
+      <text x="171" y="67" className="fill-slate-800 dark:fill-[#E2E8F0]" fontSize="7" fontFamily="monospace" fontWeight="600" transform="rotate(-90 171 67)" textAnchor="middle">
         80
       </text>
     </svg>
@@ -167,7 +168,7 @@ function HeroMachinedConeGraphic({ className }: { className?: string }) {
 function BlueprintDrawingGraphic({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
-      <rect width="100" height="70" fill="#0C1017" />
+      <rect width="100" height="70" className="fill-slate-100/90 dark:fill-[#0C1017] transition-colors" />
       <g stroke="#38BDF8" strokeWidth="0.3" strokeOpacity="0.2">
         <line x1="5" y1="15" x2="95" y2="15" />
         <line x1="5" y1="35" x2="95" y2="35" />
@@ -211,7 +212,7 @@ function ChamferBlockGraphic({ className }: { className?: string }) {
           <stop offset="100%" stopColor="#0B0C0E" />
         </linearGradient>
       </defs>
-      <rect width="100" height="70" fill="#0B0D11" />
+      <rect width="100" height="70" className="fill-slate-100/90 dark:fill-[#0B0D11] transition-colors" />
       <polygon points="18,30 50,12 82,30 50,48" fill="url(#ch-top-c)" stroke="#64748B" strokeWidth="0.5" />
       <polygon points="44,45 56,45 66,54 54,54" fill="url(#ch-bevel-c)" stroke="#E2E8F0" strokeWidth="0.6" />
       <polygon points="18,30 50,48 50,66 18,48" fill="url(#ch-front-c)" stroke="#475569" strokeWidth="0.5" />
@@ -227,7 +228,7 @@ function ChamferBlockGraphic({ className }: { className?: string }) {
 function TracingDraftGraphic({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
-      <rect width="100" height="70" fill="#0B0E14" />
+      <rect width="100" height="70" className="fill-slate-100/90 dark:fill-[#0B0E14] transition-colors" />
       <g stroke="#38BDF8" strokeWidth="0.25" strokeOpacity="0.18">
         <line x1="0" y1="18" x2="100" y2="18" />
         <line x1="0" y1="36" x2="100" y2="36" />
@@ -252,7 +253,7 @@ function TracingDraftGraphic({ className }: { className?: string }) {
 function ScientificCalculatorGraphic({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
-      <rect width="100" height="70" fill="#0A0B0E" />
+      <rect width="100" height="70" className="fill-slate-100/90 dark:fill-[#0A0B0E] transition-colors" />
       <rect x="24" y="6" width="52" height="58" rx="6" fill="#1C1E24" stroke="#374151" strokeWidth="0.75" />
       <rect x="30" y="11" width="40" height="13" rx="2.5" fill="#0D1117" stroke="#1F2937" strokeWidth="0.5" />
       <text x="34" y="17" fill="#9CA3AF" fontSize="3.8" fontFamily="monospace">sin(45°)·√2</text>
@@ -287,7 +288,7 @@ function ScientificCalculatorGraphic({ className }: { className?: string }) {
 function ExploreProjetarGraphic({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 120 85" className={cn("size-full select-none", className)} fill="none">
-      <rect width="120" height="85" fill="#0B1322" />
+      <rect width="120" height="85" className="fill-slate-100/90 dark:fill-[#0B1322] transition-colors" />
       <g stroke="#0284C7" strokeWidth="0.25" strokeOpacity="0.25">
         <line x1="5" y1="18" x2="115" y2="18" />
         <line x1="5" y1="44" x2="115" y2="44" />
@@ -324,7 +325,7 @@ function ExploreProduzirGraphic({ className }: { className?: string }) {
           <stop offset="100%" stopColor="#000000" stopOpacity="0" />
         </radialGradient>
       </defs>
-      <rect width="120" height="85" fill="#0C0D10" />
+      <rect width="120" height="85" className="fill-slate-100/90 dark:fill-[#0C0D10] transition-colors" />
       <circle cx="80" cy="42" r="40" fill="url(#prod-spark-c)" />
       <polygon points="30,32 65,18 90,30 55,45" fill="#525866" stroke="#6B7280" strokeWidth="0.6" />
       <polygon points="30,32 55,45 55,65 30,52" fill="#1C1E24" stroke="#4B5563" strokeWidth="0.6" />
@@ -346,18 +347,18 @@ function ExploreProduzirGraphic({ className }: { className?: string }) {
 function ExploreAprendaGraphic({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 120 85" className={cn("size-full select-none", className)} fill="none">
-      <rect width="120" height="85" fill="#0A0F14" />
+      <rect width="120" height="85" className="fill-slate-100/90 dark:fill-[#0A0F14] transition-colors" />
       <g stroke="#38BDF8" strokeWidth="0.3" strokeOpacity="0.15">
         <line x1="10" y1="12" x2="110" y2="12" />
         <line x1="10" y1="40" x2="110" y2="40" />
         <line x1="10" y1="68" x2="110" y2="68" />
       </g>
-      <polygon points="25,60 50,22 70,60" stroke="#E2E8F0" strokeWidth="0.65" fill="none" strokeDasharray="2 1" />
+      <polygon points="25,60 50,22 70,60" className="stroke-slate-700 dark:stroke-[#E2E8F0]" strokeWidth="0.65" fill="none" strokeDasharray="2 1" />
       <path d="M 25 60 C 38 52, 52 52, 70 60" stroke="#38BDF8" strokeWidth="0.75" />
       <text x="48" y="20" fill="#F59E0B" fontSize="5.5" fontFamily="monospace">θ = 45°</text>
       <text x="32" y="70" fill="#94A3B8" fontSize="5.5" fontFamily="monospace">a² + b² = c²</text>
       <text x="78" y="32" fill="#38BDF8" fontSize="5.5" fontFamily="monospace">R_g = R·360/α</text>
-      <text x="78" y="46" fill="#E2E8F0" fontSize="5" fontFamily="monospace">P = 2π·r</text>
+      <text x="78" y="46" className="fill-slate-800 dark:fill-[#E2E8F0]" fontSize="5" fontFamily="monospace">P = 2π·r</text>
       <text x="78" y="60" fill="#F59E0B" fontSize="5.5" fontFamily="monospace">K = t/2</text>
     </svg>
   );
@@ -376,7 +377,7 @@ function WeldedElbowGraphic({ className }: { className?: string }) {
           <stop offset="100%" stopColor="#1E2026" />
         </linearGradient>
       </defs>
-      <rect width="100" height="65" fill="#0A0B0E" />
+      <rect width="100" height="65" className="fill-slate-100/90 dark:fill-[#0A0B0E] transition-colors" />
       <path
         d="M 18 52 L 18 32 L 35 22 L 58 16 L 80 16 L 80 31 L 64 40 L 48 52 Z"
         fill="url(#elbow-steel-c)"
@@ -395,7 +396,7 @@ function WeldedElbowGraphic({ className }: { className?: string }) {
 function MaterialTableGraphic({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 100 65" className={cn("size-full select-none", className)} fill="none">
-      <rect width="100" height="65" fill="#0A0E14" />
+      <rect width="100" height="65" className="fill-slate-100/90 dark:fill-[#0A0E14] transition-colors" />
       <g stroke="#38BDF8" strokeWidth="0.3" strokeOpacity="0.25">
         <line x1="8" y1="10" x2="92" y2="10" />
         <line x1="8" y1="22" x2="92" y2="22" />
@@ -411,15 +412,15 @@ function MaterialTableGraphic({ className }: { className?: string }) {
       <text x="51" y="18" fill="#F59E0B" fontSize="4.5" fontFamily="monospace" fontWeight="bold" textAnchor="middle">ESP(mm)</text>
       <text x="79" y="18" fill="#F59E0B" fontSize="4.5" fontFamily="monospace" fontWeight="bold" textAnchor="middle">KG/M²</text>
 
-      <text x="22" y="29" fill="#E2E8F0" fontSize="4.5" fontFamily="monospace" textAnchor="middle"># 16</text>
+      <text x="22" y="29" className="fill-slate-800 dark:fill-[#E2E8F0]" fontSize="4.5" fontFamily="monospace" textAnchor="middle"># 16</text>
       <text x="51" y="29" fill="#94A3B8" fontSize="4.5" fontFamily="monospace" textAnchor="middle">1.50</text>
       <text x="79" y="29" fill="#38BDF8" fontSize="4.5" fontFamily="monospace" textAnchor="middle">12.00</text>
 
-      <text x="22" y="41" fill="#E2E8F0" fontSize="4.5" fontFamily="monospace" textAnchor="middle"># 14</text>
+      <text x="22" y="41" className="fill-slate-800 dark:fill-[#E2E8F0]" fontSize="4.5" fontFamily="monospace" textAnchor="middle"># 14</text>
       <text x="51" y="41" fill="#94A3B8" fontSize="4.5" fontFamily="monospace" textAnchor="middle">1.90</text>
       <text x="79" y="41" fill="#38BDF8" fontSize="4.5" fontFamily="monospace" textAnchor="middle">15.20</text>
 
-      <text x="22" y="53" fill="#E2E8F0" fontSize="4.5" fontFamily="monospace" textAnchor="middle">1/8"</text>
+      <text x="22" y="53" className="fill-slate-800 dark:fill-[#E2E8F0]" fontSize="4.5" fontFamily="monospace" textAnchor="middle">1/8"</text>
       <text x="51" y="53" fill="#94A3B8" fontSize="4.5" fontFamily="monospace" textAnchor="middle">3.18</text>
       <text x="79" y="53" fill="#38BDF8" fontSize="4.5" fontFamily="monospace" textAnchor="middle">25.44</text>
     </svg>
@@ -430,17 +431,17 @@ function MaterialTableGraphic({ className }: { className?: string }) {
 function FormulasBoardGraphic({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 100 65" className={cn("size-full select-none", className)} fill="none">
-      <rect width="100" height="65" fill="#0A0B0E" />
+      <rect width="100" height="65" className="fill-slate-100/90 dark:fill-[#0A0B0E] transition-colors" />
       <g stroke="#64748B" strokeWidth="0.25" strokeOpacity="0.2">
         <line x1="8" y1="15" x2="92" y2="15" />
         <line x1="8" y1="33" x2="92" y2="33" />
         <line x1="8" y1="50" x2="92" y2="50" />
       </g>
       <text x="12" y="18" fill="#38BDF8" fontSize="6" fontFamily="monospace">P = π · D</text>
-      <text x="52" y="18" fill="#E2E8F0" fontSize="5.5" fontFamily="monospace">R_g = √(H²+R²)</text>
+      <text x="52" y="18" className="fill-slate-800 dark:fill-[#E2E8F0]" fontSize="5.5" fontFamily="monospace">R_g = √(H²+R²)</text>
       <text x="12" y="36" fill="#F59E0B" fontSize="6" fontFamily="monospace">K_e = e / 3</text>
       <text x="52" y="36" fill="#38BDF8" fontSize="5.5" fontFamily="monospace">α = (R/G)·360°</text>
-      <text x="12" y="54" fill="#E2E8F0" fontSize="5.5" fontFamily="monospace">Corda = 2R·sin(θ/2)</text>
+      <text x="12" y="54" className="fill-slate-800 dark:fill-[#E2E8F0]" fontSize="5.5" fontFamily="monospace">Corda = 2R·sin(θ/2)</text>
     </svg>
   );
 }
@@ -472,7 +473,7 @@ function ScrollProgressTrack({ scrollContainerRef }: { scrollContainerRef: React
 
   return (
     <div className="flex items-center gap-1.5 px-0.5 pt-0.5">
-      <div className="relative h-0.75 w-16 overflow-hidden rounded-full bg-zinc-800">
+      <div className="relative h-0.75 w-16 overflow-hidden rounded-full bg-border">
         <div
           className="absolute top-0 h-full w-7 rounded-full bg-amber-500 transition-transform duration-75"
           style={{
@@ -480,8 +481,8 @@ function ScrollProgressTrack({ scrollContainerRef }: { scrollContainerRef: React
           }}
         />
       </div>
-      <div className="h-0.75 w-6 rounded-full bg-zinc-800" />
-      <div className="h-0.75 w-3 rounded-full bg-zinc-800" />
+      <div className="h-0.75 w-6 rounded-full bg-border" />
+      <div className="h-0.75 w-3 rounded-full bg-border" />
     </div>
   );
 }
@@ -514,13 +515,13 @@ export function WorkshopDashboard() {
   const projectCountText = projects.length > 0 ? `${projects.length} projetos` : "3 projetos";
 
   return (
-    <div className="relative w-full min-h-screen bg-[#0A0B0E] text-white overflow-x-hidden flex flex-col items-center">
+    <div className="relative w-full min-h-screen text-foreground overflow-x-hidden flex flex-col items-center">
       <div className="relative w-full max-w-md space-y-3 px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom,16px))] pt-1">
       {/* =========================================================================
           A. CABEÇALHO COMPACTO
           - Alinhado na mesma linha horizontal
           - Logotipo + "CALDRA" em vermelho + "SUA OFICINA DIGITAL"
-          - Botões circulares pequenos: Busca e Perfil
+          - Botões circulares pequenos: Busca e Perfil (respeitam --bubble-opacity)
           ========================================================================= */}
       <header className="flex h-11 items-center justify-between gap-2 pt-0.5">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -529,7 +530,7 @@ export function WorkshopDashboard() {
             <span className="font-display text-xl font-black tracking-tight text-[#FF3B30] leading-none select-none">
               CALDRA
             </span>
-            <span className="mt-0.5 font-mono text-[8px] font-semibold tracking-[0.22em] text-zinc-400 uppercase leading-none">
+            <span className="mt-0.5 font-mono text-[8px] font-semibold tracking-[0.22em] text-muted-foreground uppercase leading-none">
               SUA OFICINA DIGITAL
             </span>
           </div>
@@ -544,7 +545,7 @@ export function WorkshopDashboard() {
               setToolsOpen(true);
             }}
             aria-label="Buscar ferramentas"
-            className="flex size-8.5 items-center justify-center rounded-full border border-zinc-800 bg-[#12141A] text-zinc-300 hover:border-amber-500/50 hover:text-white active:scale-95 transition-all cursor-pointer"
+            className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-amber-500/50 hover:text-amber-500 active:scale-95 transition-all cursor-pointer"
           >
             <Search className="size-4" strokeWidth={1.8} />
           </button>
@@ -556,7 +557,7 @@ export function WorkshopDashboard() {
               AudioManager.play("ui_nav");
             }}
             aria-label="Perfil do usuário"
-            className="flex size-8.5 items-center justify-center rounded-full border border-zinc-800 bg-[#12141A] text-zinc-300 hover:border-amber-500/50 hover:text-white active:scale-95 transition-all cursor-pointer"
+            className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-amber-500/50 hover:text-amber-500 active:scale-95 transition-all cursor-pointer"
           >
             <User className="size-4" strokeWidth={1.8} />
           </Link>
@@ -566,12 +567,13 @@ export function WorkshopDashboard() {
       {/* =========================================================================
           B. BANNER PRINCIPAL (HERO) — LADO A LADO HORIZONTAL (PROPORÇÃO ~2.1:1)
           - Largura total com altura compacta (aspect-[2.1/1])
+          - Respeita --card-opacity através de .caldra-hero
           - Área esquerda (~45%): Badge, Título 2 linhas, Descrição, Botão e Dots
           - Área direita (~55%): Peça técnica com cotas (Ø 60, Ø 120, 80)
           ========================================================================= */}
       <section
         aria-label="Destaque principal"
-        className="group relative w-full aspect-[2.1/1] min-h-[160px] max-h-[195px] overflow-hidden rounded-2xl border border-zinc-800/90 bg-gradient-to-r from-[#111318] via-[#0E1015] to-[#0A0B0E] p-3 xs:p-3.5 shadow-xl transition-all"
+        className="caldra-hero group relative w-full aspect-[2.1/1] min-h-[160px] max-h-[195px] overflow-hidden rounded-2xl p-3 xs:p-3.5 shadow-xl transition-all"
       >
         {/* Glow âmbar sutil concentrado atrás da peça */}
         <div
@@ -591,12 +593,12 @@ export function WorkshopDashboard() {
             </div>
 
             {/* 2. Título grande em duas linhas */}
-            <h1 className="font-display text-[15px] xs:text-[16.5px] sm:text-[18px] font-black tracking-tight text-white leading-[1.1] uppercase">
+            <h1 className="font-display text-[15px] xs:text-[16.5px] sm:text-[18px] font-black tracking-tight text-foreground leading-[1.1] uppercase">
               PROJETE COM<br />PRECISÃO
             </h1>
 
             {/* 3. Descrição curta */}
-            <p className="text-[9px] xs:text-[9.5px] text-zinc-400 leading-tight line-clamp-2">
+            <p className="text-[9px] xs:text-[9.5px] text-muted-foreground leading-tight line-clamp-2">
               Transforme dimensões em geometrias e desenhos técnicos.
             </p>
 
@@ -618,9 +620,9 @@ export function WorkshopDashboard() {
             {/* 5. Indicadores pequenos do carrossel */}
             <div className="flex items-center gap-1 pt-0.5">
               <span className="h-0.75 w-4 rounded-full bg-amber-500" />
-              <span className="size-1 rounded-full bg-zinc-600" />
-              <span className="size-1 rounded-full bg-zinc-600" />
-              <span className="size-1 rounded-full bg-zinc-600" />
+              <span className="size-1 rounded-full bg-border" />
+              <span className="size-1 rounded-full bg-border" />
+              <span className="size-1 rounded-full bg-border" />
             </div>
           </div>
 
@@ -632,14 +634,154 @@ export function WorkshopDashboard() {
       </section>
 
       {/* =========================================================================
-          C. SEÇÃO 1 — "Continue trabalhando"
+          C1. CARTÕES DE AÇÃO RÁPIDA: NOVO PROJETO, PROJETOS, FERRAMENTAS E ORÇAMENTOS
+          - Respeitam rigorosamente --card-opacity (.caldra-card)
+          - Superfícies circulares respeitam --bubble-opacity (.caldra-bubble-base)
+          - 100% legíveis no tema claro e no tema escuro
+          ========================================================================= */}
+      <section aria-label="Ações rápidas" className="grid grid-cols-2 xs:grid-cols-4 gap-2 pt-0.5">
+        {/* Cartão 1 — Novo projeto */}
+        <button
+          type="button"
+          onClick={() => {
+            triggerHaptic("selection");
+            AudioManager.play("ui_pop");
+            setNewProjectOpen(true);
+          }}
+          className="caldra-card group flex flex-col justify-between rounded-xl p-2.5 transition-all hover:border-red-500/50 active:scale-[0.98] cursor-pointer text-left"
+        >
+          <div className="caldra-bubble-base caldra-bubble-red size-7 mb-2">
+            <Plus className="size-3.5 stroke-[2.5]" />
+          </div>
+          <div>
+            <span className="font-display text-[10.5px] font-bold text-foreground block leading-tight group-hover:text-red-500 transition-colors">
+              Novo projeto
+            </span>
+            <span className="text-[8px] text-muted-foreground block mt-0.5 font-mono">
+              Criar do zero
+            </span>
+          </div>
+        </button>
+
+        {/* Cartão 2 — Projetos */}
+        <Link
+          to="/projetos"
+          onClick={() => {
+            triggerHaptic("tap");
+            AudioManager.play("ui_nav");
+          }}
+          className="caldra-card group flex flex-col justify-between rounded-xl p-2.5 transition-all hover:border-sky-500/50 active:scale-[0.98] cursor-pointer text-left"
+        >
+          <div className="caldra-bubble-base caldra-bubble-sky size-7 mb-2">
+            <Layers className="size-3.5 stroke-[2]" />
+          </div>
+          <div>
+            <span className="font-display text-[10.5px] font-bold text-foreground block leading-tight group-hover:text-sky-500 transition-colors">
+              Projetos
+            </span>
+            <span className="text-[8px] text-muted-foreground block mt-0.5 font-mono">
+              {projectCountText}
+            </span>
+          </div>
+        </Link>
+
+        {/* Cartão 3 — Ferramentas */}
+        <button
+          type="button"
+          onClick={() => {
+            triggerHaptic("tap");
+            AudioManager.play("ui_nav");
+            setToolsOpen(true);
+          }}
+          className="caldra-card group flex flex-col justify-between rounded-xl p-2.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left"
+        >
+          <div className="caldra-bubble-base caldra-bubble-amber size-7 mb-2">
+            <Wrench className="size-3.5 stroke-[2]" />
+          </div>
+          <div>
+            <span className="font-display text-[10.5px] font-bold text-foreground block leading-tight group-hover:text-amber-500 transition-colors">
+              Ferramentas
+            </span>
+            <span className="text-[8px] text-muted-foreground block mt-0.5 font-mono">
+              Bancada CAD
+            </span>
+          </div>
+        </button>
+
+        {/* Cartão 4 — Orçamentos */}
+        <Link
+          to="/orcamentos"
+          onClick={() => {
+            triggerHaptic("tap");
+            AudioManager.play("ui_nav");
+          }}
+          className="caldra-card group flex flex-col justify-between rounded-xl p-2.5 transition-all hover:border-emerald-500/50 active:scale-[0.98] cursor-pointer text-left"
+        >
+          <div className="caldra-bubble-base caldra-bubble-emerald size-7 mb-2">
+            <Calculator className="size-3.5 stroke-[2]" />
+          </div>
+          <div>
+            <span className="font-display text-[10.5px] font-bold text-foreground block leading-tight group-hover:text-emerald-500 transition-colors">
+              Orçamentos
+            </span>
+            <span className="text-[8px] text-muted-foreground block mt-0.5 font-mono">
+              Custos & chapa
+            </span>
+          </div>
+        </Link>
+      </section>
+
+      {/* =========================================================================
+          C2. FAIXA DE ESPECIALIZAÇÃO (.caldra-specialization)
+          - Respeita --card-opacity através de sua superfície gradiente
+          - Bolha respeita --bubble-opacity (.caldra-bubble-indigo)
+          - Textos e botões de alta legibilidade
+          ========================================================================= */}
+      <section
+        aria-label="Faixa de Especialização"
+        className="caldra-specialization rounded-2xl p-3 flex items-center justify-between gap-3 group transition-all"
+      >
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="caldra-bubble-base caldra-bubble-indigo size-9 shrink-0">
+            <Sparkles className="size-4.5" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 font-mono text-[8px] font-bold tracking-wider text-amber-500 uppercase">
+              <span>ESPECIALIZAÇÃO</span>
+              <span aria-hidden className="opacity-50">·</span>
+              <span>CALDEIRARIA</span>
+            </div>
+            <h2 className="font-display text-[11px] font-bold text-foreground leading-tight truncate">
+              Métodos de Traçado e Planificação Zero Fresta
+            </h2>
+            <p className="text-[8.5px] text-muted-foreground leading-none truncate mt-0.5">
+              Conformação de chapas, ângulos e normas técnicas de caldeiraria.
+            </p>
+          </div>
+        </div>
+
+        <Link
+          to="/aprenda"
+          onClick={() => {
+            triggerHaptic("selection");
+            AudioManager.play("ui_nav");
+          }}
+          className="inline-flex h-6.5 shrink-0 items-center justify-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 font-mono text-[9px] font-bold text-amber-500 hover:bg-amber-500 hover:text-black active:scale-95 transition-all cursor-pointer"
+        >
+          <span>Acessar</span>
+          <ArrowRight className="size-2.5 stroke-[2.5]" />
+        </Link>
+      </section>
+
+      {/* =========================================================================
+          C3. SEÇÃO 1 — "Continue trabalhando"
           - ~4 cartões visíveis simultaneamente (~22-23% da largura cada)
           - Imagem técnica + Ícone circular + Título + Subtítulo
           - Barra indicadora de rolagem âmbar
           ========================================================================= */}
       <section aria-label="Continue trabalhando" className="space-y-1.5">
         <div className="flex items-center justify-between px-0.5">
-          <h2 className="font-display text-sm font-bold text-white tracking-tight sm:text-base">
+          <h2 className="font-display text-sm font-bold text-foreground tracking-tight sm:text-base">
             Continue trabalhando
           </h2>
           <Link
@@ -649,7 +791,7 @@ export function WorkshopDashboard() {
               AudioManager.play("ui_nav");
             }}
             aria-label="Ver todos os trabalhos"
-            className="flex size-5 items-center justify-center text-zinc-400 hover:text-white transition-colors"
+            className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronRight className="size-4" />
           </Link>
@@ -667,19 +809,19 @@ export function WorkshopDashboard() {
               triggerHaptic("tap");
               AudioManager.play("ui_nav");
             }}
-            className="group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-amber-500/50 bg-[#12141A] p-1.5 transition-all hover:border-amber-500 active:scale-[0.98] cursor-pointer"
+            className="caldra-card group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-amber-500/60 p-1.5 transition-all hover:border-amber-500 active:scale-[0.98] cursor-pointer"
           >
-            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-zinc-800 bg-[#0C1017]">
+            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
               <BlueprintDrawingGraphic />
-              <div className="absolute top-1 left-1 flex size-4 items-center justify-center rounded-full bg-amber-500/25 text-amber-500 border border-amber-500/40">
+              <div className="caldra-bubble-base caldra-bubble-amber absolute top-1 left-1 size-4">
                 <History className="size-2.5" />
               </div>
             </div>
             <div className="mt-1 px-0.5">
-              <h3 className="font-display text-[9.5px] font-semibold text-white truncate leading-tight group-hover:text-amber-500">
+              <h3 className="font-display text-[9.5px] font-semibold text-foreground truncate leading-tight group-hover:text-amber-500">
                 Projetos recentes
               </h3>
-              <p className="mt-0.5 text-[8px] text-zinc-400 truncate leading-none">
+              <p className="mt-0.5 text-[8px] text-muted-foreground truncate leading-none">
                 {projectCountText}
               </p>
             </div>
@@ -692,19 +834,19 @@ export function WorkshopDashboard() {
               triggerHaptic("tap");
               AudioManager.play("ui_nav");
             }}
-            className="group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-1.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            className="caldra-card group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-1.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
           >
-            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-zinc-800 bg-[#0B0D11]">
+            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
               <ChamferBlockGraphic />
-              <div className="absolute top-1 left-1 flex size-4 items-center justify-center rounded-full bg-amber-500/25 text-amber-500 border border-amber-500/40">
+              <div className="caldra-bubble-base caldra-bubble-amber absolute top-1 left-1 size-4">
                 <TrendingUp className="size-2.5" />
               </div>
             </div>
             <div className="mt-1 px-0.5">
-              <h3 className="font-display text-[9.5px] font-semibold text-white truncate leading-tight group-hover:text-amber-500">
+              <h3 className="font-display text-[9.5px] font-semibold text-foreground truncate leading-tight group-hover:text-amber-500">
                 CHAMFER
               </h3>
-              <p className="mt-0.5 text-[8px] text-zinc-400 truncate leading-none">
+              <p className="mt-0.5 text-[8px] text-muted-foreground truncate leading-none">
                 Geometria
               </p>
             </div>
@@ -717,19 +859,19 @@ export function WorkshopDashboard() {
               triggerHaptic("tap");
               AudioManager.play("ui_nav");
             }}
-            className="group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-1.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            className="caldra-card group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-1.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
           >
-            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-zinc-800 bg-[#0B0E14]">
+            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
               <TracingDraftGraphic />
-              <div className="absolute top-1 left-1 flex size-4 items-center justify-center rounded-full bg-amber-500/25 text-amber-500 border border-amber-500/40">
+              <div className="caldra-bubble-base caldra-bubble-amber absolute top-1 left-1 size-4">
                 <Compass className="size-2.5" />
               </div>
             </div>
             <div className="mt-1 px-0.5">
-              <h3 className="font-display text-[9.5px] font-semibold text-white truncate leading-tight group-hover:text-amber-500">
+              <h3 className="font-display text-[9.5px] font-semibold text-foreground truncate leading-tight group-hover:text-amber-500">
                 Traçagem
               </h3>
-              <p className="mt-0.5 text-[8px] text-zinc-400 truncate leading-none">
+              <p className="mt-0.5 text-[8px] text-muted-foreground truncate leading-none">
                 Desenho técnico
               </p>
             </div>
@@ -742,19 +884,19 @@ export function WorkshopDashboard() {
               triggerHaptic("tap");
               AudioManager.play("ui_nav");
             }}
-            className="group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-1.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            className="caldra-card group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-1.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
           >
-            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-zinc-800 bg-[#0A0B0E]">
+            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
               <ScientificCalculatorGraphic />
-              <div className="absolute top-1 left-1 flex size-4 items-center justify-center rounded-full bg-amber-500/25 text-amber-500 border border-amber-500/40">
+              <div className="caldra-bubble-base caldra-bubble-amber absolute top-1 left-1 size-4">
                 <Calculator className="size-2.5" />
               </div>
             </div>
             <div className="mt-1 px-0.5">
-              <h3 className="font-display text-[9.5px] font-semibold text-white truncate leading-tight group-hover:text-amber-500">
+              <h3 className="font-display text-[9.5px] font-semibold text-foreground truncate leading-tight group-hover:text-amber-500">
                 Calculadora Cientifica
               </h3>
-              <p className="mt-0.5 text-[8px] text-zinc-400 truncate leading-none">
+              <p className="mt-0.5 text-[8px] text-muted-foreground truncate leading-none">
                 Cálculos
               </p>
             </div>
@@ -769,10 +911,11 @@ export function WorkshopDashboard() {
           D. SEÇÃO 2 — "Explore suas ferramentas"
           - ~3 cartões visíveis simultaneamente (~30-31% da largura útil)
           - Projetar, Produzir, Aprenda com imagem superior + ícone + título + seta
+          - Superfícies integradas aos tokens de opacidade e tema
           ========================================================================= */}
       <section aria-label="Explore suas ferramentas" className="space-y-1.5 pt-1">
         <div className="flex items-center justify-between px-0.5">
-          <h2 className="font-display text-sm font-bold text-white tracking-tight sm:text-base">
+          <h2 className="font-display text-sm font-bold text-foreground tracking-tight sm:text-base">
             Explore suas ferramentas
           </h2>
           <Link
@@ -782,7 +925,7 @@ export function WorkshopDashboard() {
               AudioManager.play("ui_nav");
             }}
             aria-label="Ver todas as ferramentas"
-            className="flex size-5 items-center justify-center text-zinc-400 hover:text-white transition-colors"
+            className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronRight className="size-4" />
           </Link>
@@ -796,28 +939,28 @@ export function WorkshopDashboard() {
               triggerHaptic("selection");
               AudioManager.play("ui_nav");
             }}
-            className="group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            className="caldra-card group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
           >
-            <div className="relative h-18 w-full overflow-hidden rounded-lg border border-zinc-800/80 bg-black/60">
+            <div className="relative h-18 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
               <ExploreProjetarGraphic />
             </div>
 
             <div className="mt-2 flex items-center justify-between gap-1">
               <div className="flex items-center gap-1.5 min-w-0">
-                <div className="flex size-5.5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-500 border border-amber-500/40">
+                <div className="caldra-bubble-base caldra-bubble-amber size-5.5 shrink-0">
                   <Compass className="size-3" />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="font-display text-[10.5px] font-bold text-white leading-tight truncate group-hover:text-amber-500">
+                  <h3 className="font-display text-[10.5px] font-bold text-foreground leading-tight truncate group-hover:text-amber-500">
                     Projetar
                   </h3>
-                  <p className="text-[7.5px] text-zinc-400 leading-none truncate mt-0.5">
+                  <p className="text-[7.5px] text-muted-foreground leading-none truncate mt-0.5">
                     CAD e geometrias
                   </p>
                 </div>
               </div>
 
-              <div className="flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-700 text-zinc-400 group-hover:border-amber-500 group-hover:text-amber-500">
+              <div className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground group-hover:border-amber-500 group-hover:text-amber-500 transition-colors">
                 <ArrowRight className="size-2.5" />
               </div>
             </div>
@@ -830,28 +973,28 @@ export function WorkshopDashboard() {
               triggerHaptic("selection");
               AudioManager.play("ui_nav");
             }}
-            className="group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            className="caldra-card group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
           >
-            <div className="relative h-18 w-full overflow-hidden rounded-lg border border-zinc-800/80 bg-black/60">
+            <div className="relative h-18 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
               <ExploreProduzirGraphic />
             </div>
 
             <div className="mt-2 flex items-center justify-between gap-1">
               <div className="flex items-center gap-1.5 min-w-0">
-                <div className="flex size-5.5 shrink-0 items-center justify-center rounded-full bg-red-500/20 text-[#FF5252] border border-red-500/40">
+                <div className="caldra-bubble-base caldra-bubble-red size-5.5 shrink-0">
                   <Wrench className="size-3" />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="font-display text-[10.5px] font-bold text-white leading-tight truncate group-hover:text-amber-500">
+                  <h3 className="font-display text-[10.5px] font-bold text-foreground leading-tight truncate group-hover:text-amber-500">
                     Produzir
                   </h3>
-                  <p className="text-[7.5px] text-zinc-400 leading-none truncate mt-0.5">
+                  <p className="text-[7.5px] text-muted-foreground leading-none truncate mt-0.5">
                     Fabricação e custos
                   </p>
                 </div>
               </div>
 
-              <div className="flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-700 text-zinc-400 group-hover:border-amber-500 group-hover:text-amber-500">
+              <div className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground group-hover:border-amber-500 group-hover:text-amber-500 transition-colors">
                 <ArrowRight className="size-2.5" />
               </div>
             </div>
@@ -864,28 +1007,28 @@ export function WorkshopDashboard() {
               triggerHaptic("selection");
               AudioManager.play("ui_nav");
             }}
-            className="group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            className="caldra-card group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
           >
-            <div className="relative h-18 w-full overflow-hidden rounded-lg border border-zinc-800/80 bg-black/60">
+            <div className="relative h-18 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
               <ExploreAprendaGraphic />
             </div>
 
             <div className="mt-2 flex items-center justify-between gap-1">
               <div className="flex items-center gap-1.5 min-w-0">
-                <div className="flex size-5.5 shrink-0 items-center justify-center rounded-full bg-sky-500/20 text-[#38BDF8] border border-sky-500/40">
+                <div className="caldra-bubble-base caldra-bubble-sky size-5.5 shrink-0">
                   <BookOpen className="size-3" />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="font-display text-[10.5px] font-bold text-white leading-tight truncate group-hover:text-amber-500">
+                  <h3 className="font-display text-[10.5px] font-bold text-foreground leading-tight truncate group-hover:text-amber-500">
                     Aprenda
                   </h3>
-                  <p className="text-[7.5px] text-zinc-400 leading-none truncate mt-0.5">
+                  <p className="text-[7.5px] text-muted-foreground leading-none truncate mt-0.5">
                     Estudos e referências
                   </p>
                 </div>
               </div>
 
-              <div className="flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-700 text-zinc-400 group-hover:border-amber-500 group-hover:text-amber-500">
+              <div className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground group-hover:border-amber-500 group-hover:text-amber-500 transition-colors">
                 <ArrowRight className="size-2.5" />
               </div>
             </div>
@@ -901,7 +1044,7 @@ export function WorkshopDashboard() {
           ========================================================================= */}
       <section aria-label="Conhecimento técnico" className="space-y-1.5 pt-1">
         <div className="flex items-center justify-between px-0.5">
-          <h2 className="font-display text-sm font-bold text-white tracking-tight sm:text-base">
+          <h2 className="font-display text-sm font-bold text-foreground tracking-tight sm:text-base">
             Conhecimento técnico
           </h2>
           <Link
@@ -911,7 +1054,7 @@ export function WorkshopDashboard() {
               AudioManager.play("ui_nav");
             }}
             aria-label="Ver biblioteca de conhecimento"
-            className="flex size-5 items-center justify-center text-zinc-400 hover:text-white transition-colors"
+            className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
           >
             <ChevronRight className="size-4" />
           </Link>
@@ -928,21 +1071,21 @@ export function WorkshopDashboard() {
               triggerHaptic("tap");
               AudioManager.play("ui_nav");
             }}
-            className="group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            className="caldra-card group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
           >
-            <div className="relative h-14 w-full overflow-hidden rounded-lg border border-zinc-800 bg-[#0A0B0E]">
+            <div className="relative h-14 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
               <WeldedElbowGraphic />
             </div>
             <div className="mt-1.5 flex items-start justify-between gap-1">
               <div className="min-w-0">
-                <h3 className="font-display text-[9.5px] font-semibold text-white leading-tight line-clamp-1 group-hover:text-amber-500">
+                <h3 className="font-display text-[9.5px] font-semibold text-foreground leading-tight line-clamp-1 group-hover:text-amber-500">
                   Curvas e transições
                 </h3>
-                <p className="text-[7.5px] text-zinc-400 leading-none mt-0.5">
+                <p className="text-[7.5px] text-muted-foreground leading-none mt-0.5">
                   Estudos
                 </p>
               </div>
-              <BookOpen className="size-3 text-zinc-500 shrink-0 mt-0.5" />
+              <BookOpen className="size-3 text-muted-foreground shrink-0 mt-0.5" />
             </div>
           </Link>
 
@@ -954,21 +1097,21 @@ export function WorkshopDashboard() {
               triggerHaptic("tap");
               AudioManager.play("ui_nav");
             }}
-            className="group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            className="caldra-card group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
           >
-            <div className="relative h-14 w-full overflow-hidden rounded-lg border border-zinc-800 bg-[#0A0E14]">
+            <div className="relative h-14 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
               <MaterialTableGraphic />
             </div>
             <div className="mt-1.5 flex items-start justify-between gap-1">
               <div className="min-w-0">
-                <h3 className="font-display text-[9.5px] font-semibold text-white leading-tight line-clamp-1 group-hover:text-amber-500">
+                <h3 className="font-display text-[9.5px] font-semibold text-foreground leading-tight line-clamp-1 group-hover:text-amber-500">
                   Tabelas de materiais
                 </h3>
-                <p className="text-[7.5px] text-zinc-400 leading-none mt-0.5">
+                <p className="text-[7.5px] text-muted-foreground leading-none mt-0.5">
                   Tabelas
                 </p>
               </div>
-              <FileSpreadsheet className="size-3 text-zinc-500 shrink-0 mt-0.5" />
+              <FileSpreadsheet className="size-3 text-muted-foreground shrink-0 mt-0.5" />
             </div>
           </Link>
 
@@ -979,21 +1122,21 @@ export function WorkshopDashboard() {
               triggerHaptic("tap");
               AudioManager.play("ui_nav");
             }}
-            className="group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            className="caldra-card group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
           >
-            <div className="relative h-14 w-full overflow-hidden rounded-lg border border-zinc-800 bg-[#0A0B0E]">
+            <div className="relative h-14 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
               <FormulasBoardGraphic />
             </div>
             <div className="mt-1.5 flex items-start justify-between gap-1">
               <div className="min-w-0">
-                <h3 className="font-display text-[9.5px] font-semibold text-white leading-tight line-clamp-1 group-hover:text-amber-500">
+                <h3 className="font-display text-[9.5px] font-semibold text-foreground leading-tight line-clamp-1 group-hover:text-amber-500">
                   Fórmulas e cálculos
                 </h3>
-                <p className="text-[7.5px] text-zinc-400 leading-none mt-0.5">
+                <p className="text-[7.5px] text-muted-foreground leading-none mt-0.5">
                   Fórmulas
                 </p>
               </div>
-              <span className="font-mono text-[9px] font-bold italic text-zinc-500 shrink-0">
+              <span className="font-mono text-[9px] font-bold italic text-muted-foreground shrink-0">
                 fx
               </span>
             </div>
@@ -1067,15 +1210,15 @@ function TechnicalToolsSheet({ open, onClose }: { open: boolean; onClose: () => 
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-h-[85dvh] w-[min(92vw,480px)] overflow-y-auto border border-zinc-800 bg-[#0E1015] p-5 text-white shadow-2xl">
+      <DialogContent className="max-h-[85dvh] w-[min(92vw,480px)] overflow-y-auto border border-border bg-card p-5 text-foreground shadow-2xl">
         <DialogHeader>
           <div className="flex items-center gap-2 text-amber-500">
             <Wrench className="size-4.5" />
-            <DialogTitle className="font-display text-lg font-bold text-white">
+            <DialogTitle className="font-display text-lg font-bold text-foreground">
               Bancada de Ferramentas
             </DialogTitle>
           </div>
-          <p className="text-xs text-zinc-400">
+          <p className="text-xs text-muted-foreground">
             Acesso rápido a todos os recursos técnicos de cálculo, desenho e fabricação.
           </p>
         </DialogHeader>
@@ -1095,18 +1238,18 @@ function TechnicalToolsSheet({ open, onClose }: { open: boolean; onClose: () => 
                   void navigate({ to: t.to });
                 }
               }}
-              className="flex w-full items-center justify-between gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-3 text-left transition-all hover:border-amber-500/50 hover:bg-zinc-900 active:scale-[0.99] cursor-pointer touch-manipulation"
+              className="caldra-card flex w-full items-center justify-between gap-3 rounded-2xl p-3 text-left transition-all hover:border-amber-500/50 active:scale-[0.99] cursor-pointer touch-manipulation"
             >
               <div className="flex items-center gap-3">
                 <div className={cn("caldra-bubble-base size-10 shrink-0", t.color)}>
                   <t.icon className="size-5" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-white">{t.title}</h4>
-                  <p className="text-[11px] text-zinc-400">{t.desc}</p>
+                  <h4 className="text-sm font-semibold text-foreground">{t.title}</h4>
+                  <p className="text-[11px] text-muted-foreground">{t.desc}</p>
                 </div>
               </div>
-              <ChevronRight className="size-4 shrink-0 text-zinc-500" />
+              <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
             </button>
           ))}
         </div>
