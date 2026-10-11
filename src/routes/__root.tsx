@@ -90,7 +90,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
 /** Tema aplicado SINCRONAMENTE antes do primeiro paint — sem flash. */
 const THEME_BOOT = `(function(){try{
 var s=JSON.parse(localStorage.getItem("caldra.settings")||"{}");
-var t=s.theme||"light";var a=s.accent||"crimson";if(!s.accentAppliedCrimson||a==="magenta"){a="crimson";}
+var t=s.theme||"dark";var a=s.accent||"crimson";if(!s.accentAppliedCrimson||a==="magenta"){a="crimson";}
 var r=document.documentElement;
 var prefersDark=!window.matchMedia||window.matchMedia("(prefers-color-scheme: dark)").matches;
 var dark=t==="dark"||t==="amoled"||(t==="system"&&prefersDark);
@@ -168,11 +168,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 
 function RootShell({ children }: { children: ReactNode }) {
   return (
-    <html lang="pt-BR" className="dark" suppressHydrationWarning>
+    <html lang="pt-BR" className="dark bg-[#0A0B0E]" suppressHydrationWarning>
       <head>
         <HeadContent />
       </head>
-      <body suppressHydrationWarning>
+      <body className="bg-[#0A0B0E] text-foreground min-h-screen overflow-x-hidden m-0 p-0" suppressHydrationWarning>
         <div id="caldra-boot" dangerouslySetInnerHTML={{ __html: BOOT_SPLASH_HTML }} />
         {children}
         <Scripts />

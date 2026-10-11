@@ -47,7 +47,7 @@ export type Settings = {
 };
 
 const DEFAULTS: Settings = {
-  theme: "light",
+  theme: "dark",
   accent: "crimson",
   language: "pt",
   unit: "mm",

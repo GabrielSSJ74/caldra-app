@@ -1,215 +1,504 @@
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
-  Bell,
-  Box,
+  ArrowRight,
+  BookOpen,
   Calculator,
   ChevronRight,
-  Clock,
   Compass,
-  Folder,
-  FolderKanban,
-  GraduationCap,
+  FileSpreadsheet,
+  History,
   Layers,
-  PenTool,
-  Plus,
-  Receipt,
-  Settings,
+  Search,
   Sparkles,
   TrendingUp,
+  User,
   Wrench,
-  X,
+  PenTool,
 } from "lucide-react";
 import { CaldraLogo } from "@/components/caldra/Logo";
-import { WorkshopCarousel } from "./WorkshopCarousel";
 import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
 import {
   createProject,
   useProjects,
   type NewProjectInput,
-  type Project,
 } from "@/lib/projects/store";
-import { CHANGELOG, APP_VERSION } from "@/lib/app/version";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-/** Gráfico vetorial de alta precisão: Cabeçote de corte a laser industrial e feixe de fagulhas */
-function IndustrialLaserGraphic({ className }: { className?: string }) {
+/* =========================================================================
+   1. GRÁFICOS VETORIAIS DE ALTA FIDELIDADE (DIMENSIONADOS PARA CARDS COMPACTOS)
+   ========================================================================= */
+
+/**
+ * HERO — Redução Cônica Usinada com Cotas Técnicas (Ø 60, Ø 120, 80) e Brilho Âmbar
+ * Proporção 2.1:1, perfeitamente posicionada na metade direita do banner.
+ */
+function HeroMachinedConeGraphic({ className }: { className?: string }) {
   return (
     <svg
-      viewBox="0 0 320 280"
+      viewBox="0 0 200 135"
       className={cn("pointer-events-none select-none", className)}
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
     >
       <defs>
-        {/* Brilho quente do corte e feixe */}
-        <radialGradient id="laser-glow" cx="190" cy="180" r="100" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#FFA000" stopOpacity="0.85" />
-          <stop offset="25%" stopColor="#FF5722" stopOpacity="0.5" />
-          <stop offset="60%" stopColor="#D84315" stopOpacity="0.18" />
+        {/* Glow âmbar de fundo atrás do cone */}
+        <radialGradient id="hero-amber-glow" cx="105" cy="65" r="70" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#FFA000" stopOpacity="0.8" />
+          <stop offset="30%" stopColor="#FF6D00" stopOpacity="0.4" />
+          <stop offset="70%" stopColor="#D84315" stopOpacity="0.1" />
           <stop offset="100%" stopColor="#000000" stopOpacity="0" />
         </radialGradient>
-        {/* Gradiente da chapa de aço cortada */}
-        <linearGradient id="plate-grad" x1="40" y1="180" x2="310" y2="240" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#2A2D35" />
-          <stop offset="50%" stopColor="#1E2026" />
-          <stop offset="100%" stopColor="#141519" />
+
+        {/* Gradiente realista do corpo de aço usinado */}
+        <linearGradient id="cone-body-steel" x1="50" y1="30" x2="160" y2="105" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#252830" />
+          <stop offset="16%" stopColor="#64748B" />
+          <stop offset="36%" stopColor="#E2E8F0" />
+          <stop offset="52%" stopColor="#334155" />
+          <stop offset="76%" stopColor="#94A3B8" />
+          <stop offset="90%" stopColor="#475569" />
+          <stop offset="100%" stopColor="#1E222A" />
         </linearGradient>
-        {/* Gradiente do bocal da tocha CNC */}
-        <linearGradient id="nozzle-grad" x1="160" y1="20" x2="220" y2="150" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#5A6070" />
-          <stop offset="40%" stopColor="#3B3F4B" />
-          <stop offset="85%" stopColor="#252830" />
-          <stop offset="100%" stopColor="#E65100" />
-        </linearGradient>
-      </defs>
 
-      {/* Grid de desenho técnico de caldeiraria no fundo */}
-      <g stroke="#38BDF8" strokeWidth="0.6" strokeOpacity="0.16" strokeDasharray="3 3">
-        <line x1="30" y1="50" x2="300" y2="50" />
-        <line x1="30" y1="90" x2="300" y2="90" />
-        <line x1="30" y1="130" x2="300" y2="130" />
-        <line x1="30" y1="170" x2="300" y2="170" />
-        <line x1="70" y1="20" x2="70" y2="240" />
-        <line x1="130" y1="20" x2="130" y2="240" />
-        <line x1="190" y1="20" x2="190" y2="240" />
-        <line x1="250" y1="20" x2="250" y2="240" />
-        {/* Linhas de cota / referência */}
-        <circle cx="190" cy="180" r="45" stroke="#F59E0B" strokeWidth="0.8" strokeOpacity="0.25" />
-        <circle cx="190" cy="180" r="75" stroke="#38BDF8" strokeWidth="0.6" strokeOpacity="0.15" />
-      </g>
+        {/* Face superior torneada */}
+        <radialGradient id="cone-top-face" cx="105" cy="30" r="28" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#0B0D12" />
+          <stop offset="60%" stopColor="#1E232B" />
+          <stop offset="85%" stopColor="#94A3B8" />
+          <stop offset="98%" stopColor="#F1F5F9" />
+          <stop offset="100%" stopColor="#475569" />
+        </radialGradient>
 
-      {/* Chapa metálica chanfrada no plano de corte */}
-      <polygon points="50,195 295,140 310,210 65,260" fill="url(#plate-grad)" stroke="#4A5060" strokeWidth="1" strokeOpacity="0.5" />
-      {/* Linha de corte incandescente na chapa */}
-      <line x1="110" y1="205" x2="190" y2="180" stroke="#FF7043" strokeWidth="2.5" strokeLinecap="round" />
-      <line x1="110" y1="205" x2="190" y2="180" stroke="#FFE082" strokeWidth="1" strokeLinecap="round" />
-
-      {/* Halo de luz e plasma incandescente */}
-      <circle cx="190" cy="180" r="85" fill="url(#laser-glow)" />
-
-      {/* Feixe de laser de alta potência focalizado */}
-      <line x1="190" y1="140" x2="190" y2="180" stroke="#FFF" strokeWidth="2.8" strokeLinecap="round" filter="drop-shadow(0 0 4px #FF9100)" />
-      <line x1="190" y1="140" x2="190" y2="180" stroke="#FFE57F" strokeWidth="1.2" strokeLinecap="round" />
-
-      {/* Cabeçote e bocal da tocha CNC de corte a laser */}
-      <polygon points="175,20 205,20 208,80 172,80" fill="url(#nozzle-grad)" stroke="#222" strokeWidth="1" />
-      <polygon points="172,80 208,80 200,125 180,125" fill="url(#nozzle-grad)" stroke="#333" strokeWidth="0.8" />
-      {/* Ponta cônica do bocal */}
-      <polygon points="180,125 200,125 192,142 188,142" fill="#E65100" stroke="#FFB74D" strokeWidth="0.6" />
-
-      {/* Fagulhas e partículas industriais incandescentes espalhadas */}
-      <g fill="#FFA726">
-        <circle cx="193" cy="178" r="3.2" fill="#FFFFFF" />
-        <circle cx="178" cy="188" r="1.8" />
-        <circle cx="165" cy="198" r="1.3" />
-        <circle cx="152" cy="205" r="1.6" />
-        <circle cx="140" cy="222" r="1.1" />
-        <circle cx="204" cy="192" r="2.2" />
-        <circle cx="218" cy="202" r="1.5" />
-        <circle cx="235" cy="218" r="1.3" />
-        <circle cx="182" cy="166" r="1.6" />
-        <circle cx="210" cy="172" r="1.4" />
-        <circle cx="198" cy="155" r="1.1" />
-        <circle cx="225" cy="185" r="1.7" />
-        <circle cx="170" cy="175" r="1.2" />
-        {/* Trilhas de faíscas rápidas */}
-        <line x1="190" y1="180" x2="162" y2="210" stroke="#FFB74D" strokeWidth="1.1" strokeOpacity="0.85" />
-        <line x1="190" y1="180" x2="228" y2="208" stroke="#FFA726" strokeWidth="1" strokeOpacity="0.75" />
-        <line x1="190" y1="180" x2="206" y2="225" stroke="#FF7043" strokeWidth="1.2" strokeOpacity="0.8" />
-        <line x1="190" y1="180" x2="148" y2="195" stroke="#FFE082" strokeWidth="0.9" strokeOpacity="0.9" />
-      </g>
-    </svg>
-  );
-}
-
-/** Gráfico vetorial 3D isométrico: Redução Cônica com linhas de traçagem e cotas */
-function ConicalReductionGraphic({ className }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 160 110"
-      className={cn("pointer-events-none select-none", className)}
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <defs>
-        {/* Gradiente metálico curvo da chapa calandrada */}
-        <linearGradient id="cone-steel" x1="30" y1="20" x2="130" y2="90" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#4A4E5A" />
-          <stop offset="25%" stopColor="#2D3038" />
-          <stop offset="55%" stopColor="#555B68" />
-          <stop offset="80%" stopColor="#1E2026" />
-          <stop offset="100%" stopColor="#3C404B" />
-        </linearGradient>
-        {/* Brilho da boca superior */}
-        <linearGradient id="cone-top-edge" x1="55" y1="25" x2="105" y2="25" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#8A92A2" />
-          <stop offset="50%" stopColor="#C4CBD8" />
-          <stop offset="100%" stopColor="#6C7280" />
+        {/* Chanfro da borda inferior */}
+        <linearGradient id="cone-bottom-lip" x1="60" y1="98" x2="150" y2="102" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#334155" />
+          <stop offset="35%" stopColor="#94A3B8" />
+          <stop offset="65%" stopColor="#E2E8F0" />
+          <stop offset="88%" stopColor="#475569" />
+          <stop offset="100%" stopColor="#1E222A" />
         </linearGradient>
       </defs>
 
-      {/* Linhas de traçado / blueprint suave atrás */}
-      <g stroke="#38BDF8" strokeWidth="0.5" strokeOpacity="0.25" strokeDasharray="2 2">
-        <line x1="80" y1="5" x2="80" y2="105" stroke="#F59E0B" strokeOpacity="0.4" />
-        <line x1="10" y1="85" x2="150" y2="85" />
-        <line x1="30" y1="25" x2="130" y2="25" />
-        {/* Linha geratriz da traçagem por triangulação */}
-        <line x1="60" y1="25" x2="25" y2="85" />
-        <line x1="100" y1="25" x2="135" y2="85" />
+      {/* Aura âmbar de fundo */}
+      <circle cx="105" cy="65" r="62" fill="url(#hero-amber-glow)" />
+
+      {/* Grid de desenho técnico blueprint */}
+      <g stroke="#38BDF8" strokeWidth="0.35" strokeOpacity="0.16" strokeDasharray="2 2">
+        <line x1="15" y1="30" x2="195" y2="30" />
+        <line x1="15" y1="65" x2="195" y2="65" />
+        <line x1="15" y1="102" x2="195" y2="102" />
+        <line x1="60" y1="10" x2="60" y2="125" />
+        <line x1="105" y1="10" x2="105" y2="125" />
+        <line x1="150" y1="10" x2="150" y2="125" />
       </g>
 
-      {/* Superfície do cone truncado calandrado */}
+      {/* Linha de centro técnica */}
+      <line x1="105" y1="12" x2="105" y2="122" stroke="#EF4444" strokeWidth="0.5" strokeDasharray="6 2 1 2" strokeOpacity="0.4" />
+
+      {/* Corpo 3D do cone usinado */}
       <path
-        d="M 60 25 L 100 25 L 135 85 C 135 95, 25 95, 25 85 Z"
-        fill="url(#cone-steel)"
-        stroke="#6B7280"
-        strokeWidth="1"
+        d="M 86 30 L 124 30 L 148 100 C 148 107, 62 107, 62 100 Z"
+        fill="url(#cone-body-steel)"
+      />
+      <path
+        d="M 62 100 C 62 107, 148 107, 148 100 L 148 102 C 148 109, 62 109, 62 102 Z"
+        fill="url(#cone-bottom-lip)"
       />
 
-      {/* Boca superior (elipse menor) */}
-      <ellipse cx="80" cy="25" rx="20" ry="6.5" fill="#1C1E24" stroke="url(#cone-top-edge)" strokeWidth="1.2" />
+      {/* Face superior torneada com furo central */}
+      <ellipse cx="105" cy="30" rx="19" ry="6" fill="url(#cone-top-face)" stroke="#94A3B8" strokeWidth="0.5" />
+      <ellipse cx="105" cy="30" rx="11" ry="3.5" fill="#0A0B0E" stroke="#475569" strokeWidth="0.4" />
 
-      {/* Boca inferior (borda frontal da chapa chanfrada) */}
+      {/* Borda frontal inferior destacada */}
       <path
-        d="M 25 85 C 25 97, 135 97, 135 85"
-        stroke="#9CA3AF"
-        strokeWidth="1.2"
+        d="M 62 100 C 62 107, 148 107, 148 100"
+        stroke="#E2E8F0"
+        strokeWidth="0.75"
         fill="none"
+        strokeOpacity="0.8"
       />
-      {/* Costura de solda longitudinal técnica */}
-      <line x1="80" y1="31.5" x2="80" y2="92" stroke="#F59E0B" strokeWidth="0.9" strokeOpacity="0.65" strokeDasharray="2 1" />
+
+      {/* COTAS TÉCNICAS */}
+      {/* 1. Cota superior: Ø 60 */}
+      <g stroke="#9CA3AF" strokeWidth="0.65" strokeOpacity="0.85">
+        <line x1="86" y1="28" x2="86" y2="14" />
+        <line x1="124" y1="28" x2="124" y2="14" />
+        <line x1="86" y1="17" x2="124" y2="17" />
+        <polygon points="86,17 89,16 89,18" fill="#9CA3AF" />
+        <polygon points="124,17 121,16 121,18" fill="#9CA3AF" />
+      </g>
+      <text x="105" y="13" fill="#E2E8F0" fontSize="7.5" fontFamily="monospace" fontWeight="600" textAnchor="middle">
+        Ø 60
+      </text>
+
+      {/* 2. Cota inferior: Ø 120 */}
+      <g stroke="#9CA3AF" strokeWidth="0.65" strokeOpacity="0.85">
+        <line x1="62" y1="104" x2="62" y2="120" />
+        <line x1="148" y1="104" x2="148" y2="120" />
+        <line x1="62" y1="116" x2="148" y2="116" />
+        <polygon points="62,116 65,115 65,117" fill="#9CA3AF" />
+        <polygon points="148,116 145,115 145,117" fill="#9CA3AF" />
+      </g>
+      <text x="105" y="128" fill="#E2E8F0" fontSize="7.5" fontFamily="monospace" fontWeight="600" textAnchor="middle">
+        Ø 120
+      </text>
+
+      {/* 3. Cota lateral de altura: 80 */}
+      <g stroke="#9CA3AF" strokeWidth="0.65" strokeOpacity="0.85">
+        <line x1="126" y1="30" x2="168" y2="30" />
+        <line x1="150" y1="101" x2="168" y2="101" />
+        <line x1="164" y1="30" x2="164" y2="101" />
+        <polygon points="164,30 163,33 165,33" fill="#9CA3AF" />
+        <polygon points="164,101 163,98 165,98" fill="#9CA3AF" />
+      </g>
+      <text x="171" y="67" fill="#E2E8F0" fontSize="7" fontFamily="monospace" fontWeight="600" transform="rotate(-90 171 67)" textAnchor="middle">
+        80
+      </text>
     </svg>
   );
 }
 
-/** Formatação humanizada de data/hora relativa para projetos */
-function formatRelativeTime(ts: number): string {
-  const diffSec = Math.floor((Date.now() - ts) / 1000);
-  if (diffSec < 60) return "Atualizado agora mesmo";
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `Atualizado há ${diffMin} min`;
-  const diffHours = Math.floor(diffMin / 60);
-  if (diffHours < 24) return `Atualizado há ${diffHours} ${diffHours === 1 ? "hora" : "horas"}`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `Atualizado há ${diffDays} ${diffDays === 1 ? "dia" : "dias"}`;
-  const d = new Date(ts);
-  return `Atualizado em ${d.toLocaleDateString("pt-BR")}`;
+/** Card: Projetos recentes (Blueprint duto/flange) */
+function BlueprintDrawingGraphic({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
+      <rect width="100" height="70" fill="#0C1017" />
+      <g stroke="#38BDF8" strokeWidth="0.3" strokeOpacity="0.2">
+        <line x1="5" y1="15" x2="95" y2="15" />
+        <line x1="5" y1="35" x2="95" y2="35" />
+        <line x1="5" y1="55" x2="95" y2="55" />
+        <line x1="20" y1="5" x2="20" y2="65" />
+        <line x1="50" y1="5" x2="50" y2="65" />
+        <line x1="80" y1="5" x2="80" y2="65" />
+      </g>
+      <rect x="22" y="14" width="56" height="42" stroke="#38BDF8" strokeWidth="0.75" strokeOpacity="0.8" />
+      <circle cx="50" cy="35" r="15" stroke="#38BDF8" strokeWidth="1" strokeOpacity="0.9" />
+      <circle cx="50" cy="35" r="9" stroke="#38BDF8" strokeWidth="0.6" strokeOpacity="0.6" strokeDasharray="2 1.5" />
+      <circle cx="28" cy="20" r="2" stroke="#38BDF8" strokeWidth="0.6" />
+      <circle cx="72" cy="20" r="2" stroke="#38BDF8" strokeWidth="0.6" />
+      <circle cx="28" cy="50" r="2" stroke="#38BDF8" strokeWidth="0.6" />
+      <circle cx="72" cy="50" r="2" stroke="#38BDF8" strokeWidth="0.6" />
+      <line x1="50" y1="10" x2="50" y2="60" stroke="#EF4444" strokeWidth="0.45" strokeDasharray="4 1.5 1 1.5" strokeOpacity="0.5" />
+      <line x1="16" y1="35" x2="84" y2="35" stroke="#EF4444" strokeWidth="0.45" strokeDasharray="4 1.5 1 1.5" strokeOpacity="0.5" />
+    </svg>
+  );
 }
 
+/** Card: CHAMFER (Chanfro usinado 45° em bloco de aço) */
+function ChamferBlockGraphic({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
+      <defs>
+        <linearGradient id="ch-top-c" x1="15" y1="15" x2="85" y2="45" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#4A4E5A" />
+          <stop offset="50%" stopColor="#2D3038" />
+          <stop offset="100%" stopColor="#1E2026" />
+        </linearGradient>
+        <linearGradient id="ch-bevel-c" x1="35" y1="28" x2="75" y2="48" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#CBD5E1" />
+          <stop offset="45%" stopColor="#F8FAFC" />
+          <stop offset="85%" stopColor="#94A3B8" />
+          <stop offset="100%" stopColor="#475569" />
+        </linearGradient>
+        <linearGradient id="ch-front-c" x1="20" y1="40" x2="80" y2="65" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#1F232B" />
+          <stop offset="60%" stopColor="#13151A" />
+          <stop offset="100%" stopColor="#0B0C0E" />
+        </linearGradient>
+      </defs>
+      <rect width="100" height="70" fill="#0B0D11" />
+      <polygon points="18,30 50,12 82,30 50,48" fill="url(#ch-top-c)" stroke="#64748B" strokeWidth="0.5" />
+      <polygon points="44,45 56,45 66,54 54,54" fill="url(#ch-bevel-c)" stroke="#E2E8F0" strokeWidth="0.6" />
+      <polygon points="18,30 50,48 50,66 18,48" fill="url(#ch-front-c)" stroke="#475569" strokeWidth="0.5" />
+      <polygon points="50,48 82,30 82,48 50,66" fill="url(#ch-front-c)" stroke="#334155" strokeWidth="0.5" />
+      <line x1="50" y1="12" x2="50" y2="48" stroke="#94A3B8" strokeWidth="0.75" strokeOpacity="0.8" />
+      <line x1="18" y1="30" x2="50" y2="48" stroke="#CBD5E1" strokeWidth="0.6" strokeOpacity="0.6" />
+      <line x1="50" y1="48" x2="82" y2="30" stroke="#CBD5E1" strokeWidth="0.6" strokeOpacity="0.6" />
+    </svg>
+  );
+}
+
+/** Card: Traçagem (Compasso e geratrizes de planificação) */
+function TracingDraftGraphic({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
+      <rect width="100" height="70" fill="#0B0E14" />
+      <g stroke="#38BDF8" strokeWidth="0.25" strokeOpacity="0.18">
+        <line x1="0" y1="18" x2="100" y2="18" />
+        <line x1="0" y1="36" x2="100" y2="36" />
+        <line x1="0" y1="54" x2="100" y2="54" />
+        <line x1="20" y1="0" x2="20" y2="70" />
+        <line x1="50" y1="0" x2="50" y2="70" />
+        <line x1="80" y1="0" x2="80" y2="70" />
+      </g>
+      <path d="M 20 54 C 30 28, 70 28, 80 54" stroke="#38BDF8" strokeWidth="0.9" strokeDasharray="2 1" />
+      <path d="M 32 54 C 40 38, 60 38, 68 54" stroke="#38BDF8" strokeWidth="0.75" />
+      <line x1="50" y1="10" x2="20" y2="54" stroke="#F59E0B" strokeWidth="0.5" strokeOpacity="0.7" />
+      <line x1="50" y1="10" x2="50" y2="54" stroke="#F59E0B" strokeWidth="0.6" strokeOpacity="0.9" />
+      <line x1="50" y1="10" x2="80" y2="54" stroke="#F59E0B" strokeWidth="0.5" strokeOpacity="0.7" />
+      <polygon points="65,28 78,15 82,19 69,32" fill="#475569" stroke="#94A3B8" strokeWidth="0.5" />
+      <line x1="65" y1="28" x2="62" y2="31" stroke="#1E293B" strokeWidth="1" />
+      <circle cx="62" cy="31" r="1.2" fill="#38BDF8" />
+    </svg>
+  );
+}
+
+/** Card: Calculadora Científica */
+function ScientificCalculatorGraphic({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
+      <rect width="100" height="70" fill="#0A0B0E" />
+      <rect x="24" y="6" width="52" height="58" rx="6" fill="#1C1E24" stroke="#374151" strokeWidth="0.75" />
+      <rect x="30" y="11" width="40" height="13" rx="2.5" fill="#0D1117" stroke="#1F2937" strokeWidth="0.5" />
+      <text x="34" y="17" fill="#9CA3AF" fontSize="3.8" fontFamily="monospace">sin(45°)·√2</text>
+      <text x="67" y="21.5" fill="#10B981" fontSize="4.8" fontFamily="monospace" fontWeight="bold" textAnchor="end">1.0000</text>
+      <g fill="#262B34" stroke="#374151" strokeWidth="0.35">
+        <rect x="30" y="27" width="7" height="4.5" rx="1" />
+        <rect x="38.5" y="27" width="7" height="4.5" rx="1" />
+        <rect x="47" y="27" width="7" height="4.5" rx="1" />
+        <rect x="55.5" y="27" width="7" height="4.5" rx="1" />
+        <rect x="64" y="27" width="6" height="4.5" rx="1" fill="#E65100" />
+
+        <rect x="30" y="34" width="8" height="5.5" rx="1.2" />
+        <rect x="40.5" y="34" width="8" height="5.5" rx="1.2" />
+        <rect x="51" y="34" width="8" height="5.5" rx="1.2" />
+        <rect x="61.5" y="34" width="8" height="5.5" rx="1.2" />
+
+        <rect x="30" y="42" width="8" height="5.5" rx="1.2" />
+        <rect x="40.5" y="42" width="8" height="5.5" rx="1.2" />
+        <rect x="51" y="42" width="8" height="5.5" rx="1.2" />
+        <rect x="61.5" y="42" width="8" height="5.5" rx="1.2" />
+
+        <rect x="30" y="50" width="8" height="5.5" rx="1.2" />
+        <rect x="40.5" y="50" width="8" height="5.5" rx="1.2" />
+        <rect x="51" y="50" width="8" height="5.5" rx="1.2" />
+        <rect x="61.5" y="50" width="8" height="5.5" rx="1.2" fill="#F59E0B" />
+      </g>
+    </svg>
+  );
+}
+
+/** Card: Projetar (Isometric Wireframe com Ø 50, Ø 30, 100) */
+function ExploreProjetarGraphic({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 120 85" className={cn("size-full select-none", className)} fill="none">
+      <rect width="120" height="85" fill="#0B1322" />
+      <g stroke="#0284C7" strokeWidth="0.25" strokeOpacity="0.25">
+        <line x1="5" y1="18" x2="115" y2="18" />
+        <line x1="5" y1="44" x2="115" y2="44" />
+        <line x1="5" y1="70" x2="115" y2="70" />
+        <line x1="25" y1="5" x2="25" y2="80" />
+        <line x1="60" y1="5" x2="60" y2="80" />
+        <line x1="95" y1="5" x2="95" y2="80" />
+      </g>
+      <g stroke="#38BDF8" strokeWidth="0.8" strokeOpacity="0.9">
+        <ellipse cx="60" cy="28" rx="22" ry="7.5" fill="#0369A1" fillOpacity="0.15" />
+        <line x1="38" y1="28" x2="38" y2="64" />
+        <line x1="82" y1="28" x2="82" y2="64" />
+        <path d="M 38 64 C 38 71.5, 82 71.5, 82 64" fill="none" />
+        <ellipse cx="60" cy="48" rx="11" ry="5" strokeDasharray="1.5 1.5" stroke="#F59E0B" />
+      </g>
+      <text x="60" y="16" fill="#38BDF8" fontSize="6.5" fontFamily="monospace" textAnchor="middle">Ø 50</text>
+      <line x1="38" y1="19" x2="82" y2="19" stroke="#38BDF8" strokeWidth="0.4" strokeDasharray="1.5 1" />
+      <text x="82" y="50" fill="#F59E0B" fontSize="5.5" fontFamily="monospace">Ø 30</text>
+      <text x="96" y="48" fill="#94A3B8" fontSize="6" fontFamily="monospace" transform="rotate(-90 96 48)" textAnchor="middle">100</text>
+      <line x1="91" y1="28" x2="91" y2="64" stroke="#94A3B8" strokeWidth="0.4" />
+    </svg>
+  );
+}
+
+/** Card: Produzir (Peça usinada com fagulhas de solda) */
+function ExploreProduzirGraphic({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 120 85" className={cn("size-full select-none", className)} fill="none">
+      <defs>
+        <radialGradient id="prod-spark-c" cx="80" cy="42" r="45" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#FFA000" stopOpacity="0.85" />
+          <stop offset="30%" stopColor="#FF5722" stopOpacity="0.4" />
+          <stop offset="70%" stopColor="#BF360C" stopOpacity="0.1" />
+          <stop offset="100%" stopColor="#000000" stopOpacity="0" />
+        </radialGradient>
+      </defs>
+      <rect width="120" height="85" fill="#0C0D10" />
+      <circle cx="80" cy="42" r="40" fill="url(#prod-spark-c)" />
+      <polygon points="30,32 65,18 90,30 55,45" fill="#525866" stroke="#6B7280" strokeWidth="0.6" />
+      <polygon points="30,32 55,45 55,65 30,52" fill="#1C1E24" stroke="#4B5563" strokeWidth="0.6" />
+      <polygon points="55,45 90,30 90,50 55,65" fill="#2E323B" stroke="#4B5563" strokeWidth="0.6" />
+      <ellipse cx="65,27" rx="10" ry="4.5" fill="#1F232B" stroke="#F59E0B" strokeWidth="0.8" />
+      <g fill="#FFA726">
+        <circle cx="82" cy="40" r="1.8" fill="#FFF" />
+        <circle cx="88" cy="46" r="1.1" />
+        <circle cx="94" cy="36" r="0.9" />
+        <circle cx="76" cy="50" r="1" />
+        <line x1="82" y1="40" x2="98" y2="48" stroke="#FFB74D" strokeWidth="0.8" />
+        <line x1="82" y1="40" x2="91" y2="56" stroke="#FF7043" strokeWidth="0.7" />
+      </g>
+    </svg>
+  );
+}
+
+/** Card: Aprenda (Chalkboard com fórmulas e trigonometria) */
+function ExploreAprendaGraphic({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 120 85" className={cn("size-full select-none", className)} fill="none">
+      <rect width="120" height="85" fill="#0A0F14" />
+      <g stroke="#38BDF8" strokeWidth="0.3" strokeOpacity="0.15">
+        <line x1="10" y1="12" x2="110" y2="12" />
+        <line x1="10" y1="40" x2="110" y2="40" />
+        <line x1="10" y1="68" x2="110" y2="68" />
+      </g>
+      <polygon points="25,60 50,22 70,60" stroke="#E2E8F0" strokeWidth="0.65" fill="none" strokeDasharray="2 1" />
+      <path d="M 25 60 C 38 52, 52 52, 70 60" stroke="#38BDF8" strokeWidth="0.75" />
+      <text x="48" y="20" fill="#F59E0B" fontSize="5.5" fontFamily="monospace">θ = 45°</text>
+      <text x="32" y="70" fill="#94A3B8" fontSize="5.5" fontFamily="monospace">a² + b² = c²</text>
+      <text x="78" y="32" fill="#38BDF8" fontSize="5.5" fontFamily="monospace">R_g = R·360/α</text>
+      <text x="78" y="46" fill="#E2E8F0" fontSize="5" fontFamily="monospace">P = 2π·r</text>
+      <text x="78" y="60" fill="#F59E0B" fontSize="5.5" fontFamily="monospace">K = t/2</text>
+    </svg>
+  );
+}
+
+/** Card: Curva de gomos 90° em aço calandrado e soldado */
+function WeldedElbowGraphic({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 65" className={cn("size-full select-none", className)} fill="none">
+      <defs>
+        <linearGradient id="elbow-steel-c" x1="15" y1="15" x2="85" y2="55" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#4A4E5A" />
+          <stop offset="35%" stopColor="#D1D5DB" />
+          <stop offset="60%" stopColor="#2A2D35" />
+          <stop offset="90%" stopColor="#9CA3AF" />
+          <stop offset="100%" stopColor="#1E2026" />
+        </linearGradient>
+      </defs>
+      <rect width="100" height="65" fill="#0A0B0E" />
+      <path
+        d="M 18 52 L 18 32 L 35 22 L 58 16 L 80 16 L 80 31 L 64 40 L 48 52 Z"
+        fill="url(#elbow-steel-c)"
+        stroke="#64748B"
+        strokeWidth="0.6"
+      />
+      <line x1="35" y1="22" x2="48" y2="52" stroke="#F59E0B" strokeWidth="0.6" strokeDasharray="1.5 1" />
+      <line x1="58" y1="16" x2="64" y2="40" stroke="#F59E0B" strokeWidth="0.6" strokeDasharray="1.5 1" />
+      <ellipse cx="18" cy="42" rx="4" ry="10" fill="#1C1E24" stroke="#CBD5E1" strokeWidth="0.6" />
+      <ellipse cx="80" cy="23.5" rx="9" ry="4" fill="#1C1E24" stroke="#CBD5E1" strokeWidth="0.6" />
+    </svg>
+  );
+}
+
+/** Card: Tabela de pesos e materiais de engenharia */
+function MaterialTableGraphic({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 65" className={cn("size-full select-none", className)} fill="none">
+      <rect width="100" height="65" fill="#0A0E14" />
+      <g stroke="#38BDF8" strokeWidth="0.3" strokeOpacity="0.25">
+        <line x1="8" y1="10" x2="92" y2="10" />
+        <line x1="8" y1="22" x2="92" y2="22" />
+        <line x1="8" y1="34" x2="92" y2="34" />
+        <line x1="8" y1="46" x2="92" y2="46" />
+        <line x1="8" y1="58" x2="92" y2="58" />
+        <line x1="8" y1="10" x2="8" y2="58" />
+        <line x1="36" y1="10" x2="36" y2="58" />
+        <line x1="66" y1="10" x2="66" y2="58" />
+        <line x1="92" y1="10" x2="92" y2="58" />
+      </g>
+      <text x="22" y="18" fill="#F59E0B" fontSize="4.5" fontFamily="monospace" fontWeight="bold" textAnchor="middle">BITOLA</text>
+      <text x="51" y="18" fill="#F59E0B" fontSize="4.5" fontFamily="monospace" fontWeight="bold" textAnchor="middle">ESP(mm)</text>
+      <text x="79" y="18" fill="#F59E0B" fontSize="4.5" fontFamily="monospace" fontWeight="bold" textAnchor="middle">KG/M²</text>
+
+      <text x="22" y="29" fill="#E2E8F0" fontSize="4.5" fontFamily="monospace" textAnchor="middle"># 16</text>
+      <text x="51" y="29" fill="#94A3B8" fontSize="4.5" fontFamily="monospace" textAnchor="middle">1.50</text>
+      <text x="79" y="29" fill="#38BDF8" fontSize="4.5" fontFamily="monospace" textAnchor="middle">12.00</text>
+
+      <text x="22" y="41" fill="#E2E8F0" fontSize="4.5" fontFamily="monospace" textAnchor="middle"># 14</text>
+      <text x="51" y="41" fill="#94A3B8" fontSize="4.5" fontFamily="monospace" textAnchor="middle">1.90</text>
+      <text x="79" y="41" fill="#38BDF8" fontSize="4.5" fontFamily="monospace" textAnchor="middle">15.20</text>
+
+      <text x="22" y="53" fill="#E2E8F0" fontSize="4.5" fontFamily="monospace" textAnchor="middle">1/8"</text>
+      <text x="51" y="53" fill="#94A3B8" fontSize="4.5" fontFamily="monospace" textAnchor="middle">3.18</text>
+      <text x="79" y="53" fill="#38BDF8" fontSize="4.5" fontFamily="monospace" textAnchor="middle">25.44</text>
+    </svg>
+  );
+}
+
+/** Card: Fórmulas e cálculos */
+function FormulasBoardGraphic({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 65" className={cn("size-full select-none", className)} fill="none">
+      <rect width="100" height="65" fill="#0A0B0E" />
+      <g stroke="#64748B" strokeWidth="0.25" strokeOpacity="0.2">
+        <line x1="8" y1="15" x2="92" y2="15" />
+        <line x1="8" y1="33" x2="92" y2="33" />
+        <line x1="8" y1="50" x2="92" y2="50" />
+      </g>
+      <text x="12" y="18" fill="#38BDF8" fontSize="6" fontFamily="monospace">P = π · D</text>
+      <text x="52" y="18" fill="#E2E8F0" fontSize="5.5" fontFamily="monospace">R_g = √(H²+R²)</text>
+      <text x="12" y="36" fill="#F59E0B" fontSize="6" fontFamily="monospace">K_e = e / 3</text>
+      <text x="52" y="36" fill="#38BDF8" fontSize="5.5" fontFamily="monospace">α = (R/G)·360°</text>
+      <text x="12" y="54" fill="#E2E8F0" fontSize="5.5" fontFamily="monospace">Corda = 2R·sin(θ/2)</text>
+    </svg>
+  );
+}
+
+/* =========================================================================
+   2. BARRA INDICADORA DE ROLAGEM HORIZONTAL SINCRONIZADA
+   ========================================================================= */
+function ScrollProgressTrack({ scrollContainerRef }: { scrollContainerRef: React.RefObject<HTMLDivElement | null> }) {
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    const handleScroll = () => {
+      const maxScroll = el.scrollWidth - el.clientWidth;
+      if (maxScroll <= 0) {
+        setProgress(0);
+        return;
+      }
+      const ratio = el.scrollLeft / maxScroll;
+      setProgress(Math.min(1, Math.max(0, ratio)));
+    };
+
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [scrollContainerRef]);
+
+  return (
+    <div className="flex items-center gap-1.5 px-0.5 pt-0.5">
+      <div className="relative h-0.75 w-16 overflow-hidden rounded-full bg-zinc-800">
+        <div
+          className="absolute top-0 h-full w-7 rounded-full bg-amber-500 transition-transform duration-75"
+          style={{
+            transform: `translateX(${progress * 36}px)`,
+          }}
+        />
+      </div>
+      <div className="h-0.75 w-6 rounded-full bg-zinc-800" />
+      <div className="h-0.75 w-3 rounded-full bg-zinc-800" />
+    </div>
+  );
+}
+
+/* =========================================================================
+   3. COMPONENTE PRINCIPAL — WORKSHOP DASHBOARD HOME
+   ========================================================================= */
 export function WorkshopDashboard() {
   const navigate = useNavigate();
   const projects = useProjects();
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
-  // Manipulador real de criação de novo projeto
+  // Refs para as faixas de rolagem
+  const scrollRefTrabalhando = useRef<HTMLDivElement>(null);
+  const scrollRefConhecimento = useRef<HTMLDivElement>(null);
+
   const handleCreateProject = (input: NewProjectInput) => {
     try {
       const created = createProject(input);
@@ -222,391 +511,515 @@ export function WorkshopDashboard() {
     }
   };
 
-  // 3 projetos mais recentes reais do usuário, ordenados por data de atualização
-  const recentProjects = [...projects]
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    .slice(0, 3);
+  const projectCountText = projects.length > 0 ? `${projects.length} projetos` : "3 projetos";
 
   return (
-    <div className="relative mx-auto max-w-4xl space-y-4 pb-28 pt-1 sm:space-y-6 sm:pb-32">
+    <div className="relative w-full min-h-screen bg-[#0A0B0E] text-white overflow-x-hidden flex flex-col items-center">
+      <div className="relative w-full max-w-md space-y-3 px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom,16px))] pt-1">
       {/* =========================================================================
-          A. CABEÇALHO DA MARCA
-          - Logotipo original CALDRA
-          - Nome CALDRA em vermelho vibrante oficial
-          - Subtítulo discreto "SUA OFICINA DIGITAL"
-          - Botões de notificação e configurações
+          A. CABEÇALHO COMPACTO
+          - Alinhado na mesma linha horizontal
+          - Logotipo + "CALDRA" em vermelho + "SUA OFICINA DIGITAL"
+          - Botões circulares pequenos: Busca e Perfil
           ========================================================================= */}
-      <header className="relative flex items-center justify-between gap-3 pt-1">
-        <div className="flex items-center gap-3">
-          <CaldraLogo size={42} animated glow />
-          <div className="flex flex-col">
-            <span className="font-display text-2xl font-black tracking-tight text-[#FF3B30] sm:text-3xl leading-none select-none">
+      <header className="flex h-11 items-center justify-between gap-2 pt-0.5">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <CaldraLogo size={32} animated glow />
+          <div className="flex flex-col min-w-0">
+            <span className="font-display text-xl font-black tracking-tight text-[#FF3B30] leading-none select-none">
               CALDRA
             </span>
-            <span className="mt-1 font-mono text-[9px] font-semibold tracking-[0.22em] text-muted-foreground dark:text-zinc-400 uppercase sm:text-[10px]">
+            <span className="mt-0.5 font-mono text-[8px] font-semibold tracking-[0.22em] text-zinc-400 uppercase leading-none">
               SUA OFICINA DIGITAL
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          {/* Acesso a Notificações e Atualizações */}
+        <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => {
               triggerHaptic("tap");
               AudioManager.play("ui_nav");
-              setNotificationsOpen(true);
+              setToolsOpen(true);
             }}
-            aria-label="Notificações e novidades do CALDRA"
-            className="caldra-bubble-base caldra-bubble-neutral size-10 shadow-xs transition-all duration-150 hover:border-accent/40 active:scale-95 cursor-pointer touch-manipulation"
+            aria-label="Buscar ferramentas"
+            className="flex size-8.5 items-center justify-center rounded-full border border-zinc-800 bg-[#12141A] text-zinc-300 hover:border-amber-500/50 hover:text-white active:scale-95 transition-all cursor-pointer"
           >
-            <Bell className="size-4.5" />
+            <Search className="size-4" strokeWidth={1.8} />
           </button>
 
-          {/* Acesso a Configurações e Preferências */}
           <Link
-            to="/configuracoes"
+            to="/perfil"
             onClick={() => {
               triggerHaptic("tap");
               AudioManager.play("ui_nav");
             }}
-            aria-label="Abrir configurações"
-            className="caldra-bubble-base caldra-bubble-neutral size-10 shadow-xs transition-all duration-150 hover:border-accent/40 active:scale-95 cursor-pointer touch-manipulation"
+            aria-label="Perfil do usuário"
+            className="flex size-8.5 items-center justify-center rounded-full border border-zinc-800 bg-[#12141A] text-zinc-300 hover:border-amber-500/50 hover:text-white active:scale-95 transition-all cursor-pointer"
           >
-            <Settings className="size-4.5" />
+            <User className="size-4" strokeWidth={1.8} />
           </Link>
         </div>
       </header>
 
       {/* =========================================================================
-          B. CARROSSEL ANIMADO INTERATIVO DA OFICINA DIGITAL (5 PILARES)
-          - CRIE • CALCULE • ORCE • FABRIQUE • APRIMORE
-          - Animações reais em SVG/código técnico, navegação por swipe e indicadores
+          B. BANNER PRINCIPAL (HERO) — LADO A LADO HORIZONTAL (PROPORÇÃO ~2.1:1)
+          - Largura total com altura compacta (aspect-[2.1/1])
+          - Área esquerda (~45%): Badge, Título 2 linhas, Descrição, Botão e Dots
+          - Área direita (~55%): Peça técnica com cotas (Ø 60, Ø 120, 80)
           ========================================================================= */}
-      <WorkshopCarousel
-        onNewProject={() => {
-          triggerHaptic("selection");
-          AudioManager.play("ui_pop");
-          setNewProjectOpen(true);
-        }}
-        onOpenTools={() => {
-          triggerHaptic("selection");
-          AudioManager.play("ui_pop");
-          setToolsOpen(true);
-        }}
-      />
+      <section
+        aria-label="Destaque principal"
+        className="group relative w-full aspect-[2.1/1] min-h-[160px] max-h-[195px] overflow-hidden rounded-2xl border border-zinc-800/90 bg-gradient-to-r from-[#111318] via-[#0E1015] to-[#0A0B0E] p-3 xs:p-3.5 shadow-xl transition-all"
+      >
+        {/* Glow âmbar sutil concentrado atrás da peça */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-40 w-44 rounded-full bg-[radial-gradient(circle,rgba(245,158,11,0.22)_0%,rgba(245,158,11,0.04)_55%,transparent_70%)] blur-xl"
+        />
 
-      {/* =========================================================================
-          C. QUATRO CARTÕES PRINCIPAIS (Grade responsiva 2x2)
-          1. Novo projeto (Compasso técnico / criação)
-          2. Projetos (Cubo 3D / CAD)
-          3. Ferramentas (Calculadora / bancada técnica)
-          4. Orçamentos (Prancheta / custos e propostas)
-          ========================================================================= */}
-      <section aria-label="Módulos principais" className="grid grid-cols-2 gap-3 sm:gap-4">
-        {/* Cartão 1 — NOVO PROJETO */}
-        <button
-          type="button"
-          onClick={() => {
-            triggerHaptic("selection");
-            AudioManager.play("ui_pop");
-            setNewProjectOpen(true);
-          }}
-          className="caldra-card group relative flex min-h-[142px] flex-col justify-between rounded-2xl sm:rounded-3xl p-4 text-left transition-all duration-200 hover:border-red-500/40 active:scale-[0.98] cursor-pointer touch-manipulation sm:p-5"
-        >
-          <div className="flex items-start justify-between">
-            {/* Ícone circular com acento vermelho CALDRA */}
-            <div className="caldra-bubble-base caldra-bubble-red size-11 shadow-inner group-hover:scale-105 transition-transform duration-200">
-              <Compass className="size-5.5" strokeWidth={1.75} />
+        <div className="relative z-10 flex h-full w-full flex-row items-center justify-between">
+          {/* LADO ESQUERDO (~44% de largura) */}
+          <div className="flex h-full w-[45%] flex-col justify-between py-0.5 pr-1 shrink-0">
+            {/* 1. Badge CHAMFER */}
+            <div>
+              <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-mono text-[8.5px] font-bold tracking-wider text-amber-500 uppercase">
+                <span className="text-[9px] leading-none">✦</span>
+                <span>CHAMFER</span>
+              </span>
             </div>
-            <ChevronRight className="size-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
-          </div>
 
-          <div className="mt-3">
-            <h2 className="font-display text-sm font-semibold tracking-tight text-foreground dark:text-white sm:text-base">
-              Novo projeto
-            </h2>
-            <p className="mt-0.5 text-[11px] text-muted-foreground dark:text-zinc-400 sm:text-xs">
-              Desenhe e desenvolva
+            {/* 2. Título grande em duas linhas */}
+            <h1 className="font-display text-[15px] xs:text-[16.5px] sm:text-[18px] font-black tracking-tight text-white leading-[1.1] uppercase">
+              PROJETE COM<br />PRECISÃO
+            </h1>
+
+            {/* 3. Descrição curta */}
+            <p className="text-[9px] xs:text-[9.5px] text-zinc-400 leading-tight line-clamp-2">
+              Transforme dimensões em geometrias e desenhos técnicos.
             </p>
-          </div>
-        </button>
 
-        {/* Cartão 2 — PROJETOS */}
-        <Link
-          to="/projetos"
-          onClick={() => {
-            triggerHaptic("selection");
-            AudioManager.play("ui_nav");
-          }}
-          className="caldra-card group relative flex min-h-[142px] flex-col justify-between rounded-2xl sm:rounded-3xl p-4 text-left transition-all duration-200 hover:border-sky-500/40 active:scale-[0.98] cursor-pointer touch-manipulation sm:p-5"
-        >
-          <div className="flex items-start justify-between">
-            {/* Ícone circular com acento azul aço CAD */}
-            <div className="caldra-bubble-base caldra-bubble-sky size-11 shadow-inner group-hover:scale-105 transition-transform duration-200">
-              <Box className="size-5.5" strokeWidth={1.75} />
+            {/* 4. Botão compacto "Abrir ferramenta →" */}
+            <div>
+              <Link
+                to="/desenho-2d"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  AudioManager.play("ui_pop");
+                }}
+                className="inline-flex h-6.5 xs:h-7 items-center justify-center gap-1.5 rounded-full bg-[#F59E0B] px-3 font-mono text-[9px] xs:text-[9.5px] font-bold tracking-wide text-black shadow-md hover:bg-[#FBBF24] active:scale-95 transition-all cursor-pointer"
+              >
+                <span>Abrir ferramenta</span>
+                <ArrowRight className="size-3" strokeWidth={2.5} />
+              </Link>
             </div>
-            <ChevronRight className="size-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
-          </div>
 
-          <div className="mt-3">
-            <h2 className="font-display text-sm font-semibold tracking-tight text-foreground dark:text-white sm:text-base">
-              Projetos
-            </h2>
-            <p className="mt-0.5 text-[11px] text-muted-foreground dark:text-zinc-400 sm:text-xs">
-              CAD e criação
-            </p>
-          </div>
-        </Link>
-
-        {/* Cartão 3 — FERRAMENTAS */}
-        <button
-          type="button"
-          onClick={() => {
-            triggerHaptic("selection");
-            AudioManager.play("ui_nav");
-            setToolsOpen(true);
-          }}
-          className="caldra-card group relative flex min-h-[142px] flex-col justify-between rounded-2xl sm:rounded-3xl p-4 text-left transition-all duration-200 hover:border-amber-500/40 active:scale-[0.98] cursor-pointer touch-manipulation sm:p-5"
-        >
-          <div className="flex items-start justify-between">
-            {/* Ícone circular com acento âmbar industrial */}
-            <div className="caldra-bubble-base caldra-bubble-amber size-11 shadow-inner group-hover:scale-105 transition-transform duration-200">
-              <Calculator className="size-5.5" strokeWidth={1.75} />
+            {/* 5. Indicadores pequenos do carrossel */}
+            <div className="flex items-center gap-1 pt-0.5">
+              <span className="h-0.75 w-4 rounded-full bg-amber-500" />
+              <span className="size-1 rounded-full bg-zinc-600" />
+              <span className="size-1 rounded-full bg-zinc-600" />
+              <span className="size-1 rounded-full bg-zinc-600" />
             </div>
-            <ChevronRight className="size-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
           </div>
 
-          <div className="mt-3">
-            <h2 className="font-display text-sm font-semibold tracking-tight text-foreground dark:text-white sm:text-base">
-              Ferramentas
-            </h2>
-            <p className="mt-0.5 text-[11px] text-muted-foreground dark:text-zinc-400 sm:text-xs">
-              Calcule e resolva
-            </p>
+          {/* LADO DIREITO (~56% de largura): Peça metálica com cotas */}
+          <div className="relative flex h-full w-[55%] items-center justify-center overflow-hidden">
+            <HeroMachinedConeGraphic className="h-full w-full object-contain" />
           </div>
-        </button>
-
-        {/* Cartão 4 — ORÇAMENTOS */}
-        <Link
-          to="/oficina"
-          search={{ tab: "orcamento" }}
-          onClick={() => {
-            triggerHaptic("selection");
-            AudioManager.play("ui_nav");
-          }}
-          className="caldra-card group relative flex min-h-[142px] flex-col justify-between rounded-2xl sm:rounded-3xl p-4 text-left transition-all duration-200 hover:border-emerald-500/40 active:scale-[0.98] cursor-pointer touch-manipulation sm:p-5"
-        >
-          <div className="flex items-start justify-between">
-            {/* Ícone circular com acento verde esmeralda comercial */}
-            <div className="caldra-bubble-base caldra-bubble-emerald size-11 shadow-inner group-hover:scale-105 transition-transform duration-200">
-              <Receipt className="size-5.5" strokeWidth={1.75} />
-            </div>
-            <ChevronRight className="size-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
-          </div>
-
-          <div className="mt-3">
-            <h2 className="font-display text-sm font-semibold tracking-tight text-foreground dark:text-white sm:text-base">
-              Orçamentos
-            </h2>
-            <p className="mt-0.5 text-[11px] text-muted-foreground dark:text-zinc-400 sm:text-xs">
-              Calcule seus custos
-            </p>
-          </div>
-        </Link>
+        </div>
       </section>
 
       {/* =========================================================================
-          D. FAIXA DE ESPECIALIZAÇÃO
-          - Banner horizontal largo
-          - "Especialização — Caldeiraria e traçagem"
-          - Ícone de conhecimento técnico com ilustração de redução cônica
+          C. SEÇÃO 1 — "Continue trabalhando"
+          - ~4 cartões visíveis simultaneamente (~22-23% da largura cada)
+          - Imagem técnica + Ícone circular + Título + Subtítulo
+          - Barra indicadora de rolagem âmbar
           ========================================================================= */}
-      <Link
-        to="/escola"
-        onClick={() => {
-          triggerHaptic("selection");
-          AudioManager.play("ui_nav");
-        }}
-        className="caldra-specialization group relative flex items-center justify-between overflow-hidden rounded-2xl sm:rounded-3xl p-4.5 sm:p-5 shadow-lg transition-all duration-200 hover:border-amber-500/50 hover:shadow-amber-500/10 active:scale-[0.99] cursor-pointer touch-manipulation"
-      >
-        <div className="relative z-10 flex items-center gap-3.5 sm:gap-4">
-          <div className="caldra-bubble-base caldra-bubble-indigo size-12 shadow-inner group-hover:scale-105 transition-transform duration-200 shrink-0">
-            <GraduationCap className="size-6" strokeWidth={1.75} />
-          </div>
-
-          <div>
-            <h2 className="font-display text-base font-bold tracking-tight text-foreground dark:text-white sm:text-lg">
-              Especialização
-            </h2>
-            <p className="text-xs text-muted-foreground dark:text-zinc-400 sm:text-sm">
-              Caldeiraria e traçagem
-            </p>
-          </div>
-        </div>
-
-        {/* Ilustração geométrica da Redução Cônica à direita */}
-        <div className="relative z-10 flex items-center gap-3">
-          <div className="h-16 w-24 sm:h-20 sm:w-32 opacity-90 transition-transform duration-300 group-hover:scale-105">
-            <ConicalReductionGraphic className="size-full" />
-          </div>
-          <ChevronRight className="size-4 text-muted-foreground group-hover:text-amber-500 transition-colors" />
-        </div>
-      </Link>
-
-      {/* =========================================================================
-          E. PROJETOS RECENTES
-          - Cabeçalho com indicador âmbar e link "Ver todos"
-          - Lista de projetos reais armazenados pelo usuário
-          - Estado vazio elegante quando ainda não houver projetos
-          ========================================================================= */}
-      <section aria-label="Projetos recentes" className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <div className="flex items-center gap-2">
-            <span className="h-0.5 w-4 rounded-full bg-amber-500" />
-            <h2 className="font-mono text-xs font-semibold tracking-[0.2em] uppercase text-foreground/85 dark:text-zinc-300">
-              PROJETOS RECENTES
-            </h2>
-          </div>
-
+      <section aria-label="Continue trabalhando" className="space-y-1.5">
+        <div className="flex items-center justify-between px-0.5">
+          <h2 className="font-display text-sm font-bold text-white tracking-tight sm:text-base">
+            Continue trabalhando
+          </h2>
           <Link
             to="/projetos"
             onClick={() => {
               triggerHaptic("tap");
               AudioManager.play("ui_nav");
             }}
-            className="group flex items-center gap-1 font-mono text-xs text-muted-foreground hover:text-foreground transition-colors"
+            aria-label="Ver todos os trabalhos"
+            className="flex size-5 items-center justify-center text-zinc-400 hover:text-white transition-colors"
           >
-            Ver todos
-            <ChevronRight className="size-3.5 transition-transform duration-150 group-hover:translate-x-0.5" />
+            <ChevronRight className="size-4" />
           </Link>
         </div>
 
-        {recentProjects.length > 0 ? (
-          <div className="space-y-2.5">
-            {recentProjects.map((project) => (
-              <ProjectCard key={project.id} project={project} />
-            ))}
-          </div>
-        ) : (
-          /* Estado Vazio Elegante para novos usuários */
-          <div className="caldra-card flex flex-col items-center justify-center rounded-2xl sm:rounded-3xl p-6 text-center sm:p-8">
-            <div className="caldra-bubble-base caldra-bubble-neutral size-12">
-              <FolderKanban className="size-5" />
-            </div>
-
-            <h3 className="mt-3 font-display text-base font-semibold text-foreground dark:text-white">
-              Seu próximo projeto começa aqui.
-            </h3>
-            <p className="mt-1 text-xs text-muted-foreground max-w-sm">
-              Crie peças paramétricas, visualize em 3D, elabore desenhos CAD e gere documentação de fabricação.
-            </p>
-
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                AudioManager.play("ui_pop");
-                setNewProjectOpen(true);
-              }}
-              className="mt-4 inline-flex items-center gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-2 font-mono text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-300 hover:bg-amber-500/20 active:scale-95 transition-all cursor-pointer"
-            >
-              <Plus className="size-3.5" /> Criar primeiro projeto
-            </button>
-          </div>
-        )}
-
-        {/* F. ATALHO COMPACTO DE CRIAÇÃO (Reutiliza o mesmo fluxo) */}
-        <button
-          type="button"
-          onClick={() => {
-            triggerHaptic("selection");
-            AudioManager.play("ui_pop");
-            setNewProjectOpen(true);
-          }}
-          className="caldra-card group flex w-full items-center justify-between rounded-2xl p-3.5 text-left transition-all duration-150 hover:border-amber-500/30 active:scale-[0.99] cursor-pointer touch-manipulation sm:p-4"
+        {/* Trilho horizontal compacto: ~4 itens visíveis na largura útil */}
+        <div
+          ref={scrollRefTrabalhando}
+          className="flex gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-3 px-3"
         >
-          <div className="flex items-center gap-3">
-            <div className="caldra-bubble-base caldra-bubble-neutral size-9 group-hover:border-amber-500/40 group-hover:text-amber-500 transition-colors">
-              <Plus className="size-4.5" />
+          {/* Card 1 — Projetos recentes */}
+          <Link
+            to="/projetos"
+            onClick={() => {
+              triggerHaptic("tap");
+              AudioManager.play("ui_nav");
+            }}
+            className="group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-amber-500/50 bg-[#12141A] p-1.5 transition-all hover:border-amber-500 active:scale-[0.98] cursor-pointer"
+          >
+            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-zinc-800 bg-[#0C1017]">
+              <BlueprintDrawingGraphic />
+              <div className="absolute top-1 left-1 flex size-4 items-center justify-center rounded-full bg-amber-500/25 text-amber-500 border border-amber-500/40">
+                <History className="size-2.5" />
+              </div>
             </div>
-            <div>
-              <span className="block text-sm font-medium text-foreground dark:text-white group-hover:text-amber-500 transition-colors">
-                Novo projeto
-              </span>
-              <span className="block text-[11px] text-muted-foreground">
-                Comece um novo trabalho
-              </span>
+            <div className="mt-1 px-0.5">
+              <h3 className="font-display text-[9.5px] font-semibold text-white truncate leading-tight group-hover:text-amber-500">
+                Projetos recentes
+              </h3>
+              <p className="mt-0.5 text-[8px] text-zinc-400 truncate leading-none">
+                {projectCountText}
+              </p>
             </div>
-          </div>
+          </Link>
 
-          <ChevronRight className="size-4 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
-        </button>
+          {/* Card 2 — CHAMFER */}
+          <Link
+            to="/desenho-2d"
+            onClick={() => {
+              triggerHaptic("tap");
+              AudioManager.play("ui_nav");
+            }}
+            className="group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-1.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+          >
+            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-zinc-800 bg-[#0B0D11]">
+              <ChamferBlockGraphic />
+              <div className="absolute top-1 left-1 flex size-4 items-center justify-center rounded-full bg-amber-500/25 text-amber-500 border border-amber-500/40">
+                <TrendingUp className="size-2.5" />
+              </div>
+            </div>
+            <div className="mt-1 px-0.5">
+              <h3 className="font-display text-[9.5px] font-semibold text-white truncate leading-tight group-hover:text-amber-500">
+                CHAMFER
+              </h3>
+              <p className="mt-0.5 text-[8px] text-zinc-400 truncate leading-none">
+                Geometria
+              </p>
+            </div>
+          </Link>
+
+          {/* Card 3 — Traçagem */}
+          <Link
+            to="/tracagem"
+            onClick={() => {
+              triggerHaptic("tap");
+              AudioManager.play("ui_nav");
+            }}
+            className="group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-1.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+          >
+            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-zinc-800 bg-[#0B0E14]">
+              <TracingDraftGraphic />
+              <div className="absolute top-1 left-1 flex size-4 items-center justify-center rounded-full bg-amber-500/25 text-amber-500 border border-amber-500/40">
+                <Compass className="size-2.5" />
+              </div>
+            </div>
+            <div className="mt-1 px-0.5">
+              <h3 className="font-display text-[9.5px] font-semibold text-white truncate leading-tight group-hover:text-amber-500">
+                Traçagem
+              </h3>
+              <p className="mt-0.5 text-[8px] text-zinc-400 truncate leading-none">
+                Desenho técnico
+              </p>
+            </div>
+          </Link>
+
+          {/* Card 4 — Calculadora Cientifica */}
+          <Link
+            to="/calculadora"
+            onClick={() => {
+              triggerHaptic("tap");
+              AudioManager.play("ui_nav");
+            }}
+            className="group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-1.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+          >
+            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-zinc-800 bg-[#0A0B0E]">
+              <ScientificCalculatorGraphic />
+              <div className="absolute top-1 left-1 flex size-4 items-center justify-center rounded-full bg-amber-500/25 text-amber-500 border border-amber-500/40">
+                <Calculator className="size-2.5" />
+              </div>
+            </div>
+            <div className="mt-1 px-0.5">
+              <h3 className="font-display text-[9.5px] font-semibold text-white truncate leading-tight group-hover:text-amber-500">
+                Calculadora Cientifica
+              </h3>
+              <p className="mt-0.5 text-[8px] text-zinc-400 truncate leading-none">
+                Cálculos
+              </p>
+            </div>
+          </Link>
+        </div>
+
+        {/* Indicador de rolagem âmbar da seção */}
+        <ScrollProgressTrack scrollContainerRef={scrollRefTrabalhando} />
       </section>
 
       {/* =========================================================================
-          MODAIS E DIÁLOGOS INTEGRADOS
+          D. SEÇÃO 2 — "Explore suas ferramentas"
+          - ~3 cartões visíveis simultaneamente (~30-31% da largura útil)
+          - Projetar, Produzir, Aprenda com imagem superior + ícone + título + seta
           ========================================================================= */}
-      {/* Modal Real de Criação de Projeto */}
+      <section aria-label="Explore suas ferramentas" className="space-y-1.5 pt-1">
+        <div className="flex items-center justify-between px-0.5">
+          <h2 className="font-display text-sm font-bold text-white tracking-tight sm:text-base">
+            Explore suas ferramentas
+          </h2>
+          <Link
+            to="/projetar"
+            onClick={() => {
+              triggerHaptic("tap");
+              AudioManager.play("ui_nav");
+            }}
+            aria-label="Ver todas as ferramentas"
+            className="flex size-5 items-center justify-center text-zinc-400 hover:text-white transition-colors"
+          >
+            <ChevronRight className="size-4" />
+          </Link>
+        </div>
+
+        <div className="flex gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-3 px-3">
+          {/* Card 1 — Projetar */}
+          <Link
+            to="/projetar"
+            onClick={() => {
+              triggerHaptic("selection");
+              AudioManager.play("ui_nav");
+            }}
+            className="group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+          >
+            <div className="relative h-18 w-full overflow-hidden rounded-lg border border-zinc-800/80 bg-black/60">
+              <ExploreProjetarGraphic />
+            </div>
+
+            <div className="mt-2 flex items-center justify-between gap-1">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <div className="flex size-5.5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 text-amber-500 border border-amber-500/40">
+                  <Compass className="size-3" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-display text-[10.5px] font-bold text-white leading-tight truncate group-hover:text-amber-500">
+                    Projetar
+                  </h3>
+                  <p className="text-[7.5px] text-zinc-400 leading-none truncate mt-0.5">
+                    CAD e geometrias
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-700 text-zinc-400 group-hover:border-amber-500 group-hover:text-amber-500">
+                <ArrowRight className="size-2.5" />
+              </div>
+            </div>
+          </Link>
+
+          {/* Card 2 — Produzir */}
+          <Link
+            to="/produzir"
+            onClick={() => {
+              triggerHaptic("selection");
+              AudioManager.play("ui_nav");
+            }}
+            className="group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+          >
+            <div className="relative h-18 w-full overflow-hidden rounded-lg border border-zinc-800/80 bg-black/60">
+              <ExploreProduzirGraphic />
+            </div>
+
+            <div className="mt-2 flex items-center justify-between gap-1">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <div className="flex size-5.5 shrink-0 items-center justify-center rounded-full bg-red-500/20 text-[#FF5252] border border-red-500/40">
+                  <Wrench className="size-3" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-display text-[10.5px] font-bold text-white leading-tight truncate group-hover:text-amber-500">
+                    Produzir
+                  </h3>
+                  <p className="text-[7.5px] text-zinc-400 leading-none truncate mt-0.5">
+                    Fabricação e custos
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-700 text-zinc-400 group-hover:border-amber-500 group-hover:text-amber-500">
+                <ArrowRight className="size-2.5" />
+              </div>
+            </div>
+          </Link>
+
+          {/* Card 3 — Aprenda */}
+          <Link
+            to="/aprenda"
+            onClick={() => {
+              triggerHaptic("selection");
+              AudioManager.play("ui_nav");
+            }}
+            className="group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+          >
+            <div className="relative h-18 w-full overflow-hidden rounded-lg border border-zinc-800/80 bg-black/60">
+              <ExploreAprendaGraphic />
+            </div>
+
+            <div className="mt-2 flex items-center justify-between gap-1">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <div className="flex size-5.5 shrink-0 items-center justify-center rounded-full bg-sky-500/20 text-[#38BDF8] border border-sky-500/40">
+                  <BookOpen className="size-3" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="font-display text-[10.5px] font-bold text-white leading-tight truncate group-hover:text-amber-500">
+                    Aprenda
+                  </h3>
+                  <p className="text-[7.5px] text-zinc-400 leading-none truncate mt-0.5">
+                    Estudos e referências
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex size-5 shrink-0 items-center justify-center rounded-full border border-zinc-700 text-zinc-400 group-hover:border-amber-500 group-hover:text-amber-500">
+                <ArrowRight className="size-2.5" />
+              </div>
+            </div>
+          </Link>
+        </div>
+      </section>
+
+      {/* =========================================================================
+          E. SEÇÃO 3 — "Conhecimento técnico"
+          - ~3 cartões visíveis simultaneamente (~30-31% da largura útil)
+          - Curvas e transições, Tabelas de materiais, Fórmulas e cálculos
+          - Barra indicadora de rolagem âmbar
+          ========================================================================= */}
+      <section aria-label="Conhecimento técnico" className="space-y-1.5 pt-1">
+        <div className="flex items-center justify-between px-0.5">
+          <h2 className="font-display text-sm font-bold text-white tracking-tight sm:text-base">
+            Conhecimento técnico
+          </h2>
+          <Link
+            to="/aprenda"
+            onClick={() => {
+              triggerHaptic("tap");
+              AudioManager.play("ui_nav");
+            }}
+            aria-label="Ver biblioteca de conhecimento"
+            className="flex size-5 items-center justify-center text-zinc-400 hover:text-white transition-colors"
+          >
+            <ChevronRight className="size-4" />
+          </Link>
+        </div>
+
+        <div
+          ref={scrollRefConhecimento}
+          className="flex gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-3 px-3"
+        >
+          {/* Card 1 — Curvas e transições metálicas */}
+          <Link
+            to="/aprenda"
+            onClick={() => {
+              triggerHaptic("tap");
+              AudioManager.play("ui_nav");
+            }}
+            className="group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+          >
+            <div className="relative h-14 w-full overflow-hidden rounded-lg border border-zinc-800 bg-[#0A0B0E]">
+              <WeldedElbowGraphic />
+            </div>
+            <div className="mt-1.5 flex items-start justify-between gap-1">
+              <div className="min-w-0">
+                <h3 className="font-display text-[9.5px] font-semibold text-white leading-tight line-clamp-1 group-hover:text-amber-500">
+                  Curvas e transições
+                </h3>
+                <p className="text-[7.5px] text-zinc-400 leading-none mt-0.5">
+                  Estudos
+                </p>
+              </div>
+              <BookOpen className="size-3 text-zinc-500 shrink-0 mt-0.5" />
+            </div>
+          </Link>
+
+          {/* Card 2 — Tabelas de materiais e pesos */}
+          <Link
+            to="/oficina"
+            search={{ tab: "chapa" }}
+            onClick={() => {
+              triggerHaptic("tap");
+              AudioManager.play("ui_nav");
+            }}
+            className="group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+          >
+            <div className="relative h-14 w-full overflow-hidden rounded-lg border border-zinc-800 bg-[#0A0E14]">
+              <MaterialTableGraphic />
+            </div>
+            <div className="mt-1.5 flex items-start justify-between gap-1">
+              <div className="min-w-0">
+                <h3 className="font-display text-[9.5px] font-semibold text-white leading-tight line-clamp-1 group-hover:text-amber-500">
+                  Tabelas de materiais
+                </h3>
+                <p className="text-[7.5px] text-zinc-400 leading-none mt-0.5">
+                  Tabelas
+                </p>
+              </div>
+              <FileSpreadsheet className="size-3 text-zinc-500 shrink-0 mt-0.5" />
+            </div>
+          </Link>
+
+          {/* Card 3 — Fórmulas e cálculos */}
+          <Link
+            to="/aprenda"
+            onClick={() => {
+              triggerHaptic("tap");
+              AudioManager.play("ui_nav");
+            }}
+            className="group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-zinc-800 bg-[#12141A] p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+          >
+            <div className="relative h-14 w-full overflow-hidden rounded-lg border border-zinc-800 bg-[#0A0B0E]">
+              <FormulasBoardGraphic />
+            </div>
+            <div className="mt-1.5 flex items-start justify-between gap-1">
+              <div className="min-w-0">
+                <h3 className="font-display text-[9.5px] font-semibold text-white leading-tight line-clamp-1 group-hover:text-amber-500">
+                  Fórmulas e cálculos
+                </h3>
+                <p className="text-[7.5px] text-zinc-400 leading-none mt-0.5">
+                  Fórmulas
+                </p>
+              </div>
+              <span className="font-mono text-[9px] font-bold italic text-zinc-500 shrink-0">
+                fx
+              </span>
+            </div>
+          </Link>
+        </div>
+
+        {/* Indicador de rolagem âmbar da seção */}
+        <ScrollProgressTrack scrollContainerRef={scrollRefConhecimento} />
+      </section>
+
+      {/* =========================================================================
+          MODAIS E DIÁLOGOS INTEGRADOS (100% Funcionais)
+          ========================================================================= */}
       <NewProjectDialog
         open={newProjectOpen}
         onOpenChange={setNewProjectOpen}
         onCreate={handleCreateProject}
       />
 
-      {/* Modal de Ferramentas e Bancada Técnica */}
       <TechnicalToolsSheet open={toolsOpen} onClose={() => setToolsOpen(false)} />
-
-      {/* Drawer de Notificações e Novidades Reais */}
-      <NotificationsSheet open={notificationsOpen} onClose={() => setNotificationsOpen(false)} />
-    </div>
-  );
-}
-
-/** Componente de Cartão de Projeto Recente */
-function ProjectCard({ project }: { project: Project }) {
-  const navigate = useNavigate();
-
-  return (
-    <div
-      onClick={() => {
-        triggerHaptic("tap");
-        AudioManager.play("ui_nav");
-        void navigate({ to: "/projetos/$projectId", params: { projectId: project.id } });
-      }}
-      className="caldra-card group flex items-center justify-between gap-3.5 rounded-2xl p-3.5 transition-all duration-150 hover:border-amber-500/35 active:scale-[0.99] cursor-pointer touch-manipulation sm:p-4"
-    >
-      <div className="flex min-w-0 items-center gap-3.5">
-        {/* Miniatura isométrica estilizada */}
-        <div className="flex size-14 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-muted/30 dark:bg-zinc-950/80 p-1.5 shadow-inner">
-          <ConicalReductionGraphic className="size-full" />
-        </div>
-
-        <div className="min-w-0">
-          <h3 className="truncate font-display text-sm font-semibold text-foreground dark:text-white group-hover:text-amber-500 transition-colors">
-            {project.name}
-          </h3>
-
-          <div className="mt-1 flex items-center gap-3 text-[11px] text-muted-foreground">
-            <span className="flex items-center gap-1 truncate font-mono">
-              <Folder className="size-3 text-muted-foreground/80 shrink-0" />
-              {project.code || `Projeto #${project.id.slice(-4).toUpperCase()}`}
-            </span>
-            <span className="flex items-center gap-1 truncate">
-              <Clock className="size-3 shrink-0" />
-              {formatRelativeTime(project.updatedAt)}
-            </span>
-          </div>
-        </div>
       </div>
-
-      <ChevronRight className="size-4 shrink-0 text-muted-foreground transition-transform duration-150 group-hover:translate-x-0.5 group-hover:text-foreground" />
     </div>
   );
 }
 
-/** Bancada de Ferramentas Técnicas Integrada */
+/** Modal da Bancada de Ferramentas Técnicas */
 function TechnicalToolsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
 
@@ -654,16 +1067,16 @@ function TechnicalToolsSheet({ open, onClose }: { open: boolean; onClose: () => 
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-h-[85dvh] w-[min(92vw,500px)] overflow-y-auto border border-border bg-card p-5 text-card-foreground shadow-2xl">
+      <DialogContent className="max-h-[85dvh] w-[min(92vw,480px)] overflow-y-auto border border-zinc-800 bg-[#0E1015] p-5 text-white shadow-2xl">
         <DialogHeader>
           <div className="flex items-center gap-2 text-amber-500">
             <Wrench className="size-4.5" />
-            <DialogTitle className="font-display text-lg font-bold text-foreground">
+            <DialogTitle className="font-display text-lg font-bold text-white">
               Bancada de Ferramentas
             </DialogTitle>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Ferramentas técnicas operacionais de cálculo, traçado e oficina metálica.
+          <p className="text-xs text-zinc-400">
+            Acesso rápido a todos os recursos técnicos de cálculo, desenho e fabricação.
           </p>
         </DialogHeader>
 
@@ -682,71 +1095,19 @@ function TechnicalToolsSheet({ open, onClose }: { open: boolean; onClose: () => 
                   void navigate({ to: t.to });
                 }
               }}
-              className="flex w-full items-center justify-between gap-3 rounded-2xl border border-border/60 bg-muted/30 p-3 text-left transition-all hover:border-border hover:bg-muted/60 active:scale-[0.99] cursor-pointer touch-manipulation"
+              className="flex w-full items-center justify-between gap-3 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-3 text-left transition-all hover:border-amber-500/50 hover:bg-zinc-900 active:scale-[0.99] cursor-pointer touch-manipulation"
             >
               <div className="flex items-center gap-3">
                 <div className={cn("caldra-bubble-base size-10 shrink-0", t.color)}>
                   <t.icon className="size-5" />
                 </div>
                 <div>
-                  <h4 className="text-sm font-semibold text-foreground">{t.title}</h4>
-                  <p className="text-[11px] text-muted-foreground">{t.desc}</p>
+                  <h4 className="text-sm font-semibold text-white">{t.title}</h4>
+                  <p className="text-[11px] text-zinc-400">{t.desc}</p>
                 </div>
               </div>
-              <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+              <ChevronRight className="size-4 shrink-0 text-zinc-500" />
             </button>
-          ))}
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/** Drawer de Notificações e Novidades Reais */
-function NotificationsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
-  if (!open) return null;
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="max-h-[85dvh] w-[min(92vw,500px)] overflow-y-auto border border-border bg-card p-5 text-card-foreground shadow-2xl">
-        <DialogHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-accent">
-              <Bell className="size-4.5" />
-              <DialogTitle className="font-display text-lg font-bold text-foreground">
-                Novidades e Atualizações
-              </DialogTitle>
-            </div>
-            <span className="font-mono text-[10px] text-muted-foreground">
-              v{APP_VERSION}
-            </span>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Acompanhe as melhorias da sua oficina digital CALDRA.
-          </p>
-        </DialogHeader>
-
-        <div className="mt-4 space-y-3">
-          {CHANGELOG.slice(0, 4).map((entry) => (
-            <div key={entry.version} className="rounded-2xl border border-border/60 bg-muted/30 p-3.5 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="font-display text-sm font-semibold text-foreground flex items-center gap-1.5">
-                  <Sparkles className="size-3.5 text-amber-500" />
-                  {entry.title}
-                </span>
-                <span className="font-mono text-[10px] text-muted-foreground">
-                  v{entry.version} · {entry.date}
-                </span>
-              </div>
-              <ul className="space-y-1 text-xs text-muted-foreground pt-1">
-                {entry.items.map((item, i) => (
-                  <li key={i} className="flex gap-2">
-                    <span className="text-amber-500/80">·</span>
-                    <span>{item}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
           ))}
         </div>
       </DialogContent>

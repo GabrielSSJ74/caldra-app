@@ -17,10 +17,6 @@ import { AudioQuickControl } from "@/components/audio/AudioQuickControl";
 import { CaldraGenesisPreIntro } from "@/components/caldra/CaldraGenesisPreIntro";
 
 const AURORA_ROUTES = [
-  "/",
-  "/projetar",
-  "/produzir",
-  "/aprenda",
   "/perfil",
   "/tracagem",
   "/escola",
@@ -85,16 +81,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <ShellActionsProvider
       value={{ openProfile: () => setProfileOpen(true), openMaster: () => setMasterOpen(true) }}
     >
-      <div className="relative flex min-h-screen flex-col overflow-x-hidden text-foreground">
+      <div
+        className={cn(
+          "relative flex min-h-screen flex-col overflow-x-hidden text-foreground",
+          pathname === "/" || pathname === "/projetar" ? "bg-[#0A0B0E]" : "bg-background",
+        )}
+      >
         <AuroraBackground active={auroraVisible(pathname)} className="fixed inset-0 z-0" />
-        {/* iluminação ambiente */}
-        <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
-          <div className="absolute -top-40 -left-32 size-[26rem] rounded-full bg-accent/8 blur-[120px]" />
-          <div className="absolute -right-32 bottom-0 size-[26rem] rounded-full bg-accent2/8 blur-[120px]" />
-          {isMestre && (
-            <div className="absolute top-1/3 left-1/2 size-[22rem] -translate-x-1/2 rounded-full bg-accent/6 blur-[140px]" />
-          )}
-        </div>
+        {/* iluminação ambiente (desativada na Home, Projetar, Produzir e Aprenda para preservar fundo industrial preto) */}
+        {pathname !== "/" && pathname !== "/projetar" && pathname !== "/produzir" && pathname !== "/aprenda" && (
+          <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
+            <div className="absolute -top-40 -left-32 size-[26rem] rounded-full bg-accent/8 blur-[120px]" />
+            <div className="absolute -right-32 bottom-0 size-[26rem] rounded-full bg-accent2/8 blur-[120px]" />
+            {isMestre && (
+              <div className="absolute top-1/3 left-1/2 size-[22rem] -translate-x-1/2 rounded-full bg-accent/6 blur-[140px]" />
+            )}
+          </div>
+        )}
 
         {!immersive && !standalone && pathname !== "/" && (
           <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
@@ -132,12 +135,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             !immersive && "fade-up",
             immersive || standalone
               ? "p-0"
-              : pathname === "/"
-                ? "px-4 pt-3 pb-24 sm:px-6 sm:pt-5 lg:px-8"
+              : pathname === "/" || pathname === "/projetar" || pathname === "/produzir" || pathname === "/aprenda"
+                ? "p-0 pb-20"
                 : "px-4 pt-16 pb-28 lg:px-10 lg:pt-16 lg:pb-24",
           )}
         >
-          <div className={cn(immersive || standalone ? "w-full" : "mx-auto w-full max-w-6xl")}>
+          <div
+            className={cn(
+              immersive ||
+                standalone ||
+                pathname === "/" ||
+                pathname === "/projetar" ||
+                pathname === "/produzir" ||
+                pathname === "/aprenda"
+                ? "w-full"
+                : "mx-auto w-full max-w-6xl",
+            )}
+          >
             {children}
           </div>
         </main>
