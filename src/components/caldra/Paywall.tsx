@@ -45,9 +45,9 @@ function ComparisonTable() {
         <span className="w-14 text-center">Free</span>
         <span className="w-14 text-center text-pro">Pro</span>
       </div>
-      {COMPARISON.map((row) => (
+      {COMPARISON.map((row, idx) => (
         <div
-          key={row.label}
+          key={`${row.label}-${idx}`}
           className="grid grid-cols-[1fr_auto_auto] items-center gap-x-3 border-b border-line/60 px-3 py-2 text-[13px] last:border-0"
         >
           <span>{row.label}</span>

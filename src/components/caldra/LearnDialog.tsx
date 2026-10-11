@@ -137,8 +137,8 @@ export function LearnDialog({
                     Conferência do traçado
                   </p>
                   <div className="mt-2 grid grid-cols-2 gap-1 font-mono text-[11px]">
-                    {rows.map((r) => (
-                      <div key={r.label} className="flex justify-between gap-2">
+                    {rows.map((r, idx) => (
+                      <div key={`${r.label}-${idx}`} className="flex justify-between gap-2">
                         <span className="truncate text-muted-foreground">{r.label}</span>
                         <span>
                           {formatNumber(r.value, r.suffix === "°" ? 2 : precision)}{" "}

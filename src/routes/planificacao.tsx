@@ -124,8 +124,8 @@ function ManualMode() {
             onChange={(e) => setSheet(SHEETS.find((s) => s.label === e.target.value)!)}
             className="mt-1 w-full rounded-lg border border-line bg-background/50 px-3 py-2.5 text-sm outline-none focus:border-accent"
           >
-            {SHEETS.map((s) => (
-              <option key={s.label} value={s.label}>
+            {SHEETS.map((s, idx) => (
+              <option key={`${s.label}-${idx}`} value={s.label}>
                 {s.label}
               </option>
             ))}
@@ -306,8 +306,8 @@ function ProjectMode({ initialId }: { initialId?: string | undefined }) {
             onChange={(e) => setSheet(SHEETS.find((s) => s.label === e.target.value)!)}
             className="mt-1 w-full rounded-lg border border-line bg-background/50 px-3 py-2.5 text-sm outline-none focus:border-accent"
           >
-            {SHEETS.map((s) => (
-              <option key={s.label} value={s.label}>
+            {SHEETS.map((s, idx) => (
+              <option key={`${s.label}-${idx}`} value={s.label}>
                 {s.label}
               </option>
             ))}

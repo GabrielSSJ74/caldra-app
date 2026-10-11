@@ -96,8 +96,8 @@ function Biblioteca() {
                 </button>
               ) : (
                 <dl className="mt-3 space-y-1 border-t border-line pt-2 font-mono text-[11px]">
-                  {item.data.map((d) => (
-                    <div key={d.label} className="flex justify-between gap-2">
+                  {item.data.map((d, idx) => (
+                    <div key={`${d.label}-${d.value}-${idx}`} className="flex justify-between gap-2">
                       <dt className="text-muted-foreground">{d.label}</dt>
                       <dd>{d.value}</dd>
                     </div>

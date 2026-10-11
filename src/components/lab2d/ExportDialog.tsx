@@ -337,8 +337,8 @@ export function ExportDialog({
                   DXF CNC READY {dxf.preflight.every((r) => r.ok) ? "✓" : "—"}
                 </p>
                 <div className="mt-1 grid grid-cols-1 gap-0.5 font-mono text-[10px] sm:grid-cols-2">
-                  {dxf.preflight.map((row) => (
-                    <p key={row.label} className={row.ok ? "text-muted-foreground" : "text-warn"}>
+                  {dxf.preflight.map((row, idx) => (
+                    <p key={`${row.label}-${idx}`} className={row.ok ? "text-muted-foreground" : "text-warn"}>
                       {row.ok ? "✓" : "✕"} {row.label}: {row.value}
                     </p>
                   ))}

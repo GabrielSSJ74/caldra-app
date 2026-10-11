@@ -40,6 +40,13 @@ import {
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/oficina")({
+  validateSearch: (search: Record<string, unknown>): { tab?: TabId } => ({
+    tab:
+      typeof search.tab === "string" &&
+      ["chapa", "custo", "orcamento", "ficha", "nuvem"].includes(search.tab)
+        ? (search.tab as TabId)
+        : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Oficina — nesting, custo e orçamento | CALDRA" },
@@ -152,7 +159,14 @@ function Oficina() {
   const { regionConfig } = useSettings();
   const materials = useMaterials();
 
-  const [tab, setTab] = useState<TabId>("chapa");
+  const search = Route.useSearch();
+  const [tab, setTab] = useState<TabId>(() => search.tab ?? "chapa");
+
+  useEffect(() => {
+    if (search.tab && TABS.some((t) => t.id === search.tab)) {
+      setTab(search.tab);
+    }
+  }, [search.tab]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [parts, setParts] = useState<ProductionPart[]>([]);
 

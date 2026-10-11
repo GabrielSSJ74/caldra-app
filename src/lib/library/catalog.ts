@@ -63,9 +63,9 @@ export const LIBRARY_ITEMS: LibraryItem[] = [
     title: "Chapas comerciais",
     detail: "Formatos usuais de fornecimento no Brasil.",
     data: [
-      { label: "Formato", value: "1200 × 3000 mm" },
-      { label: "Formato", value: "1500 × 3000 mm" },
-      { label: "Formato", value: "2000 × 6000 mm" },
+      { label: "Formato 1.2×3m", value: "1200 × 3000 mm" },
+      { label: "Formato 1.5×3m", value: "1500 × 3000 mm" },
+      { label: "Formato 2×6m", value: "2000 × 6000 mm" },
       { label: "Espessuras", value: "1,2 a 25,4 mm" },
     ],
     premium: false,

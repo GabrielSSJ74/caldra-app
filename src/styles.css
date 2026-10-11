@@ -252,6 +252,10 @@
   --shadow-panel: 0 12px 36px oklch(0 0 0 / 28%), 0 1px 3px oklch(0 0 0 / 12%);
   --shadow-modal: 0 24px 64px oklch(0 0 0 / 38%), 0 2px 8px oklch(0 0 0 / 16%);
 
+  /* ——— Opacidade Dinâmica da Interface ——— */
+  --card-opacity: 0.90;
+  --bubble-opacity: 0.35;
+
   /* modo claro */
   --background: oklch(0.982 0.004 250);
   --foreground: oklch(0.24 0.021 250);
@@ -2344,4 +2348,200 @@
   .ds-spinner {
     animation-duration: 0s !important;
   }
+}
+
+/* =========================================================================
+   SISTEMA DE TEMAS E OPACIDADE DINÂMICA CALDRA
+   ========================================================================= */
+
+/* Cartões com transparência controlada por --card-opacity */
+.caldra-card {
+  background-color: color-mix(in oklab, #FFFFFF calc(var(--card-opacity, 0.90) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 9%, transparent);
+  box-shadow: 0 4px 18px -2px oklch(0 0 0 / 6%), 0 2px 6px -1px oklch(0 0 0 / 3%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: var(--foreground);
+}
+
+.dark .caldra-card {
+  background-color: color-mix(in oklab, #16181D calc(var(--card-opacity, 0.90) * 100%), transparent);
+  border: 1px solid oklch(1 0 0 / 8%);
+  box-shadow: 0 12px 32px -10px oklch(0 0 0 / 60%), 0 1px 3px oklch(0 0 0 / 25%);
+  color: var(--foreground);
+}
+
+.amoled .caldra-card {
+  background-color: color-mix(in oklab, #000000 calc(var(--card-opacity, 0.90) * 100%), transparent);
+  border: 1px solid oklch(1 0 0 / 12%);
+  box-shadow: 0 0 0 1px oklch(1 0 0 / 4%);
+}
+
+/* Área de apresentação Hero */
+.caldra-hero {
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, #FFFFFF calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, #F1F5F9 calc(var(--card-opacity, 0.90) * 100%), transparent)
+  );
+  border: 1px solid color-mix(in oklab, var(--foreground) 10%, transparent);
+  box-shadow: 0 10px 30px -4px oklch(0 0 0 / 7%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.dark .caldra-hero {
+  background: linear-gradient(
+    135deg,
+    color-mix(in oklab, #181A20 calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, #141519 calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, #0E0F12 calc(var(--card-opacity, 0.90) * 100%), transparent)
+  );
+  border: 1px solid oklch(1 0 0 / 8%);
+  box-shadow: 0 16px 40px -10px oklch(0 0 0 / 70%);
+}
+
+.amoled .caldra-hero {
+  background: color-mix(in oklab, #060709 calc(var(--card-opacity, 0.90) * 100%), transparent);
+  border: 1px solid oklch(1 0 0 / 12%);
+}
+
+/* Faixa Especialização */
+.caldra-specialization {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, #FFFBEB calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, #FEF3C7 calc(var(--card-opacity, 0.90) * 100%), transparent)
+  );
+  border: 1px solid color-mix(in oklab, #F59E0B 40%, transparent);
+  box-shadow: 0 6px 20px -2px oklch(0.7 0.15 70 / 12%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.dark .caldra-specialization {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, #181A20 calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, #1C1E26 calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, #25201A calc(var(--card-opacity, 0.90) * 100%), transparent)
+  );
+  border: 1px solid oklch(0.77 0.163 70 / 25%);
+  box-shadow: 0 12px 30px -8px oklch(0 0 0 / 50%);
+}
+
+.amoled .caldra-specialization {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, #000000 calc(var(--card-opacity, 0.90) * 100%), transparent),
+    color-mix(in oklab, #17120A calc(var(--card-opacity, 0.90) * 100%), transparent)
+  );
+  border: 1px solid oklch(0.77 0.163 70 / 35%);
+}
+
+/* Barra inferior (BubbleNav / Dock) */
+.caldra-dock {
+  background-color: color-mix(in oklab, #FFFFFF calc(var(--card-opacity, 0.95) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+  box-shadow: 0 14px 40px -4px oklch(0 0 0 / 14%), 0 2px 10px -2px oklch(0 0 0 / 6%);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+.dark .caldra-dock {
+  background-color: color-mix(in oklab, #0E1015 calc(var(--card-opacity, 0.95) * 100%), transparent);
+  border: 1px solid oklch(1 0 0 / 10%);
+  box-shadow: 0 18px 48px -6px oklch(0 0 0 / 80%), 0 2px 8px oklch(0 0 0 / 40%);
+}
+
+.amoled .caldra-dock {
+  background-color: color-mix(in oklab, #000000 calc(var(--card-opacity, 0.95) * 100%), transparent);
+  border: 1px solid oklch(1 0 0 / 15%);
+}
+
+/* Bolhas de ícones e acentos controladas por --bubble-opacity */
+.caldra-bubble-base {
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, border-color 0.2s ease;
+}
+
+/* Bolha Vermelha CALDRA */
+.caldra-bubble-red {
+  background-color: color-mix(in oklab, #FEE2E2 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, #EF4444 38%, transparent);
+  color: #DC2626;
+}
+.dark .caldra-bubble-red {
+  background-color: color-mix(in oklab, #450A0A calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid oklch(0.64 0.19 25 / 32%);
+  color: #EF4444;
+}
+
+/* Bolha Azul CAD */
+.caldra-bubble-sky {
+  background-color: color-mix(in oklab, #E0F2FE calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, #0284C7 38%, transparent);
+  color: #0284C7;
+}
+.dark .caldra-bubble-sky {
+  background-color: color-mix(in oklab, #082F49 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid oklch(0.7 0.14 230 / 32%);
+  color: #38BDF8;
+}
+
+/* Bolha Âmbar Técnica */
+.caldra-bubble-amber {
+  background-color: color-mix(in oklab, #FEF3C7 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, #D97706 40%, transparent);
+  color: #D97706;
+}
+.dark .caldra-bubble-amber {
+  background-color: color-mix(in oklab, #451A03 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid oklch(0.77 0.163 70 / 32%);
+  color: #FBBF24;
+}
+
+/* Bolha Verde Orçamentos */
+.caldra-bubble-emerald {
+  background-color: color-mix(in oklab, #D1FAE5 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, #059669 40%, transparent);
+  color: #059669;
+}
+.dark .caldra-bubble-emerald {
+  background-color: color-mix(in oklab, #022C22 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid oklch(0.7 0.15 150 / 32%);
+  color: #34D399;
+}
+
+/* Bolha Índigo / Roxa Especialização */
+.caldra-bubble-indigo {
+  background-color: color-mix(in oklab, #EEF2FF calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, #6366F1 40%, transparent);
+  color: #4F46E5;
+}
+.dark .caldra-bubble-indigo {
+  background-color: color-mix(in oklab, #1E1B4B calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid oklch(0.65 0.16 270 / 32%);
+  color: #A5B4FC;
+}
+
+/* Bolha Neutra (Botões de cabeçalho, atalhos, etc.) */
+.caldra-bubble-neutral {
+  background-color: color-mix(in oklab, var(--card) calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
+  color: var(--foreground);
+}
+.dark .caldra-bubble-neutral {
+  background-color: color-mix(in oklab, #1E2028 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid oklch(1 0 0 / 10%);
+  color: oklch(0.85 0.005 80);
+}
+.amoled .caldra-bubble-neutral {
+  background-color: color-mix(in oklab, #111114 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  border: 1px solid oklch(1 0 0 / 14%);
 }

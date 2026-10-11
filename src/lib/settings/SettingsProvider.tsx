@@ -22,6 +22,9 @@ export type AuroraStyle = "fluido" | "suave" | "padrao";
 
 const KEY = "caldra.settings";
 
+export const DEFAULT_CARD_OPACITY = 90;
+export const DEFAULT_BUBBLE_OPACITY = 35;
+
 export type Settings = {
   theme: ThemeMode;
   accent: AccentColor;
@@ -37,6 +40,10 @@ export type Settings = {
   calcAngle: "RAD" | "DEG" | "GRAD";
   /** Casas decimais exibidas na calculadora científica. */
   calcPlaces: number;
+  /** Opacidade da superfície dos cartões (35% a 100%). */
+  cardOpacity: number;
+  /** Opacidade da superfície das bolhas/círculos de ícones (20% a 100%). */
+  bubbleOpacity: number;
 };
 
 const DEFAULTS: Settings = {
@@ -50,6 +57,8 @@ const DEFAULTS: Settings = {
   auroraStyle: "suave",
   calcAngle: "DEG",
   calcPlaces: 4,
+  cardOpacity: DEFAULT_CARD_OPACITY,
+  bubbleOpacity: DEFAULT_BUBBLE_OPACITY,
 };
 
 type SettingsValue = Settings & {
@@ -63,6 +72,9 @@ type SettingsValue = Settings & {
   setAuroraStyle: (s: AuroraStyle) => void;
   setCalcAngle: (a: "RAD" | "DEG" | "GRAD") => void;
   setCalcPlaces: (n: number) => void;
+  setCardOpacity: (pct: number) => void;
+  setBubbleOpacity: (pct: number) => void;
+  resetAppearance: () => void;
   /** Região resolvida (nunca undefined). */
   regionConfig: Region;
 };
@@ -109,7 +121,25 @@ export function readStoredSettings(): Settings {
       }
     }
 
-    return { ...DEFAULTS, level: saved.level ?? "mestre", ...saved, accent, language, auroraStyle };
+    const cardOpacity =
+      typeof saved.cardOpacity === "number" && !isNaN(saved.cardOpacity)
+        ? Math.min(100, Math.max(35, saved.cardOpacity))
+        : DEFAULT_CARD_OPACITY;
+    const bubbleOpacity =
+      typeof saved.bubbleOpacity === "number" && !isNaN(saved.bubbleOpacity)
+        ? Math.min(100, Math.max(20, saved.bubbleOpacity))
+        : DEFAULT_BUBBLE_OPACITY;
+
+    return {
+      ...DEFAULTS,
+      level: saved.level ?? "mestre",
+      ...saved,
+      accent,
+      language,
+      auroraStyle,
+      cardOpacity,
+      bubbleOpacity,
+    };
   } catch {
     return DEFAULTS;
   }
@@ -127,6 +157,19 @@ function applyToDom(s: Settings) {
   root.classList.toggle("accent-crimson", isCrimson);
   root.classList.toggle("accent-magenta", isCrimson);
   root.lang = s.language === "pt" ? "pt-BR" : s.language;
+
+  const cardOp =
+    Math.min(
+      100,
+      Math.max(35, typeof s.cardOpacity === "number" ? s.cardOpacity : DEFAULT_CARD_OPACITY),
+    ) / 100;
+  const bubbleOp =
+    Math.min(
+      100,
+      Math.max(20, typeof s.bubbleOpacity === "number" ? s.bubbleOpacity : DEFAULT_BUBBLE_OPACITY),
+    ) / 100;
+  root.style.setProperty("--card-opacity", cardOp.toFixed(2));
+  root.style.setProperty("--bubble-opacity", bubbleOp.toFixed(2));
 }
 
 const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
@@ -142,8 +185,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   /* Hidrata do armazenamento antes do primeiro paint. */
   useIsoLayoutEffect(() => {
     const stored = readStoredSettings();
-    // marca o skin hidratado ANTES do estado mudar: a hidratação não é uma
-    // troca voluntária de tema e portanto não acende o véu.
     prevSkin.current = `${stored.theme}:${stored.accent}`;
     applyToDom(stored);
     setSettings(stored);
@@ -159,20 +200,14 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [settings]);
 
-  /* Troca VOLUNTÁRIA de tema/acento com transição suave. A aplicação
-     inicial (e a hidratação do armazenamento) nunca acende o véu. */
+  /* Aplica tema e opacidade no DOM imediatamente. Troca voluntária acende o véu. */
   useIsoLayoutEffect(() => {
-    if (prevSkin.current === null || prevSkin.current === skin) {
-      prevSkin.current = skin;
-      applyToDom(settings);
-      return;
+    applyToDom(settings);
+    if (prevSkin.current !== null && prevSkin.current !== skin) {
+      setVeil((v) => v + 1);
     }
     prevSkin.current = skin;
-    setVeil((v) => v + 1);
-    const swap = window.setTimeout(() => applyToDom(settings), 170);
-    return () => window.clearTimeout(swap);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [skin]);
+  }, [settings, skin]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("mestre", isMestre);
@@ -196,6 +231,24 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setAuroraStyle: (auroraStyle) => setSettings((s) => ({ ...s, auroraStyle })),
       setCalcAngle: (calcAngle) => setSettings((s) => ({ ...s, calcAngle })),
       setCalcPlaces: (calcPlaces) => setSettings((s) => ({ ...s, calcPlaces })),
+      setCardOpacity: (cardOpacity) => {
+        const val = Math.min(100, Math.max(35, cardOpacity));
+        setSettings((s) => ({ ...s, cardOpacity: val }));
+      },
+      setBubbleOpacity: (bubbleOpacity) => {
+        const val = Math.min(100, Math.max(20, bubbleOpacity));
+        setSettings((s) => ({ ...s, bubbleOpacity: val }));
+      },
+      resetAppearance: () => {
+        setSettings((s) => ({
+          ...s,
+          theme: "dark",
+          accent: "crimson",
+          auroraStyle: "suave",
+          cardOpacity: DEFAULT_CARD_OPACITY,
+          bubbleOpacity: DEFAULT_BUBBLE_OPACITY,
+        }));
+      },
       regionConfig: regionOf(settings.region),
     }),
     [settings],

@@ -86,7 +86,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         </div>
 
-        {!immersive && !standalone && (
+        {!immersive && !standalone && pathname !== "/" && (
           <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
             <AudioQuickControl />
             <button
@@ -120,7 +120,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           className={cn(
             "relative z-10 min-w-0 flex-1",
             !immersive && "fade-up",
-            immersive || standalone ? "p-0" : "px-4 pt-16 pb-28 lg:px-10 lg:pt-16 lg:pb-24",
+            immersive || standalone
+              ? "p-0"
+              : pathname === "/"
+                ? "px-4 pt-3 pb-24 sm:px-6 sm:pt-5 lg:px-8"
+                : "px-4 pt-16 pb-28 lg:px-10 lg:pt-16 lg:pb-24",
           )}
         >
           <div className={cn(immersive || standalone ? "w-full" : "mx-auto w-full max-w-6xl")}>

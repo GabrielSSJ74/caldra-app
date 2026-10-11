@@ -674,9 +674,9 @@ export function GeometryStudio({
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-                  {conferenceRows(slug, values, result).map((row) => (
+                  {conferenceRows(slug, values, result).map((row, idx) => (
                     <Metric
-                      key={row.label}
+                      key={`${row.label}-${idx}`}
                       label={row.label}
                       value={row.value}
                       suffix={row.suffix ?? "mm"}

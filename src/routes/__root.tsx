@@ -98,6 +98,10 @@ r.classList.toggle("dark",dark);r.classList.toggle("amoled",t==="amoled");
 r.classList.toggle("accent-default",a==="default");r.classList.toggle("accent-blue",a==="blue");
 var isCrimson=a==="crimson"||a==="magenta";
 r.classList.toggle("accent-crimson",isCrimson);r.classList.toggle("accent-magenta",isCrimson);
+var co=typeof s.cardOpacity==="number"?Math.min(100,Math.max(35,s.cardOpacity)):90;
+var bo=typeof s.bubbleOpacity==="number"?Math.min(100,Math.max(20,s.bubbleOpacity)):35;
+r.style.setProperty("--card-opacity",(co/100).toFixed(2));
+r.style.setProperty("--bubble-opacity",(bo/100).toFixed(2));
 r.lang=s.language==="en"?"en":s.language==="es"?"es":"pt-BR";
 }catch(e){}})();`;
 
