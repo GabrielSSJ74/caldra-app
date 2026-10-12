@@ -11,19 +11,20 @@ import {
   Receipt,
   QrCode,
   Layers,
-  Clock,
   ArrowRight,
-  ExternalLink,
   Flame,
   Activity,
   Scissors,
+  SlidersHorizontal,
+  PenTool,
+  Play,
   CheckCircle2,
-  Sparkles,
   Box,
 } from "lucide-react";
 import {
   useProjects,
   createProject,
+  projectProgress,
   type NewProjectInput,
   type Project,
   PROJECT_STATUS_LABEL,
@@ -348,7 +349,75 @@ const DEMO_PROJECTS: Array<Pick<Project, "id" | "name" | "client" | "status" | "
 ];
 
 /* =========================================================================
-   3. COMPONENTE PRINCIPAL DA PÁGINA PRODUZIR
+   3. HELPER DE ESTADO E FLUXO OPERACIONAL DE PROJETO
+   ========================================================================= */
+
+type ProjectStageInfo = {
+  currentStage: string;
+  nextAction: string;
+  actionText: string;
+  badgeBg: string;
+  badgeText: string;
+  dotColor: string;
+  statusLabel: string;
+  progressColor: string;
+  pct: number;
+  detail: string;
+};
+
+function getProjectStageInfo(project: Project): ProjectStageInfo {
+  const parts = project.parts || [];
+  const pct = projectProgress(project);
+
+  if (project.status === "concluido" || project.status === "entregue") {
+    return {
+      currentStage: "Fabricação Concluída",
+      nextAction: "Conferir memorial técnico & expedição",
+      actionText: "Ver detalhes",
+      badgeBg: "bg-sky-500/10 border-sky-500/30",
+      badgeText: "text-sky-400",
+      dotColor: "bg-sky-400",
+      statusLabel: "Concluído",
+      progressColor: "bg-sky-500",
+      pct: 100,
+      detail: `${parts.length} ${parts.length === 1 ? "peça finalizada" : "peças finalizadas"}`,
+    };
+  }
+
+  if (project.status === "em-producao") {
+    const validatedCount = parts.filter(
+      (p) => p.status === "validada" || p.status === "em-producao" || p.status === "finalizada",
+    ).length;
+    return {
+      currentStage: "Corte CNC & Calandragem",
+      nextAction: "Executar corte e conformação de virolas",
+      actionText: "Continuar trabalho",
+      badgeBg: "bg-emerald-500/10 border-emerald-500/30",
+      badgeText: "text-emerald-400",
+      dotColor: "bg-emerald-400",
+      statusLabel: "Em produção",
+      progressColor: "bg-emerald-500",
+      pct: pct > 0 ? pct : 65,
+      detail: `${validatedCount} de ${parts.length} peças validadas`,
+    };
+  }
+
+  return {
+    currentStage: "Modelagem & Detalhamento",
+    nextAction: "Validar parâmetros e materiais para corte",
+    actionText: "Retomar etapa",
+    badgeBg: "bg-amber-500/10 border-amber-500/30",
+    badgeText: "text-amber-400",
+    dotColor: "bg-amber-400",
+    statusLabel: "Em desenvolvimento",
+    progressColor: "bg-amber-500",
+    pct: pct > 0 ? pct : 30,
+    detail: `${parts.length} ${parts.length === 1 ? "peça cadastrada" : "peças cadastradas"}`,
+  };
+}
+
+/* =========================================================================
+   4. COMPONENTE PRINCIPAL DA PÁGINA PRODUZIR
    ========================================================================= */
 
 function ProduzirPage() {
@@ -369,47 +438,45 @@ function ProduzirPage() {
     }
   };
 
-  // Se houver projetos reais, usamos eles; caso contrário, demonstramos projetos para a experiência visual rica
+  const hasRealProjects = realProjects.length > 0;
   const allProjects = useMemo(() => {
-    if (realProjects.length > 0) return realProjects;
+    if (hasRealProjects) return realProjects;
     return DEMO_PROJECTS as unknown as Project[];
-  }, [realProjects]);
+  }, [hasRealProjects, realProjects]);
 
-  // Projeto mais recente em destaque para o Banner Cinema
   const featuredProject = useMemo(() => {
-    if (realProjects.length > 0) {
+    if (hasRealProjects) {
       return [...realProjects].sort((a, b) => b.updatedAt - a.updatedAt)[0];
     }
     return DEMO_PROJECTS[0] as unknown as Project;
-  }, [realProjects]);
+  }, [hasRealProjects, realProjects]);
 
-  // Filtragem para o carrossel de cards estilo streaming
   const filteredProjects = useMemo(() => {
     if (selectedFilter === "todos") return allProjects;
     return allProjects.filter((p) => {
       if (selectedFilter === "em-producao") return p.status === "em-producao";
-      if (selectedFilter === "em-desenvolvimento") return p.status === "em-desenvolvimento" || p.status === "rascunho";
-      if (selectedFilter === "concluido") return p.status === "concluido" || p.status === "entregue";
+      if (selectedFilter === "em-desenvolvimento")
+        return p.status === "em-desenvolvimento" || p.status === "rascunho";
+      if (selectedFilter === "concluido")
+        return p.status === "concluido" || p.status === "entregue";
       return true;
     });
   }, [allProjects, selectedFilter]);
 
-  // Estatística de chão de fábrica
   const totalPartsInProduction = useMemo(() => {
     return allProjects.reduce((acc, p) => acc + (p.parts?.length || 0), 0);
   }, [allProjects]);
 
+  const featuredStage = getProjectStageInfo(featuredProject);
+
   return (
     <div className="relative w-full min-h-screen bg-transparent text-foreground overflow-x-hidden selection:bg-amber-500/30 selection:text-amber-200">
-      <NavigationAreaContainer>
-        
+      <NavigationAreaContainer className="space-y-4 px-4 sm:px-5 pb-[calc(7.5rem+env(safe-area-inset-bottom,24px))]">
         {/* =========================================================================
-            A. IDENTIFICADOR DA ÁREA (SEM CABEÇALHO GLOBAL REDUNDANTE)
-            - Marca de módulo: "ORCE E FABRIQUE — PRODUÇÃO & OFICINA"
-            - Identidade industrial com LED pulsante verde/esmeralda
+            A. IDENTIFICADOR DA ÁREA & CHÃO DE FÁBRICA
             ========================================================================= */}
         <NavigationAreaHeader
-          badgeText="OFICINA & FABRICAÇÃO"
+          badgeText="OPERAÇÃO & CHÃO DE FÁBRICA"
           badgeColor="text-emerald-500"
           indicatorColor="bg-emerald-500"
           secondaryBadge={
@@ -417,105 +484,113 @@ function ProduzirPage() {
               CALDRA SHOP
             </span>
           }
-          title="Orce e Fabrique"
-          description="Gestão de projetos de fabricação, documentação técnica, gabaritos, custos e ferramentas de oficina."
+          title="Produzir"
+          description="Acompanhamento e execução de fabricação, fichas de bancada, corte CNC e custos de oficina."
           actions={
-            <div className="flex items-center gap-1.5 font-mono text-[9px] text-muted-foreground bg-card/60 border border-border/70 rounded-lg px-2.5 py-1">
-              <Activity className="size-3 text-emerald-400" />
-              <span>{totalPartsInProduction} PEÇAS EM LINHA</span>
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("success");
+                AudioManager.play("ui_pop");
+                setNewProjectOpen(true);
+              }}
+              className="flex items-center gap-1.5 font-mono text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 active:scale-95 transition-all rounded-lg px-2.5 py-1.5 cursor-pointer touch-manipulation"
+              title="Iniciar nova ordem de trabalho"
+            >
+              <Plus className="size-3.5 stroke-[2.5]" />
+              <span>Novo Trabalho</span>
+            </button>
           }
         />
 
         {/* =========================================================================
-            B. BANNER HERO DE PRODUÇÃO — AMBIENTE CINEMATOGRÁFICO DE CORTE & GESTÃO
-            - Estética profissional Netflix / Cinema de Engenharia
-            - Destaque para o projeto ativo ou linha de corte integrada
-            - Gráfico técnico vetorial de aproveitamento de chapa & nesting
-            - Ações de criação direta e gerenciamento de dossiês
+            B. DESTAQUE OPERACIONAL: TRABALHO PRIORITÁRIO EM ANDAMENTO (LARGURA TOTAL)
+            - Altura compacta (110–136 px) determinada pelo conteúdo
+            - Marcador de etapa de 32 px
+            - Hierarquia vertical clara: Nome -> Estado & Próxima Ação -> Barra -> Ação
             ========================================================================= */}
         <section
-          aria-label="Central de Fabricação em Destaque"
-          className="relative overflow-hidden rounded-2xl border border-zinc-800/90 bg-gradient-to-b from-[#13161F] to-[#0A0D12] shadow-2xl p-3.5 space-y-3"
+          aria-label="Trabalho prioritário em execução"
+          className="caldra-hero relative overflow-hidden rounded-2xl border border-zinc-800/90 bg-gradient-to-b from-[#13161F] to-[#0A0D12] shadow-2xl p-3 sm:p-3.5 space-y-2.5"
         >
-          {/* Header do Hero: Status de Produção + Identificador */}
+          {/* Linha superior: Marcador de etapa (32 px) + Título + Status */}
           <div className="flex items-center justify-between gap-2 border-b border-zinc-800/60 pb-2">
             <div className="flex items-center gap-2 min-w-0">
-              <div className="flex size-7 items-center justify-center rounded-lg bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 shrink-0">
-                <Flame className="size-4" strokeWidth={2} />
+              <div className="caldra-bubble-base caldra-bubble-emerald size-8 shrink-0">
+                <Flame className="size-4 stroke-[2]" />
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <span className="font-mono text-[9px] font-bold text-emerald-400 uppercase">
-                    01 • CHÃO DE FÁBRICA
+                  <span className="font-mono text-[8.5px] font-bold text-emerald-400 uppercase">
+                    TRABALHO EM EXECUÇÃO
                   </span>
-                  <span className="font-mono text-[8px] text-zinc-400 bg-zinc-800/80 px-1 rounded">
-                    CNC & MONTAGEM
+                  <span className="font-mono text-[7.5px] text-zinc-400 bg-zinc-800/80 px-1 rounded truncate">
+                    {featuredProject.client || "Oficina Interna"}
                   </span>
                 </div>
                 <h2 className="font-display text-sm font-bold text-zinc-100 truncate">
-                  {featuredProject?.name || "Ordem de Fabricação CALDRA"}
+                  {featuredProject.name}
                 </h2>
               </div>
             </div>
 
-            <div className="flex items-center gap-1 shrink-0">
-              <span className="inline-flex items-center gap-1 rounded-md bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 font-mono text-[8px] font-semibold text-emerald-400">
-                <span className="size-1 rounded-full bg-emerald-400 animate-pulse" />
-                {PROJECT_STATUS_LABEL[featuredProject?.status || "em-producao"]}
-              </span>
+            <span
+              className={cn(
+                "inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[8px] font-semibold border shrink-0",
+                featuredStage.badgeBg,
+                featuredStage.badgeText,
+              )}
+            >
+              <span className={cn("size-1.5 rounded-full animate-pulse", featuredStage.dotColor)} />
+              {featuredStage.statusLabel}
+            </span>
+          </div>
+
+          {/* Estado atual e próxima ação de maneira claramente visível */}
+          <div className="rounded-xl bg-zinc-900/60 border border-zinc-800/70 p-2 space-y-1.5 text-left">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-[10px] font-mono leading-tight">
+              <div>
+                <span className="text-zinc-400">Etapa ativa: </span>
+                <span className="font-bold text-zinc-200">{featuredStage.currentStage}</span>
+              </div>
+              <div className="truncate">
+                <span className="text-zinc-400">Próxima ação: </span>
+                <span className="font-bold text-emerald-400">{featuredStage.nextAction}</span>
+              </div>
+            </div>
+
+            {/* Barra de progresso discreta + percentual */}
+            <div className="space-y-1 pt-0.5">
+              <div className="flex items-center justify-between text-[8.5px] font-mono text-zinc-400">
+                <span>Progresso da ordem</span>
+                <span className="font-bold text-emerald-400">{featuredStage.pct}% ({featuredStage.detail})</span>
+              </div>
+              <div className="h-1 w-full bg-zinc-800/90 rounded-full overflow-hidden">
+                <div
+                  className={cn("h-full rounded-full transition-all duration-500", featuredStage.progressColor)}
+                  style={{ width: `${featuredStage.pct}%` }}
+                />
+              </div>
             </div>
           </div>
 
-          {/* Viewport Visual do Hero: Nesting em Chapa Metálica */}
-          <div className="relative h-44 w-full rounded-xl border border-zinc-800/90 bg-gradient-to-b from-[#090C12] to-[#06080C] overflow-hidden flex items-center justify-center">
-            {/* Grid blueprint industrial de fundo */}
-            <div
-              className="absolute inset-0 pointer-events-none opacity-20"
-              style={{
-                backgroundImage:
-                  "radial-gradient(#10b981 0.75px, transparent 0.75px), radial-gradient(#38bdf8 0.5px, transparent 0.5px)",
-                backgroundSize: "20px 20px, 40px 40px",
-                backgroundPosition: "0 0, 10px 10px",
-              }}
-            />
-
-            <SheetNestingGraphic className="size-full p-2" />
-
-            {/* Overlay informativo com cotas rápidas */}
-            <div className="pointer-events-none absolute bottom-2 left-2.5 flex items-center gap-2 bg-zinc-950/80 backdrop-blur-md border border-zinc-800/80 px-2 py-0.5 rounded-md text-[9px] font-mono">
-              <span className="text-zinc-400">Plano de Corte:</span>
-              <span className="text-emerald-400 font-bold">1200 x 3000 mm</span>
-              <span className="text-zinc-500">•</span>
-              <span className="text-amber-400 font-bold">Zero Desperdício</span>
-            </div>
-          </div>
-
-          {/* Metadados técnicos do projeto e CTAs operacionais */}
-          <div className="flex flex-col gap-2.5">
-            <div className="grid grid-cols-3 gap-2 rounded-xl bg-zinc-900/60 border border-zinc-800/70 p-2">
-              <div className="flex flex-col">
-                <span className="font-mono text-[8px] text-zinc-400 uppercase">CLIENTE</span>
-                <span className="font-mono text-[10px] font-bold text-zinc-200 truncate">
-                  {featuredProject?.client || "Oficina Interna"}
-                </span>
-              </div>
-              <div className="flex flex-col">
-                <span className="font-mono text-[8px] text-zinc-400 uppercase">VOLUME</span>
-                <span className="font-mono text-[10px] font-bold text-emerald-400">
-                  {featuredProject?.parts?.length || 0} Peças
-                </span>
-              </div>
-              <div className="flex flex-col">
-                <span className="font-mono text-[8px] text-zinc-400 uppercase">EXPEDIÇÃO</span>
-                <span className="font-mono text-[10px] font-bold text-amber-400">
-                  Pronto p/ Corte
-                </span>
-              </div>
-            </div>
-
-            {/* Ações principais: Novo Projeto + Abrir Dossiês */}
-            <div className="flex items-center gap-2">
+          {/* Ações e fluxo de trabalho: Próxima ação lógica em destaque */}
+          <div className="flex items-center gap-2 pt-0.5">
+            {hasRealProjects ? (
+              <Link
+                to="/projetos/$projectId"
+                params={{ projectId: featuredProject.id }}
+                onClick={() => {
+                  triggerHaptic("success");
+                  AudioManager.play("ui_action");
+                }}
+                className="flex-1 flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] px-3 font-display text-xs font-bold text-zinc-950 shadow-md transition-all cursor-pointer"
+              >
+                <Play className="size-3.5 fill-current stroke-none" />
+                <span>{featuredStage.actionText}</span>
+                <ArrowRight className="size-3.5 ml-auto stroke-[2.5]" />
+              </Link>
+            ) : (
               <button
                 type="button"
                 onClick={() => {
@@ -523,45 +598,48 @@ function ProduzirPage() {
                   AudioManager.play("ui_action");
                   setNewProjectOpen(true);
                 }}
-                className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-emerald-500 via-emerald-600 to-teal-700 px-3.5 py-2.5 font-display text-xs font-bold text-zinc-950 shadow-lg shadow-emerald-500/20 hover:from-emerald-400 hover:to-emerald-600 active:scale-[0.98] transition-all cursor-pointer"
+                className="flex-1 flex h-10 items-center justify-center gap-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-[0.98] px-3 font-display text-xs font-bold text-zinc-950 shadow-md transition-all cursor-pointer"
               >
-                <Plus className="size-4" strokeWidth={2.4} />
-                <span>Criar Novo Projeto</span>
-                <ArrowRight className="size-3.5 ml-auto text-zinc-950" />
+                <Play className="size-3.5 fill-current stroke-none" />
+                <span>Iniciar este trabalho</span>
+                <ArrowRight className="size-3.5 ml-auto stroke-[2.5]" />
               </button>
+            )}
 
-              <Link
-                to="/projetos"
-                onClick={() => {
-                  triggerHaptic("tap");
-                  AudioManager.play("ui_nav");
-                }}
-                className="flex items-center justify-center rounded-xl border border-zinc-700/80 bg-zinc-800/80 px-3 py-2.5 font-mono text-xs font-semibold text-zinc-300 hover:bg-zinc-700 active:scale-[0.98] transition-all cursor-pointer"
-                title="Ver todos os projetos salvos"
-              >
-                <span>Dossiês</span>
-                <ChevronRight className="size-3.5 text-zinc-400 ml-0.5" />
-              </Link>
-            </div>
+            <Link
+              to="/projetos"
+              onClick={() => {
+                triggerHaptic("tap");
+                AudioManager.play("ui_nav");
+              }}
+              className="flex h-10 items-center justify-center rounded-xl border border-zinc-700/80 bg-zinc-800/80 px-3 font-mono text-xs font-semibold text-zinc-300 hover:bg-zinc-700 active:scale-[0.98] transition-all cursor-pointer"
+              title="Ver todos os dossiês salvos"
+            >
+              <span>Ver detalhes</span>
+            </Link>
           </div>
         </section>
 
         {/* =========================================================================
-            C. CARROSSEL HORIZONTAL DE PROJETOS (UX ESTILO NETFLIX)
-            - Faixa deslizável com proporções cinematográficas
-            - Cards escuros com bordas finas e informações técnicas diretas
-            - Filtro de abas por status de produção
+            C. TRABALHOS EM ANDAMENTO — CARTÕES OPERACIONAIS DE LARGURA TOTAL
+            - Proporção própria para Produzir: Cartões de 104–136 px de largura total
+            - Marcadores de etapa: 28–32 px
+            - Hierarquia vertical: Nome principal -> Referência/Cliente -> Estado -> Ação
             ========================================================================= */}
-        <section aria-label="Projetos em Andamento" className="space-y-2">
-          <div className="flex items-center justify-between">
+        <section aria-label="Ordens de Fabricação" className="space-y-2.5">
+          <div className="flex items-center justify-between px-0.5">
             <div className="flex items-center gap-1.5">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              <h2 className="font-display text-xs font-bold uppercase tracking-wider text-zinc-200">
-                Dossiês & Pacotes de Fabricação
+              <span className="size-1.5 rounded-full bg-emerald-400" />
+              <h2 className="font-display text-xs font-bold uppercase tracking-wider text-muted-foreground">
+                Trabalhos em Andamento
               </h2>
             </div>
             <Link
               to="/projetos"
+              onClick={() => {
+                triggerHaptic("tap");
+                AudioManager.play("ui_nav");
+              }}
               className="font-mono text-[10px] text-emerald-400 hover:underline flex items-center gap-0.5"
             >
               <span>Ver todos ({allProjects.length})</span>
@@ -569,8 +647,8 @@ function ProduzirPage() {
             </Link>
           </div>
 
-          {/* Filtros em abas deslizantes sutis */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+          {/* Filtros operacionais compactos */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar overscroll-x-contain -mx-4 sm:-mx-5 px-4 sm:px-5">
             {PROJECT_FILTERS.map((filter) => {
               const active = selectedFilter === filter.id;
               return (
@@ -583,10 +661,10 @@ function ProduzirPage() {
                     setSelectedFilter(filter.id);
                   }}
                   className={cn(
-                    "shrink-0 rounded-lg px-2.5 py-1 font-mono text-[10px] font-semibold transition-all cursor-pointer",
+                    "shrink-0 min-h-[32px] rounded-lg px-2.5 py-1 font-mono text-[10px] font-semibold transition-all cursor-pointer touch-manipulation active:scale-95",
                     active
-                      ? "bg-emerald-500 text-zinc-950 font-bold shadow-md shadow-emerald-500/20"
-                      : "bg-zinc-900 border border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700",
+                      ? "bg-emerald-500 text-zinc-950 font-bold shadow-sm"
+                      : "bg-card border border-border text-muted-foreground hover:text-foreground",
                   )}
                 >
                   {filter.label}
@@ -595,33 +673,12 @@ function ProduzirPage() {
             })}
           </div>
 
-          {/* Carrossel de Cards Horizontais */}
-          <div className="flex gap-2.5 overflow-x-auto pb-1.5 pt-0.5 no-scrollbar snap-x">
-            {/* Card para criação rápida */}
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("tap");
-                AudioManager.play("ui_pop");
-                setNewProjectOpen(true);
-              }}
-              className="group relative flex w-36 shrink-0 flex-col items-center justify-center rounded-xl border border-dashed border-zinc-700/80 bg-zinc-900/40 p-3 hover:border-emerald-500/60 hover:bg-zinc-900/80 active:scale-95 transition-all snap-start cursor-pointer text-center"
-            >
-              <div className="flex size-10 items-center justify-center rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 group-hover:scale-110 transition-transform">
-                <Plus className="size-5" />
-              </div>
-              <span className="mt-2 font-display text-[11px] font-bold text-zinc-200">
-                Novo Dossiê
-              </span>
-              <span className="font-mono text-[8px] text-zinc-400 mt-0.5">
-                Iniciar pacote de peças
-              </span>
-            </button>
-
+          {/* Lista vertical de cartões operacionais de largura total (espaçamento 12–16 px) */}
+          <div className="space-y-3">
             {filteredProjects.map((p) => {
               const isReal = realProjects.some((rp) => rp.id === p.id);
+              const stage = getProjectStageInfo(p);
               const partCount = p.parts?.length || 0;
-              const statusLabel = PROJECT_STATUS_LABEL[p.status] || "Em produção";
 
               return (
                 <div
@@ -635,55 +692,59 @@ function ProduzirPage() {
                       setNewProjectOpen(true);
                     }
                   }}
-                  className="group relative flex w-44 shrink-0 flex-col rounded-xl border border-zinc-800/90 bg-gradient-to-b from-[#13161F] to-[#0A0D12] p-2.5 transition-all hover:border-emerald-500/50 hover:shadow-lg active:scale-95 snap-start cursor-pointer"
+                  className="caldra-card group flex min-h-[108px] sm:min-h-[116px] flex-col justify-between rounded-xl p-3 sm:p-3.5 transition-all hover:border-emerald-500/40 active:scale-[0.99] cursor-pointer text-left"
                 >
-                  {/* Thumbnail técnica com indicador de status */}
-                  <div className="relative h-20 w-full rounded-lg bg-[#07090D] border border-zinc-800/80 overflow-hidden flex flex-col justify-between p-2">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-[7px] font-bold text-emerald-400 uppercase bg-emerald-950/80 px-1 py-0.2 rounded border border-emerald-800/60">
-                        {statusLabel}
-                      </span>
-                      <span className="font-mono text-[8px] text-zinc-400">
-                        {partCount} {partCount === 1 ? "peça" : "peças"}
-                      </span>
+                  {/* Linha 1: Marcador de etapa (28 px) + Nome da tarefa principal + Badge de status */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-mono text-[10px] font-bold">
+                        <FolderKanban className="size-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="font-display text-[13px] sm:text-[14px] font-bold text-foreground leading-tight truncate group-hover:text-emerald-400 transition-colors">
+                          {p.name}
+                        </h3>
+                        <p className="font-mono text-[9px] text-muted-foreground truncate">
+                          {p.client ? `Cliente: ${p.client}` : "Dossiê técnico de oficina"}
+                        </p>
+                      </div>
                     </div>
 
-                    <div className="flex items-center gap-1.5">
-                      <FolderKanban className="size-4 text-emerald-400 shrink-0" />
-                      <span className="font-mono text-[9px] text-zinc-300 font-semibold truncate">
-                        {p.client || "Cliente Direto"}
-                      </span>
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[7.5px] font-bold border shrink-0",
+                        stage.badgeBg,
+                        stage.badgeText,
+                      )}
+                    >
+                      <span className={cn("size-1 rounded-full", stage.dotColor)} />
+                      {stage.statusLabel}
+                    </span>
+                  </div>
+
+                  {/* Linha 2: Estado atual e próxima ação em segundo plano */}
+                  <div className="my-1 text-[9.5px] font-mono text-muted-foreground flex items-center justify-between gap-1 leading-snug">
+                    <span className="truncate">
+                      <strong className="text-foreground">{stage.currentStage}</strong> • {stage.nextAction}
+                    </span>
+                    <span className="shrink-0 text-emerald-500 font-bold">
+                      {partCount} {partCount === 1 ? "peça" : "peças"}
+                    </span>
+                  </div>
+
+                  {/* Linha 3: Barra fina de progresso + Ação clara com alvo confortável */}
+                  <div className="space-y-1.5 pt-1 border-t border-border/50">
+                    <div className="h-1 w-full bg-border/60 rounded-full overflow-hidden">
+                      <div
+                        className={cn("h-full rounded-full transition-all", stage.progressColor)}
+                        style={{ width: `${stage.pct}%` }}
+                      />
                     </div>
-                  </div>
 
-                  {/* Informações do projeto */}
-                  <div className="mt-2 flex flex-col min-w-0">
-                    <span className="font-display text-xs font-bold text-zinc-100 truncate group-hover:text-emerald-400 transition-colors">
-                      {p.name}
-                    </span>
-                    <span className="font-mono text-[8px] text-zinc-400 line-clamp-1 mt-0.5">
-                      {p.client ? `Obra: ${p.client}` : "Dossiê técnico padrão"}
-                    </span>
-                  </div>
-
-                  {/* Barra de progresso visual */}
-                  <div className="mt-2 w-full bg-zinc-800/80 h-1 rounded-full overflow-hidden">
-                    <div
-                      className="bg-emerald-500 h-full rounded-full transition-all"
-                      style={{
-                        width:
-                          p.status === "concluido" || p.status === "entregue"
-                            ? "100%"
-                            : p.status === "em-producao"
-                              ? "65%"
-                              : "25%",
-                      }}
-                    />
-                  </div>
-
-                  <div className="mt-2 flex items-center justify-between pt-1 border-t border-zinc-800/70 text-[9px] font-mono text-emerald-400">
-                    <span>Acessar Peças</span>
-                    <ArrowRight className="size-2.5 transition-transform group-hover:translate-x-0.5" />
+                    <div className="flex items-center justify-between text-[9px] font-mono text-emerald-400">
+                      <span>{stage.actionText}</span>
+                      <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" />
+                    </div>
                   </div>
                 </div>
               );
@@ -692,50 +753,21 @@ function ProduzirPage() {
         </section>
 
         {/* =========================================================================
-            D. DESENHOS TÉCNICOS E GABARITOS (AZUL-CIANO / ÂMBAR)
-            - Ficha de produção com QR code e documentação técnica
-            - Pranchas em PDF e gabaritos de bancada
-            - Motor vetorial CAD
+            D. ETAPAS DO FLUXO DE FABRICAÇÃO — CARTÕES OPERACIONAIS DE LARGURA TOTAL
+            - Sequência de processo: 01. Ficha QR -> 02. Chapa & Nesting -> 03. Custos BDI
+            - Marcadores de etapa: 28–32 px
+            - Ações contextuais de execução: Emitir, Otimizar, Calcular
             ========================================================================= */}
-        <section
-          aria-labelledby="section-documentos"
-          className="relative overflow-hidden rounded-2xl border border-zinc-800/90 bg-gradient-to-b from-[#121620] to-[#0A0D14] p-3.5 space-y-3 shadow-xl"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex size-9 items-center justify-center rounded-xl bg-sky-500/15 border border-sky-500/40 text-sky-400 shrink-0 shadow-inner">
-                <FileText className="size-5" strokeWidth={1.8} />
-              </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono text-[10px] font-bold text-sky-400">02</span>
-                  <h2 id="section-documentos" className="font-display text-sm font-bold text-zinc-100">
-                    Desenhos Técnicos & Gabaritos
-                  </h2>
-                </div>
-                <p className="text-[11px] text-zinc-400">
-                  Pranchas para corte, arquivos CAD e fichas de bancada com QR.
-                </p>
-              </div>
-            </div>
-
-            <Link
-              to="/oficina"
-              search={{ tab: "ficha" }}
-              onClick={() => {
-                triggerHaptic("tap");
-                AudioManager.play("ui_nav");
-              }}
-              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-sky-500/30 bg-sky-500/10 px-2 py-1 text-[10px] font-semibold text-sky-400 hover:bg-sky-500/20 active:scale-95 transition-all cursor-pointer"
-            >
-              <span>Fichas</span>
-              <ChevronRight className="size-3" />
-            </Link>
+        <section aria-label="Etapas de Fabricação" className="space-y-2.5">
+          <div className="flex items-center gap-1.5 px-0.5">
+            <span className="size-1.5 rounded-full bg-sky-500" />
+            <h2 className="font-display text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Etapas do Fluxo de Fabricação
+            </h2>
           </div>
 
-          {/* Cards Visuais da Documentação Técnica */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {/* Card 1: Ficha de Bancada QR */}
+          <div className="space-y-3">
+            {/* Etapa 01: Ficha de Produção & Inspeção de Bancada (QR) */}
             <Link
               to="/oficina"
               search={{ tab: "ficha" }}
@@ -743,146 +775,82 @@ function ProduzirPage() {
                 triggerHaptic("selection");
                 AudioManager.play("ui_pop");
               }}
-              className="group flex flex-col justify-between rounded-xl border border-zinc-800/80 bg-[#090C12] p-2.5 hover:border-sky-500/50 transition-all active:scale-[0.98]"
+              className="caldra-card group flex min-h-[104px] sm:min-h-[114px] flex-col justify-between rounded-xl p-3 sm:p-3.5 transition-all hover:border-sky-500/40 active:scale-[0.99] cursor-pointer text-left"
             >
-              <div className="relative h-24 w-full rounded-lg bg-[#06080E] border border-zinc-800/80 overflow-hidden flex items-center justify-center">
-                <ProductionTravelerGraphic className="size-full" />
-                <div className="absolute top-1.5 right-1.5 bg-zinc-950/80 border border-zinc-800 rounded px-1.5 py-0.5 text-[8px] font-mono text-sky-400">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="caldra-bubble-base caldra-bubble-sky size-8 shrink-0">
+                    <FileText className="size-4 stroke-[1.9]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[8px] font-bold text-sky-400 uppercase">
+                        ETAPA 01 • RASTREABILIDADE
+                      </span>
+                    </div>
+                    <h3 className="font-display text-[13px] sm:text-[14px] font-bold text-foreground leading-tight group-hover:text-sky-400 transition-colors">
+                      Ficha de Produção & Inspeção (QR)
+                    </h3>
+                  </div>
+                </div>
+
+                <span className="font-mono text-[7.5px] font-bold text-sky-400 bg-sky-500/10 border border-sky-500/30 px-1.5 py-0.5 rounded shrink-0">
                   QR SCAN
-                </div>
+                </span>
               </div>
 
-              <div className="mt-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-display text-xs font-bold text-zinc-100 group-hover:text-sky-400 transition-colors">
-                    Ficha de Produção (QR)
-                  </h3>
-                  <QrCode className="size-3.5 text-sky-400" />
-                </div>
-                <p className="mt-0.5 text-[10px] text-zinc-400 line-clamp-2">
-                  Rastreabilidade de corte, dobras, inspeção dimensional e montagem.
-                </p>
-              </div>
+              <p className="text-[9.5px] sm:text-[10px] text-muted-foreground my-1 leading-snug">
+                Roteiro de corte, calandragem, tolerâncias e apontamento dimensional de bancada.
+              </p>
 
-              <div className="mt-2.5 flex items-center justify-between pt-1 border-t border-zinc-800/60 font-mono text-[9px] text-sky-400">
+              <div className="flex items-center justify-between text-[9px] font-mono text-sky-400 pt-1 border-t border-border/50">
                 <span>Emitir Ficha de Bancada</span>
-                <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" />
+                <ArrowRight className="size-3 group-hover:translate-x-0.5 transition-transform shrink-0" />
               </div>
             </Link>
 
-            {/* Card 2: Pranchas & Gabaritos CAD 1:1 */}
+            {/* Etapa 02: Aproveitamento de Chapa & Nesting CNC */}
             <Link
-              to="/desenho-2d"
+              to="/planificacao"
               onClick={() => {
                 triggerHaptic("selection");
                 AudioManager.play("ui_pop");
               }}
-              className="group flex flex-col justify-between rounded-xl border border-zinc-800/80 bg-[#090C12] p-2.5 hover:border-sky-500/50 transition-all active:scale-[0.98]"
+              className="caldra-card group flex min-h-[104px] sm:min-h-[114px] flex-col justify-between rounded-xl p-3 sm:p-3.5 transition-all hover:border-emerald-500/40 active:scale-[0.99] cursor-pointer text-left"
             >
-              <div className="relative h-24 w-full rounded-lg bg-[#06080E] border border-zinc-800/80 overflow-hidden flex items-center justify-center">
-                <CadBlueprintTravelerGraphic className="size-full" />
-                <div className="absolute top-1.5 right-1.5 bg-zinc-950/80 border border-zinc-800 rounded px-1.5 py-0.5 text-[8px] font-mono text-amber-400">
-                  DXF / SVG
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="caldra-bubble-base caldra-bubble-emerald size-8 shrink-0">
+                    <Scissors className="size-4 stroke-[1.9]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[8px] font-bold text-emerald-400 uppercase">
+                        ETAPA 02 • CORTE CNC
+                      </span>
+                    </div>
+                    <h3 className="font-display text-[13px] sm:text-[14px] font-bold text-foreground leading-tight group-hover:text-emerald-400 transition-colors">
+                      Aproveitamento de Chapa & Nesting
+                    </h3>
+                  </div>
                 </div>
-              </div>
 
-              <div className="mt-2">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-display text-xs font-bold text-zinc-100 group-hover:text-amber-400 transition-colors">
-                    Pranchas e Gabaritos CAD
-                  </h3>
-                  <Layers className="size-3.5 text-amber-400" />
-                </div>
-                <p className="mt-0.5 text-[10px] text-zinc-400 line-clamp-2">
-                  Exportação de contornos e arquivos DXF 1:1 para mesa de corte CNC.
-                </p>
-              </div>
-
-              <div className="mt-2.5 flex items-center justify-between pt-1 border-t border-zinc-800/60 font-mono text-[9px] text-amber-400">
-                <span>Abrir Editor Vetorial</span>
-                <ArrowRight className="size-3 transition-transform group-hover:translate-x-0.5" />
-              </div>
-            </Link>
-          </div>
-        </section>
-
-        {/* =========================================================================
-            E. OFICINA, NESTING & CUSTOS (VERDE-ESMERALDA / TURQUESA)
-            - Chapa e aproveitamento de corte (nesting de retalho)
-            - Custos de fabricação (tarifas horárias de laser, calandra, solda)
-            - Orçamentos comerciais (margem, impostos e proposta PDF)
-            ========================================================================= */}
-        <section
-          aria-labelledby="section-oficina"
-          className="relative overflow-hidden rounded-2xl border border-zinc-800/90 bg-gradient-to-b from-[#121815] to-[#0A0E0C] p-3.5 space-y-3 shadow-xl"
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="flex size-9 items-center justify-center rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-400 shrink-0 shadow-inner">
-                <Wrench className="size-5" strokeWidth={1.8} />
-              </div>
-              <div>
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono text-[10px] font-bold text-emerald-400">03</span>
-                  <h2 id="section-oficina" className="font-display text-sm font-bold text-zinc-100">
-                    Oficina & Custos de Fabricação
-                  </h2>
-                </div>
-                <p className="text-[11px] text-zinc-400">
-                  Nesting de chapas, tarifas de máquina e orçamentos em PDF.
-                </p>
-              </div>
-            </div>
-
-            <Link
-              to="/oficina"
-              onClick={() => {
-                triggerHaptic("tap");
-                AudioManager.play("ui_nav");
-              }}
-              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-2 py-1 text-[10px] font-semibold text-emerald-400 hover:bg-emerald-500/20 active:scale-95 transition-all cursor-pointer"
-            >
-              <span>Abrir Oficina</span>
-              <ChevronRight className="size-3" />
-            </Link>
-          </div>
-
-          {/* Gráfico de Economia / Custos Industriais */}
-          <div className="relative h-24 w-full rounded-xl border border-zinc-800/80 bg-[#070B09] overflow-hidden flex items-center justify-center">
-            <WorkshopEconomicsGraphic className="size-full" />
-            <div className="absolute bottom-1.5 left-2.5 right-2.5 flex items-center justify-between text-[9px] font-mono">
-              <span className="text-zinc-400 bg-zinc-950/80 px-2 py-0.5 rounded border border-zinc-800">
-                TARIFAS ATUALIZADAS
-              </span>
-              <span className="text-emerald-400 font-bold">MÁXIMA EFICIÊNCIA</span>
-            </div>
-          </div>
-
-          {/* Grid de módulos especializados */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <Link
-              to="/oficina"
-              search={{ tab: "chapa" }}
-              onClick={() => {
-                triggerHaptic("selection");
-                AudioManager.play("ui_pop");
-              }}
-              className="group flex flex-col justify-between rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-2.5 transition-all hover:border-emerald-500/40 hover:bg-zinc-900/80 active:scale-[0.98]"
-            >
-              <div className="flex items-center justify-between">
-                <Grid2x2 className="size-4 text-emerald-400" />
-                <ArrowRight className="size-3 text-zinc-500 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-400" />
-              </div>
-              <div className="mt-2">
-                <span className="font-mono text-xs font-semibold text-zinc-100 block group-hover:text-emerald-400 transition-colors">
-                  Chapa & Nesting
-                </span>
-                <span className="text-[10px] text-zinc-400">
-                  Retalhos e otimização
+                <span className="font-mono text-[7.5px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 rounded shrink-0">
+                  CHAPA STANDARD
                 </span>
               </div>
+
+              <p className="text-[9.5px] sm:text-[10px] text-muted-foreground my-1 leading-snug">
+                Distribuição de virolas e flanges em chapas 1200x3000mm com cálculo de retalhos e sobras.
+              </p>
+
+              <div className="flex items-center justify-between text-[9px] font-mono text-emerald-400 pt-1 border-t border-border/50">
+                <span>Otimizar Chapa & Nesting</span>
+                <ArrowRight className="size-3 group-hover:translate-x-0.5 transition-transform shrink-0" />
+              </div>
             </Link>
 
+            {/* Etapa 03: Custos Operacionais & Orçamento Comercial (BDI) */}
             <Link
               to="/oficina"
               search={{ tab: "custo" }}
@@ -890,49 +858,126 @@ function ProduzirPage() {
                 triggerHaptic("selection");
                 AudioManager.play("ui_pop");
               }}
-              className="group flex flex-col justify-between rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-2.5 transition-all hover:border-emerald-500/40 hover:bg-zinc-900/80 active:scale-[0.98]"
+              className="caldra-card group flex min-h-[104px] sm:min-h-[114px] flex-col justify-between rounded-xl p-3 sm:p-3.5 transition-all hover:border-amber-500/40 active:scale-[0.99] cursor-pointer text-left"
             >
-              <div className="flex items-center justify-between">
-                <Wallet className="size-4 text-sky-400" />
-                <ArrowRight className="size-3 text-zinc-500 transition-transform group-hover:translate-x-0.5 group-hover:text-sky-400" />
-              </div>
-              <div className="mt-2">
-                <span className="font-mono text-xs font-semibold text-zinc-100 block group-hover:text-sky-400 transition-colors">
-                  Custos de Máquina
-                </span>
-                <span className="text-[10px] text-zinc-400">
-                  Laser, calandra e solda
-                </span>
-              </div>
-            </Link>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="caldra-bubble-base caldra-bubble-amber size-8 shrink-0">
+                    <Wallet className="size-4 stroke-[1.9]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="font-mono text-[8px] font-bold text-amber-500 uppercase">
+                        ETAPA 03 • FORMAÇÃO DE PREÇO
+                      </span>
+                    </div>
+                    <h3 className="font-display text-[13px] sm:text-[14px] font-bold text-foreground leading-tight group-hover:text-amber-500 transition-colors">
+                      Custos de Máquina & Orçamento Comercial
+                    </h3>
+                  </div>
+                </div>
 
-            <Link
-              to="/oficina"
-              search={{ tab: "orcamento" }}
-              onClick={() => {
-                triggerHaptic("selection");
-                AudioManager.play("ui_pop");
-              }}
-              className="group flex flex-col justify-between rounded-xl border border-zinc-800/80 bg-zinc-900/40 p-2.5 transition-all hover:border-emerald-500/40 hover:bg-zinc-900/80 active:scale-[0.98]"
-            >
-              <div className="flex items-center justify-between">
-                <Receipt className="size-4 text-amber-400" />
-                <ArrowRight className="size-3 text-zinc-500 transition-transform group-hover:translate-x-0.5 group-hover:text-amber-400" />
+                <span className="font-mono text-[7.5px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/30 px-1.5 py-0.5 rounded shrink-0">
+                  BDI & PDF
+                </span>
               </div>
-              <div className="mt-2">
-                <span className="font-mono text-xs font-semibold text-zinc-100 block group-hover:text-amber-400 transition-colors">
-                  Orçamentos PDF
-                </span>
-                <span className="text-[10px] text-zinc-400">
-                  Margens e proposta técnica
-                </span>
+
+              <p className="text-[9.5px] sm:text-[10px] text-muted-foreground my-1 leading-snug">
+                Tarifas de corte, calandra e solda com aplicação de margem de lucro e proposta técnica em PDF.
+              </p>
+
+              <div className="flex items-center justify-between text-[9px] font-mono text-amber-500 pt-1 border-t border-border/50">
+                <span>Calcular Custos & Proposta</span>
+                <ArrowRight className="size-3 group-hover:translate-x-0.5 transition-transform shrink-0" />
               </div>
             </Link>
           </div>
         </section>
 
-        {/* Rodapé técnico sutil de chão de fábrica */}
-        <footer className="pt-2 pb-1 text-center font-mono text-[9px] text-zinc-500">
+        {/* =========================================================================
+            E. ATALHOS RÁPIDOS DE BANCADA (GRADE DE 2 COLUNAS PARA FERRAMENTAS SIMPLES)
+            - Proporção específica para ferramentas de apoio
+            ========================================================================= */}
+        <section aria-label="Ferramentas de apoio à bancada" className="space-y-1.5">
+          <div className="flex items-center gap-1.5 px-0.5">
+            <span className="size-1.5 rounded-full bg-zinc-500" />
+            <h2 className="font-display text-xs font-bold uppercase tracking-wider text-muted-foreground">
+              Ferramentas de Apoio à Bancada
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+            {/* Atalho 1 — Prancheta CAD 2D */}
+            <Link
+              to="/desenho-2d"
+              onClick={() => {
+                triggerHaptic("selection");
+                AudioManager.play("ui_pop");
+              }}
+              className="caldra-card group flex min-h-[96px] sm:min-h-[104px] flex-col justify-between rounded-xl p-3 transition-all hover:border-red-500/40 active:scale-[0.98] cursor-pointer text-left"
+            >
+              <div className="flex items-start justify-between gap-1.5">
+                <div className="caldra-bubble-base caldra-bubble-red size-8">
+                  <PenTool className="size-4 stroke-[1.9]" />
+                </div>
+                <span className="font-mono text-[7px] font-bold text-red-500 bg-red-500/10 border border-red-500/30 px-1 py-0.5 rounded">
+                  DXF 1:1
+                </span>
+              </div>
+
+              <div className="my-1">
+                <h3 className="font-display text-[12px] font-bold text-foreground leading-tight group-hover:text-red-500 transition-colors">
+                  Prancheta CAD 2D
+                </h3>
+                <p className="text-[9px] text-muted-foreground line-clamp-1 mt-0.5">
+                  Ajuste de perfis e furos.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between text-[8.5px] font-mono text-muted-foreground pt-1 border-t border-border/50">
+                <span>Gabarito vetorial</span>
+                <ChevronRight className="size-3 text-red-500 group-hover:translate-x-0.5 transition-transform shrink-0" />
+              </div>
+            </Link>
+
+            {/* Atalho 2 — Compensação de Dobra */}
+            <Link
+              to="/oficina"
+              search={{ tab: "chapa" }}
+              onClick={() => {
+                triggerHaptic("selection");
+                AudioManager.play("ui_pop");
+              }}
+              className="caldra-card group flex min-h-[96px] sm:min-h-[104px] flex-col justify-between rounded-xl p-3 transition-all hover:border-amber-500/40 active:scale-[0.98] cursor-pointer text-left"
+            >
+              <div className="flex items-start justify-between gap-1.5">
+                <div className="caldra-bubble-base caldra-bubble-amber size-8">
+                  <SlidersHorizontal className="size-4 stroke-[1.9]" />
+                </div>
+                <span className="font-mono text-[7px] font-bold text-amber-500 bg-amber-500/10 border border-amber-500/30 px-1 py-0.5 rounded">
+                  FATOR K
+                </span>
+              </div>
+
+              <div className="my-1">
+                <h3 className="font-display text-[12px] font-bold text-foreground leading-tight group-hover:text-amber-500 transition-colors">
+                  Compensação de Dobra
+                </h3>
+                <p className="text-[9px] text-muted-foreground line-clamp-1 mt-0.5">
+                  Dedução neutra em V.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between text-[8.5px] font-mono text-muted-foreground pt-1 border-t border-border/50">
+                <span>Tabelas de conformação</span>
+                <ChevronRight className="size-3 text-amber-500 group-hover:translate-x-0.5 transition-transform shrink-0" />
+              </div>
+            </Link>
+          </div>
+        </section>
+
+        {/* Rodapé técnico discreto */}
+        <footer className="pt-2 pb-1 text-center font-mono text-[9px] text-muted-foreground/70">
           CALDRA Metal Shop • Gestão de Produção & Chão de Fábrica • Offline-First
         </footer>
       </NavigationAreaContainer>

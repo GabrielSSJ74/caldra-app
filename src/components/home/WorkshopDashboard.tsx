@@ -514,652 +514,693 @@ export function WorkshopDashboard() {
     }
   };
 
-  const projectCountText = projects.length > 0 ? `${projects.length} projetos` : "3 projetos";
+  const sortedProjects = [...projects].sort((a, b) => b.updatedAt - a.updatedAt);
+  const projectCountText =
+    projects.length === 0
+      ? "Nenhum projeto"
+      : projects.length === 1
+        ? "1 projeto ativo"
+        : `${projects.length} projetos ativos`;
 
   return (
     <div className="relative w-full min-h-screen text-foreground overflow-x-hidden">
-      <NavigationAreaContainer>
-      {/* =========================================================================
-          A. CABEÇALHO COMPACTO
-          - Padrão estrutural e dimensional idêntico a Perfil e Conta
-          - Indicador âmbar pulsante + "SUA OFICINA DIGITAL" + Título "Início"
-          - Alinhamento horizontal estrito à esquerda
-          ========================================================================= */}
-      <NavigationAreaHeader
-        badgeText="SUA OFICINA DIGITAL"
-        badgeColor="text-amber-500"
-        indicatorColor="bg-amber-500"
-        secondaryBadge={
-          <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-amber-500 border border-amber-500/30">
-            <CaldraLogo size={12} animated glow />
-            <span>CALDRA</span>
-          </span>
-        }
-        title="Início"
-        description="Crie projetos, desenvolva desenhos CAD, calcule materiais e prepare orçamentos."
-        actions={
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("tap");
-                AudioManager.play("ui_nav");
-                setToolsOpen(true);
-              }}
-              aria-label="Buscar ferramentas"
-              className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-amber-500/50 hover:text-amber-500 active:scale-95 transition-all cursor-pointer"
-            >
-              <Search className="size-4" strokeWidth={1.8} />
-            </button>
+      <NavigationAreaContainer className="space-y-3.5 sm:space-y-4 px-4 sm:px-5">
+        {/* =========================================================================
+            A. CABEÇALHO COMPACTO
+            - Indicador âmbar pulsante + "SUA OFICINA DIGITAL" + Título "Início"
+            - Alinhamento horizontal estrito à esquerda
+            ========================================================================= */}
+        <NavigationAreaHeader
+          badgeText="SUA OFICINA DIGITAL"
+          badgeColor="text-amber-500"
+          indicatorColor="bg-amber-500"
+          secondaryBadge={
+            <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-amber-500 border border-amber-500/30">
+              <CaldraLogo size={12} animated glow />
+              <span>CALDRA</span>
+            </span>
+          }
+          title="Início"
+          description="Crie projetos, desenvolva desenhos CAD, calcule materiais e prepare orçamentos."
+          actions={
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("tap");
+                  AudioManager.play("ui_nav");
+                  setToolsOpen(true);
+                }}
+                aria-label="Buscar ferramentas"
+                className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-amber-500/50 hover:text-amber-500 active:scale-95 transition-all cursor-pointer"
+              >
+                <Search className="size-4" strokeWidth={1.8} />
+              </button>
 
-            <Link
-              to="/perfil"
-              onClick={() => {
-                triggerHaptic("tap");
-                AudioManager.play("ui_nav");
-              }}
-              aria-label="Perfil e Conta"
-              className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-amber-500/50 hover:text-amber-500 active:scale-95 transition-all cursor-pointer"
-            >
-              <User className="size-4" strokeWidth={1.8} />
-            </Link>
-          </div>
-        }
-      />
-
-      {/* =========================================================================
-          B. BANNER PRINCIPAL (HERO) — LADO A LADO HORIZONTAL (PROPORÇÃO ~2.1:1)
-          - Largura total com altura compacta (aspect-[2.1/1])
-          - Respeita --card-opacity através de .caldra-hero
-          - Área esquerda (~45%): Badge, Título 2 linhas, Descrição, Botão e Dots
-          - Área direita (~55%): Peça técnica com cotas (Ø 60, Ø 120, 80)
-          ========================================================================= */}
-      <section
-        aria-label="Destaque principal"
-        className="caldra-hero group relative w-full aspect-[2.1/1] min-h-[160px] max-h-[195px] overflow-hidden rounded-2xl p-3 xs:p-3.5 shadow-xl transition-all"
-      >
-        {/* Glow âmbar sutil concentrado atrás da peça */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-40 w-44 rounded-full bg-[radial-gradient(circle,rgba(245,158,11,0.22)_0%,rgba(245,158,11,0.04)_55%,transparent_70%)] blur-xl"
+              <Link
+                to="/perfil"
+                onClick={() => {
+                  triggerHaptic("tap");
+                  AudioManager.play("ui_nav");
+                }}
+                aria-label="Perfil e Conta"
+                className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-amber-500/50 hover:text-amber-500 active:scale-95 transition-all cursor-pointer"
+              >
+                <User className="size-4" strokeWidth={1.8} />
+              </Link>
+            </div>
+          }
         />
 
-        <div className="relative z-10 flex h-full w-full flex-row items-center justify-between">
-          {/* LADO ESQUERDO (~44% de largura) */}
-          <div className="flex h-full w-[45%] flex-col justify-between py-0.5 pr-1 shrink-0">
-            {/* 1. Badge CHAMFER */}
-            <div>
-              <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-mono text-[8.5px] font-bold tracking-wider text-amber-500 uppercase">
-                <span className="text-[9px] leading-none">✦</span>
-                <span>CHAMFER</span>
-              </span>
+        {/* =========================================================================
+            1. BANNER PRINCIPAL (HERO COMPACTO: 180–230 PX)
+            - Proporção calibrada para mobile sem empurrar a tela
+            - Título conciso, descrição essencial, CTA com ação real
+            - Composição técnica que preserva legibilidade total
+            ========================================================================= */}
+        <section
+          aria-label="Destaque principal"
+          className="caldra-hero group relative w-full h-[195px] xs:h-[205px] sm:h-[215px] min-h-[185px] max-h-[225px] overflow-hidden rounded-2xl p-3.5 sm:p-4 shadow-xl transition-all"
+        >
+          {/* Glow âmbar sutil concentrado atrás da peça técnica */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-36 w-44 rounded-full bg-[radial-gradient(circle,rgba(245,158,11,0.22)_0%,rgba(245,158,11,0.03)_60%,transparent_75%)] blur-xl"
+          />
+
+          <div className="relative z-10 flex h-full w-full flex-row items-center justify-between">
+            {/* Lado esquerdo (~52% de largura) */}
+            <div className="flex h-full w-[53%] xs:w-[51%] flex-col justify-between py-0.5 pr-1.5 shrink-0">
+              {/* Badge CALDEIRARIA & CAD */}
+              <div>
+                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-mono text-[8.5px] xs:text-[9px] font-bold tracking-wider text-amber-500 uppercase">
+                  <span className="text-[9px] leading-none">✦</span>
+                  <span>CALDEIRARIA & CAD</span>
+                </span>
+              </div>
+
+              {/* Título de alto impacto */}
+              <h1 className="font-display text-[15px] xs:text-[17px] sm:text-[19px] font-black tracking-tight text-foreground leading-[1.12] uppercase">
+                PROJETE COM PRECISÃO
+              </h1>
+
+              {/* Descrição curta e objetiva */}
+              <p className="text-[9.5px] xs:text-[10px] sm:text-[11px] text-muted-foreground leading-snug line-clamp-2">
+                Modelagem 3D, planificação zero fresta e desenhos de corte.
+              </p>
+
+              {/* Chamada principal: Ação real para iniciar trabalho */}
+              <div className="pt-0.5">
+                <Link
+                  to="/desenho-2d"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    AudioManager.play("ui_pop");
+                  }}
+                  className="inline-flex h-7.5 sm:h-8.5 items-center justify-center gap-1.5 rounded-full bg-[#F59E0B] hover:bg-[#FBBF24] active:scale-95 px-3.5 font-mono text-[9.5px] xs:text-[10.5px] font-bold tracking-wide text-black shadow-md transition-all cursor-pointer"
+                >
+                  <span>Abrir CHAMFER CAD</span>
+                  <ArrowRight className="size-3 stroke-[2.5]" />
+                </Link>
+              </div>
+
+              {/* Indicadores de ritmo visual */}
+              <div className="flex items-center gap-1 pt-0.5">
+                <span className="h-0.75 w-4 rounded-full bg-amber-500" />
+                <span className="size-1 rounded-full bg-border" />
+                <span className="size-1 rounded-full bg-border" />
+                <span className="size-1 rounded-full bg-border" />
+              </div>
             </div>
 
-            {/* 2. Título grande em duas linhas */}
-            <h1 className="font-display text-[15px] xs:text-[16.5px] sm:text-[18px] font-black tracking-tight text-foreground leading-[1.1] uppercase">
-              PROJETE COM<br />PRECISÃO
-            </h1>
+            {/* Lado direito (~48% de largura): Peça metálica com cotas */}
+            <div className="relative flex h-full w-[47%] xs:w-[49%] items-center justify-center overflow-hidden">
+              <HeroMachinedConeGraphic className="h-full w-full object-contain" />
+            </div>
+          </div>
+        </section>
 
-            {/* 3. Descrição curta */}
-            <p className="text-[9px] xs:text-[9.5px] text-muted-foreground leading-tight line-clamp-2">
-              Transforme dimensões em geometrias e desenhos técnicos.
-            </p>
-
-            {/* 4. Botão compacto "Abrir ferramenta →" */}
+        {/* =========================================================================
+            2. ATALHOS PRINCIPAIS — GRADE DE DUAS COLUNAS (ALTURA 92–118 PX)
+            - Novo projeto, Projetos, Ferramentas e Orçamentos
+            - Bolhas de 40 px, títulos funcionais e descrições essenciais
+            - Área clicável confortável em todo o cartão
+            ========================================================================= */}
+        <section aria-label="Atalhos principais" className="grid grid-cols-2 gap-2.5 sm:gap-3">
+          {/* Atalho 1 — Novo projeto */}
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("selection");
+              AudioManager.play("ui_pop");
+              setNewProjectOpen(true);
+            }}
+            className="caldra-card group flex min-h-[96px] sm:min-h-[104px] flex-col justify-between rounded-xl p-3 sm:p-3.5 transition-all hover:border-red-500/40 active:scale-[0.98] cursor-pointer text-left"
+          >
+            <div className="caldra-bubble-base caldra-bubble-red size-10 mb-2">
+              <Plus className="size-4.5 stroke-[2.5]" />
+            </div>
             <div>
-              <Link
-                to="/desenho-2d"
+              <span className="font-display text-[13px] sm:text-[14px] font-bold text-foreground block leading-tight group-hover:text-red-500 transition-colors">
+                Novo projeto
+              </span>
+              <span className="text-[10px] sm:text-[11px] text-muted-foreground block mt-0.5 font-mono truncate">
+                Criar do zero
+              </span>
+            </div>
+          </button>
+
+          {/* Atalho 2 — Projetos */}
+          <Link
+            to="/projetos"
+            onClick={() => {
+              triggerHaptic("tap");
+              AudioManager.play("ui_nav");
+            }}
+            className="caldra-card group flex min-h-[96px] sm:min-h-[104px] flex-col justify-between rounded-xl p-3 sm:p-3.5 transition-all hover:border-sky-500/40 active:scale-[0.98] cursor-pointer text-left"
+          >
+            <div className="caldra-bubble-base caldra-bubble-sky size-10 mb-2">
+              <Layers className="size-4.5 stroke-[2]" />
+            </div>
+            <div>
+              <span className="font-display text-[13px] sm:text-[14px] font-bold text-foreground block leading-tight group-hover:text-sky-500 transition-colors">
+                Projetos
+              </span>
+              <span className="text-[10px] sm:text-[11px] text-muted-foreground block mt-0.5 font-mono truncate">
+                {projectCountText}
+              </span>
+            </div>
+          </Link>
+
+          {/* Atalho 3 — Ferramentas */}
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("tap");
+              AudioManager.play("ui_nav");
+              setToolsOpen(true);
+            }}
+            className="caldra-card group flex min-h-[96px] sm:min-h-[104px] flex-col justify-between rounded-xl p-3 sm:p-3.5 transition-all hover:border-amber-500/40 active:scale-[0.98] cursor-pointer text-left"
+          >
+            <div className="caldra-bubble-base caldra-bubble-amber size-10 mb-2">
+              <Wrench className="size-4.5 stroke-[2]" />
+            </div>
+            <div>
+              <span className="font-display text-[13px] sm:text-[14px] font-bold text-foreground block leading-tight group-hover:text-amber-500 transition-colors">
+                Ferramentas
+              </span>
+              <span className="text-[10px] sm:text-[11px] text-muted-foreground block mt-0.5 font-mono truncate">
+                Bancada CAD
+              </span>
+            </div>
+          </button>
+
+          {/* Atalho 4 — Orçamentos */}
+          <Link
+            to="/oficina"
+            search={{ tab: "orcamento" }}
+            onClick={() => {
+              triggerHaptic("tap");
+              AudioManager.play("ui_nav");
+            }}
+            className="caldra-card group flex min-h-[96px] sm:min-h-[104px] flex-col justify-between rounded-xl p-3 sm:p-3.5 transition-all hover:border-emerald-500/40 active:scale-[0.98] cursor-pointer text-left"
+          >
+            <div className="caldra-bubble-base caldra-bubble-emerald size-10 mb-2">
+              <Calculator className="size-4.5 stroke-[2]" />
+            </div>
+            <div>
+              <span className="font-display text-[13px] sm:text-[14px] font-bold text-foreground block leading-tight group-hover:text-emerald-500 transition-colors">
+                Orçamentos
+              </span>
+              <span className="text-[10px] sm:text-[11px] text-muted-foreground block mt-0.5 font-mono truncate">
+                Custos & chapa
+              </span>
+            </div>
+          </Link>
+        </section>
+
+        {/* =========================================================================
+            3. CONTEÚDO EDUCACIONAL OU ESPECIALIZAÇÃO (HIERARQUIA DE CONVERSÃO #3)
+            - Faixa de Especialização em Caldeiraria
+            ========================================================================= */}
+        <section
+          aria-label="Faixa de Especialização"
+          className="caldra-specialization rounded-2xl p-3 sm:p-3.5 flex items-center justify-between gap-3 group transition-all"
+        >
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="caldra-bubble-base caldra-bubble-indigo size-9 shrink-0">
+              <Sparkles className="size-4.5" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 font-mono text-[8px] font-bold tracking-wider text-amber-500 uppercase">
+                <span>ESPECIALIZAÇÃO</span>
+                <span aria-hidden className="opacity-50">·</span>
+                <span>CALDEIRARIA</span>
+              </div>
+              <h2 className="font-display text-[11px] sm:text-[12px] font-bold text-foreground leading-tight truncate">
+                Métodos de Traçado e Planificação Zero Fresta
+              </h2>
+              <p className="text-[8.5px] sm:text-[9.5px] text-muted-foreground leading-none truncate mt-0.5">
+                Conformação de chapas, ângulos e normas técnicas de caldeiraria.
+              </p>
+            </div>
+          </div>
+
+          <Link
+            to="/aprenda"
+            onClick={() => {
+              triggerHaptic("selection");
+              AudioManager.play("ui_nav");
+            }}
+            className="inline-flex h-7 shrink-0 items-center justify-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 font-mono text-[9px] sm:text-[9.5px] font-bold text-amber-500 hover:bg-amber-500 hover:text-black active:scale-95 transition-all cursor-pointer"
+          >
+            <span>Acessar</span>
+            <ArrowRight className="size-2.5 stroke-[2.5]" />
+          </Link>
+        </section>
+
+        {/* =========================================================================
+            4. CONTINUE TRABALHANDO (CARROSSEL HORIZONTAL: LARGURA 140–170 PX)
+            - Cartões de 152–168 px com o próximo parcialmente visível
+            - Miniaturas técnicas compactas e tipografia nítida
+            - Prioriza projetos reais existentes; estado vazio útil se não houver
+            ========================================================================= */}
+        <section aria-label="Continue trabalhando" className="space-y-2">
+          <div className="flex items-center justify-between px-0.5">
+            <h2 className="font-display text-sm font-bold text-foreground tracking-tight sm:text-base">
+              Continue trabalhando
+            </h2>
+            <Link
+              to="/projetos"
+              onClick={() => {
+                triggerHaptic("tap");
+                AudioManager.play("ui_nav");
+              }}
+              aria-label="Ver todos os trabalhos"
+              className="flex items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <span>Ver todos</span>
+              <ChevronRight className="size-3.5" />
+            </Link>
+          </div>
+
+          {/* Trilho horizontal independente: cartões de 152–168 px com o próximo visível */}
+          <div
+            ref={scrollRefTrabalhando}
+            className="flex gap-2.5 overflow-x-auto pb-1.5 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-4 sm:-mx-5 px-4 sm:px-5"
+          >
+            {/* Se houver projetos reais do usuário, exibe os mais recentes */}
+            {sortedProjects.length > 0 ? (
+              sortedProjects.slice(0, 4).map((proj) => (
+                <Link
+                  key={proj.id}
+                  to="/projetos/$projectId"
+                  params={{ projectId: proj.id }}
+                  onClick={() => {
+                    triggerHaptic("tap");
+                    AudioManager.play("ui_nav");
+                  }}
+                  className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-border/80 p-2 transition-all hover:border-amber-500/60 active:scale-[0.98] cursor-pointer text-left"
+                >
+                  <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
+                    <BlueprintDrawingGraphic />
+                    <div className="caldra-bubble-base caldra-bubble-amber absolute top-1.5 left-1.5 size-5">
+                      <History className="size-3" />
+                    </div>
+                    {proj.code && (
+                      <span className="absolute top-1.5 right-1.5 rounded bg-background/80 px-1 py-0.5 font-mono text-[7.5px] font-bold text-muted-foreground">
+                        {proj.code}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2 px-0.5">
+                    <h3 className="font-display text-[12px] font-bold text-foreground leading-tight group-hover:text-amber-500 truncate">
+                      {proj.name}
+                    </h3>
+                    <p className="mt-1 text-[10px] text-muted-foreground font-mono truncate leading-none">
+                      {proj.parts.length} {proj.parts.length === 1 ? "peça" : "peças"} · {proj.status}
+                    </p>
+                  </div>
+                </Link>
+              ))
+            ) : (
+              /* Estado vazio útil: Convite de início imediato sem inventar conteúdo */
+              <button
+                type="button"
                 onClick={() => {
                   triggerHaptic("selection");
                   AudioManager.play("ui_pop");
+                  setNewProjectOpen(true);
                 }}
-                className="inline-flex h-6.5 xs:h-7 items-center justify-center gap-1.5 rounded-full bg-[#F59E0B] px-3 font-mono text-[9px] xs:text-[9.5px] font-bold tracking-wide text-black shadow-md hover:bg-[#FBBF24] active:scale-95 transition-all cursor-pointer"
+                className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-dashed border-amber-500/50 p-2 transition-all hover:border-amber-500 active:scale-[0.98] cursor-pointer text-left"
               >
-                <span>Abrir ferramenta</span>
-                <ArrowRight className="size-3" strokeWidth={2.5} />
-              </Link>
-            </div>
+                <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/40 bg-slate-100/60 dark:bg-black/40 flex flex-col items-center justify-center gap-1.5 p-2">
+                  <div className="caldra-bubble-base caldra-bubble-red size-7.5">
+                    <Plus className="size-4 stroke-[2.5]" />
+                  </div>
+                  <span className="font-mono text-[8.5px] font-bold text-amber-500 tracking-wider">
+                    NOVO PROJETO
+                  </span>
+                </div>
+                <div className="mt-2 px-0.5">
+                  <h3 className="font-display text-[12px] font-bold text-foreground leading-tight group-hover:text-amber-500 truncate">
+                    Iniciar projeto
+                  </h3>
+                  <p className="mt-1 text-[10px] text-muted-foreground font-mono truncate leading-none">
+                    Comece do zero
+                  </p>
+                </div>
+              </button>
+            )}
 
-            {/* 5. Indicadores pequenos do carrossel */}
-            <div className="flex items-center gap-1 pt-0.5">
-              <span className="h-0.75 w-4 rounded-full bg-amber-500" />
-              <span className="size-1 rounded-full bg-border" />
-              <span className="size-1 rounded-full bg-border" />
-              <span className="size-1 rounded-full bg-border" />
-            </div>
-          </div>
-
-          {/* LADO DIREITO (~56% de largura): Peça metálica com cotas */}
-          <div className="relative flex h-full w-[55%] items-center justify-center overflow-hidden">
-            <HeroMachinedConeGraphic className="h-full w-full object-contain" />
-          </div>
-        </div>
-      </section>
-
-      {/* =========================================================================
-          C1. CARTÕES DE AÇÃO RÁPIDA: NOVO PROJETO, PROJETOS, FERRAMENTAS E ORÇAMENTOS
-          - Respeitam rigorosamente --card-opacity (.caldra-card)
-          - Superfícies circulares respeitam --bubble-opacity (.caldra-bubble-base)
-          - 100% legíveis no tema claro e no tema escuro
-          ========================================================================= */}
-      <section aria-label="Ações rápidas" className="grid grid-cols-2 xs:grid-cols-4 gap-2 pt-0.5">
-        {/* Cartão 1 — Novo projeto */}
-        <button
-          type="button"
-          onClick={() => {
-            triggerHaptic("selection");
-            AudioManager.play("ui_pop");
-            setNewProjectOpen(true);
-          }}
-          className="caldra-card group flex flex-col justify-between rounded-xl p-2.5 transition-all hover:border-red-500/50 active:scale-[0.98] cursor-pointer text-left"
-        >
-          <div className="caldra-bubble-base caldra-bubble-red size-7 mb-2">
-            <Plus className="size-3.5 stroke-[2.5]" />
-          </div>
-          <div>
-            <span className="font-display text-[10.5px] font-bold text-foreground block leading-tight group-hover:text-red-500 transition-colors">
-              Novo projeto
-            </span>
-            <span className="text-[8px] text-muted-foreground block mt-0.5 font-mono">
-              Criar do zero
-            </span>
-          </div>
-        </button>
-
-        {/* Cartão 2 — Projetos */}
-        <Link
-          to="/projetos"
-          onClick={() => {
-            triggerHaptic("tap");
-            AudioManager.play("ui_nav");
-          }}
-          className="caldra-card group flex flex-col justify-between rounded-xl p-2.5 transition-all hover:border-sky-500/50 active:scale-[0.98] cursor-pointer text-left"
-        >
-          <div className="caldra-bubble-base caldra-bubble-sky size-7 mb-2">
-            <Layers className="size-3.5 stroke-[2]" />
-          </div>
-          <div>
-            <span className="font-display text-[10.5px] font-bold text-foreground block leading-tight group-hover:text-sky-500 transition-colors">
-              Projetos
-            </span>
-            <span className="text-[8px] text-muted-foreground block mt-0.5 font-mono">
-              {projectCountText}
-            </span>
-          </div>
-        </Link>
-
-        {/* Cartão 3 — Ferramentas */}
-        <button
-          type="button"
-          onClick={() => {
-            triggerHaptic("tap");
-            AudioManager.play("ui_nav");
-            setToolsOpen(true);
-          }}
-          className="caldra-card group flex flex-col justify-between rounded-xl p-2.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left"
-        >
-          <div className="caldra-bubble-base caldra-bubble-amber size-7 mb-2">
-            <Wrench className="size-3.5 stroke-[2]" />
-          </div>
-          <div>
-            <span className="font-display text-[10.5px] font-bold text-foreground block leading-tight group-hover:text-amber-500 transition-colors">
-              Ferramentas
-            </span>
-            <span className="text-[8px] text-muted-foreground block mt-0.5 font-mono">
-              Bancada CAD
-            </span>
-          </div>
-        </button>
-
-        {/* Cartão 4 — Orçamentos */}
-        <Link
-          to="/orcamentos"
-          onClick={() => {
-            triggerHaptic("tap");
-            AudioManager.play("ui_nav");
-          }}
-          className="caldra-card group flex flex-col justify-between rounded-xl p-2.5 transition-all hover:border-emerald-500/50 active:scale-[0.98] cursor-pointer text-left"
-        >
-          <div className="caldra-bubble-base caldra-bubble-emerald size-7 mb-2">
-            <Calculator className="size-3.5 stroke-[2]" />
-          </div>
-          <div>
-            <span className="font-display text-[10.5px] font-bold text-foreground block leading-tight group-hover:text-emerald-500 transition-colors">
-              Orçamentos
-            </span>
-            <span className="text-[8px] text-muted-foreground block mt-0.5 font-mono">
-              Custos & chapa
-            </span>
-          </div>
-        </Link>
-      </section>
-
-      {/* =========================================================================
-          C2. FAIXA DE ESPECIALIZAÇÃO (.caldra-specialization)
-          - Respeita --card-opacity através de sua superfície gradiente
-          - Bolha respeita --bubble-opacity (.caldra-bubble-indigo)
-          - Textos e botões de alta legibilidade
-          ========================================================================= */}
-      <section
-        aria-label="Faixa de Especialização"
-        className="caldra-specialization rounded-2xl p-3 flex items-center justify-between gap-3 group transition-all"
-      >
-        <div className="flex items-center gap-2.5 min-w-0">
-          <div className="caldra-bubble-base caldra-bubble-indigo size-9 shrink-0">
-            <Sparkles className="size-4.5" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-1.5 font-mono text-[8px] font-bold tracking-wider text-amber-500 uppercase">
-              <span>ESPECIALIZAÇÃO</span>
-              <span aria-hidden className="opacity-50">·</span>
-              <span>CALDEIRARIA</span>
-            </div>
-            <h2 className="font-display text-[11px] font-bold text-foreground leading-tight truncate">
-              Métodos de Traçado e Planificação Zero Fresta
-            </h2>
-            <p className="text-[8.5px] text-muted-foreground leading-none truncate mt-0.5">
-              Conformação de chapas, ângulos e normas técnicas de caldeiraria.
-            </p>
-          </div>
-        </div>
-
-        <Link
-          to="/aprenda"
-          onClick={() => {
-            triggerHaptic("selection");
-            AudioManager.play("ui_nav");
-          }}
-          className="inline-flex h-6.5 shrink-0 items-center justify-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 font-mono text-[9px] font-bold text-amber-500 hover:bg-amber-500 hover:text-black active:scale-95 transition-all cursor-pointer"
-        >
-          <span>Acessar</span>
-          <ArrowRight className="size-2.5 stroke-[2.5]" />
-        </Link>
-      </section>
-
-      {/* =========================================================================
-          C3. SEÇÃO 1 — "Continue trabalhando"
-          - ~4 cartões visíveis simultaneamente (~22-23% da largura cada)
-          - Imagem técnica + Ícone circular + Título + Subtítulo
-          - Barra indicadora de rolagem âmbar
-          ========================================================================= */}
-      <section aria-label="Continue trabalhando" className="space-y-1.5">
-        <div className="flex items-center justify-between px-0.5">
-          <h2 className="font-display text-sm font-bold text-foreground tracking-tight sm:text-base">
-            Continue trabalhando
-          </h2>
-          <Link
-            to="/projetos"
-            onClick={() => {
-              triggerHaptic("tap");
-              AudioManager.play("ui_nav");
-            }}
-            aria-label="Ver todos os trabalhos"
-            className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronRight className="size-4" />
-          </Link>
-        </div>
-
-        {/* Trilho horizontal compacto: ~4 itens visíveis na largura útil */}
-        <div
-          ref={scrollRefTrabalhando}
-          className="flex gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-3 sm:-mx-4 px-3 sm:px-4"
-        >
-          {/* Card 1 — Projetos recentes */}
-          <Link
-            to="/projetos"
-            onClick={() => {
-              triggerHaptic("tap");
-              AudioManager.play("ui_nav");
-            }}
-            className="caldra-card group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-amber-500/60 p-1.5 transition-all hover:border-amber-500 active:scale-[0.98] cursor-pointer"
-          >
-            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
-              <BlueprintDrawingGraphic />
-              <div className="caldra-bubble-base caldra-bubble-amber absolute top-1 left-1 size-4">
-                <History className="size-2.5" />
+            {/* Ferramenta 1 — CHAMFER CAD */}
+            <Link
+              to="/desenho-2d"
+              onClick={() => {
+                triggerHaptic("tap");
+                AudioManager.play("ui_nav");
+              }}
+              className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left"
+            >
+              <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
+                <ChamferBlockGraphic />
+                <div className="caldra-bubble-base caldra-bubble-amber absolute top-1.5 left-1.5 size-5">
+                  <TrendingUp className="size-3" />
+                </div>
               </div>
-            </div>
-            <div className="mt-1 px-0.5">
-              <h3 className="font-display text-[9.5px] font-semibold text-foreground truncate leading-tight group-hover:text-amber-500">
-                Projetos recentes
-              </h3>
-              <p className="mt-0.5 text-[8px] text-muted-foreground truncate leading-none">
-                {projectCountText}
-              </p>
-            </div>
-          </Link>
-
-          {/* Card 2 — CHAMFER */}
-          <Link
-            to="/desenho-2d"
-            onClick={() => {
-              triggerHaptic("tap");
-              AudioManager.play("ui_nav");
-            }}
-            className="caldra-card group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-1.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
-          >
-            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
-              <ChamferBlockGraphic />
-              <div className="caldra-bubble-base caldra-bubble-amber absolute top-1 left-1 size-4">
-                <TrendingUp className="size-2.5" />
+              <div className="mt-2 px-0.5">
+                <h3 className="font-display text-[12px] font-bold text-foreground leading-tight group-hover:text-amber-500 truncate">
+                  CHAMFER CAD
+                </h3>
+                <p className="mt-1 text-[10px] text-muted-foreground font-mono truncate leading-none">
+                  Prancheta 2D & Cotas
+                </p>
               </div>
-            </div>
-            <div className="mt-1 px-0.5">
-              <h3 className="font-display text-[9.5px] font-semibold text-foreground truncate leading-tight group-hover:text-amber-500">
-                CHAMFER
-              </h3>
-              <p className="mt-0.5 text-[8px] text-muted-foreground truncate leading-none">
-                Geometria
-              </p>
-            </div>
-          </Link>
+            </Link>
 
-          {/* Card 3 — Traçagem */}
-          <Link
-            to="/tracagem"
-            onClick={() => {
-              triggerHaptic("tap");
-              AudioManager.play("ui_nav");
-            }}
-            className="caldra-card group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-1.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
-          >
-            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
-              <TracingDraftGraphic />
-              <div className="caldra-bubble-base caldra-bubble-amber absolute top-1 left-1 size-4">
-                <Compass className="size-2.5" />
-              </div>
-            </div>
-            <div className="mt-1 px-0.5">
-              <h3 className="font-display text-[9.5px] font-semibold text-foreground truncate leading-tight group-hover:text-amber-500">
-                Traçagem
-              </h3>
-              <p className="mt-0.5 text-[8px] text-muted-foreground truncate leading-none">
-                Desenho técnico
-              </p>
-            </div>
-          </Link>
-
-          {/* Card 4 — Calculadora Cientifica */}
-          <Link
-            to="/calculadora"
-            onClick={() => {
-              triggerHaptic("tap");
-              AudioManager.play("ui_nav");
-            }}
-            className="caldra-card group relative flex w-[78px] xs:w-[84px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-1.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
-          >
-            <div className="relative h-13 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
-              <ScientificCalculatorGraphic />
-              <div className="caldra-bubble-base caldra-bubble-amber absolute top-1 left-1 size-4">
-                <Calculator className="size-2.5" />
-              </div>
-            </div>
-            <div className="mt-1 px-0.5">
-              <h3 className="font-display text-[9.5px] font-semibold text-foreground truncate leading-tight group-hover:text-amber-500">
-                Calculadora Cientifica
-              </h3>
-              <p className="mt-0.5 text-[8px] text-muted-foreground truncate leading-none">
-                Cálculos
-              </p>
-            </div>
-          </Link>
-        </div>
-
-        {/* Indicador de rolagem âmbar da seção */}
-        <ScrollProgressTrack scrollContainerRef={scrollRefTrabalhando} />
-      </section>
-
-      {/* =========================================================================
-          D. SEÇÃO 2 — "Explore suas ferramentas"
-          - ~3 cartões visíveis simultaneamente (~30-31% da largura útil)
-          - Projetar, Produzir, Aprenda com imagem superior + ícone + título + seta
-          - Superfícies integradas aos tokens de opacidade e tema
-          ========================================================================= */}
-      <section aria-label="Explore suas ferramentas" className="space-y-1.5 pt-1">
-        <div className="flex items-center justify-between px-0.5">
-          <h2 className="font-display text-sm font-bold text-foreground tracking-tight sm:text-base">
-            Explore suas ferramentas
-          </h2>
-          <Link
-            to="/projetar"
-            onClick={() => {
-              triggerHaptic("tap");
-              AudioManager.play("ui_nav");
-            }}
-            aria-label="Ver todas as ferramentas"
-            className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronRight className="size-4" />
-          </Link>
-        </div>
-
-        <div className="flex gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-3 sm:-mx-4 px-3 sm:px-4">
-          {/* Card 1 — Projetar */}
-          <Link
-            to="/projetar"
-            onClick={() => {
-              triggerHaptic("selection");
-              AudioManager.play("ui_nav");
-            }}
-            className="caldra-card group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
-          >
-            <div className="relative h-18 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
-              <ExploreProjetarGraphic />
-            </div>
-
-            <div className="mt-2 flex items-center justify-between gap-1">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <div className="caldra-bubble-base caldra-bubble-amber size-5.5 shrink-0">
+            {/* Ferramenta 2 — Traçagem */}
+            <Link
+              to="/tracagem"
+              onClick={() => {
+                triggerHaptic("tap");
+                AudioManager.play("ui_nav");
+              }}
+              className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left"
+            >
+              <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
+                <TracingDraftGraphic />
+                <div className="caldra-bubble-base caldra-bubble-amber absolute top-1.5 left-1.5 size-5">
                   <Compass className="size-3" />
                 </div>
-                <div className="min-w-0">
-                  <h3 className="font-display text-[10.5px] font-bold text-foreground leading-tight truncate group-hover:text-amber-500">
-                    Projetar
-                  </h3>
-                  <p className="text-[7.5px] text-muted-foreground leading-none truncate mt-0.5">
-                    CAD e geometrias
-                  </p>
-                </div>
               </div>
-
-              <div className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground group-hover:border-amber-500 group-hover:text-amber-500 transition-colors">
-                <ArrowRight className="size-2.5" />
-              </div>
-            </div>
-          </Link>
-
-          {/* Card 2 — Produzir */}
-          <Link
-            to="/produzir"
-            onClick={() => {
-              triggerHaptic("selection");
-              AudioManager.play("ui_nav");
-            }}
-            className="caldra-card group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
-          >
-            <div className="relative h-18 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
-              <ExploreProduzirGraphic />
-            </div>
-
-            <div className="mt-2 flex items-center justify-between gap-1">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <div className="caldra-bubble-base caldra-bubble-red size-5.5 shrink-0">
-                  <Wrench className="size-3" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="font-display text-[10.5px] font-bold text-foreground leading-tight truncate group-hover:text-amber-500">
-                    Produzir
-                  </h3>
-                  <p className="text-[7.5px] text-muted-foreground leading-none truncate mt-0.5">
-                    Fabricação e custos
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground group-hover:border-amber-500 group-hover:text-amber-500 transition-colors">
-                <ArrowRight className="size-2.5" />
-              </div>
-            </div>
-          </Link>
-
-          {/* Card 3 — Aprenda */}
-          <Link
-            to="/aprenda"
-            onClick={() => {
-              triggerHaptic("selection");
-              AudioManager.play("ui_nav");
-            }}
-            className="caldra-card group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
-          >
-            <div className="relative h-18 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
-              <ExploreAprendaGraphic />
-            </div>
-
-            <div className="mt-2 flex items-center justify-between gap-1">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <div className="caldra-bubble-base caldra-bubble-sky size-5.5 shrink-0">
-                  <BookOpen className="size-3" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="font-display text-[10.5px] font-bold text-foreground leading-tight truncate group-hover:text-amber-500">
-                    Aprenda
-                  </h3>
-                  <p className="text-[7.5px] text-muted-foreground leading-none truncate mt-0.5">
-                    Estudos e referências
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex size-5 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground group-hover:border-amber-500 group-hover:text-amber-500 transition-colors">
-                <ArrowRight className="size-2.5" />
-              </div>
-            </div>
-          </Link>
-        </div>
-      </section>
-
-      {/* =========================================================================
-          E. SEÇÃO 3 — "Conhecimento técnico"
-          - ~3 cartões visíveis simultaneamente (~30-31% da largura útil)
-          - Curvas e transições, Tabelas de materiais, Fórmulas e cálculos
-          - Barra indicadora de rolagem âmbar
-          ========================================================================= */}
-      <section aria-label="Conhecimento técnico" className="space-y-1.5 pt-1">
-        <div className="flex items-center justify-between px-0.5">
-          <h2 className="font-display text-sm font-bold text-foreground tracking-tight sm:text-base">
-            Conhecimento técnico
-          </h2>
-          <Link
-            to="/aprenda"
-            onClick={() => {
-              triggerHaptic("tap");
-              AudioManager.play("ui_nav");
-            }}
-            aria-label="Ver biblioteca de conhecimento"
-            className="flex size-5 items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <ChevronRight className="size-4" />
-          </Link>
-        </div>
-
-        <div
-          ref={scrollRefConhecimento}
-          className="flex gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-3 sm:-mx-4 px-3 sm:px-4"
-        >
-          {/* Card 1 — Curvas e transições metálicas */}
-          <Link
-            to="/aprenda"
-            onClick={() => {
-              triggerHaptic("tap");
-              AudioManager.play("ui_nav");
-            }}
-            className="caldra-card group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
-          >
-            <div className="relative h-14 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
-              <WeldedElbowGraphic />
-            </div>
-            <div className="mt-1.5 flex items-start justify-between gap-1">
-              <div className="min-w-0">
-                <h3 className="font-display text-[9.5px] font-semibold text-foreground leading-tight line-clamp-1 group-hover:text-amber-500">
-                  Curvas e transições
+              <div className="mt-2 px-0.5">
+                <h3 className="font-display text-[12px] font-bold text-foreground leading-tight group-hover:text-amber-500 truncate">
+                  Traçagem 3D
                 </h3>
-                <p className="text-[7.5px] text-muted-foreground leading-none mt-0.5">
-                  Estudos
+                <p className="mt-1 text-[10px] text-muted-foreground font-mono truncate leading-none">
+                  Planificação Zero Fresta
                 </p>
               </div>
-              <BookOpen className="size-3 text-muted-foreground shrink-0 mt-0.5" />
-            </div>
-          </Link>
+            </Link>
 
-          {/* Card 2 — Tabelas de materiais e pesos */}
-          <Link
-            to="/oficina"
-            search={{ tab: "chapa" }}
-            onClick={() => {
-              triggerHaptic("tap");
-              AudioManager.play("ui_nav");
-            }}
-            className="caldra-card group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
-          >
-            <div className="relative h-14 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
-              <MaterialTableGraphic />
-            </div>
-            <div className="mt-1.5 flex items-start justify-between gap-1">
-              <div className="min-w-0">
-                <h3 className="font-display text-[9.5px] font-semibold text-foreground leading-tight line-clamp-1 group-hover:text-amber-500">
-                  Tabelas de materiais
+            {/* Ferramenta 3 — Calculadora Científica */}
+            <Link
+              to="/calculadora"
+              onClick={() => {
+                triggerHaptic("tap");
+                AudioManager.play("ui_nav");
+              }}
+              className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left"
+            >
+              <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
+                <ScientificCalculatorGraphic />
+                <div className="caldra-bubble-base caldra-bubble-amber absolute top-1.5 left-1.5 size-5">
+                  <Calculator className="size-3" />
+                </div>
+              </div>
+              <div className="mt-2 px-0.5">
+                <h3 className="font-display text-[12px] font-bold text-foreground leading-tight group-hover:text-amber-500 truncate">
+                  Calculadora Científica
                 </h3>
-                <p className="text-[7.5px] text-muted-foreground leading-none mt-0.5">
-                  Tabelas
+                <p className="mt-1 text-[10px] text-muted-foreground font-mono truncate leading-none">
+                  Trigonometria & Ângulos
                 </p>
               </div>
-              <FileSpreadsheet className="size-3 text-muted-foreground shrink-0 mt-0.5" />
-            </div>
-          </Link>
+            </Link>
+          </div>
 
-          {/* Card 3 — Fórmulas e cálculos */}
-          <Link
-            to="/aprenda"
-            onClick={() => {
-              triggerHaptic("tap");
-              AudioManager.play("ui_nav");
-            }}
-            className="caldra-card group relative flex w-[104px] xs:w-[110px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
-          >
-            <div className="relative h-14 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
-              <FormulasBoardGraphic />
-            </div>
-            <div className="mt-1.5 flex items-start justify-between gap-1">
-              <div className="min-w-0">
-                <h3 className="font-display text-[9.5px] font-semibold text-foreground leading-tight line-clamp-1 group-hover:text-amber-500">
-                  Fórmulas e cálculos
-                </h3>
-                <p className="text-[7.5px] text-muted-foreground leading-none mt-0.5">
-                  Fórmulas
-                </p>
+          {/* Indicador de rolagem âmbar sincronizado */}
+          <ScrollProgressTrack scrollContainerRef={scrollRefTrabalhando} />
+        </section>
+
+        {/* =========================================================================
+            5. OUTRAS INFORMAÇÕES SECUNDÁRIAS: EXPLORE SUAS FERRAMENTAS
+            - Projetar, Produzir, Aprenda com dimensões próprias para a Home
+            ========================================================================= */}
+        <section aria-label="Explore suas ferramentas" className="space-y-2 pt-0.5">
+          <div className="flex items-center justify-between px-0.5">
+            <h2 className="font-display text-sm font-bold text-foreground tracking-tight sm:text-base">
+              Explore suas ferramentas
+            </h2>
+            <Link
+              to="/projetar"
+              onClick={() => {
+                triggerHaptic("tap");
+                AudioManager.play("ui_nav");
+              }}
+              aria-label="Ver todas as ferramentas"
+              className="flex items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <span>Ver todas</span>
+              <ChevronRight className="size-3.5" />
+            </Link>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2 sm:gap-2.5">
+            {/* Card 1 — Projetar */}
+            <Link
+              to="/projetar"
+              onClick={() => {
+                triggerHaptic("selection");
+                AudioManager.play("ui_nav");
+              }}
+              className="caldra-card group relative flex flex-col justify-between overflow-hidden rounded-xl p-2 sm:p-2.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            >
+              <div className="relative h-14 sm:h-16 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
+                <ExploreProjetarGraphic />
               </div>
-              <span className="font-mono text-[9px] font-bold italic text-muted-foreground shrink-0">
-                fx
-              </span>
-            </div>
-          </Link>
-        </div>
 
-        {/* Indicador de rolagem âmbar da seção */}
-        <ScrollProgressTrack scrollContainerRef={scrollRefConhecimento} />
-      </section>
+              <div className="mt-2 flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <div className="caldra-bubble-base caldra-bubble-amber size-5.5 shrink-0">
+                    <Compass className="size-3" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-display text-[11px] font-bold text-foreground leading-tight truncate group-hover:text-amber-500">
+                      Projetar
+                    </h3>
+                    <p className="text-[8px] text-muted-foreground leading-none truncate mt-0.5">
+                      CAD & 3D
+                    </p>
+                  </div>
+                </div>
 
-      {/* =========================================================================
-          MODAIS E DIÁLOGOS INTEGRADOS (100% Funcionais)
-          ========================================================================= */}
-      <NewProjectDialog
-        open={newProjectOpen}
-        onOpenChange={setNewProjectOpen}
-        onCreate={handleCreateProject}
-      />
+                <div className="hidden xs:flex size-4.5 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground group-hover:border-amber-500 group-hover:text-amber-500 transition-colors">
+                  <ArrowRight className="size-2.5" />
+                </div>
+              </div>
+            </Link>
 
-      <TechnicalToolsSheet open={toolsOpen} onClose={() => setToolsOpen(false)} />
+            {/* Card 2 — Produzir */}
+            <Link
+              to="/produzir"
+              onClick={() => {
+                triggerHaptic("selection");
+                AudioManager.play("ui_nav");
+              }}
+              className="caldra-card group relative flex flex-col justify-between overflow-hidden rounded-xl p-2 sm:p-2.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            >
+              <div className="relative h-14 sm:h-16 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
+                <ExploreProduzirGraphic />
+              </div>
+
+              <div className="mt-2 flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <div className="caldra-bubble-base caldra-bubble-red size-5.5 shrink-0">
+                    <Wrench className="size-3" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-display text-[11px] font-bold text-foreground leading-tight truncate group-hover:text-amber-500">
+                      Produzir
+                    </h3>
+                    <p className="text-[8px] text-muted-foreground leading-none truncate mt-0.5">
+                      Fábrica & Custo
+                    </p>
+                  </div>
+                </div>
+
+                <div className="hidden xs:flex size-4.5 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground group-hover:border-amber-500 group-hover:text-amber-500 transition-colors">
+                  <ArrowRight className="size-2.5" />
+                </div>
+              </div>
+            </Link>
+
+            {/* Card 3 — Aprenda */}
+            <Link
+              to="/aprenda"
+              onClick={() => {
+                triggerHaptic("selection");
+                AudioManager.play("ui_nav");
+              }}
+              className="caldra-card group relative flex flex-col justify-between overflow-hidden rounded-xl p-2 sm:p-2.5 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            >
+              <div className="relative h-14 sm:h-16 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
+                <ExploreAprendaGraphic />
+              </div>
+
+              <div className="mt-2 flex items-center justify-between gap-1">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <div className="caldra-bubble-base caldra-bubble-sky size-5.5 shrink-0">
+                    <BookOpen className="size-3" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-display text-[11px] font-bold text-foreground leading-tight truncate group-hover:text-amber-500">
+                      Aprenda
+                    </h3>
+                    <p className="text-[8px] text-muted-foreground leading-none truncate mt-0.5">
+                      Academia
+                    </p>
+                  </div>
+                </div>
+
+                <div className="hidden xs:flex size-4.5 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground group-hover:border-amber-500 group-hover:text-amber-500 transition-colors">
+                  <ArrowRight className="size-2.5" />
+                </div>
+              </div>
+            </Link>
+          </div>
+        </section>
+
+        {/* =========================================================================
+            6. CONHECIMENTO TÉCNICO (SEGUNDA ÁREA DE DESCOBERTA)
+            - Curvas, Tabelas de materiais e Fórmulas de cálculo
+            ========================================================================= */}
+        <section aria-label="Conhecimento técnico" className="space-y-2 pt-0.5">
+          <div className="flex items-center justify-between px-0.5">
+            <h2 className="font-display text-sm font-bold text-foreground tracking-tight sm:text-base">
+              Conhecimento técnico
+            </h2>
+            <Link
+              to="/aprenda"
+              onClick={() => {
+                triggerHaptic("tap");
+                AudioManager.play("ui_nav");
+              }}
+              aria-label="Ver biblioteca de conhecimento"
+              className="flex items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <span>Biblioteca</span>
+              <ChevronRight className="size-3.5" />
+            </Link>
+          </div>
+
+          <div
+            ref={scrollRefConhecimento}
+            className="flex gap-2.5 overflow-x-auto pb-1.5 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-4 sm:-mx-5 px-4 sm:px-5"
+          >
+            {/* Card 1 — Curvas e transições metálicas */}
+            <Link
+              to="/aprenda"
+              onClick={() => {
+                triggerHaptic("tap");
+                AudioManager.play("ui_nav");
+              }}
+              className="caldra-card group relative flex w-[140px] xs:w-[150px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            >
+              <div className="relative h-13 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
+                <WeldedElbowGraphic />
+              </div>
+              <div className="mt-1.5 flex items-start justify-between gap-1">
+                <div className="min-w-0">
+                  <h3 className="font-display text-[10.5px] font-semibold text-foreground leading-tight line-clamp-1 group-hover:text-amber-500">
+                    Curvas e transições
+                  </h3>
+                  <p className="text-[8px] text-muted-foreground font-mono leading-none mt-0.5">
+                    Estudos
+                  </p>
+                </div>
+                <BookOpen className="size-3 text-muted-foreground shrink-0 mt-0.5" />
+              </div>
+            </Link>
+
+            {/* Card 2 — Tabelas de materiais e pesos */}
+            <Link
+              to="/oficina"
+              search={{ tab: "chapa" }}
+              onClick={() => {
+                triggerHaptic("tap");
+                AudioManager.play("ui_nav");
+              }}
+              className="caldra-card group relative flex w-[140px] xs:w-[150px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            >
+              <div className="relative h-13 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
+                <MaterialTableGraphic />
+              </div>
+              <div className="mt-1.5 flex items-start justify-between gap-1">
+                <div className="min-w-0">
+                  <h3 className="font-display text-[10.5px] font-semibold text-foreground leading-tight line-clamp-1 group-hover:text-amber-500">
+                    Tabelas de materiais
+                  </h3>
+                  <p className="text-[8px] text-muted-foreground font-mono leading-none mt-0.5">
+                    Bitolas & Pesos
+                  </p>
+                </div>
+                <FileSpreadsheet className="size-3 text-muted-foreground shrink-0 mt-0.5" />
+              </div>
+            </Link>
+
+            {/* Card 3 — Fórmulas e cálculos */}
+            <Link
+              to="/aprenda"
+              onClick={() => {
+                triggerHaptic("tap");
+                AudioManager.play("ui_nav");
+              }}
+              className="caldra-card group relative flex w-[140px] xs:w-[150px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer"
+            >
+              <div className="relative h-13 w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
+                <FormulasBoardGraphic />
+              </div>
+              <div className="mt-1.5 flex items-start justify-between gap-1">
+                <div className="min-w-0">
+                  <h3 className="font-display text-[10.5px] font-semibold text-foreground leading-tight line-clamp-1 group-hover:text-amber-500">
+                    Fórmulas e cálculos
+                  </h3>
+                  <p className="text-[8px] text-muted-foreground font-mono leading-none mt-0.5">
+                    Fórmulas de Oficina
+                  </p>
+                </div>
+                <span className="font-mono text-[9px] font-bold italic text-muted-foreground shrink-0">
+                  fx
+                </span>
+              </div>
+            </Link>
+          </div>
+
+          {/* Indicador de rolagem âmbar da seção */}
+          <ScrollProgressTrack scrollContainerRef={scrollRefConhecimento} />
+        </section>
+
+        {/* =========================================================================
+            MODAIS E DIÁLOGOS INTEGRADOS (100% Funcionais)
+            ========================================================================= */}
+        <NewProjectDialog
+          open={newProjectOpen}
+          onOpenChange={setNewProjectOpen}
+          onCreate={handleCreateProject}
+        />
+
+        <TechnicalToolsSheet open={toolsOpen} onClose={() => setToolsOpen(false)} />
       </NavigationAreaContainer>
     </div>
   );

@@ -1,17 +1,12 @@
-import { useEffect, useState, useId } from "react";
-import { Link, useRouter } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
+import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
   User,
   ShieldCheck,
   Sparkles,
-  Sliders,
-  Settings,
   HardDriveDownload,
   PenTool,
-  Save,
-  Clock,
-  Grid,
   RotateCcw,
   Check,
   Compass,
@@ -22,13 +17,12 @@ import {
   LogOut,
   ChevronDown,
   ChevronRight,
-  Shield,
   Palette,
   SlidersHorizontal,
-  FolderSync,
-  HelpCircle,
   ExternalLink,
   Award,
+  CheckCircle2,
+  Lock,
 } from "lucide-react";
 import { useProfile } from "@/lib/profile/ProfileProvider";
 import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
@@ -51,7 +45,7 @@ import {
   type ChamferSettings,
 } from "@/lib/lab2d/projectSettings";
 import { REGIONS, type RegionId } from "@/lib/regional/regional";
-import { PhotoPicker, Avatar } from "@/components/chameleon/Profile";
+import { PhotoPicker } from "@/components/chameleon/Profile";
 import { ReportProblemDialog } from "@/components/chameleon/ReportProblemDialog";
 import { BackupDialog } from "@/components/chameleon/BackupDialog";
 import { MySubscriptionPanel } from "@/components/chameleon/MySubscriptionPanel";
@@ -131,11 +125,12 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
     resetAppearance,
   } = useSettings();
 
+  // Apenas a seção de perfil inicia aberta por padrão para reduzir a rolagem excessiva
   const [openSections, setOpenSections] = useState<Record<PerfilSectionId, boolean>>({
     perfil: true,
     conta: false,
     pro: false,
-    aparencia: true,
+    aparencia: false,
     preferencias: false,
     dados: false,
   });
@@ -239,7 +234,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
   };
 
   return (
-    <NavigationAreaContainer>
+    <NavigationAreaContainer className="space-y-4 px-4 sm:px-6 pb-[calc(7.5rem+env(safe-area-inset-bottom,24px))]">
       {/* =========================================================================
           CABEÇALHO DA CENTRAL — COMPACTO E TÉCNICO
           ========================================================================= */}
@@ -271,6 +266,9 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
 
       {/* =========================================================================
           01 — PERFIL PROFISSIONAL
+          - Foto de perfil: 96 px (faixa recomendada de 88–104 px)
+          - Campos de formulário de largura total: altura 48–52 px
+          - Rótulos, campos e descrições claramente separados
           ========================================================================= */}
       <section
         id="perfil-profissional"
@@ -280,10 +278,10 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
         <button
           type="button"
           onClick={() => toggleSection("perfil")}
-          className="w-full flex items-center justify-between p-3.5 sm:p-4 text-left cursor-pointer transition-colors hover:bg-muted/30 focus-visible:outline-none"
+          className="w-full flex items-center justify-between p-4 sm:p-5 text-left cursor-pointer transition-colors hover:bg-muted/30 focus-visible:outline-none"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <div className="caldra-bubble-base caldra-bubble-sky size-10 shrink-0">
+            <div className="caldra-bubble-base caldra-bubble-sky size-11 shrink-0">
               <User className="size-5 text-sky-500" strokeWidth={1.8} />
             </div>
             <div className="min-w-0">
@@ -292,11 +290,11 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                 <h2 id="heading-perfil" className="font-display text-sm sm:text-base font-bold text-foreground">
                   Perfil Profissional
                 </h2>
-                <span className="hidden xs:inline-flex rounded-full bg-sky-500/10 border border-sky-500/30 px-2 py-0.2 font-mono text-[9px] text-sky-500 font-medium">
+                <span className="hidden xs:inline-flex rounded-full bg-sky-500/10 border border-sky-500/30 px-2 py-0.5 font-mono text-[9px] text-sky-500 font-medium">
                   {profile.name || "Caldeireiro"}
                 </span>
               </div>
-              <p className="text-[11px] text-muted-foreground truncate">
+              <p className="text-[11px] text-muted-foreground truncate mt-0.5">
                 Foto, identificação técnica, especialização e cargo.
               </p>
             </div>
@@ -305,7 +303,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
             <span className="hidden sm:inline-block font-mono text-[10px] text-muted-foreground">
               {level === "mestre" ? "Nível Mestre" : "Nível Aprendiz"}
             </span>
-            <div className={cn("size-6 rounded-full grid place-items-center text-muted-foreground transition-transform duration-200", openSections.perfil && "rotate-180")}>
+            <div className={cn("size-7 rounded-full grid place-items-center text-muted-foreground transition-transform duration-200", openSections.perfil && "rotate-180")}>
               <ChevronDown className="size-4" />
             </div>
           </div>
@@ -314,36 +312,51 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
         {openSections.perfil && (
           <div className="border-t border-border/50 p-4 sm:p-5 space-y-4 bg-card/30">
             <div className="flex flex-col sm:flex-row items-center sm:items-start gap-4 sm:gap-6">
-              {/* Foto de perfil com seletor real */}
+              {/* Foto de perfil: 96 px com controles claramente identificados */}
               <div className="shrink-0 flex flex-col items-center">
                 <PhotoPicker
                   photo={profile.photo}
-                  size={104}
+                  size={96}
                   label={profile.photo ? "Alterar foto" : "Adicionar foto"}
                   onPhoto={(p) => {
                     profile.update({ photo: p });
                     toast.success("Foto do perfil atualizada.");
                   }}
                 />
+                {profile.photo && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      profile.update({ photo: null });
+                      toast.success("Foto do perfil removida.");
+                    }}
+                    className="mt-1 font-mono text-[10px] text-destructive hover:underline cursor-pointer"
+                  >
+                    Remover foto
+                  </button>
+                )}
               </div>
 
-              {/* Campos de dados profissionais */}
-              <div className="flex-1 w-full space-y-3">
+              {/* Campos de dados profissionais em largura total (altura 48–52 px) */}
+              <div className="flex-1 w-full space-y-3.5">
                 <div>
-                  <label htmlFor="field-name" className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
-                    Nome Completo / Identificação
+                  <label htmlFor="field-name" className="block font-mono text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1.5">
+                    Nome Completo / Identificação Técnica
                   </label>
                   <input
                     id="field-name"
                     value={profile.name}
                     onChange={(e) => profile.update({ name: e.target.value })}
-                    placeholder={profile.displayName || "Seu nome profissional"}
-                    className="w-full rounded-xl border border-border/80 bg-background/60 px-3.5 py-2 font-display text-sm font-semibold text-foreground outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 transition-all"
+                    placeholder={profile.displayName || "Ex: Carlos Silva"}
+                    className="w-full h-12 rounded-xl border border-border/80 bg-background/60 px-4 font-display text-sm font-semibold text-foreground outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all"
                   />
+                  <span className="block text-[11px] text-muted-foreground mt-1">
+                    Exibido nos dossiês de projetos, relatórios e memoriais de cálculo.
+                  </span>
                 </div>
 
                 <div>
-                  <label htmlFor="field-role" className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
+                  <label htmlFor="field-role" className="block font-mono text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1.5">
                     Especialização Técnica / Cargo
                   </label>
                   <input
@@ -351,41 +364,44 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                     value={profile.role}
                     onChange={(e) => profile.update({ role: e.target.value })}
                     placeholder="Ex: Caldeireiro Traçador Especialista"
-                    className="w-full rounded-xl border border-border/80 bg-background/60 px-3.5 py-2 font-mono text-xs text-foreground outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 transition-all"
+                    className="w-full h-12 rounded-xl border border-border/80 bg-background/60 px-4 font-mono text-xs text-foreground outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all"
                   />
+                  <span className="block text-[11px] text-muted-foreground mt-1">
+                    Sua atuação principal na oficina mecânica ou caldeiraria pesada.
+                  </span>
                 </div>
 
-                {/* Seleção de Nível Técnico */}
+                {/* Seleção de Nível Técnico — botões de largura total com altura 48 px */}
                 <div>
-                  <span className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-1.5">
-                    Nível de Experiência
+                  <span className="block font-mono text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1.5">
+                    Nível de Experiência na Interface
                   </span>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={() => setLevel("aprendiz")}
                       className={cn(
-                        "flex items-center justify-center gap-1.5 rounded-xl border p-2 font-mono text-xs transition-all cursor-pointer",
+                        "flex h-12 items-center justify-center gap-2 rounded-xl border px-3 font-mono text-xs transition-all cursor-pointer",
                         level === "aprendiz"
                           ? "border-sky-500 bg-sky-500/15 text-sky-500 font-bold"
                           : "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40",
                       )}
                     >
-                      <User className="size-3.5" />
-                      <span>Aprendiz (Com dicas)</span>
+                      <User className="size-4" />
+                      <span>Aprendiz (Com dicas e guias)</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setLevel("mestre")}
                       className={cn(
-                        "flex items-center justify-center gap-1.5 rounded-xl border p-2 font-mono text-xs transition-all cursor-pointer",
+                        "flex h-12 items-center justify-center gap-2 rounded-xl border px-3 font-mono text-xs transition-all cursor-pointer",
                         level === "mestre"
                           ? "border-amber-500 bg-amber-500/15 text-amber-500 font-bold"
                           : "border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/40",
                       )}
                     >
-                      <Award className="size-3.5" />
-                      <span>Mestre (Fluxo Direto)</span>
+                      <Award className="size-4" />
+                      <span>Mestre (Fluxo direto de oficina)</span>
                     </button>
                   </div>
                 </div>
@@ -397,6 +413,9 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
 
       {/* =========================================================================
           02 — CONTA E SEGURANÇA
+          - Linhas compactas (48–52 px) com controles claros
+          - Estado da sessão confirmado
+          - Ações diretas e acessíveis
           ========================================================================= */}
       <section
         id="conta-seguranca"
@@ -406,10 +425,10 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
         <button
           type="button"
           onClick={() => toggleSection("conta")}
-          className="w-full flex items-center justify-between p-3.5 sm:p-4 text-left cursor-pointer transition-colors hover:bg-muted/30 focus-visible:outline-none"
+          className="w-full flex items-center justify-between p-4 sm:p-5 text-left cursor-pointer transition-colors hover:bg-muted/30 focus-visible:outline-none"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <div className="caldra-bubble-base caldra-bubble-emerald size-10 shrink-0">
+            <div className="caldra-bubble-base caldra-bubble-emerald size-11 shrink-0">
               <ShieldCheck className="size-5 text-emerald-500" strokeWidth={1.8} />
             </div>
             <div className="min-w-0">
@@ -418,17 +437,17 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                 <h2 id="heading-conta" className="font-display text-sm sm:text-base font-bold text-foreground">
                   Conta e Segurança
                 </h2>
-                <span className="rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.2 font-mono text-[9px] text-emerald-500 font-medium">
+                <span className="rounded-full bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 font-mono text-[9px] text-emerald-500 font-medium">
                   {user ? "Conectado" : "Modo Local"}
                 </span>
               </div>
-              <p className="text-[11px] text-muted-foreground truncate">
+              <p className="text-[11px] text-muted-foreground truncate mt-0.5">
                 Estado da sessão, modo de utilização, privacidade e acesso.
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <div className={cn("size-6 rounded-full grid place-items-center text-muted-foreground transition-transform duration-200", openSections.conta && "rotate-180")}>
+            <div className={cn("size-7 rounded-full grid place-items-center text-muted-foreground transition-transform duration-200", openSections.conta && "rotate-180")}>
               <ChevronDown className="size-4" />
             </div>
           </div>
@@ -436,33 +455,33 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
 
         {openSections.conta && (
           <div className="border-t border-border/50 p-4 sm:p-5 space-y-4 bg-card/30">
-            {/* Estado da sessão atual */}
+            {/* Estado da sessão atual com linha de ação de 48–52 px */}
             <div className="rounded-xl border border-border/70 bg-background/50 p-3.5 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div>
-                  <span className="font-mono text-[10px] uppercase text-muted-foreground block">
-                    Modo de Utilização / Estado da Sessão
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground block">
+                    Modo de Utilização / Sessão Ativa
                   </span>
                   <p className="font-mono text-xs sm:text-sm font-semibold text-foreground mt-0.5">
-                    {user ? user.email : "Modo Offline / Armazenamento Local no Dispositivo"}
+                    {user ? user.email : "Modo Offline · Armazenamento Local no Dispositivo"}
                   </p>
                   <p className="text-[11px] text-muted-foreground mt-0.5">
                     {user
-                      ? "Conta autenticada com sincronização habilitada."
-                      : "Seus dados de projetos, orçamentos e traçados são mantidos seguros na memória local do navegador."}
+                      ? "Conta autenticada com sincronização na nuvem."
+                      : "Seus dados de projetos, traçados e orçamentos ficam seguros na memória do navegador."}
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1 sm:pt-0">
+                <div className="flex items-center gap-2 pt-1 sm:pt-0 shrink-0">
                   <Link
                     to="/conta"
                     onClick={() => {
                       triggerHaptic("tap");
                       AudioManager.play("ui_nav");
                     }}
-                    className="inline-flex items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 font-mono text-xs font-semibold text-emerald-500 hover:bg-emerald-500/20 active:scale-95 transition-all"
+                    className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-3.5 font-mono text-xs font-semibold text-emerald-500 hover:bg-emerald-500/20 active:scale-95 transition-all"
                   >
-                    <span>Gerenciar Conta</span>
+                    <span>{user ? "Gerenciar Conta" : "Entrar / Criar Conta"}</span>
                     <ChevronRight className="size-3.5" />
                   </Link>
 
@@ -474,7 +493,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                         void signOut();
                         toast.success("Sessão encerrada com sucesso.");
                       }}
-                      className="inline-flex items-center gap-1 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-1.5 font-mono text-xs font-semibold text-destructive hover:bg-destructive/20 active:scale-95 transition-all cursor-pointer"
+                      className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-destructive/40 bg-destructive/10 px-3.5 font-mono text-xs font-semibold text-destructive hover:bg-destructive/20 active:scale-95 transition-all cursor-pointer"
                     >
                       <LogOut className="size-3.5" />
                       <span>Sair</span>
@@ -484,12 +503,12 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
               </div>
             </div>
 
-            {/* Privacidade e telemetria anônima */}
+            {/* Privacidade e telemetria anônima em linha compacta de 48 px */}
             <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-2.5">
               <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground block">
                 Privacidade & Diagnóstico Anônimo
               </span>
-              <label className="flex items-start gap-3 cursor-pointer text-xs sm:text-sm">
+              <label className="flex min-h-[48px] items-center gap-3 cursor-pointer text-xs sm:text-sm">
                 <input
                   type="checkbox"
                   checked={consent}
@@ -502,17 +521,17 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                         : "Envio de estatísticas anônimas desativado.",
                     );
                   }}
-                  className="mt-0.5 size-4 accent-amber-500 rounded cursor-pointer"
+                  className="size-4.5 accent-amber-500 rounded cursor-pointer shrink-0"
                 />
                 <span className="text-foreground">
                   Compartilhar diagnósticos e métricas anônimas de uso
                   <span className="block text-[11px] text-muted-foreground mt-0.5">
-                    Nenhum desenho técnico, cota, projeto ou fórmula é transmitido.
+                    Nenhum desenho técnico, cota, projeto ou fórmula é transmitido externamente.
                   </span>
                 </span>
               </label>
 
-              <div className="flex flex-wrap items-center gap-3 pt-1 font-mono text-[11px] text-muted-foreground uppercase">
+              <div className="flex flex-wrap items-center gap-3 pt-1 font-mono text-[11px] text-muted-foreground uppercase border-t border-border/40">
                 <Link to="/privacidade" className="hover:text-foreground hover:underline">
                   Privacidade
                 </Link>
@@ -532,6 +551,10 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
 
       {/* =========================================================================
           03 — CALDRA PRO E ASSINATURA
+          - Plano atual e status claramente identificados
+          - Recursos inclusos vs diferenciais Pro explicados de forma objetiva
+          - Próximo passo com destaque moderado (sem escassez artificial)
+          - Chave técnica de oficina / código de ativação
           ========================================================================= */}
       <section
         id="caldra-pro"
@@ -541,10 +564,10 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
         <button
           type="button"
           onClick={() => toggleSection("pro")}
-          className="w-full flex items-center justify-between p-3.5 sm:p-4 text-left cursor-pointer transition-colors hover:bg-muted/30 focus-visible:outline-none"
+          className="w-full flex items-center justify-between p-4 sm:p-5 text-left cursor-pointer transition-colors hover:bg-muted/30 focus-visible:outline-none"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <div className="caldra-bubble-base caldra-bubble-amber size-10 shrink-0">
+            <div className="caldra-bubble-base caldra-bubble-amber size-11 shrink-0">
               <Sparkles className="size-5 text-amber-500" strokeWidth={1.8} />
             </div>
             <div className="min-w-0">
@@ -554,7 +577,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                   CALDRA Pro e Assinatura
                 </h2>
                 <span className={cn(
-                  "rounded-full px-2 py-0.2 font-mono text-[9px] font-bold uppercase border",
+                  "rounded-full px-2 py-0.5 font-mono text-[9px] font-bold uppercase border",
                   plan === "pro" || isMestre
                     ? "bg-amber-500/20 text-amber-500 border-amber-500/40"
                     : "bg-muted text-muted-foreground border-border/60",
@@ -562,13 +585,13 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                   {isMestre ? "Modo Mestre" : PLAN_LABEL[plan] || "CALDRA Free"}
                 </span>
               </div>
-              <p className="text-[11px] text-muted-foreground truncate">
-                Plano ativo, exportação DXF/PDF, recursos avançados e licença.
+              <p className="text-[11px] text-muted-foreground truncate mt-0.5">
+                Plano ativo, recursos inclusos, exportação DXF/PDF e licença.
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <div className={cn("size-6 rounded-full grid place-items-center text-muted-foreground transition-transform duration-200", openSections.pro && "rotate-180")}>
+            <div className={cn("size-7 rounded-full grid place-items-center text-muted-foreground transition-transform duration-200", openSections.pro && "rotate-180")}>
               <ChevronDown className="size-4" />
             </div>
           </div>
@@ -576,19 +599,19 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
 
         {openSections.pro && (
           <div className="border-t border-border/50 p-4 sm:p-5 space-y-4 bg-card/30">
-            {/* Status do plano e ação de upgrade */}
+            {/* Status do plano atual e chamada de ação de destaque moderado */}
             <div className="rounded-xl border border-amber-500/40 bg-amber-500/[0.06] p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div>
                 <span className="font-mono text-[10px] uppercase text-amber-500 font-bold block">
                   Plano Atual Vigente
                 </span>
                 <p className="font-display text-base font-bold text-foreground mt-0.5">
-                  {isMestre ? "CALDRA Pro · Modo Mestre Ativo" : PLAN_LABEL[plan] || "CALDRA Free"}
+                  {isMestre ? "CALDRA Pro · Licença Modo Mestre Ativa" : PLAN_LABEL[plan] || "CALDRA Free"}
                 </p>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
                   {isMestre || plan === "pro"
-                    ? "Acesso completo a planificações 3D ilimitadas, exportação DXF, cálculos com K-factor e biblioteca técnica."
-                    : "Planificação básica de caldeiraria inclusa. Atualize para exportar DXF e destravar modelos avançados."}
+                    ? "Acesso completo a planificações 3D ilimitadas, exportação DXF 1:1, cálculos com Fator K e relatórios técnicos."
+                    : "Acesso à traçagem paramétrica básica no navegador. Atualize para exportar DXF e destravar relatórios."}
                 </p>
               </div>
 
@@ -599,18 +622,71 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                     triggerHaptic("tap");
                     AudioManager.play("ui_nav");
                   }}
-                  className="inline-flex items-center gap-1 rounded-xl bg-amber-500 px-3.5 py-2 font-mono text-xs font-bold text-black shadow-md hover:bg-amber-400 active:scale-95 transition-all"
+                  className="inline-flex h-11 items-center justify-center gap-1.5 rounded-xl bg-amber-500 px-4 font-mono text-xs font-bold text-black shadow-md hover:bg-amber-400 active:scale-95 transition-all"
                 >
-                  <span>{plan === "pro" || isMestre ? "Gerenciar Plano" : "Ver Planos Pro"}</span>
+                  <span>{plan === "pro" || isMestre ? "Gerenciar Assinatura" : "Ver Planos Pro"}</span>
                   <ExternalLink className="size-3.5" />
                 </Link>
+              </div>
+            </div>
+
+            {/* Comparativo transparente de recursos reais (sem escassez artificial) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* No seu plano atual */}
+              <div className="rounded-xl border border-border/70 bg-background/50 p-3.5 space-y-2.5">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground block">
+                  Incluído no Seu Plano ({isMestre ? "PRO" : PLAN_LABEL[plan] || "FREE"})
+                </span>
+                <ul className="space-y-1.5 text-xs text-foreground">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="size-3.5 text-emerald-500 mt-0.5 shrink-0" />
+                    <span>Traçagem paramétrica 2D e 3D no navegador</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="size-3.5 text-emerald-500 mt-0.5 shrink-0" />
+                    <span>Geometria analítica e planificação em chapa plana</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="size-3.5 text-emerald-500 mt-0.5 shrink-0" />
+                    <span>Operação 100% offline para uso na oficina</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="size-3.5 text-emerald-500 mt-0.5 shrink-0" />
+                    <span>Salvamento local no dispositivo</span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Diferenciais CALDRA Pro */}
+              <div className="rounded-xl border border-amber-500/30 bg-amber-500/[0.04] p-3.5 space-y-2.5">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-amber-500 font-bold block">
+                  Diferenciais do CALDRA Pro
+                </span>
+                <ul className="space-y-1.5 text-xs text-foreground">
+                  <li className="flex items-start gap-2">
+                    <Sparkles className="size-3.5 text-amber-500 mt-0.5 shrink-0" />
+                    <span>Exportação vetorial DXF 1:1 para corte CNC e laser</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Sparkles className="size-3.5 text-amber-500 mt-0.5 shrink-0" />
+                    <span>Memoriais de cálculo detalhados e fichas em PDF</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Sparkles className="size-3.5 text-amber-500 mt-0.5 shrink-0" />
+                    <span>Compensação de dobra com Fator K configurável</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Sparkles className="size-3.5 text-amber-500 mt-0.5 shrink-0" />
+                    <span>Biblioteca técnica completa de caldeiraria pesada</span>
+                  </li>
+                </ul>
               </div>
             </div>
 
             {/* Ativação via Código de Licença / Modo Mestre */}
             <div className="rounded-xl border border-border/70 bg-background/50 p-3.5 space-y-2.5">
               <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground block">
-                Ativação por Código de Licença / Workshop Key
+                Ativação por Código de Licença / Chave Técnica
               </span>
               {isMestre ? (
                 <div className="flex items-center justify-between">
@@ -623,7 +699,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                       resetPro();
                       toast.success("CALDRA Pro desativado neste aparelho.");
                     }}
-                    className="rounded-lg border border-border px-3 py-1 font-mono text-xs text-muted-foreground hover:text-foreground cursor-pointer"
+                    className="h-10 rounded-xl border border-border px-3 font-mono text-xs text-muted-foreground hover:text-foreground cursor-pointer"
                   >
                     Desativar Licença
                   </button>
@@ -633,21 +709,21 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                   <input
                     value={code}
                     onChange={(e) => setCode(e.target.value)}
-                    placeholder="DIGITE O CÓDIGO PRO"
+                    placeholder="DIGITE O CÓDIGO DA OFICINA"
                     autoCapitalize="characters"
-                    className="flex-1 rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs tracking-widest uppercase outline-none focus:border-amber-500"
+                    className="flex-1 h-12 rounded-xl border border-border bg-background px-3.5 font-mono text-xs tracking-widest uppercase outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20"
                   />
                   <button
                     type="submit"
-                    className="rounded-xl bg-amber-500 px-4 py-2 font-mono text-xs font-bold text-black hover:bg-amber-400 active:scale-95 cursor-pointer"
+                    className="h-12 rounded-xl bg-amber-500 px-5 font-mono text-xs font-bold text-black hover:bg-amber-400 active:scale-95 cursor-pointer shrink-0"
                   >
-                    Ativar
+                    Ativar Chave
                   </button>
                 </form>
               )}
             </div>
 
-            {/* Painel de Assinatura */}
+            {/* Painel de Diagnóstico e Restauração de Assinatura */}
             <MySubscriptionPanel />
           </div>
         )}
@@ -655,6 +731,10 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
 
       {/* =========================================================================
           04 — APARÊNCIA E PERSONALIZAÇÃO
+          - Linhas compactas (48–52 px) para opções simples
+          - Sliders de opacidade com rótulos e feedback visual
+          - Pré-visualização reativa em tempo real
+          - Restauração de padrão acessível
           ========================================================================= */}
       <section
         id="aparencia-personalizacao"
@@ -664,10 +744,10 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
         <button
           type="button"
           onClick={() => toggleSection("aparencia")}
-          className="w-full flex items-center justify-between p-3.5 sm:p-4 text-left cursor-pointer transition-colors hover:bg-muted/30 focus-visible:outline-none"
+          className="w-full flex items-center justify-between p-4 sm:p-5 text-left cursor-pointer transition-colors hover:bg-muted/30 focus-visible:outline-none"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <div className="caldra-bubble-base caldra-bubble-center size-10 shrink-0 border border-amber-500/40 text-amber-500">
+            <div className="caldra-bubble-base caldra-bubble-center size-11 shrink-0 border border-amber-500/40 text-amber-500">
               <Palette className="size-5" strokeWidth={1.8} />
             </div>
             <div className="min-w-0">
@@ -676,17 +756,17 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                 <h2 id="heading-aparencia" className="font-display text-sm sm:text-base font-bold text-foreground">
                   Aparência e Personalização
                 </h2>
-                <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.2 font-mono text-[9px] text-amber-500 font-medium">
+                <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 font-mono text-[9px] text-amber-500 font-medium">
                   {theme === "dark" ? "Escuro" : theme === "light" ? "Claro" : theme === "amoled" ? "AMOLED" : "Sistema"} · {cardOpacity}%
                 </span>
               </div>
-              <p className="text-[11px] text-muted-foreground truncate">
+              <p className="text-[11px] text-muted-foreground truncate mt-0.5">
                 Tema claro/escuro, opacidade de cartões/bolhas, cor e fundo fluido.
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <div className={cn("size-6 rounded-full grid place-items-center text-muted-foreground transition-transform duration-200", openSections.aparencia && "rotate-180")}>
+            <div className={cn("size-7 rounded-full grid place-items-center text-muted-foreground transition-transform duration-200", openSections.aparencia && "rotate-180")}>
               <ChevronDown className="size-4" />
             </div>
           </div>
@@ -701,7 +781,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                   Estilo Visual Global
                 </span>
                 <p className="text-xs text-muted-foreground">
-                  Afeta todas as telas: Projetar, Produzir, Início, Aprenda e Perfil.
+                  Afeta todas as áreas: Projetar, Produzir, Início, Aprenda e Perfil.
                 </p>
               </div>
               <button
@@ -711,19 +791,19 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                   resetAppearance();
                   toast.success("Aparência restaurada para o padrão do CALDRA.");
                 }}
-                className="inline-flex items-center gap-1 rounded-lg border border-border/70 px-2.5 py-1 font-mono text-[10px] text-muted-foreground hover:text-foreground active:scale-95 cursor-pointer"
+                className="inline-flex h-9 items-center gap-1 rounded-lg border border-border/70 px-2.5 font-mono text-[10px] text-muted-foreground hover:text-foreground active:scale-95 cursor-pointer"
               >
                 <RotateCcw className="size-3" />
                 <span>Restaurar Padrão</span>
               </button>
             </div>
 
-            {/* A. Seleção de Tema */}
+            {/* A. Seleção de Tema — botões de 44–48 px */}
             <div className="space-y-1.5">
               <span className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                 Modo de Exibição
               </span>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {THEMES.map((t) => {
                   const Icon = t.icon;
                   const isSelected = theme === t.id;
@@ -739,14 +819,14 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                         }
                       }}
                       className={cn(
-                        "relative flex items-center justify-between rounded-xl border px-3 py-2 font-mono text-xs transition-all cursor-pointer",
+                        "relative flex h-11 items-center justify-between rounded-xl border px-3 font-mono text-xs transition-all cursor-pointer",
                         isSelected
                           ? "border-amber-500 bg-amber-500/10 text-amber-500 font-bold shadow-xs ring-1 ring-amber-500/30"
                           : "border-border/70 text-muted-foreground hover:text-foreground hover:border-border",
                       )}
                     >
                       <div className="flex items-center gap-2">
-                        <Icon className="size-3.5" />
+                        <Icon className="size-4" />
                         <span>{t.label}</span>
                       </div>
                       {isSelected && (
@@ -770,7 +850,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                       Opacidade dos Cartões
                     </span>
                     <span className="text-[11px] text-muted-foreground block">
-                      Ajuste a transparência dos painéis e blocos de dados.
+                      Transparência dos blocos e painéis de dados.
                     </span>
                   </div>
                   <span className="font-mono text-xs font-bold text-amber-500 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md">
@@ -803,7 +883,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                       Opacidade das Bolhas e Badges
                     </span>
                     <span className="text-[11px] text-muted-foreground block">
-                      Ajuste a transparência dos círculos, ícones e elementos arredondados.
+                      Transparência de círculos de ícones e indicadores.
                     </span>
                   </div>
                   <span className="font-mono text-xs font-bold text-amber-500 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-md">
@@ -843,7 +923,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                         Exemplo de Superfície CAD
                       </span>
                       <span className="text-[10px] text-muted-foreground block">
-                        Reage de forma imediata aos sliders de opacidade e ao tema
+                        Reage instantaneamente aos ajustes de opacidade e tema
                       </span>
                     </div>
                   </div>
@@ -862,12 +942,12 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
               </div>
             </div>
 
-            {/* Cor de destaque */}
+            {/* Cor de destaque — botões de 44 px */}
             <div className="space-y-1.5">
               <span className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                 Cor de Destaque
               </span>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {ACCENTS.map((a) => {
                   const isActive = accent === a.id || (a.id === "crimson" && accent === "magenta");
                   return (
@@ -880,7 +960,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                         setAccent(a.id);
                       }}
                       className={cn(
-                        "flex items-center justify-center gap-2 rounded-xl border px-2.5 py-2 font-mono text-xs transition-colors cursor-pointer",
+                        "flex h-11 items-center justify-center gap-2 rounded-xl border px-2.5 font-mono text-xs transition-colors cursor-pointer",
                         isActive
                           ? "border-amber-500/40 bg-amber-500/10 text-amber-500 font-semibold"
                           : "border-border/70 text-muted-foreground hover:text-foreground",
@@ -903,7 +983,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
               <span className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                 Estilo do Fundo (Aurora)
               </span>
-              <div className="grid grid-cols-3 gap-1.5">
+              <div className="grid grid-cols-3 gap-2">
                 {AURORA_STYLES.map((a) => (
                   <button
                     key={a.id}
@@ -913,7 +993,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                       setAuroraStyle(a.id);
                     }}
                     className={cn(
-                      "rounded-xl border py-2 text-center font-mono text-xs uppercase transition-colors cursor-pointer",
+                      "h-11 rounded-xl border text-center font-mono text-xs uppercase transition-colors cursor-pointer",
                       auroraStyle === a.id
                         ? "border-amber-500/40 bg-amber-500/10 text-amber-500 font-bold"
                         : "border-border/70 text-muted-foreground hover:text-foreground",
@@ -929,14 +1009,14 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
             </div>
 
             {/* Estado Híbrido de IA do Organic Light Field */}
-            <div className="rounded-xl border border-border/60 bg-muted/20 p-3 space-y-2">
+            <div className="rounded-xl border border-border/60 bg-muted/20 p-3.5 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div>
                   <span className="font-mono text-[10px] uppercase tracking-wider text-foreground font-semibold block">
                     Estado de IA do Fundo Orgânico
                   </span>
                   <p className="text-[10px] text-muted-foreground">
-                    Simulação de pulsos e ondas quando cálculos de traçado estão em execução.
+                    Pulsos e ondas dinâmicas enquanto cálculos de traçado são executados.
                   </p>
                 </div>
                 <span className={cn(
@@ -964,14 +1044,14 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                       triggerProcessing(8000, "Calculando Traçado & Malha IA");
                     }
                   }}
-                  className="flex-1 rounded-lg border border-amber-500/30 bg-amber-500/10 py-1.5 font-mono text-[10px] text-amber-500 hover:bg-amber-500/20 active:scale-95 cursor-pointer"
+                  className="flex-1 h-10 rounded-xl border border-amber-500/30 bg-amber-500/10 font-mono text-[10px] text-amber-500 hover:bg-amber-500/20 active:scale-95 cursor-pointer"
                 >
                   {isProcessing && !isContinuous ? "Parar Simulação" : "Simular IA (8s)"}
                 </button>
                 <button
                   type="button"
                   onClick={toggleContinuous}
-                  className="rounded-lg border border-border/70 bg-card py-1.5 px-3 font-mono text-[10px] text-muted-foreground hover:text-foreground active:scale-95 cursor-pointer"
+                  className="h-10 rounded-xl border border-border/70 bg-card px-4 font-mono text-[10px] text-muted-foreground hover:text-foreground active:scale-95 cursor-pointer"
                 >
                   {isContinuous ? "Desativar Contínuo" : "Modo Contínuo"}
                 </button>
@@ -983,6 +1063,9 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
 
       {/* =========================================================================
           05 — PREFERÊNCIAS DO APLICATIVO
+          - Agrupadas por finalidade em linhas compactas (48–52 px)
+          - Unidades, casas decimais, idioma, região e autosave
+          - Painel de áudio e vibração tátil
           ========================================================================= */}
       <section
         id="preferencias-app"
@@ -992,10 +1075,10 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
         <button
           type="button"
           onClick={() => toggleSection("preferencias")}
-          className="w-full flex items-center justify-between p-3.5 sm:p-4 text-left cursor-pointer transition-colors hover:bg-muted/30 focus-visible:outline-none"
+          className="w-full flex items-center justify-between p-4 sm:p-5 text-left cursor-pointer transition-colors hover:bg-muted/30 focus-visible:outline-none"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <div className="caldra-bubble-base caldra-bubble-indigo size-10 shrink-0">
+            <div className="caldra-bubble-base caldra-bubble-indigo size-11 shrink-0">
               <SlidersHorizontal className="size-5 text-indigo-400" strokeWidth={1.8} />
             </div>
             <div className="min-w-0">
@@ -1004,17 +1087,17 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                 <h2 id="heading-preferencias" className="font-display text-sm sm:text-base font-bold text-foreground">
                   Preferências do Aplicativo
                 </h2>
-                <span className="rounded-full bg-indigo-500/10 border border-indigo-500/30 px-2 py-0.2 font-mono text-[9px] text-indigo-400 font-medium">
+                <span className="rounded-full bg-indigo-500/10 border border-indigo-500/30 px-2 py-0.5 font-mono text-[9px] text-indigo-400 font-medium">
                   {unit} · {precision} decimais
                 </span>
               </div>
-              <p className="text-[11px] text-muted-foreground truncate">
+              <p className="text-[11px] text-muted-foreground truncate mt-0.5">
                 Unidades, precisão, idioma, áudio, haptics e autosave do CHAMFER.
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <div className={cn("size-6 rounded-full grid place-items-center text-muted-foreground transition-transform duration-200", openSections.preferencias && "rotate-180")}>
+            <div className={cn("size-7 rounded-full grid place-items-center text-muted-foreground transition-transform duration-200", openSections.preferencias && "rotate-180")}>
               <ChevronDown className="size-4" />
             </div>
           </div>
@@ -1022,7 +1105,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
 
         {openSections.preferencias && (
           <div className="border-t border-border/50 p-4 sm:p-5 space-y-4 bg-card/30">
-            {/* Unidades & Precisão */}
+            {/* Unidades & Precisão em linhas compactas */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <span className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground mb-1">
@@ -1035,7 +1118,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                       type="button"
                       onClick={() => setUnit(u)}
                       className={cn(
-                        "rounded-xl border py-2 text-center font-mono text-xs uppercase transition-colors cursor-pointer",
+                        "h-11 rounded-xl border text-center font-mono text-xs uppercase transition-colors cursor-pointer",
                         unit === u
                           ? "border-amber-500/40 bg-amber-500/10 text-amber-500 font-bold"
                           : "border-border/70 text-muted-foreground hover:text-foreground",
@@ -1056,15 +1139,17 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                     {precision} ({precision === 0 ? "Inteiro" : `${precision} casas`})
                   </span>
                 </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={4}
-                  value={precision}
-                  onChange={(e) => setPrecision(Number(e.target.value))}
-                  aria-label="Precisão decimal"
-                  className="w-full accent-amber-500 h-2 bg-muted rounded-lg cursor-pointer"
-                />
+                <div className="flex items-center h-11">
+                  <input
+                    type="range"
+                    min={0}
+                    max={4}
+                    value={precision}
+                    onChange={(e) => setPrecision(Number(e.target.value))}
+                    aria-label="Precisão decimal"
+                    className="w-full accent-amber-500 h-2 bg-muted rounded-lg cursor-pointer"
+                  />
+                </div>
               </div>
             </div>
 
@@ -1081,7 +1166,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                       type="button"
                       onClick={() => setLanguage(l.id)}
                       className={cn(
-                        "rounded-xl border py-2 text-center font-mono text-[11px] transition-colors cursor-pointer",
+                        "h-11 rounded-xl border text-center font-mono text-[11px] transition-colors cursor-pointer",
                         language === l.id
                           ? "border-amber-500/40 bg-amber-500/10 text-amber-500 font-bold"
                           : "border-border/70 text-muted-foreground hover:text-foreground",
@@ -1104,13 +1189,13 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                       type="button"
                       onClick={() => setRegion(r)}
                       className={cn(
-                        "rounded-xl border py-1.5 px-2 text-left font-mono text-[10px] transition-colors cursor-pointer",
+                        "h-11 rounded-xl border px-2.5 text-left font-mono text-[10px] transition-colors cursor-pointer flex flex-col justify-center",
                         region === r
                           ? "border-amber-500/40 bg-amber-500/10 text-amber-500 font-bold"
                           : "border-border/70 text-muted-foreground hover:text-foreground",
                       )}
                     >
-                      <span className="block font-bold">{REGIONS[r].label}</span>
+                      <span className="block font-bold truncate">{REGIONS[r].label}</span>
                       <span className="text-[9px] text-muted-foreground">({REGIONS[r].currency})</span>
                     </button>
                   ))}
@@ -1118,13 +1203,13 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
               </div>
             </div>
 
-            {/* Configurações da Prancheta CHAMFER CAD & Autosave */}
+            {/* Configurações da Prancheta CHAMFER CAD & Autosave em linhas de 48–52 px */}
             <div className="rounded-xl border border-border/70 bg-background/50 p-3.5 space-y-3">
               <div className="flex items-center justify-between border-b border-border/40 pb-2">
                 <div className="flex items-center gap-2">
                   <PenTool className="size-4 text-amber-500" />
                   <span className="font-display text-xs font-bold text-foreground">
-                    Prancheta CHAMFER CAD & Autosave
+                    Prancheta CHAMFER CAD & Gravação Automática
                   </span>
                 </div>
                 <button
@@ -1137,7 +1222,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                <div className="flex min-h-[48px] items-center justify-between rounded-xl border border-border/60 bg-muted/20 p-2.5">
                   <div>
                     <span className="font-mono text-[11px] font-semibold text-foreground block">
                       Autosave Automático
@@ -1150,9 +1235,9 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                     type="button"
                     onClick={() => updateChamfer({ autoSave: !chamferSettings.autoSave })}
                     className={cn(
-                      "px-2.5 py-1 rounded font-mono text-[10px] font-bold uppercase",
+                      "h-8 px-3 rounded-lg font-mono text-[10px] font-bold uppercase transition-all",
                       chamferSettings.autoSave
-                        ? "bg-amber-500 text-black"
+                        ? "bg-amber-500 text-black shadow-xs"
                         : "bg-muted text-muted-foreground",
                     )}
                   >
@@ -1160,26 +1245,26 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                   </button>
                 </div>
 
-                <div className="flex items-center justify-between rounded-lg border border-border/60 bg-muted/20 p-2.5">
+                <div className="flex min-h-[48px] items-center justify-between rounded-xl border border-border/60 bg-muted/20 p-2.5">
                   <div>
                     <span className="font-mono text-[11px] font-semibold text-foreground block">
                       Recuperação de Sessão (Crash Recovery)
                     </span>
                     <span className="text-[9px] text-muted-foreground">
-                      Restaura prancheta se a aba fechar
+                      Restaura se a aba fechar
                     </span>
                   </div>
                   <button
                     type="button"
                     onClick={() => updateChamfer({ recoveryEnabled: !chamferSettings.recoveryEnabled })}
                     className={cn(
-                      "size-6 rounded grid place-items-center border",
+                      "size-8 rounded-lg grid place-items-center border transition-all",
                       chamferSettings.recoveryEnabled
                         ? "border-emerald-500 bg-emerald-500/20 text-emerald-500"
                         : "border-border text-transparent",
                     )}
                   >
-                    <Check className="size-3.5" />
+                    <Check className="size-4" />
                   </button>
                 </div>
               </div>
@@ -1190,7 +1275,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                   <span className="block font-mono text-[10px] text-muted-foreground mb-1">
                     Intervalo de Gravação do Autosave
                   </span>
-                  <div className="grid grid-cols-5 gap-1">
+                  <div className="grid grid-cols-5 gap-1.5">
                     {[
                       { sec: 10, label: "10s" },
                       { sec: 15, label: "15s" },
@@ -1203,9 +1288,9 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                         type="button"
                         onClick={() => updateChamfer({ autoSaveIntervalSec: item.sec })}
                         className={cn(
-                          "rounded-lg border py-1 font-mono text-[10px] font-bold text-center",
+                          "h-9 rounded-lg border font-mono text-[10px] font-bold text-center transition-all",
                           chamferSettings.autoSaveIntervalSec === item.sec
-                            ? "border-amber-500/40 bg-amber-500/15 text-amber-500"
+                            ? "border-amber-500/40 bg-amber-500/15 text-amber-500 shadow-xs"
                             : "border-border/60 bg-card/40 text-muted-foreground hover:text-foreground",
                         )}
                       >
@@ -1225,6 +1310,8 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
 
       {/* =========================================================================
           06 — DADOS, ARMAZENAMENTO E MANUTENÇÃO
+          - Backup e restauração JSON em linhas compactas
+          - Informações de versão e suporte
           ========================================================================= */}
       <section
         id="dados-manutencao"
@@ -1234,10 +1321,10 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
         <button
           type="button"
           onClick={() => toggleSection("dados")}
-          className="w-full flex items-center justify-between p-3.5 sm:p-4 text-left cursor-pointer transition-colors hover:bg-muted/30 focus-visible:outline-none"
+          className="w-full flex items-center justify-between p-4 sm:p-5 text-left cursor-pointer transition-colors hover:bg-muted/30 focus-visible:outline-none"
         >
           <div className="flex items-center gap-3 min-w-0">
-            <div className="caldra-bubble-base caldra-bubble-neutral size-10 shrink-0">
+            <div className="caldra-bubble-base caldra-bubble-neutral size-11 shrink-0">
               <HardDriveDownload className="size-5 text-muted-foreground" strokeWidth={1.8} />
             </div>
             <div className="min-w-0">
@@ -1246,17 +1333,17 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                 <h2 id="heading-dados" className="font-display text-sm sm:text-base font-bold text-foreground">
                   Dados, Armazenamento e Manutenção
                 </h2>
-                <span className="rounded-full bg-muted border border-border/60 px-2 py-0.2 font-mono text-[9px] text-muted-foreground font-medium">
+                <span className="rounded-full bg-muted border border-border/60 px-2 py-0.5 font-mono text-[9px] text-muted-foreground font-medium">
                   v{APP_VERSION}
                 </span>
               </div>
-              <p className="text-[11px] text-muted-foreground truncate">
+              <p className="text-[11px] text-muted-foreground truncate mt-0.5">
                 Backup, restauração JSON, diagnóstico, versão e suporte técnico.
               </p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <div className={cn("size-6 rounded-full grid place-items-center text-muted-foreground transition-transform duration-200", openSections.dados && "rotate-180")}>
+            <div className={cn("size-7 rounded-full grid place-items-center text-muted-foreground transition-transform duration-200", openSections.dados && "rotate-180")}>
               <ChevronDown className="size-4" />
             </div>
           </div>
@@ -1264,8 +1351,8 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
 
         {openSections.dados && (
           <div className="border-t border-border/50 p-4 sm:p-5 space-y-4 bg-card/30">
-            {/* Backup e Restauração */}
-            <div className="rounded-xl border border-border/70 bg-background/50 p-3.5 space-y-2">
+            {/* Backup e Restauração com botão de 48 px */}
+            <div className="rounded-xl border border-border/70 bg-background/50 p-3.5 space-y-2.5">
               <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground block">
                 Backup e Portabilidade Local
               </span>
@@ -1278,9 +1365,9 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                   triggerHaptic("tap");
                   setBackupOpen(true);
                 }}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-border/80 bg-card px-3.5 py-2 font-mono text-xs font-semibold text-foreground hover:bg-muted active:scale-95 transition-all cursor-pointer"
+                className="inline-flex h-12 items-center gap-2 rounded-xl border border-border/80 bg-card px-4 font-mono text-xs font-semibold text-foreground hover:bg-muted active:scale-95 transition-all cursor-pointer"
               >
-                <HardDriveDownload className="size-3.5 text-amber-500" />
+                <HardDriveDownload className="size-4 text-amber-500" />
                 <span>Abrir Backup e Restauração</span>
               </button>
             </div>
@@ -1302,9 +1389,9 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                     triggerHaptic("tap");
                     setReportOpen(true);
                   }}
-                  className="inline-flex items-center gap-1 rounded-lg border border-border/70 bg-card px-2.5 py-1.5 font-mono text-[11px] text-muted-foreground hover:text-foreground active:scale-95 cursor-pointer"
+                  className="inline-flex h-10 items-center gap-1.5 rounded-xl border border-border/70 bg-card px-3 font-mono text-[11px] text-muted-foreground hover:text-foreground active:scale-95 cursor-pointer"
                 >
-                  <Bug className="size-3 text-rose-500" />
+                  <Bug className="size-3.5 text-rose-500" />
                   <span>Reportar Problema</span>
                 </button>
               </div>
@@ -1313,7 +1400,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                 <button
                   type="button"
                   onClick={() => window.dispatchEvent(new CustomEvent("caldra:open-intro"))}
-                  className="rounded-lg border border-border/70 bg-muted/30 px-3 py-1.5 font-mono text-[10px] text-muted-foreground hover:text-foreground active:scale-95 cursor-pointer"
+                  className="h-10 rounded-xl border border-border/70 bg-muted/30 px-3 font-mono text-[10px] text-muted-foreground hover:text-foreground active:scale-95 cursor-pointer"
                 >
                   ✦ Apresentação da CALDRA
                 </button>
@@ -1323,13 +1410,13 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                     window.dispatchEvent(new CustomEvent("caldra:open-intro"));
                     window.dispatchEvent(new CustomEvent("caldra:open-preintro"));
                   }}
-                  className="rounded-lg border border-border/70 bg-muted/30 px-3 py-1.5 font-mono text-[10px] text-muted-foreground hover:text-foreground active:scale-95 cursor-pointer"
+                  className="h-10 rounded-xl border border-border/70 bg-muted/30 px-3 font-mono text-[10px] text-muted-foreground hover:text-foreground active:scale-95 cursor-pointer"
                 >
                   ✦ Gênese da Marca
                 </button>
                 <Link
                   to="/novidades"
-                  className="rounded-lg border border-border/70 bg-muted/30 px-3 py-1.5 font-mono text-[10px] text-muted-foreground hover:text-foreground active:scale-95"
+                  className="inline-flex h-10 items-center rounded-xl border border-border/70 bg-muted/30 px-3 font-mono text-[10px] text-muted-foreground hover:text-foreground active:scale-95"
                 >
                   ✦ Novidades & Atualizações
                 </Link>
