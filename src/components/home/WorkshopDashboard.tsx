@@ -27,6 +27,7 @@ import {
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
 import { cn } from "@/lib/utils";
 
 /* =========================================================================
@@ -523,46 +524,47 @@ export function WorkshopDashboard() {
           - Logotipo + "CALDRA" em vermelho + "SUA OFICINA DIGITAL"
           - Botões circulares pequenos: Busca e Perfil (respeitam --bubble-opacity)
           ========================================================================= */}
-      <header className="flex h-11 items-center justify-between gap-2 pt-0.5">
-        <div className="flex items-center gap-2.5 min-w-0">
-          <CaldraLogo size={32} animated glow />
-          <div className="flex flex-col min-w-0">
-            <span className="font-display text-xl font-black tracking-tight text-[#FF3B30] leading-none select-none">
-              CALDRA
-            </span>
-            <span className="mt-0.5 font-mono text-[8px] font-semibold tracking-[0.22em] text-muted-foreground uppercase leading-none">
-              SUA OFICINA DIGITAL
-            </span>
+      <NavigationAreaHeader
+        badgeText="SUA OFICINA DIGITAL"
+        badgeColor="text-amber-500"
+        indicatorColor="bg-amber-500"
+        secondaryBadge={
+          <span className="rounded bg-amber-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-amber-500 border border-amber-500/30">
+            CALDRA
+          </span>
+        }
+        leadingVisual={<CaldraLogo size={32} animated glow />}
+        title="Início"
+        description="Crie projetos, desenvolva desenhos CAD, calcule materiais e prepare orçamentos."
+        actions={
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("tap");
+                AudioManager.play("ui_nav");
+                setToolsOpen(true);
+              }}
+              aria-label="Buscar ferramentas"
+              className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-amber-500/50 hover:text-amber-500 active:scale-95 transition-all cursor-pointer"
+            >
+              <Search className="size-4" strokeWidth={1.8} />
+            </button>
+
+            <Link
+              to="/perfil"
+              onClick={() => {
+                triggerHaptic("tap");
+                AudioManager.play("ui_nav");
+              }}
+              aria-label="Perfil e Conta"
+              className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-amber-500/50 hover:text-amber-500 active:scale-95 transition-all cursor-pointer"
+            >
+              <User className="size-4" strokeWidth={1.8} />
+            </Link>
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("tap");
-              AudioManager.play("ui_nav");
-              setToolsOpen(true);
-            }}
-            aria-label="Buscar ferramentas"
-            className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-amber-500/50 hover:text-amber-500 active:scale-95 transition-all cursor-pointer"
-          >
-            <Search className="size-4" strokeWidth={1.8} />
-          </button>
-
-          <Link
-            to="/perfil"
-            onClick={() => {
-              triggerHaptic("tap");
-              AudioManager.play("ui_nav");
-            }}
-            aria-label="Perfil do usuário"
-            className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-amber-500/50 hover:text-amber-500 active:scale-95 transition-all cursor-pointer"
-          >
-            <User className="size-4" strokeWidth={1.8} />
-          </Link>
-        </div>
-      </header>
+        }
+      />
 
       {/* =========================================================================
           B. BANNER PRINCIPAL (HERO) — LADO A LADO HORIZONTAL (PROPORÇÃO ~2.1:1)

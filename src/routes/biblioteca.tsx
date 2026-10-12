@@ -4,6 +4,7 @@ import { Lock, Search } from "lucide-react";
 import { LIBRARY_CATEGORIES, LIBRARY_ITEMS, type LibraryCategory } from "@/lib/library/catalog";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { Panel, PlanBadge } from "@/components/chameleon/ui";
+import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/biblioteca")({
@@ -42,12 +43,13 @@ function Biblioteca() {
 
   return (
     <div className="space-y-4">
-      <header>
-        <h1 className="font-display text-2xl font-semibold">Biblioteca</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Referência técnica de materiais, perfis e processos usados na caldeiraria.
-        </p>
-      </header>
+      <NavigationAreaHeader
+        badgeText="ACERVO TÉCNICO & NORMAS"
+        badgeColor="text-indigo-400"
+        indicatorColor="bg-indigo-400"
+        title="Biblioteca Técnica"
+        description="Referência rápida de materiais, tabelas normativas, perfis e processos da caldeiraria."
+      />
 
       <label className="glass flex items-center gap-2 rounded-xl px-3">
         <Search className="size-4 shrink-0 text-muted-foreground" />

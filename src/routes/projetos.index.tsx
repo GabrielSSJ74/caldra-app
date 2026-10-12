@@ -21,6 +21,7 @@ import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { Panel } from "@/components/chameleon/ui";
 import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -96,20 +97,27 @@ function Projetos() {
 
   return (
     <div className="space-y-5">
-      <header className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3 pt-1">
-        <div className="min-w-0">
-          <span className="tick-label">
-            {isMestre ? "PRO · projetos ilimitados" : `Free · até ${projectLimit} projetos`}
+      <NavigationAreaHeader
+        badgeText="GESTÃO DE OFICINA & ENGENHARIA"
+        badgeColor="text-sky-500"
+        indicatorColor="bg-sky-500"
+        secondaryBadge={
+          <span className="rounded bg-sky-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-sky-500 border border-sky-500/30">
+            {isMestre ? "PRO · ILIMITADO" : `FREE · ATÉ ${projectLimit} PROJETOS`}
           </span>
-          <h1 className="font-display text-3xl font-semibold tracking-tight">PROJETOS</h1>
-        </div>
-        <button
-          onClick={startNew}
-          className="flex items-center gap-2 rounded-xl bg-accent/12 px-3 py-2 font-mono text-[11px] tracking-wider text-accent uppercase ring-1 ring-accent/25 transition-colors hover:bg-accent/20"
-        >
-          <Plus className="size-3.5" /> Novo
-        </button>
-      </header>
+        }
+        title="Projetos"
+        description="Modelos paramétricos de caldeiraria e acompanhamento de dossiês de fabricação."
+        actions={
+          <button
+            onClick={startNew}
+            className="flex items-center gap-1.5 rounded-xl bg-amber-500 px-3 py-1.5 font-mono text-xs font-bold text-black shadow-md hover:bg-amber-400 active:scale-95 transition-all cursor-pointer"
+          >
+            <Plus className="size-3.5" strokeWidth={2.5} />
+            <span>Novo Projeto</span>
+          </button>
+        }
+      />
 
       <div className="grid grid-cols-2 rounded-lg border border-line bg-background/40 p-1">
         <Button

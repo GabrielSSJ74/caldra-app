@@ -36,6 +36,7 @@ import { CURRICULUM, type AcademyModule, type AcademyLesson } from "@/lib/educat
 import { LIBRARY_CATEGORIES, LIBRARY_ITEMS, type LibraryItem } from "@/lib/library/catalog";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
+import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/aprenda")({
@@ -322,60 +323,50 @@ function AprendaPage() {
           CABEÇALHO DA SEÇÃO CENTRAL (SEM DUPLICAR CABEÇALHO GLOBAL)
           Título obrigatório: "Aprenda & Domine"
           ========================================================================= */}
-      <section className="px-4 pt-4 pb-2 sm:px-6 lg:px-8 max-w-7xl mx-auto">
-        <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
-              </span>
-              <span className="font-mono text-[10px] font-bold tracking-[0.22em] uppercase text-amber-500">
-                FORMAÇÃO & ACADEMIA TÉCNICA
-              </span>
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-muted text-muted-foreground border border-border">
-                PRO CALDRA
-              </span>
+      <section className="px-4 pt-2 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+        <NavigationAreaHeader
+          badgeText="FORMAÇÃO & ACADEMIA TÉCNICA"
+          badgeColor="text-amber-500"
+          indicatorColor="bg-amber-500"
+          secondaryBadge={
+            <span className="rounded bg-amber-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-amber-500 border border-amber-500/30">
+              PRO CALDRA
+            </span>
+          }
+          title="Aprenda & Domine"
+          description="Trilhas de formação em caldeiraria industrial, relações matemáticas fundamentadas, tabelas normativas e acervo técnico de oficina."
+          actions={
+            <div className="flex items-center gap-3 bg-card/60 border border-border/70 rounded-xl px-3.5 py-2 shrink-0">
+              <div className="relative size-10 flex items-center justify-center">
+                <svg className="size-10 -rotate-90" viewBox="0 0 36 36">
+                  <circle cx="18" cy="18" r="15" fill="none" className="stroke-muted" strokeWidth="3" />
+                  <circle
+                    cx="18"
+                    cy="18"
+                    r="15"
+                    fill="none"
+                    className="stroke-amber-500"
+                    strokeWidth="3"
+                    strokeDasharray="94.2"
+                    strokeDashoffset={94.2 - (progressPct / 100) * 94.2}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span className="absolute font-mono text-[10px] font-bold text-amber-500">
+                  {progressPct}%
+                </span>
+              </div>
+              <div className="min-w-[110px]">
+                <span className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground block font-medium">
+                  Progresso Geral
+                </span>
+                <span className="font-display text-xs font-bold text-foreground">
+                  {totalCompleted} de {totalLessonsCount} lições
+                </span>
+              </div>
             </div>
-            <h1 className="font-display text-2xl sm:text-3xl lg:text-4xl font-extrabold tracking-tight text-foreground mt-1">
-              Aprenda & Domine
-            </h1>
-            <p className="text-xs sm:text-sm text-zinc-400 mt-1 max-w-2xl leading-relaxed">
-              Trilhas de formação em caldeiraria industrial, relações matemáticas fundamentadas, tabelas normativas e acervo técnico de oficina.
-            </p>
-          </div>
-
-          {/* Mini Indicador de Progresso Geral */}
-          <div className="flex items-center gap-3 bg-zinc-900/90 border border-zinc-800/80 rounded-xl px-3.5 py-2 shrink-0">
-            <div className="relative size-10 flex items-center justify-center">
-              <svg className="size-10 -rotate-90" viewBox="0 0 36 36">
-                <circle cx="18" cy="18" r="15" fill="none" className="stroke-zinc-800" strokeWidth="3" />
-                <circle
-                  cx="18"
-                  cy="18"
-                  r="15"
-                  fill="none"
-                  className="stroke-amber-500"
-                  strokeWidth="3"
-                  strokeDasharray="94.2"
-                  strokeDashoffset={94.2 - (progressPct / 100) * 94.2}
-                  strokeLinecap="round"
-                />
-              </svg>
-              <span className="absolute font-mono text-[10px] font-bold text-amber-400">
-                {progressPct}%
-              </span>
-            </div>
-            <div className="min-w-[110px]">
-              <span className="font-mono text-[9px] uppercase tracking-wider text-zinc-400 block font-medium">
-                Progresso Geral
-              </span>
-              <span className="font-display text-xs font-bold text-white">
-                {totalCompleted} de {totalLessonsCount} lições
-              </span>
-            </div>
-          </div>
-        </div>
+          }
+        />
 
         {/* Barra de Filtros Rápido por Abas */}
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-3 mt-2 border-b border-zinc-800/60">

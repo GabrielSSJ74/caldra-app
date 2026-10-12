@@ -31,6 +31,7 @@ import {
 import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
+import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/produzir")({
@@ -407,32 +408,24 @@ function ProduzirPage() {
             - Marca de módulo: "ORCE E FABRIQUE — PRODUÇÃO & OFICINA"
             - Identidade industrial com LED pulsante verde/esmeralda
             ========================================================================= */}
-        <section className="flex items-center justify-between border-b border-border/80 pb-2.5 pt-1">
-          <div className="flex items-center gap-2">
-            <span className="relative flex size-2">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+        <NavigationAreaHeader
+          badgeText="OFICINA & FABRICAÇÃO"
+          badgeColor="text-emerald-500"
+          indicatorColor="bg-emerald-500"
+          secondaryBadge={
+            <span className="rounded bg-emerald-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-emerald-500 border border-emerald-500/30">
+              CALDRA SHOP
             </span>
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[9px] font-bold tracking-[0.22em] uppercase text-muted-foreground">
-                  OFICINA & FABRICAÇÃO
-                </span>
-                <span className="rounded bg-emerald-500/10 px-1 py-0.2 font-mono text-[8px] font-bold text-emerald-500 border border-emerald-500/30">
-                  CALDRA SHOP
-                </span>
-              </div>
-              <h1 className="font-display text-lg font-bold tracking-tight text-foreground">
-                Orce e Fabrique
-              </h1>
+          }
+          title="Orce e Fabrique"
+          description="Gestão de projetos de fabricação, documentação técnica, gabaritos, custos e ferramentas de oficina."
+          actions={
+            <div className="flex items-center gap-1.5 font-mono text-[9px] text-muted-foreground bg-card/60 border border-border/70 rounded-lg px-2.5 py-1">
+              <Activity className="size-3 text-emerald-400" />
+              <span>{totalPartsInProduction} PEÇAS EM LINHA</span>
             </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 font-mono text-[9px] text-zinc-400 bg-zinc-900/90 border border-zinc-800 rounded-lg px-2 py-1">
-            <Activity className="size-3 text-emerald-400" />
-            <span>{totalPartsInProduction} PEÇAS EM LINHA</span>
-          </div>
-        </section>
+          }
+        />
 
         {/* =========================================================================
             B. BANNER HERO DE PRODUÇÃO — AMBIENTE CINEMATOGRÁFICO DE CORTE & GESTÃO

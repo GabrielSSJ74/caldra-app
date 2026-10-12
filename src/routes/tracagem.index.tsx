@@ -24,6 +24,7 @@ import { VectorPreview } from "@/components/chameleon/VectorPreview";
 import { buildWire, DEFAULT_PARAMS } from "@/lib/viz3d/wire";
 import { Wire3D } from "@/components/chameleon/Wire3D";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
+import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/tracagem/")({
@@ -83,10 +84,18 @@ function TracagemIndex() {
 
   return (
     <div className="space-y-4">
-      <header className="pt-1">
-        <span className="tick-label">Biblioteca de peças</span>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">TRAÇAR</h1>
-      </header>
+      <NavigationAreaHeader
+        badgeText="BIBLIOTECA & MODELOS PARAMÉTRICOS"
+        badgeColor="text-sky-500"
+        indicatorColor="bg-sky-500"
+        secondaryBadge={
+          <span className="rounded bg-sky-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-sky-500 border border-sky-500/30">
+            {PART_REGISTRY.length} MODELOS
+          </span>
+        }
+        title="Traçagem Paramétrica"
+        description="Modelos 3D matemáticos, planificação zero fresta e traçagem passo a passo para fabricação."
+      />
 
       <label className="metal flex min-w-0 items-center gap-2 rounded-full px-4 sm:max-w-md">
         <Search className="size-3.5 shrink-0 text-muted-foreground" />

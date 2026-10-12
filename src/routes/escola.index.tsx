@@ -11,6 +11,7 @@ import {
   useAcademy,
 } from "@/lib/education/progress";
 import { Panel, SectionLabel } from "@/components/chameleon/ui";
+import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/escola/")({
@@ -41,13 +42,18 @@ function EstudosIndex() {
 
   return (
     <div className="space-y-5">
-      <header className="pt-1">
-        <span className="tick-label">Escola CALDRA</span>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">ESTUDOS</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Do zero à competência: conceito, fórmula, simulação e prática.
-        </p>
-      </header>
+      <NavigationAreaHeader
+        badgeText="TRILHA DE FORMAÇÃO & CERTIFICAÇÃO"
+        badgeColor="text-amber-500"
+        indicatorColor="bg-amber-500"
+        secondaryBadge={
+          <span className="rounded bg-amber-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-amber-500 border border-amber-500/30">
+            ESCOLA CALDRA
+          </span>
+        }
+        title="Estudos Técnicos"
+        description="Do zero à competência: conceito, fórmula fundamentada, simulação e prática de caldeiraria."
+      />
 
       <Panel className="p-4">
         <SectionLabel>Descubra seu nível</SectionLabel>

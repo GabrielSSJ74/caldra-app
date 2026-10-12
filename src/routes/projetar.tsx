@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { buildWire, DEFAULT_PARAMS } from "@/lib/viz3d/wire";
 import { Wire3D } from "@/components/chameleon/Wire3D";
 import { VectorPreview } from "@/components/chameleon/VectorPreview";
+import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
 
 export const Route = createFileRoute("/projetar")({
   head: () => ({
@@ -324,32 +325,24 @@ function ProjetarPage() {
             - Marca de módulo: "CRIE E CALCULE — PROJETO TÉCNICO"
             - Identidade industrial com LED pulsante âmbar e badge de precisão
             ========================================================================= */}
-        <section className="flex items-center justify-between border-b border-border/80 pb-2.5 pt-1">
-          <div className="flex items-center gap-2">
-            <span className="relative flex size-2">
-              <span className="absolute inline-flex size-full animate-ping rounded-full bg-amber-400 opacity-75" />
-              <span className="relative inline-flex size-2 rounded-full bg-amber-500" />
+        <NavigationAreaHeader
+          badgeText="PROJETO TÉCNICO & CAD"
+          badgeColor="text-sky-500"
+          indicatorColor="bg-sky-500"
+          secondaryBadge={
+            <span className="rounded bg-sky-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-sky-500 border border-sky-500/30">
+              CALDRA LAB
             </span>
-            <div className="flex flex-col">
-              <div className="flex items-center gap-2">
-                <span className="font-mono text-[9px] font-bold tracking-[0.22em] uppercase text-muted-foreground">
-                  PROJETO TÉCNICO & CAD
-                </span>
-                <span className="rounded bg-amber-500/10 px-1 py-0.2 font-mono text-[8px] font-bold text-amber-500 border border-amber-500/30">
-                  CALDRA LAB
-                </span>
-              </div>
-              <h1 className="font-display text-lg font-bold tracking-tight text-foreground">
-                Crie e Calcule
-              </h1>
+          }
+          title="Crie e Calcule"
+          description="Desenvolvimento geométrico de peças, traçagens paramétricas, ambiente CAD e calculadora científica."
+          actions={
+            <div className="flex items-center gap-1.5 font-mono text-[9px] text-muted-foreground bg-card/60 border border-border/70 rounded-lg px-2.5 py-1">
+              <Box className="size-3 text-sky-500" />
+              <span>{PART_REGISTRY.length} MODELOS</span>
             </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 font-mono text-[9px] text-zinc-400 bg-zinc-900/90 border border-zinc-800 rounded-lg px-2 py-1">
-            <Box className="size-3 text-amber-500" />
-            <span>{PART_REGISTRY.length} MODELOS</span>
-          </div>
-        </section>
+          }
+        />
 
         {/* =========================================================================
             B. BANNER HERO CAD — AMBIENTE DE CRIAÇÃO E MODELAGEM 3D INTERATIVA

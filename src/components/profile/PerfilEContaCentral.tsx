@@ -31,6 +31,7 @@ import {
   Award,
 } from "lucide-react";
 import { useProfile } from "@/lib/profile/ProfileProvider";
+import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { PLAN_LABEL } from "@/lib/subscription/features";
@@ -241,40 +242,31 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
       {/* =========================================================================
           CABEÇALHO DA CENTRAL — COMPACTO E TÉCNICO
           ========================================================================= */}
-      <header className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1 pt-1 border-b border-border/40 pb-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="size-2 rounded-full bg-amber-500 animate-pulse" />
-            <span className="font-mono text-[10px] font-bold tracking-[0.2em] uppercase text-amber-500">
-              CENTRAL UNIFICADA
-            </span>
-          </div>
-          <h1 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground mt-0.5">
-            Perfil e Conta
-          </h1>
-          <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-            Gerenciamento profissional, assinatura, preferências e personalização do CALDRA.
-          </p>
-        </div>
-
-        {/* Controles de expansão rápida */}
-        <div className="flex items-center gap-1.5 self-start sm:self-center shrink-0">
-          <button
-            type="button"
-            onClick={expandAll}
-            className="rounded-lg border border-border/70 bg-card/60 px-2.5 py-1 font-mono text-[10px] text-muted-foreground hover:text-foreground hover:border-border transition-all active:scale-95 cursor-pointer"
-          >
-            Expandir tudo
-          </button>
-          <button
-            type="button"
-            onClick={collapseAll}
-            className="rounded-lg border border-border/70 bg-card/60 px-2.5 py-1 font-mono text-[10px] text-muted-foreground hover:text-foreground hover:border-border transition-all active:scale-95 cursor-pointer"
-          >
-            Recolher tudo
-          </button>
-        </div>
-      </header>
+      <NavigationAreaHeader
+        badgeText="CENTRAL UNIFICADA"
+        badgeColor="text-amber-500"
+        indicatorColor="bg-amber-500"
+        title="Perfil e Conta"
+        description="Gerenciamento profissional, assinatura, preferências e personalização do CALDRA."
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={expandAll}
+              className="rounded-lg border border-border/70 bg-card/60 px-2.5 py-1 font-mono text-[10px] text-muted-foreground hover:text-foreground hover:border-border transition-all active:scale-95 cursor-pointer"
+            >
+              Expandir tudo
+            </button>
+            <button
+              type="button"
+              onClick={collapseAll}
+              className="rounded-lg border border-border/70 bg-card/60 px-2.5 py-1 font-mono text-[10px] text-muted-foreground hover:text-foreground hover:border-border transition-all active:scale-95 cursor-pointer"
+            >
+              Recolher tudo
+            </button>
+          </>
+        }
+      />
 
       {/* =========================================================================
           01 — PERFIL PROFISSIONAL

@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { FeatureGate, Panel, SectionLabel } from "@/components/chameleon/ui";
 import { MaterialManager } from "@/components/chameleon/MaterialManager";
+import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
 import { useSettings } from "@/lib/settings/SettingsProvider";
 import { useMaterials } from "@/lib/materials/MaterialsProvider";
 import { formatMoney, formatWeight } from "@/lib/regional/regional";
@@ -258,14 +259,18 @@ function Oficina() {
 
   return (
     <div className="space-y-5 pb-6">
-      <header className="pt-1">
-        <span className="tick-label">Fase 5 · Plataforma</span>
-        <h1 className="font-display text-3xl font-semibold tracking-tight">OFICINA</h1>
-        <p className="mt-1 max-w-prose text-sm text-muted-foreground">
-          Da chapa ao orçamento: aproveitamento real, custo de fabricação e papelada de chão de
-          fábrica.
-        </p>
-      </header>
+      <NavigationAreaHeader
+        badgeText="BANCADA DE OFICINA & CHÃO DE FÁBRICA"
+        badgeColor="text-emerald-500"
+        indicatorColor="bg-emerald-500"
+        secondaryBadge={
+          <span className="rounded bg-emerald-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-emerald-500 border border-emerald-500/30">
+            CALDRA SHOP
+          </span>
+        }
+        title="Bancada de Oficina"
+        description="Da chapa ao orçamento: plano de corte, aproveitamento de nesting, custos de fabricação e ordens de serviço."
+      />
 
       <nav className="flex flex-wrap gap-1.5">
         {TABS.map((t) => (
