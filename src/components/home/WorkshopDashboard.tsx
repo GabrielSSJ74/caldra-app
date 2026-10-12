@@ -28,6 +28,7 @@ import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
+import { NavigationAreaContainer } from "@/components/layout/NavigationAreaContainer";
 import { cn } from "@/lib/utils";
 
 /* =========================================================================
@@ -516,24 +517,24 @@ export function WorkshopDashboard() {
   const projectCountText = projects.length > 0 ? `${projects.length} projetos` : "3 projetos";
 
   return (
-    <div className="relative w-full min-h-screen text-foreground overflow-x-hidden flex flex-col items-center">
-      <div className="relative w-full max-w-md space-y-3 px-3 pb-[calc(5.5rem+env(safe-area-inset-bottom,16px))] pt-1">
+    <div className="relative w-full min-h-screen text-foreground overflow-x-hidden">
+      <NavigationAreaContainer>
       {/* =========================================================================
           A. CABEÇALHO COMPACTO
-          - Alinhado na mesma linha horizontal
-          - Logotipo + "CALDRA" em vermelho + "SUA OFICINA DIGITAL"
-          - Botões circulares pequenos: Busca e Perfil (respeitam --bubble-opacity)
+          - Padrão estrutural e dimensional idêntico a Perfil e Conta
+          - Indicador âmbar pulsante + "SUA OFICINA DIGITAL" + Título "Início"
+          - Alinhamento horizontal estrito à esquerda
           ========================================================================= */}
       <NavigationAreaHeader
         badgeText="SUA OFICINA DIGITAL"
         badgeColor="text-amber-500"
         indicatorColor="bg-amber-500"
         secondaryBadge={
-          <span className="rounded bg-amber-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-amber-500 border border-amber-500/30">
-            CALDRA
+          <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-amber-500 border border-amber-500/30">
+            <CaldraLogo size={12} animated glow />
+            <span>CALDRA</span>
           </span>
         }
-        leadingVisual={<CaldraLogo size={32} animated glow />}
         title="Início"
         description="Crie projetos, desenvolva desenhos CAD, calcule materiais e prepare orçamentos."
         actions={
@@ -802,7 +803,7 @@ export function WorkshopDashboard() {
         {/* Trilho horizontal compacto: ~4 itens visíveis na largura útil */}
         <div
           ref={scrollRefTrabalhando}
-          className="flex gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-3 px-3"
+          className="flex gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-3 sm:-mx-4 px-3 sm:px-4"
         >
           {/* Card 1 — Projetos recentes */}
           <Link
@@ -933,7 +934,7 @@ export function WorkshopDashboard() {
           </Link>
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-3 px-3">
+        <div className="flex gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-3 sm:-mx-4 px-3 sm:px-4">
           {/* Card 1 — Projetar */}
           <Link
             to="/projetar"
@@ -1064,7 +1065,7 @@ export function WorkshopDashboard() {
 
         <div
           ref={scrollRefConhecimento}
-          className="flex gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-3 px-3"
+          className="flex gap-2 overflow-x-auto pb-1 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-3 sm:-mx-4 px-3 sm:px-4"
         >
           {/* Card 1 — Curvas e transições metálicas */}
           <Link
@@ -1159,7 +1160,7 @@ export function WorkshopDashboard() {
       />
 
       <TechnicalToolsSheet open={toolsOpen} onClose={() => setToolsOpen(false)} />
-      </div>
+      </NavigationAreaContainer>
     </div>
   );
 }

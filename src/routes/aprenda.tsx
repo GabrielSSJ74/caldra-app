@@ -37,6 +37,7 @@ import { LIBRARY_CATEGORIES, LIBRARY_ITEMS, type LibraryItem } from "@/lib/libra
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
 import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
+import { NavigationAreaContainer } from "@/components/layout/NavigationAreaContainer";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/aprenda")({
@@ -318,12 +319,13 @@ function AprendaPage() {
   const progressPct = Math.min(100, Math.round((totalCompleted / Math.max(1, totalLessonsCount)) * 100));
 
   return (
-    <div className="w-full bg-transparent text-foreground min-h-screen selection:bg-amber-500/30 selection:text-amber-200">
-      {/* =========================================================================
-          CABEÇALHO DA SEÇÃO CENTRAL (SEM DUPLICAR CABEÇALHO GLOBAL)
-          Título obrigatório: "Aprenda & Domine"
-          ========================================================================= */}
-      <section className="px-4 pt-2 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+    <div className="w-full bg-transparent text-foreground min-h-screen selection:bg-amber-500/30 selection:text-amber-200 overflow-x-hidden">
+      <NavigationAreaContainer>
+        {/* =========================================================================
+            CABEÇALHO DA SEÇÃO CENTRAL (SEM DUPLICAR CABEÇALHO GLOBAL)
+            Título obrigatório: "Aprenda & Domine"
+            ========================================================================= */}
+        <section className="w-full">
         <NavigationAreaHeader
           badgeText="FORMAÇÃO & ACADEMIA TÉCNICA"
           badgeColor="text-amber-500"
@@ -407,7 +409,7 @@ function AprendaPage() {
           Com chamada para a próxima lição, ilustração técnica de traçagem e CTA direto
           ========================================================================= */}
       {(activeTab === "todos" || activeTab === "trilhas") && (
-        <section className="px-4 py-2 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+        <section className="w-full pt-1">
           <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-zinc-950 via-zinc-900 to-zinc-950 border border-zinc-800/80 shadow-2xl">
             {/* Grid de fundo sutil & iluminação âmbar */}
             <div
@@ -577,7 +579,7 @@ function AprendaPage() {
           SEÇÃO 1: ESTUDOS & TRILHAS DE FORMAÇÃO (CARROSSEL HORIZONTAL NETFLIX)
           ========================================================================= */}
       {(activeTab === "todos" || activeTab === "trilhas") && (
-        <section className="px-4 py-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+        <section className="w-full pt-1">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="p-1.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-500">
@@ -722,7 +724,7 @@ function AprendaPage() {
           Com atalho para calculadora/traçagem e modal detalhado de cálculo
           ========================================================================= */}
       {(activeTab === "todos" || activeTab === "formulas") && (
-        <section className="px-4 py-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+        <section className="w-full pt-1">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <div className="p-1.5 rounded-lg bg-red-500/10 border border-red-500/30 text-[#FF3B30]">
@@ -844,7 +846,7 @@ function AprendaPage() {
           Bitolas MSG, Tubos Schedule 40 e Densidade de Materiais
           ========================================================================= */}
       {(activeTab === "todos" || activeTab === "tabelas") && (
-        <section className="px-4 py-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+        <section className="w-full pt-1">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
             <div className="flex items-center gap-2">
               <div className="p-1.5 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-400">
@@ -949,7 +951,7 @@ function AprendaPage() {
           Tubulações, perfis laminados, soldagem e normas
           ========================================================================= */}
       {(activeTab === "todos" || activeTab === "biblioteca") && (
-        <section className="px-4 py-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
+        <section className="w-full pt-1">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-3">
             <div className="flex items-center gap-2">
               <div className="p-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400">
@@ -1178,8 +1180,8 @@ function AprendaPage() {
         </div>
       )}
 
-      {/* Espaçamento final limpo para evitar colisão com barra flutuante */}
-      <div className="h-10" />
+      {/* Espaçamento final limpo integrado no container */}
+      </NavigationAreaContainer>
     </div>
   );
 }

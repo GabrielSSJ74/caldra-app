@@ -32,6 +32,7 @@ import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
 import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
+import { NavigationAreaContainer } from "@/components/layout/NavigationAreaContainer";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/produzir")({
@@ -399,9 +400,8 @@ function ProduzirPage() {
   }, [allProjects]);
 
   return (
-    <div className="relative w-full min-h-screen bg-transparent text-foreground flex flex-col items-center overflow-x-hidden selection:bg-amber-500/30 selection:text-amber-200">
-      {/* Container centralizado com proporções estritamente sem bordas brancas laterais */}
-      <div className="relative w-full max-w-md space-y-4 px-3 pb-[calc(6rem+env(safe-area-inset-bottom,20px))] pt-1">
+    <div className="relative w-full min-h-screen bg-transparent text-foreground overflow-x-hidden selection:bg-amber-500/30 selection:text-amber-200">
+      <NavigationAreaContainer>
         
         {/* =========================================================================
             A. IDENTIFICADOR DA ÁREA (SEM CABEÇALHO GLOBAL REDUNDANTE)
@@ -935,7 +935,7 @@ function ProduzirPage() {
         <footer className="pt-2 pb-1 text-center font-mono text-[9px] text-zinc-500">
           CALDRA Metal Shop • Gestão de Produção & Chão de Fábrica • Offline-First
         </footer>
-      </div>
+      </NavigationAreaContainer>
 
       {/* Diálogo de Criação de Projeto (Preservado integralmente) */}
       <NewProjectDialog

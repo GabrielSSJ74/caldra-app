@@ -144,8 +144,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             !immersive && "fade-up",
             immersive || standalone
               ? "p-0"
-              : pathname === "/" || pathname === "/projetar" || pathname === "/produzir" || pathname === "/aprenda"
-                ? "p-0 pb-20"
+              : pathname === "/" ||
+                  pathname === "/projetar" ||
+                  pathname === "/produzir" ||
+                  pathname === "/aprenda" ||
+                  pathname === "/perfil" ||
+                  pathname === "/configuracoes"
+                ? "p-0"
                 : "px-4 pt-16 pb-28 lg:px-10 lg:pt-16 lg:pb-24",
           )}
         >
@@ -156,7 +161,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 pathname === "/" ||
                 pathname === "/projetar" ||
                 pathname === "/produzir" ||
-                pathname === "/aprenda"
+                pathname === "/aprenda" ||
+                pathname === "/perfil" ||
+                pathname === "/configuracoes"
                 ? "w-full"
                 : "mx-auto w-full max-w-6xl",
             )}

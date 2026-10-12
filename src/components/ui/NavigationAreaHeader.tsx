@@ -50,7 +50,7 @@ export function NavigationAreaHeader({
   return (
     <header
       className={cn(
-        "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-1 pt-1",
+        "flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 pt-1",
         showDivider && "border-b border-border/40 pb-3",
         className,
       )}

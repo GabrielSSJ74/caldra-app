@@ -29,6 +29,7 @@ import { buildWire, DEFAULT_PARAMS } from "@/lib/viz3d/wire";
 import { Wire3D } from "@/components/chameleon/Wire3D";
 import { VectorPreview } from "@/components/chameleon/VectorPreview";
 import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
+import { NavigationAreaContainer } from "@/components/layout/NavigationAreaContainer";
 
 export const Route = createFileRoute("/projetar")({
   head: () => ({
@@ -317,9 +318,8 @@ function ProjetarPage() {
   }, [selectedCategory]);
 
   return (
-    <div className="relative w-full min-h-screen bg-transparent text-foreground flex flex-col items-center overflow-x-hidden selection:bg-amber-500/30 selection:text-amber-200">
-      {/* Container centralizado com dimensões idênticas à Home */}
-      <div className="relative w-full max-w-md space-y-4 px-3 pb-[calc(6rem+env(safe-area-inset-bottom,20px))] pt-1">
+    <div className="relative w-full min-h-screen bg-transparent text-foreground overflow-x-hidden selection:bg-amber-500/30 selection:text-amber-200">
+      <NavigationAreaContainer>
         {/* =========================================================================
             A. IDENTIFICADOR DA ÁREA (SEM CABEÇALHO GLOBAL REDUNDANTE)
             - Marca de módulo: "CRIE E CALCULE — PROJETO TÉCNICO"
@@ -769,7 +769,7 @@ function ProjetarPage() {
         <footer className="pt-2 pb-1 text-center font-mono text-[9px] text-zinc-500">
           CALDRA Metal Lab Suite • Precisão Sub-Milimétrica • Offline-First
         </footer>
-      </div>
+      </NavigationAreaContainer>
     </div>
   );
 }

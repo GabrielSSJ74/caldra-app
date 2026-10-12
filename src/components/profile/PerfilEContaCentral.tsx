@@ -32,6 +32,7 @@ import {
 } from "lucide-react";
 import { useProfile } from "@/lib/profile/ProfileProvider";
 import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
+import { NavigationAreaContainer } from "@/components/layout/NavigationAreaContainer";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { PLAN_LABEL } from "@/lib/subscription/features";
@@ -238,7 +239,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
   };
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4 px-3 sm:px-4 pb-32 pt-2">
+    <NavigationAreaContainer>
       {/* =========================================================================
           CABEÇALHO DA CENTRAL — COMPACTO E TÉCNICO
           ========================================================================= */}
@@ -1347,6 +1348,6 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
           CALDRA · Central de Perfil e Engenharia de Caldeiraria
         </p>
       </footer>
-    </div>
+    </NavigationAreaContainer>
   );
 }
