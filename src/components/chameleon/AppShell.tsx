@@ -1,4 +1,4 @@
-import { useRouterState } from "@tanstack/react-router";
+import { useRouterState, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -13,6 +13,7 @@ import { PaywallDialog } from "./Paywall";
 import { AuroraBackground } from "./Aurora";
 import { ShellActionsProvider } from "./ShellActions";
 import { triggerHaptic } from "@/lib/ui/haptics";
+import { AudioManager } from "@/lib/audio/AudioManager";
 import { AudioQuickControl } from "@/components/audio/AudioQuickControl";
 import { CaldraGenesisPreIntro } from "@/components/caldra/CaldraGenesisPreIntro";
 
@@ -41,6 +42,7 @@ function immersiveRoute(pathname: string) {
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [masterOpen, setMasterOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const navigate = useNavigate();
   const { isMestre, closeGate } = useFeatureAccess();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const intro = useIntro();
@@ -83,7 +85,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <ShellActionsProvider
-      value={{ openProfile: () => setProfileOpen(true), openMaster: () => setMasterOpen(true) }}
+      value={{
+        openProfile: () => {
+          triggerHaptic("tap");
+          AudioManager.play("ui_nav");
+          void navigate({ to: "/perfil" });
+        },
+        openMaster: () => setMasterOpen(true),
+      }}
     >
       <div className="relative flex min-h-screen flex-col overflow-x-hidden text-foreground bg-background">
         <AuroraBackground active={auroraVisible(pathname)} className="fixed inset-0 z-0" />
@@ -115,16 +124,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Sparkles className="size-4" />
             </button>
-            <button
+            <Link
+              to="/perfil"
               onClick={() => {
                 triggerHaptic("tap");
-                setProfileOpen(true);
+                AudioManager.play("ui_nav");
               }}
-              aria-label="Abrir perfil"
+              aria-label="Perfil e Conta"
               className="rounded-full transition-transform duration-180 [transition-timing-function:var(--ease-natural)] hover:scale-105 active:scale-95 touch-manipulation cursor-pointer"
             >
               <Avatar photo={profile.photo} size={36} className="backdrop-blur-xl shadow-sm" />
-            </button>
+            </Link>
           </div>
         )}
 

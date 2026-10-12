@@ -119,7 +119,8 @@ export function FeatureGate({
           Conhecer o CALDRA PRO
         </Link>
         <Link
-          to="/configuracoes"
+          to="/perfil"
+          hash="pro"
           className="inline-block rounded-xl border border-line px-4 py-2 text-sm"
         >
           Já tenho código

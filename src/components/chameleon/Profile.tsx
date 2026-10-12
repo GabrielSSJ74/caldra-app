@@ -141,12 +141,12 @@ export function ProfileDialog({
             </p>
           </div>
           <Link
-            to="/configuracoes"
+            to="/perfil"
             onClick={() => onOpenChange(false)}
             className="mt-2 inline-flex items-center gap-1.5 rounded-xl border border-line bg-background/50 px-4 py-2 font-mono text-xs uppercase text-muted-foreground transition-colors hover:border-accent/40 hover:text-accent"
           >
             <Settings className="size-3.5" />
-            Configurações
+            Perfil e Conta
           </Link>
         </div>
       </div>

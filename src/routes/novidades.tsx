@@ -23,8 +23,8 @@ function Novidades() {
         <h1 className="font-display text-2xl font-semibold">Novidades</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Versão atual {APP_VERSION} · compilação {APP_BUILD} ·{" "}
-          <Link to="/configuracoes" className="underline">
-            Configurações
+          <Link to="/perfil" className="underline">
+            Perfil e Conta
           </Link>
         </p>
       </header>
