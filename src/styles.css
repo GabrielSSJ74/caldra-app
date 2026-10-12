@@ -2454,24 +2454,20 @@
   border: 1px solid oklch(0.77 0.163 70 / 35%);
 }
 
-/* Barra inferior (BubbleNav / Dock) */
+/* Barra inferior de navegação sólida (BubbleNav) */
 .caldra-dock {
-  background-color: color-mix(in oklab, #FFFFFF calc(var(--card-opacity, 0.95) * 100%), transparent);
-  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
-  box-shadow: 0 14px 40px -4px oklch(0 0 0 / 14%), 0 2px 10px -2px oklch(0 0 0 / 6%);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
+  background-color: #FFFFFF;
+  border-top: 1px solid oklch(0 0 0 / 10%);
 }
 
 .dark .caldra-dock {
-  background-color: color-mix(in oklab, #0E1015 calc(var(--card-opacity, 0.95) * 100%), transparent);
-  border: 1px solid oklch(1 0 0 / 10%);
-  box-shadow: 0 18px 48px -6px oklch(0 0 0 / 80%), 0 2px 8px oklch(0 0 0 / 40%);
+  background-color: #0B0E14;
+  border-top: 1px solid oklch(1 0 0 / 10%);
 }
 
 .amoled .caldra-dock {
-  background-color: color-mix(in oklab, #000000 calc(var(--card-opacity, 0.95) * 100%), transparent);
-  border: 1px solid oklch(1 0 0 / 15%);
+  background-color: #000000;
+  border-top: 1px solid oklch(1 0 0 / 12%);
 }
 
 /* Bolhas de ícones e acentos controladas por --bubble-opacity */

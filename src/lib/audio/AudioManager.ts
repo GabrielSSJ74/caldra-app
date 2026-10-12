@@ -19,6 +19,7 @@ export type SoundEffectId =
   | "ui_select"
   | "ui_action"
   | "ui_nav"
+  | "ui_ratchet"
   | "ui_toggle_open"
   | "ui_toggle_close"
   // CHAMFER & CAD Core
@@ -528,6 +529,43 @@ export class AudioManager {
 
           osc.start(now);
           osc.stop(now + 0.19);
+          break;
+        }
+
+        // ---------------------------------------------------------------
+        // 4b. CATRACA MECÂNICA DE NAVEGAÇÃO INFINITA (Clique seco e preciso: 22 ms)
+        // ---------------------------------------------------------------
+        case "ui_ratchet": {
+          const osc = ctx.createOscillator();
+          const oscMetal = ctx.createOscillator();
+          const gain = ctx.createGain();
+          const filter = ctx.createBiquadFilter();
+
+          const jitter = 1 + (Math.random() - 0.5) * 0.05;
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(2800 * jitter, now);
+          osc.frequency.exponentialRampToValueAtTime(450, now + 0.022);
+
+          oscMetal.type = "triangle";
+          oscMetal.frequency.setValueAtTime(1850 * jitter, now);
+          oscMetal.frequency.exponentialRampToValueAtTime(320, now + 0.02);
+
+          filter.type = "bandpass";
+          filter.frequency.setValueAtTime(1900, now);
+          filter.Q.setValueAtTime(6.0, now);
+
+          gain.gain.setValueAtTime(0.26, now);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.024);
+
+          osc.connect(filter);
+          oscMetal.connect(filter);
+          filter.connect(gain);
+          gain.connect(targetBus);
+
+          osc.start(now);
+          oscMetal.start(now);
+          osc.stop(now + 0.025);
+          oscMetal.stop(now + 0.025);
           break;
         }
 

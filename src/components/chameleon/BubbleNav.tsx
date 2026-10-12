@@ -1,53 +1,289 @@
-import { useState } from "react";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Compass,
-  FolderKanban,
-  GraduationCap,
-  User,
-  Plus,
-  Receipt,
   Wrench,
-  Layers,
-  ChevronRight,
+  Home,
+  BookOpen,
+  User,
   Calculator,
   PenTool,
+  Layers,
+  ChevronRight,
 } from "lucide-react";
-import { CaldraLogo } from "@/components/caldra/Logo";
 import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
 import { createProject, type NewProjectInput } from "@/lib/projects/store";
-import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
+import { useSettings, type AccentColor } from "@/lib/settings/SettingsProvider";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { cn } from "@/lib/utils";
+
+interface NavDestination {
+  id: string;
+  label: string;
+  to: string;
+  icon: typeof Home;
+  matches: (pathname: string) => boolean;
+}
+
+const DESTINATIONS: NavDestination[] = [
+  {
+    id: "projetar",
+    label: "Projetar",
+    to: "/projetar",
+    icon: Compass,
+    matches: (p) =>
+      p.startsWith("/projetar") ||
+      p.startsWith("/tracagem") ||
+      p.startsWith("/desenho-2d") ||
+      p.startsWith("/calculadora"),
+  },
+  {
+    id: "produzir",
+    label: "Produzir",
+    to: "/produzir",
+    icon: Wrench,
+    matches: (p) =>
+      p.startsWith("/produzir") ||
+      p.startsWith("/projetos") ||
+      p.startsWith("/oficina") ||
+      p.startsWith("/planificacao"),
+  },
+  {
+    id: "inicio",
+    label: "Início",
+    to: "/",
+    icon: Home,
+    matches: (p) => p === "/",
+  },
+  {
+    id: "aprenda",
+    label: "Aprenda",
+    to: "/aprenda",
+    icon: BookOpen,
+    matches: (p) =>
+      p.startsWith("/aprenda") ||
+      p.startsWith("/escola") ||
+      p.startsWith("/biblioteca"),
+  },
+  {
+    id: "perfil",
+    label: "Perfil",
+    to: "/perfil",
+    icon: User,
+    matches: (p) =>
+      p.startsWith("/perfil") ||
+      p.startsWith("/conta") ||
+      p.startsWith("/configuracoes") ||
+      p.startsWith("/pro"),
+  },
+];
+
+const NUM_ITEMS = DESTINATIONS.length; // 5
+
+const ACCENT_COLOR_CLASSES: Record<AccentColor, string> = {
+  default: "text-[#0088CC] dark:text-[#00CCFF]",
+  blue: "text-[#0088CC] dark:text-[#00CCFF]",
+  amber: "text-[#D97706] dark:text-[#F59E0B]",
+  crimson: "text-[#E11D48] dark:text-[#FB7185]",
+  magenta: "text-[#C026D3] dark:text-[#E879F9]",
+};
 
 export function BubbleNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
+  const { accent } = useSettings();
+
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
 
-  // Mapeamento de estado ativo para cada um dos 5 destinos
-  const isHome = pathname === "/";
-  const isProjetar =
-    pathname.startsWith("/projetar") ||
-    pathname.startsWith("/tracagem") ||
-    pathname.startsWith("/desenho-2d") ||
-    pathname.startsWith("/calculadora");
-  const isProduzir =
-    pathname.startsWith("/produzir") ||
-    pathname.startsWith("/projetos") ||
-    pathname.startsWith("/oficina") ||
-    pathname.startsWith("/planificacao");
-  const isAprenda =
-    pathname.startsWith("/aprenda") ||
-    pathname.startsWith("/escola") ||
-    pathname.startsWith("/biblioteca");
-  const isPerfil =
-    pathname.startsWith("/perfil") ||
-    pathname.startsWith("/conta") ||
-    pathname.startsWith("/configuracoes") ||
-    pathname.startsWith("/pro");
+  // Identifica o índice do destino ativo (0 a 4)
+  const activeIndex = DESTINATIONS.findIndex((d) => d.matches(pathname));
+  const resolvedActiveIndex = activeIndex >= 0 ? activeIndex : 2; // Default Início
+
+  // Largura do contêiner para calcular a largura de cada slot (W / 5)
+  const [containerWidth, setContainerWidth] = useState<number>(() =>
+    typeof window !== "undefined" ? window.innerWidth : 390,
+  );
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Estados de arrasto do tambor rotativo infinito
+  const [dragOffset, setDragOffset] = useState<number>(0);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [isAnimating, setIsAnimating] = useState<boolean>(false);
+
+  // Refs de rastreamento do gesto
+  const startXRef = useRef<number>(0);
+  const startYRef = useRef<number>(0);
+  const currentXRef = useRef<number>(0);
+  const lastSlotCrossedRef = useRef<number>(0);
+  const isHorizontalGestureRef = useRef<boolean | null>(null);
+  const pointerIdRef = useRef<number | null>(null);
+
+  // Atualiza a largura do contêiner em resize
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const updateWidth = () => {
+      const w = el.getBoundingClientRect().width;
+      if (w > 0) setContainerWidth(w);
+    };
+
+    updateWidth();
+    const ro = new ResizeObserver(updateWidth);
+    ro.observe(el);
+
+    window.addEventListener("resize", updateWidth);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", updateWidth);
+    };
+  }, []);
+
+  // Escuta evento personalizado para novo projeto caso disparado
+  useEffect(() => {
+    const handleOpenNewProject = () => setNewProjectOpen(true);
+    window.addEventListener("caldra:new-project", handleOpenNewProject);
+    return () => {
+      window.removeEventListener("caldra:new-project", handleOpenNewProject);
+    };
+  }, []);
+
+  const slotWidth = containerWidth / NUM_ITEMS;
+
+  const navigateToDestination = useCallback(
+    (index: number) => {
+      const dest = DESTINATIONS[index];
+      if (!dest) return;
+      triggerHaptic("selection");
+      AudioManager.play("ui_nav");
+      void navigate({ to: dest.to });
+    },
+    [navigate],
+  );
+
+  // Início do toque / ponteiro
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Apenas clique principal / toque primário
+    if (e.button !== 0) return;
+
+    pointerIdRef.current = e.pointerId;
+    startXRef.current = e.clientX;
+    startYRef.current = e.clientY;
+    currentXRef.current = e.clientX;
+    lastSlotCrossedRef.current = 0;
+    isHorizontalGestureRef.current = null;
+
+    setIsDragging(true);
+    setIsAnimating(false);
+  };
+
+  // Movimento contínuo do tambor
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging || pointerIdRef.current !== e.pointerId) return;
+
+    const dx = e.clientX - startXRef.current;
+    const dy = e.clientY - startYRef.current;
+
+    // Detecta intenção do gesto (horizontal vs vertical)
+    if (isHorizontalGestureRef.current === null) {
+      if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          isHorizontalGestureRef.current = true;
+          // Captura o ponteiro para seguir fora da tela se necessário
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            /* ignore */
+          }
+        } else {
+          isHorizontalGestureRef.current = false;
+          setIsDragging(false);
+          return;
+        }
+      } else {
+        return;
+      }
+    }
+
+    if (!isHorizontalGestureRef.current) return;
+
+    currentXRef.current = e.clientX;
+    setDragOffset(dx);
+
+    // Feedback sonoro de catraca ao cruzar cada ranhura/slot físico
+    const slotCrossed = Math.round(dx / slotWidth);
+    if (slotCrossed !== lastSlotCrossedRef.current) {
+      lastSlotCrossedRef.current = slotCrossed;
+      AudioManager.play("ui_nav");
+      triggerHaptic("selection");
+    }
+  };
+
+  // Finalização do gesto com encaixe (snap) e navegação
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDragging || pointerIdRef.current !== e.pointerId) return;
+
+    const totalDx = e.clientX - startXRef.current;
+    const wasHorizontal = isHorizontalGestureRef.current === true;
+
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+
+    setIsDragging(false);
+    pointerIdRef.current = null;
+    isHorizontalGestureRef.current = null;
+
+    // Se o movimento foi mínimo (< 8 px), foi um clique/toque direto em um destino
+    if (!wasHorizontal || Math.abs(totalDx) < 8) {
+      setDragOffset(0);
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clickX = e.clientX - rect.left;
+      const clickedSlot = Math.floor(clickX / slotWidth);
+      const targetIndex = Math.max(0, Math.min(NUM_ITEMS - 1, clickedSlot));
+      navigateToDestination(targetIndex);
+      return;
+    }
+
+    // Caso de deslizamento: calcular quantidade de slots deslocados
+    const slotsMoved = Math.round(totalDx / slotWidth);
+
+    if (slotsMoved === 0) {
+      // Snap suave de volta para a posição original
+      setIsAnimating(true);
+      setDragOffset(0);
+      setTimeout(() => setIsAnimating(false), 240);
+    } else {
+      // O usuário girou o tambor:
+      // Se arrastou para a esquerda (totalDx negativo), o tambor gira para frente (+ slots)
+      // Se arrastou para a direita (totalDx positivo), o tambor gira para trás (- slots)
+      const targetOffset = slotsMoved * slotWidth;
+      setIsAnimating(true);
+      setDragOffset(targetOffset);
+
+      const newIndex = ((resolvedActiveIndex - slotsMoved) % NUM_ITEMS + NUM_ITEMS) % NUM_ITEMS;
+
+      setTimeout(() => {
+        setIsAnimating(false);
+        setDragOffset(0);
+        navigateToDestination(newIndex);
+      }, 220);
+    }
+  };
+
+  const handlePointerCancel = () => {
+    setIsDragging(false);
+    setIsAnimating(true);
+    setDragOffset(0);
+    pointerIdRef.current = null;
+    isHorizontalGestureRef.current = null;
+    setTimeout(() => setIsAnimating(false), 200);
+  };
 
   const handleCreateProject = (input: NewProjectInput) => {
     try {
@@ -61,130 +297,112 @@ export function BubbleNav() {
     }
   };
 
+  // Três ciclos de 5 itens para garantir rotação infinita contínua sem quebras
+  // Ciclo -1: índices -5 a -1 (wrap à esquerda)
+  // Ciclo  0: índices  0 a  4 (visão padrão em repouso)
+  // Ciclo  1: índices  5 a  9 (wrap à direita)
+  const CYCLES = [-1, 0, 1];
+
+  const activeColorClass = ACCENT_COLOR_CLASSES[accent] || ACCENT_COLOR_CLASSES.default;
+
   return (
     <>
       <nav
         aria-label="Navegação principal da oficina digital"
-        className="fixed inset-x-0 bottom-0 z-40 flex justify-center pb-[calc(env(safe-area-inset-bottom)+6px)] px-3 pointer-events-none select-none"
+        className="fixed inset-x-0 bottom-0 z-40 w-full select-none bg-white dark:bg-[#0B0E14] amoled:bg-black border-t border-zinc-200/90 dark:border-zinc-800/80 transition-colors pointer-events-auto shadow-xs"
+        style={{
+          paddingBottom: "max(env(safe-area-inset-bottom, 0px), 0px)",
+        }}
       >
-        <div className="caldra-dock pointer-events-auto flex w-full max-w-md items-center justify-between rounded-3xl px-2 py-1.5">
-          {/* =========================================================================
-              1. PROJETAR (Crie e Calcule: Traçagem, CHAMFER, Calculadora)
-              ========================================================================= */}
-          <Link
-            to="/projetar"
-            onClick={() => {
-              triggerHaptic("selection");
-              AudioManager.play("ui_nav");
+        <div
+          ref={containerRef}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerCancel}
+          className="relative w-full h-[58px] sm:h-[62px] overflow-hidden touch-pan-y cursor-grab active:cursor-grabbing"
+        >
+          {/* Trilho contínuo de 3 ciclos (300% da largura) */}
+          <div
+            className="flex h-full"
+            style={{
+              width: "300%",
+              transform: `translate3d(calc(-33.333333% + ${dragOffset}px), 0, 0)`,
+              transition: isDragging
+                ? "none"
+                : isAnimating
+                ? "transform 0.22s cubic-bezier(0.16, 1, 0.3, 1)"
+                : "none",
+              willChange: "transform",
             }}
-            aria-label="Projetar (Crie e Calcule)"
-            className={cn(
-              "flex flex-1 flex-col items-center justify-center gap-1 py-1 rounded-2xl transition-all duration-150 touch-manipulation cursor-pointer",
-              isProjetar
-                ? "text-amber-500 dark:text-amber-400 font-bold scale-105"
-                : "text-muted-foreground hover:text-foreground active:scale-95",
-            )}
           >
-            <Compass className="size-5" strokeWidth={isProjetar ? 2.2 : 1.75} />
-            <span className="font-mono text-[10px] tracking-tight">Projetar</span>
-          </Link>
+            {CYCLES.map((cycle) => (
+              <div
+                key={cycle}
+                className="flex h-full"
+                style={{ width: "33.333333%" }}
+                aria-hidden={cycle !== 0}
+              >
+                {DESTINATIONS.map((dest, destIdx) => {
+                  const isCurrent = destIdx === resolvedActiveIndex;
+                  const Icon = dest.icon;
 
-          {/* =========================================================================
-              2. PRODUZIR (Orce e Fabrique: Projetos, Gabaritos, Oficina)
-              ========================================================================= */}
-          <Link
-            to="/produzir"
-            onClick={() => {
-              triggerHaptic("selection");
-              AudioManager.play("ui_nav");
-            }}
-            aria-label="Produzir (Orce e Fabrique)"
-            className={cn(
-              "flex flex-1 flex-col items-center justify-center gap-1 py-1 rounded-2xl transition-all duration-150 touch-manipulation cursor-pointer",
-              isProduzir
-                ? "text-amber-500 dark:text-amber-400 font-bold scale-105"
-                : "text-muted-foreground hover:text-foreground active:scale-95",
-            )}
-          >
-            <FolderKanban className="size-5" strokeWidth={isProduzir ? 2.2 : 1.75} />
-            <span className="font-mono text-[10px] tracking-tight">Produzir</span>
-          </Link>
-
-          {/* =========================================================================
-              3. HOME (Início: Tela inicial com logotipo oficial CALDRA)
-              ========================================================================= */}
-          <div className="flex flex-1 items-center justify-center -my-3">
-            <Link
-              to="/"
-              onClick={() => {
-                triggerHaptic("selection");
-                AudioManager.play("ui_pop");
-              }}
-              aria-label="Página inicial (Home)"
-              className={cn(
-                "group relative flex size-13 items-center justify-center rounded-full border-2 caldra-bubble-center shadow-lg transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer touch-manipulation",
-                isHome
-                  ? "border-amber-500 shadow-amber-500/30 ring-2 ring-amber-500/20"
-                  : "border-amber-500/60 shadow-amber-500/15 hover:border-amber-500",
-              )}
-            >
-              <CaldraLogo size={28} glow={isHome} />
-              <span className="pointer-events-none absolute inset-0 rounded-full border border-amber-400/40 opacity-40 group-hover:opacity-100 transition-opacity" />
-            </Link>
+                  return (
+                    <button
+                      key={`${cycle}-${dest.id}`}
+                      type="button"
+                      tabIndex={cycle === 0 ? 0 : -1}
+                      aria-label={dest.label}
+                      aria-current={cycle === 0 && isCurrent ? "page" : undefined}
+                      onClick={(e) => {
+                        // Previne clique sintético se foi um arraste físico
+                        if (Math.abs(dragOffset) > 6) {
+                          e.preventDefault();
+                          return;
+                        }
+                        navigateToDestination(destIdx);
+                      }}
+                      className={cn(
+                        "flex flex-1 flex-col items-center justify-center gap-1 h-full py-1 transition-colors outline-none focus-visible:bg-zinc-100 dark:focus-visible:bg-zinc-800/50 cursor-pointer touch-manipulation",
+                        isCurrent
+                          ? activeColorClass
+                          : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200",
+                      )}
+                    >
+                      <Icon
+                        className={cn(
+                          "size-6 transition-transform",
+                          isCurrent ? "scale-105" : "scale-100",
+                        )}
+                        strokeWidth={isCurrent ? 2.2 : 1.75}
+                      />
+                      <span
+                        className={cn(
+                          "text-[11.5px] sm:text-[12.5px] tracking-tight leading-none transition-all",
+                          isCurrent
+                            ? "font-semibold"
+                            : "font-normal text-zinc-500 dark:text-zinc-400",
+                        )}
+                      >
+                        {dest.label}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
           </div>
-
-          {/* =========================================================================
-              4. APRENDA (Aprimore: Estudos, Fórmulas, Tabelas, Biblioteca)
-              ========================================================================= */}
-          <Link
-            to="/aprenda"
-            onClick={() => {
-              triggerHaptic("selection");
-              AudioManager.play("ui_nav");
-            }}
-            aria-label="Aprenda (Aprimore)"
-            className={cn(
-              "flex flex-1 flex-col items-center justify-center gap-1 py-1 rounded-2xl transition-all duration-150 touch-manipulation cursor-pointer",
-              isAprenda
-                ? "text-amber-500 dark:text-amber-400 font-bold scale-105"
-                : "text-muted-foreground hover:text-foreground active:scale-95",
-            )}
-          >
-            <GraduationCap className="size-5" strokeWidth={isAprenda ? 2.2 : 1.75} />
-            <span className="font-mono text-[10px] tracking-tight">Aprenda</span>
-          </Link>
-
-          {/* =========================================================================
-              5. PERFIL (Perfil e Conta: Perfil, Conta, CALDRA Pro, Configurações)
-              ========================================================================= */}
-          <Link
-            to="/perfil"
-            onClick={() => {
-              triggerHaptic("selection");
-              AudioManager.play("ui_nav");
-            }}
-            aria-label="Perfil e Conta"
-            className={cn(
-              "flex flex-1 flex-col items-center justify-center gap-1 py-1 rounded-2xl transition-all duration-150 touch-manipulation cursor-pointer",
-              isPerfil
-                ? "text-amber-500 dark:text-amber-400 font-bold scale-105"
-                : "text-muted-foreground hover:text-foreground active:scale-95",
-            )}
-          >
-            <User className="size-5" strokeWidth={isPerfil ? 2.2 : 1.75} />
-            <span className="font-mono text-[10px] tracking-tight">Perfil</span>
-          </Link>
         </div>
       </nav>
 
-      {/* Modal de Criação de Projeto Operacional */}
+      {/* Modal de Criação de Projeto Operacional (Preservado) */}
       <NewProjectDialog
         open={newProjectOpen}
         onOpenChange={setNewProjectOpen}
         onCreate={handleCreateProject}
       />
 
-      {/* Bancada de Ferramentas Técnicas */}
+      {/* Bancada de Ferramentas Técnicas (Preservado) */}
       <NavToolsModal open={toolsOpen} onClose={() => setToolsOpen(false)} />
     </>
   );
