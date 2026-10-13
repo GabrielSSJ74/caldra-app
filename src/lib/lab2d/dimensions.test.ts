@@ -175,4 +175,32 @@ describe("cotagem associativa", () => {
       expect(d.layer).toBe("cota");
     }
   });
+
+  it("isocírculo projetado preserva diâmetro real exato de Ø24 mm", () => {
+    const isoEllipse: Entity = {
+      id: "iso1",
+      layer: "recorte",
+      type: "ellipse",
+      cx: 100,
+      cy: 100,
+      rx: 12 * Math.sqrt(1.5),
+      ry: 12 * Math.sqrt(0.5),
+      rotation: 0,
+      params: {
+        isIso: true,
+        isoPlane: "top",
+        realRadius: 12,
+        realDiameter: 24,
+      },
+    };
+    const e = [isoEllipse];
+    const dDia = makeDimension("diameter", [{ kind: "entity", id: "iso1" }]);
+    const dRad = makeDimension("radius", [{ kind: "entity", id: "iso1" }]);
+
+    expect(measureDimension(dDia, e)!.value).toBeCloseTo(24, 4);
+    expect(formatDimension(dDia, e)).toBe("Ø24.00 mm");
+
+    expect(measureDimension(dRad, e)!.value).toBeCloseTo(12, 4);
+    expect(formatDimension(dRad, e)).toBe("R12.00 mm");
+  });
 });

@@ -15,6 +15,7 @@
 import type { Vec2 } from "@/lib/geometry/types";
 import { uid, type Entity } from "./core";
 import { createSlotPolyline } from "./cadGeometryCore";
+import { buildBentSupportPreset } from "./isometricEngine";
 
 export interface PresetParamDef {
   id: string;
@@ -620,6 +621,30 @@ export const CAD_PRESETS_CATALOG: PresetDefinition[] = [
       });
 
       return entities;
+    },
+  },
+  {
+    id: "iso_bent_support",
+    name: "Suporte Dobrado Isométrico 2D",
+    category: "mecanica",
+    description: "Peça técnica com representação isométrica 2D: base horizontal, flange vertical dobrada e furações em múltiplos planos.",
+    params: [
+      { id: "baseWidth", label: "Largura da Base (30°)", defaultValue: 120, unit: "mm", min: 30, max: 600 },
+      { id: "baseLength", label: "Comprimento da Base (150°)", defaultValue: 80, unit: "mm", min: 30, max: 600 },
+      { id: "flangeHeight", label: "Altura da Flange (90°)", defaultValue: 60, unit: "mm", min: 20, max: 500 },
+      { id: "thickness", label: "Espessura da Chapa", defaultValue: 4, unit: "mm", min: 1, max: 30 },
+      { id: "holeDiameter", label: "Ø dos Furos Técnicos", defaultValue: 14, unit: "mm", min: 4, max: 80 },
+    ],
+    generate: (p, base) => {
+      const res = buildBentSupportPreset({
+        baseWidth: p["baseWidth"] ?? 120,
+        baseLength: p["baseLength"] ?? 80,
+        flangeHeight: p["flangeHeight"] ?? 60,
+        thickness: p["thickness"] ?? 4,
+        holeDiameter: p["holeDiameter"] ?? 14,
+        origin: base,
+      });
+      return res.entities;
     },
   },
 ];

@@ -311,17 +311,17 @@ export function ChamferCutTab({
             </p>
 
             <div className="grid grid-cols-2 gap-1.5">
-              {/* CORTE (VERDE) */}
+              {/* CORTE (BRANCO TÉCNICO ABNT) */}
               <button
                 type="button"
                 disabled={selection.length === 0}
                 onClick={() => assignProcessToSelection("corte")}
-                className="flex items-center gap-2 rounded-xl border border-green-500/40 bg-green-950/30 p-2 text-left hover:bg-green-950/60 disabled:opacity-40 transition-colors"
+                className="flex items-center gap-2 rounded-xl border border-slate-700/80 bg-slate-900/60 p-2 text-left hover:bg-slate-800 disabled:opacity-40 transition-colors"
               >
-                <span className="size-2.5 rounded-full bg-[#22C55E] shrink-0" />
+                <span className="size-2.5 rounded-full bg-white shrink-0 border border-slate-400 shadow-2xs" />
                 <div>
-                  <div className="font-sans text-xs font-bold text-green-400">Corte</div>
-                  <div className="font-mono text-[8px] text-green-500/70">Perímetro externo</div>
+                  <div className="font-sans text-xs font-bold text-white">Corte</div>
+                  <div className="font-mono text-[8px] text-slate-300">Contorno externo (Branco)</div>
                 </div>
               </button>
 

@@ -8,7 +8,7 @@
  * Proibido: drawingColor = theme.primaryColor
  */
 
-export const CUT_COLOR = "#22C55E"; // verde técnico — corte
+export const CUT_COLOR = "#FFFFFF"; // branco técnico — linha principal de contorno e corte (ABNT NBR 16861:2020)
 export const BEND_COLOR = "#EC4899"; // rosa técnico — dobra
 export const MARK_COLOR = "#3B82F6"; // azul técnico — marcação
 export const RECORTE_COLOR = "#F59E0B"; // âmbar técnico — recorte interno
@@ -19,10 +19,10 @@ export const REFERENCE_COLOR = "#6B7480"; // cinza discreto — referência
  * ATENÇÃO: DIMENSION ≠ RECORTE. Compartilham a família cromática âmbar na
  * interface, mas são funções completamente diferentes no modelo interno.
  */
-export const DIMENSION_COLOR = "#F59E0B"; // âmbar técnico — cotas
+export const DIMENSION_COLOR = "#F59E0B"; // âmbar técnico — cotas ABNT
 export const AXIS_COLOR = "#5A636E"; // cinza discreto — eixos
-/** Destaques de interface — neutros, para nunca confundir com a paleta técnica. */
-export const SELECTION_COLOR = "#FFFFFF"; // destaque temporário de seleção/snap
+/** Destaques de interface — ciano de alto contraste para destacar sobre a linha branca. */
+export const SELECTION_COLOR = "#38BDF8"; // destaque temporário de seleção/snap (ciano de alta visibilidade)
 export const PREVIEW_COLOR = "#E2E8F0"; // destaque temporário de criação
 export const WARNING_COLOR = "#FB7185"; // alertas de validação (não é camada)
 /** Tinta única da folha exportada (PDF/PNG): sempre preto puro. */

@@ -145,7 +145,7 @@ export function resolvePoint(ref: DimRef, entities: Entity[]): Vec2 | null {
   if (ref.kind === "point") return ref.p;
   const e = findEntity(entities, ref.id);
   if (!e) return null;
-  if (e.type === "circle" || e.type === "arc") return { x: e.cx, y: e.cy };
+  if (e.type === "circle" || e.type === "arc" || e.type === "ellipse") return { x: e.cx, y: e.cy };
   const ends = lineEnds(e);
   if (ends) {
     if (ref.anchor === "end") return ends[1];
@@ -161,8 +161,24 @@ const circleOf = (ref: DimRef, entities: Entity[]) => {
   if (ref.kind !== "entity") return null;
   const e = findEntity(entities, ref.id);
   if (!e) return null;
-  if (e.type === "circle") return { c: { x: e.cx, y: e.cy }, r: e.r, a0: 0, a1: Math.PI * 2 };
-  if (e.type === "arc") return { c: { x: e.cx, y: e.cy }, r: e.r, a0: e.a0, a1: e.a1 };
+  if (e.type === "circle") return { c: { x: e.cx, y: e.cy }, r: e.r, a0: 0, a1: Math.PI * 2, rx: e.r, ry: e.r, rot: 0, isEllipse: false };
+  if (e.type === "arc") return { c: { x: e.cx, y: e.cy }, r: e.r, a0: e.a0, a1: e.a1, rx: e.r, ry: e.r, rot: 0, isEllipse: false };
+  if (e.type === "ellipse") {
+    const realR =
+      typeof e.params?.realRadius === "number"
+        ? e.params.realRadius
+        : e.rx / Math.sqrt(1.5);
+    return {
+      c: { x: e.cx, y: e.cy },
+      r: realR,
+      a0: 0,
+      a1: Math.PI * 2,
+      rx: e.rx,
+      ry: e.ry,
+      rot: e.rotation ?? 0,
+      isEllipse: true,
+    };
+  }
   return null;
 };
 
@@ -332,45 +348,91 @@ const unit = (a: Vec2, b: Vec2) => {
 
 function linearDraw(a: Vec2, b: Vec2, kind: DimKind, dim: Dimension, text: string): DimDraw {
   const off = dim.offset * dim.style.side;
+  const gap = 1.5; // Afastamento ABNT da aresta/vértice do elemento
+  const extOver = 2.5; // Prolongamento ABNT além da linha de cota
+  const arrowSize = dim.style.arrowSize || 6;
   let p1 = a;
   let p2 = b;
-  let u: Vec2;
+  let ext1Start = a;
+  let ext1End = a;
+  let ext2Start = b;
+  let ext2End = b;
 
   if (kind === "horizontal" || kind === "center-dx") {
-    const y = Math.max(a.y, b.y) + off;
+    const baseSign = off >= 0 ? 1 : -1;
+    const y = (off >= 0 ? Math.max(a.y, b.y) : Math.min(a.y, b.y)) + off;
     p1 = { x: a.x, y };
     p2 = { x: b.x, y };
-    u = { x: 1, y: 0 };
+    ext1Start = { x: a.x, y: a.y + baseSign * gap };
+    ext1End = { x: a.x, y: y + baseSign * extOver };
+    ext2Start = { x: b.x, y: b.y + baseSign * gap };
+    ext2End = { x: b.x, y: y + baseSign * extOver };
   } else if (kind === "vertical" || kind === "center-dy") {
-    const x = Math.max(a.x, b.x) + off;
+    const baseSign = off >= 0 ? 1 : -1;
+    const x = (off >= 0 ? Math.max(a.x, b.x) : Math.min(a.x, b.x)) + off;
     p1 = { x, y: a.y };
     p2 = { x, y: b.y };
-    u = { x: 0, y: 1 };
+    ext1Start = { x: a.x + baseSign * gap, y: a.y };
+    ext1End = { x: x + baseSign * extOver, y: a.y };
+    ext2Start = { x: b.x + baseSign * gap, y: b.y };
+    ext2End = { x: x + baseSign * extOver, y: b.y };
   } else {
-    u = unit(a, b);
+    const u = unit(a, b);
     const n = { x: -u.y, y: u.x };
+    const sign = Math.sign(dim.style.side) || 1;
     p1 = { x: a.x + n.x * off, y: a.y + n.y * off };
     p2 = { x: b.x + n.x * off, y: b.y + n.y * off };
+    ext1Start = { x: a.x + n.x * sign * gap, y: a.y + n.y * sign * gap };
+    ext1End = { x: p1.x + n.x * sign * extOver, y: p1.y + n.y * sign * extOver };
+    ext2Start = { x: b.x + n.x * sign * gap, y: b.y + n.y * sign * gap };
+    ext2End = { x: p2.x + n.x * sign * extOver, y: p2.y + n.y * sign * extOver };
   }
 
   const ang = Math.atan2(p2.y - p1.y, p2.x - p1.x);
-  const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
-  return {
-    lines: [
-      [p1, p2],
-      [a, p1],
-      [b, p2],
-    ],
-    arcs: [],
-    arrows: [
+  const span = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+  const isNarrow = span < arrowSize * 2.2 + 8;
+
+  const lines: [Vec2, Vec2][] = [
+    [p1, p2],
+    [ext1Start, ext1End],
+    [ext2Start, ext2End],
+  ];
+
+  let arrows: { p: Vec2; angle: number }[] = [];
+  if (isNarrow) {
+    // ABNT: Em vãos estreitos, setas externas apontando para dentro
+    arrows = [
+      { p: p1, angle: ang + Math.PI },
+      { p: p2, angle: ang },
+    ];
+    lines.push(
+      [
+        { x: p1.x - Math.cos(ang) * arrowSize * 1.5, y: p1.y - Math.sin(ang) * arrowSize * 1.5 },
+        p1,
+      ],
+      [
+        p2,
+        { x: p2.x + Math.cos(ang) * arrowSize * 1.5, y: p2.y + Math.sin(ang) * arrowSize * 1.5 },
+      ],
+    );
+  } else {
+    // ABNT normal: setas internas apontando para fora contra as linhas de extensão
+    arrows = [
       { p: p1, angle: ang },
       { p: p2, angle: ang + Math.PI },
-    ],
+    ];
+  }
+
+  const mid = { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
+  return {
+    lines,
+    arcs: [],
+    arrows,
     labels: [{ p: mid, text, angle: ang }],
   };
 }
 
-/** Geometria de apresentação da cota, derivada da geometria real. */
+/** Geometria de apresentação da cota, derivada da geometria real conforme ABNT NBR 17068:2022. */
 export function dimensionDraw(dim: Dimension, entities: Entity[]): DimDraw {
   const text = formatDimension(dim, entities);
   if (text === null) return EMPTY;
@@ -413,37 +475,59 @@ export function dimensionDraw(dim: Dimension, entities: Entity[]): DimDraw {
     case "diameter": {
       const c = circleOf(dim.refs[0]!, entities);
       if (!c) return EMPTY;
+      // Padrão ABNT: linha de chamada a 45° saindo da borda com patamar horizontal para o texto
       const a = Math.PI / 4;
-      const p1 = { x: c.c.x - c.r * Math.cos(a), y: c.c.y - c.r * Math.sin(a) };
-      const p2 = { x: c.c.x + c.r * Math.cos(a), y: c.c.y + c.r * Math.sin(a) };
-      const tip = { x: p2.x + Math.cos(a) * dim.offset, y: p2.y + Math.sin(a) * dim.offset };
+      const getBoundary = (ang: number) => {
+        if (c.isEllipse && typeof c.rx === "number" && typeof c.ry === "number") {
+          const cosT = Math.cos(ang);
+          const sinT = Math.sin(ang);
+          const rot = c.rot ?? 0;
+          return {
+            x: c.c.x + c.rx * cosT * Math.cos(rot) - c.ry * sinT * Math.sin(rot),
+            y: c.c.y + c.rx * cosT * Math.sin(rot) + c.ry * sinT * Math.cos(rot),
+          };
+        }
+        return { x: c.c.x + c.r * Math.cos(ang), y: c.c.y + c.r * Math.sin(ang) };
+      };
+      const p1 = getBoundary(a + Math.PI);
+      const p2 = getBoundary(a);
+      const knee = { x: p2.x + Math.cos(a) * Math.max(10, dim.offset * 0.6), y: p2.y + Math.sin(a) * Math.max(10, dim.offset * 0.6) };
+      const shelf = { x: knee.x + 14, y: knee.y };
       return {
         lines: [
           [p1, p2],
-          [p2, tip],
+          [p2, knee],
+          [knee, shelf],
         ],
         arcs: [],
         arrows: [
           { p: p1, angle: a },
           { p: p2, angle: a + Math.PI },
         ],
-        labels: [{ p: tip, text, angle: 0 }],
+        labels: [{ p: { x: knee.x + 7, y: knee.y - 2 }, text, angle: 0 }],
       };
     }
     case "radius": {
       const c = circleOf(dim.refs[0]!, entities);
       if (!c) return EMPTY;
+      // Padrão ABNT: seta tocando o arco com linha de chamada inclinada e patamar horizontal
       const a = c.a1 === Math.PI * 2 ? Math.PI / 4 : c.a0 + sweepOf(c.a0, c.a1) / 2;
-      const edge = { x: c.c.x + c.r * Math.cos(a), y: c.c.y + c.r * Math.sin(a) };
-      const tip = { x: edge.x + Math.cos(a) * dim.offset, y: edge.y + Math.sin(a) * dim.offset };
+      const edge = c.isEllipse && typeof c.rx === "number" && typeof c.ry === "number"
+        ? {
+            x: c.c.x + c.rx * Math.cos(a) * Math.cos(c.rot ?? 0) - c.ry * Math.sin(a) * Math.sin(c.rot ?? 0),
+            y: c.c.y + c.rx * Math.cos(a) * Math.sin(c.rot ?? 0) + c.ry * Math.sin(a) * Math.cos(c.rot ?? 0),
+          }
+        : { x: c.c.x + c.r * Math.cos(a), y: c.c.y + c.r * Math.sin(a) };
+      const knee = { x: edge.x + Math.cos(a) * Math.max(8, dim.offset * 0.5), y: edge.y + Math.sin(a) * Math.max(8, dim.offset * 0.5) };
+      const shelf = { x: knee.x + 14, y: knee.y };
       return {
         lines: [
-          [c.c, edge],
-          [edge, tip],
+          [edge, knee],
+          [knee, shelf],
         ],
         arcs: [],
         arrows: [{ p: edge, angle: a + Math.PI }],
-        labels: [{ p: tip, text, angle: 0 }],
+        labels: [{ p: { x: knee.x + 7, y: knee.y - 2 }, text, angle: 0 }],
       };
     }
     case "arc-length": {
@@ -452,16 +536,21 @@ export function dimensionDraw(dim: Dimension, entities: Entity[]): DimDraw {
       const r = c.r + dim.offset * dim.style.side;
       const sweep = sweepOf(c.a0, c.a1);
       const mid = c.a0 + sweep / 2;
+      const p1 = { x: c.c.x + r * Math.cos(c.a0), y: c.c.y + r * Math.sin(c.a0) };
+      const p2 = { x: c.c.x + r * Math.cos(c.a1), y: c.c.y + r * Math.sin(c.a1) };
       return {
         lines: [
-          [c.c, { x: c.c.x + r * Math.cos(c.a0), y: c.c.y + r * Math.sin(c.a0) }],
-          [c.c, { x: c.c.x + r * Math.cos(c.a1), y: c.c.y + r * Math.sin(c.a1) }],
+          [{ x: c.c.x + c.r * Math.cos(c.a0), y: c.c.y + c.r * Math.sin(c.a0) }, p1],
+          [{ x: c.c.x + c.r * Math.cos(c.a1), y: c.c.y + c.r * Math.sin(c.a1) }, p2],
         ],
         arcs: [{ c: c.c, r, a0: c.a0, a1: c.a0 + sweep }],
-        arrows: [],
+        arrows: [
+          { p: p1, angle: c.a0 + Math.PI / 2 },
+          { p: p2, angle: c.a1 - Math.PI / 2 },
+        ],
         labels: [
           {
-            p: { x: c.c.x + (r + 6) * Math.cos(mid), y: c.c.y + (r + 6) * Math.sin(mid) },
+            p: { x: c.c.x + (r + 4) * Math.cos(mid), y: c.c.y + (r + 4) * Math.sin(mid) },
             text,
             angle: 0,
           },
@@ -486,22 +575,29 @@ export function dimensionDraw(dim: Dimension, entities: Entity[]): DimDraw {
     case "angle": {
       const g = angleGeometry(dim, entities);
       if (!g) return EMPTY;
-      const r = Math.max(5, dim.offset);
+      const r = Math.max(8, dim.offset);
       const a0 = Math.atan2(g.d1.y, g.d1.x);
       const a1 = Math.atan2(g.d2.y, g.d2.x);
-      const mid = a0 + ((g.deg * Math.PI) / 180) * 0.5 * (sweepOf(a0, a1) > Math.PI ? -1 : 1);
+      const minA = Math.min(a0, a1);
+      const maxA = Math.max(a0, a1);
+      const mid = (minA + maxA) / 2;
+      const p1 = { x: g.vertex.x + r * Math.cos(minA), y: g.vertex.y + r * Math.sin(minA) };
+      const p2 = { x: g.vertex.x + r * Math.cos(maxA), y: g.vertex.y + r * Math.sin(maxA) };
       return {
         lines: [
-          [g.vertex, { x: g.vertex.x + g.d1.x * r * 1.2, y: g.vertex.y + g.d1.y * r * 1.2 }],
-          [g.vertex, { x: g.vertex.x + g.d2.x * r * 1.2, y: g.vertex.y + g.d2.y * r * 1.2 }],
+          [g.vertex, { x: g.vertex.x + g.d1.x * r * 1.25, y: g.vertex.y + g.d1.y * r * 1.25 }],
+          [g.vertex, { x: g.vertex.x + g.d2.x * r * 1.25, y: g.vertex.y + g.d2.y * r * 1.25 }],
         ],
-        arcs: [{ c: g.vertex, r, a0: Math.min(a0, a1), a1: Math.max(a0, a1) }],
-        arrows: [],
+        arcs: [{ c: g.vertex, r, a0: minA, a1: maxA }],
+        arrows: [
+          { p: p1, angle: minA - Math.PI / 2 },
+          { p: p2, angle: maxA + Math.PI / 2 },
+        ],
         labels: [
           {
             p: {
-              x: g.vertex.x + (r + 8) * Math.cos(mid),
-              y: g.vertex.y + (r + 8) * Math.sin(mid),
+              x: g.vertex.x + (r + 6) * Math.cos(mid),
+              y: g.vertex.y + (r + 6) * Math.sin(mid),
             },
             text,
             angle: 0,

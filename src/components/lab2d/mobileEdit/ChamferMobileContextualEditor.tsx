@@ -277,6 +277,42 @@ export function ChamferMobileContextualEditor({
           pts: entity.pts.map((p) => ({ x: p.x, y: p.y + diffY })),
         });
       }
+    } else if (entity.type === "ellipse") {
+      if (key === "diameter") {
+        const nextR = Math.max(0.1, val / 2);
+        const isIso = !!entity.params?.isIso;
+        if (isIso) {
+          onUpdateEntity({
+            ...entity,
+            rx: nextR * Math.sqrt(1.5),
+            ry: nextR * Math.sqrt(0.5),
+            params: { ...entity.params, realRadius: nextR, realDiameter: val },
+          });
+        } else {
+          onUpdateEntity({ ...entity, rx: nextR, ry: nextR * (entity.ry / (entity.rx || 1)) });
+        }
+      } else if (key === "radius") {
+        const nextR = Math.max(0.05, val);
+        const isIso = !!entity.params?.isIso;
+        if (isIso) {
+          onUpdateEntity({
+            ...entity,
+            rx: nextR * Math.sqrt(1.5),
+            ry: nextR * Math.sqrt(0.5),
+            params: { ...entity.params, realRadius: nextR, realDiameter: nextR * 2 },
+          });
+        } else {
+          onUpdateEntity({ ...entity, rx: nextR });
+        }
+      } else if (key === "rx") {
+        onUpdateEntity({ ...entity, rx: Math.max(0.1, val) });
+      } else if (key === "ry") {
+        onUpdateEntity({ ...entity, ry: Math.max(0.1, val) });
+      } else if (key === "cx") {
+        onUpdateEntity({ ...entity, cx: val });
+      } else if (key === "cy") {
+        onUpdateEntity({ ...entity, cy: val });
+      }
     } else if (entity.type === "point") {
       if (key === "x") onUpdateEntity({ ...entity, x: val });
       if (key === "y") onUpdateEntity({ ...entity, y: val });
@@ -641,6 +677,126 @@ export function ChamferMobileContextualEditor({
       );
     }
 
+    // 4.5. ELIPSE E ISOCÍRCULO
+    if (entity.type === "ellipse") {
+      const isIso = !!entity.params?.isIso;
+      const realR =
+        typeof entity.params?.realRadius === "number"
+          ? entity.params.realRadius
+          : entity.rx / Math.sqrt(1.5);
+      const realDia =
+        typeof entity.params?.realDiameter === "number"
+          ? entity.params.realDiameter
+          : realR * 2;
+      const planeLabel = entity.params?.isoPlane
+        ? String(entity.params.isoPlane).toUpperCase()
+        : null;
+
+      return (
+        <div className="flex flex-col gap-1.5 py-1">
+          {/* Diâmetro / Isodiâmetro */}
+          <button
+            type="button"
+            onClick={() =>
+              setActiveNumericProp({
+                key: "diameter",
+                label: isIso ? `Diâmetro Ø (${planeLabel ?? "ISO"})` : "Diâmetro Maior Ø",
+                symbol: "Ø",
+                value: realDia,
+                unit: "mm",
+                min: 0.2,
+                defaultStep: 5,
+                stepOptions: [0.5, 1, 5, 10],
+              })
+            }
+            className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-left hover:border-slate-700 hover:bg-slate-900 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-bold text-red-500">Ø</span>
+              <span className="text-xs font-medium text-slate-300">
+                {isIso ? `Diâmetro (${planeLabel ?? "Isométrico"})` : "Diâmetro Maior"}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-white">
+              <span>{realDia.toFixed(2)} mm</span>
+              <ChevronRight className="size-3.5 text-red-500" />
+            </div>
+          </button>
+
+          {/* Raio Real */}
+          <button
+            type="button"
+            onClick={() =>
+              setActiveNumericProp({
+                key: "radius",
+                label: isIso ? `Raio R (${planeLabel ?? "ISO"})` : "Raio Maior R",
+                symbol: "R",
+                value: realR,
+                unit: "mm",
+                min: 0.1,
+                defaultStep: 5,
+                stepOptions: [0.5, 1, 5, 10],
+              })
+            }
+            className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-left hover:border-slate-700 hover:bg-slate-900 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs font-bold text-slate-400">R</span>
+              <span className="text-xs font-medium text-slate-300">Raio Real</span>
+            </div>
+            <div className="flex items-center gap-1.5 font-mono text-xs font-semibold text-slate-200">
+              <span>{realR.toFixed(2)} mm</span>
+              <ChevronRight className="size-3.5 text-slate-500" />
+            </div>
+          </button>
+
+          {/* Centro X e Y */}
+          <div className="grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() =>
+                setActiveNumericProp({
+                  key: "cx",
+                  label: "Centro X",
+                  symbol: "X",
+                  value: entity.cx,
+                  unit: "mm",
+                  defaultStep: 5,
+                  allowNegative: true,
+                })
+              }
+              className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/80 p-2 text-left hover:bg-slate-900 transition-colors"
+            >
+              <span className="font-mono text-[10px] text-slate-400">CX</span>
+              <span className="font-mono text-xs font-semibold text-white">
+                {entity.cx.toFixed(1)}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setActiveNumericProp({
+                  key: "cy",
+                  label: "Centro Y",
+                  symbol: "Y",
+                  value: entity.cy,
+                  unit: "mm",
+                  defaultStep: 5,
+                  allowNegative: true,
+                })
+              }
+              className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/80 p-2 text-left hover:bg-slate-900 transition-colors"
+            >
+              <span className="font-mono text-[10px] text-slate-400">CY</span>
+              <span className="font-mono text-xs font-semibold text-white">
+                {entity.cy.toFixed(1)}
+              </span>
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     // 5. LINHA (COMPRIMENTO, ÂNGULO, X1, Y1, X2, Y2)
     if (entity.type === "line") {
       const len = Math.hypot(entity.x2 - entity.x1, entity.y2 - entity.y1);
@@ -941,24 +1097,45 @@ export function ChamferMobileContextualEditor({
       {/* RODAPÉ DE AÇÕES RÁPIDAS (EXCLUIR, DUPLICAR, CAMADA) */}
       {/* ---------------------------------------------------- */}
       {entity && (
-        <div className="flex items-center justify-between pt-2 border-t border-slate-800/80 mt-1">
-          {/* Seletor de Camada */}
-          <div className="flex items-center gap-1.5">
-            <select
-              value={entity.layer}
-              onChange={(e) => onUpdateEntity?.({ ...entity, layer: e.target.value })}
-              className="rounded-lg border border-slate-800 bg-slate-900/90 px-2 py-1 font-mono text-[10px] text-slate-300 outline-none hover:border-slate-700"
-            >
-              {layers.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
-          </div>
+        <div className="flex flex-col gap-2 pt-2 border-t border-slate-800/80 mt-1">
+          {/* Seletor Rápido de Camadas Independentes de Fabricação */}
+          <div className="flex flex-wrap items-center justify-between gap-1.5">
+            <div className="flex items-center gap-1">
+              {[
+                { id: "corte", label: "Corte", color: "#FFFFFF" },
+                { id: "dobra", label: "Dobra", color: "#EC4899" },
+                { id: "recorte", label: "Recorte", color: "#F59E0B" },
+                { id: "marcacao", label: "Marcação", color: "#3B82F6" },
+              ].map((cl) => {
+                const isAct = entity.layer === cl.id;
+                return (
+                  <button
+                    key={cl.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      onUpdateEntity?.({ ...entity, layer: cl.id });
+                    }}
+                    title={`Definir camada como ${cl.label}`}
+                    className={cn(
+                      "flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-[9px] font-semibold border transition-all cursor-pointer",
+                      isAct
+                        ? "border-slate-400 bg-slate-800 text-white shadow-xs ring-1 ring-slate-400"
+                        : "border-slate-800 bg-slate-950/60 text-slate-400 hover:border-slate-700 hover:text-slate-200",
+                    )}
+                  >
+                    <span
+                      className="size-2 rounded-full shrink-0 border border-slate-600/60"
+                      style={{ backgroundColor: cl.color }}
+                    />
+                    <span>{cl.label}</span>
+                  </button>
+                );
+              })}
+            </div>
 
-          {/* Ações Rápidas: Duplicar e Excluir */}
-          <div className="flex items-center gap-1">
+            {/* Ações Rápidas: Duplicar e Excluir */}
+            <div className="flex items-center gap-1">
             {onDuplicateEntity && (
               <button
                 type="button"
@@ -989,7 +1166,8 @@ export function ChamferMobileContextualEditor({
             )}
           </div>
         </div>
-      )}
+      </div>
+    )}
     </div>
   );
 }

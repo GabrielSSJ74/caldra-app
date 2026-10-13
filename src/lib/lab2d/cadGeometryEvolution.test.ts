@@ -146,8 +146,8 @@ describe("CALDRA CHAMFER 2D — Operações Booleanas 2D", () => {
 });
 
 describe("CALDRA CHAMFER 2D — Catálogo de Presets Industriais com Vista 2D", () => {
-  it("possui todos os 8 presets de caldeiraria e mecânica cadastrados", () => {
-    expect(CAD_PRESETS_CATALOG.length).toBe(8);
+  it("possui todos os presets de caldeiraria e mecânica cadastrados", () => {
+    expect(CAD_PRESETS_CATALOG.length).toBeGreaterThanOrEqual(8);
     const ids = CAD_PRESETS_CATALOG.map((p) => p.id);
     expect(ids).toContain("circular_flange");
     expect(ids).toContain("mounting_base");

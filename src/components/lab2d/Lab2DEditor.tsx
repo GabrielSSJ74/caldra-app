@@ -53,6 +53,7 @@ import {
   Moon,
   Activity,
   AlignCenter,
+  Box as BoxIcon,
   Boxes,
   FileText,
   Search,
@@ -260,6 +261,19 @@ import { ChamferTopologyHealthModal } from "./ChamferTopologyHealthModal";
 import { ChamferVariablesModal } from "./ChamferVariablesModal";
 import { ChamferPresetsModal } from "./ChamferPresetsModal";
 import { ChamferTechnicalSheetModal } from "./ChamferTechnicalSheetModal";
+import {
+  type IsoPlane,
+  type DrawingProjectionMode,
+  ISO_PLANES,
+  ISO_AXIS_VECTORS,
+  constrainToIsoAxes,
+  snapToIsoGrid,
+  buildIsoParallelogram,
+  buildIsoCircle,
+  buildBentSupportPreset,
+} from "@/lib/lab2d/isometricEngine";
+import { ChamferIsoPlaneHUD } from "./ChamferIsoPlaneHUD";
+import { ChamferIsoPieceBuilderModal } from "./ChamferIsoPieceBuilderModal";
 import { DUAL_TOOL_PRESETS } from "@/lib/lab2d/cadDualToolManager";
 import {
   evaluateGeometricIntent,
@@ -592,6 +606,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   };
   const [layers, setLayers] = useState<Layer[]>(DEFAULT_LAYERS);
   const [activeLayer, setActiveLayer] = useState("corte");
+  const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
   const [tool, setTool] = useState<Tool>("select");
   const [selection, setSelection] = useState<string[]>([]);
   const [view, setView] = useState({ tx: 80, ty: 80, k: 1 });
@@ -643,6 +658,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [showPoints3D, setShowPoints3D] = useState(true);
   const [showFolds3D, setShowFolds3D] = useState(true);
   const [showDims3D, setShowDims3D] = useState(true);
+
+  /* MODO DE DESENHO ISOMÉTRICO 2D (ETAPA ISOMÉTRICO DO CHAMFER) */
+  const [drawingProjection, setDrawingProjection] = useState<DrawingProjectionMode>("orthographic");
+  const [isoPlane, setIsoPlane] = useState<IsoPlane>("top");
+  const [isoOrtho, setIsoOrtho] = useState<boolean>(true);
+  const [isoPieceBuilderOpen, setIsoPieceBuilderOpen] = useState<boolean>(false);
 
   const [outputMode, setOutputMode] = useState<OutputMode>("completo");
   const [pending, setPending] = useState<Vec2[]>([]);
@@ -1065,6 +1086,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setEntities((prev) => {
       past.current = [...past.current.slice(-49), prev];
       future.current = [];
+      setHistoryState({ canUndo: past.current.length > 0, canRedo: false });
       const updated = typeof next === "function" ? next(prev) : next;
       const seenIds = new Set<string>();
       return updated.map((ent) => {
@@ -1079,19 +1101,38 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, []);
 
   const undo = useCallback(() => {
+    // Se houver desenho em progresso (pontos de polilinha, draft, etc.), cancela o rascunho primeiro
+    if (pending.length > 0) {
+      setPending([]);
+      setDraft(null);
+      triggerHaptic("selection");
+      toast.info("Rascunho atual cancelado.");
+      return;
+    }
+    if (liveMeasure) {
+      setLiveMeasure(null);
+      return;
+    }
     setEntities((prev) => {
       const last = past.current.pop();
       if (!last) return prev;
       future.current = [prev, ...future.current];
+      setHistoryState({ canUndo: past.current.length > 0, canRedo: future.current.length > 0 });
+      triggerHaptic("medium");
+      toast.success("Ação desfeita");
       return last;
     });
-  }, []);
+  }, [pending.length, liveMeasure]);
+
   const redo = useCallback(() => {
     setEntities((prev) => {
       const [next, ...rest] = future.current;
       if (!next) return prev;
       future.current = rest;
       past.current = [...past.current, prev];
+      setHistoryState({ canUndo: past.current.length > 0, canRedo: rest.length > 0 });
+      triggerHaptic("medium");
+      toast.success("Ação refeita");
       return next;
     });
   }, []);
@@ -1314,10 +1355,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
       const smart = findSmartSnap(p, entities, tol, activeStart ?? null, tool, selection);
       if (smart) return smart.p;
+
+      // Snapping prioritário à grade isométrica quando em modo isométrico
+      if (drawingProjection === "isometric" && showGrid) {
+        const isoG = snapToIsoGrid(p, grid, isoPlane);
+        if (dist(p, isoG) <= tol * 1.5) return isoG;
+      }
+
       const s = findSnap(p, near(p, tol * 2), tol, grid, { grid: showGrid, object: true });
       return s ? s.p : p;
     },
-    [snapOn, view.k, pending, entities, tool, selection, near, grid, showGrid],
+    [snapOn, view.k, pending, entities, tool, selection, near, grid, showGrid, drawingProjection, isoPlane],
   );
 
   /* ---------------------------------------- pintura em canvas (por sujidade) */
@@ -2788,7 +2836,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     // ferramentas de arrasto
     setPending([p]);
-    setDraft(buildDraft(tool, p, p, activeLayer, filletR));
+    setDraft(buildDraft(tool, p, p, activeLayer, filletR, drawingProjection, isoPlane));
   };
 
   const onPointerMove = (ev: React.PointerEvent) => {
@@ -2945,11 +2993,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
     if (tool === "polyline" && pending.length) {
       let p = snapPoint(raw);
-      if (orthoOn) {
+      if (drawingProjection === "isometric" && (isoOrtho || orthoOn)) {
+        p = constrainToIsoAxes(pending[pending.length - 1]!, p, isoPlane);
+      } else if (orthoOn) {
         const p0 = pending[pending.length - 1]!;
         const dx = Math.abs(raw.x - p0.x);
         const dy = Math.abs(raw.y - p0.y);
-        p = dx >= dy ? { x: p.x, y: p0.y } : { x: p0.x, y: p.y };
+        p = dx >= dy ? { x: p.x, y: p0.y } : { x: p.x, y: p.y };
       }
       setDraft({
         id: uid(),
@@ -2970,7 +3020,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         const dy = Math.abs(raw.y - p0.y);
         targetP = dx >= dy ? { x: targetP.x, y: p0.y } : { x: p0.x, y: targetP.y };
       }
-      setDraft(buildDraft(tool, pending[0]!, targetP, activeLayer, filletR));
+      if (drawingProjection === "isometric") {
+        if ((isoOrtho || orthoOn) && tool === "line") {
+          targetP = constrainToIsoAxes(pending[0]!, targetP, isoPlane);
+        }
+        if (tool === "rect") {
+          setDraft(buildIsoParallelogram(isoPlane, pending[0]!, targetP, activeLayer));
+          return;
+        }
+        if (tool === "circle" || tool === "ellipse") {
+          const r = dist(pending[0]!, targetP);
+          setDraft(buildIsoCircle(isoPlane, pending[0]!, r, activeLayer));
+          return;
+        }
+      }
+      setDraft(buildDraft(tool, pending[0]!, targetP, activeLayer, filletR, drawingProjection, isoPlane));
     }
   };
 
@@ -3125,6 +3189,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (ev.key === "F4") {
         ev.preventDefault();
         setView({ tx: 80, ty: 80, k: 1 });
+      }
+      if (ev.key === "F5" || (ev.ctrlKey && ev.key.toLowerCase() === "e")) {
+        ev.preventDefault();
+        setDrawingProjection("isometric");
+        setIsoPlane((prev) => {
+          const next = prev === "top" ? "left" : prev === "left" ? "right" : "top";
+          triggerHaptic("selection");
+          AudioManager.play("ui_select");
+          toast.info(`Plano Isométrico: ${ISO_PLANES[next].label} (${ISO_PLANES[next].name})`);
+          return next;
+        });
+        return;
       }
       const map: Record<string, Tool> = {
         v: "select",
@@ -3723,7 +3799,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 }
                 leaveEditor();
               }}
-              aria-label="Voltar para a tela anterior"
+              aria-label="Sair do editor e voltar aos Projetos"
+              title="Sair do editor (salvar e voltar)"
               className={cn(
                 "flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors",
                 isDark
@@ -3731,7 +3808,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   : "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900",
               )}
             >
-              <ArrowLeft className="size-3.5" /> Voltar
+              <ArrowLeft className="size-3.5" /> Sair
             </button>
 
             <span className={cn("h-4 w-px", isDark ? "bg-slate-800" : "bg-slate-200")} />
@@ -3777,8 +3854,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           </div>
 
-          {/* REGIÃO CENTRAL: CONTROLE PRINCIPAL DE MUDANÇA DE AMBIENTE [ 2D SKETCH | 3D SÓLIDO | FLANGES ] */}
-          <div className="flex shrink-0 items-center justify-center">
+          {/* REGIÃO CENTRAL: CONTROLE PRINCIPAL DE MUDANÇA DE AMBIENTE [ 2D SKETCH | 3D SÓLIDO | FLANGES ] E MODO [ ORTO 2D | ISO 2D ] */}
+          <div className="flex shrink-0 items-center justify-center gap-1.5">
             <div
               className={cn(
                 "flex items-center rounded-lg border p-0.5 shadow-xs",
@@ -3841,6 +3918,55 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 FLANGES
               </button>
             </div>
+
+            {/* SELETOR DE PROJEÇÃO: [ ORTO 2D | ISO 2D ] (ATIVO NO MODO 2D) */}
+            {activeMode === "2d" && !solidOpen && (
+              <div
+                className={cn(
+                  "hidden sm:flex items-center rounded-lg border p-0.5 shadow-xs",
+                  isDark ? "border-slate-800 bg-slate-900/90" : "border-slate-200 bg-slate-100",
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    AudioManager.play("ui_select");
+                    setDrawingProjection("orthographic");
+                  }}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
+                    drawingProjection === "orthographic"
+                      ? "bg-slate-700 text-white shadow-xs"
+                      : "text-slate-400 hover:text-slate-200",
+                  )}
+                  title="Modo Ortogonal 2D (Eixos X/Y convencionais)"
+                >
+                  ORTO 2D
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    AudioManager.play("ui_select");
+                    setDrawingProjection("isometric");
+                    toast.info(
+                      `Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label} · F5 para alternar)`,
+                    );
+                  }}
+                  className={cn(
+                    "rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors flex items-center gap-1",
+                    drawingProjection === "isometric"
+                      ? "bg-sky-600 text-white shadow-xs"
+                      : "text-slate-400 hover:text-slate-200",
+                  )}
+                  title="Modo Isométrico 2D (Eixos 30°/90°/150° e 3 Planos Técnicos)"
+                >
+                  <BoxIcon className="w-3 h-3" />
+                  <span>ISO 2D</span>
+                </button>
+              </div>
+            )}
           </div>
 
           {/* LADO DIREITO: HISTÓRICO + SALVAMENTO/STATUS + FERRAMENTAS GLOBAIS */}
@@ -3854,25 +3980,39 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             >
               <button
                 type="button"
+                disabled={!historyState.canUndo && pending.length === 0}
                 onClick={undo}
-                title="Desfazer ação (Ctrl+Z)"
+                title="Desfazer alteração (Ctrl+Z)"
+                aria-label="Desfazer ação anterior"
                 className={cn(
-                  "flex size-7 items-center justify-center rounded-md transition-colors",
-                  isDark ? "text-slate-300 hover:bg-slate-800 hover:text-white" : "text-slate-700 hover:bg-slate-200 hover:text-slate-900",
+                  "flex h-7 items-center gap-1 rounded-md px-2 font-mono text-[10px] font-semibold transition-colors",
+                  historyState.canUndo || pending.length > 0
+                    ? isDark
+                      ? "text-slate-200 hover:bg-slate-800 hover:text-white cursor-pointer"
+                      : "text-slate-700 hover:bg-slate-200 hover:text-slate-900 cursor-pointer"
+                    : "opacity-35 cursor-not-allowed text-slate-500",
                 )}
               >
                 <Undo2 className="size-3.5" />
+                <span className="hidden sm:inline">Desfazer</span>
               </button>
               <button
                 type="button"
+                disabled={!historyState.canRedo}
                 onClick={redo}
-                title="Refazer ação (Ctrl+Y)"
+                title="Refazer alteração (Ctrl+Y)"
+                aria-label="Refazer ação desfeita"
                 className={cn(
-                  "flex size-7 items-center justify-center rounded-md transition-colors",
-                  isDark ? "text-slate-300 hover:bg-slate-800 hover:text-white" : "text-slate-700 hover:bg-slate-200 hover:text-slate-900",
+                  "flex h-7 items-center gap-1 rounded-md px-2 font-mono text-[10px] font-semibold transition-colors",
+                  historyState.canRedo
+                    ? isDark
+                      ? "text-slate-200 hover:bg-slate-800 hover:text-white cursor-pointer"
+                      : "text-slate-700 hover:bg-slate-200 hover:text-slate-900 cursor-pointer"
+                    : "opacity-35 cursor-not-allowed text-slate-500",
                 )}
               >
                 <Redo2 className="size-3.5" />
+                <span className="hidden sm:inline">Refazer</span>
               </button>
             </div>
 
@@ -4263,6 +4403,26 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             onApplyRelief={handleApplyRelief}
             onUnfold={handleUnfold}
             onFold={handleFold}
+            activeLayer={activeLayer}
+            setActiveLayer={setActiveLayer}
+            drawingProjection={drawingProjection}
+            onToggleDrawingProjection={() => {
+              setDrawingProjection((p) => {
+                const next = p === "isometric" ? "orthographic" : "isometric";
+                if (next === "isometric") {
+                  toast.info(`Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label})`);
+                } else {
+                  toast.info("Modo Ortogonal 2D ativado");
+                }
+                return next;
+              });
+            }}
+            isoPlane={isoPlane}
+            onSelectIsoPlane={(p) => {
+              setIsoPlane(p);
+              toast.info(`Plano Isométrico: ${ISO_PLANES[p].label}`);
+            }}
+            onOpenPieceBuilder={() => setIsoPieceBuilderOpen(true)}
             isDark={isDark}
           />
         )}
@@ -4358,17 +4518,106 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         shapeRendering="crispEdges"
                       />
                     </pattern>
+                    {/* 4. GRADE ISOMÉTRICA (TRIANGULAR A 30°, 90°, 150°) */}
+                    {drawingProjection === "isometric" && (
+                      <pattern
+                        id="chamfer-grid-isometric"
+                        width={Math.max(1, grid * Math.sqrt(3) * view.k)}
+                        height={Math.max(1, grid * view.k)}
+                        patternUnits="userSpaceOnUse"
+                        x={
+                          ((view.tx % (grid * Math.sqrt(3) * view.k)) +
+                            grid * Math.sqrt(3) * view.k) %
+                          (grid * Math.sqrt(3) * view.k)
+                        }
+                        y={((view.ty % (grid * view.k)) + grid * view.k) % (grid * view.k)}
+                      >
+                        {/* Linhas a 90° (verticais) */}
+                        <line
+                          x1={0}
+                          y1={0}
+                          x2={0}
+                          y2={grid * view.k}
+                          stroke={gridStyles.secondaryStroke}
+                          strokeWidth={gridStyles.secondaryWidth}
+                        />
+                        <line
+                          x1={(grid * Math.sqrt(3) * view.k) / 2}
+                          y1={0}
+                          x2={(grid * Math.sqrt(3) * view.k) / 2}
+                          y2={grid * view.k}
+                          stroke={gridStyles.secondaryStroke}
+                          strokeWidth={gridStyles.secondaryWidth}
+                        />
+                        {/* Linhas a 30° */}
+                        <line
+                          x1={0}
+                          y1={(grid * view.k) / 2}
+                          x2={(grid * Math.sqrt(3) * view.k) / 2}
+                          y2={0}
+                          stroke={gridStyles.secondaryStroke}
+                          strokeWidth={gridStyles.secondaryWidth}
+                        />
+                        <line
+                          x1={0}
+                          y1={grid * view.k}
+                          x2={grid * Math.sqrt(3) * view.k}
+                          y2={0}
+                          stroke={gridStyles.majorStroke}
+                          strokeWidth={gridStyles.secondaryWidth}
+                        />
+                        <line
+                          x1={(grid * Math.sqrt(3) * view.k) / 2}
+                          y1={grid * view.k}
+                          x2={grid * Math.sqrt(3) * view.k}
+                          y2={(grid * view.k) / 2}
+                          stroke={gridStyles.secondaryStroke}
+                          strokeWidth={gridStyles.secondaryWidth}
+                        />
+                        {/* Linhas a 150° */}
+                        <line
+                          x1={0}
+                          y1={(grid * view.k) / 2}
+                          x2={(grid * Math.sqrt(3) * view.k) / 2}
+                          y2={grid * view.k}
+                          stroke={gridStyles.secondaryStroke}
+                          strokeWidth={gridStyles.secondaryWidth}
+                        />
+                        <line
+                          x1={0}
+                          y1={0}
+                          x2={grid * Math.sqrt(3) * view.k}
+                          y2={grid * view.k}
+                          stroke={gridStyles.majorStroke}
+                          strokeWidth={gridStyles.secondaryWidth}
+                        />
+                        <line
+                          x1={(grid * Math.sqrt(3) * view.k) / 2}
+                          y1={0}
+                          x2={grid * Math.sqrt(3) * view.k}
+                          y2={(grid * view.k) / 2}
+                          stroke={gridStyles.secondaryStroke}
+                          strokeWidth={gridStyles.secondaryWidth}
+                        />
+                      </pattern>
+                    )}
                   </defs>
 
                   {/* Renderização em camadas ordenadas de profundidade e contraste */}
-                  {gridConfig.subFade > 0.02 && (
-                    <rect width="100%" height="100%" fill="url(#chamfer-grid-secondary)" />
-                  )}
-                  {gridConfig.majorFade > 0.02 && (
-                    <rect width="100%" height="100%" fill="url(#chamfer-grid-major)" />
-                  )}
-                  {gridConfig.macroStep * view.k >= 8 && (
-                    <rect width="100%" height="100%" fill="url(#chamfer-grid-macro)" />
+                  {drawingProjection === "isometric" ? (
+                    <rect width="100%" height="100%" fill="url(#chamfer-grid-isometric)" />
+                  ) : (
+                    <>
+                      {gridConfig.subFade > 0.02 && (
+                        <rect width="100%" height="100%" fill="url(#chamfer-grid-secondary)" />
+                      )}
+                      {gridConfig.majorFade > 0.02 && (
+                        <rect width="100%" height="100%" fill="url(#chamfer-grid-major)" />
+                      )}
+                      {gridConfig.macroStep * view.k >= 8 && (
+                        <rect width="100%" height="100%" fill="url(#chamfer-grid-macro)" />
+                      )}
+                    </>
                   )}
                 </svg>
               )}
@@ -4418,49 +4667,117 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               )}
 
               {/* Eixos do Sistema de Coordenadas CAD (alinhados a (0,0) - visíveis quando showGrid está ativo) */}
-              {/* Eixos do Sistema de Coordenadas CAD (alinhados a (0,0) - visíveis quando showGrid está ativo) */}
               {!solidOpen && showGrid && (
                 <g pointerEvents="none" aria-label="Eixos do sistema CAD">
-                  {/* Eixo X: Vermelho técnico com destaque nítido sobre a grade */}
-                  <line
-                    x1={-1e5}
-                    y1={0}
-                    x2={1e5}
-                    y2={0}
-                    stroke={gridStyles.axisX}
-                    strokeWidth={gridStyles.axisWidth / view.k}
-                  />
-                  {/* Eixo Y: Verde técnico com destaque nítido sobre a grade */}
-                  <line
-                    x1={0}
-                    y1={-1e5}
-                    x2={0}
-                    y2={1e5}
-                    stroke={gridStyles.axisY}
-                    strokeWidth={gridStyles.axisWidth / view.k}
-                  />
+                  {drawingProjection === "isometric" ? (
+                    <>
+                      {/* Eixo X Isométrico (30° - Largura) */}
+                      <line
+                        x1={-1e5 * Math.cos(Math.PI / 6)}
+                        y1={1e5 * Math.sin(Math.PI / 6)}
+                        x2={1e5 * Math.cos(Math.PI / 6)}
+                        y2={-1e5 * Math.sin(Math.PI / 6)}
+                        stroke="#38BDF8"
+                        strokeWidth={(isoPlane === "top" || isoPlane === "right" ? 2.2 : 1.2) / view.k}
+                        strokeOpacity={isoPlane === "top" || isoPlane === "right" ? 0.9 : 0.45}
+                      />
+                      {/* Eixo Y Isométrico (150° - Comprimento) */}
+                      <line
+                        x1={1e5 * Math.cos(Math.PI / 6)}
+                        y1={1e5 * Math.sin(Math.PI / 6)}
+                        x2={-1e5 * Math.cos(Math.PI / 6)}
+                        y2={-1e5 * Math.sin(Math.PI / 6)}
+                        stroke="#F59E0B"
+                        strokeWidth={(isoPlane === "top" || isoPlane === "left" ? 2.2 : 1.2) / view.k}
+                        strokeOpacity={isoPlane === "top" || isoPlane === "left" ? 0.9 : 0.45}
+                      />
+                      {/* Eixo Z Isométrico (90° Vertical - Altura) */}
+                      <line
+                        x1={0}
+                        y1={1e5}
+                        x2={0}
+                        y2={-1e5}
+                        stroke="#EC4899"
+                        strokeWidth={(isoPlane === "left" || isoPlane === "right" ? 2.2 : 1.2) / view.k}
+                        strokeOpacity={isoPlane === "left" || isoPlane === "right" ? 0.9 : 0.45}
+                      />
 
-                  {/* Marcadores discretos de orientação positiva +X e +Y */}
-                  <text
-                    x={40 / view.k}
-                    y={-5 / view.k}
-                    fontSize={8.5 / view.k}
-                    fontFamily="ui-monospace, monospace"
-                    fontWeight="700"
-                    fill={gridStyles.axisX}
-                  >
-                    +X
-                  </text>
-                  <text
-                    x={6 / view.k}
-                    y={40 / view.k}
-                    fontSize={8.5 / view.k}
-                    fontFamily="ui-monospace, monospace"
-                    fontWeight="700"
-                    fill={gridStyles.axisY}
-                  >
-                    +Y
-                  </text>
+                      {/* Rótulos dos eixos isométricos com ângulos canônicos */}
+                      <text
+                        x={(40 * Math.cos(Math.PI / 6)) / view.k}
+                        y={(-40 * Math.sin(Math.PI / 6) - 5) / view.k}
+                        fontSize={8.5 / view.k}
+                        fontFamily="ui-monospace, monospace"
+                        fontWeight="700"
+                        fill="#38BDF8"
+                      >
+                        +X (30°)
+                      </text>
+                      <text
+                        x={(-40 * Math.cos(Math.PI / 6) - 35) / view.k}
+                        y={(-40 * Math.sin(Math.PI / 6) - 5) / view.k}
+                        fontSize={8.5 / view.k}
+                        fontFamily="ui-monospace, monospace"
+                        fontWeight="700"
+                        fill="#F59E0B"
+                      >
+                        +Y (150°)
+                      </text>
+                      <text
+                        x={6 / view.k}
+                        y={-45 / view.k}
+                        fontSize={8.5 / view.k}
+                        fontFamily="ui-monospace, monospace"
+                        fontWeight="700"
+                        fill="#EC4899"
+                      >
+                        +Z (90°)
+                      </text>
+                    </>
+                  ) : (
+                    <>
+                      {/* Eixo X: Vermelho técnico com destaque nítido sobre a grade */}
+                      <line
+                        x1={-1e5}
+                        y1={0}
+                        x2={1e5}
+                        y2={0}
+                        stroke={gridStyles.axisX}
+                        strokeWidth={gridStyles.axisWidth / view.k}
+                      />
+                      {/* Eixo Y: Verde técnico com destaque nítido sobre a grade */}
+                      <line
+                        x1={0}
+                        y1={-1e5}
+                        x2={0}
+                        y2={1e5}
+                        stroke={gridStyles.axisY}
+                        strokeWidth={gridStyles.axisWidth / view.k}
+                      />
+
+                      {/* Marcadores discretos de orientação positiva +X e +Y */}
+                      <text
+                        x={40 / view.k}
+                        y={-5 / view.k}
+                        fontSize={8.5 / view.k}
+                        fontFamily="ui-monospace, monospace"
+                        fontWeight="700"
+                        fill={gridStyles.axisX}
+                      >
+                        +X
+                      </text>
+                      <text
+                        x={6 / view.k}
+                        y={40 / view.k}
+                        fontSize={8.5 / view.k}
+                        fontFamily="ui-monospace, monospace"
+                        fontWeight="700"
+                        fill={gridStyles.axisY}
+                      >
+                        +Y
+                      </text>
+                    </>
+                  )}
 
                   {/* Ponto e Rótulo de Origem (0,0) */}
                   <circle
@@ -4479,7 +4796,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     fontWeight="bold"
                     fill={gridStyles.originText}
                   >
-                    (0,0)
+                    {drawingProjection === "isometric" ? "(0,0,0) ISO" : "(0,0)"}
                   </text>
                 </g>
               )}
@@ -4818,31 +5135,49 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       if (!l || !l.p || !Number.isFinite(l.p.x) || !Number.isFinite(l.p.y)) return null;
                       const parsedVal =
                         parseFloat(l.text.replace(/[^0-9.,]/g, "").replace(",", ".")) || 0;
+                      const angDeg = ((l.angle ?? 0) * 180) / Math.PI;
+                      const flip = angDeg > 90 || angDeg < -90 ? 180 : 0;
+                      const rot = angDeg + flip;
+                      const sz = (d.style.textSize || 11) / safeK;
+                      const txtLen = l.text.length;
                       return (
-                        <text
-                          key={`t${i}`}
-                          x={l.p.x}
-                          y={l.p.y - 3 / safeK}
-                          fontSize={(d.style.textSize || 11) / safeK}
-                          textAnchor="middle"
-                          stroke="none"
-                          className="font-mono cursor-pointer hover:font-bold hover:fill-accent select-none"
-                          onPointerDown={(ev) => {
-                            ev.stopPropagation();
-                            const r = svgRef.current?.getBoundingClientRect();
-                            const screenX = l.p.x * safeK + (r?.left ?? 0) + view.tx;
-                            const screenY = l.p.y * safeK + (r?.top ?? 0) + view.ty;
-                            setDirectDimEditor({
-                              open: true,
-                              dimId: d.id,
-                              pos: { x: screenX, y: screenY },
-                              value: parsedVal,
-                              label: l.text,
-                            });
-                          }}
-                        >
-                          {l.text}
-                        </text>
+                        <g key={`t${i}`} transform={`rotate(${rot} ${l.p.x} ${l.p.y})`}>
+                          {/* Máscara de respiro ABNT para proteger a legibilidade do texto contra linhas de fundo */}
+                          <rect
+                            x={l.p.x - (txtLen * sz * 0.3 + 3 / safeK)}
+                            y={l.p.y - sz * 0.95}
+                            width={txtLen * sz * 0.6 + 6 / safeK}
+                            height={sz * 1.25}
+                            fill={isDark ? "#090d14" : "#ffffff"}
+                            fillOpacity={0.94}
+                            rx={2 / safeK}
+                            stroke="none"
+                          />
+                          <text
+                            x={l.p.x}
+                            y={l.p.y - 2 / safeK}
+                            fontSize={sz}
+                            textAnchor="middle"
+                            stroke="none"
+                            fill={DIMENSION_COLOR}
+                            className="font-mono cursor-pointer hover:font-bold hover:fill-accent select-none font-medium"
+                            onPointerDown={(ev) => {
+                              ev.stopPropagation();
+                              const r = svgRef.current?.getBoundingClientRect();
+                              const screenX = l.p.x * safeK + (r?.left ?? 0) + view.tx;
+                              const screenY = l.p.y * safeK + (r?.top ?? 0) + view.ty;
+                              setDirectDimEditor({
+                                open: true,
+                                dimId: d.id,
+                                pos: { x: screenX, y: screenY },
+                                value: parsedVal,
+                                label: l.text,
+                              });
+                            }}
+                          >
+                            {l.text}
+                          </text>
+                        </g>
                       );
                     })}
                   </g>
@@ -5957,7 +6292,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         isDark={isDark}
       />
 
-      {/* CURSOR GEOMÉTRICO VIRTUAL COM FINGER OFFSET (SEÇÃO 11) */}
+      {/* CURSOR GEOMÉTRICO VIRTUAL COM FINGER OFFSET E MODO ISOMÉTRICO (SEÇÃO 11) */}
       <ChamferVirtualCursor
         visible={virtualCursorVisible && !radialMenuOpen}
         screenPos={loupeScreenPos}
@@ -5965,6 +6300,45 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         activeSnap={smartSnap?.point ? { ...smartSnap, kind: smartSnap.kind, pt: smartSnap.point } : snapHit}
         basePoint={pending.length > 0 ? pending[pending.length - 1] : null}
         fingerOffsetEnabled={true}
+        drawingProjection={drawingProjection}
+        isoPlane={isoPlane}
+      />
+
+      {/* HUD DE CONTROLE DE PLANO ISOMÉTRICO (ETAPA DESENHO ISOMÉTRICO 2D DO CHAMFER) */}
+      {drawingProjection === "isometric" && activeMode === "2d" && !solidOpen && (
+        <ChamferIsoPlaneHUD
+          activePlane={isoPlane}
+          onSelectPlane={(p) => {
+            setIsoPlane(p);
+            toast.info(`Plano Isométrico Ativo: ${ISO_PLANES[p].label} (${ISO_PLANES[p].name})`);
+          }}
+          isoOrtho={isoOrtho}
+          onToggleIsoOrtho={() => {
+            setIsoOrtho((v) => {
+              const next = !v;
+              toast.info(next ? "Orto Isométrico: Ativado" : "Orto Isométrico: Desativado");
+              return next;
+            });
+          }}
+          onOpenPieceBuilder={() => setIsoPieceBuilderOpen(true)}
+          isDark={isDark}
+        />
+      )}
+
+      {/* CONSTRUTOR GUIADO DE PEÇAS POR FACES E PLANOS ISOMÉTRICOS */}
+      <ChamferIsoPieceBuilderModal
+        open={isoPieceBuilderOpen}
+        onClose={() => setIsoPieceBuilderOpen(false)}
+        onInsertPiece={(newEntities, newDims) => {
+          commit((prev) => [...prev, ...newEntities]);
+          if (newDims.length > 0) {
+            setDims((prev) => [...prev, ...newDims]);
+          }
+          setSelection(newEntities.map((e) => e.id));
+          fitTo([...entities, ...newEntities]);
+          toast.success("Peça isométrica construída e inserida com cotas técnicas!");
+        }}
+        isDark={isDark}
       />
 
       {/* EDIÇÃO DIRETA DE COTAS NO CANVAS (SEÇÃO 14) */}
@@ -6292,7 +6666,23 @@ function MenuItem({
   );
 }
 
-function buildDraft(tool: Tool, a: Vec2, b: Vec2, layer: string, radius: number): Entity | null {
+function buildDraft(
+  tool: Tool,
+  a: Vec2,
+  b: Vec2,
+  layer: string,
+  radius: number,
+  drawingProjection: DrawingProjectionMode = "orthographic",
+  isoPlane: IsoPlane = "top",
+): Entity | null {
+  if (drawingProjection === "isometric") {
+    if (tool === "rect") {
+      return buildIsoParallelogram(isoPlane, a, b, layer);
+    }
+    if (tool === "circle" || tool === "ellipse") {
+      return buildIsoCircle(isoPlane, a, dist(a, b), layer);
+    }
+  }
   switch (tool) {
     case "line":
       return { id: uid(), layer, type: "line", x1: a.x, y1: a.y, x2: b.x, y2: b.y };
@@ -6369,8 +6759,17 @@ export function EntityShape({
   selected?: boolean;
   preview?: boolean;
 }) {
+  const isDark =
+    typeof document !== "undefined"
+      ? document.documentElement.classList.contains("dark")
+      : true;
   const style = techStyle(e.layer);
-  const stroke = preview ? PREVIEW_COLOR : style.color;
+  const isCutOrWhite = style.color === "#FFFFFF" || e.layer === "corte";
+  const stroke = preview
+    ? PREVIEW_COLOR
+    : !isDark && isCutOrWhite
+      ? "#0F172A"
+      : style.color;
   const props = {
     fill: "none",
     stroke,
@@ -6383,9 +6782,9 @@ export function EntityShape({
   const halo = selected
     ? {
         fill: "none",
-        stroke: SELECTION_COLOR,
-        strokeOpacity: 0.5,
-        strokeWidth: 5 / k,
+        stroke: !isDark ? "#DC2626" : SELECTION_COLOR,
+        strokeOpacity: !isDark ? 0.75 : 0.65,
+        strokeWidth: 4.5 / k,
         strokeLinecap: "round" as const,
         strokeLinejoin: "round" as const,
       }

@@ -147,6 +147,16 @@ interface ChamferCadToolbarProps {
   onUnfold: () => void;
   onFold: () => void;
 
+  // Modo Isométrico 2D
+  drawingProjection?: "orthographic" | "isometric";
+  onToggleDrawingProjection?: () => void;
+  isoPlane?: "top" | "left" | "right";
+  onSelectIsoPlane?: (plane: "top" | "left" | "right") => void;
+  onOpenPieceBuilder?: () => void;
+
+  activeLayer?: string;
+  setActiveLayer?: (l: string) => void;
+
   className?: string;
   isDark?: boolean;
 }
@@ -201,6 +211,13 @@ export function ChamferCadToolbar({
   onApplyRelief,
   onUnfold,
   onFold,
+  activeLayer = "corte",
+  setActiveLayer,
+  drawingProjection = "orthographic",
+  onToggleDrawingProjection,
+  isoPlane = "top",
+  onSelectIsoPlane,
+  onOpenPieceBuilder,
   className,
   isDark = true,
 }: ChamferCadToolbarProps) {
@@ -460,6 +477,53 @@ export function ChamferCadToolbar({
         })}
       </div>
 
+      {/* SELETOR RÁPIDO DE CAMADA ATIVA (CORTE, DOBRA, RECORTE, MARCAÇÃO) */}
+      {setActiveLayer && (
+        <div className="w-full pt-1 border-t border-slate-800/80 flex flex-col items-center shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("selection");
+              const order = ["corte", "dobra", "recorte", "marcacao"];
+              const curIdx = order.indexOf(activeLayer ?? "corte");
+              const next = order[(curIdx + 1) % order.length] ?? "corte";
+              setActiveLayer(next);
+            }}
+            title={`Camada ativa: ${activeLayer}. Toque para alternar (Corte, Dobra, Recorte, Marcação).`}
+            aria-label={`Camada ativa: ${activeLayer}`}
+            className={cn(
+              "group relative flex size-9 w-full flex-col items-center justify-center rounded-xl transition-all border",
+              isDark
+                ? "border-slate-800 bg-slate-900/90 hover:border-slate-700 hover:bg-slate-800"
+                : "border-slate-200 bg-slate-100 hover:border-slate-300 hover:bg-slate-200",
+            )}
+          >
+            <span
+              className="size-3 rounded-full border border-slate-500/50 shadow-2xs transition-transform group-hover:scale-110"
+              style={{
+                backgroundColor:
+                  activeLayer === "dobra"
+                    ? "#EC4899"
+                    : activeLayer === "recorte"
+                    ? "#F59E0B"
+                    : activeLayer === "marcacao"
+                    ? "#3B82F6"
+                    : "#FFFFFF",
+              }}
+            />
+            <span className="text-[7px] font-mono font-bold tracking-wider mt-0.5 leading-none uppercase text-slate-400 group-hover:text-white">
+              {activeLayer === "dobra"
+                ? "DOB"
+                : activeLayer === "recorte"
+                ? "REC"
+                : activeLayer === "marcacao"
+                ? "MAR"
+                : "COR"}
+            </span>
+          </button>
+        </div>
+      )}
+
       {/* FLYOUT CONTEXTUAL FLUTUANTE ANCORADO, SEGURO CONTRA CORTES NA VIEWPORT */}
       {openCat !== "none" && activeCategoryData && (
         <div
@@ -661,6 +725,17 @@ export function ChamferCadToolbar({
                           setOpenCat("none");
                         }}
                         desc="Prancha A4/A3/A2 com carimbo CALDRA"
+                      />
+                    )}
+                    {onOpenPieceBuilder && (
+                      <FlyoutItem
+                        label="Construir Peça Isométrica"
+                        icon={Sparkles}
+                        onClick={() => {
+                          onOpenPieceBuilder();
+                          setOpenCat("none");
+                        }}
+                        desc="Gerador guiado de suportes dobrados e furos por faces/planos"
                       />
                     )}
 
@@ -960,6 +1035,59 @@ export function ChamferCadToolbar({
                       </div>
                       <span className="font-bold">{showGrid ? "LIGADO" : "DESLIGADO"}</span>
                     </button>
+
+                    {onToggleDrawingProjection && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          onToggleDrawingProjection();
+                        }}
+                        className={cn(
+                          "flex items-center justify-between rounded-xl px-2.5 py-1.5 transition-colors",
+                          drawingProjection === "isometric"
+                            ? "bg-red-950/60 border border-red-500/40 text-red-300"
+                            : "bg-slate-900 text-slate-400 hover:text-slate-200",
+                        )}
+                        title="Alternar entre Desenho Ortogonal 2D e Isométrico 2D"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Box className="size-4" />
+                          <span>Modo Isométrico 2D</span>
+                        </div>
+                        <span className="font-bold">
+                          {drawingProjection === "isometric" ? "ATIVO" : "DESLIGADO"}
+                        </span>
+                      </button>
+                    )}
+
+                    {drawingProjection === "isometric" && onSelectIsoPlane && (
+                      <div className="flex flex-col gap-1 p-1.5 rounded-xl bg-slate-900/90 border border-slate-800">
+                        <span className="text-[10px] text-muted-foreground font-semibold px-1">
+                          Plano Isométrico (F5):
+                        </span>
+                        <div className="grid grid-cols-3 gap-1">
+                          {(["top", "left", "right"] as const).map((pId) => (
+                            <button
+                              key={pId}
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic("selection");
+                                onSelectIsoPlane(pId);
+                              }}
+                              className={cn(
+                                "py-1 rounded-lg text-[10px] font-bold uppercase transition-colors text-center",
+                                isoPlane === pId
+                                  ? "bg-red-600 text-white shadow-xs"
+                                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200",
+                              )}
+                            >
+                              {pId === "top" ? "Superior" : pId === "left" ? "Esquerdo" : "Direito"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     <div className="border-t border-slate-800 pt-2 mt-1">
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">

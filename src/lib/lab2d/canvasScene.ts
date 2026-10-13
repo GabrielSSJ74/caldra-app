@@ -120,7 +120,8 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     const style = techStyle(e.layer);
     if (e.layer !== currentLayer) {
       currentLayer = e.layer;
-      ctx.strokeStyle = style.color;
+      const isCutOrWhite = style.color === "#FFFFFF" || e.layer === "corte";
+      ctx.strokeStyle = opts.isLight && isCutOrWhite ? "#0F172A" : style.color;
       ctx.lineWidth = 1.4 * style.weight * inv;
       const dash = !lod && style.dash(inv);
       ctx.setLineDash(dash ? dash.split(" ").map(Number) : []);
@@ -134,8 +135,8 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
   if (selection.size) {
     ctx.setLineDash([]);
     ctx.strokeStyle = opts.isLight ? "#DC2626" : SELECTION_COLOR;
-    ctx.globalAlpha = opts.isLight ? 0.75 : 0.5;
-    ctx.lineWidth = 5 * inv;
+    ctx.globalAlpha = opts.isLight ? 0.75 : 0.65;
+    ctx.lineWidth = 4.5 * inv;
     for (const e of list) {
       if (!selection.has(e.id) || e.type === "text") continue;
       ctx.beginPath();

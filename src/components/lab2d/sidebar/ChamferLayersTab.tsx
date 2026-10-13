@@ -366,14 +366,14 @@ export function ChamferLayersTab({
                 {/* Tipo de Traço Técnico */}
                 <span className="font-mono text-[9px] text-slate-400">
                   {layer.id === "dobra"
-                    ? "Traço-ponto · 1.0mm"
+                    ? "Traço-ponto · Dobra (Rosa)"
                     : layer.id === "marcacao"
-                    ? "Tracejada · 1.0mm"
+                    ? "Tracejada · Marcação (Azul)"
                     : layer.id === "recorte"
-                    ? "Contínua · 1.2mm"
+                    ? "Contínua · Recorte interno (Âmbar)"
                     : layer.id === "corte"
-                    ? "Contínua · 1.4mm"
-                    : "Contínua · 0.8mm"}
+                    ? "Contínua larga ABNT · Corte (Branco)"
+                    : "Contínua fina · 0.8mm"}
                 </span>
 
                 <div className="flex items-center gap-1">
