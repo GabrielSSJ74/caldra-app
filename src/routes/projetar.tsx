@@ -341,7 +341,7 @@ function ProjetarPage() {
 
   return (
     <div className="relative w-full min-h-screen bg-transparent text-foreground overflow-x-hidden selection:bg-amber-500/30 selection:text-amber-200">
-      <NavigationAreaContainer className="space-y-4 px-4 sm:px-5 pb-[calc(7.5rem+env(safe-area-inset-bottom,24px))]">
+      <NavigationAreaContainer>
         {/* =========================================================================
             CABEÇALHO DA SEÇÃO DE PROJETO
             - Identificador: "PROJETO TÉCNICO & CAD"

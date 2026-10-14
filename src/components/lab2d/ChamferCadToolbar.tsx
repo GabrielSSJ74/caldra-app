@@ -729,13 +729,13 @@ export function ChamferCadToolbar({
                     )}
                     {onOpenPieceBuilder && (
                       <FlyoutItem
-                        label="Construir Peça Isométrica"
+                        label="Projeção Isométrica (Converter)"
                         icon={Sparkles}
                         onClick={() => {
                           onOpenPieceBuilder();
                           setOpenCat("none");
                         }}
-                        desc="Gerador guiado de suportes dobrados e furos por faces/planos"
+                        desc="Transforma a seleção ativa do documento para perspectiva isométrica analítica 2D/2.5D"
                       />
                     )}
 
@@ -789,7 +789,7 @@ export function ChamferCadToolbar({
                         onCopySelection();
                         setOpenCat("none");
                       }}
-                      desc="Duplicar elementos selecionados"
+                      desc="Copiar seleção para a Área de Transferência (Ctrl+C)"
                     />
                     <FlyoutItem
                       label="Girar"

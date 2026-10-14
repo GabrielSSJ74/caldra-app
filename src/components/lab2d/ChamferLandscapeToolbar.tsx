@@ -317,7 +317,7 @@ export function ChamferLandscapeToolbar({
               onClick={onCopySelection}
               icon={Copy}
               label="Copiar"
-              title="Duplica as entidades selecionadas"
+              title="Copia as entidades selecionadas para a Área de Transferência (Ctrl+C)"
             />
             <RibbonBtn
               disabled={!hasSelection}

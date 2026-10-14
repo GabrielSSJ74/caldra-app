@@ -234,7 +234,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
   };
 
   return (
-    <NavigationAreaContainer className="space-y-4 px-4 sm:px-6 pb-[calc(7.5rem+env(safe-area-inset-bottom,24px))]">
+    <NavigationAreaContainer>
       {/* =========================================================================
           CABEÇALHO DA CENTRAL — COMPACTO E TÉCNICO
           ========================================================================= */}

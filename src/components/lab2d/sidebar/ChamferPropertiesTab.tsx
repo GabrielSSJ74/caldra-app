@@ -38,6 +38,8 @@ import type { Entity, Layer } from "@/lib/lab2d/core";
 import { techColor, isUserLayer } from "@/lib/lab2d/technical";
 import { ChamferCompactNumericEditor } from "@/components/lab2d/mobileEdit/ChamferCompactNumericEditor";
 import type { NumericPropertyDef } from "@/components/lab2d/mobileEdit/types";
+import { copyToGlobalClipboard } from "@/lib/lab2d/globalClipboard";
+import { toast } from "sonner";
 
 const deg = (r: number) => (r * 180) / Math.PI;
 const rad = (d: number) => (d * Math.PI) / 180;
@@ -569,9 +571,12 @@ export function ChamferPropertiesTab({
                 type="button"
                 onClick={() => {
                   triggerHaptic("selection");
-                  onDuplicateEntity(selectedEntity);
+                  const item = copyToGlobalClipboard(entities, [selectedEntity.id]);
+                  if (item) {
+                    toast.success(`✓ "${item.title}" copiado para a Área de Transferência.`);
+                  }
                 }}
-                title="Duplicar entidade"
+                title="Copiar para Área de Transferência"
                 className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
               >
                 <Copy className="size-3.5" />
@@ -985,29 +990,15 @@ export function ChamferPropertiesTab({
                 type="button"
                 onClick={() => {
                   triggerHaptic("selection");
-                  const duplicatedList: Entity[] = [];
-                  for (const ent of selectedEntities) {
-                    duplicatedList.push({
-                      ...ent,
-                      id: crypto.randomUUID(),
-                      ...(ent.type === "circle" || ent.type === "arc"
-                        ? { cx: ent.cx + 10, cy: ent.cy + 10 }
-                        : ent.type === "line"
-                        ? { x1: ent.x1 + 10, y1: ent.y1 + 10, x2: ent.x2 + 10, y2: ent.y2 + 10 }
-                        : ent.type === "polyline"
-                        ? { pts: ent.pts.map((p) => ({ x: p.x + 10, y: p.y + 10 })) }
-                        : {}),
-                    });
+                  const item = copyToGlobalClipboard(entities, selection);
+                  if (item) {
+                    toast.success(`✓ "${item.title}" copiado para a Área de Transferência.`);
                   }
-                  for (const dup of duplicatedList) {
-                    onDuplicateEntity(dup);
-                  }
-                  setSelection(duplicatedList.map((d) => d.id));
                 }}
                 className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 py-1.5 font-mono text-[10px] font-semibold text-slate-200 hover:bg-slate-800"
               >
                 <Copy className="size-3.5" />
-                <span>Duplicar Todas</span>
+                <span>Copiar Todas</span>
               </button>
 
               <button

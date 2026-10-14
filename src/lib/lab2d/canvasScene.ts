@@ -25,11 +25,22 @@ export type SceneOptions = {
   lod: boolean;
   /** Tema claro ativo para contraste da seleção */
   isLight?: boolean;
+  /** Movimento destravado via Long-Press (destaque ciano/laranja brilhante de arraste ativo) */
+  isDraggingUnlocked?: boolean;
 };
 
-/** Ordena por camada técnica sem alocar novos objetos de entidade. */
+/** Ordena por camada técnica ou por profundidade Z (Painter's Algorithm para oclusão 2.5D/3D). */
 function paintOrder(list: Entity[]) {
-  return list.slice().sort((a, b) => techStyle(a.layer).order - techStyle(b.layer).order);
+  return list.slice().sort((a, b) => {
+    const aDepth = typeof a.params?.depth === "number" ? (a.params.depth as number) : null;
+    const bDepth = typeof b.params?.depth === "number" ? (b.params.depth as number) : null;
+    if (aDepth !== null && bDepth !== null) {
+      return aDepth - bDepth; // Menor profundidade (fundo) desenhado antes, maior (frente) desenhado por cima!
+    }
+    if (a.params?.isIsoSolidFace && !b.params?.isIsoSolidFace) return -1;
+    if (!a.params?.isIsoSolidFace && b.params?.isIsoSolidFace) return 1;
+    return techStyle(a.layer).order - techStyle(b.layer).order;
+  });
 }
 
 function tracePolyline(ctx: CanvasRenderingContext2D, pts: Vec2[], closed: boolean, step: number) {
@@ -117,6 +128,33 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     if (e.type === "text") continue;
     if (lod && screenSize(index.boxOfId(e.id), view.k) < 1.2) continue;
 
+    // RENDERIZAÇÃO SÓLIDA TÉCNICA COM SOMBREAMENTO E OCLUSÃO (CHAMFER ISO 2.5D/3D)
+    if (e.params?.isIsoSolidFace) {
+      currentLayer = ""; // reset layer tracking
+      const fillCol = (e.params.fillColor as string) || "#323B47";
+      const strokeCol = (e.params.strokeColor as string) || "#FFFFFF";
+      const strokeW = (typeof e.params.strokeWidth === "number" ? e.params.strokeWidth : 2) * inv;
+      const noStroke = !!e.params.noStroke;
+
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      traceEntity(ctx, e, lod);
+
+      if (fillCol && fillCol !== "none" && fillCol !== "transparent") {
+        ctx.fillStyle = fillCol;
+        ctx.fill();
+      }
+
+      if (!noStroke && strokeCol && strokeCol !== "none" && strokeCol !== "transparent") {
+        ctx.strokeStyle = strokeCol;
+        ctx.lineWidth = strokeW;
+        ctx.stroke();
+      }
+      ctx.restore();
+      continue;
+    }
+
     const style = techStyle(e.layer);
     if (e.layer !== currentLayer) {
       currentLayer = e.layer;
@@ -133,16 +171,25 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
 
   // halo de seleção — destaque temporário, nunca substitui a cor técnica
   if (selection.size) {
-    ctx.setLineDash([]);
-    ctx.strokeStyle = opts.isLight ? "#DC2626" : SELECTION_COLOR;
-    ctx.globalAlpha = opts.isLight ? 0.75 : 0.65;
-    ctx.lineWidth = 4.5 * inv;
+    if (opts.isDraggingUnlocked) {
+      // Destaque visual ao destravar movimento: contorno laranja brilhante com dash técnico
+      ctx.setLineDash([8 * inv, 4 * inv]);
+      ctx.strokeStyle = "#FF8800";
+      ctx.globalAlpha = 0.95;
+      ctx.lineWidth = 6 * inv;
+    } else {
+      ctx.setLineDash([]);
+      ctx.strokeStyle = opts.isLight ? "#DC2626" : SELECTION_COLOR;
+      ctx.globalAlpha = opts.isLight ? 0.75 : 0.65;
+      ctx.lineWidth = 4.5 * inv;
+    }
     for (const e of list) {
       if (!selection.has(e.id) || e.type === "text") continue;
       ctx.beginPath();
       traceEntity(ctx, e, lod);
       ctx.stroke();
     }
+    ctx.setLineDash([]);
     ctx.globalAlpha = 1;
   }
 

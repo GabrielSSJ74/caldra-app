@@ -55,6 +55,7 @@ import {
   AlignCenter,
   Box as BoxIcon,
   Boxes,
+  Ungroup,
   FileText,
   Search,
   Sliders,
@@ -171,7 +172,7 @@ import { CutPanel } from "@/components/lab2d/CutPanel";
 import { MultiSelectPanel } from "@/components/lab2d/MultiSelectPanel";
 import { drawFlow, drawSim } from "@/lib/lab2d/flow";
 import { buildSimPath, sampleSim, SIM_LABEL } from "@/lib/lab2d/simulation";
-import { expandSelection, pruneGroups, type GroupDef } from "@/lib/lab2d/groups";
+import { createGroup, dissolveGroup, expandSelection, pruneGroups, type GroupDef } from "@/lib/lab2d/groups";
 import { isCutPath, setStartPoint, startPointOf, endPointOf } from "@/lib/lab2d/cutPlan";
 import { revalidateShared, type ShareCandidate } from "@/lib/lab2d/sharedCut";
 import {
@@ -251,8 +252,13 @@ import {
   type QuickCommandItem,
 } from "./ChamferQuickCommandModal";
 import { ChamferSemanticPalette } from "./ChamferSemanticPalette";
-import { ChamferRadialMenu } from "./ChamferRadialMenu";
-import { ChamferVirtualCursor } from "./ChamferVirtualCursor";
+import { ChamferClipboardModal } from "./ChamferClipboardModal";
+import {
+  copyToGlobalClipboard,
+  loadGlobalClipboard,
+  instantiateClipboardItemAt,
+  type GlobalClipboardItem,
+} from "@/lib/lab2d/globalClipboard";
 import { ChamferFabricationPassportModal } from "./ChamferFabricationPassportModal";
 import { ChamferDirectDimensionEditor } from "./ChamferDirectDimensionEditor";
 import { ChamferPrecisionLoupeOverlay } from "./ChamferPrecisionLoupeOverlay";
@@ -270,10 +276,12 @@ import {
   snapToIsoGrid,
   buildIsoParallelogram,
   buildIsoCircle,
-  buildBentSupportPreset,
+  unprojectPointFromIsoPlane,
+  ISO_SQRT_1_5,
+  ISO_SQRT_0_5,
 } from "@/lib/lab2d/isometricEngine";
 import { ChamferIsoPlaneHUD } from "./ChamferIsoPlaneHUD";
-import { ChamferIsoPieceBuilderModal } from "./ChamferIsoPieceBuilderModal";
+import { ChamferIsoConvertModal } from "./ChamferIsoConvertModal";
 import { DUAL_TOOL_PRESETS } from "@/lib/lab2d/cadDualToolManager";
 import {
   evaluateGeometricIntent,
@@ -664,6 +672,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [isoPlane, setIsoPlane] = useState<IsoPlane>("top");
   const [isoOrtho, setIsoOrtho] = useState<boolean>(true);
   const [isoPieceBuilderOpen, setIsoPieceBuilderOpen] = useState<boolean>(false);
+  const [isoPreview, setIsoPreview] = useState<{ entities: Entity[]; dims: Dimension[] } | null>(null);
 
   const [outputMode, setOutputMode] = useState<OutputMode>("completo");
   const [pending, setPending] = useState<Vec2[]>([]);
@@ -777,15 +786,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [dualToolSecondary, setDualToolSecondary] = useState<Tool | null>(null);
   const [dualToolPinned, setDualToolPinned] = useState(false);
 
-  /* LUPA DE PRECISÃO & CURSOR VIRTUAL MOBILE (SEÇÕES 10 E 11) */
+  /* LUPA DE PRECISÃO MOBILE (BOLHA QUADRADA DE ZOOM) */
   const [loupeVisible, setLoupeVisible] = useState(false);
   const [loupeScreenPos, setLoupeScreenPos] = useState<Vec2>({ x: 0, y: 0 });
   const [loupeCadPos, setLoupeCadPos] = useState<Vec2>({ x: 0, y: 0 });
-  const [virtualCursorVisible, setVirtualCursorVisible] = useState(false);
 
-  /* MENU RADIAL CONTEXTUAL (SEÇÃO 16) */
-  const [radialMenuOpen, setRadialMenuOpen] = useState(false);
-  const [radialMenuPos, setRadialMenuPos] = useState<Vec2>({ x: 0, y: 0 });
+  /* ÁREA DE TRANSFERÊNCIA GLOBAL DO CAD (SEÇÃO 17) */
+  const [clipboardModalOpen, setClipboardModalOpen] = useState(false);
+  const [clipboardAnchorWorld, setClipboardAnchorWorld] = useState<Vec2 | null>(null);
+  const emptyCanvasLongPressRef = useRef<{
+    timer: ReturnType<typeof setTimeout>;
+    x: number;
+    y: number;
+    world: Vec2;
+  } | null>(null);
 
   /* PASSAPORTE DE FABRICAÇÃO (SEÇÕES 34 & 35) */
   const [fabricationPassportOpen, setFabricationPassportOpen] = useState(false);
@@ -811,7 +825,30 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const past = useRef<Entity[][]>([]);
   const future = useRef<Entity[][]>([]);
   const panRef = useRef<{ x: number; y: number } | null>(null);
-  const moveRef = useRef<{ from: Vec2; ids: string[]; base: Entity[]; moved?: boolean } | null>(null);
+  /* Sessão de arraste determinístico com Snapshot Inicial e Delta Absoluto no Espaço do Mundo */
+  const dragEntityRef = useRef<{
+    pointerId: number;
+    startClient: Vec2;
+    startWorld: Vec2;
+    ids: string[];
+    initialEntitiesSnapshot: Entity[];
+    moved: boolean;
+    effectiveDelta: Vec2;
+    unlocked?: boolean;
+  } | null>(null);
+  const isDraggingEntityRef = useRef<boolean>(false);
+  const [isDraggingUnlocked, setIsDraggingUnlocked] = useState<boolean>(false);
+  const dragCooldownUntilRef = useRef<number>(0);
+  const dragLongPressRef = useRef<{
+    timer: ReturnType<typeof setTimeout>;
+    pointerId: number;
+    startClient: Vec2;
+    startWorld: Vec2;
+    ids: string[];
+    initialEntitiesSnapshot: Entity[];
+  } | null>(null);
+  const pendingDragEntitiesRef = useRef<Entity[] | null>(null);
+  const dragRafRef = useRef<number | null>(null);
   /* ponteiros ativos (toque/caneta/mouse) para gesto de pinça */
   const ptrsRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef<{ dist: number; mx: number; my: number } | null>(null);
@@ -1021,7 +1058,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   /* SALVAMENTO AUTOMÁTICO CONFORME CONFIGURAÇÃO DO CHAMFER */
   useEffect(() => {
-    if (isInitialLoad.current || !project || !planId) return;
+    if (isInitialLoad.current || !project || !planId || isDraggingEntityRef.current) return;
 
     // Sinaliza que há alterações não salvas
     setSaveStatus("pendente");
@@ -1301,21 +1338,36 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const hitTest = useCallback(
     (p: Vec2): Entity | null => {
-      const tol = 8 / view.k;
-      let best: { e: Entity; d: number } | null = null;
+      // Tolerância matemática de 12px / zoom conforme Seção 2 da especificação
+      const tol = 12 / view.k;
+      const candidates: { e: Entity; d: number }[] = [];
+
       for (const e of near(p, Math.max(tol, 25 / view.k))) {
         if (layerOf(e.layer)?.locked) continue;
         let d = Infinity;
         if (e.type === "circle") {
+          // Interior 100% vazado: calcula estritamente a distância matemática ao contorno/traço
           const cd = dist(p, { x: e.cx, y: e.cy });
-          if (cd <= e.r) {
-            d = 0; // clique na área interna do círculo
-          } else {
-            d = Math.abs(cd - e.r);
-          }
+          d = Math.abs(cd - e.r);
         } else if (e.type === "arc") {
-          d = Math.abs(dist(p, { x: e.cx, y: e.cy }) - e.r);
+          // Mede a distância ao arco no seu vão angular ou às pontas
+          const cd = dist(p, { x: e.cx, y: e.cy });
+          const twoPi = Math.PI * 2;
+          const norm = (a: number) => ((a % twoPi) + twoPi) % twoPi;
+          const a0 = norm(e.a0);
+          let a1 = norm(e.a1);
+          if (a1 <= a0) a1 += twoPi;
+          let cur = norm(Math.atan2(p.y - e.cy, p.x - e.cx));
+          if (cur < a0) cur += twoPi;
+          if (cur <= a1) {
+            d = Math.abs(cd - e.r);
+          } else {
+            const p0 = { x: e.cx + e.r * Math.cos(e.a0), y: e.cy + e.r * Math.sin(e.a0) };
+            const p1 = { x: e.cx + e.r * Math.cos(e.a1), y: e.cy + e.r * Math.sin(e.a1) };
+            d = Math.min(dist(p, p0), dist(p, p1));
+          }
         } else if (e.type === "ellipse") {
+          // Interior 100% vazado: calcula distância ao perímetro elíptico
           const dx = p.x - e.cx;
           const dy = p.y - e.cy;
           const rot = e.rotation ?? 0;
@@ -1326,26 +1378,39 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           const rx = Math.max(e.rx, 1e-4);
           const ry = Math.max(e.ry, 1e-4);
           const normD = (ux / rx) ** 2 + (uy / ry) ** 2;
-          if (normD <= 1) {
-            d = 0; // clique na área interna da elipse
-          } else {
-            d = Math.abs(Math.sqrt(normD) - 1) * Math.min(rx, ry);
-          }
+          d = Math.abs(Math.sqrt(normD) - 1) * Math.min(rx, ry);
         } else if (e.type === "text") {
           d = dist(p, { x: e.x, y: e.y });
+        } else if (e.type === "point") {
+          d = dist(p, { x: e.x, y: e.y });
         } else {
-          for (const s of segmentsOf(e)) d = Math.min(d, dist(p, closestOnSegment(p, s)));
-          if (e.type === "polyline" && e.closed && e.pts.length >= 3) {
-            if (pointInPoly(p, e.pts)) {
-              d = 0; // clique na área interna da polilinha/retângulo/polígono fechado
-            }
+          // Linhas e polilinhas (abertas ou fechadas / retângulos / polígonos):
+          // Mede estritamente a distância matemática às arestas/traços reais.
+          // Sem captura de área interna vazia (nunca bloqueia entidades de baixo)!
+          for (const s of segmentsOf(e)) {
+            d = Math.min(d, dist(p, closestOnSegment(p, s)));
           }
         }
-        if (d <= tol && (!best || d < best.d)) best = { e, d };
+
+        if (d <= tol) {
+          candidates.push({ e, d });
+        }
       }
-      return best?.e ?? null;
+
+      if (candidates.length === 0) return null;
+      // Ordena por menor distância matemática à aresta
+      candidates.sort((a, b) => a.d - b.d);
+      if (candidates.length === 1) return candidates[0].e;
+
+      // Alternância / ciclo entre entidades sobrepostas ao tocar repetidamente no mesmo ponto
+      const selIdx = candidates.findIndex((c) => selection.includes(c.e.id));
+      if (selIdx >= 0 && candidates.length > 1) {
+        return candidates[(selIdx + 1) % candidates.length].e;
+      }
+
+      return candidates[0].e;
     },
-    [near, view.k, layerOf],
+    [near, view.k, layerOf, selection],
   );
 
   const snapPoint = useCallback(
@@ -1448,6 +1513,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     // pinta no MESMO quadro em que o SVG recebe a transformação: sem atraso
     // de um frame entre a geometria (canvas) e os overlays (SVG) no pinch.
+    const hasIsoSolidFaces = entities.some((e) => e.params?.isIsoSolidFace);
+    const forceDarkIsoCanvas = drawingProjection === "isometric" || hasIsoSolidFaces;
+
     drawScene(ctx, {
       index: drawIndex,
       view,
@@ -1456,9 +1524,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       dpr,
       selection: selectionSet,
       lod: gesturing,
-      isLight: !isDark,
+      isLight: !isDark && !forceDarkIsoCanvas,
+      isDraggingUnlocked,
     });
-  }, [drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isDark]);
+  }, [drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isDark, drawingProjection, entities, isDraggingUnlocked]);
 
   /* ------------------------------------------------------- FLUXO CALDRA */
   /*
@@ -1661,15 +1730,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [selected.length, selection, commit]);
 
   const handleCopySelection = useCallback(() => {
-    if (!selected.length) {
+    if (!selection.length) {
       toast.info("Selecione entidades para copiar.");
       return;
     }
-    const copied = selected.map((s) => ({ ...translate(s, 10, 10), id: uid() }));
-    commit((e) => [...e, ...copied]);
-    setSelection(copied.map((c) => c.id));
-    toast.success(`${copied.length} entidade(s) copiada(s).`);
-  }, [selected, commit]);
+    const item = copyToGlobalClipboard(entities, selection, groups, dims);
+    clipboardRef.current = copySelection(entities, selection, groups);
+    setTool("select");
+    triggerHaptic("action");
+    if (item) {
+      toast.success(`✓ "${item.title}" copiado para a Área de Transferência.`);
+    } else if (clipboardRef.current) {
+      toast.success(`${clipboardRef.current.entities.length} objeto(s) copiado(s).`);
+    }
+  }, [entities, selection, groups, dims]);
 
   const handleRotateSelection = useCallback(() => {
     if (!selected.length) {
@@ -1819,6 +1893,43 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       toast.info("Nenhuma polilinha compatível para explodir.");
     }
   }, [entities, selection, commit]);
+
+  const handleGroupSelection = useCallback(() => {
+    if (selection.length < 2) {
+      toast.info("Selecione 2 ou mais entidades para agrupar (via seleção por janela ou Shift+Toque).");
+      return;
+    }
+    const res = createGroup(entities, selection, groups);
+    if (!res) return;
+    commit(res.entities);
+    setGroups(res.groups);
+    setSelection(expandSelection(res.entities, selection));
+    triggerHaptic("action");
+    AudioManager.play("ui_select");
+    toast.success("Peças agrupadas como uma unidade única.");
+  }, [selection, entities, groups, commit]);
+
+  const handleUngroupSelection = useCallback(() => {
+    const targetGroups = new Set(
+      selection.map((id) => entities.find((e) => e.id === id)?.group).filter(Boolean) as string[],
+    );
+    if (!targetGroups.size) {
+      toast.info("Nenhuma peça agrupada na seleção atual.");
+      return;
+    }
+    let nextEntities = entities;
+    let nextGroups = groups;
+    for (const gid of targetGroups) {
+      const res = dissolveGroup(nextEntities, nextGroups, gid);
+      nextEntities = res.entities;
+      nextGroups = res.groups;
+    }
+    commit(nextEntities);
+    setGroups(nextGroups);
+    triggerHaptic("action");
+    AudioManager.play("ui_select");
+    toast.success("Peça desagrupada com sucesso.");
+  }, [selection, entities, groups, commit]);
 
   /* FERRAMENTA CENTRALIZAR FORMAS */
   const handleOpenCenterDialog = useCallback(() => {
@@ -2072,98 +2183,55 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       icon: FileText,
       action: () => setFabricationPassportOpen(true),
     },
-  ], []);
+    {
+      id: "iso_convert",
+      title: "Projeção Isométrica (Converter Seleção)",
+      keywords: ["isométrico", "isometrico", "iso", "3d", "2.5d", "converter", "perspectiva", "top", "left", "right", "projeção"],
+      category: "modificar",
+      description: "Transforma a seleção ativa do documento para perspectiva isométrica analítica nos planos Superior, Esquerdo ou Direito.",
+      icon: BoxIcon,
+      action: () => setIsoPieceBuilderOpen(true),
+    },
+    {
+      id: "iso_toggle_mode",
+      title: "Alternar Modo de Desenho Isométrico 2D",
+      keywords: ["desenho isometrico", "grade isometrica", "isocírculo", "isocirculo", "orto iso", "eixos 30"],
+      category: "criar",
+      description: "Alterna a projeção do canvas para desenho isométrico 2D com eixos a 30°, 90° e 150°.",
+      icon: BoxIcon,
+      action: () => {
+        setDrawingProjection((prev) => {
+          const next = prev === "isometric" ? "orthographic" : "isometric";
+          if (next === "isometric") {
+            toast.info(`Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label} · F5 para alternar)`);
+          } else {
+            toast.info("Modo Ortogonal 2D ativado");
+          }
+          return next;
+        });
+      },
+    },
+  ], [isoPlane]);
 
-  const handleRadialAction = (actionId: string) => {
-    switch (actionId) {
-      case "radius":
-      case "measure":
-        setTool("measure");
-        break;
-      case "move":
-        setTool("select");
-        break;
-      case "copy":
-        if (selected.length > 0) {
-          copySelection(selected);
-          toast.success("Geometria copiada.");
-        }
-        break;
-      case "mirror":
-        if (selected.length > 0) {
-          const c = getEntityCenter(selected[0]);
-          commit((prev) => prev.map((e) => selection.includes(e.id) ? mirrorAcrossAxis(e, "y", c.x) : e));
-          toast.success("Geometria espelhada horizontalmente.");
-        }
-        break;
-      case "array":
-        if (selected.length > 0) {
-          const c = getEntityCenter(selected[0]);
-          const arr = arrayCircular(selected[0], c, 6, 360);
-          commit((prev) => [...prev, ...arr]);
-          toast.success("Matriz polar circular de 6 itens criada.");
-        }
-        break;
-      case "delete":
-        if (selected.length > 0) {
-          commit((prev) => prev.filter((e) => !selection.includes(e.id)));
-          setSelection([]);
-          toast.success("Entidade(s) removida(s).");
-        }
-        break;
-      case "fillet":
-        setTool("fillet");
-        break;
-      case "chamfer":
-        setTool("chamfer");
-        break;
-      case "trim":
-        setTool("smart_trim");
-        break;
-      case "extend":
-        setTool("extend");
-        break;
-      case "offset":
-        setTool("offset");
-        break;
-      case "area":
-        toast.info("Cálculo de área: utilize o Passaporte de Fabricação.");
-        setFabricationPassportOpen(true);
-        break;
-      case "passport":
-        setFabricationPassportOpen(true);
-        break;
-      case "validate":
-        setTopologyHealthOpen(true);
-        break;
-      case "scale":
-        setScaleDialogOpen(true);
-        break;
-      case "tool-line":
-        setTool("line");
-        break;
-      case "tool-rect":
-        setTool("rect");
-        break;
-      case "tool-circle":
-        setTool("circle");
-        break;
-      case "tool-trim":
-        setTool("smart_trim");
-        break;
-      case "palette":
-        setQuickCommandOpen(true);
-        break;
-      case "loupe":
-        setLoupeVisible((v) => !v);
-        break;
-      case "undo":
-        undo();
-        break;
-      default:
-        break;
-    }
-  };
+  const handlePasteClipboardItem = useCallback(
+    (item: GlobalClipboardItem, targetPos?: Vec2 | null) => {
+      const target =
+        targetPos && Number.isFinite(targetPos.x) && Number.isFinite(targetPos.y)
+          ? targetPos
+          : {
+              x: (canvasSize.w / 2 - view.tx) / view.k,
+              y: (canvasSize.h / 2 - view.ty) / view.k,
+            };
+
+      const result = instantiateClipboardItemAt(item, target, groups);
+      commit((list) => [...list, ...result.newEntities]);
+      setGroups(result.newGroups);
+      setSelection(result.newIds);
+      triggerHaptic("action");
+      toast.success(`✓ Colado: ${item.title}`);
+    },
+    [canvasSize, view, groups, commit],
+  );
 
   const handleDirectDimUpdate = (newVal: number) => {
     if (!directDimEditor) return;
@@ -2171,14 +2239,36 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const dim = dims.find((d) => d.id === dimId);
     if (!dim) return;
 
-    if (dim.refA.kind === "entity") {
-      const entId = dim.refA.entityId;
+    const entRef = dim.refs.find((r) => r.kind === "entity");
+    if (entRef && entRef.kind === "entity") {
+      const entId = entRef.id;
       commit((prev) =>
         prev.map((e) => {
           if (e.id !== entId) return e;
           if (e.type === "circle") {
             const newR = dim.kind === "diameter" ? newVal / 2 : newVal;
-            return { ...e, r: newR };
+            return {
+              ...e,
+              r: newR,
+              params: {
+                ...e.params,
+                realRadius: newR,
+                realDiameter: newR * 2,
+              },
+            };
+          }
+          if (e.type === "ellipse") {
+            const newR = dim.kind === "diameter" ? newVal / 2 : newVal;
+            return {
+              ...e,
+              rx: newR * ISO_SQRT_1_5,
+              ry: newR * ISO_SQRT_0_5,
+              params: {
+                ...e.params,
+                realRadius: newR,
+                realDiameter: newR * 2,
+              },
+            };
           }
           if (e.type === "line") {
             const curLen = Math.hypot(e.x2 - e.x1, e.y2 - e.y1) || 1;
@@ -2187,14 +2277,41 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               ...e,
               x2: e.x1 + (e.x2 - e.x1) * factor,
               y2: e.y1 + (e.y2 - e.y1) * factor,
+              params: {
+                ...e.params,
+                realLength: newVal,
+              },
             };
           }
           return e;
-        })
+        }),
       );
+    } else {
+      // Se a cota tem referências de ponto (ex: p0 e p1)
+      const pt0 = dim.refs[0]?.kind === "point" ? dim.refs[0].p : null;
+      const pt1 = dim.refs[1]?.kind === "point" ? dim.refs[1].p : null;
+      if (pt0 && pt1) {
+        commit((prev) =>
+          prev.map((e) => {
+            if (e.type === "line") {
+              const d0 = Math.hypot(e.x1 - pt0.x, e.y1 - pt0.y);
+              const d1 = Math.hypot(e.x2 - pt1.x, e.y2 - pt1.y);
+              if (d0 < 1 && d1 < 1) {
+                const curLen = Math.hypot(e.x2 - e.x1, e.y2 - e.y1) || 1;
+                const factor = newVal / curLen;
+                const newX2 = e.x1 + (e.x2 - e.x1) * factor;
+                const newY2 = e.y1 + (e.y2 - e.y1) * factor;
+                return { ...e, x2: newX2, y2: newY2 };
+              }
+            }
+            return e;
+          }),
+        );
+      }
     }
+
     setDims((prev) =>
-      prev.map((d) => (d.id === dimId ? { ...d, label: `${newVal.toFixed(2)} mm` } : d))
+      prev.map((d) => (d.id === dimId ? { ...d, label: `${newVal.toFixed(2)} mm` } : d)),
     );
     toast.success(`Cota atualizada para ${newVal.toFixed(2)} mm e geometria recalculada.`);
     setDirectDimEditor(null);
@@ -2455,7 +2572,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           { id: polyId, layer: activeLayer, type: "polyline", pts: points, closed: close },
         ]);
         setSelection([polyId]);
-        setTool("select");
       }
       setPending([]);
       setDraft(null);
@@ -2463,14 +2579,82 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [pending, activeLayer, commit],
   );
 
+  const cancelOrFinalizeEntityDrag = useCallback(() => {
+    if (dragRafRef.current) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
+    if (!dragEntityRef.current) return;
+    const drag = dragEntityRef.current;
+    const wasMoved = drag.moved;
+    const baseSnapshot = drag.initialEntitiesSnapshot;
+    const finalDelta = drag.effectiveDelta;
+    const ids = drag.ids;
+    dragEntityRef.current = null;
+    isDraggingEntityRef.current = false;
+    pendingDragEntitiesRef.current = null;
+
+    if (wasMoved && Math.hypot(finalDelta.x, finalDelta.y) > 0.01) {
+      past.current = [...past.current.slice(-49), baseSnapshot];
+      future.current = [];
+      setHistoryState({ canUndo: true, canRedo: false });
+      const finalEntities = baseSnapshot.map((e) => {
+        if (!ids.includes(e.id)) return e;
+        const translated = translate(e, finalDelta.x, finalDelta.y);
+        if (translated.params?.canonical2D && typeof translated.params.canonical2D === "object") {
+          const entPlane = (translated.params.isoPlane as IsoPlane) || isoPlane;
+          const canDelta = unprojectPointFromIsoPlane(
+            { x: finalDelta.x, y: finalDelta.y },
+            entPlane,
+            { x: 0, y: 0 },
+          );
+          const origCan =
+            (baseSnapshot.find((orig) => orig.id === e.id)?.params?.canonical2D as Entity) ??
+            translated.params.canonical2D;
+          translated.params = {
+            ...translated.params,
+            canonical2D: translate(origCan, canDelta.x, canDelta.y),
+          };
+        }
+        return translated;
+      });
+      setEntities(revalidateShared(finalEntities));
+    }
+  }, [isoPlane]);
+
   const onPointerDown = (ev: React.PointerEvent) => {
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
     ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
 
     // dois dedos sempre navegam, independentemente da ferramenta ativa
     if (ptrsRef.current.size >= 2) {
+      setLoupeVisible(false);
+      setIsDraggingUnlocked(false);
+
+      // a) Cancele imediatamente qualquer timer de Long-Press pendente
+      if (dragLongPressRef.current) {
+        clearTimeout(dragLongPressRef.current.timer);
+        dragLongPressRef.current = null;
+      }
       if (longPressRef.current) clearTimeout(longPressRef.current.timer);
       longPressRef.current = null;
+
+      // b) Se uma peça já estava sendo movida, aborte imediatamente o arraste e restaure à posição original do snapshot
+      if (dragEntityRef.current) {
+        if (dragRafRef.current) {
+          cancelAnimationFrame(dragRafRef.current);
+          dragRafRef.current = null;
+        }
+        setEntities(dragEntityRef.current.initialEntitiesSnapshot);
+        dragEntityRef.current = null;
+        isDraggingEntityRef.current = false;
+        pendingDragEntitiesRef.current = null;
+      }
+
+      // c) Cooldown de 150ms após soltar o gesto de 2 dedos antes de aceitar novo início de arraste
+      dragCooldownUntilRef.current = performance.now() + 150;
+      gestureUntilRef.current = Math.max(gestureUntilRef.current, performance.now() + 150);
+
       const [a, b] = [...ptrsRef.current.values()];
       if (a && b) {
         pinchRef.current = {
@@ -2483,31 +2667,46 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
     // ignora toques fantasma logo após um gesto
-    if (performance.now() < gestureUntilRef.current) return;
+    if (performance.now() < Math.max(gestureUntilRef.current, dragCooldownUntilRef.current)) return;
 
     const raw = toWorld(ev);
     const p = snapPoint(raw);
 
-    if (ev.pointerType === "touch") {
-      setVirtualCursorVisible(true);
+    const isDrawingOrEditingTool = (
+      tool === "line" ||
+      tool === "polyline" ||
+      tool === "rect" ||
+      tool === "circle" ||
+      tool === "ellipse" ||
+      tool === "arc" ||
+      tool.startsWith("dim_") ||
+      tool === "measure" ||
+      tool === "fillet" ||
+      tool === "chamfer" ||
+      tool === "smart_trim" ||
+      tool === "trim" ||
+      tool === "move" ||
+      tool === "leader" ||
+      dragNode !== null ||
+      dragEntityRef.current !== null ||
+      tool === "select"
+    );
+
+    if (ptrsRef.current.size === 1 && tool !== "pan" && isDrawingOrEditingTool) {
+      setLoupeVisible(true);
       setLoupeScreenPos({ x: ev.clientX, y: ev.clientY });
       setLoupeCadPos(p);
+    }
 
-      if (longPressRef.current) clearTimeout(longPressRef.current.timer);
-      longPressRef.current = {
-        x: ev.clientX,
-        y: ev.clientY,
-        timer: setTimeout(() => {
-          // Ativa o Menu Radial Contextual Touch (Seção 16)
-          setRadialMenuPos({ x: ev.clientX, y: ev.clientY });
-          setRadialMenuOpen(true);
-          triggerHaptic("medium");
-          longPressRef.current = null;
-        }, 460),
-      };
+    if (ev.pointerType === "touch") {
+      setLoupeScreenPos({ x: ev.clientX, y: ev.clientY });
+      setLoupeCadPos(p);
     }
 
     if (tool === "pan" || ev.button === 1) {
+      if (dragEntityRef.current) {
+        cancelOrFinalizeEntityDrag();
+      }
       panRef.current = { x: ev.clientX, y: ev.clientY };
       return;
     }
@@ -2559,10 +2758,135 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             ? selection
             : target;
         setSelection(nextSel);
-        if (tool === "select") moveRef.current = { from: raw, ids: nextSel, base: entities, moved: false };
+        if (tool === "select") {
+          const inCooldown = performance.now() < Math.max(gestureUntilRef.current, dragCooldownUntilRef.current);
+          if (!inCooldown && ptrsRef.current.size === 1) {
+            const canvasRect = (canvasViewportRef.current ?? svgRef.current)?.getBoundingClientRect();
+            const v = viewRef.current;
+            const zoom = v && Number.isFinite(v.k) && v.k > 0 ? v.k : 1;
+            const panX = v && Number.isFinite(v.tx) ? v.tx : 0;
+            const panY = v && Number.isFinite(v.ty) ? v.ty : 0;
+            const left = canvasRect?.left ?? 0;
+            const top = canvasRect?.top ?? 0;
+
+            const startWorldX = (ev.clientX - left - panX) / zoom;
+            const startWorldY = (ev.clientY - top - panY) / zoom;
+
+            // Snapshot Imutável de todas as entidades
+            const initialEntitiesSnapshot: Entity[] = entities.map((e) => {
+              if (e.type === "polyline") {
+                return { ...e, pts: e.pts.map((pt) => ({ ...pt })) };
+              }
+              return { ...e };
+            });
+
+            // REGRA 1.1: BLOQUEIO DE MOVIMENTO IMEDIATO (Exigir Segurar por 320ms)
+            // Uma peça NUNCA deve começar a se mover no instante do toque!
+            if (dragLongPressRef.current) {
+              clearTimeout(dragLongPressRef.current.timer);
+              dragLongPressRef.current = null;
+            }
+            if (dragEntityRef.current) {
+              dragEntityRef.current = null;
+              isDraggingEntityRef.current = false;
+            }
+            setIsDraggingUnlocked(false);
+
+            const clientX = ev.clientX;
+            const clientY = ev.clientY;
+            const pointerId = ev.pointerId;
+
+            const timer = setTimeout(() => {
+              if (ptrsRef.current.size !== 1) return;
+              if (performance.now() < dragCooldownUntilRef.current) return;
+
+              // Destrava movimento da peça após 320ms parado
+              setIsDraggingUnlocked(true);
+              isDraggingEntityRef.current = true;
+              dragEntityRef.current = {
+                pointerId,
+                startClient: { x: clientX, y: clientY },
+                startWorld: { x: startWorldX, y: startWorldY },
+                ids: nextSel,
+                initialEntitiesSnapshot,
+                moved: false,
+                effectiveDelta: { x: 0, y: 0 },
+                unlocked: true,
+              };
+
+              // Feedback ao destravar: vibração curta (15ms) + ativação da Bolha Quadrada de Zoom
+              if (typeof navigator !== "undefined" && navigator.vibrate) {
+                try {
+                  navigator.vibrate(15);
+                } catch {
+                  // ignorar se vibração não suportada
+                }
+              }
+              triggerHaptic("action");
+              AudioManager.play("ui_select");
+
+              setLoupeVisible(true);
+              setLoupeScreenPos({ x: clientX, y: clientY });
+              setLoupeCadPos({ x: startWorldX, y: startWorldY });
+
+              // Cancela menu radial se estava aguardando
+              if (longPressRef.current) {
+                clearTimeout(longPressRef.current.timer);
+                longPressRef.current = null;
+              }
+            }, 320);
+
+            dragLongPressRef.current = {
+              timer,
+              pointerId,
+              startClient: { x: clientX, y: clientY },
+              startWorld: { x: startWorldX, y: startWorldY },
+              ids: nextSel,
+              initialEntitiesSnapshot,
+            };
+          }
+        }
+        if (emptyCanvasLongPressRef.current) {
+          clearTimeout(emptyCanvasLongPressRef.current.timer);
+          emptyCanvasLongPressRef.current = null;
+        }
         return;
       }
+
+      if (emptyCanvasLongPressRef.current) {
+        clearTimeout(emptyCanvasLongPressRef.current.timer);
+        emptyCanvasLongPressRef.current = null;
+      }
       if (!ev.shiftKey) setSelection([]);
+
+      // TOQUE LONGO NO ESPAÇO VAZIO (400ms): Abre a Área de Transferência do CAD
+      const clientX = ev.clientX;
+      const clientY = ev.clientY;
+      const anchorPos = { x: p.x, y: p.y };
+      const emptyTimer = setTimeout(() => {
+        if (ptrsRef.current.size !== 1) return;
+        triggerHaptic("medium");
+        if (typeof navigator !== "undefined" && navigator.vibrate) {
+          try {
+            navigator.vibrate(20);
+          } catch {
+            // ignorar se vibração não suportada
+          }
+        }
+        setMarquee(null);
+        setLoupeVisible(false);
+        setClipboardAnchorWorld(anchorPos);
+        setClipboardModalOpen(true);
+        emptyCanvasLongPressRef.current = null;
+      }, 400);
+
+      emptyCanvasLongPressRef.current = {
+        timer: emptyTimer,
+        x: clientX,
+        y: clientY,
+        world: anchorPos,
+      };
+
       setMarquee({ a: raw, b: raw });
       return;
     }
@@ -2613,7 +2937,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         if (arc) {
           commit((e) => [...e, arc]);
           setSelection([arc.id]);
-          setTool("select");
         }
         setPending([]);
         setDraft(null);
@@ -2842,6 +3165,55 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const onPointerMove = (ev: React.PointerEvent) => {
     if (ptrsRef.current.has(ev.pointerId))
       ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+
+    // Multi-Touch Guard: se 2 ou mais dedos estiverem no canvas, cancela arraste e restaura snapshot
+    if (ptrsRef.current.size >= 2) {
+      setLoupeVisible(false);
+      setIsDraggingUnlocked(false);
+      if (dragLongPressRef.current) {
+        clearTimeout(dragLongPressRef.current.timer);
+        dragLongPressRef.current = null;
+      }
+      if (longPressRef.current) {
+        clearTimeout(longPressRef.current.timer);
+        longPressRef.current = null;
+      }
+      if (emptyCanvasLongPressRef.current) {
+        clearTimeout(emptyCanvasLongPressRef.current.timer);
+        emptyCanvasLongPressRef.current = null;
+      }
+      if (dragEntityRef.current) {
+        if (dragRafRef.current) {
+          cancelAnimationFrame(dragRafRef.current);
+          dragRafRef.current = null;
+        }
+        setEntities(dragEntityRef.current.initialEntitiesSnapshot);
+        dragEntityRef.current = null;
+        isDraggingEntityRef.current = false;
+        pendingDragEntitiesRef.current = null;
+      }
+      dragCooldownUntilRef.current = performance.now() + 150;
+    }
+
+    // REGRA 1.1: Tolerância de oscilação de 8px antes de completar os 320ms
+    if (dragLongPressRef.current && !dragEntityRef.current?.unlocked) {
+      const lp = dragLongPressRef.current;
+      const oscDist = Math.hypot(ev.clientX - lp.startClient.x, ev.clientY - lp.startClient.y);
+      if (oscDist > 8) {
+        clearTimeout(lp.timer);
+        dragLongPressRef.current = null;
+        // Gesto cancelado para movimentação da peça (tratado apenas como navegação ou marquee)
+      }
+    }
+
+    if (
+      emptyCanvasLongPressRef.current &&
+      Math.hypot(ev.clientX - emptyCanvasLongPressRef.current.x, ev.clientY - emptyCanvasLongPressRef.current.y) > 8
+    ) {
+      clearTimeout(emptyCanvasLongPressRef.current.timer);
+      emptyCanvasLongPressRef.current = null;
+    }
+
     if (
       longPressRef.current &&
       Math.hypot(ev.clientX - longPressRef.current.x, ev.clientY - longPressRef.current.y) > 8
@@ -2877,11 +3249,33 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const raw = toWorld(ev);
     setCursor(raw);
 
-    // Visor ampliado magnético / Lupa de precisão para toque móvel
-    if (ev.pointerType === "touch") {
+    // Visor ampliado magnético / Lupa de precisão técnica (3x)
+    const isDrawingOrEditingToolMove = (
+      tool === "line" ||
+      tool === "polyline" ||
+      tool === "rect" ||
+      tool === "circle" ||
+      tool === "ellipse" ||
+      tool === "arc" ||
+      tool.startsWith("dim_") ||
+      tool === "measure" ||
+      tool === "fillet" ||
+      tool === "chamfer" ||
+      tool === "smart_trim" ||
+      tool === "trim" ||
+      tool === "move" ||
+      tool === "leader" ||
+      dragNode !== null ||
+      dragEntityRef.current !== null ||
+      (tool === "select" && (isDraggingEntityRef.current || selection.length > 0 || marquee !== null))
+    );
+
+    if (ptrsRef.current.size === 1 && isDrawingOrEditingToolMove && !panRef.current && tool !== "pan") {
       setLoupeVisible(true);
       setLoupeScreenPos({ x: ev.clientX, y: ev.clientY });
       setLoupeCadPos(raw);
+    } else if (ptrsRef.current.size >= 2 || panRef.current || tool === "pan") {
+      setLoupeVisible(false);
     }
 
     if (panRef.current) {
@@ -2955,14 +3349,122 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       );
       return;
     }
-    if (moveRef.current) {
-      const { from, ids, base } = moveRef.current;
-      const p = snapPoint(raw);
-      const dx = p.x - from.x;
-      const dy = p.y - from.y;
-      if (Math.hypot(dx, dy) > 0.5) {
-        moveRef.current.moved = true;
-        setEntities(base.map((e) => (ids.includes(e.id) ? translate(e, dx, dy) : e)));
+    if (dragEntityRef.current && dragEntityRef.current.unlocked && (!ev.pointerId || dragEntityRef.current.pointerId === ev.pointerId)) {
+      const drag = dragEntityRef.current;
+      const canvasRect = (canvasViewportRef.current ?? svgRef.current)?.getBoundingClientRect();
+      const v = viewRef.current;
+      const zoom = v && Number.isFinite(v.k) && v.k > 0 ? v.k : 1;
+      const panX = v && Number.isFinite(v.tx) ? v.tx : 0;
+      const panY = v && Number.isFinite(v.ty) ? v.ty : 0;
+      const left = canvasRect?.left ?? 0;
+      const top = canvasRect?.top ?? 0;
+
+      const currentWorldX = (ev.clientX - left - panX) / zoom;
+      const currentWorldY = (ev.clientY - top - panY) / zoom;
+
+      let totalDeltaX = currentWorldX - drag.startWorld.x;
+      let totalDeltaY = currentWorldY - drag.startWorld.y;
+
+      drag.moved = true;
+      isDraggingEntityRef.current = true;
+      if (longPressRef.current) {
+        clearTimeout(longPressRef.current.timer);
+        longPressRef.current = null;
+      }
+
+      // Mantém a Bolha Quadrada de Zoom sincronizada com o arraste da peça
+      setLoupeVisible(true);
+      setLoupeScreenPos({ x: ev.clientX, y: ev.clientY });
+      setLoupeCadPos({ x: currentWorldX, y: currentWorldY });
+
+      // Restrições ortogonais e isométricas
+      if (drawingProjection === "isometric" && (isoOrtho || orthoOn)) {
+        const constrained = constrainToIsoAxes(
+          drag.startWorld,
+          { x: drag.startWorld.x + totalDeltaX, y: drag.startWorld.y + totalDeltaY },
+          isoPlane,
+        );
+        totalDeltaX = constrained.x - drag.startWorld.x;
+        totalDeltaY = constrained.y - drag.startWorld.y;
+      } else if (orthoOn) {
+        const adx = Math.abs(totalDeltaX);
+        const ady = Math.abs(totalDeltaY);
+        if (adx >= ady) {
+          totalDeltaY = 0;
+        } else {
+          totalDeltaX = 0;
+        }
+      }
+
+      let effectiveDeltaX = totalDeltaX;
+      let effectiveDeltaY = totalDeltaY;
+
+      if (snapOn) {
+        const targetWorldPos = {
+          x: drag.startWorld.x + totalDeltaX,
+          y: drag.startWorld.y + totalDeltaY,
+        };
+        // Exclui as entidades selecionadas da lista de snap para eliminar feedback loop oscilatório
+        const otherEntities = drag.initialEntitiesSnapshot.filter((e) => !drag.ids.includes(e.id));
+        const tol = 12 / zoom;
+
+        let snappedPos: Vec2 | null = null;
+        if (drawingProjection === "isometric" && showGrid) {
+          const isoG = snapToIsoGrid(targetWorldPos, grid, isoPlane);
+          if (dist(targetWorldPos, isoG) <= tol * 1.5) {
+            snappedPos = isoG;
+          }
+        }
+        if (!snappedPos) {
+          const smart = findSmartSnap(targetWorldPos, otherEntities, tol, null, "select", []);
+          if (smart) {
+            snappedPos = smart.p;
+          } else {
+            const s = findSnap(targetWorldPos, otherEntities, tol, grid, { grid: showGrid, object: true });
+            if (s) snappedPos = s.p;
+          }
+        }
+
+        if (snappedPos) {
+          effectiveDeltaX = snappedPos.x - drag.startWorld.x;
+          effectiveDeltaY = snappedPos.y - drag.startWorld.y;
+        }
+      }
+
+      drag.effectiveDelta = { x: effectiveDeltaX, y: effectiveDeltaY };
+
+      // REGRA DE OURO: Calcular nova posição estritamente a partir do Snapshot Inicial (sem acumulação)
+      const updated = drag.initialEntitiesSnapshot.map((e) => {
+        if (!drag.ids.includes(e.id)) return e;
+        const translated = translate(e, effectiveDeltaX, effectiveDeltaY);
+        // Compatibilidade com Modo Isométrico: converter delta usando a Matriz Isométrica Inversa
+        if (translated.params?.canonical2D && typeof translated.params.canonical2D === "object") {
+          const entPlane = (translated.params.isoPlane as IsoPlane) || isoPlane;
+          const canDelta = unprojectPointFromIsoPlane(
+            { x: effectiveDeltaX, y: effectiveDeltaY },
+            entPlane,
+            { x: 0, y: 0 },
+          );
+          const origCan =
+            (drag.initialEntitiesSnapshot.find((orig) => orig.id === e.id)?.params?.canonical2D as Entity) ??
+            translated.params.canonical2D;
+          translated.params = {
+            ...translated.params,
+            canonical2D: translate(origCan, canDelta.x, canDelta.y),
+          };
+        }
+        return translated;
+      });
+
+      // Throttle via RAF para 60fps macio e proteção contra sobrecarga de CPU/memória
+      pendingDragEntitiesRef.current = updated;
+      if (!dragRafRef.current) {
+        dragRafRef.current = requestAnimationFrame(() => {
+          dragRafRef.current = null;
+          if (pendingDragEntitiesRef.current) {
+            setEntities(pendingDragEntitiesRef.current);
+          }
+        });
       }
       return;
     }
@@ -3040,7 +3542,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const onPointerUp = (ev?: React.PointerEvent) => {
     setLoupeVisible(false);
-    setVirtualCursorVisible(false);
+    setIsDraggingUnlocked(false);
+
+    if (dragLongPressRef.current) {
+      clearTimeout(dragLongPressRef.current.timer);
+      dragLongPressRef.current = null;
+    }
+    if (emptyCanvasLongPressRef.current) {
+      clearTimeout(emptyCanvasLongPressRef.current.timer);
+      emptyCanvasLongPressRef.current = null;
+    }
     if (longPressRef.current) clearTimeout(longPressRef.current.timer);
     longPressRef.current = null;
     if (ev) ptrsRef.current.delete(ev.pointerId);
@@ -3048,12 +3559,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (wasPinching && ptrsRef.current.size < 2) {
       pinchRef.current = null;
       gestureUntilRef.current = performance.now() + 350;
+      dragCooldownUntilRef.current = performance.now() + 150;
       // continua o pan com o dedo restante, sem salto
       const rest = [...ptrsRef.current.values()][0];
       panRef.current = null;
       return;
     }
-    if (wasPinching) return;
+    if (wasPinching) {
+      dragCooldownUntilRef.current = performance.now() + 150;
+      return;
+    }
     panRef.current = null;
 
     if (dragNode) {
@@ -3062,14 +3577,47 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setEntities((list) => revalidateShared(list));
       return;
     }
-    if (moveRef.current) {
-      const wasMoved = moveRef.current.moved;
-      const base = moveRef.current.base;
-      moveRef.current = null;
-      if (wasMoved) {
-        past.current = [...past.current, base];
-        // mover pode invalidar um trecho comum ligado a peça fora do grupo
-        setEntities((list) => revalidateShared(list));
+    if (dragRafRef.current) {
+      cancelAnimationFrame(dragRafRef.current);
+      dragRafRef.current = null;
+    }
+    if (dragEntityRef.current) {
+      const drag = dragEntityRef.current;
+      const wasMoved = drag.moved && drag.unlocked;
+      const baseSnapshot = drag.initialEntitiesSnapshot;
+      const finalDelta = drag.effectiveDelta;
+      const ids = drag.ids;
+      dragEntityRef.current = null;
+      isDraggingEntityRef.current = false;
+      pendingDragEntitiesRef.current = null;
+
+      if (wasMoved && Math.hypot(finalDelta.x, finalDelta.y) > 0.01) {
+        past.current = [...past.current.slice(-49), baseSnapshot];
+        future.current = [];
+        setHistoryState({ canUndo: true, canRedo: false });
+        const finalEntities = baseSnapshot.map((e) => {
+          if (!ids.includes(e.id)) return e;
+          const translated = translate(e, finalDelta.x, finalDelta.y);
+          if (translated.params?.canonical2D && typeof translated.params.canonical2D === "object") {
+            const entPlane = (translated.params.isoPlane as IsoPlane) || isoPlane;
+            const canDelta = unprojectPointFromIsoPlane(
+              { x: finalDelta.x, y: finalDelta.y },
+              entPlane,
+              { x: 0, y: 0 },
+            );
+            const origCan =
+              (baseSnapshot.find((orig) => orig.id === e.id)?.params?.canonical2D as Entity) ??
+              translated.params.canonical2D;
+            translated.params = {
+              ...translated.params,
+              canonical2D: translate(origCan, canDelta.x, canDelta.y),
+            };
+          }
+          return translated;
+        });
+        setEntities(revalidateShared(finalEntities));
+        toast.success("Peça posicionada com sucesso.");
+        triggerHaptic("tap");
       }
       return;
     }
@@ -3108,9 +3656,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         } else if (dualToolSecondary === "smart_trim") {
           setTool("smart_trim");
           toast.info("Dual Tool: selecione o trecho a aparar.");
-        } else {
-          setTool("select");
         }
+        // Ferramenta permanece ativa continuamente para desenhar múltiplas formas em sequência
       }
       setDraft(null);
       setPending([]);
@@ -3150,17 +3697,43 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       if (meta && ev.key.toLowerCase() === "c") {
         ev.preventDefault();
-        clipboardRef.current = copySelection(entities, selection, groups);
-        if (clipboardRef.current)
-          toast.success(`${clipboardRef.current.entities.length} objeto(s) copiado(s).`);
+        copySelected();
         return;
       }
-      if (meta && ev.key.toLowerCase() === "v" && clipboardRef.current) {
+      if (meta && ev.key.toLowerCase() === "g") {
         ev.preventDefault();
-        const pasted = pasteClipboard(clipboardRef.current, { x: cursor.x + 10, y: cursor.y + 10 });
-        commit((list) => [...list, ...pasted.entities]);
-        setGroups((list) => [...list, ...pasted.groups]);
-        setSelection(pasted.ids);
+        if (ev.shiftKey) {
+          handleUngroupSelection();
+        } else {
+          handleGroupSelection();
+        }
+        return;
+      }
+      if (meta && ev.key.toLowerCase() === "v") {
+        ev.preventDefault();
+        const items = loadGlobalClipboard();
+        if (items.length > 0) {
+          const item = items[0];
+          const target =
+            Number.isFinite(cursor.x) && Number.isFinite(cursor.y)
+              ? { x: cursor.x, y: cursor.y }
+              : {
+                  x: (canvasSize.w / 2 - view.tx) / view.k,
+                  y: (canvasSize.h / 2 - view.ty) / view.k,
+                };
+          const result = instantiateClipboardItemAt(item, target, groups);
+          commit((list) => [...list, ...result.newEntities]);
+          setGroups(result.newGroups);
+          setSelection(result.newIds);
+          triggerHaptic("action");
+          toast.success(`✓ Colado: ${item.title}`);
+        } else if (clipboardRef.current) {
+          const pasted = pasteClipboard(clipboardRef.current, { x: cursor.x + 10, y: cursor.y + 10 });
+          commit((list) => [...list, ...pasted.entities]);
+          setGroups((list) => [...list, ...pasted.groups]);
+          setSelection(pasted.ids);
+          toast.success("✓ Objeto colado.");
+        }
         return;
       }
       if (ev.key === "Delete" || ev.key === "Backspace") {
@@ -3237,6 +3810,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     groups,
     cursor,
     handleManualSave,
+    handleGroupSelection,
+    handleUngroupSelection,
   ]);
 
   /* ------------------------------------------------------------- ações */
@@ -3277,14 +3852,32 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [selected],
   );
 
-  const copySelected = useCallback(() => {
-    clipboardRef.current = copySelection(entities, selection, groups);
-    if (clipboardRef.current)
-      toast.success(`${clipboardRef.current.entities.length} objeto(s) copiado(s).`);
-  }, [entities, selection, groups]);
+  const copySelected = handleCopySelection;
+
+  /** Grupo ativo na seleção (badge + botão de isolar membro). */
+  const activeGroup = useMemo(() => {
+    const gid = selected.find((e) => e.group)?.group;
+    return gid ? (groups.find((g) => g.id === gid) ?? null) : null;
+  }, [selected, groups]);
 
   const selectionActions = (
     <>
+      {selection.length >= 2 && (
+        <IconBtn
+          label="Agrupar Peça (Ctrl+G)"
+          onClick={handleGroupSelection}
+          icon={Boxes}
+          flat
+        />
+      )}
+      {(activeGroup || selected.some((e) => e.group)) && (
+        <IconBtn
+          label="Desagrupar (Ctrl+Shift+G)"
+          onClick={handleUngroupSelection}
+          icon={Ungroup}
+          flat
+        />
+      )}
       <IconBtn label="Copiar" onClick={copySelected} icon={Copy} flat />
       <IconBtn
         label="Dividir em N Partes"
@@ -3327,12 +3920,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       />
     </>
   );
-
-  /** Grupo ativo na seleção (badge + botão de isolar membro). */
-  const activeGroup = useMemo(() => {
-    const gid = selected.find((e) => e.group)?.group;
-    return gid ? (groups.find((g) => g.id === gid) ?? null) : null;
-  }, [selected, groups]);
 
   /**
    * HIERARQUIA VISUAL DINÂMICA DO GRID (CHAMFER CAD)
@@ -3683,16 +4270,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       ) : (
         <div className="space-y-2">
           {activeGroup && (
-            <div className="flex items-center gap-1">
-              <span className="rounded-full bg-accent/15 px-2 py-0.5 font-mono text-[9px] text-accent">
+            <div className="flex items-center justify-between gap-1 p-1 bg-cyan-950/40 border border-cyan-500/30 rounded-lg">
+              <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 font-mono text-[10px] text-cyan-300 font-bold flex items-center gap-1">
+                <Boxes className="size-3" />
                 {activeGroup.name}
               </span>
-              <button
-                onClick={() => setSelection(selection.slice(0, 1))}
-                className="rounded-lg border border-line px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground hover:text-foreground"
-              >
-                Selecionar só este
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleUngroupSelection}
+                  className="rounded-lg bg-amber-950/60 border border-amber-500/50 px-2 py-0.5 font-mono text-[9px] text-amber-300 hover:bg-amber-900/80 transition-colors font-semibold"
+                  title="Desagrupar peça (Ctrl+Shift+G)"
+                >
+                  Desagrupar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelection(selection.slice(0, 1))}
+                  className="rounded-lg border border-line px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground hover:text-foreground"
+                >
+                  Isolar
+                </button>
+              </div>
             </div>
           )}
           <MultiSelectPanel
@@ -3704,6 +4303,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             groups={groups}
             setGroups={setGroups}
             onOpenCenterDialog={handleOpenCenterDialog}
+            onOpenIsoConvert={() => setIsoPieceBuilderOpen(true)}
           />
           <div className="flex flex-wrap gap-1 border-t border-line pt-2">{selectionActions}</div>
         </div>
@@ -4432,9 +5032,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           ref={canvasViewportRef}
           className={cn(
             "relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border shadow-inner transition-colors",
-            isDark
-              ? "border-slate-800 bg-[#0d121c]"
-              : "border-slate-200 bg-[#ffffff]",
+            drawingProjection === "isometric" || entities.some((e) => e.params?.isIsoSolidFace)
+              ? "border-slate-800 bg-[#1A2028]"
+              : isDark
+                ? "border-slate-800 bg-[#0d121c]"
+                : "border-slate-200 bg-[#ffffff]",
           )}
         >
           {solidOpen ? (
@@ -4901,6 +5503,26 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 </g>
               )}
 
+              {/* PRÉVIA EM TEMPO REAL DA CONVERSÃO ISOMÉTRICA (MOTOR UNIVERSAL SÓLIDO HLR) */}
+              {!solidOpen && isoPreview && isoPreview.entities.length > 0 && (
+                <g className="chamfer-iso-live-preview pointer-events-none" opacity={0.96}>
+                  {isoPreview.entities
+                    .slice()
+                    .sort(
+                      (a, b) =>
+                        ((a.params?.depth as number) ?? 0) - ((b.params?.depth as number) ?? 0),
+                    )
+                    .map((pe, idx) => (
+                      <EntityShape
+                        key={`iso-prev-${pe.id || idx}`}
+                        e={pe}
+                        k={view.k}
+                        preview={!pe.params?.isIsoSolidFace}
+                      />
+                    ))}
+                </g>
+              )}
+
               {!solidOpen && pending.length > 0 && tool === "polyline" && (
                 <polyline
                   points={pending.map((p) => `${p.x},${p.y}`).join(" ")}
@@ -5148,7 +5770,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             y={l.p.y - sz * 0.95}
                             width={txtLen * sz * 0.6 + 6 / safeK}
                             height={sz * 1.25}
-                            fill={isDark ? "#090d14" : "#ffffff"}
+                            fill={
+                              isDark ||
+                              drawingProjection === "isometric" ||
+                              entities.some((e) => e.params?.isIsoSolidFace)
+                                ? "#1A2028"
+                                : "#ffffff"
+                            }
                             fillOpacity={0.94}
                             rx={2 / safeK}
                             stroke="none"
@@ -5597,10 +6225,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   setSelection([]);
                 }}
                 onDuplicateEntity={(ent) => {
+                  const item = copyToGlobalClipboard(entities, [ent.id], groups, dims);
                   const dup = translate(ent, 10, 10);
                   const dupWithNewId = { ...dup, id: crypto.randomUUID() };
                   commit((list) => [...list, dupWithNewId]);
                   setSelection([dupWithNewId.id]);
+                  if (item) {
+                    toast.success(`✓ "${item.title}" copiado para a Área de Transferência.`);
+                  }
                 }}
                 onClose={() => {
                   setSelection([]);
@@ -6100,18 +6732,86 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
-      {/* CONTROLE FLUTUANTE DA FERRAMENTA APARAR ATÉ ENCONTRO */}
-      {tool === "smart_trim" && (
-        <ChamferSmartTrimControlBar
-          preview={smartTrimPreview}
-          mode={smartTrimMode}
-          onToggleMode={setSmartTrimMode}
-          onExit={() => {
-            setTool("select");
-            setSmartTrimPreview(null);
-          }}
-          isDark={isDark}
-        />
+      {/* BARRA CONTEXTUAL FLUTUANTE DE SELEÇÃO E AGRUPAMENTO (MOBILE/DESKTOP) */}
+      {selection.length > 0 && !solidOpen && tool === "select" && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-500/40 shadow-2xl backdrop-blur-md text-white select-none pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-150">
+          <div className="flex items-center gap-1.5 pr-2 border-r border-slate-700/80 font-mono text-[11px]">
+            {activeGroup ? (
+              <span className="flex items-center gap-1 text-cyan-400 font-bold bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-500/40">
+                <Boxes className="size-3.5" />
+                {activeGroup.name}
+              </span>
+            ) : (
+              <span className="text-slate-300 font-semibold">
+                {selection.length} {selection.length === 1 ? "peça" : "peças"}
+              </span>
+            )}
+          </div>
+
+          {selection.length >= 2 && (
+            <button
+              type="button"
+              onClick={handleGroupSelection}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-xs font-bold transition-all shadow-sm active:scale-95"
+              title="Agrupar formas em uma única peça (Ctrl+G)"
+            >
+              <Boxes className="size-3.5" />
+              Agrupar
+            </button>
+          )}
+
+          {(activeGroup || selected.some((e) => e.group)) && (
+            <button
+              type="button"
+              onClick={handleUngroupSelection}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600/90 hover:bg-amber-500 text-white font-mono text-xs font-bold transition-all shadow-sm active:scale-95"
+              title="Desagrupar peça em formas independentes (Ctrl+Shift+G)"
+            >
+              <Ungroup className="size-3.5" />
+              Desagrupar
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => applySelection((e) => rotate(e, center, 90))}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs transition-colors"
+            title="Girar 90°"
+          >
+            <RotateCw className="size-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsoPieceBuilderOpen(true)}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 font-mono text-xs transition-colors"
+            title="Projetar para Isométrico"
+          >
+            <BoxIcon className="size-3.5" />
+            <span className="hidden sm:inline">Iso</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              commit((e) => e.filter((x) => !selection.includes(x.id)));
+              setSelection([]);
+            }}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-950/80 hover:bg-red-900 border border-red-500/40 text-red-300 font-mono text-xs transition-colors"
+            title="Excluir seleção"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelection([])}
+            className="ml-1 p-1 rounded-lg text-slate-400 hover:text-white transition-colors"
+            title="Limpar seleção"
+          >
+            <X className="size-3.5" />
+          </button>
+        </div>
       )}
 
       <ImportDialog
@@ -6274,34 +6974,31 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
-      {/* CURSOR MAGNÉTICO E LUPA DE PRECISÃO TOUCH */}
+      {/* BOLHA QUADRADA DE ZOOM (LUPA DE PRECISÃO MOBILE) */}
       <ChamferPrecisionLoupeOverlay
         visible={loupeVisible}
         screenPos={loupeScreenPos}
         cadPos={loupeCadPos}
-        isDark={isDark}
-      />
-
-      {/* MENU RADIAL CONTEXTUAL TOUCH (SEÇÃO 16) */}
-      <ChamferRadialMenu
-        open={radialMenuOpen}
-        onClose={() => setRadialMenuOpen(false)}
-        position={radialMenuPos}
-        selectedEntities={selected}
-        onAction={handleRadialAction}
-        isDark={isDark}
-      />
-
-      {/* CURSOR GEOMÉTRICO VIRTUAL COM FINGER OFFSET E MODO ISOMÉTRICO (SEÇÃO 11) */}
-      <ChamferVirtualCursor
-        visible={virtualCursorVisible && !radialMenuOpen}
-        screenPos={loupeScreenPos}
-        cadPos={loupeCadPos}
-        activeSnap={smartSnap?.point ? { ...smartSnap, kind: smartSnap.kind, pt: smartSnap.point } : snapHit}
-        basePoint={pending.length > 0 ? pending[pending.length - 1] : null}
-        fingerOffsetEnabled={true}
+        activeSnap={smartSnap ?? snapHit}
+        baseCadPoint={pending.length > 0 ? pending[pending.length - 1] : null}
+        cameraZoom={view.k}
         drawingProjection={drawingProjection}
         isoPlane={isoPlane}
+        entities={entities}
+        draft={draft}
+        pendingPoints={pending}
+        grid={grid}
+        showGrid={showGrid}
+        isDark={isDark}
+      />
+
+      {/* ÁREA DE TRANSFERÊNCIA GLOBAL DO CAD (SEÇÃO 17) */}
+      <ChamferClipboardModal
+        open={clipboardModalOpen}
+        onClose={() => setClipboardModalOpen(false)}
+        anchorWorldPos={clipboardAnchorWorld}
+        onPasteItem={handlePasteClipboardItem}
+        isDark={isDark}
       />
 
       {/* HUD DE CONTROLE DE PLANO ISOMÉTRICO (ETAPA DESENHO ISOMÉTRICO 2D DO CHAMFER) */}
@@ -6325,19 +7022,29 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
-      {/* CONSTRUTOR GUIADO DE PEÇAS POR FACES E PLANOS ISOMÉTRICOS */}
-      <ChamferIsoPieceBuilderModal
+      {/* MODAL UNIVERSAL DE PROJEÇÃO E CONVERSÃO ISOMÉTRICA (ZERO TEMPLATES) */}
+      <ChamferIsoConvertModal
         open={isoPieceBuilderOpen}
-        onClose={() => setIsoPieceBuilderOpen(false)}
-        onInsertPiece={(newEntities, newDims) => {
-          commit((prev) => [...prev, ...newEntities]);
-          if (newDims.length > 0) {
-            setDims((prev) => [...prev, ...newDims]);
-          }
-          setSelection(newEntities.map((e) => e.id));
-          fitTo([...entities, ...newEntities]);
-          toast.success("Peça isométrica construída e inserida com cotas técnicas!");
+        onClose={() => {
+          setIsoPieceBuilderOpen(false);
+          setIsoPreview(null);
         }}
+        selectedEntities={selected}
+        allEntities={entities}
+        dims={dims}
+        activeSheetThickness={thickness}
+        onConfirm={({ updatedEntities, updatedDims, newSelectionIds }) => {
+          commit(updatedEntities);
+          setDims(updatedDims);
+          setSelection(newSelectionIds);
+          setIsoPreview(null);
+          if (updatedEntities.some((e) => e.params?.isIso)) {
+            setDrawingProjection("isometric");
+          }
+          fitTo(updatedEntities);
+          toast.success("Seleção convertida para perspectiva isométrica sólida com sucesso!");
+        }}
+        onPreviewChange={setIsoPreview}
         isDark={isDark}
       />
 
@@ -6770,13 +7477,21 @@ export function EntityShape({
     : !isDark && isCutOrWhite
       ? "#0F172A"
       : style.color;
+  const isIsoSolid = !!e.params?.isIsoSolidFace;
+  const fillColor = isIsoSolid ? ((e.params?.fillColor as string) || "#323B47") : "none";
+  const customStroke = isIsoSolid ? ((e.params?.strokeColor as string) || "#FFFFFF") : stroke;
+  const customWidth = isIsoSolid
+    ? (typeof e.params?.strokeWidth === "number" ? e.params.strokeWidth : 2) / k
+    : (1.4 * style.weight) / k;
+  const noStroke = isIsoSolid && !!e.params?.noStroke;
+
   const props = {
-    fill: "none",
-    stroke,
-    strokeWidth: (1.4 * style.weight) / k,
+    fill: fillColor,
+    stroke: noStroke ? "none" : customStroke,
+    strokeWidth: customWidth,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
-    strokeDasharray: preview ? `${5 / k} ${4 / k}` : style.dash(1 / k),
+    strokeDasharray: preview && !isIsoSolid ? `${5 / k} ${4 / k}` : style.dash(1 / k),
     vectorEffect: "non-scaling-stroke" as const,
   };
   const halo = selected

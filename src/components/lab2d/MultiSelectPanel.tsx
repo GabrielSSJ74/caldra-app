@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   ArrowLeftRight,
+  Box,
   Boxes,
   Copy,
   Eye,
@@ -22,12 +23,14 @@ import {
   Combine,
   Split,
   Sparkles,
+  Ungroup,
 } from "lucide-react";
 
 import type { Entity, Layer } from "@/lib/lab2d/core";
 import { translate, uid } from "@/lib/lab2d/core";
 import { reverseEntity } from "@/lib/lab2d/cutPlan";
-import { createGroup, type GroupDef } from "@/lib/lab2d/groups";
+import { createGroup, dissolveGroup, expandSelection, type GroupDef } from "@/lib/lab2d/groups";
+import { copyToGlobalClipboard } from "@/lib/lab2d/globalClipboard";
 import { alignEntities, distributeEntities, type AlignDirection } from "@/lib/lab2d/cadCenterShapes";
 import { execute2DBoolean } from "@/lib/lab2d/cadBooleans2D";
 import {
@@ -67,6 +70,7 @@ export function MultiSelectPanel({
   groups,
   setGroups,
   onOpenCenterDialog,
+  onOpenIsoConvert,
 }: {
   entities: Entity[];
   selected: Entity[];
@@ -76,6 +80,7 @@ export function MultiSelectPanel({
   groups: GroupDef[];
   setGroups: (g: GroupDef[]) => void;
   onOpenCenterDialog?: () => void;
+  onOpenIsoConvert?: () => void;
 }) {
   const ids = useMemo(() => selected.map((e) => e.id), [selected]);
   const [dx, setDx] = useState(0);
@@ -214,8 +219,31 @@ export function MultiSelectPanel({
 
             commit(res.entities);
             setGroups(res.groups);
+            setSelection(expandSelection(res.entities, ids));
+            toast.success("Peças agrupadas como uma unidade única.");
           }}
         />
+        {selected.some((e) => e.group) && (
+          <Act
+            label="Desagrupar"
+            icon={Ungroup}
+            onClick={() => {
+              const targetGroups = new Set(
+                selected.map((e) => e.group).filter(Boolean) as string[],
+              );
+              let nextEntities = entities;
+              let nextGroups = groups;
+              for (const gid of targetGroups) {
+                const res = dissolveGroup(nextEntities, nextGroups, gid);
+                nextEntities = res.entities;
+                nextGroups = res.groups;
+              }
+              commit(nextEntities);
+              setGroups(nextGroups);
+              toast.success("Peça desagrupada com sucesso.");
+            }}
+          />
+        )}
         {onOpenCenterDialog && (
           <Act
             label="Centralizar"
@@ -223,6 +251,16 @@ export function MultiSelectPanel({
             onClick={onOpenCenterDialog}
           />
         )}
+        <Act
+          label="Copiar"
+          icon={Copy}
+          onClick={() => {
+            const item = copyToGlobalClipboard(entities, ids, groups);
+            if (item) {
+              toast.success(`"${item.title}" copiado para a Área de Transferência.`);
+            }
+          }}
+        />
         <Act
           label="Duplicar"
           icon={Copy}
@@ -248,6 +286,13 @@ export function MultiSelectPanel({
             setSelection([]);
           }}
         />
+        {onOpenIsoConvert && (
+          <Act
+            label="Isométrico"
+            icon={Box}
+            onClick={onOpenIsoConvert}
+          />
+        )}
       </div>
 
       {/* Alinhamento Rápido */}

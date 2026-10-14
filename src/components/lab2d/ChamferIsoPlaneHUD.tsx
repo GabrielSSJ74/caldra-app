@@ -174,7 +174,7 @@ export function ChamferIsoPlaneHUD({
         <span className="hidden md:inline">Orto Iso</span>
       </button>
 
-      {/* BOTÃO CONSTRUÇÃO GUIADA DE PEÇAS POR FACES/PLANOS */}
+      {/* BOTÃO CONVERSÃO / PROJEÇÃO ISOMÉTRICA DA SELEÇÃO */}
       <button
         type="button"
         onClick={() => {
@@ -182,11 +182,11 @@ export function ChamferIsoPlaneHUD({
           AudioManager.play("ui_select");
           onOpenPieceBuilder();
         }}
-        className="min-h-[36px] px-2.5 sm:px-3 py-1 rounded-xl text-[11px] font-semibold transition-all flex items-center gap-1.5 bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white shadow-md active:scale-95"
-        title="Construção Guiada de Peças: Crie suportes, chapas dobradas e flanges com furos em planos distintos"
+        className="min-h-[36px] px-2.5 sm:px-3 py-1 rounded-xl text-[11px] font-semibold transition-all flex items-center gap-1.5 bg-gradient-to-r from-sky-500 to-amber-500 hover:from-sky-400 hover:to-amber-400 text-black shadow-md active:scale-95 cursor-pointer"
+        title="Converter Seleção: Transforma analiticamente as peças selecionadas para projeção isométrica"
       >
-        <Sparkles className="w-3.5 h-3.5 fill-white" />
-        <span className="font-bold tracking-tight">Construir Peça</span>
+        <Sparkles className="w-3.5 h-3.5 fill-black" />
+        <span className="font-bold tracking-tight">Converter Seleção</span>
       </button>
     </div>
   );

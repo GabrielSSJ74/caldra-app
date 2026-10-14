@@ -325,7 +325,6 @@ function AprendaPage() {
             CABEÇALHO DA SEÇÃO CENTRAL (SEM DUPLICAR CABEÇALHO GLOBAL)
             Título obrigatório: "Aprenda & Domine"
             ========================================================================= */}
-        <section className="w-full">
         <NavigationAreaHeader
           badgeText="FORMAÇÃO & ACADEMIA TÉCNICA"
           badgeColor="text-amber-500"
@@ -371,7 +370,7 @@ function AprendaPage() {
         />
 
         {/* Barra de Filtros Rápido por Abas */}
-        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-3 mt-2 border-b border-zinc-800/60">
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none py-1 border-b border-border/40">
           {[
             { id: "todos", label: "Visão Geral", icon: Sparkles },
             { id: "trilhas", label: "01. Escola & Trilhas", icon: GraduationCap },
@@ -402,7 +401,6 @@ function AprendaPage() {
             );
           })}
         </div>
-      </section>
 
       {/* =========================================================================
           BANNER HERO CINEMATOGRÁFICO DE APRENDIZADO (ESTILO STREAMING PREMIUM)

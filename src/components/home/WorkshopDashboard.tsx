@@ -524,7 +524,7 @@ export function WorkshopDashboard() {
 
   return (
     <div className="relative w-full min-h-screen text-foreground overflow-x-hidden">
-      <NavigationAreaContainer className="space-y-3.5 sm:space-y-4 px-4 sm:px-5">
+      <NavigationAreaContainer>
         {/* =========================================================================
             A. CABEÇALHO COMPACTO
             - Indicador âmbar pulsante + "SUA OFICINA DIGITAL" + Título "Início"
@@ -807,7 +807,7 @@ export function WorkshopDashboard() {
           {/* Trilho horizontal independente: cartões de 152–168 px com o próximo visível */}
           <div
             ref={scrollRefTrabalhando}
-            className="flex gap-2.5 overflow-x-auto pb-1.5 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-4 sm:-mx-5 px-4 sm:px-5"
+            className="flex gap-2.5 overflow-x-auto pb-1.5 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-5 sm:-mx-6 px-5 sm:px-6"
           >
             {/* Se houver projetos reais do usuário, exibe os mais recentes */}
             {sortedProjects.length > 0 ? (
@@ -1106,7 +1106,7 @@ export function WorkshopDashboard() {
 
           <div
             ref={scrollRefConhecimento}
-            className="flex gap-2.5 overflow-x-auto pb-1.5 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-4 sm:-mx-5 px-4 sm:px-5"
+            className="flex gap-2.5 overflow-x-auto pb-1.5 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-5 sm:-mx-6 px-5 sm:px-6"
           >
             {/* Card 1 — Curvas e transições metálicas */}
             <Link
