@@ -267,6 +267,7 @@ import { ChamferTopologyHealthModal } from "./ChamferTopologyHealthModal";
 import { ChamferVariablesModal } from "./ChamferVariablesModal";
 import { ChamferPresetsModal } from "./ChamferPresetsModal";
 import { ChamferTechnicalSheetModal } from "./ChamferTechnicalSheetModal";
+import { CaldraIntegratedWorkshopModal } from "./CaldraIntegratedWorkshopModal";
 import {
   type IsoPlane,
   type DrawingProjectionMode,
@@ -803,6 +804,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   /* PASSAPORTE DE FABRICAÇÃO (SEÇÕES 34 & 35) */
   const [fabricationPassportOpen, setFabricationPassportOpen] = useState(false);
+  const [integratedWorkshopOpen, setIntegratedWorkshopOpen] = useState(false);
 
   /* EDIÇÃO DIRETA DE COTAS NO CANVAS (SEÇÃO 14) */
   const [directDimEditor, setDirectDimEditor] = useState<{
@@ -4709,6 +4711,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               <span className="hidden xl:inline">CHAMFER VISION</span>
               <span className="xl:hidden">VISION</span>
             </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("action");
+                setIntegratedWorkshopOpen(true);
+              }}
+              title="Oficina Digital Integrada: Catálogo Costa Ferro, Dossiê Multi-Vistas, Lista de Corte 6m, BOM e Orçamento"
+              className={cn(
+                "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
+                isDark
+                  ? "border-amber-500/40 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 hover:text-white hover:border-amber-400"
+                  : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:text-amber-950 hover:border-amber-400",
+              )}
+            >
+              <Boxes className="size-3.5 text-amber-500" />
+              <span className="hidden xl:inline">OFICINA & CORTE</span>
+              <span className="xl:hidden">CORTE/BOM</span>
+            </button>
             <IconBtn
               label="Camadas"
               onClick={() => {
@@ -4763,6 +4783,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               />
               {moreOpen && (
                 <div className="metal hairline pop-in fixed top-12 right-3 z-[70] w-56 rounded-2xl p-1.5 shadow-xl">
+                  <MenuItem
+                    label="Oficina Digital (Corte, BOM e Orçamento)"
+                    icon={Boxes}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setIntegratedWorkshopOpen(true);
+                    }}
+                  />
                   <MenuItem
                     label="Folha Técnica e Legenda"
                     icon={FileText}
@@ -7068,6 +7096,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         projectName={project?.name ?? "Projeto Chamfer"}
         onExportDxf={() => setExportOpen(true)}
         onExportSvg={() => downloadTracagemSvgFile(entities, project?.name ?? "Projeto Chamfer")}
+      />
+
+      {/* ESTÚDIO DA OFICINA DIGITAL INTEGRADA (CATÁLOGO COSTA FERRO + DOSSIÊ MULTI-VISTAS + CORTE 6M + BOM + ORÇAMENTO) */}
+      <CaldraIntegratedWorkshopModal
+        open={integratedWorkshopOpen}
+        onClose={() => setIntegratedWorkshopOpen(false)}
+        canvasEntities={entities}
+        projectName={project?.name ?? "Projeto Chamfer"}
+        onInsertEntitiesToCad={(newEntities, replaceAll) => {
+          if (replaceAll) {
+            commit(newEntities);
+          } else {
+            commit((prev) => [...prev, ...newEntities]);
+          }
+          setSelection(newEntities.map((e) => e.id));
+          fitTo(newEntities);
+        }}
       />
     </div>
   );

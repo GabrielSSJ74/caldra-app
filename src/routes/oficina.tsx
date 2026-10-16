@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { FeatureGate, Panel, SectionLabel } from "@/components/chameleon/ui";
 import { MaterialManager } from "@/components/chameleon/MaterialManager";
+import { CaldraIntegratedWorkshopModal } from "@/components/lab2d/CaldraIntegratedWorkshopModal";
 import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
 import { useSettings } from "@/lib/settings/SettingsProvider";
 import { useMaterials } from "@/lib/materials/MaterialsProvider";
@@ -30,7 +31,7 @@ import { DEFAULT_SHEET_ID } from "@/lib/nesting/sheets";
 import { emptyPart, partsFromProject, type ProductionPart } from "@/lib/production/parts";
 import { jobSheetPdf } from "@/lib/production/jobSheet";
 import { newQuote, quotePdf, quoteTotals, quoteFilename, type Quote } from "@/lib/costing/quote";
-import { listProjects, type Project } from "@/lib/lab2d/projects";
+import { listProjects, newProject, saveProject, type Project } from "@/lib/lab2d/projects";
 import {
   listVersions,
   restoreVersion,
@@ -50,16 +51,16 @@ export const Route = createFileRoute("/oficina")({
   }),
   head: () => ({
     meta: [
-      { title: "Oficina — nesting, custo e orçamento | CALDRA" },
+      { title: "Oficina Digital Integrada — Corte, BOM e Orçamento | CALDRA" },
       {
         name: "description",
         content:
-          "Encaixe peças na chapa, calcule custo de fabricação, emita orçamento em PDF e a ficha de produção com QR.",
+          "Projete estruturas e peças com o Catálogo Costa Ferro, gere dossiê multi-vistas, lista de corte de barras 6m, materiais e orçamento.",
       },
-      { property: "og:title", content: "Oficina — nesting, custo e orçamento | CALDRA" },
+      { property: "og:title", content: "Oficina Digital Integrada — Corte, BOM e Orçamento | CALDRA" },
       {
         property: "og:description",
-        content: "Do traçado ao orçamento: aproveitamento de chapa, custo real e ficha de bancada.",
+        content: "Do traçado ao orçamento: aproveitamento de barras 6m e chapas, custo real e dossiê técnico.",
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -78,8 +79,20 @@ const TABS = [
 type TabId = (typeof TABS)[number]["id"];
 
 function OficinaPage() {
+  const navigate = useNavigate();
+
   return (
     <div className="space-y-5">
+      <CaldraIntegratedWorkshopModal
+        open={true}
+        onClose={() => {}}
+        embedded={true}
+        onInsertEntitiesToCad={(entities) => {
+          const proj = newProject(`Estrutura Oficina ${new Date().toLocaleDateString("pt-BR")}`, entities);
+          saveProject(proj);
+          navigate({ to: "/desenho-2d/$projectId", params: { projectId: proj.id } });
+        }}
+      />
       {/* Materiais moraram em Configurações; agora ficam ao lado de quem os usa.
           Fora do FeatureGate: continuam disponíveis no plano gratuito. */}
       <MaterialManager />

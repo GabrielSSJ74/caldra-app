@@ -4,17 +4,17 @@ import { WorkshopDashboard } from "@/components/home/WorkshopDashboard";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "CALDRA — Sua oficina digital" },
+      { title: "CALDRA — Sua oficina digital, na palma da sua mão" },
       {
         name: "description",
         content:
-          "Crie projetos, desenvolva desenhos CAD, calcule materiais, prepare orçamentos e evolua na caldeiraria e na traçagem.",
+          "Projete peças e estruturas. Gere desenhos técnicos, listas de corte, materiais e orçamentos. Especialização em Caldeiraria, Serralheria e Traçagem.",
       },
-      { property: "og:title", content: "CALDRA — Sua oficina digital" },
+      { property: "og:title", content: "CALDRA — Sua oficina digital, na palma da sua mão" },
       {
         property: "og:description",
         content:
-          "Sua oficina na palma da mão: CAD, criação de projetos, orçamentos e especialização em caldeiraria e traçagem.",
+          "Projete peças e estruturas. Gere desenhos técnicos, listas de corte, materiais e orçamentos. Especialização em Caldeiraria, Serralheria e Traçagem.",
       },
     ],
   }),

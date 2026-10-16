@@ -541,7 +541,7 @@ export function WorkshopDashboard() {
             </span>
           }
           title="Início"
-          description="Crie projetos, desenvolva desenhos CAD, calcule materiais e prepare orçamentos."
+          description="Sua oficina digital, na palma da sua mão. Projete peças e estruturas. Gere desenhos técnicos, listas de corte, materiais e orçamentos. Especialização em Caldeiraria, Serralheria e Traçagem."
           actions={
             <div className="flex items-center gap-2 shrink-0">
               <button
@@ -591,22 +591,22 @@ export function WorkshopDashboard() {
           <div className="relative z-10 flex h-full w-full flex-row items-center justify-between">
             {/* Lado esquerdo (~52% de largura) */}
             <div className="flex h-full w-[53%] xs:w-[51%] flex-col justify-between py-0.5 pr-1.5 shrink-0">
-              {/* Badge CALDEIRARIA & CAD */}
+              {/* Badge CALDEIRARIA, SERRALHERIA & TRAÇAGEM */}
               <div>
                 <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-mono text-[8.5px] xs:text-[9px] font-bold tracking-wider text-amber-500 uppercase">
                   <span className="text-[9px] leading-none">✦</span>
-                  <span>CALDEIRARIA & CAD</span>
+                  <span>CALDEIRARIA, SERRALHERIA & CAD</span>
                 </span>
               </div>
 
               {/* Título de alto impacto */}
               <h1 className="font-display text-[15px] xs:text-[17px] sm:text-[19px] font-black tracking-tight text-foreground leading-[1.12] uppercase">
-                PROJETE COM PRECISÃO
+                PROJETE PEÇAS E ESTRUTURAS
               </h1>
 
               {/* Descrição curta e objetiva */}
               <p className="text-[9.5px] xs:text-[10px] sm:text-[11px] text-muted-foreground leading-snug line-clamp-2">
-                Modelagem 3D, planificação zero fresta e desenhos de corte.
+                Gere desenhos técnicos multi-vistas, listas de corte 6m, materiais Costa Ferro e orçamentos.
               </p>
 
               {/* Chamada principal: Ação real para iniciar trabalho */}

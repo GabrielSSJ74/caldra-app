@@ -6,6 +6,44 @@
  */
 
 import type { ProfileSection, ProfileType } from "./types";
+import { getAllCostaFerroMaterials } from "@/lib/library/costaFerroCatalog";
+
+function mapCostaFerroToProfileSections(): ProfileSection[] {
+  const items = getAllCostaFerroMaterials();
+  const mapped: ProfileSection[] = [];
+  for (const m of items) {
+    if (m.category === "CHAPA_ACO" || !m.linearWeightKgM) continue;
+    let type: ProfileType = "RECT_TUBE";
+    if (m.category === "TUBO_REDONDO_INDUSTRIAL" || m.category === "TUBO_CONDUCAO_DIN_SCH") {
+      type = "ROUND_TUBE";
+    } else if (m.subcategory.includes("Viga")) {
+      type = "I_BEAM";
+    } else if (m.subcategory.includes("Perfil U")) {
+      type = "U_CHANNEL";
+    } else if (m.subcategory.includes("Cantoneira")) {
+      type = "L_ANGLE";
+    } else if (m.subcategory.includes("Barra Chata")) {
+      type = "FLAT_BAR";
+    }
+    const areaCm2 = +(m.linearWeightKgM / 0.785).toFixed(2);
+    mapped.push({
+      type,
+      designation: m.name,
+      standard: `${m.norm} · ${m.origin}`,
+      heightMm: m.heightMm,
+      widthMm: m.widthMm,
+      diameterMm: m.diameterMm,
+      wallThicknessMm: m.wallThicknessMm,
+      webThicknessMm: m.wallThicknessMm,
+      flangeThicknessMm: m.wallThicknessMm,
+      linearMassKgM: m.linearWeightKgM,
+      areaCm2,
+      ixCm4: +((areaCm2 * m.heightMm * m.heightMm) / 1200).toFixed(2),
+      iyCm4: +((areaCm2 * m.widthMm * m.widthMm) / 1200).toFixed(2),
+    });
+  }
+  return mapped;
+}
 
 export class ProfileCatalog {
   private static profiles: ProfileSection[] = [
@@ -247,19 +285,22 @@ export class ProfileCatalog {
     },
   ];
 
-  /** Retorna todos os perfis disponíveis */
+  /** Retorna todos os perfis disponíveis (incluindo Catálogo Costa Ferro) */
   static getAll(): ProfileSection[] {
-    return [...this.profiles];
+    const cf = mapCostaFerroToProfileSections();
+    const seen = new Set(cf.map((p) => p.designation.toLowerCase()));
+    const legacy = this.profiles.filter((p) => !seen.has(p.designation.toLowerCase()));
+    return [...cf, ...legacy];
   }
 
   /** Busca perfil por designação */
   static get(designation: string): ProfileSection | undefined {
-    return this.profiles.find((p) => p.designation.toLowerCase() === designation.toLowerCase());
+    return this.getAll().find((p) => p.designation.toLowerCase() === designation.toLowerCase());
   }
 
   /** Filtra perfis por tipo */
   static getByType(type: ProfileType): ProfileSection[] {
-    return this.profiles.filter((p) => p.type === type);
+    return this.getAll().filter((p) => p.type === type);
   }
 
   /** Cria especificação paramétrica customizada de tubo retangular/quadrado */
