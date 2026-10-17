@@ -8,10 +8,11 @@
  */
 
 import React, { useState } from "react";
-import { Check, X, Minus, Plus } from "lucide-react";
+import { Check, X, Minus, Plus, ArrowLeftRight } from "lucide-react";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
 import { globalParametricStore } from "@/lib/lab2d/cadParametricVariables";
+import { GeometricConstraintResolver } from "@/lib/lab2d/cadConstraintResolver";
 
 interface ChamferDirectDimensionEditorProps {
   open: boolean;
@@ -20,6 +21,8 @@ interface ChamferDirectDimensionEditorProps {
   currentValue: number;
   label: string;
   onConfirm: (newValue: number) => void;
+  allowInvert?: boolean;
+  onInvertSide?: () => void;
 }
 
 export function ChamferDirectDimensionEditor({
@@ -29,6 +32,8 @@ export function ChamferDirectDimensionEditor({
   currentValue,
   label,
   onConfirm,
+  allowInvert = false,
+  onInvertSide,
 }: ChamferDirectDimensionEditorProps) {
   const [valStr, setValStr] = useState<string>(String(currentValue));
 
@@ -36,14 +41,16 @@ export function ChamferDirectDimensionEditor({
 
   const handleStep = (delta: number) => {
     triggerHaptic("selection");
-    const num = globalParametricStore.evaluateExpression(valStr) || currentValue;
+    const parsed = GeometricConstraintResolver.parseDimensionInput(valStr);
+    const num = parsed ?? (globalParametricStore.evaluateExpression(valStr) || currentValue);
     const next = Math.max(0.1, num + delta);
     setValStr(String(parseFloat(next.toFixed(2))));
   };
 
   const handleConfirm = () => {
-    const evaluated = globalParametricStore.evaluateExpression(valStr);
-    if (!isNaN(evaluated) && evaluated > 0) {
+    const parsed = GeometricConstraintResolver.parseDimensionInput(valStr);
+    const evaluated = parsed ?? globalParametricStore.evaluateExpression(valStr);
+    if (typeof evaluated === "number" && !isNaN(evaluated) && evaluated > 0) {
       triggerHaptic("success");
       AudioManager.play("ui_select");
       onConfirm(evaluated);
@@ -95,6 +102,17 @@ export function ChamferDirectDimensionEditor({
           <Plus className="size-3.5" />
         </button>
 
+        {allowInvert && onInvertSide && (
+          <button
+            type="button"
+            onClick={onInvertSide}
+            className="size-8 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 flex items-center justify-center font-bold active:scale-95 transition-transform"
+            title="Inverter Lado do Afastamento"
+          >
+            <ArrowLeftRight className="size-3.5" />
+          </button>
+        )}
+
         <div className="w-px h-5 bg-border mx-0.5" />
 
         <button
@@ -115,6 +133,11 @@ export function ChamferDirectDimensionEditor({
           <X className="size-4" />
         </button>
       </div>
+      {label && (
+        <div className="mt-1 text-center font-mono text-[9.5px] font-semibold text-slate-300 drop-shadow-md">
+          {label}
+        </div>
+      )}
     </div>
   );
 }

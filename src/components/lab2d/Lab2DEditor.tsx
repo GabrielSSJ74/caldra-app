@@ -268,6 +268,11 @@ import { ChamferVariablesModal } from "./ChamferVariablesModal";
 import { ChamferPresetsModal } from "./ChamferPresetsModal";
 import { ChamferTechnicalSheetModal } from "./ChamferTechnicalSheetModal";
 import { CaldraIntegratedWorkshopModal } from "./CaldraIntegratedWorkshopModal";
+import { GeometricReferenceEngine, type EdgeReference } from "@/lib/lab2d/cadGeometricReferences";
+import { CoordinateFrameManager, type TemporaryOrigin } from "@/lib/lab2d/cadCoordinateFrames";
+import { DynamicDimensionInteraction, type LiveDimension } from "@/lib/lab2d/cadDynamicDimensions";
+import { GeometricConstraintResolver } from "@/lib/lab2d/cadConstraintResolver";
+import { ChamferLiveDimensionsOverlay } from "./ChamferLiveDimensionsOverlay";
 import {
   type IsoPlane,
   type DrawingProjectionMode,
@@ -814,6 +819,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     value: number;
     label: string;
   } | null>(null);
+
+  /* SISTEMA UNIFICADO DE REFERÊNCIAS GEOMÉTRICAS, REF 0,0 E AFASTAMENTO DE BORDAS */
+  const [temporaryOrigin, setTemporaryOrigin] = useState<TemporaryOrigin | null>(null);
+  const [activeEdge, setActiveEdge] = useState<EdgeReference | null>(null);
+  const [activeEdgeSide, setActiveEdgeSide] = useState<1 | -1>(1);
+  const [activeEdgeOffset, setActiveEdgeOffset] = useState<number>(40);
+  const [liveDimensions, setLiveDimensions] = useState<LiveDimension[]>([]);
+  const [liveDimEditor, setLiveDimEditor] = useState<{
+    dim: LiveDimension;
+    screenPos: Vec2;
+    currentValue: number;
+    label: string;
+    allowInvert?: boolean;
+  } | null>(null);
+  const [showGlobalCoordsPeek, setShowGlobalCoordsPeek] = useState<boolean>(false);
 
   const clipboardRef = useRef<ChamferClipboard | null>(null);
   const [clipboardMenu, setClipboardMenu] = useState<{ x: number; y: number; world: Vec2 } | null>(
@@ -3302,6 +3322,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     } else {
       setSmartSnap(null);
       setSnapHit(null);
+    }
+
+    // Atualização em tempo real das Cotas Vivas Inteligentes (Live Dimensions)
+    if (activeEdge) {
+      const dims = DynamicDimensionInteraction.generateEdgeOffsetDimensions(raw, activeEdge, activeEdgeSide);
+      setLiveDimensions(dims);
+    } else if (temporaryOrigin) {
+      const dims = DynamicDimensionInteraction.generateRefOriginDimensions(raw, temporaryOrigin);
+      setLiveDimensions(dims);
+    } else if (liveDimensions.length > 0) {
+      setLiveDimensions([]);
     }
 
     if (tool === "smart_trim") {
@@ -5991,6 +6022,33 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               )}
 
+              {/* OVERLAY DE COTAS VIVAS, REF 0,0 E BORDA ATIVA */}
+              <ChamferLiveDimensionsOverlay
+                temporaryOrigin={temporaryOrigin}
+                activeEdge={activeEdge}
+                activeEdgeSide={activeEdgeSide}
+                liveDimensions={liveDimensions}
+                viewK={view.k}
+                isDark={isDark}
+                onDimensionClick={(dim, screenPos) => {
+                  setLiveDimEditor({
+                    dim,
+                    screenPos,
+                    currentValue: dim.value,
+                    label: dim.label,
+                    allowInvert: dim.kind === "offset",
+                  });
+                }}
+                onClearTemporaryOrigin={() => {
+                  setTemporaryOrigin(null);
+                  toast.success("Origem temporária limpa");
+                }}
+                onInvertEdgeSide={() => {
+                  setActiveEdgeSide((prev) => (prev === 1 ? -1 : 1));
+                  triggerHaptic("selection");
+                }}
+              />
+
               {/* SMART TRIM SVG PREVIEW */}
               {tool === "smart_trim" && (
                 <ChamferSmartTrimSvgOverlay
@@ -6185,6 +6243,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   commit((list) => [...list, ...pasted.entities]);
                   setGroups((list) => [...list, ...pasted.groups]);
                   setSelection(pasted.ids);
+                  setClipboardMenu(null);
+                }}
+              />
+              <MenuItem
+                label="Definir como REF (0,0)"
+                icon={Target}
+                onClick={() => {
+                  setTemporaryOrigin({
+                    id: uid(),
+                    p: clipboardMenu.world,
+                    label: "Ponto Selecionado",
+                    kind: "origin",
+                    timestamp: Date.now(),
+                  });
+                  triggerHaptic("success");
+                  toast.success(
+                    `✓ REF 0,0 fixada em (${clipboardMenu.world.x.toFixed(1)}, ${clipboardMenu.world.y.toFixed(1)}) mm`,
+                  );
                   setClipboardMenu(null);
                 }}
               />
@@ -6471,13 +6547,191 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               <span>CHAPA {thickness.toFixed(1)}MM</span>
             </button>
 
-            {/* LEITURA DE COORDENADAS */}
-            <div className="flex items-center gap-1 font-mono text-[9.5px]">
-              <span className={isDark ? "text-slate-500" : "text-slate-400"}>X:</span>
-              <strong className={isDark ? "text-slate-200" : "text-slate-800"}>{cursor.x.toFixed(2)}</strong>
-              <span className={isDark ? "text-slate-500" : "text-slate-400"}>Y:</span>
-              <strong className={isDark ? "text-slate-200" : "text-slate-800"}>{cursor.y.toFixed(2)}</strong>
-            </div>
+            {/* LEITURA DE COORDENADAS E PAINEL CONTEXTUAL INTELIGENTE (REF 0,0 & BORDAS) */}
+            {temporaryOrigin ? (
+              <div className="flex items-center gap-1.5 font-mono text-[9.5px]">
+                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold shrink-0">
+                  <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  REF [{temporaryOrigin.label}]:
+                </span>
+                <span className="text-amber-400 font-bold">ΔX:</span>
+                <strong className="text-amber-200">
+                  {(cursor.x - temporaryOrigin.p.x >= 0 ? "+" : "") + (cursor.x - temporaryOrigin.p.x).toFixed(1)}
+                </strong>
+                <span className="text-slate-600">|</span>
+                <span className="text-amber-400 font-bold">ΔY:</span>
+                <strong className="text-amber-200">
+                  {(cursor.y - temporaryOrigin.p.y >= 0 ? "+" : "") + (cursor.y - temporaryOrigin.p.y).toFixed(1)} mm
+                </strong>
+
+                {showGlobalCoordsPeek && (
+                  <span className="text-slate-400 text-[8.5px] ml-1">
+                    (G: {cursor.x.toFixed(1)}, {cursor.y.toFixed(1)})
+                  </span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setShowGlobalCoordsPeek((v) => !v)}
+                  title="Alternar coordenadas globais"
+                  className="px-1 py-0.5 rounded text-[8px] bg-slate-800 hover:bg-slate-700 text-slate-300 ml-0.5"
+                >
+                  {showGlobalCoordsPeek ? "Ocultar G" : "G"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTemporaryOrigin(null);
+                    triggerHaptic("tap");
+                    toast.success("Origem temporária limpa (retornado ao 0,0 global)");
+                  }}
+                  title="Limpar REF 0,0 e voltar ao documento global"
+                  className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-red-950/60 hover:bg-red-900 border border-red-500/40 text-red-300 font-bold text-[8.5px] active:scale-95"
+                >
+                  ✕ Limpar REF
+                </button>
+              </div>
+            ) : activeEdge ? (
+              (() => {
+                const { u, v } = CoordinateFrameManager.worldToUV(cursor, activeEdge);
+                return (
+                  <div className="flex items-center gap-1.5 font-mono text-[9.5px]">
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-bold shrink-0">
+                      <span className="size-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                      BORDA [L = {activeEdge.length.toFixed(0)} mm]:
+                    </span>
+                    <span className="text-slate-400">u:</span>
+                    <strong className="text-cyan-200">{u.toFixed(1)}</strong>
+                    <span className="text-slate-600">|</span>
+                    <span className="text-slate-400">v (afast.):</span>
+                    <strong className="text-emerald-300">
+                      {(v >= 0 ? "+" : "") + v.toFixed(1)} mm
+                    </strong>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveEdgeSide((prev) => (prev === 1 ? -1 : 1));
+                        triggerHaptic("selection");
+                      }}
+                      title="Inverter Lado do Afastamento"
+                      className="px-1.5 py-0.5 rounded bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300 font-bold text-[8.5px] active:scale-95"
+                    >
+                      ⇄ Lado {activeEdgeSide === 1 ? "A" : "B"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const line = GeometricConstraintResolver.createMarkingOrBendLine(
+                          activeEdge,
+                          activeEdgeOffset,
+                          activeEdgeSide,
+                          "marcacao"
+                        );
+                        commit((prev) => [...prev, line]);
+                        triggerHaptic("action");
+                        AudioManager.play("ui_select");
+                        toast.success(`✓ Linha de marcação gerada a ${activeEdgeOffset} mm da borda!`);
+                      }}
+                      title={`Criar linha de marcação paralela a ${activeEdgeOffset} mm`}
+                      className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-[8.5px] active:scale-95"
+                    >
+                      + MAR ({activeEdgeOffset}mm)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const line = GeometricConstraintResolver.createMarkingOrBendLine(
+                          activeEdge,
+                          activeEdgeOffset,
+                          activeEdgeSide,
+                          "dobra"
+                        );
+                        commit((prev) => [...prev, line]);
+                        triggerHaptic("action");
+                        AudioManager.play("ui_select");
+                        toast.success(`✓ Linha de dobra gerada a ${activeEdgeOffset} mm da borda!`);
+                      }}
+                      title={`Criar linha de dobra paralela a ${activeEdgeOffset} mm`}
+                      className="px-1.5 py-0.5 rounded bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 font-bold text-[8.5px] active:scale-95"
+                    >
+                      + Dobra ({activeEdgeOffset}mm)
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveEdge(null);
+                        setLiveDimensions([]);
+                        triggerHaptic("tap");
+                      }}
+                      title="Desmarcar borda"
+                      className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold text-[8.5px]"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })()
+            ) : (
+              <div className="flex items-center gap-1 font-mono text-[9.5px]">
+                <span className={isDark ? "text-slate-500" : "text-slate-400"}>X:</span>
+                <strong className={isDark ? "text-slate-200" : "text-slate-800"}>{cursor.x.toFixed(2)}</strong>
+                <span className={isDark ? "text-slate-500" : "text-slate-400"}>Y:</span>
+                <strong className={isDark ? "text-slate-200" : "text-slate-800"}>{cursor.y.toFixed(2)}</strong>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const p = smartSnap ? smartSnap.p : { x: cursor.x, y: cursor.y };
+                    const label = smartSnap ? smartSnap.label : "Ponto";
+                    const kind = smartSnap ? smartSnap.kind : "origin";
+                    setTemporaryOrigin({
+                      id: uid(),
+                      p,
+                      label,
+                      kind,
+                      timestamp: Date.now(),
+                    });
+                    triggerHaptic("success");
+                    AudioManager.play("ui_select");
+                    toast.success(`✓ REF 0,0 fixada em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm`);
+                  }}
+                  title="Definir ponto sob o cursor / snap como origem temporária REF (0,0)"
+                  className="ml-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all"
+                >
+                  <span>📍</span>
+                  <span>REF 0,0</span>
+                </button>
+
+                {selection.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const selectedEntities = entities.filter((e) => selection.includes(e.id));
+                      const edges = GeometricReferenceEngine.extractEdges(selectedEntities);
+                      if (edges.length > 0) {
+                        const bestEdge =
+                          GeometricReferenceEngine.findNearestEdge(cursor, edges, 500)?.edge ?? edges[0]!;
+                        setActiveEdge(bestEdge);
+                        triggerHaptic("action");
+                        toast.success(`✓ Borda selecionada: ${bestEdge.label} (${bestEdge.length.toFixed(1)} mm)`);
+                      } else {
+                        toast.info("A seleção atual não possui bordas lineares.");
+                      }
+                    }}
+                    title="Definir borda da seleção para afastamento e cotas vivas"
+                    className="ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all"
+                  >
+                    <span>📐</span>
+                    <span>Usar Borda</span>
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* HUD DE COMPRIMENTO / ÂNGULO QUANDO DESENHANDO LINHA */}
             {pending.length === 1 && (tool === "line" || tool === "polyline") && (
@@ -7009,6 +7263,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         cadPos={loupeCadPos}
         activeSnap={smartSnap ?? snapHit}
         baseCadPoint={pending.length > 0 ? pending[pending.length - 1] : null}
+        temporaryOrigin={temporaryOrigin}
+        activeEdge={activeEdge}
         cameraZoom={view.k}
         drawingProjection={drawingProjection}
         isoPlane={isoPlane}
@@ -7085,6 +7341,37 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           currentValue={directDimEditor.value}
           label={directDimEditor.label}
           onConfirm={handleDirectDimUpdate}
+        />
+      )}
+
+      {/* EDIÇÃO DIRETA DE COTAS VIVAS NO CANVAS (SMART DIMENSIONS & OFFSET) */}
+      {liveDimEditor && (
+        <ChamferDirectDimensionEditor
+          open={true}
+          onClose={() => setLiveDimEditor(null)}
+          screenPos={liveDimEditor.screenPos}
+          currentValue={liveDimEditor.currentValue}
+          label={liveDimEditor.label}
+          allowInvert={liveDimEditor.allowInvert}
+          onInvertSide={() => {
+            setActiveEdgeSide((prev) => (prev === 1 ? -1 : 1));
+            triggerHaptic("selection");
+          }}
+          onConfirm={(newVal) => {
+            if (liveDimEditor.dim.kind === "offset") {
+              setActiveEdgeOffset(newVal);
+              toast.success(`✓ Afastamento configurado para ${newVal.toFixed(1)} mm`);
+            } else if (liveDimEditor.dim.kind === "u_along") {
+              toast.success(`✓ Posição longitudinal u configurada para ${newVal.toFixed(1)} mm`);
+            } else if (liveDimEditor.dim.kind === "dx") {
+              toast.success(`✓ Distância ΔX configurada para ${newVal.toFixed(1)} mm`);
+            } else if (liveDimEditor.dim.kind === "dy") {
+              toast.success(`✓ Distância ΔY configurada para ${newVal.toFixed(1)} mm`);
+            } else if (liveDimEditor.dim.kind === "diameter") {
+              toast.success(`✓ Diâmetro configurado para ${newVal.toFixed(1)} mm`);
+            }
+            setLiveDimEditor(null);
+          }}
         />
       )}
 

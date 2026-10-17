@@ -14,6 +14,9 @@ import React, { useEffect, useRef, useMemo } from "react";
 import type { Vec2 } from "@/lib/geometry/types";
 import type { Entity, Snap } from "@/lib/lab2d/core";
 import type { SmartReferencePoint } from "@/lib/lab2d/cadReferenceSnaps";
+import type { TemporaryOrigin } from "@/lib/lab2d/cadCoordinateFrames";
+import type { EdgeReference } from "@/lib/lab2d/cadGeometricReferences";
+import { CoordinateFrameManager } from "@/lib/lab2d/cadCoordinateFrames";
 import type { IsoPlane } from "@/lib/lab2d/isometricEngine";
 import { techStyle } from "@/lib/lab2d/technical";
 import { Magnet, Crosshair } from "lucide-react";
@@ -24,6 +27,8 @@ export interface ChamferPrecisionLoupeOverlayProps {
   cadPos: Vec2;    // Coordenada geométrica no mundo CAD (mm)
   activeSnap?: Snap | SmartReferencePoint | null;
   baseCadPoint?: Vec2 | null;
+  temporaryOrigin?: TemporaryOrigin | null;
+  activeEdge?: EdgeReference | null;
   cameraZoom?: number;
   drawingProjection?: "orthographic" | "isometric";
   isoPlane?: IsoPlane;
@@ -44,6 +49,8 @@ export function ChamferPrecisionLoupeOverlay({
   cadPos,
   activeSnap,
   baseCadPoint,
+  temporaryOrigin,
+  activeEdge,
   cameraZoom = 1,
   drawingProjection = "orthographic",
   isoPlane = "top",
@@ -525,7 +532,12 @@ export function ChamferPrecisionLoupeOverlay({
       {/* BADGE DE CABEÇALHO (INDICADOR DE SNAP OU PRECISÃO 3X) */}
       <div className="mb-1.5 flex items-center justify-between px-2 py-0.5 rounded-md bg-[#0B1017]/95 border border-[#00E5FF]/40 backdrop-blur-md shadow-lg">
         <div className="flex items-center gap-1 text-[9px] font-mono font-bold tracking-wider text-[#00E5FF]">
-          {activeSnap ? (
+          {temporaryOrigin ? (
+            <>
+              <span className="size-2 rounded-full bg-amber-400 animate-pulse" />
+              <span className="text-amber-400 truncate max-w-[85px]">REF (0,0)</span>
+            </>
+          ) : activeSnap ? (
             <>
               <Magnet className="w-2.5 h-2.5 text-[#FFD600] animate-pulse" />
               <span className="text-[#FFD600] truncate max-w-[85px]">{snapLabel}</span>
@@ -555,13 +567,46 @@ export function ChamferPrecisionLoupeOverlay({
 
       {/* BADGE DE RODAPÉ (COORDENADAS MILIMÉTRICAS DIGITAIS E MEDIDAS) */}
       <div className="mt-1.5 px-2 py-1 rounded-md bg-[#0B1017]/95 border border-border/80 backdrop-blur-md shadow-lg text-center font-mono text-[9px]">
-        <div className="flex items-center justify-center gap-1.5 font-bold text-slate-100">
-          <span className="text-cyan-400">X:</span>
-          <span>{targetWorld.x.toFixed(1)}</span>
-          <span className="text-slate-600">|</span>
-          <span className="text-pink-400">Y:</span>
-          <span>{targetWorld.y.toFixed(1)}</span>
-        </div>
+        {temporaryOrigin ? (
+          <div>
+            <div className="flex items-center justify-center gap-1.5 font-bold text-amber-300">
+              <span className="text-amber-400">ΔX:</span>
+              <span>{(targetWorld.x - temporaryOrigin.p.x >= 0 ? "+" : "") + (targetWorld.x - temporaryOrigin.p.x).toFixed(1)}</span>
+              <span className="text-slate-600">|</span>
+              <span className="text-amber-400">ΔY:</span>
+              <span>{(targetWorld.y - temporaryOrigin.p.y >= 0 ? "+" : "") + (targetWorld.y - temporaryOrigin.p.y).toFixed(1)}</span>
+            </div>
+            <div className="text-[7.5px] text-slate-400 font-normal">
+              G: {targetWorld.x.toFixed(0)}, {targetWorld.y.toFixed(0)} mm
+            </div>
+          </div>
+        ) : activeEdge ? (
+          <div>
+            {(() => {
+              const { u, v } = CoordinateFrameManager.worldToUV(targetWorld, activeEdge);
+              return (
+                <div className="flex items-center justify-center gap-1.5 font-bold text-cyan-300">
+                  <span className="text-cyan-400">u:</span>
+                  <span>{u.toFixed(1)}</span>
+                  <span className="text-slate-600">|</span>
+                  <span className="text-emerald-400">v:</span>
+                  <span>{(v >= 0 ? "+" : "") + v.toFixed(1)} mm</span>
+                </div>
+              );
+            })()}
+            <div className="text-[7.5px] text-slate-400 font-normal truncate max-w-[120px] mx-auto">
+              {activeEdge.label}
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center gap-1.5 font-bold text-slate-100">
+            <span className="text-cyan-400">X:</span>
+            <span>{targetWorld.x.toFixed(1)}</span>
+            <span className="text-slate-600">|</span>
+            <span className="text-pink-400">Y:</span>
+            <span>{targetWorld.y.toFixed(1)}</span>
+          </div>
+        )}
         {baseCadPoint && distMm > 0 && (
           <div className="flex items-center justify-center gap-1.5 text-[8.5px] text-amber-300 font-semibold mt-0.5 border-t border-slate-800/80 pt-0.5">
             <span>L: {distMm.toFixed(1)} mm</span>
