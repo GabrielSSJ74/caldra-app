@@ -328,6 +328,12 @@ export function useIntro() {
 
   useEffect(() => {
     try {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("autostart") === "1") {
+        window.sessionStorage.setItem(KEY, "done");
+        setShow(false);
+        return;
+      }
       if (!window.sessionStorage.getItem(KEY)) {
         setShow(true);
       }

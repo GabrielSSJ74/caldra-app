@@ -15,11 +15,11 @@ import { ShellActionsProvider } from "./ShellActions";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { CaldraGenesisPreIntro } from "./CaldraGenesisPreIntro";
 
-/** Rotas com fundo AURORA. O editor CHAMFER (desenho-2d) nunca entra aqui. */
-const AURORA_ROUTES = ["/", "/tracagem", "/escola", "/projetos", "/oficina", "/configuracoes"];
+/** Rotas com fundo AURORA. O editor CHAMFER (desenho-2d) e a Home nunca entram aqui. */
+const AURORA_ROUTES = ["/tracagem", "/escola", "/projetos", "/oficina", "/configuracoes"];
 
 function auroraVisible(pathname: string) {
-  return AURORA_ROUTES.some((r) => (r === "/" ? pathname === "/" : pathname.startsWith(r)));
+  return AURORA_ROUTES.some((r) => pathname.startsWith(r));
 }
 
 /** Editor CHAMFER aberto: tela cheia imersiva, sem navegação global. */
@@ -37,10 +37,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Executa na abertura do aplicativo por exatamente 5,000 segundos
   const [startupGenesis, setStartupGenesis] = useState(false);
+  const [autostart, setAutostart] = useState(false);
 
   useEffect(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
+      if (sp.get("autostart") === "1") {
+        setAutostart(true);
+        setStartupGenesis(false);
+        window.sessionStorage.setItem("caldra.genesis_session_done", "1");
+        window.sessionStorage.setItem("caldra.intro.v2", "done");
+        return;
+      }
       if (sp.has("genesis") || sp.has("abertura") || sp.has("preintro")) {
         setStartupGenesis(true);
         return;
@@ -59,7 +67,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("caldra:open-preintro", handleReopen);
   }, []);
 
-  const showOnboarding = profile.ready && !intro.show && !profile.onboarded && !startupGenesis;
+  const showOnboarding =
+    profile.ready && !intro.show && !profile.onboarded && !startupGenesis && !autostart;
   const editorPath = immersiveRoute(pathname);
   const immersive = editorPath;
   const standalone = pathname.startsWith("/calculadora");

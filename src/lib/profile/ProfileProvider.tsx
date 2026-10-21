@@ -25,8 +25,15 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     try {
+      const sp = new URLSearchParams(window.location.search);
+      const autoOnboard = sp.get("autostart") === "1";
       const raw = window.localStorage.getItem(KEY);
-      if (raw) setProfile({ ...DEFAULTS, ...(JSON.parse(raw) as Partial<Profile>) });
+      if (raw) {
+        const parsed = JSON.parse(raw) as Partial<Profile>;
+        setProfile({ ...DEFAULTS, ...parsed, ...(autoOnboard ? { onboarded: true } : {}) });
+      } else if (autoOnboard) {
+        setProfile({ ...DEFAULTS, onboarded: true });
+      }
     } catch {
       /* ignore */
     }

@@ -18,7 +18,6 @@ import { AudioQuickControl } from "@/components/audio/AudioQuickControl";
 import { CaldraGenesisPreIntro } from "@/components/caldra/CaldraGenesisPreIntro";
 
 const AURORA_ROUTES = [
-  "/",
   "/perfil",
   "/tracagem",
   "/escola",
@@ -31,7 +30,7 @@ const AURORA_ROUTES = [
 ];
 
 function auroraVisible(pathname: string) {
-  return AURORA_ROUTES.some((r) => (r === "/" ? pathname === "/" : pathname.startsWith(r)));
+  return AURORA_ROUTES.some((r) => pathname.startsWith(r));
 }
 
 /** Editor CHAMFER aberto: tela cheia imersiva, sem navegação global. */
@@ -50,10 +49,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // Executa na abertura do aplicativo por exatamente 5,000 segundos
   const [startupGenesis, setStartupGenesis] = useState(false);
+  const [autostart, setAutostart] = useState(false);
 
   useEffect(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
+      if (sp.get("autostart") === "1") {
+        setAutostart(true);
+        setStartupGenesis(false);
+        window.sessionStorage.setItem("caldra.genesis_session_done", "1");
+        window.sessionStorage.setItem("caldra.intro.v2", "done");
+        return;
+      }
       if (sp.has("genesis") || sp.has("abertura") || sp.has("preintro")) {
         setStartupGenesis(true);
         return;
@@ -72,7 +79,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("caldra:open-preintro", handleReopen);
   }, []);
 
-  const showOnboarding = profile.ready && !intro.show && !profile.onboarded && !startupGenesis;
+  const showOnboarding =
+    profile.ready && !intro.show && !profile.onboarded && !startupGenesis && !autostart;
   const editorPath = immersiveRoute(pathname);
   const immersive = editorPath;
   const standalone = pathname.startsWith("/calculadora");
@@ -176,7 +184,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <MasterModeDialog open={masterOpen} onOpenChange={setMasterOpen} />
         <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
         <PaywallDialog />
-        {intro.show && !startupGenesis && <Intro onDone={intro.done} />}
+        {intro.show && !startupGenesis && !autostart && <Intro onDone={intro.done} />}
         {showOnboarding && <Onboarding />}
         {startupGenesis && (
           <CaldraGenesisPreIntro

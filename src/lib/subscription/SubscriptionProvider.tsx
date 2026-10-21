@@ -81,6 +81,17 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
 
   /* Cache local aplicado ANTES do paint — o app abre no plano correto. */
   useIsoLayoutEffect(() => {
+    try {
+      const sp = new URLSearchParams(window.location.search);
+      if (sp.get("autostart") === "1") {
+        writeCache("pro", "local");
+        setEnt(initialState("pro", "local"));
+        setReady(true);
+        return;
+      }
+    } catch {
+      /* ignore */
+    }
     const cached = readCache();
     setEnt(initialState(cached.plan, cached.source));
     setReady(true);
