@@ -7,6 +7,11 @@ import {
   computeTouchCursorScreenAndWorld,
   computeNudgeDelta,
 } from "./ChamferVirtualCursor";
+import {
+  CADInteractionHub,
+  cycleLoupeHudMode,
+  computeUnifiedCursorFrame,
+} from "@/lib/lab2d/cadInteractionHub";
 import type { Entity } from "@/lib/lab2d/core";
 
 describe("CHAMFER — Testes de Interação Mobile e Tarefas-Âncora (Especificação Mobile-First)", () => {
@@ -283,6 +288,85 @@ describe("CHAMFER — Testes de Interação Mobile e Tarefas-Âncora (Especifica
           resolve();
         }, 400);
       });
+    });
+  });
+
+  describe("CADInteractionHub — Arquitetura Modular, Fusão Gestual e Zero-Idle em Repouso", () => {
+    it("Gerencia ferramentas ('tool') de modo exclusivo e modificadores ('precision_modifier') combináveis", () => {
+      const hub = new CADInteractionHub();
+      expect(hub.getActiveToolId()).toBe("pointer");
+      expect(hub.isModuleActive("pointer")).toBe(true);
+      expect(hub.isModuleActive("nodes")).toBe(false);
+
+      hub.activateModule("nodes");
+      expect(hub.getActiveToolId()).toBe("nodes");
+      expect(hub.isModuleActive("nodes")).toBe(true);
+      expect(hub.isModuleActive("pointer")).toBe(false);
+
+      // Modificadores de precisão combinam sem desativar a ferramenta ativa
+      hub.toggleModifier("nudge_dpad", true);
+      expect(hub.isModuleActive("nudge_dpad")).toBe(true);
+      expect(hub.getActiveToolId()).toBe("nodes");
+    });
+
+    it("Garante Eficiência em Repouso (Zero-Idle): cancela timers e listeners transitórios ao soltar o toque", () => {
+      const hub = new CADInteractionHub();
+      let disposedCount = 0;
+
+      hub.beginActiveInteraction({
+        directWorld: { x: 10, y: 10 },
+        cursorWorld: { x: 10, y: -17.5 },
+        cursorScreen: { x: 100, y: 145 },
+        appliedOffsetY: -55,
+        invertedTopEdge: false,
+      });
+
+      hub.scheduleTimeout(() => {}, 5000);
+      hub.registerTransientDisposer(() => {
+        disposedCount += 1;
+      });
+
+      expect(hub.getIdleDiagnostics().isIdle).toBe(false);
+      expect(hub.getIdleDiagnostics().activeTimerCount).toBe(1);
+      expect(hub.getIdleDiagnostics().activeTransientListeners).toBe(1);
+
+      hub.enterIdleState();
+
+      const diag = hub.getIdleDiagnostics();
+      expect(diag.isIdle).toBe(true);
+      expect(diag.activeRafCount).toBe(0);
+      expect(diag.activeTimerCount).toBe(0);
+      expect(diag.activeTransientListeners).toBe(0);
+      expect(disposedCount).toBe(1);
+    });
+
+    it("Fusão Gestual no modo Ponteiro ('select'): ativa offset de 55px quando há peça selecionada e desativa em modo Direto", () => {
+      // Sem seleção e sem arrasto no modo select: 1:1 para toque inicial
+      expect(shouldUseTouchOffset("touch", "select", false, false, "offset", false)).toBe(false);
+      // Com peça selecionada no modo select: ativa offset 55px para mirar e arrastar vértices diretamente
+      expect(shouldUseTouchOffset("touch", "select", false, false, "offset", true)).toBe(true);
+      // Se o modificador Cursor Offset estiver em 'direct' (Stylus), desativa offset em qualquer ferramenta
+      expect(shouldUseTouchOffset("touch", "line", false, false, "direct", true)).toBe(false);
+      expect(shouldUseTouchOffset("touch", "select", true, false, "direct", true)).toBe(false);
+    });
+
+    it("Cicla corretamente os 3 estados do Módulo Lupa HUD (Flutuante -> Fixa -> Desligada)", () => {
+      expect(cycleLoupeHudMode("floating")).toBe("pinned");
+      expect(cycleLoupeHudMode("pinned")).toBe("off");
+      expect(cycleLoupeHudMode("off")).toBe("floating");
+    });
+
+    it("Calcula coordenada unificada do mundo CAD com matriz única sem duplicação", () => {
+      const frame = computeUnifiedCursorFrame(
+        200,
+        300,
+        { left: 0, top: 0, panX: 0, panY: 0, zoom: 2 },
+        true,
+      );
+      expect(frame.directWorld).toEqual({ x: 100, y: 150 });
+      expect(frame.cursorWorld).toEqual({ x: 100, y: (300 - 55) / 2 });
+      expect(frame.appliedOffsetY).toBe(-55);
+      expect(frame.invertedTopEdge).toBe(false);
     });
   });
 });

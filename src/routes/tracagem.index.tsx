@@ -175,7 +175,10 @@ function TracagemIndex() {
           Nenhuma peça encontrada para esta combinação.
         </p>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+        <div
+          className="grid grid-cols-3 gap-2 pb-[100px]"
+          style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}
+        >
           {parts.map((p, i) => (
             <PartCard key={p.id} part={p} index={i} favorite={favorites.includes(p.id)} />
           ))}
@@ -266,52 +269,63 @@ function PartCard({
   const locked = !can(part.feature);
   const href = partHref(part, part.id);
 
+  const capabilityTags = part.capabilities
+    .filter((c) => c !== "top-view")
+    .map((c) => (c === "chamfer" ? "CHAM." : CAPABILITY_LABEL[c]))
+    .join(" • ");
+
   return (
-    <div ref={ref} className="relative">
+    <div ref={ref} className="relative min-w-0">
       <Link
         to={href.to}
         params={href.params as never}
         search={href.search as never}
         onClick={() => markRecent(part.id)}
         style={{ animationDelay: `${Math.min(index, 12) * 24}ms` }}
-        className="metal pop-in group relative flex aspect-[4/5] flex-col overflow-hidden rounded-3xl transition-all duration-500 hover:scale-[1.02] hover:amber-ring"
+        className="metal pop-in group relative flex min-w-0 flex-col justify-between overflow-hidden rounded-[14px] p-2 transition-all duration-300 hover:scale-[1.015] hover:amber-ring"
       >
         <span
           aria-hidden
           className="grid-bg-fine pointer-events-none absolute inset-0 opacity-40"
         />
-        <div className="relative min-h-0 flex-1 p-3">{seen && <Preview part={part} />}</div>
-        <div className="relative space-y-1 bg-gradient-to-t from-background/92 to-transparent px-3 pt-4 pb-2.5">
-          <p className="truncate font-mono text-[10px] tracking-[0.14em] uppercase">{part.name}</p>
-          <p className="truncate text-[10px] text-muted-foreground">
-            {CATEGORY_LABEL[part.category]} · {part.kind === "vector" ? "Vetorial" : "Paramétrica"}
+        <div className="relative flex h-[72px] w-full items-center justify-center overflow-hidden">
+          {seen && <Preview part={part} />}
+        </div>
+        <div className="relative mt-1.5 min-w-0 space-y-0.5 bg-gradient-to-t from-background/92 to-transparent pt-1">
+          <p className="line-clamp-2 min-h-[25px] font-mono text-[10.5px] leading-[1.2] font-bold tracking-[0.02em] text-foreground uppercase">
+            {part.name}
+          </p>
+          <p className="truncate text-[9px] leading-[1.25] text-muted-foreground">
+            {CATEGORY_LABEL[part.category]} • {part.kind === "vector" ? "Vetorial" : "Paramétrica"}
           </p>
           {part.specs[0] && (
-            <p className="truncate font-mono text-[10px] text-muted-foreground/80">
+            <p className="truncate font-mono text-[8.5px] leading-[1.2] text-muted-foreground/80">
               {part.specs[0]}
             </p>
           )}
-          <p className="truncate font-mono text-[9px] tracking-[0.16em] text-accent/80 uppercase">
-            {part.capabilities
-              .filter((c) => c !== "top-view")
-              .map((c) => CAPABILITY_LABEL[c])
-              .join(" · ")}
+          <p className="truncate pt-0.5 font-mono text-[8.5px] font-semibold tracking-[0.02em] text-accent/85 uppercase">
+            {capabilityTags}
           </p>
         </div>
         {locked && (
           <Lock
-            className="absolute top-2.5 left-3 size-3 text-accent/70"
+            className="absolute top-[6px] left-[6px] size-3 text-accent/70"
             aria-label="Recurso PRO"
           />
         )}
       </Link>
       <button
-        onClick={() => toggleFavorite(part.id)}
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          toggleFavorite(part.id);
+        }}
         aria-label={favorite ? `Remover ${part.name} dos favoritos` : `Favoritar ${part.name}`}
         aria-pressed={favorite}
-        className="absolute top-1 right-1 grid size-9 place-items-center rounded-full text-muted-foreground transition-colors hover:text-accent"
+        className="absolute top-[6px] right-[6px] z-10 grid size-6 place-items-center rounded-full text-muted-foreground transition-colors hover:text-accent"
       >
-        <Heart className={cn("size-3.5", favorite && "fill-accent text-accent")} />
+        <Heart className={cn("size-[14px]", favorite && "fill-accent text-accent")} />
       </button>
     </div>
   );
@@ -324,7 +338,7 @@ function Preview({ part }: { part: PartModel }) {
     return (
       <VectorPreview
         entities={gen.build(defaultValues(gen))}
-        className="text-foreground/85 transition-transform duration-700 group-hover:scale-105"
+        className="size-full scale-[0.92] object-contain text-foreground/85 transition-transform duration-500 group-hover:scale-100"
       />
     );
   }
@@ -333,7 +347,7 @@ function Preview({ part }: { part: PartModel }) {
       model={buildWire(part.preview.slug, { ...DEFAULT_PARAMS, seg: 32 })}
       edgeMode="shaded"
       showRefLines={false}
-      className="size-full text-foreground/85 transition-transform duration-700 group-hover:scale-110"
+      className="size-full scale-[0.92] object-contain text-foreground/85 transition-transform duration-500 group-hover:scale-100"
     />
   );
 }

@@ -5,7 +5,7 @@
  * (curriculum.ts). Regras determinísticas, sem IA. Persistência local.
  */
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { ALL_LESSONS, CURRICULUM, findAcademyLesson } from "./curriculum";
 import { COMPETENCIES, type CompetencyId } from "./knowledge";
 
@@ -80,8 +80,18 @@ function subscribe(l: () => void) {
   return () => listeners.delete(l);
 }
 
+let clientHydrated = false;
+const hookSnapshot = (): AcademyState => (!clientHydrated || typeof window === "undefined" ? empty : load());
+
 export function useAcademy(): AcademyState {
-  return useSyncExternalStore(subscribe, load, () => empty);
+  useEffect(() => {
+    if (!clientHydrated) {
+      clientHydrated = true;
+      load();
+      listeners.forEach((l) => l());
+    }
+  }, []);
+  return useSyncExternalStore(subscribe, hookSnapshot, () => empty);
 }
 
 export function lessonState(id: string): LessonState {

@@ -272,6 +272,16 @@ import {
   type NudgeDirection,
   type NudgeStepMm,
 } from "./ChamferVirtualCursor";
+import {
+  globalCADInteractionHub,
+  loadCursorOffsetMode,
+  saveCursorOffsetMode,
+  loadLoupeHudMode,
+  saveLoupeHudMode,
+  cycleLoupeHudMode,
+  type CursorOffsetMode,
+  type LoupeHudMode,
+} from "@/lib/lab2d/cadInteractionHub";
 import { ChamferDualToolHUD } from "./ChamferDualToolHUD";
 import { ChamferTopologyHealthModal } from "./ChamferTopologyHealthModal";
 import { ChamferVariablesModal } from "./ChamferVariablesModal";
@@ -802,7 +812,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [dualToolSecondary, setDualToolSecondary] = useState<Tool | null>(null);
   const [dualToolPinned, setDualToolPinned] = useState(false);
 
-  /* LUPA DE PRECISÃO MOBILE & SISTEMA AVANÇADO DE CONTROLE DE CURSOR (OFFSET + CROSSHAIR + NUDGE) */
+  /* LUPA DE PRECISÃO MOBILE & SISTEMA MODULAR DE CONTROLE DE CURSOR (CADInteractionHub) */
   const [loupeVisible, setLoupeVisible] = useState(false);
   const [loupeScreenPos, setLoupeScreenPos] = useState<Vec2>({ x: 0, y: 0 });
   const [loupeCadPos, setLoupeCadPos] = useState<Vec2>({ x: 0, y: 0 });
@@ -812,28 +822,78 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [touchOffsetActive, setTouchOffsetActive] = useState<boolean>(false);
   const [nudgeStepMm, setNudgeStepMm] = useState<NudgeStepMm>(1);
   const [nudgeHudVisible, setNudgeHudVisible] = useState<boolean>(false);
-  const [loupePinned, setLoupePinned] = useState<boolean>(() => {
-    if (typeof window !== "undefined") {
-      try {
-        return localStorage.getItem("chamfer_loupe_pinned") === "true";
-      } catch {
-        return false;
-      }
-    }
-    return false;
-  });
+  const [cursorOffsetMode, setCursorOffsetMode] = useState<CursorOffsetMode>(() =>
+    loadCursorOffsetMode(),
+  );
+  const [loupeMode, setLoupeMode] = useState<LoupeHudMode>(() => loadLoupeHudMode());
+  const loupePinned = loupeMode === "pinned";
 
-  const toggleLoupePinned = useCallback(() => {
-    setLoupePinned((prev) => {
-      const next = !prev;
-      try {
-        localStorage.setItem("chamfer_loupe_pinned", String(next));
-      } catch {
-        // ignore localStorage errors in sandboxed environments
-      }
-      toast.info(next ? "Lupa Fixada no canto (Modo Fixo)" : "Lupa Flutuante (Acompanha o dedo)");
+  const toggleCursorOffsetMode = useCallback(() => {
+    setCursorOffsetMode((prev) => {
+      const next: CursorOffsetMode = prev === "offset" ? "direct" : "offset";
+      saveCursorOffsetMode(next);
+      globalCADInteractionHub.toggleModifier("cursor_offset", next === "offset");
+      toast.info(
+        next === "offset"
+          ? "Mira Técnica: Offset 55px (Anti-Oclusão)"
+          : "Mira Técnica: Direta 1:1 (Sob o dedo / Stylus)",
+      );
       return next;
     });
+  }, []);
+
+  const handleCycleLoupeMode = useCallback(() => {
+    setLoupeMode((prev) => {
+      const next = cycleLoupeHudMode(prev);
+      saveLoupeHudMode(next);
+      globalCADInteractionHub.toggleModifier("loupe_hud", next !== "off");
+      if (next === "off") {
+        setLoupeVisible(false);
+        toast.info("Lupa HUD: Desligada (Zero consumo em repouso)");
+      } else if (next === "pinned") {
+        toast.info("Lupa HUD: Fixa no canto superior");
+      } else {
+        toast.info("Lupa HUD: Flutuante (Acompanha o toque)");
+      }
+      return next;
+    });
+  }, []);
+
+  const toggleLoupePinned = useCallback(() => {
+    setLoupeMode((prev) => {
+      const next: LoupeHudMode = prev === "pinned" ? "floating" : "pinned";
+      saveLoupeHudMode(next);
+      globalCADInteractionHub.toggleModifier("loupe_hud", true);
+      toast.info(
+        next === "pinned"
+          ? "Lupa Fixada no canto (Modo Fixo)"
+          : "Lupa Flutuante (Acompanha o dedo)",
+      );
+      return next;
+    });
+  }, []);
+
+  // Sincroniza a ferramenta ativa e o ciclo de vida Zero-Idle com o CADInteractionHub
+  useEffect(() => {
+    const hubId = tool === "select" ? "pointer" : tool === "node" ? "nodes" : tool;
+    if (!globalCADInteractionHub.getModule(hubId)) {
+      globalCADInteractionHub.registerModule({
+        id: hubId,
+        type: "tool",
+        label: hubId,
+        active: false,
+        activate: () => {},
+        deactivate: () => {},
+        cleanup: () => {},
+      });
+    }
+    globalCADInteractionHub.activateModule(hubId);
+  }, [tool]);
+
+  useEffect(() => {
+    return () => {
+      globalCADInteractionHub.cleanupAll();
+    };
   }, []);
 
   const lastEntityTapRef = useRef<{ id: string; time: number } | null>(null);
@@ -958,6 +1018,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           tool,
           dragNode !== null,
           isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
+          cursorOffsetMode,
+          selection.length > 0,
         );
       const calc = computeTouchCursorScreenAndWorld({
         clientX: ev.clientX,
@@ -974,7 +1036,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         y: calc.cursorWorldY,
       };
     },
-    [tool, dragNode],
+    [tool, dragNode, cursorOffsetMode, selection.length],
   );
 
   /** Enquadra uma caixa do desenho na viewport com escala proporcional, centralização exata e limites seguros. */
@@ -2764,11 +2826,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       tool,
       dragNode !== null,
       isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
+      cursorOffsetMode,
+      selection.length > 0,
     );
+    globalCADInteractionHub.beginActiveInteraction({
+      directWorld: directTouchWorld,
+      cursorWorld: raw,
+      cursorScreen: { x: ev.clientX, y: ev.clientY },
+      appliedOffsetY: useOffsetHere ? -55 : 0,
+      invertedTopEdge: false,
+    });
     if (pType === "touch" && useOffsetHere) {
       setTouchWorldPos(directTouchWorld);
       setTouchOffsetActive(true);
-      setNudgeHudVisible(true);
+      if (tool !== "select") {
+        setNudgeHudVisible(true);
+      }
     } else {
       setTouchOffsetActive(false);
       setTouchWorldPos(null);
@@ -2794,13 +2867,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       dragEntityRef.current !== null
     );
 
-    if (ptrsRef.current.size === 1 && tool !== "pan" && isDrawingOrEditingTool) {
+    if (loupeMode !== "off" && ptrsRef.current.size === 1 && tool !== "pan" && isDrawingOrEditingTool) {
       setLoupeVisible(true);
       setLoupeScreenPos({ x: ev.clientX, y: ev.clientY });
       setLoupeCadPos(p);
     }
 
-    if (ev.pointerType === "touch" && isDrawingOrEditingTool) {
+    if (loupeMode !== "off" && ev.pointerType === "touch" && isDrawingOrEditingTool) {
       setLoupeScreenPos({ x: ev.clientX, y: ev.clientY });
       setLoupeCadPos(p);
     }
@@ -2828,16 +2901,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
 
     if (tool === "select" || tool === "node") {
-      // 1. Teste de nós de vértice em entidades selecionadas (grip nodes)
-      let bestNode: { id: string; index: number; dist: number } | null = null;
+      // 1. Fusão Gestual Inteligente (Seção 3.2):
+      // Ao aproximar o cursor (com offset 55px ou direto) de qualquer vértice de uma peça selecionada,
+      // o Snap magnético trava nele e permite arrastar o nó diretamente no modo Ponteiro!
+      let bestNode: { id: string; index: number; dist: number; pt: Vec2 } | null = null;
       if (selection.length > 0) {
-        const bd = 12 / view.k;
+        const bd = (pType === "touch" ? 16 : 12) / view.k;
         for (const selEnt of selected) {
           const pts = entityPoints(selEnt);
           pts.forEach((q, i) => {
             const d = Math.min(dist(q, raw), dist(q, directTouchWorld));
             if (d < bd && (!bestNode || d < bestNode.dist)) {
-              bestNode = { id: selEnt.id, index: i, dist: d };
+              bestNode = { id: selEnt.id, index: i, dist: d, pt: q };
             }
           });
         }
@@ -2851,18 +2926,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       // MÁQUINA DE ESTADOS BASEADA NO ALVO DO TOQUE (HIT-TEST CONTEXT)
       // =========================================================================
 
-      // CASO A: O toque começou em cima de uma Forma Geométrica ou Peça Existente (targetEntity != null || bestNode != null)
+      // CASO A: O toque começou em cima de uma Forma Geométrica ou Vértice (targetEntity != null || bestNode != null)
       if (targetEntity || bestNode) {
-        if (ev.pointerType === "touch") {
-          setNudgeHudVisible(true);
-        }
-        // Se clicou sobre um grip node existente, inicia edição do vértice
+        // Se clicou/mirou sobre um vértice de peça selecionada, inicia edição direta do nó (Fusão Gestual)
         if (bestNode) {
           setDragNode({ id: bestNode.id, index: bestNode.index });
-          if (ev.pointerType === "touch") {
+          if (ev.pointerType === "touch" && cursorOffsetMode === "offset") {
             setTouchWorldPos(directTouchWorld);
             setTouchOffsetActive(true);
           }
+          if (loupeMode !== "off") {
+            setLoupeVisible(true);
+            setLoupeScreenPos({ x: ev.clientX, y: ev.clientY });
+            setLoupeCadPos(bestNode.pt);
+          }
+          triggerHaptic("selection");
           return;
         }
 
@@ -3383,11 +3461,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       tool,
       dragNode !== null,
       isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
+      cursorOffsetMode,
+      selection.length > 0,
     );
     if (pType === "touch" && useOffsetMove && ptrsRef.current.size === 1 && !panRef.current) {
       setTouchWorldPos(directTouchWorld);
       setTouchOffsetActive(true);
-    } else if (pType !== "touch" || ptrsRef.current.size >= 2 || panRef.current) {
+    } else if (pType !== "touch" || ptrsRef.current.size >= 2 || panRef.current || !useOffsetMove) {
       setTouchOffsetActive(false);
       setTouchWorldPos(null);
     }
@@ -3414,11 +3494,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       (tool === "select" && (isDraggingEntityRef.current || selection.length > 0 || marquee !== null))
     );
 
-    if (ptrsRef.current.size === 1 && isDrawingOrEditingToolMove && !panRef.current && tool !== "pan") {
+    if (loupeMode !== "off" && ptrsRef.current.size === 1 && isDrawingOrEditingToolMove && !panRef.current && tool !== "pan") {
       setLoupeVisible(true);
       setLoupeScreenPos({ x: ev.clientX, y: ev.clientY });
       setLoupeCadPos(raw);
-    } else if (ptrsRef.current.size >= 2 || panRef.current || tool === "pan") {
+    } else if (loupeMode === "off" || ptrsRef.current.size >= 2 || panRef.current || tool === "pan") {
       setLoupeVisible(false);
     }
 
@@ -3699,6 +3779,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setIsDraggingUnlocked(false);
     setTouchOffsetActive(false);
     setTouchWorldPos(null);
+    // Regra Zero-Idle (Seção 2.2): libera listeners e animações transitórias ao soltar o toque
+    globalCADInteractionHub.enterIdleState();
 
     if (dragLongPressRef.current) {
       clearTimeout(dragLongPressRef.current.timer);
@@ -5389,6 +5471,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             setOrthoOn={setOrthoOn}
             trackingOn={trackingOn}
             setTrackingOn={setTrackingOn}
+            cursorOffsetMode={cursorOffsetMode}
+            onToggleCursorOffsetMode={toggleCursorOffsetMode}
+            loupeMode={loupeMode}
+            onCycleLoupeMode={handleCycleLoupeMode}
+            nudgeHudVisible={nudgeHudVisible}
+            onToggleNudgeHud={() => {
+              setNudgeHudVisible((prev) => {
+                const next = !prev;
+                globalCADInteractionHub.toggleModifier("nudge_dpad", next);
+                return next;
+              });
+            }}
             dimKind={dimKind}
             onPickDimKind={(k) => {
               setDimKind(k);
@@ -5956,23 +6050,108 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               )}
 
-              {/* nós da seleção */}
-              {!solidOpen && (tool === "node" || tool === "select") &&
-                selected.flatMap((e, eIdx) =>
-                  entityPoints(e)
-                    .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
-                    .map((p, i) => (
-                      <circle
-                        key={`node-${e.id || "ent"}-${eIdx}-${i}`}
-                        cx={p.x}
-                        cy={p.y}
-                        r={3.2 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
-                        fill={isDark ? "#090d14" : "#ffffff"}
-                        stroke={isDark ? SELECTION_COLOR : "#DC2626"}
-                        strokeWidth={1.5 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
-                      />
-                    )),
-                )}
+              {/* NÓS E GRIPS TÉCNICOS DA SELEÇÃO (□ VÉRTICES, △ MEIOS, ⊕ CENTROS - SEÇÃO 3.2) */}
+              {!solidOpen && (tool === "node" || tool === "select") && (() => {
+                const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                const gripHalf = 3.4 / safeK;
+                const snapDist = 15 / safeK;
+
+                return (
+                  <g className="cad-selection-grips">
+                    {/* 1. Pontos Médios de Segmentos (△ Triângulo Técnico) */}
+                    {selected.flatMap((e, eIdx) =>
+                      segmentsOf(e).map((seg, sIdx) => {
+                        if (!seg || !seg[0] || !seg[1]) return null;
+                        const mx = (seg[0].x + seg[1].x) / 2;
+                        const my = (seg[0].y + seg[1].y) / 2;
+                        if (!Number.isFinite(mx) || !Number.isFinite(my)) return null;
+                        const r = 2.8 / safeK;
+                        const ptsStr = `${mx},${my - r} ${mx - r},${my + r * 0.85} ${mx + r},${my + r * 0.85}`;
+                        return (
+                          <polygon
+                            key={`mid-grip-${e.id || eIdx}-${sIdx}`}
+                            points={ptsStr}
+                            fill={isDark ? "#090d14" : "#ffffff"}
+                            stroke={isDark ? "#38BDF8" : "#0284C7"}
+                            strokeWidth={1.2 / safeK}
+                            opacity={0.82}
+                          />
+                        );
+                      }),
+                    )}
+
+                    {/* 2. Vértices (□ Quadrado) e Centros (⊕ Círculo com Cruz) */}
+                    {selected.flatMap((e, eIdx) =>
+                      entityPoints(e)
+                        .filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+                        .map((p, i) => {
+                          const isCenterGrip = (e.type === "circle" || e.type === "arc") && i === 0;
+                          const isHoveredOrActive =
+                            (dragNode?.id === e.id && dragNode?.index === i) ||
+                            dist(p, cursor) < snapDist;
+                          const strokeCol = isHoveredOrActive
+                            ? "#10B981"
+                            : isDark
+                              ? SELECTION_COLOR
+                              : "#DC2626";
+                          const fillCol = isHoveredOrActive
+                            ? isDark
+                              ? "rgba(16, 185, 129, 0.25)"
+                              : "rgba(5, 150, 105, 0.2)"
+                            : isDark
+                              ? "#090d14"
+                              : "#ffffff";
+
+                          if (isCenterGrip) {
+                            const cr = (isHoveredOrActive ? 4.4 : 3.6) / safeK;
+                            return (
+                              <g key={`node-center-${e.id || "ent"}-${eIdx}-${i}`}>
+                                <circle
+                                  cx={p.x}
+                                  cy={p.y}
+                                  r={cr}
+                                  fill={fillCol}
+                                  stroke={strokeCol}
+                                  strokeWidth={(isHoveredOrActive ? 1.8 : 1.4) / safeK}
+                                />
+                                <line
+                                  x1={p.x - cr * 0.7}
+                                  y1={p.y}
+                                  x2={p.x + cr * 0.7}
+                                  y2={p.y}
+                                  stroke={strokeCol}
+                                  strokeWidth={1.1 / safeK}
+                                />
+                                <line
+                                  x1={p.x}
+                                  y1={p.y - cr * 0.7}
+                                  x2={p.x}
+                                  y2={p.y + cr * 0.7}
+                                  stroke={strokeCol}
+                                  strokeWidth={1.1 / safeK}
+                                />
+                              </g>
+                            );
+                          }
+
+                          const half = isHoveredOrActive ? gripHalf * 1.25 : gripHalf;
+                          return (
+                            <rect
+                              key={`node-${e.id || "ent"}-${eIdx}-${i}`}
+                              x={p.x - half}
+                              y={p.y - half}
+                              width={half * 2}
+                              height={half * 2}
+                              fill={fillCol}
+                              stroke={strokeCol}
+                              strokeWidth={(isHoveredOrActive ? 1.8 : 1.45) / safeK}
+                            />
+                          );
+                        }),
+                    )}
+                  </g>
+                );
+              })()}
 
               {selBox &&
                 Number.isFinite(selBox.minX) &&
@@ -6363,9 +6542,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   />
                 )}
 
-              {/* MIRA TÉCNICA VETORIAL + CROSSHAIR DINÂMICO + HASTE GUIA ELÁSTICA (SUBSTITUI O '+' AZUL BÁSICO) */}
+              {/* MIRA TÉCNICA VETORIAL + CROSSHAIR DINÂMICO + HASTE GUIA ELÁSTICA (ZERO-IDLE EM REPOUSO NO TOUCH) */}
               <ChamferTechnicalCursorSvg
-                visible={!solidOpen && tool !== "pan"}
+                visible={
+                  !solidOpen &&
+                  tool !== "pan" &&
+                  (activePointerType === "mouse" ||
+                    touchOffsetActive ||
+                    nudgeHudVisible ||
+                    pending.length > 0 ||
+                    dragNode !== null)
+                }
                 cursorWorld={cursor}
                 touchWorld={touchWorldPos}
                 touchOffsetActive={touchOffsetActive}
@@ -7228,23 +7415,47 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
             <button
               type="button"
-              onClick={toggleLoupePinned}
+              onClick={toggleCursorOffsetMode}
               className={cn(
                 "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                loupePinned
-                  ? "text-cyan-400 bg-cyan-950/60 border border-cyan-500/40"
+                cursorOffsetMode === "offset"
+                  ? "text-sky-400 bg-sky-950/60 border border-sky-500/40"
                   : "text-muted-foreground hover:text-foreground",
               )}
-              title={loupePinned ? "Lupa no Modo Fixo (Ancorada no canto da tela)" : "Lupa no Modo Flutuante (Acompanha o dedo)"}
+              title={
+                cursorOffsetMode === "offset"
+                  ? "Módulo Cursor Offset: Mira projetada 55px acima do dedo (Anti-Oclusão)"
+                  : "Módulo Cursor Direto: Mira 1:1 sob o dedo / Stylus"
+              }
             >
-              LUPA: {loupePinned ? "FIXA" : "AUTO"}
+              MIRA: {cursorOffsetMode === "offset" ? "55PX" : "DIRETA"}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleCycleLoupeMode}
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                loupeMode === "pinned"
+                  ? "text-cyan-400 bg-cyan-950/60 border border-cyan-500/40"
+                  : loupeMode === "floating"
+                    ? "text-accent bg-accent/15"
+                    : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Alternar Módulo Lupa HUD: Flutuante -> Fixa -> Desligada (Desmontada)"
+            >
+              LUPA: {loupeMode === "pinned" ? "FIXA" : loupeMode === "floating" ? "AUTO" : "OFF"}
             </button>
 
             <button
               type="button"
               onClick={() => {
                 triggerHaptic("selection");
-                setNudgeHudVisible((prev) => !prev);
+                setNudgeHudVisible((prev) => {
+                  const next = !prev;
+                  globalCADInteractionHub.toggleModifier("nudge_dpad", next);
+                  return next;
+                });
               }}
               className={cn(
                 "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors cursor-pointer",
@@ -7252,7 +7463,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   ? "text-accent bg-accent/15 border border-accent/40"
                   : "text-muted-foreground hover:text-foreground",
               )}
-              title="Alternar controle de Ajuste Fino Incremental (Nudge 0.1 / 1 / 5 / 10 mm)"
+              title="Alternar Módulo Coordenadas / Micro-Ajuste Incremental (0.1 / 1 / 5 / 10 mm)"
             >
               FINO: {nudgeHudVisible ? `${nudgeStepMm}MM` : "OFF"}
             </button>
@@ -7696,36 +7907,43 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
-      {/* BOLHA QUADRADA DE ZOOM (LUPA DE PRECISÃO MOBILE) */}
-      <ChamferPrecisionLoupeOverlay
-        visible={loupeVisible}
-        screenPos={loupeScreenPos}
-        cadPos={loupeCadPos}
-        activeSnap={smartSnap ?? snapHit}
-        baseCadPoint={pending.length > 0 ? pending[pending.length - 1] : null}
-        temporaryOrigin={temporaryOrigin}
-        activeEdge={activeEdge}
-        cameraZoom={view.k}
-        drawingProjection={drawingProjection}
-        isoPlane={isoPlane}
-        entities={entities}
-        draft={draft}
-        pendingPoints={pending}
-        grid={grid}
-        showGrid={showGrid}
-        isDark={isDark}
-        pinned={loupePinned}
-        onTogglePinned={toggleLoupePinned}
-        rightOffset={rightSidebarOpen ? 300 : undefined}
-      />
+      {/* MÓDULO LUPA HUD (DESMONTADO DO DOM SE DESLIGADO OU EM REPOUSO FLUTUANTE) */}
+      {loupeMode !== "off" && (
+        <ChamferPrecisionLoupeOverlay
+          visible={loupeVisible}
+          screenPos={loupeScreenPos}
+          cadPos={loupeCadPos}
+          activeSnap={smartSnap ?? snapHit}
+          baseCadPoint={pending.length > 0 ? pending[pending.length - 1] : null}
+          temporaryOrigin={temporaryOrigin}
+          activeEdge={activeEdge}
+          cameraZoom={view.k}
+          drawingProjection={drawingProjection}
+          isoPlane={isoPlane}
+          entities={entities}
+          draft={draft}
+          pendingPoints={pending}
+          grid={grid}
+          showGrid={showGrid}
+          isDark={isDark}
+          pinned={loupePinned}
+          onTogglePinned={toggleLoupePinned}
+          rightOffset={rightSidebarOpen ? 300 : undefined}
+        />
+      )}
 
-      {/* CONTROLE DE MICRO-AJUSTE INCREMENTAL (NUDGE PADRÃO DESKTOP NO TOUCH) */}
+      {/* MÓDULO COORDENADAS / MICRO-AJUSTE INCREMENTAL (SOB DEMANDA, LIBERA AO CONFIRMAR/FECHAR) */}
       <ChamferNudgeControlHUD
         visible={!solidOpen && nudgeHudVisible}
         stepMm={nudgeStepMm}
         onStepChange={setNudgeStepMm}
         onNudge={handleNudge}
         onConfirmPoint={handleConfirmNudgePoint}
+        onSetExactCoord={(pt) => {
+          setCursor(pt);
+          setLoupeCadPos(pt);
+          toast.success(`Mira posicionada em X: ${pt.x.toFixed(1)}, Y: ${pt.y.toFixed(1)} mm`);
+        }}
         canConfirmPoint={
           tool === "line" ||
           tool === "polyline" ||
@@ -7742,7 +7960,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         confirmLabel={pending.length === 0 ? "INÍCIO" : "FIXAR"}
         targetLabel={tool === "select" && selection.length > 0 ? "PEÇA" : "MIRA"}
         cursorPos={(smartSnap ?? snapHit)?.p ?? cursor}
-        onClose={() => setNudgeHudVisible(false)}
+        onClose={() => {
+          setNudgeHudVisible(false);
+          globalCADInteractionHub.deactivateModule("nudge_dpad");
+        }}
         isDark={isDark}
       />
 

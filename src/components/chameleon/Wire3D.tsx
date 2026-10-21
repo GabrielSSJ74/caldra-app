@@ -313,15 +313,27 @@ export function Wire3D({
     );
 
     const depthEpsilon = span * 3.5e-3;
-    const e = deduped.edges.flatMap((edge, index) => {
-      const origIndex = deduped.originalIndices[index] ?? index;
-      return visibleLineSegments(
-        projectLine(`edge:${origIndex}`, edge, cp, kk, panX, panY),
-        effectiveVisibility,
-        occluders,
-        depthEpsilon,
-      );
-    });
+    const e =
+      edgeMode === "shaded"
+        ? model.edges.flatMap((edge, index) => {
+            const kind = model.edgeKinds?.[index];
+            if (kind !== "REAL_BOUNDARY") return [];
+            return visibleLineSegments(
+              projectLine(`edge:${index}`, edge, cp, kk, panX, panY),
+              "real-occlusion",
+              occluders,
+              depthEpsilon,
+            );
+          })
+        : deduped.edges.flatMap((edge, index) => {
+            const origIndex = deduped.originalIndices[index] ?? index;
+            return visibleLineSegments(
+              projectLine(`edge:${origIndex}`, edge, cp, kk, panX, panY),
+              effectiveVisibility,
+              occluders,
+              depthEpsilon,
+            );
+          });
 
     const shouldShowRefs = showRefLines ?? (edgeMode !== "shaded");
     const r = shouldShowRefs
@@ -515,9 +527,9 @@ export function Wire3D({
               data-entity-id={f.id}
               data-category="surface"
               points={f.d}
-              fill={f.fill}
-              stroke={f.fill}
-              strokeWidth={0.4}
+              fill={f.kind === "rim" && edgeMode === "shaded" ? "#F8FAFC" : f.fill}
+              stroke={f.kind === "rim" && edgeMode === "shaded" ? "#F8FAFC" : f.fill}
+              strokeWidth={f.kind === "rim" && edgeMode === "shaded" ? 0.75 : 0.4}
               strokeLinejoin="round"
             />
           ))}
@@ -537,26 +549,27 @@ export function Wire3D({
               strokeDasharray="4 3 1 3"
             />
           ))}
-        {edgeMode !== "shaded" &&
-          edges.map((e) => (
-            <line
-              key={e.id}
-              data-entity-id={e.id}
-              data-category="edge"
-              x1={e.x1.toFixed(2)}
-              y1={e.y1.toFixed(2)}
-              x2={e.x2.toFixed(2)}
-              y2={e.y2.toFixed(2)}
-              stroke="var(--solid-edge)"
-              strokeWidth={edgeMode === "wireframe" ? 0.65 : 0.78}
-              strokeOpacity={
-                edgeMode === "wireframe"
+        {edges.map((e) => (
+          <line
+            key={e.id}
+            data-entity-id={e.id}
+            data-category="edge"
+            x1={e.x1.toFixed(2)}
+            y1={e.y1.toFixed(2)}
+            x2={e.x2.toFixed(2)}
+            y2={e.y2.toFixed(2)}
+            stroke={edgeMode === "shaded" ? "#F8FAFC" : "var(--solid-edge)"}
+            strokeWidth={edgeMode === "shaded" ? 0.95 : edgeMode === "wireframe" ? 0.65 : 0.78}
+            strokeOpacity={
+              edgeMode === "shaded"
+                ? 0.92
+                : edgeMode === "wireframe"
                   ? (0.5 + 0.45 * (((e.z1 + e.z2) / 2 + maxDepth) / (2 * maxDepth))).toFixed(3)
                   : (0.62 + 0.32 * (((e.z1 + e.z2) / 2 + maxDepth) / (2 * maxDepth))).toFixed(3)
-              }
-              strokeLinecap="round"
-            />
-          ))}
+            }
+            strokeLinecap="round"
+          />
+        ))}
         {hasHighlight && (selectedEdges.length > 0 || selectedFaces.length > 0) && (
           <g data-category="selection" pointerEvents="none">
             {selectedFaces.map((f) => (

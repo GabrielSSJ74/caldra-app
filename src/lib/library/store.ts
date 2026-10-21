@@ -5,7 +5,7 @@
  * Persistência local, sem rastreamento: só o necessário para a experiência.
  */
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import type { PartModel } from "./registry";
 import { findPart } from "./registry";
 
@@ -81,11 +81,20 @@ function subscribe(l: () => void) {
   return () => listeners.delete(l);
 }
 
+let clientHydrated = false;
+
 function snapshot(): State {
-  return typeof window === "undefined" ? EMPTY : load();
+  return !clientHydrated || typeof window === "undefined" ? EMPTY : load();
 }
 
 export function useLibraryState(): State {
+  useEffect(() => {
+    if (!clientHydrated) {
+      clientHydrated = true;
+      load();
+      listeners.forEach((l) => l());
+    }
+  }, []);
   return useSyncExternalStore(subscribe, snapshot, () => EMPTY);
 }
 

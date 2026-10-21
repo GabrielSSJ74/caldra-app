@@ -3,7 +3,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -15,6 +14,8 @@ import {
   readAppearancePreferences,
   persistAppearancePreferences,
   checkIsProFromStorage,
+  resolveAccentColorTokens,
+  CALDRA_ACCENT_COLOR_KEY,
   CALDRA_SETTINGS_KEY,
   type ThemeMode,
   type AccentColor,
@@ -161,6 +162,16 @@ function applyToDom(s: Settings) {
   root.classList.toggle("accent-magenta", isCrimson);
   root.lang = s.language === "pt" ? "pt-BR" : s.language;
 
+  let storedRawHex: string | null = null;
+  try {
+    storedRawHex = window.localStorage?.getItem(CALDRA_ACCENT_COLOR_KEY) ?? null;
+  } catch {
+    storedRawHex = null;
+  }
+  const { accentColor, accentRgb } = resolveAccentColorTokens(s.accent, dark, storedRawHex);
+  root.style.setProperty("--accent-color", accentColor);
+  root.style.setProperty("--accent-rgb", accentRgb);
+
   const cardOp =
     Math.min(
       100,
@@ -175,13 +186,10 @@ function applyToDom(s: Settings) {
   root.style.setProperty("--bubble-opacity", bubbleOp.toFixed(2));
 }
 
-const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
-
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const { isMestre } = useFeatureAccess();
-  const isPro =
-    isMestre ||
-    (typeof window !== "undefined" ? checkIsProFromStorage(window.localStorage) : false);
+  const [storagePro, setStoragePro] = useState(false);
+  const isPro = isMestre || storagePro;
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
   const hydrated = useRef(false);
   const [veil, setVeil] = useState(0);
@@ -204,9 +212,13 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   const isInitialMount = useRef(true);
 
-  /* Hidrata do armazenamento antes do primeiro paint. */
-  useIsoLayoutEffect(() => {
-    const stored = readStoredSettings(isPro);
+  /* Hidrata do armazenamento após a hidratação do React (o script pré-paint em __root.tsx já aplicou classes no DOM). */
+  useEffect(() => {
+    const proFromStorage =
+      typeof window !== "undefined" ? checkIsProFromStorage(window.localStorage) : false;
+    setStoragePro(proFromStorage);
+    const effectivePro = isMestre || proFromStorage;
+    const stored = readStoredSettings(effectivePro);
     prevSkin.current = `${stored.theme}:${stored.accent}`;
     applyToDom(stored);
     setSettings(stored);
@@ -217,7 +229,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       persistAppearancePreferences(window.localStorage, stored);
     }
     hydrated.current = true;
-  }, [isPro, warnProFluidViolation]);
+  }, [isMestre, warnProFluidViolation]);
 
   // Monitora se o status PRO muda e valida permissão do estilo fluido
   useEffect(() => {
@@ -251,8 +263,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [settings]);
 
-  /* Aplica tema e opacidade no DOM imediatamente. Troca voluntária acende o véu. */
-  useIsoLayoutEffect(() => {
+  /* Aplica tema e opacidade no DOM imediatamente após hidratação. Troca voluntária acende o véu. */
+  useEffect(() => {
+    if (!hydrated.current) return;
     applyToDom(settings);
     if (prevSkin.current !== null && prevSkin.current !== skin) {
       setVeil((v) => v + 1);

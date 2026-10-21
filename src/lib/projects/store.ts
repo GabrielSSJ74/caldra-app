@@ -12,7 +12,7 @@
  * chamadores (debounce) — este módulo apenas grava o estado recebido.
  */
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import { findPart } from "@/lib/library/registry";
 import type { Entity } from "@/lib/lab2d/core";
 import type { CanonicalProject, DerivedKind } from "@/lib/project-catalog/types";
@@ -396,10 +396,20 @@ function subscribe(l: () => void) {
   return () => listeners.delete(l);
 }
 
+let clientHydrated = false;
+
 const snapshot = (): State => (typeof window === "undefined" ? EMPTY : load());
+const hookSnapshot = (): State => (!clientHydrated || typeof window === "undefined" ? EMPTY : load());
 
 export function useProjects(): Project[] {
-  return useSyncExternalStore(subscribe, snapshot, () => EMPTY).projects;
+  useEffect(() => {
+    if (!clientHydrated) {
+      clientHydrated = true;
+      load();
+      listeners.forEach((l) => l());
+    }
+  }, []);
+  return useSyncExternalStore(subscribe, hookSnapshot, () => EMPTY).projects;
 }
 
 export function useProject(id: string): Project | null {

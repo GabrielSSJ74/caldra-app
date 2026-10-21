@@ -1,5 +1,5 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useMemo } from "react";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import {
   Calculator,
   Compass,
@@ -7,12 +7,8 @@ import {
   ArrowRight,
   ChevronRight,
   Layers,
-  RotateCcw,
   SlidersHorizontal,
-  Box,
   FileCode,
-  Maximize2,
-  Minimize2,
   FolderOpen,
 } from "lucide-react";
 import { PART_REGISTRY } from "@/lib/library/registry";
@@ -21,10 +17,13 @@ import { useProjects as useDossierProjects } from "@/lib/projects/store";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
 import { cn } from "@/lib/utils";
-import { buildWire } from "@/lib/viz3d/wire";
+import { getEngine } from "@/lib/geometry/engines";
+import { buildWire, DEFAULT_PARAMS, type WireModel } from "@/lib/viz3d/wire";
 import { Wire3D } from "@/components/chameleon/Wire3D";
 import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
 import { NavigationAreaContainer } from "@/components/layout/NavigationAreaContainer";
+import { useSettings } from "@/lib/settings/SettingsProvider";
+import { resolveAccentColorTokens } from "@/lib/settings/appearancePreferences";
 
 export const Route = createFileRoute("/projetar")({
   head: () => ({
@@ -46,149 +45,54 @@ export const Route = createFileRoute("/projetar")({
 });
 
 /* =========================================================================
-   1. GRÁFICOS TÉCNICOS ESPECÍFICOS PARA O AMBIENTE DE PROJETO
+   1. MINIATURAS 3D SOMBREADAS PARA OS MODELOS DE CALDEIRARIA
    ========================================================================= */
 
-/** Gráficos técnicos específicos por família de caldeiraria para reconhecimento imediato */
-function TransitionDraftGraphic({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
-      <rect width="100" height="70" fill="#080A0E" />
-      {/* Blueprint grid */}
-      <g stroke="#38BDF8" strokeWidth="0.25" strokeOpacity="0.18">
-        <line x1="0" y1="35" x2="100" y2="35" />
-        <line x1="50" y1="0" x2="50" y2="70" />
-      </g>
-      {/* Base retangular/quadrada */}
-      <rect x="20" y="15" width="60" height="40" stroke="#64748B" strokeWidth="0.8" rx="1" />
-      {/* Colar redondo concêntrico */}
-      <circle cx="50" cy="35" r="13" stroke="#38BDF8" strokeWidth="1" />
-      {/* Geratrizes de triangulação dos cantos para a circunferência */}
-      <line x1="20" y1="15" x2="41" y2="26" stroke="#F59E0B" strokeWidth="0.5" strokeOpacity="0.85" />
-      <line x1="20" y1="15" x2="50" y2="22" stroke="#F59E0B" strokeWidth="0.5" strokeOpacity="0.85" />
-      <line x1="80" y1="15" x2="50" y2="22" stroke="#F59E0B" strokeWidth="0.5" strokeOpacity="0.85" />
-      <line x1="80" y1="15" x2="59" y2="26" stroke="#F59E0B" strokeWidth="0.5" strokeOpacity="0.85" />
-      <line x1="20" y1="55" x2="41" y2="44" stroke="#F59E0B" strokeWidth="0.5" strokeOpacity="0.85" />
-      <line x1="20" y1="55" x2="50" y2="48" stroke="#F59E0B" strokeWidth="0.5" strokeOpacity="0.85" />
-      <line x1="80" y1="55" x2="50" y2="48" stroke="#F59E0B" strokeWidth="0.5" strokeOpacity="0.85" />
-      <line x1="80" y1="55" x2="59" y2="44" stroke="#F59E0B" strokeWidth="0.5" strokeOpacity="0.85" />
-      <circle cx="20" cy="15" r="1.2" fill="#F59E0B" />
-      <circle cx="80" cy="15" r="1.2" fill="#F59E0B" />
-      <circle cx="20" cy="55" r="1.2" fill="#F59E0B" />
-      <circle cx="80" cy="55" r="1.2" fill="#F59E0B" />
-    </svg>
-  );
+const THUMBNAIL_WIRE_CACHE = new Map<string, WireModel>();
+
+function getPartThumbnailWireModel(slug: string): WireModel {
+  const cached = THUMBNAIL_WIRE_CACHE.get(slug);
+  if (cached) return cached;
+
+  const eng = getEngine(slug);
+  const baseParams =
+    slug === "redondo-quadrado"
+      ? { d1: 500, d2: 750, h: 480, e: 0, seg: 32, t: 6 }
+      : eng
+        ? { ...eng.wire(eng.defaults), seg: 32 }
+        : { ...DEFAULT_PARAMS, seg: 32, divisions: 6, t: 6 };
+
+  const model = buildWire(slug, baseParams);
+  THUMBNAIL_WIRE_CACHE.set(slug, model);
+  return model;
 }
 
-function ConeDraftGraphic({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
-      <rect width="100" height="70" fill="#080A0E" />
-      {/* Blueprint grid */}
-      <g stroke="#38BDF8" strokeWidth="0.25" strokeOpacity="0.18">
-        <line x1="0" y1="20" x2="100" y2="20" />
-        <line x1="0" y1="46" x2="100" y2="46" />
-        <line x1="50" y1="0" x2="50" y2="70" />
-      </g>
-      {/* Arco de planificação do cone */}
-      <path d="M 15 56 C 26 26, 74 26, 85 56" stroke="#38BDF8" strokeWidth="1" strokeDasharray="2.5 1.5" />
-      <path d="M 28 56 C 36 40, 64 40, 72 56" stroke="#38BDF8" strokeWidth="0.8" />
-      {/* Geratrizes cardinais de caldeiraria */}
-      <line x1="50" y1="10" x2="15" y2="56" stroke="#F59E0B" strokeWidth="0.5" strokeOpacity="0.8" />
-      <line x1="50" y1="10" x2="33" y2="56" stroke="#F59E0B" strokeWidth="0.4" strokeOpacity="0.5" />
-      <line x1="50" y1="10" x2="50" y2="56" stroke="#F59E0B" strokeWidth="0.7" strokeOpacity="0.9" />
-      <line x1="50" y1="10" x2="67" y2="56" stroke="#F59E0B" strokeWidth="0.4" strokeOpacity="0.5" />
-      <line x1="50" y1="10" x2="85" y2="56" stroke="#F59E0B" strokeWidth="0.5" strokeOpacity="0.8" />
-      <circle cx="50" cy="10" r="1.3" fill="#38BDF8" />
-    </svg>
-  );
-}
+/** Miniatura 3D sólida sombreada e isolada correspondente à geometria da peça */
+function PartThumbnail3D({ slug, className }: { slug: string; className?: string }) {
+  const model = useMemo(() => getPartThumbnailWireModel(slug), [slug]);
 
-function ElbowDraftGraphic({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
-      <rect width="100" height="70" fill="#080A0E" />
-      <g stroke="#38BDF8" strokeWidth="0.25" strokeOpacity="0.18">
-        <line x1="20" y1="0" x2="20" y2="70" />
-        <line x1="50" y1="0" x2="50" y2="70" />
-        <line x1="0" y1="50" x2="100" y2="50" />
-      </g>
-      {/* Contorno do cotovelo segmentado (gomos de 90°) */}
-      <path d="M 22 58 L 22 42 L 36 28 L 56 18 L 78 18" stroke="#38BDF8" strokeWidth="1" />
-      <path d="M 42 58 L 42 48 L 54 38 L 70 32 L 78 32" stroke="#38BDF8" strokeWidth="0.8" strokeDasharray="2 1.5" />
-      {/* Linhas de corte dos gomos (mitre joints) */}
-      <line x1="22" y1="42" x2="42" y2="48" stroke="#F59E0B" strokeWidth="0.6" strokeOpacity="0.85" />
-      <line x1="36" y1="28" x2="54" y2="38" stroke="#F59E0B" strokeWidth="0.6" strokeOpacity="0.85" />
-      <line x1="56" y1="18" x2="70" y2="32" stroke="#F59E0B" strokeWidth="0.6" strokeOpacity="0.85" />
-      {/* Raio de curvatura central */}
-      <path d="M 32 58 A 36 36 0 0 1 78 25" stroke="#F59E0B" strokeWidth="0.5" strokeDasharray="1.5 1.5" strokeOpacity="0.6" />
-    </svg>
+    <div
+      className={cn(
+        "relative size-full flex items-center justify-center select-none pointer-events-none",
+        className,
+      )}
+    >
+      {/* Backlight radial quente e suave atrás do sólido 3D */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 rounded-full bg-[radial-gradient(circle_at_55%_50%,rgba(251,191,36,0.20)_0%,rgba(245,158,11,0.07)_48%,transparent_74%)] dark:bg-[radial-gradient(circle_at_55%_50%,rgba(245,158,11,0.16)_0%,rgba(245,158,11,0.04)_50%,transparent_74%)]"
+      />
+      <Wire3D
+        model={model}
+        interactive={false}
+        autoSpin={false}
+        edgeMode="shaded"
+        showRefLines={false}
+        className="relative z-10 size-full scale-[1.14] drop-shadow-[0_6px_12px_rgba(15,23,42,0.14)] dark:drop-shadow-[0_8px_14px_rgba(0,0,0,0.45)] transition-transform duration-300 group-hover:scale-[1.22]"
+      />
+    </div>
   );
-}
-
-function IntersectDraftGraphic({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
-      <rect width="100" height="70" fill="#080A0E" />
-      <g stroke="#38BDF8" strokeWidth="0.25" strokeOpacity="0.18">
-        <line x1="0" y1="35" x2="100" y2="35" />
-        <line x1="50" y1="0" x2="50" y2="70" />
-      </g>
-      {/* Tubo principal horizontal */}
-      <line x1="16" y1="26" x2="84" y2="26" stroke="#64748B" strokeWidth="0.75" />
-      <line x1="16" y1="46" x2="84" y2="46" stroke="#64748B" strokeWidth="0.75" />
-      {/* Ramal vertical (Boca de lobo) */}
-      <line x1="38" y1="12" x2="38" y2="28" stroke="#38BDF8" strokeWidth="0.8" />
-      <line x1="62" y1="12" x2="62" y2="28" stroke="#38BDF8" strokeWidth="0.8" />
-      {/* Curva de sela (fishmouth saddle intersection) */}
-      <path d="M 38 28 Q 50 38 62 28" stroke="#F59E0B" strokeWidth="1.1" />
-      <path d="M 38 28 Q 50 20 62 28" stroke="#F59E0B" strokeWidth="0.7" strokeDasharray="1.5 1.5" strokeOpacity="0.7" />
-    </svg>
-  );
-}
-
-function FlangeDraftGraphic({ className }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
-      <rect width="100" height="70" fill="#080A0E" />
-      <g stroke="#38BDF8" strokeWidth="0.25" strokeOpacity="0.18">
-        <line x1="0" y1="35" x2="100" y2="35" />
-        <line x1="50" y1="0" x2="50" y2="70" />
-      </g>
-      {/* Círculo externo do flange */}
-      <circle cx="50" cy="35" r="26" stroke="#64748B" strokeWidth="0.8" />
-      {/* Círculo de furação (PCD) */}
-      <circle cx="50" cy="35" r="20" stroke="#F59E0B" strokeWidth="0.5" strokeDasharray="2 1.5" strokeOpacity="0.8" />
-      {/* Furo central */}
-      <circle cx="50" cy="35" r="10" stroke="#38BDF8" strokeWidth="1" />
-      {/* 8 Furos dos parafusos */}
-      <circle cx="50" cy="15" r="1.8" fill="#38BDF8" />
-      <circle cx="50" cy="55" r="1.8" fill="#38BDF8" />
-      <circle cx="30" cy="35" r="1.8" fill="#38BDF8" />
-      <circle cx="70" cy="35" r="1.8" fill="#38BDF8" />
-      <circle cx="36" cy="21" r="1.8" fill="#38BDF8" />
-      <circle cx="64" cy="21" r="1.8" fill="#38BDF8" />
-      <circle cx="36" cy="49" r="1.8" fill="#38BDF8" />
-      <circle cx="64" cy="49" r="1.8" fill="#38BDF8" />
-    </svg>
-  );
-}
-
-function PartThumbnailGraphic({ family, className }: { family: string; className?: string }) {
-  switch (family) {
-    case "Transições":
-      return <TransitionDraftGraphic className={className} />;
-    case "Cones":
-      return <ConeDraftGraphic className={className} />;
-    case "Curvas":
-      return <ElbowDraftGraphic className={className} />;
-    case "Interseções":
-      return <IntersectDraftGraphic className={className} />;
-    case "Flanges":
-      return <FlangeDraftGraphic className={className} />;
-    default:
-      return <ConeDraftGraphic className={className} />;
-  }
 }
 
 /* =========================================================================
@@ -283,6 +187,24 @@ const FEATURED_MODELS: FeaturedModel[] = [
   },
 ];
 
+const HERO_WIRE_CACHE = new Map<string, WireModel>();
+
+function getHeroWireModel(item: FeaturedModel): WireModel {
+  const cached = HERO_WIRE_CACHE.get(item.id);
+  if (cached) return cached;
+  const built = buildWire(item.slug, {
+    d1: item.d1,
+    d2: item.d2,
+    h: item.h,
+    e: item.e,
+    seg: 48,
+    divisions: 6,
+    t: 6,
+  });
+  HERO_WIRE_CACHE.set(item.id, built);
+  return built;
+}
+
 /* =========================================================================
    3. CATEGORIAS DE TRAÇAGEM (CARROSSEL HORIZONTAL)
    ========================================================================= */
@@ -302,37 +224,105 @@ const TRACAGEM_CATEGORIES = [
    ========================================================================= */
 
 function ProjetarPage() {
-  const navigate = useNavigate();
+  const { accent, theme } = useSettings();
+  const isDarkTheme = theme === "dark" || theme === "amoled";
+  const resolvedTokens = useMemo(
+    () => resolveAccentColorTokens(accent, isDarkTheme),
+    [accent, isDarkTheme],
+  );
 
-  // Projetos salvos no CHAMFER e no dossiê
-  const chamferProjects = useMemo(() => listChamferProjects(), []);
+  // Projetos salvos no CHAMFER e no dossiê (carregados após hidratação para consistência SSR)
+  const [chamferProjects, setChamferProjects] = useState<ReturnType<typeof listChamferProjects>>([]);
+  useEffect(() => {
+    setChamferProjects(listChamferProjects());
+  }, []);
   const dossierProjects = useDossierProjects();
 
-  // Estado do modelo em exibição no Hero CAD
-  const [activeModelIndex, setActiveModelIndex] = useState(0);
-  const activeModel = FEATURED_MODELS[activeModelIndex];
+  // Estado do carrossel 3D infinito em exibição no Hero CAD (fluxo contínuo e tracking 1:1)
+  const modelCount = FEATURED_MODELS.length;
+  const [virtualIndex, setVirtualIndex] = useState(0);
+  const [dragDeltaX, setDragDeltaX] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [cardWidth, setCardWidth] = useState(340);
+
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const gestureRef = useRef<{
+    active: boolean;
+    pointerId: number | null;
+    startX: number;
+    startY: number;
+    startTime: number;
+    currentDeltaX: number;
+    isHorizontal: boolean | null;
+    width: number;
+  }>({
+    active: false,
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    startTime: 0,
+    currentDeltaX: 0,
+    isHorizontal: null,
+    width: 340,
+  });
+
+  const activeModelIndex = ((virtualIndex % modelCount) + modelCount) % modelCount;
+  const activeModel = FEATURED_MODELS[activeModelIndex] ?? FEATURED_MODELS[0]!;
+
+  // Medição responsiva da largura do card para normalização de progresso 1:1
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const measure = () => {
+      const w = el.getBoundingClientRect().width;
+      if (w > 0) {
+        setCardWidth(w);
+        gestureRef.current.width = w;
+      }
+    };
+    measure();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, []);
+
+  // Prevenção de conflito de rolagem vertical durante swipe horizontal (passive: false)
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const onNativeTouchMove = (e: TouchEvent) => {
+      if (!gestureRef.current.active) return;
+      const t = e.touches[0];
+      if (!t) return;
+      const dx = t.clientX - gestureRef.current.startX;
+      const dy = t.clientY - gestureRef.current.startY;
+      if (gestureRef.current.isHorizontal === null && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+        gestureRef.current.isHorizontal = Math.abs(dx) > Math.abs(dy);
+      }
+      if (gestureRef.current.isHorizontal && e.cancelable) {
+        e.preventDefault();
+      }
+    };
+    el.addEventListener("touchmove", onNativeTouchMove, { passive: false });
+    return () => el.removeEventListener("touchmove", onNativeTouchMove);
+  }, []);
+
+  // Ciclo automático de 3000ms: desliza para a esquerda (virtualIndex + 1) continuamente sem rebobinar
+  useEffect(() => {
+    if (isDragging) return;
+    const timer = setInterval(() => {
+      setDragDeltaX(0);
+      setVirtualIndex((v) => v + 1);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [virtualIndex, isDragging]);
 
   // Estado da categoria de traçagem selecionada
   const [selectedCategory, setSelectedCategory] = useState("todas");
-
-  // Estado do modo de visualização da viewport 3D
-  const [edgeMode, setEdgeMode] = useState<"shaded-edges" | "wireframe">("shaded-edges");
-  const [autoRotate, setAutoRotate] = useState(true);
-  const [viewNonce, setViewNonce] = useState(0);
-  const [isExpandedViewport, setIsExpandedViewport] = useState(false);
-
-  // Construção reativa do modelo 3D matemático
-  const wireModel = useMemo(() => {
-    return buildWire(activeModel.slug, {
-      d1: activeModel.d1,
-      d2: activeModel.d2,
-      h: activeModel.h,
-      e: activeModel.e,
-      seg: 48,
-      divisions: 6,
-      t: 6,
-    });
-  }, [activeModel]);
 
   // Lista de peças filtradas pela categoria
   const filteredParts = useMemo(() => {
@@ -342,8 +332,136 @@ function ProjetarPage() {
     return PART_REGISTRY.filter((p) => p.family === selectedCategory).slice(0, 8);
   }, [selectedCategory]);
 
+  // Fase 1 — Início do Toque / Pointer
+  const beginDrag = useCallback((clientX: number, clientY: number, pointerId: number | null = null) => {
+    const width = viewportRef.current?.getBoundingClientRect().width || cardWidth || 340;
+    gestureRef.current = {
+      active: true,
+      pointerId,
+      startX: clientX,
+      startY: clientY,
+      startTime: performance.now(),
+      currentDeltaX: 0,
+      isHorizontal: null,
+      width,
+    };
+    setCardWidth(width);
+    setIsDragging(true);
+    setDragDeltaX(0);
+  }, [cardWidth]);
+
+  // Fase 2 — Arraste Contínuo 1:1 a 60 FPS
+  const moveDrag = useCallback((clientX: number, clientY: number) => {
+    const g = gestureRef.current;
+    if (!g.active) return;
+    const dx = clientX - g.startX;
+    const dy = clientY - g.startY;
+
+    if (g.isHorizontal === null && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
+      g.isHorizontal = Math.abs(dx) > Math.abs(dy);
+    }
+
+    if (g.isHorizontal === false) {
+      return;
+    }
+
+    g.currentDeltaX = dx;
+    setDragDeltaX(dx);
+  }, []);
+
+  // Fase 3 — Soltura e Snap Elástico com decisão por distância (20%) ou velocidade (0.35 px/ms)
+  const endDrag = useCallback((clientX?: number) => {
+    const g = gestureRef.current;
+    if (!g.active) return;
+
+    const finalDeltaX =
+      typeof clientX === "number" && g.isHorizontal !== false
+        ? clientX - g.startX
+        : g.currentDeltaX;
+    const elapsed = Math.max(1, performance.now() - g.startTime);
+    const velocity = finalDeltaX / elapsed;
+    const width = g.width || cardWidth || 340;
+
+    g.active = false;
+    g.pointerId = null;
+    g.currentDeltaX = 0;
+    g.isHorizontal = null;
+
+    setIsDragging(false);
+    setDragDeltaX(0);
+
+    if (finalDeltaX < -width * 0.2 || velocity < -0.35) {
+      // Swipe para a esquerda -> avança para a próxima peça (activeIndex + 1)
+      triggerHaptic("selection");
+      AudioManager.play("ui_pop");
+      setVirtualIndex((v) => v + 1);
+    } else if (finalDeltaX > width * 0.2 || velocity > 0.35) {
+      // Swipe para a direita -> volta para a peça anterior (activeIndex - 1)
+      triggerHaptic("selection");
+      AudioManager.play("ui_pop");
+      setVirtualIndex((v) => v - 1);
+    }
+  }, [cardWidth]);
+
+  // Progresso normalizado [-1, 1] para interpolação em tempo real de escala e opacidade
+  const dragProgress = useMemo(() => {
+    if (!cardWidth) return 0;
+    return Math.max(-1, Math.min(1, dragDeltaX / cardWidth));
+  }, [dragDeltaX, cardWidth]);
+
+  const absProgress = Math.abs(dragProgress);
+
+  // Janela virtual [anterior (-1), atual (0), próxima (+1)] para loop infinito contínuo sem rebobinar
+  const visibleSlots = useMemo(
+    () => [virtualIndex - 1, virtualIndex, virtualIndex + 1],
+    [virtualIndex],
+  );
+
   return (
-    <div className="relative w-full min-h-screen bg-transparent text-foreground overflow-x-hidden selection:bg-amber-500/30 selection:text-amber-200">
+    <div
+      className="relative w-full min-h-screen bg-transparent text-foreground overflow-x-hidden selection:bg-amber-500/30 selection:text-amber-200"
+      style={
+        {
+          "--hero-accent-color": `var(--accent-color, ${resolvedTokens.accentColor})`,
+          "--hero-accent-rgb": `var(--accent-rgb, ${resolvedTokens.accentRgb})`,
+        } as React.CSSProperties
+      }
+    >
+      <style>{`
+        @keyframes caldraHeroTitleSlideLeft {
+          0% {
+            opacity: 0;
+            transform: translate3d(14px, 0, 0);
+          }
+          100% {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+          }
+        }
+        .caldra-hero-title-anim {
+          animation: caldraHeroTitleSlideLeft 450ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+          will-change: transform, opacity;
+        }
+        .caldra-hero-backlight {
+          background: radial-gradient(
+            circle at 55% 50%,
+            rgba(var(--accent-rgb, 0, 102, 255), 0.20) 0%,
+            rgba(var(--accent-rgb, 0, 102, 255), 0.08) 45%,
+            transparent 72%
+          );
+          filter: blur(16px);
+        }
+        .dark .caldra-hero-backlight {
+          background: radial-gradient(
+            circle at 55% 50%,
+            rgba(var(--accent-rgb, 59, 130, 246), 0.24) 0%,
+            rgba(var(--accent-rgb, 59, 130, 246), 0.08) 50%,
+            transparent 75%
+          );
+          filter: blur(20px);
+        }
+      `}</style>
+
       <NavigationAreaContainer>
         {/* =========================================================================
             CABEÇALHO DA SEÇÃO DE PROJETO
@@ -359,197 +477,193 @@ function ProjetarPage() {
             </span>
           }
           title="Projetar"
-          actions={
-            <div className="flex items-center gap-1.5 font-mono text-[9px] text-muted-foreground bg-card/60 border border-border/70 rounded-lg px-2.5 py-1">
-              <Box className="size-3 text-sky-500" />
-              <span>{PART_REGISTRY.length} MODELOS CAD</span>
-            </div>
-          }
         />
 
         {/* =========================================================================
             NÍVEL 1: FERRAMENTAS PRIORITÁRIAS (AÇÕES IMEDIATAS)
             1.1 FERRAMENTA COMPLEXA EM DESTAQUE (LARGURA TOTAL):
-                TRAÇAGEM PARAMÉTRICA & MODELAGEM 3D B-REP
+                CARROSSEL 3D CINEMATOGRÁFICO COM TRACKING 1:1 E BACKLIGHT DINÂMICO
             ========================================================================= */}
         <section
           aria-label="Ambiente CAD em Destaque"
-          className="caldra-hero relative overflow-hidden rounded-2xl border dark:border-zinc-800/90 border-border/80 dark:bg-gradient-to-b dark:from-[#13151B] dark:to-[#0D0E12] shadow-2xl p-3 sm:p-3.5 space-y-2.5"
+          className="caldra-hero relative overflow-hidden rounded-2xl border border-border/80 dark:border-zinc-800/90 shadow-lg p-3 sm:p-3.5 space-y-2.5"
         >
-          {/* Header do Hero: Seletor de modelo + Norma técnica */}
-          <div className="flex items-center justify-between gap-2 border-b dark:border-zinc-800/60 border-border/60 pb-2">
-            <div className="flex items-center gap-2 min-w-0">
-              <div className="caldra-bubble-base caldra-bubble-amber size-8 shrink-0">
+          {/* Topo do Card: Título dinâmico da peça à esquerda + Pílula de Paginação à direita */}
+          <div className="relative z-10 flex items-center justify-between gap-2 pb-1">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div
+                className="flex size-8 shrink-0 items-center justify-center rounded-xl border transition-colors"
+                style={{
+                  backgroundColor: "rgba(var(--accent-rgb, 0, 102, 255), 0.12)",
+                  borderColor: "rgba(var(--accent-rgb, 0, 102, 255), 0.28)",
+                  color: "var(--accent-color, var(--accent))",
+                }}
+              >
                 <Compass className="size-4" strokeWidth={2} />
               </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="font-mono text-[8.5px] font-bold text-amber-500 uppercase">
-                    TRAÇAGEM 3D
-                  </span>
-                  <span className="font-mono text-[7.5px] text-zinc-400 bg-zinc-800/80 px-1 rounded">
-                    {activeModel.norma}
-                  </span>
-                </div>
-                <h2 className="font-display text-sm font-bold text-foreground dark:text-zinc-100 truncate">
-                  {activeModel.title}
-                </h2>
-              </div>
-            </div>
-
-            {/* Alternar modelo demonstrativo */}
-            <div className="flex items-center gap-1 shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  AudioManager.play("ui_pop");
-                  setActiveModelIndex((prev) => (prev + 1) % FEATURED_MODELS.length);
-                }}
-                className="inline-flex items-center gap-1 rounded-lg border border-zinc-700/80 bg-zinc-800/80 px-2 py-1 font-mono text-[9px] font-medium text-zinc-300 hover:bg-zinc-700 active:scale-95 transition-all cursor-pointer"
-                title="Alternar modelo demonstrativo"
+              <h2
+                key={`title-${activeModel.id}-${virtualIndex}`}
+                className="caldra-hero-title-anim font-display text-[15px] sm:text-base font-bold text-foreground dark:text-zinc-100 truncate"
               >
-                <span>Alternar</span>
-                <ChevronRight className="size-3 text-amber-400" />
-              </button>
-            </div>
-          </div>
-
-          {/* Viewport 3D Principal Interativa */}
-          <div
-            className={cn(
-              "relative w-full rounded-xl border border-zinc-800/90 bg-gradient-to-b from-[#090B0F] to-[#050608] overflow-hidden transition-all",
-              isExpandedViewport
-                ? "fixed inset-3 z-50 h-[calc(100vh-1.5rem)] w-[calc(100vw-1.5rem)] rounded-2xl border-zinc-700/90 shadow-2xl"
-                : "h-44 sm:h-48",
-            )}
-          >
-            {/* Grid blueprint CAD de fundo */}
-            <div
-              className="absolute inset-0 pointer-events-none opacity-25"
-              style={{
-                backgroundImage:
-                  "radial-gradient(#38bdf8 0.75px, transparent 0.75px), radial-gradient(#f59e0b 0.5px, transparent 0.5px)",
-                backgroundSize: "20px 20px, 40px 40px",
-                backgroundPosition: "0 0, 10px 10px",
-              }}
-            />
-            {/* Iluminação direcional radial superior-esquerda */}
-            <div
-              className="absolute inset-0 pointer-events-none"
-              style={{
-                background:
-                  "radial-gradient(circle at 26% 22%, rgba(148, 163, 184, 0.14) 0%, rgba(15, 23, 42, 0.04) 48%, transparent 75%)",
-              }}
-            />
-
-            {/* Canvas 3D Paramétrico Real */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Wire3D
-                model={wireModel}
-                className="size-full"
-                interactive={true}
-                autoSpin={autoRotate}
-                edgeMode={edgeMode}
-                viewNonce={viewNonce}
-                showRefLines={false}
-              />
+                {activeModel.title}
+              </h2>
             </div>
 
-            {/* Cotas técnicas em tempo real */}
-            <div className="pointer-events-none absolute top-2.5 left-3 flex flex-col gap-0.5">
-              <span className="font-mono text-[8px] font-semibold text-zinc-400 tracking-wider">
-                GEOMETRIA PARAMÉTRICA • 360°
-              </span>
-              <span className="font-mono text-[9px] font-bold text-amber-400">
-                D1={activeModel.d1} • D2={activeModel.d2} • H={activeModel.h} mm
-              </span>
-            </div>
-
-            {/* Barra de Ferramentas Flutuante (Bottom-Right do Visor: 3 botões circulares escuros com ícones dourados/brancos) */}
+            {/* Indicador de Paginação em Pílula de Pontos (Cápsula Superior Direita) */}
             <div
-              className="absolute bottom-2.5 right-2.5 z-20 flex items-center gap-1.5"
-              role="group"
-              aria-label="Controles flutuantes do visor 3D"
+              role="tablist"
+              aria-label="Modelos 3D em destaque"
+              className="flex shrink-0 items-center gap-1.5 rounded-full border border-slate-200/75 dark:border-slate-700/75 bg-white/85 dark:bg-[rgba(30,41,59,0.85)] px-3 py-1.5 shadow-[0_2px_8px_rgba(0,0,0,0.06)] backdrop-blur-md"
             >
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("tap");
-                  setViewNonce((n) => n + 1);
-                  setAutoRotate(true);
-                }}
-                className="flex size-8 items-center justify-center rounded-full border border-zinc-700/80 bg-zinc-900/90 text-amber-400 shadow-lg backdrop-blur-md transition-all hover:border-amber-500/50 hover:bg-zinc-800 active:scale-95 cursor-pointer"
-                title="Resetar Rotação / Vista Padrão"
-                aria-label="Resetar Rotação / Vista Padrão"
-              >
-                <RotateCcw className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("tap");
-                  setEdgeMode((m) => (m === "shaded-edges" ? "wireframe" : "shaded-edges"));
-                }}
-                className={cn(
-                  "flex size-8 items-center justify-center rounded-full border shadow-lg backdrop-blur-md transition-all active:scale-95 cursor-pointer",
-                  edgeMode === "shaded-edges"
-                    ? "border-amber-500/50 bg-zinc-900/90 text-amber-400 hover:bg-zinc-800"
-                    : "border-zinc-700/80 bg-zinc-900/90 text-zinc-100 hover:border-zinc-600 hover:bg-zinc-800",
-                )}
-                title="Alternar Modo de Camadas / Wireframe vs. Sólido"
-                aria-label="Alternar Modo de Camadas / Wireframe vs. Sólido"
-              >
-                <Layers className="size-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  setIsExpandedViewport((v) => !v);
-                }}
-                className={cn(
-                  "flex size-8 items-center justify-center rounded-full border shadow-lg backdrop-blur-md transition-all active:scale-95 cursor-pointer",
-                  isExpandedViewport
-                    ? "border-amber-500/50 bg-zinc-900/90 text-amber-400 hover:bg-zinc-800"
-                    : "border-zinc-700/80 bg-zinc-900/90 text-zinc-100 hover:border-zinc-600 hover:bg-zinc-800",
-                )}
-                title={isExpandedViewport ? "Recolher Tela Cheia" : "Tela Cheia / Expandir"}
-                aria-label={isExpandedViewport ? "Recolher Tela Cheia" : "Tela Cheia / Expandir"}
-              >
-                {isExpandedViewport ? (
-                  <Minimize2 className="size-3.5" />
-                ) : (
-                  <Maximize2 className="size-3.5" />
-                )}
-              </button>
+              {FEATURED_MODELS.map((model, idx) => {
+                const isActive = idx === activeModelIndex;
+                return (
+                  <button
+                    key={model.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    aria-label={`Visualizar ${model.title}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const diff = idx - activeModelIndex;
+                      if (diff === 0) return;
+                      triggerHaptic("selection");
+                      AudioManager.play("ui_pop");
+                      setIsDragging(false);
+                      setDragDeltaX(0);
+                      setVirtualIndex((v) => v + diff);
+                    }}
+                    style={{
+                      width: isActive ? "20px" : "6px",
+                      height: "6px",
+                      borderRadius: "9999px",
+                      background: isActive
+                        ? "var(--accent-color, var(--accent))"
+                        : "rgba(148, 163, 184, 0.45)",
+                      transition: "all 0.4s cubic-bezier(0.22, 1, 0.36, 1)",
+                    }}
+                    className="cursor-pointer border-0 p-0 outline-none focus-visible:ring-1 focus-visible:ring-accent"
+                  />
+                );
+              })}
             </div>
           </div>
 
-          {/* Parâmetros técnicos essenciais */}
-          <div className="grid grid-cols-3 gap-2 rounded-xl bg-zinc-900/60 border border-zinc-800/70 p-2 text-center">
-            <div className="flex flex-col">
-              <span className="font-mono text-[7.5px] text-zinc-400 uppercase">MÉTODO</span>
-              <span className="font-mono text-[9.5px] font-bold text-zinc-200 truncate">
-                {activeModel.method}
-              </span>
-            </div>
-            <div className="flex flex-col">
-              <span className="font-mono text-[7.5px] text-zinc-400 uppercase">NÍVEL</span>
-              <span className="font-mono text-[9.5px] font-bold text-amber-400">
-                {activeModel.level}
-              </span>
-            </div>
-            <div className="flex flex-col">
-              <span className="font-mono text-[7.5px] text-zinc-400 uppercase">FABRICAÇÃO</span>
-              <span className="font-mono text-[9.5px] font-bold text-emerald-400">
-                Zero Fresta
-              </span>
+          {/* Viewport 3D com Arraste 1:1 em Tempo Real (60 FPS) e Deslocamento Contínuo para a Esquerda */}
+          <div
+            ref={viewportRef}
+            onTouchStart={(e) => {
+              const t = e.touches[0];
+              if (t) beginDrag(t.clientX, t.clientY, null);
+            }}
+            onTouchMove={(e) => {
+              const t = e.touches[0];
+              if (t) moveDrag(t.clientX, t.clientY);
+            }}
+            onTouchEnd={(e) => {
+              const t = e.changedTouches[0];
+              endDrag(t?.clientX);
+            }}
+            onTouchCancel={() => endDrag()}
+            onPointerDown={(e) => {
+              if (e.pointerType === "touch") return;
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+              beginDrag(e.clientX, e.clientY, e.pointerId);
+            }}
+            onPointerMove={(e) => {
+              if (e.pointerType === "touch") return;
+              moveDrag(e.clientX, e.clientY);
+            }}
+            onPointerUp={(e) => {
+              if (e.pointerType === "touch") return;
+              if (e.currentTarget.hasPointerCapture?.(e.pointerId)) {
+                e.currentTarget.releasePointerCapture(e.pointerId);
+              }
+              endDrag(e.clientX);
+            }}
+            onPointerCancel={(e) => {
+              if (e.pointerType === "touch") return;
+              endDrag();
+            }}
+            className="relative my-1 flex h-44 sm:h-48 w-full items-center justify-center select-none overflow-hidden touch-pan-y cursor-grab active:cursor-grabbing"
+          >
+            {/* Mancha / Aura de Fundo (Backlight) vinculada à cor de destaque ativa */}
+            <div
+              aria-hidden="true"
+              className="caldra-hero-backlight pointer-events-none absolute inset-0 rounded-full transition-colors duration-500"
+            />
+
+            {/* Faixa Horizontal Contínua (Track 1:1 com GPU translate3d) */}
+            <div
+              style={{
+                transform: `translate3d(calc(${-virtualIndex * 100}% + ${dragDeltaX}px), 0, 0)`,
+                transition: isDragging
+                  ? "none"
+                  : "transform 550ms cubic-bezier(0.22, 1, 0.36, 1)",
+                willChange: "transform",
+              }}
+              className="relative z-10 size-full"
+            >
+              {visibleSlots.map((slotIndex) => {
+                const modelIdx = ((slotIndex % modelCount) + modelCount) % modelCount;
+                const slotModel = FEATURED_MODELS[modelIdx] ?? FEATURED_MODELS[0]!;
+                const slotWire = getHeroWireModel(slotModel);
+                const offset = slotIndex - virtualIndex; // -1 (esquerda), 0 (centro), +1 (direita)
+
+                const isCenter = offset === 0;
+                const isIncomingNeighbor =
+                  (offset === 1 && dragDeltaX < 0) || (offset === -1 && dragDeltaX > 0);
+
+                const itemScale = isCenter
+                  ? 1 - absProgress * 0.08
+                  : isIncomingNeighbor
+                    ? 0.92 + absProgress * 0.08
+                    : 0.92;
+
+                const itemOpacity = isCenter
+                  ? 1 - absProgress * 0.35
+                  : isIncomingNeighbor
+                    ? 0.65 + absProgress * 0.35
+                    : 0.65;
+
+                return (
+                  <div
+                    key={slotIndex}
+                    style={{
+                      transform: `translate3d(${slotIndex * 100}%, 0, 0)`,
+                      willChange: "transform",
+                    }}
+                    className="pointer-events-none absolute inset-0 flex items-center justify-center"
+                  >
+                    <div
+                      style={{
+                        transform: `scale(${itemScale})`,
+                        opacity: itemOpacity,
+                        transition: isDragging
+                          ? "none"
+                          : "transform 550ms cubic-bezier(0.22, 1, 0.36, 1), opacity 550ms ease",
+                        willChange: "transform, opacity",
+                      }}
+                      className="flex size-full items-center justify-center"
+                    >
+                      <Wire3D
+                        model={slotWire}
+                        className="size-full max-h-[172px] sm:max-h-[188px] drop-shadow-[0_10px_18px_rgba(15,23,42,0.12)] dark:drop-shadow-[0_12px_22px_rgba(0,0,0,0.45)]"
+                        interactive={false}
+                        autoSpin={true}
+                        edgeMode="shaded"
+                        showRefLines={false}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
-          {/* Ação contextual clara: Traçar Esta Peça Agora */}
-          <div className="flex items-center gap-2 pt-0.5">
+          {/* Ação contextual final: Traçar Esta Peça Agora + Todas */}
+          <div className="relative z-10 flex items-center gap-2 pt-1">
             <Link
               to="/tracagem/$slug"
               params={{ slug: activeModel.slug }}
@@ -557,7 +671,12 @@ function ProjetarPage() {
                 triggerHaptic("success");
                 AudioManager.play("ui_action");
               }}
-              className="flex-1 flex h-10 items-center justify-center gap-2 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-[0.98] px-3 font-display text-xs font-bold text-zinc-950 shadow-md transition-all cursor-pointer"
+              style={{
+                backgroundColor: "var(--accent-color, var(--accent))",
+                boxShadow: "0 6px 18px rgba(var(--accent-rgb, 0, 102, 255), 0.26)",
+                color: accent === "default" && isDarkTheme ? "#0F172A" : "#FFFFFF",
+              }}
+              className="flex-1 flex h-10 items-center justify-center gap-2 rounded-xl hover:opacity-95 active:scale-[0.98] px-3 font-display text-xs font-bold transition-all cursor-pointer"
             >
               <Compass className="size-4" strokeWidth={2.2} />
               <span>Traçar esta peça agora</span>
@@ -570,7 +689,7 @@ function ProjetarPage() {
                 triggerHaptic("tap");
                 AudioManager.play("ui_nav");
               }}
-              className="flex h-10 items-center justify-center rounded-xl border border-zinc-700/80 bg-zinc-800/80 px-3 font-mono text-xs font-semibold text-zinc-300 hover:bg-zinc-700 active:scale-[0.98] transition-all cursor-pointer"
+              className="flex h-10 items-center justify-center rounded-xl border border-border/80 dark:border-zinc-700/80 bg-secondary/70 dark:bg-zinc-800/80 px-3 font-mono text-xs font-semibold text-foreground dark:text-zinc-300 hover:bg-secondary dark:hover:bg-zinc-700 active:scale-[0.98] transition-all cursor-pointer"
               title="Ver todas as traçagens"
             >
               <span>Todas</span>
@@ -729,10 +848,10 @@ function ProjetarPage() {
                 }}
                 className="caldra-card group relative flex w-[142px] xs:w-[150px] shrink-0 flex-col justify-between rounded-xl p-2.5 transition-all hover:border-amber-500/50 active:scale-[0.98] snap-start cursor-pointer text-left"
               >
-                {/* Thumbnail técnico vetorial específico da geometria */}
-                <div className="relative h-18 w-full rounded-lg bg-slate-100/80 dark:bg-[#07090D] border border-border/80 overflow-hidden flex items-center justify-center p-1">
-                  <PartThumbnailGraphic family={part.family} className="size-full opacity-75 group-hover:opacity-100 transition-opacity" />
-                  <span className="absolute bottom-1 right-1 font-mono text-[7px] text-muted-foreground bg-card/90 px-1 rounded border border-border/70">
+                {/* Miniatura 3D sólida sombreada isolada correspondente à peça */}
+                <div className="relative h-18 w-full rounded-lg overflow-hidden flex items-center justify-center p-0.5">
+                  <PartThumbnail3D slug={part.engineSlug || "quadrado-redondo"} />
+                  <span className="absolute bottom-1 right-1 z-20 font-mono text-[7px] text-muted-foreground bg-card/90 px-1 rounded border border-border/70">
                     {part.family}
                   </span>
                 </div>

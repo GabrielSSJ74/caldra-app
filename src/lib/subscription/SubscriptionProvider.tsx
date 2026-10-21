@@ -3,7 +3,6 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -61,9 +60,6 @@ type SubscriptionValue = {
 
 const SubscriptionContext = createContext<SubscriptionValue | null>(null);
 
-/** Antes do primeiro paint (sem flash e sem divergência de hidratação). */
-const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
-
 export function SubscriptionProvider({ children }: { children: React.ReactNode }) {
   const [ent, setEnt] = useState<EntitlementState>(() => initialState("free", "none"));
   const [ready, setReady] = useState(false);
@@ -79,8 +75,8 @@ export function SubscriptionProvider({ children }: { children: React.ReactNode }
     writeCache(next, source);
   }, []);
 
-  /* Cache local aplicado ANTES do paint — o app abre no plano correto. */
-  useIsoLayoutEffect(() => {
+  /* Cache local aplicado logo após a hidratação — sem divergência de hidratação SSR. */
+  useEffect(() => {
     try {
       const sp = new URLSearchParams(window.location.search);
       if (sp.get("autostart") === "1") {

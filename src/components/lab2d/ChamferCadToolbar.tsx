@@ -68,12 +68,37 @@ import {
   FileText,
   Activity,
   Zap,
+  Hand,
+  Eye,
 } from "lucide-react";
 import type { Tool } from "./Lab2DEditor";
 import type { DimKind } from "@/lib/lab2d/dimensions";
+import type { CursorOffsetMode, LoupeHudMode } from "@/lib/lab2d/cadInteractionHub";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
+
+/** Ícone vetorial minimalista de Nós / Vértices Interligados para o Micro-Dock */
+function ControlNodesIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M6 18L18 6" />
+      <path d="M6 6h12" />
+      <rect x="3" y="3" width="6" height="6" rx="1" />
+      <rect x="15" y="3" width="6" height="6" rx="1" />
+      <rect x="3" y="15" width="6" height="6" rx="1" />
+    </svg>
+  );
+}
 
 export type CadCategory =
   | "none"
@@ -122,7 +147,7 @@ interface ChamferCadToolbarProps {
   onOpenVariables?: () => void;
   onOpenClipboard?: () => void;
 
-  // Precisão
+  // Precisão e Modificadores Modulares (CADInteractionHub - Seção 4)
   snapOn: boolean;
   setSnapOn: (fn: (v: boolean) => boolean) => void;
   showGrid: boolean;
@@ -133,6 +158,12 @@ interface ChamferCadToolbarProps {
   setOrthoOn: (fn: (v: boolean) => boolean) => void;
   trackingOn: boolean;
   setTrackingOn: (fn: (v: boolean) => boolean) => void;
+  cursorOffsetMode?: CursorOffsetMode;
+  onToggleCursorOffsetMode?: () => void;
+  loupeMode?: LoupeHudMode;
+  onCycleLoupeMode?: () => void;
+  nudgeHudVisible?: boolean;
+  onToggleNudgeHud?: () => void;
 
   // Medição e Cotas
   dimKind: DimKind;
@@ -203,6 +234,12 @@ export function ChamferCadToolbar({
   setOrthoOn,
   trackingOn,
   setTrackingOn,
+  cursorOffsetMode = "offset",
+  onToggleCursorOffsetMode,
+  loupeMode = "floating",
+  onCycleLoupeMode,
+  nudgeHudVisible = false,
+  onToggleNudgeHud,
   dimKind,
   onPickDimKind,
   thickness,
@@ -281,16 +318,19 @@ export function ChamferCadToolbar({
     return { top: "18%" };
   };
 
-  // Fecha flyout ao clicar fora (se não estiver fixado)
+  // Fecha flyout / Micro-Dock ao tocar fora no canvas (Micro-Dock 'selecionar' fecha sempre)
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (!isPinned && toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
-        setOpenCat("none");
+    if (openCat === "none") return;
+    function handlePointerOutside(e: PointerEvent | MouseEvent) {
+      if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
+        if (openCat === "selecionar" || !isPinned) {
+          setOpenCat("none");
+        }
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [isPinned]);
+    document.addEventListener("pointerdown", handlePointerOutside, { passive: true });
+    return () => document.removeEventListener("pointerdown", handlePointerOutside);
+  }, [isPinned, openCat]);
 
   const handleToggleCat = (cat: CadCategory) => {
     triggerHaptic("tap");
@@ -307,7 +347,8 @@ export function ChamferCadToolbar({
     if (catId) {
       setLastUsedTool((prev) => ({ ...prev, [catId]: t }));
     }
-    if (!isPinned) {
+    // Micro-Dock de seleção recolhe SEMPRE imediatamente após o toque (200ms)
+    if (catId === "selecionar" || !isPinned) {
       setOpenCat("none");
     }
   };
@@ -350,14 +391,18 @@ export function ChamferCadToolbar({
     }
   };
 
+  // Ícone dinâmico do botão SEL refletindo o submodo ativo (Ponteiro, Nós ou Pan)
+  const selButtonIcon =
+    tool === "pan" ? Hand : tool === "node" ? ControlNodesIcon : MousePointer2;
+
   // 8 Categorias Canônicas
   const categories = [
     {
       id: "selecionar" as const,
       label: "Selecionar",
       short: "SEL",
-      icon: MousePointer2,
-      desc: "Seleção, vértices e navegação",
+      icon: selButtonIcon,
+      desc: "Ponteiro, vértices e navegação",
     },
     {
       id: "criar" as const,
@@ -527,8 +572,96 @@ export function ChamferCadToolbar({
         </div>
       )}
 
-      {/* FLYOUT CONTEXTUAL FLUTUANTE ANCORADO, SEGURO CONTRA CORTES NA VIEWPORT */}
-      {openCat !== "none" && activeCategoryData && (
+      {/* 1. MICRO-DOCK RETRÁTIL ACOPLADO AO BOTÃO 'SEL' (LARGURA ZERO QUANDO FECHADO, 200ms) */}
+      <div
+        role="toolbar"
+        aria-label="Modos de seleção e navegação"
+        aria-hidden={openCat !== "selecionar"}
+        style={{
+          top: "6px",
+          left: "calc(100% + 6px)",
+          height: "38px",
+          borderRadius: "9999px",
+          padding: openCat === "selecionar" ? "2px 6px" : "2px 0px",
+          maxWidth: openCat === "selecionar" ? "116px" : "0px",
+          opacity: openCat === "selecionar" ? 1 : 0,
+          transform:
+            openCat === "selecionar"
+              ? "translateX(0) scale(1)"
+              : "translateX(-6px) scale(0.92)",
+          pointerEvents: openCat === "selecionar" ? "auto" : "none",
+          transition: "all 200ms cubic-bezier(0.22, 1, 0.36, 1)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+        }}
+        className={cn(
+          "absolute z-50 flex items-center gap-1 overflow-hidden shadow-lg select-none",
+          openCat === "selecionar" ? "border" : "border-0",
+          isDark
+            ? "border-slate-700/80 bg-slate-900/94 text-slate-200 shadow-black/50"
+            : "border-slate-200/90 bg-white/94 text-slate-700 shadow-slate-900/12",
+        )}
+      >
+        {/* 1. Ponteiro (Seleção Geral + Fusão Gestual de Vértices) */}
+        <button
+          type="button"
+          tabIndex={openCat === "selecionar" ? 0 : -1}
+          aria-label="Ponteiro (Seleção Geral)"
+          title="Ponteiro (Seleção Geral e Vértices Diretos)"
+          onClick={() => handleSelectTool("select", "selecionar")}
+          className={cn(
+            "flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation",
+            tool === "select"
+              ? "bg-red-600 text-white shadow-xs"
+              : isDark
+                ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+          )}
+        >
+          <MousePointer2 className="size-3.5" />
+        </button>
+
+        {/* 2. Nós (Vértices Isolados) */}
+        <button
+          type="button"
+          tabIndex={openCat === "selecionar" ? 0 : -1}
+          aria-label="Nós (Vértices Isolados)"
+          title="Nós (Vértices Isolados)"
+          onClick={() => handleSelectTool("node", "selecionar")}
+          className={cn(
+            "flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation",
+            tool === "node"
+              ? "bg-red-600 text-white shadow-xs"
+              : isDark
+                ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+          )}
+        >
+          <ControlNodesIcon className="size-3.5" />
+        </button>
+
+        {/* 3. Pan (Mover Prancheta 1 Dedo) */}
+        <button
+          type="button"
+          tabIndex={openCat === "selecionar" ? 0 : -1}
+          aria-label="Pan (Mover Prancheta)"
+          title="Pan (Mover Prancheta com 1 Dedo)"
+          onClick={() => handleSelectTool("pan", "selecionar")}
+          className={cn(
+            "flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation",
+            tool === "pan"
+              ? "bg-red-600 text-white shadow-xs"
+              : isDark
+                ? "text-slate-300 hover:bg-slate-800 hover:text-white"
+                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+          )}
+        >
+          <Hand className="size-3.5" />
+        </button>
+      </div>
+
+      {/* FLYOUT CONTEXTUAL FLUTUANTE PARA AS DEMAIS CATEGORIAS (EXCETO 'selecionar') */}
+      {openCat !== "none" && openCat !== "selecionar" && activeCategoryData && (
         <div
           className={cn(
             "absolute left-full ml-2 z-50 w-64 rounded-2xl border p-2 shadow-2xl backdrop-blur-lg animate-in fade-in zoom-in-95 duration-150 overflow-y-auto",
@@ -597,36 +730,6 @@ export function ChamferCadToolbar({
               </button>
             </div>
           </div>
-
-          {/* 1. GRUPO: SELECIONAR */}
-          {openCat === "selecionar" && (
-                  <div className="flex flex-col gap-0.5 font-mono text-xs">
-                    <FlyoutItem
-                      label="Selecionar / Ponteiro"
-                      keyLabel="V"
-                      icon={MousePointer2}
-                      active={tool === "select"}
-                      onClick={() => handleSelectTool("select", "selecionar")}
-                      desc="Clique em entidade ou arraste para caixa de seleção"
-                    />
-                    <FlyoutItem
-                      label="Editar Nós / Vértices"
-                      keyLabel="N"
-                      icon={MousePointer2}
-                      active={tool === "node"}
-                      onClick={() => handleSelectTool("node", "selecionar")}
-                      desc="Manipular pontos de controle e vértices"
-                    />
-                    <FlyoutItem
-                      label="Mover Tela (Pan)"
-                      keyLabel="H"
-                      icon={Move}
-                      active={tool === "pan"}
-                      onClick={() => handleSelectTool("pan", "selecionar")}
-                      desc="Arrastar prancheta sem mover geometrias"
-                    />
-                  </div>
-                )}
 
                 {/* 2. GRUPO: CRIAR */}
                 {openCat === "criar" && (
@@ -1101,6 +1204,89 @@ export function ChamferCadToolbar({
                         </div>
                       </div>
                     )}
+
+                    <div className="border-t border-slate-800 pt-2 mt-1">
+                      <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">
+                        Modificadores de Precisão (Touch)
+                      </p>
+                      <div className="flex flex-col gap-1">
+                        {onToggleCursorOffsetMode && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic("selection");
+                              onToggleCursorOffsetMode();
+                            }}
+                            className={cn(
+                              "flex items-center justify-between rounded-xl px-2.5 py-1.5 transition-colors",
+                              cursorOffsetMode === "offset"
+                                ? "bg-sky-950/60 border border-sky-500/40 text-sky-300"
+                                : "bg-slate-900 text-slate-400 hover:text-slate-200",
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Crosshair className="size-3.5" />
+                              <span>Mira Técnica</span>
+                            </div>
+                            <span className="font-bold uppercase">
+                              {cursorOffsetMode === "offset" ? "OFFSET 55PX" : "DIRETA"}
+                            </span>
+                          </button>
+                        )}
+
+                        {onCycleLoupeMode && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic("selection");
+                              onCycleLoupeMode();
+                            }}
+                            className={cn(
+                              "flex items-center justify-between rounded-xl px-2.5 py-1.5 transition-colors",
+                              loupeMode !== "off"
+                                ? "bg-cyan-950/60 border border-cyan-500/40 text-cyan-300"
+                                : "bg-slate-900 text-slate-400 hover:text-slate-200",
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Eye className="size-3.5" />
+                              <span>Lupa HUD</span>
+                            </div>
+                            <span className="font-bold uppercase">
+                              {loupeMode === "pinned"
+                                ? "FIXA"
+                                : loupeMode === "floating"
+                                  ? "FLUTUANTE"
+                                  : "DESLIGADA"}
+                            </span>
+                          </button>
+                        )}
+
+                        {onToggleNudgeHud && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic("selection");
+                              onToggleNudgeHud();
+                            }}
+                            className={cn(
+                              "flex items-center justify-between rounded-xl px-2.5 py-1.5 transition-colors",
+                              nudgeHudVisible
+                                ? "bg-emerald-950/60 border border-emerald-500/40 text-emerald-300"
+                                : "bg-slate-900 text-slate-400 hover:text-slate-200",
+                            )}
+                          >
+                            <div className="flex items-center gap-2">
+                              <Sliders className="size-3.5" />
+                              <span>Coordenadas / Nudge</span>
+                            </div>
+                            <span className="font-bold uppercase">
+                              {nudgeHudVisible ? "ATIVO" : "SOB DEMANDA"}
+                            </span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
 
                     <div className="border-t border-slate-800 pt-2 mt-1">
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-1.5">

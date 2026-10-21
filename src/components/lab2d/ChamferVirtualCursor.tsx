@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 
 export const TOUCH_CURSOR_OFFSET_PX = 55;
 export const TOUCH_TOP_INVERSION_THRESHOLD_PX = 120;
+export const TOUCH_TOP_EDGE_THRESHOLD_PX = TOUCH_TOP_INVERSION_THRESHOLD_PX;
 
 export type NudgeDirection = "up" | "down" | "left" | "right";
 export type NudgeStepMm = 0.1 | 1 | 5 | 10;
@@ -28,17 +29,24 @@ export const NUDGE_STEP_OPTIONS: NudgeStepMm[] = [0.1, 1, 5, 10];
 
 /**
  * Determina se a ferramenta ativa deve aplicar o deslocamento anti-oclusão (55px) quando operada via toque (`touch`).
- * No uso com mouse físico (`pointerType === 'mouse'`), retorna sempre `false` (comportamento 1:1 tradicional).
+ * No uso com mouse físico (`pointerType === 'mouse'`) ou modo direto (`cursorOffsetMode === 'direct'`),
+ * retorna sempre `false` (comportamento 1:1 tradicional).
+ * No modo Ponteiro (`select`) com peça selecionada (`hasSelection`), ativa a Fusão Gestual com offset
+ * para permitir mirar e arrastar vértices diretamente sem o dedo cobrir o nó.
  */
 export function shouldUseTouchOffset(
   pointerType: string | undefined,
   tool: string,
   isDraggingNode = false,
   isDraggingEntity = false,
+  cursorOffsetMode: "offset" | "direct" = "offset",
+  hasSelection = false,
 ): boolean {
+  if (cursorOffsetMode === "direct") return false;
   if (pointerType !== "touch") return false;
   if (tool === "pan") return false;
   if (isDraggingNode || isDraggingEntity) return true;
+  if (tool === "select" && hasSelection) return true;
 
   return (
     tool === "line" ||
@@ -502,6 +510,7 @@ export interface ChamferNudgeControlHUDProps {
   onStepChange: (step: NudgeStepMm) => void;
   onNudge: (dir: NudgeDirection) => void;
   onConfirmPoint?: () => void;
+  onSetExactCoord?: (pt: Vec2) => void;
   canConfirmPoint?: boolean;
   confirmLabel?: string;
   targetLabel?: string;
@@ -514,7 +523,8 @@ export interface ChamferNudgeControlHUDProps {
 /**
  * HUD Técnico de Ajuste Fino Incremental (Nudge — Padrão Desktop no Touch)
  * Permite deslocar o cursor geométrico, o vértice ativo ou a peça selecionada
- * em incrementos cirúrgicos (0.1mm, 1mm, 5mm, 10mm) e confirmar o ponto sem oscilação do dedo.
+ * em incrementos cirúrgicos (0.1mm, 1mm, 5mm, 10mm) ou digitar coordenadas X/Y sob demanda,
+ * fechando e liberando eventos ao confirmar.
  */
 export function ChamferNudgeControlHUD({
   visible,
@@ -522,6 +532,7 @@ export function ChamferNudgeControlHUD({
   onStepChange,
   onNudge,
   onConfirmPoint,
+  onSetExactCoord,
   canConfirmPoint = false,
   confirmLabel = "PONTO",
   targetLabel = "CURSOR",
@@ -529,6 +540,16 @@ export function ChamferNudgeControlHUD({
   onClose,
   className,
 }: ChamferNudgeControlHUDProps) {
+  const [editingCoord, setEditingCoord] = React.useState(false);
+  const [xInput, setXInput] = React.useState("");
+  const [yInput, setYInput] = React.useState("");
+
+  React.useEffect(() => {
+    if (!visible) {
+      setEditingCoord(false);
+    }
+  }, [visible]);
+
   if (!visible) return null;
 
   const handleStep = (s: NudgeStepMm) => {
@@ -541,13 +562,32 @@ export function ChamferNudgeControlHUD({
     onNudge(dir);
   };
 
+  const handleOpenCoordInput = () => {
+    if (!onSetExactCoord) return;
+    triggerHaptic("selection");
+    setXInput(cursorPos.x.toFixed(1));
+    setYInput(cursorPos.y.toFixed(1));
+    setEditingCoord((prev) => !prev);
+  };
+
+  const handleApplyCoord = (e: React.FormEvent) => {
+    e.preventDefault();
+    const nx = Number(xInput.replace(",", "."));
+    const ny = Number(yInput.replace(",", "."));
+    if (Number.isFinite(nx) && Number.isFinite(ny) && onSetExactCoord) {
+      triggerHaptic("action");
+      onSetExactCoord({ x: nx, y: ny });
+    }
+    setEditingCoord(false);
+  };
+
   return (
     <div
       role="region"
       aria-label="Controle de Ajuste Fino Incremental CAD"
       onPointerDown={(e) => e.stopPropagation()}
       className={cn(
-        "hud-loupe-card pointer-events-auto fixed bottom-12 left-3 z-40 flex w-[156px] flex-col rounded-[12px] p-2 select-none",
+        "hud-loupe-card pointer-events-auto fixed bottom-12 left-3 z-40 flex w-[158px] flex-col rounded-[12px] p-2 select-none",
         className,
       )}
     >
@@ -567,7 +607,7 @@ export function ChamferNudgeControlHUD({
               triggerHaptic("selection");
               onClose();
             }}
-            title="Ocultar painel de ajuste fino"
+            title="Fechar painel de ajuste fino e liberar eventos"
             aria-label="Ocultar painel de ajuste fino"
             className="hud-loupe-pin-btn flex size-5 items-center justify-center rounded-[5px] cursor-pointer"
           >
@@ -667,14 +707,51 @@ export function ChamferNudgeControlHUD({
         <div />
       </div>
 
-      {/* RODAPÉ DE COORDENADAS ATUAIS */}
-      <div className="mt-1.5 flex items-center justify-center gap-1 border-t border-line/60 pt-1 font-mono text-[9.5px] tabular-nums">
-        <span className="hud-loupe-muted">X:</span>
-        <span className="font-semibold">{cursorPos.x.toFixed(1)}</span>
-        <span className="hud-loupe-sep mx-0.5">|</span>
-        <span className="hud-loupe-muted">Y:</span>
-        <span className="font-semibold">{cursorPos.y.toFixed(1)}</span>
-      </div>
+      {/* RODAPÉ DE COORDENADAS ATUAIS OU ENTRADA NUMÉRICA SOB DEMANDA */}
+      {editingCoord ? (
+        <form onSubmit={handleApplyCoord} className="mt-1.5 flex items-center gap-1 border-t border-line/60 pt-1.5">
+          <input
+            type="text"
+            inputMode="decimal"
+            value={xInput}
+            onChange={(e) => setXInput(e.target.value)}
+            aria-label="Coordenada X (mm)"
+            placeholder="X"
+            className="hud-loupe-viewport w-14 rounded-[5px] px-1 py-0.5 text-center font-mono text-[9.5px] font-semibold outline-none focus:border-accent"
+          />
+          <input
+            type="text"
+            inputMode="decimal"
+            value={yInput}
+            onChange={(e) => setYInput(e.target.value)}
+            aria-label="Coordenada Y (mm)"
+            placeholder="Y"
+            className="hud-loupe-viewport w-14 rounded-[5px] px-1 py-0.5 text-center font-mono text-[9.5px] font-semibold outline-none focus:border-accent"
+          />
+          <button
+            type="submit"
+            title="Ir para coordenada X, Y"
+            aria-label="Confirmar coordenada"
+            style={{ backgroundColor: "var(--accent)", color: "var(--accent-foreground)" }}
+            className="flex size-5 shrink-0 items-center justify-center rounded-[5px] cursor-pointer"
+          >
+            <Check className="size-3" />
+          </button>
+        </form>
+      ) : (
+        <button
+          type="button"
+          onClick={handleOpenCoordInput}
+          title="Toque para digitar coordenadas X e Y exatas sob demanda"
+          className="mt-1.5 flex w-full items-center justify-center gap-1 border-t border-line/60 pt-1 font-mono text-[9.5px] tabular-nums hover:opacity-85 cursor-pointer"
+        >
+          <span className="hud-loupe-muted">X:</span>
+          <span className="font-semibold">{cursorPos.x.toFixed(1)}</span>
+          <span className="hud-loupe-sep mx-0.5">|</span>
+          <span className="hud-loupe-muted">Y:</span>
+          <span className="font-semibold">{cursorPos.y.toFixed(1)}</span>
+        </button>
+      )}
     </div>
   );
 }

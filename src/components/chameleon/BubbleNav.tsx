@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo, type CSSProperties } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import {
-  Compass,
+  DraftingCompass,
   Wrench,
   Home,
   BookOpen,
@@ -13,10 +13,25 @@ import {
 } from "lucide-react";
 import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
 import { createProject, type NewProjectInput } from "@/lib/projects/store";
+import { useSettings } from "@/lib/settings/SettingsProvider";
+import {
+  CALDRA_ACCENT_COLOR_KEY,
+  hexToRgbChannels,
+  resolveAccentColorTokens,
+} from "@/lib/settings/appearancePreferences";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+
+/**
+ * Helper de conversão de cor HEX (#RGB ou #RRGGBB) para canais RGB ("r, g, b")
+ * para aplicação em fundos e bordas translúcidas da Cápsula Deslizante Tonal.
+ */
+export function hexToRgbString(hex: string, fallback = "0, 102, 255"): string {
+  const parsed = hexToRgbChannels(hex);
+  return parsed ? parsed.rgb : fallback;
+}
 
 interface NavDestination {
   id: string;
@@ -31,7 +46,7 @@ const DESTINATIONS: NavDestination[] = [
     id: "projetar",
     label: "Projetar",
     to: "/projetar",
-    icon: Compass,
+    icon: DraftingCompass,
     matches: (p) =>
       p.startsWith("/projetar") ||
       p.startsWith("/tracagem") ||
@@ -82,9 +97,15 @@ const DESTINATIONS: NavDestination[] = [
 export function BubbleNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const navigate = useNavigate();
+  const { accent, theme } = useSettings();
 
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Identifica o índice do destino ativo (0 a 4)
   const activeIndex = DESTINATIONS.findIndex((d) => d.matches(pathname));
@@ -92,6 +113,38 @@ export function BubbleNav() {
 
   // Trava anti-spam de cliques/toques repetidos
   const lastNavTimeRef = useRef<number>(0);
+
+  // Resolve dinamicamente a Cor de Destaque ativa (--accent-color e --accent-rgb)
+  const navAccentStyle = useMemo<CSSProperties>(() => {
+    const prefersDark =
+      mounted &&
+      typeof window !== "undefined" &&
+      (window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
+    const isDark =
+      theme === "dark" ||
+      theme === "amoled" ||
+      (theme === "system" && prefersDark) ||
+      (mounted && typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
+
+    let storedHex: string | null = null;
+    if (mounted && typeof window !== "undefined") {
+      try {
+        storedHex = window.localStorage.getItem(CALDRA_ACCENT_COLOR_KEY);
+      } catch {
+        storedHex = null;
+      }
+    }
+
+    const { accentColor, accentRgb } = resolveAccentColorTokens(accent, isDark, storedHex);
+    const rgbChannels = accentColor.startsWith("#")
+      ? hexToRgbString(accentColor, accentRgb)
+      : accentRgb;
+
+    return {
+      "--accent-color": accentColor,
+      "--accent-rgb": rgbChannels,
+    } as CSSProperties;
+  }, [accent, theme, mounted]);
 
   // Escuta evento personalizado para novo projeto caso disparado
   useEffect(() => {
@@ -138,22 +191,20 @@ export function BubbleNav() {
       <nav
         aria-label="Navegação principal da oficina digital"
         className="caldra-floating-nav"
+        style={navAccentStyle}
       >
         <div className="relative flex h-full w-full items-center">
-          {/* Conjunto Indicador Deslizante: [Marcador Superior + Cone de Luz Trapezoidal] */}
+          {/* Cápsula Deslizante de Precisão (Sliding Pill) vinculada à Cor de Destaque */}
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute top-0 left-0 z-0 flex h-full w-1/5 flex-col items-center justify-start"
+            className="pointer-events-none absolute top-0 left-0 z-0 flex h-full w-1/5 items-center justify-center"
             style={{
               transform: `translate3d(${resolvedActiveIndex * 100}%, 0, 0)`,
-              transition: "transform 0.38s cubic-bezier(0.22, 1, 0.36, 1)",
+              transition: "transform 0.36s cubic-bezier(0.22, 1, 0.36, 1)",
               willChange: "transform",
             }}
           >
-            {/* Marcador Luminoso Superior (Top Pill Indicator) */}
-            <div className="caldra-nav-top-pill" />
-            {/* Feixe de Luz Projetado (Spotlight Cone) */}
-            <div className="caldra-nav-spotlight-cone" />
+            <div className="caldra-nav-sliding-pill" />
           </div>
 
           {/* 5 Botões de Destino (Apenas Ícones Vetoriais, Minimalista, Acessível via aria-label) */}
@@ -169,7 +220,7 @@ export function BubbleNav() {
                 aria-current={isCurrent ? "page" : undefined}
                 data-active={isCurrent ? "true" : "false"}
                 onClick={() => navigateToDestination(destIdx)}
-                className="caldra-nav-item-btn focus-visible:ring-1 focus-visible:ring-[#FF3B4E]/50 focus-visible:ring-inset"
+                className="caldra-nav-item-btn focus-visible:ring-1 focus-visible:ring-[var(--accent-color)]/50 focus-visible:ring-inset"
               >
                 <Icon
                   className="caldra-nav-item-icon"
@@ -211,7 +262,7 @@ function NavToolsModal({ open, onClose }: { open: boolean; onClose: () => void }
     {
       title: "Traçagem Paramétrica",
       desc: "Modelos 3D, planificação zero fresta e traçagem passo a passo",
-      icon: Compass,
+      icon: DraftingCompass,
       color: "caldra-bubble-sky text-sky-500",
       to: "/tracagem",
     },

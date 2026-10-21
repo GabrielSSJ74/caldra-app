@@ -75,6 +75,93 @@ export function toStoredAccentColor(accent: AccentColor): string {
 }
 
 /**
+ * Converte uma string hexadecimal (#RGB ou #RRGGBB) em canais numéricos RGB (r, g, b).
+ */
+export function hexToRgbChannels(hex: string): { r: number; g: number; b: number; rgb: string } | null {
+  if (typeof hex !== "string") return null;
+  const cleaned = hex.trim().replace(/^#/, "");
+  if (/^[0-9a-fA-F]{3}$/.test(cleaned)) {
+    const r = parseInt(cleaned[0] + cleaned[0], 16);
+    const g = parseInt(cleaned[1] + cleaned[1], 16);
+    const b = parseInt(cleaned[2] + cleaned[2], 16);
+    return { r, g, b, rgb: `${r}, ${g}, ${b}` };
+  }
+  if (/^[0-9a-fA-F]{6}$/.test(cleaned)) {
+    const r = parseInt(cleaned.slice(0, 2), 16);
+    const g = parseInt(cleaned.slice(2, 4), 16);
+    const b = parseInt(cleaned.slice(4, 6), 16);
+    return { r, g, b, rgb: `${r}, ${g}, ${b}` };
+  }
+  return null;
+}
+
+/**
+ * Resolve dinamicamente os tokens `--accent-color` (HEX) e `--accent-rgb` ("r, g, b")
+ * para qualquer cor de destaque do CALDRA (Azul #0066FF, Vermelho, Âmbar, Laranja, Neutro ou HEX customizado).
+ */
+export function resolveAccentColorTokens(
+  accent: AccentColor | string,
+  isDark: boolean,
+  customHex?: string | null,
+): { accentColor: string; accentRgb: string } {
+  // 1. Se um HEX explícito foi fornecido diretamente em `accent` ou `customHex`
+  const directHex =
+    (typeof accent === "string" && accent.trim().startsWith("#") ? accent.trim() : null) ??
+    (typeof customHex === "string" && customHex.trim().startsWith("#") ? customHex.trim() : null);
+
+  const normalized = typeof accent === "string" ? accent.trim().toLowerCase() : "blue";
+
+  if (normalized === "blue" || normalized === "#0066ff" || normalized === "azul") {
+    const hex = isDark ? "#3B82F6" : CALDRA_OFFICIAL_BLUE;
+    const rgb = hexToRgbChannels(CALDRA_OFFICIAL_BLUE)!;
+    return { accentColor: hex, accentRgb: rgb.rgb };
+  }
+
+  if (normalized === "amber" || normalized === "#f59e0b" || normalized === "ambar") {
+    const hex = isDark ? "#F59E0B" : "#D97706";
+    const rgb = hexToRgbChannels("#F59E0B")!;
+    return { accentColor: hex, accentRgb: rgb.rgb };
+  }
+
+  if (
+    normalized === "crimson" ||
+    normalized === "magenta" ||
+    normalized === "#b22222" ||
+    normalized === "vermelho" ||
+    normalized === "red"
+  ) {
+    const hex = isDark ? "#EF4444" : "#B22222";
+    const rgb = hexToRgbChannels(hex)!;
+    return { accentColor: hex, accentRgb: rgb.rgb };
+  }
+
+  if (normalized === "orange" || normalized === "laranja" || normalized === "#f97316") {
+    const hex = isDark ? "#FB923C" : "#EA580C";
+    const rgb = hexToRgbChannels("#F97316")!;
+    return { accentColor: hex, accentRgb: rgb.rgb };
+  }
+
+  if (normalized === "default" || normalized === "neutro") {
+    const hex = isDark ? "#F1F5F9" : "#0F172A";
+    const rgb = hexToRgbChannels(hex)!;
+    return { accentColor: hex, accentRgb: rgb.rgb };
+  }
+
+  if (directHex) {
+    const parsed = hexToRgbChannels(directHex);
+    if (parsed) {
+      return { accentColor: directHex, accentRgb: parsed.rgb };
+    }
+  }
+
+  // Fallback padrão: Azul Oficial CALDRA #0066FF
+  return {
+    accentColor: isDark ? "#3B82F6" : CALDRA_OFFICIAL_BLUE,
+    accentRgb: "0, 102, 255",
+  };
+}
+
+/**
  * Verifica se o usuário tem privilégio PRO com base no armazenamento.
  */
 export function checkIsProFromStorage(storage?: StorageLike | null): boolean {

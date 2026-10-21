@@ -7,7 +7,7 @@
  * não altera o status de fabricação das peças.
  */
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import type { Project } from "./store";
 
 export type AssemblyStep = {
@@ -169,13 +169,22 @@ export function resetAssemblyProgress(projectId: string) {
   persist();
 }
 
+let clientHydrated = false;
+
 export function useAssemblyProgress(projectId: string): string[] {
+  useEffect(() => {
+    if (!clientHydrated) {
+      clientHydrated = true;
+      load();
+      listeners.forEach((l) => l());
+    }
+  }, []);
   return useSyncExternalStore(
     (l) => {
       listeners.add(l);
       return () => listeners.delete(l);
     },
-    () => snapshot(projectId),
+    () => (!clientHydrated || typeof window === "undefined" ? EMPTY : snapshot(projectId)),
     () => EMPTY,
   );
 }

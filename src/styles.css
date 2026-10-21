@@ -88,25 +88,66 @@
 
 .calculator-theme {
   /* Tokens derivados do design system — reagem a tema, AMOLED e cor de destaque. */
-  --calc-page: transparent;
+  --calc-page: var(--background);
   --calc-shell: var(--card);
-  --calc-display: color-mix(in oklab, var(--background) 82%, var(--card));
-  --calc-recess: color-mix(in oklab, var(--background) 70%, var(--card));
-  --calc-key: color-mix(in oklab, var(--card) 82%, var(--foreground) 6%);
-  --calc-key-hover: color-mix(in oklab, var(--card) 70%, var(--accent) 12%);
-  --calc-border: var(--border);
-  --calc-line: var(--border);
-  --calc-text: var(--foreground);
-  --calc-muted: var(--muted-foreground);
-  --calc-expression: var(--muted-foreground);
-  --calc-result: var(--foreground);
-  --calc-cyan: var(--accent);
-  --calc-icon: var(--accent);
-  --calc-active: color-mix(in oklab, var(--accent) 16%, transparent);
-  --calc-tab: color-mix(in oklab, var(--accent) 12%, transparent);
+  --calc-display: #F8FAFC;
+  --calc-display-border: #E2E8F0;
+  --calc-recess: #F1F5F9;
+  --calc-key: #FFFFFF;
+  --calc-key-sci: #F1F5F9;
+  --calc-key-op: #E2E8F0;
+  --calc-key-clear-bg: rgba(239, 68, 68, 0.08);
+  --calc-key-clear-text: #DC2626;
+  --calc-key-clear-border: rgba(239, 68, 68, 0.22);
+  --calc-key-hover: color-mix(in oklab, var(--card) 85%, var(--accent) 12%);
+  --calc-border: #E2E8F0;
+  --calc-line: #E2E8F0;
+  --calc-text: #0F172A;
+  --calc-sci-text: #475569;
+  --calc-muted: #64748B;
+  --calc-expression: #64748B;
+  --calc-result: #0F172A;
+  --calc-cyan: var(--accent-color, var(--accent));
+  --calc-icon: var(--accent-color, var(--accent));
+  --calc-active: rgba(var(--accent-rgb, 0, 102, 255), 0.12);
+  --calc-tab: rgba(var(--accent-rgb, 0, 102, 255), 0.10);
   --calc-error: var(--destructive);
-  --shadow-calc: 0 30px 80px oklch(0 0 0 / 22%), inset 0 1px 0 oklch(1 0 0 / 4%);
-  --shadow-calc-glow: 0 0 18px color-mix(in oklab, var(--accent) 22%, transparent);
+  --shadow-calc: 0 20px 50px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  --shadow-calc-glow: 0 4px 12px rgba(var(--accent-rgb, 0, 102, 255), 0.30);
+}
+
+.dark .calculator-theme,
+.calculator-theme.dark {
+  --calc-page: var(--background);
+  --calc-shell: #0F1115;
+  --calc-display: #14171C;
+  --calc-display-border: rgba(255, 255, 255, 0.08);
+  --calc-recess: #12151B;
+  --calc-key: #1E232B;
+  --calc-key-sci: #161920;
+  --calc-key-op: #252B36;
+  --calc-key-clear-bg: rgba(239, 68, 68, 0.14);
+  --calc-key-clear-text: #F87171;
+  --calc-key-clear-border: rgba(239, 68, 68, 0.28);
+  --calc-key-hover: color-mix(in oklab, #1E232B 82%, var(--accent) 18%);
+  --calc-border: rgba(255, 255, 255, 0.08);
+  --calc-line: rgba(255, 255, 255, 0.07);
+  --calc-text: #F8FAFC;
+  --calc-sci-text: #94A3B8;
+  --calc-muted: #94A3B8;
+  --calc-expression: #94A3B8;
+  --calc-result: #F8FAFC;
+  --calc-active: rgba(var(--accent-rgb, 59, 130, 246), 0.18);
+  --calc-tab: rgba(var(--accent-rgb, 59, 130, 246), 0.14);
+  --shadow-calc: 0 28px 70px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --shadow-calc-glow: 0 4px 12px rgba(var(--accent-rgb, 59, 130, 246), 0.30);
+}
+
+.amoled .calculator-theme,
+.calculator-theme.amoled {
+  --calc-page: #000000;
+  --calc-shell: #050608;
+  --calc-display: #0B0D11;
 }
 
 @utility shadow-calc {
@@ -118,17 +159,17 @@
 
 .calc-icon-button {
   display: grid;
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.25rem;
+  height: 2.25rem;
   place-items: center;
   border: 1px solid var(--calc-line);
-  border-radius: 999px;
+  border-radius: 0.65rem;
   color: var(--calc-muted);
   background: var(--calc-recess);
   transition:
-    color 160ms ease,
-    border-color 160ms ease,
-    transform 160ms ease;
+    color 150ms ease,
+    border-color 150ms ease,
+    transform 120ms ease;
 }
 
 .calc-icon-button:hover {
@@ -139,96 +180,122 @@
   transform: scale(0.95);
 }
 .calc-icon-button svg {
-  width: 1.1rem;
-  height: 1.1rem;
+  width: 1rem;
+  height: 1rem;
 }
 
 .calc-key {
+  position: relative;
   display: flex;
-  height: clamp(3.15rem, 8dvh, 4.15rem);
+  height: 100%;
+  min-height: 0;
   align-items: center;
   justify-content: center;
-  gap: 0.2rem;
+  gap: 0.15rem;
   border: 1px solid var(--calc-line);
-  border-radius: 0.75rem;
-  background: linear-gradient(
-    155deg,
-    color-mix(in oklab, var(--calc-key) 92%, white 8%),
-    var(--calc-key)
-  );
+  border-radius: 0.65rem;
+  background: var(--calc-key);
   color: var(--calc-text);
-  box-shadow:
-    inset 0 1px 0 oklch(1 0 0 / 5%),
-    0 5px 10px oklch(0 0 0 / 18%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  user-select: none;
+  touch-action: manipulation;
   transition:
-    background 150ms ease,
-    border-color 150ms ease,
+    background 120ms ease,
+    border-color 120ms ease,
     transform 80ms ease;
 }
 
 .calc-key:hover {
-  background: var(--calc-key-hover);
-  border-color: color-mix(in oklab, var(--calc-cyan) 32%, var(--calc-line));
+  border-color: color-mix(in oklab, var(--calc-cyan) 36%, var(--calc-line));
 }
+
+/* Nível 1: Teclas Numéricas */
+.calc-key-num {
+  background: var(--calc-key);
+  color: var(--calc-text);
+}
+.calc-key-num .calc-key-main {
+  font-family: var(--font-mono);
+  font-size: clamp(1.05rem, 2.6dvh, 1.3rem);
+  font-weight: 700;
+}
+
+/* Nível 2: Funções Científicas e Caldeiraria */
+.calc-key-sci {
+  background: var(--calc-key-sci);
+  color: var(--calc-sci-text);
+}
+.calc-key-sci .calc-key-main {
+  font-family: var(--font-mono);
+  font-size: clamp(0.75rem, 1.85dvh, 0.88rem);
+  font-weight: 600;
+}
+
+/* Nível 3: Operadores Básicos */
+.calc-key-operator {
+  background: var(--calc-key-op);
+  color: var(--calc-cyan);
+  font-weight: 700;
+}
+.calc-key-operator .calc-key-main {
+  font-family: var(--font-mono);
+  font-size: clamp(1rem, 2.4dvh, 1.2rem);
+  font-weight: 700;
+}
+
+/* Nível 4: Ações de Controle (C, AC, Backspace) */
+.calc-key-clear {
+  background: var(--calc-key-clear-bg);
+  color: var(--calc-key-clear-text);
+  border-color: var(--calc-key-clear-border);
+}
+.calc-key-clear .calc-key-main {
+  font-family: var(--font-mono);
+  font-size: clamp(0.85rem, 2dvh, 1rem);
+  font-weight: 700;
+}
+
 .calc-key-main {
   font-family: var(--font-mono);
-  font-size: clamp(1rem, 4.5vw, 1.3rem);
+  font-size: clamp(0.85rem, 2.1dvh, 1.15rem);
+  line-height: 1;
 }
+
 .calc-key-sub {
-  align-self: flex-start;
-  margin-top: 0.45rem;
+  position: absolute;
+  top: 0.2rem;
+  right: 0.3rem;
+  font-family: var(--font-mono);
   font-size: 0.55rem;
+  line-height: 1;
   color: var(--calc-muted);
+  opacity: 0.85;
 }
-.calc-key-operator {
-  color: var(--calc-cyan);
-}
+
 .calc-key-shift {
-  flex-direction: column;
+  background: var(--calc-key-sci);
   color: var(--calc-cyan);
+  font-weight: 700;
 }
 .calc-key-shift.is-active {
   border-color: var(--calc-cyan);
   background: var(--calc-active);
+  color: var(--calc-cyan);
   box-shadow: var(--shadow-calc-glow);
 }
+
+/* Botão de Execução (=) com Accent Color e Sombra Dinâmica */
 .calc-key-equals {
   border-color: var(--calc-cyan);
   background: var(--calc-cyan);
-  color: var(--accent-foreground);
+  color: #FFFFFF;
+  font-weight: 700;
   box-shadow: var(--shadow-calc-glow);
 }
 .calc-key-equals:hover {
-  background: color-mix(in oklab, var(--calc-cyan) 88%, white);
+  background: color-mix(in oklab, var(--calc-cyan) 90%, white);
 }
 
-@media (max-width: 420px) {
-  .calc-shell {
-    border-radius: 1.25rem;
-  }
-  .calc-key {
-    border-radius: 0.62rem;
-  }
-}
-
-@media (max-height: 760px) and (orientation: landscape) {
-  .calculator-theme {
-    padding-block: 0.35rem;
-  }
-  .calc-shell {
-    max-width: 920px;
-    padding: 0.65rem;
-  }
-  .calc-display {
-    padding-block: 0.7rem;
-  }
-  .calc-display > div:nth-child(2) {
-    min-height: 2.5rem;
-  }
-  .calc-key {
-    height: 2.45rem;
-  }
-}
 
 :root {
   --radius: 0.875rem;
@@ -270,6 +337,8 @@
   --muted: oklch(0.95 0.005 80);
   --muted-foreground: oklch(0.52 0.01 80);
   --accent: oklch(0.66 0.15 62);
+  --accent-color: #D97706;
+  --accent-rgb: 245, 158, 11;
   --accent-foreground: oklch(0.99 0.003 80);
   --accent2: oklch(0.55 0.1 180);
   --warn: oklch(0.68 0.15 70);
@@ -338,6 +407,8 @@
   --muted: oklch(0.225 0.006 60);
   --muted-foreground: oklch(0.66 0.008 75);
   --accent: oklch(0.77 0.163 70); /* âmbar #F59E0B */
+  --accent-color: #F59E0B;
+  --accent-rgb: 245, 158, 11;
   --accent-foreground: oklch(0.145 0.006 60);
   --accent2: oklch(0.78 0.11 178); /* turquesa secundária */
   --warn: oklch(0.79 0.155 70);
@@ -650,10 +721,18 @@
   --primary: var(--foreground);
   --primary-foreground: var(--background);
   --accent: var(--foreground);
+  --accent-color: #0F172A;
+  --accent-rgb: 15, 23, 42;
   --accent-foreground: var(--background);
   --accent2: var(--muted-foreground);
   --ring: var(--foreground);
   --gradient-brand: linear-gradient(120deg, var(--foreground), var(--muted-foreground));
+}
+
+.dark.accent-default,
+.dark .accent-default {
+  --accent-color: #F1F5F9;
+  --accent-rgb: 241, 245, 249;
 }
 
 /* Azul Oficial CALDRA #0066FF — vívido e de alto contraste em modo claro, luminoso em modo escuro */
@@ -661,6 +740,8 @@
   --primary: #0066FF;
   --primary-foreground: #ffffff;
   --accent: #0066FF;
+  --accent-color: #0066FF;
+  --accent-rgb: 0, 102, 255;
   --accent-foreground: #ffffff;
   --accent2: #0099FF;
   --ring: #0066FF;
@@ -672,6 +753,8 @@
   --primary: #0066FF;
   --primary-foreground: #ffffff;
   --accent: #38BDF8;
+  --accent-color: #3B82F6;
+  --accent-rgb: 0, 102, 255;
   --accent-foreground: #090D16;
   --accent2: #00CCFF;
   --ring: #38BDF8;
@@ -684,6 +767,8 @@
   --primary: #B22222;
   --primary-foreground: #ffffff;
   --accent: #B22222;
+  --accent-color: #B22222;
+  --accent-rgb: 178, 34, 34;
   --accent-foreground: #ffffff;
   --accent2: #D32F2F;
   --ring: #B22222;
@@ -695,20 +780,22 @@
   --primary: #B22222;
   --primary-foreground: #ffffff;
   --accent: #E53935; /* Carmesim luminoso legível como texto e realce no escuro */
+  --accent-color: #EF4444;
+  --accent-rgb: 239, 68, 68;
   --accent-foreground: #ffffff;
   --accent2: #EF5350;
   --ring: #E53935;
   --gradient-brand: linear-gradient(120deg, #B22222, #E53935);
 }
 
-/* ——— render sólido 3D (estilo CAD metálico técnico) ——— */
+/* ——— render sólido 3D (estilo CAD metálico natural clássico) ——— */
 :root {
   --holo: oklch(0.9 0.16 190);
-  --solid-hi: #8b96a6; /* aço metálico iluminado (#6B7280 -> #9CA3AF) */
-  --solid-lo: #3b4452; /* aço sombreado técnico (#374151 -> #4B5563) */
-  --solid-edge: #9ca3af; /* arestas e dobras nítidas em tom claro */
-  --solid-in: #475263; /* superfície interna sombreada */
-  --solid-rim: #cbd5e1; /* borda / espessura da chapa */
+  --solid-hi: #b6c2ce; /* aço metálico acetinado iluminado (estilo clássico natural) */
+  --solid-lo: #667586; /* aço sombreado técnico suave */
+  --solid-edge: #94a3b8; /* arestas e dobras nítidas em tom claro */
+  --solid-in: #8493a3; /* superfície interna sombreada natural */
+  --solid-rim: #f8fafc; /* borda / contorno branco nítido nas aberturas */
 }
 
 @utility holo-text {
@@ -2540,7 +2627,7 @@
   border: 1px solid oklch(0.77 0.163 70 / 35%);
 }
 
-/* Barra inferior de navegação em Pílula Flutuante com Feixe Luminoso Deslizante (Navigation Tabs V2) */
+/* Barra inferior de navegação em Pílula Flutuante com Cápsula Deslizante Tonal (Vinculada à Cor de Destaque do CALDRA) */
 .caldra-floating-nav {
   position: fixed;
   bottom: calc(16px + env(safe-area-inset-bottom, 0px));
@@ -2577,42 +2664,30 @@
     0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-/* Marcador luminoso superior (Top Pill Indicator) */
-.caldra-nav-top-pill {
-  width: 28px;
-  height: 4px;
-  border-radius: 0 0 4px 4px;
-  background-color: #FF3B4E;
-  box-shadow:
-    0 2px 10px #FF3B4E,
-    0 0 6px rgba(255, 59, 78, 0.75);
-  flex-shrink: 0;
-}
-
-/* Feixe de luz trapezoidal (Spotlight Cone) */
-.caldra-nav-spotlight-cone {
-  width: 48px;
-  height: 46px;
-  margin-top: -1px;
-  clip-path: polygon(22% 0%, 78% 0%, 100% 100%, 0% 100%);
-  background: linear-gradient(
-    180deg,
-    rgba(255, 59, 78, 0.26) 0%,
-    rgba(255, 59, 78, 0.06) 65%,
-    transparent 100%
-  );
+/* Cápsula Deslizante Tonal (Sliding Pill) — Modo Claro */
+.caldra-nav-sliding-pill {
+  width: calc(100% - 12px);
+  max-width: 56px;
+  min-width: 44px;
+  height: 44px;
+  border-radius: 9999px;
+  background-color: rgba(var(--accent-rgb, 0, 102, 255), 0.12);
+  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), 0.22);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
   pointer-events: none;
   flex-shrink: 0;
+  transition:
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
 }
 
-.dark .caldra-nav-spotlight-cone,
-.amoled .caldra-nav-spotlight-cone {
-  background: linear-gradient(
-    180deg,
-    rgba(255, 59, 78, 0.32) 0%,
-    rgba(255, 59, 78, 0.06) 65%,
-    transparent 100%
-  );
+/* Cápsula Deslizante Tonal (Sliding Pill) — Modo Escuro & AMOLED */
+.dark .caldra-nav-sliding-pill,
+.amoled .caldra-nav-sliding-pill {
+  background-color: rgba(var(--accent-rgb, 0, 102, 255), 0.18);
+  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), 0.30);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 /* Botões e ícones da barra flutuante */
@@ -2641,32 +2716,31 @@
 
 .dark .caldra-nav-item-btn,
 .amoled .caldra-nav-item-btn {
-  color: #8E8E93;
+  color: #94A3B8;
   opacity: 0.72;
 }
 
 .caldra-nav-item-btn:hover:not([data-active="true"]) {
-  opacity: 0.92;
+  opacity: 0.94;
 }
 
 .caldra-nav-item-btn[data-active="true"] {
-  color: #FF3B4E;
+  color: var(--accent-color, var(--accent));
   opacity: 1;
 }
 
 .caldra-nav-item-icon {
   width: 22px;
   height: 22px;
-  transform: translateY(0) scale(1);
+  transform: scale(1);
   transition:
     transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
-    filter 0.28s ease;
+    color 0.25s ease;
   will-change: transform;
 }
 
 .caldra-nav-item-btn[data-active="true"] .caldra-nav-item-icon {
-  transform: translateY(-2px) scale(1.08);
-  filter: drop-shadow(0 2px 8px rgba(255, 59, 78, 0.35));
+  transform: scale(1.06);
 }
 
 /* Bolhas de ícones e acentos controladas por --bubble-opacity */

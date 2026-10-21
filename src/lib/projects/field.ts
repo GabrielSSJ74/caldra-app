@@ -9,7 +9,7 @@
  * o status de fabricação da peça no dossiê e não duplica nenhum motor.
  */
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 import type { Project } from "./store";
 
 export type FieldInstall = { at: number; by?: string | undefined };
@@ -139,13 +139,22 @@ export function resetField(projectId: string) {
 /* Leitura                                                             */
 /* ------------------------------------------------------------------ */
 
+let clientHydrated = false;
+
 export function useFieldRecord(projectId: string): FieldRecord {
+  useEffect(() => {
+    if (!clientHydrated) {
+      clientHydrated = true;
+      load();
+      listeners.forEach((l) => l());
+    }
+  }, []);
   return useSyncExternalStore(
     (l) => {
       listeners.add(l);
       return () => listeners.delete(l);
     },
-    () => recordOf(projectId),
+    () => (!clientHydrated || typeof window === "undefined" ? EMPTY : recordOf(projectId)),
     () => EMPTY,
   );
 }
