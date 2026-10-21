@@ -30,13 +30,85 @@ export type PreprocessOptions = {
   threshold?: number;
 };
 
-export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/webp"];
+export const ACCEPTED_IMAGE_TYPES = ["image/png", "image/jpeg", "image/jpg", "image/webp"];
 
-export function isAcceptedImage(file: File) {
-  return ACCEPTED_IMAGE_TYPES.includes(file.type) || /\.(png|jpe?g|webp)$/i.test(file.name);
+/**
+ * Inspeciona os primeiros bytes (magic bytes) do arquivo para identificar o
+ * formato real mesmo quando o provedor de mídia (Google Fotos / Android Photo
+ * Picker `content://...`) não fornece extensão no nome ou informa MIME genérico.
+ */
+export function detectImageMimeFromBytes(
+  bytes: Uint8Array,
+): "image/png" | "image/jpeg" | "image/webp" | "application/pdf" | null {
+  if (!bytes || bytes.length < 4) return null;
+  // %PDF- (25 50 44 46)
+  if (bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46) {
+    return "application/pdf";
+  }
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  // JPEG: FF D8 FF
+  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  // WEBP: "RIFF" .... "WEBP"
+  if (
+    bytes.length >= 12 &&
+    bytes[0] === 0x52 &&
+    bytes[1] === 0x49 &&
+    bytes[2] === 0x46 &&
+    bytes[3] === 0x46 &&
+    bytes[8] === 0x57 &&
+    bytes[9] === 0x45 &&
+    bytes[10] === 0x42 &&
+    bytes[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  return null;
 }
 
-export function readAsDataUrl(file: File): Promise<string> {
+export async function readHeaderBytes(blob: Blob, count = 16): Promise<Uint8Array> {
+  const slice = blob.slice(0, count);
+  if (typeof slice.arrayBuffer === "function") {
+    const buf = await slice.arrayBuffer();
+    return new Uint8Array(buf);
+  }
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      if (fr.result instanceof ArrayBuffer) {
+        resolve(new Uint8Array(fr.result));
+      } else {
+        resolve(new Uint8Array(0));
+      }
+    };
+    fr.onerror = () => reject(new Error("Não foi possível ler o cabeçalho do arquivo."));
+    fr.readAsArrayBuffer(slice);
+  });
+}
+
+export function isAcceptedImage(file: File, detectedMime?: string | null) {
+  if (detectedMime && ACCEPTED_IMAGE_TYPES.includes(detectedMime)) return true;
+  return (
+    ACCEPTED_IMAGE_TYPES.includes(file.type.toLowerCase()) ||
+    /\.(png|jpe?g|webp)$/i.test(file.name)
+  );
+}
+
+export function readAsDataUrl(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const fr = new FileReader();
     fr.onload = () => resolve(String(fr.result));
@@ -54,7 +126,68 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-/** Desenha a imagem aplicando rotação/recorte e devolve os pixels RGBA. */
+/**
+ * Avalia se a imagem possui canal alfa ativo (transparência real) e se os
+ * pixels opacos são predominantemente claros/brancos (ex.: logo branca em PNG
+ * transparente, onde compor sobre fundo branco apagaria a silhueta).
+ */
+export function analyzeAlphaChannel(image: ImageData): {
+  hasAlpha: boolean;
+  transparentRatio: number;
+  lightForegroundOnAlpha: boolean;
+} {
+  const { data, width, height } = image;
+  const total = Math.max(1, width * height);
+  const step = Math.max(1, Math.floor(total / 16000));
+  let sampled = 0;
+  let transparentCount = 0;
+  let opaqueCount = 0;
+  let opaqueLumSum = 0;
+
+  for (let p = 0; p < total; p += step) {
+    const i = p * 4;
+    const a = data[i + 3]!;
+    sampled++;
+    if (a < 64) {
+      transparentCount++;
+    } else if (a >= 128) {
+      opaqueCount++;
+      opaqueLumSum += 0.299 * data[i]! + 0.587 * data[i + 1]! + 0.114 * data[i + 2]!;
+    }
+  }
+
+  const transparentRatio = sampled ? transparentCount / sampled : 0;
+  const hasAlpha = transparentRatio >= 0.015;
+  const avgOpaqueLum = opaqueCount ? opaqueLumSum / opaqueCount : 0;
+  // Se há fundo transparente (>= 3%) e a arte opaca é muito clara (> 218),
+  // a informação da forma está na opacidade alfa sobre fundo transparente.
+  const lightForegroundOnAlpha =
+    hasAlpha && transparentRatio >= 0.03 && opaqueCount > 0 && avgOpaqueLum > 218;
+
+  return { hasAlpha, transparentRatio, lightForegroundOnAlpha };
+}
+
+/**
+ * Calcula a luminância efetiva (0 = tinta escura, 255 = fundo branco)
+ * preservando tanto logos escuras quanto logos brancas em PNG com transparência.
+ */
+export function effectivePixelLuminance(
+  data: Uint8ClampedArray,
+  i: number,
+  lightForegroundOnAlpha: boolean,
+): number {
+  const a = data[i + 3]! / 255;
+  if (lightForegroundOnAlpha) {
+    // Pixels opacos viram tinta (luminância baixa), transparentes viram fundo branco (255)
+    return 255 * (1 - a);
+  }
+  const r = data[i]! * a + 255 * (1 - a);
+  const g = data[i + 1]! * a + 255 * (1 - a);
+  const b = data[i + 2]! * a + 255 * (1 - a);
+  return 0.299 * r + 0.587 * g + 0.114 * b;
+}
+
+/** Desenha a imagem aplicando rotação/recorte e devolve os pixels RGBA preservando o canal alfa. */
 export function rasterize(img: HTMLImageElement, opt: PreprocessOptions = {}) {
   const rot = (((opt.rotationDeg ?? 0) % 360) + 360) % 360;
   const swap = rot === 90 || rot === 270;
@@ -78,8 +211,7 @@ export function rasterize(img: HTMLImageElement, opt: PreprocessOptions = {}) {
   if (!ctx) throw new Error("Canvas indisponível neste dispositivo.");
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(0, 0, W, H);
+  ctx.clearRect(0, 0, W, H);
 
   ctx.save();
   ctx.scale(scale, scale);
@@ -120,15 +252,11 @@ function otsu(hist: number[], total: number) {
 /** Converte a imagem em máscara binária (1 = traço). */
 export function binarize(image: ImageData, invert = false): Binary {
   const { width, height, data } = image;
+  const { lightForegroundOnAlpha } = analyzeAlphaChannel(image);
   const gray = new Uint8Array(width * height);
   const hist = new Array<number>(256).fill(0);
   for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    const a = data[i + 3]! / 255;
-    // pixels transparentes contam como fundo branco
-    const r = data[i]! * a + 255 * (1 - a);
-    const g = data[i + 1]! * a + 255 * (1 - a);
-    const b = data[i + 2]! * a + 255 * (1 - a);
-    const v = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    const v = Math.round(effectivePixelLuminance(data, i, lightForegroundOnAlpha));
     gray[p] = v;
     hist[v] = (hist[v] ?? 0) + 1;
   }
@@ -218,13 +346,10 @@ export function gaussianBlur(image: ImageData, radius: number): ImageData {
 /** Limiar fixo (0–255) sobre a luminância — usado quando há prévia manual. */
 export function thresholdBinarize(image: ImageData, threshold: number, invert = false): Binary {
   const { width, height, data } = image;
+  const { lightForegroundOnAlpha } = analyzeAlphaChannel(image);
   const out = new Uint8Array(width * height);
   for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    const a = data[i + 3]! / 255;
-    const r = data[i]! * a + 255 * (1 - a);
-    const g = data[i + 1]! * a + 255 * (1 - a);
-    const b = data[i + 2]! * a + 255 * (1 - a);
-    const v = 0.299 * r + 0.587 * g + 0.114 * b;
+    const v = effectivePixelLuminance(data, i, lightForegroundOnAlpha);
     out[p] = (invert ? v > threshold : v <= threshold) ? 1 : 0;
   }
   return { data: out, width, height };
@@ -261,14 +386,11 @@ export function closeHoles(bin: Binary, passes = 1): Binary {
  */
 export function normalizeContrast(image: ImageData): ImageData {
   const { width: w, height: h, data } = image;
+  const { lightForegroundOnAlpha } = analyzeAlphaChannel(image);
   const hist = new Uint32Array(256);
   const lum = new Float32Array(w * h);
   for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    const a = data[i + 3]! / 255;
-    const r = data[i]! * a + 255 * (1 - a);
-    const g = data[i + 1]! * a + 255 * (1 - a);
-    const b = data[i + 2]! * a + 255 * (1 - a);
-    const v = 0.299 * r + 0.587 * g + 0.114 * b;
+    const v = effectivePixelLuminance(data, i, lightForegroundOnAlpha);
     lum[p] = v;
     const bi = Math.max(0, Math.min(255, Math.round(v)));
     hist[bi] = (hist[bi] ?? 0) + 1;
@@ -318,17 +440,14 @@ export function sauvolaBinarize(
   opt: { window?: number; k?: number; invert?: boolean } = {},
 ): Binary {
   const { width: w, height: h, data } = image;
+  const { lightForegroundOnAlpha } = analyzeAlphaChannel(image);
   const k = opt.k ?? 0.3;
   const win = Math.max(7, Math.round(opt.window ?? Math.max(15, Math.min(w, h) * 0.035)) | 1);
   const rad = (win - 1) >> 1;
 
   const gray = new Float64Array(w * h);
   for (let i = 0, p = 0; i < data.length; i += 4, p++) {
-    const a = data[i + 3]! / 255;
-    const r = data[i]! * a + 255 * (1 - a);
-    const g = data[i + 1]! * a + 255 * (1 - a);
-    const b = data[i + 2]! * a + 255 * (1 - a);
-    gray[p] = 0.299 * r + 0.587 * g + 0.114 * b;
+    gray[p] = effectivePixelLuminance(data, i, lightForegroundOnAlpha);
   }
 
   const iw = w + 1;

@@ -88,11 +88,22 @@ export function useImmersiveLandscape(enabled: boolean) {
     void request();
 
     const onResize = () => sync();
+    const onVisibilityOrFocus = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      sync();
+      if (typeof document !== "undefined" && document.fullscreenElement) {
+        void lockLandscape();
+      }
+    };
     window.addEventListener("resize", onResize);
     window.addEventListener("orientationchange", onResize);
+    window.addEventListener("focus", onVisibilityOrFocus);
+    document.addEventListener("visibilitychange", onVisibilityOrFocus);
     return () => {
       window.removeEventListener("resize", onResize);
       window.removeEventListener("orientationchange", onResize);
+      window.removeEventListener("focus", onVisibilityOrFocus);
+      document.removeEventListener("visibilitychange", onVisibilityOrFocus);
       unlockOrientation();
       void exitFullscreen();
     };

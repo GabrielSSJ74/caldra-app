@@ -8,6 +8,7 @@
  */
 
 import type { Tolerance } from "./geometryRecognizer";
+import { analyzeAlphaChannel, effectivePixelLuminance } from "./imagePreprocessor";
 import type { TurnPolicy } from "./logoTracer";
 
 export type ImageProfile = {
@@ -30,6 +31,8 @@ export type ImageProfile = {
   otsu: number;
   /** Imagem com poucos tons (arte chapada) → cara de logo. */
   flatArt: boolean;
+  /** Possui canal alfa ativo (PNG/WEBP com transparência). */
+  hasAlpha?: boolean;
 };
 
 export type VisionSuggestion = {
@@ -49,14 +52,6 @@ export type VisionSuggestion = {
   normalize: boolean;
   reasons: string[];
 };
-
-function luminance(data: Uint8ClampedArray, i: number) {
-  const a = data[i + 3]! / 255;
-  const r = data[i]! * a + 255 * (1 - a);
-  const g = data[i + 1]! * a + 255 * (1 - a);
-  const b = data[i + 2]! * a + 255 * (1 - a);
-  return 0.299 * r + 0.587 * g + 0.114 * b;
-}
 
 function otsuOf(hist: Float64Array, total: number) {
   let sum = 0;
@@ -83,10 +78,11 @@ function otsuOf(hist: Float64Array, total: number) {
 /** Retrato completo da imagem já rasterizada. */
 export function profileImage(image: ImageData): ImageProfile {
   const { width: w, height: h, data } = image;
+  const { hasAlpha, lightForegroundOnAlpha } = analyzeAlphaChannel(image);
   const gray = new Float32Array(w * h);
   const hist = new Float64Array(256);
   for (let p = 0; p < gray.length; p++) {
-    const v = luminance(data, p * 4);
+    const v = effectivePixelLuminance(data, p * 4, lightForegroundOnAlpha);
     gray[p] = v;
     const bi = Math.max(0, Math.min(255, Math.round(v)));
     hist[bi] = (hist[bi] ?? 0) + 1;
@@ -188,7 +184,8 @@ export function profileImage(image: ImageData): ImageProfile {
     backgroundSpread,
     uniformBackground: backgroundSpread < 12,
     otsu,
-    flatArt: top > 0.55,
+    flatArt: top > 0.55 || hasAlpha,
+    hasAlpha,
   };
 }
 
@@ -197,7 +194,10 @@ export function suggestFromProfile(p: ImageProfile): VisionSuggestion {
   const reasons: string[] = [];
 
   let mode: VisionSuggestion["mode"] = "tecnico";
-  if (p.flatArt && p.strokePx > 6 && p.inkRatio > 0.06) {
+  if (p.hasAlpha) {
+    mode = "logo";
+    reasons.push("Fundo transparente detectado (PNG/WEBP) — modo logo preserva curvas de Bézier e furos.");
+  } else if (p.flatArt && p.strokePx > 6 && p.inkRatio > 0.06) {
     mode = "logo";
     reasons.push("Arte chapada com traço grosso — curvas de Bézier preservam melhor a forma.");
   } else if (!p.uniformBackground && p.strokePx > 1.5 && p.strokePx < 14) {

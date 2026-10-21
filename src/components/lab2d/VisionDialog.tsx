@@ -5,13 +5,18 @@ import {
   Check,
   Circle as CircleIcon,
   Eraser,
+  FolderOpen,
   Image as ImageIcon,
   Loader2,
+  Maximize2,
+  Minimize2,
   MousePointerClick,
+  RefreshCw,
   RotateCw,
   Ruler,
   Scan,
   ScanText,
+  Smartphone,
   Spline,
   Undo2,
   Upload,
@@ -31,6 +36,15 @@ import { uid, type Entity } from "@/lib/lab2d/core";
 
 import { CUT_COLOR, DIMENSION_COLOR, MARK_COLOR } from "@/lib/lab2d/technical";
 import { importImage, type ImportedImage } from "@/lib/vision/imageImportService";
+import {
+  detectVisionPickerPlatform,
+  getSessionMediaEntries,
+  nativeMediaItemToFile,
+  registerSessionMediaEntry,
+  removeSessionMediaByUri,
+  type EmbeddedPickerPanelState,
+  type SessionMediaEntry,
+} from "@/lib/vision/mediaPickerBridge";
 import type { Prim, Tolerance } from "@/lib/vision/geometryRecognizer";
 import { toEntities, type VisionAnalysis } from "@/lib/vision/vectorizer";
 import { countDuplicates, normalizeGeometry } from "@/lib/vision/geometryNormalizer";
@@ -118,6 +132,16 @@ export function VisionDialog({
   const [limitOpen, setLimitOpen] = useState(false);
   const [img, setImg] = useState<ImportedImage | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isPickingFile, setIsPickingFile] = useState(false);
+  const [isLoadingImage, setIsLoadingImage] = useState(false);
+  const [embeddedPanelState, setEmbeddedPanelState] = useState<EmbeddedPickerPanelState>("peek");
+  const [sessionMedia, setSessionMedia] = useState<readonly SessionMediaEntry[]>(() =>
+    getSessionMediaEntries(),
+  );
+
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const committedImgRef = useRef<ImportedImage | null>(null);
+  const platformCaps = useMemo(() => detectVisionPickerPlatform(), [open]);
 
   // pré-visualização
   const [rotation, setRotation] = useState(0);
@@ -201,9 +225,16 @@ export function VisionDialog({
 
   const reset = useCallback(() => {
     cancelVision();
+    setImg((prev) => {
+      if (prev && prev !== committedImgRef.current) {
+        prev.release?.();
+      }
+      return null;
+    });
     setStep("importar");
-    setImg(null);
     setError(null);
+    setIsPickingFile(false);
+    setIsLoadingImage(false);
     setRotation(0);
     setOpacity(1);
     setZoom(1);
@@ -233,28 +264,178 @@ export function VisionDialog({
   }, []);
 
   useEffect(() => {
-    if (!open) reset();
+    if (open) {
+      setSessionMedia(getSessionMediaEntries());
+    } else {
+      reset();
+    }
   }, [open, reset]);
 
-  const pick = async (file: File) => {
+  // Escuta cancelamento nativo do <input type="file"> e retorno de foco da janela
+  useEffect(() => {
+    const input = fileInputRef.current;
+    if (!input) return;
+    const onCancel = () => {
+      setIsPickingFile(false);
+    };
+    input.addEventListener("cancel", onCancel);
+    return () => input.removeEventListener("cancel", onCancel);
+  }, [open]);
+
+  useEffect(() => {
+    if (!isPickingFile) return;
+    const onWindowFocus = () => {
+      setTimeout(() => {
+        setIsPickingFile(false);
+      }, 350);
+    };
+    window.addEventListener("focus", onWindowFocus);
+    return () => window.removeEventListener("focus", onWindowFocus);
+  }, [isPickingFile]);
+
+  // Escuta revogação de URI concedido pelo Android Embedded Photo Picker (`onUriPermissionRevoked`)
+  useEffect(() => {
+    if (!open || typeof window === "undefined") return;
+    const bridge = window.CaldraAndroidPhotoPicker;
+    if (!bridge?.onUriPermissionRevoked) return;
+    return bridge.onUriPermissionRevoked((revokedUris) => {
+      if (!Array.isArray(revokedUris) || !revokedUris.length) return;
+      revokedUris.forEach((u) => removeSessionMediaByUri(u));
+      setSessionMedia(getSessionMediaEntries());
+      setImg((current) => {
+        if (current?.sourceUri && revokedUris.includes(current.sourceUri)) {
+          cancelVision();
+          current.release?.();
+          setStep("importar");
+          setAnalysis(null);
+          setLogo(null);
+          setCenter(null);
+          setError("O acesso à imagem selecionada foi revogado no seletor de fotos.");
+          return null;
+        }
+        return current;
+      });
+    });
+  }, [open]);
+
+  const pick = useCallback(async (file: File, sourceUri?: string) => {
     setError(null);
+    setIsPickingFile(false);
+    setIsLoadingImage(true);
     try {
-      const imported = await importImage(file);
-      setImg(imported);
+      const imported = await importImage(file, { sourceUri });
+      setImg((prev) => {
+        if (prev && prev !== imported && prev !== committedImgRef.current) {
+          prev.release?.();
+        }
+        return imported;
+      });
+      // Reinicia estado específico da imagem anterior somente após validar a nova
+      setRotation(0);
+      setOpacity(1);
+      setZoom(1);
+      setAnalysis(null);
+      setLogo(null);
+      setCenter(null);
+      setCal(DEFAULT_CALIBRATION);
+      setWidthMm("");
+      setCalPts([]);
+      setManualOn(false);
+      setManual(EMPTY_MANUAL);
+      setPast([]);
+      setFuture([]);
+      setFocusBox(null);
+      setParamValues(null);
+      setParamRejected(false);
+      setOcr([]);
+
       setStep("previa");
-      // relatório pré-flight: rápido, na thread principal, sem aplicar nada
+
+      // Registra no cache leve da sessão atual para seleção rápida sem reabrir o SO
+      registerSessionMediaEntry({
+        name: imported.name,
+        file,
+        widthPx: imported.widthPx,
+        heightPx: imported.heightPx,
+        hasAlpha: Boolean(imported.hasAlpha),
+        sourceUri,
+      });
+      setSessionMedia(getSessionMediaEntries());
+
+      // Relatório pré-flight: rápido, na thread principal, sem iniciar vetorização automática
       try {
         const p = profileImage(rasterForProfile(imported.element));
         setProfile(p);
-        setSuggestion(suggestFromProfile(p));
+        const sug = suggestFromProfile(p);
+        setSuggestion(sug);
+        if (imported.hasAlpha || p.hasAlpha) {
+          setMode("logo");
+        }
       } catch {
         setProfile(null);
         setSuggestion(null);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao importar imagem.");
+    } finally {
+      setIsLoadingImage(false);
     }
-  };
+  }, []);
+
+  /**
+   * Aciona o seletor de fotos:
+   * - Se estiver em contêiner Android com `CaldraAndroidPhotoPicker`, usa o
+   *   `EmbeddedPhotoPicker` (API 34+ / Ext R >= 15) ou `PickVisualMedia` fallback.
+   * - Em aplicação Web, aciona o `<input type="file">` autorizado pelo navegador
+   *   preservando integralmente o estado do CHAMFER CAD.
+   */
+  const openMediaSelector = useCallback(async () => {
+    setError(null);
+    const bridge = typeof window !== "undefined" ? window.CaldraAndroidPhotoPicker : undefined;
+    if (bridge && typeof bridge.openPhotoPicker === "function") {
+      setIsPickingFile(true);
+      try {
+        const res = await bridge.openPhotoPicker({
+          mimeTypes: ["image/png", "image/jpeg", "image/webp"],
+          maxItems: 1,
+          preferEmbedded: true,
+          orderedSelection: false,
+        });
+        setIsPickingFile(false);
+        if (res.status === "cancelled") {
+          return; // Preserva integralmente o contexto e o desenho atual
+        }
+        if (res.status === "error") {
+          setError(res.message || "Falha ao abrir o seletor de fotos do Android.");
+          return;
+        }
+        const first = res.items[0];
+        if (!first) return;
+        setIsLoadingImage(true);
+        const file = await nativeMediaItemToFile(first);
+        await pick(file, first.uri);
+      } catch (e) {
+        setIsPickingFile(false);
+        setIsLoadingImage(false);
+        setError(
+          e instanceof Error ? e.message : "Não foi possível ler a imagem do seletor nativo.",
+        );
+      }
+      return;
+    }
+
+    const input = fileInputRef.current;
+    if (!input) return;
+    setIsPickingFile(true);
+    input.value = "";
+    input.click();
+  }, [pick]);
+
+  const toggleEmbeddedExpand = useCallback(() => {
+    const next: EmbeddedPickerPanelState = embeddedPanelState === "expanded" ? "peek" : "expanded";
+    setEmbeddedPanelState(next);
+    window.CaldraAndroidPhotoPicker?.setEmbeddedPanelState?.(next);
+  }, [embeddedPanelState]);
 
   /** Aplica a sugestão do pré-flight — só quando o usuário confirma. */
   const useSuggestion = () => {
@@ -587,6 +768,7 @@ export function VisionDialog({
 
     const s = cal.mmPerPx;
     const geo = (logo ?? analysis)!;
+    committedImgRef.current = img;
     onCreate(list, {
       src: img.dataUrl,
       name: img.name,
@@ -604,19 +786,70 @@ export function VisionDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="vision-dialog flex max-h-[70dvh] w-[min(90vw,36rem)] max-w-none flex-col overflow-y-auto border p-4 shadow-2xl sm:p-6">
+      <DialogContent
+        onInteractOutside={(e) => {
+          if (isPickingFile || isLoadingImage || step === "analisando") {
+            e.preventDefault();
+          }
+        }}
+        onEscapeKeyDown={(e) => {
+          if (isPickingFile || isLoadingImage) {
+            e.preventDefault();
+          }
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const dropped = e.dataTransfer?.files?.[0];
+          if (dropped && step !== "analisando") {
+            void pick(dropped);
+          }
+        }}
+        onPaste={(e) => {
+          const item = Array.from(e.clipboardData?.items ?? []).find((it) =>
+            it.type.startsWith("image/"),
+          );
+          const pastedFile = item?.getAsFile();
+          if (pastedFile && step !== "analisando") {
+            e.preventDefault();
+            void pick(pastedFile);
+          }
+        }}
+        className="vision-dialog flex max-h-[85dvh] w-[min(92vw,38rem)] max-w-none flex-col overflow-y-auto border p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl sm:p-6"
+      >
+        {/* Seletor de arquivos persistente para abrir e reabrir sem desmontar ou perder contexto */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          aria-label="Selecionar imagem para o CHAMFER VISION"
+          className="hidden"
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = "";
+            setIsPickingFile(false);
+            if (f) {
+              void pick(f);
+            }
+          }}
+        />
+
         <DialogHeader>
-          <DialogTitle className="font-display text-lg">
-            CHAMFER VISION
-            <span className="ml-2 font-mono text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
+          <DialogTitle className="flex flex-wrap items-center gap-1.5 font-display text-lg">
+            <span>CHAMFER VISION</span>
+            <span className="font-mono text-[10px] tracking-[0.2em] text-muted-foreground uppercase">
               Imagem → Vetor
             </span>
             {quota.unlimited ? (
-              <span className="pro-surface ml-2 rounded-full px-2 py-0.5 align-middle font-mono text-[9px] tracking-[0.18em] text-pro uppercase">
+              <span className="pro-surface rounded-full px-2 py-0.5 align-middle font-mono text-[9px] tracking-[0.18em] text-pro uppercase">
                 Vision ilimitado
               </span>
             ) : (
-              <span className="ml-2 rounded-full border border-line px-2 py-0.5 align-middle font-mono text-[9px] tracking-[0.18em] text-muted-foreground uppercase">
+              <span className="rounded-full border border-line px-2 py-0.5 align-middle font-mono text-[9px] tracking-[0.18em] text-muted-foreground uppercase">
                 Vision hoje {quota.used}/{quota.limit}
               </span>
             )}
@@ -624,42 +857,177 @@ export function VisionDialog({
         </DialogHeader>
 
         {error && (
-          <p className="rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive">
-            {error}
-          </p>
+          <div
+            role="alert"
+            className="flex items-center justify-between gap-2 rounded-xl border border-destructive/40 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+          >
+            <span>{error}</span>
+            <button
+              type="button"
+              onClick={() => void openMediaSelector()}
+              className="shrink-0 rounded-lg border border-destructive/30 px-2 py-1 font-mono text-[10px] uppercase hover:bg-destructive/10"
+            >
+              Tentar outra
+            </button>
+          </div>
         )}
 
-        {step === "importar" && (
-          <label className="metal flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-border px-4 py-12 text-center">
-            <Upload className="size-6 text-accent" />
-            <span className="text-sm">Importar imagem</span>
-            <span className="font-mono text-[10px] tracking-wider text-muted-foreground uppercase">
-              PNG · JPG · JPEG · WEBP
+        {isLoadingImage && (
+          <div
+            role="status"
+            aria-live="polite"
+            className="metal flex items-center justify-center gap-2.5 rounded-2xl border border-border px-4 py-6 text-center"
+          >
+            <Loader2 className="size-5 animate-spin text-accent" />
+            <span className="font-mono text-xs tracking-wider text-muted-foreground uppercase">
+              Validando formato e carregando resolução original…
             </span>
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="hidden"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                e.target.value = "";
-                if (f) void pick(f);
-              }}
-            />
-          </label>
+          </div>
+        )}
+
+        {step === "importar" && !isLoadingImage && (
+          <div className="flex flex-col gap-3">
+            {/* Painel de Importação Incorporado ao CHAMFER Vision */}
+            <div className="metal flex flex-col gap-3 rounded-2xl border border-border p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-2.5">
+                <div className="flex items-center gap-2">
+                  <Smartphone className="size-4 text-accent" />
+                  <div className="text-left">
+                    <p className="font-mono text-[10px] font-semibold tracking-wider text-foreground uppercase">
+                      {platformCaps.supportsEmbeddedPhotoPicker
+                        ? "Galeria Incorporada Android (Jetpack Photopicker)"
+                        : "Seletor de Mídia Integrado ao Fluxo CAD"}
+                    </p>
+                    <p className="font-mono text-[9px] text-muted-foreground">
+                      {platformCaps.description}
+                    </p>
+                  </div>
+                </div>
+
+                {platformCaps.supportsEmbeddedPhotoPicker && (
+                  <button
+                    type="button"
+                    onClick={toggleEmbeddedExpand}
+                    className="vision-control flex items-center gap-1 rounded-xl px-2.5 py-1 font-mono text-[9px] tracking-wider uppercase text-muted-foreground hover:text-foreground"
+                  >
+                    {embeddedPanelState === "expanded" ? (
+                      <>
+                        <Minimize2 className="size-3" /> Compactar
+                      </>
+                    ) : (
+                      <>
+                        <Maximize2 className="size-3" /> Expandir
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => void openMediaSelector()}
+                disabled={isPickingFile}
+                className="group flex cursor-pointer flex-col items-center gap-2 rounded-2xl border border-dashed border-border bg-background/40 px-4 py-9 text-center transition-colors hover:border-accent/60 hover:bg-accent/5 disabled:opacity-60"
+              >
+                <div className="flex size-11 items-center justify-center rounded-2xl bg-accent/10 text-accent transition-transform group-hover:scale-105">
+                  <Upload className="size-5" />
+                </div>
+                <span className="font-display text-sm font-semibold text-foreground">
+                  Importar imagem
+                </span>
+                <span className="font-mono text-[10px] tracking-wider text-muted-foreground uppercase">
+                  PNG (com ou sem transparência) · JPG · JPEG · WEBP
+                </span>
+                <span className="font-mono text-[9px] text-muted-foreground">
+                  Selecione da biblioteca do dispositivo, Google Fotos ou provedor de mídia sem
+                  perder o desenho atual
+                </span>
+              </button>
+
+              {/* Galeria Incorporada da Sessão Ativa (Imagens já abertas na sessão) */}
+              {sessionMedia.length > 0 && (
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 font-mono text-[9px] tracking-[0.18em] text-muted-foreground uppercase">
+                      <FolderOpen className="size-3 text-accent" /> Selecionadas nesta sessão (
+                      {sessionMedia.length})
+                    </span>
+                    <span className="font-mono text-[9px] text-muted-foreground">
+                      Toque para reabrir instantaneamente
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                    {sessionMedia.map((entry) => (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        onClick={() => void pick(entry.file, entry.sourceUri)}
+                        className="flex items-center gap-2 rounded-xl border border-border bg-background/50 p-2 text-left transition-colors hover:border-accent hover:bg-accent/5"
+                      >
+                        <ImageIcon className="size-4 shrink-0 text-accent" />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-mono text-[10px] font-medium text-foreground">
+                            {entry.name}
+                          </p>
+                          <p className="font-mono text-[8.5px] text-muted-foreground">
+                            {entry.widthPx}×{entry.heightPx}px
+                            {entry.hasAlpha ? " · Alfa" : ""}
+                          </p>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
         )}
 
         {step === "previa" && img && (
           <div className="flex min-h-0 flex-col gap-3">
+            {/* Cabeçalho da Prévia com Metadados da Imagem e Botão para Reabrir Seletor */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <ImageIcon className="size-3.5 shrink-0 text-accent" />
+                <span className="max-w-[180px] truncate font-mono text-[11px] font-medium text-foreground sm:max-w-[260px]">
+                  {img.name}
+                </span>
+                <span className="rounded-md border border-border px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground">
+                  {img.widthPx} × {img.heightPx} px
+                </span>
+                {(img.hasAlpha || profile?.hasAlpha) && (
+                  <span className="rounded-md bg-accent/15 px-1.5 py-0.5 font-mono text-[9px] font-medium text-accent uppercase">
+                    PNG · Transparência
+                  </span>
+                )}
+              </div>
+              <Chip
+                icon={RefreshCw}
+                label="Trocar imagem"
+                onClick={() => void openMediaSelector()}
+              />
+            </div>
+
             <div
               className="relative flex aspect-[4/3] w-full shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-border bg-white"
-              style={{ maxHeight: "45vh" }}
+              style={{
+                maxHeight: "42vh",
+                backgroundImage:
+                  img.hasAlpha || profile?.hasAlpha
+                    ? "linear-gradient(45deg, #e2e8f0 25%, transparent 25%), linear-gradient(-45deg, #e2e8f0 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #e2e8f0 75%), linear-gradient(-45deg, transparent 75%, #e2e8f0 75%)"
+                    : undefined,
+                backgroundSize: img.hasAlpha || profile?.hasAlpha ? "16px 16px" : undefined,
+                backgroundPosition:
+                  img.hasAlpha || profile?.hasAlpha
+                    ? "0 0, 0 8px, 8px -8px, -8px 0"
+                    : undefined,
+              }}
             >
               <img
                 src={img.dataUrl}
                 alt={`Pré-visualização de ${img.name}`}
                 style={{ transform: `rotate(${rotation}deg) scale(${zoom})`, opacity }}
-                className="mx-auto block h-full w-full max-h-[45vh] object-contain object-center transition-transform"
+                className="mx-auto block h-full w-full max-h-[42vh] object-contain object-center transition-transform"
               />
               {ocr.map((c) => (
                 <div
@@ -835,6 +1203,11 @@ export function VisionDialog({
                 icon={RotateCw}
                 label="Girar 90°"
                 onClick={() => setRotation((r) => (r + 90) % 360)}
+              />
+              <Chip
+                icon={Upload}
+                label="Nova imagem"
+                onClick={() => void openMediaSelector()}
               />
               <span className="font-mono text-[10px] text-muted-foreground">
                 {img.widthPx} × {img.heightPx} px
@@ -1349,12 +1722,21 @@ export function VisionDialog({
 
             <div className="flex gap-2 pt-1">
               <button
+                type="button"
+                onClick={() => void openMediaSelector()}
+                className="rounded-xl border border-border px-3 py-2.5 text-sm transition-colors hover:bg-secondary"
+              >
+                Trocar imagem
+              </button>
+              <button
+                type="button"
                 onClick={() => setStep("previa")}
                 className="flex-1 rounded-xl border border-border py-2.5 text-sm transition-colors hover:bg-secondary"
               >
                 Voltar
               </button>
               <button
+                type="button"
                 disabled={!normalized.entities.length || (!!manualEntities.length && !calibrated)}
                 onClick={create}
                 className="brand-gradient flex-1 rounded-xl py-2.5 font-display text-sm font-semibold text-background disabled:opacity-40"
@@ -1399,12 +1781,22 @@ export function VisionDialog({
                 }}
               />
             </div>
-            <button
-              onClick={() => setStep("previa")}
-              className="w-full rounded-xl border border-border py-2.5 text-sm transition-colors hover:bg-secondary"
-            >
-              Voltar
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => void openMediaSelector()}
+                className="flex-1 rounded-xl border border-border py-2.5 text-sm transition-colors hover:bg-secondary"
+              >
+                Trocar imagem
+              </button>
+              <button
+                type="button"
+                onClick={() => setStep("previa")}
+                className="flex-1 rounded-xl border border-border py-2.5 text-sm transition-colors hover:bg-secondary"
+              >
+                Voltar
+              </button>
+            </div>
           </div>
         )}
       </DialogContent>

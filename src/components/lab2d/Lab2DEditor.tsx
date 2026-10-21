@@ -4830,7 +4830,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         isMestre && "glow-ring",
       )}
     >
-      {needsRotate && !rotateDismissed && (
+      {needsRotate && !rotateDismissed && !visionOpen && !importOpen && (
         <RotateGate
           onRetry={() => void requestLandscape()}
           onContinue={() => setRotateDismissed(true)}
