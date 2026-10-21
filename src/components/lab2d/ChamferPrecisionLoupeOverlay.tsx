@@ -1,13 +1,12 @@
 /**
- * CALDRA CHAMFER — BOLHA QUADRADA DE ZOOM (LUPA DE PRECISÃO MOBILE)
+ * CALDRA CHAMFER — HUD TÉCNICO DE INSTRUMENTO DE PRECISÃO (LUPA 3X E COORDENADAS)
  *
- * Implementa um visor ampliado de alta precisão (3x sobre o zoom atual da câmera):
- *  - Formato técnico quadrado de 130px x 130px com cantos arredondados e borda ciano de alto contraste;
- *  - Posicionamento inteligente anti-oclusão (offsetY = -115px com auto-flip no topo < 160px);
- *  - Renderização vetorial nativa em Canvas 2D Retina (devicePixelRatio);
- *  - Exibição de entidades do mundo, grade ortogonal/isométrica e prévias (draft/pending);
- *  - Mira técnica central (crosshair) ortogonal (0°/90°) ou isométrica (30°/90°/150°);
- *  - Indicador geométrico de snap com destaque magnético e badges numéricos (X, Y, L, ∠).
+ * Implementa um visor ampliado de alta precisão (3x sobre o zoom atual da câmera)
+ * unificado em um único card técnico contínuo e adaptado dinamicamente aos temas Claro e Escuro:
+ *  - Contêiner único (largura 146px, border-radius 12px, borda fina 1px, sombra discreta);
+ *  - Zona Superior (~26px): status GRID / ORTHO (ou ISO) + indicador sutil de Snap/REF + botão Fixar (📌);
+ *  - Zona Central (134x134px, border-radius 6px): Canvas 2D Retina 3x com retículo de metrologia fino (1px);
+ *  - Zona Inferior (~24px): faixa de coordenadas monoespaçada integrada (X | Y, ΔX | ΔY ou u | v).
  */
 
 import React, { useState, useEffect, useRef, useMemo } from "react";
@@ -19,7 +18,8 @@ import type { EdgeReference } from "@/lib/lab2d/cadGeometricReferences";
 import { CoordinateFrameManager } from "@/lib/lab2d/cadCoordinateFrames";
 import type { IsoPlane } from "@/lib/lab2d/isometricEngine";
 import { techStyle } from "@/lib/lab2d/technical";
-import { Magnet, Crosshair, Pin, PinOff } from "lucide-react";
+import { useSettings, type AccentColor, type ThemeMode } from "@/lib/settings/SettingsProvider";
+import { Magnet, Pin } from "lucide-react";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { cn } from "@/lib/utils";
 
@@ -45,8 +45,59 @@ export interface ChamferPrecisionLoupeOverlayProps {
   rightOffset?: number;
 }
 
-const LOUPE_SIZE = 130;
-const HALF_SIZE = LOUPE_SIZE / 2; // 65px
+const CARD_WIDTH = 146;
+const LOUPE_SIZE = 134;
+const HALF_SIZE = LOUPE_SIZE / 2; // 67px
+
+function hexToRgba(hex: string, alpha: number): string {
+  const clean = hex.replace("#", "").trim();
+  if (clean.length === 6) {
+    const r = parseInt(clean.slice(0, 2), 16);
+    const g = parseInt(clean.slice(2, 4), 16);
+    const b = parseInt(clean.slice(4, 6), 16);
+    if (!Number.isNaN(r) && !Number.isNaN(g) && !Number.isNaN(b)) {
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+  }
+  return `rgba(0, 102, 255, ${alpha})`;
+}
+
+function resolveAccentHex(accent: AccentColor, dark: boolean): string {
+  switch (accent) {
+    case "amber":
+      return dark ? "#F59E0B" : "#D97706";
+    case "crimson":
+    case "magenta":
+      return dark ? "#EF4444" : "#B22222";
+    case "default":
+      return dark ? "#CBD5E1" : "#334155";
+    case "blue":
+    default:
+      return dark ? "#38BDF8" : "#0066FF";
+  }
+}
+
+/** Adapta cores de camadas pensadas para fundo escuro quando o visor está no Tema Claro */
+function resolveEntityStrokeForTheme(rawColor: string, dark: boolean): string {
+  if (dark) return rawColor;
+  const normalized = rawColor.trim().toLowerCase();
+  if (
+    normalized === "#ffffff" ||
+    normalized === "#fff" ||
+    normalized === "#f8fafc" ||
+    normalized === "#f1f5f9" ||
+    normalized === "#e2e8f0"
+  ) {
+    return "#1E293B";
+  }
+  if (normalized === "#38bdf8" || normalized === "#00e5ff" || normalized === "#22d3ee") {
+    return "#0284C7";
+  }
+  if (normalized === "#facc15" || normalized === "#ffd600" || normalized === "#fbbf24") {
+    return "#D97706";
+  }
+  return rawColor;
+}
 
 export function ChamferPrecisionLoupeOverlay({
   visible,
@@ -64,12 +115,46 @@ export function ChamferPrecisionLoupeOverlay({
   pendingPoints = [],
   grid = 10,
   showGrid = true,
-  isDark = true,
+  isDark,
   pinned,
   onTogglePinned,
   rightOffset,
 }: ChamferPrecisionLoupeOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Leitura reativa do sistema de temas e cor de destaque do CALDRA
+  let settingsTheme: ThemeMode = "light";
+  let settingsAccent: AccentColor = "blue";
+  try {
+    const s = useSettings();
+    settingsTheme = s.theme;
+    settingsAccent = s.accent;
+  } catch {
+    // Fallback seguro caso renderizado isoladamente em testes
+  }
+
+  const effectiveIsDark = useMemo(() => {
+    if (typeof isDark === "boolean") return isDark;
+    if (settingsTheme === "dark" || settingsTheme === "amoled") return true;
+    if (settingsTheme === "light") return false;
+    if (typeof document !== "undefined") {
+      return document.documentElement.classList.contains("dark");
+    }
+    return false;
+  }, [isDark, settingsTheme]);
+
+  const isAmoled = useMemo(() => {
+    if (settingsTheme === "amoled") return true;
+    if (typeof document !== "undefined") {
+      return document.documentElement.classList.contains("amoled");
+    }
+    return false;
+  }, [settingsTheme]);
+
+  const accentHex = useMemo(
+    () => resolveAccentHex(settingsAccent, effectiveIsDark),
+    [settingsAccent, effectiveIsDark],
+  );
 
   // Estado de fixação (ancoragem no canto da tela vs acompanhamento do dedo)
   const [internalPinned, setInternalPinned] = useState<boolean>(() => {
@@ -124,28 +209,38 @@ export function ChamferPrecisionLoupeOverlay({
     if (angleDeg < 0) angleDeg += 360;
   }
 
-  // Posicionamento inteligente da bolha:
-  // Flutua acima do dedo (offsetY = -115px). Se muito perto do topo (< 160px), inverte para baixo (+115px).
-  const isTouchNearTop = screenPos && screenPos.y < 160;
-  const offsetY = isTouchNearTop ? 115 : -115;
-
+  // Posicionamento inteligente do card sincronizado com o Cursor Deslocado (-55px / +55px):
+  // Flutua acima da mira deslocada (offsetY = -164px). Se perto do topo (< 220px), desloca lateralmente para nunca cobrir a mira!
   const winW = typeof window !== "undefined" ? window.innerWidth : 800;
   const winH = typeof window !== "undefined" ? window.innerHeight : 600;
+  const halfCardW = CARD_WIDTH / 2;
+  const halfCardH = 94;
 
-  // Garante que a bolha nunca saia das bordas da tela no modo flutuante
-  const loupeCenterX = Math.max(HALF_SIZE + 10, Math.min(winW - HALF_SIZE - 10, screenPos?.x ?? HALF_SIZE + 10));
-  const loupeCenterY = Math.max(HALF_SIZE + 10, Math.min(winH - HALF_SIZE - 10, (screenPos?.y ?? 150) + offsetY));
+  const isTouchNearTop = screenPos && screenPos.y < 220;
+  const isInvertedCursor = screenPos && screenPos.y < 120;
+  const offsetX = isTouchNearTop ? ((screenPos?.x ?? 0) > winW / 2 ? -108 : 108) : 0;
+  const offsetY = isTouchNearTop ? (isInvertedCursor ? 55 : -20) : -164;
+
+  // Garante que o card nunca saia das bordas da tela no modo flutuante
+  const loupeCenterX = Math.max(
+    halfCardW + 10,
+    Math.min(winW - halfCardW - 10, (screenPos?.x ?? halfCardW + 10) + offsetX),
+  );
+  const loupeCenterY = Math.max(
+    halfCardH + 10,
+    Math.min(winH - halfCardH - 10, (screenPos?.y ?? 150) + offsetY),
+  );
 
   // Posição ancorada (Modo Fixo): canto superior direito, visível e fora dos menus
   const defaultRightOffset = winW >= 1024 ? 48 : 16;
   const effectiveRightOffset = rightOffset !== undefined ? rightOffset : defaultRightOffset;
-  const fixedX = Math.max(16, winW - LOUPE_SIZE - effectiveRightOffset);
+  const fixedX = Math.max(16, winW - CARD_WIDTH - effectiveRightOffset);
   const fixedY = 56;
 
-  const boxLeft = isPinned ? fixedX : loupeCenterX - HALF_SIZE;
-  const boxTop = isPinned ? fixedY : loupeCenterY - HALF_SIZE;
+  const boxLeft = isPinned ? fixedX : loupeCenterX - halfCardW;
+  const boxTop = isPinned ? fixedY : loupeCenterY - halfCardH;
 
-  // Renderização em Canvas 2D da região ampliada
+  // Renderização em Canvas 2D da região ampliada (3x)
   useEffect(() => {
     if (!visible && !isPinned) return;
     const canvas = canvasRef.current;
@@ -164,8 +259,12 @@ export function ChamferPrecisionLoupeOverlay({
     ctx.save();
     ctx.scale(dpr, dpr);
 
-    // 1. Fundo técnico escuro de alto contraste
-    ctx.fillStyle = "#0B1017";
+    // 1. Fundo do Visor da Mira adaptado ao Tema (Claro vs Escuro/AMOLED)
+    const viewportBg = !effectiveIsDark ? "#F8FAFC" : isAmoled ? "#05080F" : "#0F172A";
+    const gridMinorColor = !effectiveIsDark ? "#E2E8F0" : "#1E293B";
+    const gridMajorColor = !effectiveIsDark ? "#CBD5E1" : "#334155";
+
+    ctx.fillStyle = viewportBg;
     ctx.fillRect(0, 0, w, h);
 
     // 2. Fator de ampliação adicional de 3x sobre o zoom atual da câmera
@@ -179,7 +278,7 @@ export function ChamferPrecisionLoupeOverlay({
     const minWy = targetWorld.y - halfSpanMm;
     const maxWy = targetWorld.y + halfSpanMm;
 
-    // 3. Renderização da Grade Técnica (Grid / IsoGrid)
+    // 3. Renderização da Grade Técnica Suave (Grid / IsoGrid)
     if (showGrid && grid > 0) {
       ctx.save();
       ctx.translate(HALF_SIZE, HALF_SIZE);
@@ -187,9 +286,9 @@ export function ChamferPrecisionLoupeOverlay({
       ctx.translate(-targetWorld.x, -targetWorld.y);
 
       if (drawingProjection === "isometric") {
-        // Grade Isométrica com linhas a 30°, 150° e 90°
-        ctx.strokeStyle = "rgba(0, 229, 255, 0.12)";
-        ctx.lineWidth = 1 / loupeZoom;
+        // Grade Isométrica com linhas finas a 30° e 150°
+        ctx.strokeStyle = gridMinorColor;
+        ctx.lineWidth = 0.85 / loupeZoom;
         const isoStep = grid;
         const range = Math.max(halfSpanMm * 2, 80);
 
@@ -197,50 +296,67 @@ export function ChamferPrecisionLoupeOverlay({
         const endX = Math.ceil((targetWorld.x + range) / isoStep) * isoStep;
 
         ctx.beginPath();
-        // Linhas a 30° e 150°
         for (let gx = startX; gx <= endX; gx += isoStep) {
           const dy = range * Math.tan(Math.PI / 6);
-          // Eixo 30°
           ctx.moveTo(gx - range, targetWorld.y - dy);
           ctx.lineTo(gx + range, targetWorld.y + dy);
-          // Eixo 150°
           ctx.moveTo(gx - range, targetWorld.y + dy);
           ctx.lineTo(gx + range, targetWorld.y - dy);
         }
         ctx.stroke();
       } else {
-        // Grade Ortogonal 2D
+        // Grade Ortogonal 2D (secundária e principal)
         const gStep = grid;
+        const majorStep = gStep * 5;
         const startX = Math.floor(minWx / gStep) * gStep;
         const endX = Math.ceil(maxWx / gStep) * gStep;
         const startY = Math.floor(minWy / gStep) * gStep;
         const endY = Math.ceil(maxWy / gStep) * gStep;
 
-        ctx.strokeStyle = "rgba(0, 229, 255, 0.10)";
-        ctx.lineWidth = 1 / loupeZoom;
+        // Grade secundária
+        ctx.strokeStyle = gridMinorColor;
+        ctx.lineWidth = 0.8 / loupeZoom;
         ctx.beginPath();
         for (let gx = startX; gx <= endX; gx += gStep) {
+          if (Math.abs(gx % majorStep) < 1e-6) continue;
           ctx.moveTo(gx, minWy);
           ctx.lineTo(gx, maxWy);
         }
         for (let gy = startY; gy <= endY; gy += gStep) {
+          if (Math.abs(gy % majorStep) < 1e-6) continue;
           ctx.moveTo(minWx, gy);
           ctx.lineTo(maxWx, gy);
         }
         ctx.stroke();
 
-        // Eixos de origem principal se visíveis
+        // Grade principal
+        ctx.strokeStyle = gridMajorColor;
+        ctx.lineWidth = 1 / loupeZoom;
+        ctx.beginPath();
+        for (let gx = startX; gx <= endX; gx += gStep) {
+          if (Math.abs(gx % majorStep) >= 1e-6) continue;
+          ctx.moveTo(gx, minWy);
+          ctx.lineTo(gx, maxWy);
+        }
+        for (let gy = startY; gy <= endY; gy += gStep) {
+          if (Math.abs(gy % majorStep) >= 1e-6) continue;
+          ctx.moveTo(minWx, gy);
+          ctx.lineTo(maxWx, gy);
+        }
+        ctx.stroke();
+
+        // Eixos de origem principal (0,0) se visíveis
         if (minWx <= 0 && maxWx >= 0) {
-          ctx.strokeStyle = "rgba(0, 229, 255, 0.4)";
-          ctx.lineWidth = 1.5 / loupeZoom;
+          ctx.strokeStyle = hexToRgba(accentHex, effectiveIsDark ? 0.35 : 0.28);
+          ctx.lineWidth = 1.15 / loupeZoom;
           ctx.beginPath();
           ctx.moveTo(0, minWy);
           ctx.lineTo(0, maxWy);
           ctx.stroke();
         }
         if (minWy <= 0 && maxWy >= 0) {
-          ctx.strokeStyle = "rgba(236, 72, 153, 0.4)";
-          ctx.lineWidth = 1.5 / loupeZoom;
+          ctx.strokeStyle = hexToRgba(accentHex, effectiveIsDark ? 0.35 : 0.28);
+          ctx.lineWidth = 1.15 / loupeZoom;
           ctx.beginPath();
           ctx.moveTo(minWx, 0);
           ctx.lineTo(maxWx, 0);
@@ -260,7 +376,6 @@ export function ChamferPrecisionLoupeOverlay({
 
     const inv = 1 / loupeZoom;
 
-    // Função auxiliar para traçar polígono / polilinha
     const tracePts = (pts: Vec2[], closed?: boolean) => {
       if (!pts || pts.length === 0) return;
       ctx.moveTo(pts[0]!.x, pts[0]!.y);
@@ -268,10 +383,8 @@ export function ChamferPrecisionLoupeOverlay({
       if (closed) ctx.closePath();
     };
 
-    // Ordenação técnica de desenho
     const visibleEntities = entities.filter((e) => {
       if (e.type === "text") return false;
-      // Teste rápido de proximidade para performance
       if (e.type === "line") {
         return (
           Math.min(e.x1, e.x2) <= maxWx &&
@@ -287,11 +400,11 @@ export function ChamferPrecisionLoupeOverlay({
     });
 
     for (const e of visibleEntities) {
-      // Faces sólidas isométricas com sombreamento técnico
       if (e.params?.isIsoSolidFace) {
-        const fillCol = (e.params.fillColor as string) || "#323B47";
-        const strokeCol = (e.params.strokeColor as string) || "#FFFFFF";
-        const strokeW = (typeof e.params.strokeWidth === "number" ? e.params.strokeWidth : 2) * inv;
+        const fillCol = (e.params.fillColor as string) || (effectiveIsDark ? "#323B47" : "#CBD5E1");
+        const rawStrokeCol = (e.params.strokeColor as string) || (effectiveIsDark ? "#FFFFFF" : "#1E293B");
+        const strokeCol = resolveEntityStrokeForTheme(rawStrokeCol, effectiveIsDark);
+        const strokeW = (typeof e.params.strokeWidth === "number" ? e.params.strokeWidth : 1.6) * inv;
 
         ctx.save();
         ctx.beginPath();
@@ -310,8 +423,8 @@ export function ChamferPrecisionLoupeOverlay({
       }
 
       const style = techStyle(e.layer);
-      ctx.strokeStyle = style.color;
-      ctx.lineWidth = Math.max(1.2 * inv, style.weight * 1.5 * inv);
+      ctx.strokeStyle = resolveEntityStrokeForTheme(style.color, effectiveIsDark);
+      ctx.lineWidth = Math.max(1.15 * inv, style.weight * 1.35 * inv);
       const dash = style.dash(inv);
       ctx.setLineDash(dash ? dash.split(" ").map(Number) : []);
 
@@ -337,28 +450,26 @@ export function ChamferPrecisionLoupeOverlay({
 
     // 5. Renderização do Traçado Ativo / Draft / Pontos Pendentes
     if (pendingPoints && pendingPoints.length > 0) {
-      ctx.strokeStyle = "#00E5FF";
-      ctx.lineWidth = 1.8 * inv;
+      ctx.strokeStyle = accentHex;
+      ctx.lineWidth = 1.5 * inv;
       ctx.setLineDash([4 * inv, 3 * inv]);
       ctx.beginPath();
       tracePts(pendingPoints, false);
-      const lastP = pendingPoints[pendingPoints.length - 1]!;
       ctx.lineTo(targetWorld.x, targetWorld.y);
       ctx.stroke();
 
-      // Vértices dos pontos pendentes
-      ctx.fillStyle = "#00E5FF";
+      ctx.fillStyle = accentHex;
       ctx.setLineDash([]);
       for (const pt of pendingPoints) {
         ctx.beginPath();
-        ctx.arc(pt.x, pt.y, 3 * inv, 0, Math.PI * 2);
+        ctx.arc(pt.x, pt.y, 2.5 * inv, 0, Math.PI * 2);
         ctx.fill();
       }
     }
 
     if (draft) {
-      ctx.strokeStyle = "#FFD600";
-      ctx.lineWidth = 1.8 * inv;
+      ctx.strokeStyle = accentHex;
+      ctx.lineWidth = 1.5 * inv;
       ctx.setLineDash([3 * inv, 3 * inv]);
       ctx.beginPath();
       if (draft.type === "line") {
@@ -374,18 +485,20 @@ export function ChamferPrecisionLoupeOverlay({
 
     ctx.restore(); // Restaura transform do mundo CAD
 
-    // 6. Mira Técnica Central (Crosshair de Alta Precisão)
+    // 6. Retículo de Metrologia Limpo (1px, sem brilho neon e sem cantoneiras)
     ctx.save();
     ctx.translate(HALF_SIZE, HALF_SIZE);
+    ctx.shadowBlur = 0;
+    ctx.setLineDash([]);
+
+    const reticleStroke = hexToRgba(accentHex, effectiveIsDark ? 0.62 : 0.58);
+    const reticleRingStroke = hexToRgba(accentHex, effectiveIsDark ? 0.28 : 0.24);
 
     if (drawingProjection === "isometric") {
-      // Mira Isométrica alinhada aos eixos do plano ativo
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = "#00E5FF";
-      ctx.shadowColor = "rgba(0, 229, 255, 0.6)";
-      ctx.shadowBlur = 4;
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = reticleStroke;
 
-      const arm = 38;
+      const arm = 44;
       const gap = 5;
 
       const drawIsoRay = (angleRad: number) => {
@@ -398,32 +511,33 @@ export function ChamferPrecisionLoupeOverlay({
       };
 
       if (isoPlane === "top") {
-        // Eixos a 30° e 150°
-        drawIsoRay(Math.PI / 6);       // 30°
-        drawIsoRay(-5 * Math.PI / 6);  // 210°
-        drawIsoRay(5 * Math.PI / 6);   // 150°
-        drawIsoRay(-Math.PI / 6);      // 330°
+        drawIsoRay(Math.PI / 6);
+        drawIsoRay((-5 * Math.PI) / 6);
+        drawIsoRay((5 * Math.PI) / 6);
+        drawIsoRay(-Math.PI / 6);
       } else if (isoPlane === "left") {
-        // Eixos a 90° e 150°
-        drawIsoRay(-Math.PI / 2);      // 90° para cima
-        drawIsoRay(Math.PI / 2);       // 90° para baixo
-        drawIsoRay(5 * Math.PI / 6);   // 150°
-        drawIsoRay(-Math.PI / 6);      // 330°
+        drawIsoRay(-Math.PI / 2);
+        drawIsoRay(Math.PI / 2);
+        drawIsoRay((5 * Math.PI) / 6);
+        drawIsoRay(-Math.PI / 6);
       } else {
-        // right: eixos a 90° e 30°
         drawIsoRay(-Math.PI / 2);
         drawIsoRay(Math.PI / 2);
         drawIsoRay(Math.PI / 6);
-        drawIsoRay(-5 * Math.PI / 6);
+        drawIsoRay((-5 * Math.PI) / 6);
       }
-    } else {
-      // Mira Ortogonal 2D (0° e 90°)
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = "#00E5FF";
-      ctx.shadowColor = "rgba(0, 229, 255, 0.5)";
-      ctx.shadowBlur = 3;
 
-      const arm = 42;
+      ctx.strokeStyle = reticleRingStroke;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(0, 0, 12, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      // Mira Ortogonal 2D Fina (1px)
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = reticleStroke;
+
+      const arm = 48;
       const gap = 5;
 
       ctx.beginPath();
@@ -439,105 +553,67 @@ export function ChamferPrecisionLoupeOverlay({
       ctx.lineTo(0, arm);
       ctx.stroke();
 
-      // Círculo fino de tolerância central
-      ctx.strokeStyle = "rgba(0, 229, 255, 0.35)";
+      // Anel central de metrologia discreto (1px)
+      ctx.strokeStyle = reticleRingStroke;
       ctx.lineWidth = 1;
-      ctx.shadowBlur = 0;
       ctx.beginPath();
-      ctx.arc(0, 0, 16, 0, Math.PI * 2);
+      ctx.arc(0, 0, 13, 0, Math.PI * 2);
       ctx.stroke();
     }
 
-    // 7. Marcador Geométrico de Snap Central (com destaque técnico)
+    // 7. Ponto de Referência Sutil / Indicador Geométrico de Snap
     if (activeSnap) {
       const snapKind = activeSnap.kind;
-      ctx.strokeStyle = "#FFD600";
-      ctx.fillStyle = "rgba(255, 214, 0, 0.25)";
-      ctx.lineWidth = 2.2;
-      ctx.shadowColor = "rgba(255, 214, 0, 0.8)";
-      ctx.shadowBlur = 6;
+      ctx.strokeStyle = accentHex;
+      ctx.fillStyle = hexToRgba(accentHex, effectiveIsDark ? 0.2 : 0.14);
+      ctx.lineWidth = 1.35;
 
       ctx.beginPath();
       if (snapKind === "end") {
-        // Extremidade / Vértice: Quadrado 12x12
-        ctx.rect(-6, -6, 12, 12);
+        ctx.rect(-4.5, -4.5, 9, 9);
       } else if (snapKind === "mid") {
-        // Ponto Médio: Triângulo equilátero
-        ctx.moveTo(0, -7);
-        ctx.lineTo(6, 5);
-        ctx.lineTo(-6, 5);
+        ctx.moveTo(0, -5.5);
+        ctx.lineTo(5, 4);
+        ctx.lineTo(-5, 4);
         ctx.closePath();
       } else if (snapKind === "center") {
-        // Centro: Círculo com cruzinha
-        ctx.arc(0, 0, 6, 0, Math.PI * 2);
-        ctx.moveTo(-3, 0);
-        ctx.lineTo(3, 0);
-        ctx.moveTo(0, -3);
-        ctx.lineTo(0, 3);
+        ctx.arc(0, 0, 5, 0, Math.PI * 2);
+        ctx.moveTo(-2.5, 0);
+        ctx.lineTo(2.5, 0);
+        ctx.moveTo(0, -2.5);
+        ctx.lineTo(0, 2.5);
       } else if (snapKind === "quadrant") {
-        // Quadrante: Losango
-        ctx.moveTo(0, -7);
-        ctx.lineTo(7, 0);
-        ctx.lineTo(0, 7);
-        ctx.lineTo(-7, 0);
+        ctx.moveTo(0, -5.5);
+        ctx.lineTo(5.5, 0);
+        ctx.lineTo(0, 5.5);
+        ctx.lineTo(-5.5, 0);
         ctx.closePath();
       } else if (snapKind === "cross" || snapKind === "intersection") {
-        // Interseção: "X"
-        ctx.moveTo(-5, -5);
-        ctx.lineTo(5, 5);
-        ctx.moveTo(5, -5);
-        ctx.lineTo(-5, 5);
+        ctx.moveTo(-4, -4);
+        ctx.lineTo(4, 4);
+        ctx.moveTo(4, -4);
+        ctx.lineTo(-4, 4);
       } else if (snapKind === "perp") {
-        // Perpendicular: Esquadro
-        ctx.moveTo(-6, -6);
-        ctx.lineTo(-6, 6);
-        ctx.lineTo(6, 6);
-        ctx.moveTo(-6, 0);
+        ctx.moveTo(-4.5, -4.5);
+        ctx.lineTo(-4.5, 4.5);
+        ctx.lineTo(4.5, 4.5);
+        ctx.moveTo(-4.5, 0);
         ctx.lineTo(0, 0);
-        ctx.lineTo(0, 6);
+        ctx.lineTo(0, 4.5);
       } else {
-        // Snap genérico / Grid
-        ctx.rect(-5, -5, 10, 10);
+        ctx.rect(-4, -4, 8, 8);
       }
       ctx.fill();
       ctx.stroke();
     } else {
-      // Ponto de mira sem snap: micro ponto central ciano
-      ctx.fillStyle = "#00E5FF";
-      ctx.shadowColor = "#00E5FF";
-      ctx.shadowBlur = 4;
+      // Ponto central sutil de referência (1.5px)
+      ctx.fillStyle = hexToRgba(accentHex, 0.85);
       ctx.beginPath();
-      ctx.arc(0, 0, 2, 0, Math.PI * 2);
+      ctx.arc(0, 0, 1.5, 0, Math.PI * 2);
       ctx.fill();
     }
 
     ctx.restore();
-
-    // 8. Cantoneiras Técnicas estilo CAD HUD
-    ctx.strokeStyle = "rgba(0, 229, 255, 0.7)";
-    ctx.lineWidth = 1.5;
-    const cl = 10; // comprimento da cantoneira
-    const inset = 6;
-
-    ctx.beginPath();
-    // Top-Left
-    ctx.moveTo(inset, inset + cl);
-    ctx.lineTo(inset, inset);
-    ctx.lineTo(inset + cl, inset);
-    // Top-Right
-    ctx.moveTo(w - inset - cl, inset);
-    ctx.lineTo(w - inset, inset);
-    ctx.lineTo(w - inset, inset + cl);
-    // Bottom-Left
-    ctx.moveTo(inset, h - inset - cl);
-    ctx.lineTo(inset, h - inset);
-    ctx.lineTo(inset + cl, h - inset);
-    // Bottom-Right
-    ctx.moveTo(w - inset - cl, h - inset);
-    ctx.lineTo(w - inset, h - inset);
-    ctx.lineTo(w - inset, h - inset - cl);
-    ctx.stroke();
-
     ctx.restore();
   }, [
     visible,
@@ -553,6 +629,9 @@ export function ChamferPrecisionLoupeOverlay({
     showGrid,
     activeSnap,
     isPinned,
+    effectiveIsDark,
+    isAmoled,
+    accentHex,
   ]);
 
   if (!visible && !isPinned) {
@@ -562,7 +641,7 @@ export function ChamferPrecisionLoupeOverlay({
     return null;
   }
 
-  // Label amigável do snap ativo
+  // Label compacto do snap ativo
   const snapLabel =
     activeSnap && typeof activeSnap === "object"
       ? "label" in activeSnap && activeSnap.label
@@ -570,133 +649,141 @@ export function ChamferPrecisionLoupeOverlay({
         : activeSnap.kind.toUpperCase()
       : null;
 
+  const modeStatusLabel =
+    drawingProjection === "isometric" ? `ISO ${isoPlane.toUpperCase()}` : "GRID / ORTHO";
+
   return (
     <div
-      className="pointer-events-none fixed z-50 transition-opacity duration-150 ease-out select-none"
+      className="pointer-events-none fixed z-50 select-none transition-opacity duration-150 ease-out"
       style={{
         left: `${boxLeft}px`,
         top: `${boxTop}px`,
-        width: `${LOUPE_SIZE}px`,
+        width: `${CARD_WIDTH}px`,
       }}
     >
-      {/* BADGE DE CABEÇALHO (INDICADOR DE SNAP OU PRECISÃO 3X + BOTÃO FIXAR) */}
-      <div className="mb-1.5 flex items-center justify-between px-2 py-0.5 rounded-md bg-[#0B1017]/95 border border-[#00E5FF]/40 backdrop-blur-md shadow-lg pointer-events-auto">
-        <div className="flex items-center gap-1 text-[9px] font-mono font-bold tracking-wider text-[#00E5FF]">
-          {temporaryOrigin ? (
-            <>
-              <span className="size-2 rounded-full bg-amber-400 animate-pulse" />
-              <span className="text-amber-400 truncate max-w-[85px]">REF (0,0)</span>
-            </>
-          ) : activeSnap ? (
-            <>
-              <Magnet className="w-2.5 h-2.5 text-[#FFD600] animate-pulse" />
-              <span className="text-[#FFD600] truncate max-w-[85px]">{snapLabel}</span>
-            </>
-          ) : (
-            <>
-              <Crosshair className="w-2.5 h-2.5 text-[#00E5FF]" />
-              <span>LUPA 3X</span>
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="text-[8px] font-mono text-cyan-300/70 font-semibold uppercase">
-            {drawingProjection === "isometric" ? `ISO ${isoPlane}` : "GRID / ORTHO"}
-          </span>
+      {/* CARD ÚNICO CONTÍNUO — INSTRUMENTO DE PRECISÃO INDUSTRIAL */}
+      <div className="hud-loupe-card pointer-events-auto flex flex-col rounded-[12px] p-[5px]">
+        {/* ZONA 1: CABEÇALHO INTEGRADO (~26px) */}
+        <div className="flex h-[24px] items-center justify-between px-1.5 pb-[3px]">
+          <div className="flex min-w-0 items-center gap-1.5">
+            {temporaryOrigin ? (
+              <>
+                <span
+                  className="size-1.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: "var(--accent)" }}
+                />
+                <span
+                  className="truncate font-mono text-[10px] font-semibold tracking-[0.5px] uppercase"
+                  style={{ color: "var(--accent)" }}
+                >
+                  REF 0,0
+                </span>
+              </>
+            ) : activeSnap ? (
+              <>
+                <Magnet
+                  className="size-2.5 shrink-0"
+                  style={{ color: "var(--accent)" }}
+                />
+                <span
+                  className="truncate font-mono text-[10px] font-semibold tracking-[0.5px] uppercase"
+                  style={{ color: "var(--accent)" }}
+                >
+                  {snapLabel}
+                </span>
+              </>
+            ) : (
+              <span className="hud-loupe-muted truncate font-mono text-[10px] font-semibold tracking-[0.5px] uppercase">
+                {modeStatusLabel}
+              </span>
+            )}
+          </div>
+
           <button
             type="button"
+            data-active={isPinned ? "true" : "false"}
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
               handleTogglePinned();
             }}
-            title={isPinned ? "Desafixar Lupa (Acompanhar dedo)" : "Fixar Lupa no canto da tela (Modo Fixo)"}
-            className={cn(
-              "p-1 rounded transition-colors cursor-pointer flex items-center justify-center",
+            title={
               isPinned
-                ? "bg-cyan-500/30 text-cyan-300 hover:bg-cyan-500/50"
-                : "text-slate-400 hover:text-cyan-300 hover:bg-white/10"
-            )}
+                ? "Desafixar Lupa (Acompanhar dedo)"
+                : "Fixar Lupa no canto da tela (Modo Fixo)"
+            }
+            aria-label={isPinned ? "Desafixar Lupa" : "Fixar Lupa"}
+            className="hud-loupe-pin-btn flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-[5px]"
           >
-            {isPinned ? (
-              <Pin className="w-3 h-3 text-cyan-300 fill-cyan-300/60" />
-            ) : (
-              <PinOff className="w-3 h-3" />
-            )}
+            <Pin
+              className={cn(
+                "size-3 transition-transform duration-150",
+                isPinned ? "rotate-0 fill-current" : "rotate-45",
+              )}
+            />
           </button>
         </div>
-      </div>
 
-      {/* CONTAINER QUADRADO TÉCNICO 130px x 130px (CANVAS VETORIAL AMPLIADO) */}
-      <div
-        className="relative w-[130px] h-[130px] rounded-[10px] overflow-hidden bg-[#0B1017] border-2 border-[#00E5FF] shadow-[0_10px_30px_rgba(0,0,0,0.8),0_0_20px_rgba(0,229,255,0.35)] ring-1 ring-[#00E5FF]/40"
-      >
-        <canvas
-          ref={canvasRef}
+        {/* ZONA 2: VISOR VETORIAL DE ALTA PRECISÃO (CANVAS 3X) */}
+        <div
+          className="hud-loupe-viewport relative mx-auto overflow-hidden rounded-[6px]"
           style={{ width: `${LOUPE_SIZE}px`, height: `${LOUPE_SIZE}px` }}
-          className="block w-full h-full"
-        />
-      </div>
+        >
+          <canvas
+            ref={canvasRef}
+            style={{ width: `${LOUPE_SIZE}px`, height: `${LOUPE_SIZE}px` }}
+            className="block size-full"
+          />
+        </div>
 
-      {/* BADGE DE RODAPÉ (COORDENADAS MILIMÉTRICAS DIGITAIS E MEDIDAS) */}
-      <div className="mt-1.5 px-2 py-1 rounded-md bg-[#0B1017]/95 border border-border/80 backdrop-blur-md shadow-lg text-center font-mono text-[9px]">
-        {temporaryOrigin ? (
-          <div>
-            <div className="flex items-center justify-center gap-1.5 font-bold text-amber-300">
-              <span className="text-amber-400">ΔX:</span>
-              <span>{(targetWorld.x - temporaryOrigin.p.x >= 0 ? "+" : "") + (targetWorld.x - temporaryOrigin.p.x).toFixed(1)}</span>
-              <span className="text-slate-600">|</span>
-              <span className="text-amber-400">ΔY:</span>
-              <span>{(targetWorld.y - temporaryOrigin.p.y >= 0 ? "+" : "") + (targetWorld.y - temporaryOrigin.p.y).toFixed(1)}</span>
+        {/* ZONA 3: FAIXA DE COORDENADAS INTEGRADA (~24px) */}
+        <div className="flex min-h-[24px] flex-col items-center justify-center px-1 pt-[4px] pb-[1px] font-mono text-[10.5px] leading-tight tabular-nums">
+          {temporaryOrigin ? (
+            <div className="flex items-center justify-center gap-1 font-semibold">
+              <span className="hud-loupe-muted text-[9.5px]">ΔX:</span>
+              <span>
+                {(targetWorld.x - temporaryOrigin.p.x >= 0 ? "+" : "") +
+                  (targetWorld.x - temporaryOrigin.p.x).toFixed(1)}
+              </span>
+              <span className="hud-loupe-sep mx-0.5">|</span>
+              <span className="hud-loupe-muted text-[9.5px]">ΔY:</span>
+              <span>
+                {(targetWorld.y - temporaryOrigin.p.y >= 0 ? "+" : "") +
+                  (targetWorld.y - temporaryOrigin.p.y).toFixed(1)}
+              </span>
             </div>
-            <div className="text-[7.5px] text-slate-400 font-normal">
-              G: {targetWorld.x.toFixed(0)}, {targetWorld.y.toFixed(0)} mm
-            </div>
-          </div>
-        ) : activeEdge ? (
-          <div>
-            {(() => {
+          ) : activeEdge ? (
+            (() => {
               const { u, v } = CoordinateFrameManager.worldToUV(targetWorld, activeEdge);
               return (
-                <div className="flex items-center justify-center gap-1.5 font-bold text-cyan-300">
-                  <span className="text-cyan-400">u:</span>
+                <div className="flex items-center justify-center gap-1 font-semibold">
+                  <span className="hud-loupe-muted text-[9.5px]">u:</span>
                   <span>{u.toFixed(1)}</span>
-                  <span className="text-slate-600">|</span>
-                  <span className="text-emerald-400">v:</span>
-                  <span>{(v >= 0 ? "+" : "") + v.toFixed(1)} mm</span>
+                  <span className="hud-loupe-sep mx-0.5">|</span>
+                  <span className="hud-loupe-muted text-[9.5px]">v:</span>
+                  <span>{(v >= 0 ? "+" : "") + v.toFixed(1)}</span>
                 </div>
               );
-            })()}
-            <div className="text-[7.5px] text-slate-400 font-normal truncate max-w-[120px] mx-auto">
-              {activeEdge.label}
+            })()
+          ) : (
+            <div className="flex items-center justify-center gap-1 font-medium">
+              <span className="hud-loupe-muted text-[9.5px]">X:</span>
+              <span>{targetWorld.x.toFixed(1)}</span>
+              <span className="hud-loupe-sep mx-0.5">|</span>
+              <span className="hud-loupe-muted text-[9.5px]">Y:</span>
+              <span>{targetWorld.y.toFixed(1)}</span>
             </div>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center gap-1.5 font-bold text-slate-100">
-            <span className="text-cyan-400">X:</span>
-            <span>{targetWorld.x.toFixed(1)}</span>
-            <span className="text-slate-600">|</span>
-            <span className="text-pink-400">Y:</span>
-            <span>{targetWorld.y.toFixed(1)}</span>
-          </div>
-        )}
-        {baseCadPoint && distMm > 0 && (
-          <div className="flex items-center justify-center gap-1.5 text-[8.5px] text-amber-300 font-semibold mt-0.5 border-t border-slate-800/80 pt-0.5">
-            <span>L: {distMm.toFixed(1)} mm</span>
-            <span className="text-slate-600">•</span>
-            <span>∠ {angleDeg.toFixed(1)}°</span>
-          </div>
-        )}
-      </div>
+          )}
 
-      {/* GUIA TÉCNICA VISUAL APONTANDO NA DIREÇÃO DO DEDO / PONTO DE CONTATO (APENAS MODO FLUTUANTE) */}
-      {!isPinned && (
-        <div
-          className={`absolute left-1/2 -translate-x-1/2 w-0.5 bg-gradient-to-b from-[#00E5FF]/80 to-transparent pointer-events-none ${
-            isTouchNearTop ? "-top-6 h-6" : "-bottom-6 h-6"
-          }`}
-        />
-      )}
+          {baseCadPoint && distMm > 0 && (
+            <div className="hud-loupe-muted mt-0.5 flex items-center justify-center gap-1 text-[9px] font-medium">
+              <span>L: {distMm.toFixed(1)}</span>
+              <span className="hud-loupe-sep">|</span>
+              <span>∠ {angleDeg.toFixed(1)}°</span>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

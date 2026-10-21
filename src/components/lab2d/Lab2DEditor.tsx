@@ -263,6 +263,15 @@ import {
 import { ChamferFabricationPassportModal } from "./ChamferFabricationPassportModal";
 import { ChamferDirectDimensionEditor } from "./ChamferDirectDimensionEditor";
 import { ChamferPrecisionLoupeOverlay } from "./ChamferPrecisionLoupeOverlay";
+import {
+  ChamferTechnicalCursorSvg,
+  ChamferNudgeControlHUD,
+  shouldUseTouchOffset,
+  computeTouchCursorScreenAndWorld,
+  computeNudgeDelta,
+  type NudgeDirection,
+  type NudgeStepMm,
+} from "./ChamferVirtualCursor";
 import { ChamferDualToolHUD } from "./ChamferDualToolHUD";
 import { ChamferTopologyHealthModal } from "./ChamferTopologyHealthModal";
 import { ChamferVariablesModal } from "./ChamferVariablesModal";
@@ -793,10 +802,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [dualToolSecondary, setDualToolSecondary] = useState<Tool | null>(null);
   const [dualToolPinned, setDualToolPinned] = useState(false);
 
-  /* LUPA DE PRECISÃO MOBILE (BOLHA QUADRADA DE ZOOM) */
+  /* LUPA DE PRECISÃO MOBILE & SISTEMA AVANÇADO DE CONTROLE DE CURSOR (OFFSET + CROSSHAIR + NUDGE) */
   const [loupeVisible, setLoupeVisible] = useState(false);
   const [loupeScreenPos, setLoupeScreenPos] = useState<Vec2>({ x: 0, y: 0 });
   const [loupeCadPos, setLoupeCadPos] = useState<Vec2>({ x: 0, y: 0 });
+  const lastPointerTypeRef = useRef<string>("mouse");
+  const [activePointerType, setActivePointerType] = useState<string>("mouse");
+  const [touchWorldPos, setTouchWorldPos] = useState<Vec2 | null>(null);
+  const [touchOffsetActive, setTouchOffsetActive] = useState<boolean>(false);
+  const [nudgeStepMm, setNudgeStepMm] = useState<NudgeStepMm>(1);
+  const [nudgeHudVisible, setNudgeHudVisible] = useState<boolean>(false);
   const [loupePinned, setLoupePinned] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
       try {
@@ -926,19 +941,41 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, []);
 
   /* --------------------------------------------------------- coordenadas */
-  const toWorld = useCallback((ev: { clientX: number; clientY: number }): Vec2 => {
-    const el = canvasViewportRef.current ?? svgRef.current;
-    const r = el?.getBoundingClientRect();
-    if (!r) return { x: 0, y: 0 };
-    const v = viewRef.current;
-    const safeK = v && Number.isFinite(v.k) && v.k > 0 ? v.k : 1;
-    const safeTx = v && Number.isFinite(v.tx) ? v.tx : 0;
-    const safeTy = v && Number.isFinite(v.ty) ? v.ty : 0;
-    return {
-      x: (ev.clientX - r.left - safeTx) / safeK,
-      y: (ev.clientY - r.top - safeTy) / safeK,
-    };
-  }, []);
+  const toWorld = useCallback(
+    (ev: { clientX: number; clientY: number; pointerType?: string }, forceDirect = false): Vec2 => {
+      const el = canvasViewportRef.current ?? svgRef.current;
+      const r = el?.getBoundingClientRect();
+      if (!r) return { x: 0, y: 0 };
+      const v = viewRef.current;
+      const safeK = v && Number.isFinite(v.k) && v.k > 0 ? v.k : 1;
+      const safeTx = v && Number.isFinite(v.tx) ? v.tx : 0;
+      const safeTy = v && Number.isFinite(v.ty) ? v.ty : 0;
+      const pType = ev.pointerType ?? lastPointerTypeRef.current;
+      const useOffset =
+        !forceDirect &&
+        shouldUseTouchOffset(
+          pType,
+          tool,
+          dragNode !== null,
+          isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
+        );
+      const calc = computeTouchCursorScreenAndWorld({
+        clientX: ev.clientX,
+        clientY: ev.clientY,
+        pointerType: pType,
+        canvasRect: r,
+        panX: safeTx,
+        panY: safeTy,
+        zoom: safeK,
+        offsetEnabled: useOffset,
+      });
+      return {
+        x: calc.cursorWorldX,
+        y: calc.cursorWorldY,
+      };
+    },
+    [tool, dragNode],
+  );
 
   /** Enquadra uma caixa do desenho na viewport com escala proporcional, centralização exata e limites seguros. */
   const fitBox = useCallback((box: Box | null) => {
@@ -2713,8 +2750,29 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     // ignora toques fantasma logo após um gesto
     if (performance.now() < Math.max(gestureUntilRef.current, dragCooldownUntilRef.current)) return;
 
+    const pType = ev.pointerType || "mouse";
+    lastPointerTypeRef.current = pType;
+    setActivePointerType(pType);
+
     const raw = toWorld(ev);
+    const directTouchWorld = toWorld(ev, true);
     const p = snapPoint(raw);
+    setCursor(raw);
+
+    const useOffsetHere = shouldUseTouchOffset(
+      pType,
+      tool,
+      dragNode !== null,
+      isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
+    );
+    if (pType === "touch" && useOffsetHere) {
+      setTouchWorldPos(directTouchWorld);
+      setTouchOffsetActive(true);
+      setNudgeHudVisible(true);
+    } else {
+      setTouchOffsetActive(false);
+      setTouchWorldPos(null);
+    }
 
     const isDrawingOrEditingTool = (
       tool === "line" ||
@@ -2730,6 +2788,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       tool === "smart_trim" ||
       tool === "trim" ||
       tool === "move" ||
+      tool === "node" ||
       tool === "leader" ||
       dragNode !== null ||
       dragEntityRef.current !== null
@@ -2772,11 +2831,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       // 1. Teste de nós de vértice em entidades selecionadas (grip nodes)
       let bestNode: { id: string; index: number; dist: number } | null = null;
       if (selection.length > 0) {
-        const bd = 10 / view.k;
+        const bd = 12 / view.k;
         for (const selEnt of selected) {
           const pts = entityPoints(selEnt);
           pts.forEach((q, i) => {
-            const d = dist(q, raw);
+            const d = Math.min(dist(q, raw), dist(q, directTouchWorld));
             if (d < bd && (!bestNode || d < bestNode.dist)) {
               bestNode = { id: selEnt.id, index: i, dist: d };
             }
@@ -2785,7 +2844,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
 
       // 2. Teste de colisão com formas geométricas existentes
-      const hit = hitTest(raw);
+      const hit = hitTest(raw) ?? hitTest(directTouchWorld);
       const targetEntity = hit;
 
       // =========================================================================
@@ -2794,9 +2853,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
       // CASO A: O toque começou em cima de uma Forma Geométrica ou Peça Existente (targetEntity != null || bestNode != null)
       if (targetEntity || bestNode) {
+        if (ev.pointerType === "touch") {
+          setNudgeHudVisible(true);
+        }
         // Se clicou sobre um grip node existente, inicia edição do vértice
         if (bestNode) {
           setDragNode({ id: bestNode.id, index: bestNode.index });
+          if (ev.pointerType === "touch") {
+            setTouchWorldPos(directTouchWorld);
+            setTouchOffsetActive(true);
+          }
           return;
         }
 
@@ -3304,8 +3370,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
+    const pType = ev.pointerType || lastPointerTypeRef.current || "mouse";
+    lastPointerTypeRef.current = pType;
+    if (activePointerType !== pType) setActivePointerType(pType);
+
     const raw = toWorld(ev);
+    const directTouchWorld = toWorld(ev, true);
     setCursor(raw);
+
+    const useOffsetMove = shouldUseTouchOffset(
+      pType,
+      tool,
+      dragNode !== null,
+      isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
+    );
+    if (pType === "touch" && useOffsetMove && ptrsRef.current.size === 1 && !panRef.current) {
+      setTouchWorldPos(directTouchWorld);
+      setTouchOffsetActive(true);
+    } else if (pType !== "touch" || ptrsRef.current.size >= 2 || panRef.current) {
+      setTouchOffsetActive(false);
+      setTouchWorldPos(null);
+    }
 
     // Visor ampliado magnético / Lupa de precisão técnica (3x)
     const isDrawingOrEditingToolMove = (
@@ -3322,6 +3407,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       tool === "smart_trim" ||
       tool === "trim" ||
       tool === "move" ||
+      tool === "node" ||
       tool === "leader" ||
       dragNode !== null ||
       dragEntityRef.current !== null ||
@@ -3611,6 +3697,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const onPointerUp = (ev?: React.PointerEvent) => {
     setLoupeVisible(false);
     setIsDraggingUnlocked(false);
+    setTouchOffsetActive(false);
+    setTouchWorldPos(null);
 
     if (dragLongPressRef.current) {
       clearTimeout(dragLongPressRef.current.timer);
@@ -3729,6 +3817,204 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setPending([]);
     }
   };
+
+  /* ---------------------------------------------- micro-ajuste incremental (nudge) */
+  const handleNudge = useCallback(
+    (dir: NudgeDirection, customStep?: number) => {
+      const step = customStep ?? nudgeStepMm;
+      const delta = computeNudgeDelta(dir, step, drawingProjection, isoPlane);
+
+      // 1. Se houver peças selecionadas na ferramenta Selecionar sem traço pendente, move as peças selecionadas
+      if (tool === "select" && selection.length > 0 && pending.length === 0) {
+        commit((list) =>
+          revalidateShared(
+            list.map((e) => {
+              if (!selection.includes(e.id)) return e;
+              const translated = translate(e, delta.x, delta.y);
+              if (translated.params?.canonical2D && typeof translated.params.canonical2D === "object") {
+                const entPlane = (translated.params.isoPlane as IsoPlane) || isoPlane;
+                const canDelta = unprojectPointFromIsoPlane(delta, entPlane, { x: 0, y: 0 });
+                translated.params = {
+                  ...translated.params,
+                  canonical2D: translate(translated.params.canonical2D as Entity, canDelta.x, canDelta.y),
+                };
+              }
+              return translated;
+            }),
+          ),
+        );
+        const nextC = {
+          x: Number((cursor.x + delta.x).toFixed(4)),
+          y: Number((cursor.y + delta.y).toFixed(4)),
+        };
+        setCursor(nextC);
+        setLoupeCadPos(nextC);
+        return;
+      }
+
+      // 2. Desloca o cursor ativo com precisão cirúrgica e atualiza o draft/cotas em tempo real
+      const basePt = (smartSnap ?? snapHit)?.p ?? cursor;
+      const nextCursor = {
+        x: Number((basePt.x + delta.x).toFixed(4)),
+        y: Number((basePt.y + delta.y).toFixed(4)),
+      };
+      setSmartSnap(null);
+      setSnapHit(null);
+      setCursor(nextCursor);
+      setLoupeCadPos(nextCursor);
+
+      if (activeEdge) {
+        setLiveDimensions(DynamicDimensionInteraction.generateEdgeOffsetDimensions(nextCursor, activeEdge, activeEdgeSide));
+      } else if (temporaryOrigin) {
+        setLiveDimensions(DynamicDimensionInteraction.generateRefOriginDimensions(nextCursor, temporaryOrigin));
+      }
+
+      if (tool === "polyline" && pending.length > 0) {
+        const lastPoint = pending[pending.length - 1]!;
+        setDraft({
+          id: uid(),
+          layer: activeLayer,
+          type: "line",
+          x1: lastPoint.x,
+          y1: lastPoint.y,
+          x2: nextCursor.x,
+          y2: nextCursor.y,
+        });
+      } else if (tool === "arc" && pending.length > 0) {
+        const [a, b] = pending;
+        if (pending.length === 1 && a) {
+          setDraft({
+            id: uid(),
+            layer: activeLayer,
+            type: "line",
+            x1: a.x,
+            y1: a.y,
+            x2: nextCursor.x,
+            y2: nextCursor.y,
+          });
+        } else if (a && b) {
+          setDraft(arcFrom3(a, b, nextCursor, activeLayer));
+        }
+      } else if (tool === "measure" && pending.length === 1) {
+        setLiveMeasure({ a: pending[0]!, b: nextCursor });
+      } else if (pending.length === 1) {
+        setDraft(buildDraft(tool, pending[0]!, nextCursor, activeLayer, filletR, drawingProjection, isoPlane));
+      }
+    },
+    [
+      nudgeStepMm,
+      drawingProjection,
+      isoPlane,
+      tool,
+      selection,
+      pending,
+      commit,
+      cursor,
+      smartSnap,
+      snapHit,
+      activeEdge,
+      activeEdgeSide,
+      temporaryOrigin,
+      activeLayer,
+      filletR,
+    ],
+  );
+
+  const handleConfirmNudgePoint = useCallback(() => {
+    const p = (smartSnap ?? snapHit)?.p ?? cursor;
+    if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
+
+    if (tool === "point") {
+      commit((e) => [...e, { id: uid(), layer: activeLayer, type: "point", x: p.x, y: p.y }]);
+      toast.success(`Ponto fixado em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm`);
+      return;
+    }
+
+    if (tool === "polyline") {
+      if (shouldClosePolyline(pending, p, 10 / view.k)) {
+        finishPolyline(true);
+        return;
+      }
+      setPending((q) => [...q, p]);
+      setDraft({
+        id: uid(),
+        layer: activeLayer,
+        type: "line",
+        x1: p.x,
+        y1: p.y,
+        x2: p.x,
+        y2: p.y,
+      });
+      return;
+    }
+
+    if (tool === "arc") {
+      const q = [...pending, p];
+      if (q.length === 3) {
+        const [a, b, c] = q as [Vec2, Vec2, Vec2];
+        const arc = arcFrom3(a, b, c, activeLayer);
+        if (arc) commit((e) => [...e, arc]);
+        setPending([]);
+        setDraft(null);
+      } else {
+        setPending(q);
+      }
+      return;
+    }
+
+    if (tool === "measure") {
+      const q = [...pending, p];
+      if (q.length === 2) {
+        const m = { a: q[0]!, b: q[1]! };
+        setMeasures((list) => [...list, m]);
+        setPending([]);
+        setLiveMeasure(null);
+      } else {
+        setPending(q);
+      }
+      return;
+    }
+
+    if (
+      tool === "line" ||
+      tool === "rect" ||
+      tool === "rrect" ||
+      tool === "circle" ||
+      tool === "ellipse" ||
+      tool === "polygon" ||
+      tool === "slot"
+    ) {
+      if (pending.length === 0) {
+        setPending([p]);
+        setDraft(buildDraft(tool, p, p, activeLayer, filletR, drawingProjection, isoPlane));
+        toast.info(`Origem fixada em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm. Ajuste o ponto final.`);
+      } else {
+        const built = buildDraft(tool, pending[0]!, p, activeLayer, filletR, drawingProjection, isoPlane);
+        if (built) {
+          const box = boxOf(built);
+          const empty = box.maxX - box.minX < 0.01 && box.maxY - box.minY < 0.01;
+          if (!empty) {
+            commit((e) => [...e, { ...built, id: uid() }]);
+          }
+        }
+        setPending([]);
+        setDraft(null);
+      }
+    }
+  }, [
+    smartSnap,
+    snapHit,
+    cursor,
+    tool,
+    commit,
+    activeLayer,
+    pending,
+    view.k,
+    finishPolyline,
+    filletR,
+    drawingProjection,
+    isoPlane,
+  ]);
 
   /* ------------------------------------------------------------ atalhos */
   useEffect(() => {
@@ -3852,6 +4138,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         });
         return;
       }
+      if (ev.key === "ArrowUp" || ev.key === "ArrowDown" || ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
+        ev.preventDefault();
+        const dir: NudgeDirection =
+          ev.key === "ArrowUp"
+            ? "up"
+            : ev.key === "ArrowDown"
+              ? "down"
+              : ev.key === "ArrowLeft"
+                ? "left"
+                : "right";
+        const step = ev.shiftKey ? 10 : ev.altKey ? 0.1 : nudgeStepMm;
+        handleNudge(dir, step);
+        return;
+      }
+      if (ev.key === "Enter" && tool !== "polyline" && tool !== "select") {
+        ev.preventDefault();
+        handleConfirmNudgePoint();
+        return;
+      }
       const map: Record<string, Tool> = {
         v: "select",
         n: "node",
@@ -3886,6 +4191,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     entities,
     groups,
     cursor,
+    nudgeStepMm,
+    handleNudge,
+    handleConfirmNudgePoint,
     handleManualSave,
     handleGroupSelection,
     handleUngroupSelection,
@@ -6055,17 +6363,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   />
                 )}
 
-              {snapHit && (
-                <text
-                  x={snapHit.p.x}
-                  y={snapHit.p.y + 4 / view.k}
-                  fontSize={12 / view.k}
-                  textAnchor="middle"
-                  fill={SELECTION_COLOR}
-                >
-                  {SNAP_GLYPH[snapHit.kind]}
-                </text>
-              )}
+              {/* MIRA TÉCNICA VETORIAL + CROSSHAIR DINÂMICO + HASTE GUIA ELÁSTICA (SUBSTITUI O '+' AZUL BÁSICO) */}
+              <ChamferTechnicalCursorSvg
+                visible={!solidOpen && tool !== "pan"}
+                cursorWorld={cursor}
+                touchWorld={touchWorldPos}
+                touchOffsetActive={touchOffsetActive}
+                activeSnap={smartSnap ?? snapHit}
+                viewK={view.k}
+                drawingProjection={drawingProjection}
+                isoPlane={isoPlane}
+                orthoOn={orthoOn}
+                basePoint={pending.length > 0 ? pending[pending.length - 1] : null}
+                isDark={isDark}
+              />
 
               {/* SMART SNAP OVERLAY CAD DE PRECISÃO */}
               {snapOn && (
@@ -6931,6 +7242,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
             <button
               type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                setNudgeHudVisible((prev) => !prev);
+              }}
+              className={cn(
+                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                nudgeHudVisible
+                  ? "text-accent bg-accent/15 border border-accent/40"
+                  : "text-muted-foreground hover:text-foreground",
+              )}
+              title="Alternar controle de Ajuste Fino Incremental (Nudge 0.1 / 1 / 5 / 10 mm)"
+            >
+              FINO: {nudgeHudVisible ? `${nudgeStepMm}MM` : "OFF"}
+            </button>
+
+            <button
+              type="button"
               onClick={() => updateFrame({ visible: !frame.visible })}
               title={`Área de trabalho ${frame.w} × ${frame.h} mm`}
               className={cn(
@@ -7389,6 +7717,33 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         pinned={loupePinned}
         onTogglePinned={toggleLoupePinned}
         rightOffset={rightSidebarOpen ? 300 : undefined}
+      />
+
+      {/* CONTROLE DE MICRO-AJUSTE INCREMENTAL (NUDGE PADRÃO DESKTOP NO TOUCH) */}
+      <ChamferNudgeControlHUD
+        visible={!solidOpen && nudgeHudVisible}
+        stepMm={nudgeStepMm}
+        onStepChange={setNudgeStepMm}
+        onNudge={handleNudge}
+        onConfirmPoint={handleConfirmNudgePoint}
+        canConfirmPoint={
+          tool === "line" ||
+          tool === "polyline" ||
+          tool === "rect" ||
+          tool === "rrect" ||
+          tool === "circle" ||
+          tool === "ellipse" ||
+          tool === "arc" ||
+          tool === "polygon" ||
+          tool === "slot" ||
+          tool === "point" ||
+          tool === "measure"
+        }
+        confirmLabel={pending.length === 0 ? "INÍCIO" : "FIXAR"}
+        targetLabel={tool === "select" && selection.length > 0 ? "PEÇA" : "MIRA"}
+        cursorPos={(smartSnap ?? snapHit)?.p ?? cursor}
+        onClose={() => setNudgeHudVisible(false)}
+        isDark={isDark}
       />
 
       {/* ÁREA DE TRANSFERÊNCIA GLOBAL DO CAD (SEÇÃO 17) */}

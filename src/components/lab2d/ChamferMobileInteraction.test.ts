@@ -1,6 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { CadSemanticIntentEngine } from "@/lib/lab2d/cadSemanticIntent";
 import { globalParametricStore } from "@/lib/lab2d/cadParametricVariables";
+import {
+  TOUCH_CURSOR_OFFSET_PX,
+  shouldUseTouchOffset,
+  computeTouchCursorScreenAndWorld,
+  computeNudgeDelta,
+} from "./ChamferVirtualCursor";
 import type { Entity } from "@/lib/lab2d/core";
 
 describe("CHAMFER — Testes de Interação Mobile e Tarefas-Âncora (Especificação Mobile-First)", () => {
@@ -68,6 +74,85 @@ describe("CHAMFER — Testes de Interação Mobile e Tarefas-Âncora (Especifica
     expect(globalParametricStore.evaluateExpression("500 + 250")).toBe(750);
     expect(globalParametricStore.evaluateExpression("2 * 375")).toBe(750);
     expect(globalParametricStore.evaluateExpression("sqrt(100) * 75")).toBe(750);
+  });
+
+  describe("Sistema Avançado de Controle de Cursor: Offset Anti-Oclusão, Mouse 1:1 e Ajuste Fino Incremental", () => {
+    it("Preserva cursor 1:1 sem deslocamento quando pointerType === 'mouse'", () => {
+      expect(shouldUseTouchOffset("mouse", "line")).toBe(false);
+      expect(shouldUseTouchOffset("mouse", "polyline")).toBe(false);
+      expect(shouldUseTouchOffset("mouse", "node", true, false)).toBe(false);
+
+      const res = computeTouchCursorScreenAndWorld({
+        clientX: 300,
+        clientY: 400,
+        pointerType: "mouse",
+        canvasRect: { left: 20, top: 50 },
+        panX: 80,
+        panY: 100,
+        zoom: 2,
+        offsetEnabled: false,
+      });
+
+      expect(res.offsetY).toBe(0);
+      expect(res.isInverted).toBe(false);
+      expect(res.cursorWorldX).toBe((300 - 20 - 80) / 2); // 100
+      expect(res.cursorWorldY).toBe((400 - 50 - 100) / 2); // 125
+    });
+
+    it("Ativa deslocamento de -55px acima do dedo em ferramentas ativas quando pointerType === 'touch'", () => {
+      expect(shouldUseTouchOffset("touch", "line")).toBe(true);
+      expect(shouldUseTouchOffset("touch", "polyline")).toBe(true);
+      expect(shouldUseTouchOffset("touch", "circle")).toBe(true);
+      expect(shouldUseTouchOffset("touch", "node")).toBe(true);
+      expect(shouldUseTouchOffset("touch", "select", false, true)).toBe(true);
+      expect(shouldUseTouchOffset("touch", "pan")).toBe(false);
+
+      const res = computeTouchCursorScreenAndWorld({
+        clientX: 300,
+        clientY: 400,
+        pointerType: "touch",
+        canvasRect: { left: 20, top: 50 },
+        panX: 80,
+        panY: 100,
+        zoom: 2,
+        offsetEnabled: true,
+      });
+
+      expect(res.offsetY).toBe(-TOUCH_CURSOR_OFFSET_PX); // -55
+      expect(res.isInverted).toBe(false);
+      expect(res.cursorWorldX).toBe((300 - 20 - 80) / 2); // 100
+      expect(res.cursorWorldY).toBe((400 - 55 - 50 - 100) / 2); // 97.5
+      expect(res.touchWorldY).toBe((400 - 50 - 100) / 2); // 125
+    });
+
+    it("Inverte automaticamente o deslocamento para +55px abaixo do dedo quando próximo ao topo da tela (touchClientY < 120)", () => {
+      const res = computeTouchCursorScreenAndWorld({
+        clientX: 250,
+        clientY: 95,
+        pointerType: "touch",
+        canvasRect: { left: 0, top: 40 },
+        panX: 0,
+        panY: 0,
+        zoom: 1,
+        offsetEnabled: true,
+      });
+
+      expect(res.isInverted).toBe(true);
+      expect(res.offsetY).toBe(TOUCH_CURSOR_OFFSET_PX); // +55
+      expect(res.cursorScreenY).toBe(95 + 55); // 150
+      expect(res.cursorWorldY).toBe(150 - 40); // 110
+    });
+
+    it("Calcula incrementos exatos no Micro-Ajuste Incremental (Nudge 0.1, 1, 5, 10 mm) em 2D e Isométrico", () => {
+      expect(computeNudgeDelta("up", 0.1, "orthographic")).toEqual({ x: 0, y: -0.1 });
+      expect(computeNudgeDelta("down", 1, "orthographic")).toEqual({ x: 0, y: 1 });
+      expect(computeNudgeDelta("left", 5, "orthographic")).toEqual({ x: -5, y: 0 });
+      expect(computeNudgeDelta("right", 10, "orthographic")).toEqual({ x: 10, y: 0 });
+
+      const isoRight = computeNudgeDelta("right", 10, "isometric", "top");
+      expect(isoRight.x).toBeCloseTo(10 * Math.cos(Math.PI / 6), 5);
+      expect(isoRight.y).toBeCloseTo(-10 * Math.sin(Math.PI / 6), 5);
+    });
   });
 
   describe("Desambiguação de Gestos Long-Press: Área de Transferência (no vazio) vs. Arraste/Referência (em entidades)", () => {
