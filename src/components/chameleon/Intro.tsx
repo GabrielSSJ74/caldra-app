@@ -151,12 +151,6 @@ export function Intro({ onDone }: { onDone: () => void }) {
           </defs>
           <rect width="100%" height="100%" fill="url(#caldra-intro-grid)" />
         </svg>
-
-        {/* Miras técnicas de calibração nos cantos */}
-        <div className="absolute top-6 left-6 text-zinc-400/40 text-[10px] font-mono tracking-widest">+ 00.00</div>
-        <div className="absolute top-6 right-6 text-zinc-400/40 text-[10px] font-mono tracking-widest">+ CAD.REF</div>
-        <div className="absolute bottom-6 left-6 text-zinc-400/40 text-[10px] font-mono tracking-widest">+ 100%</div>
-        <div className="absolute bottom-6 right-6 text-zinc-400/40 text-[10px] font-mono tracking-widest">+ ISO</div>
       </div>
 
       {/* ============================================================== */}

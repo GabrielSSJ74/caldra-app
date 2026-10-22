@@ -111,16 +111,12 @@ r.style.setProperty("--bubble-opacity",(bo/100).toFixed(2));
 r.lang=s.language==="en"?"en":s.language==="es"?"es":"pt-BR";
 }catch(e){}})();`;
 
-/** Splash de abertura: pinta antes do JS e some com fade após a montagem. */
+/** Splash de abertura: pinta o fundo escuro técnico (#030712) antes do JS e entrega sem flash para a animação CAD 3D. */
 const BOOT_SPLASH_STYLE = `
-#caldra-boot{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#040914;transition:opacity .35s ease;font-family:'Space Grotesk',system-ui,sans-serif}
-#caldra-boot .mark{width:88px;height:88px;border-radius:20px;background:#040914;overflow:hidden;display:flex;align-items:center;justify-content:center}
-#caldra-boot .mark img{width:100%;height:100%;object-fit:contain;display:block;user-select:none}
-#caldra-boot p{color:#F4F4F5;font-size:18px;font-weight:700;letter-spacing:.18em;margin:0}
-#caldra-boot span{color:#94A3B8;font-size:10px;letter-spacing:.24em;text-transform:uppercase}
+#caldra-boot{position:fixed;inset:0;z-index:9999;background:#030712;transition:opacity .25s ease}
 #caldra-boot.done{opacity:0;pointer-events:none}
 `;
-const BOOT_SPLASH_HTML = `<div class="mark"><img src="/assets/aistudio/file_000000002214820eb6cb9975b671bfdd_baf1f0b1.png" alt="CALDRA" draggable="false" /></div><p>CALDRA</p><span>ENGENHARIA EM FORMA</span>`;
+const BOOT_SPLASH_HTML = ``;
 
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
