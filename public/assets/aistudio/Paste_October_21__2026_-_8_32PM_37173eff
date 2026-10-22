@@ -1,0 +1,693 @@
+CALDRA — CHAMFER INTENT
+
+ESPECIFICAÇÃO MESTRA DE IMPLEMENTAÇÃO: COMPILADOR GEOMÉTRICO PARAMÉTRICO POR LINGUAGEM NATURAL
+
+Produto: CALDRA — Metal Lab Suite
+Ambiente: CHAMFER CAD 2D
+Módulo: CHAMFER Intent
+Modelo de interpretação: Gemini 4 Argon, conforme disponibilidade e capacidades efetivas do ambiente
+Missão: Converter descrições em linguagem natural em projetos CAD paramétricos, geometricamente válidos, dimensionados e editáveis, com possibilidade de expansão para caldeiraria e fabricação industrial.
+
+---
+
+0. MISSÃO E PRINCÍPIO ARQUITETURAL
+
+Atue como arquiteto de software sênior, engenheiro de CAD paramétrico, especialista em geometria computacional, visão de linguagem natural, caldeiraria, traçagem e fabricação CNC.
+
+Desenvolva o CHAMFER Intent como uma camada inteligente integrada ao CHAMFER CAD, permitindo que o usuário descreva verbalmente ou por texto o que deseja construir, modificar, dimensionar ou consultar.
+
+A ferramenta deve compreender linguagem técnica e informal de oficina, interpretar parâmetros e relações geométricas, resolver ambiguidades, gerar um plano de operações estruturado e utilizar o motor geométrico existente para construir a geometria real.
+
+O usuário deve conseguir trabalhar por conversa, sem precisar executar manualmente cada comando convencional do CAD.
+
+Exemplos de intenção:
+
+- “Desenhe uma chapa de 500 por 250 milímetros.”
+- “Arredonde os quatro cantos com raio de 20.”
+- “Adicione cinco furos de 12 milímetros na linha central, igualmente espaçados.”
+- “Distribua oito furos igualmente em uma circunferência de 180 milímetros de diâmetro primitivo.”
+- “Crie um oblongo de 20 por 40, centralizado a 30 milímetros da borda esquerda.”
+- “Agora aumente esses furos para 16 milímetros.”
+- “Espelhe o conjunto em relação ao eixo vertical.”
+- “Crie uma redução concêntrica de 400 para 200 milímetros, com altura de 350 milímetros e chapa de 3 milímetros”, quando o módulo especializado de caldeiraria estiver disponível.
+
+Princípio inegociável: o modelo de linguagem interpreta a intenção; o motor do CHAMFER calcula, constrói e valida a geometria.
+
+Não peça à IA que desenhe pixels, invente coordenadas finais sem restrições ou gere arquivos SVG/DXF brutos como substitutos do modelo geométrico. O resultado deve ser uma estrutura paramétrica validada, convertida em entidades nativas e editáveis do CAD.
+
+O objetivo é permitir uma variedade crescente de desenhos e peças, dentro de um vocabulário geométrico extensível. Não declare que o sistema desenha literalmente qualquer coisa antes de implementar os comandos, modelos e algoritmos correspondentes.
+
+1. AUDITORIA OBRIGATÓRIA DA IMPLEMENTAÇÃO ATUAL
+
+Antes de modificar o projeto:
+
+1. Identifique a plataforma, a linguagem, o framework, a estrutura dos módulos e a versão real do ambiente de desenvolvimento.
+2. Localize o canvas do CHAMFER, o motor geométrico, o modelo de entidades, as cotas, as constraints, os padrões e o sistema de coordenadas.
+3. Identifique os comandos de desenho e edição já implementados.
+4. Examine como o aplicativo salva projetos, mantém o histórico e executa Undo/Redo.
+5. Identifique se já existe integração com Gemini, quais recursos estão disponíveis e como as credenciais são protegidas.
+6. Identifique as operações que podem ser executadas localmente, sem chamar um modelo de IA.
+7. Registre as limitações conhecidas e estabeleça testes de referência.
+
+Não presuma que funções existentes estejam completas só porque aparecem na interface.
+
+Não reescreva o CHAMFER inteiro. Não introduza um segundo motor geométrico sem necessidade comprovada. Não substitua recursos que já funcionam por demonstrações ou simulações.
+
+O objetivo é acrescentar a inteligência conversacional à arquitetura real do projeto.
+
+2. ARQUITETURA DO CHAMFER INTENT
+
+Implemente uma arquitetura com seis responsabilidades distintas.
+
+2.1 Intent Interpreter — interpretador semântico
+
+Responsável por interpretar a linguagem natural, inclusive português informal e terminologia industrial.
+
+Deve reconhecer:
+
+- A intenção principal do usuário.
+- Entidades e elementos mencionados.
+- Dimensões e unidades.
+- Referências espaciais.
+- Quantidades e padrões de distribuição.
+- Relações geométricas.
+- Restrições explícitas e implícitas.
+- Alterações solicitadas em mensagens posteriores.
+- Informações obrigatórias ausentes.
+- Ambiguidades que exigem esclarecimento.
+
+O interpretador deve distinguir uma ordem de criação de uma ordem de edição, consulta, seleção, exclusão ou exportação.
+
+Ele pode produzir candidatos de interpretação, mas não deve inventar parâmetros ausentes como se tivessem sido informados pelo usuário.
+
+2.2 Parametric Plan Compiler — compilador do plano paramétrico
+
+Converte a interpretação em uma representação intermediária estruturada e validável.
+
+Essa representação deve descrever:
+
+- A peça ou projeto.
+- As operações planejadas.
+- As entidades criadas ou modificadas.
+- Os parâmetros dimensionais.
+- As relações geométricas.
+- As dependências entre operações.
+- As referências de coordenadas.
+- As informações ainda pendentes.
+- Os avisos e as condições de validação.
+- A necessidade de confirmação.
+
+Deve ser possível inspecionar e validar o plano antes de executá-lo.
+
+2.3 CAD Command Registry — catálogo de comandos
+
+Mantém a lista oficial de operações que a IA pode solicitar.
+
+Cada comando deve possuir nome estável, finalidade, parâmetros tipados, unidades, restrições, pré-condições, efeitos esperados e regras de validação.
+
+O modelo não pode chamar comandos desconhecidos nem executar código arbitrário.
+
+2.4 Geometric Execution Engine — execução determinística
+
+Recebe o plano validado e utiliza o motor geométrico do CHAMFER para calcular a geometria.
+
+É responsável por coordenadas, interseções, relações espaciais, padrões, raios, cotas e validações geométricas.
+
+Não delegue a precisão dimensional ao texto explicativo do modelo.
+
+2.5 Constraint & Validation Engine — consistência técnica
+
+Verifica a validade matemática, geométrica e paramétrica das operações.
+
+Deve detectar parâmetros ausentes, conflitos, referências inexistentes, geometrias degeneradas, furos fora de regiões válidas e operações incompatíveis com o modelo existente.
+
+A IA não pode aprovar por conta própria a validade de uma geometria apenas descrevendo-a como correta.
+
+2.6 Transaction & Preview Manager — controle da execução
+
+Apresenta a prévia, permite revisar parâmetros e controla a aplicação da alteração.
+
+Cada alteração confirmada deve ser registrada em uma transação coerente de Undo/Redo.
+
+Em caso de falha, o documento deve permanecer íntegro, sem geometrias parciais ou modificações involuntárias.
+
+3. VOCABULÁRIO GEOMÉTRICO PARAMÉTRICO
+
+Defina um catálogo extensível de entidades e operações, alinhado às capacidades reais do CHAMFER.
+
+3.1 Formas-base
+
+Comece pelas formas:
+
+- Linha e polilinha.
+- Retângulo e polígono regular.
+- Círculo, arco e elipse.
+- Anel e flange.
+- Rasgo oblongo.
+- Perfil fechado e perfil aberto.
+- Contorno composto.
+
+Cada entidade deve receber uma identidade estável e possuir parâmetros editáveis.
+
+3.2 Modificadores geométricos
+
+Inclua, conforme as capacidades existentes:
+
+- Filete ou arredondamento de raio definido.
+- Chanfro com distância ou ângulo.
+- Offset.
+- Trim e extend.
+- Divisão e união de segmentos.
+- Transformações de posição, escala e rotação.
+- Espelhamento e cópia.
+- Alinhamento e distribuição.
+- Restrições dimensionais e geométricas.
+
+Os modificadores devem referenciar as entidades e os parâmetros a que se aplicam.
+
+Não aplique um arredondamento global quando o pedido especificar cantos determinados.
+
+3.3 Elementos de fabricação
+
+Implemente progressivamente:
+
+- Furos simples e padrões de furos.
+- Rasgos e recortes.
+- Furos centrais e círculos de furação.
+- Flanges e padrões circulares.
+- Perfis com contornos internos.
+- Linhas de construção e marcações.
+- Elementos de corte, recorte e dobra, conforme o modelo do CALDRA.
+
+Não misture entidades auxiliares de construção com entidades de corte sem preservar suas classes e camadas.
+
+3.4 Operações compostas
+
+Quando os comandos básicos estiverem estáveis, defina operações compostas de engenharia:
+
+- Chapa com furos e raios.
+- Flange com círculo de furação.
+- Placa de fixação.
+- Suporte e cantoneira.
+- Perfis simétricos.
+- Peças paramétricas de serralheria.
+- Transição quadrado-circular.
+- Cone, redução, curva segmentada e boca de lobo.
+
+Cada operação composta deve possuir um modelo paramétrico próprio e um algoritmo determinístico de construção ou planificação.
+
+A presença do nome de uma peça no catálogo não é suficiente: implemente e valide a matemática correspondente antes de expor a função como disponível.
+
+4. ESQUEMA DE DADOS CANÔNICO
+
+Crie uma representação intermediária tipada — um DSL de CAD — adequada ao estado atual do CHAMFER.
+
+Não imponha um esquema enorme e rígido que obrigue a duplicar todo o documento. Defina um formato modular, versionado e capaz de evoluir.
+
+A estrutura conceitual deve conter:
+
+- "schema_version": versão do esquema.
+- "document_context": unidade ativa, origem e referência ao documento.
+- "intent": tipo de intenção solicitado.
+- "operations": lista ordenada de operações.
+- "parameters": dimensões e valores explicitamente definidos.
+- "constraints": vínculos e relações geométricas.
+- "dependencies": referências às entidades ou operações antecedentes.
+- "unresolved": informações que precisam ser esclarecidas.
+- "warnings": avisos e inconsistências detectadas.
+- "validation": estado e resultado das verificações.
+- "confirmation_required": indicação de confirmação antes da aplicação.
+- "response_summary": resumo compreensível das alterações planejadas.
+
+Cada operação deve possuir um tipo definido e parâmetros validados. Os campos específicos podem variar entre criar uma chapa, adicionar um furo, modificar uma entidade ou construir um componente paramétrico.
+
+Use identificadores estáveis e referências entre operações. Não use a posição visual de um objeto no canvas como identificador permanente.
+
+O esquema deve representar a intenção e as dependências, e não apenas uma coleção de coordenadas finais sem significado paramétrico.
+
+5. GOOGLE AI STUDIO: STRUCTURED OUTPUTS E FUNCTION CALLING
+
+Utilize os recursos estruturados suportados pelo modelo efetivamente selecionado no projeto.
+
+Avalie:
+
+- Structured Outputs para gerar a representação intermediária conforme um esquema.
+- Function Calling para solicitar operações disponíveis por meio de funções explicitamente declaradas.
+- Validação do esquema antes da execução.
+- Validação semântica e geométrica no código do aplicativo.
+- Tratamento de respostas incompletas, erros, recusas e falhas de rede.
+
+Não presuma que um modelo ou ambiente suporte todos os recursos apenas porque eles existem em outras versões da API. Verifique a configuração real e a documentação correspondente.
+
+A saída estruturada deve ser validada no aplicativo, inclusive quanto aos valores permitidos, referências, unidades, limites e relações entre parâmetros.
+
+Se o formato estiver incorreto, rejeite-o e trate o erro. Se estiver correto estruturalmente, mas geometricamente impossível, não execute a operação.
+
+O código do aplicativo é sempre responsável por executar as funções solicitadas pela IA.
+
+Não envie ao modelo o projeto CAD completo em todas as interações se apenas um pequeno subconjunto de entidades for necessário. Forneça o contexto mínimo suficiente para interpretar o pedido com segurança.
+
+Proteja as credenciais da API conforme a arquitetura disponível. Não exponha segredos no código cliente nem invente infraestrutura de backend que não exista no projeto.
+
+6. SISTEMA DE REFERÊNCIAS E UNIDADES
+
+Integre o Intent ao sistema de referências geométricas existente no CHAMFER.
+
+O sistema deve compreender:
+
+- Origem global do desenho.
+- Origem local de uma peça.
+- Centro geométrico de uma forma.
+- Centro de um círculo.
+- Ponto médio de uma aresta.
+- Vértice ou extremidade de entidade.
+- Distância em relação a uma aresta.
+- Distância entre centros.
+- Linha de centro.
+- Eixos horizontal e vertical.
+- Sistemas de referência locais.
+- Coordenadas cartesianas e polares.
+
+Não confunda centro geométrico, centro de um círculo, centro da caixa delimitadora e centróide de uma região.
+
+O pedido “posicione o furo a 40 mm da borda esquerda” precisa identificar se os 40 mm se referem ao centro do furo, à borda mais próxima do furo ou a outro ponto.
+
+Use a unidade do documento quando ela estiver claramente definida. Caso contrário, estabeleça a unidade de trabalho de forma explícita ou solicite esclarecimento quando a ambiguidade tiver impacto significativo.
+
+Interprete expressões como:
+
+- “Meio metro” = 500 mm.
+- “25 centímetros” = 250 mm.
+- “Furo de doze” = interpretar como diâmetro de 12 mm somente quando o contexto tornar essa intenção suficientemente clara.
+- “Raio vinte” = raio de 20 mm, respeitando as unidades do documento.
+- “Espaçados igualmente” = identificar quais referências são utilizadas para distribuir os elementos.
+
+Mantenha a precisão numérica internamente. Arredonde valores somente para apresentação, sem acumular erros por utilizar os valores exibidos na tela como dados canônicos.
+
+7. RESOLUÇÃO MATEMÁTICA E PADRÕES DE FURAÇÃO
+
+As fórmulas abaixo definem o comportamento do motor geométrico; o modelo de linguagem identifica os parâmetros e solicita a operação correspondente.
+
+7.1 Padrão linear de N furos
+
+O padrão precisa definir:
+
+- Quantidade "N".
+- Diâmetro dos furos.
+- Orientação da linha.
+- Referência de início e fim ou margem.
+- Regra de espaçamento.
+- Alinhamento ou offset.
+- Eventuais restrições de simetria.
+
+Se a distância entre o primeiro e o último centro for "L", para "N > 1":
+
+[
+p=\frac{L}{N-1}
+]
+
+Se a largura total disponível for "W" e os centros extremos precisarem ter margens iguais a "m" em relação às extremidades:
+
+[
+p=\frac{W-2m}{N-1}
+]
+
+Se a convenção escolhida for deixar um passo de margem em cada lado, então:
+
+[
+p=\frac{W}{N+1}
+]
+
+Essa última fórmula só deve ser aplicada quando essa regra de margens fizer parte da intenção interpretada ou tiver sido escolhida explicitamente como convenção do comando.
+
+Para um único furo, não dividir por zero nem aplicar fórmulas destinadas a múltiplos elementos.
+
+7.2 Padrão circular / PCD
+
+Um círculo de furação deve possuir:
+
+- Centro de referência.
+- Diâmetro primitivo "PCD", quando definido por diâmetro.
+- Quantidade de furos.
+- Diâmetro de cada furo.
+- Ângulo inicial.
+- Intervalo angular ou regra de distribuição.
+- Eventual orientação de um furo de referência.
+
+Para "N" furos distribuídos uniformemente por 360 graus:
+
+[
+\Delta\theta=\frac{360^\circ}{N}
+]
+
+O raio primitivo é:
+
+[
+R=\frac{PCD}{2}
+]
+
+Para um centro "(cx, cy)" e ângulo inicial "θ0":
+
+[
+x_i=c_x+R\cos(\theta_0+i\Delta\theta)
+]
+
+[
+y_i=c_y+R\sin(\theta_0+i\Delta\theta)
+]
+
+O motor calcula as coordenadas, valida o resultado e cria a entidade paramétrica de padrão circular.
+
+Não assuma que diâmetro primitivo e diâmetro externo do flange sejam a mesma medida.
+
+7.3 Arredondamento de cantos
+
+Para uma placa retangular com arredondamento uniforme:
+
+- Verifique o raio solicitado.
+- Valide se os arredondamentos são geometricamente compatíveis com as dimensões.
+- Construa segmentos retos e arcos tangentes.
+- Preserve o contorno fechado e a continuidade.
+- Não aplique arredondamentos em vértices não solicitados.
+
+Para quatro cantos com raio uniforme em um retângulo, verifique a compatibilidade com as duas dimensões da placa. Para formas irregulares, avalie localmente as arestas e os vértices envolvidos.
+
+7.4 Validação de posição
+
+Para cada furo ou recorte:
+
+- Verifique a posição em relação ao contorno aplicável.
+- Considere o raio do furo e as margens solicitadas.
+- Diferencie estar dentro do contorno de satisfazer a distância mínima à borda.
+- Verifique interferências com outros elementos quando relevante.
+- Informe os conflitos antes de inserir a geometria.
+
+Não limite a validação a verificar se o diâmetro é menor que a largura da chapa.
+
+8. REGRA DE AMBIGUIDADE
+
+Crie uma política clara de esclarecimento.
+
+Quando houver várias interpretações geometricamente diferentes, o sistema deve apresentar opções curtas e específicas.
+
+Exemplo:
+
+Usuário: “Chapa 500 × 250 mm, cinco furos centrais de 12 mm, divididos igualmente, cantos R20.”
+
+Se não houver contexto suficiente, perguntar:
+
+“Como deseja distribuir os cinco furos?”
+
+- Na linha central horizontal.
+- Em um círculo de furação (PCD).
+- Em outra configuração.
+
+Se o usuário escolher círculo de furação, mas não fornecer o PCD, solicite a medida necessária ou ofereça opções claramente identificadas para escolha.
+
+Não escolha silenciosamente uma configuração e não crie uma peça com parâmetros inventados.
+
+O sistema pode usar valores padrão apenas quando eles estiverem explicitamente configurados como convenções reconhecidas do aplicativo e forem adequados ao contexto. Esses valores devem ser identificáveis e editáveis pelo usuário.
+
+Diferencie:
+
+- Parâmetros explicitamente informados.
+- Parâmetros inferidos com alta confiança.
+- Valores padrão aplicados.
+- Informações pendentes.
+- Decisões que precisam de confirmação.
+
+9. EXEMPLO DE PLANO PARAMÉTRICO
+
+Considere a solicitação:
+
+“Crie uma chapa de 500 × 250 mm com quatro cantos R20 e cinco furos de Ø12 mm no eixo horizontal central, igualmente espaçados, com um passo de margem em cada lado.”
+
+O sistema pode gerar uma representação conceitual equivalente a:
+
+{
+"schema_version": "1.0",
+"intent": "create_parametric_part",
+"document_context": {
+"units": "mm",
+"origin": "part_center"
+},
+"part": {
+"id": "plate_001",
+"name": "Chapa_Base",
+"base_shape": {
+"type": "rounded_rectangle",
+"width": 500,
+"height": 250,
+"corner_radius": 20
+},
+"features": [
+{
+"id": "hole_pattern_001",
+"type": "linear_hole_pattern",
+"count": 5,
+"hole_diameter": 12,
+"axis": "horizontal",
+"center_y": 0,
+"spacing_rule": "equal_step_margins",
+"spacing_reference_width": 500
+}
+]
+},
+"unresolved": [],
+"warnings": [],
+"validation": {
+"status": "pending_geometry_validation"
+},
+"confirmation_required": true
+}
+
+Esse exemplo ilustra o conceito do esquema. A implementação deve adaptar a estrutura ao catálogo real de entidades do CHAMFER, com validação por esquema e sem copiar literalmente este objeto se ele for incompatível com o código existente.
+
+O motor calcula as coordenadas do padrão. A partir de uma largura de referência de 500 mm e da regra de um passo de margem em cada lado, o passo linear será aproximadamente 83,333 mm.
+
+Após validar o contorno, os furos, as margens e os arredondamentos, o sistema apresenta uma prévia antes de confirmar.
+
+10. EDIÇÃO MULTITURNO E MEMÓRIA DE CONTEXTO
+
+A ferramenta precisa compreender alterações sucessivas sobre o mesmo desenho.
+
+Exemplos:
+
+- “Agora muda todos os furos para 16 mm.”
+- “Adicione mais dois furos com o mesmo espaçamento.”
+- “Aumente a chapa para 600 mm de largura.”
+- “Mantenha os furos centralizados depois de aumentar a largura.”
+- “Arredonde somente os dois cantos esquerdos.”
+- “Espelhe o conjunto em relação ao eixo vertical.”
+- “Desfaça a última alteração.”
+
+Para cada mensagem, envie à IA somente o contexto necessário:
+
+- Entidades relevantes do desenho.
+- Identificadores estáveis.
+- Parâmetros e constraints aplicáveis.
+- Operações recentes.
+- Seleção atual, se relevante.
+- Unidade e sistema de referência.
+- Estado do plano paramétrico.
+
+A IA deve preservar os elementos não mencionados.
+
+Se o pedido se referir a “esses furos”, resolva a referência por identidade de entidades, pelo padrão ou pelo contexto. Se houver vários conjuntos possíveis, pergunte qual conjunto alterar.
+
+Alterações dimensionais devem atualizar o modelo paramétrico existente, quando possível, em vez de apagar a geometria e reconstruí-la sem continuidade.
+
+O histórico de conversa não substitui o estado canônico do documento. A versão atual da geometria no CHAMFER é a fonte de verdade.
+
+11. EXECUÇÃO TRANSACIONAL E SEGURANÇA
+
+Implemente o princípio de planejar, validar e executar.
+
+1. A IA produz a intenção estruturada.
+2. O sistema valida o esquema.
+3. O catálogo verifica os comandos permitidos.
+4. O motor geométrico valida referências e parâmetros.
+5. O plano é executado de forma provisória ou em prévia.
+6. O usuário revisa e confirma quando necessário.
+7. O sistema aplica uma transação atômica.
+8. O documento e o histórico são atualizados.
+
+Nenhuma operação inválida pode deixar entidades parciais no desenho.
+
+Exija confirmação antes de modificações destrutivas, operações ambíguas, exclusões significativas ou mudanças que possam comprometer trabalho existente.
+
+Para solicitações simples e não destrutivas, permita um fluxo de aplicação mais direto se isso for uma opção configurada pelo usuário e se a validação for aprovada.
+
+Não permita que comandos gerados pela IA contornem as validações, as permissões ou as transações.
+
+A operação de aplicar um plano deve ser segura contra repetição acidental. Utilize identificadores ou mecanismos equivalentes para evitar criar a mesma peça duas vezes quando a mesma resposta for processada novamente.
+
+12. INTEGRAÇÃO COM O CANVAS E O SISTEMA DE HISTÓRICO
+
+A geometria gerada deverá entrar no CHAMFER como entidades nativas compatíveis com as ferramentas existentes.
+
+Preserve:
+
+- Unidades e precisão.
+- Identificadores e relações entre entidades.
+- Cotas editáveis.
+- Restrições geométricas e dimensionais existentes.
+- Camadas e metadados.
+- Seleção e snapping.
+- Referências geométricas.
+- Undo/Redo.
+- Salvamento e recuperação do projeto.
+- Exportação suportada pelo aplicativo.
+
+Não limpe automaticamente a camada vetorial ativa para substituir um desenho, a menos que essa operação seja explicitamente solicitada e confirmada.
+
+Prefira adicionar a nova peça a uma camada, grupo ou conjunto identificável, sem alterar geometrias não relacionadas.
+
+O resultado deve permanecer editável após a aplicação. Uma imagem renderizada, SVG estático ou desenho sem vínculo com os parâmetros não constitui uma implementação suficiente.
+
+13. ESPECIALIZAÇÃO PROGRESSIVA EM CALDEIRARIA
+
+Depois de estabilizar as operações fundamentais, expanda o Intent para interpretar vocabulário industrial e trabalhar com modelos paramétricos especializados.
+
+Avalie, conforme os recursos implementados no CALDRA:
+
+- Chapas, perfis, flanges e suportes.
+- Transições quadrado-circular.
+- Cones e reduções concêntricas ou excêntricas.
+- Curvas segmentadas.
+- Bocas de lobo e derivações.
+- Peças com linhas de corte, dobra e marcação.
+- Planificações e desenvolvimento de chapas.
+- Compensação de espessura e linha neutra.
+- Regras relacionadas a processos de corte ou dobra.
+
+Cada família precisa possuir parâmetros dimensionais, fórmulas determinísticas, tolerâncias e validações específicas.
+
+O modelo de linguagem deve extrair os parâmetros e selecionar o modelo especializado. O código do CALDRA calcula a geometria e o desenvolvimento.
+
+Não permita que o Gemini invente automaticamente fatores de linha neutra, allowances, deduções de dobra, tolerâncias de máquina ou condições de fabricação. Esses dados devem vir das regras configuradas, de fontes confiáveis ou de parâmetros fornecidos pelo usuário.
+
+Quando houver informações insuficientes para uma planificação confiável, solicite os dados necessários antes de afirmar que o desenvolvimento está pronto para corte.
+
+14. EXPERIÊNCIA MÓVEL
+
+O CHAMFER Intent deve ser natural de usar em um celular.
+
+- Painel conversacional compacto e contextual.
+- Campo de texto acessível por toque.
+- Prévia visível no próprio canvas.
+- Possibilidade de revisar parâmetros sem sair do desenho.
+- Mensagens curtas para esclarecimentos.
+- Resumo das operações planejadas.
+- Visualização de cotas e referências relevantes.
+- Indicadores de processamento, erros e confirmação.
+- Preservação do desenho ao alternar telas ou cancelar uma operação.
+
+A entrada por voz poderá ser acrescentada quando houver uma API confiável disponível, mas não deve ser requisito para o funcionamento inicial.
+
+Evite enviar todo o desenho à IA a cada mensagem. Restrinja o contexto às entidades relevantes e utilize as operações geométricas locais sempre que possível.
+
+15. TESTES E CRITÉRIOS DE ACEITAÇÃO
+
+Crie uma suíte automatizada de testes de interpretação, geometria e integração.
+
+15.1 Interpretação
+
+Teste expressões técnicas e informais, diferentes unidades, abreviações, mensagens em etapas e referências ao desenho atual.
+
+Verifique se o sistema distingue corretamente:
+
+- Criação de edição.
+- Raio de diâmetro.
+- Distância entre centros e margem até uma borda.
+- Padrão linear e padrão circular.
+- Quantidade de furos e número de intervalos.
+- Coordenadas globais e locais.
+
+15.2 Matemática e geometria
+
+Utilize exemplos de referência para verificar dimensões, áreas, coordenadas, raios, passos, centros e relações geométricas.
+
+Teste parâmetros limites, furos fora da peça, raios impossíveis, contornos inválidos, padrões com quantidade inadequada e operações que entram em conflito.
+
+Compare o resultado geométrico com valores conhecidos, usando tolerâncias explícitas.
+
+15.3 Integração
+
+Verifique:
+
+- Inserção de entidades nativas.
+- Preservação do desenho anterior.
+- Edição paramétrica após a criação.
+- Undo/Redo completo.
+- Persistência e recuperação do projeto.
+- Ausência de duplicações acidentais.
+- Exportação compatível com os recursos existentes.
+- Tratamento de falhas da API.
+- Recuperação após cancelamento da operação.
+
+15.4 Métricas
+
+Registre resultados reproduzíveis para:
+
+- Exatidão da extração de parâmetros.
+- Percentual de ambiguidades corretamente identificadas.
+- Taxa de sucesso das operações geométricas.
+- Quantidade de operações inválidas rejeitadas.
+- Tempo de interpretação.
+- Tempo de execução geométrica.
+- Responsividade da interface.
+- Integridade do histórico.
+
+Não confunda precisão sintática do JSON com precisão geométrica. Não declare resultados de qualidade sem medições.
+
+16. PLANO DE IMPLEMENTAÇÃO
+
+Execute o projeto incrementalmente.
+
+Fase 1 — Auditoria e fundação
+
+Identificar o motor existente, as operações disponíveis e as limitações reais. Definir o schema inicial e a interface do catálogo de comandos.
+
+Fase 2 — Criação conversacional
+
+Implementar retângulos, linhas, círculos, furos, arcos, raios, chanfros, cotas e padrões de furação. Garantir a geração de entidades reais.
+
+Fase 3 — Edição contextual
+
+Implementar mudanças sucessivas, referências estáveis, alterações dimensionais, restrições e Undo/Redo transacional.
+
+Fase 4 — Operações compostas
+
+Criar peças paramétricas reutilizáveis, expandindo o catálogo de desenhos e componentes.
+
+Fase 5 — Caldeiraria especializada
+
+Integrar os modelos determinísticos de traçagem, desenvolvimento, planificação e fabricação disponíveis no CALDRA.
+
+Fase 6 — Otimização e validação final
+
+Executar a suíte de testes, corrigir regressões, avaliar latência e consolidar a documentação técnica.
+
+Cada fase deve ser testada antes de avançar para a seguinte. Não implemente todas as interfaces antecipadamente deixando os comandos sem funcionalidade.
+
+17. INSTRUÇÕES FINAIS AO AGENTE
+
+Implemente o CHAMFER Intent na aplicação existente, respeitando sua arquitetura e seus recursos reais.
+
+Não entregue somente uma descrição de arquitetura. Não se limite a criar um chatbot visual que responde em português. Não simule entidades geométricas com imagens estáticas.
+
+O sistema deve demonstrar que:
+
+- Interpreta uma solicitação.
+- Gera um plano estruturado.
+- Detecta e esclarece ambiguidades.
+- Valida os parâmetros.
+- Executa as operações no motor geométrico.
+- Insere entidades nativas no CAD.
+- Preserva a edição, as relações paramétricas e o histórico.
+- Corrige e modifica o desenho por comandos posteriores.
+
+Antes de encerrar, apresente um relatório com o que foi implementado, os módulos afetados, os testes executados, os resultados observados e os recursos ainda pendentes.
+
+Priorize precisão, integridade do documento, clareza semântica, manutenção e desempenho. Preserve o ecossistema existente do CALDRA e expanda o CHAMFER Intent como uma capacidade nativa do CAD, não como um sistema externo desconectado.

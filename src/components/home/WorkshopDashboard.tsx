@@ -371,8 +371,8 @@ export function WorkshopDashboard() {
           badgeColor="text-amber-500"
           indicatorColor="bg-amber-500"
           secondaryBadge={
-            <span className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-amber-500 border border-amber-500/30">
-              <CaldraLogo size={12} animated glow />
+            <span className="inline-flex items-center gap-1.5 rounded bg-amber-500/10 px-1.5 py-0.5 font-mono text-[8px] font-bold text-amber-500 border border-amber-500/30">
+              <CaldraLogo size={14} className="rounded-sm" />
               <span>CALDRA</span>
             </span>
           }

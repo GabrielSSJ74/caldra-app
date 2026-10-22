@@ -1,13 +1,13 @@
 {
-  "name": "CALDRA — Traçado e Planificação Zero Fresta",
+  "name": "CALDRA — Engenharia em Forma",
   "short_name": "CALDRA",
   "description": "Traçagem, planificação e desenho 2D para caldeiraria. Da medida ao corte em 2 minutos.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#0B0B0C",
-  "theme_color": "#0B0B0C",
+  "background_color": "#040914",
+  "theme_color": "#040914",
   "lang": "pt-BR",
   "categories": ["productivity", "utilities"],
   "icons": [

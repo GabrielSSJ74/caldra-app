@@ -2,6 +2,7 @@ import { useState } from "react";
 import { ArrowRight } from "lucide-react";
 import { useProfile } from "@/lib/profile/ProfileProvider";
 import { PhotoPicker } from "./Profile";
+import { CaldraLogo } from "@/components/caldra/Logo";
 import { cn } from "@/lib/utils";
 
 const ROLES = [
@@ -24,7 +25,8 @@ export function Onboarding() {
     <div className="fade-up fixed inset-0 z-[95] flex flex-col overflow-y-auto bg-background px-6 py-10">
       <div aria-hidden className="pointer-events-none absolute inset-0 grid-bg opacity-30" />
       <div className="relative z-10 mx-auto flex w-full max-w-sm flex-1 flex-col justify-center gap-6">
-        <header className="text-center">
+        <header className="text-center flex flex-col items-center">
+          <CaldraLogo size={56} className="mb-2.5 rounded-2xl shadow-md" />
           <span className="tick-label">CALDRA</span>
           <h1 className="mt-1 font-display text-3xl leading-tight font-semibold">
             Vamos nos conhecer melhor

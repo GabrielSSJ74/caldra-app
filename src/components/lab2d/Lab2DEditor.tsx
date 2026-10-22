@@ -253,6 +253,12 @@ import {
   type QuickCommandItem,
 } from "./ChamferQuickCommandModal";
 import { ChamferSemanticPalette } from "./ChamferSemanticPalette";
+import {
+  ChamferTransactionManager,
+  ChamferIntentInterpreter,
+  type ChamferIntentPlan,
+  type ParametricSessionContext,
+} from "@/lib/intent";
 import { ChamferClipboardModal } from "./ChamferClipboardModal";
 import {
   copyToGlobalClipboard,
@@ -801,8 +807,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     targetPoint: null,
   });
 
-  /* COMANDOS E MODAIS AVANÇADOS DO CAD */
+  /* COMANDOS E MODAIS AVANÇADOS DO CAD & CHAMFER INTENT */
   const [quickCommandOpen, setQuickCommandOpen] = useState(false);
+  const [intentPreviewPlan, setIntentPreviewPlan] = useState<ChamferIntentPlan | null>(null);
+  const intentTxManagerRef = useRef<ChamferTransactionManager>(new ChamferTransactionManager());
+  const [intentSession, setIntentSession] = useState<ParametricSessionContext>(() =>
+    ChamferIntentInterpreter.createInitialSessionContext(),
+  );
   const [topologyHealthOpen, setTopologyHealthOpen] = useState(false);
   const [variablesModalOpen, setVariablesModalOpen] = useState(false);
   const [presetsModalOpen, setPresetsModalOpen] = useState(false);
@@ -5162,6 +5173,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               type="button"
               onClick={() => {
                 triggerHaptic("action");
+                setQuickCommandOpen(true);
+              }}
+              title="CHAMFER INTENT — Compilador Geométrico Paramétrico por Linguagem Natural (Atalho: Q)"
+              aria-label="Abrir CHAMFER INTENT"
+              className={cn(
+                "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
+                isDark
+                  ? "border-sky-500/40 bg-sky-950/40 text-sky-300 hover:bg-sky-900/60 hover:text-white hover:border-sky-400"
+                  : "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 hover:text-sky-950 hover:border-sky-400",
+              )}
+            >
+              <Sparkles className="size-3.5 text-sky-400" />
+              <span className="hidden xl:inline">CHAMFER INTENT</span>
+              <span className="xl:hidden">INTENT</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("action");
                 setIntegratedWorkshopOpen(true);
               }}
               title="Oficina Digital Integrada: Catálogo Costa Ferro, Dossiê Multi-Vistas, Lista de Corte 6m, BOM e Orçamento"
@@ -6039,6 +6069,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     ))}
                 </g>
               )}
+
+              {/* PRÉVIA EM TEMPO REAL DO COMPILADOR CHAMFER INTENT (GHOST PREVIEW ANTES DO COMMIT) */}
+              {!solidOpen &&
+                intentPreviewPlan?.compiled?.previewEntities &&
+                intentPreviewPlan.compiled.previewEntities.length > 0 && (
+                  <g className="chamfer-intent-live-preview pointer-events-none" opacity={0.9}>
+                    {intentPreviewPlan.compiled.previewEntities.map((pe, idx) => (
+                      <EntityShape
+                        key={`intent-prev-${pe.id || idx}`}
+                        e={pe}
+                        k={view.k}
+                        preview
+                      />
+                    ))}
+                  </g>
+                )}
 
               {!solidOpen && pending.length > 0 && tool === "polyline" && (
                 <polyline
@@ -7833,13 +7879,42 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </form>
         </DialogContent>
       </Dialog>
-      {/* COMANDOS E MODAIS AVANÇADOS DO CAD COM IA & SEMÂNTICA */}
+      {/* COMANDOS E MODAIS AVANÇADOS DO CAD COM IA & SEMÂNTICA (CHAMFER INTENT) */}
       <ChamferSemanticPalette
         open={quickCommandOpen}
-        onClose={() => setQuickCommandOpen(false)}
+        onClose={() => {
+          setQuickCommandOpen(false);
+          setIntentPreviewPlan(null);
+        }}
         commands={quickCommands}
         existingEntities={entities}
+        selectedEntityIds={selection}
         activeLayer={activeLayer}
+        sessionContext={intentSession}
+        onPreviewIntentPlanChange={setIntentPreviewPlan}
+        onExecuteIntentPlan={(plan) => {
+          const tx = intentTxManagerRef.current;
+          tx.setSession(intentSession);
+          const res = tx.commitPlan(plan, {
+            commitEntities: commit,
+            setDimensions: setDims,
+            setSelection,
+            fitViewport: (vp) =>
+              fitBox({
+                minX: vp.x,
+                minY: vp.y,
+                maxX: vp.x + vp.width,
+                maxY: vp.y + vp.height,
+              }),
+            triggerUndo: undo,
+            triggerExport: () => setExportOpen(true),
+          });
+          setIntentSession(res.updatedSession);
+          setIntentPreviewPlan(null);
+          if (res.committed) {
+            toast.success(plan.response_summary);
+          }
+        }}
         onExecutePlan={(plan) => {
           commit((prev) => [...prev, ...plan.generatedEntities]);
           if (plan.generatedDimensions && plan.generatedDimensions.length > 0) {

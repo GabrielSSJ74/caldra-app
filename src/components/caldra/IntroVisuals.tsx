@@ -16,166 +16,27 @@ import {
   FolderClosed,
 } from "lucide-react";
 
+import { CaldraLogo } from "@/components/caldra/Logo";
+
 /**
  * 1. VISUAL DA PRIMEIRA TELA:
- * Logotipo 3D canônico da CALDRA com facetamento metálico,
- * pastilha carmesim chanfrada com reflexos especulares,
- * sombras suaves de profundidade e tipografia de engenharia.
+ * Logotipo oficial da CALDRA utilizando exclusivamente o componente <CaldraLogo />
+ * sem redesenho em SVG, sem mira e sem deformações.
  */
 export function IntroLogoHero() {
   return (
     <div className="relative flex flex-col items-center justify-center py-4 select-none">
-      {/* Luz ambiente orgânica e marcas técnicas de referência */}
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -top-10 size-64 rounded-full bg-gradient-to-tr from-amber-400/25 via-orange-500/20 to-transparent blur-3xl"
-      />
-      <div
-        aria-hidden
-        className="pointer-events-none absolute -bottom-10 size-64 rounded-full bg-gradient-to-br from-violet-500/15 via-blue-500/15 to-transparent blur-3xl"
-      />
+      {/* EMBLEMA OFICIAL CALDRA */}
+      <CaldraLogo size={148} className="rounded-3xl shadow-xl" />
 
-      {/* Grid técnico com mira de alinhamento ao fundo */}
-      <svg
-        className="pointer-events-none absolute inset-0 size-full opacity-35"
-        viewBox="0 0 320 280"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <circle cx="160" cy="115" r="95" stroke="#CBD5E1" strokeWidth="0.8" strokeDasharray="3 3" />
-        <circle cx="160" cy="115" r="125" stroke="#E2E8F0" strokeWidth="0.6" strokeDasharray="2 4" />
-        <line x1="20" y1="115" x2="300" y2="115" stroke="#CBD5E1" strokeWidth="0.8" strokeDasharray="4 4" />
-        <line x1="160" y1="10" x2="160" y2="230" stroke="#CBD5E1" strokeWidth="0.8" strokeDasharray="4 4" />
-        {/* Cruz de centro técnica */}
-        <path d="M152 115h16 M160 107v16" stroke="#94A3B8" strokeWidth="1.2" strokeLinecap="round" />
-        <path d="M40 35h12 M46 29v12" stroke="#CBD5E1" strokeWidth="1" />
-        <path d="M275 35h12 M281 29v12" stroke="#CBD5E1" strokeWidth="1" />
-      </svg>
-
-      {/* EMBLEMA 3D CALDRA */}
-      <div className="relative z-10 size-36 sm:size-40 transition-transform duration-500 hover:scale-105">
-        <svg
-          viewBox="0 0 100 100"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          className="size-full overflow-visible"
-          style={{
-            filter: "drop-shadow(0 26px 28px rgba(15, 23, 42, 0.24)) drop-shadow(0 8px 10px rgba(15, 23, 42, 0.12))",
-          }}
-        >
-          <defs>
-            {/* Gradiente do corpo metálico escuro com chanfros */}
-            <linearGradient id="caldra-body-metal" x1="20" y1="15" x2="85" y2="85" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#3F3F46" />
-              <stop offset="35%" stopColor="#27272A" />
-              <stop offset="70%" stopColor="#18181B" />
-              <stop offset="100%" stopColor="#09090B" />
-            </linearGradient>
-
-            {/* Chanfro superior iluminado especular */}
-            <linearGradient id="caldra-bevel-top" x1="18" y1="18" x2="82" y2="38" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#71717A" />
-              <stop offset="50%" stopColor="#D4D4D8" />
-              <stop offset="100%" stopColor="#3F3F46" />
-            </linearGradient>
-
-            {/* Gradiente da pastilha interna carmesim com brilho de rubi */}
-            <linearGradient id="caldra-ruby-gem" x1="43" y1="42.5" x2="75.5" y2="58" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#F43F5E" />
-              <stop offset="30%" stopColor="#E11D48" />
-              <stop offset="75%" stopColor="#BE123C" />
-              <stop offset="100%" stopColor="#881337" />
-            </linearGradient>
-
-            {/* Reflexo chanfrado especular na pastilha */}
-            <linearGradient id="caldra-ruby-sheen" x1="43" y1="42.5" x2="65" y2="50" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.75" />
-              <stop offset="45%" stopColor="#FDA4AF" stopOpacity="0.3" />
-              <stop offset="100%" stopColor="#E11D48" stopOpacity="0" />
-            </linearGradient>
-
-            {/* Sombra de oclusão interna no alojamento da pastilha */}
-            <radialGradient id="caldra-socket-shadow" cx="55" cy="50" r="30" gradientUnits="userSpaceOnUse">
-              <stop offset="40%" stopColor="#000000" stopOpacity="0.45" />
-              <stop offset="100%" stopColor="#000000" stopOpacity="0" />
-            </radialGradient>
-          </defs>
-
-          {/* Sombra de oclusão de contato inferior */}
-          <ellipse cx="50" cy="85" rx="35" ry="6" fill="rgba(15,23,42,0.18)" filter="blur(4px)" />
-
-          {/* Sombra interna do rebaixo */}
-          <path
-            d="M 38 18 L 82 18 L 66.5 33.5 L 50 33.5 L 33.5 50 L 50 66.5 L 82 66.5 L 66.5 82 L 38 82 L 18 62 L 18 38 Z"
-            fill="url(#caldra-socket-shadow)"
-          />
-
-          {/* CORPO 'C' CHANFRADO - Metálico */}
-          <path
-            d="M 38 18 L 82 18 L 66.5 33.5 L 50 33.5 L 33.5 50 L 50 66.5 L 82 66.5 L 66.5 82 L 38 82 L 18 62 L 18 38 Z"
-            fill="url(#caldra-body-metal)"
-            stroke="#18181B"
-            strokeWidth="1.2"
-            strokeLinejoin="round"
-          />
-
-          {/* Chanfros facetados superiores com luz especular metálica */}
-          <path
-            d="M 38 18 L 82 18 L 66.5 33.5 L 50 33.5 L 33.5 50 L 18 38 Z"
-            fill="url(#caldra-bevel-top)"
-            opacity="0.28"
-          />
-          <path
-            d="M 18 38 L 38 18 L 82 18 L 66.5 33.5"
-            stroke="#A1A1AA"
-            strokeWidth="1.2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            opacity="0.8"
-          />
-
-          {/* Borda chanfrada de precisão */}
-          <path
-            d="M 38 82 L 18 62 L 18 38"
-            stroke="#52525B"
-            strokeWidth="1"
-            strokeLinecap="round"
-            opacity="0.6"
-          />
-
-          {/* PASTILHA INTERNA CARMESIM (Paralelogramo 45° lapidado) */}
-          <g style={{ filter: "drop-shadow(0 4px 10px rgba(225, 29, 72, 0.45))" }}>
-            <path
-              d="M 43 42.5 L 60 42.5 L 75.5 58 L 58.5 58 Z"
-              fill="url(#caldra-ruby-gem)"
-              stroke="#E11D48"
-              strokeWidth="0.8"
-              strokeLinejoin="round"
-            />
-            {/* Faceta de reflexo de luz na aresta superior da pastilha */}
-            <path
-              d="M 43 42.5 L 60 42.5 L 58.5 45 L 43 45 Z"
-              fill="url(#caldra-ruby-sheen)"
-            />
-            <path
-              d="M 43 42.5 L 60 42.5"
-              stroke="#FFFFFF"
-              strokeWidth="1"
-              strokeLinecap="round"
-              opacity="0.9"
-            />
-          </g>
-        </svg>
-      </div>
-
-      {/* LOGOTIPO E SUBLINHA VERBATIM DA REFERÊNCIA */}
+      {/* LOGOTIPO E SLOGAN */}
       <div className="relative z-10 mt-5 text-center">
         <h2 className="flex items-center justify-center font-display text-[26px] sm:text-[30px] font-extrabold tracking-[0.24em] text-zinc-900 uppercase">
           CALDRA
           <span className="ml-1 text-[11px] font-bold text-zinc-500 self-start mt-1">®</span>
         </h2>
         <p className="mt-1 font-mono text-[10.5px] sm:text-[11.5px] font-semibold tracking-[0.28em] text-zinc-600 uppercase">
-          CALDEIRARIA E TRAÇAGEM
+          ENGENHARIA EM FORMA
         </p>
       </div>
     </div>
