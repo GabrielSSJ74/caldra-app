@@ -334,6 +334,22 @@ export function ChamferCadToolbar({
 
   const handleToggleCat = (cat: CadCategory) => {
     triggerHaptic("tap");
+    if (
+      activeMode === "3d" &&
+      (cat === "criar" ||
+        cat === "modificar" ||
+        cat === "medir" ||
+        cat === "chapa" ||
+        cat === "estruturas" ||
+        cat === "detalhes")
+    ) {
+      setOpenCat("none");
+      AudioManager.play("ui_toggle_open");
+      window.dispatchEvent(
+        new CustomEvent("chamfer-3d-open-category", { detail: { category: cat } }),
+      );
+      return;
+    }
     setOpenCat((prev) => {
       const next = prev === cat ? "none" : cat;
       AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");

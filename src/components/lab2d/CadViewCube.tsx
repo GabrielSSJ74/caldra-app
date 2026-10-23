@@ -70,23 +70,23 @@ export function CadViewCube({
         onClick={() => onSelectPreset("iso")}
         title="Restaurar Vista Isométrica (Home)"
         aria-label="Restaurar Vista Isométrica"
-        className="absolute -top-2 -left-2 z-30 flex size-5.5 items-center justify-center rounded-md border border-slate-700/80 bg-slate-900/90 text-slate-300 shadow-md transition-colors hover:border-red-500/60 hover:bg-slate-800 hover:text-red-400"
+        className="absolute -top-1.5 -left-1.5 z-30 flex size-5 items-center justify-center rounded-md border border-slate-700/80 bg-slate-900/95 text-slate-300 shadow-sm transition-colors hover:border-red-500/60 hover:bg-slate-800 hover:text-red-400"
       >
-        <Home className="size-3" />
+        <Home className="size-2.5" />
       </button>
 
-      {/* ÁREA 3D COM PERSPECTIVA */}
+      {/* ÁREA 3D COM PERSPECTIVA (52px x 52px) */}
       <div
-        className="relative size-[76px] cursor-pointer"
-        style={{ perspective: "450px" }}
+        className="relative size-[52px] cursor-pointer"
+        style={{ perspective: "360px" }}
       >
         {/* DISCO / BÚSSOLA DE BASE */}
-        <div className="absolute inset-0 -bottom-1 flex items-center justify-center pointer-events-none opacity-40">
-          <div className="size-[72px] rounded-full border border-dashed border-slate-600 flex items-center justify-center">
-            <span className="absolute top-0 text-[7px] font-mono font-bold text-slate-400">N</span>
-            <span className="absolute right-0.5 text-[7px] font-mono font-bold text-slate-400">L</span>
-            <span className="absolute bottom-0 text-[7px] font-mono font-bold text-slate-400">S</span>
-            <span className="absolute left-0.5 text-[7px] font-mono font-bold text-slate-400">O</span>
+        <div className="absolute inset-0 -bottom-0.5 flex items-center justify-center pointer-events-none opacity-45">
+          <div className="size-[50px] rounded-full border border-dashed border-slate-500 flex items-center justify-center">
+            <span className="absolute top-0 text-[6px] font-mono font-bold text-slate-400 leading-none">N</span>
+            <span className="absolute right-0 text-[6px] font-mono font-bold text-slate-400 leading-none">L</span>
+            <span className="absolute bottom-0 text-[6px] font-mono font-bold text-slate-400 leading-none">S</span>
+            <span className="absolute left-0 text-[6px] font-mono font-bold text-slate-400 leading-none">O</span>
           </div>
         </div>
 
@@ -102,12 +102,12 @@ export function CadViewCube({
           <div
             onClick={() => onSelectPreset("front")}
             className={cn(
-              "absolute inset-3 flex items-center justify-center rounded-xs border font-mono text-[9px] font-bold tracking-wider uppercase transition-colors shadow-inner",
+              "absolute inset-[8px] flex items-center justify-center rounded-[2px] border font-mono text-[8px] font-bold tracking-tight uppercase transition-colors shadow-inner",
               activePreset === "front"
-                ? "border-red-500 bg-red-950/80 text-red-300"
-                : "border-slate-600 bg-slate-800/90 text-slate-200 hover:border-red-400 hover:bg-slate-700",
+                ? "border-red-500 bg-red-950/90 text-red-300"
+                : "border-slate-600 bg-slate-800/95 text-slate-200 hover:border-red-400 hover:bg-slate-700",
             )}
-            style={{ transform: "translateZ(26px)" }}
+            style={{ transform: "translateZ(18px)" }}
             title="Vista Frontal (FR)"
           >
             FR
@@ -117,12 +117,12 @@ export function CadViewCube({
           <div
             onClick={() => onSelectPreset("back")}
             className={cn(
-              "absolute inset-3 flex items-center justify-center rounded-xs border font-mono text-[9px] font-bold tracking-wider uppercase transition-colors shadow-inner",
+              "absolute inset-[8px] flex items-center justify-center rounded-[2px] border font-mono text-[7.5px] font-bold tracking-tight uppercase transition-colors shadow-inner",
               activePreset === "back"
-                ? "border-red-500 bg-red-950/80 text-red-300"
-                : "border-slate-600 bg-slate-800/90 text-slate-200 hover:border-red-400 hover:bg-slate-700",
+                ? "border-red-500 bg-red-950/90 text-red-300"
+                : "border-slate-600 bg-slate-800/95 text-slate-200 hover:border-red-400 hover:bg-slate-700",
             )}
-            style={{ transform: "rotateY(180deg) translateZ(26px)" }}
+            style={{ transform: "rotateY(180deg) translateZ(18px)" }}
             title="Vista Posterior (POST)"
           >
             POST
@@ -132,12 +132,12 @@ export function CadViewCube({
           <div
             onClick={() => onSelectPreset("top")}
             className={cn(
-              "absolute inset-3 flex items-center justify-center rounded-xs border font-mono text-[9px] font-bold tracking-wider uppercase transition-colors shadow-inner",
+              "absolute inset-[8px] flex items-center justify-center rounded-[2px] border font-mono text-[8px] font-bold tracking-tight uppercase transition-colors shadow-inner",
               activePreset === "top"
-                ? "border-red-500 bg-red-950/80 text-red-300"
-                : "border-slate-600 bg-slate-800/90 text-slate-200 hover:border-red-400 hover:bg-slate-700",
+                ? "border-red-500 bg-red-950/90 text-red-300"
+                : "border-slate-600 bg-slate-800/95 text-slate-200 hover:border-red-400 hover:bg-slate-700",
             )}
-            style={{ transform: "rotateX(90deg) translateZ(26px)" }}
+            style={{ transform: "rotateX(90deg) translateZ(18px)" }}
             title="Vista Superior (SUP)"
           >
             SUP
@@ -147,12 +147,12 @@ export function CadViewCube({
           <div
             onClick={() => onSelectPreset("bottom")}
             className={cn(
-              "absolute inset-3 flex items-center justify-center rounded-xs border font-mono text-[9px] font-bold tracking-wider uppercase transition-colors shadow-inner",
+              "absolute inset-[8px] flex items-center justify-center rounded-[2px] border font-mono text-[8px] font-bold tracking-tight uppercase transition-colors shadow-inner",
               activePreset === "bottom"
-                ? "border-red-500 bg-red-950/80 text-red-300"
-                : "border-slate-600 bg-slate-800/90 text-slate-200 hover:border-red-400 hover:bg-slate-700",
+                ? "border-red-500 bg-red-950/90 text-red-300"
+                : "border-slate-600 bg-slate-800/95 text-slate-200 hover:border-red-400 hover:bg-slate-700",
             )}
-            style={{ transform: "rotateX(-90deg) translateZ(26px)" }}
+            style={{ transform: "rotateX(-90deg) translateZ(18px)" }}
             title="Vista Inferior (INF)"
           >
             INF
@@ -162,12 +162,12 @@ export function CadViewCube({
           <div
             onClick={() => onSelectPreset("right")}
             className={cn(
-              "absolute inset-3 flex items-center justify-center rounded-xs border font-mono text-[9px] font-bold tracking-wider uppercase transition-colors shadow-inner",
+              "absolute inset-[8px] flex items-center justify-center rounded-[2px] border font-mono text-[8px] font-bold tracking-tight uppercase transition-colors shadow-inner",
               activePreset === "right" || activePreset === "side"
-                ? "border-red-500 bg-red-950/80 text-red-300"
-                : "border-slate-600 bg-slate-800/90 text-slate-200 hover:border-red-400 hover:bg-slate-700",
+                ? "border-red-500 bg-red-950/90 text-red-300"
+                : "border-slate-600 bg-slate-800/95 text-slate-200 hover:border-red-400 hover:bg-slate-700",
             )}
-            style={{ transform: "rotateY(90deg) translateZ(26px)" }}
+            style={{ transform: "rotateY(90deg) translateZ(18px)" }}
             title="Vista Lateral Direita (LAT)"
           >
             LAT
@@ -177,12 +177,12 @@ export function CadViewCube({
           <div
             onClick={() => onSelectPreset("left")}
             className={cn(
-              "absolute inset-3 flex items-center justify-center rounded-xs border font-mono text-[9px] font-bold tracking-wider uppercase transition-colors shadow-inner",
+              "absolute inset-[8px] flex items-center justify-center rounded-[2px] border font-mono text-[8px] font-bold tracking-tight uppercase transition-colors shadow-inner",
               activePreset === "left"
-                ? "border-red-500 bg-red-950/80 text-red-300"
-                : "border-slate-600 bg-slate-800/90 text-slate-200 hover:border-red-400 hover:bg-slate-700",
+                ? "border-red-500 bg-red-950/90 text-red-300"
+                : "border-slate-600 bg-slate-800/95 text-slate-200 hover:border-red-400 hover:bg-slate-700",
             )}
-            style={{ transform: "rotateY(-90deg) translateZ(26px)" }}
+            style={{ transform: "rotateY(-90deg) translateZ(18px)" }}
             title="Vista Lateral Esquerda (ESQ)"
           >
             ESQ

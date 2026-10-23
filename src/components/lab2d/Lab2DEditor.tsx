@@ -715,6 +715,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [startPicking, setStartPicking] = useState(false);
   const [shareHint, setShareHint] = useState<ShareCandidate | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [statusPrecisionMenuOpen, setStatusPrecisionMenuOpen] = useState(false);
+  const [statusCncMenuOpen, setStatusCncMenuOpen] = useState(false);
   /* ESPESSURA — chapa do plano; alimenta a vista 3D / Traçagem */
   const [thickness, setThickness] = useState(DEFAULT_PLAN_THICKNESS);
   const [solidOpen, setSolidOpen] = useState(false);
@@ -4907,14 +4909,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onPointerCancel={handleTopBarPointerUp}
           onWheel={handleTopBarWheel}
           className={cn(
-            "flex h-10 shrink-0 w-full items-center justify-between gap-3 border-b px-2.5 shadow-xs backdrop-blur-md transition-colors select-none",
+            "flex h-12 shrink-0 w-full items-center justify-between gap-3 border-b px-3 shadow-xs backdrop-blur-md transition-colors select-none",
             "overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing",
             isDark
               ? "border-slate-800 bg-slate-950/95 text-slate-100"
               : "border-slate-200 bg-white/95 text-slate-800 shadow-xs",
           )}
         >
-          {/* LADO ESQUERDO: [ ← VOLTAR ] + [ CHAMFER · NOME DO PROJETO ] + [ DOSSIÊ ] */}
+          {/* LADO ESQUERDO: [ ← SAIR ] + [ CHAMFER • NOME DO PROJETO ] + [ DOSSIÊ ] */}
           <div className="flex shrink-0 items-center gap-2">
             <button
               onClick={() => {
@@ -4929,19 +4931,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               aria-label="Sair do editor e voltar aos Projetos"
               title="Sair do editor (salvar e voltar)"
               className={cn(
-                "flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors",
+                "flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors whitespace-nowrap",
                 isDark
                   ? "border-slate-700/80 bg-slate-900/90 text-slate-300 hover:bg-slate-800 hover:text-white"
                   : "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900",
               )}
             >
-              <ArrowLeft className="size-3.5" /> Sair
+              <ArrowLeft className="size-3.5 shrink-0" /> SAIR
             </button>
 
-            <span className={cn("h-4 w-px", isDark ? "bg-slate-800" : "bg-slate-200")} />
+            <span className={cn("h-4 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
 
-            <div className="flex items-center gap-1.5">
-              <span className="font-mono text-xs font-bold tracking-wider text-red-600">CHAMFER</span>
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="font-mono text-xs font-bold tracking-wider text-red-600 shrink-0">CHAMFER</span>
               {project && (
                 <button
                   type="button"
@@ -4950,13 +4952,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
                     setNewProjectDialogOpen(true);
                   }}
+                  style={{ textOverflow: "ellipsis" }}
                   className={cn(
-                    "hidden md:inline font-mono text-[11px] font-semibold transition-colors truncate max-w-[140px]",
+                    "inline-block font-mono text-[11px] font-semibold transition-colors truncate whitespace-nowrap max-w-[160px] sm:max-w-[200px]",
                     isDark ? "text-slate-200 hover:text-white" : "text-slate-800 hover:text-slate-950",
                   )}
                   title={`Documento: ${project.name} (clique para alternar/criar)`}
                 >
-                  · {project.name}
+                  • {project.name}
                 </button>
               )}
               {dossier && (
@@ -7072,14 +7075,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         )}
       </div>
 
-      {/* REGIÃO E — STATUS BAR LANDSCAPE */}
+      {/* REGIÃO E — STATUS BAR AGRUPADA (32px) */}
       {!focus && (
         <footer
           aria-label="Barra de status do CHAMFER"
           className={cn(
-            "flex h-7 shrink-0 items-center justify-between gap-2 border-t px-2.5 font-mono text-[10px] backdrop-blur-md select-none transition-colors",
+            "relative flex h-8 shrink-0 items-center justify-between gap-2 border-t px-2.5 font-mono text-[10px] backdrop-blur-md select-none transition-colors z-30",
             isDark
-              ? "border-slate-800/80 bg-slate-950/90 text-slate-400"
+              ? "border-slate-800/80 bg-slate-950/95 text-slate-400"
               : "border-slate-200 bg-white/95 text-slate-600 shadow-xs",
           )}
         >
@@ -7465,13 +7468,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           </div>
 
-          {/* LADO DIREITO: STATUS DE PRECISÃO, CNC E ZOOM */}
+          {/* LADO DIREITO: 3 GRUPOS LÓGICOS (1. PRIMÁRIOS VISÍVEIS | 2. PRECISÃO | 3. FLUXO/CNC) */}
           <div className="flex items-center gap-1.5 shrink-0">
+            {/* GRUPO 1 — PRIMÁRIOS (SEMPRE VISÍVEIS NA BARRA): SNAP, ORTO, GRID, ZOOM */}
             <button
               type="button"
               onClick={() => setSnapOn((s) => !s)}
               className={cn(
-                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
+                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
                 snapOn ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
               )}
               title="Alternar Snap Geométrico"
@@ -7483,7 +7487,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               type="button"
               onClick={() => setOrthoOn((o) => !o)}
               className={cn(
-                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
+                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
                 orthoOn
                   ? "text-emerald-400 bg-emerald-500/15"
                   : "text-muted-foreground hover:text-foreground",
@@ -7497,7 +7501,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               type="button"
               onClick={() => setShowGrid((s) => !s)}
               className={cn(
-                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
+                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
                 showGrid
                   ? isDark
                     ? "text-red-400 bg-red-950/50 border border-red-500/30"
@@ -7509,120 +7513,215 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               GRID: {showGrid ? `${grid}MM` : "OFF"}
             </button>
 
-            <button
-              type="button"
-              onClick={toggleCursorOffsetMode}
-              className={cn(
-                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                cursorOffsetMode === "offset"
-                  ? "text-sky-400 bg-sky-950/60 border border-sky-500/40"
-                  : "text-muted-foreground hover:text-foreground",
+            <div className={cn("mx-0.5 h-3.5 w-px", isDark ? "bg-slate-800" : "bg-slate-200")} />
+
+            {/* GRUPO 2 — PRECISÃO (POPOVER COMPACTO: MIRA, LUPA, FINO, QUADRO) */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusPrecisionMenuOpen((v) => !v);
+                  setStatusCncMenuOpen(false);
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors cursor-pointer",
+                  statusPrecisionMenuOpen || nudgeHudVisible || cursorOffsetMode === "offset"
+                    ? isDark
+                      ? "border-sky-500/40 bg-sky-950/60 text-sky-300"
+                      : "border-sky-300 bg-sky-50 text-sky-700"
+                    : isDark
+                      ? "border-slate-800 bg-slate-900/80 text-slate-300 hover:text-white"
+                      : "border-slate-200 bg-slate-100 text-slate-700 hover:text-slate-900",
+                )}
+                title="Controles de Precisão: Mira, Lupa, Ajuste Fino e Quadro"
+              >
+                <Crosshair className="size-2.5 shrink-0" />
+                <span>Precisão</span>
+              </button>
+
+              {statusPrecisionMenuOpen && (
+                <div
+                  className={cn(
+                    "absolute bottom-8 right-0 z-50 flex w-52 flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md",
+                    isDark
+                      ? "border-slate-800 bg-slate-950/96 text-slate-200"
+                      : "border-slate-200 bg-white/98 text-slate-800",
+                  )}
+                >
+                  <div className="flex items-center justify-between border-b border-slate-800/40 pb-1 text-[8.5px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <span>Módulos de Precisão</span>
+                    <button
+                      type="button"
+                      onClick={() => setStatusPrecisionMenuOpen(false)}
+                      className="text-slate-400 hover:text-foreground"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={toggleCursorOffsetMode}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                      cursorOffsetMode === "offset"
+                        ? "text-sky-400 bg-sky-950/60 border border-sky-500/40"
+                        : "hover:bg-slate-800/40",
+                    )}
+                  >
+                    <span>MIRA</span>
+                    <span>{cursorOffsetMode === "offset" ? "55PX" : "DIRETA"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCycleLoupeMode}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                      loupeMode === "pinned"
+                        ? "text-cyan-400 bg-cyan-950/60 border border-cyan-500/40"
+                        : loupeMode === "floating"
+                          ? "text-accent bg-accent/15"
+                          : "hover:bg-slate-800/40",
+                    )}
+                  >
+                    <span>LUPA</span>
+                    <span>{loupeMode === "pinned" ? "FIXA" : loupeMode === "floating" ? "AUTO" : "OFF"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setNudgeHudVisible((prev) => {
+                        const next = !prev;
+                        globalCADInteractionHub.toggleModifier("nudge_dpad", next);
+                        return next;
+                      });
+                    }}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                      nudgeHudVisible
+                        ? "text-accent bg-accent/15 border border-accent/40"
+                        : "hover:bg-slate-800/40",
+                    )}
+                  >
+                    <span>FINO</span>
+                    <span>{nudgeHudVisible ? `${nudgeStepMm}MM` : "OFF"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => updateFrame({ visible: !frame.visible })}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                      frame.visible ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
+                    )}
+                  >
+                    <span>QUADRO</span>
+                    <span>{frame.visible ? "ON" : "OFF"}</span>
+                  </button>
+                </div>
               )}
-              title={
-                cursorOffsetMode === "offset"
-                  ? "Módulo Cursor Offset: Mira projetada 55px acima do dedo (Anti-Oclusão)"
-                  : "Módulo Cursor Direto: Mira 1:1 sob o dedo / Stylus"
-              }
-            >
-              MIRA: {cursorOffsetMode === "offset" ? "55PX" : "DIRETA"}
-            </button>
+            </div>
 
-            <button
-              type="button"
-              onClick={handleCycleLoupeMode}
-              className={cn(
-                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                loupeMode === "pinned"
-                  ? "text-cyan-400 bg-cyan-950/60 border border-cyan-500/40"
-                  : loupeMode === "floating"
-                    ? "text-accent bg-accent/15"
-                    : "text-muted-foreground hover:text-foreground",
+            {/* GRUPO 3 — FABRICAÇÃO E APRESENTAÇÃO (POPOVER COMPACTO: FLUXO, ORDEM, PRÉVIA CNC) */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusCncMenuOpen((v) => !v);
+                  setStatusPrecisionMenuOpen(false);
+                }}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors cursor-pointer",
+                  statusCncMenuOpen || showArrows || showOrder || simOn
+                    ? isDark
+                      ? "border-red-500/40 bg-red-950/60 text-red-300"
+                      : "border-red-300 bg-red-50 text-red-700"
+                    : isDark
+                      ? "border-slate-800 bg-slate-900/80 text-slate-300 hover:text-white"
+                      : "border-slate-200 bg-slate-100 text-slate-700 hover:text-slate-900",
+                )}
+                title="Fabricação e Apresentação: Fluxo, Ordem de Corte e Prévia CNC"
+              >
+                <Sliders className="size-2.5 shrink-0" />
+                <span>Fluxo/CNC</span>
+              </button>
+
+              {statusCncMenuOpen && (
+                <div
+                  className={cn(
+                    "absolute bottom-8 right-0 z-50 flex w-48 flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md",
+                    isDark
+                      ? "border-slate-800 bg-slate-950/96 text-slate-200"
+                      : "border-slate-200 bg-white/98 text-slate-800",
+                  )}
+                >
+                  <div className="flex items-center justify-between border-b border-slate-800/40 pb-1 text-[8.5px] font-bold uppercase tracking-wider text-muted-foreground">
+                    <span>Fabricação & CNC</span>
+                    <button
+                      type="button"
+                      onClick={() => setStatusCncMenuOpen(false)}
+                      className="text-slate-400 hover:text-foreground"
+                    >
+                      <X className="size-3" />
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowArrows((s) => !s)}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                      showArrows ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
+                    )}
+                  >
+                    <span>FLUXO</span>
+                    <span>{showArrows ? "ON" : "OFF"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowOrder((s) => !s)}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                      showOrder ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
+                    )}
+                  >
+                    <span>ORDEM</span>
+                    <span>{showOrder ? "ON" : "OFF"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSimOn((s) => {
+                        const next = !s;
+                        setSimPlaying(next);
+                        setSimDist(0);
+                        return next;
+                      });
+                    }}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                      simOn ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
+                    )}
+                  >
+                    <span>PRÉVIA CNC</span>
+                    <span>{simOn ? "ON" : "OFF"}</span>
+                  </button>
+                </div>
               )}
-              title="Alternar Módulo Lupa HUD: Flutuante -> Fixa -> Desligada (Desmontada)"
-            >
-              LUPA: {loupeMode === "pinned" ? "FIXA" : loupeMode === "floating" ? "AUTO" : "OFF"}
-            </button>
+            </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                setNudgeHudVisible((prev) => {
-                  const next = !prev;
-                  globalCADInteractionHub.toggleModifier("nudge_dpad", next);
-                  return next;
-                });
-              }}
-              className={cn(
-                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                nudgeHudVisible
-                  ? "text-accent bg-accent/15 border border-accent/40"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              title="Alternar Módulo Coordenadas / Micro-Ajuste Incremental (0.1 / 1 / 5 / 10 mm)"
-            >
-              FINO: {nudgeHudVisible ? `${nudgeStepMm}MM` : "OFF"}
-            </button>
+            <div className={cn("mx-0.5 h-3.5 w-px", isDark ? "bg-slate-800" : "bg-slate-200")} />
 
-            <button
-              type="button"
-              onClick={() => updateFrame({ visible: !frame.visible })}
-              title={`Área de trabalho ${frame.w} × ${frame.h} mm`}
-              className={cn(
-                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
-                frame.visible ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              QUADRO
-            </button>
-
-            <div className="mx-0.5 h-3.5 w-px bg-line" />
-
-            <button
-              type="button"
-              onClick={() => setShowArrows((s) => !s)}
-              title="Direção de corte"
-              className={cn(
-                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
-                showArrows ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              FLUXO
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setShowOrder((s) => !s)}
-              className={cn(
-                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
-                showOrder ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              ORDEM
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setSimOn((s) => {
-                  const next = !s;
-                  setSimPlaying(next);
-                  setSimDist(0);
-                  return next;
-                });
-              }}
-              className={cn(
-                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold transition-colors",
-                simOn ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
-              )}
-            >
-              PRÉVIA CNC
-            </button>
-
+            {/* ZOOM ATUAL (SEMPRE VISÍVEL) */}
             <button
               type="button"
               onClick={() => fitTo(entities)}
-              className="rounded bg-background/60 px-2 py-0.5 font-mono text-[9px] font-bold text-accent hover:bg-background transition-colors"
+              className="rounded bg-background/60 px-2 py-0.5 font-mono text-[9px] font-bold text-accent hover:bg-background whitespace-nowrap transition-colors"
               title="Clique para enquadrar desenho (100%)"
             >
               {Math.round(view.k * 100)}%

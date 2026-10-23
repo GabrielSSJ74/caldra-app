@@ -93,9 +93,12 @@ export interface CadBRepViewerProps {
   onTitleChange?: (newTitle: string) => void;
   onSave?: () => void;
   isSaved?: boolean;
+  onThicknessChange?: (v: number) => void;
+  onUpdate3DParam?: (key: string, val: number) => void;
+  initialInspectorOpen?: boolean;
 }
 
-type LeftCategory =
+export type LeftCategory =
   | "none"
   | "criar"
   | "modificar"
@@ -123,6 +126,9 @@ export function CadBRepViewer({
   onTitleChange,
   onSave,
   isSaved = true,
+  onThicknessChange,
+  onUpdate3DParam,
+  initialInspectorOpen = false,
 }: CadBRepViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<ThreeBRepRenderer | null>(null);
@@ -170,6 +176,7 @@ export function CadBRepViewer({
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [cameraRotation, setCameraRotation] = useState<{ x: number; y: number; z: number } | undefined>(undefined);
   const [isOrtho, setIsOrtho] = useState(false);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
 
   // Seleção e Metrologia
   const [selectionType, setSelectionType] = useState<CadSelectionType>("face");
@@ -177,10 +184,61 @@ export function CadBRepViewer({
   const [multiSelection, setMultiSelection] = useState<CadSelectedEntity[]>([]);
   const [measurement, setMeasurement] = useState<CadMeasurementResult | null>(null);
 
-  // Painéis Flutuantes
-  const [activeLeftCat, setActiveLeftCat] = useState<LeftCategory>("none");
-  const [rightPanelOpen, setRightPanelOpen] = useState(true);
+  // Arquitetura de Zonas e Revelação Progressiva (Estados A, B, C, D + Exclusão Mútua)
+  const [leftPanelOpen, setLeftPanelOpen] = useState(false);
+  const [activeLeftCat, setActiveLeftCat] = useState<LeftCategory>("criar");
+  const [rightPanelOpen, setRightPanelOpen] = useState(initialInspectorOpen);
   const [rightTab, setRightTab] = useState<RightPanelTab>("parametros");
+  const [schematicOpen, setSchematicOpen] = useState(true);
+
+  const openLeftCategoryPanel = useCallback((cat?: LeftCategory) => {
+    setLeftPanelOpen(true);
+    if (cat && cat !== "none") {
+      setActiveLeftCat(cat);
+    }
+    setViewMenuOpen(false);
+    // Regra de Exclusão Mútua Mobile/Tablet (e telas estreitas/médias)
+    if (typeof window !== "undefined" && window.innerWidth < 1100) {
+      setRightPanelOpen(false);
+    }
+  }, []);
+
+  const openRightInspector = useCallback((tab?: RightPanelTab) => {
+    setRightPanelOpen(true);
+    if (tab) {
+      setRightTab(tab);
+    }
+    setViewMenuOpen(false);
+    // Regra de Exclusão Mútua Mobile/Tablet (e telas estreitas/médias)
+    if (typeof window !== "undefined" && window.innerWidth < 1100) {
+      setLeftPanelOpen(false);
+    }
+  }, []);
+
+  // Sincronização com a Barra Lateral Esquerda Principal (ChamferCadToolbar) no modo 3D Sólido
+  useEffect(() => {
+    const handleExternalCategory = (e: Event) => {
+      const custom = e as CustomEvent<{ category: LeftCategory }>;
+      const cat = custom.detail?.category;
+      if (!cat || cat === "none") {
+        setLeftPanelOpen(false);
+        return;
+      }
+      setLeftPanelOpen((prevOpen) => {
+        if (prevOpen && activeLeftCat === cat) {
+          return false;
+        }
+        setActiveLeftCat(cat);
+        setViewMenuOpen(false);
+        if (typeof window !== "undefined" && window.innerWidth < 1100) {
+          setRightPanelOpen(false);
+        }
+        return true;
+      });
+    };
+    window.addEventListener("chamfer-3d-open-category", handleExternalCategory);
+    return () => window.removeEventListener("chamfer-3d-open-category", handleExternalCategory);
+  }, [activeLeftCat]);
 
   // Estado do Kernel e Geometria Ativa
   const [loading, setLoading] = useState(true);
@@ -264,6 +322,14 @@ export function CadBRepViewer({
           } else if (entity.type === "vertex") {
             AudioManager.play("cad_select_vertex");
           }
+          // Estado B: Objeto/Entidade selecionado no 3D abre contextualmente o Inspetor à direita
+          setLeftPanelOpen(false);
+          setViewMenuOpen(false);
+          setRightPanelOpen(true);
+        } else {
+          // Toque/Clique na área livre do Canvas recolhe menus temporários da esquerda/topo
+          setLeftPanelOpen(false);
+          setViewMenuOpen(false);
         }
       },
       onMeasure: (meas) => {
@@ -605,587 +671,771 @@ export function CadBRepViewer({
             </span>
           </div>
 
-          {/* BÚSSOLA DE COORDENADAS 3D DISCRETA (SEÇÃO 31) */}
-          <div className="absolute top-2.5 right-[335px] pointer-events-none flex flex-col items-center">
-            <div className="relative size-6 flex items-center justify-center">
-              <div className="size-3.5 border border-slate-300 bg-white/60 rounded-xs shadow-2xs opacity-80" />
-              <span className="absolute -top-2 text-[8px] font-bold text-blue-600 font-mono">Z</span>
-              <span className="absolute -right-2 text-[8px] font-bold text-red-600 font-mono">X</span>
-              <span className="absolute -top-0.5 right-3 text-[8px] font-bold text-emerald-600 font-mono">Y</span>
-            </div>
-          </div>
         </div>
       )}
 
       {/* ========================================================================= */}
-      {/* 1. BARRA DE VISTAS, REPRESENTAÇÃO E NAVEGAÇÃO 3D (COMPACTA, PADRÃO CAD)  */}
+      {/* REGIÃO 3.1 — CÁPSULA DE VISUALIZAÇÃO COMPACTA (TOPO CENTRAL, 34px)        */}
       {/* ========================================================================= */}
-      <div className="absolute top-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1.5 pointer-events-auto">
-        <div className="flex h-[36px] items-center gap-0.5 rounded-xl border border-slate-700/80 bg-slate-900/90 p-0.5 shadow-xl backdrop-blur-md">
-          {/* VISTAS RÁPIDAS: ISO | FR | LAT | SUP */}
-          {(
-            [
-              { id: "iso", label: "ISO" },
-              { id: "front", label: "FR" },
-              { id: "right", label: "LAT" },
-              { id: "top", label: "SUP" },
-            ] as const
-          ).map((v) => (
-            <button
-              key={v.id}
-              type="button"
-              onClick={() => handleViewPresetChange(v.id)}
-              className={cn(
-                "flex h-[26px] items-center gap-1 rounded-lg px-2 font-mono text-[10px] font-bold uppercase transition-all",
-                viewPreset === v.id
-                  ? "bg-red-600 text-white shadow-xs"
-                  : "text-slate-300 hover:text-white hover:bg-slate-800",
-              )}
-              title={`Vista ${v.label}`}
-            >
-              <Box className="size-3" /> {v.label}
-            </button>
-          ))}
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 flex items-center pointer-events-auto">
+        <div
+          style={{ height: "34px", borderRadius: "9999px", padding: "0 12px" }}
+          className="flex items-center gap-1 border border-slate-700/80 bg-slate-900/92 shadow-md backdrop-blur-md font-mono text-[10px] font-bold text-slate-200"
+        >
+          {/* SOMBREADO / SÓLIDO */}
+          <button
+            type="button"
+            onClick={() => setEdgeMode((m) => (m === "shaded-edges" ? "shaded" : "shaded-edges"))}
+            className={cn(
+              "inline-flex h-[24px] items-center gap-1 rounded-full px-2.5 text-[9.5px] font-bold uppercase whitespace-nowrap transition-colors",
+              edgeMode === "shaded-edges" || edgeMode === "shaded"
+                ? "bg-red-600 text-white shadow-2xs"
+                : "text-slate-300 hover:bg-slate-800 hover:text-white",
+            )}
+            title={edgeMode === "shaded" ? "Sombreado puro (clique para Sombreado + Arestas)" : "Sombreado com arestas (clique para alternar)"}
+          >
+            <Box className="size-3 shrink-0" />
+            <span>{edgeMode === "shaded" ? "SOMB" : "SÓLIDO"}</span>
+          </button>
 
-          <span className="h-3.5 w-px bg-slate-700 mx-1" />
+          {/* ARAME (WIREFRAME) */}
+          <button
+            type="button"
+            onClick={() => setEdgeMode("wireframe")}
+            className={cn(
+              "inline-flex h-[24px] items-center gap-1 rounded-full px-2.5 text-[9.5px] font-bold uppercase whitespace-nowrap transition-colors",
+              edgeMode === "wireframe"
+                ? "bg-red-600 text-white shadow-2xs"
+                : "text-slate-300 hover:bg-slate-800 hover:text-white",
+            )}
+            title="Modo Arame (Wireframe)"
+          >
+            <span>ARAME</span>
+          </button>
 
-          {/* REPRESENTAÇÃO TÉCNICA: SOMB | SOMB + AR | ARAME */}
-          {(
-            [
-              { id: "shaded", label: "SOMB" },
-              { id: "shaded-edges", label: "SOMB+AR" },
-              { id: "wireframe", label: "ARAME" },
-            ] as const
-          ).map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => setEdgeMode(m.id)}
-              className={cn(
-                "flex h-[26px] items-center gap-1 rounded-lg px-2 font-mono text-[10px] font-bold uppercase transition-all",
-                edgeMode === m.id
-                  ? "bg-red-600 text-white shadow-xs"
-                  : "text-slate-300 hover:text-white hover:bg-slate-800",
-              )}
-              title={`Modo de renderização: ${m.label}`}
-            >
-              {m.label}
-            </button>
-          ))}
+          <span className="h-3.5 w-px bg-slate-700/80 mx-0.5 shrink-0" />
 
-          <span className="h-3.5 w-px bg-slate-700 mx-1" />
-
-          {/* PROJEÇÃO: PERSPECTIVA / ORTOGRÁFICO */}
+          {/* PERSPECTIVA / ORTOGRÁFICA */}
           <button
             type="button"
             onClick={handleToggleOrtho}
             className={cn(
-              "flex h-[26px] items-center gap-1 rounded-lg px-2 font-mono text-[10px] font-bold uppercase transition-all",
+              "inline-flex h-[24px] items-center rounded-full px-2 text-[9.5px] font-bold uppercase whitespace-nowrap transition-colors",
               isOrtho
-                ? "bg-emerald-600 text-white shadow-xs"
-                : "text-slate-300 hover:text-white hover:bg-slate-800",
+                ? "bg-emerald-600 text-white shadow-2xs"
+                : "text-slate-300 hover:bg-slate-800 hover:text-white",
             )}
-            title={isOrtho ? "Câmera Ortográfica (clique para Perspectiva)" : "Câmera em Perspectiva (clique para Ortográfica)"}
+            title={isOrtho ? "Projeção Ortográfica (clique para Perspectiva)" : "Projeção em Perspectiva (clique para Ortográfica)"}
           >
             {isOrtho ? "ORTO" : "PERSP"}
           </button>
 
-          <span className="h-3.5 w-px bg-slate-700 mx-1" />
+          <span className="h-3.5 w-px bg-slate-700/80 mx-0.5 shrink-0" />
 
-          {/* CONTROLES DE NAVEGAÇÃO: ZOOM +, ZOOM -, GIRAR, ENQUADRAR */}
+          {/* ZOOM +, ZOOM -, ENQUADRAR / RESET */}
           <button
             type="button"
             onClick={() => rendererRef.current?.zoomIn()}
-            className="flex size-[26px] items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
-            title="Aproximar Zoom (Zoom In)"
+            className="flex size-[24px] shrink-0 items-center justify-center rounded-full text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            title="Aproximar Zoom (Zoom +)"
           >
             <ZoomIn className="size-3.5" />
           </button>
           <button
             type="button"
             onClick={() => rendererRef.current?.zoomOut()}
-            className="flex size-[26px] items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
-            title="Afastar Zoom (Zoom Out)"
+            className="flex size-[24px] shrink-0 items-center justify-center rounded-full text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            title="Afastar Zoom (Zoom -)"
           >
             <ZoomOut className="size-3.5" />
           </button>
           <button
             type="button"
-            onClick={() => rendererRef.current?.orbitCamera(0.25, 0)}
-            className="flex size-[26px] items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
-            title="Rotacionar Câmera (Orbit)"
-          >
-            <RotateCw className="size-3.5" />
-          </button>
-          <button
-            type="button"
             onClick={handleFitToModel}
-            className="flex size-[26px] items-center justify-center rounded-lg text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
-            title="Enquadrar Modelo Centralizado (Fit to Model)"
+            className="flex size-[24px] shrink-0 items-center justify-center rounded-full text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
+            title="Enquadrar / Resetar câmera na peça"
           >
-            <Maximize2 className="size-3.5" />
+            <Maximize2 className="size-3" />
           </button>
+
+          <span className="h-3.5 w-px bg-slate-700/80 mx-0.5 shrink-0" />
+
+          {/* MENU COMPACTO "VISUALIZAÇÃO" (VISTAS, GIZMO, HISTÓRICO 3D, ÁUDIO) */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setViewMenuOpen((v) => !v)}
+              className={cn(
+                "inline-flex h-[24px] items-center gap-1 rounded-full px-2 text-[9.5px] font-bold uppercase whitespace-nowrap transition-colors",
+                viewMenuOpen || gizmoMode !== "off"
+                  ? "bg-slate-700 text-white"
+                  : "text-slate-300 hover:bg-slate-800 hover:text-white",
+              )}
+              title="Mais opções de visualização, vistas ortográficas, Gizmo 3D e áudio"
+            >
+              <Eye className="size-3 shrink-0" />
+              <span className="hidden sm:inline">Visualização</span>
+              <ChevronDown className={cn("size-3 transition-transform", viewMenuOpen && "rotate-180")} />
+            </button>
+
+            {viewMenuOpen && (
+              <div className="absolute top-9 left-1/2 -translate-x-1/2 z-50 w-64 rounded-2xl border border-slate-700/90 bg-slate-900/96 p-2.5 shadow-2xl backdrop-blur-md text-slate-200 flex flex-col gap-2">
+                {/* Vistas Canônicas */}
+                <div>
+                  <div className="text-[8.5px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Vistas Padrão
+                  </div>
+                  <div className="grid grid-cols-4 gap-1">
+                    {(
+                      [
+                        { id: "iso", label: "ISO" },
+                        { id: "front", label: "FR" },
+                        { id: "right", label: "LAT" },
+                        { id: "top", label: "SUP" },
+                      ] as const
+                    ).map((v) => (
+                      <button
+                        key={v.id}
+                        type="button"
+                        onClick={() => {
+                          handleViewPresetChange(v.id);
+                          setViewMenuOpen(false);
+                        }}
+                        className={cn(
+                          "h-6 rounded-lg font-mono text-[9.5px] font-bold uppercase transition-colors",
+                          viewPreset === v.id
+                            ? "bg-red-600 text-white"
+                            : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white",
+                        )}
+                      >
+                        {v.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Modos de Sombreado */}
+                <div className="border-t border-slate-800 pt-1.5">
+                  <div className="text-[8.5px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                    Estilo de Renderização
+                  </div>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(
+                      [
+                        { id: "shaded", label: "SOMB" },
+                        { id: "shaded-edges", label: "SOMB+AR" },
+                        { id: "wireframe", label: "ARAME" },
+                      ] as const
+                    ).map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        onClick={() => {
+                          setEdgeMode(m.id);
+                          setViewMenuOpen(false);
+                        }}
+                        className={cn(
+                          "h-6 rounded-lg font-mono text-[9px] font-bold uppercase transition-colors",
+                          edgeMode === m.id
+                            ? "bg-red-600 text-white"
+                            : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white",
+                        )}
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Manipulação & Histórico 3D */}
+                <div className="border-t border-slate-800 pt-1.5 flex items-center justify-between gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      AudioManager.play("cad_gizmo");
+                      setGizmoMode((m) => (m === "off" ? "translate" : "off"));
+                    }}
+                    className={cn(
+                      "flex h-7 flex-1 items-center justify-center gap-1 rounded-lg px-2 text-[9.5px] font-bold uppercase transition-colors",
+                      gizmoMode !== "off"
+                        ? "bg-red-600 text-white"
+                        : "bg-slate-800 text-slate-300 hover:bg-slate-700",
+                    )}
+                  >
+                    <Crosshair className="size-3" /> Gizmo {gizmoMode !== "off" ? "ON" : "OFF"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canUndo}
+                    onClick={handleUndo}
+                    className={cn(
+                      "flex size-7 items-center justify-center rounded-lg bg-slate-800 transition-colors",
+                      canUndo ? "text-slate-200 hover:bg-slate-700" : "opacity-40 cursor-not-allowed",
+                    )}
+                    title="Desfazer operação 3D"
+                  >
+                    <Undo2 className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!canRedo}
+                    onClick={handleRedo}
+                    className={cn(
+                      "flex size-7 items-center justify-center rounded-lg bg-slate-800 transition-colors",
+                      canRedo ? "text-slate-200 hover:bg-slate-700" : "opacity-40 cursor-not-allowed",
+                    )}
+                    title="Refazer operação 3D"
+                  >
+                    <Redo2 className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => rendererRef.current?.orbitCamera(0.25, 0)}
+                    className="flex size-7 items-center justify-center rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 transition-colors"
+                    title="Orbitar câmera 3D"
+                  >
+                    <RotateCw className="size-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsFullscreen((f) => !f)}
+                    className="flex size-7 items-center justify-center rounded-lg bg-slate-800 text-slate-200 hover:bg-slate-700 transition-colors"
+                    title="Alternar tela cheia"
+                  >
+                    {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+                  </button>
+                </div>
+
+                {/* Controle de Áudio Integrado (Fora da Área de Desenho) */}
+                <div className="border-t border-slate-800 pt-1.5 flex items-center justify-between">
+                  <span className="text-[9px] text-slate-400 uppercase font-bold">Áudio do Sistema</span>
+                  <AudioQuickControl />
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 2. TOPO DIREITO: FERRAMENTAS DE MANIPULAÇÃO & VIEW CUBE                   */}
+      {/* REGIÃO 3.2 — CUBO DE ORIENTAÇÃO 3D (52x52px) + EIXOS XYZ SEM COLISÃO      */}
       {/* ========================================================================= */}
-      <div className={cn(
-        "absolute top-2.5 z-20 flex items-center gap-2 pointer-events-auto transition-all",
-        rightPanelOpen ? "right-[335px]" : "right-3",
-      )}>
-        {/* BARRA DE MANIPULAÇÃO & HISTÓRICO */}
-        <div className="flex h-[36px] items-center gap-0.5 rounded-xl border border-slate-700/80 bg-slate-900/90 p-0.5 shadow-xl backdrop-blur-md font-mono text-[10px] font-bold">
-          <button
-            type="button"
-            onClick={() => {
-              AudioManager.play("cad_gizmo");
-              setGizmoMode((m) => (m === "off" ? "translate" : "off"));
-            }}
-            className={cn(
-              "flex h-[26px] items-center gap-1 rounded-lg px-2 uppercase transition-colors",
-              gizmoMode !== "off"
-                ? "bg-red-600 text-white"
-                : "text-slate-300 hover:bg-slate-800 hover:text-white",
-            )}
-            title="Alternar manipulador 3D (Gizmo)"
-          >
-            <Crosshair className="size-3" /> GIZMO {gizmoMode !== "off" ? "ON" : "▾"}
-          </button>
-
-          <span className="h-3.5 w-px bg-slate-700 mx-0.5" />
-
-          {/* UNDO / REDO */}
-          <button
-            type="button"
-            disabled={!canUndo}
-            onClick={handleUndo}
-            className={cn(
-              "flex size-[26px] items-center justify-center rounded-lg transition-colors",
-              canUndo ? "text-slate-300 hover:bg-slate-800 hover:text-white" : "text-slate-600 cursor-not-allowed",
-            )}
-            title="Desfazer alteração (Undo)"
-          >
-            <Undo2 className="size-3.5" />
-          </button>
-          <button
-            type="button"
-            disabled={!canRedo}
-            onClick={handleRedo}
-            className={cn(
-              "flex size-[26px] items-center justify-center rounded-lg transition-colors",
-              canRedo ? "text-slate-300 hover:bg-slate-800 hover:text-white" : "text-slate-600 cursor-not-allowed",
-            )}
-            title="Refazer alteração (Redo)"
-          >
-            <Redo2 className="size-3.5" />
-          </button>
-
-          <span className="h-3.5 w-px bg-slate-700 mx-0.5" />
-
-          {/* ÁUDIO & FULLSCREEN */}
-          <AudioQuickControl />
-
-          <button
-            type="button"
-            onClick={() => setIsFullscreen((f) => !f)}
-            className="flex size-[26px] items-center justify-center rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-            title="Alternar tela cheia"
-          >
-            {isFullscreen ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
-          </button>
-        </div>
-
-        {/* VIEW CUBE CAD INTERATIVO COMPACTO */}
+      <div
+        style={{
+          top: rightPanelOpen ? "12px" : "52px",
+          right: rightPanelOpen ? "calc(clamp(250px, 30vw, 300px) + 20px)" : "12px",
+          transition: "all 200ms cubic-bezier(0.22, 1, 0.36, 1)",
+        }}
+        className={cn(
+          "absolute z-15 flex flex-col items-center gap-1.5 pointer-events-auto",
+          rightPanelOpen && "hidden md:flex",
+        )}
+      >
         <CadViewCube
           activePreset={viewPreset}
           onSelectPreset={handleViewPresetChange}
           cameraRotation={cameraRotation}
         />
+        {/* Bússola de Coordenadas XYZ Compacta */}
+        <div className="pointer-events-none flex items-center gap-1 rounded-full border border-slate-300/80 bg-white/85 px-1.5 py-0.5 shadow-2xs backdrop-blur-xs font-mono text-[7.5px] font-bold">
+          <span className="text-red-600">X</span>
+          <span className="text-slate-300">·</span>
+          <span className="text-emerald-600">Y</span>
+          <span className="text-slate-300">·</span>
+          <span className="text-blue-600">Z</span>
+        </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 3. BARRA LATERAL ESQUERDA (LARGURA 180-200px, COMPACTA)                   */}
+      {/* REGIÃO 2 — PAINEL DE CATEGORIAS 3D RECOLHÍVEL (ESQUERDA, ACCORDION)       */}
       {/* ========================================================================= */}
-      <div className="absolute top-2 left-2.5 z-20 flex flex-col gap-1 w-[180px] pointer-events-auto">
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-1 shadow-lg backdrop-blur-xs flex flex-col gap-0.5">
-          {/* CATEGORIA 1: CRIAR */}
+      {/* Botão Disparador Compacto quando recolhido */}
+      {!leftPanelOpen && (
+        <div className="absolute top-3 left-3 z-20 pointer-events-auto">
           <button
             type="button"
             onClick={() => {
-              setActiveLeftCat((c) => {
-                const next = c === "criar" ? "none" : "criar";
-                AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");
-                return next;
-              });
+              AudioManager.play("ui_toggle_open");
+              openLeftCategoryPanel(activeLeftCat === "none" ? "criar" : activeLeftCat);
             }}
-            className={cn(
-              "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
-              activeLeftCat === "criar"
-                ? "bg-[#dc2626] text-white shadow-xs"
-                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
-            )}
+            style={{ height: "34px", borderRadius: "9999px" }}
+            className="inline-flex items-center gap-1.5 border border-slate-300/90 bg-white/95 px-3 font-mono text-[10px] font-bold uppercase text-slate-800 shadow-md backdrop-blur-md hover:border-red-300 hover:bg-white transition-all whitespace-nowrap cursor-pointer"
+            title="Abrir categorias de modelagem 3D (Criar, Modificar, Detalhes, Chapa, Estruturas, Medir, Exportar)"
           >
-            <div className="flex items-center gap-1.5">
-              <Box className="size-3.5" /> CRIAR
-            </div>
-            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "criar" && "rotate-180")} />
+            <Boxes className="size-3.5 text-red-600 shrink-0" />
+            <span>Categorias 3D</span>
+            <ChevronRight className="size-3 text-slate-500 shrink-0" />
           </button>
+        </div>
+      )}
 
-          {/* CATEGORIA 2: MODIFICAR */}
+      {/* Painel de Categorias Recolhível em Coluna Única (Accordion sem Flyout Sobreposto) */}
+      <div
+        aria-hidden={!leftPanelOpen}
+        style={{
+          top: "12px",
+          bottom: "64px",
+          maxHeight: "calc(100% - 76px)",
+          width: "204px",
+          opacity: leftPanelOpen ? 1 : 0,
+          transform: leftPanelOpen ? "translateX(0)" : "translateX(-12px)",
+          pointerEvents: leftPanelOpen ? "auto" : "none",
+          transition: "all 200ms cubic-bezier(0.22, 1, 0.36, 1)",
+        }}
+        className="absolute left-3 z-25 overflow-y-auto rounded-2xl border border-slate-200/95 bg-white/96 p-2 shadow-xl backdrop-blur-md flex flex-col gap-1 font-mono"
+      >
+        <div className="flex items-center justify-between border-b border-slate-100 pb-1.5 px-1">
+          <span className="text-[9.5px] font-bold uppercase tracking-wider text-slate-800">
+            Operações 3D
+          </span>
           <button
             type="button"
             onClick={() => {
-              setActiveLeftCat((c) => {
-                const next = c === "modificar" ? "none" : "modificar";
-                AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");
-                return next;
-              });
+              setLeftPanelOpen(false);
+              AudioManager.play("ui_toggle_close");
             }}
-            className={cn(
-              "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
-              activeLeftCat === "modificar"
-                ? "bg-red-50 text-red-600 border border-red-200"
-                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
-            )}
+            className="rounded-full p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+            title="Recolher painel de categorias"
           >
-            <div className="flex items-center gap-1.5">
-              <Scissors className="size-3.5" /> MODIFICAR
-            </div>
-            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "modificar" && "rotate-180")} />
-          </button>
-
-          {/* CATEGORIA 3: DETALHES */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveLeftCat((c) => {
-                const next = c === "detalhes" ? "none" : "detalhes";
-                AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");
-                return next;
-              });
-            }}
-            className={cn(
-              "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
-              activeLeftCat === "detalhes"
-                ? "bg-red-50 text-red-600 border border-red-200"
-                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
-            )}
-          >
-            <div className="flex items-center gap-1.5">
-              <Settings className="size-3.5" /> DETALHES
-            </div>
-            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "detalhes" && "rotate-180")} />
-          </button>
-
-          {/* CATEGORIA 4: CHAPA */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveLeftCat((c) => {
-                const next = c === "chapa" ? "none" : "chapa";
-                AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");
-                return next;
-              });
-            }}
-            className={cn(
-              "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
-              activeLeftCat === "chapa"
-                ? "bg-red-50 text-red-600 border border-red-200"
-                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
-            )}
-          >
-            <div className="flex items-center gap-1.5">
-              <Layers className="size-3.5" /> CHAPA
-            </div>
-            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "chapa" && "rotate-180")} />
-          </button>
-
-          {/* CATEGORIA 5: ESTRUTURAS */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveLeftCat((c) => {
-                const next = c === "estruturas" ? "none" : "estruturas";
-                AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");
-                return next;
-              });
-            }}
-            className={cn(
-              "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
-              activeLeftCat === "estruturas"
-                ? "bg-red-50 text-red-600 border border-red-200"
-                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
-            )}
-          >
-            <div className="flex items-center gap-1.5">
-              <Boxes className="size-3.5" /> ESTRUTURAS
-            </div>
-            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "estruturas" && "rotate-180")} />
-          </button>
-
-          {/* CATEGORIA 6: MEDIR */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveLeftCat((c) => {
-                const next = c === "medir" ? "none" : "medir";
-                AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");
-                return next;
-              });
-            }}
-            className={cn(
-              "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
-              activeLeftCat === "medir"
-                ? "bg-red-50 text-red-600 border border-red-200"
-                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
-            )}
-          >
-            <div className="flex items-center gap-1.5">
-              <Ruler className="size-3.5" /> MEDIR
-            </div>
-            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "medir" && "rotate-180")} />
-          </button>
-
-          {/* CATEGORIA 7: EXPORTAR */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveLeftCat((c) => {
-                const next = c === "exportar" ? "none" : "exportar";
-                AudioManager.play(next === "none" ? "ui_toggle_close" : "ui_toggle_open");
-                return next;
-              });
-            }}
-            className={cn(
-              "flex h-[32px] w-full items-center justify-between rounded-xl px-2 font-mono text-[10px] font-bold uppercase transition-all",
-              activeLeftCat === "exportar"
-                ? "bg-red-50 text-red-600 border border-red-200"
-                : "bg-white text-slate-700 hover:bg-slate-50 border border-slate-100",
-            )}
-          >
-            <div className="flex items-center gap-1.5">
-              <Download className="size-3.5" /> EXPORTAR
-            </div>
-            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "exportar" && "rotate-180")} />
+            <X className="size-3.5" />
           </button>
         </div>
 
-        {/* SUBPAINEL FLYOUT ADJACENTE (NÃO COBRE A PEÇA) */}
-        {activeLeftCat !== "none" && (
-          <div className="absolute left-[184px] top-0 w-38 rounded-2xl border border-slate-200 bg-white/95 p-1.5 shadow-xl backdrop-blur-xs flex flex-col gap-0.5 font-mono text-[9.5px]">
-            <div className="flex items-center justify-between pb-0.5 border-b border-slate-100 font-bold text-slate-800 uppercase">
-              <span>{activeLeftCat}</span>
+        {/* CATEGORIA 1: CRIAR */}
+        <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => setActiveLeftCat((c) => (c === "criar" ? "none" : "criar"))}
+            className={cn(
+              "flex h-[32px] w-full items-center justify-between rounded-xl px-2.5 text-[10px] font-bold uppercase transition-all",
+              activeLeftCat === "criar"
+                ? "bg-[#dc2626] text-white shadow-2xs"
+                : "bg-slate-50/80 text-slate-700 hover:bg-slate-100 border border-slate-100",
+            )}
+          >
+            <span className="flex items-center gap-1.5">
+              <Box className="size-3.5 shrink-0" /> CRIAR
+            </span>
+            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "criar" && "rotate-180")} />
+          </button>
+          {activeLeftCat === "criar" && (
+            <div className="mt-1 ml-1 pl-1.5 border-l-2 border-red-200 flex flex-col gap-0.5 text-[9.5px]">
               <button
                 type="button"
                 onClick={() => {
-                  setActiveLeftCat("none");
-                  AudioManager.play("ui_toggle_close");
+                  setModelType("boilermaking_cone");
+                  setModelTitle("Cone Truncado");
+                  setParamA(200);
+                  setParamB(2);
+                  setParamC(100);
+                  setLeftPanelOpen(false);
+                  openRightInspector("parametros");
                 }}
-                className="text-slate-400 hover:text-slate-600"
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
               >
-                <X className="size-3" />
+                <Flame className="size-3 shrink-0" /> Cone Truncado
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setModelType("boilermaking_transition");
+                  setModelTitle("Quadrado para Redondo");
+                  setParamA(200);
+                  setParamB(200);
+                  setParamD(120);
+                  setParamC(150);
+                  setLeftPanelOpen(false);
+                  openRightInspector("parametros");
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Layers className="size-3 shrink-0" /> Quadrado → Redondo
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setModelType("boilermaking_elbow");
+                  setModelTitle("Curva de Gomos");
+                  setParamA(150);
+                  setParamB(225);
+                  setParamC(90);
+                  setLeftPanelOpen(false);
+                  openRightInspector("parametros");
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Box className="size-3 shrink-0" /> Curva de Gomos
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setModelType("boilermaking_branch");
+                  setModelTitle("Boca de Lobo");
+                  setParamA(200);
+                  setParamB(150);
+                  setParamC(180);
+                  setLeftPanelOpen(false);
+                  openRightInspector("parametros");
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Crosshair className="size-3 shrink-0" /> Boca de Lobo / Tê
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setModelType("base_cylinder");
+                  setModelTitle("Cilindro Industrial");
+                  setParamA(160);
+                  setParamC(220);
+                  setLeftPanelOpen(false);
+                  openRightInspector("parametros");
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Box className="size-3 shrink-0" /> Cilindro / Tubo
               </button>
             </div>
+          )}
+        </div>
 
-            {activeLeftCat === "criar" && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setModelType("boilermaking_cone");
-                    setModelTitle("Cone Truncado");
-                    setParamA(200);
-                    setParamB(2);
-                    setParamC(100);
-                  }}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
-                >
-                  <Flame className="size-3" /> Cone Truncado
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setModelType("boilermaking_transition");
-                    setModelTitle("Quadrado para Redondo");
-                    setParamA(200);
-                    setParamB(200);
-                    setParamD(120);
-                    setParamC(150);
-                  }}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
-                >
-                  <Layers className="size-3" /> Quadrado → Redondo
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setModelType("boilermaking_elbow");
-                    setModelTitle("Curva de Gomos");
-                    setParamA(150);
-                    setParamB(225);
-                    setParamC(90);
-                  }}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
-                >
-                  <Box className="size-3" /> Curva de Gomos
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setModelType("boilermaking_branch");
-                    setModelTitle("Boca de Lobo");
-                    setParamA(200);
-                    setParamB(150);
-                    setParamC(180);
-                  }}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
-                >
-                  <Crosshair className="size-3" /> Boca de Lobo / Tê
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setModelType("base_cylinder");
-                    setModelTitle("Cilindro Industrial");
-                    setParamA(160);
-                    setParamC(220);
-                  }}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
-                >
-                  <Box className="size-3" /> Cilindro / Tubo
-                </button>
-              </>
+        {/* CATEGORIA 2: MODIFICAR */}
+        <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => setActiveLeftCat((c) => (c === "modificar" ? "none" : "modificar"))}
+            className={cn(
+              "flex h-[32px] w-full items-center justify-between rounded-xl px-2.5 text-[10px] font-bold uppercase transition-all",
+              activeLeftCat === "modificar"
+                ? "bg-[#dc2626] text-white shadow-2xs"
+                : "bg-slate-50/80 text-slate-700 hover:bg-slate-100 border border-slate-100",
             )}
+          >
+            <span className="flex items-center gap-1.5">
+              <Scissors className="size-3.5 shrink-0" /> MODIFICAR
+            </span>
+            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "modificar" && "rotate-180")} />
+          </button>
+          {activeLeftCat === "modificar" && (
+            <div className="mt-1 ml-1 pl-1.5 border-l-2 border-red-200 flex flex-col gap-0.5 text-[9.5px]">
+              <button
+                type="button"
+                onClick={() => {
+                  setGizmoMode("translate");
+                  setLeftPanelOpen(false);
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Move className="size-3 shrink-0" /> Mover / Transladar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOptHole((h) => !h);
+                  setLeftPanelOpen(false);
+                  openRightInspector("parametros");
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Crosshair className="size-3 shrink-0" /> Furo Passante
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOptFillet((f) => !f);
+                  setLeftPanelOpen(false);
+                  openRightInspector("parametros");
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Scissors className="size-3 shrink-0" /> Filete nas Arestas
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setOptChamfer((c) => !c);
+                  setLeftPanelOpen(false);
+                  openRightInspector("parametros");
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Scissors className="size-3 shrink-0" /> Chanfro 45°
+              </button>
+            </div>
+          )}
+        </div>
 
-            {activeLeftCat === "modificar" && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setGizmoMode("translate")}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
-                >
-                  <Move className="size-3" /> Mover / Transladar
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOptHole((h) => !h)}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
-                >
-                  <Crosshair className="size-3" /> Furo Passante
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOptFillet((f) => !f)}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
-                >
-                  <Scissors className="size-3" /> Filete nas Arestas
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setOptChamfer((c) => !c)}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
-                >
-                  <Scissors className="size-3" /> Chanfro 45°
-                </button>
-              </>
+        {/* CATEGORIA 3: DETALHES */}
+        <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => setActiveLeftCat((c) => (c === "detalhes" ? "none" : "detalhes"))}
+            className={cn(
+              "flex h-[32px] w-full items-center justify-between rounded-xl px-2.5 text-[10px] font-bold uppercase transition-all",
+              activeLeftCat === "detalhes"
+                ? "bg-[#dc2626] text-white shadow-2xs"
+                : "bg-slate-50/80 text-slate-700 hover:bg-slate-100 border border-slate-100",
             )}
+          >
+            <span className="flex items-center gap-1.5">
+              <Settings className="size-3.5 shrink-0" /> DETALHES
+            </span>
+            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "detalhes" && "rotate-180")} />
+          </button>
+          {activeLeftCat === "detalhes" && (
+            <div className="mt-1 ml-1 pl-1.5 border-l-2 border-red-200 flex flex-col gap-0.5 text-[9.5px]">
+              <button
+                type="button"
+                onClick={() => {
+                  setTemplatesDialogOpen(true);
+                  setLeftPanelOpen(false);
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Wrench className="size-3 shrink-0" /> Catálogo Caldeiraria
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLeftPanelOpen(false);
+                  openRightInspector("parametros");
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Sliders className="size-3 shrink-0" /> Parâmetros de Borda
+              </button>
+            </div>
+          )}
+        </div>
 
-            {activeLeftCat === "chapa" && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setFlatPatternDialogOpen(true)}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-red-600 font-bold hover:bg-red-50"
-                >
-                  <Compass className="size-3" /> Planificar Sólido
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDraftingDialogOpen(true)}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
-                >
-                  <FileText className="size-3" /> Prancha 2D ABNT
-                </button>
-              </>
+        {/* CATEGORIA 4: CHAPA */}
+        <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => setActiveLeftCat((c) => (c === "chapa" ? "none" : "chapa"))}
+            className={cn(
+              "flex h-[32px] w-full items-center justify-between rounded-xl px-2.5 text-[10px] font-bold uppercase transition-all",
+              activeLeftCat === "chapa"
+                ? "bg-[#dc2626] text-white shadow-2xs"
+                : "bg-slate-50/80 text-slate-700 hover:bg-slate-100 border border-slate-100",
             )}
+          >
+            <span className="flex items-center gap-1.5">
+              <Layers className="size-3.5 shrink-0" /> CHAPA
+            </span>
+            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "chapa" && "rotate-180")} />
+          </button>
+          {activeLeftCat === "chapa" && (
+            <div className="mt-1 ml-1 pl-1.5 border-l-2 border-red-200 flex flex-col gap-0.5 text-[9.5px]">
+              <button
+                type="button"
+                onClick={() => {
+                  setFlatPatternDialogOpen(true);
+                  setLeftPanelOpen(false);
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-red-600 font-bold hover:bg-red-50 transition-colors"
+              >
+                <Compass className="size-3 shrink-0" /> Planificar Sólido
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftingDialogOpen(true);
+                  setLeftPanelOpen(false);
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <FileText className="size-3 shrink-0" /> Prancha 2D ABNT
+              </button>
+            </div>
+          )}
+        </div>
 
-            {activeLeftCat === "estruturas" && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setWeldmentDialogOpen(true)}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600 font-bold"
-                >
-                  <Boxes className="size-3" /> Perfis & Cut-List
-                </button>
-              </>
+        {/* CATEGORIA 5: ESTRUTURAS */}
+        <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => setActiveLeftCat((c) => (c === "estruturas" ? "none" : "estruturas"))}
+            className={cn(
+              "flex h-[32px] w-full items-center justify-between rounded-xl px-2.5 text-[10px] font-bold uppercase transition-all",
+              activeLeftCat === "estruturas"
+                ? "bg-[#dc2626] text-white shadow-2xs"
+                : "bg-slate-50/80 text-slate-700 hover:bg-slate-100 border border-slate-100",
             )}
+          >
+            <span className="flex items-center gap-1.5">
+              <Boxes className="size-3.5 shrink-0" /> ESTRUTURAS
+            </span>
+            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "estruturas" && "rotate-180")} />
+          </button>
+          {activeLeftCat === "estruturas" && (
+            <div className="mt-1 ml-1 pl-1.5 border-l-2 border-red-200 flex flex-col gap-0.5 text-[9.5px]">
+              <button
+                type="button"
+                onClick={() => {
+                  setWeldmentDialogOpen(true);
+                  setLeftPanelOpen(false);
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 font-bold hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Boxes className="size-3 shrink-0" /> Perfis & Cut-List
+              </button>
+            </div>
+          )}
+        </div>
 
-            {activeLeftCat === "medir" && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setRightTab("inspecao");
-                    setRightPanelOpen(true);
-                  }}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
-                >
-                  <Ruler className="size-3" /> Metrologia B-Rep
-                </button>
-              </>
+        {/* CATEGORIA 6: MEDIR */}
+        <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => setActiveLeftCat((c) => (c === "medir" ? "none" : "medir"))}
+            className={cn(
+              "flex h-[32px] w-full items-center justify-between rounded-xl px-2.5 text-[10px] font-bold uppercase transition-all",
+              activeLeftCat === "medir"
+                ? "bg-[#dc2626] text-white shadow-2xs"
+                : "bg-slate-50/80 text-slate-700 hover:bg-slate-100 border border-slate-100",
             )}
+          >
+            <span className="flex items-center gap-1.5">
+              <Ruler className="size-3.5 shrink-0" /> MEDIR
+            </span>
+            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "medir" && "rotate-180")} />
+          </button>
+          {activeLeftCat === "medir" && (
+            <div className="mt-1 ml-1 pl-1.5 border-l-2 border-red-200 flex flex-col gap-0.5 text-[9.5px]">
+              <button
+                type="button"
+                onClick={() => {
+                  setLeftPanelOpen(false);
+                  openRightInspector("inspecao");
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Ruler className="size-3 shrink-0" /> Metrologia B-Rep
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLeftPanelOpen(false);
+                  openRightInspector("filtro");
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Crosshair className="size-3 shrink-0" /> Filtro Face/Aresta/Vértice
+              </button>
+            </div>
+          )}
+        </div>
 
-            {activeLeftCat === "exportar" && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setFlatPatternDialogOpen(true)}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
-                >
-                  <Download className="size-3" /> DXF / Código G
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDraftingDialogOpen(true)}
-                  className="flex items-center gap-1 rounded-lg px-1.5 py-1 text-slate-700 hover:bg-red-50 hover:text-red-600"
-                >
-                  <Download className="size-3" /> Prancha Técnica DXF
-                </button>
-              </>
+        {/* CATEGORIA 7: EXPORTAR */}
+        <div className="flex flex-col">
+          <button
+            type="button"
+            onClick={() => setActiveLeftCat((c) => (c === "exportar" ? "none" : "exportar"))}
+            className={cn(
+              "flex h-[32px] w-full items-center justify-between rounded-xl px-2.5 text-[10px] font-bold uppercase transition-all",
+              activeLeftCat === "exportar"
+                ? "bg-[#dc2626] text-white shadow-2xs"
+                : "bg-slate-50/80 text-slate-700 hover:bg-slate-100 border border-slate-100",
             )}
-          </div>
-        )}
+          >
+            <span className="flex items-center gap-1.5">
+              <Download className="size-3.5 shrink-0" /> EXPORTAR
+            </span>
+            <ChevronDown className={cn("size-3.5 transition-transform", activeLeftCat === "exportar" && "rotate-180")} />
+          </button>
+          {activeLeftCat === "exportar" && (
+            <div className="mt-1 ml-1 pl-1.5 border-l-2 border-red-200 flex flex-col gap-0.5 text-[9.5px]">
+              <button
+                type="button"
+                onClick={() => {
+                  setFlatPatternDialogOpen(true);
+                  setLeftPanelOpen(false);
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Download className="size-3 shrink-0" /> DXF / Código G
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftingDialogOpen(true);
+                  setLeftPanelOpen(false);
+                }}
+                className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-left text-slate-700 hover:bg-red-50 hover:text-red-600 transition-colors"
+              >
+                <Download className="size-3 shrink-0" /> Prancha Técnica DXF
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* 4. PAINEL CONTEXTUAL DIREITO (LARGURA 320px, COMPACTO)                    */}
+      {/* REGIÃO 4 — INSPETOR CONTEXTUAL DE PROPRIEDADES À DIREITA                  */}
       {/* ========================================================================= */}
+      {/* Botão Disparador Único [ Parâmetros 3D ] (Estado A: sempre acessível no topo direito) */}
+      <div className="absolute top-3 right-3 z-25 pointer-events-auto">
+        <button
+          type="button"
+          onClick={() => {
+            if (rightPanelOpen) {
+              setRightPanelOpen(false);
+              AudioManager.play("ui_toggle_close");
+            } else {
+              AudioManager.play("ui_toggle_open");
+              openRightInspector("parametros");
+            }
+          }}
+          style={{ height: "34px", borderRadius: "9999px" }}
+          className={cn(
+            "inline-flex items-center gap-1.5 border px-3.5 font-mono text-[10.5px] font-bold shadow-md backdrop-blur-md transition-all whitespace-nowrap cursor-pointer",
+            rightPanelOpen
+              ? "border-red-500 bg-[#dc2626] text-white shadow-red-900/25"
+              : "border-slate-700/80 bg-slate-900/92 text-slate-100 hover:bg-slate-800",
+          )}
+          aria-expanded={rightPanelOpen}
+          aria-label="Alternar Inspetor de Parâmetros 3D"
+        >
+          <Sliders className="size-3.5 shrink-0" />
+          <span>Parâmetros 3D</span>
+        </button>
+      </div>
+
+      {/* Painel Inspetor Contido (top: 52px, bottom: 64px, nunca invade a barra inferior) */}
       {rightPanelOpen && (
-        <div className="absolute top-14 right-3 z-20 w-[320px] rounded-2xl border border-slate-200/90 bg-white p-2.5 shadow-xl backdrop-blur-xs flex flex-col gap-2 font-mono text-[10px] text-slate-800 pointer-events-auto">
-          {/* ABAS DO PAINEL */}
-          <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+        <aside
+          aria-label="Inspetor de Propriedades 3D"
+          style={{
+            width: "clamp(250px, 30vw, 300px)",
+            top: "52px",
+            bottom: "64px",
+            maxHeight: "calc(100% - 116px)",
+            transition: "all 200ms cubic-bezier(0.22, 1, 0.36, 1)",
+          }}
+          className="absolute right-3 z-25 overflow-y-auto rounded-2xl border border-slate-200/95 bg-white/98 p-3 shadow-xl backdrop-blur-md flex flex-col gap-2.5 font-mono text-[10px] text-slate-800 pointer-events-auto"
+        >
+          {/* ABAS DO INSPETOR + BOTÃO FECHAR (✕) */}
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2 shrink-0">
             <div className="flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => setRightTab("parametros")}
                 className={cn(
-                  "flex items-center gap-1 rounded-full px-2 py-0.5 font-bold uppercase transition-colors text-[9.5px]",
+                  "inline-flex items-center gap-1 rounded-full px-2 py-0.5 font-bold uppercase transition-colors text-[9px] whitespace-nowrap",
                   rightTab === "parametros"
                     ? "bg-red-50 text-red-600 border border-red-200"
                     : "text-slate-600 hover:text-slate-900",
                 )}
               >
-                <Sliders className="size-3 text-red-600" /> PARÂMETROS
+                <Sliders className="size-2.5 text-red-600 shrink-0" /> PARÂMETROS
               </button>
 
               <button
                 type="button"
                 onClick={() => setRightTab("inspecao")}
                 className={cn(
-                  "rounded-full px-2 py-0.5 font-bold uppercase transition-colors text-[9.5px]",
+                  "rounded-full px-2 py-0.5 font-bold uppercase transition-colors text-[9px] whitespace-nowrap",
                   rightTab === "inspecao"
                     ? "bg-red-50 text-red-600 border border-red-200"
                     : "text-slate-600 hover:text-slate-900",
@@ -1198,7 +1448,7 @@ export function CadBRepViewer({
                 type="button"
                 onClick={() => setRightTab("filtro")}
                 className={cn(
-                  "rounded-full px-2 py-0.5 font-bold uppercase transition-colors text-[9.5px]",
+                  "rounded-full px-2 py-0.5 font-bold uppercase transition-colors text-[9px] whitespace-nowrap",
                   rightTab === "filtro"
                     ? "bg-red-50 text-red-600 border border-red-200"
                     : "text-slate-600 hover:text-slate-900",
@@ -1211,155 +1461,193 @@ export function CadBRepViewer({
             <button
               type="button"
               onClick={() => setRightPanelOpen(false)}
-              className="rounded-full p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
-              title="Fechar painel"
+              className="rounded-full p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors shrink-0"
+              title="Fechar inspetor (✕)"
             >
-              <X className="size-3" />
+              <X className="size-3.5" />
             </button>
           </div>
 
-          {/* ABA 1: PARÂMETROS COM MINI-DIAGRAMA TÉCNICO VETORIAL DINÂMICO */}
+          {/* ABA 1: PARÂMETROS ORGANIZADOS EM COLUNA ÚNICA + ESQUEMA COMPACTO RECOLHÍVEL */}
           {rightTab === "parametros" && (
             <div className="flex flex-col gap-2">
-              {/* NOME DA PEÇA */}
-              <div className="flex items-center gap-1.5 font-bold text-slate-900 uppercase text-[12px]">
-                <Box className="size-3.5 text-red-600" /> {modelTitle.toUpperCase()}
+              {/* 1. CABEÇALHO COMPACTO COM NOME DO OBJETO / PROJETO */}
+              <div className="flex items-center justify-between gap-2 rounded-xl bg-slate-50 px-2.5 py-1.5 border border-slate-100">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <Box className="size-3.5 text-red-600 shrink-0" />
+                  <span className="font-bold text-slate-900 uppercase text-[11px] truncate">
+                    {modelTitle.toUpperCase()}
+                  </span>
+                </div>
+                {documentTitle && (
+                  <span className="text-[9px] text-slate-500 truncate max-w-[110px]" title={documentTitle}>
+                    {documentTitle}
+                  </span>
+                )}
               </div>
 
-              {/* INPUTS + DIAGRAMA ESQUEMÁTICO ESPECÍFICO DA PEÇA */}
-              <div className="grid grid-cols-2 gap-2 items-center">
-                {/* COLUNA ESQUERDA: INPUTS NUMÉRICOS */}
-                <div className="flex flex-col gap-1">
-                  {modelType === "boilermaking_transition" ? (
-                    <>
-                      <div>
-                        <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
-                          BASE (X)
-                        </label>
-                        <div className="flex h-[28px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 mt-0.5">
-                          <input
-                            type="number"
-                            value={paramA}
-                            onChange={(e) => setParamA(Number(e.target.value))}
-                            className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
-                          />
-                          <span className="text-[8.5px] text-slate-400">mm</span>
-                        </div>
+              {/* 2. RÓTULOS E CAMPOS NUMÉRICOS ALINHADOS COM UNIDADE (mm) */}
+              <div className="flex flex-col gap-1.5">
+                {modelType === "boilermaking_transition" ? (
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-[9px] font-bold text-slate-600 uppercase tracking-tight">
+                        BASE (X)
+                      </label>
+                      <div className="flex h-[28px] w-28 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 focus-within:border-red-500">
+                        <input
+                          type="number"
+                          value={paramA}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setParamA(v);
+                            onUpdate3DParam?.("width", v);
+                          }}
+                          className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px] text-right pr-1"
+                        />
+                        <span className="text-[8.5px] text-slate-400 shrink-0">mm</span>
                       </div>
-                      <div>
-                        <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
-                          DIÂMETRO (Ø)
-                        </label>
-                        <div className="flex h-[28px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 mt-0.5">
-                          <input
-                            type="number"
-                            value={paramD}
-                            onChange={(e) => setParamD(Number(e.target.value))}
-                            className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
-                          />
-                          <span className="text-[8.5px] text-slate-400">mm</span>
-                        </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-[9px] font-bold text-slate-600 uppercase tracking-tight">
+                        DIÂMETRO (Ø)
+                      </label>
+                      <div className="flex h-[28px] w-28 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 focus-within:border-red-500">
+                        <input
+                          type="number"
+                          value={paramD}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setParamD(v);
+                            onUpdate3DParam?.("diameter", v);
+                          }}
+                          className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px] text-right pr-1"
+                        />
+                        <span className="text-[8.5px] text-slate-400 shrink-0">mm</span>
                       </div>
-                      <div>
-                        <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
-                          ALTURA (Z)
-                        </label>
-                        <div className="flex h-[28px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 mt-0.5">
-                          <input
-                            type="number"
-                            value={paramC}
-                            onChange={(e) => setParamC(Number(e.target.value))}
-                            className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
-                          />
-                          <span className="text-[8.5px] text-slate-400">mm</span>
-                        </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-[9px] font-bold text-slate-600 uppercase tracking-tight">
+                        ALTURA (Z)
+                      </label>
+                      <div className="flex h-[28px] w-28 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 focus-within:border-red-500">
+                        <input
+                          type="number"
+                          value={paramC}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setParamC(v);
+                            onUpdate3DParam?.("height", v);
+                          }}
+                          className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px] text-right pr-1"
+                        />
+                        <span className="text-[8.5px] text-slate-400 shrink-0">mm</span>
                       </div>
-                    </>
-                  ) : (
-                    <>
-                      <div>
-                        <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
-                          DIÂMETRO BASE (X)
-                        </label>
-                        <div className="flex h-[28px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 mt-0.5">
-                          <input
-                            type="number"
-                            value={paramA}
-                            onChange={(e) => setParamA(Number(e.target.value))}
-                            className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
-                          />
-                          <span className="text-[8.5px] text-slate-400">mm</span>
-                        </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-[9px] font-bold text-slate-600 uppercase tracking-tight">
+                        DIÂMETRO BASE (X)
+                      </label>
+                      <div className="flex h-[28px] w-28 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 focus-within:border-red-500">
+                        <input
+                          type="number"
+                          value={paramA}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setParamA(v);
+                            onUpdate3DParam?.("D", v);
+                          }}
+                          className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px] text-right pr-1"
+                        />
+                        <span className="text-[8.5px] text-slate-400 shrink-0">mm</span>
                       </div>
-                      <div>
-                        <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
-                          ALTURA (Z)
-                        </label>
-                        <div className="flex h-[28px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 mt-0.5">
-                          <input
-                            type="number"
-                            value={paramC}
-                            onChange={(e) => setParamC(Number(e.target.value))}
-                            className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
-                          />
-                          <span className="text-[8.5px] text-slate-400">mm</span>
-                        </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-[9px] font-bold text-slate-600 uppercase tracking-tight">
+                        ALTURA (Z)
+                      </label>
+                      <div className="flex h-[28px] w-28 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 focus-within:border-red-500">
+                        <input
+                          type="number"
+                          value={paramC}
+                          onChange={(e) => {
+                            const v = Number(e.target.value);
+                            setParamC(v);
+                            onUpdate3DParam?.("height", v);
+                          }}
+                          className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px] text-right pr-1"
+                        />
+                        <span className="text-[8.5px] text-slate-400 shrink-0">mm</span>
                       </div>
-                      <div>
-                        <label className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
-                          ESPESSURA
-                        </label>
-                        <div className="flex h-[28px] items-center rounded-lg border border-slate-200 bg-slate-50 px-2 mt-0.5">
-                          <input
-                            type="number"
-                            value={thickness}
-                            onChange={(e) => setThickness(Number(e.target.value))}
-                            className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px]"
-                          />
-                          <span className="text-[8.5px] text-slate-400">mm</span>
-                        </div>
-                      </div>
-                    </>
-                  )}
+                    </div>
+                  </>
+                )}
+
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-[9px] font-bold text-slate-600 uppercase tracking-tight">
+                    ESPESSURA
+                  </label>
+                  <div className="flex h-[28px] w-28 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 focus-within:border-red-500">
+                    <input
+                      type="number"
+                      step={0.1}
+                      value={thickness}
+                      onChange={(e) => {
+                        const v = Math.max(0.2, Number(e.target.value) || 0.2);
+                        setThickness(v);
+                        onThicknessChange?.(v);
+                        onUpdate3DParam?.("thickness", v);
+                      }}
+                      className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px] text-right pr-1"
+                    />
+                    <span className="text-[8.5px] text-slate-400 shrink-0">mm</span>
+                  </div>
                 </div>
+              </div>
 
-                {/* COLUNA DIREITA: MINI-DIAGRAMA TÉCNICO VETORIAL ESPECÍFICO */}
-                <div className="flex items-center justify-center p-1 border border-slate-100 bg-slate-50/70 rounded-xl h-full">
-                  {modelType === "boilermaking_transition" ? (
-                    <svg viewBox="0 0 100 80" className="w-full h-18">
-                      {/* Diagrama Quadrado -> Redondo */}
-                      <line x1="12" y1="15" x2="12" y2="60" stroke="#94a3b8" strokeWidth="0.75" />
-                      <text x="6" y="38" fontSize="6" fill="#475569" fontWeight="bold" textAnchor="end">H</text>
-                      <polygon points="35,18 65,18 85,60 15,60" fill="#fee2e2" stroke="#dc2626" strokeWidth="0.8" />
-                      <ellipse cx="50" cy="18" rx="15" ry="3.5" fill="#fecaca" stroke="#dc2626" strokeWidth="0.75" />
-                      <line x1="15" y1="70" x2="85" y2="70" stroke="#94a3b8" strokeWidth="0.75" />
-                      <text x="50" y="76" fontSize="6" fill="#475569" fontWeight="bold" textAnchor="middle">A</text>
-                    </svg>
-                  ) : (
-                    <svg viewBox="0 0 100 80" className="w-full h-18">
-                      {/* Cota Z lateral */}
-                      <line x1="12" y1="10" x2="12" y2="60" stroke="#94a3b8" strokeWidth="0.75" />
-                      <line x1="8" y1="10" x2="16" y2="10" stroke="#94a3b8" strokeWidth="0.75" />
-                      <line x1="8" y1="60" x2="16" y2="60" stroke="#94a3b8" strokeWidth="0.75" />
-                      <text x="6" y="36" fontSize="6" fill="#475569" fontWeight="bold" textAnchor="end">Z</text>
-
-                      {/* Sombra / Preenchimento do Cone */}
-                      <polygon points="55,10 25,60 85,60" fill="#fee2e2" stroke="#dc2626" strokeWidth="0.8" />
-                      <ellipse cx="55" cy="60" rx="30" ry="5.5" fill="#fecaca" stroke="#dc2626" strokeWidth="0.8" />
-                      <path d="M 25 60 A 30 5.5 0 0 1 85 60" fill="none" stroke="#dc2626" strokeWidth="0.75" strokeDasharray="2,2" />
-
-                      {/* Cota X inferior */}
-                      <line x1="25" y1="70" x2="85" y2="70" stroke="#94a3b8" strokeWidth="0.75" />
-                      <line x1="25" y1="65" x2="25" y2="73" stroke="#94a3b8" strokeWidth="0.75" />
-                      <line x1="85" y1="65" x2="85" y2="73" stroke="#94a3b8" strokeWidth="0.75" />
-                      <text x="55" y="77" fontSize="6" fill="#475569" fontWeight="bold" textAnchor="middle">X</text>
-                    </svg>
-                  )}
-                </div>
+              {/* 3. PRÉ-VISUALIZAÇÃO ESQUEMÁTICA 2D COMPACTA / RECOLHÍVEL (X e Z) */}
+              <div className="rounded-xl border border-slate-100 bg-slate-50/70 overflow-hidden">
+                <button
+                  type="button"
+                  onClick={() => setSchematicOpen((s) => !s)}
+                  className="flex w-full items-center justify-between px-2.5 py-1 text-[8.5px] font-bold uppercase tracking-wider text-slate-500 hover:text-slate-800"
+                >
+                  <span>Esquema Dimensional (X / Z)</span>
+                  <ChevronDown className={cn("size-3 transition-transform", schematicOpen && "rotate-180")} />
+                </button>
+                {schematicOpen && (
+                  <div className="flex items-center justify-center px-2 pb-1.5">
+                    {modelType === "boilermaking_transition" ? (
+                      <svg viewBox="0 0 120 64" className="w-full h-14">
+                        <line x1="16" y1="10" x2="16" y2="48" stroke="#94a3b8" strokeWidth="0.75" />
+                        <text x="10" y="32" fontSize="6" fill="#475569" fontWeight="bold" textAnchor="end">Z</text>
+                        <polygon points="42,12 78,12 96,48 24,48" fill="#fee2e2" stroke="#dc2626" strokeWidth="0.8" />
+                        <ellipse cx="60" cy="12" rx="18" ry="3.5" fill="#fecaca" stroke="#dc2626" strokeWidth="0.75" />
+                        <line x1="24" y1="56" x2="96" y2="56" stroke="#94a3b8" strokeWidth="0.75" />
+                        <text x="60" y="62" fontSize="6" fill="#475569" fontWeight="bold" textAnchor="middle">X</text>
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 120 64" className="w-full h-14">
+                        <line x1="16" y1="8" x2="16" y2="48" stroke="#94a3b8" strokeWidth="0.75" />
+                        <line x1="12" y1="8" x2="20" y2="8" stroke="#94a3b8" strokeWidth="0.75" />
+                        <line x1="12" y1="48" x2="20" y2="48" stroke="#94a3b8" strokeWidth="0.75" />
+                        <text x="10" y="30" fontSize="6" fill="#475569" fontWeight="bold" textAnchor="end">Z</text>
+                        <polygon points="62,8 30,48 94,48" fill="#fee2e2" stroke="#dc2626" strokeWidth="0.8" />
+                        <ellipse cx="62" cy="48" rx="32" ry="5" fill="#fecaca" stroke="#dc2626" strokeWidth="0.8" />
+                        <path d="M 30 48 A 32 5 0 0 1 94 48" fill="none" stroke="#dc2626" strokeWidth="0.75" strokeDasharray="2,2" />
+                        <line x1="30" y1="56" x2="94" y2="56" stroke="#94a3b8" strokeWidth="0.75" />
+                        <text x="62" y="62" fontSize="6" fill="#475569" fontWeight="bold" textAnchor="middle">X</text>
+                      </svg>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* OPÇÕES E MATERIAL */}
-              <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-slate-100">
+              <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
                 <div className="flex flex-col gap-1">
                   <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
                     OPÇÕES
@@ -1393,7 +1681,6 @@ export function CadBRepViewer({
                   </label>
                 </div>
 
-                {/* MATERIAL */}
                 <div className="flex flex-col gap-1">
                   <span className="text-[8px] font-bold text-slate-500 uppercase tracking-wider">
                     MATERIAL
@@ -1413,10 +1700,15 @@ export function CadBRepViewer({
               {/* BOTÃO PRINCIPAL APLICAR (VERMELHO SÓLIDO CALDRA — 34px) */}
               <button
                 type="button"
-                onClick={applyParametersAndRebuild}
-                className="mt-0.5 flex h-[34px] w-full items-center justify-center gap-1.5 rounded-xl bg-[#dc2626] font-mono text-[10.5px] font-bold tracking-wider text-white shadow-xs hover:bg-[#b91c1c] active:scale-[0.99] transition-all uppercase"
+                onClick={async () => {
+                  await applyParametersAndRebuild();
+                  if (typeof window !== "undefined" && window.innerWidth < 768) {
+                    setRightPanelOpen(false);
+                  }
+                }}
+                className="mt-0.5 flex h-[34px] w-full items-center justify-center gap-1.5 rounded-xl bg-[#dc2626] font-mono text-[10.5px] font-bold tracking-wider text-white shadow-xs hover:bg-[#b91c1c] active:scale-[0.99] transition-all uppercase cursor-pointer"
               >
-                <Settings className="size-3.5" /> APLICAR
+                <Settings className="size-3.5 shrink-0" /> APLICAR
               </button>
             </div>
           )}
@@ -1436,7 +1728,30 @@ export function CadBRepViewer({
                 <div>Volume: <strong className="text-slate-900">{massProps ? massProps.volume.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) : "30.000"} mm³</strong></div>
                 <div>Massa Est.: <strong className="text-red-600">{massProps ? massProps.mass.toFixed(3) : "9.030"} kg</strong></div>
                 <div>Área Total: <strong className="text-slate-900">{massProps ? massProps.surfaceArea.toLocaleString("pt-BR", { maximumFractionDigits: 0 }) : "21.200"} mm²</strong></div>
-                <div>Topologia: <strong className="text-slate-900">{tessData?.faces.length ?? 3} faces, {tessData?.edges.length ?? 6} arestas</strong></div>
+                <div>
+                  Topologia:{" "}
+                  <strong className="text-slate-900">
+                    {tessData?.mesh?.faceGroups?.length ??
+                      (Array.isArray((tessData as unknown as { faces?: unknown[] })?.faces)
+                        ? (tessData as unknown as { faces: unknown[] }).faces.length
+                        : 3)}{" "}
+                    faces,{" "}
+                    {tessData?.edges?.totalEdges ??
+                      tessData?.edges?.edges?.length ??
+                      (Array.isArray(tessData?.edges) ? (tessData.edges as unknown[]).length : 6)}{" "}
+                    arestas
+                  </strong>
+                </div>
+                {measurement && (
+                  <div className="mt-1 rounded-lg border border-red-200 bg-red-50/70 p-1.5 text-[9px] text-slate-800">
+                    <div className="font-bold text-red-600">
+                      Distância: {measurement.distance.toFixed(2)} mm
+                    </div>
+                    <div className="text-[8.5px] text-slate-600">
+                      ΔX {measurement.deltaX.toFixed(1)} · ΔY {measurement.deltaY.toFixed(1)} · ΔZ {measurement.deltaZ.toFixed(1)} mm
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1468,10 +1783,10 @@ export function CadBRepViewer({
               {selectedEntity ? (
                 <div className="mt-0.5 rounded-lg border border-slate-200 bg-slate-50 p-1.5 text-[9px]">
                   <div className="font-bold text-slate-800">
-                    {selectedEntity.type.toUpperCase()} #{selectedEntity.index}
+                    {(selectedEntity.type || "face").toUpperCase()} #{selectedEntity.index ?? 0}
                   </div>
                   <div className="text-slate-500">
-                    Posição: ({selectedEntity.point?.x.toFixed(1)}, {selectedEntity.point?.y.toFixed(1)}, {selectedEntity.point?.z.toFixed(1)})
+                    Posição: ({selectedEntity.point?.x?.toFixed(1) ?? "0.0"}, {selectedEntity.point?.y?.toFixed(1) ?? "0.0"}, {selectedEntity.point?.z?.toFixed(1) ?? "0.0"})
                   </div>
                 </div>
               ) : (
@@ -1481,54 +1796,65 @@ export function CadBRepViewer({
               )}
             </div>
           )}
-        </div>
+        </aside>
       )}
 
       {/* ========================================================================= */}
-      {/* 5. AÇÕES PRINCIPAIS (APARECEM NO CHÃO DO VIEWPORT — 36px)                 */}
+      {/* REGIÃO 5.1 — BARRA INFERIOR DE AÇÕES DE FABRICAÇÃO (40px, LINHA ÚNICA)   */}
       {/* ========================================================================= */}
-      <div className="absolute bottom-2.5 left-1/2 -translate-x-1/2 z-20 flex items-center gap-1 rounded-full border border-slate-200/90 bg-white p-0.5 shadow-lg backdrop-blur-xs pointer-events-auto">
-        {/* PLANIFICAR */}
+      <div
+        style={{ bottom: "10px", height: "40px" }}
+        className="absolute left-1/2 -translate-x-1/2 z-20 flex max-w-[calc(100%-24px)] items-center gap-1.5 overflow-x-auto scrollbar-none rounded-full border border-slate-200/95 bg-white/96 px-1.5 shadow-lg backdrop-blur-md pointer-events-auto"
+      >
+        {/* PLANIFICAR (Ação Primária de Destaque) */}
         <button
           type="button"
           onClick={() => {
             AudioManager.play("planify_sequence");
             setFlatPatternDialogOpen(true);
           }}
-          className="flex h-[36px] items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-3.5 font-mono text-[10px] font-bold text-red-600 shadow-2xs hover:bg-red-100 transition-colors uppercase"
+          style={{ whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "6px" }}
+          className="h-[32px] shrink-0 rounded-full border border-red-200 bg-red-50 px-3.5 font-mono text-[10px] font-bold text-red-600 shadow-2xs hover:bg-red-100 transition-colors uppercase cursor-pointer"
           title="Planificar sólido 3D"
         >
-          <Compass className="size-3.5 text-red-600" /> PLANIFICAR
+          <Compass className="size-3.5 text-red-600 shrink-0" />
+          <span>PLANIFICAR</span>
         </button>
 
         {/* PRANCHA 2D */}
         <button
           type="button"
           onClick={() => setDraftingDialogOpen(true)}
-          className="flex h-[36px] items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+          style={{ whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "6px" }}
+          className="h-[32px] shrink-0 rounded-full border border-slate-200 bg-white px-3.5 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase cursor-pointer"
           title="Desenho técnico 2D ABNT com vistas ortográficas e carimbo"
         >
-          <FileText className="size-3.5 text-slate-600" /> PRANCHA 2D
+          <FileText className="size-3.5 text-slate-600 shrink-0" />
+          <span>PRANCHA 2D</span>
         </button>
 
         {/* ESTRUTURAS */}
         <button
           type="button"
           onClick={() => setWeldmentDialogOpen(true)}
-          className="flex h-[36px] items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+          style={{ whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "6px" }}
+          className="h-[32px] shrink-0 rounded-full border border-slate-200 bg-white px-3.5 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase cursor-pointer"
           title="Estruturas metálicas, perfis industriais e lista de corte"
         >
-          <Boxes className="size-3.5 text-slate-600" /> ESTRUTURAS
+          <Boxes className="size-3.5 text-slate-600 shrink-0" />
+          <span>ESTRUTURAS</span>
         </button>
 
         {/* CNC / DXF */}
         <button
           type="button"
           onClick={() => setFlatPatternDialogOpen(true)}
-          className="flex h-[36px] items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3.5 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase"
+          style={{ whiteSpace: "nowrap", display: "inline-flex", alignItems: "center", gap: "6px" }}
+          className="h-[32px] shrink-0 rounded-full border border-slate-200 bg-white px-3.5 font-mono text-[10px] font-bold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors uppercase cursor-pointer"
           title="Exportar código G CNC e DXF para máquinas de corte"
         >
-          <Crosshair className="size-3.5 text-slate-600" /> CNC / DXF
+          <Crosshair className="size-3.5 text-slate-600 shrink-0" />
+          <span>CNC / DXF</span>
         </button>
       </div>
 

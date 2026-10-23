@@ -111,6 +111,7 @@ export function Cad3DStage({
   cadDoc: externalDoc,
   onCadDocChange: externalDocChange,
   embedded = true,
+  initialCadPanelOpen = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -124,6 +125,7 @@ export function Cad3DStage({
   cadDoc?: PartDocument;
   onCadDocChange?: (doc: PartDocument) => void;
   embedded?: boolean;
+  initialCadPanelOpen?: boolean;
 }) {
   const ctx = useProjectContext(labProjectId);
 
@@ -376,45 +378,12 @@ export function Cad3DStage({
               initialLength={cadDoc.baseLength || 200}
               activeViewPreset={viewPreset}
               onViewPresetChange={setViewPreset}
+              documentTitle={title}
+              onThicknessChange={onThickness}
+              onUpdate3DParam={handleUpdate3DParam}
+              initialInspectorOpen={initialCadPanelOpen}
             />
           </Stage3DErrorBoundary>
-
-          {/* Botão de alternância do Editor 3D Contextual (Regra 14) */}
-          <div className="absolute top-3 right-3 z-30 flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setEditor3DOpen((prev) => !prev)}
-              aria-label="Alternar parâmetros 3D"
-              className={cn(
-                "flex h-8 items-center gap-1.5 rounded-xl border px-3 font-mono text-[11px] font-bold shadow-lg backdrop-blur-md transition-all cursor-pointer",
-                editor3DOpen
-                  ? "border-red-500 bg-red-600 text-white shadow-red-900/40"
-                  : "border-slate-700 bg-slate-900/90 text-slate-200 hover:bg-slate-800"
-              )}
-            >
-              <Sliders className="size-3.5" />
-              <span>Parâmetros 3D</span>
-            </button>
-          </div>
-
-          {/* Editor Contextual 3D Mobile / CAD */}
-          {editor3DOpen && (
-            <div className="absolute top-13 right-3 z-40 max-h-[calc(100%-60px)] overflow-y-auto">
-              <ChamferMobileContextualEditor
-                is3DMode={true}
-                model3D={{
-                  type: resolvedModel.type,
-                  name: resolvedModel.name,
-                  params: liveParams,
-                }}
-                onUpdate3DParam={handleUpdate3DParam}
-                thickness={liveParams.thickness ?? thickness}
-                onUpdateThickness={(th) => handleUpdate3DParam("thickness", th)}
-                onClose={() => setEditor3DOpen(false)}
-                projectName={title}
-              />
-            </div>
-          )}
         </div>
       </div>
     );
