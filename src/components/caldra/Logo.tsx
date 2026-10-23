@@ -8,6 +8,17 @@ import { cn } from "@/lib/utils";
 export const CALDRA_LOGO_SRC =
   "/assets/aistudio/file_000000002214820eb6cb9975b671bfdd_baf1f0b1.png";
 
+// Singleton de pré-carregamento e decodificação em memória de GPU/Bitmap no cliente
+let preloadedLogoImg: HTMLImageElement | null = null;
+if (typeof window !== "undefined" && typeof Image !== "undefined") {
+  preloadedLogoImg = new Image();
+  preloadedLogoImg.decoding = "async";
+  preloadedLogoImg.src = CALDRA_LOGO_SRC;
+  void preloadedLogoImg.decode?.().catch(() => {
+    // Fallback silencioso caso o navegador ainda esteja baixando o asset
+  });
+}
+
 export interface CaldraLogoProps {
   className?: string;
   size?: number | string;
@@ -22,7 +33,7 @@ export interface CaldraLogoProps {
  * preservando a geometria original, os gradientes de azul/ciano/branco, a estrela central de 4 pontas
  * e o fundo azul-marinho escuro (#040914), sem efeitos artificiais, sem mira e sem redesenho em SVG.
  */
-export function CaldraLogo({
+export const CaldraLogo = React.memo(function CaldraLogo({
   className,
   size = 36,
   alt = "CALDRA",
@@ -43,23 +54,24 @@ export function CaldraLogo({
         alt={alt}
         draggable={false}
         decoding="async"
+        fetchPriority="high"
         className="size-full aspect-square object-contain select-none pointer-events-none"
       />
     </div>
   );
-}
+});
 
 /** Marca oficial do CALDRA compatível com o design system existente. */
-export function CaldraMark({ className }: { className?: string }) {
+export const CaldraMark = React.memo(function CaldraMark({ className }: { className?: string }) {
   return <CaldraLogo className={cn("rounded-xl", className)} size="100%" />;
-}
+});
 
 /** Alias de compatibilidade com módulos chameleon. */
-export function ChameleonMark({ className }: { className?: string }) {
+export const ChameleonMark = React.memo(function ChameleonMark({ className }: { className?: string }) {
   return <CaldraLogo className={cn("rounded-xl", className)} size="100%" />;
-}
+});
 
-export function Wordmark({ compact = false }: { compact?: boolean }) {
+export const Wordmark = React.memo(function Wordmark({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-2.5 min-w-0 leading-tight">
       <CaldraLogo size={compact ? 24 : 32} className="rounded-lg" />
@@ -75,4 +87,5 @@ export function Wordmark({ compact = false }: { compact?: boolean }) {
       </div>
     </div>
   );
-}
+});
+

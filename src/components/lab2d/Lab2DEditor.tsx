@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { triggerHaptic } from "@/lib/ui/haptics";
@@ -75,12 +75,20 @@ import {
 import { Button } from "@/components/ui/button";
 
 import type { Vec2 } from "@/lib/geometry/types";
-import { ExportDialog } from "@/components/lab2d/ExportDialog";
 import { RotateGate } from "@/components/lab2d/RotateGate";
 import { useDeclareImmersive, useImmersiveLandscape } from "@/lib/ui/immersive";
-import { ImportDialog } from "@/components/lab2d/ImportDialog";
-import { VisionDialog, type VisionImageLayer } from "@/components/lab2d/VisionDialog";
+import type { VisionImageLayer } from "@/components/lab2d/VisionDialog";
 import { TextDialog, type TextSpec } from "@/components/lab2d/TextDialog";
+
+const ExportDialog = lazy(() =>
+  import("@/components/lab2d/ExportDialog").then((m) => ({ default: m.ExportDialog })),
+);
+const ImportDialog = lazy(() =>
+  import("@/components/lab2d/ImportDialog").then((m) => ({ default: m.ImportDialog })),
+);
+const VisionDialog = lazy(() =>
+  import("@/components/lab2d/VisionDialog").then((m) => ({ default: m.VisionDialog })),
+);
 import {
   DEFAULT_LAYERS,
   bbox,
@@ -167,9 +175,6 @@ import {
 } from "@/lib/lab2d/workspace";
 import { buildIndex } from "@/lib/lab2d/spatialIndex";
 import { drawScene } from "@/lib/lab2d/canvasScene";
-import { stressEntities } from "@/lib/lab2d/stress";
-import { CutPanel } from "@/components/lab2d/CutPanel";
-import { MultiSelectPanel } from "@/components/lab2d/MultiSelectPanel";
 import { drawFlow, drawSim } from "@/lib/lab2d/flow";
 import { buildSimPath, sampleSim, SIM_LABEL } from "@/lib/lab2d/simulation";
 import { createGroup, dissolveGroup, expandSelection, pruneGroups, type GroupDef } from "@/lib/lab2d/groups";
@@ -187,12 +192,8 @@ import {
 
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { cn } from "@/lib/utils";
-import {
-  ChamferLandscapeToolbar,
-  type RibbonTab,
-} from "@/components/lab2d/ChamferLandscapeToolbar";
+import { type RibbonTab } from "@/components/lab2d/ChamferLandscapeToolbar";
 import { ChamferCadToolbar } from "@/components/lab2d/ChamferCadToolbar";
-import { Cad3DStage } from "@/components/lab2d/Cad3DStage";
 import { ChamferMobileContextualEditor } from "@/components/lab2d/mobileEdit/ChamferMobileContextualEditor";
 import { ChamferCompactNumericEditor } from "@/components/lab2d/mobileEdit/ChamferCompactNumericEditor";
 import { ChamferRightSidebar, type ChamferSidebarTab } from "@/components/lab2d/sidebar";
@@ -202,9 +203,18 @@ import {
   ChamferSmartTrimSvgOverlay,
   ChamferSmartTrimControlBar,
 } from "./ChamferSmartTrimOverlay";
-import { ChamferCenterDialog } from "./ChamferCenterDialog";
-import { ChamferScaleDialog, type ScaleBasePointType } from "./ChamferScaleDialog";
+import { type ScaleBasePointType } from "./ChamferScaleDialog";
 import { ChamferFilletChamferHUD } from "./ChamferFilletChamferHUD";
+
+const Cad3DStage = lazy(() =>
+  import("@/components/lab2d/Cad3DStage").then((m) => ({ default: m.Cad3DStage })),
+);
+const ChamferCenterDialog = lazy(() =>
+  import("./ChamferCenterDialog").then((m) => ({ default: m.ChamferCenterDialog })),
+);
+const ChamferScaleDialog = lazy(() =>
+  import("./ChamferScaleDialog").then((m) => ({ default: m.ChamferScaleDialog })),
+);
 import {
   findCornerAtPoint,
   findAllCornersInEntities,
@@ -248,25 +258,19 @@ import {
   getEntityCenter,
 } from "@/lib/lab2d/cadModifiers";
 import { AudioManager } from "@/lib/audio/AudioManager";
-import {
-  ChamferQuickCommandModal,
-  type QuickCommandItem,
-} from "./ChamferQuickCommandModal";
-import { ChamferSemanticPalette } from "./ChamferSemanticPalette";
+import type { QuickCommandItem } from "./ChamferQuickCommandModal";
 import {
   ChamferTransactionManager,
   ChamferIntentInterpreter,
   type ChamferIntentPlan,
   type ParametricSessionContext,
 } from "@/lib/intent";
-import { ChamferClipboardModal } from "./ChamferClipboardModal";
 import {
   copyToGlobalClipboard,
   loadGlobalClipboard,
   instantiateClipboardItemAt,
   type GlobalClipboardItem,
 } from "@/lib/lab2d/globalClipboard";
-import { ChamferFabricationPassportModal } from "./ChamferFabricationPassportModal";
 import { ChamferDirectDimensionEditor } from "./ChamferDirectDimensionEditor";
 import { ChamferPrecisionLoupeOverlay } from "./ChamferPrecisionLoupeOverlay";
 import {
@@ -289,11 +293,6 @@ import {
   type LoupeHudMode,
 } from "@/lib/lab2d/cadInteractionHub";
 import { ChamferDualToolHUD } from "./ChamferDualToolHUD";
-import { ChamferTopologyHealthModal } from "./ChamferTopologyHealthModal";
-import { ChamferVariablesModal } from "./ChamferVariablesModal";
-import { ChamferPresetsModal } from "./ChamferPresetsModal";
-import { ChamferTechnicalSheetModal } from "./ChamferTechnicalSheetModal";
-import { CaldraIntegratedWorkshopModal } from "./CaldraIntegratedWorkshopModal";
 import { GeometricReferenceEngine, type EdgeReference } from "@/lib/lab2d/cadGeometricReferences";
 import { CoordinateFrameManager, type TemporaryOrigin } from "@/lib/lab2d/cadCoordinateFrames";
 import { DynamicDimensionInteraction, DimensionInteractionEngine, type LiveDimension } from "@/lib/lab2d/cadDynamicDimensions";
@@ -313,7 +312,38 @@ import {
   ISO_SQRT_0_5,
 } from "@/lib/lab2d/isometricEngine";
 import { ChamferIsoPlaneHUD } from "./ChamferIsoPlaneHUD";
-import { ChamferIsoConvertModal } from "./ChamferIsoConvertModal";
+
+const loadChamferSemanticPalette = () =>
+  import("./ChamferSemanticPalette").then((m) => ({ default: m.ChamferSemanticPalette }));
+const ChamferSemanticPalette = lazy(loadChamferSemanticPalette);
+const ChamferClipboardModal = lazy(() =>
+  import("./ChamferClipboardModal").then((m) => ({ default: m.ChamferClipboardModal })),
+);
+const ChamferFabricationPassportModal = lazy(() =>
+  import("./ChamferFabricationPassportModal").then((m) => ({
+    default: m.ChamferFabricationPassportModal,
+  })),
+);
+const ChamferTopologyHealthModal = lazy(() =>
+  import("./ChamferTopologyHealthModal").then((m) => ({ default: m.ChamferTopologyHealthModal })),
+);
+const ChamferVariablesModal = lazy(() =>
+  import("./ChamferVariablesModal").then((m) => ({ default: m.ChamferVariablesModal })),
+);
+const ChamferPresetsModal = lazy(() =>
+  import("./ChamferPresetsModal").then((m) => ({ default: m.ChamferPresetsModal })),
+);
+const ChamferTechnicalSheetModal = lazy(() =>
+  import("./ChamferTechnicalSheetModal").then((m) => ({ default: m.ChamferTechnicalSheetModal })),
+);
+const CaldraIntegratedWorkshopModal = lazy(() =>
+  import("./CaldraIntegratedWorkshopModal").then((m) => ({
+    default: m.CaldraIntegratedWorkshopModal,
+  })),
+);
+const ChamferIsoConvertModal = lazy(() =>
+  import("./ChamferIsoConvertModal").then((m) => ({ default: m.ChamferIsoConvertModal })),
+);
 import { DUAL_TOOL_PRESETS } from "@/lib/lab2d/cadDualToolManager";
 import {
   evaluateGeometricIntent,
@@ -4832,6 +4862,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     return getOperationFeedback(tool, pending.length, selected.length);
   }, [tool, pending.length, selected.length]);
 
+  // Pré-aquece o chunk do CHAMFER INTENT em background após o canvas 2D estar interativo
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadChamferSemanticPalette();
+    }, 180);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  // Memoiza a geometria calculada das cotas associativas e automáticas (evita recálculo a 60Hz no pointermove)
+  const drawnDims = useMemo(
+    () => dims.map((d) => ({ d, draw: dimensionDraw(d, entities) })),
+    [dims, entities],
+  );
+
+  const autoDimsList = useMemo(
+    () => (showDims ? autoDimensions(drawable) : []),
+    [showDims, drawable],
+  );
+
   return (
     <div
       ref={wrapRef}
@@ -5565,21 +5614,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         >
           {solidOpen ? (
             <div className="relative size-full">
-              <Cad3DStage
-                open={true}
-                onClose={() => {
-                  setActiveMode("2d");
-                  setSolidOpen(false);
-                }}
-                entities={drawable}
-                thickness={thickness}
-                onThickness={setThickness}
-                title={project?.name ?? "Peça Chamfer"}
-                labProjectId={projectId}
-                selection={selection}
-                onSelectEntity={(id) => setSelection(id ? [id] : [])}
-                initialCadPanelOpen={activeMode === "flanges"}
-              />
+              <Suspense fallback={null}>
+                <Cad3DStage
+                  open={true}
+                  onClose={() => {
+                    setActiveMode("2d");
+                    setSolidOpen(false);
+                  }}
+                  entities={drawable}
+                  thickness={thickness}
+                  onThickness={setThickness}
+                  title={project?.name ?? "Peça Chamfer"}
+                  labProjectId={projectId}
+                  selection={selection}
+                  onSelectEntity={(id) => setSelection(id ? [id] : [])}
+                  initialCadPanelOpen={activeMode === "flanges"}
+                />
+              </Suspense>
             </div>
           ) : (
             <>
@@ -6336,8 +6387,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               })()}
 
               {/* COTAS ASSOCIATIVAS — âmbar técnico, sempre medidas na geometria */}
-              {dims.map((d) => {
-                const draw = dimensionDraw(d, entities);
+              {drawnDims.map(({ d, draw }) => {
                 const on = dimSel === d.id;
                 const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
                 return (
@@ -6462,7 +6512,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
               {/* cotas automáticas de apoio */}
               {showDims &&
-                autoDimensions(drawable).map((d, i) => {
+                autoDimsList.map((d, i) => {
                   if (
                     !d ||
                     !d.a ||
@@ -7582,30 +7632,34 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       )}
 
       {/* PONTO ÚNICO DE EXPORTAÇÃO: DXF (três perfis), SVG, PNG e PDF. */}
-      <ExportDialog
-        open={exportOpen || cncOpen}
-        onOpenChange={(v) => {
-          if (!v) {
-            setExportOpen(false);
-            setCncOpen(false);
-          }
-        }}
-        layers={layers}
-        projectName={project?.name ?? "CALDRA"}
-        planName={project?.plans.find((p) => p.id === planId)?.name ?? "P01"}
-        thickness={thickness}
-        scopes={{
-          selection: selected,
-          /* as cotas entram como entidades DIMENSION: o perfil LASER as descarta */
-          plan: [...drawable, ...dimensionEntities(dims, entities)],
-          project: project
-            ? [
-                ...project.plans.flatMap((p) => (p.id === planId ? drawable : p.entities)),
-                ...dimensionEntities(dims, entities),
-              ]
-            : drawable,
-        }}
-      />
+      {(exportOpen || cncOpen) && (
+        <Suspense fallback={null}>
+          <ExportDialog
+            open={exportOpen || cncOpen}
+            onOpenChange={(v) => {
+              if (!v) {
+                setExportOpen(false);
+                setCncOpen(false);
+              }
+            }}
+            layers={layers}
+            projectName={project?.name ?? "CALDRA"}
+            planName={project?.plans.find((p) => p.id === planId)?.name ?? "P01"}
+            thickness={thickness}
+            scopes={{
+              selection: selected,
+              /* as cotas entram como entidades DIMENSION: o perfil LASER as descarta */
+              plan: [...drawable, ...dimensionEntities(dims, entities)],
+              project: project
+                ? [
+                    ...project.plans.flatMap((p) => (p.id === planId ? drawable : p.entities)),
+                    ...dimensionEntities(dims, entities),
+                  ]
+                : drawable,
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* FERRAMENTA DIVIDIR: EDITOR COMPACTO EM N PARTES IGUAIS */}
       <ChamferDivideEditor
@@ -7672,27 +7726,35 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       )}
 
       {/* FERRAMENTA CENTRALIZAR FORMAS */}
-      <ChamferCenterDialog
-        open={centerDialogOpen}
-        selectedEntities={entities.filter((e) => e && selection.includes(e.id))}
-        allEntities={entities}
-        options={centerOptions}
-        onOptionsChange={setCenterOptions}
-        onConfirm={handleConfirmCenter}
-        onCancel={handleCancelCenter}
-        isDark={isDark}
-        view={view}
-      />
+      {centerDialogOpen && (
+        <Suspense fallback={null}>
+          <ChamferCenterDialog
+            open={centerDialogOpen}
+            selectedEntities={selected}
+            allEntities={entities}
+            options={centerOptions}
+            onOptionsChange={setCenterOptions}
+            onConfirm={handleConfirmCenter}
+            onCancel={handleCancelCenter}
+            isDark={isDark}
+            view={view}
+          />
+        </Suspense>
+      )}
 
       {/* FERRAMENTA ESCALAR SELEÇÃO */}
-      <ChamferScaleDialog
-        open={scaleDialogOpen}
-        selectedEntities={entities.filter((e) => e && selection.includes(e.id))}
-        onConfirm={handleConfirmScale}
-        onCancel={() => setScaleDialogOpen(false)}
-        isDark={isDark}
-        view={view}
-      />
+      {scaleDialogOpen && (
+        <Suspense fallback={null}>
+          <ChamferScaleDialog
+            open={scaleDialogOpen}
+            selectedEntities={selected}
+            onConfirm={handleConfirmScale}
+            onCancel={() => setScaleDialogOpen(false)}
+            isDark={isDark}
+            view={view}
+          />
+        </Suspense>
+      )}
 
       {/* CONTROLE FLUTUANTE DE FILETE E CHANFRO */}
       {(tool === "fillet" || tool === "chamfer") && (
@@ -7793,12 +7855,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </div>
       )}
 
-      <ImportDialog
-        open={importOpen}
-        layers={layers}
-        onClose={() => setImportOpen(false)}
-        onConfirm={onImportConfirm}
-      />
+      {importOpen && (
+        <Suspense fallback={null}>
+          <ImportDialog
+            open={importOpen}
+            layers={layers}
+            onClose={() => setImportOpen(false)}
+            onConfirm={onImportConfirm}
+          />
+        </Suspense>
+      )}
       <TextDialog
         open={textOpen}
         {...(editingTextId && textSpec ? { initial: textSpec } : {})}
@@ -7833,14 +7899,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           toast.info("Toque no desenho para posicionar o texto.");
         }}
       />
-      <VisionDialog
-        open={visionOpen}
-        onOpenChange={setVisionOpen}
-        onCreate={(next, image) => {
-          setImageLayer(image);
-          onImportConfirm(next);
-        }}
-      />
+      {visionOpen && (
+        <Suspense fallback={null}>
+          <VisionDialog
+            open={visionOpen}
+            onOpenChange={setVisionOpen}
+            onCreate={(next, image) => {
+              setImageLayer(image);
+              onImportConfirm(next);
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* DIALOG: NOVO PROJETO CHAMFER A PARTIR DO EDITOR */}
       <Dialog open={newProjectDialogOpen} onOpenChange={setNewProjectDialogOpen}>
@@ -7880,91 +7950,111 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </DialogContent>
       </Dialog>
       {/* COMANDOS E MODAIS AVANÇADOS DO CAD COM IA & SEMÂNTICA (CHAMFER INTENT) */}
-      <ChamferSemanticPalette
-        open={quickCommandOpen}
-        onClose={() => {
-          setQuickCommandOpen(false);
-          setIntentPreviewPlan(null);
-        }}
-        commands={quickCommands}
-        existingEntities={entities}
-        selectedEntityIds={selection}
-        activeLayer={activeLayer}
-        sessionContext={intentSession}
-        onPreviewIntentPlanChange={setIntentPreviewPlan}
-        onExecuteIntentPlan={(plan) => {
-          const tx = intentTxManagerRef.current;
-          tx.setSession(intentSession);
-          const res = tx.commitPlan(plan, {
-            commitEntities: commit,
-            setDimensions: setDims,
-            setSelection,
-            fitViewport: (vp) =>
-              fitBox({
-                minX: vp.x,
-                minY: vp.y,
-                maxX: vp.x + vp.width,
-                maxY: vp.y + vp.height,
-              }),
-            triggerUndo: undo,
-            triggerExport: () => setExportOpen(true),
-          });
-          setIntentSession(res.updatedSession);
-          setIntentPreviewPlan(null);
-          if (res.committed) {
-            toast.success(plan.response_summary);
-          }
-        }}
-        onExecutePlan={(plan) => {
-          commit((prev) => [...prev, ...plan.generatedEntities]);
-          if (plan.generatedDimensions && plan.generatedDimensions.length > 0) {
-            setDims((prev) => [...prev, ...plan.generatedDimensions!]);
-          }
-          setSelection(plan.generatedEntities.map((e) => e.id));
-          toast.success(`${plan.title} executado e inserido no modelo.`);
-        }}
-      />
+      {quickCommandOpen && (
+        <Suspense fallback={null}>
+          <ChamferSemanticPalette
+            open={quickCommandOpen}
+            onClose={() => {
+              setQuickCommandOpen(false);
+              setIntentPreviewPlan(null);
+            }}
+            commands={quickCommands}
+            existingEntities={entities}
+            selectedEntityIds={selection}
+            activeLayer={activeLayer}
+            sessionContext={intentSession}
+            onPreviewIntentPlanChange={setIntentPreviewPlan}
+            onExecuteIntentPlan={(plan) => {
+              const tx = intentTxManagerRef.current;
+              tx.setSession(intentSession);
+              const res = tx.commitPlan(plan, {
+                commitEntities: commit,
+                setDimensions: setDims,
+                setSelection,
+                fitViewport: (vp) =>
+                  fitBox({
+                    minX: vp.x,
+                    minY: vp.y,
+                    maxX: vp.x + vp.width,
+                    maxY: vp.y + vp.height,
+                  }),
+                triggerUndo: undo,
+                triggerExport: () => setExportOpen(true),
+              });
+              setIntentSession(res.updatedSession);
+              setIntentPreviewPlan(null);
+              if (res.committed) {
+                toast.success(plan.response_summary);
+              }
+            }}
+            onExecutePlan={(plan) => {
+              commit((prev) => [...prev, ...plan.generatedEntities]);
+              if (plan.generatedDimensions && plan.generatedDimensions.length > 0) {
+                setDims((prev) => [...prev, ...plan.generatedDimensions!]);
+              }
+              setSelection(plan.generatedEntities.map((e) => e.id));
+              toast.success(`${plan.title} executado e inserido no modelo.`);
+            }}
+          />
+        </Suspense>
+      )}
 
-      <ChamferTopologyHealthModal
-        open={topologyHealthOpen}
-        onClose={() => setTopologyHealthOpen(false)}
-        entities={entities}
-        onApplyHeal={(healed) => {
-          commit(healed);
-          setTopologyHealthOpen(false);
-          toast.success("Correção topológica aplicada com sucesso!");
-        }}
-      />
+      {topologyHealthOpen && (
+        <Suspense fallback={null}>
+          <ChamferTopologyHealthModal
+            open={topologyHealthOpen}
+            onClose={() => setTopologyHealthOpen(false)}
+            entities={entities}
+            onApplyHeal={(healed) => {
+              commit(healed);
+              setTopologyHealthOpen(false);
+              toast.success("Correção topológica aplicada com sucesso!");
+            }}
+          />
+        </Suspense>
+      )}
 
-      <ChamferPresetsModal
-        open={presetsModalOpen}
-        onClose={() => setPresetsModalOpen(false)}
-        insertPosition={{ x: 0, y: 0 }}
-        onInsertEntities={(newEntities) => {
-          commit((prev) => [...prev, ...newEntities]);
-          setSelection(newEntities.map((e) => e.id));
-          toast.success(`${newEntities.length} entidade(s) inserida(s) no projeto.`);
-        }}
-        isDark={isDark}
-      />
+      {presetsModalOpen && (
+        <Suspense fallback={null}>
+          <ChamferPresetsModal
+            open={presetsModalOpen}
+            onClose={() => setPresetsModalOpen(false)}
+            insertPosition={{ x: 0, y: 0 }}
+            onInsertEntities={(newEntities) => {
+              commit((prev) => [...prev, ...newEntities]);
+              setSelection(newEntities.map((e) => e.id));
+              toast.success(`${newEntities.length} entidade(s) inserida(s) no projeto.`);
+            }}
+            isDark={isDark}
+          />
+        </Suspense>
+      )}
 
-      <ChamferTechnicalSheetModal
-        open={technicalSheetModalOpen}
-        onClose={() => setTechnicalSheetModalOpen(false)}
-        suggestedOrigin={{ x: 0, y: 0 }}
-        onInsertSheet={(sheetEntities) => {
-          commit((prev) => [...prev, ...sheetEntities]);
-          toast.success("Folha técnica e legenda inseridas.");
-        }}
-      />
+      {technicalSheetModalOpen && (
+        <Suspense fallback={null}>
+          <ChamferTechnicalSheetModal
+            open={technicalSheetModalOpen}
+            onClose={() => setTechnicalSheetModalOpen(false)}
+            suggestedOrigin={{ x: 0, y: 0 }}
+            onInsertSheet={(sheetEntities) => {
+              commit((prev) => [...prev, ...sheetEntities]);
+              toast.success("Folha técnica e legenda inseridas.");
+            }}
+          />
+        </Suspense>
+      )}
 
-      <ChamferVariablesModal
-        open={variablesModalOpen}
-        onClose={() => setVariablesModalOpen(false)}
-        onVariablesChange={() => {
-          toast.info("Tabela de variáveis atualizada.");
-        }}
-      />
+      {variablesModalOpen && (
+        <Suspense fallback={null}>
+          <ChamferVariablesModal
+            open={variablesModalOpen}
+            onClose={() => setVariablesModalOpen(false)}
+            onVariablesChange={() => {
+              toast.info("Tabela de variáveis atualizada.");
+            }}
+          />
+        </Suspense>
+      )}
 
       {/* DUAL TOOL HUD */}
       {dualToolSecondary && (
@@ -8043,13 +8133,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       />
 
       {/* ÁREA DE TRANSFERÊNCIA GLOBAL DO CAD (SEÇÃO 17) */}
-      <ChamferClipboardModal
-        open={clipboardModalOpen}
-        onClose={() => setClipboardModalOpen(false)}
-        anchorWorldPos={clipboardAnchorWorld}
-        onPasteItem={handlePasteClipboardItem}
-        isDark={isDark}
-      />
+      {clipboardModalOpen && (
+        <Suspense fallback={null}>
+          <ChamferClipboardModal
+            open={clipboardModalOpen}
+            onClose={() => setClipboardModalOpen(false)}
+            anchorWorldPos={clipboardAnchorWorld}
+            onPasteItem={handlePasteClipboardItem}
+            isDark={isDark}
+          />
+        </Suspense>
+      )}
 
       {/* HUD DE CONTROLE DE PLANO ISOMÉTRICO (ETAPA DESENHO ISOMÉTRICO 2D DO CHAMFER) */}
       {drawingProjection === "isometric" && activeMode === "2d" && !solidOpen && (
@@ -8073,30 +8167,34 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       )}
 
       {/* MODAL UNIVERSAL DE PROJEÇÃO E CONVERSÃO ISOMÉTRICA (ZERO TEMPLATES) */}
-      <ChamferIsoConvertModal
-        open={isoPieceBuilderOpen}
-        onClose={() => {
-          setIsoPieceBuilderOpen(false);
-          setIsoPreview(null);
-        }}
-        selectedEntities={selected}
-        allEntities={entities}
-        dims={dims}
-        activeSheetThickness={thickness}
-        onConfirm={({ updatedEntities, updatedDims, newSelectionIds }) => {
-          commit(updatedEntities);
-          setDims(updatedDims);
-          setSelection(newSelectionIds);
-          setIsoPreview(null);
-          if (updatedEntities.some((e) => e.params?.isIso)) {
-            setDrawingProjection("isometric");
-          }
-          fitTo(updatedEntities);
-          toast.success("Seleção convertida para perspectiva isométrica sólida com sucesso!");
-        }}
-        onPreviewChange={setIsoPreview}
-        isDark={isDark}
-      />
+      {isoPieceBuilderOpen && (
+        <Suspense fallback={null}>
+          <ChamferIsoConvertModal
+            open={isoPieceBuilderOpen}
+            onClose={() => {
+              setIsoPieceBuilderOpen(false);
+              setIsoPreview(null);
+            }}
+            selectedEntities={selected}
+            allEntities={entities}
+            dims={dims}
+            activeSheetThickness={thickness}
+            onConfirm={({ updatedEntities, updatedDims, newSelectionIds }) => {
+              commit(updatedEntities);
+              setDims(updatedDims);
+              setSelection(newSelectionIds);
+              setIsoPreview(null);
+              if (updatedEntities.some((e) => e.params?.isIso)) {
+                setDrawingProjection("isometric");
+              }
+              fitTo(updatedEntities);
+              toast.success("Seleção convertida para perspectiva isométrica sólida com sucesso!");
+            }}
+            onPreviewChange={setIsoPreview}
+            isDark={isDark}
+          />
+        </Suspense>
+      )}
 
       {/* EDIÇÃO DIRETA DE COTAS NO CANVAS (SEÇÃO 14) */}
       {directDimEditor && (
@@ -8168,31 +8266,39 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       )}
 
       {/* PASSAPORTE DA PEÇA E PRONTIDÃO DE FABRICAÇÃO (SEÇÕES 34 & 35) */}
-      <ChamferFabricationPassportModal
-        open={fabricationPassportOpen}
-        onClose={() => setFabricationPassportOpen(false)}
-        entities={entities}
-        projectName={project?.name ?? "Projeto Chamfer"}
-        onExportDxf={() => setExportOpen(true)}
-        onExportSvg={() => downloadTracagemSvgFile(entities, project?.name ?? "Projeto Chamfer")}
-      />
+      {fabricationPassportOpen && (
+        <Suspense fallback={null}>
+          <ChamferFabricationPassportModal
+            open={fabricationPassportOpen}
+            onClose={() => setFabricationPassportOpen(false)}
+            entities={entities}
+            projectName={project?.name ?? "Projeto Chamfer"}
+            onExportDxf={() => setExportOpen(true)}
+            onExportSvg={() => downloadTracagemSvgFile(entities, project?.name ?? "Projeto Chamfer")}
+          />
+        </Suspense>
+      )}
 
       {/* ESTÚDIO DA OFICINA DIGITAL INTEGRADA (CATÁLOGO COSTA FERRO + DOSSIÊ MULTI-VISTAS + CORTE 6M + BOM + ORÇAMENTO) */}
-      <CaldraIntegratedWorkshopModal
-        open={integratedWorkshopOpen}
-        onClose={() => setIntegratedWorkshopOpen(false)}
-        canvasEntities={entities}
-        projectName={project?.name ?? "Projeto Chamfer"}
-        onInsertEntitiesToCad={(newEntities, replaceAll) => {
-          if (replaceAll) {
-            commit(newEntities);
-          } else {
-            commit((prev) => [...prev, ...newEntities]);
-          }
-          setSelection(newEntities.map((e) => e.id));
-          fitTo(newEntities);
-        }}
-      />
+      {integratedWorkshopOpen && (
+        <Suspense fallback={null}>
+          <CaldraIntegratedWorkshopModal
+            open={integratedWorkshopOpen}
+            onClose={() => setIntegratedWorkshopOpen(false)}
+            canvasEntities={entities}
+            projectName={project?.name ?? "Projeto Chamfer"}
+            onInsertEntitiesToCad={(newEntities, replaceAll) => {
+              if (replaceAll) {
+                commit(newEntities);
+              } else {
+                commit((prev) => [...prev, ...newEntities]);
+              }
+              setSelection(newEntities.map((e) => e.id));
+              fitTo(newEntities);
+            }}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
@@ -8403,23 +8509,25 @@ function DimensionsPanel({
   );
 }
 
-function IconBtn({
+const IconBtn = React.memo(function IconBtn({
   label,
   onClick,
   icon: Icon,
   flat,
   active,
+  title,
 }: {
   label: string;
   onClick: () => void;
   icon: typeof Minus;
   flat?: boolean;
   active?: boolean;
+  title?: string;
 }) {
   return (
     <button
       onClick={onClick}
-      title={label}
+      title={title ?? label}
       aria-label={label}
       className={cn(
         "grid size-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:text-accent",
@@ -8430,9 +8538,9 @@ function IconBtn({
       <Icon className="size-[15px]" />
     </button>
   );
-}
+});
 
-function ToolBtn({
+const ToolBtn = React.memo(function ToolBtn({
   t,
   active,
   onPick,
@@ -8454,7 +8562,7 @@ function ToolBtn({
       <t.icon className="size-[15px]" />
     </button>
   );
-}
+});
 
 function PanelTab({
   active,
@@ -8478,7 +8586,7 @@ function PanelTab({
   );
 }
 
-function MenuItem({
+const MenuItem = React.memo(function MenuItem({
   label,
   icon: Icon,
   onClick,
@@ -8495,7 +8603,7 @@ function MenuItem({
       <Icon className="size-3.5 shrink-0" /> {label}
     </button>
   );
-}
+});
 
 function buildDraft(
   tool: Tool,
@@ -8579,7 +8687,7 @@ function arcFrom3(a: Vec2, b: Vec2, c: Vec2, layer: string): Entity | null {
  * Desenha a entidade com a linguagem técnica fixa do CALDRA.
  * A seleção adiciona apenas um halo temporário — a cor da camada não muda.
  */
-export function EntityShape({
+export const EntityShape = React.memo(function EntityShape({
   e,
   k,
   selected,
@@ -8753,9 +8861,9 @@ export function EntityShape({
       {e.text}
     </text>
   );
-}
+});
 
-function Rulers({
+const Rulers = React.memo(function Rulers({
   view,
   isDark,
   majorStep,
@@ -8912,7 +9020,7 @@ function Rulers({
       </div>
     </div>
   );
-}
+});
 
 const TYPE_LABEL: Record<Entity["type"], string> = {
   line: "Linha",

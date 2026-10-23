@@ -94,6 +94,12 @@ export class ThreeBRepRenderer {
   // Animação e Renderização
   private isDestroyed = false;
   private animFrameId = 0;
+  private tempEuler: THREE.Euler = new THREE.Euler();
+  private lastReportedRotation: { x: number; y: number; z: number } = {
+    x: Number.NaN,
+    y: Number.NaN,
+    z: Number.NaN,
+  };
   private cameraAnimation: {
     fromPos: THREE.Vector3;
     toPos: THREE.Vector3;
@@ -393,6 +399,15 @@ export class ThreeBRepRenderer {
       const obj = this.selectionOverlayGroup.children[0] as THREE.Mesh;
       this.selectionOverlayGroup.remove(obj);
       if (obj.geometry) obj.geometry.dispose();
+      if (
+        obj.material instanceof THREE.Material &&
+        obj.material !== this.primaryFaceMaterial &&
+        obj.material !== this.secondaryFaceMaterial &&
+        obj.material !== this.primaryEdgeMaterial &&
+        obj.material !== this.secondaryEdgeMaterial
+      ) {
+        obj.material.dispose();
+      }
     }
   }
 
@@ -402,6 +417,13 @@ export class ThreeBRepRenderer {
       this.measurementGroup.remove(obj);
       if ("geometry" in obj && obj.geometry instanceof THREE.BufferGeometry) {
         obj.geometry.dispose();
+      }
+      if (
+        "material" in obj &&
+        obj.material instanceof THREE.Material &&
+        obj.material !== this.dimensionLineMaterial
+      ) {
+        obj.material.dispose();
       }
     }
   }
@@ -1098,8 +1120,19 @@ export class ThreeBRepRenderer {
       }
 
       if (this.onCameraRotateCallback) {
-        const euler = new THREE.Euler().setFromQuaternion(this.activeCamera.quaternion, "YXZ");
-        this.onCameraRotateCallback({ x: euler.x, y: euler.y, z: euler.z });
+        this.tempEuler.setFromQuaternion(this.activeCamera.quaternion, "YXZ");
+        if (
+          Math.abs(this.tempEuler.x - this.lastReportedRotation.x) > 1e-4 ||
+          Math.abs(this.tempEuler.y - this.lastReportedRotation.y) > 1e-4 ||
+          Math.abs(this.tempEuler.z - this.lastReportedRotation.z) > 1e-4
+        ) {
+          this.lastReportedRotation = {
+            x: this.tempEuler.x,
+            y: this.tempEuler.y,
+            z: this.tempEuler.z,
+          };
+          this.onCameraRotateCallback(this.lastReportedRotation);
+        }
       }
 
       this.renderer.render(this.scene, this.activeCamera);
@@ -1127,7 +1160,21 @@ export class ThreeBRepRenderer {
     if (this.gridHelper) {
       this.scene.remove(this.gridHelper);
       this.gridHelper.geometry.dispose();
+      if (Array.isArray(this.gridHelper.material)) {
+        this.gridHelper.material.forEach((m) => m.dispose());
+      } else if (this.gridHelper.material instanceof THREE.Material) {
+        this.gridHelper.material.dispose();
+      }
       this.gridHelper = null;
+    }
+
+    if (this.gizmoTargetMesh) {
+      this.scene.remove(this.gizmoTargetMesh);
+      this.gizmoTargetMesh.geometry.dispose();
+      if (this.gizmoTargetMesh.material instanceof THREE.Material) {
+        this.gizmoTargetMesh.material.dispose();
+      }
+      this.gizmoTargetMesh = null;
     }
 
     this.baseSolidMaterial.dispose();

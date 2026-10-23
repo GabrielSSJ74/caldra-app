@@ -197,10 +197,13 @@ export function ChamferSemanticPalette({
       (isPlatePlan ? livePlateValidation.isValid : activeIntentPlan.validation.status === "valid"),
   );
 
-  // Sincroniza pré-visualização viva no canvas principal do CHAMFER
+  // Sincroniza pré-visualização viva no canvas principal do CHAMFER via rAF (isola a Janela de Prévia 60 FPS de bloqueios síncronos na digitação rápida dos 7 inputs)
   useEffect(() => {
-    if (!open) return;
-    onPreviewIntentPlanChange?.(activeIntentPlan);
+    if (!open || !onPreviewIntentPlanChange) return;
+    const rafId = window.requestAnimationFrame(() => {
+      onPreviewIntentPlanChange(activeIntentPlan);
+    });
+    return () => window.cancelAnimationFrame(rafId);
   }, [open, activeIntentPlan, onPreviewIntentPlanChange]);
 
   // Filtra comandos rápidos tradicionais quando o usuário digita termos curtos de ferramenta

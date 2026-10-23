@@ -10,7 +10,7 @@
  *  - Validação geométrica instantânea com destaque visual em vermelho (#ef4444).
  */
 
-import React, { useState, useId } from "react";
+import React, { useState, useId, useMemo } from "react";
 import { Maximize2, Minimize2, Eye, Ruler, Crosshair, AlertTriangle } from "lucide-react";
 import type { CornerSelector, HoleDistributionMode } from "@/lib/intent";
 import type { Entity } from "@/lib/lab2d/core";
@@ -242,7 +242,7 @@ function buildSelectiveRoundedRectSvgPath(
   };
 }
 
-export function ChamferLiveMiniViewport({
+export const ChamferLiveMiniViewport = React.memo(function ChamferLiveMiniViewport({
   width,
   height,
   cornerRadius,
@@ -272,15 +272,19 @@ export function ChamferLiveMiniViewport({
   const safeD = Math.max(1, Number.isFinite(holeDiameter) && holeDiameter > 0 ? holeDiameter : 12);
   const safeMargin = Number.isFinite(margin) ? margin : 25;
 
-  const validation = evaluateLivePlateValidation({
-    width,
-    height,
-    cornerRadius,
-    cornerSelector,
-    holeCount,
-    holeDiameter,
-    margin,
-  });
+  const validation = useMemo(
+    () =>
+      evaluateLivePlateValidation({
+        width,
+        height,
+        cornerRadius,
+        cornerSelector,
+        holeCount,
+        holeDiameter,
+        margin,
+      }),
+    [width, height, cornerRadius, cornerSelector, holeCount, holeDiameter, margin],
+  );
 
   // Auto-Fit ViewBox Dinâmico: W e H com 35% de padding ao redor (total = 1.70x)
   const padX = safeW * 0.35;
@@ -297,35 +301,41 @@ export function ChamferLiveMiniViewport({
   const arrowSize = 5.5 * u;
   const gridStep = Math.max(10, Math.pow(10, Math.floor(Math.log10(Math.max(safeW, safeH)))) / 5);
 
-  const platePath = buildSelectiveRoundedRectSvgPath(safeW, safeH, safeR, cornerSelector);
+  const platePath = useMemo(
+    () => buildSelectiveRoundedRectSvgPath(safeW, safeH, safeR, cornerSelector),
+    [safeW, safeH, safeR, cornerSelector],
+  );
 
   // Cálculo determinístico dos furos na Prévia em Tempo Real
-  const holeCenters: Array<{ x: number; y: number }> = [];
-  if (safeN === 1) {
-    holeCenters.push({ x: 0, y: 0 });
-  } else if (safeN > 1) {
-    if (holeDistribution === "circular_pcd" && pcd && pcd > 0) {
-      const rPcd = pcd / 2;
-      for (let i = 0; i < safeN; i++) {
-        const theta = (2 * Math.PI * i) / safeN;
-        holeCenters.push({
-          x: rPcd * Math.cos(theta),
-          y: rPcd * Math.sin(theta),
-        });
-      }
-    } else {
-      // Convenção linear com margem de borda:
-      // X_start = -W/2 + margemBorda | X_end = +W/2 - margemBorda | pitch = (W - 2*margemBorda)/(N - 1)
-      const xStart = -safeW / 2 + safeMargin;
-      const pitch = (safeW - 2 * safeMargin) / (safeN - 1);
-      for (let i = 0; i < safeN; i++) {
-        holeCenters.push({
-          x: xStart + i * pitch,
-          y: 0,
-        });
+  const holeCenters = useMemo(() => {
+    const centers: Array<{ x: number; y: number }> = [];
+    if (safeN === 1) {
+      centers.push({ x: 0, y: 0 });
+    } else if (safeN > 1) {
+      if (holeDistribution === "circular_pcd" && pcd && pcd > 0) {
+        const rPcd = pcd / 2;
+        for (let i = 0; i < safeN; i++) {
+          const theta = (2 * Math.PI * i) / safeN;
+          centers.push({
+            x: rPcd * Math.cos(theta),
+            y: rPcd * Math.sin(theta),
+          });
+        }
+      } else {
+        // Convenção linear com margem de borda:
+        // X_start = -W/2 + margemBorda | X_end = +W/2 - margemBorda | pitch = (W - 2*margemBorda)/(N - 1)
+        const xStart = -safeW / 2 + safeMargin;
+        const pitch = (safeW - 2 * safeMargin) / (safeN - 1);
+        for (let i = 0; i < safeN; i++) {
+          centers.push({
+            x: xStart + i * pitch,
+            y: 0,
+          });
+        }
       }
     }
-  }
+    return centers;
+  }, [safeN, holeDistribution, pcd, safeW, safeMargin]);
 
   const plateStrokeColor = validation.isRadiusError ? "#ef4444" : "#38bdf8";
   const plateFillColor = validation.isRadiusError
@@ -805,9 +815,9 @@ export function ChamferLiveMiniViewport({
       )}
     </div>
   );
-}
+});
 
-function FallbackEntitiesMiniViewport({
+const FallbackEntitiesMiniViewport = React.memo(function FallbackEntitiesMiniViewport({
   entities,
   showAxes,
   patternId,
@@ -995,4 +1005,4 @@ function FallbackEntitiesMiniViewport({
       })}
     </svg>
   );
-}
+});

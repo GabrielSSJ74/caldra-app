@@ -246,7 +246,7 @@ export function CadBRepViewer({
     }
   }, [refreshHistoryFlags]);
 
-  // Inicialização do ThreeBRepRenderer
+  // Inicialização única do ThreeBRepRenderer (mantém o contexto WebGL vivo durante trocas de Gizmo/Tema)
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -286,7 +286,24 @@ export function CadBRepViewer({
       renderer.dispose();
       rendererRef.current = null;
     };
-  }, [gizmoMode, isDarkTheme]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Sincroniza parâmetros externos in-place sem recriar o contexto WebGL
+  useEffect(() => {
+    setParamA(initialParams?.width || initialParams?.D || initialWidth);
+    setParamB(initialParams?.length || initialParams?.d || initialLength);
+    if (initialParams?.height || initialParams?.H) {
+      setParamC(initialParams.height || initialParams.H || 100);
+    }
+    if (initialParams?.diameter) {
+      setParamD(initialParams.diameter);
+    }
+  }, [initialParams, initialWidth, initialLength]);
+
+  useEffect(() => {
+    setThickness(initialThickness);
+  }, [initialThickness]);
 
   // Sincroniza tema quando alterado pelo usuário (Seção 24 & 25)
   useEffect(() => {

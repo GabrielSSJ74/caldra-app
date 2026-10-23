@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
 interface CaldraGenesisPreIntroProps {
@@ -149,9 +149,173 @@ const EXTRUSION_WALL_SEGMENTS: ReadonlyArray<
   [388, 862, 742, 520],
 ];
 
-// Linhas de construção isométricas de 30°, 90° e 150° para o Grid Técnico de CAD
-const ISOMETRIC_ANGLES_DEG = [30, 90, 150];
-const ISOMETRIC_OFFSETS = [-640, -480, -320, -160, 0, 160, 320, 480, 640];
+// Linhas de construção isométricas de 30°, 90° e 150° pré-calculadas (evita 27x Math.cos/sin a 60Hz)
+const ISOMETRIC_ANGLES_DEG = [30, 90, 150] as const;
+const ISOMETRIC_OFFSETS = [-640, -480, -320, -160, 0, 160, 320, 480, 640] as const;
+
+const STATIC_ISOMETRIC_LINES: ReadonlyArray<{
+  readonly key: string;
+  readonly x1: number;
+  readonly y1: number;
+  readonly x2: number;
+  readonly y2: number;
+}> = ISOMETRIC_ANGLES_DEG.flatMap((angle) => {
+  const rad = (angle * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const nx = -sin;
+  const ny = cos;
+  const len = 820;
+  return ISOMETRIC_OFFSETS.map((offset) => {
+    const cx = 800 + nx * offset;
+    const cy = 806 + ny * offset;
+    return {
+      key: `${angle}-${offset}`,
+      x1: cx - cos * len,
+      y1: cy - sin * len,
+      x2: cx + cos * len,
+      y2: cy + sin * len,
+    };
+  });
+});
+
+const StaticGridDefs = React.memo(function StaticGridDefs() {
+  return (
+    <defs>
+      {/* Sub-malha fina de CAD (0.5px, rgba(56, 189, 248, 0.1)) */}
+      <pattern
+        id="caldra-iso-subgrid"
+        width="32"
+        height="32"
+        patternUnits="userSpaceOnUse"
+      >
+        <path
+          d="M 32 0 L 0 0 0 32"
+          fill="none"
+          stroke="rgba(56, 189, 248, 0.1)"
+          strokeWidth="0.5"
+        />
+        {/* Grid Snap Points nas interseções */}
+        <circle
+          cx="0"
+          cy="0"
+          r="0.85"
+          fill="rgba(56, 189, 248, 0.22)"
+        />
+      </pattern>
+
+      {/* Malha principal de prancheta com snap points destacados */}
+      <pattern
+        id="caldra-iso-majgrid"
+        width="160"
+        height="160"
+        patternUnits="userSpaceOnUse"
+      >
+        <rect width="160" height="160" fill="url(#caldra-iso-subgrid)" />
+        <path
+          d="M 160 0 L 0 0 0 160"
+          fill="none"
+          stroke="rgba(56, 189, 248, 0.18)"
+          strokeWidth="0.75"
+        />
+        <circle
+          cx="0"
+          cy="0"
+          r="1.8"
+          fill="rgba(148, 163, 184, 0.35)"
+        />
+      </pattern>
+
+      <radialGradient id="caldra-grid-vignette" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stopColor="#FFFFFF" stopOpacity="1" />
+        <stop offset="62%" stopColor="#FFFFFF" stopOpacity="0.85" />
+        <stop offset="88%" stopColor="#FFFFFF" stopOpacity="0.24" />
+        <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
+      </radialGradient>
+
+      <mask id="caldra-grid-mask">
+        <rect width="1600" height="1600" fill="url(#caldra-grid-vignette)" />
+      </mask>
+    </defs>
+  );
+});
+
+const StaticLogoDefs = React.memo(function StaticLogoDefs() {
+  return (
+    <defs>
+      {/* Haste 1 (Sup-Esq): Branco Prateado */}
+      <linearGradient id="caldra-h1-grad" x1="55%" y1="15%" x2="26%" y2="51%">
+        <stop offset="0%" stopColor="#FFFFFF" />
+        <stop offset="55%" stopColor="#EBF3FF" />
+        <stop offset="100%" stopColor="#C8DCF8" />
+      </linearGradient>
+
+      {/* Haste 2 (Inf-Esq): Branco Gelo -> Prata Azulado */}
+      <linearGradient id="caldra-h2-body-grad" x1="18%" y1="38%" x2="48%" y2="73%">
+        <stop offset="0%" stopColor="#FFFFFF" />
+        <stop offset="52%" stopColor="#DCEBFE" />
+        <stop offset="100%" stopColor="#A6CAFA" />
+      </linearGradient>
+
+      {/* Haste 2 Chanfro: Azul Royal */}
+      <linearGradient id="caldra-h2-chamfer-grad" x1="0%" y1="50%" x2="100%" y2="50%">
+        <stop offset="0%" stopColor="#0055FF" />
+        <stop offset="100%" stopColor="#0088FF" />
+      </linearGradient>
+
+      {/* Haste 3 Chanfro: Azul Royal */}
+      <linearGradient id="caldra-h3-chamfer-grad" x1="0%" y1="50%" x2="100%" y2="50%">
+        <stop offset="0%" stopColor="#0051FF" />
+        <stop offset="100%" stopColor="#0084FF" />
+      </linearGradient>
+
+      {/* Haste 3 Corpo (Sup-Dir): Azul Ciano -> Azul Royal */}
+      <linearGradient id="caldra-h3-body-grad" x1="82%" y1="32%" x2="65%" y2="68%">
+        <stop offset="0%" stopColor="#00E1FF" />
+        <stop offset="48%" stopColor="#0095FF" />
+        <stop offset="100%" stopColor="#0044EE" />
+      </linearGradient>
+
+      {/* Haste 4 (Inf-Dir): Azul Royal -> Azul Ciano */}
+      <linearGradient id="caldra-h4-grad" x1="39%" y1="86%" x2="76%" y2="52%">
+        <stop offset="0%" stopColor="#0044EE" />
+        <stop offset="50%" stopColor="#0088FF" />
+        <stop offset="100%" stopColor="#00E1FF" />
+      </linearGradient>
+
+      {/* Sistema de Degradê Contínuo em Camadas Suaves da Estrela Central (Centro em 497, 514) */}
+      <linearGradient id="starBaseGrad" x1="0%" y1="50%" x2="100%" y2="35%">
+        <stop offset="0%" stopColor="#00E6FF" />
+        <stop offset="42%" stopColor="#00B2FF" />
+        <stop offset="68%" stopColor="#006AFF" />
+        <stop offset="100%" stopColor="#0044E8" />
+      </linearGradient>
+
+      <linearGradient id="starTopRightShade" x1="0%" y1="100%" x2="75%" y2="15%">
+        <stop offset="0%" stopColor="#0044E8" stopOpacity="0.55" />
+        <stop offset="100%" stopColor="#002AB9" stopOpacity="0.85" />
+      </linearGradient>
+
+      <linearGradient id="starBottomRightShade" x1="0%" y1="0%" x2="60%" y2="80%">
+        <stop offset="0%" stopColor="#009BFF" stopOpacity="0.35" />
+        <stop offset="100%" stopColor="#005FFF" stopOpacity="0.45" />
+      </linearGradient>
+
+      <linearGradient id="starLeftGlow" x1="0%" y1="50%" x2="100%" y2="50%">
+        <stop offset="0%" stopColor="#00F0FF" stopOpacity="0.65" />
+        <stop offset="65%" stopColor="#00B9FF" stopOpacity="0.25" />
+        <stop offset="100%" stopColor="#0082FF" stopOpacity="0" />
+      </linearGradient>
+
+      <radialGradient id="caldra-star-bloom-rad" cx="50%" cy="50%" r="50%">
+        <stop offset="0%" stopColor="#00D2FF" stopOpacity="0.72" />
+        <stop offset="42%" stopColor="#0088FF" stopOpacity="0.36" />
+        <stop offset="75%" stopColor="#0044E8" stopOpacity="0.12" />
+        <stop offset="100%" stopColor="#002AB9" stopOpacity="0" />
+      </radialGradient>
+    </defs>
+  );
+});
 
 const TOTAL_DURATION_MS = 5000;
 const FADEOUT_DURATION_MS = 300;
@@ -317,62 +481,7 @@ export function CaldraGenesisPreIntro({
               className="size-full overflow-visible"
               xmlns="http://www.w3.org/2000/svg"
             >
-              <defs>
-                {/* Sub-malha fina de CAD (0.5px, rgba(56, 189, 248, 0.1)) */}
-                <pattern
-                  id="caldra-iso-subgrid"
-                  width="32"
-                  height="32"
-                  patternUnits="userSpaceOnUse"
-                >
-                  <path
-                    d="M 32 0 L 0 0 0 32"
-                    fill="none"
-                    stroke="rgba(56, 189, 248, 0.1)"
-                    strokeWidth="0.5"
-                  />
-                  {/* Grid Snap Points nas interseções */}
-                  <circle
-                    cx="0"
-                    cy="0"
-                    r="0.85"
-                    fill="rgba(56, 189, 248, 0.22)"
-                  />
-                </pattern>
-
-                {/* Malha principal de prancheta com snap points destacados */}
-                <pattern
-                  id="caldra-iso-majgrid"
-                  width="160"
-                  height="160"
-                  patternUnits="userSpaceOnUse"
-                >
-                  <rect width="160" height="160" fill="url(#caldra-iso-subgrid)" />
-                  <path
-                    d="M 160 0 L 0 0 0 160"
-                    fill="none"
-                    stroke="rgba(56, 189, 248, 0.18)"
-                    strokeWidth="0.75"
-                  />
-                  <circle
-                    cx="0"
-                    cy="0"
-                    r="1.8"
-                    fill="rgba(148, 163, 184, 0.35)"
-                  />
-                </pattern>
-
-                <radialGradient id="caldra-grid-vignette" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stopColor="#FFFFFF" stopOpacity="1" />
-                  <stop offset="62%" stopColor="#FFFFFF" stopOpacity="0.85" />
-                  <stop offset="88%" stopColor="#FFFFFF" stopOpacity="0.24" />
-                  <stop offset="100%" stopColor="#FFFFFF" stopOpacity="0" />
-                </radialGradient>
-
-                <mask id="caldra-grid-mask">
-                  <rect width="1600" height="1600" fill="url(#caldra-grid-vignette)" />
-                </mask>
-              </defs>
+              <StaticGridDefs />
 
               <g mask="url(#caldra-grid-mask)">
                 {/* Plano da malha CAD */}
@@ -384,29 +493,17 @@ export function CaldraGenesisPreIntro({
                   strokeWidth="0.6"
                   strokeDasharray="6 6"
                 >
-                  {ISOMETRIC_ANGLES_DEG.map((angle) =>
-                    ISOMETRIC_OFFSETS.map((offset) => {
-                      const rad = (angle * Math.PI) / 180;
-                      const cos = Math.cos(rad);
-                      const sin = Math.sin(rad);
-                      const nx = -sin;
-                      const ny = cos;
-                      const cx = 800 + nx * offset;
-                      const cy = 806 + ny * offset;
-                      const len = 820;
-                      return (
-                        <line
-                          key={`${angle}-${offset}`}
-                          x1={cx - cos * len}
-                          y1={cy - sin * len}
-                          x2={cx + cos * len}
-                          y2={cy + sin * len}
-                          pathLength={1}
-                          strokeDashoffset={1 - gridDraw}
-                        />
-                      );
-                    }),
-                  )}
+                  {STATIC_ISOMETRIC_LINES.map((line) => (
+                    <line
+                      key={line.key}
+                      x1={line.x1}
+                      y1={line.y1}
+                      x2={line.x2}
+                      y2={line.y2}
+                      pathLength={1}
+                      strokeDashoffset={1 - gridDraw}
+                    />
+                  ))}
                 </g>
 
                 {/* Eixos principais ortogonais X e Y passando pelo centro da peça */}
@@ -596,83 +693,7 @@ export function CaldraGenesisPreIntro({
               className="size-full overflow-visible"
               xmlns="http://www.w3.org/2000/svg"
             >
-              <defs>
-                {/* Haste 1 (Sup-Esq): Branco Prateado */}
-                <linearGradient id="caldra-h1-grad" x1="55%" y1="15%" x2="26%" y2="51%">
-                  <stop offset="0%" stopColor="#FFFFFF" />
-                  <stop offset="55%" stopColor="#EBF3FF" />
-                  <stop offset="100%" stopColor="#C8DCF8" />
-                </linearGradient>
-
-                {/* Haste 2 (Inf-Esq): Branco Gelo -> Prata Azulado */}
-                <linearGradient id="caldra-h2-body-grad" x1="18%" y1="38%" x2="48%" y2="73%">
-                  <stop offset="0%" stopColor="#FFFFFF" />
-                  <stop offset="52%" stopColor="#DCEBFE" />
-                  <stop offset="100%" stopColor="#A6CAFA" />
-                </linearGradient>
-
-                {/* Haste 2 Chanfro: Azul Royal */}
-                <linearGradient id="caldra-h2-chamfer-grad" x1="0%" y1="50%" x2="100%" y2="50%">
-                  <stop offset="0%" stopColor="#0055FF" />
-                  <stop offset="100%" stopColor="#0088FF" />
-                </linearGradient>
-
-                {/* Haste 3 Chanfro: Azul Royal */}
-                <linearGradient id="caldra-h3-chamfer-grad" x1="0%" y1="50%" x2="100%" y2="50%">
-                  <stop offset="0%" stopColor="#0051FF" />
-                  <stop offset="100%" stopColor="#0084FF" />
-                </linearGradient>
-
-                {/* Haste 3 Corpo (Sup-Dir): Azul Ciano -> Azul Royal */}
-                <linearGradient id="caldra-h3-body-grad" x1="82%" y1="32%" x2="65%" y2="68%">
-                  <stop offset="0%" stopColor="#00E1FF" />
-                  <stop offset="48%" stopColor="#0095FF" />
-                  <stop offset="100%" stopColor="#0044EE" />
-                </linearGradient>
-
-                {/* Haste 4 (Inf-Dir): Azul Royal -> Azul Ciano */}
-                <linearGradient id="caldra-h4-grad" x1="39%" y1="86%" x2="76%" y2="52%">
-                  <stop offset="0%" stopColor="#0044EE" />
-                  <stop offset="50%" stopColor="#0088FF" />
-                  <stop offset="100%" stopColor="#00E1FF" />
-                </linearGradient>
-
-                {/* Sistema de Degradê Contínuo em Camadas Suaves da Estrela Central (Centro em 497, 514) */}
-                {/* Camada 1 — Corpo Base Unificado (Degradê Horizontal/Diagonal Contínuo) */}
-                <linearGradient id="starBaseGrad" x1="0%" y1="50%" x2="100%" y2="35%">
-                  <stop offset="0%" stopColor="#00E6FF" />
-                  <stop offset="42%" stopColor="#00B2FF" />
-                  <stop offset="68%" stopColor="#006AFF" />
-                  <stop offset="100%" stopColor="#0044E8" />
-                </linearGradient>
-
-                {/* Camada 2 — Relevo Tonal Superior-Direito (Transição Suave de Volume) */}
-                <linearGradient id="starTopRightShade" x1="0%" y1="100%" x2="75%" y2="15%">
-                  <stop offset="0%" stopColor="#0044E8" stopOpacity="0.55" />
-                  <stop offset="100%" stopColor="#002AB9" stopOpacity="0.85" />
-                </linearGradient>
-
-                {/* Camada 3 — Nuance Tonal Inferior-Direita (Degradê Azul Celeste -> Azul Médio) */}
-                <linearGradient id="starBottomRightShade" x1="0%" y1="0%" x2="60%" y2="80%">
-                  <stop offset="0%" stopColor="#009BFF" stopOpacity="0.35" />
-                  <stop offset="100%" stopColor="#005FFF" stopOpacity="0.45" />
-                </linearGradient>
-
-                {/* Camada 4 — Luz Suave na Metade Esquerda (Degradê Ciano Orgânico) */}
-                <linearGradient id="starLeftGlow" x1="0%" y1="50%" x2="100%" y2="50%">
-                  <stop offset="0%" stopColor="#00F0FF" stopOpacity="0.65" />
-                  <stop offset="65%" stopColor="#00B9FF" stopOpacity="0.25" />
-                  <stop offset="100%" stopColor="#0082FF" stopOpacity="0" />
-                </linearGradient>
-
-                {/* Halo Radial Difuso por trás da Estrela Central (497, 514) */}
-                <radialGradient id="caldra-star-bloom-rad" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stopColor="#00D2FF" stopOpacity="0.72" />
-                  <stop offset="42%" stopColor="#0088FF" stopOpacity="0.36" />
-                  <stop offset="75%" stopColor="#0044E8" stopOpacity="0.12" />
-                  <stop offset="100%" stopColor="#002AB9" stopOpacity="0" />
-                </radialGradient>
-              </defs>
+              <StaticLogoDefs />
 
               {/* ============================================================ */}
               {/* VOLUME DE PEÇA 3D (25px): PAREDES LATERAIS E ARESTAS DE 1PX  */}

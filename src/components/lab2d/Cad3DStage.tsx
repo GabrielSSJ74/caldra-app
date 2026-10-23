@@ -366,7 +366,7 @@ export function Cad3DStage({
         <div className="relative min-h-0 flex-1 overflow-hidden bg-[#0b0f17]">
           <Stage3DErrorBoundary onReset={resetView}>
             <CadBRepViewer
-              key={`${resetNonce}_${resolvedModel.type}_${JSON.stringify(liveParams)}`}
+              key={`${resetNonce}_${resolvedModel.type}`}
               className="size-full"
               initialModelType={resolvedModel.type}
               initialModelTitle={resolvedModel.name}
