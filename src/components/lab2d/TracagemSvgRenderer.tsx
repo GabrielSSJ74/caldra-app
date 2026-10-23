@@ -115,7 +115,7 @@ export function TracagemSvgRenderer({
   }, [shapes, openPolylines, bendLines]);
 
   // --------------------------------------------------------------------------
-  // VISTA 1: PROJEÇÃO ISOMÉTRICA 3D EM SVG (com espessura real sem WebGL)
+  // VISTA 1: PROJEÇÃO ISOMÉTRICA 3D EM SVG ("ISOMETRIC WIREFRAME SOLID" / X-RAY)
   // --------------------------------------------------------------------------
   if (viewMode3D === "isometrica" && shapes.length > 0) {
     const t = Math.max(0.5, thickness);
@@ -162,61 +162,83 @@ export function TracagemSvgRenderer({
               }}
               className="cursor-pointer"
             >
-              {/* Face de Fundo */}
+              {/* 1. Face Traseira (X-Ray Wireframe) */}
               <path
                 d={botPath}
-                fill="var(--accent)"
-                fillOpacity={0.04}
-                stroke="var(--accent)"
-                strokeOpacity={0.35}
-                strokeWidth={strokeW * 0.8}
+                fill="rgba(12, 26, 48, 0.10)"
+                stroke="rgba(125, 211, 252, 0.32)"
+                strokeWidth={(0.75 / k)}
+                strokeDasharray={`${3 / k} ${2.5 / k}`}
                 strokeLinejoin="round"
               />
 
-              {/* Paredes Laterais da Espessura Metálica */}
+              {/* 2. Paredes Laterais da Espessura Real da Chapa */}
               {sideWalls.map((d, wIdx) => (
                 <path
                   key={`wall_${idx}_${wIdx}`}
                   d={d}
-                  fill="var(--accent)"
-                  fillOpacity={0.22}
-                  stroke="var(--accent)"
-                  strokeOpacity={0.75}
-                  strokeWidth={strokeW * 0.9}
+                  fill="rgba(56, 189, 248, 0.12)"
+                  stroke="rgba(186, 230, 253, 0.65)"
+                  strokeWidth={(0.95 / k)}
                   strokeLinejoin="round"
                 />
               ))}
 
-              {/* Face de Topo */}
+              {/* 3. Face Principal Frontal Translúcida + Contorno Nítido */}
               <path
                 d={topPath}
-                fill="var(--accent)"
-                fillOpacity={isSel ? 0.16 : 0.08}
-                stroke="var(--accent)"
-                strokeWidth={strokeW}
+                fill={isSel ? "rgba(56, 189, 248, 0.22)" : "rgba(18, 40, 74, 0.25)"}
+                stroke={isSel ? "#38BDF8" : "#E8F4FF"}
+                strokeWidth={(1.4 / k)}
                 strokeLinejoin="round"
               />
 
-              {/* Furos projetados no topo */}
+              {/* 4. Furos Volumétricos (Anel de Entrada + Saída X-Ray + Paredes Internas) */}
               {s.holes.map((h, hIdx) => {
                 const hTop = h.map((p) => toIso(p.x, p.y, zTop));
-                const hPath =
+                const hBot = h.map((p) => toIso(p.x, p.y, zBot));
+                const hTopPath =
                   hTop
                     .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
                     .join(" ") + " Z";
+                const hBotPath =
+                  hBot
+                    .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
+                    .join(" ") + " Z";
                 return (
-                  <path
-                    key={`hole_${idx}_${hIdx}`}
-                    d={hPath}
-                    fill="var(--background)"
-                    stroke="var(--accent)"
-                    strokeWidth={strokeW * 0.9}
-                    strokeLinejoin="round"
-                  />
+                  <g key={`hole_${idx}_${hIdx}`}>
+                    <path
+                      d={hBotPath}
+                      fill="none"
+                      stroke="rgba(125, 211, 252, 0.32)"
+                      strokeWidth={(0.75 / k)}
+                      strokeDasharray={`${3 / k} ${2.5 / k}`}
+                      strokeLinejoin="round"
+                    />
+                    <path
+                      d={hTopPath}
+                      fill="rgba(5, 9, 20, 0.36)"
+                      stroke="#E8F4FF"
+                      strokeWidth={(1.35 / k)}
+                      strokeLinejoin="round"
+                    />
+                  </g>
                 );
               })}
 
-              {/* Linhas de dobra no topo */}
+              {/* 5. Micro-pontos de Vértice Técnicos (r = 1.6px) */}
+              {topPts.length <= 48 &&
+                topPts.map((pt, pIdx) => (
+                  <circle
+                    key={`vdot_${idx}_${pIdx}`}
+                    cx={pt.x}
+                    cy={pt.y}
+                    r={1.6 / k}
+                    fill="#F8FAFC"
+                  />
+                ))}
+
+              {/* 6. Linhas de dobra no topo */}
               {showFolds &&
                 bendLines.map((bl) => {
                   if (bl.type !== "line") return null;
@@ -229,7 +251,7 @@ export function TracagemSvgRenderer({
                       y1={p1.y}
                       x2={p2.x}
                       y2={p2.y}
-                      stroke="var(--accent2)"
+                      stroke="#F59E0B"
                       strokeWidth={foldStrokeW}
                       strokeDasharray={`${6 / k} ${3 / k}`}
                     />

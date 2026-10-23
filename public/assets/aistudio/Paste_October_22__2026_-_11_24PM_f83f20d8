@@ -1,0 +1,814 @@
+CALDRA / CHAMFER CAD
+
+IMPLEMENTAÇÃO DO MOTOR DE MODELAGEM 3D PARAMÉTRICA POR RECURSOS COMBINÁVEIS
+
+Feature-Based Parametric Modeling + Dependency Graph + Boolean Solid Modeling
+
+Módulo: CHAMFER 3D SÓLIDO
+Aplicação: CALDRA — engenharia, caldeiraria, traçagem e fabricação industrial
+Objetivo: transformar o atual ambiente 3D em um sistema de modelagem paramétrica capaz de construir uma ampla variedade de peças mecânicas, estruturais e industriais por meio de ferramentas geométricas universais que possam ser combinadas, editadas e reconstruídas.
+
+Referência funcional: conceitos de modelagem baseados em recursos encontrados em SOLIDWORKS, Autodesk Inventor e Fusion, adaptados à arquitetura e identidade do CALDRA, sem copiar código, identidade visual ou interfaces proprietárias.
+
+---
+
+0. MISSÃO FUNDAMENTAL
+
+Evolua o modo 3D SÓLIDO existente do CHAMFER CAD para um sistema de modelagem tridimensional paramétrica baseado em recursos, operações geométricas e dependências explícitas.
+
+O objetivo NÃO é criar uma coleção de peças prontas.
+
+O objetivo é implementar as ferramentas fundamentais que permitam ao usuário produzir inúmeras peças diferentes combinando operações.
+
+O sistema deverá permitir que uma peça seja criada por uma sequência como:
+
+1. Criar um perfil 2D.
+2. Extrudar o perfil para obter um volume.
+3. Criar outra extrusão e unir o resultado ao volume anterior.
+4. Criar um furo e subtrair material.
+5. Multiplicar o furo por padrão circular.
+6. Criar uma nervura de reforço.
+7. Aplicar filetes e chanfros.
+8. Editar parâmetros de recursos anteriores.
+9. Reconstruir automaticamente apenas os recursos dependentes afetados.
+10. Exportar a geometria final utilizando os formatos já suportados pelo CALDRA.
+
+A mesma arquitetura deve permitir evoluir de formas elementares para flanges, eixos, parafusos, suportes, engrenagens, caixas, conexões, componentes de máquinas e estruturas de caldeiraria.
+
+Esses exemplos servem como cenários de validação. Não criar modelos prontos, uma biblioteca de peças acabadas ou um catálogo de projetos pré-montados como substitutos das ferramentas.
+
+Princípio arquitetural: toda peça deve ser o resultado de um modelo geométrico construído a partir de recursos e parâmetros, não apenas uma malha estática exibida na tela.
+
+1. AUDITORIA E PRESERVAÇÃO DO CAD ATUAL
+
+Antes de modificar qualquer código, audite a implementação existente.
+
+Identifique:
+
+- Plataforma, framework e linguagem.
+- Biblioteca de visualização 3D.
+- Sistema atual de coordenadas e unidades.
+- Modelo interno de sólidos e entidades.
+- Representação geométrica armazenada no documento.
+- Algoritmos de extrusão, revolução, transformação e operações booleanas, caso existam.
+- Sistema atual de esboços 2D e referências entre o 2D e o 3D.
+- Sistema de seleção de faces, arestas e vértices.
+- Gizmo de transformação e ViewCube.
+- Painel Parâmetros 3D.
+- Histórico e Undo/Redo.
+- Persistência e serialização de projetos.
+- Exportadores existentes.
+- Testes de geometria e desempenho.
+
+Diferencie claramente o que está implementado, o que está parcialmente implementado e o que existe apenas como interface.
+
+Não presuma que uma operação geométrica é funcional apenas porque há um botão correspondente.
+
+Não substitua funcionalidades existentes sem demonstrar necessidade técnica. Não reescreva o motor 2D, o motor 3D, o CALDRA Vision ou os sistemas de traçagem apenas para acomodar os novos recursos.
+
+Antes de escolher ou adicionar um motor booleano, verifique a representação de sólidos atualmente adotada e a possibilidade de integração com ela.
+
+2. PRESERVAÇÃO DA INTERFACE 3D SÓLIDO
+
+Preserve a organização visual já aprovada na interface atual.
+
+Manter:
+
+- Barra superior com Sair, 2D Sketch, 3D Sólido, Desfazer, Refazer e Salvar.
+- Controles SOMB, ARAME, PERSP, zoom e visualização.
+- ViewCube com orientações superiores, laterais e frontais.
+- Barra lateral esquerda com CRI, MOD e seus controles existentes.
+- Botão CATEGORIAS 3D.
+- Gaveta Parâmetros 3D.
+- Dock inferior com PLANIFICAR, PRANCHA 2D, ESTRUTURAS e CNC / DXF.
+- Barra de status, unidade de medida, referência geométrica, SNAP, ORTO, GRID, precisão e informações de escala ou zoom já presentes.
+
+Não remova componentes da interface para acomodar a nova arquitetura.
+
+Distribua as novas funcionalidades nos pontos de acesso existentes:
+
+- CRI: criação de esboços, volumes e recursos.
+- MOD: edição, modificadores, operações booleanas e padrões.
+- CATEGORIAS 3D: organização dos grupos de ferramentas.
+- Parâmetros 3D: árvore paramétrica, parâmetros, dependências e estado da reconstrução.
+
+A árvore de recursos pode ser apresentada como uma seção superior ou um painel recolhível dentro de Parâmetros 3D, preservando o acesso ao restante dos parâmetros.
+
+Adapte o uso a telas móveis: painéis retráteis, seletores contextuais e campos numéricos acessíveis por toque, sem transformar o ambiente em uma interface desktop excessivamente carregada.
+
+3. ARQUITETURA GEOMÉTRICA CENTRAL
+
+Organize a implementação em camadas separadas.
+
+3.1 Modelo paramétrico canônico
+
+Armazene a definição do projeto:
+
+- Esboços e planos de referência.
+- Parâmetros dimensionais.
+- Restrições geométricas.
+- Recursos ordenados.
+- Dependências entre recursos.
+- Corpos sólidos.
+- Transformações e sistemas de coordenadas locais.
+- Relações entre entidades.
+- Estado de validação.
+- Histórico necessário para reconstrução.
+
+Essa estrutura deve ser a fonte de verdade do modelo.
+
+3.2 Núcleo de geometria
+
+Responsável por calcular os sólidos, perfis, superfícies, interseções, curvas, operações booleanas e modificadores geométricos.
+
+A implementação deve utilizar o motor existente quando ele atender aos requisitos. Caso seja insuficiente, avaliar uma camada adaptadora para um núcleo geométrico compatível com a plataforma.
+
+Não confundir a malha triangular usada na visualização com a representação matemática e topológica necessária à edição paramétrica.
+
+Se o sistema atual usar Three.js e "BufferGeometry", verificar a possibilidade real de realizar operações booleanas com confiabilidade suficiente para o uso pretendido.
+
+Uma solução de booleanas sobre malhas pode ser válida para certos fluxos, desde que o motor trate suas limitações, valide a malha resultante e não prometa precisão B-Rep ou superfícies analíticas que não consegue preservar.
+
+Para uso industrial com geometria precisa, avaliar uma estratégia baseada em B-Rep ou núcleo equivalente, conforme a viabilidade de integração e as necessidades de exportação.
+
+3.3 Renderizador 3D
+
+Responsável por converter o modelo geométrico validado em uma representação visual eficiente.
+
+Deve manter:
+
+- Visualização sombreada e em arame.
+- Perspectiva e projeções ortográficas.
+- Seleção e realce de faces, arestas e vértices.
+- Gizmo e referências espaciais.
+- Cotagem visual e realce de recursos.
+- Atualização incremental de geometrias renderizadas.
+
+O renderizador não deve se tornar o único local de armazenamento dos parâmetros ou da lógica paramétrica.
+
+3.4 Adaptador de fabricação
+
+Quando houver suporte a exportação, o resultado validado deverá alimentar os formatos e os módulos de fabricação existentes.
+
+Preserve as interfaces já funcionais de DXF, CNC e prancha técnica. Não implemente um novo exportador que ignore as entidades e unidades canônicas do projeto.
+
+4. FEATURE TREE ENGINE — ÁRVORE PARAMÉTRICA DE RECURSOS
+
+Implemente um sistema de recursos paramétricos persistentes.
+
+Cada operação deve ser armazenada como um recurso editável, com entrada, parâmetros, dependências, resultado e estado de validação.
+
+4.1 Estrutura conceitual
+
+Utilize uma estrutura equivalente a:
+
+CADFeature {
+id,
+name,
+type,
+operation,
+parameters,
+inputReferences,
+dependencyIds,
+outputBodyIds,
+enabled,
+suppressed,
+status,
+diagnostics,
+revision
+}
+
+Esse esquema é conceitual e deverá ser adaptado ao modelo de dados real do CHAMFER.
+
+Requisitos:
+
+- IDs estáveis e exclusivos.
+- Parâmetros dimensionais tipados.
+- Unidades explícitas.
+- Referências persistentes quando possível.
+- Dependências entre recursos.
+- Resultado geométrico identificável.
+- Estado de cálculo e validação.
+- Diagnósticos específicos por recurso.
+- Capacidade de suprimir ou reativar recursos.
+- Compatibilidade com a serialização atual.
+
+Não representar dependências apenas por índices numéricos da lista. A árvore pode ter hierarquia visual, mas o sistema também deve manter um grafo de dependências explícito.
+
+4.2 Ordem e dependências
+
+O modelo deve reconstruir os recursos respeitando sua ordem e suas dependências.
+
+Quando o usuário editar um recurso anterior:
+
+1. Marcar os recursos dependentes como desatualizados.
+2. Determinar a ordem válida de reconstrução.
+3. Recalcular os recursos afetados.
+4. Reutilizar resultados válidos dos recursos não afetados.
+5. Validar cada operação reconstruída.
+6. Atualizar a visualização quando os resultados estiverem disponíveis.
+
+Permita alterar a ordem somente quando as dependências continuarem válidas. Se uma reordenação romper uma referência ou criar uma dependência circular, rejeite-a ou solicite a correção.
+
+4.3 Edição, supressão e exclusão
+
+Ao selecionar um recurso na árvore:
+
+- Realçar a geometria correspondente na viewport.
+- Mostrar seus parâmetros no painel.
+- Permitir alterar os valores numéricos.
+- Exibir dependências e diagnósticos relevantes.
+- Oferecer suprimir, reativar, duplicar e excluir.
+
+Suprimir um recurso significa omitir sua contribuição durante a reconstrução sem apagar sua definição paramétrica.
+
+Excluir um recurso deve considerar seus descendentes. Se outros recursos dependerem dele, apresentar as consequências antes de concluir a exclusão.
+
+Quando uma alteração tornar a geometria inválida, não corromper o documento. Preserve a última geometria válida e apresente o erro e sua causa.
+
+5. SISTEMA UNIFICADO DE OPERAÇÕES BOOLEANAS
+
+As ferramentas geradoras devem ser capazes de operar sobre corpos sólidos conforme a função de cada recurso.
+
+Implementar os seguintes modos onde forem geometricamente aplicáveis:
+
+- "NEW_BODY": gerar um novo corpo sólido.
+- "ADD": unir o volume gerado ao corpo-alvo.
+- "CUT": subtrair o volume-ferramenta do corpo-alvo.
+- "INTERSECT": preservar a região volumétrica comum aos sólidos.
+
+O usuário deve poder selecionar o corpo-alvo ou aceitar uma seleção contextual inequívoca.
+
+A criação de um corpo novo não deve unir automaticamente objetos que não deveriam pertencer ao mesmo corpo.
+
+A operação de interseção deve possuir semântica real de interseção volumétrica; não deve ser confundida com união ou diferença.
+
+Cada operação booleana precisa validar:
+
+- Existência dos corpos de entrada.
+- Compatibilidade dos sólidos.
+- Interseção ou relação espacial necessária.
+- Resultado vazio ou degenerado.
+- Inconsistências topológicas.
+- Possíveis erros numéricos.
+- Validade do sólido resultante.
+
+Não obrigue a interface a oferecer os quatro modos em todos os recursos quando determinada operação não fizer sentido para aquela ferramenta.
+
+O seletor visual deve mostrar somente as opções compatíveis com a operação selecionada.
+
+6. GRUPO CRI — RECURSOS DE GERAÇÃO
+
+6.1 Esboço e planos de trabalho
+
+Integre os recursos do 3D aos esboços 2D existentes.
+
+Permita criar e selecionar esboços em:
+
+- Planos globais XY, XZ e YZ.
+- Planos de referência criados pelo usuário.
+- Faces planas selecionadas do modelo.
+- Planos offset ou planos auxiliares, quando implementados.
+
+Preserve restrições, cotas e referências dos esboços.
+
+Antes da extrusão ou de operações que exigem uma região fechada, valide a existência do perfil e sua compatibilidade com a operação.
+
+Não aceite silenciosamente perfis autointersectados ou regiões ambíguas.
+
+6.2 Extrusão e corte extrudado
+
+Criar recursos de extrusão capazes de transformar um perfil válido em volume ou de remover material.
+
+Parâmetros:
+
+- Perfil de entrada.
+- Distância.
+- Direção.
+- Sentido.
+- Condição final.
+- Ângulo de inclinação, quando suportado.
+- Operação booleana.
+- Corpo-alvo.
+- Simetria em relação ao plano do esboço, quando solicitada.
+
+Condições finais iniciais:
+
+- Distância definida.
+- Passante, quando a operação alcançar adequadamente o volume-alvo.
+- Plano médio ou extrusão simétrica.
+
+Não executar corte passante quando não houver um corpo-alvo válido.
+
+6.3 Revolução e corte por revolução
+
+Transformar um perfil em sólido por rotação em torno de um eixo definido.
+
+Parâmetros:
+
+- Perfil.
+- Eixo de revolução.
+- Ângulo total.
+- Sentido.
+- Operação booleana.
+- Corpo-alvo, quando houver remoção.
+
+Utilizar essa ferramenta como recurso universal para componentes rotacionais, sem criar cada tipo de peça como modelo separado.
+
+6.4 Varredura
+
+Permitir transportar um perfil ao longo de uma trajetória válida.
+
+Parâmetros:
+
+- Perfil da seção.
+- Caminho.
+- Orientação do perfil ao longo do caminho.
+- Regra de orientação e torção, quando suportada.
+- Operação booleana.
+- Corpo-alvo.
+
+Validar autointerseções, mudanças bruscas de direção e situações em que a varredura não possa produzir um sólido válido.
+
+6.5 Hélices, espirais e roscas
+
+Criar ferramentas para produzir trajetórias helicoidais e perfis associados.
+
+Parâmetros:
+
+- Diâmetro de referência.
+- Passo.
+- Número de voltas ou comprimento.
+- Sentido.
+- Perfil da seção.
+- Eixo.
+- Orientação.
+- Operação booleana, quando aplicável.
+
+Permitir gerar geometrias helicoidais reais quando necessário.
+
+Uma representação cosmética ou simplificada de rosca deve ser identificada como tal. Não apresentá-la como uma rosca geométrica completa.
+
+A ferramenta deverá ser desenvolvida após o sistema de varredura e o núcleo geométrico estarem suficientemente estáveis.
+
+6.6 Loft ou transição
+
+Conectar dois ou mais perfis compatíveis situados em planos ou posições diferentes.
+
+Parâmetros:
+
+- Perfis de entrada.
+- Planos e orientações.
+- Seções intermediárias, quando necessárias.
+- Correspondência entre pontos dos perfis.
+- Controle de continuidade, quando suportado.
+- Operação booleana.
+- Corpo-alvo.
+
+Validar perfis incompatíveis, correspondência das seções e resultados degenerados.
+
+Esse recurso deve permitir evoluir para conexões e transições industriais sem limitar-se a formas predefinidas.
+
+6.7 Primitivas paramétricas
+
+Permitir criar primitivas como:
+
+- Caixa.
+- Cilindro.
+- Esfera.
+- Cone.
+- Toro, se suportado.
+- Prisma.
+- Polígono extrudável.
+
+Cada primitiva deve possuir parâmetros editáveis, posição e orientação.
+
+Primitivas não substituem os recursos derivados de esboços; ambas as abordagens devem coexistir.
+
+6.8 Furação técnica
+
+Criar um assistente de furação inspirado funcionalmente nos recursos encontrados em CAD mecânicos, com parâmetros claros e posicionamento independente da definição do tipo de furo.
+
+Tipos iniciais:
+
+- Furo simples passante.
+- Furo cego com profundidade.
+- Furo escalonado.
+- Rebaixo cilíndrico para cabeça de parafuso.
+- Escareado cônico.
+- Furo com representação ou geometria de rosca, conforme a opção.
+- Rasgo oblongo.
+
+Parâmetros conforme o tipo:
+
+- Diâmetro.
+- Profundidade.
+- Diâmetro e profundidade do rebaixo.
+- Ângulo do escareado.
+- Especificação de rosca.
+- Posições.
+- Referência da face.
+- Corpo-alvo.
+
+Mantenha separadas a definição técnica do furo e sua posição geométrica.
+
+Não invente normas, tolerâncias ou dimensões padronizadas. Disponibilize tamanhos conforme tabelas verificadas ou permita valores personalizados devidamente identificados.
+
+Utilize um algoritmo simples para furos simples sempre que ele satisfizer os requisitos; não execute operações complexas desnecessariamente.
+
+6.9 Nervuras e reforços
+
+Implementar recursos capazes de gerar nervuras a partir de um perfil ou linha de referência.
+
+Parâmetros:
+
+- Esboço de entrada.
+- Espessura.
+- Direção.
+- Extensão ou condições de término.
+- Corpos ou faces relacionados.
+- Operação booleana.
+
+Validar a conexão com o corpo e o volume resultante.
+
+A ferramenta deve servir a suportes, reforços estruturais e geometrias diversas, não apenas a uma peça predefinida.
+
+7. GRUPO MOD — MODIFICADORES GEOMÉTRICOS
+
+7.1 Filete
+
+Aplicar arredondamento de raio definido às arestas selecionadas.
+
+Parâmetros:
+
+- Arestas-alvo.
+- Raio.
+- Regra de continuidade, quando suportada.
+- Conjunto de arestas relacionadas.
+
+Detectar raios inválidos e situações em que a operação faça desaparecer faces, produza geometria degenerada ou falhe.
+
+Não aplicar automaticamente o mesmo filete a todas as arestas se o usuário tiver selecionado apenas algumas.
+
+7.2 Chanfro
+
+Aplicar quebra de aresta por distância ou por distância e ângulo, conforme suportado.
+
+Parâmetros:
+
+- Arestas-alvo.
+- Distâncias.
+- Ângulo.
+- Referência e direção.
+- Regras aplicáveis à geometria selecionada.
+
+Validar a construção e mostrar os erros de geometria quando o chanfro não for possível.
+
+7.3 Casca
+
+Esvaziar um sólido preservando uma espessura de parede e permitindo selecionar as faces a remover quando a topologia suportar a operação.
+
+Parâmetros:
+
+- Espessura.
+- Faces removidas.
+- Sentido da espessura, quando aplicável.
+- Corpo-alvo.
+
+Validar regiões estreitas e geometrias que não possam conservar a espessura desejada.
+
+7.4 Espessamento e outras modificações
+
+Disponibilizar, conforme compatibilidade do núcleo:
+
+- Espessamento de superfícies.
+- Inclinação de faces.
+- Deslocamento de superfícies.
+- Alargamento ou redução controlados.
+- Outras modificações incrementais compatíveis.
+
+Cada modificador deve preservar a relação com o recurso anterior e fornecer diagnósticos quando não puder ser reconstruído.
+
+8. GRUPO MOD — PADRÕES, REPETIÇÃO E SIMETRIA
+
+As operações de repetição precisam atuar sobre recursos da árvore, sem duplicar manualmente toda a lógica geométrica.
+
+8.1 Padrão linear
+
+Parâmetros:
+
+- Recurso-alvo.
+- Direção 1.
+- Número de instâncias.
+- Passo ou comprimento total, de acordo com a convenção selecionada.
+- Direção 2 opcional.
+- Quantidade e espaçamento por direção.
+- Regras de orientação.
+
+Defina claramente se o número total inclui a instância original.
+
+8.2 Padrão circular
+
+Parâmetros:
+
+- Recurso-alvo.
+- Eixo ou referência de rotação.
+- Centro ou eixo de referência.
+- Quantidade de instâncias.
+- Ângulo total.
+- Distribuição angular.
+- Inclusão da instância original e regra de espaçamento.
+
+Deve permitir repetir furos, ressaltos, dentes, recortes e outros recursos compatíveis.
+
+Verifique o resultado antes de efetivar padrões que produzam volumes coincidentes ou geometrias inválidas.
+
+8.3 Padrão por esboço ou trajetória
+
+Quando o núcleo suportar, permitir colocar instâncias em pontos, entidades de construção ou posições distribuídas ao longo de um caminho.
+
+Essa operação é complementar e pode ser implementada após os padrões linear e circular.
+
+8.4 Espelhamento
+
+Espelhar recursos ou corpos sobre:
+
+- Planos globais.
+- Planos de referência.
+- Planos de simetria definidos pelo usuário.
+- Referências compatíveis com a arquitetura existente.
+
+A operação deve preservar o recurso original e criar uma referência explícita ao espelhamento.
+
+A escolha da referência não pode depender apenas de uma direção visual na tela.
+
+9. FACE RELATIVE SKETCH E REFERÊNCIAS 3D
+
+A interface deve permitir selecionar diretamente o sólido para determinar onde um novo esboço ou recurso será posicionado.
+
+Ao tocar em uma face:
+
+1. Identificar a face geométrica real.
+2. Realçar visualmente a seleção.
+3. Obter sua geometria, orientação e sistema local quando disponíveis.
+4. Criar uma referência ao objeto geométrico selecionado.
+5. Permitir definir offsets e posição do próximo recurso.
+6. Exibir coordenadas e orientação no painel contextual.
+
+Para faces planas, definir um plano local com origem, normal e eixos tangentes consistentes.
+
+Para faces cilíndricas ou outras superfícies não planas, permitir apenas as operações cujo referencial possa ser definido de forma válida. Não tratar todas as faces como planos.
+
+Evite referências frágeis que apontem exclusivamente para o índice de uma face ou aresta dentro de uma malha. Quando a topologia mudar, essas referências podem deixar de corresponder ao elemento pretendido.
+
+Use identificadores e referências persistentes quando o núcleo permitir, juntamente com mecanismos de remapeamento, validação e diagnóstico.
+
+Quando uma face desaparecer após a reconstrução, não redirecione silenciosamente o recurso para uma face arbitrária. Marque a referência como perdida e explique o problema.
+
+10. PAINEL PARÂMETROS 3D E FEATURE TREE
+
+Integre a árvore de recursos à gaveta Parâmetros 3D existente.
+
+A árvore deve mostrar a sequência lógica dos recursos aplicados e suas dependências.
+
+Exemplo meramente ilustrativo:
+
+- Esboço-base.
+- Extrusão-base.
+- Corte central.
+- Assistente de furação.
+- Padrão circular.
+- Nervura.
+- Chanfro.
+
+Esses itens são exemplos de operações, não uma peça pronta que deva ser instalada no aplicativo.
+
+Ao selecionar um recurso na árvore:
+
+- Destacar seu efeito geométrico.
+- Mostrar seus parâmetros editáveis.
+- Identificar seus recursos antecedentes e dependentes.
+- Apresentar estado da reconstrução.
+- Exibir avisos de referências ausentes ou operações inválidas.
+
+Disponibilizar:
+
+- Expandir e recolher grupos.
+- Renomear recursos.
+- Editar parâmetros.
+- Suprimir ou reativar.
+- Excluir com tratamento das dependências.
+- Duplicar ou reutilizar recursos de maneira controlada.
+- Reordenar quando permitido.
+- Consultar diagnósticos.
+
+Não sobrecarregue o canvas com informações permanentes. A árvore, os parâmetros e os diagnósticos devem ser contextuais, claros e adaptados ao uso móvel.
+
+11. RECONSTRUÇÃO INCREMENTAL E DESEMPENHO
+
+A prioridade é manter a interface responsiva e evitar cálculos desnecessários.
+
+Implemente:
+
+- Rastreamento das dependências.
+- Identificação de recursos alterados.
+- Reconstrução apenas da parte afetada do modelo.
+- Reutilização de resultados válidos.
+- Avaliação ordenada dos recursos dependentes.
+- Cancelamento ou descarte de reconstruções obsoletas.
+- Separação entre cálculo geométrico e renderização.
+- Cache com invalidação correta.
+- Indicadores de progresso para operações demoradas.
+- Recuperação de falhas sem corromper o documento.
+
+Não recompute todos os recursos após qualquer alteração quando for possível recalcular somente os dependentes.
+
+Não declare desempenho de 60 FPS para todas as operações geométricas. O objetivo deve ser uma interação visual fluida, mantendo operações pesadas fora do ciclo de interação sempre que possível.
+
+Não mantenha tarefas de cálculo em execução quando nada precisar ser reconstruído.
+
+Não descarte informações paramétricas só para reduzir consumo de memória.
+
+12. UNIDADES, PRECISÃO E ESTABILIDADE
+
+Mantenha milímetros como unidade de trabalho preferencial do CALDRA, respeitando as unidades configuradas no documento e as convenções existentes.
+
+Defina tolerâncias geométricas apropriadas ao motor e às operações.
+
+Diferencie:
+
+- Valores exatos do modelo.
+- Valores arredondados apenas para exibição.
+- Tolerâncias numéricas.
+- Tolerâncias de fabricação.
+- Valores inferidos ou padrão.
+
+Evite usar valores visualmente arredondados como parâmetros canônicos.
+
+Valide coordenadas, dimensões, ângulos, raios, profundidades e parâmetros de operações antes de executá-las.
+
+Trate explicitamente divisões por zero, perfis vazios, geometrias degeneradas, interseções ambíguas, sólidos inválidos e operações impossíveis.
+
+Se uma operação falhar, preserve a última geometria válida e sinalize a falha no recurso correspondente.
+
+13. PERSISTÊNCIA, VERSÃO DO MODELO E COMPATIBILIDADE
+
+A árvore paramétrica deve ser armazenada junto do projeto utilizando a estratégia de persistência existente, sempre que possível.
+
+O documento deve conservar:
+
+- Esboços.
+- Recursos e seus parâmetros.
+- Dependências.
+- Corpos sólidos.
+- Referências geométricas.
+- Estado de supressão.
+- Unidades.
+- Ordem de reconstrução.
+- Identificadores estáveis.
+- Dados necessários à reconstrução do modelo.
+
+Utilize versionamento do esquema e migração quando a estrutura atual precisar ser ampliada.
+
+Não torne projetos antigos ilegíveis. Se um projeto anterior armazenar apenas a geometria final, preserve seu carregamento e trate o modelo como geometria importada ou não paramétrica até existir um método seguro de conversão.
+
+Não declare que é possível recuperar uma árvore paramétrica original de qualquer malha importada sem um processo específico de reconhecimento de recursos.
+
+14. ENGENHARIA MECÂNICA E FAMÍLIAS DE RECURSOS
+
+O sistema deverá ser capaz de evoluir para várias famílias de peças utilizando as ferramentas universais.
+
+14.1 Flanges e discos
+
+Combinação de esboços, extrusões, revoluções, cortes, padrões de furação e acabamento.
+
+14.2 Eixos, pinos e componentes rotacionais
+
+Combinação de esboço de perfil, revolução, cortes, chanfros, filetes e recursos helicoidais quando implementados.
+
+14.3 Fixadores
+
+Combinação de polígonos, extrusões, revolução, furação, rasgos e operações de rosca.
+
+14.4 Engrenagens e transmissão
+
+Combinação de sólidos-base, perfis de dentes, padrões circulares, furos e rasgos de chaveta.
+
+Um gerador de dentes precisa utilizar um algoritmo geométrico validado, com parâmetros mecânicos como módulo, quantidade de dentes e ângulo de pressão conforme o tipo de engrenagem.
+
+Não use uma série de blocos aproximados como substituto de dentes cuja geometria exija perfil específico.
+
+14.5 Suportes e estruturas
+
+Combinação de esboços, extrusões, nervuras, furos, padrões, filetes, chanfros e espelhamento.
+
+14.6 Caixas, carcaças e alojamentos
+
+Combinação de extrusão, revolução, casca, cortes, furos, ressaltos e padrões.
+
+14.7 Tubulações e conexões
+
+Combinação de perfis, varreduras, lofts, espessamento, casca e cortes, conforme o modelo geométrico suportado.
+
+14.8 Caldeiraria e chapa metálica
+
+Evoluir para recursos próprios de chapa, flanges, dobras, alívios, espessura e planificação.
+
+Essa integração deve respeitar os módulos de traçagem e planificação existentes no CALDRA. Não implemente uma segunda lógica de desenvolvimento incompatível com a já utilizada.
+
+Regra de escopo: nesta etapa, desenvolver e validar as ferramentas fundamentais; não adicionar peças prontas a uma biblioteca. Use as famílias acima para organizar o catálogo de recursos e os testes de combinação.
+
+15. TESTES DE ACEITAÇÃO
+
+Crie testes geométricos automatizados, testes de regressão e testes interativos.
+
+15.1 Sequência de recursos
+
+Verificar se uma extrusão cria um volume e se os recursos subsequentes o modificam sem substituir indevidamente os anteriores.
+
+15.2 Booleanas
+
+Testar união, corte e interseção com casos válidos, volumes sem sobreposição, coincidências e resultados degenerados.
+
+15.3 Dependências
+
+Alterar um parâmetro-base e verificar se os recursos dependentes são reconstruídos corretamente e se os não afetados preservam seus resultados.
+
+15.4 Padrões
+
+Criar um recurso único e multiplicá-lo linearmente e circularmente; validar a quantidade de instâncias, a orientação e a geometria final.
+
+15.5 Referências
+
+Selecionar uma face, criar um recurso relativo a ela e alterar o modelo anterior. Verificar se a referência permanece válida ou se é sinalizada corretamente quando deixa de existir.
+
+15.6 Modificadores
+
+Testar filetes, chanfros, casca e nervuras com parâmetros válidos e inválidos.
+
+15.7 Histórico
+
+Verificar edição, supressão, reativação, exclusão, Undo/Redo e recuperação de projetos.
+
+15.8 Interface
+
+Confirmar que os controles atuais continuam funcionando, que a viewport responde à seleção e que Parâmetros 3D exibe os dados do recurso selecionado.
+
+15.9 Fabricação
+
+Validar que o modelo final continua compatível com as exportações e os módulos de fabricação suportados, sem alegar precisão industrial além das capacidades reais do núcleo geométrico.
+
+Utilize peças temporárias de teste para essas verificações. Não as transforme em modelos prontos instalados no catálogo.
+
+16. PLANO DE IMPLEMENTAÇÃO POR ETAPAS
+
+Fase 1 — Auditoria e base paramétrica
+
+Auditar o núcleo existente, definir o modelo de recursos, o esquema persistente e o fluxo básico de reconstrução.
+
+Fase 2 — Recursos fundamentais
+
+Implementar e validar esboço, extrusão, revolução, corte e corpos sólidos.
+
+Fase 3 — Operações booleanas e múltiplos corpos
+
+Implementar união, subtração, interseção, corpo-alvo e validação dos resultados.
+
+Fase 4 — Feature Tree e reconstrução
+
+Integrar árvore, parâmetros editáveis, dependências, supressão, diagnóstico e reconstrução incremental.
+
+Fase 5 — Modificadores e padrões
+
+Integrar furos, filetes, chanfros, casca, nervuras, padrões e espelhamento.
+
+Fase 6 — Ferramentas avançadas
+
+Implementar loft, varredura, hélices, roscas e recursos especializados após validar os anteriores.
+
+Fase 7 — Integração industrial
+
+Conectar o motor a ferramentas de engrenagens, componentes mecânicos, chapa metálica, planificação, montagens e fabricação conforme as capacidades desenvolvidas.
+
+Cada fase deve ser implementada e testada antes de avançar. Não crie primeiro todas as interfaces para depois deixar as operações sem funcionalidade.
+
+17. CRITÉRIO FINAL DE CONCLUSÃO
+
+O trabalho só estará concluído quando o usuário puder:
+
+1. Criar um volume base.
+2. Adicionar e remover material por novas operações.
+3. Combinar recursos sucessivos.
+4. Selecionar faces para referenciar novos esboços ou recursos.
+5. Criar padrões e espelhamentos de recursos anteriores.
+6. Editar parâmetros na árvore.
+7. Reconstruir automaticamente os recursos dependentes.
+8. Suprimir, reativar e desfazer operações sem corromper o projeto.
+9. Salvar e reabrir o modelo paramétrico.
+10. Preservar o layout do CHAMFER e os módulos existentes do CALDRA.
+
+Não considere concluído um recurso que apenas apareça no menu ou renderize uma malha sem manter parâmetros e dependências.
+
+Ao finalizar, apresente um relatório informando o motor geométrico utilizado, os módulos alterados, os recursos efetivamente implementados, os testes executados, os resultados medidos e as limitações restantes.
+
+Implemente a arquitetura real do CHAMFER 3D sem substituir o projeto atual por uma demonstração isolada.

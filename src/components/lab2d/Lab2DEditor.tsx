@@ -1698,7 +1698,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     // pinta no MESMO quadro em que o SVG recebe a transformação: sem atraso
     // de um frame entre a geometria (canvas) e os overlays (SVG) no pinch.
     const hasIsoSolidFaces = entities.some((e) => e.params?.isIsoSolidFace);
-    const forceDarkIsoCanvas = drawingProjection === "isometric" || hasIsoSolidFaces;
+    const isIsoView = drawingProjection === "isometric" || hasIsoSolidFaces;
 
     drawScene(ctx, {
       index: drawIndex,
@@ -1708,10 +1708,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       dpr,
       selection: selectionSet,
       lod: gesturing,
-      isLight: !isDark && !forceDarkIsoCanvas,
+      isLight: !isDark,
       isDraggingUnlocked,
+      isIsometric: isIsoView,
+      isoPlane,
+      sheetThickness: thickness,
     });
-  }, [drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isDark, drawingProjection, entities, isDraggingUnlocked]);
+  }, [drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isDark, drawingProjection, entities, isDraggingUnlocked, isoPlane, thickness]);
 
   /* ------------------------------------------------------- FLUXO CALDRA */
   /*
@@ -5027,7 +5030,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       : "text-slate-600 hover:text-slate-900",
                 )}
               >
-                3D SÓLIDO
+                CAD 3D
               </button>
             </div>
 
@@ -5609,7 +5612,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           className={cn(
             "relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border shadow-inner transition-colors",
             drawingProjection === "isometric" || entities.some((e) => e.params?.isIsoSolidFace)
-              ? "border-slate-800 bg-[#1A2028]"
+              ? isDark
+                ? "border-slate-800/90 bg-[#050914] bg-[radial-gradient(ellipse_at_center,#0A1528_0%,#050914_78%)]"
+                : "border-slate-200 bg-[#F8FAFC]"
               : isDark
                 ? "border-slate-800 bg-[#0d121c]"
                 : "border-slate-200 bg-[#ffffff]",
@@ -5698,7 +5703,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         shapeRendering="crispEdges"
                       />
                     </pattern>
-                    {/* 4. GRADE ISOMÉTRICA (TRIANGULAR A 30°, 90°, 150°) */}
+                    {/* 4. GRADE ISOMÉTRICA ESPACIAL (EIXOS A 30°, 90°, 150°) */}
                     {drawingProjection === "isometric" && (
                       <pattern
                         id="chamfer-grid-isometric"
@@ -5718,16 +5723,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           y1={0}
                           x2={0}
                           y2={grid * view.k}
-                          stroke={gridStyles.secondaryStroke}
-                          strokeWidth={gridStyles.secondaryWidth}
+                          stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.12)"}
+                          strokeWidth={0.8}
                         />
                         <line
                           x1={(grid * Math.sqrt(3) * view.k) / 2}
                           y1={0}
                           x2={(grid * Math.sqrt(3) * view.k) / 2}
                           y2={grid * view.k}
-                          stroke={gridStyles.secondaryStroke}
-                          strokeWidth={gridStyles.secondaryWidth}
+                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                          strokeWidth={0.65}
                         />
                         {/* Linhas a 30° */}
                         <line
@@ -5735,24 +5740,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           y1={(grid * view.k) / 2}
                           x2={(grid * Math.sqrt(3) * view.k) / 2}
                           y2={0}
-                          stroke={gridStyles.secondaryStroke}
-                          strokeWidth={gridStyles.secondaryWidth}
+                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                          strokeWidth={0.65}
                         />
                         <line
                           x1={0}
                           y1={grid * view.k}
                           x2={grid * Math.sqrt(3) * view.k}
                           y2={0}
-                          stroke={gridStyles.majorStroke}
-                          strokeWidth={gridStyles.secondaryWidth}
+                          stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.14)"}
+                          strokeWidth={0.85}
                         />
                         <line
                           x1={(grid * Math.sqrt(3) * view.k) / 2}
                           y1={grid * view.k}
                           x2={grid * Math.sqrt(3) * view.k}
                           y2={(grid * view.k) / 2}
-                          stroke={gridStyles.secondaryStroke}
-                          strokeWidth={gridStyles.secondaryWidth}
+                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                          strokeWidth={0.65}
                         />
                         {/* Linhas a 150° */}
                         <line
@@ -5760,24 +5765,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           y1={(grid * view.k) / 2}
                           x2={(grid * Math.sqrt(3) * view.k) / 2}
                           y2={grid * view.k}
-                          stroke={gridStyles.secondaryStroke}
-                          strokeWidth={gridStyles.secondaryWidth}
+                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                          strokeWidth={0.65}
                         />
                         <line
                           x1={0}
                           y1={0}
                           x2={grid * Math.sqrt(3) * view.k}
                           y2={grid * view.k}
-                          stroke={gridStyles.majorStroke}
-                          strokeWidth={gridStyles.secondaryWidth}
+                          stroke={isDark ? "rgba(56, 189, 248, 0.09)" : "rgba(2, 132, 199, 0.14)"}
+                          strokeWidth={0.85}
                         />
                         <line
                           x1={(grid * Math.sqrt(3) * view.k) / 2}
                           y1={0}
                           x2={grid * Math.sqrt(3) * view.k}
                           y2={(grid * view.k) / 2}
-                          stroke={gridStyles.secondaryStroke}
-                          strokeWidth={gridStyles.secondaryWidth}
+                          stroke={isDark ? "rgba(148, 163, 184, 0.04)" : "rgba(100, 116, 139, 0.07)"}
+                          strokeWidth={0.65}
                         />
                       </pattern>
                     )}
@@ -5874,6 +5879,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 <g pointerEvents="none" aria-label="Eixos do sistema CAD">
                   {drawingProjection === "isometric" ? (
                     <>
+                      {/* Anéis elípticos concêntricos de referência espacial isométrica */}
+                      {[100, 220, 360].map((rIso, rIdx) => (
+                        <ellipse
+                          key={`iso_ring_${rIso}`}
+                          cx={0}
+                          cy={0}
+                          rx={rIso * Math.sqrt(1.5)}
+                          ry={rIso * Math.sqrt(0.5)}
+                          fill="none"
+                          stroke={isDark ? "rgba(56, 189, 248, 0.08)" : "rgba(2, 132, 199, 0.12)"}
+                          strokeWidth={0.75 / view.k}
+                          strokeDasharray={rIdx === 1 ? `${4 / view.k} ${3 / view.k}` : undefined}
+                        />
+                      ))}
                       {/* Eixo X Isométrico (30° - Largura) */}
                       <line
                         x1={-1e5 * Math.cos(Math.PI / 6)}
@@ -6472,10 +6491,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             width={txtLen * sz * 0.6 + 6 / safeK}
                             height={sz * 1.25}
                             fill={
-                              isDark ||
-                              drawingProjection === "isometric" ||
-                              entities.some((e) => e.params?.isIsoSolidFace)
-                                ? "#1A2028"
+                              isDark
+                                ? drawingProjection === "isometric" ||
+                                  entities.some((e) => e.params?.isIsoSolidFace)
+                                  ? "#050914"
+                                  : "#1A2028"
                                 : "#ffffff"
                             }
                             fillOpacity={0.94}
@@ -8809,12 +8829,13 @@ export const EntityShape = React.memo(function EntityShape({
       ? "#0F172A"
       : style.color;
   const isIsoSolid = !!e.params?.isIsoSolidFace;
-  const fillColor = isIsoSolid ? ((e.params?.fillColor as string) || "#323B47") : "none";
-  const customStroke = isIsoSolid ? ((e.params?.strokeColor as string) || "#FFFFFF") : stroke;
+  const fillColor = isIsoSolid ? ((e.params?.fillColor as string) || "rgba(18, 40, 74, 0.25)") : "none";
+  const customStroke = isIsoSolid ? ((e.params?.strokeColor as string) || "#E8F4FF") : stroke;
   const customWidth = isIsoSolid
-    ? (typeof e.params?.strokeWidth === "number" ? e.params.strokeWidth : 2) / k
+    ? (typeof e.params?.strokeWidth === "number" ? e.params.strokeWidth : 1.4) / k
     : (1.4 * style.weight) / k;
   const noStroke = isIsoSolid && !!e.params?.noStroke;
+  const customDashArr = Array.isArray(e.params?.dash) ? (e.params.dash as number[]) : null;
 
   const props = {
     fill: fillColor,
@@ -8822,7 +8843,12 @@ export const EntityShape = React.memo(function EntityShape({
     strokeWidth: customWidth,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
-    strokeDasharray: preview && !isIsoSolid ? `${5 / k} ${4 / k}` : style.dash(1 / k),
+    strokeDasharray:
+      preview && !isIsoSolid
+        ? `${5 / k} ${4 / k}`
+        : customDashArr && customDashArr.length > 0
+          ? customDashArr.map((d) => d / k).join(" ")
+          : style.dash(1 / k),
     vectorEffect: "non-scaling-stroke" as const,
   };
   const halo = selected

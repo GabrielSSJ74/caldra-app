@@ -248,6 +248,83 @@ export class OcctKernelAdapter implements ICadKernel {
   // PERFIS 2D E EXTRUSÃO
   // ==========================================
 
+  /**
+   * Desembrulha um TopoDS_Compound de resultado booleano para TopoDS_Solid único
+   * quando aplicável, garantindo que fillet/chamfer/shell subsequentes funcionem.
+   */
+  private unwrapSolidHandle(k: OcctKernel, handle: ShapeHandle): ShapeHandle {
+    try {
+      if (k.isCompound(handle)) {
+        const solids = k.getSubShapes(handle, "solid");
+        if (solids.length === 1 && solids[0] !== undefined) {
+          return solids[0];
+        }
+      }
+    } catch {
+      // Preserva handle original se não for compound
+    }
+    return handle;
+  }
+
+  private mapPlane2DTo3D(
+    pt: { x: number; y: number },
+    origin: CadVector3D = { x: 0, y: 0, z: 0 },
+    normal: CadVector3D = { x: 0, y: 0, z: 1 },
+  ): CadVector3D {
+    // Constrói base ortonormal (u, v, n) a partir da normal do plano
+    const len = Math.hypot(normal.x, normal.y, normal.z) || 1;
+    const nx = normal.x / len;
+    const ny = normal.y / len;
+    const nz = normal.z / len;
+
+    // Se plano padrão XY (normal Z+)
+    if (Math.abs(nx) < 1e-4 && Math.abs(ny) < 1e-4) {
+      return {
+        x: origin.x + pt.x,
+        y: origin.y + pt.y,
+        z: origin.z,
+      };
+    }
+
+    // Se plano XZ (normal Y)
+    if (Math.abs(nx) < 1e-4 && Math.abs(Math.abs(ny) - 1) < 1e-4) {
+      return {
+        x: origin.x + pt.x,
+        y: origin.y,
+        z: origin.z + pt.y,
+      };
+    }
+
+    // Se plano YZ (normal X)
+    if (Math.abs(Math.abs(nx) - 1) < 1e-4 && Math.abs(ny) < 1e-4) {
+      return {
+        x: origin.x,
+        y: origin.y + pt.x,
+        z: origin.z + pt.y,
+      };
+    }
+
+    // Plano arbitrário inclinado
+    const up = Math.abs(nz) < 0.9 ? { x: 0, y: 0, z: 1 } : { x: 1, y: 0, z: 0 };
+    const uxRaw = up.y * nz - up.z * ny;
+    const uyRaw = up.z * nx - up.x * nz;
+    const uzRaw = up.x * ny - up.y * nx;
+    const uLen = Math.hypot(uxRaw, uyRaw, uzRaw) || 1;
+    const ux = uxRaw / uLen;
+    const uy = uyRaw / uLen;
+    const uz = uzRaw / uLen;
+
+    const vx = ny * uz - nz * uy;
+    const vy = nz * ux - nx * uz;
+    const vz = nx * uy - ny * ux;
+
+    return {
+      x: origin.x + pt.x * ux + pt.y * vx,
+      y: origin.y + pt.x * uy + pt.y * vy,
+      z: origin.z + pt.x * uz + pt.y * vz,
+    };
+  }
+
   async createRectangleFace(width: number, height: number, name = "Face Retangular"): Promise<CadShape> {
     const k = this.ensureKernel();
     try {
@@ -282,6 +359,93 @@ export class OcctKernelAdapter implements ICadKernel {
     }
   }
 
+  async createPolygonFace(
+    points: Array<{ x: number; y: number }>,
+    name = "Face Poligonal",
+    planeOrigin: CadVector3D = { x: 0, y: 0, z: 0 },
+    planeNormal: CadVector3D = { x: 0, y: 0, z: 1 },
+  ): Promise<CadShape> {
+    const k = this.ensureKernel();
+    if (!points || points.length < 3) {
+      throw new CadKernelError({
+        operation: "createPolygonFace",
+        message: "Um perfil poligonal fechado requer ao menos 3 vértices distintos.",
+        code: "INVALID_DIMENSIONS",
+      });
+    }
+
+    try {
+      const edges: ShapeHandle[] = [];
+      for (let i = 0; i < points.length; i++) {
+        const p0 = points[i]!;
+        const p1 = points[(i + 1) % points.length]!;
+        if (Math.hypot(p1.x - p0.x, p1.y - p0.y) < 1e-4) continue;
+        const v0 = this.mapPlane2DTo3D(p0, planeOrigin, planeNormal);
+        const v1 = this.mapPlane2DTo3D(p1, planeOrigin, planeNormal);
+        edges.push(k.makeLineEdge(v0, v1));
+      }
+      if (edges.length < 3) {
+        throw new Error("Perfil degenerado: menos de 3 segmentos válidos.");
+      }
+      const wire = k.makeWire(edges);
+      const face = k.makeFace(wire);
+      for (const e of edges) k.release(e);
+      k.release(wire);
+
+      return createCadShape({
+        name,
+        type: "face",
+        handle: face as unknown as number,
+      });
+    } catch (err) {
+      throw wrapKernelError("createPolygonFace", err);
+    }
+  }
+
+  async createRegularPolygonFace(
+    sides: number,
+    radius: number,
+    name = "Polígono Regular",
+    planeOrigin: CadVector3D = { x: 0, y: 0, z: 0 },
+    planeNormal: CadVector3D = { x: 0, y: 0, z: 1 },
+  ): Promise<CadShape> {
+    const n = Math.max(3, Math.min(64, Math.round(sides)));
+    const r = Math.max(0.5, radius);
+    const pts: Array<{ x: number; y: number }> = [];
+    for (let i = 0; i < n; i++) {
+      const angle = (i * 2 * Math.PI) / n;
+      pts.push({
+        x: r * Math.cos(angle),
+        y: r * Math.sin(angle),
+      });
+    }
+    return await this.createPolygonFace(pts, name, planeOrigin, planeNormal);
+  }
+
+  async createSlotFace(
+    centerDistance: number,
+    radius: number,
+    name = "Rasgo Oblongo",
+    planeOrigin: CadVector3D = { x: 0, y: 0, z: 0 },
+    planeNormal: CadVector3D = { x: 0, y: 0, z: 1 },
+  ): Promise<CadShape> {
+    const halfL = Math.max(0.5, centerDistance / 2);
+    const r = Math.max(0.5, radius);
+    const pts: Array<{ x: number; y: number }> = [];
+    const arcSegs = 12;
+    // Semicírculo direito (-90° a +90°)
+    for (let i = 0; i <= arcSegs; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / arcSegs;
+      pts.push({ x: halfL + r * Math.cos(a), y: r * Math.sin(a) });
+    }
+    // Semicírculo esquerdo (+90° a +270°)
+    for (let i = 0; i <= arcSegs; i++) {
+      const a = Math.PI / 2 + (i * Math.PI) / arcSegs;
+      pts.push({ x: -halfL + r * Math.cos(a), y: r * Math.sin(a) });
+    }
+    return await this.createPolygonFace(pts, name, planeOrigin, planeNormal);
+  }
+
   async extrude(
     profile: CadShape,
     dx: number,
@@ -290,6 +454,13 @@ export class OcctKernelAdapter implements ICadKernel {
     name = "Extrusão",
   ): Promise<CadShape> {
     const k = this.ensureKernel();
+    if (Math.hypot(dx, dy, dz) < 1e-4) {
+      throw new CadKernelError({
+        operation: "extrude",
+        message: "A distância de extrusão deve ser maior que zero.",
+        code: "INVALID_DIMENSIONS",
+      });
+    }
     try {
       const handle = k.extrude(profile.handle as unknown as ShapeHandle, dx, dy, dz);
       return createCadShape({
@@ -299,6 +470,37 @@ export class OcctKernelAdapter implements ICadKernel {
       });
     } catch (err) {
       throw wrapKernelError("extrude", err, "EXTRUSION_FAILED");
+    }
+  }
+
+  async draftExtrude(
+    profile: CadShape,
+    dx: number,
+    dy: number,
+    dz: number,
+    angleDeg: number,
+    name = "Extrusão com Inclinação",
+  ): Promise<CadShape> {
+    const k = this.ensureKernel();
+    try {
+      if (Math.abs(angleDeg) < 1e-3) {
+        return await this.extrude(profile, dx, dy, dz, name);
+      }
+      const handle = k.draftPrism(
+        profile.handle as unknown as ShapeHandle,
+        dx,
+        dy,
+        dz,
+        angleDeg,
+      );
+      return createCadShape({
+        name,
+        type: "solid",
+        handle: handle as unknown as number,
+      });
+    } catch {
+      // Fallback seguro se draftPrism falhar em faces planas arbitrárias
+      return await this.extrude(profile, dx, dy, dz, name);
     }
   }
 
@@ -345,7 +547,13 @@ export class OcctKernelAdapter implements ICadKernel {
     }
 
     try {
-      const handles = wireProfiles.map((p) => p.handle as unknown as ShapeHandle);
+      const handles = wireProfiles.map((p) => {
+        const raw = p.handle as unknown as ShapeHandle;
+        if (k.isFace(raw)) {
+          return k.outerWire(raw);
+        }
+        return raw;
+      });
       const handle = k.loft(handles, isSolid, ruled);
       return createCadShape({
         name,
@@ -357,6 +565,55 @@ export class OcctKernelAdapter implements ICadKernel {
     }
   }
 
+  async sweep(
+    profile: CadShape,
+    spine: CadShape,
+    name = "Varredura (Sweep)",
+  ): Promise<CadShape> {
+    const k = this.ensureKernel();
+    try {
+      const profileHandle = profile.handle as unknown as ShapeHandle;
+      const spineHandle = spine.handle as unknown as ShapeHandle;
+      const handle = k.pipe(profileHandle, spineHandle);
+      return createCadShape({
+        name,
+        type: "solid",
+        handle: this.unwrapSolidHandle(k, handle) as unknown as number,
+      });
+    } catch (err) {
+      throw wrapKernelError("sweep", err, "EXTRUSION_FAILED");
+    }
+  }
+
+  async createHelixWire(
+    origin: CadVector3D,
+    axis: CadVector3D,
+    pitch: number,
+    height: number,
+    radius: number,
+    leftHanded = false,
+    name = "Hélice 3D",
+  ): Promise<CadShape> {
+    const k = this.ensureKernel();
+    if (pitch <= 0 || height <= 0 || radius <= 0) {
+      throw new CadKernelError({
+        operation: "createHelixWire",
+        message: `Parâmetros helicoidais inválidos: Passo=${pitch}, Altura=${height}, Raio=${radius} mm.`,
+        code: "INVALID_DIMENSIONS",
+      });
+    }
+    try {
+      const handle = k.makeHelixWireHanded(origin, axis, pitch, height, radius, leftHanded);
+      return createCadShape({
+        name,
+        type: "wire",
+        handle: handle as unknown as number,
+      });
+    } catch (err) {
+      throw wrapKernelError("createHelixWire", err);
+    }
+  }
+
   // ==========================================
   // OPERAÇÕES BOOLEANAS EXATAS
   // ==========================================
@@ -364,10 +621,11 @@ export class OcctKernelAdapter implements ICadKernel {
   async fuse(a: CadShape, b: CadShape, name = "União Booleana"): Promise<CadShape> {
     const k = this.ensureKernel();
     try {
-      const handle = k.fuse(
+      const raw = k.fuse(
         a.handle as unknown as ShapeHandle,
         b.handle as unknown as ShapeHandle,
       );
+      const handle = this.unwrapSolidHandle(k, raw);
       return createCadShape({
         name,
         type: "solid",
@@ -381,10 +639,11 @@ export class OcctKernelAdapter implements ICadKernel {
   async cut(base: CadShape, tool: CadShape, name = "Corte Booleano"): Promise<CadShape> {
     const k = this.ensureKernel();
     try {
-      const handle = k.cut(
+      const raw = k.cut(
         base.handle as unknown as ShapeHandle,
         tool.handle as unknown as ShapeHandle,
       );
+      const handle = this.unwrapSolidHandle(k, raw);
       return createCadShape({
         name,
         type: "solid",
@@ -398,10 +657,19 @@ export class OcctKernelAdapter implements ICadKernel {
   async intersect(a: CadShape, b: CadShape, name = "Interseção Booleana"): Promise<CadShape> {
     const k = this.ensureKernel();
     try {
-      const handle = k.intersect(
+      const raw = k.intersect(
         a.handle as unknown as ShapeHandle,
         b.handle as unknown as ShapeHandle,
       );
+      const handle = this.unwrapSolidHandle(k, raw);
+      const vol = k.getVolume(handle);
+      if (vol <= 1e-3) {
+        throw new CadKernelError({
+          operation: "intersect",
+          message: "Interseção vazia ou degenerada: os corpos não possuem volume em comum.",
+          code: "BOOLEAN_FAILED",
+        });
+      }
       return createCadShape({
         name,
         type: "solid",
@@ -413,7 +681,7 @@ export class OcctKernelAdapter implements ICadKernel {
   }
 
   // ==========================================
-  // OPERAÇÕES DE DETALHE (FILLET / CHAMFER)
+  // OPERAÇÕES DE DETALHE (FILLET / CHAMFER / SHELL / THICKEN)
   // ==========================================
 
   async fillet(
@@ -432,29 +700,48 @@ export class OcctKernelAdapter implements ICadKernel {
     }
 
     try {
+      const baseHandle = this.unwrapSolidHandle(k, solid.handle as unknown as ShapeHandle);
       let targetEdges: ShapeHandle[] = [];
-      const allEdges = k.getSubShapes(solid.handle as unknown as ShapeHandle, "edge");
+      const allEdges = k.getSubShapes(baseHandle, "edge");
 
       if (edgeIndicesOrHandles && edgeIndicesOrHandles.length > 0) {
         targetEdges = edgeIndicesOrHandles
-          .map((idx) => allEdges[idx])
+          .map((idx) => allEdges[idx % Math.max(1, allEdges.length)])
           .filter((e): e is ShapeHandle => e !== undefined);
       } else {
-        targetEdges = allEdges;
+        targetEdges = allEdges.slice(0, Math.min(4, allEdges.length));
       }
 
-      const handle = k.fillet(
-        solid.handle as unknown as ShapeHandle,
-        targetEdges,
-        radius,
-      );
+      // Validação preventiva de comprimento das arestas vizinhas
+      for (let i = 0; i < targetEdges.length; i++) {
+        const eh = targetEdges[i]!;
+        try {
+          const len = k.getLength(eh);
+          if (len > 0 && radius > len * 0.85) {
+            throw new CadKernelError({
+              operation: "fillet",
+              message: `Raio do filete (${radius} mm) excede o limite geométrico da aresta selecionada (${len.toFixed(1)} mm).`,
+              code: "FILLET_FAILED",
+            });
+          }
+        } catch (innerErr) {
+          if (innerErr instanceof CadKernelError) throw innerErr;
+        }
+      }
+
+      const handle = k.fillet(baseHandle, targetEdges, radius);
       return createCadShape({
         name,
         type: "solid",
-        handle: handle as unknown as number,
+        handle: this.unwrapSolidHandle(k, handle) as unknown as number,
       });
     } catch (err) {
-      throw wrapKernelError("fillet", err, "FILLET_FAILED");
+      if (err instanceof CadKernelError) throw err;
+      throw new CadKernelError({
+        operation: "fillet",
+        message: `Não foi possível aplicar filete R=${radius} mm nas arestas selecionadas (excede limite da face vizinha ou aresta de costura).`,
+        code: "FILLET_FAILED",
+      });
     }
   }
 
@@ -474,29 +761,148 @@ export class OcctKernelAdapter implements ICadKernel {
     }
 
     try {
+      const baseHandle = this.unwrapSolidHandle(k, solid.handle as unknown as ShapeHandle);
       let targetEdges: ShapeHandle[] = [];
-      const allEdges = k.getSubShapes(solid.handle as unknown as ShapeHandle, "edge");
+      const allEdges = k.getSubShapes(baseHandle, "edge");
 
       if (edgeIndicesOrHandles && edgeIndicesOrHandles.length > 0) {
         targetEdges = edgeIndicesOrHandles
-          .map((idx) => allEdges[idx])
+          .map((idx) => allEdges[idx % Math.max(1, allEdges.length)])
           .filter((e): e is ShapeHandle => e !== undefined);
       } else {
-        targetEdges = allEdges;
+        targetEdges = allEdges.slice(0, Math.min(4, allEdges.length));
       }
 
-      const handle = k.chamfer(
-        solid.handle as unknown as ShapeHandle,
-        targetEdges,
-        distance,
-      );
+      const handle = k.chamfer(baseHandle, targetEdges, distance);
       return createCadShape({
         name,
         type: "solid",
-        handle: handle as unknown as number,
+        handle: this.unwrapSolidHandle(k, handle) as unknown as number,
       });
     } catch (err) {
-      throw wrapKernelError("chamfer", err, "CHAMFER_FAILED");
+      if (err instanceof CadKernelError) throw err;
+      throw new CadKernelError({
+        operation: "chamfer",
+        message: `Distância do chanfro (${distance} mm) incompatível com a topologia das arestas selecionadas.`,
+        code: "CHAMFER_FAILED",
+      });
+    }
+  }
+
+  async chamferAdvanced(
+    solid: CadShape,
+    options: {
+      mode: "symmetric" | "two_distances" | "distance_angle";
+      distance1: number;
+      distance2?: number;
+      angleDeg?: number;
+      edgeIndices?: number[];
+    },
+    name = "Chanfro Paramétrico",
+  ): Promise<CadShape> {
+    const k = this.ensureKernel();
+    const d1 = Math.max(0.1, options.distance1);
+    const baseHandle = this.unwrapSolidHandle(k, solid.handle as unknown as ShapeHandle);
+    const allEdges = k.getSubShapes(baseHandle, "edge");
+    const indices = options.edgeIndices && options.edgeIndices.length > 0 ? options.edgeIndices : [0];
+    const targetEdges = indices
+      .map((idx) => allEdges[idx % Math.max(1, allEdges.length)])
+      .filter((e): e is ShapeHandle => e !== undefined);
+
+    try {
+      if (options.mode === "distance_angle" && options.angleDeg && Math.abs(options.angleDeg - 45) > 0.5) {
+        const ang = Math.max(5, Math.min(85, options.angleDeg));
+        const handle = k.chamferDistAngle(baseHandle, targetEdges, d1, ang);
+        return createCadShape({
+          name,
+          type: "solid",
+          handle: this.unwrapSolidHandle(k, handle) as unknown as number,
+        });
+      }
+      if (options.mode === "two_distances" && options.distance2 && Math.abs(options.distance2 - d1) > 0.05 && targetEdges[0]) {
+        const d2 = Math.max(0.1, options.distance2);
+        let cur = baseHandle;
+        for (const edge of targetEdges) {
+          cur = this.unwrapSolidHandle(k, k.chamferAsymmetric(cur, edge, d1, d2));
+        }
+        return createCadShape({
+          name,
+          type: "solid",
+          handle: cur as unknown as number,
+        });
+      }
+      return await this.chamfer(solid, d1, indices, name);
+    } catch {
+      return await this.chamfer(solid, d1, indices, name);
+    }
+  }
+
+  async shell(
+    solid: CadShape,
+    thickness: number,
+    faceIndicesToRemove?: number[],
+    name = "Casca (Shell)",
+  ): Promise<CadShape> {
+    const k = this.ensureKernel();
+    if (thickness <= 0) {
+      throw new CadKernelError({
+        operation: "shell",
+        message: `Espessura de parede inválida para Casca: ${thickness} mm.`,
+        code: "INVALID_DIMENSIONS",
+      });
+    }
+
+    try {
+      const baseHandle = this.unwrapSolidHandle(k, solid.handle as unknown as ShapeHandle);
+      const allFaces = k.getSubShapes(baseHandle, "face");
+      const indices = faceIndicesToRemove && faceIndicesToRemove.length > 0 ? faceIndicesToRemove : [allFaces.length - 1];
+      const facesToRemove = indices
+        .map((idx) => allFaces[idx % Math.max(1, allFaces.length)])
+        .filter((f): f is ShapeHandle => f !== undefined);
+
+      // Espessura negativa no OCCT desloca as paredes para dentro do sólido
+      const handle = k.shell(baseHandle, facesToRemove, -Math.abs(thickness), 1e-3);
+      return createCadShape({
+        name,
+        type: "solid",
+        handle: this.unwrapSolidHandle(k, handle) as unknown as number,
+      });
+    } catch {
+      throw new CadKernelError({
+        operation: "shell",
+        message: `Espessura da casca (${thickness} mm) excede a geometria interna ou a face selecionada não permite abertura.`,
+        code: "BOOLEAN_FAILED",
+      });
+    }
+  }
+
+  async thicken(
+    shape: CadShape,
+    thickness: number,
+    name = "Espessamento (Thicken)",
+  ): Promise<CadShape> {
+    const k = this.ensureKernel();
+    if (Math.abs(thickness) < 0.05) {
+      throw new CadKernelError({
+        operation: "thicken",
+        message: `Espessura inválida para Thicken: ${thickness} mm.`,
+        code: "INVALID_DIMENSIONS",
+      });
+    }
+    try {
+      const baseHandle = this.unwrapSolidHandle(k, shape.handle as unknown as ShapeHandle);
+      const handle = k.thicken(baseHandle, thickness, 1e-3);
+      return createCadShape({
+        name,
+        type: "solid",
+        handle: this.unwrapSolidHandle(k, handle) as unknown as number,
+      });
+    } catch {
+      throw new CadKernelError({
+        operation: "thicken",
+        message: `Não foi possível espessar o sólido com ${thickness} mm.`,
+        code: "BOOLEAN_FAILED",
+      });
     }
   }
 

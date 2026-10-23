@@ -421,7 +421,7 @@ export function Cad3DStage({
               type="button"
               className="h-[24px] rounded-md bg-red-600 px-3 font-mono text-[9.5px] font-bold tracking-wider text-white shadow-xs uppercase"
             >
-              3D SÓLIDO
+              CAD 3D
             </button>
           </div>
         </div>

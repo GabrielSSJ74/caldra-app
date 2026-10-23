@@ -1,21 +1,17 @@
 /**
- * CALDRA CAD — CAD B-REP EDITOR & COMMAND DISPATCHER (FASE 06)
+ * CALDRA CAD — CAD B-REP EDITOR & COMMAND DISPATCHER (FASE 06 — PARAMÉTRICO COMBINÁVEL)
  *
  * Camada de comando e orquestração de edição paramétrica B-Rep.
- * Conecta a interação do usuário na interface 3D e no Gizmo ao motor analítico
- * do OpenCascade (OCCT), garantindo reconstrução geométrica determinística real.
- *
- * Respeita a regra fundamental da CALDRA:
- * NUNCA aplicar apenas transformações visuais (mesh.position/scale).
- * Toda alteração modifica os parâmetros da geometria no CAD CORE e reconstrói o B-Rep.
+ * Conecta a interação do usuário na interface CAD 3D e no Gizmo ao motor analítico
+ * do OpenCascade (OCCT), garantindo reconstrução geométrica determinística real
+ * com snapshots completos da Árvore de Recursos (Undo / Redo sem perda de topologia).
  */
 
 import { CadFeatureTree } from "../features/CadFeatureTree";
-import type { CadFeature, CadFeatureType } from "../features/types";
-import type { CadSelectedEntity } from "./CadSelection";
+import type { CadFeatureInput, CadFeatureParams } from "../features/CadFeatureModel";
 
 export interface CadEditSnapshot {
-  featuresJson: string;
+  serializedTreeJson: string;
   rollbackIndex: number;
   timestamp: number;
 }
@@ -24,24 +20,16 @@ export class CadBRepEditor {
   private tree: CadFeatureTree;
   private undoStack: CadEditSnapshot[] = [];
   private redoStack: CadEditSnapshot[] = [];
-  private maxHistory = 30;
+  private maxHistory = 35;
 
   constructor(tree: CadFeatureTree) {
     this.tree = tree;
   }
 
-  /** Cria snapshot imutável do estado atual da árvore */
+  /** Cria snapshot imutável completo do estado atual da árvore (recursos, corpos, mates, refs semânticas) */
   private createSnapshot(): CadEditSnapshot {
     return {
-      featuresJson: JSON.stringify(
-        this.tree.getFeatures().map((f) => ({
-          id: f.id,
-          name: f.name,
-          type: f.type,
-          parameters: f.parameters,
-          isSuppressed: f.isSuppressed,
-        })),
-      ),
+      serializedTreeJson: this.tree.serializeTree(),
       rollbackIndex: this.tree.getRollbackIndex(),
       timestamp: Date.now(),
     };
@@ -53,7 +41,7 @@ export class CadBRepEditor {
     if (this.undoStack.length > this.maxHistory) {
       this.undoStack.shift();
     }
-    this.redoStack = []; // Nova ação invalida histórico de redo futuro
+    this.redoStack = [];
   }
 
   public canUndo(): boolean {
@@ -67,10 +55,7 @@ export class CadBRepEditor {
   /** Desfaz a última alteração geométrica */
   public async undo(): Promise<boolean> {
     if (!this.canUndo()) return false;
-
-    // Guarda o estado atual no redoStack para poder refazer
     this.redoStack.push(this.createSnapshot());
-
     const target = this.undoStack.pop()!;
     await this.restoreSnapshot(target);
     return true;
@@ -79,37 +64,41 @@ export class CadBRepEditor {
   /** Refaz a alteração desfeita */
   public async redo(): Promise<boolean> {
     if (!this.canRedo()) return false;
-
-    // Guarda o estado atual no undoStack para poder desfazer novamente
     this.undoStack.push(this.createSnapshot());
-
     const target = this.redoStack.pop()!;
     await this.restoreSnapshot(target);
     return true;
   }
 
   private async restoreSnapshot(snapshot: CadEditSnapshot): Promise<void> {
-    const rawFeatures = JSON.parse(snapshot.featuresJson) as CadFeature[];
-    this.tree.dispose();
-
-    for (const f of rawFeatures) {
-      const added = this.tree.addFeature({
-        name: f.name,
-        type: f.type,
-        parameters: f.parameters,
-      });
-      if (f.isSuppressed) {
-        this.tree.setSuppressed(added.id, true);
-      }
-    }
+    this.tree.deserializeTree(snapshot.serializedTreeJson);
     this.tree.setRollbackIndex(snapshot.rollbackIndex);
     await this.tree.rebuild();
   }
 
+  /** Adiciona qualquer recurso paramétrico combinável com suporte a Undo */
+  public async addParametricFeature(input: CadFeatureInput): Promise<string> {
+    this.pushUndo();
+    const added = this.tree.addFeature(input);
+    await this.tree.rebuild();
+    return added.id;
+  }
+
+  /** Atualiza parâmetros de um recurso existente com propagação incremental */
+  public async updateParametricFeature(
+    featureId: string,
+    newParams: Partial<CadFeatureParams>,
+  ): Promise<boolean> {
+    this.pushUndo();
+    const ok = this.tree.updateFeature(featureId, newParams);
+    if (!ok) return false;
+    await this.tree.rebuild();
+    return true;
+  }
+
   /**
-   * EDIÇÃO VIA GIZMO (Seção 15 do Requisito Industrial):
-   * Exemplo: Selecionar Face Superior (Z+) e arrastar de 50 mm para 70 mm (+20 mm).
-   * Atualiza a altura do bloco base diretamente e reconstrói o sólido analítico.
+   * EDIÇÃO VIA GIZMO / PUSH-PULL DE FACE:
+   * Atualiza o bloco base se aplicável ou adiciona uma extrusão/transformação na árvore.
    */
   public async applyFacePushPull(
     faceIndex: number,
@@ -123,8 +112,6 @@ export class CadBRepEditor {
 
     if (baseBox) {
       const p = { ...(baseBox.parameters as { width: number; length: number; height: number }) };
-
-      // Se a face for predominantemente Z+ ou Z-
       if (normal && Math.abs(normal.z) > 0.7) {
         const change = normal.z > 0 ? delta.z : -delta.z;
         p.height = Math.max(1, p.height + change);
@@ -135,7 +122,6 @@ export class CadBRepEditor {
         const change = normal.y > 0 ? delta.y : -delta.y;
         p.length = Math.max(1, p.length + change);
       } else {
-        // Sem normal explícita, aplica a maior componente euclidiana
         if (Math.abs(delta.z) >= Math.abs(delta.x) && Math.abs(delta.z) >= Math.abs(delta.y)) {
           p.height = Math.max(1, p.height + delta.z);
         } else if (Math.abs(delta.x) >= Math.abs(delta.y)) {
@@ -149,7 +135,6 @@ export class CadBRepEditor {
       await this.tree.rebuild();
       return true;
     } else {
-      // Adiciona uma transformação espacial no sólido
       this.tree.addFeature({
         name: `Deslocamento Face #${faceIndex}`,
         type: "transform",
@@ -160,10 +145,7 @@ export class CadBRepEditor {
     }
   }
 
-  /**
-   * APLICAÇÃO DE FILETE (Arredondamento / Concordância)
-   * Adiciona ou atualiza operação de concordância nas arestas selecionadas
-   */
+  /** Aplicação de Filete (Arredondamento / Concordância) */
   public async applyFillet(edgeIndices: number[], radius: number): Promise<boolean> {
     if (edgeIndices.length === 0 || radius <= 0) return false;
     this.pushUndo();
@@ -178,9 +160,7 @@ export class CadBRepEditor {
     return true;
   }
 
-  /**
-   * APLICAÇÃO DE CHANFRO (Quebra de canto linear)
-   */
+  /** Aplicação de Chanfro (Quebra de canto linear) */
   public async applyChamfer(edgeIndices: number[], distance: number): Promise<boolean> {
     if (edgeIndices.length === 0 || distance <= 0) return false;
     this.pushUndo();
@@ -195,10 +175,7 @@ export class CadBRepEditor {
     return true;
   }
 
-  /**
-   * ADIÇÃO DE FURO CILÍNDRICO (Hole Cut)
-   * Aplica furo em posição tridimensional com diâmetro e profundidade configuráveis
-   */
+  /** Adição de Furo Cilíndrico ou ISO (Hole Wizard) */
   public async addHole(
     diameter: number,
     depth: number,
@@ -223,9 +200,7 @@ export class CadBRepEditor {
     return true;
   }
 
-  /**
-   * ALTERAÇÃO DE ESPESSURA DE CHAPA (CALDEIRARIA)
-   */
+  /** Alteração de espessura de chapa (Caldeiraria) */
   public async setSheetThickness(newThickness: number): Promise<boolean> {
     if (newThickness <= 0) return false;
     const features = this.tree.getFeatures();

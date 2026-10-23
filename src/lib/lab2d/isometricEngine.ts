@@ -46,17 +46,22 @@ export interface IsoPlaneConfig {
   accentColor: string;
 }
 
-// Paleta de Sombreado Técnico Sólido (Estilo Imagem de Referência Escura)
+// Paleta Técnica "Isometric Wireframe Solid" (Wireframe Técnico Volumétrico + Sólido Translúcido X-Ray)
 export const ISO_TECH_SHADING = {
-  topFace: "#323B47",
-  leftFace: "#262E38",
-  rightFace: "#1B222A",
-  chamferFace: "#2C3540",
-  bendFace: "#2B3440",
-  holeWall: "#1B222A",
-  holeBottomVoid: "#141920",
-  edgeStroke: "#FFFFFF",
-  centerlineStroke: "#64748B",
+  canvasBg: "#050914",
+  topFace: "rgba(18, 40, 74, 0.25)",
+  leftFace: "rgba(15, 34, 62, 0.28)",
+  rightFace: "rgba(24, 52, 92, 0.18)",
+  chamferFace: "rgba(30, 64, 112, 0.22)",
+  bendFace: "rgba(38, 84, 145, 0.22)",
+  wallFace: "rgba(56, 189, 248, 0.12)",
+  backFace: "rgba(12, 26, 48, 0.10)",
+  holeWall: "rgba(56, 189, 248, 0.12)",
+  holeBottomVoid: "rgba(5, 9, 20, 0.36)",
+  edgeStroke: "#E8F4FF",
+  internalEdgeStroke: "rgba(186, 230, 253, 0.65)",
+  backEdgeStroke: "rgba(125, 211, 252, 0.32)",
+  centerlineStroke: "rgba(148, 163, 184, 0.35)",
 } as const;
 
 // Fatores canônicos de escala do isocírculo em projeção isométrica 2D
@@ -283,10 +288,11 @@ export function buildIsoCircle(
 }
 
 /**
- * Constrói um furo cilíndrico isométrico sólido com oclusão real (Seção 2.2):
- * - Elipse superior completa com parede interna sombreada (#1B222A)
- * - Cálculo analítico da interseção da elipse inferior deslocada pela espessura T,
- *   desenhando APENAS o arco inferior que passa por dentro da abertura superior!
+ * Constrói um furo cilíndrico isométrico em estilo Isometric Wireframe Solid (X-Ray):
+ * - Anel elíptico de saída completo (X-Ray traseiro sutil em 0.75px rgba(125,211,252,0.32))
+ * - Parede cilíndrica interna translúcida (rgba(56, 189, 248, 0.12)) e geratrizes laterais de espessura
+ * - Arco inferior visível dentro da abertura em 1.0px rgba(186, 230, 253, 0.65)
+ * - Anel elíptico frontal de entrada nítido em 1.4px #E8F4FF
  */
 export function buildIsoHoleWithDepth(
   plane: IsoPlane,
@@ -303,8 +309,10 @@ export function buildIsoHoleWithDepth(
   const rx = r * ISO_SQRT_1_5;
   const ry = r * ISO_SQRT_0_5;
   const rotRad = (cfg.ellipseRotationDeg * Math.PI) / 180;
+  const cosR = Math.cos(rotRad);
+  const sinR = Math.sin(rotRad);
 
-  // 1. Preenchimento sombreado escuro da parede interna do furo (#1B222A)
+  // 1. Preenchimento translúcido do vão do furo na face frontal
   const holeWallFill: Entity = {
     id: uid(),
     layer,
@@ -322,15 +330,15 @@ export function buildIsoHoleWithDepth(
       realDiameter: r * 2,
       isIsoSolidFace: true,
       isIsoExtrudedBackFace: true,
-      fillColor: ISO_TECH_SHADING.holeWall,
+      fillColor: ISO_TECH_SHADING.holeBottomVoid,
       strokeColor: "none",
       noStroke: true,
-      depth: baseDepthOrder + 1,
+      depth: baseDepthOrder + 0.5,
     },
   };
   entities.push(holeWallFill);
 
-  // 2. Arco inferior visível por dentro da elipse superior (Regra Visual 2.2)
+  // 2. Anel traseiro de saída (X-Ray), parede lateral interna e geratrizes de espessura
   if (depth > 0) {
     const extVec = getIsoExtrusionVector(plane, depth);
     const botCenter: Vec2 = {
@@ -338,6 +346,69 @@ export function buildIsoHoleWithDepth(
       y: center.y + extVec.y,
     };
 
+    // 2.1. Anel elíptico traseiro completo (X-Ray sutil, visível através da face translúcida)
+    entities.push({
+      id: uid(),
+      layer,
+      type: "ellipse",
+      cx: botCenter.x,
+      cy: botCenter.y,
+      rx,
+      ry,
+      rotation: rotRad,
+      params: {
+        isIso: true,
+        isoPlane: plane,
+        isHole: true,
+        isIsoSolidFace: true,
+        isIsoExtrudedBackFace: true,
+        isIsoBackXRay: true,
+        fillColor: ISO_TECH_SHADING.holeWall,
+        strokeColor: ISO_TECH_SHADING.backEdgeStroke,
+        strokeWidth: 0.75,
+        dash: [3, 2.5],
+        depth: baseDepthOrder + 1.0,
+      },
+    });
+
+    // 2.2. Geratrizes laterais tangentes conectando o anel de entrada ao anel de saída
+    const extLen = Math.hypot(extVec.x, extVec.y);
+    if (extLen > 0.1) {
+      const nAxis: Vec2 = { x: -extVec.y / extLen, y: extVec.x / extLen };
+      const dotU = cosR * nAxis.x + sinR * nAxis.y;
+      const dotV = -sinR * nAxis.x + cosR * nAxis.y;
+      const tTan1 = Math.atan2(ry * dotV, rx * dotU);
+      const tTan2 = tTan1 + Math.PI;
+      const evalPt = (c: Vec2, t: number): Vec2 => ({
+        x: c.x + rx * Math.cos(t) * cosR - ry * Math.sin(t) * sinR,
+        y: c.y + rx * Math.cos(t) * sinR + ry * Math.sin(t) * cosR,
+      });
+      for (const tTan of [tTan1, tTan2]) {
+        const pTop = evalPt(center, tTan);
+        const pBot = evalPt(botCenter, tTan);
+        entities.push({
+          id: uid(),
+          layer,
+          type: "line",
+          x1: pTop.x,
+          y1: pTop.y,
+          x2: pBot.x,
+          y2: pBot.y,
+          params: {
+            isIso: true,
+            isoPlane: plane,
+            isIsoSolidFace: true,
+            isIsoExtrudedBackFace: true,
+            fillColor: "none",
+            strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+            strokeWidth: 0.95,
+            depth: baseDepthOrder + 1.5,
+          },
+        });
+      }
+    }
+
+    // 2.3. Arco inferior visível por dentro da abertura superior
     const visibleArcPts = computeVisibleBottomHoleArc(center, botCenter, rx, ry, rotRad);
     if (visibleArcPts.length >= 2) {
       entities.push({
@@ -352,15 +423,15 @@ export function buildIsoHoleWithDepth(
           isIsoSolidFace: true,
           isIsoExtrudedBackFace: true,
           fillColor: "none",
-          strokeColor: ISO_TECH_SHADING.edgeStroke,
-          strokeWidth: 1.8,
+          strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+          strokeWidth: 1.05,
           depth: baseDepthOrder + 2,
         },
       });
     }
   }
 
-  // 3. Contorno branco nítido da elipse superior do furo
+  // 3. Contorno frontal de entrada nítido da elipse superior do furo (1.4px #E8F4FF)
   const topHoleRing: Entity = {
     id: uid(),
     layer,
@@ -380,13 +451,14 @@ export function buildIsoHoleWithDepth(
       isIsoSolidFace: true,
       fillColor: "none",
       strokeColor: ISO_TECH_SHADING.edgeStroke,
-      strokeWidth: 2.0,
+      strokeWidth: 1.4,
+      vertexDots: true,
       depth: baseDepthOrder + 3,
     },
   };
   entities.push(topHoleRing);
 
-  // 4. Linhas de centro isométricas discretas (apenas na face superior, sem duplicar no fundo)
+  // 4. Linhas de centro isométricas discretas (0.7px tracejadas em rgba(148, 163, 184, 0.35))
   const crossLength = r * 1.25;
   entities.push({
     id: uid(),
@@ -401,6 +473,9 @@ export function buildIsoHoleWithDepth(
       isIso: true,
       isoPlane: plane,
       isIsoExtrudedBackFace: true,
+      strokeColor: ISO_TECH_SHADING.centerlineStroke,
+      strokeWidth: 0.7,
+      dash: [4, 4],
       depth: baseDepthOrder + 4,
     },
   });
@@ -417,6 +492,9 @@ export function buildIsoHoleWithDepth(
       isIso: true,
       isoPlane: plane,
       isIsoExtrudedBackFace: true,
+      strokeColor: ISO_TECH_SHADING.centerlineStroke,
+      strokeWidth: 0.7,
+      dash: [4, 4],
       depth: baseDepthOrder + 4,
     },
   });
@@ -914,12 +992,15 @@ export function unprojectEntityFromIso(
   delete cleanParams.isIso;
   delete cleanParams.isoPlane;
   delete cleanParams.isIsoExtrudedBackFace;
+  delete cleanParams.isIsoBackXRay;
   delete cleanParams.isoThickness;
   delete cleanParams.isIsoSolidFace;
   delete cleanParams.fillColor;
   delete cleanParams.strokeColor;
   delete cleanParams.strokeWidth;
   delete cleanParams.noStroke;
+  delete cleanParams.dash;
+  delete cleanParams.vertexDots;
   delete cleanParams.depth;
 
   switch (entity.type) {
@@ -1473,7 +1554,31 @@ export function buildSolidIsoCylinder(params: {
 
   const out: Entity[] = [];
 
-  // 1. Corpo cilíndrico sólido sombreado (#262E38)
+  // 0. Elipse traseira completa da base (X-Ray sutil, visível através do volume translúcido)
+  out.push({
+    id: uid(),
+    layer,
+    type: "ellipse",
+    cx: baseCenter.x,
+    cy: baseCenter.y,
+    rx,
+    ry,
+    rotation: rotRad,
+    params: {
+      isIso: true,
+      isoPlane: plane,
+      isIsoSolidFace: true,
+      isIsoExtrudedBackFace: true,
+      isIsoBackXRay: true,
+      fillColor: ISO_TECH_SHADING.backFace,
+      strokeColor: ISO_TECH_SHADING.backEdgeStroke,
+      strokeWidth: 0.75,
+      dash: [3, 2.5],
+      depth: baseDepth - 2,
+    },
+  });
+
+  // 1. Corpo cilíndrico translúcido (rgba(56, 189, 248, 0.12))
   out.push({
     id: uid(),
     layer,
@@ -1485,14 +1590,14 @@ export function buildSolidIsoCylinder(params: {
       isoPlane: plane,
       isIsoSolidFace: true,
       isIsoExtrudedBackFace: true,
-      fillColor: ISO_TECH_SHADING.leftFace,
+      fillColor: ISO_TECH_SHADING.wallFace,
       strokeColor: "none",
       noStroke: true,
       depth: baseDepth,
     },
   });
 
-  // 2. Semiarco frontal visível da base (ocultando o semiarco traseiro)
+  // 2. Semiarco frontal visível da base
   out.push({
     id: uid(),
     layer,
@@ -1505,13 +1610,13 @@ export function buildSolidIsoCylinder(params: {
       isIsoSolidFace: true,
       isIsoExtrudedBackFace: true,
       fillColor: "none",
-      strokeColor: ISO_TECH_SHADING.edgeStroke,
-      strokeWidth: 2.0,
+      strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+      strokeWidth: 1.05,
       depth: baseDepth + 1,
     },
   });
 
-  // 3. As duas linhas de silhueta (tangentes externas paralelas ao eixo do cilindro)
+  // 3. As duas linhas de silhueta (geratrizes tangentes externas paralelas ao eixo do cilindro)
   const baseT1 = frontBaseArcPts[0]!;
   const baseT2 = frontBaseArcPts[frontBaseArcPts.length - 1]!;
   const topT1 = evalEllipse(topCenter, arcStart);
@@ -1532,7 +1637,8 @@ export function buildSolidIsoCylinder(params: {
       isIsoExtrudedBackFace: true,
       fillColor: "none",
       strokeColor: ISO_TECH_SHADING.edgeStroke,
-      strokeWidth: 2.0,
+      strokeWidth: 1.35,
+      vertexDots: true,
       depth: baseDepth + 1.5,
     },
   });
@@ -1552,12 +1658,13 @@ export function buildSolidIsoCylinder(params: {
       isIsoExtrudedBackFace: true,
       fillColor: "none",
       strokeColor: ISO_TECH_SHADING.edgeStroke,
-      strokeWidth: 2.0,
+      strokeWidth: 1.35,
+      vertexDots: true,
       depth: baseDepth + 1.5,
     },
   });
 
-  // 4. Face elíptica superior preenchida (#323B47) com aresta branca nítida
+  // 4. Face elíptica superior translúcida com aresta frontal nítida (#E8F4FF, 1.4px)
   out.push({
     id: primaryId ?? uid(),
     layer,
@@ -1576,12 +1683,13 @@ export function buildSolidIsoCylinder(params: {
       isIsoSolidFace: true,
       fillColor: ISO_TECH_SHADING.topFace,
       strokeColor: ISO_TECH_SHADING.edgeStroke,
-      strokeWidth: 2.2,
+      strokeWidth: 1.4,
+      vertexDots: true,
       depth: baseDepth + 2,
     },
   });
 
-  // 5. Furo interno do cilindro/bucha (ex: Ø20 dentro de Ø30) com parede interna cilíndrica sombreada
+  // 5. Furo interno do cilindro/bucha com parede translúcida e anel X-Ray
   if (innerRadius > 0.1 && innerRadius < rOut) {
     const holeEntities = buildIsoHoleWithDepth(
       plane,
@@ -1599,8 +1707,9 @@ export function buildSolidIsoCylinder(params: {
 }
 
 /**
- * Gera paredes laterais sólidas oclusivas e face principal preenchida para uma região poligonal 3D
- * (chapa base ou aba dobrada), tratando chanfros, filetes (arcos suaves) e recortes internos.
+ * Gera representação Isometric Wireframe Solid (X-Ray) para uma região poligonal 3D
+ * (chapa base ou aba dobrada), com face traseira X-Ray, arestas de espessura, paredes translúcidas
+ * e face frontal nítida com micro-pontos nos vértices.
  */
 function buildSolidSheetRegion3D(params: {
   topPts2D: Vec2[];
@@ -1644,7 +1753,31 @@ function buildSolidSheetRegion3D(params: {
   const windingSign = screenArea >= 0 ? 1 : -1;
 
   if (extLen > 0.15) {
-    // 1. Paredes laterais da espessura da chapa (apenas paredes frontais visíveis à câmera!)
+    // 0. Contorno traseiro completo (Face Inferior em X-Ray sutil: 0.75px rgba(125, 211, 252, 0.32))
+    result.push({
+      id: uid(),
+      layer,
+      type: "polyline",
+      closed: true,
+      pts: botPts2D,
+      params: {
+        isIso: true,
+        isoPlane: plane,
+        isIsoSolidFace: true,
+        isIsoExtrudedBackFace: true,
+        isIsoBackXRay: true,
+        fillColor: ISO_TECH_SHADING.backFace,
+        strokeColor: ISO_TECH_SHADING.backEdgeStroke,
+        strokeWidth: 0.75,
+        dash: [3, 2.5],
+        vertexDots: true,
+        depth: baseDepth - 22,
+      },
+    });
+
+    const visibleWallFlags: boolean[] = new Array(n).fill(false);
+
+    // 1. Paredes laterais da espessura da chapa
     for (let i = 0; i < n; i++) {
       const next = (i + 1) % n;
       const tA = topPts2D[i]!;
@@ -1661,25 +1794,13 @@ function buildSolidSheetRegion3D(params: {
       const outNx = (edgeDy / edgeLen) * windingSign;
       const outNy = (-edgeDx / edgeLen) * windingSign;
 
-      // A parede lateral é frontal/visível se o deslocamento de extrusão avança na direção da normal externa
       const visibilityDot = (outNx * extVec.x + outNy * extVec.y) / extLen;
       if (visibilityDot <= -0.02) continue;
 
-      // Determina o tom de sombra técnico da parede lateral pela direção da normal em tela:
-      // Normal apontando para a direita (+X) -> #1B222A (sombra mais escura)
-      // Normal apontando para a esquerda (-X) -> #262E38 (tom intermediário)
-      // Chanfro inclinado -> #2C3540
-      let wallColor: string = ISO_TECH_SHADING.leftFace;
-      if (outNx > 0.25) {
-        wallColor = ISO_TECH_SHADING.rightFace;
-      } else if (Math.abs(outNx) <= 0.25) {
-        wallColor = ISO_TECH_SHADING.chamferFace;
-      }
+      visibleWallFlags[i] = true;
 
-      // Profundidade da parede lateral (sempre desenhada antes da face principal superior, mas ordenada entre si)
       const midScreenY = 0.25 * (tA.y + tB.y + bA.y + bB.y);
-      const wallDepth = baseDepth - 15 + midScreenY * 0.01;
-
+      const wallDepth = baseDepth - 14 + midScreenY * 0.01;
       const isArcSegment = edgesMeta && edgesMeta[i]?.isArc;
 
       result.push({
@@ -1693,17 +1814,15 @@ function buildSolidSheetRegion3D(params: {
           isoPlane: plane,
           isIsoSolidFace: true,
           isIsoExtrudedBackFace: true,
-          fillColor: wallColor,
-          // Em segmentos curvos de filete (Seção 2.5), não desenha linhas verticais internas de tesselação!
-          strokeColor: isArcSegment ? "none" : ISO_TECH_SHADING.edgeStroke,
+          fillColor: ISO_TECH_SHADING.wallFace,
+          strokeColor: isArcSegment ? "none" : ISO_TECH_SHADING.internalEdgeStroke,
           noStroke: !!isArcSegment,
-          strokeWidth: 1.9,
+          strokeWidth: 1.0,
           depth: wallDepth,
         },
       });
 
       if (isArcSegment) {
-        // Para filetes/arcos suaves, desenha a borda inferior visível contínua
         result.push({
           id: uid(),
           layer,
@@ -1718,16 +1837,51 @@ function buildSolidSheetRegion3D(params: {
             isIsoSolidFace: true,
             isIsoExtrudedBackFace: true,
             fillColor: "none",
-            strokeColor: ISO_TECH_SHADING.edgeStroke,
-            strokeWidth: 1.9,
+            strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+            strokeWidth: 1.0,
             depth: wallDepth + 0.1,
+          },
+        });
+      }
+    }
+
+    // 1.5. Arestas de espessura traseiras (V_i -> V'_i) em X-Ray para vértices ocultos não-curvos
+    for (let i = 0; i < n; i++) {
+      const prev = (i - 1 + n) % n;
+      const isArcVertex =
+        edgesMeta && (edgesMeta[i]?.isArc || edgesMeta[prev]?.isArc);
+      if (isArcVertex) continue;
+
+      const isFrontCorner = visibleWallFlags[i] || visibleWallFlags[prev];
+      if (!isFrontCorner) {
+        const tPt = topPts2D[i]!;
+        const bPt = botPts2D[i]!;
+        result.push({
+          id: uid(),
+          layer,
+          type: "line",
+          x1: tPt.x,
+          y1: tPt.y,
+          x2: bPt.x,
+          y2: bPt.y,
+          params: {
+            isIso: true,
+            isoPlane: plane,
+            isIsoSolidFace: true,
+            isIsoExtrudedBackFace: true,
+            isIsoBackXRay: true,
+            fillColor: "none",
+            strokeColor: ISO_TECH_SHADING.backEdgeStroke,
+            strokeWidth: 0.75,
+            dash: [3, 2.5],
+            depth: baseDepth - 18,
           },
         });
       }
     }
   }
 
-  // 2. Face principal opaca preenchida com arestas brancas nítidas (#FFFFFF)
+  // 2. Face principal translúcida com arestas frontais nítidas (#E8F4FF, 1.4px) e micro-pontos nos vértices
   result.push({
     id: primaryId ?? uid(),
     layer,
@@ -1741,7 +1895,8 @@ function buildSolidSheetRegion3D(params: {
       isIsoSolidFace: true,
       fillColor: faceFillColor,
       strokeColor: ISO_TECH_SHADING.edgeStroke,
-      strokeWidth: 2.1,
+      strokeWidth: 1.4,
+      vertexDots: true,
       depth: baseDepth,
       ...(canonicalEntity ? { canonical2D: canonicalEntity } : {}),
     },
@@ -1751,7 +1906,7 @@ function buildSolidSheetRegion3D(params: {
 }
 
 /**
- * Renderiza uma nervura / mão-francesa triangular sólida em perspectiva isométrica (Seção 2.5).
+ * Renderiza uma nervura / mão-francesa triangular em estilo Isometric Wireframe Solid (X-Ray).
  */
 export function buildSolidIsoRib(params: {
   pStart2D: Vec2; // Ponto junto à parede vertical / cilindro (altura H)
@@ -1799,7 +1954,7 @@ export function buildSolidIsoRib(params: {
     ? [botStartB.pt, tipB.pt, topB.pt]
     : [botStartA.pt, tipA.pt, topA.pt];
 
-  // Parede triangular traseira (oclusa pela rampa e parede frontal)
+  // Parede triangular traseira (X-Ray)
   out.push({
     id: uid(),
     layer,
@@ -1811,9 +1966,12 @@ export function buildSolidIsoRib(params: {
       isoPlane: plane,
       isIsoSolidFace: true,
       isIsoExtrudedBackFace: true,
-      fillColor: ISO_TECH_SHADING.rightFace,
-      strokeColor: ISO_TECH_SHADING.edgeStroke,
-      strokeWidth: 1.8,
+      isIsoBackXRay: true,
+      fillColor: ISO_TECH_SHADING.backFace,
+      strokeColor: ISO_TECH_SHADING.backEdgeStroke,
+      strokeWidth: 0.75,
+      dash: [3, 2.5],
+      vertexDots: true,
       depth: baseDepth + 0.5,
     },
   });
@@ -1830,9 +1988,10 @@ export function buildSolidIsoRib(params: {
       isoPlane: plane,
       isIsoSolidFace: true,
       isIsoExtrudedBackFace: true,
-      fillColor: ISO_TECH_SHADING.topFace,
-      strokeColor: ISO_TECH_SHADING.edgeStroke,
-      strokeWidth: 2.0,
+      fillColor: ISO_TECH_SHADING.wallFace,
+      strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+      strokeWidth: 1.0,
+      vertexDots: true,
       depth: baseDepth + 1.5,
     },
   });
@@ -1851,7 +2010,8 @@ export function buildSolidIsoRib(params: {
       isIsoExtrudedBackFace: true,
       fillColor: ISO_TECH_SHADING.leftFace,
       strokeColor: ISO_TECH_SHADING.edgeStroke,
-      strokeWidth: 2.0,
+      strokeWidth: 1.4,
+      vertexDots: true,
       depth: baseDepth + 2.0,
     },
   });
@@ -1860,8 +2020,7 @@ export function buildSolidIsoRib(params: {
 }
 
 /**
- * Gera a extrusão volumétrica 2.5D/3D sólida com oclusão (Painter's Algorithm + HLR).
- * Mantém assinatura compatível, operando com superfícies opacas preenchidas e silhuetas reais.
+ * Gera a extrusão volumétrica 2.5D/3D em estilo Isometric Wireframe Solid (X-Ray).
  */
 export function generate25DExtrusion(
   projectedFront: Entity[],
@@ -1883,8 +2042,30 @@ export function generate25DExtrusion(
     if (ent.type === "ellipse") {
       const isHole = !!(ent.params?.isHole || ent.layer === "recorte");
       if (isHole) {
-        // Regra 2.2: Furo passante — desenha APENAS o arco inferior visível dentro da elipse superior
         const botCenter = { x: ent.cx + extrudeVec.x, y: ent.cy + extrudeVec.y };
+        result.push({
+          id: uid(),
+          layer: ent.layer,
+          type: "ellipse",
+          cx: botCenter.x,
+          cy: botCenter.y,
+          rx: ent.rx,
+          ry: ent.ry,
+          rotation: ent.rotation ?? 0,
+          params: {
+            isIso: true,
+            isoPlane: plane,
+            isIsoSolidFace: true,
+            isIsoExtrudedBackFace: true,
+            isIsoBackXRay: true,
+            isoThickness: thickness,
+            fillColor: ISO_TECH_SHADING.holeWall,
+            strokeColor: ISO_TECH_SHADING.backEdgeStroke,
+            strokeWidth: 0.75,
+            dash: [3, 2.5],
+            depth: ((ent.params?.depth as number) ?? 100) - 1.0,
+          },
+        });
         const visArc = computeVisibleBottomHoleArc(
           { x: ent.cx, y: ent.cy },
           botCenter,
@@ -1906,14 +2087,13 @@ export function generate25DExtrusion(
               isIsoExtrudedBackFace: true,
               isoThickness: thickness,
               fillColor: "none",
-              strokeColor: ISO_TECH_SHADING.edgeStroke,
-              strokeWidth: 1.8,
+              strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+              strokeWidth: 1.0,
               depth: ((ent.params?.depth as number) ?? 100) - 0.5,
             },
           });
         }
       } else {
-        // Regra 2.4: Cilindro externo — gera parede cilíndrica sólida, semiarco frontal e 2 linhas de silhueta
         const r =
           typeof ent.params?.realRadius === "number"
             ? (ent.params.realRadius as number)
@@ -1927,8 +2107,7 @@ export function generate25DExtrusion(
           layer: ent.layer,
           baseDepth: ((ent.params?.depth as number) ?? 100) - 10,
         });
-        // Adiciona corpo, arco de base e as 2 linhas de silhueta (sem duplicar a elipse de topo)
-        result.push(...cylEntities.filter((ce) => ce.type !== "ellipse"));
+        result.push(...cylEntities.filter((ce) => ce.type !== "ellipse" || ce.params?.isIsoBackXRay));
       }
     } else if (ent.type === "polyline" && ent.pts.length >= 3 && ent.closed) {
       const botPts = ent.pts.map((p) => ({ x: p.x + extrudeVec.x, y: p.y + extrudeVec.y }));
@@ -1940,7 +2119,6 @@ export function generate25DExtrusion(
         plane,
         layer: ent.layer,
       });
-      // Retorna as paredes laterais frontais visíveis
       result.push(...walls.filter((w) => w.params?.isIsoExtrudedBackFace));
     } else if (ent.type === "line") {
       const p1 = { x: ent.x1, y: ent.y1 };
@@ -1959,9 +2137,10 @@ export function generate25DExtrusion(
           isIsoSolidFace: true,
           isIsoExtrudedBackFace: true,
           isoThickness: thickness,
-          fillColor: ISO_TECH_SHADING.leftFace,
-          strokeColor: ISO_TECH_SHADING.edgeStroke,
-          strokeWidth: 1.9,
+          fillColor: ISO_TECH_SHADING.wallFace,
+          strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+          strokeWidth: 1.0,
+          vertexDots: true,
           depth: 50,
         },
       });
@@ -2358,13 +2537,58 @@ function buildSolidIsoSceneFromSelection(params: {
         }
         allGenerated.push(...holeEnts);
       } else {
-        // Recorte poligonal ou oblongo interno na base
+        // Recorte poligonal ou oblongo interno na base (Wireframe Técnico Volumétrico + X-Ray)
         const topHolePts = hole.pts.map(
           (p) => project3DToIso(p.x - pivot.x, p.y - pivot.y, 0, plane, pivot).pt,
         );
         const botHolePts = hole.pts.map(
           (p) => project3DToIso(p.x - pivot.x, p.y - pivot.y, -T, plane, pivot).pt,
         );
+        // Contorno traseiro completo do recorte em X-Ray
+        allGenerated.push({
+          id: uid(),
+          layer: hole.layer,
+          type: "polyline",
+          closed: true,
+          pts: botHolePts,
+          params: {
+            isIso: true,
+            isoPlane: plane,
+            isIsoSolidFace: true,
+            isIsoExtrudedBackFace: true,
+            isIsoBackXRay: true,
+            fillColor: ISO_TECH_SHADING.holeWall,
+            strokeColor: ISO_TECH_SHADING.backEdgeStroke,
+            strokeWidth: 0.75,
+            dash: [3, 2.5],
+            vertexDots: true,
+            depth: baseCenter3D.depth + 1.2,
+          },
+        });
+        // Arestas verticais de espessura do recorte
+        for (let hi = 0; hi < topHolePts.length; hi++) {
+          const hpTop = topHolePts[hi]!;
+          const hpBot = botHolePts[hi]!;
+          allGenerated.push({
+            id: uid(),
+            layer: hole.layer,
+            type: "line",
+            x1: hpTop.x,
+            y1: hpTop.y,
+            x2: hpBot.x,
+            y2: hpBot.y,
+            params: {
+              isIso: true,
+              isoPlane: plane,
+              isIsoSolidFace: true,
+              isIsoExtrudedBackFace: true,
+              fillColor: "none",
+              strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+              strokeWidth: 0.95,
+              depth: baseCenter3D.depth + 1.5,
+            },
+          });
+        }
         allGenerated.push({
           id: mapId(hole.id),
           layer: hole.layer,
@@ -2375,9 +2599,10 @@ function buildSolidIsoSceneFromSelection(params: {
             isIso: true,
             isoPlane: plane,
             isIsoSolidFace: true,
-            fillColor: ISO_TECH_SHADING.holeWall,
+            fillColor: ISO_TECH_SHADING.holeBottomVoid,
             strokeColor: ISO_TECH_SHADING.edgeStroke,
-            strokeWidth: 2.0,
+            strokeWidth: 1.4,
+            vertexDots: true,
             depth: baseCenter3D.depth + 2,
           },
         });
@@ -2396,8 +2621,8 @@ function buildSolidIsoSceneFromSelection(params: {
               isIsoSolidFace: true,
               isIsoExtrudedBackFace: true,
               fillColor: "none",
-              strokeColor: ISO_TECH_SHADING.edgeStroke,
-              strokeWidth: 1.8,
+              strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+              strokeWidth: 1.0,
               depth: baseCenter3D.depth + 2.5,
             },
           });
@@ -2414,8 +2639,6 @@ function buildSolidIsoSceneFromSelection(params: {
       const absAlpha = Math.abs(alphaRad);
       const R = Math.max(1.5, bendRadius || bendLine.radius || T * 0.65);
 
-      // Função que mapeia um ponto 2D da aba (x, y) e offset normal (off = 0 face interna, off = -T face externa)
-      // para coordenadas 3D (u, v, w) rotacionadas em torno da linha de dobra com raio R!
       const mapFlangePoint3D = (p: Vec2, normalOffset: number) => {
         const rx = p.x - bendLine.p1.x;
         const ry = p.y - bendLine.p1.y;
@@ -2425,7 +2648,6 @@ function buildSolidIsoSceneFromSelection(params: {
         const footX = bendLine.p1.x + s * uBend.x;
         const footY = bendLine.p1.y + s * uBend.y;
 
-        // Rotação 3D real em torno da linha de dobra por ângulo alphaRad com raio de concordância R
         const rEff = R - signAlpha * normalOffset;
         const flatDist = Math.max(0, d - R * 0.5);
         const horizAdvance = rEff * Math.sin(absAlpha) + flatDist * Math.cos(absAlpha);
@@ -2440,8 +2662,6 @@ function buildSolidIsoSceneFromSelection(params: {
         return project3DToIso(worldX - pivot.x, worldY - pivot.y, worldW, plane, pivot);
       };
 
-      // 2.1. Gera o Cilindro Suave do Raio de Dobra (R interno e R + T externo) e Linhas de Tangência
-      // Encontra a extensão [sMin, sMax] da linha de dobra no polígono
       let sMin = Infinity;
       let sMax = -Infinity;
       for (const p of poly2D) {
@@ -2466,7 +2686,6 @@ function buildSolidIsoSceneFromSelection(params: {
         y: bendLine.p1.y + sMax * uBend.y,
       };
 
-      // Superfície cilíndrica de concordância da dobra (entre a base plana e o início da aba vertical)
       const bendBaseStart = project3DToIso(bStart.x - pivot.x, bStart.y - pivot.y, 0, plane, pivot);
       const bendBaseEnd = project3DToIso(bEnd.x - pivot.x, bEnd.y - pivot.y, 0, plane, pivot);
       const bendFlangeStart = mapFlangePoint3D(bStart, 0);
@@ -2475,7 +2694,7 @@ function buildSolidIsoSceneFromSelection(params: {
       const bendZoneDepth =
         0.25 * (bendBaseStart.depth + bendBaseEnd.depth + bendFlangeStart.depth + bendFlangeEnd.depth);
 
-      // Polígono preenchido da zona do raio de dobra com as duas linhas de tangência visíveis
+      // Polígono translúcido da zona do raio de dobra com linhas de tangência
       allGenerated.push({
         id: mapId(bendLine.id),
         layer: "dobra",
@@ -2487,8 +2706,9 @@ function buildSolidIsoSceneFromSelection(params: {
           isoPlane: plane,
           isIsoSolidFace: true,
           fillColor: ISO_TECH_SHADING.bendFace,
-          strokeColor: ISO_TECH_SHADING.edgeStroke,
-          strokeWidth: 1.8,
+          strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+          strokeWidth: 1.05,
+          vertexDots: true,
           depth: bendZoneDepth + 1,
           canonical2D: bendLine.entity,
         },
@@ -2526,9 +2746,9 @@ function buildSolidIsoSceneFromSelection(params: {
           isoPlane: plane,
           isIsoSolidFace: true,
           isIsoExtrudedBackFace: true,
-          fillColor: ISO_TECH_SHADING.rightFace,
-          strokeColor: ISO_TECH_SHADING.edgeStroke,
-          strokeWidth: 1.9,
+          fillColor: ISO_TECH_SHADING.wallFace,
+          strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+          strokeWidth: 1.0,
           depth: bendZoneDepth + 2,
         },
       });
@@ -2540,13 +2760,11 @@ function buildSolidIsoSceneFromSelection(params: {
       const flangeCenterFront = mapFlangePoint3D(flangeCentroid2D, 0);
       const flangeCenterBack = mapFlangePoint3D(flangeCentroid2D, -T);
 
-      // Verifica qual face da aba dobrada (0 ou -T) está voltada para a câmera isométrica
       const isFrontCloser = flangeCenterFront.depth >= flangeCenterBack.depth;
       const visTopPts = isFrontCloser ? flangeFrontPts : flangeBackPts;
       const visBotPts = isFrontCloser ? flangeBackPts : flangeFrontPts;
       const flangeDepth = Math.max(flangeCenterFront.depth, flangeCenterBack.depth);
 
-      // Cor de sombreado técnico da aba dobrada segundo sua orientação 3D
       const flangeNormalShade = shadeFromLocalNormal(
         -nFlange.x * Math.sin(absAlpha),
         -nFlange.y * Math.sin(absAlpha),
@@ -2554,7 +2772,6 @@ function buildSolidIsoSceneFromSelection(params: {
         plane,
       );
 
-      // Determina o plano isométrico equivalente da aba vertical ("left" ou "right")
       const flangeIsoPlane: IsoPlane =
         Math.abs(nFlange.x) >= Math.abs(nFlange.y) ? "left" : "right";
 
@@ -2574,7 +2791,7 @@ function buildSolidIsoSceneFromSelection(params: {
       }));
       allGenerated.push(...flangeSheetEnts);
 
-      // 2.3. Furos passantes localizados na Aba Dobrada (rotacionados em 3D junto com a aba!)
+      // 2.3. Furos passantes localizados na Aba Dobrada
       for (const hole of throughHoles) {
         if (!isPointInPolygon2D(hole.centroid, poly2D)) continue;
 
@@ -2589,7 +2806,7 @@ function buildSolidIsoSceneFromSelection(params: {
             "referencia",
             flangeDepth + 2,
           );
-          const mainRing = holeEnts.find((he) => he.type === "ellipse" && !he.params?.noStroke);
+          const mainRing = holeEnts.find((he) => he.type === "ellipse" && !he.params?.noStroke && !he.params?.isIsoBackXRay);
           const origHole = selectedEntities.find((e) => e.id === hole.id);
           if (mainRing) {
             mainRing.id = mapId(hole.id);
@@ -2636,8 +2853,8 @@ function buildSolidIsoSceneFromSelection(params: {
       }),
     );
 
-    // Se o contorno externo possui arcos de filete (Seção 2.5), desenha a linha de silhueta vertical
-    // APENAS na extremidade tangente externa da curva!
+    // Se o contorno externo possui arcos de filete, desenha a linha de silhueta vertical
+    // na extremidade tangente externa da curva
     const extVec = getIsoExtrusionVector(plane, T);
     for (const ed of outerLoop.edges) {
       if (ed.isArc && ed.arcCenter && ed.arcRadius) {
@@ -2648,7 +2865,6 @@ function buildSolidIsoSceneFromSelection(params: {
         const cosR = Math.cos(rotRad);
         const sinR = Math.sin(rotRad);
 
-        // Pontos de tangência vertical na elipse do filete
         const nAxis = { x: -extVec.y, y: extVec.x };
         const dotU = cosR * nAxis.x + sinR * nAxis.y;
         const dotV = -sinR * nAxis.x + cosR * nAxis.y;
@@ -2660,7 +2876,6 @@ function buildSolidIsoSceneFromSelection(params: {
             x: arcCenterIso.x + rx * Math.cos(tCand) * cosR - ry * Math.sin(tCand) * sinR,
             y: arcCenterIso.y + rx * Math.cos(tCand) * sinR + ry * Math.sin(tCand) * cosR,
           };
-          // Verifica se o ponto tangente pertence ao trecho do arco de filete
           const dStart = dist(tanPt, projectPointToIsoPlane(ed.p1, plane, pivot));
           const dEnd = dist(tanPt, projectPointToIsoPlane(ed.p2, plane, pivot));
           const chord = dist(
@@ -2682,8 +2897,8 @@ function buildSolidIsoSceneFromSelection(params: {
                 isIsoSolidFace: true,
                 isIsoExtrudedBackFace: true,
                 fillColor: "none",
-                strokeColor: ISO_TECH_SHADING.edgeStroke,
-                strokeWidth: 2.0,
+                strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+                strokeWidth: 1.0,
                 depth: baseCenter.depth - 5,
               },
             });
@@ -2694,7 +2909,6 @@ function buildSolidIsoSceneFromSelection(params: {
 
     // Furos Passantes e Recortes Internos (Seção 2.2)
     for (const hole of throughHoles) {
-      // Se este furo já é o furo interno de um boss concêntrico, ele será desenhado no topo do boss
       if (bosses.some((b) => b.innerHoleLoop?.id === hole.id)) continue;
 
       if (hole.isCircle && hole.circleCenter && hole.circleRadius) {
@@ -2714,7 +2928,7 @@ function buildSolidIsoSceneFromSelection(params: {
           "referencia",
           baseCenter.depth + 2,
         );
-        const mainRing = holeEnts.find((he) => he.type === "ellipse" && !he.params?.noStroke);
+        const mainRing = holeEnts.find((he) => he.type === "ellipse" && !he.params?.noStroke && !he.params?.isIsoBackXRay);
         const origHole = selectedEntities.find((e) => e.id === hole.id);
         if (mainRing) {
           mainRing.id = mapId(hole.id);
@@ -2729,6 +2943,50 @@ function buildSolidIsoSceneFromSelection(params: {
         const botHolePts = hole.pts.map(
           (p) => project3DToIso(p.x - pivot.x, p.y - pivot.y, -T, plane, pivot).pt,
         );
+        // Contorno traseiro completo em X-Ray
+        allGenerated.push({
+          id: uid(),
+          layer: hole.layer,
+          type: "polyline",
+          closed: true,
+          pts: botHolePts,
+          params: {
+            isIso: true,
+            isoPlane: plane,
+            isIsoSolidFace: true,
+            isIsoExtrudedBackFace: true,
+            isIsoBackXRay: true,
+            fillColor: ISO_TECH_SHADING.holeWall,
+            strokeColor: ISO_TECH_SHADING.backEdgeStroke,
+            strokeWidth: 0.75,
+            dash: [3, 2.5],
+            vertexDots: true,
+            depth: baseCenter.depth + 1.2,
+          },
+        });
+        for (let hi = 0; hi < topHolePts.length; hi++) {
+          const hpTop = topHolePts[hi]!;
+          const hpBot = botHolePts[hi]!;
+          allGenerated.push({
+            id: uid(),
+            layer: hole.layer,
+            type: "line",
+            x1: hpTop.x,
+            y1: hpTop.y,
+            x2: hpBot.x,
+            y2: hpBot.y,
+            params: {
+              isIso: true,
+              isoPlane: plane,
+              isIsoSolidFace: true,
+              isIsoExtrudedBackFace: true,
+              fillColor: "none",
+              strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+              strokeWidth: 0.95,
+              depth: baseCenter.depth + 1.5,
+            },
+          });
+        }
         allGenerated.push({
           id: mapId(hole.id),
           layer: hole.layer,
@@ -2739,9 +2997,10 @@ function buildSolidIsoSceneFromSelection(params: {
             isIso: true,
             isoPlane: plane,
             isIsoSolidFace: true,
-            fillColor: ISO_TECH_SHADING.holeWall,
+            fillColor: ISO_TECH_SHADING.holeBottomVoid,
             strokeColor: ISO_TECH_SHADING.edgeStroke,
-            strokeWidth: 2.0,
+            strokeWidth: 1.4,
+            vertexDots: true,
             depth: baseCenter.depth + 2,
           },
         });
@@ -2759,8 +3018,8 @@ function buildSolidIsoSceneFromSelection(params: {
               isIsoSolidFace: true,
               isIsoExtrudedBackFace: true,
               fillColor: "none",
-              strokeColor: ISO_TECH_SHADING.edgeStroke,
-              strokeWidth: 1.8,
+              strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+              strokeWidth: 1.0,
               depth: baseCenter.depth + 2.5,
             },
           });
@@ -3116,6 +3375,7 @@ export function buildBentSupportPreset(params?: {
     depth: number,
     layer: LayerId = "corte",
     noStroke = false,
+    isWall = false,
   ): Entity => ({
     id: uid(),
     layer,
@@ -3126,8 +3386,9 @@ export function buildBentSupportPreset(params?: {
       isIso: true,
       isIsoSolidFace: true,
       fillColor,
-      strokeColor: "#FFFFFF",
-      strokeWidth: 2,
+      strokeColor: isWall ? ISO_TECH_SHADING.internalEdgeStroke : ISO_TECH_SHADING.edgeStroke,
+      strokeWidth: isWall ? 1.0 : 1.4,
+      vertexDots: !isWall,
       noStroke,
       depth,
     },
@@ -3143,12 +3404,33 @@ export function buildBentSupportPreset(params?: {
   const bWL = { x: pWL.x, y: pWL.y + t };
   const bL = { x: pL.x, y: pL.y + t };
 
+  // Contorno traseiro da base em X-Ray
+  entities.push({
+    id: uid(),
+    layer: "corte",
+    type: "polyline",
+    closed: true,
+    pts: [b0, bW, bWL, bL],
+    params: {
+      isIso: true,
+      isIsoSolidFace: true,
+      isIsoExtrudedBackFace: true,
+      isIsoBackXRay: true,
+      fillColor: ISO_TECH_SHADING.backFace,
+      strokeColor: ISO_TECH_SHADING.backEdgeStroke,
+      strokeWidth: 0.75,
+      dash: [3, 2.5],
+      vertexDots: true,
+      depth: 5,
+    },
+  });
+
   // Paredes laterais frontais da base
-  entities.push(solidPoly([p0, pL, bL, b0], "#262E38", 10));
-  entities.push(solidPoly([p0, pW, bW, b0], "#1B222A", 12));
+  entities.push(solidPoly([p0, pL, bL, b0], ISO_TECH_SHADING.wallFace, 10, "corte", false, true));
+  entities.push(solidPoly([p0, pW, bW, b0], ISO_TECH_SHADING.wallFace, 12, "corte", false, true));
 
   // Face superior da base
-  entities.push(solidPoly([p0, pW, pWL, pL], "#323B47", 20));
+  entities.push(solidPoly([p0, pW, pWL, pL], ISO_TECH_SHADING.topFace, 20));
 
   // Linha de dobra e raio de concordância
   const bendStart = isoPlaneToCanvas("top", w - t, 0, origin);
@@ -3165,13 +3447,13 @@ export function buildBentSupportPreset(params?: {
       isIso: true,
       isIsoSolidFace: true,
       fillColor: "none",
-      strokeColor: "#FFFFFF",
-      strokeWidth: 1.8,
+      strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+      strokeWidth: 1.05,
       depth: 22,
     },
   });
 
-  // Furos passantes na base com oclusão real (Seção 2.2)
+  // Furos passantes na base com oclusão e anel X-Ray (Seção 2.2)
   const hole1Center = isoPlaneToCanvas("top", w * 0.35, l * 0.3, origin);
   const hole2Center = isoPlaneToCanvas("top", w * 0.35, l * 0.7, origin);
   entities.push(...buildIsoHoleWithDepth("top", hole1Center, d, t, "recorte", "referencia", 25));
@@ -3185,10 +3467,10 @@ export function buildBentSupportPreset(params?: {
   const fInTopBack = { x: fInBotBack.x, y: fInBotBack.y - h };
   const fInTopFront = { x: fInBotFront.x, y: fInBotFront.y - h };
 
-  entities.push(solidPoly([pW, pWL, fTopFront, fTopBack], "#1B222A", 35));
-  entities.push(solidPoly([fInTopBack, fTopBack, fTopFront, fInTopFront], "#323B47", 45));
-  entities.push(solidPoly([fInBotFront, pWL, fTopFront, fInTopFront], "#1B222A", 48));
-  entities.push(solidPoly([fInBotBack, fInBotFront, fInTopFront, fInTopBack], "#262E38", 50));
+  entities.push(solidPoly([pW, pWL, fTopFront, fTopBack], ISO_TECH_SHADING.rightFace, 35, "corte", false, true));
+  entities.push(solidPoly([fInTopBack, fTopBack, fTopFront, fInTopFront], ISO_TECH_SHADING.wallFace, 45, "corte", false, true));
+  entities.push(solidPoly([fInBotFront, pWL, fTopFront, fInTopFront], ISO_TECH_SHADING.wallFace, 48, "corte", false, true));
+  entities.push(solidPoly([fInBotBack, fInBotFront, fInTopFront, fInTopBack], ISO_TECH_SHADING.leftFace, 50));
 
   // Furo passante na aba vertical
   const flangeHoleCenter = {
@@ -3259,7 +3541,7 @@ export function buildIsoFlangePreset(params?: {
   const extVec = getIsoExtrusionVector(plane, thickness);
   const botCenter = { x: origin.x + extVec.x, y: origin.y + extVec.y };
 
-  // Disco principal sólido + furo central com oclusão real
+  // Disco principal sólido + furo central com oclusão e X-Ray
   entities.push(
     ...buildSolidIsoCylinder({
       plane,
@@ -3272,16 +3554,22 @@ export function buildIsoFlangePreset(params?: {
     }),
   );
 
-  const outerEllipse = entities.find((e) => e.type === "ellipse");
-  const innerEllipse = entities.filter((e) => e.type === "ellipse")[1];
+  const outerEllipse = entities.find((e) => e.type === "ellipse" && !e.params?.isIsoBackXRay);
+  const innerEllipse = entities.filter((e) => e.type === "ellipse" && !e.params?.isIsoBackXRay)[1];
 
   // Círculo primitivo de furação (PCD - linha de centro apenas no topo)
   const pcdCircle = buildIsoCircle(plane, origin, pcdR, "referencia", false);
   pcdCircle.isConstruction = true;
-  pcdCircle.params = { ...pcdCircle.params, depth: 30 };
+  pcdCircle.params = {
+    ...pcdCircle.params,
+    strokeColor: ISO_TECH_SHADING.centerlineStroke,
+    strokeWidth: 0.7,
+    dash: [4, 4],
+    depth: 30,
+  };
   entities.push(pcdCircle);
 
-  // Furos periféricos passantes com arco inferior visível
+  // Furos periféricos passantes com anel traseiro X-Ray e arco inferior visível
   for (let i = 0; i < numHoles; i++) {
     const angle = (i * 2 * Math.PI) / numHoles;
     const u = Math.cos(angle) * pcdR;
@@ -3325,6 +3613,7 @@ export function buildIsoChannelPreset(params?: {
     fillColor: string,
     depth: number,
     layer: LayerId = "corte",
+    isWall = false,
   ): Entity => ({
     id: uid(),
     layer,
@@ -3335,8 +3624,9 @@ export function buildIsoChannelPreset(params?: {
       isIso: true,
       isIsoSolidFace: true,
       fillColor,
-      strokeColor: "#FFFFFF",
-      strokeWidth: 2,
+      strokeColor: isWall ? ISO_TECH_SHADING.internalEdgeStroke : ISO_TECH_SHADING.edgeStroke,
+      strokeWidth: isWall ? 1.0 : 1.4,
+      vertexDots: !isWall,
       depth,
     },
   });
@@ -3353,12 +3643,12 @@ export function buildIsoChannelPreset(params?: {
   const lInTop0 = { x: lIn0.x, y: lIn0.y - h };
   const lInTopL = { x: lInL.x, y: lInL.y - h };
 
-  entities.push(solidPoly([p0, pL, lTopL, lTop0], "#262E38", 10));
-  entities.push(solidPoly([lIn0, lInL, lInTopL, lInTop0], "#1B222A", 15));
-  entities.push(solidPoly([lTop0, lInTop0, lInTopL, lTopL], "#323B47", 18));
-  entities.push(solidPoly([p0, lIn0, lInTop0, lTop0], "#1B222A", 19));
+  entities.push(solidPoly([p0, pL, lTopL, lTop0], ISO_TECH_SHADING.leftFace, 10));
+  entities.push(solidPoly([lIn0, lInL, lInTopL, lInTop0], ISO_TECH_SHADING.rightFace, 15, "corte", true));
+  entities.push(solidPoly([lTop0, lInTop0, lInTopL, lTopL], ISO_TECH_SHADING.wallFace, 18, "corte", true));
+  entities.push(solidPoly([p0, lIn0, lInTop0, lTop0], ISO_TECH_SHADING.wallFace, 19, "corte", true));
 
-  entities.push(solidPoly([p0, pW, pWL, pL], "#323B47", 25));
+  entities.push(solidPoly([p0, pW, pWL, pL], ISO_TECH_SHADING.topFace, 25));
   entities.push({
     id: uid(),
     layer: "dobra",
@@ -3367,7 +3657,13 @@ export function buildIsoChannelPreset(params?: {
     y1: lIn0.y,
     x2: lInL.x,
     y2: lInL.y,
-    params: { isIso: true, depth: 26 },
+    params: {
+      isIso: true,
+      isIsoSolidFace: true,
+      strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+      strokeWidth: 1.0,
+      depth: 26,
+    },
   });
 
   if (holeDia > 0) {
@@ -3392,13 +3688,19 @@ export function buildIsoChannelPreset(params?: {
     y1: rInW.y,
     x2: rInWL.x,
     y2: rInWL.y,
-    params: { isIso: true, depth: 26 },
+    params: {
+      isIso: true,
+      isIsoSolidFace: true,
+      strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
+      strokeWidth: 1.0,
+      depth: 26,
+    },
   });
 
-  entities.push(solidPoly([rInW, rInWL, rInTopWL, rInTopW], "#262E38", 35));
-  entities.push(solidPoly([rInTopW, rTopW, rTopWL, rInTopWL], "#323B47", 38));
-  entities.push(solidPoly([rInW, pW, rTopW, rInTopW], "#262E38", 39));
-  entities.push(solidPoly([pW, pWL, rTopWL, rTopW], "#1B222A", 42));
+  entities.push(solidPoly([rInW, rInWL, rInTopWL, rInTopW], ISO_TECH_SHADING.leftFace, 35, "corte", true));
+  entities.push(solidPoly([rInTopW, rTopW, rTopWL, rInTopWL], ISO_TECH_SHADING.wallFace, 38, "corte", true));
+  entities.push(solidPoly([rInW, pW, rTopW, rInTopW], ISO_TECH_SHADING.wallFace, 39, "corte", true));
+  entities.push(solidPoly([pW, pWL, rTopWL, rTopW], ISO_TECH_SHADING.rightFace, 42));
 
   dims.push(
     makeDimension(

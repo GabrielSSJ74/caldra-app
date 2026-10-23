@@ -338,6 +338,7 @@ export function ChamferCadToolbar({
       activeMode === "3d" &&
       (cat === "criar" ||
         cat === "modificar" ||
+        cat === "precisao" ||
         cat === "medir" ||
         cat === "chapa" ||
         cat === "estruturas" ||
@@ -346,7 +347,9 @@ export function ChamferCadToolbar({
       setOpenCat("none");
       AudioManager.play("ui_toggle_open");
       window.dispatchEvent(
-        new CustomEvent("chamfer-3d-open-category", { detail: { category: cat } }),
+        new CustomEvent("chamfer-3d-open-category", {
+          detail: { category: cat === "precisao" ? "esboco" : cat },
+        }),
       );
       return;
     }

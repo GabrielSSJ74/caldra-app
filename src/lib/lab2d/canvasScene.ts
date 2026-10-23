@@ -11,6 +11,7 @@ import type { Box, Entity } from "./core";
 import { samplePath } from "./bezier";
 import { SELECTION_COLOR, techStyle } from "./technical";
 import { viewportBox, type SpatialIndex } from "./spatialIndex";
+import { getIsoExtrusionVector, ISO_TECH_SHADING, type IsoPlane } from "./isometricEngine";
 
 export type SceneView = { tx: number; ty: number; k: number };
 
@@ -27,6 +28,12 @@ export type SceneOptions = {
   isLight?: boolean;
   /** Movimento destravado via Long-Press (destaque ciano/laranja brilhante de arraste ativo) */
   isDraggingUnlocked?: boolean;
+  /** Modo Isométrico (ISO 2D) ativo para renderização Isometric Wireframe Solid (X-Ray) */
+  isIsometric?: boolean;
+  /** Plano isométrico ativo para extrusão da espessura real da chapa */
+  isoPlane?: IsoPlane;
+  /** Espessura real da chapa configurada no projeto (mm) */
+  sheetThickness?: number;
 };
 
 /** Ordena por camada técnica ou por profundidade Z (Painter's Algorithm para oclusão 2.5D/3D). */
@@ -98,6 +105,65 @@ function traceEntity(ctx: CanvasRenderingContext2D, e: Entity, lod: boolean) {
   }
 }
 
+/** Coleta vértices geométricos de uma entidade para renderizar micro-pontos de interseção (r = 1.6px) */
+function collectEntityVertices(e: Entity): Vec2[] {
+  switch (e.type) {
+    case "line":
+      return [
+        { x: e.x1, y: e.y1 },
+        { x: e.x2, y: e.y2 },
+      ];
+    case "polyline":
+      return e.pts.length <= 48 ? e.pts : [];
+    case "arc":
+      return [
+        { x: e.cx + e.r * Math.cos(e.a0), y: e.cy + e.r * Math.sin(e.a0) },
+        { x: e.cx + e.r * Math.cos(e.a1), y: e.cy + e.r * Math.sin(e.a1) },
+      ];
+    case "ellipse": {
+      const rot = e.rotation ?? 0;
+      const cosR = Math.cos(rot);
+      const sinR = Math.sin(rot);
+      return [
+        { x: e.cx + e.rx * cosR, y: e.cy + e.rx * sinR },
+        { x: e.cx - e.rx * cosR, y: e.cy - e.rx * sinR },
+        { x: e.cx - e.ry * sinR, y: e.cy + e.ry * cosR },
+        { x: e.cx + e.ry * sinR, y: e.cy - e.ry * cosR },
+      ];
+    }
+    case "circle":
+      return [
+        { x: e.cx + e.r, y: e.cy },
+        { x: e.cx - e.r, y: e.cy },
+        { x: e.cx, y: e.cy + e.r },
+        { x: e.cx, y: e.cy - e.r },
+      ];
+    default:
+      return [];
+  }
+}
+
+function drawVertexMicroDots(
+  ctx: CanvasRenderingContext2D,
+  pts: Vec2[],
+  inv: number,
+  isLight?: boolean,
+) {
+  if (!pts.length) return;
+  const r = 1.6 * inv;
+  ctx.save();
+  ctx.setLineDash([]);
+  ctx.fillStyle = isLight ? "#0284C7" : ISO_TECH_SHADING.vertexDotFill;
+  ctx.beginPath();
+  for (const pt of pts) {
+    if (!Number.isFinite(pt.x) || !Number.isFinite(pt.y)) continue;
+    ctx.moveTo(pt.x + r, pt.y);
+    ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
+  }
+  ctx.fill();
+  ctx.restore();
+}
+
 const screenSize = (b: Box | undefined, k: number) =>
   b ? Math.max(b.maxX - b.minX, b.maxY - b.minY) * k : Infinity;
 
@@ -121,6 +187,8 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
   const box = viewportBox({ k: safeK, tx: safeTx, ty: safeTy }, safeW, safeH);
   const list = paintOrder(index.query(box));
   const inv = 1 / safeK;
+  const isoSheetThickness =
+    typeof opts.sheetThickness === "number" && opts.sheetThickness > 0 ? opts.sheetThickness : 5;
 
   // agrupa por estilo para minimizar trocas de estado do contexto
   let currentLayer = "";
@@ -128,16 +196,35 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     if (e.type === "text") continue;
     if (lod && screenSize(index.boxOfId(e.id), view.k) < 1.2) continue;
 
-    // RENDERIZAÇÃO SÓLIDA TÉCNICA COM SOMBREAMENTO E OCLUSÃO (CHAMFER ISO 2.5D/3D)
+    // 1. RENDERIZAÇÃO VOLUMÉTRICA ISOMÉTRICA (ISOMETRIC WIREFRAME SOLID / X-RAY)
     if (e.params?.isIsoSolidFace) {
       currentLayer = ""; // reset layer tracking
-      const fillCol = (e.params.fillColor as string) || "#323B47";
-      const strokeCol = (e.params.strokeColor as string) || "#FFFFFF";
-      const strokeW = (typeof e.params.strokeWidth === "number" ? e.params.strokeWidth : 2) * inv;
+      let fillCol = (e.params.fillColor as string) || ISO_TECH_SHADING.topFace;
+      let strokeCol = (e.params.strokeColor as string) || ISO_TECH_SHADING.edgeStroke;
+      if (opts.isLight) {
+        if (strokeCol === "#E8F4FF" || strokeCol === "#FFFFFF" || strokeCol === "#F8FAFC") {
+          strokeCol = "#0F172A";
+        } else if (strokeCol.includes("186, 230, 253")) {
+          strokeCol = "rgba(15, 23, 42, 0.58)";
+        } else if (strokeCol.includes("125, 211, 252")) {
+          strokeCol = "rgba(2, 132, 199, 0.38)";
+        }
+        if (fillCol.includes("15, 34, 62") || fillCol.includes("18, 40, 74") || fillCol.includes("24, 52, 92")) {
+          fillCol = "rgba(14, 165, 233, 0.08)";
+        } else if (fillCol.includes("5, 9, 20")) {
+          fillCol = "rgba(241, 245, 249, 0.65)";
+        }
+      }
+      const strokeW = (typeof e.params.strokeWidth === "number" ? e.params.strokeWidth : 1.4) * inv;
       const noStroke = !!e.params.noStroke;
+      const customDash = Array.isArray(e.params.dash) ? (e.params.dash as number[]) : null;
 
       ctx.save();
-      ctx.setLineDash([]);
+      if (!lod && customDash && customDash.length > 0) {
+        ctx.setLineDash(customDash.map((d) => d * inv));
+      } else {
+        ctx.setLineDash([]);
+      }
       ctx.beginPath();
       traceEntity(ctx, e, lod);
 
@@ -152,6 +239,132 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
         ctx.stroke();
       }
       ctx.restore();
+
+      if (!lod && e.params.vertexDots) {
+        drawVertexMicroDots(ctx, collectEntityVertices(e), inv, opts.isLight);
+      }
+      continue;
+    }
+
+    // 2. PASSAGEM VOLUMÉTRICA EM TEMPO REAL (ISO 2D WIREFRAME SOLID) PARA ENTIDADES PLANAS
+    if (
+      opts.isIsometric &&
+      !e.isConstruction &&
+      e.layer !== "centro" &&
+      e.layer !== "referencia" &&
+      e.layer !== "dobra" &&
+      e.type !== "point"
+    ) {
+      currentLayer = "";
+      const entPlane = ((e.params?.isoPlane as IsoPlane) || opts.isoPlane || "top") as IsoPlane;
+      const ext = getIsoExtrusionVector(entPlane, isoSheetThickness);
+      const isHole = e.layer === "furo" || e.type === "ellipse" || e.type === "circle";
+
+      const backStroke = opts.isLight ? "rgba(2, 132, 199, 0.35)" : ISO_TECH_SHADING.backEdgeStroke;
+      const wallStroke = opts.isLight ? "rgba(15, 23, 42, 0.55)" : ISO_TECH_SHADING.internalEdgeStroke;
+      const frontStroke = opts.isLight ? "#0F172A" : ISO_TECH_SHADING.edgeStroke;
+      const faceFill = opts.isLight
+        ? isHole
+          ? "rgba(241, 245, 249, 0.55)"
+          : "rgba(14, 165, 233, 0.08)"
+        : isHole
+          ? ISO_TECH_SHADING.holeBottomVoid
+          : entPlane === "left"
+            ? ISO_TECH_SHADING.leftFace
+            : entPlane === "right"
+              ? ISO_TECH_SHADING.rightFace
+              : ISO_TECH_SHADING.topFace;
+      const wallFill = opts.isLight ? "rgba(14, 165, 233, 0.10)" : ISO_TECH_SHADING.wallFace;
+
+      ctx.save();
+      // 2a. Contorno traseiro em X-Ray (deslocado por ext)
+      ctx.save();
+      ctx.translate(ext.x, ext.y);
+      ctx.beginPath();
+      traceEntity(ctx, e, lod);
+      ctx.setLineDash(!lod ? [3 * inv, 2.5 * inv] : []);
+      ctx.strokeStyle = backStroke;
+      ctx.lineWidth = 0.75 * inv;
+      ctx.stroke();
+      ctx.restore();
+
+      // 2b. Paredes laterais de espessura (V_i -> V'_i) e geratrizes tangentes
+      if (!lod) {
+        ctx.setLineDash([]);
+        ctx.strokeStyle = wallStroke;
+        ctx.lineWidth = 0.95 * inv;
+        if (e.type === "polyline" && e.pts.length >= 2) {
+          const n = e.pts.length;
+          const limit = e.closed ? n : n - 1;
+          for (let i = 0; i < limit; i++) {
+            const p0 = e.pts[i]!;
+            const p1 = e.pts[(i + 1) % n]!;
+            ctx.beginPath();
+            ctx.moveTo(p0.x, p0.y);
+            ctx.lineTo(p1.x, p1.y);
+            ctx.lineTo(p1.x + ext.x, p1.y + ext.y);
+            ctx.lineTo(p0.x + ext.x, p0.y + ext.y);
+            ctx.closePath();
+            ctx.fillStyle = wallFill;
+            ctx.fill();
+            ctx.stroke();
+          }
+        } else if (e.type === "line") {
+          ctx.beginPath();
+          ctx.moveTo(e.x1, e.y1);
+          ctx.lineTo(e.x2, e.y2);
+          ctx.lineTo(e.x2 + ext.x, e.y2 + ext.y);
+          ctx.lineTo(e.x1 + ext.x, e.y1 + ext.y);
+          ctx.closePath();
+          ctx.fillStyle = wallFill;
+          ctx.fill();
+          ctx.stroke();
+        } else if (e.type === "ellipse") {
+          const rot = e.rotation ?? 0;
+          const cosR = Math.cos(rot);
+          const sinR = Math.sin(rot);
+          const t1 = { x: e.cx + e.rx * cosR, y: e.cy + e.rx * sinR };
+          const t2 = { x: e.cx - e.rx * cosR, y: e.cy - e.rx * sinR };
+          ctx.beginPath();
+          ctx.moveTo(t1.x, t1.y);
+          ctx.lineTo(t1.x + ext.x, t1.y + ext.y);
+          ctx.moveTo(t2.x, t2.y);
+          ctx.lineTo(t2.x + ext.x, t2.y + ext.y);
+          ctx.stroke();
+        } else if (e.type === "circle") {
+          const extLen = Math.hypot(ext.x, ext.y);
+          const nx = extLen > 1e-6 ? -ext.y / extLen : 1;
+          const ny = extLen > 1e-6 ? ext.x / extLen : 0;
+          ctx.beginPath();
+          ctx.moveTo(e.cx + nx * e.r, e.cy + ny * e.r);
+          ctx.lineTo(e.cx + nx * e.r + ext.x, e.cy + ny * e.r + ext.y);
+          ctx.moveTo(e.cx - nx * e.r, e.cy - ny * e.r);
+          ctx.lineTo(e.cx - nx * e.r + ext.x, e.cy - ny * e.r + ext.y);
+          ctx.stroke();
+        }
+      }
+
+      // 2c. Face frontal translúcida + Aresta principal nítida (1.4px)
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      traceEntity(ctx, e, lod);
+      if (
+        (e.type === "polyline" && e.closed) ||
+        e.type === "circle" ||
+        e.type === "ellipse" ||
+        (e.type === "path" && e.closed)
+      ) {
+        ctx.fillStyle = faceFill;
+        ctx.fill();
+      }
+      ctx.strokeStyle = frontStroke;
+      ctx.lineWidth = 1.4 * inv;
+      ctx.stroke();
+      ctx.restore();
+
+      if (!lod) {
+        drawVertexMicroDots(ctx, collectEntityVertices(e), inv, opts.isLight);
+      }
       continue;
     }
 

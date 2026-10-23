@@ -79,12 +79,48 @@ export interface ICadKernel {
   /** Cria uma face circular planar no plano XY */
   createCircleFace(radius: number, name?: string): Promise<CadShape>;
 
+  /** Cria uma face poligonal fechada a partir de pontos 2D em um plano 3D opcional */
+  createPolygonFace(
+    points: Array<{ x: number; y: number }>,
+    name?: string,
+    planeOrigin?: CadVector3D,
+    planeNormal?: CadVector3D,
+  ): Promise<CadShape>;
+
+  /** Cria uma face de polígono regular (N lados, ex: sextavado) */
+  createRegularPolygonFace(
+    sides: number,
+    radius: number,
+    name?: string,
+    planeOrigin?: CadVector3D,
+    planeNormal?: CadVector3D,
+  ): Promise<CadShape>;
+
+  /** Cria uma face de rasgo oblongo (Slot reto) */
+  createSlotFace(
+    centerDistance: number,
+    radius: number,
+    name?: string,
+    planeOrigin?: CadVector3D,
+    planeNormal?: CadVector3D,
+  ): Promise<CadShape>;
+
   /** Extruda uma face ou perfil 2D ao longo de um vetor tridimensional (dx, dy, dz) */
   extrude(
     profile: CadShape,
     dx: number,
     dy: number,
     dz: number,
+    name?: string,
+  ): Promise<CadShape>;
+
+  /** Extruda uma face com ângulo de inclinação (Draft Prism) */
+  draftExtrude(
+    profile: CadShape,
+    dx: number,
+    dy: number,
+    dz: number,
+    angleDeg: number,
     name?: string,
   ): Promise<CadShape>;
 
@@ -105,6 +141,24 @@ export interface ICadKernel {
     name?: string,
   ): Promise<CadShape>;
 
+  /** Varre (Sweep / Pipe) um perfil ao longo de uma trajetória (spine wire) */
+  sweep(
+    profile: CadShape,
+    spine: CadShape,
+    name?: string,
+  ): Promise<CadShape>;
+
+  /** Cria um fio helicoidal (Helix Wire) para roscas e molas */
+  createHelixWire(
+    origin: CadVector3D,
+    axis: CadVector3D,
+    pitch: number,
+    height: number,
+    radius: number,
+    leftHanded?: boolean,
+    name?: string,
+  ): Promise<CadShape>;
+
   // ==========================================
   // OPERAÇÕES BOOLEANAS EXATAS (CSG / B-Rep)
   // ==========================================
@@ -119,7 +173,7 @@ export interface ICadKernel {
   intersect(a: CadShape, b: CadShape, name?: string): Promise<CadShape>;
 
   // ==========================================
-  // OPERAÇÕES DE DETALHE (FILLET / CHAMFER)
+  // OPERAÇÕES DE DETALHE (FILLET / CHAMFER / SHELL / THICKEN)
   // ==========================================
 
   /** Aplica concordância / arredondamento (Fillet) com raio constante em arestas selecionadas */
@@ -135,6 +189,34 @@ export interface ICadKernel {
     solid: CadShape,
     distance: number,
     edgeIndicesOrHandles?: number[],
+    name?: string,
+  ): Promise<CadShape>;
+
+  /** Aplica chanfro por distância e ângulo ou duas distâncias */
+  chamferAdvanced(
+    solid: CadShape,
+    options: {
+      mode: "symmetric" | "two_distances" | "distance_angle";
+      distance1: number;
+      distance2?: number;
+      angleDeg?: number;
+      edgeIndices?: number[];
+    },
+    name?: string,
+  ): Promise<CadShape>;
+
+  /** Esvazia um sólido (Casca / Shell) removendo as faces indicadas e aplicando espessura de parede */
+  shell(
+    solid: CadShape,
+    thickness: number,
+    faceIndicesToRemove?: number[],
+    name?: string,
+  ): Promise<CadShape>;
+
+  /** Espessa uma superfície/casca ou desloca as faces do sólido (Thicken / Offset) */
+  thicken(
+    shape: CadShape,
+    thickness: number,
     name?: string,
   ): Promise<CadShape>;
 
