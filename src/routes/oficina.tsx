@@ -1152,7 +1152,7 @@ function NuvemTab({ projects, onRefresh }: { projects: Project[]; onRefresh: () 
                 <div className="flex items-center justify-between gap-2">
                   <button onClick={() => void loadVersions(p.id)} className="min-w-0 text-left">
                     <span className="block truncate text-sm">{p.name}</span>
-                    <span className="block font-mono text-[10px] text-muted-foreground">
+                    <span className="block font-mono text-[10px] text-muted-foreground" suppressHydrationWarning>
                       {new Date(p.updatedAt).toLocaleString("pt-BR")}
                     </span>
                   </button>

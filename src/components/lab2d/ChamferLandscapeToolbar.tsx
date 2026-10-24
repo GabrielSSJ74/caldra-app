@@ -190,7 +190,10 @@ export function ChamferLandscapeToolbar({
   return (
     <nav
       aria-label="Barra de ferramentas CAD"
-      className="flex shrink-0 flex-col border-b border-line bg-card/60 backdrop-blur-md transition-all select-none"
+      style={{
+        backgroundColor: "color-mix(in oklab, var(--card) calc(var(--ui-opacity, 0.90) * 100%), transparent)",
+      }}
+      className="flex shrink-0 flex-col border-b border-line backdrop-blur-md transition-all select-none"
     >
       {/* 1. LINHA DE ABAS PRINCIPAIS DO RIBBON */}
       <div className="flex h-8 items-center justify-between border-b border-line/60 px-2.5">

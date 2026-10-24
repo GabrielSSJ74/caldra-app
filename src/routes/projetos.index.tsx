@@ -102,7 +102,7 @@ function Projetos() {
         badgeColor="text-sky-500"
         indicatorColor="bg-sky-500"
         secondaryBadge={
-          <span className="rounded bg-sky-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-sky-500 border border-sky-500/30">
+          <span className="rounded bg-sky-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-sky-500 border border-sky-500/30" suppressHydrationWarning>
             {isMestre ? "PRO · ILIMITADO" : `FREE · ATÉ ${projectLimit} PROJETOS`}
           </span>
         }
@@ -125,7 +125,7 @@ function Projetos() {
         >
           Catálogo
         </Button>
-        <Button variant={tab === "meus" ? "default" : "ghost"} onClick={() => setTab("meus")}>
+        <Button variant={tab === "meus" ? "default" : "ghost"} onClick={() => setTab("meus")} suppressHydrationWarning>
           Meus projetos ({projects.length})
         </Button>
       </div>

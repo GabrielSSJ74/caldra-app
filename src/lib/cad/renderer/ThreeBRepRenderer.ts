@@ -21,6 +21,14 @@ import { TransformControls } from "three/examples/jsm/controls/TransformControls
 import type { CadTessellatedShape } from "../core/CadMesh";
 import type { CadSelectedEntity, CadSelectionType, CadMeasurementResult } from "../core/CadSelection";
 import type { EdgeMode, ViewPresetId } from "@/lib/viz3d/cameraPresets";
+import {
+  computeOrbitalBasisZUp,
+  cubicBezier022,
+  evaluateMorphCameraPose,
+  type Camera2DTo3DMatch,
+  type CameraPose3D,
+  type Sketch3DWireframe,
+} from "../sketch/sketch3dBridge";
 
 export type CadGizmoMode = "translate" | "rotate" | "scale" | "off";
 
@@ -52,6 +60,7 @@ export class ThreeBRepRenderer {
   private meshGroup: THREE.Group;
   private edgesGroup: THREE.Group;
   private verticesGroup: THREE.Group;
+  private sketchWireframeGroup: THREE.Group;
   private selectionOverlayGroup: THREE.Group;
   private measurementGroup: THREE.Group;
   private gridHelper: THREE.GridHelper | null = null;
@@ -59,6 +68,7 @@ export class ThreeBRepRenderer {
 
   // Dados do Sólido Carregado
   private currentShape: CadTessellatedShape | null = null;
+  private currentWireframes: Sketch3DWireframe[] = [];
   private multiSelection: CadSelectedEntity[] = [];
   private hoveredEntity: CadSelectedEntity | null = null;
 
@@ -78,6 +88,8 @@ export class ThreeBRepRenderer {
   private edgeMode: EdgeMode = "shaded-edges";
   private selectionType: CadSelectionType = "face";
   private isOrtho = false;
+  private hasInitialCameraPose = false;
+  private lastCameraMatch: Camera2DTo3DMatch | null = null;
   private onSelectCallback?: (entity: CadSelectedEntity | null, multiSelection: CadSelectedEntity[]) => void;
   private onHoverCallback?: (entity: CadSelectedEntity | null) => void;
   private onMeasureCallback?: (measurement: CadMeasurementResult | null) => void;
@@ -105,8 +117,23 @@ export class ThreeBRepRenderer {
     toPos: THREE.Vector3;
     fromTarget: THREE.Vector3;
     toTarget: THREE.Vector3;
+    fromUp?: THREE.Vector3;
+    toUp?: THREE.Vector3;
     startTime: number;
     duration: number;
+  } | null = null;
+
+  private morphAnimation: {
+    direction: "to3d" | "to2d";
+    match: Camera2DTo3DMatch;
+    startTime: number;
+    durationMs: number;
+    startProgress3D: number;
+    fromPos: THREE.Vector3;
+    fromTarget: THREE.Vector3;
+    fromUp: THREE.Vector3;
+    onProgress?: (progress3D: number) => void;
+    onComplete?: () => void;
   } | null = null;
 
   // Raycasting
@@ -131,9 +158,10 @@ export class ThreeBRepRenderer {
     const width = this.container.clientWidth || 800;
     const height = this.container.clientHeight || 600;
 
-    // 2. Câmeras
-    this.camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 5000);
-    this.camera.position.set(150, 120, 150);
+    // 2. Câmeras (FOV 38° alinhado com correspondência óptica 2D <-> 3D)
+    this.camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 15000);
+    this.camera.position.set(0, -160, 220);
+    this.camera.up.set(0, 1, 0);
 
     const aspect = width / height;
     const d = 120;
@@ -143,9 +171,10 @@ export class ThreeBRepRenderer {
       d,
       -d,
       0.1,
-      5000,
+      15000,
     );
     this.orthoCamera.position.copy(this.camera.position);
+    this.orthoCamera.up.copy(this.camera.up);
 
     this.activeCamera = this.isOrtho ? this.orthoCamera : this.camera;
 
@@ -173,12 +202,14 @@ export class ThreeBRepRenderer {
     this.meshGroup = new THREE.Group();
     this.edgesGroup = new THREE.Group();
     this.verticesGroup = new THREE.Group();
+    this.sketchWireframeGroup = new THREE.Group();
     this.selectionOverlayGroup = new THREE.Group();
     this.measurementGroup = new THREE.Group();
 
     this.rootGroup.add(this.meshGroup);
     this.rootGroup.add(this.edgesGroup);
     this.rootGroup.add(this.verticesGroup);
+    this.rootGroup.add(this.sketchWireframeGroup);
     this.rootGroup.add(this.selectionOverlayGroup);
     this.rootGroup.add(this.measurementGroup);
     this.scene.add(this.rootGroup);
@@ -311,9 +342,14 @@ export class ThreeBRepRenderer {
   // CARREGAMENTO DA GEOMETRIA B-REP TESSELLADA
   // ==========================================
 
-  public setShape(shape: CadTessellatedShape): void {
+  public setShape(shape: CadTessellatedShape | null, autoFit = false): void {
     this.currentShape = shape;
     this.clearGeometry();
+
+    if (!shape) {
+      this.updateGridAndBackground();
+      return;
+    }
 
     const { mesh, edges } = shape;
 
@@ -367,8 +403,60 @@ export class ThreeBRepRenderer {
     }
 
     this.updateVisibilityByEdgeMode();
-    this.fitView(false);
+    if (autoFit || (!this.hasInitialCameraPose && !this.lastCameraMatch)) {
+      this.fitView(false);
+    }
     this.updateGridAndBackground();
+  }
+
+  /**
+   * Renderiza os fios do esboço 2D diretamente no plano de trabalho XY (Z = 0.05) da cena 3D.
+   * Essencial para o Caso 4.2 (esboços abertos sem sólido fechado) e para continuidade visual 2D <-> 3D.
+   */
+  public setSketchWireframes(wireframes: Sketch3DWireframe[], visible = true): void {
+    this.currentWireframes = wireframes;
+    this.clearSketchWireframes();
+    this.sketchWireframeGroup.visible = visible;
+
+    if (!visible || wireframes.length === 0) return;
+
+    const isDark = this.currentTheme === "dark";
+    for (const wf of wireframes) {
+      if (wf.points.length < 2) continue;
+      const pts3 = wf.points.map((p) => new THREE.Vector3(p.x, p.y, (p.z ?? 0) + 0.06));
+      if (wf.closed && pts3.length >= 3) {
+        pts3.push(pts3[0]!.clone());
+      }
+      const geo = new THREE.BufferGeometry().setFromPoints(pts3);
+      const color = wf.isConstruction
+        ? isDark
+          ? 0x64748b
+          : 0x94a3b8
+        : isDark
+          ? 0x38bdf8
+          : 0x0284c7;
+      const mat = new THREE.LineBasicMaterial({
+        color,
+        transparent: true,
+        opacity: wf.isConstruction ? 0.55 : 0.92,
+      });
+      const line = new THREE.Line(geo, mat);
+      line.name = `sketch_wf_${wf.id}`;
+      this.sketchWireframeGroup.add(line);
+    }
+
+    this.updateGridAndBackground();
+  }
+
+  private clearSketchWireframes(): void {
+    while (this.sketchWireframeGroup.children.length > 0) {
+      const obj = this.sketchWireframeGroup.children[0] as THREE.Line;
+      this.sketchWireframeGroup.remove(obj);
+      obj.geometry?.dispose();
+      if (obj.material instanceof THREE.Material) {
+        obj.material.dispose();
+      }
+    }
   }
 
   private clearGeometry(): void {
@@ -758,34 +846,46 @@ export class ThreeBRepRenderer {
   // ==========================================
 
   public setView(view: ViewPresetId, animate = true): void {
-    let dir: [number, number, number] = [1, 0.8, 1];
+    let dir: [number, number, number] = [0.45, -0.72, 0.82];
+    let up: [number, number, number] = [0, 1, 0];
+
     switch (view) {
-      case "front":
+      case "top":
+        // Vista Superior (SUP) 100% alinhada ao plano XY do Esboço 2D (+X direita, +Y cima, olhando -Z)
         dir = [0, 0, 1];
+        up = [0, 1, 0];
+        break;
+      case "bottom":
+        dir = [0, 0, -1];
+        up = [0, -1, 0];
+        break;
+      case "front":
+        dir = [0, -1, 0.001];
+        up = [0, 0, 1];
+        break;
+      case "back":
+        dir = [0, 1, 0.001];
+        up = [0, 0, 1];
         break;
       case "side":
       case "right":
-        dir = [1, 0, 0];
-        break;
-      case "top":
-        dir = [0, 1, 0.001];
-        break;
-      case "back":
-        dir = [0, 0, -1];
+        dir = [1, 0, 0.001];
+        up = [0, 0, 1];
         break;
       case "left":
-        dir = [-1, 0, 0];
-        break;
-      case "bottom":
-        dir = [0, -1, 0.001];
+        dir = [-1, 0, 0.001];
+        up = [0, 0, 1];
         break;
       case "iso":
-      default:
-        dir = [1, 0.8, 1];
+      default: {
+        const basis = computeOrbitalBasisZUp((35 * Math.PI) / 180, (-32 * Math.PI) / 180);
+        dir = [basis.offsetDir.x, basis.offsetDir.y, basis.offsetDir.z];
+        up = [basis.up.x, basis.up.y, basis.up.z];
         break;
+      }
     }
 
-    this.fitView(animate, dir);
+    this.fitView(animate, dir, up);
   }
 
   public setViewPreset(view: ViewPresetId, animate = true): void {
@@ -793,7 +893,12 @@ export class ThreeBRepRenderer {
   }
 
   public fitToModel(animate = true): void {
-    this.fitView(animate);
+    const basis = computeOrbitalBasisZUp((35 * Math.PI) / 180, (-32 * Math.PI) / 180);
+    this.fitView(
+      animate,
+      [basis.offsetDir.x, basis.offsetDir.y, basis.offsetDir.z],
+      [basis.up.x, basis.up.y, basis.up.z],
+    );
   }
 
   public setTheme(theme: "light" | "dark"): void {
@@ -803,7 +908,6 @@ export class ThreeBRepRenderer {
 
   public updateGridAndBackground(): void {
     const isDark = this.currentTheme === "dark";
-    // Viewport background: exactly #051833 for dark theme (Prompt Sec. 24)
     this.scene.background = new THREE.Color(isDark ? 0x051833 : 0xf8fafc);
 
     if (this.gridHelper) {
@@ -817,28 +921,36 @@ export class ThreeBRepRenderer {
       this.gridHelper = null;
     }
 
-    let maxDim = 300;
-    let floorY = 0;
+    let maxDim = 400;
+    let centerX = this.controls.target.x || 0;
+    let centerY = this.controls.target.y || 0;
+    let floorZ = -0.15;
+
     if (this.currentShape?.bounds) {
       const b = this.currentShape.bounds;
       const dx = b.max.x - b.min.x;
       const dy = b.max.y - b.min.y;
       const dz = b.max.z - b.min.z;
-      maxDim = Math.max(dx, dy, dz);
-      floorY = b.min.y - 0.5;
+      maxDim = Math.max(dx, dy, dz, 200);
+      centerX = Math.round(((b.min.x + b.max.x) / 2) / 50) * 50;
+      centerY = Math.round(((b.min.y + b.max.y) / 2) / 50) * 50;
+      floorZ = Math.min(0, b.min.z) - 0.15;
+    } else if (this.lastCameraMatch) {
+      centerX = Math.round(this.lastCameraMatch.startPose.target.x / 50) * 50;
+      centerY = Math.round(this.lastCameraMatch.startPose.target.y / 50) * 50;
+      maxDim = Math.max(400, this.lastCameraMatch.startPose.visibleWidthMm);
     }
 
-    // Escala adaptativa em mm coerente com o modelo (Prompt Sec. 29 & 30)
-    const gridSize = Math.max(600, Math.ceil((maxDim * 3) / 100) * 100);
-    const divisions = Math.min(100, Math.max(20, Math.round(gridSize / 20)));
+    const gridSize = Math.max(800, Math.ceil((maxDim * 3.5) / 100) * 100);
+    const divisions = Math.min(120, Math.max(20, Math.round(gridSize / 20)));
 
-    // Tema Escuro: Grid branco (0.18 principal, 0.08 secundária) (Sec. 24)
-    // Tema Claro: Grid escuro (0.16 principal, 0.07 secundária) (Sec. 25)
     const mainColor = isDark ? 0xffffff : 0x0f172a;
     const subColor = isDark ? 0xffffff : 0x334155;
 
     const grid = new THREE.GridHelper(gridSize, divisions, mainColor, subColor);
-    grid.position.set(0, floorY, 0);
+    // Rotaciona 90° em X para que o GridHelper fique exatamente no plano de trabalho XY (Z = floorZ)
+    grid.rotation.x = Math.PI / 2;
+    grid.position.set(centerX, centerY, floorZ);
 
     if (Array.isArray(grid.material)) {
       grid.material[0].transparent = true;
@@ -854,7 +966,11 @@ export class ThreeBRepRenderer {
     this.scene.add(grid);
   }
 
-  public fitView(animate = true, dir?: [number, number, number]): void {
+  public fitView(
+    animate = true,
+    dir?: [number, number, number],
+    upVec?: [number, number, number],
+  ): void {
     const box = new THREE.Box3();
     if (this.currentShape?.bounds) {
       const b = this.currentShape.bounds;
@@ -865,7 +981,7 @@ export class ThreeBRepRenderer {
     }
 
     if (box.isEmpty()) {
-      box.set(new THREE.Vector3(-50, -50, -25), new THREE.Vector3(50, 50, 25));
+      box.set(new THREE.Vector3(-50, -50, 0), new THREE.Vector3(50, 50, 10));
     }
 
     const center = box.getCenter(new THREE.Vector3());
@@ -876,9 +992,14 @@ export class ThreeBRepRenderer {
       ? new THREE.Vector3(...dir).normalize()
       : this.camera.position.clone().sub(this.controls.target).normalize();
 
+    const targetUp = upVec
+      ? new THREE.Vector3(...upVec).normalize()
+      : this.camera.up.clone().normalize();
+
     const fovRad = (this.camera.fov * Math.PI) / 360;
-    const distance = (radius / Math.sin(fovRad)) * 1.05;
+    const distance = (radius / Math.sin(fovRad)) * 1.12;
     const targetCameraPos = center.clone().add(direction.multiplyScalar(distance));
+    this.hasInitialCameraPose = true;
 
     if (animate) {
       this.cameraAnimation = {
@@ -886,15 +1007,110 @@ export class ThreeBRepRenderer {
         toPos: targetCameraPos,
         fromTarget: this.controls.target.clone(),
         toTarget: center,
+        fromUp: this.camera.up.clone(),
+        toUp: targetUp,
         startTime: performance.now(),
         duration: 380,
       };
     } else {
       this.camera.position.copy(targetCameraPos);
       this.orthoCamera.position.copy(targetCameraPos);
+      this.camera.up.copy(targetUp);
+      this.orthoCamera.up.copy(targetUp);
       this.controls.target.copy(center);
       this.controls.update();
     }
+  }
+
+  // ==========================================
+  // TRANSIÇÃO CONTÍNUA SEAMLESS 2D ↔ 3D (550ms / 500ms)
+  // ==========================================
+
+  public applyCameraPose(pose: CameraPose3D): void {
+    this.hasInitialCameraPose = true;
+    this.camera.position.set(pose.position.x, pose.position.y, pose.position.z);
+    this.orthoCamera.position.set(pose.position.x, pose.position.y, pose.position.z);
+    this.camera.up.set(pose.up.x, pose.up.y, pose.up.z);
+    this.orthoCamera.up.set(pose.up.x, pose.up.y, pose.up.z);
+    this.controls.target.set(pose.target.x, pose.target.y, pose.target.z);
+
+    const halfW = Math.max(10, pose.visibleWidthMm / 2);
+    const halfH = Math.max(10, pose.visibleHeightMm / 2);
+    this.orthoCamera.left = -halfW;
+    this.orthoCamera.right = halfW;
+    this.orthoCamera.top = halfH;
+    this.orthoCamera.bottom = -halfH;
+    this.orthoCamera.zoom = 1;
+    this.orthoCamera.updateProjectionMatrix();
+
+    this.controls.update();
+  }
+
+  /**
+   * Posiciona a câmera 3D imediatamente no Quadro 0 (`t = 0`), em correspondência
+   * óptica 1:1 com o canvas 2D (`tx, ty, k`).
+   */
+  public setCameraTo2DMatch(match: Camera2DTo3DMatch): void {
+    this.lastCameraMatch = match;
+    this.morphAnimation = null;
+    this.cameraAnimation = null;
+    this.applyCameraPose(match.startPose);
+    this.setExtrusionMorphScale(0.01);
+    this.updateGridAndBackground();
+    this.renderer.render(this.scene, this.activeCamera);
+  }
+
+  private setExtrusionMorphScale(progress3D: number): void {
+    const minZ = this.currentShape?.bounds?.min.z ?? 0;
+    // Se o sólido apoia-se no plano de esboço Z = 0, emerge/recolhe suavemente a espessura em Z
+    if (Math.abs(minZ) < 0.6) {
+      const zScale = Math.max(0.01, Math.min(1, progress3D));
+      this.meshGroup.scale.set(1, 1, zScale);
+      this.edgesGroup.scale.set(1, 1, zScale);
+      this.verticesGroup.scale.set(1, 1, zScale);
+    } else {
+      this.meshGroup.scale.set(1, 1, 1);
+      this.edgesGroup.scale.set(1, 1, 1);
+      this.verticesGroup.scale.set(1, 1, 1);
+    }
+  }
+
+  public startMorphTransition(options: {
+    direction: "to3d" | "to2d";
+    match: Camera2DTo3DMatch;
+    durationMs: number;
+    startProgress3D?: number;
+    onProgress?: (progress3D: number) => void;
+    onComplete?: () => void;
+  }): void {
+    this.lastCameraMatch = options.match;
+    this.cameraAnimation = null;
+
+    const startProgress3D =
+      options.startProgress3D ?? (options.direction === "to3d" ? 0 : 1);
+
+    if (options.direction === "to3d" && startProgress3D <= 0.001) {
+      this.applyCameraPose(options.match.startPose);
+      this.setExtrusionMorphScale(0.01);
+    }
+
+    this.morphAnimation = {
+      direction: options.direction,
+      match: options.match,
+      startTime: performance.now(),
+      durationMs: Math.max(60, options.durationMs),
+      startProgress3D,
+      fromPos: this.camera.position.clone(),
+      fromTarget: this.controls.target.clone(),
+      fromUp: this.camera.up.clone(),
+      onProgress: options.onProgress,
+      onComplete: options.onComplete,
+    };
+  }
+
+  public cancelMorphTransition(): void {
+    this.morphAnimation = null;
+    this.setExtrusionMorphScale(1);
   }
 
   public zoomIn(factor = 0.8): void {
@@ -1094,22 +1310,89 @@ export class ThreeBRepRenderer {
       if (this.isDestroyed) return;
       this.animFrameId = requestAnimationFrame(loop);
 
-      if (this.cameraAnimation) {
+      if (this.morphAnimation) {
+        const m = this.morphAnimation;
+        const now = performance.now();
+        const rawT = Math.min(1, Math.max(0, (now - m.startTime) / m.durationMs));
+        const eased = cubicBezier022(rawT);
+
+        if (m.direction === "to3d") {
+          const progress3D = m.startProgress3D + (1 - m.startProgress3D) * eased;
+          const pose = evaluateMorphCameraPose(m.match, progress3D);
+          this.applyCameraPose(pose);
+          this.setExtrusionMorphScale(progress3D);
+          m.onProgress?.(progress3D);
+
+          if (rawT >= 1) {
+            this.setExtrusionMorphScale(1);
+            const doneCb = m.onComplete;
+            this.morphAnimation = null;
+            doneCb?.();
+          }
+        } else {
+          // Retorno 3D -> 2D: interpola suavemente da pose 3D atual até a pose 2D exata (startPose)
+          const progress3D = m.startProgress3D * (1 - eased);
+          const toPose = m.match.startPose;
+
+          const pos = new THREE.Vector3().lerpVectors(
+            m.fromPos,
+            new THREE.Vector3(toPose.position.x, toPose.position.y, toPose.position.z),
+            eased,
+          );
+          const target = new THREE.Vector3().lerpVectors(
+            m.fromTarget,
+            new THREE.Vector3(toPose.target.x, toPose.target.y, toPose.target.z),
+            eased,
+          );
+          const up = new THREE.Vector3()
+            .lerpVectors(
+              m.fromUp,
+              new THREE.Vector3(toPose.up.x, toPose.up.y, toPose.up.z),
+              eased,
+            )
+            .normalize();
+
+          this.camera.position.copy(pos);
+          this.orthoCamera.position.copy(pos);
+          this.camera.up.copy(up);
+          this.orthoCamera.up.copy(up);
+          this.controls.target.copy(target);
+          this.controls.update();
+
+          this.setExtrusionMorphScale(progress3D);
+          m.onProgress?.(progress3D);
+
+          if (rawT >= 1) {
+            this.applyCameraPose(toPose);
+            this.setExtrusionMorphScale(0.01);
+            const doneCb = m.onComplete;
+            this.morphAnimation = null;
+            doneCb?.();
+          }
+        }
+      } else if (this.cameraAnimation) {
         const now = performance.now();
         const elapsed = now - this.cameraAnimation.startTime;
         const progress = Math.min(elapsed / this.cameraAnimation.duration, 1);
-        const t = 1 - Math.pow(1 - progress, 3);
+        const t = cubicBezier022(progress);
 
         this.camera.position.lerpVectors(
           this.cameraAnimation.fromPos,
           this.cameraAnimation.toPos,
           t,
         );
+        this.orthoCamera.position.copy(this.camera.position);
         this.controls.target.lerpVectors(
           this.cameraAnimation.fromTarget,
           this.cameraAnimation.toTarget,
           t,
         );
+        if (this.cameraAnimation.fromUp && this.cameraAnimation.toUp) {
+          this.camera.up
+            .lerpVectors(this.cameraAnimation.fromUp, this.cameraAnimation.toUp, t)
+            .normalize();
+          this.orthoCamera.up.copy(this.camera.up);
+        }
         this.controls.update();
 
         if (progress >= 1) {
@@ -1156,6 +1439,7 @@ export class ThreeBRepRenderer {
     window.removeEventListener("resize", this.onWindowResize);
 
     this.clearGeometry();
+    this.clearSketchWireframes();
 
     if (this.gridHelper) {
       this.scene.remove(this.gridHelper);

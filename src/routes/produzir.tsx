@@ -420,7 +420,7 @@ function getProjectStageInfo(project: Project): ProjectStageInfo {
    4. COMPONENTE PRINCIPAL DA PÁGINA PRODUZIR
    ========================================================================= */
 
-function ProduzirPage() {
+export function ProduzirPage() {
   const navigate = useNavigate();
   const realProjects = useProjects();
   const [newProjectOpen, setNewProjectOpen] = useState(false);
@@ -909,9 +909,24 @@ function ProduzirPage() {
             {/* Atalho 1 — Prancheta CAD 2D */}
             <Link
               to="/desenho-2d"
-              onClick={() => {
-                triggerHaptic("selection");
-                AudioManager.play("ui_pop");
+              onPointerDown={(e) => {
+                if (e.button === 0) {
+                  triggerHaptic("selection");
+                  AudioManager.play("ui_pop");
+                }
+              }}
+              onClick={(e) => {
+                if (e.detail === 0) {
+                  triggerHaptic("selection");
+                  AudioManager.play("ui_pop");
+                }
+              }}
+              style={{
+                touchAction: "manipulation",
+                userSelect: "none",
+                WebkitUserSelect: "none",
+                WebkitTapHighlightColor: "transparent",
+                willChange: "transform, opacity",
               }}
               className="caldra-card group flex min-h-[96px] sm:min-h-[104px] flex-col justify-between rounded-xl p-3 transition-all hover:border-red-500/40 active:scale-[0.98] cursor-pointer text-left"
             >

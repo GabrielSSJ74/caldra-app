@@ -184,6 +184,8 @@ function applyToDom(s: Settings) {
     ) / 100;
   root.style.setProperty("--card-opacity", cardOp.toFixed(2));
   root.style.setProperty("--bubble-opacity", bubbleOp.toFixed(2));
+  root.style.setProperty("--ui-opacity", cardOp.toFixed(2));
+  root.setAttribute("data-bg-style", s.auroraStyle);
 }
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {

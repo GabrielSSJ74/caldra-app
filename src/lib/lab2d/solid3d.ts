@@ -34,17 +34,21 @@ function pointInPoly(p: Vec2, poly: Vec2[]): boolean {
   return inside;
 }
 
-/** Contornos fechados de corte, do maior para o menor. */
+const VALID_SOLID_LAYERS = new Set(["corte", "recorte"]);
+
+/** Contornos fechados de corte/recorte, do maior para o menor. */
 function closedLoops(entities: Entity[]): Loop[] {
   const out: Loop[] = [];
   for (const e of entities) {
-    if (e.layer !== "corte") continue;
+    if (e.isConstruction || !VALID_SOLID_LAYERS.has((e.layer || "corte").toLowerCase())) continue;
     let pts: Vec2[] | null = null;
     if (e.type === "circle") {
       pts = Array.from({ length: 64 }, (_, i) => {
         const t = (i / 64) * Math.PI * 2;
         return { x: e.cx + e.r * Math.cos(t), y: e.cy + e.r * Math.sin(t) };
       });
+    } else if (e.type === "ellipse") {
+      pts = outlinePoints(e);
     } else if (e.type === "polyline" && e.closed && e.pts.length > 2) {
       pts = e.pts;
     } else if (e.type === "path" && e.closed) {
@@ -58,7 +62,10 @@ function closedLoops(entities: Entity[]): Loop[] {
 
   // Laços fechados formados por segmentos de reta conectados (ex: desenho feito com ferramenta Linha ou DXF)
   const lineSegs = entities.filter(
-    (e) => e.layer === "corte" && e.type === "line",
+    (e) =>
+      !e.isConstruction &&
+      VALID_SOLID_LAYERS.has((e.layer || "corte").toLowerCase()) &&
+      e.type === "line",
   ) as Array<Extract<Entity, { type: "line" }>>;
 
   if (lineSegs.length >= 3) {

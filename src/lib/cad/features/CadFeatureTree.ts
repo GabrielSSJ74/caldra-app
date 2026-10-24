@@ -792,24 +792,145 @@ export class CadFeatureTree {
           throw new Error("Corte passante requer um corpo-alvo sólido válido.");
         }
 
-        const rawDepth = Math.max(0.5, p.depth || 25);
+        const rawDepth = Math.max(0.2, p.depth || 25);
         const depth = p.endCondition === "through_all" ? Math.max(rawDepth, 500) : rawDepth;
         const sign = p.direction === "inverted" ? -1 : 1;
         const ox = p.offsetX ?? p.centerX ?? 0;
         const oy = p.offsetY ?? p.centerY ?? 0;
         const oz = p.offsetZ ?? (p.endCondition === "midplane" || p.symmetric || (p.direction as string) === "both" ? -depth / 2 : 0);
+        const dz = depth * sign;
+        const zBase = dz >= 0 ? oz : oz + dz;
+        const absDepth = Math.abs(dz);
+
+        // Extrusão de esboço 2D real (com suporte a furos internos, círculos analíticos e múltiplos contornos)
+        const contoursToExtrude =
+          p.sketchProfile?.multiContours && p.sketchProfile.multiContours.length > 0
+            ? p.sketchProfile.multiContours
+            : p.sketchProfile?.points && p.sketchProfile.points.length >= 3
+              ? [
+                  {
+                    points: p.sketchProfile.points,
+                    circle: p.sketchProfile.circle,
+                    holes: p.sketchProfile.holes,
+                  },
+                ]
+              : null;
+
+        if (contoursToExtrude && contoursToExtrude.length > 0) {
+          let combinedSolid: CadShape | null = null;
+
+          for (let cIdx = 0; cIdx < contoursToExtrude.length; cIdx++) {
+            const contour = contoursToExtrude[cIdx]!;
+            let contourSolid: CadShape;
+
+            if (contour.circle && contour.circle.r > 0.05 && !p.draftAngleDeg) {
+              // Cilindro analítico exato para perfis circulares
+              const cyl = await this.kernel.createCylinder(
+                contour.circle.r,
+                absDepth,
+                true,
+                `${node.name}_cyl_${cIdx}`,
+              );
+              const tx = ox + contour.circle.cx;
+              const ty = oy + contour.circle.cy;
+              if (Math.abs(tx) > 1e-5 || Math.abs(ty) > 1e-5 || Math.abs(zBase) > 1e-5) {
+                contourSolid = await this.kernel.translate(cyl, tx, ty, zBase);
+                this.kernel.release(cyl);
+              } else {
+                contourSolid = cyl;
+              }
+            } else {
+              const polyFace = await this.kernel.createPolygonFace(
+                contour.points,
+                `${node.name}_poly_${cIdx}`,
+                { x: ox, y: oy, z: oz },
+                { x: 0, y: 0, z: 1 },
+              );
+              contourSolid = p.draftAngleDeg
+                ? await this.kernel.draftExtrude(polyFace, 0, 0, dz, p.draftAngleDeg, `${node.name}_${cIdx}`)
+                : await this.kernel.extrude(polyFace, 0, 0, dz, `${node.name}_${cIdx}`);
+              this.kernel.release(polyFace);
+            }
+
+            // Subtrai furos internos do contorno (ex: furos circulares ou recortes poligonais)
+            if (contour.holes && contour.holes.length > 0) {
+              const holeZStart = zBase - 2;
+              const holeHeight = absDepth + 4;
+
+              for (let hIdx = 0; hIdx < contour.holes.length; hIdx++) {
+                const hole = contour.holes[hIdx]!;
+                try {
+                  let holeTool: CadShape;
+                  if (hole.circle && hole.circle.r > 0.05) {
+                    const hCyl = await this.kernel.createCylinder(
+                      hole.circle.r,
+                      holeHeight,
+                      true,
+                      `${node.name}_hole_cyl_${hIdx}`,
+                    );
+                    holeTool = await this.kernel.translate(
+                      hCyl,
+                      ox + hole.circle.cx,
+                      oy + hole.circle.cy,
+                      holeZStart,
+                    );
+                    this.kernel.release(hCyl);
+                  } else if (hole.points && hole.points.length >= 3) {
+                    const hFace = await this.kernel.createPolygonFace(
+                      hole.points,
+                      `${node.name}_hole_face_${hIdx}`,
+                      { x: ox, y: oy, z: holeZStart },
+                      { x: 0, y: 0, z: 1 },
+                    );
+                    holeTool = await this.kernel.extrude(
+                      hFace,
+                      0,
+                      0,
+                      holeHeight,
+                      `${node.name}_hole_ext_${hIdx}`,
+                    );
+                    this.kernel.release(hFace);
+                  } else {
+                    continue;
+                  }
+
+                  const nextCut = await this.kernel.cut(
+                    contourSolid,
+                    holeTool,
+                    `${node.name}_cut_${hIdx}`,
+                  );
+                  this.kernel.release(contourSolid);
+                  this.kernel.release(holeTool);
+                  contourSolid = nextCut;
+                } catch (holeErr) {
+                  console.warn(`[CadFeatureTree] Aviso ao subtrair furo #${hIdx} do esboço:`, holeErr);
+                }
+              }
+            }
+
+            if (!combinedSolid) {
+              combinedSolid = contourSolid;
+            } else {
+              const fused = await this.kernel.fuse(combinedSolid, contourSolid, node.name);
+              this.kernel.release(combinedSolid);
+              this.kernel.release(contourSolid);
+              combinedSolid = fused;
+            }
+          }
+
+          if (combinedSolid) {
+            node.cachedToolShape = combinedSolid;
+            const effectiveOp: CadBooleanMode = isCut
+              ? "cut"
+              : (p.operation || p.booleanMode || (inputSolid ? "union" : "new_body"));
+            return await this.applyBooleanMode(inputSolid, combinedSolid, effectiveOp, node.name);
+          }
+        }
 
         let profileFace: CadShape;
         const profileType = p.profileType || p.profileKind || "rectangle";
 
-        if (p.sketchProfile?.points && p.sketchProfile.points.length >= 3) {
-          profileFace = await this.kernel.createPolygonFace(
-            p.sketchProfile.points,
-            `${node.name}_poly`,
-            { x: ox, y: oy, z: oz },
-            { x: 0, y: 0, z: 1 },
-          );
-        } else if (profileType === "circle") {
+        if (profileType === "circle") {
           const r = Math.max(1, p.radius || (p.diameter ? p.diameter / 2 : p.width ? p.width / 2 : 40));
           const circle = await this.kernel.createCircleFace(r, `${node.name}_circ`);
           profileFace = ox || oy || oz ? await this.kernel.translate(circle, ox, oy, oz) : circle;
@@ -868,7 +989,6 @@ export class CadFeatureTree {
           );
         }
 
-        const dz = depth * sign;
         const extruded = p.draftAngleDeg
           ? await this.kernel.draftExtrude(profileFace, 0, 0, dz, p.draftAngleDeg, node.name)
           : await this.kernel.extrude(profileFace, 0, 0, dz, node.name);

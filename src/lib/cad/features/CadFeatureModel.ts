@@ -277,8 +277,24 @@ export interface ExtrudeSketchParams {
   offsetY?: number;
   offsetZ?: number;
   plane?: "XY" | "XZ" | "YZ";
+  isLinked2DSketch?: boolean;
+  sketchFingerprint?: string;
+  sourceEntityIds?: string[];
   sketchProfile?: {
     points: { x: number; y: number }[];
+    circle?: { cx: number; cy: number; r: number };
+    holes?: Array<{
+      points: { x: number; y: number }[];
+      circle?: { cx: number; cy: number; r: number };
+    }>;
+    multiContours?: Array<{
+      points: { x: number; y: number }[];
+      circle?: { cx: number; cy: number; r: number };
+      holes?: Array<{
+        points: { x: number; y: number }[];
+        circle?: { cx: number; cy: number; r: number };
+      }>;
+    }>;
   };
 }
 

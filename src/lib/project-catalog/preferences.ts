@@ -1,10 +1,10 @@
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 const KEY = "caldra.project-catalog.preferences.v1";
 type State = { favorites: string[]; recent: string[] };
 const EMPTY: State = { favorites: [], recent: [] };
 let state = EMPTY,
   loaded = false,
-  clientHydrated = false;
+  catalogGlobalHydrated = false;
 const ls = new Set<() => void>();
 function load() {
   if (loaded) return state;
@@ -38,20 +38,23 @@ export function markRecent(slug: string) {
   const s = load();
   commit({ ...s, recent: [slug, ...s.recent.filter((x) => x !== slug)].slice(0, 8) });
 }
-export function useCatalogPreferences() {
+export function useCatalogPreferences(): State {
+  const [mounted, setMounted] = useState(() => catalogGlobalHydrated);
   useEffect(() => {
-    if (!clientHydrated) {
-      clientHydrated = true;
+    if (!catalogGlobalHydrated) {
+      catalogGlobalHydrated = true;
       load();
       ls.forEach((l) => l());
     }
+    setMounted(true);
   }, []);
-  return useSyncExternalStore(
+  const s = useSyncExternalStore(
     (l) => {
       ls.add(l);
       return () => ls.delete(l);
     },
-    () => (!clientHydrated || typeof window === "undefined" ? EMPTY : load()),
+    () => (typeof window === "undefined" ? EMPTY : load()),
     () => EMPTY,
   );
+  return mounted ? s : EMPTY;
 }

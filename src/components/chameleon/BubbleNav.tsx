@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback, useMemo, type CSSProperties } from "react";
-import { useNavigate, useRouterState } from "@tanstack/react-router";
+import React, { useState, useRef, useEffect, useCallback, useMemo, startTransition, type CSSProperties } from "react";
+import { useNavigate, useRouterState, useRouter } from "@tanstack/react-router";
 import {
   DraftingCompass,
   Wrench,
@@ -96,23 +96,32 @@ const DESTINATIONS: NavDestination[] = [
 
 export function BubbleNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const router = useRouter();
   const navigate = useNavigate();
   const { accent, theme } = useSettings();
 
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [optimisticIndex, setOptimisticIndex] = useState<number | null>(null);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
+  // Sincroniza optimisticIndex quando a rota de fato conclui a mudança
+  useEffect(() => {
+    setOptimisticIndex(null);
+  }, [pathname]);
+
   // Identifica o índice do destino ativo (0 a 4)
   const activeIndex = DESTINATIONS.findIndex((d) => d.matches(pathname));
-  const resolvedActiveIndex = activeIndex >= 0 ? activeIndex : 2; // Default Início (centro)
+  const fallbackActiveIndex = activeIndex >= 0 ? activeIndex : 2; // Default Início (centro)
+  const resolvedActiveIndex = optimisticIndex ?? fallbackActiveIndex;
 
-  // Trava anti-spam de cliques/toques repetidos
+  // Trava anti-spam e deduplicação de cliques/toques repetidos
   const lastNavTimeRef = useRef<number>(0);
+  const lastNavIndexRef = useRef<number>(-1);
 
   // Resolve dinamicamente a Cor de Destaque ativa (--accent-color e --accent-rgb)
   const navAccentStyle = useMemo<CSSProperties>(() => {
@@ -157,21 +166,41 @@ export function BubbleNav() {
 
   const navigateToDestination = useCallback(
     (index: number) => {
-      // Previne disparos duplicados ao tocar repetidamente na aba já ativa
-      if (index === resolvedActiveIndex) return;
-
-      const now = performance.now();
-      if (now - lastNavTimeRef.current < 160) return;
-      lastNavTimeRef.current = now;
-
       const dest = DESTINATIONS[index];
       if (!dest) return;
 
+      // Previne disparos repetidos na mesma aba
+      if (dest.matches(pathname)) {
+        setOptimisticIndex(null);
+        return;
+      }
+
+      const now = performance.now();
+      if (now - lastNavTimeRef.current < 50 && lastNavIndexRef.current === index) return;
+      lastNavTimeRef.current = now;
+      lastNavIndexRef.current = index;
+
+      // Resposta visual e tátil imediata no MESMO sub-frame de entrada (<2ms, 500Hz)
+      setOptimisticIndex(index);
       triggerHaptic("selection");
       AudioManager.play("ui_nav");
-      void navigate({ to: dest.to });
+
+      // Navegação sem engasgos com transição concorrente React
+      React.startTransition(() => {
+        void navigate({ to: dest.to });
+      });
     },
-    [navigate, resolvedActiveIndex],
+    [navigate, pathname],
+  );
+
+  const handlePointerEnter = useCallback(
+    (index: number) => {
+      const dest = DESTINATIONS[index];
+      if (dest) {
+        void router.preloadRoute({ to: dest.to }).catch(() => {});
+      }
+    },
+    [router],
   );
 
   const handleCreateProject = (input: NewProjectInput) => {
@@ -180,7 +209,9 @@ export function BubbleNav() {
       setNewProjectOpen(false);
       triggerHaptic("success");
       AudioManager.play("ui_pop");
-      void navigate({ to: "/projetos/$projectId", params: { projectId: created.id } });
+      React.startTransition(() => {
+        void navigate({ to: "/projetos/$projectId", params: { projectId: created.id } });
+      });
     } catch (e) {
       console.error("Erro ao criar projeto:", e);
     }
@@ -194,20 +225,20 @@ export function BubbleNav() {
         style={navAccentStyle}
       >
         <div className="relative flex h-full w-full items-center">
-          {/* Cápsula Deslizante de Precisão (Sliding Pill) vinculada à Cor de Destaque */}
+          {/* Cápsula Deslizante de Precisão (Sliding Pill) vinculada à Cor de Destaque — GPU acelerada 190ms */}
           <div
             aria-hidden="true"
             className="pointer-events-none absolute top-0 left-0 z-0 flex h-full w-1/5 items-center justify-center"
             style={{
               transform: `translate3d(${resolvedActiveIndex * 100}%, 0, 0)`,
-              transition: "transform 0.36s cubic-bezier(0.22, 1, 0.36, 1)",
+              transition: "transform 190ms cubic-bezier(0.22, 1, 0.36, 1)",
               willChange: "transform",
             }}
           >
             <div className="caldra-nav-sliding-pill" />
           </div>
 
-          {/* 5 Botões de Destino (Apenas Ícones Vetoriais, Minimalista, Acessível via aria-label) */}
+          {/* 5 Botões de Destino com disparo imediato em onPointerDown e feedback <2ms */}
           {DESTINATIONS.map((dest, destIdx) => {
             const isCurrent = destIdx === resolvedActiveIndex;
             const Icon = dest.icon;
@@ -219,7 +250,25 @@ export function BubbleNav() {
                 aria-label={dest.label}
                 aria-current={isCurrent ? "page" : undefined}
                 data-active={isCurrent ? "true" : "false"}
-                onClick={() => navigateToDestination(destIdx)}
+                onPointerDown={(e) => {
+                  if (e.pointerType === "mouse" && e.button !== 0) return;
+                  e.preventDefault();
+                  navigateToDestination(destIdx);
+                }}
+                onPointerEnter={() => handlePointerEnter(destIdx)}
+                onClick={(e) => {
+                  // Fallback para acessibilidade de teclado
+                  if (e.detail === 0) {
+                    navigateToDestination(destIdx);
+                  }
+                }}
+                style={{
+                  touchAction: "manipulation",
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
+                  WebkitTapHighlightColor: "transparent",
+                  willChange: "transform, opacity",
+                }}
                 className="caldra-nav-item-btn focus-visible:ring-1 focus-visible:ring-[var(--accent-color)]/50 focus-visible:ring-inset"
               >
                 <Icon

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, startTransition } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowRight,
@@ -335,6 +335,24 @@ export function WorkshopDashboard() {
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
 
+  // Pré-aquecimento em segundo plano (Warm-up Silencioso) do CHAMFER CAD e módulos matemáticos
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const prewarm = () => {
+      void import("@/components/lab2d/Lab2DEditor");
+      void import("@/routes/desenho-2d.index");
+      void import("@/lib/lab2d/projects");
+      void import("@/lib/lab2d/spatialIndex");
+    };
+    if ("requestIdleCallback" in window) {
+      const id = (window as any).requestIdleCallback(prewarm, { timeout: 1500 });
+      return () => (window as any).cancelIdleCallback?.(id);
+    } else {
+      const timer = window.setTimeout(prewarm, 200);
+      return () => window.clearTimeout(timer);
+    }
+  }, []);
+
   // Ref para a faixa de rolagem
   const scrollRefTrabalhando = useRef<HTMLDivElement>(null);
 
@@ -344,7 +362,9 @@ export function WorkshopDashboard() {
       setNewProjectOpen(false);
       triggerHaptic("success");
       AudioManager.play("ui_pop");
-      void navigate({ to: "/projetos/$projectId", params: { projectId: created.id } });
+      startTransition(() => {
+        void navigate({ to: "/projetos/$projectId", params: { projectId: created.id } });
+      });
     } catch (e) {
       console.error("Falha ao criar projeto:", e);
     }
@@ -448,9 +468,27 @@ export function WorkshopDashboard() {
               <div className="pt-0.5">
                 <Link
                   to="/desenho-2d"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    AudioManager.play("ui_pop");
+                  onPointerDown={(e) => {
+                    if (e.button === 0) {
+                      triggerHaptic("selection");
+                      AudioManager.play("ui_pop");
+                      startTransition(() => {
+                        void navigate({ to: "/desenho-2d" });
+                      });
+                    }
+                  }}
+                  onClick={(e) => {
+                    if (e.detail === 0) {
+                      triggerHaptic("selection");
+                      AudioManager.play("ui_pop");
+                    }
+                  }}
+                  style={{
+                    touchAction: "manipulation",
+                    userSelect: "none",
+                    WebkitUserSelect: "none",
+                    WebkitTapHighlightColor: "transparent",
+                    willChange: "transform, opacity",
                   }}
                   className="inline-flex h-7.5 sm:h-8.5 items-center justify-center gap-1.5 rounded-full bg-[#F59E0B] hover:bg-[#FBBF24] active:scale-95 px-3.5 font-mono text-[9.5px] xs:text-[10.5px] font-bold tracking-wide text-black shadow-md transition-all cursor-pointer"
                 >
@@ -521,7 +559,7 @@ export function WorkshopDashboard() {
               <span className="font-display text-[13px] sm:text-[14px] font-bold text-foreground block leading-tight group-hover:text-sky-500 transition-colors">
                 Projetos
               </span>
-              <span className="text-[10px] sm:text-[11px] text-muted-foreground block mt-0.5 font-mono truncate">
+              <span className="text-[10px] sm:text-[11px] text-muted-foreground block mt-0.5 font-mono truncate" suppressHydrationWarning>
                 {projectCountText}
               </span>
             </div>
@@ -620,7 +658,7 @@ export function WorkshopDashboard() {
             - Miniaturas técnicas compactas e tipografia nítida
             - Prioriza projetos reais existentes; estado vazio útil se não houver
             ========================================================================= */}
-        <section aria-label="Continue trabalhando" className="space-y-2">
+        <section aria-label="Continue trabalhando" className="space-y-2" suppressHydrationWarning>
           <div className="flex items-center justify-between px-0.5">
             <h2 className="font-display text-sm font-bold text-foreground tracking-tight sm:text-base">
               Continue trabalhando
@@ -682,10 +720,24 @@ export function WorkshopDashboard() {
               /* Estado vazio útil: Convite de início imediato sem inventar conteúdo */
               <button
                 type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  AudioManager.play("ui_pop");
-                  setNewProjectOpen(true);
+                onPointerDown={(e) => {
+                  if (e.button === 0) {
+                    triggerHaptic("selection");
+                    AudioManager.play("ui_pop");
+                    setNewProjectOpen(true);
+                  }
+                }}
+                onClick={(e) => {
+                  if (e.detail === 0) {
+                    setNewProjectOpen(true);
+                  }
+                }}
+                style={{
+                  touchAction: "manipulation",
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
+                  WebkitTapHighlightColor: "transparent",
+                  willChange: "transform, opacity",
                 }}
                 className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-dashed border-amber-500/50 p-2 transition-all hover:border-amber-500 active:scale-[0.98] cursor-pointer text-left"
               >
@@ -711,9 +763,27 @@ export function WorkshopDashboard() {
             {/* Ferramenta 1 — CHAMFER CAD */}
             <Link
               to="/desenho-2d"
-              onClick={() => {
-                triggerHaptic("tap");
-                AudioManager.play("ui_nav");
+              onPointerDown={(e) => {
+                if (e.button === 0) {
+                  triggerHaptic("tap");
+                  AudioManager.play("ui_nav");
+                  startTransition(() => {
+                    void navigate({ to: "/desenho-2d" });
+                  });
+                }
+              }}
+              onClick={(e) => {
+                if (e.detail === 0) {
+                  triggerHaptic("tap");
+                  AudioManager.play("ui_nav");
+                }
+              }}
+              style={{
+                touchAction: "manipulation",
+                userSelect: "none",
+                WebkitUserSelect: "none",
+                WebkitTapHighlightColor: "transparent",
+                willChange: "transform, opacity",
               }}
               className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left"
             >
@@ -736,9 +806,27 @@ export function WorkshopDashboard() {
             {/* Ferramenta 2 — Traçagem */}
             <Link
               to="/tracagem"
-              onClick={() => {
-                triggerHaptic("tap");
-                AudioManager.play("ui_nav");
+              onPointerDown={(e) => {
+                if (e.button === 0) {
+                  triggerHaptic("tap");
+                  AudioManager.play("ui_nav");
+                  startTransition(() => {
+                    void navigate({ to: "/tracagem" });
+                  });
+                }
+              }}
+              onClick={(e) => {
+                if (e.detail === 0) {
+                  triggerHaptic("tap");
+                  AudioManager.play("ui_nav");
+                }
+              }}
+              style={{
+                touchAction: "manipulation",
+                userSelect: "none",
+                WebkitUserSelect: "none",
+                WebkitTapHighlightColor: "transparent",
+                willChange: "transform, opacity",
               }}
               className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left"
             >
@@ -761,9 +849,27 @@ export function WorkshopDashboard() {
             {/* Ferramenta 3 — Calculadora Científica */}
             <Link
               to="/calculadora"
-              onClick={() => {
-                triggerHaptic("tap");
-                AudioManager.play("ui_nav");
+              onPointerDown={(e) => {
+                if (e.button === 0) {
+                  triggerHaptic("tap");
+                  AudioManager.play("ui_nav");
+                  startTransition(() => {
+                    void navigate({ to: "/calculadora" });
+                  });
+                }
+              }}
+              onClick={(e) => {
+                if (e.detail === 0) {
+                  triggerHaptic("tap");
+                  AudioManager.play("ui_nav");
+                }
+              }}
+              style={{
+                touchAction: "manipulation",
+                userSelect: "none",
+                WebkitUserSelect: "none",
+                WebkitTapHighlightColor: "transparent",
+                willChange: "transform, opacity",
               }}
               className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left"
             >
@@ -869,15 +975,36 @@ function TechnicalToolsSheet({ open, onClose }: { open: boolean; onClose: () => 
             <button
               key={t.title}
               type="button"
-              onClick={() => {
-                triggerHaptic("tap");
-                AudioManager.play("ui_nav");
-                onClose();
-                if (t.search) {
-                  void navigate({ to: t.to, search: t.search });
-                } else {
-                  void navigate({ to: t.to });
+              onPointerDown={(e) => {
+                if (e.button === 0) {
+                  triggerHaptic("tap");
+                  AudioManager.play("ui_nav");
+                  onClose();
+                  startTransition(() => {
+                    if (t.search) {
+                      void navigate({ to: t.to, search: t.search });
+                    } else {
+                      void navigate({ to: t.to });
+                    }
+                  });
                 }
+              }}
+              onClick={(e) => {
+                if (e.detail === 0) {
+                  onClose();
+                  if (t.search) {
+                    void navigate({ to: t.to, search: t.search });
+                  } else {
+                    void navigate({ to: t.to });
+                  }
+                }
+              }}
+              style={{
+                touchAction: "manipulation",
+                userSelect: "none",
+                WebkitUserSelect: "none",
+                WebkitTapHighlightColor: "transparent",
+                willChange: "transform, opacity",
               }}
               className="caldra-card flex w-full items-center justify-between gap-3 rounded-2xl p-3 text-left transition-all hover:border-amber-500/50 active:scale-[0.99] cursor-pointer touch-manipulation"
             >

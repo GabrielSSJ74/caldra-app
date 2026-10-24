@@ -22,7 +22,7 @@ export const Route = createFileRoute("/perfil")({
   component: PerfilRouteComponent,
 });
 
-function PerfilRouteComponent() {
+export function PerfilRouteComponent() {
   const [initialSection, setInitialSection] = useState<PerfilSectionId | undefined>(undefined);
 
   useEffect(() => {

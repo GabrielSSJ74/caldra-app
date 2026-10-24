@@ -277,13 +277,15 @@ export function ChamferCadToolbar({
   const toolbarRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
-  // Controle de Swipe Vertical com o Dedo (arraste suave e contínuo)
+  // Controle de Swipe Vertical para Mouse (toque utiliza touch-pan-y nativo a 120Hz)
   const dragStartY = useRef(0);
   const dragStartScrollTop = useRef(0);
   const isPointerDown = useRef(false);
   const isDragging = useRef(false);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Apenas captura arraste sintético se for mouse; toque móvel usa pan-y nativo
+    if (e.pointerType !== "mouse") return;
     isPointerDown.current = true;
     isDragging.current = false;
     dragStartY.current = e.clientY;
@@ -293,7 +295,7 @@ export function ChamferCadToolbar({
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!isPointerDown.current) return;
     const dy = e.clientY - dragStartY.current;
-    if (Math.abs(dy) > 4) {
+    if (Math.abs(dy) > 12) {
       isDragging.current = true;
     }
     if (scrollContainerRef.current) {
@@ -305,7 +307,7 @@ export function ChamferCadToolbar({
     isPointerDown.current = false;
     setTimeout(() => {
       isDragging.current = false;
-    }, 60);
+    }, 50);
   };
 
   const getFlyoutPosition = (cat: CadCategory): React.CSSProperties => {
@@ -480,11 +482,16 @@ export function ChamferCadToolbar({
     <aside
       ref={toolbarRef}
       aria-label="Barra de ferramentas CAD"
+      style={{
+        backgroundColor: isDark
+          ? "rgba(15, 23, 42, var(--ui-opacity, 0.92))"
+          : "rgba(255, 255, 255, var(--ui-opacity, 0.94))",
+      }}
       className={cn(
-        "relative flex h-full max-h-full w-12 shrink-0 flex-col items-center rounded-2xl border p-1 shadow-xl backdrop-blur-md select-none z-40",
+        "relative flex h-full max-h-full w-12 shrink-0 flex-col items-center rounded-2xl border p-1 shadow-xl backdrop-blur-md select-none z-40 transition-colors",
         isDark
-          ? "border-slate-800/80 bg-slate-950/90 text-slate-300"
-          : "border-slate-200 bg-white/95 text-slate-700 shadow-md",
+          ? "border-slate-800/80 text-slate-300"
+          : "border-slate-200 text-slate-700 shadow-md",
         className,
       )}
     >
@@ -504,20 +511,25 @@ export function ChamferCadToolbar({
           const isOpen = openCat === cat.id;
 
           return (
-            <div key={cat.id} className="relative w-full shrink-0">
+            <div key={cat.id} className="relative w-full shrink-0 flex items-center justify-center">
               <button
                 type="button"
+                onPointerDown={(e) => {
+                  if (e.pointerType === "mouse" && e.button !== 0) return;
+                }}
                 onClick={(e) => {
                   if (isDragging.current) {
                     e.stopPropagation();
                     return;
                   }
+                  triggerHaptic("selection");
+                  AudioManager.play("ui_select");
                   handleToggleCat(cat.id);
                 }}
                 title={`${cat.label} — ${cat.desc}`}
                 aria-label={cat.label}
                 className={cn(
-                  "group relative flex size-9 w-full flex-col items-center justify-center rounded-xl transition-all",
+                  "group relative flex min-h-[40px] size-10 w-full flex-col items-center justify-center rounded-xl transition-all touch-manipulation cursor-pointer",
                   isOpen
                     ? "bg-red-600 text-white shadow-md shadow-red-600/30 scale-[1.02]"
                     : active

@@ -6,6 +6,7 @@ import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { useProfile } from "@/lib/profile/ProfileProvider";
 import { MasterModeDialog } from "./MasterModeDialog";
 import { BubbleNav } from "./BubbleNav";
+import { MainTabsKeepAlive, MAIN_TAB_PATHS } from "./MainTabsKeepAlive";
 import { Intro, useIntro } from "./Intro";
 import { Onboarding } from "./Onboarding";
 import { Avatar, ProfileDialog } from "./Profile";
@@ -17,20 +18,9 @@ import { AudioManager } from "@/lib/audio/AudioManager";
 import { AudioQuickControl } from "@/components/audio/AudioQuickControl";
 import { CaldraGenesisPreIntro } from "@/components/caldra/CaldraGenesisPreIntro";
 
-const AURORA_ROUTES = [
-  "/perfil",
-  "/tracagem",
-  "/escola",
-  "/projetos",
-  "/oficina",
-  "/configuracoes",
-  "/projetar",
-  "/produzir",
-  "/aprenda",
-];
-
+/** Fundo AURORA ativo em todas as telas não-imersivas (Home, Chamfer Lobby, Projetar, Produzir, Aprenda, Perfil, etc.) */
 function auroraVisible(pathname: string) {
-  return AURORA_ROUTES.some((r) => pathname.startsWith(r));
+  return !immersiveRoute(pathname);
 }
 
 /** Editor CHAMFER aberto: tela cheia imersiva, sem navegação global. */
@@ -84,6 +74,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const editorPath = immersiveRoute(pathname);
   const immersive = editorPath;
   const standalone = pathname.startsWith("/calculadora");
+  const normalizedPath = pathname.replace(/\/$/, "") || "/";
+  const isMainTab = MAIN_TAB_PATHS.includes(normalizedPath as any);
 
   /* A troca de rota encerra o gate antes de o editor montar. Assim, o portal,
      o bloqueio de scroll e o backdrop nunca sobrevivem dentro do CHAMFER. */
@@ -104,8 +96,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     >
       <div className="relative flex min-h-screen flex-col overflow-x-hidden text-foreground bg-background">
         <AuroraBackground active={auroraVisible(pathname)} className="fixed inset-0 z-0" />
-        {/* iluminação ambiente (desativada na Home, Projetar, Produzir e Aprenda para preservar fundo industrial preto) */}
-        {pathname !== "/" && pathname !== "/projetar" && pathname !== "/produzir" && pathname !== "/aprenda" && (
+        {/* iluminação ambiente adaptativa para todas as áreas não-imersivas */}
+        {!immersive && (
           <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
             <div className="absolute -top-40 -left-32 size-[26rem] rounded-full bg-accent/8 blur-[120px]" />
             <div className="absolute -right-32 bottom-0 size-[26rem] rounded-full bg-accent2/8 blur-[120px]" />
@@ -152,11 +144,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             !immersive && "fade-up",
             immersive || standalone
               ? "p-0"
-              : pathname === "/" ||
-                  pathname === "/projetar" ||
-                  pathname === "/produzir" ||
-                  pathname === "/aprenda" ||
-                  pathname === "/perfil" ||
+              : isMainTab ||
+                  pathname === "/desenho-2d" ||
+                  pathname === "/desenho-2d/" ||
                   pathname === "/configuracoes"
                 ? "p-0"
                 : "px-4 pt-16 pb-28 lg:px-10 lg:pt-16 lg:pb-24",
@@ -166,17 +156,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             className={cn(
               immersive ||
                 standalone ||
-                pathname === "/" ||
-                pathname === "/projetar" ||
-                pathname === "/produzir" ||
-                pathname === "/aprenda" ||
-                pathname === "/perfil" ||
+                isMainTab ||
+                pathname === "/desenho-2d" ||
+                pathname === "/desenho-2d/" ||
                 pathname === "/configuracoes"
                 ? "w-full"
                 : "mx-auto w-full max-w-6xl",
             )}
           >
-            {children}
+            {/* Camada viva em memória (Keep-Alive) das 5 abas principais — zero unmount */}
+            <MainTabsKeepAlive activePath={normalizedPath} isVisible={isMainTab} />
+            {/* Rotas secundárias e imersivas renderizadas via Outlet */}
+            {!isMainTab && children}
           </div>
         </main>
 

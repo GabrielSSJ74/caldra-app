@@ -15,11 +15,8 @@ import { ShellActionsProvider } from "./ShellActions";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { CaldraGenesisPreIntro } from "./CaldraGenesisPreIntro";
 
-/** Rotas com fundo AURORA. O editor CHAMFER (desenho-2d) e a Home nunca entram aqui. */
-const AURORA_ROUTES = ["/tracagem", "/escola", "/projetos", "/oficina", "/configuracoes"];
-
 function auroraVisible(pathname: string) {
-  return AURORA_ROUTES.some((r) => pathname.startsWith(r));
+  return !immersiveRoute(pathname);
 }
 
 /** Editor CHAMFER aberto: tela cheia imersiva, sem navegação global. */

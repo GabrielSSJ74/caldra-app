@@ -112,6 +112,16 @@ export function Cad3DStage({
   onCadDocChange: externalDocChange,
   embedded = true,
   initialCadPanelOpen = false,
+  view2D,
+  viewportSize2D,
+  initialTreeJson,
+  onTreeChange,
+  morphDirection = null,
+  morphDurationMs,
+  morphStartProgress3D,
+  onMorphFrame0Ready,
+  onMorphProgress,
+  onMorphComplete,
 }: {
   open: boolean;
   onClose: () => void;
@@ -126,6 +136,16 @@ export function Cad3DStage({
   onCadDocChange?: (doc: PartDocument) => void;
   embedded?: boolean;
   initialCadPanelOpen?: boolean;
+  view2D?: { tx: number; ty: number; k: number };
+  viewportSize2D?: { w: number; h: number };
+  initialTreeJson?: string | null;
+  onTreeChange?: (treeJson: string) => void;
+  morphDirection?: "to3d" | "to2d" | null;
+  morphDurationMs?: number;
+  morphStartProgress3D?: number;
+  onMorphFrame0Ready?: () => void;
+  onMorphProgress?: (progress3D: number) => void;
+  onMorphComplete?: (direction: "to3d" | "to2d") => void;
 }) {
   const ctx = useProjectContext(labProjectId);
 
@@ -137,8 +157,20 @@ export function Cad3DStage({
   // Vista ativa compartilhada
   const [viewPreset, setViewPreset] = useState<ViewPresetId>("iso");
 
-  // Identificação do Modelo Real (Regra do Prompt: PROIBIDO CONE PADRÃO)
+  // Identificação do Modelo Real:
+  // Prioridade absoluta para a geometria real do documento 2D ativo quando estamos no CHAMFER CAD.
   const resolvedModel = useMemo(() => {
+    // Se estamos integrados ao editor 2D (entities foi fornecido, mesmo vazio) ou há entidades 2D desenhadas:
+    if (entities !== undefined && (!ctx?.modelSlug || entities.length > 0)) {
+      return {
+        type: "extrude_sketch",
+        name: title && title !== "Peça Chamfer" ? title : "Peça do Esboço 2D",
+        params: {
+          thickness: thickness,
+        },
+      };
+    }
+
     const rawId = (ctx?.part?.modelId || ctx?.modelSlug || "").toLowerCase();
     const rawTitle = (title || "").toLowerCase();
 
@@ -243,7 +275,7 @@ export function Cad3DStage({
       };
     }
 
-    // 6. Cone Truncado
+    // 6. Cone Truncado (somente se explicitamente indicado pelo modelo de catálogo ou título)
     if (
       rawId.includes("cone") ||
       rawId.includes("tronco") ||
@@ -263,37 +295,22 @@ export function Cad3DStage({
       };
     }
 
-    // 7. Entidades de 2D Sketch
-    if (entities && entities.length > 0) {
-      return {
-        type: "extrude_sketch",
-        name: title && title !== "Peça Chamfer" ? title : "Chapa Planificada",
-        params: {
-          thickness: thickness,
-        },
-      };
-    }
-
-    // 8. Modelo padrão explícito se título indicar cone
+    // 7. Padrão canônico: Esboço 2D (nunca inventa um cone genérico se não for peça de catálogo de cone)
     return {
-      type: "boilermaking_cone",
-      name: "Cone",
+      type: "extrude_sketch",
+      name: title && title !== "Peça Chamfer" ? title : "Peça do Esboço 2D",
       params: {
-        D: 200,
-        d: 2,
-        height: 100,
         thickness: thickness,
       },
     };
   }, [ctx, title, entities, thickness]);
 
-  // Documento CAD unificado com fallback seguro
+  // Documento CAD unificado sem primitiva genérica artificial
   const [internalCadDoc, setInternalCadDoc] = useState<PartDocument>(() => {
     const d = ChamferKernel.createDocument(title, thickness, "Aço Carbono");
     if (entities && entities.length > 0) {
       try {
         ChamferKernel.addSketchFromEntities(d, entities);
-        ChamferKernel.extrudeBasePlate(d, 120, 100);
       } catch (err) {
         console.warn("Aviso: inicialização geométrica preliminar em 3D:", err);
       }
@@ -320,8 +337,8 @@ export function Cad3DStage({
   // Área 2D analítica para cálculo de peso
   const area = useMemo(() => {
     if (!entities || entities.length === 0) {
-      const w = cadDoc.baseWidth || 100;
-      const l = cadDoc.baseLength || 100;
+      const w = cadDoc.baseWidth || 0;
+      const l = cadDoc.baseLength || 0;
       return w * l;
     }
     return planArea(entities);
@@ -382,6 +399,17 @@ export function Cad3DStage({
               onThicknessChange={onThickness}
               onUpdate3DParam={handleUpdate3DParam}
               initialInspectorOpen={initialCadPanelOpen}
+              entities2D={entities}
+              view2D={view2D}
+              viewportSize2D={viewportSize2D}
+              initialTreeJson={initialTreeJson}
+              onTreeChange={onTreeChange}
+              morphDirection={morphDirection}
+              morphDurationMs={morphDurationMs}
+              morphStartProgress3D={morphStartProgress3D}
+              onMorphFrame0Ready={onMorphFrame0Ready}
+              onMorphProgress={onMorphProgress}
+              onMorphComplete={onMorphComplete}
             />
           </Stage3DErrorBoundary>
         </div>
@@ -503,6 +531,20 @@ export function Cad3DStage({
             initialLength={cadDoc.baseLength || 200}
             activeViewPreset={viewPreset}
             onViewPresetChange={setViewPreset}
+            documentTitle={title}
+            onThicknessChange={onThickness}
+            onUpdate3DParam={handleUpdate3DParam}
+            entities2D={entities}
+            view2D={view2D}
+            viewportSize2D={viewportSize2D}
+            initialTreeJson={initialTreeJson}
+            onTreeChange={onTreeChange}
+            morphDirection={morphDirection}
+            morphDurationMs={morphDurationMs}
+            morphStartProgress3D={morphStartProgress3D}
+            onMorphFrame0Ready={onMorphFrame0Ready}
+            onMorphProgress={onMorphProgress}
+            onMorphComplete={onMorphComplete}
           />
         </Stage3DErrorBoundary>
       </div>

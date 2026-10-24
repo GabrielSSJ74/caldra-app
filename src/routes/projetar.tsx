@@ -223,7 +223,7 @@ const TRACAGEM_CATEGORIES = [
    COMPONENTE PRINCIPAL — PROJETAR (CRIE E CALCULE)
    ========================================================================= */
 
-function ProjetarPage() {
+export function ProjetarPage() {
   const { accent, theme } = useSettings();
   const isDarkTheme = theme === "dark" || theme === "amoled";
   const resolvedTokens = useMemo(
@@ -715,9 +715,24 @@ function ProjetarPage() {
             {/* Ferramenta 1 — Prancheta CAD 2D CHAMFER */}
             <Link
               to="/desenho-2d"
-              onClick={() => {
-                triggerHaptic("selection");
-                AudioManager.play("ui_pop");
+              onPointerDown={(e) => {
+                if (e.button === 0) {
+                  triggerHaptic("selection");
+                  AudioManager.play("ui_pop");
+                }
+              }}
+              onClick={(e) => {
+                if (e.detail === 0) {
+                  triggerHaptic("selection");
+                  AudioManager.play("ui_pop");
+                }
+              }}
+              style={{
+                touchAction: "manipulation",
+                userSelect: "none",
+                WebkitUserSelect: "none",
+                WebkitTapHighlightColor: "transparent",
+                willChange: "transform, opacity",
               }}
               className="caldra-card group flex min-h-[118px] sm:min-h-[126px] flex-col justify-between rounded-xl p-3 sm:p-3.5 transition-all hover:border-red-500/40 active:scale-[0.98] cursor-pointer text-left"
             >
@@ -934,7 +949,7 @@ function ProjetarPage() {
                 <div className="caldra-bubble-base caldra-bubble-emerald size-10.5">
                   <FolderOpen className="size-5 stroke-[1.9]" />
                 </div>
-                <span className="font-mono text-[7.5px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 rounded">
+                <span className="font-mono text-[7.5px] font-bold text-emerald-500 bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 rounded" suppressHydrationWarning>
                   {dossierProjects.length > 0 ? `${dossierProjects.length} PROJ` : "MONTAGEM"}
                 </span>
               </div>

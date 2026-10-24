@@ -107,10 +107,18 @@ export class CadBRepEditor {
   ): Promise<boolean> {
     const features = this.tree.getFeatures();
     const baseBox = features.find((f) => f.type === "base_box");
+    const baseExtrude = features.find((f) => f.type === "extrude_sketch");
 
     this.pushUndo();
 
-    if (baseBox) {
+    if (baseExtrude && (!normal || Math.abs(normal.z) > 0.5)) {
+      const p = { ...(baseExtrude.parameters as { depth?: number }) };
+      const change = normal ? (normal.z >= 0 ? delta.z : -delta.z) : delta.z;
+      p.depth = Math.max(0.5, (p.depth || 3) + change);
+      this.tree.updateFeature(baseExtrude.id, p);
+      await this.tree.rebuild();
+      return true;
+    } else if (baseBox) {
       const p = { ...(baseBox.parameters as { width: number; length: number; height: number }) };
       if (normal && Math.abs(normal.z) > 0.7) {
         const change = normal.z > 0 ? delta.z : -delta.z;
@@ -204,8 +212,18 @@ export class CadBRepEditor {
   public async setSheetThickness(newThickness: number): Promise<boolean> {
     if (newThickness <= 0) return false;
     const features = this.tree.getFeatures();
-    const baseBox = features.find((f) => f.type === "base_box");
+    const baseExtrude = features.find((f) => f.type === "extrude_sketch");
+    if (baseExtrude) {
+      this.pushUndo();
+      this.tree.updateFeature(baseExtrude.id, {
+        ...baseExtrude.parameters,
+        depth: newThickness,
+      });
+      await this.tree.rebuild();
+      return true;
+    }
 
+    const baseBox = features.find((f) => f.type === "base_box");
     if (baseBox) {
       this.pushUndo();
       const p = { ...(baseBox.parameters as { width: number; length: number; height: number }) };

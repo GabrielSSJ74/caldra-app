@@ -21,6 +21,8 @@ export type Plan = {
   groups?: GroupDef[];
   /** Cotas associativas do plano — informação, nunca geometria de fabricação. */
   dims?: Dimension[];
+  /** Árvore paramétrica 3D serializada associada ao plano (extrude_sketch vinculado + recursos 3D). */
+  cad3dTreeJson?: string;
 };
 
 export type Project = {
@@ -108,6 +110,16 @@ export function newProject(name: string, entities: Entity[] = []): Project {
   };
 }
 
+let cachedRaw: string | null = null;
+let cachedProjects: Project[] | null = null;
+const projectMap = new Map<string, Project>();
+
+export function invalidateProjectsCache(): void {
+  cachedRaw = null;
+  cachedProjects = null;
+  projectMap.clear();
+}
+
 export function listProjects(): Project[] {
   try {
     let raw = window.localStorage.getItem(KEY);
@@ -121,12 +133,28 @@ export function listProjects(): Project[] {
         }
       }
     }
-    if (!raw) return [];
+    if (!raw) {
+      cachedRaw = null;
+      cachedProjects = [];
+      projectMap.clear();
+      return [];
+    }
+    // Retorno O(1) instantâneo se a string do localStorage não mudou
+    if (cachedProjects && cachedRaw === raw) {
+      return cachedProjects;
+    }
     const list = JSON.parse(raw) as Project[];
     if (!Array.isArray(list)) return [];
-    return list
+    const sanitized = list
       .map(sanitizeProject)
       .sort((a, b) => b.updatedAt - a.updatedAt);
+    cachedRaw = raw;
+    cachedProjects = sanitized;
+    projectMap.clear();
+    for (const p of sanitized) {
+      projectMap.set(p.id, p);
+    }
+    return sanitized;
   } catch {
     return [];
   }
@@ -134,14 +162,29 @@ export function listProjects(): Project[] {
 
 function writeAll(list: Project[]) {
   try {
-    window.localStorage.setItem(KEY, JSON.stringify(list));
+    const raw = JSON.stringify(list);
+    window.localStorage.setItem(KEY, raw);
+    cachedRaw = raw;
+    cachedProjects = list;
+    projectMap.clear();
+    for (const p of list) {
+      projectMap.set(p.id, p);
+    }
   } catch {
     /* armazenamento indisponível */
   }
 }
 
 export function getProject(id: string): Project | null {
+  // Procura diretamente no mapa em memória primeiro para resposta imediata em 0ms
+  if (projectMap.has(id)) {
+    return projectMap.get(id)!;
+  }
   return listProjects().find((p) => p.id === id) ?? null;
+}
+
+export function preloadProject(id: string): Project | null {
+  return getProject(id);
 }
 
 export function saveProject(project: Project) {

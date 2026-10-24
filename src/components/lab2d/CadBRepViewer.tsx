@@ -80,6 +80,13 @@ import type {
   CadMeasurementResult,
 } from "@/lib/cad/core/CadSelection";
 import type { EdgeMode, ViewPresetId } from "@/lib/viz3d/cameraPresets";
+import type { Entity } from "@/lib/lab2d/core";
+import {
+  analyze2DSketchFor3D,
+  compute2DTo3DCameraMatch,
+  LINKED_SKETCH_FEATURE_ID,
+  sync2DSketchToFeatureTree,
+} from "@/lib/cad/sketch/sketch3dBridge";
 import { CaldraBoilermakingDialog } from "@/components/lab2d/CaldraBoilermakingDialog";
 import { CaldraFlatPatternDialog } from "@/components/lab2d/CaldraFlatPatternDialog";
 import { CaldraDraftingDialog } from "@/components/lab2d/CaldraDraftingDialog";
@@ -98,6 +105,17 @@ export interface CadBRepViewerProps {
   initialWidth?: number;
   initialLength?: number;
   initialThickness?: number;
+  entities2D?: Entity[];
+  view2D?: { tx: number; ty: number; k: number };
+  viewportSize2D?: { w: number; h: number };
+  initialTreeJson?: string;
+  onTreeChange?: (serializedTreeJson: string) => void;
+  morphDirection?: "to3d" | "to2d" | "idle";
+  morphDurationMs?: number;
+  morphStartProgress3D?: number;
+  onMorphFrame0Ready?: () => void;
+  onMorphProgress?: (progress3D: number) => void;
+  onMorphComplete?: (direction: "to3d" | "to2d") => void;
   activeViewPreset?: ViewPresetId;
   onViewPresetChange?: (preset: ViewPresetId) => void;
   onBack?: () => void;
@@ -175,6 +193,17 @@ export function CadBRepViewer({
   initialWidth = 200,
   initialLength = 200,
   initialThickness = 3,
+  entities2D,
+  view2D,
+  viewportSize2D,
+  initialTreeJson,
+  onTreeChange,
+  morphDirection = "idle",
+  morphDurationMs,
+  morphStartProgress3D,
+  onMorphFrame0Ready,
+  onMorphProgress,
+  onMorphComplete,
   activeViewPreset = "iso",
   onViewPresetChange,
   documentTitle,
@@ -202,7 +231,7 @@ export function CadBRepViewer({
   // Parâmetros Dinâmicos do Sólido Base
   const [paramA, setParamA] = useState<number>(initialParams?.width || initialParams?.D || initialWidth);
   const [paramB, setParamB] = useState<number>(initialParams?.length || initialParams?.d || initialLength);
-  const [paramC, setParamC] = useState<number>(initialParams?.height || initialParams?.H || 100);
+  const [paramC, setParamC] = useState<number>(initialParams?.height || initialParams?.H || initialThickness || 3);
   const [paramD, setParamD] = useState<number>(initialParams?.diameter || 120);
   const [thickness, setThickness] = useState<number>(initialThickness);
   const [material, setMaterial] = useState<string>("Aço Carbono");
@@ -215,10 +244,12 @@ export function CadBRepViewer({
   // Motor da Árvore de Recursos e Editor B-Rep
   const treeRef = useRef<CadFeatureTree>(new CadFeatureTree());
   const editorRef = useRef<CadBRepEditor>(new CadBRepEditor(treeRef.current));
+  const initialTreeDeserializedRef = useRef(false);
   const [featuresList, setFeaturesList] = useState<readonly CadFeatureNode[]>([]);
   const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null);
   const [lastRebuildMs, setLastRebuildMs] = useState<number>(0);
   const [recomputedCount, setRecomputedCount] = useState<number>(0);
+  const [sketchStatusNotice, setSketchStatusNotice] = useState<string | null>(null);
 
   // Histórico de Edição B-Rep
   const [canUndo, setCanUndo] = useState(false);
@@ -340,12 +371,14 @@ export function CadBRepViewer({
         // Mantém seleção de recurso consistente
         setSelectedFeatureId((prev) => {
           if (prev && currentFeatures.some((f) => f.id === prev)) return prev;
-          return currentFeatures.length > 0 ? currentFeatures[currentFeatures.length - 1].id : null;
+          return currentFeatures.length > 0 ? currentFeatures[currentFeatures.length - 1]!.id : null;
         });
 
         // Persiste árvore paramétrica automaticamente
+        const serialized = treeRef.current.serializeTree();
+        onTreeChange?.(serialized);
         try {
-          localStorage.setItem(STORAGE_TREE_KEY, treeRef.current.serializeTree());
+          localStorage.setItem(STORAGE_TREE_KEY, serialized);
         } catch {
           // ignore storage quota errors
         }
@@ -354,7 +387,7 @@ export function CadBRepViewer({
           setActiveShape(res.activeShape);
           setTessData(res.tessellation);
           setMassProps(res.massProperties);
-          rendererRef.current?.setShape(res.tessellation);
+          rendererRef.current?.setShape(res.tessellation, fitCamera);
           if (fitCamera) {
             rendererRef.current?.fitView(false);
           }
@@ -374,7 +407,7 @@ export function CadBRepViewer({
         setLoading(false);
       }
     },
-    [refreshHistoryFlags],
+    [refreshHistoryFlags, onTreeChange],
   );
 
   // Inicialização única do ThreeBRepRenderer
@@ -446,7 +479,14 @@ export function CadBRepViewer({
     rendererRef.current?.setEdgeMode(edgeMode);
   }, [edgeMode]);
 
+  const isFirstPresetMountRef = useRef(true);
+  const initialBuildDoneRef = useRef(false);
+
   useEffect(() => {
+    if (isFirstPresetMountRef.current) {
+      isFirstPresetMountRef.current = false;
+      if (view2D) return;
+    }
     if (rendererRef.current) {
       if (typeof rendererRef.current.setView === "function") {
         rendererRef.current.setView(viewPreset);
@@ -454,7 +494,7 @@ export function CadBRepViewer({
         rendererRef.current.setViewPreset(viewPreset);
       }
     }
-  }, [viewPreset]);
+  }, [viewPreset, view2D]);
 
   useEffect(() => {
     rendererRef.current?.setSelectionType(selectionType);
@@ -464,11 +504,113 @@ export function CadBRepViewer({
     rendererRef.current?.setGizmoMode(gizmoMode);
   }, [gizmoMode]);
 
-  // Constrói o Sólido Base quando acionado pelo seletor de modelos base
+  const executeMorphTransition = useCallback(
+    (dir: "to3d" | "to2d" | "idle" | null | undefined) => {
+      if (!rendererRef.current || !view2D || !dir || dir === "idle") return;
+
+      const w = viewportSize2D?.w || containerRef.current?.clientWidth || 800;
+      const h = viewportSize2D?.h || containerRef.current?.clientHeight || 600;
+      const analysis = analyze2DSketchFor3D(entities2D ?? [], thickness);
+      const match = compute2DTo3DCameraMatch(view2D, w, h, 38, analysis.bounds3D);
+
+      if (dir === "to3d") {
+        if ((morphStartProgress3D ?? 0) <= 0.001) {
+          rendererRef.current.setCameraTo2DMatch(match);
+        }
+        onMorphFrame0Ready?.();
+        rendererRef.current.startMorphTransition({
+          direction: "to3d",
+          match,
+          durationMs: morphDurationMs ?? 550,
+          startProgress3D: morphStartProgress3D ?? 0,
+          onProgress: onMorphProgress,
+          onComplete: () => onMorphComplete?.("to3d"),
+        });
+      } else if (dir === "to2d") {
+        rendererRef.current.startMorphTransition({
+          direction: "to2d",
+          match,
+          durationMs: morphDurationMs ?? 500,
+          startProgress3D: morphStartProgress3D ?? 1,
+          onProgress: onMorphProgress,
+          onComplete: () => onMorphComplete?.("to2d"),
+        });
+      }
+    },
+    [
+      view2D,
+      viewportSize2D,
+      entities2D,
+      thickness,
+      morphStartProgress3D,
+      morphDurationMs,
+      onMorphFrame0Ready,
+      onMorphProgress,
+      onMorphComplete,
+    ],
+  );
+
+  // Constrói ou sincroniza o Sólido Base com o Esboço 2D / Parâmetros
   const applyParametersAndRebuild = useCallback(async () => {
     const tree = treeRef.current;
+
+    // Quando em modo extrude_sketch (sincronizado com o esboço 2D real do CHAMFER)
+    if (modelType === "extrude_sketch" && entities2D !== undefined) {
+      if (!initialTreeDeserializedRef.current && initialTreeJson) {
+        initialTreeDeserializedRef.current = true;
+        tree.deserializeTree(initialTreeJson);
+      }
+
+      const analysis = analyze2DSketchFor3D(entities2D, thickness);
+      rendererRef.current?.setSketchWireframes(analysis.wireframes, true);
+
+      if (analysis.bounds2D) {
+        setParamA(Math.round(analysis.bounds2D.width * 10) / 10);
+        setParamB(Math.round(analysis.bounds2D.height * 10) / 10);
+      }
+      setParamC(thickness);
+
+      const syncRes = sync2DSketchToFeatureTree(tree, analysis);
+
+      if (analysis.status === "VALID_SOLID" && syncRes.hasSolidFeatures) {
+        setSketchStatusNotice(null);
+        await rebuildFromTree(false);
+      } else if (syncRes.hasSolidFeatures) {
+        // Caso 4.3: Preserva sólidos 3D já existentes na árvore
+        setSketchStatusNotice(analysis.status !== "VALID_SOLID" ? analysis.message || null : null);
+        await rebuildFromTree(false);
+      } else {
+        // Caso 4.2: Esboço 2D aberto ou sem perfil fechado (nunca inventa sólido genérico!)
+        setConversionError(null);
+        setSketchStatusNotice(
+          analysis.message ||
+            "Esboço aberto no plano XY — feche o contorno na camada Corte para extrudar volume sólido.",
+        );
+        setActiveShape(null);
+        setTessData(null);
+        setMassProps(null);
+        setFeaturesList([...tree.getFeatures()]);
+        rendererRef.current?.setShape(null, false);
+        setLoading(false);
+      }
+
+      if (!initialBuildDoneRef.current) {
+        initialBuildDoneRef.current = true;
+        if (morphDirection === "to3d" || morphDirection === "to2d") {
+          executeMorphTransition(morphDirection);
+        } else if (view2D && rendererRef.current) {
+          const w = viewportSize2D?.w || containerRef.current?.clientWidth || 800;
+          const h = viewportSize2D?.h || containerRef.current?.clientHeight || 600;
+          const match = compute2DTo3DCameraMatch(view2D, w, h, 38, analysis.bounds3D);
+          rendererRef.current.applyCameraPose(match.pose3D);
+        }
+      }
+      return;
+    }
+
     editorRef.current.pushUndo();
     tree.dispose();
+    setSketchStatusNotice(null);
 
     try {
       switch (modelType) {
@@ -492,8 +634,8 @@ export function CadBRepViewer({
             type: "extrude_sketch",
             parameters: {
               depth: thickness,
-              width: paramA || 200,
-              length: paramB || 200,
+              width: paramA || 160,
+              length: paramB || 120,
               endCondition: "blind",
               direction: "normal",
               booleanMode: "new_body",
@@ -635,6 +777,7 @@ export function CadBRepViewer({
       }
 
       await rebuildFromTree(true);
+      initialBuildDoneRef.current = true;
     } catch (err: unknown) {
       console.error("[CadBRepViewer] Erro na criação da geometria:", err);
       setConversionError((err as Error)?.message || "Não foi possível converter este modelo para CAD 3D.");
@@ -642,6 +785,8 @@ export function CadBRepViewer({
   }, [
     modelType,
     modelTitle,
+    entities2D,
+    initialTreeJson,
     paramA,
     paramB,
     paramC,
@@ -652,13 +797,22 @@ export function CadBRepViewer({
     optFillet,
     optChamfer,
     rebuildFromTree,
+    morphDirection,
+    executeMorphTransition,
+    view2D,
+    viewportSize2D,
   ]);
 
-  // Carrega a primeira geometria ao montar
+  // Sincroniza automaticamente quando o esboço 2D ou a espessura mudam
   useEffect(() => {
     void applyParametersAndRebuild();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [entities2D, thickness, modelType]);
+
+  // Orquestração da transição contínua de câmera 2D ↔ 3D (550 ms ida / 500 ms volta) quando já construído
+  useEffect(() => {
+    if (!initialBuildDoneRef.current) return;
+    executeMorphTransition(morphDirection);
+  }, [morphDirection, executeMorphTransition]);
 
   // =========================================================================
   // ADIÇÃO DE RECURSOS COMBINÁVEIS NA ÁRVORE PARAMÉTRICA
@@ -1313,9 +1467,21 @@ export function CadBRepViewer({
       )}
 
       {/* ========================================================================= */}
-      {/* COTAS TÉCNICAS SOBREPOSTAS AO VIEWPORT (DINÂMICAS POR MODELO)            */}
+      {/* AVISO DISCRETO PARA ESBOÇO 2D ABERTO / SEM VOLUME SÓLIDO (CASO 4.2)       */}
       {/* ========================================================================= */}
-      {!conversionError && (
+      {sketchStatusNotice && !conversionError && (
+        <div className="pointer-events-none absolute top-14 left-1/2 -translate-x-1/2 z-20 max-w-lg px-4">
+          <div className="flex items-center gap-2 rounded-full border border-amber-500/40 bg-slate-900/90 px-3.5 py-1 text-[10px] font-mono font-bold text-amber-300 shadow-lg backdrop-blur-md">
+            <AlertTriangle className="size-3.5 shrink-0 text-amber-400" />
+            <span>{sketchStatusNotice}</span>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* COTAS TÉCNICAS SOBREPOSTAS AO VIEWPORT (EXCLUSIVO PARA CALDEIRARIA)       */}
+      {/* ========================================================================= */}
+      {!conversionError && modelType.startsWith("boilermaking_") && (
         <div className="absolute inset-0 pointer-events-none z-10">
           {/* COTA VERTICAL DE ALTURA */}
           <div className="absolute left-[33%] top-[38%] -translate-y-1/2 flex items-center gap-0.5 font-mono text-[9px] font-bold text-slate-800">
@@ -1341,7 +1507,7 @@ export function CadBRepViewer({
               <div className="absolute right-0 bottom-0 h-3.5 w-px bg-slate-400" />
             </div>
             <span className="mt-0.5 bg-white/90 px-1 py-0.2 rounded shadow-2xs text-[9px] text-slate-800 font-bold">
-              {modelType === "boilermaking_transition" || modelType === "base_box"
+              {modelType === "boilermaking_transition"
                 ? `${Number(paramA || 0).toFixed(0)} × ${Number(paramB || 0).toFixed(0)} mm`
                 : `Ø ${Number(paramA || 0).toFixed(0)} mm`}
             </span>
@@ -2794,7 +2960,9 @@ export function CadBRepViewer({
               </div>
 
               <div className="flex flex-col gap-1.5">
-                {modelType === "boilermaking_transition" || modelType === "base_box" ? (
+                {modelType === "boilermaking_transition" ||
+                modelType === "base_box" ||
+                modelType === "extrude_sketch" ? (
                   <>
                     <div className="flex items-center justify-between gap-2">
                       <label className="text-[9px] font-bold text-slate-600 uppercase tracking-tight">
@@ -2804,6 +2972,7 @@ export function CadBRepViewer({
                         <input
                           type="number"
                           value={paramA}
+                          readOnly={modelType === "extrude_sketch" && Boolean(entities2D?.length)}
                           onChange={(e) => {
                             const v = Number(e.target.value);
                             setParamA(v);
@@ -2816,20 +2985,21 @@ export function CadBRepViewer({
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <label className="text-[9px] font-bold text-slate-600 uppercase tracking-tight">
-                        {modelType === "base_box" ? "COMPRIMENTO (Y)" : "DIÂMETRO (Ø)"}
+                        {modelType === "boilermaking_transition" ? "DIÂMETRO (Ø)" : "COMPRIMENTO (Y)"}
                       </label>
                       <div className="flex h-[28px] w-28 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 focus-within:border-red-500">
                         <input
                           type="number"
-                          value={modelType === "base_box" ? paramB : paramD}
+                          value={modelType === "boilermaking_transition" ? paramD : paramB}
+                          readOnly={modelType === "extrude_sketch" && Boolean(entities2D?.length)}
                           onChange={(e) => {
                             const v = Number(e.target.value);
-                            if (modelType === "base_box") {
-                              setParamB(v);
-                              onUpdate3DParam?.("length", v);
-                            } else {
+                            if (modelType === "boilermaking_transition") {
                               setParamD(v);
                               onUpdate3DParam?.("diameter", v);
+                            } else {
+                              setParamB(v);
+                              onUpdate3DParam?.("length", v);
                             }
                           }}
                           className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px] text-right pr-1"
@@ -2837,24 +3007,26 @@ export function CadBRepViewer({
                         <span className="text-[8.5px] text-slate-400 shrink-0">mm</span>
                       </div>
                     </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="text-[9px] font-bold text-slate-600 uppercase tracking-tight">
-                        ALTURA (Z)
-                      </label>
-                      <div className="flex h-[28px] w-28 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 focus-within:border-red-500">
-                        <input
-                          type="number"
-                          value={paramC}
-                          onChange={(e) => {
-                            const v = Number(e.target.value);
-                            setParamC(v);
-                            onUpdate3DParam?.("height", v);
-                          }}
-                          className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px] text-right pr-1"
-                        />
-                        <span className="text-[8.5px] text-slate-400 shrink-0">mm</span>
+                    {modelType !== "extrude_sketch" && (
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="text-[9px] font-bold text-slate-600 uppercase tracking-tight">
+                          ALTURA (Z)
+                        </label>
+                        <div className="flex h-[28px] w-28 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 focus-within:border-red-500">
+                          <input
+                            type="number"
+                            value={paramC}
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              setParamC(v);
+                              onUpdate3DParam?.("height", v);
+                            }}
+                            className="w-full bg-transparent font-mono font-bold text-slate-900 outline-none text-[11px] text-right pr-1"
+                          />
+                          <span className="text-[8.5px] text-slate-400 shrink-0">mm</span>
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </>
                 ) : (
                   <>
@@ -2899,7 +3071,7 @@ export function CadBRepViewer({
 
                 <div className="flex items-center justify-between gap-2">
                   <label className="text-[9px] font-bold text-slate-600 uppercase tracking-tight">
-                    ESPESSURA
+                    ESPESSURA (Z)
                   </label>
                   <div className="flex h-[28px] w-28 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 focus-within:border-red-500">
                     <input
@@ -2909,6 +3081,7 @@ export function CadBRepViewer({
                       onChange={(e) => {
                         const v = Math.max(0.2, Number(e.target.value) || 0.2);
                         setThickness(v);
+                        setParamC(v);
                         onThicknessChange?.(v);
                         onUpdate3DParam?.("thickness", v);
                       }}

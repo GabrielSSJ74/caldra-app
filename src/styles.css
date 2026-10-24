@@ -322,6 +322,7 @@
   /* ——— Opacidade Dinâmica da Interface ——— */
   --card-opacity: 0.90;
   --bubble-opacity: 0.35;
+  --ui-opacity: 0.90;
 
   /* modo claro */
   --background: oklch(0.982 0.004 250);
@@ -647,17 +648,17 @@
 }
 
 @utility fade-up {
-  animation: caldra-fade-up 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: caldra-fade-up 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @utility pop-in {
-  animation: caldra-pop-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: caldra-pop-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes caldra-fade-up {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
@@ -685,17 +686,19 @@
   }
 }
 
-/* superfícies metálicas técnicas — sólidas, com hairline e reflexo discreto */
+/* superfícies metálicas técnicas — respeitam a opacidade configurada pelo usuário */
 @utility metal {
   background: linear-gradient(
     168deg,
-    color-mix(in oklab, var(--card) 92%, var(--foreground) 8%),
-    color-mix(in oklab, var(--card) 98%, transparent)
+    color-mix(in oklab, var(--card) calc(var(--card-opacity, 0.90) * 92%), transparent),
+    color-mix(in oklab, var(--card) calc(var(--card-opacity, 0.90) * 98%), transparent)
   );
   border: 1px solid var(--glass-border);
   box-shadow:
     inset 0 1px 0 color-mix(in oklab, var(--foreground) 7%, transparent),
     0 18px 40px -28px oklch(0 0 0 / 90%);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 @utility hairline {
@@ -2638,7 +2641,7 @@
   max-width: 380px;
   height: 62px;
   border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.94);
+  background-color: rgba(255, 255, 255, var(--ui-opacity, 0.90));
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(15, 23, 42, 0.08);
@@ -2648,20 +2651,41 @@
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
+  touch-action: manipulation;
   pointer-events: auto;
   transition:
-    background-color 0.25s ease,
-    border-color 0.25s ease,
-    box-shadow 0.25s ease;
+    background-color 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
-.dark .caldra-floating-nav,
-.amoled .caldra-floating-nav {
-  background: rgba(28, 28, 32, 0.94);
+.dark .caldra-floating-nav {
+  background-color: rgba(20, 24, 33, var(--ui-opacity, 0.90));
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow:
     0 12px 32px rgba(0, 0, 0, 0.45),
     0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.amoled .caldra-floating-nav {
+  background-color: rgba(0, 0, 0, var(--ui-opacity, 0.90));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 12px 32px rgba(0, 0, 0, 0.65),
+    0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Barras de ferramentas CAD reativas à opacidade */
+.caldra-cad-toolbar {
+  background-color: rgba(255, 255, 255, var(--ui-opacity, 0.94));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.dark .caldra-cad-toolbar {
+  background-color: rgba(15, 23, 42, var(--ui-opacity, 0.92));
+}
+.amoled .caldra-cad-toolbar {
+  background-color: rgba(0, 0, 0, var(--ui-opacity, 0.92));
 }
 
 /* Cápsula Deslizante Tonal (Sliding Pill) — Modo Claro */
@@ -2676,6 +2700,8 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
   pointer-events: none;
   flex-shrink: 0;
+  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
   transition:
     background-color 0.25s ease,
     border-color 0.25s ease,
@@ -2690,7 +2716,7 @@
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
-/* Botões e ícones da barra flutuante */
+/* Botões e ícones da barra flutuante com resposta a 500Hz / 2ms */
 .caldra-nav-item-btn {
   position: relative;
   z-index: 10;
@@ -2706,12 +2732,21 @@
   outline: none;
   cursor: pointer;
   touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
+  will-change: transform, opacity;
+  transform: translate3d(0, 0, 0);
   color: #64748B;
   opacity: 0.72;
   transition:
-    color 0.25s ease,
-    opacity 0.25s ease;
+    transform 60ms cubic-bezier(0.16, 1, 0.3, 1),
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.caldra-nav-item-btn:active {
+  transform: scale(0.92) translate3d(0, 0, 0);
 }
 
 .dark .caldra-nav-item-btn,
@@ -2727,6 +2762,30 @@
 .caldra-nav-item-btn[data-active="true"] {
   color: var(--accent-color, var(--accent));
   opacity: 1;
+}
+
+/* Keep-Alive Tab Layering com interpolação acelerada por GPU */
+.caldra-tab-layer {
+  width: 100%;
+  transform: translate3d(0, 0, 0);
+  will-change: transform, opacity;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.caldra-tab-layer[data-active="true"] {
+  display: block;
+  opacity: 1;
+  pointer-events: auto;
+  transform: scale(1) translate3d(0, 0, 0);
+  transition: transform 100ms cubic-bezier(0.16, 1, 0.3, 1), opacity 100ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.caldra-tab-layer[data-active="false"] {
+  display: none !important;
+  opacity: 0;
+  pointer-events: none;
+  transform: scale(0.98) translate3d(0, 0, 0);
 }
 
 .caldra-nav-item-icon {

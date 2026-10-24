@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useState, startTransition } from "react";
+import { createFileRoute, useNavigate, useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Copy, FolderOpen, FolderPlus, Pencil, Plus, Search, Sliders, Trash2 } from "lucide-react";
 import { FeatureGate } from "@/components/chameleon/ui";
 import { ChamferProjectSettingsDialog } from "@/components/lab2d/ChamferProjectSettingsDialog";
+import { NavigationAreaContainer } from "@/components/layout/NavigationAreaContainer";
+import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
 import {
   Dialog,
   DialogContent,
@@ -14,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { triggerHaptic } from "@/lib/ui/haptics";
+import { AudioManager } from "@/lib/audio/AudioManager";
 import { takeHandoff } from "@/lib/lab2d/handoff";
 import {
   countEntities,
@@ -21,6 +24,7 @@ import {
   duplicateProject,
   listProjects,
   newProject,
+  preloadProject,
   renameProject,
   saveProject,
   type Project,
@@ -60,6 +64,7 @@ function ExplorerPage() {
 }
 
 function Explorer() {
+  const router = useRouter();
   const navigate = useNavigate();
   const [projects, setProjects] = useState<Project[]>([]);
   const [query, setQuery] = useState("");
@@ -101,6 +106,15 @@ function Explorer() {
     setCreateOpen(true);
   };
 
+  const openProject = (id: string) => {
+    preloadProject(id);
+    triggerHaptic("selection");
+    AudioManager.play("ui_nav");
+    startTransition(() => {
+      void navigate({ to: "/desenho-2d/$projectId", params: { projectId: id } });
+    });
+  };
+
   const handleCreate = (e?: React.FormEvent) => {
     e?.preventDefault();
     triggerHaptic("action");
@@ -109,7 +123,9 @@ function Explorer() {
     saveProject(p);
     setCreateOpen(false);
     toast.success(`Projeto "${p.name}" criado.`);
-    void navigate({ to: "/desenho-2d/$projectId", params: { projectId: p.id } });
+    startTransition(() => {
+      void navigate({ to: "/desenho-2d/$projectId", params: { projectId: p.id } });
+    });
   };
 
   const handleRename = (e?: React.FormEvent) => {
@@ -135,32 +151,35 @@ function Explorer() {
   };
 
   return (
-    <section className="space-y-4">
-      <header className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight">Projetos CHAMFER</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("tap");
-              setGlobalSettingsOpen(true);
-            }}
-            className="flex items-center gap-1.5 rounded-2xl border border-line bg-background/60 px-3 py-2 font-mono text-[10px] tracking-wider text-muted-foreground uppercase hover:text-foreground transition-colors cursor-pointer"
-            title="Configurações gerais do CHAMFER (salvamento automático, unidades, visualização)"
-          >
-            <Sliders className="size-3.5 text-accent" /> Configurações
-          </button>
-          <button
-            type="button"
-            onClick={openCreateDialog}
-            className="brand-gradient flex items-center gap-1.5 rounded-2xl px-4 py-2 font-mono text-[10px] tracking-[0.18em] text-background uppercase shadow-sm transition-transform active:scale-95 touch-manipulation cursor-pointer"
-          >
-            <Plus className="size-3.5" /> Adicionar Projeto
-          </button>
-        </div>
-      </header>
+    <NavigationAreaContainer className="space-y-4">
+      <NavigationAreaHeader
+        badgeText="PRANCHETA VETORIAL CAD"
+        badgeColor="text-red-500"
+        indicatorColor="bg-red-500"
+        title="Projetos CHAMFER"
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("tap");
+                setGlobalSettingsOpen(true);
+              }}
+              className="flex items-center gap-1.5 rounded-2xl border border-line bg-card/60 backdrop-blur-md px-3 py-2 font-mono text-[10px] tracking-wider text-muted-foreground uppercase hover:text-foreground transition-colors cursor-pointer"
+              title="Configurações gerais do CHAMFER (salvamento automático, unidades, visualização)"
+            >
+              <Sliders className="size-3.5 text-accent" /> Configurações
+            </button>
+            <button
+              type="button"
+              onClick={openCreateDialog}
+              className="brand-gradient flex items-center gap-1.5 rounded-2xl px-4 py-2 font-mono text-[10px] tracking-[0.18em] text-background uppercase shadow-sm transition-transform active:scale-95 touch-manipulation cursor-pointer"
+            >
+              <Plus className="size-3.5" /> Adicionar Projeto
+            </button>
+          </div>
+        }
+      />
 
       <label className="metal flex items-center gap-2 rounded-2xl px-3 py-2.5">
         <Search className="size-4 text-muted-foreground" />
@@ -211,15 +230,33 @@ function Explorer() {
           {filtered.map((p) => (
             <li key={p.id} className="metal group rounded-2xl p-3 transition-all hover:amber-ring">
               <button
-                onClick={() =>
-                  navigate({ to: "/desenho-2d/$projectId", params: { projectId: p.id } })
-                }
-                className="flex w-full items-center gap-3 text-left touch-manipulation cursor-pointer"
+                type="button"
+                onPointerDown={(e) => {
+                  if (e.pointerType === "mouse" && e.button !== 0) return;
+                  openProject(p.id);
+                }}
+                onMouseEnter={() => {
+                  preloadProject(p.id);
+                  void router.preloadRoute({ to: "/desenho-2d/$projectId", params: { projectId: p.id } }).catch(() => {});
+                }}
+                onClick={(e) => {
+                  if (e.detail === 0) {
+                    openProject(p.id);
+                  }
+                }}
+                style={{
+                  touchAction: "manipulation",
+                  userSelect: "none",
+                  WebkitUserSelect: "none",
+                  WebkitTapHighlightColor: "transparent",
+                  willChange: "transform, opacity",
+                }}
+                className="flex w-full items-center gap-3 text-left touch-manipulation cursor-pointer select-none"
               >
                 <FolderOpen className="size-5 shrink-0 text-accent" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{p.name}</span>
-                  <span className="block font-mono text-[10px] tracking-wider text-muted-foreground">
+                  <span className="block font-mono text-[10px] tracking-wider text-muted-foreground" suppressHydrationWarning>
                     {p.plans.length} {p.plans.length === 1 ? "plano" : "planos"} · {countEntities(p)} objetos ·{" "}
                     {p.thickness ? `${p.thickness} mm · ` : ""}
                     {new Date(p.updatedAt).toLocaleDateString("pt-BR")}
@@ -376,7 +413,7 @@ function Explorer() {
         projectId={settingsProject?.id}
         projectName={settingsProject?.name}
       />
-    </section>
+    </NavigationAreaContainer>
   );
 }
 

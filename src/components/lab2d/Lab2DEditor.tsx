@@ -206,6 +206,13 @@ import {
 import { type ScaleBasePointType } from "./ChamferScaleDialog";
 import { ChamferFilletChamferHUD } from "./ChamferFilletChamferHUD";
 
+import {
+  MorphTransitionController,
+  MORPH_TO_3D_DURATION_MS,
+  MORPH_TO_2D_DURATION_MS,
+  type MorphTransitionState,
+} from "@/lib/cad/sketch/sketch3dBridge";
+
 const Cad3DStage = lazy(() =>
   import("@/components/lab2d/Cad3DStage").then((m) => ({ default: m.Cad3DStage })),
 );
@@ -628,16 +635,64 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const canvasViewportRef = useRef<HTMLDivElement>(null);
-  const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 });
 
-  // Inicialização sonora CAD do CHAMFER (Seção 5)
+  // Estratégia de Inicialização em 3 Fases do CHAMFER CAD:
+  // Quadro 1 (Imediato / 0ms): Renderiza as barras de controle, títulos e status sem congelar a UI
+  // Quadro 2 (rAF / microtask): Inicializa o contexto gráfico do Canvas 2D e o viewport
+  // Quadro 3 (Idle / rIC): Carrega entidades geométricas, malha e árvore de cotas
+  const [cadPhase, setCadPhase] = useState<1 | 2 | 3>(1);
+
   useEffect(() => {
-    AudioManager.play("chamfer_init");
+    // Transiciona para o Quadro 2 no próximo requestAnimationFrame
+    const raf = requestAnimationFrame(() => {
+      setCadPhase(2);
+
+      const triggerPhase3 = () => setCadPhase(3);
+
+      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+        const id = (window as any).requestIdleCallback(triggerPhase3, { timeout: 80 });
+        return () => (window as any).cancelIdleCallback?.(id);
+      } else {
+        const t = setTimeout(triggerPhase3, 16);
+        return () => clearTimeout(t);
+      }
+    });
+
+    return () => cancelAnimationFrame(raf);
   }, []);
 
-  const [project, setProject] = useState<Project | null>(null);
-  const [planId, setPlanId] = useState<string>("");
-  const [entities, setEntities] = useState<Entity[]>([]);
+  // Carregamento síncrono e instantâneo do projeto (Quadro Zero sem tela preta ou atraso)
+  const initialProj = useMemo(() => (projectId ? getProject(projectId) : null), [projectId]);
+  const initialPlan = useMemo(() => {
+    if (!initialProj) return null;
+    return (
+      initialProj.plans.find((x) => x.id === initialProj.lastPlanId) ??
+      initialProj.plans[0] ??
+      null
+    );
+  }, [initialProj]);
+  const initialEntities = useMemo(() => {
+    if (!initialPlan?.entities) return [];
+    return initialPlan.entities;
+  }, [initialPlan]);
+
+  const [canvasSize, setCanvasSize] = useState(() =>
+    typeof window !== "undefined"
+      ? { w: Math.max(320, window.innerWidth - 48), h: Math.max(320, window.innerHeight - 80) }
+      : { w: 0, h: 0 },
+  );
+
+  // Inicialização sonora CAD em background para não bloquear o primeiro quadro
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      AudioManager.play("chamfer_init");
+    }, 120);
+    return () => window.clearTimeout(t);
+  }, []);
+
+  const [project, setProject] = useState<Project | null>(() => initialProj);
+  const [planId, setPlanId] = useState<string>(() => initialPlan?.id ?? "");
+  const [entities, setEntities] = useState<Entity[]>(() => initialEntities);
 
   // Configurações do CHAMFER para o projeto atual
   const [chamferSettings, setChamferSettings] = useState<ChamferSettings>(() =>
@@ -674,7 +729,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     toast.success(`Projeto "${p.name}" criado.`);
     void navigate({ to: "/desenho-2d/$projectId", params: { projectId: p.id } });
   };
-  const [layers, setLayers] = useState<Layer[]>(DEFAULT_LAYERS);
+  const [layers, setLayers] = useState<Layer[]>(() => initialProj?.layers ?? DEFAULT_LAYERS);
   const [activeLayer, setActiveLayer] = useState("corte");
   const [historyState, setHistoryState] = useState({ canUndo: false, canRedo: false });
   const [tool, setTool] = useState<Tool>("select");
@@ -702,7 +757,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [focus, setFocus] = useState(false);
   const [showLayers, setShowLayers] = useState(false);
   const [showCut, setShowCut] = useState(false);
-  const [groups, setGroups] = useState<GroupDef[]>([]);
+  const [groups, setGroups] = useState<GroupDef[]>(() => initialPlan?.groups ?? []);
   const [showArrows, setShowArrows] = useState(false);
   const [showOrder, setShowOrder] = useState(false);
   const [cncOpen, setCncOpen] = useState(false);
@@ -718,10 +773,65 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [statusPrecisionMenuOpen, setStatusPrecisionMenuOpen] = useState(false);
   const [statusCncMenuOpen, setStatusCncMenuOpen] = useState(false);
   /* ESPESSURA — chapa do plano; alimenta a vista 3D / Traçagem */
-  const [thickness, setThickness] = useState(DEFAULT_PLAN_THICKNESS);
+  const [thickness, setThickness] = useState<number>(() => initialProj?.thickness ?? DEFAULT_PLAN_THICKNESS);
+  const [cad3dTreeJson, setCad3dTreeJson] = useState<string | undefined>(() => initialPlan?.cad3dTreeJson);
   const [solidOpen, setSolidOpen] = useState(false);
   /* MODO CANÔNICO DO CHAMFER: 2D ESBOÇO ↔ 3D TRAÇAGEM ↔ FLANGES */
   const [activeMode, setActiveMode] = useState<"2d" | "3d" | "flanges">("2d");
+  const morphControllerRef = useRef<MorphTransitionController>(new MorphTransitionController());
+  const [morphState, setMorphState] = useState<MorphTransitionState>("2D_IDLE");
+  const [morphDirection, setMorphDirection] = useState<"to3d" | "to2d" | null>(null);
+  const [morphDurationMs, setMorphDurationMs] = useState<number>(MORPH_TO_3D_DURATION_MS);
+  const [morphStartProgress3D, setMorphStartProgress3D] = useState<number | undefined>(undefined);
+
+  const transitionTo3D = useCallback((targetMode: "3d" | "flanges" = "3d") => {
+    const { state, durationMs, startProgress3D } = morphControllerRef.current.requestTo3D();
+    setActiveMode(targetMode);
+    setSolidOpen(true);
+    setMorphState(state);
+    setMorphDurationMs(durationMs);
+    setMorphStartProgress3D(startProgress3D);
+    setMorphDirection("to3d");
+  }, []);
+
+  const transitionTo2D = useCallback(() => {
+    const { state, durationMs, startProgress3D } = morphControllerRef.current.requestTo2D();
+    setActiveMode("2d");
+    setMorphState(state);
+    setMorphDurationMs(durationMs);
+    setMorphStartProgress3D(startProgress3D);
+    if (state === "2D_IDLE") {
+      setMorphDirection(null);
+      setSolidOpen(false);
+    } else {
+      setMorphDirection("to2d");
+    }
+  }, []);
+
+  const handleMorphFrame0Ready = useCallback(() => {
+    const nextState = morphControllerRef.current.beginTransitionTo3D();
+    setMorphState(nextState);
+  }, []);
+
+  const handleMorphProgress = useCallback((progress3D: number) => {
+    morphControllerRef.current.updateProgress(progress3D);
+  }, []);
+
+  const handleMorphComplete = useCallback((dir: "to3d" | "to2d") => {
+    if (dir === "to3d") {
+      const nextState = morphControllerRef.current.completeTransitionTo3D();
+      setMorphState(nextState);
+      setMorphDirection(null);
+      setMorphStartProgress3D(undefined);
+    } else {
+      const nextState = morphControllerRef.current.completeTransitionTo2D();
+      setMorphState(nextState);
+      setMorphDirection(null);
+      setMorphStartProgress3D(undefined);
+      setSolidOpen(false);
+    }
+  }, []);
+
   const [activeRibbonTab, setActiveRibbonTab] = useState<RibbonTab>("desenhar");
   const [orthoOn, setOrthoOn] = useState(false);
   const [trackingOn, setTrackingOn] = useState(false);
@@ -746,7 +856,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [measures, setMeasures] = useState<Measure[]>([]);
   const [liveMeasure, setLiveMeasure] = useState<Measure | null>(null);
   /* COTAGEM — entidades DIMENSION associativas (nunca geometria de corte) */
-  const [dims, setDims] = useState<Dimension[]>([]);
+  const [dims, setDims] = useState<Dimension[]>(() => initialPlan?.dims ?? []);
   const [dimKind, setDimKind] = useState<DimKind>("linear");
   const [dimPicks, setDimPicks] = useState<DimRef[]>([]);
   const [showDims2, setShowDims2] = useState(false);
@@ -1133,7 +1243,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   fitBoxRef.current = fitBox;
   const entitiesRef = useRef(entities);
   entitiesRef.current = entities;
-  const loadedProjectIdRef = useRef<string | null>(null);
+  const loadedProjectIdRef = useRef<string | null>(initialProj?.id ?? null);
+
+  // Auto-fit progressivo no Quadro 3 (quando a geometria é carregada sem congelar a UI no Quadro 1)
+  useEffect(() => {
+    if (cadPhase >= 3 && initialEntities.length > 0) {
+      const b = bbox(initialEntities);
+      if (b && Number.isFinite(b.minX) && b.maxX - b.minX > 1) {
+        fitBoxRef.current(b);
+      }
+    }
+  }, [cadPhase, initialEntities]);
 
   /* ------------------------------------------- projeto, planos e autosave */
   useEffect(() => {
@@ -1159,6 +1279,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setEntities(sanitizedEntities);
     setGroups(plan.groups ?? []);
     setDims(plan.dims ?? []);
+    setCad3dTreeJson(plan.cad3dTreeJson);
     setThickness(p.thickness ?? DEFAULT_PLAN_THICKNESS);
     past.current = [];
     future.current = [];
@@ -1223,7 +1344,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       lastPlanId: planId,
       plans: project.plans.map((pl) =>
         pl.id === planId
-          ? { ...pl, entities, groups: live, dims: pruneDimensions(dims, entities) }
+          ? { ...pl, entities, groups: live, dims: pruneDimensions(dims, entities), cad3dTreeJson }
           : pl,
       ),
     };
@@ -1232,7 +1353,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setTimeout(() => {
       setSaveStatus("salvo");
     }, 400);
-  }, [project, planId, entities, groups, layers, thickness, dims]);
+  }, [project, planId, entities, groups, layers, thickness, dims, cad3dTreeJson]);
 
   const handleManualSave = useCallback(() => {
     triggerHaptic("action");
@@ -1495,9 +1616,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [zoomAt, flashZoom]);
 
   /* ---------------------------------------------------------- utilidades */
+  const activeEntities = useMemo(
+    () => (cadPhase >= 3 ? entities : []),
+    [cadPhase, entities],
+  );
+
   const visible = useMemo(
-    () => entities.filter((e) => Boolean(e && e.id) && layerOf(e.layer)?.visible !== false),
-    [entities, layerOf],
+    () => activeEntities.filter((e) => Boolean(e && e.id) && layerOf(e.layer)?.visible !== false),
+    [activeEntities, layerOf],
   );
 
   /** Entidades desenháveis: camada visível + modo de saída (produção/corte). */
@@ -1678,6 +1804,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const selectionSet = useMemo(() => new Set(selection), [selection]);
 
   useEffect(() => {
+    if (cadPhase < 2) return;
     const el = canvasRef.current;
     if (!el || !canvasSize.w || !canvasSize.h) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -1714,7 +1841,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       isoPlane,
       sheetThickness: thickness,
     });
-  }, [drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isDark, drawingProjection, entities, isDraggingUnlocked, isoPlane, thickness]);
+  }, [cadPhase, drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isDark, drawingProjection, entities, isDraggingUnlocked, isoPlane, thickness]);
 
   /* ------------------------------------------------------- FLUXO CALDRA */
   /*
@@ -1730,6 +1857,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   );
 
   useLayoutEffect(() => {
+    if (cadPhase < 2) return;
     const el = flowRef.current;
     if (!el || !canvasSize.w || !canvasSize.h) return;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -1802,7 +1930,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       cancelAnimationFrame(raf);
       document.removeEventListener("visibilitychange", onVis);
     };
-  }, [drawable, view, canvasSize, showArrows, showOrder, simOn, simSample, gesturing]);
+  }, [cadPhase, drawable, view, canvasSize, showArrows, showOrder, simOn, simSample, gesturing]);
 
   /* avanço da simulação */
   useEffect(() => {
@@ -2648,16 +2776,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [boxOfEntities, selected, cursor.x, cursor.y, commit]);
 
   const handlePlanificar = useCallback(() => {
-    setActiveMode("3d");
-    setSolidOpen(true);
+    transitionTo3D("3d");
     setViewMode3D("planificada");
     toast.info("Visualização Planificada (Flat Pattern) ativada.");
-  }, []);
+  }, [transitionTo3D]);
 
   const handleOpenFlanges = useCallback(() => {
-    setActiveMode("flanges");
-    setSolidOpen(true);
-  }, []);
+    transitionTo3D("flanges");
+  }, [transitionTo3D]);
 
   const handleApplyRelief = useCallback(() => {
     if (!selected.length) {
@@ -2680,18 +2806,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [selected.length, selection, commit]);
 
   const handleUnfold = useCallback(() => {
-    setActiveMode("3d");
-    setSolidOpen(true);
+    transitionTo3D("3d");
     setViewMode3D("planificada");
     toast.success("Desdobramento analítico ativado.");
-  }, []);
+  }, [transitionTo3D]);
 
   const handleFold = useCallback(() => {
-    setActiveMode("3d");
-    setSolidOpen(true);
+    transitionTo3D("3d");
     setViewMode3D("isometrica");
     toast.success("Conformação 3D dobrada a 100%.");
-  }, []);
+  }, [transitionTo3D]);
 
   const handleApplyCoordinate = useCallback(
     (x: number, y: number) => {
@@ -4867,10 +4991,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     return getOperationFeedback(tool, pending.length, selected.length);
   }, [tool, pending.length, selected.length]);
 
-  // Pré-aquece o chunk do CHAMFER INTENT em background após o canvas 2D estar interativo
+  // Pré-aquece o chunk do CHAMFER INTENT e do CAD 3D Stage em background após o canvas 2D estar interativo
   useEffect(() => {
     const timer = window.setTimeout(() => {
       void loadChamferSemanticPalette();
+      void import("@/components/lab2d/Cad3DStage");
     }, 180);
     return () => window.clearTimeout(timer);
   }, []);
@@ -4999,8 +5124,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 type="button"
                 onClick={() => {
                   triggerHaptic("selection");
-                  setActiveMode("2d");
-                  setSolidOpen(false);
+                  transitionTo2D();
                 }}
                 className={cn(
                   "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
@@ -5017,9 +5141,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 type="button"
                 onClick={() => {
                   triggerHaptic("selection");
-                  setActiveMode("3d");
-                  setSolidOpen(true);
-                  if (drawable.length > 0) fitTo(drawable);
+                  transitionTo3D("3d");
                 }}
                 className={cn(
                   "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
@@ -5507,12 +5629,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             activeMode={activeMode}
             onModeChange={(m) => {
               triggerHaptic("selection");
-              setActiveMode(m);
               if (m === "3d" || m === "flanges") {
-                setSolidOpen(true);
-                if (drawable.length > 0) fitTo(drawable);
+                transitionTo3D(m);
               } else {
-                setSolidOpen(false);
+                transitionTo2D();
               }
             }}
             hasSelection={selected.length > 0}
@@ -5620,16 +5740,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 : "border-slate-200 bg-[#ffffff]",
           )}
         >
-          {solidOpen ? (
-            <div className="relative size-full">
+          {solidOpen && (
+            <div
+              className={cn(
+                "absolute inset-0 z-30 size-full transition-opacity duration-75",
+                morphState === "PREPARING_3D" ? "opacity-0 pointer-events-none" : "opacity-100",
+              )}
+            >
               <Suspense fallback={null}>
                 <Cad3DStage
                   open={true}
-                  onClose={() => {
-                    setActiveMode("2d");
-                    setSolidOpen(false);
-                  }}
-                  entities={drawable}
+                  onClose={transitionTo2D}
+                  entities={entities}
                   thickness={thickness}
                   onThickness={setThickness}
                   title={project?.name ?? "Peça Chamfer"}
@@ -5637,13 +5759,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   selection={selection}
                   onSelectEntity={(id) => setSelection(id ? [id] : [])}
                   initialCadPanelOpen={activeMode === "flanges"}
+                  view2D={view}
+                  viewportSize2D={canvasSize}
+                  initialTreeJson={cad3dTreeJson}
+                  onTreeChange={setCad3dTreeJson}
+                  morphDirection={morphDirection}
+                  morphDurationMs={morphDurationMs}
+                  morphStartProgress3D={morphStartProgress3D}
+                  onMorphFrame0Ready={handleMorphFrame0Ready}
+                  onMorphProgress={handleMorphProgress}
+                  onMorphComplete={handleMorphComplete}
                 />
               </Suspense>
             </div>
-          ) : (
-            <>
+          )}
+          <div
+            className={cn(
+              "relative size-full",
+              solidOpen && morphState !== "PREPARING_3D" && "pointer-events-none",
+            )}
+          >
               {/* GRADE CAD REAL E FUNCIONAL (ACOMPANHA ZOOM, PAN E ORIGEM DE COORDENADAS) */}
-              {showGrid && !solidOpen && (
+              {showGrid && (!solidOpen || morphState === "PREPARING_3D") && (
                 <svg className="pointer-events-none absolute inset-0 size-full">
                   <defs>
                     {/* 1. GRID SECUNDÁRIO — subdivisões finas (10-18% Dark / 10-15% Light, adaptável ao zoom) */}
@@ -7032,8 +7169,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               />
             </div>
           )}
-            </>
-          )}
+          </div>
         </div>
 
         {/* REGIÃO D — JANELA LATERAL DIREITA DO CHAMFER 2D (PROPRIEDADES / CAMADAS / CORTE) */}
@@ -7119,7 +7255,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       ? {
                           ...prev,
                           plans: prev.plans.map((x) =>
-                            x.id === planId ? { ...x, entities, groups, dims } : x,
+                            x.id === planId ? { ...x, entities, groups, dims, cad3dTreeJson } : x,
                           ),
                         }
                       : prev,
@@ -7137,6 +7273,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   setEntities(sanitizedPlanEntities);
                   setGroups(pl.groups ?? []);
                   setDims(pl.dims ?? []);
+                  setCad3dTreeJson(pl.cad3dTreeJson);
                   setSelection([]);
                   past.current = [];
                   future.current = [];
@@ -7164,7 +7301,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     ...project,
                     plans: [
                       ...project.plans.map((x) =>
-                        x.id === planId ? { ...x, entities, groups, dims } : x,
+                        x.id === planId ? { ...x, entities, groups, dims, cad3dTreeJson } : x,
                       ),
                       plan,
                     ],
@@ -7176,6 +7313,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   setEntities([]);
                   setGroups([]);
                   setDims([]);
+                  setCad3dTreeJson(undefined);
                   setSelection([]);
                   toast.success(`${plan.name} criado.`);
                 }}

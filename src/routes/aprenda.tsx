@@ -259,7 +259,7 @@ const SHOP_FLOOR_TABLES = [
    COMPONENTE PRINCIPAL
    ========================================================================= */
 
-function AprendaPage() {
+export function AprendaPage() {
   const navigate = useNavigate();
   const academyState = useAcademy();
   const next = nextLesson(academyState);

@@ -42,10 +42,12 @@ export function measureFirstInteraction(): () => void {
 }
 
 export const CORE_ROUTES = [
+  "/",
   "/projetar",
   "/produzir",
   "/aprenda",
   "/perfil",
+  "/desenho-2d",
   "/tracagem",
   "/escola",
   "/projetos",

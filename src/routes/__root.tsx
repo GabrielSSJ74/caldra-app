@@ -106,8 +106,11 @@ var isCrimson=a==="crimson";
 r.classList.toggle("accent-crimson",isCrimson);r.classList.toggle("accent-magenta",isCrimson);
 var co=typeof s.cardOpacity==="number"?Math.min(100,Math.max(20,s.cardOpacity)):90;
 var bo=typeof s.bubbleOpacity==="number"?Math.min(100,Math.max(20,s.bubbleOpacity)):35;
-r.style.setProperty("--card-opacity",(co/100).toFixed(2));
+var uiOp=(co/100).toFixed(2);
+r.style.setProperty("--card-opacity",uiOp);
 r.style.setProperty("--bubble-opacity",(bo/100).toFixed(2));
+r.style.setProperty("--ui-opacity",uiOp);
+r.setAttribute("data-bg-style",s.auroraStyle||"padrao");
 r.lang=s.language==="en"?"en":s.language==="es"?"es":"pt-BR";
 }catch(e){}})();`;
 
@@ -170,7 +173,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
 function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="pt-BR" className="accent-blue bg-background" suppressHydrationWarning>
-      <head>
+      <head suppressHydrationWarning>
         <HeadContent />
       </head>
       <body className="bg-background text-foreground min-h-screen overflow-x-hidden m-0 p-0" suppressHydrationWarning>

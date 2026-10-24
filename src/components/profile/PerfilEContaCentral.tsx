@@ -755,7 +755,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                 <h2 id="heading-aparencia" className="font-display text-sm sm:text-base font-bold text-foreground">
                   Aparência e Personalização
                 </h2>
-                <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 font-mono text-[9px] text-amber-500 font-medium">
+                <span className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 font-mono text-[9px] text-amber-500 font-medium" suppressHydrationWarning>
                   {theme === "dark" ? "Escuro" : theme === "light" ? "Claro" : theme === "amoled" ? "AMOLED" : "Sistema"} · {cardOpacity}%
                 </span>
               </div>
