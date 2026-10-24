@@ -122,6 +122,9 @@ export function Cad3DStage({
   onMorphFrame0Ready,
   onMorphProgress,
   onMorphComplete,
+  orbitCommand,
+  orbitModeActive,
+  onOrbitAnglesChange,
 }: {
   open: boolean;
   onClose: () => void;
@@ -146,6 +149,15 @@ export function Cad3DStage({
   onMorphFrame0Ready?: () => void;
   onMorphProgress?: (progress3D: number) => void;
   onMorphComplete?: (direction: "to3d" | "to2d") => void;
+  orbitCommand?: {
+    azimuthDeg: number;
+    elevationDeg: number;
+    pivot: { x: number; y: number; z: number };
+    animate: boolean;
+    nonce: number;
+  } | null;
+  orbitModeActive?: boolean;
+  onOrbitAnglesChange?: (angles: { azimuthDeg: number; elevationDeg: number }) => void;
 }) {
   const ctx = useProjectContext(labProjectId);
 
@@ -410,6 +422,9 @@ export function Cad3DStage({
               onMorphFrame0Ready={onMorphFrame0Ready}
               onMorphProgress={onMorphProgress}
               onMorphComplete={onMorphComplete}
+              orbitCommand={orbitCommand}
+              orbitModeActive={orbitModeActive}
+              onOrbitAnglesChange={onOrbitAnglesChange}
             />
           </Stage3DErrorBoundary>
         </div>
@@ -545,6 +560,9 @@ export function Cad3DStage({
             onMorphFrame0Ready={onMorphFrame0Ready}
             onMorphProgress={onMorphProgress}
             onMorphComplete={onMorphComplete}
+            orbitCommand={orbitCommand}
+            orbitModeActive={orbitModeActive}
+            onOrbitAnglesChange={onOrbitAnglesChange}
           />
         </Stage3DErrorBoundary>
       </div>

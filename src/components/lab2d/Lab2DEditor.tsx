@@ -280,6 +280,20 @@ import {
 } from "@/lib/lab2d/globalClipboard";
 import { ChamferDirectDimensionEditor } from "./ChamferDirectDimensionEditor";
 import { ChamferPrecisionLoupeOverlay } from "./ChamferPrecisionLoupeOverlay";
+import { ChamferOrbit3DPopover } from "./ChamferOrbit3DPopover";
+import { ChamferAxesGizmo3D } from "./ChamferAxesGizmo3D";
+import {
+  applyOrbitDragDelta,
+  computeSmartOrbitPivot,
+  computeWorkplaneOrbitProjection2D,
+  detectMatchingPreset,
+  getOrbitPresetDefinition,
+  interpolateOrbitAngles,
+  isFlatTop2DView,
+  ORBIT_TRANSITION_DURATION_MS,
+  unprojectOrbit2DToWorkplanePoint,
+  type OrbitPresetId,
+} from "@/lib/lab2d/orbit3dController";
 import {
   ChamferTechnicalCursorSvg,
   ChamferNudgeControlHUD,
@@ -848,6 +862,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [isoPieceBuilderOpen, setIsoPieceBuilderOpen] = useState<boolean>(false);
   const [isoPreview, setIsoPreview] = useState<{ entities: Entity[]; dims: Dimension[] } | null>(null);
 
+  /* FERRAMENTA DE ÓRBITA 3D UNIFICADA (2D SKETCH INCLINADO + CAD 3D) */
+  const [orbitAzimuthDeg, setOrbitAzimuthDeg] = useState<number>(0);
+  const [orbitElevationDeg, setOrbitElevationDeg] = useState<number>(90);
+  const [orbitPreset, setOrbitPreset] = useState<OrbitPresetId>("top");
+  const [isOrbitToolActive, setIsOrbitToolActive] = useState<boolean>(false);
+  const [orbitCommand3D, setOrbitCommand3D] = useState<{
+    azimuthDeg: number;
+    elevationDeg: number;
+    pivot: { x: number; y: number; z: number };
+    animate: boolean;
+    nonce: number;
+  } | null>(null);
+  const orbitAzimuthRef = useRef<number>(0);
+  const orbitElevationRef = useRef<number>(90);
+  orbitAzimuthRef.current = orbitAzimuthDeg;
+  orbitElevationRef.current = orbitElevationDeg;
+  const orbitAnimRafRef = useRef<number | null>(null);
+  const orbitDragRef = useRef<{ x: number; y: number } | null>(null);
+
   const [outputMode, setOutputMode] = useState<OutputMode>("completo");
   const [pending, setPending] = useState<Vec2[]>([]);
 
@@ -1153,6 +1186,133 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     });
   }, []);
 
+  /* PIVÔ INTELIGENTE DA ÓRBITA E PROJEÇÃO 3D DO PLANO DE TRABALHO 2D */
+  const smartOrbitPivot = useMemo(
+    () => computeSmartOrbitPivot(entities, selection, temporaryOrigin?.p ?? null, thickness),
+    [entities, selection, temporaryOrigin, thickness],
+  );
+  const smartOrbitPivotRef = useRef(smartOrbitPivot);
+  smartOrbitPivotRef.current = smartOrbitPivot;
+
+  const orbitProjection2D = useMemo(
+    () =>
+      computeWorkplaneOrbitProjection2D(
+        orbitAzimuthDeg,
+        orbitElevationDeg,
+        smartOrbitPivot,
+        thickness,
+      ),
+    [orbitAzimuthDeg, orbitElevationDeg, smartOrbitPivot, thickness],
+  );
+  const orbitProjection2DRef = useRef(orbitProjection2D);
+  orbitProjection2DRef.current = orbitProjection2D;
+
+  useEffect(() => {
+    return () => {
+      if (orbitAnimRafRef.current) {
+        cancelAnimationFrame(orbitAnimRafRef.current);
+        orbitAnimRafRef.current = null;
+      }
+    };
+  }, []);
+
+  const animateOrbitTo = useCallback(
+    (targetAzimuthDeg: number, targetElevationDeg: number, nextPreset: OrbitPresetId) => {
+      if (orbitAnimRafRef.current) {
+        cancelAnimationFrame(orbitAnimRafRef.current);
+        orbitAnimRafRef.current = null;
+      }
+
+      const startAz = orbitAzimuthRef.current;
+      const startEl = orbitElevationRef.current;
+      const startTime = performance.now();
+
+      setOrbitPreset(nextPreset);
+      setOrbitCommand3D({
+        azimuthDeg: targetAzimuthDeg,
+        elevationDeg: targetElevationDeg,
+        pivot: smartOrbitPivotRef.current,
+        animate: true,
+        nonce: startTime,
+      });
+
+      const step = (now: number) => {
+        const rawT = Math.min(1, (now - startTime) / ORBIT_TRANSITION_DURATION_MS);
+        const interp = interpolateOrbitAngles(
+          startAz,
+          startEl,
+          targetAzimuthDeg,
+          targetElevationDeg,
+          rawT,
+        );
+        orbitAzimuthRef.current = interp.azimuthDeg;
+        orbitElevationRef.current = interp.elevationDeg;
+        setOrbitAzimuthDeg(interp.azimuthDeg);
+        setOrbitElevationDeg(interp.elevationDeg);
+
+        if (rawT < 1) {
+          orbitAnimRafRef.current = requestAnimationFrame(step);
+        } else {
+          orbitAnimRafRef.current = null;
+        }
+      };
+
+      orbitAnimRafRef.current = requestAnimationFrame(step);
+    },
+    [],
+  );
+
+  const handleSelectOrbitPreset = useCallback(
+    (presetId: OrbitPresetId) => {
+      if (presetId === "free") {
+        setIsOrbitToolActive(true);
+        setOrbitPreset("free");
+        toast.info("Órbita 3D Livre ativada — arraste na tela para rotacionar a perspectiva.");
+        return;
+      }
+      const def = getOrbitPresetDefinition(presetId);
+      animateOrbitTo(def.azimuthDeg, def.elevationDeg, presetId);
+      toast.info(`Perspectiva: ${def.label}`);
+    },
+    [animateOrbitTo],
+  );
+
+  const handleDragOrbitDelta = useCallback((dx: number, dy: number) => {
+    if (orbitAnimRafRef.current) {
+      cancelAnimationFrame(orbitAnimRafRef.current);
+      orbitAnimRafRef.current = null;
+    }
+    const next = applyOrbitDragDelta(
+      orbitAzimuthRef.current,
+      orbitElevationRef.current,
+      dx,
+      dy,
+    );
+    orbitAzimuthRef.current = next.azimuthDeg;
+    orbitElevationRef.current = next.elevationDeg;
+    setOrbitAzimuthDeg(next.azimuthDeg);
+    setOrbitElevationDeg(next.elevationDeg);
+    setOrbitPreset("free");
+    setOrbitCommand3D({
+      azimuthDeg: next.azimuthDeg,
+      elevationDeg: next.elevationDeg,
+      pivot: smartOrbitPivotRef.current,
+      animate: false,
+      nonce: performance.now(),
+    });
+  }, []);
+
+  const handleOrbitAnglesFrom3D = useCallback(
+    (angles: { azimuthDeg: number; elevationDeg: number }) => {
+      orbitAzimuthRef.current = angles.azimuthDeg;
+      orbitElevationRef.current = angles.elevationDeg;
+      setOrbitAzimuthDeg(angles.azimuthDeg);
+      setOrbitElevationDeg(angles.elevationDeg);
+      setOrbitPreset(detectMatchingPreset(angles.azimuthDeg, angles.elevationDeg));
+    },
+    [],
+  );
+
   /* --------------------------------------------------------- coordenadas */
   const toWorld = useCallback(
     (ev: { clientX: number; clientY: number; pointerType?: string }, forceDirect = false): Vec2 => {
@@ -1166,6 +1326,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const pType = ev.pointerType ?? lastPointerTypeRef.current;
       const useOffset =
         !forceDirect &&
+        !isOrbitToolActive &&
         shouldUseTouchOffset(
           pType,
           tool,
@@ -1184,12 +1345,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         zoom: safeK,
         offsetEnabled: useOffset,
       });
-      return {
+      const projectedPt = {
         x: calc.cursorWorldX,
         y: calc.cursorWorldY,
       };
+      if (!solidOpen && orbitProjection2DRef.current.isTilted) {
+        return unprojectOrbit2DToWorkplanePoint(
+          projectedPt,
+          orbitAzimuthRef.current,
+          orbitElevationRef.current,
+          smartOrbitPivotRef.current,
+        );
+      }
+      return projectedPt;
     },
-    [tool, dragNode, cursorOffsetMode, selection.length],
+    [tool, dragNode, cursorOffsetMode, selection.length, isOrbitToolActive, solidOpen],
   );
 
   /** Enquadra uma caixa do desenho na viewport com escala proporcional, centralização exata e limites seguros. */
@@ -1840,8 +2010,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       isIsometric: isIsoView,
       isoPlane,
       sheetThickness: thickness,
+      orbitProjection: orbitProjection2D,
     });
-  }, [cadPhase, drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isDark, drawingProjection, entities, isDraggingUnlocked, isoPlane, thickness]);
+  }, [cadPhase, drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isDark, drawingProjection, entities, isDraggingUnlocked, isoPlane, thickness, orbitProjection2D]);
 
   /* ------------------------------------------------------- FLUXO CALDRA */
   /*
@@ -2976,11 +3147,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           my: (a.y + b.y) / 2,
         };
         panRef.current = null;
+        orbitDragRef.current = null;
       }
       return;
     }
     // ignora toques fantasma logo após um gesto
     if (performance.now() < Math.max(gestureUntilRef.current, dragCooldownUntilRef.current)) return;
+
+    // Se o modo ÓRBITA 3D estiver ativo na barra superior, 1 dedo / botão esquerdo rotaciona a órbita
+    // (impedindo seleção acidental ou traçado de linhas durante a rotação 3D)
+    if (isOrbitToolActive && ptrsRef.current.size === 1 && ev.button !== 1) {
+      setLoupeVisible(false);
+      setTouchOffsetActive(false);
+      setTouchWorldPos(null);
+      orbitDragRef.current = { x: ev.clientX, y: ev.clientY };
+      return;
+    }
 
     const pType = ev.pointerType || "mouse";
     lastPointerTypeRef.current = pType;
@@ -3615,6 +3797,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       flashZoom(k);
       markGesture();
       pinchRef.current = { dist: d, mx, my };
+      orbitDragRef.current = null;
+      return;
+    }
+
+    // ---- arraste livre de Órbita 3D (1 dedo ou mouse quando ÓRBITA 3D ativo) ----
+    if (orbitDragRef.current && ptrsRef.current.size === 1) {
+      ev.preventDefault();
+      const dx = ev.clientX - orbitDragRef.current.x;
+      const dy = ev.clientY - orbitDragRef.current.y;
+      orbitDragRef.current = { x: ev.clientX, y: ev.clientY };
+      if (Math.abs(dx) > 0.2 || Math.abs(dy) > 0.2) {
+        handleDragOrbitDelta(dx, dy);
+        markGesture();
+      }
       return;
     }
 
@@ -3971,9 +4167,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
     if (wasPinching) {
       dragCooldownUntilRef.current = performance.now() + 150;
+      orbitDragRef.current = null;
       return;
     }
     panRef.current = null;
+    if (orbitDragRef.current) {
+      orbitDragRef.current = null;
+      return;
+    }
 
     if (dragNode) {
       setDragNode(null);
@@ -4356,6 +4557,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setChamferPreview(null);
         setScaleDialogOpen(false);
         setCenterDialogOpen(false);
+        setIsOrbitToolActive(false);
         setTool("select");
       }
       if (tool === "polyline") {
@@ -4475,6 +4677,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const pickTool = useCallback(
     (id: Tool) => {
+      // Desativa o modo de arraste de Órbita 3D ao escolher qualquer ferramenta na barra lateral,
+      // mantendo a perspectiva 3D escolhida na tela (Seção 5.3)
+      setIsOrbitToolActive(false);
+      orbitDragRef.current = null;
       if (id === "text") setTextOpen(true);
       if (id === "divide") {
         if (selected.length >= 1 && canDivideEntity(selected[0])) {
@@ -5170,14 +5376,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     triggerHaptic("selection");
                     AudioManager.play("ui_select");
                     setDrawingProjection("orthographic");
+                    setIsOrbitToolActive(false);
+                    if (!isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+                      animateOrbitTo(0, 90, "top");
+                    }
                   }}
                   className={cn(
                     "rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
-                    drawingProjection === "orthographic"
+                    drawingProjection === "orthographic" && !orbitProjection2D.isTilted
                       ? "bg-slate-700 text-white shadow-xs"
                       : "text-slate-400 hover:text-slate-200",
                   )}
-                  title="Modo Ortogonal 2D (Eixos X/Y convencionais)"
+                  title="Modo Ortogonal 2D (Eixos X/Y convencionais a 0°)"
                 >
                   ORTO 2D
                 </button>
@@ -5204,6 +5414,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 </button>
               </div>
             )}
+
+            {/* COMANDO DE BARRA SUPERIOR: ⟳ ÓRBITA 3D (ATIVO EM 2D SKETCH E CAD 3D) */}
+            <ChamferOrbit3DPopover
+              azimuthDeg={orbitAzimuthDeg}
+              elevationDeg={orbitElevationDeg}
+              activePreset={orbitPreset}
+              isOrbitToolActive={isOrbitToolActive}
+              onToggleOrbitTool={(next) => {
+                const target = typeof next === "boolean" ? next : !isOrbitToolActive;
+                setIsOrbitToolActive(target);
+                if (target) {
+                  toast.info(
+                    "Modo Órbita 3D ativo — arraste na área de desenho para rotacionar a perspectiva.",
+                  );
+                }
+              }}
+              onSelectPreset={handleSelectOrbitPreset}
+              isDark={isDark}
+            />
           </div>
 
           {/* LADO DIREITO: HISTÓRICO + SALVAMENTO/STATUS + FERRAMENTAS GLOBAIS */}
@@ -5704,6 +5933,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             onFold={handleFold}
             activeLayer={activeLayer}
             setActiveLayer={setActiveLayer}
+            onDeactivateOrbitTool={() => {
+              if (isOrbitToolActive) {
+                setIsOrbitToolActive(false);
+                orbitDragRef.current = null;
+              }
+            }}
             drawingProjection={drawingProjection}
             onToggleDrawingProjection={() => {
               setDrawingProjection((p) => {
@@ -5731,7 +5966,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           ref={canvasViewportRef}
           className={cn(
             "relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border shadow-inner transition-colors",
-            drawingProjection === "isometric" || entities.some((e) => e.params?.isIsoSolidFace)
+            drawingProjection === "isometric" ||
+              orbitProjection2D.isTilted ||
+              entities.some((e) => e.params?.isIsoSolidFace)
               ? isDark
                 ? "border-slate-800/90 bg-[#050914] bg-[radial-gradient(ellipse_at_center,#0A1528_0%,#050914_78%)]"
                 : "border-slate-200 bg-[#F8FAFC]"
@@ -5769,6 +6006,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   onMorphFrame0Ready={handleMorphFrame0Ready}
                   onMorphProgress={handleMorphProgress}
                   onMorphComplete={handleMorphComplete}
+                  orbitCommand={orbitCommand3D}
+                  orbitModeActive={isOrbitToolActive}
+                  onOrbitAnglesChange={handleOrbitAnglesFrom3D}
                 />
               </Suspense>
             </div>
@@ -5949,7 +6189,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
           <svg
             ref={svgRef}
-            className="absolute inset-0 size-full touch-none"
+            className={cn(
+              "absolute inset-0 size-full touch-none",
+              isOrbitToolActive && "cursor-grab active:cursor-grabbing",
+            )}
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
@@ -5960,16 +6203,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 finishPolyline(false);
                 return;
               }
-              const v = viewRef.current;
-              const zoom = v && Number.isFinite(v.k) && v.k > 0 ? v.k : 1;
-              const panX = v && Number.isFinite(v.tx) ? v.tx : 0;
-              const panY = v && Number.isFinite(v.ty) ? v.ty : 0;
-              const canvasRect = (canvasViewportRef.current ?? svgRef.current)?.getBoundingClientRect();
-              const left = canvasRect?.left ?? 0;
-              const top = canvasRect?.top ?? 0;
-              const wx = (e.clientX - left - panX) / zoom;
-              const wy = (e.clientY - top - panY) / zoom;
-              const hit = hitTest({ x: wx, y: wy });
+              const hit = hitTest(toWorld(e, true));
               if (hit) {
                 setSelection([hit.id]);
                 setMobileEditorOpenManual(true);
@@ -5981,7 +6215,50 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             role="application"
             aria-label="Prancheta vetorial"
           >
-            <g transform={`translate(${view.tx} ${view.ty}) scale(${view.k})`}>
+            <g
+              data-testid="chamfer-2d-world-group"
+              transform={`translate(${view.tx} ${view.ty}) scale(${view.k})${
+                orbitProjection2D.isTilted ? ` ${orbitProjection2D.svgMatrix}` : ""
+              }`}
+            >
+              {/* GRADE 3D DO PLANO DE TRABALHO QUANDO INCLINADO PELA ÓRBITA 3D */}
+              {!solidOpen && showGrid && orbitProjection2D.isTilted && (
+                <g pointerEvents="none" aria-label="Grade do plano de trabalho em perspectiva 3D">
+                  {Array.from({ length: 41 }, (_, idx) => {
+                    const step = Math.max(10, gridConfig.majorStep);
+                    const coord = (idx - 20) * step;
+                    const span = 20 * step;
+                    const isMajor = idx % 2 === 0;
+                    const stroke = isDark
+                      ? isMajor
+                        ? "rgba(56, 189, 248, 0.16)"
+                        : "rgba(148, 163, 184, 0.08)"
+                      : isMajor
+                        ? "rgba(2, 132, 199, 0.18)"
+                        : "rgba(100, 116, 139, 0.10)";
+                    return (
+                      <React.Fragment key={`orbit_grid_${idx}`}>
+                        <line
+                          x1={smartOrbitPivot.x - span}
+                          y1={smartOrbitPivot.y + coord}
+                          x2={smartOrbitPivot.x + span}
+                          y2={smartOrbitPivot.y + coord}
+                          stroke={stroke}
+                          strokeWidth={(isMajor ? 1.0 : 0.65) / view.k}
+                        />
+                        <line
+                          x1={smartOrbitPivot.x + coord}
+                          y1={smartOrbitPivot.y - span}
+                          x2={smartOrbitPivot.x + coord}
+                          y2={smartOrbitPivot.y + span}
+                          stroke={stroke}
+                          strokeWidth={(isMajor ? 1.0 : 0.65) / view.k}
+                        />
+                      </React.Fragment>
+                    );
+                  })}
+                </g>
+              )}
               {/* RENDERIZADOR SVG ESTILO MODELOS DE TRAÇAGEM (Modo 3D / Planificada na mesma tela) */}
               {solidOpen && (
                 <TracagemSvgRenderer
@@ -7078,6 +7355,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           )}
 
+          {/* INDICADOR INTERATIVO DE EIXOS 3D (GIZMO X Y Z) — CANTO NÃO INTRUSIVO */}
+          <div className="pointer-events-none absolute bottom-12 left-4 z-35 flex flex-col items-start gap-1.5">
+            <ChamferAxesGizmo3D
+              azimuthDeg={orbitAzimuthDeg}
+              elevationDeg={orbitElevationDeg}
+              activePreset={orbitPreset}
+              isOrbitToolActive={isOrbitToolActive}
+              onSelectPreset={handleSelectOrbitPreset}
+              onDragOrbitDelta={handleDragOrbitDelta}
+              onToggleOrbitTool={() => setIsOrbitToolActive((v) => !v)}
+              isDark={isDark}
+            />
+          </div>
+
           {/* BARRA FLUTUANTE DE COMANDO / FEEDBACK CAD TÉCNICO (CANVAS 2D) */}
           <div
             className={cn(
@@ -7087,11 +7378,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 : "border-slate-200 bg-white/95 text-slate-700 shadow-md",
             )}
           >
-            <span className={cn("font-bold uppercase tracking-wider", isDark ? "text-red-400" : "text-red-600")}>
-              {operationFeedback.command}
+            <span className={cn("font-bold uppercase tracking-wider", isOrbitToolActive ? "text-cyan-400" : isDark ? "text-red-400" : "text-red-600")}>
+              {isOrbitToolActive ? "ÓRBITA 3D" : operationFeedback.command}
             </span>
             <span className={isDark ? "text-slate-600" : "text-slate-300"}>|</span>
-            <span className={isDark ? "text-slate-300" : "text-slate-700"}>{operationFeedback.instruction}</span>
+            <span className={isDark ? "text-slate-300" : "text-slate-700"}>
+              {isOrbitToolActive
+                ? `Arraste com 1 dedo/mouse para orbitar (θ ${Math.round(orbitAzimuthDeg)}° · φ ${Math.round(orbitElevationDeg)}°)`
+                : operationFeedback.instruction}
+            </span>
           </div>
 
           {zoomHud !== null && (

@@ -189,6 +189,7 @@ interface ChamferCadToolbarProps {
 
   activeLayer?: string;
   setActiveLayer?: (l: string) => void;
+  onDeactivateOrbitTool?: () => void;
 
   className?: string;
   isDark?: boolean;
@@ -253,6 +254,7 @@ export function ChamferCadToolbar({
   onFold,
   activeLayer = "corte",
   setActiveLayer,
+  onDeactivateOrbitTool,
   drawingProjection = "orthographic",
   onToggleDrawingProjection,
   isoPlane = "top",
@@ -336,6 +338,7 @@ export function ChamferCadToolbar({
 
   const handleToggleCat = (cat: CadCategory) => {
     triggerHaptic("tap");
+    onDeactivateOrbitTool?.();
     if (
       activeMode === "3d" &&
       (cat === "criar" ||
@@ -364,6 +367,7 @@ export function ChamferCadToolbar({
 
   const handleSelectTool = (t: Tool, catId?: CadCategory) => {
     triggerHaptic("selection");
+    onDeactivateOrbitTool?.();
     onPickTool(t);
     if (catId) {
       setLastUsedTool((prev) => ({ ...prev, [catId]: t }));

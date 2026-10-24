@@ -44,6 +44,7 @@ export interface ThreeBRepRendererOptions {
   onGizmoChange?: (delta: { x: number; y: number; z: number }) => void;
   onGizmoCommit?: (delta: { x: number; y: number; z: number }, entity: CadSelectedEntity | null) => void;
   onCameraRotate?: (rot: { x: number; y: number; z: number }) => void;
+  onOrbitAnglesChange?: (angles: { azimuthDeg: number; elevationDeg: number }) => void;
 }
 
 export class ThreeBRepRenderer {
@@ -88,6 +89,7 @@ export class ThreeBRepRenderer {
   private edgeMode: EdgeMode = "shaded-edges";
   private selectionType: CadSelectionType = "face";
   private isOrtho = false;
+  private orbitModeActive = false;
   private hasInitialCameraPose = false;
   private lastCameraMatch: Camera2DTo3DMatch | null = null;
   private onSelectCallback?: (entity: CadSelectedEntity | null, multiSelection: CadSelectedEntity[]) => void;
@@ -96,6 +98,7 @@ export class ThreeBRepRenderer {
   private onGizmoChangeCallback?: (delta: { x: number; y: number; z: number }) => void;
   private onGizmoCommitCallback?: (delta: { x: number; y: number; z: number }, entity: CadSelectedEntity | null) => void;
   private onCameraRotateCallback?: (rot: { x: number; y: number; z: number }) => void;
+  private onOrbitAnglesChangeCallback?: (angles: { azimuthDeg: number; elevationDeg: number }) => void;
 
   // Gizmo CAD Interativo (FASE 06)
   private transformControls: TransformControls | null = null;
@@ -111,6 +114,10 @@ export class ThreeBRepRenderer {
     x: Number.NaN,
     y: Number.NaN,
     z: Number.NaN,
+  };
+  private lastReportedOrbitAngles: { azimuthDeg: number; elevationDeg: number } = {
+    azimuthDeg: Number.NaN,
+    elevationDeg: Number.NaN,
   };
   private cameraAnimation: {
     fromPos: THREE.Vector3;
@@ -150,6 +157,7 @@ export class ThreeBRepRenderer {
     this.onHoverCallback = options.onHover;
     this.onMeasureCallback = options.onMeasure;
     this.onCameraRotateCallback = options.onCameraRotate;
+    this.onOrbitAnglesChangeCallback = options.onOrbitAnglesChange;
 
     // 1. Cena Three.js
     this.scene = new THREE.Scene();
@@ -899,6 +907,103 @@ export class ThreeBRepRenderer {
     this.setView(view, animate);
   }
 
+  public setOrbitModeActive(active: boolean): void {
+    this.orbitModeActive = active;
+    if (this.renderer.domElement) {
+      this.renderer.domElement.style.cursor = active ? "grab" : "";
+    }
+  }
+
+  public getOrbitAngles(): { azimuthDeg: number; elevationDeg: number } {
+    const offset = this.activeCamera.position.clone().sub(this.controls.target);
+    const radius = Math.max(offset.length(), 1e-6);
+    const sinEl = Math.max(-1, Math.min(1, offset.z / radius));
+    const elevationDeg = (Math.asin(sinEl) * 180) / Math.PI;
+    const horizLen = Math.hypot(offset.x, offset.y);
+    let azimuthDeg = 0;
+    if (horizLen > 1e-3) {
+      azimuthDeg = (((Math.atan2(offset.x, -offset.y) * 180) / Math.PI) + 360) % 360;
+    } else {
+      const sign = sinEl >= 0 ? 1 : -1;
+      azimuthDeg =
+        (((Math.atan2(-this.activeCamera.up.x * sign, this.activeCamera.up.y * sign) * 180) /
+          Math.PI) +
+          360) %
+        360;
+    }
+    return { azimuthDeg, elevationDeg };
+  }
+
+  public setOrbitAngles(
+    azimuthDeg: number,
+    elevationDeg: number,
+    pivot?: { x: number; y: number; z: number } | null,
+    animate = true,
+    durationMs = 350,
+  ): void {
+    const alpha = (azimuthDeg * Math.PI) / 180;
+    const beta = (Math.max(-90, Math.min(90, elevationDeg)) * Math.PI) / 180;
+
+    const sinA = Math.sin(alpha);
+    const cosA = Math.cos(alpha);
+    const sinB = Math.sin(beta);
+    const cosB = Math.cos(beta);
+
+    const dir: [number, number, number] = [sinA * cosB, -cosA * cosB, sinB];
+    const up: [number, number, number] = [-sinA * sinB, cosA * sinB, cosB];
+
+    const currentOffset = this.camera.position.clone().sub(this.controls.target);
+    let distance = currentOffset.length();
+    if (!Number.isFinite(distance) || distance < 25) {
+      const box = new THREE.Box3();
+      if (this.currentShape?.bounds) {
+        const b = this.currentShape.bounds;
+        box.min.set(b.min.x, b.min.y, b.min.z);
+        box.max.set(b.max.x, b.max.y, b.max.z);
+      } else {
+        box.setFromObject(this.rootGroup);
+      }
+      if (box.isEmpty()) {
+        box.set(new THREE.Vector3(-50, -50, 0), new THREE.Vector3(50, 50, 10));
+      }
+      const sphere = box.getBoundingSphere(new THREE.Sphere());
+      const radius = Math.max(sphere.radius, 15);
+      const fovRad = (this.camera.fov * Math.PI) / 360;
+      distance = (radius / Math.sin(fovRad)) * 1.12;
+    }
+
+    const targetCenter =
+      pivot && Number.isFinite(pivot.x) && Number.isFinite(pivot.y)
+        ? new THREE.Vector3(pivot.x, pivot.y, Number.isFinite(pivot.z) ? pivot.z : 0)
+        : this.controls.target.clone();
+
+    const directionVec = new THREE.Vector3(...dir).normalize();
+    const targetUpVec = new THREE.Vector3(...up).normalize();
+    const targetCameraPos = targetCenter.clone().add(directionVec.multiplyScalar(distance));
+    this.hasInitialCameraPose = true;
+
+    if (animate) {
+      this.cameraAnimation = {
+        fromPos: this.camera.position.clone(),
+        toPos: targetCameraPos,
+        fromTarget: this.controls.target.clone(),
+        toTarget: targetCenter,
+        fromUp: this.camera.up.clone(),
+        toUp: targetUpVec,
+        startTime: performance.now(),
+        duration: Math.max(60, durationMs),
+      };
+    } else {
+      this.cameraAnimation = null;
+      this.camera.position.copy(targetCameraPos);
+      this.orthoCamera.position.copy(targetCameraPos);
+      this.camera.up.copy(targetUpVec);
+      this.orthoCamera.up.copy(targetUpVec);
+      this.controls.target.copy(targetCenter);
+      this.controls.update();
+    }
+  }
+
   public fitToModel(animate = true): void {
     const basis = computeOrbitalBasisZUp((35 * Math.PI) / 180, (-32 * Math.PI) / 180);
     this.fitView(
@@ -1219,6 +1324,7 @@ export class ThreeBRepRenderer {
   };
 
   private onPointerUp = (e: PointerEvent): void => {
+    if (this.orbitModeActive) return;
     const elapsed = performance.now() - this.pointerDownTime;
     const dist = Math.hypot(
       e.clientX - this.pointerDownPos.x,
@@ -1409,7 +1515,7 @@ export class ThreeBRepRenderer {
         this.controls.update();
       }
 
-      if (this.onCameraRotateCallback) {
+      if (this.onCameraRotateCallback || this.onOrbitAnglesChangeCallback) {
         this.tempEuler.setFromQuaternion(this.activeCamera.quaternion, "YXZ");
         if (
           Math.abs(this.tempEuler.x - this.lastReportedRotation.x) > 1e-4 ||
@@ -1421,7 +1527,18 @@ export class ThreeBRepRenderer {
             y: this.tempEuler.y,
             z: this.tempEuler.z,
           };
-          this.onCameraRotateCallback(this.lastReportedRotation);
+          this.onCameraRotateCallback?.(this.lastReportedRotation);
+        }
+
+        if (this.onOrbitAnglesChangeCallback && !this.cameraAnimation && !this.morphAnimation) {
+          const angles = this.getOrbitAngles();
+          if (
+            Math.abs(angles.azimuthDeg - this.lastReportedOrbitAngles.azimuthDeg) > 0.25 ||
+            Math.abs(angles.elevationDeg - this.lastReportedOrbitAngles.elevationDeg) > 0.25
+          ) {
+            this.lastReportedOrbitAngles = angles;
+            this.onOrbitAnglesChangeCallback(angles);
+          }
         }
       }
 

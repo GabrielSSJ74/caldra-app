@@ -127,6 +127,15 @@ export interface CadBRepViewerProps {
   onThicknessChange?: (v: number) => void;
   onUpdate3DParam?: (key: string, val: number) => void;
   initialInspectorOpen?: boolean;
+  orbitCommand?: {
+    azimuthDeg: number;
+    elevationDeg: number;
+    pivot: { x: number; y: number; z: number };
+    animate: boolean;
+    nonce: number;
+  } | null;
+  orbitModeActive?: boolean;
+  onOrbitAnglesChange?: (angles: { azimuthDeg: number; elevationDeg: number }) => void;
 }
 
 export type LeftCategory =
@@ -210,6 +219,9 @@ export function CadBRepViewer({
   onThicknessChange,
   onUpdate3DParam,
   initialInspectorOpen = false,
+  orbitCommand,
+  orbitModeActive = false,
+  onOrbitAnglesChange,
 }: CadBRepViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<ThreeBRepRenderer | null>(null);
@@ -444,6 +456,9 @@ export function CadBRepViewer({
       onCameraRotate: (rot) => {
         setCameraRotation(rot);
       },
+      onOrbitAnglesChange: (angles) => {
+        onOrbitAnglesChange?.(angles);
+      },
     });
 
     renderer.setTheme(isDarkTheme ? "dark" : "light");
@@ -503,6 +518,21 @@ export function CadBRepViewer({
   useEffect(() => {
     rendererRef.current?.setGizmoMode(gizmoMode);
   }, [gizmoMode]);
+
+  useEffect(() => {
+    rendererRef.current?.setOrbitModeActive?.(!!orbitModeActive);
+  }, [orbitModeActive]);
+
+  useEffect(() => {
+    if (!orbitCommand || !rendererRef.current) return;
+    rendererRef.current.setOrbitAngles?.(
+      orbitCommand.azimuthDeg,
+      orbitCommand.elevationDeg,
+      orbitCommand.pivot,
+      orbitCommand.animate,
+      350,
+    );
+  }, [orbitCommand]);
 
   const executeMorphTransition = useCallback(
     (dir: "to3d" | "to2d" | "idle" | null | undefined) => {

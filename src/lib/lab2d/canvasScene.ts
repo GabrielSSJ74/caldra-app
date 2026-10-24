@@ -12,6 +12,7 @@ import { samplePath } from "./bezier";
 import { SELECTION_COLOR, techStyle } from "./technical";
 import { viewportBox, type SpatialIndex } from "./spatialIndex";
 import { getIsoExtrusionVector, ISO_TECH_SHADING, type IsoPlane } from "./isometricEngine";
+import type { WorkplaneOrbitProjection2D } from "./orbit3dController";
 
 export type SceneView = { tx: number; ty: number; k: number };
 
@@ -34,6 +35,8 @@ export type SceneOptions = {
   isoPlane?: IsoPlane;
   /** Espessura real da chapa configurada no projeto (mm) */
   sheetThickness?: number;
+  /** Projeção orbital 3D ativa no modo 2D SKETCH */
+  orbitProjection?: WorkplaneOrbitProjection2D;
 };
 
 /** Ordena por camada técnica ou por profundidade Z (Painter's Algorithm para oclusão 2.5D/3D). */
@@ -181,10 +184,24 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
   ctx.setTransform(safeDpr, 0, 0, safeDpr, 0, 0);
   ctx.clearRect(0, 0, safeW, safeH);
   ctx.setTransform(safeDpr * safeK, 0, 0, safeDpr * safeK, safeDpr * safeTx, safeDpr * safeTy);
+  const orbitProj = opts.orbitProjection;
+  const isOrbitTilted = !!orbitProj?.isTilted;
+  if (isOrbitTilted && orbitProj) {
+    ctx.transform(orbitProj.a, orbitProj.b, orbitProj.c, orbitProj.d, orbitProj.e, orbitProj.f);
+  }
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
 
-  const box = viewportBox({ k: safeK, tx: safeTx, ty: safeTy }, safeW, safeH);
+  const rawBox = viewportBox({ k: safeK, tx: safeTx, ty: safeTy }, safeW, safeH);
+  // Quando o plano 2D está inclinado em 3D, expande o box de consulta para evitar corte nas bordas rotacionadas
+  const box = isOrbitTilted
+    ? {
+        minX: rawBox.minX - (rawBox.maxX - rawBox.minX) * 2.5 - 2000,
+        maxX: rawBox.maxX + (rawBox.maxX - rawBox.minX) * 2.5 + 2000,
+        minY: rawBox.minY - (rawBox.maxY - rawBox.minY) * 2.5 - 2000,
+        maxY: rawBox.maxY + (rawBox.maxY - rawBox.minY) * 2.5 + 2000,
+      }
+    : rawBox;
   const list = paintOrder(index.query(box));
   const inv = 1 / safeK;
   const isoSheetThickness =
@@ -246,9 +263,9 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       continue;
     }
 
-    // 2. PASSAGEM VOLUMÉTRICA EM TEMPO REAL (ISO 2D WIREFRAME SOLID) PARA ENTIDADES PLANAS
+    // 2. PASSAGEM VOLUMÉTRICA EM TEMPO REAL (ISO 2D WIREFRAME SOLID / ÓRBITA 3D) PARA ENTIDADES PLANAS
     if (
-      opts.isIsometric &&
+      (opts.isIsometric || isOrbitTilted) &&
       !e.isConstruction &&
       e.layer !== "centro" &&
       e.layer !== "referencia" &&
@@ -257,7 +274,10 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     ) {
       currentLayer = "";
       const entPlane = ((e.params?.isoPlane as IsoPlane) || opts.isoPlane || "top") as IsoPlane;
-      const ext = getIsoExtrusionVector(entPlane, isoSheetThickness);
+      const ext =
+        isOrbitTilted && orbitProj && !opts.isIsometric
+          ? orbitProj.localExtrusion
+          : getIsoExtrusionVector(entPlane, isoSheetThickness);
       const isHole = e.layer === "furo" || e.type === "ellipse" || e.type === "circle";
 
       const backStroke = opts.isLight ? "rgba(2, 132, 199, 0.35)" : ISO_TECH_SHADING.backEdgeStroke;
