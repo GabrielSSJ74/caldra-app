@@ -558,9 +558,9 @@ export class CadFeatureTree {
         };
       }
 
-      // Extrai tesselação e propriedades físicas do sólido B-Rep resultante
+      // Extrai tesselação de alta resolução radial (128+ segmentos) e propriedades físicas do sólido B-Rep resultante
       const [tess, mass] = await Promise.all([
-        this.kernel.tessellate(currentShape, { linearDeflection: 0.1, angularDeflection: 0.4 }),
+        this.kernel.tessellate(currentShape, { linearDeflection: 0.008, angularDeflection: 0.028 }),
         this.kernel.getMassProperties(currentShape, 7.85),
       ]);
 
@@ -839,6 +839,27 @@ export class CadFeatureTree {
               } else {
                 contourSolid = cyl;
               }
+            } else if (contour.circle && contour.circle.r > 0.05 && p.draftAngleDeg) {
+              const circFace = await this.kernel.createCircleFace(
+                contour.circle.r,
+                `${node.name}_circ_${cIdx}`,
+              );
+              const movedFace = await this.kernel.translate(
+                circFace,
+                ox + contour.circle.cx,
+                oy + contour.circle.cy,
+                oz,
+              );
+              this.kernel.release(circFace);
+              contourSolid = await this.kernel.draftExtrude(
+                movedFace,
+                0,
+                0,
+                dz,
+                p.draftAngleDeg,
+                `${node.name}_${cIdx}`,
+              );
+              this.kernel.release(movedFace);
             } else {
               const polyFace = await this.kernel.createPolygonFace(
                 contour.points,
@@ -1101,7 +1122,7 @@ export class CadFeatureTree {
             `${node.name}_helix`,
           );
           const profFace = await this.kernel.createRegularPolygonFace(
-            p.profileShape === "polygon" ? 6 : 12,
+            p.profileShape === "polygon" ? 6 : 128,
             profR,
             `${node.name}_prof`,
             { x: pathR, y: 0, z: 0 },
@@ -1111,21 +1132,21 @@ export class CadFeatureTree {
         } else {
           // Caminho tubular / arco em L via Loft entre seções orientadas
           const f1 = await this.kernel.createRegularPolygonFace(
-            p.profileShape === "rectangle" ? 4 : 16,
+            p.profileShape === "rectangle" ? 4 : 128,
             profR,
             "s1",
             { x: 0, y: 0, z: 0 },
             { x: 0, y: 0, z: 1 },
           );
           const f2 = await this.kernel.createRegularPolygonFace(
-            p.profileShape === "rectangle" ? 4 : 16,
+            p.profileShape === "rectangle" ? 4 : 128,
             profR,
             "s2",
             { x: pathR * 0.35, y: 0, z: pathH * 0.5 },
             { x: 0, y: 0, z: 1 },
           );
           const f3 = await this.kernel.createRegularPolygonFace(
-            p.profileShape === "rectangle" ? 4 : 16,
+            p.profileShape === "rectangle" ? 4 : 128,
             profR,
             "s3",
             { x: pathR, y: 0, z: pathH },
@@ -1162,7 +1183,7 @@ export class CadFeatureTree {
 
         const bottomFace =
           bProf === "circle"
-            ? await this.kernel.createRegularPolygonFace(24, bW / 2, "loft_b", { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
+            ? await this.kernel.createRegularPolygonFace(128, bW / 2, "loft_b", { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
             : bProf === "polygon"
               ? await this.kernel.createRegularPolygonFace(6, bW / 2, "loft_b", { x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
               : await this.kernel.createPolygonFace(
@@ -1192,7 +1213,7 @@ export class CadFeatureTree {
               )
             : tProf === "polygon"
               ? await this.kernel.createRegularPolygonFace(6, tW / 2, "loft_t", { x: 0, y: 0, z: h }, { x: 0, y: 0, z: 1 })
-              : await this.kernel.createRegularPolygonFace(24, tW / 2, "loft_t", { x: 0, y: 0, z: h }, { x: 0, y: 0, z: 1 });
+              : await this.kernel.createRegularPolygonFace(128, tW / 2, "loft_t", { x: 0, y: 0, z: h }, { x: 0, y: 0, z: 1 });
 
         const lofted = await this.kernel.loft([bottomFace, topFace], true, p.ruled ?? true, node.name);
         node.cachedToolShape = lofted;

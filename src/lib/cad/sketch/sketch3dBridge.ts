@@ -202,8 +202,8 @@ export function cleanPolygonPoints(
 export function hasPolygonSelfIntersection(pts: ReadonlyArray<{ x: number; y: number }>): boolean {
   const n = pts.length;
   if (n < 4) return false;
-  // Para polígonos muito densos (ex: círculos amostrados), limita checagem ou ignora se < 120 vértices
-  if (n > 128) return false;
+  // Para polígonos densos (ex: círculos amostrados de 128+ segmentos), ignora checagem quadrática
+  if (n >= 64) return false;
 
   const ccw = (
     A: { x: number; y: number },
@@ -255,17 +255,88 @@ interface ChainableSegment {
   pts: Array<{ x: number; y: number }>;
 }
 
+/**
+ * Detecta se um polígono fechado representa um círculo discretizado (mesmo que tenha vindo
+ * de polilinha de 16–64 lados) e recupera seu centro (cx, cy) e raio analítico exato R.
+ */
+export function detectAnalyticalCircle2D(
+  pts: ReadonlyArray<{ x: number; y: number }>,
+): AnalyticalCircle2D | undefined {
+  const n = pts.length;
+  if (n < 12) return undefined;
+
+  let mx = 0;
+  let my = 0;
+  for (let i = 0; i < n; i++) {
+    mx += pts[i]!.x;
+    my += pts[i]!.y;
+  }
+  mx /= n;
+  my /= n;
+
+  let suu = 0;
+  let svv = 0;
+  let suv = 0;
+  let ru = 0;
+  let rv = 0;
+  for (let i = 0; i < n; i++) {
+    const u = pts[i]!.x - mx;
+    const v = pts[i]!.y - my;
+    const u2v2 = u * u + v * v;
+    suu += u * u;
+    svv += v * v;
+    suv += u * v;
+    ru += 0.5 * u * u2v2;
+    rv += 0.5 * v * u2v2;
+  }
+
+  const det = suu * svv - suv * suv;
+  if (Math.abs(det) < 1e-6) return undefined;
+
+  const cx = mx + (ru * svv - rv * suv) / det;
+  const cy = my + (suu * rv - suv * ru) / det;
+
+  let rSum = 0;
+  for (let i = 0; i < n; i++) {
+    rSum += Math.hypot(pts[i]!.x - cx, pts[i]!.y - cy);
+  }
+  const r = rSum / n;
+  if (!Number.isFinite(r) || r <= 0.25) return undefined;
+
+  const tol = Math.max(0.08, r * 0.015);
+  for (let i = 0; i < n; i++) {
+    const d = Math.hypot(pts[i]!.x - cx, pts[i]!.y - cy);
+    if (Math.abs(d - r) > tol) return undefined;
+  }
+
+  // Confirma que a área poligonal corresponde a um círculo completo de 360°
+  const polyArea = Math.abs(signedPolygonArea(pts));
+  const idealPolyArea = 0.5 * n * r * r * Math.sin((2 * Math.PI) / n);
+  if (Math.abs(polyArea - idealPolyArea) > idealPolyArea * 0.04) {
+    return undefined;
+  }
+
+  return { cx, cy, r };
+}
+
+function sampleCirclePoints2D(cx: number, cy: number, r: number, segments = 128): Array<{ x: number; y: number }> {
+  return Array.from({ length: segments }, (_, i) => {
+    const t = (i / segments) * Math.PI * 2;
+    return { x: cx + r * Math.cos(t), y: cy + r * Math.sin(t) };
+  });
+}
+
 function sampleArcPoints2D(
   cx: number,
   cy: number,
   r: number,
   a0: number,
   a1: number,
-  segments = 24,
+  segments = 128,
 ): Array<{ x: number; y: number }> {
   let sweep = a1 - a0;
   while (sweep <= 0) sweep += Math.PI * 2;
-  const count = Math.max(4, Math.min(48, Math.ceil((sweep / (Math.PI * 2)) * segments)));
+  const count = Math.max(16, Math.min(256, Math.ceil((sweep / (Math.PI * 2)) * segments)));
   const pts: Array<{ x: number; y: number }> = [];
   for (let i = 0; i <= count; i++) {
     const a = a0 + (sweep * i) / count;
@@ -295,10 +366,7 @@ function extractClosedLoops2D(entities: Entity[]): {
       if (!Number.isFinite(e.cx) || !Number.isFinite(e.cy) || !Number.isFinite(e.r) || e.r <= 0.05) {
         continue;
       }
-      const pts2D = Array.from({ length: 64 }, (_, i) => {
-        const t = (i / 64) * Math.PI * 2;
-        return { x: e.cx + e.r * Math.cos(t), y: e.cy + e.r * Math.sin(t) };
-      });
+      const pts2D = sampleCirclePoints2D(e.cx, e.cy, e.r, 128);
       loops.push({
         pts2D,
         circle2D: { cx: e.cx, cy: e.cy, r: e.r },
@@ -319,7 +387,15 @@ function extractClosedLoops2D(entities: Entity[]): {
         const pts2D = cleanPolygonPoints(e.pts);
         const area = Math.abs(signedPolygonArea(pts2D));
         if (pts2D.length >= 3 && area >= 1e-2) {
-          if (hasPolygonSelfIntersection(pts2D)) {
+          const detectedCircle = detectAnalyticalCircle2D(pts2D);
+          if (detectedCircle) {
+            loops.push({
+              pts2D: sampleCirclePoints2D(detectedCircle.cx, detectedCircle.cy, detectedCircle.r, 128),
+              circle2D: detectedCircle,
+              area: Math.PI * detectedCircle.r * detectedCircle.r,
+              entityIds: [e.id],
+            });
+          } else if (hasPolygonSelfIntersection(pts2D)) {
             hasSelfIntersection = true;
           } else {
             loops.push({ pts2D, area, entityIds: [e.id] });
@@ -333,7 +409,15 @@ function extractClosedLoops2D(entities: Entity[]): {
           const pts2D = cleanPolygonPoints(e.pts.slice(0, -1));
           const area = Math.abs(signedPolygonArea(pts2D));
           if (pts2D.length >= 3 && area >= 1e-2) {
-            if (hasPolygonSelfIntersection(pts2D)) {
+            const detectedCircle = detectAnalyticalCircle2D(pts2D);
+            if (detectedCircle) {
+              loops.push({
+                pts2D: sampleCirclePoints2D(detectedCircle.cx, detectedCircle.cy, detectedCircle.r, 128),
+                circle2D: detectedCircle,
+                area: Math.PI * detectedCircle.r * detectedCircle.r,
+                entityIds: [e.id],
+              });
+            } else if (hasPolygonSelfIntersection(pts2D)) {
               hasSelfIntersection = true;
             } else {
               loops.push({ pts2D, area, entityIds: [e.id] });
@@ -349,7 +433,17 @@ function extractClosedLoops2D(entities: Entity[]): {
         const pts2D = cleanPolygonPoints(sampled);
         const area = Math.abs(signedPolygonArea(pts2D));
         if (pts2D.length >= 3 && area >= 1e-2) {
-          loops.push({ pts2D, area, entityIds: [e.id] });
+          const detectedCircle = detectAnalyticalCircle2D(pts2D);
+          if (detectedCircle) {
+            loops.push({
+              pts2D: sampleCirclePoints2D(detectedCircle.cx, detectedCircle.cy, detectedCircle.r, 128),
+              circle2D: detectedCircle,
+              area: Math.PI * detectedCircle.r * detectedCircle.r,
+              entityIds: [e.id],
+            });
+          } else {
+            loops.push({ pts2D, area, entityIds: [e.id] });
+          }
         }
       } else if (sampled.length >= 2) {
         chainCandidates.push({ id: e.id, pts: sampled });
@@ -366,7 +460,7 @@ function extractClosedLoops2D(entities: Entity[]): {
       }
     } else if (e.type === "arc") {
       if (e.r > 0.05) {
-        const arcPts = sampleArcPoints2D(e.cx, e.cy, e.r, e.a0, e.a1, 24);
+        const arcPts = sampleArcPoints2D(e.cx, e.cy, e.r, e.a0, e.a1, 128);
         if (arcPts.length >= 2) {
           chainCandidates.push({ id: e.id, pts: arcPts });
         }
@@ -428,7 +522,15 @@ function extractClosedLoops2D(entities: Entity[]): {
           const cleaned = cleanPolygonPoints(chainPts.slice(0, -1));
           const area = Math.abs(signedPolygonArea(cleaned));
           if (cleaned.length >= 3 && area >= 1e-2) {
-            if (hasPolygonSelfIntersection(cleaned)) {
+            const detectedCircle = detectAnalyticalCircle2D(cleaned);
+            if (detectedCircle) {
+              loops.push({
+                pts2D: sampleCirclePoints2D(detectedCircle.cx, detectedCircle.cy, detectedCircle.r, 128),
+                circle2D: detectedCircle,
+                area: Math.PI * detectedCircle.r * detectedCircle.r,
+                entityIds: currentIds,
+              });
+            } else if (hasPolygonSelfIntersection(cleaned)) {
               hasSelfIntersection = true;
             } else {
               loops.push({
@@ -457,7 +559,7 @@ function extractClosedLoops2D(entities: Entity[]): {
 /**
  * Extrai representações de fios 3D (no plano XY, Z = 0, com Y invertido `Y = -y2d`)
  * para todas as entidades 2D visíveis, garantindo que esboços abertos também possam
- * ser visualizados em 3D na posição exata.
+ * ser visualizados em 3D na posição exata com resolução radial de 128 segmentos.
  */
 export function extract3DSketchWireframes(entities: Entity[]): Sketch3DWireframe[] {
   const out: Sketch3DWireframe[] = [];
@@ -477,18 +579,19 @@ export function extract3DSketchWireframes(entities: Entity[]): Sketch3DWireframe
         isConstruction,
       });
     } else if (e.type === "polyline" && e.pts.length >= 2) {
+      const detectedCircle = e.closed ? detectAnalyticalCircle2D(cleanPolygonPoints(e.pts)) : undefined;
+      const pts2D = detectedCircle
+        ? sampleCirclePoints2D(detectedCircle.cx, detectedCircle.cy, detectedCircle.r, 128)
+        : e.pts;
       out.push({
         id: e.id,
-        points: e.pts.map(to3D),
+        points: pts2D.map(to3D),
         closed: e.closed,
         layer: e.layer,
         isConstruction,
       });
     } else if (e.type === "circle" && e.r > 0) {
-      const pts = Array.from({ length: 64 }, (_, i) => {
-        const a = (i / 64) * Math.PI * 2;
-        return to3D({ x: e.cx + e.r * Math.cos(a), y: e.cy + e.r * Math.sin(a) });
-      });
+      const pts = sampleCirclePoints2D(e.cx, e.cy, e.r, 128).map(to3D);
       out.push({
         id: e.id,
         points: pts,
@@ -497,7 +600,7 @@ export function extract3DSketchWireframes(entities: Entity[]): Sketch3DWireframe
         isConstruction,
       });
     } else if (e.type === "arc" && e.r > 0) {
-      const arcPts = sampleArcPoints2D(e.cx, e.cy, e.r, e.a0, e.a1, 32).map(to3D);
+      const arcPts = sampleArcPoints2D(e.cx, e.cy, e.r, e.a0, e.a1, 128).map(to3D);
       out.push({
         id: e.id,
         points: arcPts,

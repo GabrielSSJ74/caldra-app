@@ -68,15 +68,25 @@ export class CaldraBoilermakingBRep {
    * 1. CONE TRUNCADO / REDUÇÃO (Concêntrico ou Excêntrico)
    * Gera sólido de chapa oca B-Rep via subtração booleana entre cones externo e interno.
    */
-  static async createTruncatedCone(params: TruncatedConeBRepParams): Promise<CadShape> {
+  static async createTruncatedCone(
+    params: TruncatedConeBRepParams & { bottomDiameter?: number; topDiameter?: number },
+  ): Promise<CadShape> {
     const kernel = getCadKernel();
-    const D = Math.max(10, params.D);
-    const d = Math.max(5, params.d);
-    const H = Math.max(10, params.height);
-    const t = Math.max(0.5, params.thickness);
+    const rawD = Number.isFinite(params.D) ? params.D : (params.bottomDiameter ?? 200);
+    const rawd = Number.isFinite(params.d) ? params.d : (params.topDiameter ?? 120);
+    const D = Math.max(10, rawD);
+    const d = Math.max(5, rawd);
+    const H = Math.max(10, params.height ?? 100);
+    const t = Math.max(0, params.thickness ?? 3);
 
     const r1Outer = D / 2;
     const r2Outer = d / 2;
+    if (t <= 0.05) {
+      if (Math.abs(D - d) < 1) {
+        return await kernel.createCylinder(r1Outer, H, true, "Cilindro_Solido_Caldeiraria");
+      }
+      return await kernel.createCone(r1Outer, r2Outer, H, "Cone_Truncado_Solido");
+    }
     const r1Inner = Math.max(1, r1Outer - t);
     const r2Inner = Math.max(0.5, r2Outer - t);
 

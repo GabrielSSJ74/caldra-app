@@ -43,8 +43,8 @@ function closedLoops(entities: Entity[]): Loop[] {
     if (e.isConstruction || !VALID_SOLID_LAYERS.has((e.layer || "corte").toLowerCase())) continue;
     let pts: Vec2[] | null = null;
     if (e.type === "circle") {
-      pts = Array.from({ length: 64 }, (_, i) => {
-        const t = (i / 64) * Math.PI * 2;
+      pts = Array.from({ length: 128 }, (_, i) => {
+        const t = (i / 128) * Math.PI * 2;
         return { x: e.cx + e.r * Math.cos(t), y: e.cy + e.r * Math.sin(t) };
       });
     } else if (e.type === "ellipse") {

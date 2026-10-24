@@ -512,7 +512,7 @@ export function computeVisibleBottomHoleArc(
   rx: number,
   ry: number,
   rotRad: number,
-  steps: number = 72,
+  steps: number = 144,
 ): Vec2[] {
   const cosR = Math.cos(rotRad);
   const sinR = Math.sin(rotRad);
@@ -583,7 +583,7 @@ export function computeVisibleBottomHoleArc(
   const tEnd = refineBoundary((endIdx + 1) * dt, endIdx * dt);
 
   const arcPts: Vec2[] = [];
-  const numArcSteps = 28;
+  const numArcSteps = 96;
   for (let i = 0; i <= numArcSteps; i++) {
     const t = tStart + ((tEnd - tStart) * i) / numArcSteps;
     arcPts.push(pointOnBot(t));
@@ -845,7 +845,7 @@ export function projectEntityToIso(
       const rx = r * ISO_SQRT_1_5;
       const ry = r * ISO_SQRT_0_5;
       const rotation = (cfg.ellipseRotationDeg * Math.PI) / 180;
-      const numPts = 20;
+      const numPts = 128;
       let sweep = entity.a1 - entity.a0;
       if (sweep <= 0) sweep += Math.PI * 2;
       const arcPts: Vec2[] = [];
@@ -1252,7 +1252,7 @@ function extractTopologyFrom2D(entities: Entity[]): {
 
     // 3. Círculos (Furos, Buchas, Cilindros ou Contornos Circulares)
     if (e.type === "circle") {
-      const numPts = 40;
+      const numPts = 128;
       const pts: Vec2[] = [];
       const edges: EdgeSegment2D[] = [];
       for (let i = 0; i < numPts; i++) {
@@ -1345,7 +1345,7 @@ function extractTopologyFrom2D(entities: Entity[]): {
     } else if (e.type === "arc") {
       let sweep = e.a1 - e.a0;
       while (sweep <= 0) sweep += Math.PI * 2;
-      const steps = Math.max(8, Math.round((sweep / (Math.PI / 2)) * 8));
+      const steps = Math.max(32, Math.round((sweep / (Math.PI / 2)) * 32));
       const arcPts: Vec2[] = [];
       for (let i = 0; i <= steps; i++) {
         const ang = e.a0 + (sweep * i) / steps;
@@ -1540,7 +1540,7 @@ export function buildSolidIsoCylinder(params: {
   const arcStart = dist1 >= dist2 ? tTan1 : tTan2;
   const arcEnd = arcStart + Math.PI;
 
-  const numArcPts = 28;
+  const numArcPts = 96;
   const frontBaseArcPts: Vec2[] = [];
   const backTopArcPts: Vec2[] = [];
   for (let i = 0; i <= numArcPts; i++) {

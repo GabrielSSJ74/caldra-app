@@ -409,7 +409,7 @@ export class OcctKernelAdapter implements ICadKernel {
     planeOrigin: CadVector3D = { x: 0, y: 0, z: 0 },
     planeNormal: CadVector3D = { x: 0, y: 0, z: 1 },
   ): Promise<CadShape> {
-    const n = Math.max(3, Math.min(64, Math.round(sides)));
+    const n = Math.max(3, Math.min(256, Math.round(sides)));
     const r = Math.max(0.5, radius);
     const pts: Array<{ x: number; y: number }> = [];
     for (let i = 0; i < n; i++) {
@@ -432,7 +432,7 @@ export class OcctKernelAdapter implements ICadKernel {
     const halfL = Math.max(0.5, centerDistance / 2);
     const r = Math.max(0.5, radius);
     const pts: Array<{ x: number; y: number }> = [];
-    const arcSegs = 12;
+    const arcSegs = 64;
     // Semicírculo direito (-90° a +90°)
     for (let i = 0; i <= arcSegs; i++) {
       const a = -Math.PI / 2 + (i * Math.PI) / arcSegs;
@@ -1290,8 +1290,9 @@ export class OcctKernelAdapter implements ICadKernel {
   ): Promise<CadTessellatedShape> {
     const k = this.ensureKernel();
     try {
-      const linearDeflection = options.linearDeflection ?? 0.1;
-      const angularDeflection = options.angularDeflection ?? 0.5;
+      // Alta resolução radial (128+ segmentos em cilindros, furos, flanges e cones)
+      const linearDeflection = Math.min(options.linearDeflection ?? 0.008, 0.015);
+      const angularDeflection = Math.min(options.angularDeflection ?? 0.028, 0.045);
 
       // 1. Tesselação das faces com mapeamento de grupos por Face CAD
       const rawMesh = k.meshShape(shape.handle as unknown as ShapeHandle, {
@@ -1315,37 +1316,56 @@ export class OcctKernelAdapter implements ICadKernel {
         }
       }
 
+      const smoothedNormals = computeCreasedVertexNormals(
+        rawMesh.positions,
+        rawMesh.normals,
+        rawMesh.indices,
+        35,
+      );
+
       const meshData: CadMeshData = {
         positions: rawMesh.positions,
-        normals: rawMesh.normals,
+        normals: smoothedNormals,
         indices: rawMesh.indices,
         vertexCount: rawMesh.vertexCount,
         triangleCount: rawMesh.triangleCount,
         faceGroups,
       };
 
-      // 2. Extração das arestas CAD reais (sem triangulação interna)
+      // 2. Extração das arestas CAD reais em altíssima densidade e filtragem de seam edges (< 35°)
       const edgeData = k.wireframe(shape.handle as unknown as ShapeHandle, {
-        deflection: linearDeflection,
+        deflection: Math.min(linearDeflection * 0.5, 0.004),
         source: "curve",
       });
 
       const edges: CadPolylineEdge[] = [];
+      let totalPoints = 0;
       if (edgeData.edgeGroups && edgeData.edgeCount) {
         for (let i = 0; i < edgeData.edgeCount; i++) {
           const pointStart = edgeData.edgeGroups[i * 3] ?? 0;
           const pointCount = edgeData.edgeGroups[i * 3 + 1] ?? 0;
           const edgeHash = edgeData.edgeGroups[i * 3 + 2] ?? 0;
 
-          // Extrai o slice de coordenadas XYZ correspondente à polilinha
-          const edgePoints = edgeData.points.slice(pointStart, pointStart + pointCount);
+          const rawEdgePoints = edgeData.points.slice(pointStart, pointStart + pointCount);
+          const refinedPoints = upsampleAnalyticalCircularEdge(rawEdgePoints, 160);
+          const isSeam = isSmoothOrSeamEdge(
+            refinedPoints,
+            rawMesh.positions,
+            rawMesh.indices,
+            faceGroups,
+            35,
+          );
+
+          const numVerts = refinedPoints.length / 3;
+          totalPoints += numVerts;
 
           edges.push({
             edgeId: `edge_${i}`,
             edgeIndex: i,
             edgeHash,
-            points: edgePoints,
-            pointCount: pointCount / 3,
+            points: refinedPoints,
+            pointCount: numVerts,
+            isSeam,
           });
         }
       }
@@ -1356,8 +1376,8 @@ export class OcctKernelAdapter implements ICadKernel {
         mesh: meshData,
         edges: {
           edges,
-          totalEdges: edgeData.edgeCount,
-          totalPoints: edgeData.pointCount / 3,
+          totalEdges: edges.length,
+          totalPoints,
         },
         bounds,
       };
@@ -1434,3 +1454,452 @@ export function getCadKernel(): ICadKernel {
   }
   return _cadKernelInstance;
 }
+
+/**
+ * Reamostra analiticamente laços circulares fechados para `targetSegments` (ex: 160 pontos),
+ * garantindo que bordas de cilindros, furos, flanges e troncos de cone sejam curvas
+ * contínuas perfeitas no raio matemático real R em qualquer nível de zoom.
+ */
+export function upsampleAnalyticalCircularEdge(
+  rawPoints: Float32Array,
+  targetSegments = 160,
+): Float32Array {
+  const numPts = Math.floor(rawPoints.length / 3);
+  if (numPts < 6) return rawPoints;
+
+  const x0 = rawPoints[0]!;
+  const y0 = rawPoints[1]!;
+  const z0 = rawPoints[2]!;
+  const xLast = rawPoints[(numPts - 1) * 3]!;
+  const yLast = rawPoints[(numPts - 1) * 3 + 1]!;
+  const zLast = rawPoints[(numPts - 1) * 3 + 2]!;
+
+  // Verifica se é um laço fechado
+  const closeDist = Math.hypot(xLast - x0, yLast - y0, zLast - z0);
+  if (closeDist > 0.15) return rawPoints;
+
+  // Verifica se o laço é planar em Z (tampas horizontais XY, furos, flanges e cones)
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  const uniqueCount = closeDist < 1e-4 ? numPts - 1 : numPts;
+  if (uniqueCount < 6) return rawPoints;
+
+  let mx = 0;
+  let my = 0;
+  let mz = 0;
+  for (let i = 0; i < uniqueCount; i++) {
+    const px = rawPoints[i * 3]!;
+    const py = rawPoints[i * 3 + 1]!;
+    const pz = rawPoints[i * 3 + 2]!;
+    mx += px;
+    my += py;
+    mz += pz;
+    if (pz < minZ) minZ = pz;
+    if (pz > maxZ) maxZ = pz;
+  }
+
+  if (maxZ - minZ > 0.03) return rawPoints;
+
+  mx /= uniqueCount;
+  my /= uniqueCount;
+  mz /= uniqueCount;
+
+  // Ajuste algébrico exato de círculo (Kasa) centrado em (mx, my)
+  let suu = 0;
+  let svv = 0;
+  let suv = 0;
+  let ru = 0;
+  let rv = 0;
+  for (let i = 0; i < uniqueCount; i++) {
+    const u = rawPoints[i * 3]! - mx;
+    const v = rawPoints[i * 3 + 1]! - my;
+    const u2v2 = u * u + v * v;
+    suu += u * u;
+    svv += v * v;
+    suv += u * v;
+    ru += 0.5 * u * u2v2;
+    rv += 0.5 * v * u2v2;
+  }
+
+  const det = suu * svv - suv * suv;
+  if (Math.abs(det) < 1e-6) return rawPoints;
+
+  const cx = mx + (ru * svv - rv * suv) / det;
+  const cy = my + (suu * rv - suv * ru) / det;
+
+  let rSum = 0;
+  for (let i = 0; i < uniqueCount; i++) {
+    const dx = rawPoints[i * 3]! - cx;
+    const dy = rawPoints[i * 3 + 1]! - cy;
+    rSum += Math.hypot(dx, dy);
+  }
+  const r = rSum / uniqueCount;
+  if (!Number.isFinite(r) || r < 0.25) return rawPoints;
+
+  // Confirma que todos os pontos pertencem ao círculo de raio R
+  const maxRadialTol = Math.max(0.06, r * 0.015);
+  for (let i = 0; i < uniqueCount; i++) {
+    const d = Math.hypot(rawPoints[i * 3]! - cx, rawPoints[i * 3 + 1]! - cy);
+    if (Math.abs(d - r) > maxRadialTol) {
+      return rawPoints;
+    }
+  }
+
+  const segs = Math.max(128, targetSegments);
+  const theta0 = Math.atan2(y0 - cy, x0 - cx);
+  const out = new Float32Array((segs + 1) * 3);
+  for (let i = 0; i <= segs; i++) {
+    const theta = theta0 + (i / segs) * Math.PI * 2;
+    out[i * 3] = cx + r * Math.cos(theta);
+    out[i * 3 + 1] = cy + r * Math.sin(theta);
+    out[i * 3 + 2] = mz;
+  }
+  return out;
+}
+
+/**
+ * Distância mínima ao quadrado de um ponto 3D P a uma polilinha aberta `edgePoints`,
+ * retornando também a posição paramétrica normalizada `paramS` em [0, 1] ao longo da aresta.
+ */
+function pointToPolylineProjection(
+  px: number,
+  py: number,
+  pz: number,
+  edgePoints: Float32Array,
+  numPts: number,
+): { distSq: number; paramS: number } {
+  let minDistSq = Infinity;
+  let bestS = 0;
+  const segCount = Math.max(1, numPts - 1);
+
+  for (let i = 0; i < numPts - 1; i++) {
+    const ax = edgePoints[i * 3]!;
+    const ay = edgePoints[i * 3 + 1]!;
+    const az = edgePoints[i * 3 + 2]!;
+    const bx = edgePoints[(i + 1) * 3]!;
+    const by = edgePoints[(i + 1) * 3 + 1]!;
+    const bz = edgePoints[(i + 1) * 3 + 2]!;
+
+    const abx = bx - ax;
+    const aby = by - ay;
+    const abz = bz - az;
+    const lenSq = abx * abx + aby * aby + abz * abz;
+    let t = 0;
+    if (lenSq > 1e-10) {
+      t = ((px - ax) * abx + (py - ay) * aby + (pz - az) * abz) / lenSq;
+      if (t < 0) t = 0;
+      else if (t > 1) t = 1;
+    }
+    const dx = px - (ax + t * abx);
+    const dy = py - (ay + t * aby);
+    const dz = pz - (az + t * abz);
+    const dSq = dx * dx + dy * dy + dz * dz;
+    if (dSq < minDistSq) {
+      minDistSq = dSq;
+      bestS = (i + t) / segCount;
+    }
+  }
+  return { distSq: minDistSq, paramS: bestS };
+}
+
+/**
+ * Identifica se uma aresta extraída pelo kernel B-Rep é uma linha de costura ("seam edge" /
+ * "bridge seam" em 0°/360° de cilindros, anéis, furos e troncos de cone) ou uma aresta interna
+ * entre faces tangentes suaves (ângulo diedro < thresholdAngleDeg, padrão 35°).
+ */
+export function isSmoothOrSeamEdge(
+  edgePoints: Float32Array,
+  positions: Float32Array,
+  indices: Uint32Array,
+  faceGroups: CadFaceGroup[],
+  thresholdAngleDeg = 35,
+): boolean {
+  const numPts = Math.floor(edgePoints.length / 3);
+  if (numPts < 2) return true;
+
+  const x0 = edgePoints[0]!;
+  const y0 = edgePoints[1]!;
+  const z0 = edgePoints[2]!;
+  const xLast = edgePoints[(numPts - 1) * 3]!;
+  const yLast = edgePoints[(numPts - 1) * 3 + 1]!;
+  const zLast = edgePoints[(numPts - 1) * 3 + 2]!;
+
+  // Laços fechados (círculos de topo/base, bordas de furos) nunca são seam edges
+  const closeDist = Math.hypot(xLast - x0, yLast - y0, zLast - z0);
+  if (closeDist < 0.08 && numPts >= 4) {
+    return false;
+  }
+
+  const triCount = Math.floor(indices.length / 3);
+  if (triCount === 0) return false;
+
+  // Calcula caixa delimitadora da aresta aberta expandida pela tolerância
+  const tol = 0.15;
+  const tolSq = tol * tol;
+  let eMinX = Infinity;
+  let eMinY = Infinity;
+  let eMinZ = Infinity;
+  let eMaxX = -Infinity;
+  let eMaxY = -Infinity;
+  let eMaxZ = -Infinity;
+
+  for (let i = 0; i < numPts; i++) {
+    const px = edgePoints[i * 3]!;
+    const py = edgePoints[i * 3 + 1]!;
+    const pz = edgePoints[i * 3 + 2]!;
+    if (px < eMinX) eMinX = px;
+    if (py < eMinY) eMinY = py;
+    if (pz < eMinZ) eMinZ = pz;
+    if (px > eMaxX) eMaxX = px;
+    if (py > eMaxY) eMaxY = py;
+    if (pz > eMaxZ) eMaxZ = pz;
+  }
+  eMinX -= tol;
+  eMinY -= tol;
+  eMinZ -= tol;
+  eMaxX += tol;
+  eMaxY += tol;
+  eMaxZ += tol;
+
+  // Mapeia cada triângulo para sua face topológica (quando disponível)
+  const triToFace = new Int32Array(triCount).fill(-1);
+  for (const fg of faceGroups) {
+    const end = Math.min(triCount, fg.startTriangle + fg.triangleCount);
+    for (let t = fg.startTriangle; t < end; t++) {
+      triToFace[t] = fg.faceIndex;
+    }
+  }
+
+  const borderingNormals: Array<{ nx: number; ny: number; nz: number; faceIdx: number }> = [];
+
+  for (let t = 0; t < triCount; t++) {
+    const i0 = indices[t * 3]! * 3;
+    const i1 = indices[t * 3 + 1]! * 3;
+    const i2 = indices[t * 3 + 2]! * 3;
+
+    const ax = positions[i0]!;
+    const ay = positions[i0 + 1]!;
+    const az = positions[i0 + 2]!;
+    const bx = positions[i1]!;
+    const by = positions[i1 + 1]!;
+    const bz = positions[i1 + 2]!;
+    const cx = positions[i2]!;
+    const cy = positions[i2 + 1]!;
+    const cz = positions[i2 + 2]!;
+
+    // Rejeição rápida por AABB
+    if (
+      Math.max(ax, bx, cx) < eMinX ||
+      Math.min(ax, bx, cx) > eMaxX ||
+      Math.max(ay, by, cy) < eMinY ||
+      Math.min(ay, by, cy) > eMaxY ||
+      Math.max(az, bz, cz) < eMinZ ||
+      Math.min(az, bz, cz) > eMaxZ
+    ) {
+      continue;
+    }
+
+    const pA = pointToPolylineProjection(ax, ay, az, edgePoints, numPts);
+    const pB = pointToPolylineProjection(bx, by, bz, edgePoints, numPts);
+    const pC = pointToPolylineProjection(cx, cy, cz, edgePoints, numPts);
+
+    const matchedS: number[] = [];
+    if (pA.distSq <= tolSq) matchedS.push(pA.paramS);
+    if (pB.distSq <= tolSq) matchedS.push(pB.paramS);
+    if (pC.distSq <= tolSq) matchedS.push(pC.paramS);
+
+    // Exige pelo menos 2 vértices sobre a aresta em posições distintas ao longo do comprimento
+    if (matchedS.length >= 2) {
+      const minS = Math.min(...matchedS);
+      const maxS = Math.max(...matchedS);
+      if (maxS - minS < 0.015) continue;
+
+      const ux = bx - ax;
+      const uy = by - ay;
+      const uz = bz - az;
+      const vx = cx - ax;
+      const vy = cy - ay;
+      const vz = cz - az;
+      const nx = uy * vz - uz * vy;
+      const ny = uz * vx - ux * vz;
+      const nz = ux * vy - uy * vx;
+      const len = Math.hypot(nx, ny, nz);
+      if (len > 1e-8) {
+        borderingNormals.push({
+          nx: nx / len,
+          ny: ny / len,
+          nz: nz / len,
+          faceIdx: triToFace[t] ?? -1,
+        });
+      }
+    }
+  }
+
+  if (borderingNormals.length >= 2) {
+    // 1. Se todos os triângulos adjacentes pertencem à mesma Face B-Rep, é uma aresta de costura (seam/bridge)
+    const firstFace = borderingNormals[0]!.faceIdx;
+    if (firstFace >= 0 && borderingNormals.every((b) => b.faceIdx === firstFace)) {
+      return true;
+    }
+
+    // 2. Verifica se o ângulo diedro máximo entre os triângulos adjacentes é menor que thresholdAngleDeg (35°)
+    const cosThreshold = Math.cos((thresholdAngleDeg * Math.PI) / 180);
+    let minDot = 1.0;
+    for (let i = 0; i < borderingNormals.length; i++) {
+      const a = borderingNormals[i]!;
+      for (let j = i + 1; j < borderingNormals.length; j++) {
+        const b = borderingNormals[j]!;
+        const dot = a.nx * b.nx + a.ny * b.ny + a.nz * b.nz;
+        if (dot < minDot) minDot = dot;
+      }
+    }
+    if (minDot >= cosThreshold) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Suaviza normais de vértices nas paredes curvas (cilindros, furos, cones, flanges)
+ * soldando vértices na mesma posição 3D cuja diferença angular seja < creaseAngleDeg (35°),
+ * preservando quinas vivas nas tampas planas superior e inferior.
+ */
+export function computeCreasedVertexNormals(
+  positions: Float32Array,
+  rawNormals: Float32Array,
+  indices: Uint32Array,
+  creaseAngleDeg = 35,
+): Float32Array {
+  const vertexCount = Math.floor(positions.length / 3);
+  if (vertexCount === 0 || indices.length < 3) {
+    return rawNormals;
+  }
+
+  // Calcula normais base ponderadas por área de cada triângulo por vértice indexado
+  const accumNormals = new Float32Array(positions.length);
+  const triCount = Math.floor(indices.length / 3);
+
+  for (let t = 0; t < triCount; t++) {
+    const i0 = indices[t * 3]!;
+    const i1 = indices[t * 3 + 1]!;
+    const i2 = indices[t * 3 + 2]!;
+
+    const p0 = i0 * 3;
+    const p1 = i1 * 3;
+    const p2 = i2 * 3;
+
+    const ux = positions[p1]! - positions[p0]!;
+    const uy = positions[p1 + 1]! - positions[p0 + 1]!;
+    const uz = positions[p1 + 2]! - positions[p0 + 2]!;
+    const vx = positions[p2]! - positions[p0]!;
+    const vy = positions[p2 + 1]! - positions[p0 + 1]!;
+    const vz = positions[p2 + 2]! - positions[p0 + 2]!;
+
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    const nz = ux * vy - uy * vx;
+
+    accumNormals[p0] += nx;
+    accumNormals[p0 + 1] += ny;
+    accumNormals[p0 + 2] += nz;
+
+    accumNormals[p1] += nx;
+    accumNormals[p1 + 1] += ny;
+    accumNormals[p1 + 2] += nz;
+
+    accumNormals[p2] += nx;
+    accumNormals[p2 + 1] += ny;
+    accumNormals[p2 + 2] += nz;
+  }
+
+  // Normaliza as normais base (usando rawNormals como fallback caso degenerado)
+  const baseNormals = new Float32Array(positions.length);
+  for (let v = 0; v < vertexCount; v++) {
+    const idx = v * 3;
+    const nx = accumNormals[idx]!;
+    const ny = accumNormals[idx + 1]!;
+    const nz = accumNormals[idx + 2]!;
+    const len = Math.hypot(nx, ny, nz);
+    if (len > 1e-8) {
+      baseNormals[idx] = nx / len;
+      baseNormals[idx + 1] = ny / len;
+      baseNormals[idx + 2] = nz / len;
+    } else if (rawNormals.length >= idx + 3) {
+      baseNormals[idx] = rawNormals[idx]!;
+      baseNormals[idx + 1] = rawNormals[idx + 1]!;
+      baseNormals[idx + 2] = rawNormals[idx + 2]!;
+    } else {
+      baseNormals[idx + 2] = 1;
+    }
+  }
+
+  // Agrupa vértices que compartilham a mesma coordenada espacial 3D (ex: costura 0°/360°)
+  const posBuckets = new Map<string, number[]>();
+  for (let v = 0; v < vertexCount; v++) {
+    const idx = v * 3;
+    const kx = Math.round(positions[idx]! * 200);
+    const ky = Math.round(positions[idx + 1]! * 200);
+    const kz = Math.round(positions[idx + 2]! * 200);
+    const key = `${kx}_${ky}_${kz}`;
+    const list = posBuckets.get(key);
+    if (list) {
+      list.push(v);
+    } else {
+      posBuckets.set(key, [v]);
+    }
+  }
+
+  const cosCrease = Math.cos((creaseAngleDeg * Math.PI) / 180);
+  const outNormals = new Float32Array(positions.length);
+
+  for (const bucket of posBuckets.values()) {
+    if (bucket.length === 1) {
+      const v = bucket[0]! * 3;
+      outNormals[v] = baseNormals[v]!;
+      outNormals[v + 1] = baseNormals[v + 1]!;
+      outNormals[v + 2] = baseNormals[v + 2]!;
+      continue;
+    }
+
+    for (let i = 0; i < bucket.length; i++) {
+      const vi = bucket[i]! * 3;
+      const nix = baseNormals[vi]!;
+      const niy = baseNormals[vi + 1]!;
+      const niz = baseNormals[vi + 2]!;
+
+      let sx = nix;
+      let sy = niy;
+      let sz = niz;
+
+      for (let j = 0; j < bucket.length; j++) {
+        if (i === j) continue;
+        const vj = bucket[j]! * 3;
+        const njx = baseNormals[vj]!;
+        const njy = baseNormals[vj + 1]!;
+        const njz = baseNormals[vj + 2]!;
+        const dot = nix * njx + niy * njy + niz * njz;
+        if (dot >= cosCrease) {
+          sx += njx;
+          sy += njy;
+          sz += njz;
+        }
+      }
+
+      const len = Math.hypot(sx, sy, sz);
+      if (len > 1e-8) {
+        outNormals[vi] = sx / len;
+        outNormals[vi + 1] = sy / len;
+        outNormals[vi + 2] = sz / len;
+      } else {
+        outNormals[vi] = nix;
+        outNormals[vi + 1] = niy;
+        outNormals[vi + 2] = niz;
+      }
+    }
+  }
+
+  return outNormals;
+}
+

@@ -52,7 +52,7 @@ export function createSlotPolyline(
     y: center.y + halfLen * dirY,
   };
 
-  const steps = 12;
+  const steps = 64;
   const pts: Vec2[] = [];
 
   // Semicírculo 1 (em torno de c2, de -90° a +90° relativo à normal)

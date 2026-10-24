@@ -47,9 +47,9 @@ function screenPath(e: Entity, v: FlowView): Vec2[] {
     case "polyline":
       return (e.closed ? [...e.pts, e.pts[0]!] : e.pts).filter(Boolean).map(to);
     case "path":
-      return samplePath(e.start, e.segs, e.closed, 10).map(to);
+      return samplePath(e.start, e.segs, e.closed, 24).map(to);
     case "circle": {
-      const n = 64;
+      const n = 128;
       return Array.from({ length: n + 1 }, (_, i) =>
         to({
           x: e.cx + e.r * Math.cos((i / n) * Math.PI * 2),
@@ -61,7 +61,7 @@ function screenPath(e: Entity, v: FlowView): Vec2[] {
       let sweep = e.a1 - e.a0;
       while (sweep < -Math.PI * 2) sweep += Math.PI * 2;
       while (sweep > Math.PI * 2) sweep -= Math.PI * 2;
-      const n = 48;
+      const n = 128;
       return Array.from({ length: n + 1 }, (_, i) =>
         to({
           x: e.cx + e.r * Math.cos(e.a0 + sweep * (i / n)),

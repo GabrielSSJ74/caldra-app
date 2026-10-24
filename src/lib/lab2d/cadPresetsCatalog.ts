@@ -583,7 +583,7 @@ export const CAD_PRESETS_CATALOG: PresetDefinition[] = [
       const cx = base.x;
       const cy = base.y;
 
-      const numPts = 32;
+      const numPts = 128;
       const outerArcPts: Vec2[] = [];
       const innerArcPts: Vec2[] = [];
 

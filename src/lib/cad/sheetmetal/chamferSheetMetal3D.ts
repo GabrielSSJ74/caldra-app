@@ -600,7 +600,7 @@ export function generateSheetMetalMesh(
 
         if (Math.abs(delta) > 0.02) {
           const ba = Math.abs(delta) * (r + profile.kFactor * t);
-          const arcSteps = 6;
+          const arcSteps = 24;
           const arcAngleStep = effectiveBendAngle / arcSteps;
           const stepLen = ba / arcSteps;
 
@@ -737,7 +737,11 @@ export function generateSheetMetalMesh(
         }
       }
 
-      const geom = new THREE.ExtrudeGeometry(shape, { depth: t * S, bevelEnabled: false });
+      const geom = new THREE.ExtrudeGeometry(shape, {
+        depth: t * S,
+        bevelEnabled: false,
+        curveSegments: 128,
+      });
       geom.translate(0, 0, -halfT);
 
       const posAttr = geom.getAttribute("position");

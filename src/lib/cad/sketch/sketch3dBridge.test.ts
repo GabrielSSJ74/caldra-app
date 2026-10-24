@@ -5,6 +5,7 @@ import {
   analyze2DSketchFor3D,
   compute2DTo3DCameraMatch,
   cubicBezier022,
+  detectAnalyticalCircle2D,
   evaluateMorphCameraPose,
   LINKED_SKETCH_FEATURE_ID,
   MorphTransitionController,
@@ -271,4 +272,82 @@ describe("CHAMFER CAD — Seamless 2D <-> 3D Morph & 1:1 Geometric Sync", () => 
     const resRestored = await restoredTree.rebuild();
     expect(resRestored.massProperties!.volume).toBeCloseTo(150 * 50 * 8.0, -1);
   });
+
+  it("Teste I: Círculos, anéis com furo e Tronco de Cone possuem 128+ segmentos radiais contínuos e eliminam a linha de costura (isSeam = true em 0°/360°)", async () => {
+    const ringEntities: Entity[] = [
+      { id: "outer_c", type: "circle", layer: "corte", cx: 0, cy: 0, r: 100 },
+      { id: "inner_h", type: "circle", layer: "recorte", cx: 0, cy: 0, r: 60 },
+    ];
+
+    const analysis = analyze2DSketchFor3D(ringEntities, 6.0);
+    expect(analysis.status).toBe("VALID_SOLID");
+    expect(analysis.contours[0]!.points.length).toBeGreaterThanOrEqual(128);
+    expect(analysis.contours[0]!.holes[0]!.points.length).toBeGreaterThanOrEqual(128);
+    expect(analysis.wireframes[0]!.points.length).toBeGreaterThanOrEqual(128);
+
+    const tree = new CadFeatureTree();
+    sync2DSketchToFeatureTree(tree, analysis);
+    const ringRebuild = await tree.rebuild();
+    expect(ringRebuild.success).toBe(true);
+
+    const ringEdges = ringRebuild.tessellation!.edges.edges;
+    const visibleRingEdges = ringEdges.filter((e) => !e.isSeam);
+    const seamRingEdges = ringEdges.filter((e) => e.isSeam);
+
+    // As 4 bordas circulares (topo/base externa e interna) são preservadas com >= 128 pontos
+    expect(visibleRingEdges.length).toBe(4);
+    for (const edge of visibleRingEdges) {
+      expect(edge.pointCount).toBeGreaterThanOrEqual(128);
+    }
+    // As costuras verticais/radiais (0°/360°) são marcadas como isSeam = true
+    expect(seamRingEdges.length).toBeGreaterThanOrEqual(2);
+
+    // Testa também um Tronco de Cone (boilermaking_cone)
+    const coneTree = new CadFeatureTree();
+    coneTree.addFeature({
+      name: "Tronco de Cone",
+      type: "boilermaking_cone",
+      parameters: {
+        bottomDiameter: 200,
+        topDiameter: 120,
+        height: 100,
+        thickness: 0,
+      },
+    });
+    const coneRebuild = await coneTree.rebuild();
+    expect(coneRebuild.success).toBe(true);
+    const visibleConeEdges = coneRebuild.tessellation!.edges.edges.filter((e) => !e.isSeam);
+    const seamConeEdges = coneRebuild.tessellation!.edges.edges.filter((e) => e.isSeam);
+    expect(visibleConeEdges.length).toBe(2);
+    for (const edge of visibleConeEdges) {
+      expect(edge.pointCount).toBeGreaterThanOrEqual(128);
+    }
+    expect(seamConeEdges.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("Teste J: Polilinha circular discretizada (ex: 24 lados) é promovida a círculo analítico de 128 segmentos", () => {
+    const polyPts = Array.from({ length: 24 }, (_, i) => {
+      const a = (i / 24) * Math.PI * 2;
+      return { x: 50 + 80 * Math.cos(a), y: -30 + 80 * Math.sin(a) };
+    });
+    const detected = detectAnalyticalCircle2D(polyPts);
+    expect(detected).toBeDefined();
+    expect(detected!.cx).toBeCloseTo(50, 2);
+    expect(detected!.cy).toBeCloseTo(-30, 2);
+    expect(detected!.r).toBeCloseTo(80, 2);
+
+    const polyEntity: Entity = {
+      id: "poly_circle_24",
+      type: "polyline",
+      layer: "corte",
+      closed: true,
+      pts: polyPts,
+    };
+    const analysis = analyze2DSketchFor3D([polyEntity], 4.0);
+    expect(analysis.status).toBe("VALID_SOLID");
+    expect(analysis.contours[0]!.circle).toBeDefined();
+    expect(analysis.contours[0]!.circle!.r).toBeCloseTo(80, 2);
+    expect(analysis.contours[0]!.points.length).toBe(128);
+  });
 });
+

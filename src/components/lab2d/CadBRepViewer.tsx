@@ -562,7 +562,12 @@ export function CadBRepViewer({
       }
 
       const analysis = analyze2DSketchFor3D(entities2D, thickness);
-      rendererRef.current?.setSketchWireframes(analysis.wireframes, true);
+      const extrudedIdSet = new Set(analysis.sourceEntityIds);
+      const visibleWireframes =
+        analysis.status === "VALID_SOLID"
+          ? analysis.wireframes.filter((wf) => wf.isConstruction || !extrudedIdSet.has(wf.id))
+          : analysis.wireframes;
+      rendererRef.current?.setSketchWireframes(visibleWireframes, visibleWireframes.length > 0);
 
       if (analysis.bounds2D) {
         setParamA(Math.round(analysis.bounds2D.width * 10) / 10);

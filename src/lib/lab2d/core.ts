@@ -173,13 +173,13 @@ export function entityPoints(e: Entity): Vec2[] {
 
 /** Pontos usados para enquadramento e hit-test (curvas entram amostradas). */
 export function outlinePoints(e: Entity): Vec2[] {
-  if (e.type === "path") return samplePath(e.start, e.segs, e.closed, 10);
+  if (e.type === "path") return samplePath(e.start, e.segs, e.closed, 24);
   if (e.type === "ellipse") {
     const rot = e.rotation ?? 0;
     const cosR = Math.cos(rot);
     const sinR = Math.sin(rot);
-    return Array.from({ length: 32 }, (_, i) => {
-      const a = (i / 32) * Math.PI * 2;
+    return Array.from({ length: 128 }, (_, i) => {
+      const a = (i / 128) * Math.PI * 2;
       const px = e.rx * Math.cos(a);
       const py = e.ry * Math.sin(a);
       return {

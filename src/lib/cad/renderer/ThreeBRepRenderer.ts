@@ -223,11 +223,12 @@ export class ThreeBRepRenderer {
     this.onGizmoCommitCallback = options.onGizmoCommit;
     this.setupGizmo();
 
-    // 8. Inicialização de Materiais
+    // 8. Inicialização de Materiais (Smooth Shading ativo nas paredes curvas)
     this.baseSolidMaterial = new THREE.MeshStandardMaterial({
       color: 0x94a3b8,
       roughness: 0.38,
       metalness: 0.72,
+      flatShading: false,
       polygonOffset: true,
       polygonOffsetFactor: 1,
       polygonOffsetUnits: 1,
@@ -240,6 +241,7 @@ export class ThreeBRepRenderer {
       emissiveIntensity: 0.45,
       roughness: 0.3,
       metalness: 0.6,
+      flatShading: false,
       polygonOffset: true,
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
@@ -252,6 +254,7 @@ export class ThreeBRepRenderer {
       emissiveIntensity: 0.45,
       roughness: 0.3,
       metalness: 0.6,
+      flatShading: false,
       polygonOffset: true,
       polygonOffsetFactor: -1,
       polygonOffsetUnits: -1,
@@ -264,6 +267,7 @@ export class ThreeBRepRenderer {
       emissiveIntensity: 0.25,
       roughness: 0.3,
       metalness: 0.6,
+      flatShading: false,
       polygonOffset: true,
       polygonOffsetFactor: -0.5,
       polygonOffsetUnits: -0.5,
@@ -382,6 +386,8 @@ export class ThreeBRepRenderer {
     if (edges && edges.edges.length > 0) {
       for (const edge of edges.edges) {
         if (edge.pointCount < 2) continue;
+        // Elimina linhas de costura radiais/verticais (seam edges em 0°/360° e arestas internas suaves < 35°)
+        if (edge.isSeam) continue;
         const lineGeo = new THREE.BufferGeometry();
         lineGeo.setAttribute(
           "position",
@@ -410,8 +416,8 @@ export class ThreeBRepRenderer {
   }
 
   /**
-   * Renderiza os fios do esboço 2D diretamente no plano de trabalho XY (Z = 0.05) da cena 3D.
-   * Essencial para o Caso 4.2 (esboços abertos sem sólido fechado) e para continuidade visual 2D <-> 3D.
+   * Renderiza os fios do esboço 2D diretamente no plano de trabalho XY (Z = 0) da cena 3D.
+   * Essencial para o Caso 4.2 (esboços abertos sem sólido fechado) e para linhas de referência.
    */
   public setSketchWireframes(wireframes: Sketch3DWireframe[], visible = true): void {
     this.currentWireframes = wireframes;
@@ -423,7 +429,7 @@ export class ThreeBRepRenderer {
     const isDark = this.currentTheme === "dark";
     for (const wf of wireframes) {
       if (wf.points.length < 2) continue;
-      const pts3 = wf.points.map((p) => new THREE.Vector3(p.x, p.y, (p.z ?? 0) + 0.06));
+      const pts3 = wf.points.map((p) => new THREE.Vector3(p.x, p.y, p.z ?? 0));
       if (wf.closed && pts3.length >= 3) {
         pts3.push(pts3[0]!.clone());
       }
@@ -439,6 +445,7 @@ export class ThreeBRepRenderer {
         color,
         transparent: true,
         opacity: wf.isConstruction ? 0.55 : 0.92,
+        depthTest: true,
       });
       const line = new THREE.Line(geo, mat);
       line.name = `sketch_wf_${wf.id}`;
