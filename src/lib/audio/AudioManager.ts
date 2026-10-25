@@ -20,6 +20,8 @@ export type SoundEffectId =
   | "ui_action"
   | "ui_nav"
   | "ui_ratchet"
+  | "ui_pop"
+  | "ui_tick"
   | "ui_toggle_open"
   | "ui_toggle_close"
   // CHAMFER & CAD Core
@@ -566,6 +568,40 @@ export class AudioManager {
           oscMetal.start(now);
           osc.stop(now + 0.025);
           oscMetal.stop(now + 0.025);
+          break;
+        }
+
+        case "ui_pop": {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(520, now);
+          osc.frequency.exponentialRampToValueAtTime(1120, now + 0.045);
+
+          gain.gain.setValueAtTime(0.24, now);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+
+          osc.connect(gain);
+          gain.connect(targetBus);
+          osc.start(now);
+          osc.stop(now + 0.055);
+          break;
+        }
+
+        case "ui_tick": {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.setValueAtTime(1600, now);
+          osc.frequency.exponentialRampToValueAtTime(600, now + 0.018);
+
+          gain.gain.setValueAtTime(0.18, now);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.022);
+
+          osc.connect(gain);
+          gain.connect(targetBus);
+          osc.start(now);
+          osc.stop(now + 0.025);
           break;
         }
 

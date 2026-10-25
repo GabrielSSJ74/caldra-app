@@ -17,6 +17,11 @@ import {
   isFlatTop2DView,
   type OrbitPresetId,
 } from "@/lib/lab2d/orbit3dController";
+import {
+  DEFAULT_CHAMFER_WIREFRAME_3D_STYLE,
+  type ChamferWireframe3DStyleConfig,
+} from "@/lib/lab2d/chamferWireframe3D";
+import type { EdgeMode } from "@/lib/viz3d/cameraPresets";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
@@ -29,6 +34,10 @@ export interface ChamferOrbit3DPopoverProps {
   onToggleOrbitTool: (nextActive?: boolean) => void;
   onSelectPreset: (presetId: OrbitPresetId) => void;
   isDark?: boolean;
+  renderStyle3D?: EdgeMode;
+  onChangeRenderStyle3D?: (mode: EdgeMode) => void;
+  wireframe3DStyle?: ChamferWireframe3DStyleConfig;
+  onChangeWireframe3DStyle?: (next: ChamferWireframe3DStyleConfig) => void;
 }
 
 /** Ícone técnico vetorial de Órbita 3D com anel elíptico e tríade de eixos */
@@ -71,6 +80,10 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
   onToggleOrbitTool,
   onSelectPreset,
   isDark = true,
+  renderStyle3D = "shaded-edges",
+  onChangeRenderStyle3D,
+  wireframe3DStyle = DEFAULT_CHAMFER_WIREFRAME_3D_STYLE,
+  onChangeWireframe3DStyle,
 }: ChamferOrbit3DPopoverProps) {
   const [popoverOpen, setPopoverOpen] = useState(false);
   const triggerWrapRef = useRef<HTMLDivElement>(null);
@@ -308,8 +321,75 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
               </button>
             </div>
 
+            {/* SELETOR DE REPRESENTAÇÃO VISUAL 3D (SÓLIDO / SOMB / ARAME) */}
+            {onChangeRenderStyle3D && (
+              <div className="mb-1.5 rounded-lg border border-slate-800/90 bg-slate-900/60 p-1">
+                <div className="mb-1 flex items-center justify-between px-1">
+                  <span className="font-mono text-[8.5px] font-bold tracking-wider text-slate-400 uppercase">
+                    ESTILO DE VISUALIZAÇÃO 3D
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-1">
+                  <button
+                    type="button"
+                    data-testid="chamfer-orbit3d-style-solid-edges"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      AudioManager.play("ui_select");
+                      onChangeRenderStyle3D("shaded-edges");
+                    }}
+                    className={cn(
+                      "rounded px-1.5 py-1 font-mono text-[9px] font-bold uppercase transition-colors cursor-pointer text-center",
+                      renderStyle3D === "shaded-edges"
+                        ? "bg-cyan-600 text-white shadow-xs"
+                        : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200",
+                    )}
+                    title="Sólido Metálico 3D com Arestas Técnicas Visíveis"
+                  >
+                    SÓLIDO
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="chamfer-orbit3d-style-solid"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      AudioManager.play("ui_select");
+                      onChangeRenderStyle3D("shaded");
+                    }}
+                    className={cn(
+                      "rounded px-1.5 py-1 font-mono text-[9px] font-bold uppercase transition-colors cursor-pointer text-center",
+                      renderStyle3D === "shaded"
+                        ? "bg-cyan-600 text-white shadow-xs"
+                        : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200",
+                    )}
+                    title="Sólido Metálico 3D Puro (Sem Arestas)"
+                  >
+                    SOMB
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="chamfer-orbit3d-style-wireframe"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      AudioManager.play("ui_select");
+                      onChangeRenderStyle3D("wireframe");
+                    }}
+                    className={cn(
+                      "rounded px-1.5 py-1 font-mono text-[9px] font-bold uppercase transition-colors cursor-pointer text-center",
+                      renderStyle3D === "wireframe"
+                        ? "bg-cyan-600 text-white shadow-xs"
+                        : "bg-slate-900 text-slate-400 hover:bg-slate-800 hover:text-slate-200",
+                    )}
+                    title="Wireframe Técnico 3D com Hierarquia de Arestas e Profundidade Óptica"
+                  >
+                    ARAME
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* Lista de Vistas Predefinidas */}
-            <div className="space-y-0.5 max-h-[310px] overflow-y-auto pr-0.5">
+            <div className="space-y-0.5 max-h-[260px] overflow-y-auto pr-0.5">
               {ORBIT_PRESETS.filter((p) => p.id !== "free").map((preset) => {
                 const isSelected =
                   activePreset === preset.id ||
@@ -343,6 +423,73 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
                 );
               })}
             </div>
+
+            {/* Controles Discretos de Estilo 3D (Hierarquia de Arestas & Profundidade Óptica) */}
+            {onChangeWireframe3DStyle && renderStyle3D === "wireframe" && (
+              <div className="mt-1.5 border-t border-slate-800/80 pt-1.5 space-y-1">
+                <div className="flex items-center justify-between px-1">
+                  <span className="font-mono text-[8.5px] font-bold tracking-wider text-slate-400 uppercase">
+                    ESTILO WIREFRAME 3D
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="chamfer-orbit3d-reset-style"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      onChangeWireframe3DStyle({ ...DEFAULT_CHAMFER_WIREFRAME_3D_STYLE });
+                    }}
+                    className="font-mono text-[8px] text-cyan-400 hover:text-cyan-300 underline cursor-pointer"
+                    title="Restaurar parâmetros de estilo padrão da Imagem 2"
+                  >
+                    Restaurar Estilo Padrão
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    data-testid="chamfer-orbit3d-toggle-hierarchy"
+                    onClick={() => {
+                      triggerHaptic("tap");
+                      onChangeWireframe3DStyle({
+                        ...wireframe3DStyle,
+                        hierarchyEnabled: !wireframe3DStyle.hierarchyEnabled,
+                      });
+                    }}
+                    className={cn(
+                      "flex items-center justify-between rounded border px-1.5 py-1 font-mono text-[9px] font-bold transition-colors cursor-pointer",
+                      wireframe3DStyle.hierarchyEnabled
+                        ? "border-cyan-500/45 bg-cyan-950/60 text-cyan-200"
+                        : "border-slate-800 bg-slate-900/70 text-slate-400 hover:text-slate-200",
+                    )}
+                    title="Alternar Hierarquia 3D (Wireframe Técnico com Profundidade Óptica)"
+                  >
+                    <span>Hierarquia 3D</span>
+                    <span className="text-[8px]">{wireframe3DStyle.hierarchyEnabled ? "ON" : "OFF"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="chamfer-orbit3d-toggle-hidden-edges"
+                    onClick={() => {
+                      triggerHaptic("tap");
+                      onChangeWireframe3DStyle({
+                        ...wireframe3DStyle,
+                        showHiddenEdges: !wireframe3DStyle.showHiddenEdges,
+                      });
+                    }}
+                    className={cn(
+                      "flex items-center justify-between rounded border px-1.5 py-1 font-mono text-[9px] font-bold transition-colors cursor-pointer",
+                      wireframe3DStyle.showHiddenEdges
+                        ? "border-sky-500/45 bg-sky-950/60 text-sky-200"
+                        : "border-slate-800 bg-slate-900/70 text-slate-400 hover:text-slate-200",
+                    )}
+                    title="Alternar exibição de Arestas Ocultas tracejadas (#53647B)"
+                  >
+                    <span>Arestas Ocultas</span>
+                    <span className="text-[8px]">{wireframe3DStyle.showHiddenEdges ? "ON" : "OFF"}</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* Rodapé informativo */}
             <div className="mt-1.5 border-t border-slate-800/80 pt-1.5 px-1 flex items-center justify-between text-[8.5px] font-mono text-slate-400">

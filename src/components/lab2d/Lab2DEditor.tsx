@@ -175,6 +175,10 @@ import {
 } from "@/lib/lab2d/workspace";
 import { buildIndex } from "@/lib/lab2d/spatialIndex";
 import { drawScene } from "@/lib/lab2d/canvasScene";
+import {
+  DEFAULT_CHAMFER_WIREFRAME_3D_STYLE,
+  type ChamferWireframe3DStyleConfig,
+} from "@/lib/lab2d/chamferWireframe3D";
 import { drawFlow, drawSim } from "@/lib/lab2d/flow";
 import { buildSimPath, sampleSim, SIM_LABEL } from "@/lib/lab2d/simulation";
 import { createGroup, dissolveGroup, expandSelection, pruneGroups, type GroupDef } from "@/lib/lab2d/groups";
@@ -282,6 +286,8 @@ import { ChamferDirectDimensionEditor } from "./ChamferDirectDimensionEditor";
 import { ChamferPrecisionLoupeOverlay } from "./ChamferPrecisionLoupeOverlay";
 import { ChamferOrbit3DPopover } from "./ChamferOrbit3DPopover";
 import { ChamferAxesGizmo3D } from "./ChamferAxesGizmo3D";
+import { ChamferUnified3DViewport } from "./ChamferUnified3DViewport";
+import type { EdgeMode } from "@/lib/viz3d/cameraPresets";
 import {
   applyOrbitDragDelta,
   computeSmartOrbitPivot,
@@ -290,6 +296,7 @@ import {
   getOrbitPresetDefinition,
   interpolateOrbitAngles,
   isFlatTop2DView,
+  ISO_CANONICAL_ELEVATION_DEG,
   ORBIT_TRANSITION_DURATION_MS,
   unprojectOrbit2DToWorkplanePoint,
   type OrbitPresetId,
@@ -798,30 +805,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [morphDurationMs, setMorphDurationMs] = useState<number>(MORPH_TO_3D_DURATION_MS);
   const [morphStartProgress3D, setMorphStartProgress3D] = useState<number | undefined>(undefined);
 
-  const transitionTo3D = useCallback((targetMode: "3d" | "flanges" = "3d") => {
-    const { state, durationMs, startProgress3D } = morphControllerRef.current.requestTo3D();
-    setActiveMode(targetMode);
-    setSolidOpen(true);
-    setMorphState(state);
-    setMorphDurationMs(durationMs);
-    setMorphStartProgress3D(startProgress3D);
-    setMorphDirection("to3d");
-  }, []);
-
-  const transitionTo2D = useCallback(() => {
-    const { state, durationMs, startProgress3D } = morphControllerRef.current.requestTo2D();
-    setActiveMode("2d");
-    setMorphState(state);
-    setMorphDurationMs(durationMs);
-    setMorphStartProgress3D(startProgress3D);
-    if (state === "2D_IDLE") {
-      setMorphDirection(null);
-      setSolidOpen(false);
-    } else {
-      setMorphDirection("to2d");
-    }
-  }, []);
-
   const handleMorphFrame0Ready = useCallback(() => {
     const nextState = morphControllerRef.current.beginTransitionTo3D();
     setMorphState(nextState);
@@ -862,11 +845,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [isoPieceBuilderOpen, setIsoPieceBuilderOpen] = useState<boolean>(false);
   const [isoPreview, setIsoPreview] = useState<{ entities: Entity[]; dims: Dimension[] } | null>(null);
 
-  /* FERRAMENTA DE ÓRBITA 3D UNIFICADA (2D SKETCH INCLINADO + CAD 3D) */
+  /* FERRAMENTA DE ÓRBITA 3D UNIFICADA (2D SKETCH INCLINADO + CAD 3D IN-PLACE) */
   const [orbitAzimuthDeg, setOrbitAzimuthDeg] = useState<number>(0);
   const [orbitElevationDeg, setOrbitElevationDeg] = useState<number>(90);
   const [orbitPreset, setOrbitPreset] = useState<OrbitPresetId>("top");
   const [isOrbitToolActive, setIsOrbitToolActive] = useState<boolean>(false);
+  const [renderStyle3D, setRenderStyle3D] = useState<EdgeMode>("shaded-edges");
+  const [wireframe3DStyle, setWireframe3DStyle] = useState<ChamferWireframe3DStyleConfig>(() => ({
+    ...DEFAULT_CHAMFER_WIREFRAME_3D_STYLE,
+  }));
   const [orbitCommand3D, setOrbitCommand3D] = useState<{
     azimuthDeg: number;
     elevationDeg: number;
@@ -1262,6 +1249,37 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [],
   );
 
+  // Motor Sólido 3D In-Place ativo no canvas unificado quando em vista 3D e modo SÓLIDO / SOMB
+  const isInPlaceSolid3DActive =
+    !solidOpen &&
+    (activeMode === "3d" || orbitProjection2D.isTilted || isOrbitToolActive) &&
+    renderStyle3D !== "wireframe";
+
+  const transitionTo3D = useCallback(
+    (targetMode: "3d" | "flanges" = "3d") => {
+      setActiveMode(targetMode);
+      setSolidOpen(false);
+      setIsOrbitToolActive(true);
+      setRenderStyle3D((prev) => (prev === "wireframe" ? "shaded-edges" : prev));
+      if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+        animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+      }
+    },
+    [animateOrbitTo],
+  );
+
+  const transitionTo2D = useCallback(() => {
+    setActiveMode("2d");
+    setSolidOpen(false);
+    setMorphDirection(null);
+    setMorphState("2D_IDLE");
+    setIsOrbitToolActive(false);
+    orbitDragRef.current = null;
+    if (!isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+      animateOrbitTo(0, 90, "top");
+    }
+  }, [animateOrbitTo]);
+
   const handleSelectOrbitPreset = useCallback(
     (presetId: OrbitPresetId) => {
       if (presetId === "free") {
@@ -1269,6 +1287,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setOrbitPreset("free");
         toast.info("Órbita 3D Livre ativada — arraste na tela para rotacionar a perspectiva.");
         return;
+      }
+      if (presetId === "top") {
+        setIsOrbitToolActive(false);
+      } else {
+        setIsOrbitToolActive(true);
       }
       const def = getOrbitPresetDefinition(presetId);
       animateOrbitTo(def.azimuthDeg, def.elevationDeg, presetId);
@@ -1985,8 +2008,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const ctx = el.getContext("2d");
     if (!ctx) return;
 
-    if (solidOpen) {
-      // Em modo 3D Traçagem, limpa o canvas para dar lugar ao SVG vetorial nítido
+    if (solidOpen || isInPlaceSolid3DActive) {
+      // Em modo 3D Sólido In-Place ou Traçagem, limpa o canvas 2D para exibir o sólido B-Rep sem duplicação
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, canvasSize.w, canvasSize.h);
       return;
@@ -2011,8 +2034,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       isoPlane,
       sheetThickness: thickness,
       orbitProjection: orbitProjection2D,
+      wireframe3DStyle,
+      showGrid,
+      gridStep: Math.max(15, grid * 2.5),
     });
-  }, [cadPhase, drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isDark, drawingProjection, entities, isDraggingUnlocked, isoPlane, thickness, orbitProjection2D]);
+  }, [cadPhase, drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isInPlaceSolid3DActive, isDark, drawingProjection, entities, isDraggingUnlocked, isoPlane, thickness, orbitProjection2D, wireframe3DStyle, showGrid, grid]);
 
   /* ------------------------------------------------------- FLUXO CALDRA */
   /*
@@ -3219,13 +3245,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       dragEntityRef.current !== null
     );
 
-    if (loupeMode !== "off" && ptrsRef.current.size === 1 && tool !== "pan" && isDrawingOrEditingTool) {
+    if (
+      loupeMode !== "off" &&
+      ptrsRef.current.size === 1 &&
+      tool !== "pan" &&
+      (loupeMode === "pinned" || isDrawingOrEditingTool)
+    ) {
       setLoupeVisible(true);
       setLoupeScreenPos({ x: ev.clientX, y: ev.clientY });
       setLoupeCadPos(p);
     }
 
-    if (loupeMode !== "off" && ev.pointerType === "touch" && isDrawingOrEditingTool) {
+    if (
+      loupeMode !== "off" &&
+      ev.pointerType === "touch" &&
+      (loupeMode === "pinned" || isDrawingOrEditingTool)
+    ) {
       setLoupeScreenPos({ x: ev.clientX, y: ev.clientY });
       setLoupeCadPos(p);
     }
@@ -3860,11 +3895,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       (tool === "select" && (isDraggingEntityRef.current || selection.length > 0 || marquee !== null))
     );
 
-    if (loupeMode !== "off" && ptrsRef.current.size === 1 && isDrawingOrEditingToolMove && !panRef.current && tool !== "pan") {
+    if (
+      loupeMode !== "off" &&
+      ptrsRef.current.size === 1 &&
+      (loupeMode === "pinned" || isDrawingOrEditingToolMove) &&
+      !panRef.current &&
+      tool !== "pan"
+    ) {
       setLoupeVisible(true);
       setLoupeScreenPos({ x: ev.clientX, y: ev.clientY });
       setLoupeCadPos(raw);
-    } else if (loupeMode === "off" || ptrsRef.current.size >= 2 || panRef.current || tool === "pan") {
+    } else if (loupeMode === "off" || ptrsRef.current.size !== 1 || panRef.current || tool === "pan") {
       setLoupeVisible(false);
     }
 
@@ -5362,8 +5403,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </button>
             </div>
 
-            {/* SELETOR DE PROJEÇÃO: [ ORTO 2D | ISO 2D ] (ATIVO NO MODO 2D) */}
-            {activeMode === "2d" && !solidOpen && (
+            {/* SELETOR DE PROJEÇÃO: [ ORTO 2D | ISO 2D ] (SEMPRE PRESENTE NO WORKSPACE UNIFICADO) */}
+            {!solidOpen && (
               <div
                 className={cn(
                   "hidden sm:flex items-center rounded-lg border p-0.5 shadow-xs",
@@ -5376,14 +5417,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     triggerHaptic("selection");
                     AudioManager.play("ui_select");
                     setDrawingProjection("orthographic");
-                    setIsOrbitToolActive(false);
-                    if (!isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
-                      animateOrbitTo(0, 90, "top");
-                    }
+                    transitionTo2D();
                   }}
                   className={cn(
                     "rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
-                    drawingProjection === "orthographic" && !orbitProjection2D.isTilted
+                    drawingProjection === "orthographic" && !orbitProjection2D.isTilted && activeMode === "2d"
                       ? "bg-slate-700 text-white shadow-xs"
                       : "text-slate-400 hover:text-slate-200",
                   )}
@@ -5425,14 +5463,106 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 const target = typeof next === "boolean" ? next : !isOrbitToolActive;
                 setIsOrbitToolActive(target);
                 if (target) {
+                  if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+                    animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+                  }
                   toast.info(
                     "Modo Órbita 3D ativo — arraste na área de desenho para rotacionar a perspectiva.",
                   );
                 }
               }}
-              onSelectPreset={handleSelectOrbitPreset}
+              onSelectPreset={(presetId) => {
+                if (presetId === "top") {
+                  setActiveMode("2d");
+                }
+                handleSelectOrbitPreset(presetId);
+              }}
               isDark={isDark}
+              renderStyle3D={renderStyle3D}
+              onChangeRenderStyle3D={setRenderStyle3D}
+              wireframe3DStyle={wireframe3DStyle}
+              onChangeWireframe3DStyle={setWireframe3DStyle}
             />
+
+            {/* SELETOR DIRETO DE REPRESENTAÇÃO 3D NA BARRA SUPERIOR: [ SÓLIDO | SOMB | ARAME ] */}
+            {(activeMode === "3d" || isOrbitToolActive || orbitProjection2D.isTilted) && (
+              <div
+                data-testid="chamfer-topbar-3d-style-selector"
+                className={cn(
+                  "flex items-center rounded-lg border p-0.5 shadow-xs",
+                  isDark ? "border-slate-800 bg-slate-900/90" : "border-slate-200 bg-slate-100",
+                )}
+              >
+                <button
+                  type="button"
+                  data-testid="chamfer-topbar-style-solid-edges"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    AudioManager.play("ui_select");
+                    setRenderStyle3D("shaded-edges");
+                    if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+                      setIsOrbitToolActive(true);
+                      animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+                    }
+                  }}
+                  className={cn(
+                    "rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
+                    renderStyle3D === "shaded-edges"
+                      ? "bg-cyan-600 text-white shadow-xs"
+                      : isDark
+                        ? "text-slate-400 hover:text-slate-200"
+                        : "text-slate-600 hover:text-slate-900",
+                  )}
+                  title="Sólido Metálico 3D com Arestas Técnicas Visíveis"
+                >
+                  SÓLIDO
+                </button>
+                <button
+                  type="button"
+                  data-testid="chamfer-topbar-style-solid"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    AudioManager.play("ui_select");
+                    setRenderStyle3D("shaded");
+                    if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+                      setIsOrbitToolActive(true);
+                      animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+                    }
+                  }}
+                  className={cn(
+                    "rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
+                    renderStyle3D === "shaded"
+                      ? "bg-cyan-600 text-white shadow-xs"
+                      : isDark
+                        ? "text-slate-400 hover:text-slate-200"
+                        : "text-slate-600 hover:text-slate-900",
+                  )}
+                  title="Sólido Metálico 3D Puro (Sem Arestas)"
+                >
+                  SOMB
+                </button>
+                <button
+                  type="button"
+                  data-testid="chamfer-topbar-style-wireframe"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    AudioManager.play("ui_select");
+                    setRenderStyle3D("wireframe");
+                  }}
+                  className={cn(
+                    "rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
+                    renderStyle3D === "wireframe"
+                      ? "bg-cyan-600 text-white shadow-xs"
+                      : isDark
+                        ? "text-slate-400 hover:text-slate-200"
+                        : "text-slate-600 hover:text-slate-900",
+                  )}
+                  title="Wireframe Técnico 3D com Hierarquia de Arestas e Profundidade Óptica"
+                >
+                  ARAME
+                </button>
+              </div>
+            )}
           </div>
 
           {/* LADO DIREITO: HISTÓRICO + SALVAMENTO/STATUS + FERRAMENTAS GLOBAIS */}
@@ -6184,6 +6314,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 </svg>
               )}
           <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
+          {/* MOTOR 3D SÓLIDO IN-PLACE ACOPLADO AO CANVAS UNIFICADO DO 2D SKETCH */}
+          <ChamferUnified3DViewport
+            active={isInPlaceSolid3DActive}
+            entities={drawable}
+            thickness={thickness}
+            edgeMode={renderStyle3D}
+            view2D={view}
+            viewportSize={canvasSize}
+            azimuthDeg={orbitAzimuthDeg}
+            elevationDeg={orbitElevationDeg}
+            pivot2D={smartOrbitPivot}
+            isDark={isDark}
+            initialTreeJson={cad3dTreeJson}
+            onTreeChange={setCad3dTreeJson}
+          />
           {/* FLUXO CALDRA / PRÉVIA CNC — camada de UI, nunca exportada */}
           {!solidOpen && <canvas ref={flowRef} className="pointer-events-none absolute inset-0 size-full" />}
 
@@ -6221,44 +6366,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 orbitProjection2D.isTilted ? ` ${orbitProjection2D.svgMatrix}` : ""
               }`}
             >
-              {/* GRADE 3D DO PLANO DE TRABALHO QUANDO INCLINADO PELA ÓRBITA 3D */}
-              {!solidOpen && showGrid && orbitProjection2D.isTilted && (
-                <g pointerEvents="none" aria-label="Grade do plano de trabalho em perspectiva 3D">
-                  {Array.from({ length: 41 }, (_, idx) => {
-                    const step = Math.max(10, gridConfig.majorStep);
-                    const coord = (idx - 20) * step;
-                    const span = 20 * step;
-                    const isMajor = idx % 2 === 0;
-                    const stroke = isDark
-                      ? isMajor
-                        ? "rgba(56, 189, 248, 0.16)"
-                        : "rgba(148, 163, 184, 0.08)"
-                      : isMajor
-                        ? "rgba(2, 132, 199, 0.18)"
-                        : "rgba(100, 116, 139, 0.10)";
-                    return (
-                      <React.Fragment key={`orbit_grid_${idx}`}>
-                        <line
-                          x1={smartOrbitPivot.x - span}
-                          y1={smartOrbitPivot.y + coord}
-                          x2={smartOrbitPivot.x + span}
-                          y2={smartOrbitPivot.y + coord}
-                          stroke={stroke}
-                          strokeWidth={(isMajor ? 1.0 : 0.65) / view.k}
-                        />
-                        <line
-                          x1={smartOrbitPivot.x + coord}
-                          y1={smartOrbitPivot.y - span}
-                          x2={smartOrbitPivot.x + coord}
-                          y2={smartOrbitPivot.y + span}
-                          stroke={stroke}
-                          strokeWidth={(isMajor ? 1.0 : 0.65) / view.k}
-                        />
-                      </React.Fragment>
-                    );
-                  })}
-                </g>
-              )}
               {/* RENDERIZADOR SVG ESTILO MODELOS DE TRAÇAGEM (Modo 3D / Planificada na mesma tela) */}
               {solidOpen && (
                 <TracagemSvgRenderer
@@ -6293,20 +6400,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 <g pointerEvents="none" aria-label="Eixos do sistema CAD">
                   {drawingProjection === "isometric" ? (
                     <>
-                      {/* Anéis elípticos concêntricos de referência espacial isométrica */}
-                      {[100, 220, 360].map((rIso, rIdx) => (
-                        <ellipse
-                          key={`iso_ring_${rIso}`}
-                          cx={0}
-                          cy={0}
-                          rx={rIso * Math.sqrt(1.5)}
-                          ry={rIso * Math.sqrt(0.5)}
-                          fill="none"
-                          stroke={isDark ? "rgba(56, 189, 248, 0.08)" : "rgba(2, 132, 199, 0.12)"}
-                          strokeWidth={0.75 / view.k}
-                          strokeDasharray={rIdx === 1 ? `${4 / view.k} ${3 / view.k}` : undefined}
-                        />
-                      ))}
                       {/* Eixo X Isométrico (30° - Largura) */}
                       <line
                         x1={-1e5 * Math.cos(Math.PI / 6)}
@@ -7355,19 +7448,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           )}
 
-          {/* INDICADOR INTERATIVO DE EIXOS 3D (GIZMO X Y Z) — CANTO NÃO INTRUSIVO */}
-          <div className="pointer-events-none absolute bottom-12 left-4 z-35 flex flex-col items-start gap-1.5">
-            <ChamferAxesGizmo3D
-              azimuthDeg={orbitAzimuthDeg}
-              elevationDeg={orbitElevationDeg}
-              activePreset={orbitPreset}
-              isOrbitToolActive={isOrbitToolActive}
-              onSelectPreset={handleSelectOrbitPreset}
-              onDragOrbitDelta={handleDragOrbitDelta}
-              onToggleOrbitTool={() => setIsOrbitToolActive((v) => !v)}
-              isDark={isDark}
-            />
-          </div>
+          {/* INDICADOR INTERATIVO DE EIXOS 3D (GIZMO X Y Z) — VISÍVEL SOMENTE QUANDO ÓRBITA 3D ESTIVER ATIVA */}
+          {isOrbitToolActive && (
+            <div className="pointer-events-none absolute bottom-12 left-4 z-35 flex flex-col items-start gap-1.5">
+              <ChamferAxesGizmo3D
+                azimuthDeg={orbitAzimuthDeg}
+                elevationDeg={orbitElevationDeg}
+                activePreset={orbitPreset}
+                isOrbitToolActive={isOrbitToolActive}
+                onSelectPreset={handleSelectOrbitPreset}
+                onDragOrbitDelta={handleDragOrbitDelta}
+                onToggleOrbitTool={() => setIsOrbitToolActive((v) => !v)}
+                isDark={isDark}
+              />
+            </div>
+          )}
 
           {/* BARRA FLUTUANTE DE COMANDO / FEEDBACK CAD TÉCNICO (CANVAS 2D) */}
           <div

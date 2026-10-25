@@ -46,22 +46,24 @@ export interface IsoPlaneConfig {
   accentColor: string;
 }
 
-// Paleta Técnica "Isometric Wireframe Solid" (Wireframe Técnico Volumétrico + Sólido Translúcido X-Ray)
+// Paleta Técnica "Technical Wireframe CAD com Profundidade Óptica" (Padrão Imagem 2)
 export const ISO_TECH_SHADING = {
   canvasBg: "#050914",
-  topFace: "rgba(18, 40, 74, 0.25)",
-  leftFace: "rgba(15, 34, 62, 0.28)",
-  rightFace: "rgba(24, 52, 92, 0.18)",
-  chamferFace: "rgba(30, 64, 112, 0.22)",
-  bendFace: "rgba(38, 84, 145, 0.22)",
-  wallFace: "rgba(56, 189, 248, 0.12)",
-  backFace: "rgba(12, 26, 48, 0.10)",
-  holeWall: "rgba(56, 189, 248, 0.12)",
-  holeBottomVoid: "rgba(5, 9, 20, 0.36)",
-  edgeStroke: "#E8F4FF",
-  internalEdgeStroke: "rgba(186, 230, 253, 0.65)",
-  backEdgeStroke: "rgba(125, 211, 252, 0.32)",
-  centerlineStroke: "rgba(148, 163, 184, 0.35)",
+  topFace: "rgba(18, 33, 56, 0.24)",
+  leftFace: "rgba(14, 26, 45, 0.18)",
+  rightFace: "rgba(14, 26, 45, 0.16)",
+  chamferFace: "rgba(18, 33, 56, 0.20)",
+  bendFace: "rgba(20, 38, 64, 0.20)",
+  wallFace: "rgba(14, 26, 45, 0.16)",
+  backFace: "rgba(10, 18, 32, 0.10)",
+  holeWall: "rgba(8, 15, 28, 0.30)",
+  holeBottomVoid: "rgba(5, 9, 20, 0.42)",
+  edgeStroke: "#F8FAFC",
+  internalEdgeStroke: "rgba(145, 163, 184, 0.68)",
+  bottomVisibleStroke: "rgba(101, 117, 138, 0.50)",
+  backEdgeStroke: "rgba(83, 100, 123, 0.32)",
+  centerlineStroke: "rgba(56, 189, 248, 0.38)",
+  vertexDotFill: "rgba(255, 255, 255, 0.92)",
 } as const;
 
 // Fatores canônicos de escala do isocírculo em projeção isométrica 2D
@@ -423,15 +425,15 @@ export function buildIsoHoleWithDepth(
           isIsoSolidFace: true,
           isIsoExtrudedBackFace: true,
           fillColor: "none",
-          strokeColor: ISO_TECH_SHADING.internalEdgeStroke,
-          strokeWidth: 1.05,
+          strokeColor: ISO_TECH_SHADING.bottomVisibleStroke,
+          strokeWidth: 1.0,
           depth: baseDepthOrder + 2,
         },
       });
     }
   }
 
-  // 3. Contorno frontal de entrada nítido da elipse superior do furo (1.4px #E8F4FF)
+  // 3. Contorno frontal de entrada nítido da elipse superior do furo (1.7px #F8FAFC)
   const topHoleRing: Entity = {
     id: uid(),
     layer,
@@ -451,7 +453,7 @@ export function buildIsoHoleWithDepth(
       isIsoSolidFace: true,
       fillColor: "none",
       strokeColor: ISO_TECH_SHADING.edgeStroke,
-      strokeWidth: 1.4,
+      strokeWidth: 1.7,
       vertexDots: true,
       depth: baseDepthOrder + 3,
     },

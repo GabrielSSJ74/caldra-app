@@ -45,6 +45,10 @@ export interface ThreeBRepRendererOptions {
   onGizmoCommit?: (delta: { x: number; y: number; z: number }, entity: CadSelectedEntity | null) => void;
   onCameraRotate?: (rot: { x: number; y: number; z: number }) => void;
   onOrbitAnglesChange?: (angles: { azimuthDeg: number; elevationDeg: number }) => void;
+  transparentBackground?: boolean;
+  showFloorGrid?: boolean;
+  disableOrbitControls?: boolean;
+  onDemandRender?: boolean;
 }
 
 export class ThreeBRepRenderer {
@@ -99,6 +103,12 @@ export class ThreeBRepRenderer {
   private onGizmoCommitCallback?: (delta: { x: number; y: number; z: number }, entity: CadSelectedEntity | null) => void;
   private onCameraRotateCallback?: (rot: { x: number; y: number; z: number }) => void;
   private onOrbitAnglesChangeCallback?: (angles: { azimuthDeg: number; elevationDeg: number }) => void;
+  private transparentBackground = false;
+  private showFloorGrid = true;
+  private disableOrbitControls = false;
+  private onDemandRender = false;
+  private isPaused = false;
+  private renderQueued = false;
 
   // Gizmo CAD Interativo (FASE 06)
   private transformControls: TransformControls | null = null;
@@ -158,6 +168,10 @@ export class ThreeBRepRenderer {
     this.onMeasureCallback = options.onMeasure;
     this.onCameraRotateCallback = options.onCameraRotate;
     this.onOrbitAnglesChangeCallback = options.onOrbitAnglesChange;
+    this.transparentBackground = options.transparentBackground ?? false;
+    this.showFloorGrid = options.showFloorGrid ?? true;
+    this.disableOrbitControls = options.disableOrbitControls ?? false;
+    this.onDemandRender = options.onDemandRender ?? false;
 
     // 1. Cena Three.js
     this.scene = new THREE.Scene();
@@ -201,9 +215,12 @@ export class ThreeBRepRenderer {
 
     // 4. OrbitControls
     this.controls = new OrbitControls(this.activeCamera, this.renderer.domElement);
-    this.controls.enableDamping = true;
+    this.controls.enableDamping = !this.disableOrbitControls;
     this.controls.dampingFactor = 0.08;
     this.controls.target.set(0, 0, 0);
+    if (this.disableOrbitControls) {
+      this.controls.enabled = false;
+    }
 
     // 5. Grupos de Geometria
     this.rootGroup = new THREE.Group();
@@ -326,7 +343,11 @@ export class ThreeBRepRenderer {
     this.pointer = new THREE.Vector2();
 
     this.bindEvents();
-    this.startRenderLoop();
+    if (this.onDemandRender) {
+      this.requestRender();
+    } else {
+      this.startRenderLoop();
+    }
   }
 
   private setupLighting(): void {
@@ -392,35 +413,97 @@ export class ThreeBRepRenderer {
     }
 
     if (edges && edges.edges.length > 0) {
+      const minZ = shape.bounds?.min.z ?? 0;
+      const maxZ = shape.bounds?.max.z ?? 10;
+      const zSpan = Math.max(0.1, maxZ - minZ);
+      const zTol = zSpan * 0.08;
+
+      const topEdgeMat = new THREE.LineBasicMaterial({
+        color: 0xf8fafc,
+        linewidth: 1.8,
+        transparent: true,
+        opacity: 0.98,
+      });
+      const lateralEdgeMat = new THREE.LineBasicMaterial({
+        color: 0x91a3b8,
+        linewidth: 1.15,
+        transparent: true,
+        opacity: 0.68,
+      });
+      const bottomEdgeMat = new THREE.LineBasicMaterial({
+        color: 0x65758a,
+        linewidth: 1.0,
+        transparent: true,
+        opacity: 0.52,
+      });
+
       for (const edge of edges.edges) {
         if (edge.pointCount < 2) continue;
         // Elimina linhas de costura radiais/verticais (seam edges em 0°/360° e arestas internas suaves < 35°)
         if (edge.isSeam) continue;
+
+        let eMinZ = Infinity;
+        let eMaxZ = -Infinity;
+        for (let i = 2; i < edge.points.length; i += 3) {
+          const pz = edge.points[i]!;
+          if (pz < eMinZ) eMinZ = pz;
+          if (pz > eMaxZ) eMaxZ = pz;
+        }
+
+        const isTopEdge = eMinZ >= maxZ - zTol;
+        const isBottomEdge = eMaxZ <= minZ + zTol;
+        const mat = isTopEdge
+          ? topEdgeMat
+          : isBottomEdge
+            ? bottomEdgeMat
+            : lateralEdgeMat;
+
         const lineGeo = new THREE.BufferGeometry();
         lineGeo.setAttribute(
           "position",
           new THREE.BufferAttribute(edge.points, 3),
         );
-        const line = new THREE.Line(lineGeo, this.edgeMaterial);
+        const line = new THREE.Line(lineGeo, mat);
         line.name = `edge_${edge.edgeIndex}`;
-        line.userData = { edgeIndex: edge.edgeIndex, edgeId: edge.edgeId };
+        line.userData = {
+          edgeIndex: edge.edgeIndex,
+          edgeId: edge.edgeId,
+          edgeHierarchy: isTopEdge ? "top_primary" : isBottomEdge ? "bottom_visible" : "lateral_wall",
+        };
         this.edgesGroup.add(line);
       }
     }
 
     if (mesh.positions.length > 0) {
+      const maxZ = shape.bounds?.max.z ?? 10;
+      const minZ = shape.bounds?.min.z ?? 0;
+      const zTol = Math.max(0.05, (maxZ - minZ) * 0.08);
+      const topPositions: number[] = [];
+      for (let i = 0; i < mesh.positions.length; i += 3) {
+        const pz = mesh.positions[i + 2]!;
+        if (pz >= maxZ - zTol) {
+          topPositions.push(mesh.positions[i]!, mesh.positions[i + 1]!, pz);
+        }
+      }
       const vGeo = new THREE.BufferGeometry();
-      vGeo.setAttribute("position", new THREE.BufferAttribute(mesh.positions, 3));
+      vGeo.setAttribute(
+        "position",
+        new THREE.BufferAttribute(
+          topPositions.length >= 3 ? new Float32Array(topPositions) : mesh.positions,
+          3,
+        ),
+      );
       const vPoints = new THREE.Points(vGeo, this.vertexMaterial);
       vPoints.name = "cad_vertices";
       this.verticesGroup.add(vPoints);
     }
 
     this.updateVisibilityByEdgeMode();
-    if (autoFit || (!this.hasInitialCameraPose && !this.lastCameraMatch)) {
+    if (autoFit || (!this.hasInitialCameraPose && !this.lastCameraMatch && !this.disableOrbitControls)) {
       this.fitView(false);
     }
     this.updateGridAndBackground();
+    this.requestRender();
   }
 
   /**
@@ -461,6 +544,7 @@ export class ThreeBRepRenderer {
     }
 
     this.updateGridAndBackground();
+    this.requestRender();
   }
 
   private clearSketchWireframes(): void {
@@ -538,26 +622,50 @@ export class ThreeBRepRenderer {
   public setEdgeMode(mode: EdgeMode): void {
     this.edgeMode = mode;
     this.updateVisibilityByEdgeMode();
+    this.requestRender();
   }
 
   private updateVisibilityByEdgeMode(): void {
+    const solidMesh = this.meshGroup.getObjectByName("solid_mesh") as THREE.Mesh | undefined;
     switch (this.edgeMode) {
       case "shaded":
         this.meshGroup.visible = true;
+        if (solidMesh) {
+          this.baseSolidMaterial.color.setHex(0x94a3b8);
+          this.baseSolidMaterial.transparent = false;
+          this.baseSolidMaterial.opacity = 1.0;
+          this.baseSolidMaterial.depthWrite = true;
+        }
         this.edgesGroup.visible = false;
         this.verticesGroup.visible = this.selectionType === "vertex";
         break;
 
       case "shaded-edges":
         this.meshGroup.visible = true;
+        if (solidMesh) {
+          this.baseSolidMaterial.color.setHex(0x94a3b8);
+          this.baseSolidMaterial.transparent = false;
+          this.baseSolidMaterial.opacity = 1.0;
+          this.baseSolidMaterial.depthWrite = true;
+        }
         this.edgesGroup.visible = true;
         this.verticesGroup.visible = this.selectionType === "vertex";
         break;
 
       case "wireframe":
-        this.meshGroup.visible = false;
+        // Em modo ARAME (Technical Wireframe CAD com Profundidade Óptica), exibe o véu translúcido
+        // azul-noturno ultra-sutil (rgba(18, 33, 56, 0.24)) com arestas hierárquicas e micro-pontos brancos
+        this.meshGroup.visible = true;
+        if (solidMesh) {
+          this.baseSolidMaterial.color.setHex(0x122138);
+          this.baseSolidMaterial.transparent = true;
+          this.baseSolidMaterial.opacity = 0.24;
+          this.baseSolidMaterial.depthWrite = false;
+        }
         this.edgesGroup.visible = true;
         this.verticesGroup.visible = true;
+        this.vertexMaterial.color.setHex(0xffffff);
+        this.vertexMaterial.size = 3.6;
         break;
     }
   }
@@ -949,8 +1057,8 @@ export class ThreeBRepRenderer {
     const sinB = Math.sin(beta);
     const cosB = Math.cos(beta);
 
-    const dir: [number, number, number] = [sinA * cosB, -cosA * cosB, sinB];
-    const up: [number, number, number] = [-sinA * sinB, cosA * sinB, cosB];
+    const dir: [number, number, number] = [-sinA * cosB, -cosA * cosB, sinB];
+    const up: [number, number, number] = [sinA * sinB, cosA * sinB, cosB];
 
     const currentOffset = this.camera.position.clone().sub(this.controls.target);
     let distance = currentOffset.length();
@@ -993,6 +1101,7 @@ export class ThreeBRepRenderer {
         startTime: performance.now(),
         duration: Math.max(60, durationMs),
       };
+      this.requestRender();
     } else {
       this.cameraAnimation = null;
       this.camera.position.copy(targetCameraPos);
@@ -1001,7 +1110,102 @@ export class ThreeBRepRenderer {
       this.orthoCamera.up.copy(targetUpVec);
       this.controls.target.copy(targetCenter);
       this.controls.update();
+      this.requestRender();
     }
+  }
+
+  /**
+   * Sincroniza 1:1 a câmera 3D do ThreeBRepRenderer com o viewport do 2D SKETCH
+   * (pan tx/ty, zoom k, dimensões W/H, ângulos orbitais θ/φ e pivô inteligente 2D).
+   */
+  public syncWith2DViewport(params: {
+    view2D: { tx: number; ty: number; k: number };
+    viewportWidth: number;
+    viewportHeight: number;
+    azimuthDeg: number;
+    elevationDeg: number;
+    pivot2D: { x: number; y: number; z: number };
+  }): void {
+    const W = Math.max(10, params.viewportWidth || this.container.clientWidth || 800);
+    const H = Math.max(10, params.viewportHeight || this.container.clientHeight || 600);
+    const safeK =
+      Number.isFinite(params.view2D.k) && params.view2D.k > 1e-4 ? params.view2D.k : 1;
+    const safeTx = Number.isFinite(params.view2D.tx) ? params.view2D.tx : W * 0.5;
+    const safeTy = Number.isFinite(params.view2D.ty) ? params.view2D.ty : H * 0.5;
+
+    if (
+      Math.abs(this.camera.aspect - W / H) > 1e-3 ||
+      this.renderer.domElement.clientWidth !== W ||
+      this.renderer.domElement.clientHeight !== H
+    ) {
+      this.camera.aspect = W / H;
+      this.camera.updateProjectionMatrix();
+      this.renderer.setSize(W, H, false);
+    }
+
+    const alpha = (params.azimuthDeg * Math.PI) / 180;
+    const beta = (Math.max(-90, Math.min(90, params.elevationDeg)) * Math.PI) / 180;
+    const cosA = Math.cos(alpha);
+    const sinA = Math.sin(alpha);
+    const cosB = Math.cos(beta);
+    const sinB = Math.sin(beta);
+
+    // Base ortonormal Z-up idêntica ao controlador orbital do 2D SKETCH e ao Gizmo 3D:
+    // +X_3D = +x_2D, +Y_3D = -y_2D, +Z_3D = espessura da chapa
+    const rightVec = new THREE.Vector3(cosA, -sinA, 0).normalize();
+    const upVec = new THREE.Vector3(sinA * sinB, cosA * sinB, cosB).normalize();
+    const outDirVec = new THREE.Vector3(-sinA * cosB, -cosA * cosB, sinB).normalize();
+
+    const px = Number.isFinite(params.pivot2D.x) ? params.pivot2D.x : 0;
+    const py = Number.isFinite(params.pivot2D.y) ? params.pivot2D.y : 0;
+    const pz = Number.isFinite(params.pivot2D.z) ? params.pivot2D.z : 0;
+
+    // No mundo 3D do ThreeBRepRenderer, Y = -y_2D
+    const pivot3D = new THREE.Vector3(px, -py, pz);
+
+    // Posição do pivô na tela 2D (em pixels):
+    const pivotScreenX = safeTx + px * safeK;
+    const pivotScreenY = safeTy + py * safeK;
+
+    // Deslocamento do centro da viewport (W/2, H/2) em relação ao pivô na tela, convertido para mm:
+    const panMmRight = (W * 0.5 - pivotScreenX) / safeK;
+    const panMmUp = -(H * 0.5 - pivotScreenY) / safeK;
+
+    const target3D = pivot3D
+      .clone()
+      .addScaledVector(rightVec, panMmRight)
+      .addScaledVector(upVec, panMmUp);
+
+    const visibleHeightMm = Math.max(5, H / safeK);
+    const visibleWidthMm = Math.max(5, W / safeK);
+    const fovRad = (this.camera.fov * Math.PI) / 360;
+    const distance = Math.max(15, (visibleHeightMm * 0.5) / Math.tan(fovRad));
+
+    const camPos = target3D.clone().addScaledVector(outDirVec, distance);
+
+    this.hasInitialCameraPose = true;
+    this.cameraAnimation = null;
+
+    this.camera.position.copy(camPos);
+    this.camera.up.copy(upVec);
+    this.camera.lookAt(target3D);
+
+    this.orthoCamera.position.copy(camPos);
+    this.orthoCamera.up.copy(upVec);
+    this.orthoCamera.left = -visibleWidthMm * 0.5;
+    this.orthoCamera.right = visibleWidthMm * 0.5;
+    this.orthoCamera.top = visibleHeightMm * 0.5;
+    this.orthoCamera.bottom = -visibleHeightMm * 0.5;
+    this.orthoCamera.zoom = 1;
+    this.orthoCamera.lookAt(target3D);
+    this.orthoCamera.updateProjectionMatrix();
+
+    this.controls.target.copy(target3D);
+    if (this.controls.enabled) {
+      this.controls.update();
+    }
+
+    this.requestRender();
   }
 
   public fitToModel(animate = true): void {
@@ -1016,11 +1220,14 @@ export class ThreeBRepRenderer {
   public setTheme(theme: "light" | "dark"): void {
     this.currentTheme = theme;
     this.updateGridAndBackground();
+    this.requestRender();
   }
 
   public updateGridAndBackground(): void {
     const isDark = this.currentTheme === "dark";
-    this.scene.background = new THREE.Color(isDark ? 0x051833 : 0xf8fafc);
+    this.scene.background = this.transparentBackground
+      ? null
+      : new THREE.Color(isDark ? 0x051833 : 0xf8fafc);
 
     if (this.gridHelper) {
       this.scene.remove(this.gridHelper);
@@ -1031,6 +1238,10 @@ export class ThreeBRepRenderer {
         this.gridHelper.material.dispose();
       }
       this.gridHelper = null;
+    }
+
+    if (!this.showFloorGrid) {
+      return;
     }
 
     let maxDim = 400;
@@ -1415,8 +1626,36 @@ export class ThreeBRepRenderer {
   };
 
   // ==========================================
-  // LOOP DE RENDERIZAÇÃO
+  // LOOP DE RENDERIZAÇÃO E ZERO-IDLE ON-DEMAND
   // ==========================================
+
+  public setPaused(paused: boolean): void {
+    this.isPaused = paused;
+    if (paused && this.animFrameId) {
+      cancelAnimationFrame(this.animFrameId);
+      this.animFrameId = 0;
+      this.renderQueued = false;
+    } else if (!paused) {
+      if (this.onDemandRender) {
+        this.requestRender();
+      } else if (!this.animFrameId) {
+        this.startRenderLoop();
+      }
+    }
+  }
+
+  public requestRender(): void {
+    if (this.isDestroyed || this.isPaused) return;
+    if (!this.onDemandRender) return;
+    if (this.renderQueued) return;
+    this.renderQueued = true;
+    this.animFrameId = requestAnimationFrame(() => {
+      this.renderQueued = false;
+      this.animFrameId = 0;
+      if (this.isDestroyed || this.isPaused) return;
+      this.renderer.render(this.scene, this.activeCamera);
+    });
+  }
 
   private startRenderLoop(): void {
     const loop = () => {

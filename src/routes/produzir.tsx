@@ -444,9 +444,10 @@ export function ProduzirPage() {
     return DEMO_PROJECTS as unknown as Project[];
   }, [hasRealProjects, realProjects]);
 
-  const featuredProject = useMemo(() => {
+  const featuredProject = useMemo((): Project => {
     if (hasRealProjects) {
-      return [...realProjects].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      const top = [...realProjects].sort((a, b) => b.updatedAt - a.updatedAt)[0];
+      if (top) return top;
     }
     return DEMO_PROJECTS[0] as unknown as Project;
   }, [hasRealProjects, realProjects]);

@@ -886,7 +886,7 @@ export function AprendaPage() {
 
           {/* Renderização da Tabela Selecionada com Estilo Industrial Escuro */}
           {(() => {
-            const currentTable = SHOP_FLOOR_TABLES.find((t) => t.id === activeTableTab) || SHOP_FLOOR_TABLES[0];
+            const currentTable = (SHOP_FLOOR_TABLES.find((t) => t.id === activeTableTab) ?? SHOP_FLOOR_TABLES[0])!;
             return (
               <div className="rounded-2xl bg-zinc-900/90 border border-zinc-800/80 p-4 sm:p-5 shadow-xl">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-zinc-800 gap-2">

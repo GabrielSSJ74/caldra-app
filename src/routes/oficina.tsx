@@ -42,13 +42,16 @@ import {
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/oficina")({
-  validateSearch: (search: Record<string, unknown>): { tab?: TabId } => ({
-    tab:
-      typeof search.tab === "string" &&
-      ["chapa", "custo", "orcamento", "ficha", "nuvem"].includes(search.tab)
-        ? (search.tab as TabId)
-        : undefined,
-  }),
+  validateSearch: (search: Record<string, unknown>): { tab?: TabId } => {
+    const rawTab = search["tab"];
+    if (
+      typeof rawTab === "string" &&
+      ["chapa", "custo", "orcamento", "ficha", "nuvem"].includes(rawTab)
+    ) {
+      return { tab: rawTab as TabId };
+    }
+    return {};
+  },
   head: () => ({
     meta: [
       { title: "Oficina Digital Integrada — Corte, BOM e Orçamento | CALDRA" },

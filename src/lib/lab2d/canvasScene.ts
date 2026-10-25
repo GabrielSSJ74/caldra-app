@@ -11,8 +11,14 @@ import type { Box, Entity } from "./core";
 import { samplePath } from "./bezier";
 import { SELECTION_COLOR, techStyle } from "./technical";
 import { viewportBox, type SpatialIndex } from "./spatialIndex";
-import { getIsoExtrusionVector, ISO_TECH_SHADING, type IsoPlane } from "./isometricEngine";
+import { ISO_TECH_SHADING, type IsoPlane } from "./isometricEngine";
 import type { WorkplaneOrbitProjection2D } from "./orbit3dController";
+import {
+  buildClassifiedWireframeScene3D,
+  renderClassifiedWireframeSceneToCanvas,
+  resolveBaseToTopExtrusionVector,
+  type ChamferWireframe3DStyleConfig,
+} from "./chamferWireframe3D";
 
 export type SceneView = { tx: number; ty: number; k: number };
 
@@ -37,6 +43,12 @@ export type SceneOptions = {
   sheetThickness?: number;
   /** Projeção orbital 3D ativa no modo 2D SKETCH */
   orbitProjection?: WorkplaneOrbitProjection2D;
+  /** Configuração do estilo de hierarquia de arestas e profundidade óptica 3D */
+  wireframe3DStyle?: Partial<ChamferWireframe3DStyleConfig>;
+  /** Exibe a grade orbital no plano base Z = 0 abaixo da peça 3D */
+  showGrid?: boolean;
+  /** Passo principal da grade (mm) */
+  gridStep?: number;
 };
 
 /** Ordena por camada técnica ou por profundidade Z (Painter's Algorithm para oclusão 2.5D/3D). */
@@ -153,7 +165,7 @@ function drawVertexMicroDots(
   isLight?: boolean,
 ) {
   if (!pts.length) return;
-  const r = 1.6 * inv;
+  const r = 1.75 * inv;
   ctx.save();
   ctx.setLineDash([]);
   ctx.fillStyle = isLight ? "#0284C7" : ISO_TECH_SHADING.vertexDotFill;
@@ -206,6 +218,12 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
   const inv = 1 / safeK;
   const isoSheetThickness =
     typeof opts.sheetThickness === "number" && opts.sheetThickness > 0 ? opts.sheetThickness : 5;
+  const is3DWireframeActive =
+    (opts.isIsometric || isOrbitTilted) &&
+    opts.wireframe3DStyle?.hierarchyEnabled !== false;
+
+  // Coleta entidades planas elegíveis para o motor de Hierarquia de Arestas e Profundidade Óptica 3D
+  const planarFor3D: Entity[] = [];
 
   // agrupa por estilo para minimizar trocas de estado do contexto
   let currentLayer = "";
@@ -213,26 +231,36 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     if (e.type === "text") continue;
     if (lod && screenSize(index.boxOfId(e.id), view.k) < 1.2) continue;
 
-    // 1. RENDERIZAÇÃO VOLUMÉTRICA ISOMÉTRICA (ISOMETRIC WIREFRAME SOLID / X-RAY)
+    // 1. RENDERIZAÇÃO VOLUMÉTRICA ISOMÉTRICA EXPLÍCITA (ISOMETRIC SOLID FACES / HLR)
     if (e.params?.isIsoSolidFace) {
       currentLayer = ""; // reset layer tracking
       let fillCol = (e.params.fillColor as string) || ISO_TECH_SHADING.topFace;
       let strokeCol = (e.params.strokeColor as string) || ISO_TECH_SHADING.edgeStroke;
       if (opts.isLight) {
-        if (strokeCol === "#E8F4FF" || strokeCol === "#FFFFFF" || strokeCol === "#F8FAFC") {
+        if (
+          strokeCol === "#E8F4FF" ||
+          strokeCol === "#FFFFFF" ||
+          strokeCol === "#F8FAFC" ||
+          strokeCol === "#F1F5F9"
+        ) {
           strokeCol = "#0F172A";
-        } else if (strokeCol.includes("186, 230, 253")) {
+        } else if (strokeCol.includes("186, 230, 253") || strokeCol.includes("145, 163, 184")) {
           strokeCol = "rgba(15, 23, 42, 0.58)";
-        } else if (strokeCol.includes("125, 211, 252")) {
+        } else if (strokeCol.includes("125, 211, 252") || strokeCol.includes("83, 100, 123")) {
           strokeCol = "rgba(2, 132, 199, 0.38)";
         }
-        if (fillCol.includes("15, 34, 62") || fillCol.includes("18, 40, 74") || fillCol.includes("24, 52, 92")) {
+        if (
+          fillCol.includes("15, 34, 62") ||
+          fillCol.includes("18, 40, 74") ||
+          fillCol.includes("18, 33, 56") ||
+          fillCol.includes("14, 26, 45")
+        ) {
           fillCol = "rgba(14, 165, 233, 0.08)";
         } else if (fillCol.includes("5, 9, 20")) {
           fillCol = "rgba(241, 245, 249, 0.65)";
         }
       }
-      const strokeW = (typeof e.params.strokeWidth === "number" ? e.params.strokeWidth : 1.4) * inv;
+      const strokeW = (typeof e.params.strokeWidth === "number" ? e.params.strokeWidth : 1.7) * inv;
       const noStroke = !!e.params.noStroke;
       const customDash = Array.isArray(e.params.dash) ? (e.params.dash as number[]) : null;
 
@@ -257,134 +285,15 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       }
       ctx.restore();
 
-      if (!lod && e.params.vertexDots) {
+      if (!lod && e.params.vertexDots && opts.wireframe3DStyle?.showVertexDots !== false) {
         drawVertexMicroDots(ctx, collectEntityVertices(e), inv, opts.isLight);
       }
       continue;
     }
 
-    // 2. PASSAGEM VOLUMÉTRICA EM TEMPO REAL (ISO 2D WIREFRAME SOLID / ÓRBITA 3D) PARA ENTIDADES PLANAS
-    if (
-      (opts.isIsometric || isOrbitTilted) &&
-      !e.isConstruction &&
-      e.layer !== "centro" &&
-      e.layer !== "referencia" &&
-      e.layer !== "dobra" &&
-      e.type !== "point"
-    ) {
-      currentLayer = "";
-      const entPlane = ((e.params?.isoPlane as IsoPlane) || opts.isoPlane || "top") as IsoPlane;
-      const ext =
-        isOrbitTilted && orbitProj && !opts.isIsometric
-          ? orbitProj.localExtrusion
-          : getIsoExtrusionVector(entPlane, isoSheetThickness);
-      const isHole = e.layer === "furo" || e.type === "ellipse" || e.type === "circle";
-
-      const backStroke = opts.isLight ? "rgba(2, 132, 199, 0.35)" : ISO_TECH_SHADING.backEdgeStroke;
-      const wallStroke = opts.isLight ? "rgba(15, 23, 42, 0.55)" : ISO_TECH_SHADING.internalEdgeStroke;
-      const frontStroke = opts.isLight ? "#0F172A" : ISO_TECH_SHADING.edgeStroke;
-      const faceFill = opts.isLight
-        ? isHole
-          ? "rgba(241, 245, 249, 0.55)"
-          : "rgba(14, 165, 233, 0.08)"
-        : isHole
-          ? ISO_TECH_SHADING.holeBottomVoid
-          : entPlane === "left"
-            ? ISO_TECH_SHADING.leftFace
-            : entPlane === "right"
-              ? ISO_TECH_SHADING.rightFace
-              : ISO_TECH_SHADING.topFace;
-      const wallFill = opts.isLight ? "rgba(14, 165, 233, 0.10)" : ISO_TECH_SHADING.wallFace;
-
-      ctx.save();
-      // 2a. Contorno traseiro em X-Ray (deslocado por ext)
-      ctx.save();
-      ctx.translate(ext.x, ext.y);
-      ctx.beginPath();
-      traceEntity(ctx, e, lod);
-      ctx.setLineDash(!lod ? [3 * inv, 2.5 * inv] : []);
-      ctx.strokeStyle = backStroke;
-      ctx.lineWidth = 0.75 * inv;
-      ctx.stroke();
-      ctx.restore();
-
-      // 2b. Paredes laterais de espessura (V_i -> V'_i) e geratrizes tangentes
-      if (!lod) {
-        ctx.setLineDash([]);
-        ctx.strokeStyle = wallStroke;
-        ctx.lineWidth = 0.95 * inv;
-        if (e.type === "polyline" && e.pts.length >= 2) {
-          const n = e.pts.length;
-          const limit = e.closed ? n : n - 1;
-          for (let i = 0; i < limit; i++) {
-            const p0 = e.pts[i]!;
-            const p1 = e.pts[(i + 1) % n]!;
-            ctx.beginPath();
-            ctx.moveTo(p0.x, p0.y);
-            ctx.lineTo(p1.x, p1.y);
-            ctx.lineTo(p1.x + ext.x, p1.y + ext.y);
-            ctx.lineTo(p0.x + ext.x, p0.y + ext.y);
-            ctx.closePath();
-            ctx.fillStyle = wallFill;
-            ctx.fill();
-            ctx.stroke();
-          }
-        } else if (e.type === "line") {
-          ctx.beginPath();
-          ctx.moveTo(e.x1, e.y1);
-          ctx.lineTo(e.x2, e.y2);
-          ctx.lineTo(e.x2 + ext.x, e.y2 + ext.y);
-          ctx.lineTo(e.x1 + ext.x, e.y1 + ext.y);
-          ctx.closePath();
-          ctx.fillStyle = wallFill;
-          ctx.fill();
-          ctx.stroke();
-        } else if (e.type === "ellipse") {
-          const rot = e.rotation ?? 0;
-          const cosR = Math.cos(rot);
-          const sinR = Math.sin(rot);
-          const t1 = { x: e.cx + e.rx * cosR, y: e.cy + e.rx * sinR };
-          const t2 = { x: e.cx - e.rx * cosR, y: e.cy - e.rx * sinR };
-          ctx.beginPath();
-          ctx.moveTo(t1.x, t1.y);
-          ctx.lineTo(t1.x + ext.x, t1.y + ext.y);
-          ctx.moveTo(t2.x, t2.y);
-          ctx.lineTo(t2.x + ext.x, t2.y + ext.y);
-          ctx.stroke();
-        } else if (e.type === "circle") {
-          const extLen = Math.hypot(ext.x, ext.y);
-          const nx = extLen > 1e-6 ? -ext.y / extLen : 1;
-          const ny = extLen > 1e-6 ? ext.x / extLen : 0;
-          ctx.beginPath();
-          ctx.moveTo(e.cx + nx * e.r, e.cy + ny * e.r);
-          ctx.lineTo(e.cx + nx * e.r + ext.x, e.cy + ny * e.r + ext.y);
-          ctx.moveTo(e.cx - nx * e.r, e.cy - ny * e.r);
-          ctx.lineTo(e.cx - nx * e.r + ext.x, e.cy - ny * e.r + ext.y);
-          ctx.stroke();
-        }
-      }
-
-      // 2c. Face frontal translúcida + Aresta principal nítida (1.4px)
-      ctx.setLineDash([]);
-      ctx.beginPath();
-      traceEntity(ctx, e, lod);
-      if (
-        (e.type === "polyline" && e.closed) ||
-        e.type === "circle" ||
-        e.type === "ellipse" ||
-        (e.type === "path" && e.closed)
-      ) {
-        ctx.fillStyle = faceFill;
-        ctx.fill();
-      }
-      ctx.strokeStyle = frontStroke;
-      ctx.lineWidth = 1.4 * inv;
-      ctx.stroke();
-      ctx.restore();
-
-      if (!lod) {
-        drawVertexMicroDots(ctx, collectEntityVertices(e), inv, opts.isLight);
-      }
+    // 2. COleta ENTIDADES PLANAS PARA O MOTOR 3D WIREFRAME TÉCNICO COM PROFUNDIDADE ÓPTICA
+    if (is3DWireframeActive && e.type !== "point") {
+      planarFor3D.push(e);
       continue;
     }
 
@@ -402,6 +311,24 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     ctx.stroke();
   }
 
+  // Renderiza em lote ordenado (Painter's Algorithm + 5 Categorias + Recorte Even-Odd dos Furos)
+  if (planarFor3D.length > 0) {
+    const classifiedScene = buildClassifiedWireframeScene3D(planarFor3D, {
+      isOrbitTilted,
+      orbitProjection: orbitProj,
+      isIsometric: opts.isIsometric,
+      isoPlane: opts.isoPlane,
+      sheetThickness: isoSheetThickness,
+      styleConfig: opts.wireframe3DStyle,
+    });
+    renderClassifiedWireframeSceneToCanvas(ctx, classifiedScene, {
+      invScale: inv,
+      lod,
+      isLight: opts.isLight,
+      styleConfig: opts.wireframe3DStyle,
+    });
+  }
+
   // halo de seleção — destaque temporário, nunca substitui a cor técnica
   if (selection.size) {
     if (opts.isDraggingUnlocked) {
@@ -416,11 +343,26 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       ctx.globalAlpha = opts.isLight ? 0.75 : 0.65;
       ctx.lineWidth = 4.5 * inv;
     }
+    const selTopOffset = is3DWireframeActive
+      ? resolveBaseToTopExtrusionVector({
+          isOrbitTilted,
+          orbitProjection: orbitProj,
+          isIsometric: opts.isIsometric,
+          isoPlane: opts.isoPlane,
+          sheetThickness: isoSheetThickness,
+        }).topOffset
+      : { x: 0, y: 0 };
+
     for (const e of list) {
       if (!selection.has(e.id) || e.type === "text") continue;
+      ctx.save();
+      if (is3DWireframeActive && !e.params?.isIsoSolidFace) {
+        ctx.translate(selTopOffset.x, selTopOffset.y);
+      }
       ctx.beginPath();
       traceEntity(ctx, e, lod);
       ctx.stroke();
+      ctx.restore();
     }
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;

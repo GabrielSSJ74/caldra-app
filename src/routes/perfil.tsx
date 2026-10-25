@@ -43,5 +43,5 @@ export function PerfilRouteComponent() {
     }
   }, []);
 
-  return <PerfilEContaCentral initialSection={initialSection} />;
+  return <PerfilEContaCentral {...(initialSection ? { initialSection } : {})} />;
 }

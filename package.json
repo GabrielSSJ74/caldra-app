@@ -4,9 +4,9 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "dev": "vite dev --host 0.0.0.0 --port 3000",
-    "build": "vite build",
-    "build:dev": "vite build --mode development",
+    "dev": "node scripts/patch-tanstack.cjs && vite dev --host 0.0.0.0 --port 3000",
+    "build": "node scripts/patch-tanstack.cjs && vite build",
+    "build:dev": "node scripts/patch-tanstack.cjs && vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
     "test": "vitest run",

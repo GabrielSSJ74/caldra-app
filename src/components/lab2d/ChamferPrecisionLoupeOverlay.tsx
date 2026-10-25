@@ -242,7 +242,7 @@ export function ChamferPrecisionLoupeOverlay({
 
   // Renderização em Canvas 2D da região ampliada (3x)
   useEffect(() => {
-    if (!visible && !isPinned) return;
+    if (!visible) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -634,7 +634,7 @@ export function ChamferPrecisionLoupeOverlay({
     accentHex,
   ]);
 
-  if (!visible && !isPinned) {
+  if (!visible) {
     return null;
   }
   if (!isPinned && (!screenPos || !Number.isFinite(screenPos.x) || !Number.isFinite(screenPos.y))) {

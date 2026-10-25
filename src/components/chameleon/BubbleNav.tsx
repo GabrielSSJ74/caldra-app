@@ -328,7 +328,7 @@ function NavToolsModal({ open, onClose }: { open: boolean; onClose: () => void }
       icon: Layers,
       color: "caldra-bubble-emerald text-emerald-500",
       to: "/oficina",
-      search: { tab: "chapa" },
+      search: { tab: "chapa" as const },
     },
   ];
 

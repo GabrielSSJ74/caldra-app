@@ -162,38 +162,58 @@ export function TracagemSvgRenderer({
               }}
               className="cursor-pointer"
             >
-              {/* 1. Face Traseira (X-Ray Wireframe) */}
+              {/* 1. Face Base / Arestas Ocultas (Categoria 3.4: #53647B @ 0.32, 0.8px tracejado + véu base rgba(10,18,32,0.10)) */}
               <path
                 d={botPath}
-                fill="rgba(12, 26, 48, 0.10)"
-                stroke="rgba(125, 211, 252, 0.32)"
-                strokeWidth={(0.75 / k)}
-                strokeDasharray={`${3 / k} ${2.5 / k}`}
+                fill="rgba(10, 18, 32, 0.10)"
+                stroke="rgba(83, 100, 123, 0.32)"
+                strokeWidth={0.8 / k}
+                strokeDasharray={`${3.6 / k} ${2.8 / k}`}
                 strokeLinejoin="round"
               />
 
-              {/* 2. Paredes Laterais da Espessura Real da Chapa */}
+              {/* 2. Paredes Laterais de Altura/Espessura (Categoria 3.2: #91A3B8 @ 0.68, 1.1px contínuo + véu rgba(14,26,45,0.16)) */}
               {sideWalls.map((d, wIdx) => (
                 <path
                   key={`wall_${idx}_${wIdx}`}
                   d={d}
-                  fill="rgba(56, 189, 248, 0.12)"
-                  stroke="rgba(186, 230, 253, 0.65)"
-                  strokeWidth={(0.95 / k)}
+                  fill="rgba(14, 26, 45, 0.16)"
+                  stroke="rgba(145, 163, 184, 0.68)"
+                  strokeWidth={1.1 / k}
                   strokeLinejoin="round"
                 />
               ))}
 
-              {/* 3. Face Principal Frontal Translúcida + Contorno Nítido */}
+              {/* 3. Face Superior Principal (Categoria 3.1: #F8FAFC @ 0.98, 1.7px contínuo + véu rgba(18,33,56,0.24) com recorte evenodd dos furos) */}
+              <path
+                d={
+                  topPath +
+                  " " +
+                  s.holes
+                    .map((h) => {
+                      const hTop = h.map((p) => toIso(p.x, p.y, zTop));
+                      return (
+                        hTop
+                          .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
+                          .join(" ") + " Z"
+                      );
+                    })
+                    .join(" ")
+                }
+                fillRule="evenodd"
+                fill={isSel ? "rgba(56, 189, 248, 0.22)" : "rgba(18, 33, 56, 0.24)"}
+                stroke="none"
+              />
               <path
                 d={topPath}
-                fill={isSel ? "rgba(56, 189, 248, 0.22)" : "rgba(18, 40, 74, 0.25)"}
-                stroke={isSel ? "#38BDF8" : "#E8F4FF"}
-                strokeWidth={(1.4 / k)}
+                fill="none"
+                stroke={isSel ? "#38BDF8" : "#F8FAFC"}
+                strokeOpacity={0.98}
+                strokeWidth={1.7 / k}
                 strokeLinejoin="round"
               />
 
-              {/* 4. Furos Volumétricos (Anel de Entrada + Saída X-Ray + Paredes Internas) */}
+              {/* 4. Furos Volumétricos (Anel Inferior #65758A / #53647B + Geratrizes #91A3B8 + Anel Superior #F8FAFC 1.7px) */}
               {s.holes.map((h, hIdx) => {
                 const hTop = h.map((p) => toIso(p.x, p.y, zTop));
                 const hBot = h.map((p) => toIso(p.x, p.y, zBot));
@@ -205,36 +225,53 @@ export function TracagemSvgRenderer({
                   hBot
                     .map((p, i) => `${i === 0 ? "M" : "L"} ${p.x.toFixed(2)} ${p.y.toFixed(2)}`)
                     .join(" ") + " Z";
+                const genStep = Math.max(1, Math.floor(hTop.length / 4));
                 return (
                   <g key={`hole_${idx}_${hIdx}`}>
                     <path
                       d={hBotPath}
-                      fill="none"
-                      stroke="rgba(125, 211, 252, 0.32)"
-                      strokeWidth={(0.75 / k)}
-                      strokeDasharray={`${3 / k} ${2.5 / k}`}
+                      fill="rgba(8, 15, 28, 0.30)"
+                      stroke="rgba(101, 117, 138, 0.50)"
+                      strokeWidth={1.0 / k}
                       strokeLinejoin="round"
                     />
+                    {hTop.map((ptTop, gIdx) => {
+                      if (gIdx % genStep !== 0) return null;
+                      const ptBot = hBot[gIdx];
+                      if (!ptBot) return null;
+                      return (
+                        <line
+                          key={`hgen_${idx}_${hIdx}_${gIdx}`}
+                          x1={ptBot.x}
+                          y1={ptBot.y}
+                          x2={ptTop.x}
+                          y2={ptTop.y}
+                          stroke="rgba(145, 163, 184, 0.68)"
+                          strokeWidth={1.05 / k}
+                        />
+                      );
+                    })}
                     <path
                       d={hTopPath}
-                      fill="rgba(5, 9, 20, 0.36)"
-                      stroke="#E8F4FF"
-                      strokeWidth={(1.35 / k)}
+                      fill="none"
+                      stroke="#F8FAFC"
+                      strokeOpacity={0.98}
+                      strokeWidth={1.7 / k}
                       strokeLinejoin="round"
                     />
                   </g>
                 );
               })}
 
-              {/* 5. Micro-pontos de Vértice Técnicos (r = 1.6px) */}
+              {/* 5. Micro-pontos de Vértice Técnicos na Face Superior (r = 1.75px em #FFFFFF @ 0.92) */}
               {topPts.length <= 48 &&
                 topPts.map((pt, pIdx) => (
                   <circle
                     key={`vdot_${idx}_${pIdx}`}
                     cx={pt.x}
                     cy={pt.y}
-                    r={1.6 / k}
-                    fill="#F8FAFC"
+                    r={1.75 / k}
+                    fill="rgba(255, 255, 255, 0.92)"
                   />
                 ))}
 

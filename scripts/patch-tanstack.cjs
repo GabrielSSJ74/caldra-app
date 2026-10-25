@@ -153,6 +153,20 @@ for (const f of targetFiles) {
   }
 }
 
+// Silence noisy inputValidator deprecation warning in @tanstack/start-plugin-core
+const startCompilerFiles = [
+  path.join(__dirname, "../node_modules/@tanstack/start-plugin-core/dist/esm/start-compiler/handleCreateServerFn.js"),
+  path.join(__dirname, "../node_modules/@tanstack/start-plugin-core/dist/cjs/start-compiler/handleCreateServerFn.cjs"),
+];
+for (const f of startCompilerFiles) {
+  patchFile(f, [
+    {
+      from: 'context.warn?.(`${location}createServerFn().inputValidator() is deprecated. Use createServerFn().validator() instead.`);',
+      to: "/* inputValidator warning silenced */",
+    },
+  ]);
+}
+
 // Remove vite prebundle cache only if files were newly patched so vite re-bundles @tanstack/router-core
 if (anyModified) {
   const viteCache = path.join(__dirname, "../node_modules/.vite");

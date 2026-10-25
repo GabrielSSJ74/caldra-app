@@ -144,10 +144,15 @@ function Biblioteca() {
       widthMm: customWidth,
       heightMm: customHeight,
       wallThicknessMm: customWall,
-      commercialLengthMm: isSheet ? undefined : 6000,
-      sheetAreaMm: isSheet ? { widthMm: customWidth, lengthMm: customHeight } : undefined,
-      linearWeightKgM: isSheet ? undefined : customKgM,
-      areaWeightKgM2: isSheet ? +(customWall * 7.85).toFixed(2) : undefined,
+      ...(isSheet
+        ? {
+            sheetAreaMm: { widthMm: customWidth, lengthMm: customHeight },
+            areaWeightKgM2: +(customWall * 7.85).toFixed(2),
+          }
+        : {
+            commercialLengthMm: 6000,
+            linearWeightKgM: customKgM,
+          }),
       unitWeightKg: unitWeight,
       finish: "Preto",
       unitPriceBRL: customPrice,

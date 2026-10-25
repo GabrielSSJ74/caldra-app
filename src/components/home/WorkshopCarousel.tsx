@@ -344,7 +344,7 @@ export function WorkshopCarousel({
     }
   };
 
-  const currentScene = PILLAR_SCENES[activeIndex];
+  const currentScene = (PILLAR_SCENES[activeIndex] ?? PILLAR_SCENES[0])!;
   const activeModel = useMemo(() => getCachedWire(currentScene.modelSlug), [currentScene.modelSlug]);
 
   // Modelagem Dual-Buffer para interpolação da transição cinemática 3D

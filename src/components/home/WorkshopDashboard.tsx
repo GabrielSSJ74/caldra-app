@@ -337,6 +337,7 @@ export function WorkshopDashboard() {
 
   // Pré-aquecimento em segundo plano (Warm-up Silencioso) do CHAMFER CAD e módulos matemáticos
   useEffect(() => {
+    if (import.meta.env.DEV) return;
     if (typeof window === "undefined") return;
     const prewarm = () => {
       void import("@/components/lab2d/Lab2DEditor");
@@ -344,13 +345,16 @@ export function WorkshopDashboard() {
       void import("@/lib/lab2d/projects");
       void import("@/lib/lab2d/spatialIndex");
     };
-    if ("requestIdleCallback" in window) {
-      const id = (window as any).requestIdleCallback(prewarm, { timeout: 1500 });
-      return () => (window as any).cancelIdleCallback?.(id);
-    } else {
-      const timer = window.setTimeout(prewarm, 200);
-      return () => window.clearTimeout(timer);
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (typeof win.requestIdleCallback === "function") {
+      const id = win.requestIdleCallback(prewarm, { timeout: 1500 });
+      return () => win.cancelIdleCallback?.(id);
     }
+    const timer = window.setTimeout(prewarm, 200);
+    return () => window.clearTimeout(timer);
   }, []);
 
   // Ref para a faixa de rolagem
@@ -943,7 +947,7 @@ function TechnicalToolsSheet({ open, onClose }: { open: boolean; onClose: () => 
       icon: Layers,
       color: "caldra-bubble-emerald text-emerald-500",
       to: "/oficina",
-      search: { tab: "chapa" },
+      search: { tab: "chapa" as const },
     },
     {
       title: "Tarifas de Máquina e Custos",
@@ -951,7 +955,7 @@ function TechnicalToolsSheet({ open, onClose }: { open: boolean; onClose: () => 
       icon: TrendingUp,
       color: "caldra-bubble-indigo text-indigo-500",
       to: "/oficina",
-      search: { tab: "custo" },
+      search: { tab: "custo" as const },
     },
   ];
 
