@@ -91,6 +91,27 @@ export class ChamferIntentInterpreter {
       parameterOverrides: context.parameterOverrides,
       callbacks: context.streamingCallbacks,
     });
+    // Sincronizar entityDelta caso compilePromptInternal tenha resolvido delete_entities / trim_entity seletivos
+    if (plan.compiled?.deletedEntityIds?.length) {
+      v2.entityDelta.deleteCount = Math.max(
+        v2.entityDelta.deleteCount,
+        plan.compiled.deletedEntityIds.length,
+      );
+    }
+    for (const op of plan.operations) {
+      if (op.type === "delete_entities") {
+        const countFromIds = Array.isArray(op.params.target_ids) ? op.params.target_ids.length : 0;
+        const countFromParam =
+          typeof op.params.deleted_count === "number" ? op.params.deleted_count : 0;
+        v2.entityDelta.deleteCount = Math.max(
+          v2.entityDelta.deleteCount,
+          countFromIds,
+          countFromParam,
+        );
+      } else if (op.type === "trim_entity") {
+        v2.entityDelta.modifyCount = Math.max(v2.entityDelta.modifyCount, 1);
+      }
+    }
     plan.v2 = v2;
 
     if (v2.isRefusal && v2.refusalMessage) {

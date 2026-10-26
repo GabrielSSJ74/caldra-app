@@ -22,6 +22,9 @@ import {
   parseDxfTextToIntentAttachment,
   parseSketchImageToIntentAttachment,
   ChamferIntentInterpreter,
+  createExecutionSandbox,
+  executeDslV2ToolCallsBatch,
+  resolveCanonicalPositionRef,
 } from "./index";
 
 describe("CHAMFER INTENT 2.0 — Fases 4, 5, 6 e 7 do Claude (Voz, Modificação Contextual, Suíte Golden ≥40 e Extras)", () => {
@@ -281,7 +284,7 @@ describe("CHAMFER INTENT 2.0 — Fases 4, 5, 6 e 7 do Claude (Voz, Modificação
         activeLayer: "corte",
       },
     );
-    expect(trimPlan.validation.valid).toBe(true);
+    expect(trimPlan.validation.status).toBe("valid");
     expect(trimPlan.operations.some((op) => op.type === "trim_entity")).toBe(true);
 
     // 7. Limite de 500 operações por turno (§19.3)
@@ -290,7 +293,7 @@ describe("CHAMFER INTENT 2.0 — Fases 4, 5, 6 e 7 do Claude (Voz, Modificação
       { existingEntities: [], selectedEntityIds: [], activeLayer: "corte" },
     );
     expect(
-      runawayPlan.v2?.manufacturingReport.geometryErrors.some(
+      runawayPlan.v2?.manufacturingReport.errors.some(
         (err) => err.code === "OPERATION_LIMIT_EXCEEDED",
       ),
     ).toBe(true);
@@ -302,6 +305,65 @@ describe("CHAMFER INTENT 2.0 — Fases 4, 5, 6 e 7 do Claude (Voz, Modificação
     );
     expect(provisionalPlan.v2?.decisionStatus).toBe("provisional");
     expect(provisionalPlan.v2?.requiresPremiseConfirmation).toBe(true);
+  });
+
+  it("Gemini 4 Argon Fases B a G: Ancoragem canônica pos (abs, center, edge_offset, from, polar) e create_cutout", () => {
+    const sandbox = createExecutionSandbox({});
+    const batch = executeDslV2ToolCallsBatch(
+      [
+        {
+          id: "g1",
+          name: "create_plate",
+          args: { id: "plate_1", width: 400, height: 250 },
+        },
+        {
+          id: "g2",
+          name: "create_cutout",
+          args: {
+            id: "cutout_1",
+            parent: "plate_1",
+            shape: "rect",
+            width: 80,
+            height: 50,
+            pos: { center: "plate_1" },
+          },
+        },
+        {
+          id: "g3",
+          name: "create_circle",
+          args: {
+            id: "hole_offset",
+            d: 16,
+            pos: { edge_offset: { id: "plate_1", side: "left", dist: 40 } },
+          },
+        },
+      ],
+      sandbox,
+    );
+
+    expect(batch.ok).toBe(true);
+    const state = batch.finalState;
+
+    // Ancoragem center
+    expect(resolveCanonicalPositionRef({ center: "plate_1" }, state)).toEqual({ x: 200, y: 125 });
+
+    // Ancoragem edge_offset
+    expect(
+      resolveCanonicalPositionRef({ edge_offset: { id: "plate_1", side: "right", dist: 30 } }, state),
+    ).toEqual({ x: 370, y: 125 });
+
+    // Ancoragem from (tl, br, top)
+    expect(
+      resolveCanonicalPositionRef({ from: { id: "plate_1", anchor: "tl", dx: 20, dy: -20 } }, state),
+    ).toEqual({ x: 20, y: 230 });
+    expect(
+      resolveCanonicalPositionRef({ from: { id: "plate_1", anchor: "br", dx: -25, dy: 25 } }, state),
+    ).toEqual({ x: 375, y: 25 });
+
+    // Ancoragem polar
+    expect(
+      resolveCanonicalPositionRef({ polar: { center: [200, 125], r: 50, angle: 0 } }, state),
+    ).toEqual({ x: 250, y: 125 });
   });
 });
 

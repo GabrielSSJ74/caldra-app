@@ -57,6 +57,7 @@ export type DslV2ToolName =
   // 6.3 Furação e recortes
   | "add_holes"
   | "add_cutout"
+  | "create_cutout"
   // 6.4 Modificação e transformação
   | "edit_feature"
   | "transform"
@@ -121,6 +122,43 @@ export type DslV2CornerSelection =
   | "top_two"
   | "bottom_two";
 
+export type DslV2PositionAnchor =
+  | "center"
+  | "start"
+  | "end"
+  | "mid"
+  | "tl"
+  | "tr"
+  | "br"
+  | "bl"
+  | "top"
+  | "bottom"
+  | "left"
+  | "right";
+
+export interface DslV2PositionRef {
+  abs?: [number, number];
+  center?: string;
+  edge_offset?: {
+    id?: string;
+    side: "left" | "right" | "top" | "bottom";
+    dist: number;
+  };
+  from?: {
+    id?: string;
+    anchor: DslV2PositionAnchor;
+    dx?: number;
+    dy?: number;
+  };
+  polar?: {
+    center?: [number, number] | string;
+    r: number;
+    angle: number;
+  };
+  dx?: number;
+  dy?: number;
+}
+
 // ============================================================================
 // INTERFACES DE ARGUMENTOS TIPADOS POR FERRAMENTA (DSL v2)
 // ============================================================================
@@ -130,6 +168,7 @@ export interface CreatePlateArgs {
   width: number;
   height: number;
   origin?: [number, number] | "center" | "bottom_left";
+  pos?: DslV2PositionRef;
   corner_radius?: number;
   corner_chamfer?: number;
   corners?: DslV2CornerSelection | DslV2CornerSelection[];
@@ -144,6 +183,7 @@ export interface CreateRectangleArgs {
   height: number;
   center?: [number, number];
   origin?: [number, number];
+  pos?: DslV2PositionRef;
   corner_radius?: number;
   angle_deg?: number;
   layer?: LayerId;
@@ -152,6 +192,7 @@ export interface CreateRectangleArgs {
 export interface CreateCircleArgs {
   id?: string;
   center?: [number, number];
+  pos?: DslV2PositionRef;
   d?: number;
   r?: number;
   role?: "cut" | "hole" | "reference";
@@ -198,6 +239,7 @@ export interface CreateEllipseArgs {
 export interface CreatePolygonArgs {
   id?: string;
   center?: [number, number];
+  pos?: DslV2PositionRef;
   sides: number;
   r?: number;
   across_flats?: number;
@@ -210,6 +252,7 @@ export interface CreateTextArgs {
   id?: string;
   text: string;
   at?: [number, number];
+  pos?: DslV2PositionRef;
   height?: number;
   angle_deg?: number;
   layer?: LayerId;
@@ -223,6 +266,7 @@ export interface CreateCenterlinesArgs {
 export interface CreateSlotArgs {
   id?: string;
   center?: [number, number];
+  pos?: DslV2PositionRef;
   length: number;
   width: number;
   mode?: "total_length" | "center_to_center";
@@ -308,6 +352,7 @@ export interface AddHolesArgs {
   measure_from?: DslV2MeasureFrom;
   // single / points
   at?: [number, number];
+  pos?: DslV2PositionRef;
   points?: Array<[number, number]>;
   // corners
   margin_x?: number;
@@ -344,14 +389,19 @@ export interface AddCutoutArgs {
   parent?: string;
   shape: "rect" | "circle" | "slot" | "polygon";
   center?: [number, number];
+  pos?: DslV2PositionRef;
   width?: number;
   height?: number;
+  w?: number;
+  h?: number;
   d?: number;
   corner_radius?: number;
   angle_deg?: number;
   sides?: number;
   layer?: LayerId;
 }
+
+export type CreateCutoutArgs = AddCutoutArgs;
 
 export interface EditFeatureArgs {
   id: string;
@@ -972,6 +1022,33 @@ export const CHAMFER_DSL_V2_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
         corner_radius: { type: Type.NUMBER, description: "Raio nos cantos do recorte retangular em mm" },
         angle_deg: { type: Type.NUMBER, description: "Ângulo em graus" },
         sides: { type: Type.INTEGER, description: "Número de lados se shape='polygon'" },
+      },
+      required: ["shape"],
+    },
+  },
+  {
+    name: "create_cutout",
+    description:
+      "Cria um recorte ou janela interna (rect, circle, slot, polygon) em uma chapa existente com suporte a ancoragem relativa `pos`.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        id: { type: Type.STRING },
+        parent: { type: Type.STRING, description: "ID da chapa hospedeira (ex: plate_1)" },
+        shape: { type: Type.STRING, description: "rect | circle | slot | polygon" },
+        center: { type: Type.ARRAY, items: { type: Type.NUMBER }, description: "Centro [x, y] em mm" },
+        pos: {
+          type: Type.OBJECT,
+          description:
+            "Posição canônica: { abs: [x,y] } | { center: id } | { edge_offset: { id, side, dist } } | { from: { id, anchor }, dx, dy } | { polar: { center, r, angle } }",
+        },
+        width: { type: Type.NUMBER, description: "Largura em mm" },
+        height: { type: Type.NUMBER, description: "Altura em mm" },
+        d: { type: Type.NUMBER, description: "Diâmetro em mm" },
+        corner_radius: { type: Type.NUMBER, description: "Raio de canto em mm" },
+        angle_deg: { type: Type.NUMBER, description: "Ângulo em graus" },
+        sides: { type: Type.INTEGER, description: "Número de lados para polígono" },
+        layer: { type: Type.STRING },
       },
       required: ["shape"],
     },

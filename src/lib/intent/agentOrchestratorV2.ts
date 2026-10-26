@@ -642,7 +642,7 @@ export function compilePromptToAgentDslV2Plan(
       /(?:(\d+)\s*furos?\b[^.;]*?\b(m(?:4|5|6|8|10|12|14|16|20|24))|\b(m(?:4|5|6|8|10|12|14|16|20|24))\b)/i,
     );
     const stdHoleMatch = normalized.match(
-      /(\d+)\s*furos?\b[^.;]*?(?:de\s+|ø\s*|diametro\s+|diâmetro\s+)(\d+(?:[.,]\d+)?)/i,
+      /(?:(\d+)\s*)?furos?\b[^.;]*?(?:de\s+|ø\s*|diametro\s+|diâmetro\s+)(\d+(?:[.,]\d+)?)/i,
     );
 
     if (metricMatch && /\bfuros?\b/i.test(normalized)) {
@@ -695,7 +695,11 @@ export function compilePromptToAgentDslV2Plan(
         });
       }
     } else if (stdHoleMatch) {
-      holeCount = Number(stdHoleMatch[1]);
+      holeCount = stdHoleMatch[1]
+        ? Number(stdHoleMatch[1])
+        : /\bfuros\b/i.test(normalized)
+          ? 4
+          : 1;
       holeDiameter = Number(stdHoleMatch[2]!.replace(",", ".")) * unitMultiplier;
     }
 
@@ -1225,9 +1229,9 @@ export function executeAgentTurnV2Sync(
   let modifyCount = 0;
   let deleteCount = 0;
   for (const r of finalResults) {
-    createCount += r.created.length;
-    modifyCount += r.modified.length;
-    deleteCount += r.deleted.length;
+    createCount += (r.created ?? []).length;
+    modifyCount += (r.changed ?? []).length;
+    deleteCount += (r.removed ?? []).length;
   }
 
   // Determinar estado de decisão (§10 e §15: determined | provisional | needs_clarification | unsupported)
