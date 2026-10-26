@@ -1,0 +1,161 @@
+# CALDRA / CHAMFER CAD — CHAMFER INTENT: TELA CHEIA, TEMA ADAPTÁVEL E PRÉVIA CAD PROFISSIONAL (VERSÃO UNIFICADA)
+
+Responda sempre em português do Brasil.
+
+## 0. DIRETRIZ SUPREMA DE ESCOPO (prioridade máxima; vale sobre qualquer outra seção)
+- ISOLAMENTO: altere EXCLUSIVAMENTE o CHAMFER INTENT e os componentes internos de interface e prévia necessários ao seu funcionamento. É terminantemente proibido modificar App.tsx, a Home, o Onboarding, a Splash Screen, a navegação global e a barra de navegação inferior, os demais módulos do CALDRA e o sistema global de temas: o Intent só LÊ o tema, nunca o altera. Se uma mudança fora do escopo parecer indispensável, NÃO a faça: pare, explique e peça autorização.
+- A tarefa é de APRESENTAÇÃO. Não altere a DSL v2.0, o compilador geométrico, o interpretador, a integração com o Gemini, a lógica do chat, a voz, o fluxo Descrever → Interpretar → Compilar → Validar → Pré-visualizar → Confirmar → Aplicar, o Undo/Redo, o versionamento (V1) nem a cena e o plano compilados. A prévia só LÊ a cena compilada. Única exceção: ajuste estritamente necessário para ligar a interface à prévia real, declarado no relatório.
+- PRESERVE todas as funções atuais: cabeçalho CHAMFER INTENT (reutilize o componente de logo existente) e selo DSL, seletor de versão (V1), Auto (ON/OFF), ajustes, atividade/log, pastas com contador, campo de linguagem natural, exemplos de pedidos, anexar, microfone com transcrição editável, enviar, limpar texto, chips de Versão e Camada, histórico e estados de processamento, alternâncias COTAS, EIXOS e CANVAS (mostrar/ocultar a área gráfica, como já funciona), expandir, parâmetros extraídos editáveis e a confirmação antes de aplicar. Reorganize e reestilize; não remova nem mude comportamento. Nunca crie botão que não execute uma ação real.
+- Sem dependências pesadas. Use o mecanismo de estilo já usado no módulo, as fontes e os ícones do app e, para texto técnico, uma pilha com fallback (ui-monospace, "JetBrains Mono", Consolas, monospace) que não bloqueie a renderização.
+- Não aproveite esta tarefa para reescrever outras partes do CHAMFER nem para criar funções fora do que está descrito aqui.
+
+## 1. DIAGNÓSTICO DA CAPTURA DE TELA (confirme no código e corrija tudo)
+a) O Intent abre como cartão flutuante com margens, com o app escurecido e desfocado ao fundo; a área útil do conteúdo ocupa cerca de 1/3 da altura.
+b) Na barra da prévia, "CAD 2D LIVE" colide com o botão "COTAS ON" e fica ilegível.
+c) O cabeçalho gasta duas linhas de controles e o subtítulo trunca ("Comando requer especifica…").
+d) A área rolável é tão curta que PARÂMETROS EXTRAÍDOS aparece cortada.
+e) O composer é apertado: textarea estreita, botões grandes, fonte excessiva.
+f) As cores são fixas e ignoram o tema; o vermelho do botão de enviar e do selo DSL sugere erro, mas não é erro.
+g) A prévia parece ilustração de dashboard, não desenho técnico: furos com anel grosso e claro (aspecto de "alvo"), linha de centro atravessando o desenho inteiro e além, "Passo: 87.5 mm" como rótulo solto, grade densa, aspecto neon, sem convenção de cotagem.
+
+## 2. TELA CHEIA E LAYOUT RESPONSIVO
+- Cobertura total, em QUALQUER dispositivo (celular, tablet e desktop): o Intent vira uma tela cheia (overlay position: fixed; inset: 0) renderizada em portal (para escapar de ancestrais com transform, filter ou contain), com z-index acima de toda a UI do CHAMFER e do CALDRA, altura 100dvh (fallback 100vh) e fundo OPACO do tema. Evite w-screen/100vw (podem gerar rolagem horizontal): use inset-0. Nada do app pode aparecer nem receber toque por trás; sem fundo desfocado; sem margens externas nem cantos externos arredondados. Se o módulo usa Tailwind, a base pode ser: fixed inset-0 flex flex-col overflow-hidden.
+- Respeite safe areas (env(safe-area-inset-*)). Trave a rolagem do fundo enquanto aberto (overscroll-behavior: contain). role="dialog" com aria-modal, foco preso, Esc fecha no desktop, botão Fechar sempre visível. Conversa e rascunho sobrevivem a fechar e reabrir, girar a tela e redimensionar; com plano pendente, peça confirmação ao fechar.
+- Teclado virtual: no Chrome para Android (desde a v108) o teclado redimensiona só a viewport visual, as unidades dvh/vh não encolhem e elementos fixos ficam por trás dele. NÃO confie só em 100dvh: acompanhe window.visualViewport (resize e scroll), exponha --vvh e --kbd e ancore o composer a esses valores; a VirtualKeyboard API pode complementar, se existir. Teste também fora do iframe do preview do AI Studio, onde o comportamento do teclado pode diferir. Com o teclado aberto, a prévia encolhe até uma altura mínima (~140–160 px) e continua atualizando ao vivo enquanto a pessoa digita ou fala.
+- Quatro zonas, sem cortes: (1) cabeçalho + faixa de status, fixos no topo; (2) região de trabalho: prévia FIXA (compacto) + área rolável com PARÂMETROS EXTRAÍDOS e histórico de turnos; (3) barra de contexto: chips Versão e Camada (com amostra da cor técnica), premissas e alternativas, em linha com rolagem horizontal; (4) composer de largura total, fixo no rodapé. Só a área rolável da zona 2 rola; cabeçalho e composer nunca rolam junto com o conteúdo.
+- COMPACTO (< 640 px, retrato): prévia fixa com altura padrão clamp(200px, 36dvh, 340px) (≈ 260–320 px em celulares comuns), alça de redimensionamento com área de toque ≥ 44 px e 3 alturas (mínima ~140 px, padrão, ampliada ~65%) que lembra a última escolha, e botão de tela cheia da prévia. Grade de parâmetros: repeat(auto-fit, minmax(150px, 1fr)), 2 colunas em celulares, sem cortes.
+- MÉDIO (640–1023 px, ou celular em paisagem): duas colunas: conversa e composer à esquerda (36–42%), prévia e parâmetros à direita.
+- EXPANDIDO (≥ 1024 px): duas colunas com divisor ajustável; a prévia ocupa todo o espaço restante. Não estique componentes pequenos nem amplie textos sem necessidade; sem colunas estreitas, sobreposições ou áreas vazias.
+- Prévia expandida (tela cheia da prévia): nunca bloqueie a conversa por completo; mantenha um botão "Conversa" sempre visível e uma linha mínima de composer (campo de 1 linha, microfone e enviar) ou equivalente; recolher volta ao layout anterior sem perder estado.
+- Sem alturas fixas que cortem a prévia ou os controles. Esboço do COMPACTO:
+  +--------------------------------------+
+  | logo CHAMFER INTENT  DSL v2.0 V1 ..X |  cabeçalho de 1 linha
+  | (!) Comando requer especificação   v |  faixa de status (só quando houver estado)
+  | [-][PLANTA][2D] AO VIVO   ícones ... |  barra da prévia (fora do desenho)
+  | +----------------------------------+ |
+  | |      PRÉVIA CAD (fixa)           | |
+  | +----------------------------------+ |
+  | Escala | Área | Perímetro | Furos    |  telemetria (recolhível)
+  | ============= alça ================= |
+  |  PARÂMETROS EXTRAÍDOS + conversa     |  única área que rola
+  | [Versão V1][Camada CORTE][premissas] |  barra de contexto
+  | [ campo de texto, 1 a 5 linhas    ]  |
+  | [anexar] [limpar] [mic]     [enviar] |
+  +--------------------------------------+
+
+## 3. CABEÇALHO, STATUS E COMPOSER
+- Cabeçalho de UMA linha (~52 px): logo existente e nome "CHAMFER INTENT", selo "DSL v2.0" neutro e discreto, versão (V1), Auto, atalhos de ajustes, atividade e pastas (ícones de 44 px com aria-label; excedentes num menu de overflow) e Fechar. Nunca truncar nome nem selo.
+- O estado ("Comando requer especificação", provisório, inválido, compilando…) vira uma faixa de status própria, com ícone e cor semântica do tema (info, aviso, erro), até 2 linhas, toque para expandir ou copiar o texto completo; some quando ocioso. Vermelho só para erro ou ação destrutiva: o selo DSL e o botão de enviar usam tons neutros e a cor de destaque do tema.
+- Composer de largura total (padding ~12 px + safe area): container arredondado (~12 px); textarea que cresce de 1 a 5 linhas e depois rola; fonte ≥ 16 px; anexar, limpar, microfone e enviar alinhados sem estreitar o campo; botão de enviar na cor de destaque do TEMA, com estados desabilitado, ocupado e interromper. Enter, IME, voz e envio continuam exatamente como estão.
+
+## 4. TEMA ADAPTÁVEL
+- Auditoria (só leitura): descubra como o app aplica temas (Context/Provider, data-theme, classe dark, variáveis CSS, Tailwind, localStorage) e se há cor de destaque e opacidade personalizáveis.
+- Crie um adaptador local do módulo (ex.: useIntentTheme) que alimenta tokens semânticos escopados no elemento raiz do Intent:
+  UI: --ci-bg, --ci-surface, --ci-surface-2, --ci-border, --ci-text, --ci-text-muted, --ci-accent, --ci-accent-contrast, --ci-success, --ci-warning, --ci-danger.
+  CAD: --cad-canvas, --cad-grid-minor, --cad-grid-major, --cad-axis-x, --cad-axis-y, --cad-center, --cad-hidden, --cad-dim, --cad-text, --cad-selection, --cad-provisional, --cad-sheet, --cad-sheet-ink.
+- Fonte dos valores, em ordem: (1) tokens/Provider do app, incluindo cor de destaque e opacidade personalizadas; (2) derivação das cores computadas de fundo e de texto do contêiner raiz, com color-mix ou OKLCH (ex.: grade = texto a 8–12% sobre o fundo); (3) paletas de CONTINGÊNCIA, usadas só se (1) e (2) falharem, escolhidas pela luminância do fundo computado e contidas no adaptador:
+  ESCURO: bg #060B14; surface #0B1220; border #1E293B; text #F8FAFC; muted #94A3B8; input #0F172A; canvas #050912; grade principal #1E293B e secundária #0F172A; cota #7DD3FC; eixo de simetria #475569; contorno de corte #38BDF8.
+  CLARO: bg #F8FAFC; surface #FFFFFF; border #E2E8F0; text #0F172A; muted #475569; input #F1F5F9 com borda #CBD5E1; canvas #F8FAFC; grade principal #CBD5E1 e secundária #E2E8F0; cota #0284C7 (ou #DC2626); eixo #64748B; contorno de corte #0369A1 (ou #0F172A).
+- Regras: a troca de tema vale ao vivo (assine o Provider ou observe data-theme/class com MutationObserver), sem recarregar e sem perder conversa, parâmetros ou prévia; só a apresentação é recalculada, nunca a geometria. Nenhum hex fora do adaptador (CSS, JSX ou SVG): use classes ou var(). A cor de destaque vem do tema ativo. Respeite prefers-contrast e prefers-reduced-motion.
+- Escuro: identidade industrial (azul-noturno ou grafite, superfícies discretamente diferentes, divisórias sutis, texto claro), sem brilho excessivo, sombras exageradas nem aparência de neon. Claro: neutro, painéis brancos ou cinza muito suave, bordas finas, texto escuro, grade cinza-clara, linhas de alto contraste, sem transparências que desapareçam sobre o fundo.
+- Contraste: texto ≥ 4,5:1; linhas do desenho ≥ 3:1 sobre o canvas.
+- A cor TÉCNICA da camada (ex.: CORTE) vem dos dados do app e nunca é trocada pelo tema. Só a cor de EXIBIÇÃO pode ser ajustada, por displayColor(corDaCamada, fundoDoCanvas), que preserva o matiz e garante 3:1; dados e exportação usam sempre a cor original. A cor de destaque da interface não classifica linhas CAD, e trocar o tema não altera geometria nem classificação técnica.
+- Modos de desenho independentes do tema da interface: MODELO (segue o tema) e, opcional na Fase G, FOLHA.
+
+## 5. PRÉVIA GEOMÉTRICA PADRÃO CAD (ISO 128 / ABNT NBR 8403 para linhas; ISO 129 / ABNT NBR 10126 para cotagem, adaptadas à tela)
+5.1 Estrutura da área
+- Barra de controles própria, ACIMA da área gráfica, nunca sobre o desenho. Esquerda: rótulo de viewport estilo CAD ("[−] [PLANTA] [WIREFRAME 2D]") e indicador AO VIVO / PROVISÓRIO (nowrap, shrink-0). Direita: botões de ícone com aria-label e estado pressionado (Cotas, Eixos, Canvas, Grade, Ajustar, Tela cheia), shrink-0; em telas estreitas o excedente vai para uma segunda linha ou menu de overflow. As opções de visualização atualizam a prévia na hora, sem mudar a geometria.
+- Dentro do canvas ficam só: rótulo de viewport (superior esquerdo), símbolo de origem/UCS X-Y (inferior esquerdo), leitura de coordenadas e barra de escala em mm, com valores redondos (inferior direito). O enquadramento reserva esses cantos; nada cobre a geometria.
+- Faixa de telemetria abaixo do canvas (recolhível): Zoom e barra de escala | Área líquida | Perímetro de corte | Furos, calculados em código com fórmulas analíticas (círculos e arcos), nunca pela tesselação e nunca inventados. "Escala 1:N" só no modo FOLHA, onde a escala é de impressão.
+
+5.2 Dados e renderização
+- Gere o desenho a partir da cena/plano compilado (os mesmos dados do compilador). Sem imagens estáticas, formas codificadas à mão ou círculos concêntricos decorativos. Aprimore o mecanismo de renderização existente (SVG ou Canvas) em vez de criar um segundo renderer.
+- Projete mm → px em JS (zoom e pan) e gere as primitivas já em px (espaço de tela): espessuras, tracejados, setas e textos ficam exatos e constantes, sem depender de vector-effect. Se parte da vista for transformada por CSS, use vector-effect: non-scaling-stroke como reforço. O eixo Y do CAD é para cima: trate a inversão, inclusive nos sweep-flags dos arcos.
+- Círculos e arcos reais (circle e comandos de arco), nunca polilinhas aproximadas; cantos arredondados = linhas + arcos tangentes com o raio real; polilinhas conectadas; furos e contornos internos nas posições calculadas pelo compilador. Contorno externo e furos num único path com fill-rule evenodd, para os furos ficarem realmente vazados sobre a grade; preenchimento opcional de 4–8% de opacidade. Não corrija silenciosamente geometria inválida: marque o erro.
+- shape-rendering: geometricPrecision (grade: crispEdges); alinhe linhas ortogonais finas a meio pixel quando DPR = 1.
+- Ordem: grade → eixos de origem → preenchimento → geometria → linhas de centro → cotas e chamadas → seleção, mira e UCS. Funções puras e memorizadas: buildDrawing(cena, opções) → desenho em mm; projectToScreen(desenho, vista, tema) → primitivas em px; redesenhe em requestAnimationFrame e só quando algo mudar.
+
+5.3 Linhas (razão 2:1 entre grossa e fina; tokens configuráveis, escalados pelo DPR, nunca abaixo de 1 pixel físico)
+- Espessuras (px): grossa 1,6; média 1,1; fina 0,8; grade menor 0,5 e maior 0,8.
+- Contorno e furos (camada CORTE): contínua grossa, cor técnica da camada. Os furos têm a MESMA espessura do contorno, nunca mais grossa, sem anel claro, brilho ou sombra.
+- Contornos secundários e geometria auxiliar: espessura média e estilo discreto.
+- Linhas de centro e eixos de simetria: traço-ponto fina, padrão 10 3 2 3 px, ultrapassando o contorno em 6–16 px (≈ 8% da dimensão). Marca de centro de cada furo: cruz fina cujos braços passam ~4–5 px do círculo; em furos < 16 px na tela, só a cruz. A linha de centro de uma fileira de furos vai só ~5 px além do último furo (nunca atravessa a peça nem a tela).
+- Cotas, extensões e chamadas: contínua fina. Ocultas, quando existirem: tracejada fina (7 4). Eixos de origem X/Y: vermelho e verde discretos (tokens).
+- Grade 1-2-5 adaptativa: passo menor entre 10 e 28 px na tela, maior a cada 5.º ou 10.º, no máximo ~60 linhas por eixo, finas e de baixa opacidade (menor 6–10%, maior 14–20%); opcionalmente pontos. Nunca compete com a geometria.
+- Seleção: realce temporário com --cad-selection e grips quadrados de ~7 px (somente leitura nesta versão), sem alterar cor nem geometria da entidade.
+- Classifique pelo tipo da entidade, pela função semântica e pelas propriedades do compilador, não só pela cor.
+
+5.4 Cotagem profissional, gerada em código a partir do modelo (nunca de pixels, nunca pelo LLM)
+- Setas fechadas e preenchidas, ~9–10 px de comprimento, proporção ~1:3 (ponta afiada), geradas como polígonos em px; se não couberem entre as extensões, vão por fora apontando para dentro.
+- Linhas de extensão: folga de ~3 px do elemento e ~4 px além da linha de cota. Primeira fileira a ~26 px do contorno, as demais a +20 px.
+- Texto horizontal, 11 px (mín. 10), numerais tabulares, com máscara na cor do canvas (retângulo ou halo) para a linha nunca riscar o número; símbolos Ø e R; sem zeros à direita (87,5; 400); separador decimal e precisão conforme a configuração do app. Unidade: não repita "mm" em cada cota; mostre "UN: mm" no viewport; opção "Mostrar unidade nas cotas" no overflow.
+- Conjunto padrão: largura total (embaixo) e altura total (direita); cadeia de cotas dos furos alinhados (borda ao 1.º furo | 4× passo | último furo à borda; o nível "Todas" mostra cada intervalo); chamada "5× Ø12" com linha de chamada (perna horizontal curta) até a borda de um furo; "R20" com chamada a 45° cuja seta toca o arco; flange: Ø externo, Ø interno, Ø do PCD (círculo de furação em traço-ponto) e "8× Ø18"; furos nos cantos: X e Y a partir das bordas. Rótulos soltos como "Passo: 87.5 mm" viram cotas convencionais.
+- Anticolisão: posicione os textos por caixas delimitadoras; em colisão, empurre para a fileira seguinte, use uma chamada ou amplie o enquadramento. COTAS com 3 níveis (Desligadas / Principais / Todas); no nível "Principais", mostre um contador tocável "N cotas ocultas". Nunca esconda dimensões em silêncio.
+
+5.5 Estados
+- Provisório: linhas tracejadas e translúcidas (--cad-provisional) e selo PROVISÓRIO. Validado: linhas sólidas. Inválido ou compilação falha: mantenha a última prévia válida com aviso explícito ("resultado anterior: não corresponde ao último pedido") e marque o elemento problemático com legenda curta. Compilando: indicador discreto que não cobre o desenho. Nada é declarado válido sem a validação do compilador.
+
+5.6 Enquadramento, interação e expansão
+- Enquadramento: caixa envolvente da geometria E das anotações (cotas e chamadas), com margem adaptável (~24 px); nada cortado; não centralize ignorando cotas externas. Re-enquadre ao redimensionar, girar a tela e editar parâmetros enquanto a pessoa NÃO tiver feito zoom ou pan manual; depois disso, mantenha a vista até ela tocar em "Ajustar". A escala de exibição é independente das dimensões do modelo; as coordenadas físicas nunca mudam para caber.
+- Pinça com zoom centrado no gesto, pan com 1 ou 2 dedos, toque duplo ajusta, roda e arraste no desktop, limites de zoom. Toque longo (ou arraste com mira) mostra X/Y em mm e snap a pontos notáveis (extremidade □, ponto médio △, centro ○, interseção ✕). Tocar numa entidade a realça e foca o parâmetro correspondente.
+- O estado da prévia (vista, visibilidades, nível de cotas) é preservado ao expandir, recolher, girar ou redimensionar.
+
+5.7 Modo FOLHA (OPCIONAL: só na Fase G e após minha aprovação)
+Papel claro com moldura e legenda (PEÇA, ESPESSURA, ESCALA padrão 1:1, 1:2, 1:5, 1:10…, UN: mm, VERSÃO, DATA, "CHAMFER INTENT · DSL v2.0"), linhas em tinta escura. Dados de fabricação calculados em código; massa só se a densidade existir no app.
+
+5.8 Desempenho e acessibilidade
+- Nenhum loop em repouso; a prévia acompanha ao vivo a digitação e a voz sem travar o campo; pan e zoom fluidos; mexer na prévia não re-renderiza a conversa. <svg role="img"> com título e descrição geradas ("Chapa 400 × 250, R20, 5 furos Ø12, passo 87,5"); cor nunca é o único sinal; alvos de toque ≥ 44 px.
+
+## 6. PARÂMETROS E ESTADOS
+- Agrupe por função, conforme a peça e as operações realmente presentes (dimensões principais, espessura, raios e chanfros, quantidade de furos, diâmetros, posições, margens, passos, padrões de distribuição). Campos dinâmicos, nunca sempre os mesmos; não exiba valores que o compilador não identificou ou calculou.
+- Diferencie com ícone, cor E texto: confirmados, premissas provisórias, campos ausentes, erros de validação e avisos.
+- Editar um campo recompila pelo compilador existente e atualiza a prévia; NUNCA aplica ao desenho definitivo sozinho. Tocar na entidade na prévia foca o campo, e vice-versa.
+
+## 7. CHAT, TEXTO E VOZ
+Preserve o campo de linguagem natural, a entrada por voz com transcrição editável (nunca envie automaticamente por padrão), anexos, estados de geração, histórico e exemplos. O composer fica acessível no rodapé, adapta-se ao teclado virtual e, com texto longo, expande ou rola sem cobrir anexar, microfone e enviar. A prévia expandida nunca bloqueia o acesso à conversa. Tudo claro e funcional nos dois temas.
+
+## 8. DESEMPENHO E INTEGRIDADE
+- Recalcule a geometria só quando houver mudança relevante no plano ou nos parâmetros. Trocar tema, cor ou visibilidade das cotas atualiza só a apresentação. Sem animações ou renderizações contínuas desnecessárias.
+- Expandir a prévia, trocar o tema ou redimensionar a tela nunca altera o histórico geométrico, as dimensões físicas ou a classificação das entidades.
+- Se uma nova compilação falhar, preserve a última prévia válida e sinalize que ela não corresponde ao pedido mais recente. Não declare geometria válida sem a validação do compilador.
+
+## 9. ESTILO DE ENGENHARIA, NÃO GENÉRICO
+- Superfícies planas, bordas de 1 px, raios de 6–10 px (nada de "pílulas" em tudo), sem gradientes, brilho neon ou sombras pesadas; hierarquia por tipografia e espaçamento (grade de 4 px).
+- Micro-rótulos em maiúsculas de 10–11 px, espaçamento largo e cor atenuada; valores numéricos em monoespaçada tabular de 13–14 px.
+- Ícones de traço único (~1,5 px) em 18–20 px, coerentes com os existentes; sem emojis.
+- Movimento só funcional (120–180 ms), respeitando prefers-reduced-motion. Textos de interface em pt-BR centralizados.
+
+## 10. FASES
+Modo padrão: PASSO A PASSO. Execute uma fase por vez; ao fim, pare e aguarde eu dizer "prosseguir". Se eu disser "modo contínuo", siga sem parar, com relatório a cada fase.
+- FASE A (sem código): como o Intent é montado hoje (modal, portal, estilos); como o tema é aplicado; componente e gerador da prévia; lista de hex e cores fixas; função de cada controle do cabeçalho e do composer; estados do plano; arquivos a alterar DENTRO do módulo; riscos; no máximo 5 perguntas bloqueantes.
+- FASE B: tela cheia, layout responsivo, teclado, cabeçalho e faixa de status.
+- FASE C: adaptador de tema, remoção de hex fixos, displayColor, verificação nos temas.
+- FASE D: renderizador da prévia (linhas, cotagem, marcas, grade, UCS, estados, enquadramento, interação, telemetria).
+- FASE E: composer, parâmetros, estilo de engenharia, acessibilidade.
+- FASE F: testes, regressão, desempenho e relatório final.
+- FASE G (opcional, só com minha aprovação): modo FOLHA.
+
+## 11. TESTES OBRIGATÓRIOS (não declare concluído sem executar)
+T1 Caso da captura: chapa 400 × 250, cantos R20, 5 furos Ø12, passo 87,5. Esperado: contorno grosso com arcos exatos; furos vazados em y = 125 e x = 25; 112,5; 200; 287,5; 375 (a partir da borda esquerda); cruz de centro em cada furo; linha de centro dos furos curta; cadeia 25 | 4× 87,5 | 25; total 400 embaixo e 250 à direita; "5× Ø12"; "R20" com chamada; nenhum rótulo "Passo:" solto; nada sobreposto.
+T2 Chapa 500 × 300 com 4 furos Ø12 nos cantos a 25 mm: cotas 25 | 450 | 25 e 25 | 250 | 25; "4× Ø12".
+T3 Flange Ø400/Ø200 com 8× Ø18 em PCD 320: Ø400, Ø200, Ø320 (círculo de furação em traço-ponto), "8× Ø18", marcas de centro.
+T4 Rasgo oblongo 100 × 20: comprimento, largura (R10) e linha de centro no eixo.
+T5 Fidelidade: círculos são círculos; arcos de canto têm o raio real; as cotas vêm do modelo (alterar um parâmetro altera a cota); geometria inválida não é corrigida, é marcada, com a última prévia válida e o aviso.
+T6 Temas: para CADA tema do app, interface e prévia seguem o tema, com troca ao vivo, contraste atendido, cor de destaque do tema e cor técnica da camada preservada.
+T7 Tela cheia e viewports: 320×568, 360×640, 390×844, 412×915, 844×390, 768×1024, 1280×720, 1920×1080; nada do app por trás; teclado aberto não cobre o composer e a prévia fica ≥ 140 px; girar a tela preserva conversa, rascunho e vista; repetir fora do preview do AI Studio.
+T8 Controles e colisão: nenhum selo, botão ou texto de estado sobre geometria ou cotas; teste de caixas delimitadoras dos textos de cota em T1 a T4, em 3 níveis de zoom; contador de cotas ocultas funcional.
+T9 Enquadramento e interação: ajuste com anotações; sem re-enquadrar após zoom ou pan manual até tocar em "Ajustar"; pinça, pan, toque duplo e mira com snap.
+T10 Estados: provisório, validado, inválido (com última prévia válida) e compilando.
+T11 Prévia expandida: expandir e recolher, acesso à conversa, estado preservado.
+T12 Composer: multilinha, anexos, microfone e envio com o teclado aberto; voz não é enviada automaticamente.
+T13 Regressão funcional: chat, voz, enviar, aplicar (ainda exige confirmação), desfazer, versões, Auto, anexos e parâmetros editáveis iguais ao que eram; DSL v2.0 intacta.
+T14 Desempenho: zero loops ociosos; pan e zoom fluidos; reporte números reais ou "não medido".
+T15 Escopo: liste os arquivos alterados; nenhum fora do módulo; tema global intocado.
+
+## 12. CRITÉRIOS DE ACEITE
+1) O Intent cobre toda a tela, em qualquer dispositivo, sem nada visível ou clicável do app por trás, com safe areas e teclado tratados. 2) Layout correto em compacto, médio e expandido, com a prévia visível e ao vivo com o teclado aberto e sem bloquear a conversa quando expandida. 3) Interface e prévia seguem o tema ativo, ao vivo, sem hex fora do adaptador, com contraste atendido e cor técnica preservada. 4) Prévia com tipos de linha, marcas de centro, furos vazados, setas fechadas, cotas convencionais, grade adaptativa, origem, rótulo de viewport e telemetria, sem sobreposição nem cortes. 5) Cabeçalho e barra da prévia sem textos colidindo, com alvos ≥ 44 px e todas as funções preservadas. 6) Composer compacto, com fonte ≥ 16 px e comportamento original. 7) Estados provisório, validado e inválido visualmente distintos, com a última prévia válida sinalizada. 8) Cotas e valores vêm do modelo, nunca de pixels; nenhuma geometria corrigida em silêncio. 9) Nenhuma mudança funcional na DSL, no compilador, no chat, na voz, na aplicação ou no histórico. 10) Sem CPU em repouso; desempenho medido ou declarado "não medido". 11) Nenhum arquivo fora do módulo alterado.
+
+## 13. ENTREGA E CONDUTA
+- A cada fase responda com: (a) o que mudou; (b) arquivos alterados, todos dentro do módulo; (c) testes executados e resultados; (d) o que devo conferir no celular, em poucos passos; (e) riscos e pendências; (f) próxima fase.
+- Honestidade: se não conseguir ver o resultado, diga "não verificado visualmente"; nunca declare pronto sem executar os testes; marque suposições; não invente funções do app.
+- Estilo: mudanças pequenas e verificáveis, sem refatorar além do necessário.
