@@ -150,20 +150,104 @@ export function parseLengthUnit(unitStr?: string): LengthUnit {
 export function normalizeNaturalLanguageNumbers(input: string): string {
   let s = input.toLowerCase();
 
-  // Expressões compostas de metro
+  // Normaliza gírias de oficina e erros comuns de digitação (§10)
+  s = s.replace(/\b(chapinha|xapa|chapa\s+de\s+aço|placa)\b/gi, "chapa");
+  s = s.replace(/\b(furu|furus|furinho|furinhos)\b/gi, "furos");
+  s = s.replace(/\b(flanje|flangi)\b/gi, "flange");
+  s = s.replace(/\bnos\s+canto\b/gi, "nos cantos");
+  s = s.replace(/\b4\s+furo\b/gi, "4 furos");
+
+  // Expressões compostas de metro e polegada (§9.3, §14 e §20)
   s = s.replace(/\bum\s+metro\s+e\s+meio\b/gi, "1500 mm");
   s = s.replace(/\b1\s+metro\s+e\s+meio\b/gi, "1500 mm");
   s = s.replace(/\bdois\s+metros\s+e\s+meio\b/gi, "2500 mm");
   s = s.replace(/\bmeio\s+metro\b/gi, "500 mm");
   s = s.replace(/\bmeia\s+polegada\b/gi, "12.7 mm");
-  s = s.replace(/\b1\/2\s*(?:pol|polegada|")\b/gi, "12.7 mm");
-  s = s.replace(/\b3\/4\s*(?:pol|polegada|")\b/gi, "19.05 mm");
-  s = s.replace(/\b1\/4\s*(?:pol|polegada|")\b/gi, "6.35 mm");
-  s = s.replace(/\b3\/8\s*(?:pol|polegada|")\b/gi, "9.525 mm");
-  s = s.replace(/\b5\/8\s*(?:pol|polegada|")\b/gi, "15.875 mm");
+  s = s.replace(/\btr[eê]s\s+oitavos(?:\s+de\s+polegada)?\b/gi, "9.525 mm");
+  s = s.replace(/\bcinto\s+oitavos|\bcinco\s+oitavos(?:\s+de\s+polegada)?\b/gi, "15.875 mm");
+  s = s.replace(/\btr[eê]s\s+quartos(?:\s+de\s+polegada)?\b/gi, "19.05 mm");
+  s = s.replace(/\bum\s+quarto\s+de\s+polegada\b/gi, "6.35 mm");
+  s = s.replace(/\bum\s+oitavo(?:\s+de\s+polegada)?\b/gi, "3.175 mm");
+  s = s.replace(/\b1\/2\s*(?:pol|polegadas?|")\b/gi, "12.7 mm");
+  s = s.replace(/\b3\/4\s*(?:pol|polegadas?|")\b/gi, "19.05 mm");
+  s = s.replace(/\b1\/4\s*(?:pol|polegadas?|")\b/gi, "6.35 mm");
+  s = s.replace(/\b3\/8\s*(?:pol|polegadas?|")?\b/gi, "9.525 mm");
+  s = s.replace(/\b5\/8\s*(?:pol|polegadas?|")?\b/gi, "15.875 mm");
+  s = s.replace(/\b3\/16\s*(?:pol|polegadas?|")?\b/gi, "4.7625 mm");
+  s = s.replace(/\b5\/16\s*(?:pol|polegadas?|")?\b/gi, "7.9375 mm");
 
-  // Substitui "vinte e cinco" antes das palavras individuais
-  s = s.replace(/\bvinte\s+e\s+cinco\b/gi, "25");
+  // Substitui números compostos por extenso ("duzentos e cinquenta" -> "250", "vinte e cinco" -> "25")
+  const hundredsMap: Record<string, number> = {
+    cem: 100,
+    cento: 100,
+    duzentos: 200,
+    duzentas: 200,
+    trezentos: 300,
+    trezentas: 300,
+    quatrocentos: 400,
+    quatrocentas: 400,
+    quinhentos: 500,
+    quinhentas: 500,
+    seiscentos: 600,
+    setecentos: 700,
+    oitocentos: 800,
+    novecentos: 900,
+  };
+  const tensMap: Record<string, number> = {
+    vinte: 20,
+    trinta: 30,
+    quarenta: 40,
+    cinquenta: 50,
+    sessenta: 60,
+    setenta: 70,
+    oitenta: 80,
+    noventa: 90,
+  };
+  const unitsMap: Record<string, number> = {
+    um: 1,
+    uma: 1,
+    dois: 2,
+    duas: 2,
+    tres: 3,
+    três: 3,
+    quatro: 4,
+    cinco: 5,
+    seis: 6,
+    sete: 7,
+    oito: 8,
+    nove: 9,
+  };
+
+  // Centena + dezena + unidade ("duzentos e cinquenta e cinco")
+  s = s.replace(
+    /\b(cento|duzentos|duzentas|trezentos|trezentas|quatrocentos|quatrocentas|quinhentos|quinhentas|seiscentos|setecentos|oitocentos|novecentos)\s+e\s+(vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa)(?:\s+e\s+(um|uma|dois|duas|tres|três|quatro|cinco|seis|sete|oito|nove))?\b/gi,
+    (_m, h: string, t: string, u?: string) => {
+      const hv = hundredsMap[h.toLowerCase()] ?? 0;
+      const tv = tensMap[t.toLowerCase()] ?? 0;
+      const uv = u ? (unitsMap[u.toLowerCase()] ?? 0) : 0;
+      return String(hv + tv + uv);
+    },
+  );
+
+  // Centena + unidade/dez-dezenove ("cento e vinte", "duzentos e dez")
+  s = s.replace(
+    /\b(cento|duzentos|trezentos|quatrocentos|quinhentos|seiscentos|setecentos|oitocentos|novecentos)\s+e\s+(dez|onze|doze|treze|quatorze|catorze|quinze|dezesseis|dezessete|dezoito|dezenove|um|uma|dois|duas|tres|três|quatro|cinco|seis|sete|oito|nove)\b/gi,
+    (_m, h: string, u: string) => {
+      const hv = hundredsMap[h.toLowerCase()] ?? 0;
+      const uv = PORTUGUESE_NUMBERS[u.toLowerCase()] ?? 0;
+      return String(hv + uv);
+    },
+  );
+
+  // Dezena + unidade ("vinte e cinco", "trinta e dois")
+  s = s.replace(
+    /\b(vinte|trinta|quarenta|cinquenta|sessenta|setenta|oitenta|noventa)\s+e\s+(um|uma|dois|duas|tres|três|quatro|cinco|seis|sete|oito|nove)\b/gi,
+    (_m, t: string, u: string) => {
+      const tv = tensMap[t.toLowerCase()] ?? 0;
+      const uv = unitsMap[u.toLowerCase()] ?? 0;
+      return String(tv + uv);
+    },
+  );
 
   // Substitui palavras numéricas isoladas
   const entries = Object.entries(PORTUGUESE_NUMBERS).sort((a, b) => b[0].length - a[0].length);
@@ -172,6 +256,17 @@ export function normalizeNaturalLanguageNumbers(input: string): string {
     const regex = new RegExp(`\\b${word}\\b`, "gi");
     s = s.replace(regex, String(num));
   }
+
+  // Par dimensional com unidade compartilhada no final: ex. "50 por 25 cm" -> "500 por 250 mm"
+  s = s.replace(
+    /\b(\d+(?:[.,]\d+)?)\s*(por|x|×)\s*(\d+(?:[.,]\d+)?)\s*(cent[ií]metros?|cm|metros?|mts?|polegadas?|pol)\b/gi,
+    (_m, n1: string, sep: string, n2: string, rawUnit: string) => {
+      const unit = parseLengthUnit(rawUnit);
+      const v1 = toMillimeters(parseFloat(n1.replace(",", ".")), unit);
+      const v2 = toMillimeters(parseFloat(n2.replace(",", ".")), unit);
+      return `${v1} ${sep} ${v2} mm`;
+    },
+  );
 
   // Converte medidas explícitas em cm, m ou polegadas para mm mantendo rastreabilidade
   s = s.replace(

@@ -167,7 +167,25 @@ for (const f of startCompilerFiles) {
   ]);
 }
 
-// Remove vite prebundle cache only if files were newly patched so vite re-bundles @tanstack/router-core
+// Replace vite-tsconfig-paths plugin with native Vite 8 resolve.tsconfigPaths: true in @lovable.dev/vite-tanstack-config
+const lovableConfigFiles = [
+  path.join(__dirname, "../node_modules/@lovable.dev/vite-tanstack-config/dist/index.js"),
+  path.join(__dirname, "../node_modules/@lovable.dev/vite-tanstack-config/dist/index.cjs"),
+];
+for (const f of lovableConfigFiles) {
+  patchFile(f, [
+    {
+      from: '\t\tconst tsConfigPaths = (await import("vite-tsconfig-paths")).default;\n\t\tinternalPlugins.push(tsConfigPaths({ projects: ["./tsconfig.json"] }));',
+      to: "\t\t/* vite-tsconfig-paths replaced by native resolve.tsconfigPaths: true */",
+    },
+    {
+      from: '\t\t\tresolve: {\n\t\t\t\talias: { "@": `${process.cwd()}/src` },',
+      to: '\t\t\tresolve: {\n\t\t\t\ttsconfigPaths: true,\n\t\t\t\talias: { "@": `${process.cwd()}/src` },',
+    },
+  ]);
+}
+
+// Remove vite prebundle cache only if @tanstack/router-core files were newly patched
 if (anyModified) {
   const viteCache = path.join(__dirname, "../node_modules/.vite");
   if (fs.existsSync(viteCache)) {

@@ -505,7 +505,7 @@ export function ChamferCadToolbar({
           : "rgba(255, 255, 255, var(--ui-opacity, 0.94))",
       }}
       className={cn(
-        "relative flex h-full max-h-full w-12 shrink-0 flex-col items-center rounded-2xl border p-1 shadow-xl backdrop-blur-md select-none z-40 transition-colors",
+        "relative flex h-full max-h-full w-11 sm:w-12 shrink-0 flex-col items-center rounded-2xl border p-1 shadow-xl backdrop-blur-md select-none z-40 transition-colors",
         isDark
           ? "border-slate-800/80 text-slate-300"
           : "border-slate-200 text-slate-700 shadow-md",
@@ -712,7 +712,7 @@ export function ChamferCadToolbar({
       {openCat !== "none" && openCat !== "selecionar" && activeCategoryData && (
         <div
           className={cn(
-            "absolute left-full ml-2 z-50 w-64 rounded-2xl border p-2 shadow-2xl backdrop-blur-lg animate-in fade-in zoom-in-95 duration-150 overflow-y-auto",
+            "absolute left-full ml-1.5 sm:ml-2 z-50 w-64 max-w-[calc(100vw-60px)] sm:max-w-[92vw] rounded-2xl border p-2 shadow-2xl backdrop-blur-lg animate-in fade-in zoom-in-95 duration-150 overflow-y-auto",
             isDark
               ? "border-slate-800 bg-slate-950/95 text-slate-200"
               : "border-slate-200 bg-white/95 text-slate-800 shadow-2xl",

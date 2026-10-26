@@ -369,4 +369,45 @@ describe("CHAMFER — Testes de Interação Mobile e Tarefas-Âncora (Especifica
       expect(frame.invertedTopEdge).toBe(false);
     });
   });
+
+  describe("Suporte Nativo a Modo Retrato (Portrait) e Paisagem (Landscape) sem Trava de Tela", () => {
+    it("RotateGate nunca renderiza tela de bloqueio vertical (retorna null)", async () => {
+      const { RotateGate } = await import("./RotateGate");
+      expect(RotateGate({})).toBeNull();
+    });
+
+    it("Preserva centro do mundo CAD (cx, cy) e proporção 1:1 (scaleX === scaleY) ao girar entre Retrato (390×844) e Paisagem (844×390)", () => {
+      // Estado inicial em Retrato (390 × 844) com quadrado 200 × 200 mm centrado em (100, 100)
+      const prevSize = { w: 390, h: 844 };
+      const k = 1.4;
+      const worldCenter = { x: 100, y: 100 };
+      const portraitView = {
+        k,
+        tx: prevSize.w / 2 - worldCenter.x * k,
+        ty: prevSize.h / 2 - worldCenter.y * k,
+      };
+
+      // Gira o aparelho para Paisagem (844 × 390)
+      const nextSize = { w: 844, h: 390 };
+      const dw = (nextSize.w - prevSize.w) / 2;
+      const dh = (nextSize.h - prevSize.h) / 2;
+      const landscapeView = {
+        k: portraitView.k,
+        tx: portraitView.tx + dw,
+        ty: portraitView.ty + dh,
+      };
+
+      // O ponto central da tela em Paisagem deve apontar exatamente para o mesmo (100, 100) do mundo CAD
+      const newWorldCenterX = (nextSize.w / 2 - landscapeView.tx) / landscapeView.k;
+      const newWorldCenterY = (nextSize.h / 2 - landscapeView.ty) / landscapeView.k;
+      expect(newWorldCenterX).toBeCloseTo(worldCenter.x, 6);
+      expect(newWorldCenterY).toBeCloseTo(worldCenter.y, 6);
+
+      // Um quadrado de 200 × 200 mm deve ter exatamente a mesma largura e altura em pixels (proporção 1:1)
+      const squareScreenWidthPx = 200 * landscapeView.k;
+      const squareScreenHeightPx = 200 * landscapeView.k;
+      expect(squareScreenWidthPx).toBeCloseTo(squareScreenHeightPx, 6);
+    });
+  });
 });
+

@@ -269,7 +269,7 @@ export function CadBRepViewer({
 
   // Estados de Manipulação e Vistas
   const [viewPreset, setViewPreset] = useState<ViewPresetId>(activeViewPreset);
-  const [edgeMode, setEdgeMode] = useState<EdgeMode>("shaded-edges");
+  const [edgeMode, setEdgeMode] = useState<EdgeMode>("wireframe");
   const [gizmoMode, setGizmoMode] = useState<CadGizmoMode>("off");
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [cameraRotation, setCameraRotation] = useState<{ x: number; y: number; z: number } | undefined>(undefined);

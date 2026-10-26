@@ -49,6 +49,8 @@ import {
 } from "./unitAndReferenceParser";
 import { ChamferGeometricExecutionEngine } from "./geometricExecutionEngine";
 import { ChamferValidationEngine } from "./validationEngine";
+import { executeAgentTurnV2Sync, type AgentStreamingCallbacks } from "./agentOrchestratorV2";
+import type { PartModel } from "./partModel";
 
 export class ChamferIntentInterpreter {
   /**
@@ -66,9 +68,62 @@ export class ChamferIntentInterpreter {
 
   /**
    * Ponto de entrada principal: compila um comando em linguagem natural (e possíveis patches de desambiguação)
-   * em um ChamferIntentPlan completo, validado e pronto para pré-visualização ou commit.
+   * em um ChamferIntentPlan completo, validado e enriquecido com o Agente V2 (DSL v2 + DFM + Premissas).
    */
   public static compilePrompt(
+    rawPrompt: string,
+    context: {
+      existingEntities?: Entity[];
+      selectedEntityIds?: string[];
+      activeLayer?: LayerId;
+      session?: ParametricSessionContext;
+      parameterOverrides?: Record<string, unknown>;
+      partModel?: PartModel;
+      streamingCallbacks?: AgentStreamingCallbacks;
+    } = {},
+  ): ChamferIntentPlan {
+    const plan = ChamferIntentInterpreter.compilePromptInternal(rawPrompt, context);
+    const v2 = executeAgentTurnV2Sync(rawPrompt, {
+      existingEntities: context.existingEntities,
+      selectedEntityIds: context.selectedEntityIds,
+      activeLayer: context.activeLayer,
+      partModel: context.partModel,
+      parameterOverrides: context.parameterOverrides,
+      callbacks: context.streamingCallbacks,
+    });
+    plan.v2 = v2;
+
+    if (v2.isRefusal && v2.refusalMessage) {
+      plan.intent.summary = "Fora do escopo do Chamfer CAD";
+      plan.response_summary = v2.refusalMessage;
+      plan.validation = {
+        status: "invalid",
+        issues: [
+          {
+            code: "SECURITY_OR_SCOPE_REFUSAL",
+            severity: "error",
+            message: v2.refusalMessage,
+          },
+        ],
+        checkedAt: Date.now(),
+      };
+      if (plan.compiled) {
+        plan.compiled.previewEntities = [];
+        plan.compiled.finalEntities = context.existingEntities ?? [];
+      }
+    } else if (v2.unsupportedReport) {
+      plan.intent.summary = `Não suportado diretamente: ${v2.unsupportedReport.request}`;
+      plan.response_summary = v2.unsupportedReport.alternative;
+      plan.warnings = [
+        ...plan.warnings,
+        `Alternativa sugerida: ${v2.unsupportedReport.alternative}`,
+      ];
+    }
+
+    return plan;
+  }
+
+  private static compilePromptInternal(
     rawPrompt: string,
     context: {
       existingEntities?: Entity[];
@@ -134,7 +189,7 @@ export class ChamferIntentInterpreter {
     }
 
     // -------------------------------------------------------------------------
-    // 3. OPERAÇÃO DE CONSULTA GEOMÉTRICA (QUERY)
+    // 3. OPERAÇÃO DE CONSULTA GEOMÉTRICA (QUERY — Exemplo H §23)
     // -------------------------------------------------------------------------
     if (
       /^(qual|quais|quanto\s+mede|quantos\s+furos|calcule\s+a\s+[aá]rea|me[cç]a|informe)\b/i.test(
@@ -145,21 +200,32 @@ export class ChamferIntentInterpreter {
         (e): e is Extract<Entity, { type: "circle" }> =>
           e.type === "circle" && e.layer !== "referencia" && !e.isConstruction,
       );
+      const sortedCircles = [...circles].sort((a, b) => a.cx - b.cx || a.cy - b.cy);
+      const measuredPitch =
+        sortedCircles.length >= 2
+          ? Number(
+              Math.hypot(
+                sortedCircles[1]!.cx - sortedCircles[0]!.cx,
+                sortedCircles[1]!.cy - sortedCircles[0]!.cy,
+              ).toFixed(2),
+            )
+          : activePart?.holeGroups[0]?.pitch ?? 0;
+
       const box = bbox(existingEntities.filter((e) => e.layer !== "referencia"));
       const w = box ? Number((box.maxX - box.minX).toFixed(2)) : activePart?.width ?? 0;
       const h = box ? Number((box.maxY - box.minY).toFixed(2)) : activePart?.height ?? 0;
       const holeCount = circles.length;
       const answer = `Dimensões externas: ${w} × ${h} mm | Furos de corte: ${holeCount}${
         holeCount > 0 ? ` (Ø${(circles[0]!.r * 2).toFixed(1)} mm)` : ""
-      } | Total de entidades: ${existingEntities.length}.`;
+      }${measuredPitch > 0 ? ` | Passo entre centros: ${measuredPitch} mm` : ""} | Total de entidades: ${existingEntities.length}.`;
 
       const plan = ChamferIntentInterpreter.buildControlPlan({
         rawPrompt: cleanPrompt,
         turnIndex,
         category: "query",
         opType: "query_geometry",
-        params: { width: w, height: h, hole_count: holeCount },
-        summary: "Consulta técnica de dimensões e furação",
+        params: { width: w, height: h, hole_count: holeCount, pitch: measuredPitch },
+        summary: "Consulta técnica de dimensões, furação e passo",
         responseSummary: answer,
         existingEntitiesCount: existingEntities.length,
         selectedIds,
@@ -175,6 +241,153 @@ export class ChamferIntentInterpreter {
         deletedEntityIds: [],
         selectedEntityIds: selectedIds,
         queryAnswer: answer,
+      };
+      return plan;
+    }
+
+    // -------------------------------------------------------------------------
+    // 3b. ATUALIZAÇÃO DE ESPESSURA DA CHAPA (§20 — "Chapa de 3 mm", "Espessura de 6,35 mm", "Chapa de três oitavos", "Mude a espessura para 10 mm")
+    // -------------------------------------------------------------------------
+    const isPureThicknessCommand =
+      !/(\d+(?:[.,]\d+)?)\s*(?:mm)?\s*(?:x|×|por|\*)\s*(\d+(?:[.,]\d+)?)/i.test(q) &&
+      (/\b(?:mude|altere|defina|ajust[ea])?\s*(?:a\s+)?espessura\s*(?:da\s+chapa\s*)?(?:para|de|=)?\s*(\d+(?:[.,]\d+)?)\s*(?:mm)?/i.test(
+        q,
+      ) ||
+        /^chapa\s+de\s+(\d+(?:[.,]\d+)?)\s*mm\b/i.test(q.trim()));
+
+    if (isPureThicknessCommand) {
+      const thMatch =
+        q.match(/espessura\s*(?:da\s+chapa\s*)?(?:para|de|=)?\s*(\d+(?:[.,]\d+)?)/i) ??
+        q.match(/^chapa\s+de\s+(\d+(?:[.,]\d+)?)\s*mm\b/i);
+      const thicknessMm = thMatch?.[1] ? parseFloat(thMatch[1].replace(",", ".")) : 3;
+      const plan = ChamferIntentInterpreter.buildControlPlan({
+        rawPrompt: cleanPrompt,
+        turnIndex,
+        category: "modify",
+        opType: "modify_feature",
+        params: {
+          thickness: thicknessMm,
+          width: activePart?.width ?? 500,
+          height: activePart?.height ?? 250,
+        },
+        summary: `Definir espessura CHAPA = ${thicknessMm} mm`,
+        responseSummary: `Propriedade CHAPA atualizada para espessura de ${thicknessMm} mm.`,
+        existingEntitiesCount: existingEntities.length,
+        selectedIds,
+        originMode,
+        activePartId: activePart?.partId,
+      });
+      plan.compiled = {
+        previewEntities: existingEntities,
+        finalEntities: existingEntities,
+        generatedDimensions: [],
+        replacedEntityIds: [],
+        deletedEntityIds: [],
+        selectedEntityIds: selectedIds,
+        parametricFeatureSnapshot: activePart ?? undefined,
+      };
+      return plan;
+    }
+
+    // -------------------------------------------------------------------------
+    // 3c. APARO PARCIAL DE ENTIDADES (TRIM — §12.3 e Exemplo G §23)
+    // -------------------------------------------------------------------------
+    if (/^(apar[ea]r?|trim|corte\s+o\s+trecho)\b/i.test(q)) {
+      const lines = existingEntities.filter((e) => e.type === "line" || e.type === "polyline");
+      const cutters = existingEntities.filter((e) => e.type === "circle" || e.type === "arc" || e.type === "line");
+
+      if (lines.length === 0 || cutters.length < 2) {
+        const plan = ChamferIntentInterpreter.buildControlPlan({
+          rawPrompt: cleanPrompt,
+          turnIndex,
+          category: "modify",
+          opType: "trim_entity",
+          params: {},
+          summary: "Esclarecer entidade e fronteira de corte para TRIM parcial",
+          responseSummary:
+            "Para aparar apenas o trecho pretendido, selecione ou indique a entidade a aparar e a circunferência/linha limite.",
+          existingEntitiesCount: existingEntities.length,
+          selectedIds,
+          originMode,
+          activePartId: activePart?.partId,
+        });
+        plan.unresolved = [
+          {
+            id: "amb_trim_target",
+            parameter: "target_entity",
+            reason: "Não há referência inequívoca ao trecho e à fronteira de aparo.",
+            question: "Qual trecho e qual entidade limite devem ser usados no aparo (TRIM)?",
+            options: [
+              {
+                id: "opt_trim_top",
+                label: "Trecho superior acima da circunferência",
+                description: "Apara apenas o segmento que ultrapassa o topo do círculo",
+                patch: { trim_region: "top" },
+              },
+              {
+                id: "opt_trim_bottom",
+                label: "Trecho inferior abaixo da circunferência",
+                description: "Apara apenas o segmento que ultrapassa a base do círculo",
+                patch: { trim_region: "bottom" },
+              },
+            ],
+          },
+        ];
+        plan.validation = {
+          status: "needs_clarification",
+          issues: [
+            {
+              code: "AMBIGUOUS_TRIM_TARGET",
+              severity: "warning",
+              message: "Especifique ou selecione a entidade a aparar e a fronteira de corte.",
+            },
+          ],
+          checkedAt: Date.now(),
+        };
+        return plan;
+      }
+
+      // Quando há linha e circunferência reais no canvas, apara apenas o trecho que ultrapassa a fronteira
+      const targetLine = lines[0]!;
+      const circleCutter = existingEntities.find(
+        (e): e is Extract<Entity, { type: "circle" }> => e.type === "circle",
+      );
+      let trimmedEntities = [...existingEntities];
+      const replacedIds: string[] = [];
+
+      if (targetLine.type === "line" && circleCutter) {
+        // Apara o extremo superior (maior Y ou menor Y conforme pedido) até a borda da circunferência
+        const topY = circleCutter.cy + circleCutter.r;
+        const bottomY = circleCutter.cy - circleCutter.r;
+        const modifiedLine: Entity = {
+          ...targetLine,
+          y1: Math.min(targetLine.y1, topY),
+          y2: Math.max(Math.min(targetLine.y2, topY), bottomY),
+        };
+        replacedIds.push(targetLine.id);
+        trimmedEntities = existingEntities.map((e) => (e.id === targetLine.id ? modifiedLine : e));
+      }
+
+      const plan = ChamferIntentInterpreter.buildControlPlan({
+        rawPrompt: cleanPrompt,
+        turnIndex,
+        category: "modify",
+        opType: "trim_entity",
+        params: { trimmed_entity_id: targetLine.id, partial_trim: true },
+        summary: `Aparar parcialmente trecho de '${targetLine.id}' na fronteira circular`,
+        responseSummary: `Trecho excedente aparado parcialmente em '${targetLine.id}', preservando o restante da entidade e as demais geometrias.`,
+        existingEntitiesCount: existingEntities.length,
+        selectedIds,
+        originMode,
+        activePartId: activePart?.partId,
+      });
+      plan.compiled = {
+        previewEntities: trimmedEntities,
+        finalEntities: trimmedEntities,
+        generatedDimensions: [],
+        replacedEntityIds: replacedIds,
+        deletedEntityIds: [],
+        selectedEntityIds: [targetLine.id],
       };
       return plan;
     }
@@ -220,9 +433,76 @@ export class ChamferIntentInterpreter {
     }
 
     // -------------------------------------------------------------------------
-    // 5. OPERAÇÃO DE REMOÇÃO / EXCLUSÃO
+    // 5. OPERAÇÃO DE REMOÇÃO / EXCLUSÃO (INCLUINDO EXCLUSÃO SELETIVA DE 1 FURO — §2.4 e §12.3)
     // -------------------------------------------------------------------------
     if (/^(remova|remover|apague|apagar|exclua|excluir|delete|deletar)\b/i.test(q)) {
+      const circleEntities = existingEntities
+        .filter(
+          (e): e is Extract<Entity, { type: "circle" }> =>
+            e.type === "circle" && e.layer !== "referencia",
+        )
+        .sort((a, b) => a.cx - b.cx || a.cy - b.cy);
+
+      const wantsSingleSpecificHole =
+        /\b(furo\s+do\s+meio|furo\s+central|apenas\s+o\s+furo|somente\s+o\s+furo|primeiro\s+furo|1º\s+furo|segundo\s+furo|2º\s+furo|terceiro\s+furo|3º\s+furo|[úu]ltimo\s+furo)\b/i.test(
+          rawPrompt,
+        );
+
+      if (wantsSingleSpecificHole && circleEntities.length > 0) {
+        let targetIdx = Math.floor(circleEntities.length / 2);
+        if (/\b(primeiro|1º)\b/i.test(rawPrompt)) targetIdx = 0;
+        else if (/\b(segundo|2º)\b/i.test(rawPrompt)) targetIdx = Math.min(1, circleEntities.length - 1);
+        else if (/\b(terceiro|3º)\b/i.test(rawPrompt)) targetIdx = Math.min(2, circleEntities.length - 1);
+        else if (/\b([úu]ltimo)\b/i.test(rawPrompt)) targetIdx = circleEntities.length - 1;
+
+        const targetHole = circleEntities[targetIdx]!;
+        const remaining = existingEntities.filter((e) => e.id !== targetHole.id);
+        const remainingHoleCount = circleEntities.length - 1;
+
+        const plan = ChamferIntentInterpreter.buildControlPlan({
+          rawPrompt: cleanPrompt,
+          turnIndex,
+          category: "delete",
+          opType: "delete_entities",
+          params: {
+            deleted_count: 1,
+            deleted_hole_id: targetHole.id,
+            hole_count: remainingHoleCount,
+          },
+          summary: `Remover apenas o furo selecionado (${targetHole.id} em X=${targetHole.cx.toFixed(1)}, Y=${targetHole.cy.toFixed(1)} mm)`,
+          responseSummary: `Remove exclusivamente o furo referenciado (${targetHole.id}), preservando os outros ${remainingHoleCount} furo(s) e o contorno da peça.`,
+          existingEntitiesCount: existingEntities.length,
+          selectedIds,
+          originMode,
+          activePartId: activePart?.partId,
+        });
+        plan.compiled = {
+          previewEntities: remaining,
+          finalEntities: remaining,
+          generatedDimensions: [],
+          replacedEntityIds: [],
+          deletedEntityIds: [targetHole.id],
+          selectedEntityIds: [],
+          parametricFeatureSnapshot: activePart
+            ? {
+                ...activePart,
+                holeGroups: activePart.holeGroups.map((g, idx) =>
+                  idx === 0
+                    ? {
+                        ...g,
+                        count: remainingHoleCount,
+                        entityIds: g.entityIds.filter((id) => id !== targetHole.id),
+                      }
+                    : g,
+                ),
+                allEntityIds: activePart.allEntityIds.filter((id) => id !== targetHole.id),
+                lastUpdatedTurn: turnIndex,
+              }
+            : undefined,
+        };
+        return plan;
+      }
+
       if ((q.includes("furo") || q.includes("furação")) && activePart && activePart.kind === "plate") {
         return ChamferIntentInterpreter.compileMultiTurnPlateModification(
           cleanPrompt,
@@ -237,9 +517,7 @@ export class ChamferIntentInterpreter {
       }
       const toDeleteIds =
         q.includes("furo") || q.includes("círculo")
-          ? existingEntities
-              .filter((e) => e.type === "circle" && e.layer !== "referencia")
-              .map((e) => e.id)
+          ? circleEntities.map((e) => e.id)
           : selectedIds.length > 0
             ? selectedIds
             : existingEntities.map((e) => e.id);

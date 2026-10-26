@@ -122,7 +122,7 @@ export function ChamferRightSidebar({
     return (
       <aside
         className={cn(
-          "relative z-30 flex flex-col items-center justify-start border-l bg-slate-950/90 py-2 select-none shadow-md backdrop-blur-md transition-all w-9 shrink-0",
+          "relative z-30 flex flex-col items-center justify-start border-l bg-slate-950/90 py-2 select-none shadow-md backdrop-blur-md transition-all w-8 sm:w-9 shrink-0 rounded-xl sm:rounded-none",
           isDark ? "border-slate-800 text-slate-400" : "border-slate-200 bg-white/90 text-slate-600"
         )}
       >
@@ -225,12 +225,13 @@ export function ChamferRightSidebar({
   }
 
   // -------------------------------------------------------------------------
-  // JANELA LATERAL DIREITA COMPACTA EXPANDIDA
+  // JANELA LATERAL DIREITA COMPACTA EXPANDIDA (GAVETA OVERLAY NO MODO RETRATO)
   // -------------------------------------------------------------------------
   return (
     <aside
       className={cn(
-        "relative z-30 flex w-[265px] sm:w-[285px] shrink-0 flex-col overflow-hidden border-l select-none shadow-xl backdrop-blur-md transition-all",
+        "z-40 flex w-[265px] max-w-[86vw] sm:w-[285px] shrink-0 flex-col overflow-hidden border-l select-none shadow-2xl backdrop-blur-md transition-all",
+        "max-md:absolute max-md:right-1 max-md:top-1 max-md:bottom-1 max-md:rounded-2xl max-md:border md:relative",
         isDark
           ? "border-slate-800 bg-slate-950/95 text-slate-100"
           : "border-slate-200 bg-white/95 text-slate-800",

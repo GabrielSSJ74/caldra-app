@@ -119,6 +119,7 @@ export class ThreeBRepRenderer {
   // Animação e Renderização
   private isDestroyed = false;
   private animFrameId = 0;
+  private resizeObserver: ResizeObserver | null = null;
   private tempEuler: THREE.Euler = new THREE.Euler();
   private lastReportedRotation: { x: number; y: number; z: number } = {
     x: Number.NaN,
@@ -1508,6 +1509,13 @@ export class ThreeBRepRenderer {
     dom.addEventListener("pointermove", this.onPointerMove);
     dom.addEventListener("pointerup", this.onPointerUp);
     window.addEventListener("resize", this.onWindowResize);
+
+    if (typeof ResizeObserver !== "undefined" && this.container) {
+      this.resizeObserver = new ResizeObserver(() => {
+        this.onWindowResize();
+      });
+      this.resizeObserver.observe(this.container);
+    }
   }
 
   private onPointerDown = (e: PointerEvent): void => {
@@ -1610,6 +1618,7 @@ export class ThreeBRepRenderer {
     if (!this.container || this.isDestroyed) return;
     const width = this.container.clientWidth || 800;
     const height = this.container.clientHeight || 600;
+    if (width <= 0 || height <= 0) return;
 
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
@@ -1622,7 +1631,11 @@ export class ThreeBRepRenderer {
     this.orthoCamera.bottom = -d;
     this.orthoCamera.updateProjectionMatrix();
 
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.setSize(width, height);
+    if (this.onDemandRender) {
+      this.requestRender();
+    }
   };
 
   // ==========================================
@@ -1800,6 +1813,10 @@ export class ThreeBRepRenderer {
     dom.removeEventListener("pointermove", this.onPointerMove);
     dom.removeEventListener("pointerup", this.onPointerUp);
     window.removeEventListener("resize", this.onWindowResize);
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
 
     this.clearGeometry();
     this.clearSketchWireframes();

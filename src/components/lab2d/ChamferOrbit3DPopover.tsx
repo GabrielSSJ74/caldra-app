@@ -105,7 +105,7 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
     const el = triggerWrapRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    const menuWidth = 264;
+    const menuWidth = Math.min(264, window.innerWidth - 16);
     const clampedLeft = Math.max(8, Math.min(r.left, window.innerWidth - menuWidth - 8));
     setAnchorRect({
       left: clampedLeft,
@@ -265,6 +265,9 @@ export const ChamferOrbit3DPopover = React.memo(function ChamferOrbit3DPopover({
               left: `${anchorRect.left}px`,
               top: `${anchorRect.top}px`,
               width: "264px",
+              maxWidth: "94vw",
+              maxHeight: "calc(100dvh - 76px)",
+              overflowY: "auto",
               background: "rgba(15, 23, 42, 0.94)",
               backdropFilter: "blur(12px)",
               WebkitBackdropFilter: "blur(12px)",

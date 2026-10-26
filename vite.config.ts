@@ -8,6 +8,9 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
   vite: {
+    resolve: {
+      tsconfigPaths: true,
+    },
     server: {
       host: "0.0.0.0",
       port: 3000,
@@ -15,6 +18,42 @@ export default defineConfig({
     },
     optimizeDeps: {
       exclude: ["occt-wasm"],
+      holdUntilCrawlEnd: true,
+      include: [
+        "@google/genai",
+        "@lovable.dev/cloud-auth-js",
+        "@radix-ui/react-checkbox",
+        "@radix-ui/react-dialog",
+        "@radix-ui/react-dropdown-menu",
+        "@radix-ui/react-slot",
+        "@radix-ui/react-switch",
+        "@supabase/supabase-js",
+        "@tanstack/history",
+        "@tanstack/react-query",
+        "@tanstack/router-core",
+        "@tanstack/router-core/isServer",
+        "@tanstack/router-core/ssr/client",
+        "@tanstack/router-core/ssr/server",
+        "class-variance-authority",
+        "clsx",
+        "h3-v2",
+        "jspdf",
+        "lucide-react",
+        "qrcode",
+        "react",
+        "react-dom",
+        "react-dom/client",
+        "react/jsx-dev-runtime",
+        "react/jsx-runtime",
+        "seroval",
+        "sonner",
+        "tailwind-merge",
+        "tesseract.js",
+        "three",
+        "three/examples/jsm/controls/OrbitControls.js",
+        "three/examples/jsm/controls/TransformControls.js",
+        "zod",
+      ],
     },
     build: {
       target: "esnext",

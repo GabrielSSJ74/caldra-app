@@ -8,6 +8,7 @@
 
 import type { Entity, LayerId, Vec2 } from "@/lib/lab2d/core";
 import type { Dimension } from "@/lib/lab2d/dimensions";
+import type { AgentTurnSummaryV2 } from "./agentOrchestratorV2";
 
 export const CHAMFER_INTENT_SCHEMA_VERSION = "1.0.0" as const;
 
@@ -240,6 +241,7 @@ export interface ChamferIntentPlan {
   confirmation_required: boolean;
   response_summary: string;
   compiled?: CompiledGeometryPayload;
+  v2?: AgentTurnSummaryV2;
 }
 
 /**

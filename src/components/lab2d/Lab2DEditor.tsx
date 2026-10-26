@@ -75,8 +75,7 @@ import {
 import { Button } from "@/components/ui/button";
 
 import type { Vec2 } from "@/lib/geometry/types";
-import { RotateGate } from "@/components/lab2d/RotateGate";
-import { useDeclareImmersive, useImmersiveLandscape } from "@/lib/ui/immersive";
+import { useDeclareImmersive } from "@/lib/ui/immersive";
 import type { VisionImageLayer } from "@/components/lab2d/VisionDialog";
 import { TextDialog, type TextSpec } from "@/components/lab2d/TextDialog";
 
@@ -675,12 +674,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [isDark, setAppTheme]);
 
   const navigate = useNavigate();
-  const { needsRotate, request: requestLandscape, release } = useImmersiveLandscape(true);
   useDeclareImmersive(true);
-  const [rotateDismissed, setRotateDismissed] = useState(false);
   const leaveEditor = useCallback(() => {
-    void release().finally(() => void navigate({ to: "/desenho-2d" }));
-  }, [navigate, release]);
+    void navigate({ to: "/desenho-2d" });
+  }, [navigate]);
   const wrapRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -900,7 +897,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [swipeTrimCutPreview, setSwipeTrimCutPreview] = useState<[Vec2, Vec2][]>([]);
   const [orbitPreset, setOrbitPreset] = useState<OrbitPresetId>("top");
   const [isOrbitToolActive, setIsOrbitToolActive] = useState<boolean>(false);
-  const [renderStyle3D, setRenderStyle3D] = useState<EdgeMode>("shaded-edges");
+  const [renderStyle3D, setRenderStyle3D] = useState<EdgeMode>("wireframe");
   const [wireframe3DStyle, setWireframe3DStyle] = useState<ChamferWireframe3DStyleConfig>(() => ({
     ...DEFAULT_CHAMFER_WIREFRAME_3D_STYLE,
   }));
@@ -1321,7 +1318,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setActiveMode(targetMode);
       setSolidOpen(false);
       setIsOrbitToolActive(true);
-      setRenderStyle3D((prev) => (prev === "wireframe" ? "shaded-edges" : prev));
       if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
         animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
       }
@@ -1661,20 +1657,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);
   }, [saveStatus, chamferSettings.autoSave, chamferSettings.recoveryEnabled, performSave]);
 
-  /* --------------------------------- paisagem automática no celular */
-  useEffect(() => {
-    const so = window.screen?.orientation as
-      | (ScreenOrientation & { lock?: (o: string) => Promise<void>; unlock?: () => void })
-      | undefined;
-    void so?.lock?.("landscape").catch(() => undefined);
-    return () => {
-      try {
-        so?.unlock?.();
-      } catch {
-        /* não suportado */
-      }
-    };
-  }, []);
+  /* Orientação livre (Portrait e Landscape) — sem bloqueio forçado de tela */
 
   const layerOf = useCallback((id: string) => layers.find((l) => l.id === id), [layers]);
 
@@ -2008,9 +1991,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (r && r.width > 20 && r.height > 20) {
         const nextW = Math.round(r.width);
         const nextH = Math.round(r.height);
-        setCanvasSize((prev) =>
-          prev.w === nextW && prev.h === nextH ? prev : { w: nextW, h: nextH }
-        );
+        setCanvasSize((prev) => {
+          if (prev.w === nextW && prev.h === nextH) return prev;
+          if (initialFitDoneRef.current && prev.w > 20 && prev.h > 20) {
+            // Preserva o ponto central do mundo CAD (cx, cy) e a proporção 1:1 (k_x === k_y === k)
+            // ao girar o aparelho entre Retrato (Portrait) e Paisagem (Landscape)
+            const dw = (nextW - prev.w) / 2;
+            const dh = (nextH - prev.h) / 2;
+            const curV = viewRef.current;
+            if (
+              curV &&
+              Number.isFinite(curV.tx) &&
+              Number.isFinite(curV.ty) &&
+              Number.isFinite(curV.k)
+            ) {
+              const adjusted = { k: curV.k, tx: curV.tx + dw, ty: curV.ty + dh };
+              viewRef.current = adjusted;
+              setView(adjusted);
+            }
+          }
+          return { w: nextW, h: nextH };
+        });
         if (!initialFitDoneRef.current) {
           initialFitDoneRef.current = true;
           requestAnimationFrame(() => {
@@ -5247,12 +5248,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const isMobile = useIsMobile();
   const [isLandscape, setIsLandscape] = useState(
-    typeof window !== "undefined" ? window.innerWidth > window.innerHeight : true
+    typeof window !== "undefined" ? window.innerWidth >= window.innerHeight : true
   );
+
+  // Janela lateral direita estruturada do CHAMFER (Propriedades / Camadas / Corte / Cotas)
+  // Inicia recolhida no modo retrato ou em telas menores para liberar toda a largura central para o desenho
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(
+    typeof window !== "undefined"
+      ? window.innerWidth >= 1024 && window.innerWidth >= window.innerHeight
+      : true
+  );
+  const [activeSidebarTab, setActiveSidebarTab] = useState<ChamferSidebarTab>("propriedades");
 
   useEffect(() => {
     const handleResize = () => {
-      setIsLandscape(window.innerWidth > window.innerHeight);
+      const nextLandscape = window.innerWidth >= window.innerHeight;
+      setIsLandscape((prev) => {
+        if (prev && !nextLandscape) {
+          // Ao girar para modo retrato (vertical), recolhe automaticamente a barra lateral direita
+          setRightSidebarOpen(false);
+        }
+        return nextLandscape;
+      });
     };
     window.addEventListener("resize", handleResize);
     return () => window.removeEventListener("resize", handleResize);
@@ -5289,12 +5306,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     canvasWidth: canvasSize.w,
     canvasHeight: canvasSize.h,
   });
-
-  // Janela lateral direita estruturada do CHAMFER (Propriedades / Camadas / Corte / Cotas)
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(
-    typeof window !== "undefined" ? window.innerWidth >= 1024 : true
-  );
-  const [activeSidebarTab, setActiveSidebarTab] = useState<ChamferSidebarTab>("propriedades");
 
   // Contextual CAD: ao selecionar entidade(s), foca na aba Propriedades
   useEffect(() => {
@@ -5599,13 +5610,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         isMestre && "glow-ring",
       )}
     >
-      {needsRotate && !rotateDismissed && !visionOpen && !importOpen && (
-        <RotateGate
-          onRetry={() => void requestLandscape()}
-          onContinue={() => setRotateDismissed(true)}
-          onExit={leaveEditor}
-        />
-      )}
       {/* REGIÃO A — HEADER SUPERIOR DEFINITIVO CAD (BARRA FIXA COM SWIPE HORIZONTAL) */}
       {!focus && (
         <header
@@ -5735,11 +5739,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </button>
             </div>
 
-            {/* SELETOR DE PROJEÇÃO: [ ORTO 2D | ISO 2D ] (SEMPRE PRESENTE NO WORKSPACE UNIFICADO) */}
+            {/* SELETOR DE PROJEÇÃO: [ ORTO 2D | ISO 2D ] (SEMPRE PRESENTE NO WORKSPACE UNIFICADO EM PAISAGEM E RETRATO) */}
             {!solidOpen && (
               <div
                 className={cn(
-                  "hidden sm:flex items-center rounded-lg border p-0.5 shadow-xs",
+                  "flex items-center rounded-lg border p-0.5 shadow-xs shrink-0",
                   isDark ? "border-slate-800 bg-slate-900/90" : "border-slate-200 bg-slate-100",
                 )}
               >
@@ -8122,7 +8126,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         )}
       </div>
 
-      {/* REGIÃO E — STATUS BAR AGRUPADA (32px) */}
+      {/* REGIÃO E — STATUS BAR AGRUPADA (32px) — ROLAGEM HORIZONTAL SUAVE EM MODO RETRATO */}
       {!focus && (
         <footer
           aria-label="Barra de status do CHAMFER"
@@ -8133,439 +8137,440 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               : "border-slate-200 bg-white/95 text-slate-600 shadow-xs",
           )}
         >
-          {/* LADO ESQUERDO: PLANOS DO PROJETO + COORDENADAS REAIS */}
-          <div className="flex items-center gap-2 overflow-x-auto scrollbar-none">
-            {project?.plans.map((pl) => (
-              <button
-                key={pl.id}
-                type="button"
-                onClick={() => {
-                  if (pl.id === planId) return;
-                  setProject((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          plans: prev.plans.map((x) =>
-                            x.id === planId ? { ...x, entities, groups, dims, cad3dTreeJson } : x,
-                          ),
-                        }
-                      : prev,
-                  );
-                  setPlanId(pl.id);
-                  const seenPlanIds = new Set<string>();
-                  const sanitizedPlanEntities = (pl.entities ?? []).map((ent) => {
-                    let entId = ent.id;
-                    if (!entId || entId === "draft" || entId.startsWith("draft-") || seenPlanIds.has(entId)) {
-                      entId = uid();
-                    }
-                    seenPlanIds.add(entId);
-                    return ent.id === entId ? ent : { ...ent, id: entId };
-                  });
-                  setEntities(sanitizedPlanEntities);
-                  setGroups(pl.groups ?? []);
-                  setDims(pl.dims ?? []);
-                  setCad3dTreeJson(pl.cad3dTreeJson);
-                  setSelection([]);
-                  past.current = [];
-                  future.current = [];
-                }}
-                className={cn(
-                  "shrink-0 rounded px-2 py-0.5 font-bold transition-colors",
-                  pl.id === planId
-                    ? isDark
-                      ? "bg-red-950/60 text-red-400 border border-red-500/30"
-                      : "bg-red-50 text-red-600 border border-red-200"
-                    : "hover:text-foreground",
-                )}
-              >
-                {pl.name}
-              </button>
-            ))}
-            {project && (
-              <button
-                type="button"
-                aria-label="Novo plano de corte"
-                onClick={() => {
-                  const plan = emptyPlan(project.plans.length);
-                  plan.name = planLabel(project.plans.length);
-                  const next: Project = {
-                    ...project,
-                    plans: [
-                      ...project.plans.map((x) =>
-                        x.id === planId ? { ...x, entities, groups, dims, cad3dTreeJson } : x,
-                      ),
-                      plan,
-                    ],
-                    lastPlanId: plan.id,
-                  };
-                  saveProject(next);
-                  setProject(next);
-                  setPlanId(plan.id);
-                  setEntities([]);
-                  setGroups([]);
-                  setDims([]);
-                  setCad3dTreeJson(undefined);
-                  setSelection([]);
-                  toast.success(`${plan.name} criado.`);
-                }}
-                className="shrink-0 rounded px-1.5 py-0.5 text-muted-foreground hover:text-accent font-bold"
-                title="Adicionar novo plano de corte ao projeto"
-              >
-                +
-              </button>
-            )}
-
-            <div className={cn("mx-1 h-3.5 w-px", isDark ? "bg-slate-800" : "bg-slate-200")} />
-
-            {/* UNIDADE DE MEDIDA CANÔNICA */}
-            <span
-              className={cn(
-                "flex items-center px-1.5 py-0.2 rounded border font-mono font-bold text-[9px] tracking-wider",
-                isDark
-                  ? "border-slate-700/80 bg-slate-900 text-slate-200"
-                  : "border-slate-300 bg-slate-100 text-slate-700",
-              )}
-              title="Unidade de medida: Milímetros (mm)"
-            >
-              MM
-            </span>
-
-            {/* BOTÃO PROPRIEDADES DA PEÇA / CHAPA CONTEXTUAL (REGRAS 2 & 5) */}
-            <button
-              type="button"
-              onClick={() => {
-                setMobileEditorOpenManual((prev) => !prev);
-              }}
-              title="Abrir editor contextual de chapa e projeto"
-              className={cn(
-                "flex items-center gap-1 px-2 py-0.5 rounded border font-mono font-bold text-[9px] tracking-wider transition-colors cursor-pointer",
-                mobileEditorOpenManual
-                  ? "border-red-500 bg-red-600 text-white shadow-xs"
-                  : isDark
-                  ? "border-slate-700/80 bg-slate-900 text-slate-300 hover:text-white hover:border-slate-600"
-                  : "border-slate-300 bg-slate-100 text-slate-700 hover:text-slate-900"
-              )}
-            >
-              <span>CHAPA {thickness.toFixed(1)}MM</span>
-            </button>
-
-            {/* LEITURA DE COORDENADAS E PAINEL CONTEXTUAL INTELIGENTE (REF 0,0 & BORDAS) */}
-            {temporaryOrigin ? (
-              <div className="flex items-center gap-1.5 font-mono text-[9.5px]">
-                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold shrink-0">
-                  <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
-                  REF [{temporaryOrigin.label}]:
-                </span>
-                <span className="text-amber-400 font-bold">ΔX:</span>
-                <strong className="text-amber-200">
-                  {(cursor.x - temporaryOrigin.p.x >= 0 ? "+" : "") + (cursor.x - temporaryOrigin.p.x).toFixed(1)}
-                </strong>
-                <span className="text-slate-600">|</span>
-                <span className="text-amber-400 font-bold">ΔY:</span>
-                <strong className="text-amber-200">
-                  {(cursor.y - temporaryOrigin.p.y >= 0 ? "+" : "") + (cursor.y - temporaryOrigin.p.y).toFixed(1)} mm
-                </strong>
-
-                {showGlobalCoordsPeek && (
-                  <span className="text-slate-400 text-[8.5px] ml-1">
-                    (G: {cursor.x.toFixed(1)}, {cursor.y.toFixed(1)})
-                  </span>
-                )}
-
+          {/* FAIXA UNIFICADA COM SWIPE HORIZONTAL SUAVE (SEM CORTAR BOTÕES EM MODO RETRATO) */}
+          <div className="flex flex-1 min-w-0 items-center justify-between gap-2 overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x whitespace-nowrap">
+            {/* LADO ESQUERDO: PLANOS DO PROJETO + COORDENADAS REAIS */}
+            <div className="flex shrink-0 items-center gap-2">
+              {project?.plans.map((pl) => (
                 <button
-                  type="button"
-                  onClick={() => setShowGlobalCoordsPeek((v) => !v)}
-                  title="Alternar coordenadas globais"
-                  className="px-1 py-0.5 rounded text-[8px] bg-slate-800 hover:bg-slate-700 text-slate-300 ml-0.5"
-                >
-                  {showGlobalCoordsPeek ? "Ocultar G" : "G"}
-                </button>
-
-                <button
+                  key={pl.id}
                   type="button"
                   onClick={() => {
-                    setTemporaryOrigin(null);
-                    triggerHaptic("tap");
-                    toast.success("Origem temporária limpa (retornado ao 0,0 global)");
-                  }}
-                  title="Limpar REF 0,0 e voltar ao documento global"
-                  className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-red-950/60 hover:bg-red-900 border border-red-500/40 text-red-300 font-bold text-[8.5px] active:scale-95"
-                >
-                  ✕ Limpar REF
-                </button>
-              </div>
-            ) : activeEdge ? (
-              (() => {
-                const { u, v } = CoordinateFrameManager.worldToUV(cursor, activeEdge);
-                return (
-                  <div className="flex items-center gap-1.5 font-mono text-[9.5px]">
-                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-bold shrink-0">
-                      <span className="size-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                      BORDA [L = {activeEdge.length.toFixed(0)} mm]:
-                    </span>
-                    <span className="text-slate-400">u:</span>
-                    <strong className="text-cyan-200">{u.toFixed(1)}</strong>
-                    <span className="text-slate-600">|</span>
-                    <span className="text-slate-400">v (afast.):</span>
-                    <strong className="text-emerald-300">
-                      {(v >= 0 ? "+" : "") + v.toFixed(1)} mm
-                    </strong>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveEdgeSide((prev) => (prev === 1 ? -1 : 1));
-                        triggerHaptic("selection");
-                      }}
-                      title="Inverter Lado do Afastamento"
-                      className="px-1.5 py-0.5 rounded bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300 font-bold text-[8.5px] active:scale-95"
-                    >
-                      ⇄ Lado {activeEdgeSide === 1 ? "A" : "B"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const line = GeometricConstraintResolver.createMarkingOrBendLine(
-                          activeEdge,
-                          activeEdgeOffset,
-                          activeEdgeSide,
-                          "marcacao"
-                        );
-                        commit((prev) => [...prev, line]);
-                        triggerHaptic("action");
-                        AudioManager.play("ui_select");
-                        toast.success(`✓ Linha de marcação gerada a ${activeEdgeOffset} mm da borda!`);
-                      }}
-                      title={`Criar linha de marcação paralela a ${activeEdgeOffset} mm`}
-                      className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-[8.5px] active:scale-95"
-                    >
-                      + MAR ({activeEdgeOffset}mm)
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const line = GeometricConstraintResolver.createMarkingOrBendLine(
-                          activeEdge,
-                          activeEdgeOffset,
-                          activeEdgeSide,
-                          "dobra"
-                        );
-                        commit((prev) => [...prev, line]);
-                        triggerHaptic("action");
-                        AudioManager.play("ui_select");
-                        toast.success(`✓ Linha de dobra gerada a ${activeEdgeOffset} mm da borda!`);
-                      }}
-                      title={`Criar linha de dobra paralela a ${activeEdgeOffset} mm`}
-                      className="px-1.5 py-0.5 rounded bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 font-bold text-[8.5px] active:scale-95"
-                    >
-                      + Dobra ({activeEdgeOffset}mm)
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setActiveEdge(null);
-                        setLiveDimensions([]);
-                        triggerHaptic("tap");
-                      }}
-                      title="Desmarcar borda"
-                      className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold text-[8.5px]"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                );
-              })()
-            ) : (
-              <div className="flex items-center gap-1 font-mono text-[9.5px]">
-                <span className={isDark ? "text-slate-500" : "text-slate-400"}>X:</span>
-                <strong className={isDark ? "text-slate-200" : "text-slate-800"}>{cursor.x.toFixed(2)}</strong>
-                <span className={isDark ? "text-slate-500" : "text-slate-400"}>Y:</span>
-                <strong className={isDark ? "text-slate-200" : "text-slate-800"}>{cursor.y.toFixed(2)}</strong>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const p = smartSnap ? smartSnap.p : { x: cursor.x, y: cursor.y };
-                    const label = smartSnap ? smartSnap.label : "Ponto";
-                    const kind = smartSnap ? smartSnap.kind : "origin";
-                    setTemporaryOrigin({
-                      id: uid(),
-                      p,
-                      label,
-                      kind,
-                      timestamp: Date.now(),
+                    if (pl.id === planId) return;
+                    setProject((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            plans: prev.plans.map((x) =>
+                              x.id === planId ? { ...x, entities, groups, dims, cad3dTreeJson } : x,
+                            ),
+                          }
+                        : prev,
+                    );
+                    setPlanId(pl.id);
+                    const seenPlanIds = new Set<string>();
+                    const sanitizedPlanEntities = (pl.entities ?? []).map((ent) => {
+                      let entId = ent.id;
+                      if (!entId || entId === "draft" || entId.startsWith("draft-") || seenPlanIds.has(entId)) {
+                        entId = uid();
+                      }
+                      seenPlanIds.add(entId);
+                      return ent.id === entId ? ent : { ...ent, id: entId };
                     });
-                    triggerHaptic("success");
-                    AudioManager.play("ui_select");
-                    toast.success(`✓ REF 0,0 fixada em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm`);
+                    setEntities(sanitizedPlanEntities);
+                    setGroups(pl.groups ?? []);
+                    setDims(pl.dims ?? []);
+                    setCad3dTreeJson(pl.cad3dTreeJson);
+                    setSelection([]);
+                    past.current = [];
+                    future.current = [];
                   }}
-                  title="Definir ponto sob o cursor / snap como origem temporária REF (0,0)"
-                  className="ml-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all"
+                  className={cn(
+                    "shrink-0 rounded px-2 py-0.5 font-bold transition-colors",
+                    pl.id === planId
+                      ? isDark
+                        ? "bg-red-950/60 text-red-400 border border-red-500/30"
+                        : "bg-red-50 text-red-600 border border-red-200"
+                      : "hover:text-foreground",
+                  )}
                 >
-                  <span>📍</span>
-                  <span>REF 0,0</span>
+                  {pl.name}
                 </button>
+              ))}
+              {project && (
+                <button
+                  type="button"
+                  aria-label="Novo plano de corte"
+                  onClick={() => {
+                    const plan = emptyPlan(project.plans.length);
+                    plan.name = planLabel(project.plans.length);
+                    const next: Project = {
+                      ...project,
+                      plans: [
+                        ...project.plans.map((x) =>
+                          x.id === planId ? { ...x, entities, groups, dims, cad3dTreeJson } : x,
+                        ),
+                        plan,
+                      ],
+                      lastPlanId: plan.id,
+                    };
+                    saveProject(next);
+                    setProject(next);
+                    setPlanId(plan.id);
+                    setEntities([]);
+                    setGroups([]);
+                    setDims([]);
+                    setCad3dTreeJson(undefined);
+                    setSelection([]);
+                    toast.success(`${plan.name} criado.`);
+                  }}
+                  className="shrink-0 rounded px-1.5 py-0.5 text-muted-foreground hover:text-accent font-bold"
+                  title="Adicionar novo plano de corte ao projeto"
+                >
+                  +
+                </button>
+              )}
 
-                {selection.length > 0 && (
+              <div className={cn("mx-1 h-3.5 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
+
+              {/* UNIDADE DE MEDIDA CANÔNICA */}
+              <span
+                className={cn(
+                  "flex shrink-0 items-center px-1.5 py-0.2 rounded border font-mono font-bold text-[9px] tracking-wider",
+                  isDark
+                    ? "border-slate-700/80 bg-slate-900 text-slate-200"
+                    : "border-slate-300 bg-slate-100 text-slate-700",
+                )}
+                title="Unidade de medida: Milímetros (mm)"
+              >
+                MM
+              </span>
+
+              {/* BOTÃO PROPRIEDADES DA PEÇA / CHAPA CONTEXTUAL (REGRAS 2 & 5) */}
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileEditorOpenManual((prev) => !prev);
+                }}
+                title="Abrir editor contextual de chapa e projeto"
+                className={cn(
+                  "flex shrink-0 items-center gap-1 px-2 py-0.5 rounded border font-mono font-bold text-[9px] tracking-wider transition-colors cursor-pointer",
+                  mobileEditorOpenManual
+                    ? "border-red-500 bg-red-600 text-white shadow-xs"
+                    : isDark
+                    ? "border-slate-700/80 bg-slate-900 text-slate-300 hover:text-white hover:border-slate-600"
+                    : "border-slate-300 bg-slate-100 text-slate-700 hover:text-slate-900"
+                )}
+              >
+                <span>CHAPA {thickness.toFixed(1)}MM</span>
+              </button>
+
+              {/* LEITURA DE COORDENADAS E PAINEL CONTEXTUAL INTELIGENTE (REF 0,0 & BORDAS) */}
+              {temporaryOrigin ? (
+                <div className="flex shrink-0 items-center gap-1.5 font-mono text-[9.5px]">
+                  <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold shrink-0">
+                    <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
+                    REF [{temporaryOrigin.label}]:
+                  </span>
+                  <span className="text-amber-400 font-bold">ΔX:</span>
+                  <strong className="text-amber-200">
+                    {(cursor.x - temporaryOrigin.p.x >= 0 ? "+" : "") + (cursor.x - temporaryOrigin.p.x).toFixed(1)}
+                  </strong>
+                  <span className="text-slate-600">|</span>
+                  <span className="text-amber-400 font-bold">ΔY:</span>
+                  <strong className="text-amber-200">
+                    {(cursor.y - temporaryOrigin.p.y >= 0 ? "+" : "") + (cursor.y - temporaryOrigin.p.y).toFixed(1)} mm
+                  </strong>
+
+                  {showGlobalCoordsPeek && (
+                    <span className="text-slate-400 text-[8.5px] ml-1">
+                      (G: {cursor.x.toFixed(1)}, {cursor.y.toFixed(1)})
+                    </span>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowGlobalCoordsPeek((v) => !v)}
+                    title="Alternar coordenadas globais"
+                    className="px-1 py-0.5 rounded text-[8px] bg-slate-800 hover:bg-slate-700 text-slate-300 ml-0.5"
+                  >
+                    {showGlobalCoordsPeek ? "Ocultar G" : "G"}
+                  </button>
+
                   <button
                     type="button"
                     onClick={() => {
-                      const selectedEntities = entities.filter((e) => selection.includes(e.id));
-                      const edges = GeometricReferenceEngine.extractEdges(selectedEntities);
-                      if (edges.length > 0) {
-                        const bestEdge =
-                          GeometricReferenceEngine.findNearestEdge(cursor, edges, 500)?.edge ?? edges[0]!;
-                        setActiveEdge(bestEdge);
-                        triggerHaptic("action");
-                        toast.success(`✓ Borda selecionada: ${bestEdge.label} (${bestEdge.length.toFixed(1)} mm)`);
-                      } else {
-                        toast.info("A seleção atual não possui bordas lineares.");
-                      }
+                      setTemporaryOrigin(null);
+                      triggerHaptic("tap");
+                      toast.success("Origem temporária limpa (retornado ao 0,0 global)");
                     }}
-                    title="Definir borda da seleção para afastamento e cotas vivas"
-                    className="ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all"
+                    title="Limpar REF 0,0 e voltar ao documento global"
+                    className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-red-950/60 hover:bg-red-900 border border-red-500/40 text-red-300 font-bold text-[8.5px] active:scale-95"
                   >
-                    <span>📐</span>
-                    <span>Usar Borda</span>
+                    ✕ Limpar REF
                   </button>
-                )}
-              </div>
-            )}
+                </div>
+              ) : activeEdge ? (
+                (() => {
+                  const { u, v } = CoordinateFrameManager.worldToUV(cursor, activeEdge);
+                  return (
+                    <div className="flex shrink-0 items-center gap-1.5 font-mono text-[9.5px]">
+                      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-bold shrink-0">
+                        <span className="size-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                        BORDA [L = {activeEdge.length.toFixed(0)} mm]:
+                      </span>
+                      <span className="text-slate-400">u:</span>
+                      <strong className="text-cyan-200">{u.toFixed(1)}</strong>
+                      <span className="text-slate-600">|</span>
+                      <span className="text-slate-400">v (afast.):</span>
+                      <strong className="text-emerald-300">
+                        {(v >= 0 ? "+" : "") + v.toFixed(1)} mm
+                      </strong>
 
-            {/* HUD DE COMPRIMENTO / ÂNGULO QUANDO DESENHANDO LINHA OU POLILINHA */}
-            {pending.length >= 1 && (tool === "line" || tool === "polyline") && (
-              <div className="flex items-center gap-1.5 rounded bg-red-950/60 border border-red-500/30 px-1.5 py-0.5 text-[9.5px] text-red-300">
-                <span>
-                  L: {Math.hypot(
-                    cursor.x - pending[pending.length - 1]!.x,
-                    cursor.y - pending[pending.length - 1]!.y,
-                  ).toFixed(1)} mm
-                </span>
-                <span>·</span>
-                <span>
-                  ∠{" "}
-                  {(
-                    ((Math.atan2(
-                      -(cursor.y - pending[pending.length - 1]!.y),
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveEdgeSide((prev) => (prev === 1 ? -1 : 1));
+                          triggerHaptic("selection");
+                        }}
+                        title="Inverter Lado do Afastamento"
+                        className="px-1.5 py-0.5 rounded bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300 font-bold text-[8.5px] active:scale-95"
+                      >
+                        ⇄ Lado {activeEdgeSide === 1 ? "A" : "B"}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const line = GeometricConstraintResolver.createMarkingOrBendLine(
+                            activeEdge,
+                            activeEdgeOffset,
+                            activeEdgeSide,
+                            "marcacao"
+                          );
+                          commit((prev) => [...prev, line]);
+                          triggerHaptic("action");
+                          AudioManager.play("ui_select");
+                          toast.success(`✓ Linha de marcação gerada a ${activeEdgeOffset} mm da borda!`);
+                        }}
+                        title={`Criar linha de marcação paralela a ${activeEdgeOffset} mm`}
+                        className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-[8.5px] active:scale-95"
+                      >
+                        + MAR ({activeEdgeOffset}mm)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const line = GeometricConstraintResolver.createMarkingOrBendLine(
+                            activeEdge,
+                            activeEdgeOffset,
+                            activeEdgeSide,
+                            "dobra"
+                          );
+                          commit((prev) => [...prev, line]);
+                          triggerHaptic("action");
+                          AudioManager.play("ui_select");
+                          toast.success(`✓ Linha de dobra gerada a ${activeEdgeOffset} mm da borda!`);
+                        }}
+                        title={`Criar linha de dobra paralela a ${activeEdgeOffset} mm`}
+                        className="px-1.5 py-0.5 rounded bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 font-bold text-[8.5px] active:scale-95"
+                      >
+                        + Dobra ({activeEdgeOffset}mm)
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveEdge(null);
+                          setLiveDimensions([]);
+                          triggerHaptic("tap");
+                        }}
+                        title="Desmarcar borda"
+                        className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold text-[8.5px]"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })()
+              ) : (
+                <div className="flex shrink-0 items-center gap-1 font-mono text-[9.5px]">
+                  <span className={isDark ? "text-slate-500" : "text-slate-400"}>X:</span>
+                  <strong className={isDark ? "text-slate-200" : "text-slate-800"}>{cursor.x.toFixed(2)}</strong>
+                  <span className={isDark ? "text-slate-500" : "text-slate-400"}>Y:</span>
+                  <strong className={isDark ? "text-slate-200" : "text-slate-800"}>{cursor.y.toFixed(2)}</strong>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const p = smartSnap ? smartSnap.p : { x: cursor.x, y: cursor.y };
+                      const label = smartSnap ? smartSnap.label : "Ponto";
+                      const kind = smartSnap ? smartSnap.kind : "origin";
+                      setTemporaryOrigin({
+                        id: uid(),
+                        p,
+                        label,
+                        kind,
+                        timestamp: Date.now(),
+                      });
+                      triggerHaptic("success");
+                      AudioManager.play("ui_select");
+                      toast.success(`✓ REF 0,0 fixada em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm`);
+                    }}
+                    title="Definir ponto sob o cursor / snap como origem temporária REF (0,0)"
+                    className="ml-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all"
+                  >
+                    <span>📍</span>
+                    <span>REF 0,0</span>
+                  </button>
+
+                  {selection.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const selectedEntities = entities.filter((e) => selection.includes(e.id));
+                        const edges = GeometricReferenceEngine.extractEdges(selectedEntities);
+                        if (edges.length > 0) {
+                          const bestEdge =
+                            GeometricReferenceEngine.findNearestEdge(cursor, edges, 500)?.edge ?? edges[0]!;
+                          setActiveEdge(bestEdge);
+                          triggerHaptic("action");
+                          toast.success(`✓ Borda selecionada: ${bestEdge.label} (${bestEdge.length.toFixed(1)} mm)`);
+                        } else {
+                          toast.info("A seleção atual não possui bordas lineares.");
+                        }
+                      }}
+                      title="Definir borda da seleção para afastamento e cotas vivas"
+                      className="ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all"
+                    >
+                      <span>📐</span>
+                      <span>Usar Borda</span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* HUD DE COMPRIMENTO / ÂNGULO QUANDO DESENHANDO LINHA OU POLILINHA */}
+              {pending.length >= 1 && (tool === "line" || tool === "polyline") && (
+                <div className="flex shrink-0 items-center gap-1.5 rounded bg-red-950/60 border border-red-500/30 px-1.5 py-0.5 text-[9.5px] text-red-300">
+                  <span>
+                    L: {Math.hypot(
                       cursor.x - pending[pending.length - 1]!.x,
-                    ) * 180) /
-                      Math.PI +
-                      360) %
-                    360
-                  ).toFixed(1)}
-                  °
-                </span>
-                {tool === "polyline" && (
-                  <span className="font-mono text-[9px] text-slate-400">
-                    ({pending.length} {pending.length === 1 ? "vértice" : "vértices"})
+                      cursor.y - pending[pending.length - 1]!.y,
+                    ).toFixed(1)} mm
                   </span>
-                )}
-              </div>
-            )}
+                  <span>·</span>
+                  <span>
+                    ∠{" "}
+                    {(
+                      ((Math.atan2(
+                        -(cursor.y - pending[pending.length - 1]!.y),
+                        cursor.x - pending[pending.length - 1]!.x,
+                      ) * 180) /
+                        Math.PI +
+                        360) %
+                      360
+                    ).toFixed(1)}
+                    °
+                  </span>
+                  {tool === "polyline" && (
+                    <span className="font-mono text-[9px] text-slate-400">
+                      ({pending.length} {pending.length === 1 ? "vértice" : "vértices"})
+                    </span>
+                  )}
+                </div>
+              )}
 
-            {/* BOTÕES DE FINALIZAR POLILINHA DIRETO NA TELA */}
-            {tool === "polyline" && pending.length >= 2 && (
-              <div className="pointer-events-auto flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("action");
-                    finishPolyline(false);
-                  }}
-                  className="rounded bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[9.5px] font-bold px-2 py-0.5 shadow transition-colors flex items-center gap-1"
-                  title="Concluir Polilinha aberta (Enter)"
-                >
-                  <Check className="size-3" />
-                  <span>Concluir</span>
-                </button>
-                {pending.length >= 3 && (
+              {/* BOTÕES DE FINALIZAR POLILINHA DIRETO NA TELA */}
+              {tool === "polyline" && pending.length >= 2 && (
+                <div className="pointer-events-auto flex shrink-0 items-center gap-1">
                   <button
                     type="button"
                     onClick={() => {
                       triggerHaptic("action");
-                      finishPolyline(true);
+                      finishPolyline(false);
                     }}
-                    className="rounded bg-sky-600 hover:bg-sky-500 text-white font-mono text-[9.5px] font-bold px-2 py-0.5 shadow transition-colors"
-                    title="Fechar Polilinha no ponto inicial (C)"
+                    className="rounded bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[9.5px] font-bold px-2 py-0.5 shadow transition-colors flex items-center gap-1"
+                    title="Concluir Polilinha aberta (Enter)"
                   >
-                    Fechar
+                    <Check className="size-3" />
+                    <span>Concluir</span>
                   </button>
-                )}
+                  {pending.length >= 3 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("action");
+                        finishPolyline(true);
+                      }}
+                      className="rounded bg-sky-600 hover:bg-sky-500 text-white font-mono text-[9.5px] font-bold px-2 py-0.5 shadow transition-colors"
+                      title="Fechar Polilinha no ponto inicial (C)"
+                    >
+                      Fechar
+                    </button>
+                  )}
+                </div>
+              )}
+
+              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
+
+              {/* ESTADO DA OPERAÇÃO CAD */}
+              <div className="hidden lg:flex items-center gap-1.5 text-[9.5px] truncate max-w-[260px]">
+                <span className="size-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+                <strong className="text-red-500 uppercase">{operationFeedback.command}:</strong>
+                <span className={cn("truncate", isDark ? "text-slate-400" : "text-slate-600")}>{operationFeedback.instruction}</span>
               </div>
-            )}
 
-            <div className={cn("mx-0.5 h-3.5 w-px", isDark ? "bg-slate-800" : "bg-slate-200")} />
+              <div className={cn("mx-0.5 h-3.5 w-px hidden sm:block shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
 
-            {/* ESTADO DA OPERAÇÃO CAD */}
-            <div className="hidden lg:flex items-center gap-1.5 text-[9.5px] truncate max-w-[260px]">
-              <span className="size-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
-              <strong className="text-red-500 uppercase">{operationFeedback.command}:</strong>
-              <span className={cn("truncate", isDark ? "text-slate-400" : "text-slate-600")}>{operationFeedback.instruction}</span>
+              {/* INFORMAÇÕES DA SELEÇÃO */}
+              <div className="hidden sm:flex shrink-0 items-center gap-1 text-[9.5px]">
+                <span className={isDark ? "text-slate-500" : "text-slate-400"}>SEL:</span>
+                <strong className={cn(selected.length > 0 ? (isDark ? "text-cyan-400 font-bold" : "text-red-600 font-bold") : (isDark ? "text-slate-400 font-normal" : "text-slate-500 font-normal"))}>
+                  {selectionText}
+                </strong>
+              </div>
             </div>
 
-            <div className={cn("mx-0.5 h-3.5 w-px hidden sm:block", isDark ? "bg-slate-800" : "bg-slate-200")} />
+            {/* LADO DIREITO: 3 GRUPOS LÓGICOS (1. PRIMÁRIOS VISÍVEIS | 2. PRECISÃO | 3. FLUXO/CNC) */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* GRUPO 1 — PRIMÁRIOS (SEMPRE VISÍVEIS NA BARRA): SNAP, ORTO, GRID, ZOOM */}
+              <button
+                type="button"
+                onClick={() => setSnapOn((s) => !s)}
+                className={cn(
+                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
+                  snapOn ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
+                )}
+                title="Alternar Snap Geométrico"
+              >
+                SNAP: {snapOn ? "ON" : "OFF"}
+              </button>
 
-            {/* INFORMAÇÕES DA SELEÇÃO */}
-            <div className="hidden sm:flex items-center gap-1 text-[9.5px]">
-              <span className={isDark ? "text-slate-500" : "text-slate-400"}>SEL:</span>
-              <strong className={cn(selected.length > 0 ? (isDark ? "text-cyan-400 font-bold" : "text-red-600 font-bold") : (isDark ? "text-slate-400 font-normal" : "text-slate-500 font-normal"))}>
-                {selectionText}
-              </strong>
-            </div>
-          </div>
+              <button
+                type="button"
+                onClick={() => setOrthoOn((o) => !o)}
+                className={cn(
+                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
+                  orthoOn
+                    ? "text-emerald-400 bg-emerald-500/15"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                title="Modo Ortogonal (0°, 90°, 180°, 270°)"
+              >
+                ORTO: {orthoOn ? "ON" : "OFF"}
+              </button>
 
-          {/* LADO DIREITO: 3 GRUPOS LÓGICOS (1. PRIMÁRIOS VISÍVEIS | 2. PRECISÃO | 3. FLUXO/CNC) */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* GRUPO 1 — PRIMÁRIOS (SEMPRE VISÍVEIS NA BARRA): SNAP, ORTO, GRID, ZOOM */}
-            <button
-              type="button"
-              onClick={() => setSnapOn((s) => !s)}
-              className={cn(
-                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
-                snapOn ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
-              )}
-              title="Alternar Snap Geométrico"
-            >
-              SNAP: {snapOn ? "ON" : "OFF"}
-            </button>
+              <button
+                type="button"
+                onClick={() => setShowGrid((s) => !s)}
+                className={cn(
+                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
+                  showGrid
+                    ? isDark
+                      ? "text-red-400 bg-red-950/50 border border-red-500/30"
+                      : "text-red-600 bg-red-50 border border-red-300 font-bold"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                title="Alternar visibilidade da grade"
+              >
+                GRID: {showGrid ? `${grid}MM` : "OFF"}
+              </button>
 
-            <button
-              type="button"
-              onClick={() => setOrthoOn((o) => !o)}
-              className={cn(
-                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
-                orthoOn
-                  ? "text-emerald-400 bg-emerald-500/15"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              title="Modo Ortogonal (0°, 90°, 180°, 270°)"
-            >
-              ORTO: {orthoOn ? "ON" : "OFF"}
-            </button>
+              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
 
-            <button
-              type="button"
-              onClick={() => setShowGrid((s) => !s)}
-              className={cn(
-                "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
-                showGrid
-                  ? isDark
-                    ? "text-red-400 bg-red-950/50 border border-red-500/30"
-                    : "text-red-600 bg-red-50 border border-red-300 font-bold"
-                  : "text-muted-foreground hover:text-foreground",
-              )}
-              title="Alternar visibilidade da grade"
-            >
-              GRID: {showGrid ? `${grid}MM` : "OFF"}
-            </button>
-
-            <div className={cn("mx-0.5 h-3.5 w-px", isDark ? "bg-slate-800" : "bg-slate-200")} />
-
-            {/* GRUPO 2 — PRECISÃO (POPOVER COMPACTO: MIRA, LUPA, FINO, QUADRO) */}
-            <div className="relative">
+              {/* GRUPO 2 — BOTÃO DE ABERTURA DO POPOVER PRECISÃO */}
               <button
                 type="button"
                 onClick={() => {
@@ -8588,94 +8593,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 <span>Precisão</span>
               </button>
 
-              {statusPrecisionMenuOpen && (
-                <div
-                  className={cn(
-                    "absolute bottom-8 right-0 z-50 flex w-52 flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md",
-                    isDark
-                      ? "border-slate-800 bg-slate-950/96 text-slate-200"
-                      : "border-slate-200 bg-white/98 text-slate-800",
-                  )}
-                >
-                  <div className="flex items-center justify-between border-b border-slate-800/40 pb-1 text-[8.5px] font-bold uppercase tracking-wider text-muted-foreground">
-                    <span>Módulos de Precisão</span>
-                    <button
-                      type="button"
-                      onClick={() => setStatusPrecisionMenuOpen(false)}
-                      className="text-slate-400 hover:text-foreground"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={toggleCursorOffsetMode}
-                    className={cn(
-                      "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                      cursorOffsetMode === "offset"
-                        ? "text-sky-400 bg-sky-950/60 border border-sky-500/40"
-                        : "hover:bg-slate-800/40",
-                    )}
-                  >
-                    <span>MIRA</span>
-                    <span>{cursorOffsetMode === "offset" ? "55PX" : "DIRETA"}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleCycleLoupeMode}
-                    className={cn(
-                      "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                      loupeMode === "pinned"
-                        ? "text-cyan-400 bg-cyan-950/60 border border-cyan-500/40"
-                        : loupeMode === "floating"
-                          ? "text-accent bg-accent/15"
-                          : "hover:bg-slate-800/40",
-                    )}
-                  >
-                    <span>LUPA</span>
-                    <span>{loupeMode === "pinned" ? "FIXA" : loupeMode === "floating" ? "AUTO" : "OFF"}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      setNudgeHudVisible((prev) => {
-                        const next = !prev;
-                        globalCADInteractionHub.toggleModifier("nudge_dpad", next);
-                        return next;
-                      });
-                    }}
-                    className={cn(
-                      "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                      nudgeHudVisible
-                        ? "text-accent bg-accent/15 border border-accent/40"
-                        : "hover:bg-slate-800/40",
-                    )}
-                  >
-                    <span>FINO</span>
-                    <span>{nudgeHudVisible ? `${nudgeStepMm}MM` : "OFF"}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => updateFrame({ visible: !frame.visible })}
-                    className={cn(
-                      "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                      frame.visible ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
-                    )}
-                  >
-                    <span>QUADRO</span>
-                    <span>{frame.visible ? "ON" : "OFF"}</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {/* GRUPO 3 — FABRICAÇÃO E APRESENTAÇÃO (POPOVER COMPACTO: FLUXO, ORDEM, PRÉVIA CNC) */}
-            <div className="relative">
+              {/* GRUPO 3 — BOTÃO DE ABERTURA DO POPOVER FLUXO/CNC */}
               <button
                 type="button"
                 onClick={() => {
@@ -8698,84 +8616,170 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 <span>Fluxo/CNC</span>
               </button>
 
-              {statusCncMenuOpen && (
-                <div
-                  className={cn(
-                    "absolute bottom-8 right-0 z-50 flex w-48 flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md",
-                    isDark
-                      ? "border-slate-800 bg-slate-950/96 text-slate-200"
-                      : "border-slate-200 bg-white/98 text-slate-800",
-                  )}
-                >
-                  <div className="flex items-center justify-between border-b border-slate-800/40 pb-1 text-[8.5px] font-bold uppercase tracking-wider text-muted-foreground">
-                    <span>Fabricação & CNC</span>
-                    <button
-                      type="button"
-                      onClick={() => setStatusCncMenuOpen(false)}
-                      className="text-slate-400 hover:text-foreground"
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </div>
+              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
 
-                  <button
-                    type="button"
-                    onClick={() => setShowArrows((s) => !s)}
-                    className={cn(
-                      "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                      showArrows ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
-                    )}
-                  >
-                    <span>FLUXO</span>
-                    <span>{showArrows ? "ON" : "OFF"}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setShowOrder((s) => !s)}
-                    className={cn(
-                      "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                      showOrder ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
-                    )}
-                  >
-                    <span>ORDEM</span>
-                    <span>{showOrder ? "ON" : "OFF"}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSimOn((s) => {
-                        const next = !s;
-                        setSimPlaying(next);
-                        setSimDist(0);
-                        return next;
-                      });
-                    }}
-                    className={cn(
-                      "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                      simOn ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
-                    )}
-                  >
-                    <span>PRÉVIA CNC</span>
-                    <span>{simOn ? "ON" : "OFF"}</span>
-                  </button>
-                </div>
-              )}
+              {/* ZOOM ATUAL (SEMPRE VISÍVEL) */}
+              <button
+                type="button"
+                onClick={() => fitTo(entities)}
+                className="rounded bg-background/60 px-2 py-0.5 font-mono text-[9px] font-bold text-accent hover:bg-background whitespace-nowrap transition-colors"
+                title="Clique para enquadrar desenho (100%)"
+              >
+                {Math.round(view.k * 100)}%
+              </button>
             </div>
-
-            <div className={cn("mx-0.5 h-3.5 w-px", isDark ? "bg-slate-800" : "bg-slate-200")} />
-
-            {/* ZOOM ATUAL (SEMPRE VISÍVEL) */}
-            <button
-              type="button"
-              onClick={() => fitTo(entities)}
-              className="rounded bg-background/60 px-2 py-0.5 font-mono text-[9px] font-bold text-accent hover:bg-background whitespace-nowrap transition-colors"
-              title="Clique para enquadrar desenho (100%)"
-            >
-              {Math.round(view.k * 100)}%
-            </button>
           </div>
+
+          {/* POPOVERS FLUTUANTES DA BARRA DE STATUS (RENDERIZADOS FORA DO CONTAINER OVERFLOW-X-AUTO PARA NUNCA CORTAR) */}
+          {statusPrecisionMenuOpen && (
+            <div
+              className={cn(
+                "absolute bottom-9 right-2 z-50 flex w-52 max-w-[92vw] flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md",
+                isDark
+                  ? "border-slate-800 bg-slate-950/96 text-slate-200"
+                  : "border-slate-200 bg-white/98 text-slate-800",
+              )}
+            >
+              <div className="flex items-center justify-between border-b border-slate-800/40 pb-1 text-[8.5px] font-bold uppercase tracking-wider text-muted-foreground">
+                <span>Módulos de Precisão</span>
+                <button
+                  type="button"
+                  onClick={() => setStatusPrecisionMenuOpen(false)}
+                  className="text-slate-400 hover:text-foreground"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={toggleCursorOffsetMode}
+                className={cn(
+                  "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                  cursorOffsetMode === "offset"
+                    ? "text-sky-400 bg-sky-950/60 border border-sky-500/40"
+                    : "hover:bg-slate-800/40",
+                )}
+              >
+                <span>MIRA</span>
+                <span>{cursorOffsetMode === "offset" ? "55PX" : "DIRETA"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleCycleLoupeMode}
+                className={cn(
+                  "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                  loupeMode === "pinned"
+                    ? "text-cyan-400 bg-cyan-950/60 border border-cyan-500/40"
+                    : loupeMode === "floating"
+                      ? "text-accent bg-accent/15"
+                      : "hover:bg-slate-800/40",
+                )}
+              >
+                <span>LUPA</span>
+                <span>{loupeMode === "pinned" ? "FIXA" : loupeMode === "floating" ? "AUTO" : "OFF"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setNudgeHudVisible((prev) => {
+                    const next = !prev;
+                    globalCADInteractionHub.toggleModifier("nudge_dpad", next);
+                    return next;
+                  });
+                }}
+                className={cn(
+                  "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                  nudgeHudVisible
+                    ? "text-accent bg-accent/15 border border-accent/40"
+                    : "hover:bg-slate-800/40",
+                )}
+              >
+                <span>FINO</span>
+                <span>{nudgeHudVisible ? `${nudgeStepMm}MM` : "OFF"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => updateFrame({ visible: !frame.visible })}
+                className={cn(
+                  "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                  frame.visible ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
+                )}
+              >
+                <span>QUADRO</span>
+                <span>{frame.visible ? "ON" : "OFF"}</span>
+              </button>
+            </div>
+          )}
+
+          {statusCncMenuOpen && (
+            <div
+              className={cn(
+                "absolute bottom-9 right-2 z-50 flex w-48 max-w-[92vw] flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md",
+                isDark
+                  ? "border-slate-800 bg-slate-950/96 text-slate-200"
+                  : "border-slate-200 bg-white/98 text-slate-800",
+              )}
+            >
+              <div className="flex items-center justify-between border-b border-slate-800/40 pb-1 text-[8.5px] font-bold uppercase tracking-wider text-muted-foreground">
+                <span>Fabricação & CNC</span>
+                <button
+                  type="button"
+                  onClick={() => setStatusCncMenuOpen(false)}
+                  className="text-slate-400 hover:text-foreground"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowArrows((s) => !s)}
+                className={cn(
+                  "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                  showArrows ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
+                )}
+              >
+                <span>FLUXO</span>
+                <span>{showArrows ? "ON" : "OFF"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setShowOrder((s) => !s)}
+                className={cn(
+                  "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                  showOrder ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
+                )}
+              >
+                <span>ORDEM</span>
+                <span>{showOrder ? "ON" : "OFF"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setSimOn((s) => {
+                    const next = !s;
+                    setSimPlaying(next);
+                    setSimDist(0);
+                    return next;
+                  });
+                }}
+                className={cn(
+                  "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                  simOn ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
+                )}
+              >
+                <span>PRÉVIA CNC</span>
+                <span>{simOn ? "ON" : "OFF"}</span>
+              </button>
+            </div>
+          )}
         </footer>
       )}
 
@@ -9108,10 +9112,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             }}
             commands={quickCommands}
             existingEntities={entities}
+            existingDimensions={dims}
             selectedEntityIds={selection}
             activeLayer={activeLayer}
+            projectId={project?.id ?? "default-chamfer-project"}
             sessionContext={intentSession}
             onPreviewIntentPlanChange={setIntentPreviewPlan}
+            onRestoreVersionSnapshot={(snapEntities, snapDims) => {
+              commit(snapEntities);
+              setDims(snapDims);
+              setSelection(snapEntities.map((e) => e.id));
+              if (snapEntities.length > 0) {
+                fitTo(snapEntities);
+              }
+            }}
+            onTriggerUndo={undo}
+            onTriggerRedo={redo}
+            onTriggerExport={() => setExportOpen(true)}
+            onClearSelection={() => setSelection([])}
             onExecuteIntentPlan={(plan) => {
               const tx = intentTxManagerRef.current;
               tx.setSession(intentSession);
@@ -9146,6 +9164,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           />
         </Suspense>
       )}
+
 
       {topologyHealthOpen && (
         <Suspense fallback={null}>

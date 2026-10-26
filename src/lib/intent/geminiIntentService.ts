@@ -1,29 +1,37 @@
 /**
- * CALDRA — CHAMFER INTENT
- * Seção 11: Integração com a API Gemini (Structured Outputs + Function Calling)
+ * CALDRA — CHAMFER INTENT 2.0
+ * Integração com o Endpoint Server-Side Gemini (`/api/chamfer-intent`) + Fallback Determinístico V2
  *
- * Princípio Arquitetural:
- *   O modelo Gemini atua exclusivamente como extrator semântico de intenção e parâmetros
- *   estruturados (via JSON Schema / Function Declarations). O cálculo matemático de coordenadas,
- *   validação topológica e construção de entidades nativas são executados determinísticamente
- *   pelo motor geométrico do CHAMFER.
+ * Princípio Arquitetural (§1 e §3 do Prompt Mestre Claude):
+ *   1. As chamadas à API Gemini acontecem exclusivamente no servidor via `/api/chamfer-intent`
+ *      usando a System Instruction literal (§9) e o catálogo completo de 46 funções (§6).
+ *   2. Cada função retornada roda imediatamente em dry-run no compilador determinístico e passa
+ *      pelo validador de fabricação (§8).
+ *   3. Havendo erros bloqueantes no dry-run do LLM, devolvemos os erros ao endpoint para
+ *      auto-correção com a menor mudança possível (máximo de 2 tentativas).
+ *   4. Em modo offline, testes locais ou falha de rede, o motor determinístico V2 assume
+ *      sem interromper o fluxo de trabalho do usuário.
  */
 
-import { GoogleGenAI, Type, type FunctionDeclaration, type Schema } from "@google/genai";
+import { Type, type FunctionDeclaration, type Schema } from "@google/genai";
 import type { Entity, LayerId } from "@/lib/lab2d/core";
+import type { Dimension } from "@/lib/lab2d/dimensions";
 import type { ChamferIntentPlan, ParametricSessionContext } from "./schema";
 import { ChamferIntentInterpreter } from "./intentInterpreter";
+import { CHAMFER_INTENT_V2_SYSTEM_INSTRUCTION } from "./chamferIntent.systemInstruction";
+import { CHAMFER_DSL_V2_FUNCTION_DECLARATIONS, type DslV2ToolCall } from "./dslV2Schemas";
+import {
+  executeAgentTurnV2Sync,
+  type AgentStreamingCallbacks,
+} from "./agentOrchestratorV2";
+import {
+  buildPartModelFromCanvas,
+  createEmptyPartModel,
+  type PartModel,
+} from "./partModel";
 
-export const CHAMFER_INTENT_SYSTEM_INSTRUCTION = `Você é o compilador semântico do CHAMFER Intent dentro do CALDRA — Metal Lab Suite.
-Regras inegociáveis:
-1. NUNCA desenhe geometria livremente nem retorne código SVG/HTML.
-2. Converta o pedido do usuário em português técnico ou informal em parâmetros geométricos estruturados (em milímetros e graus).
-3. NUNCA invente silenciosamente parâmetros críticos ausentes (como o arranjo de furos quando o usuário diz apenas "cinco furos centrais divididos igualmente", ou o diâmetro PCD quando não informado). Marque tais parâmetros em unresolved_parameters.
-4. Preserve o contexto da peça ativa em comandos subsequentes ("aumente esses furos para 16 mm", "adicione mais dois furos com o mesmo espaçamento", "arredonde somente os dois cantos esquerdos").`;
+export const CHAMFER_INTENT_SYSTEM_INSTRUCTION = CHAMFER_INTENT_V2_SYSTEM_INSTRUCTION;
 
-/**
- * Esquema JSON Estrito para Gemini Structured Outputs (responseSchema)
- */
 export const CHAMFER_INTENT_GEMINI_RESPONSE_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
@@ -33,8 +41,7 @@ export const CHAMFER_INTENT_GEMINI_RESPONSE_SCHEMA: Schema = {
     },
     operation_type: {
       type: Type.STRING,
-      description:
-        "Tipo de comando CAD do catálogo: create_parametric_plate, create_circular_flange, create_slotted_bracket, create_boilermaking_square_to_round, create_boilermaking_truncated_cone, modify_active_feature, transform_mirror, etc.",
+      description: "Tipo de comando CAD do catálogo",
     },
     parameters: {
       type: Type.OBJECT,
@@ -43,27 +50,15 @@ export const CHAMFER_INTENT_GEMINI_RESPONSE_SCHEMA: Schema = {
         height: { type: Type.NUMBER, description: "Altura em mm" },
         corner_radius: { type: Type.NUMBER, description: "Raio de arredondamento dos cantos em mm" },
         corner_chamfer: { type: Type.NUMBER, description: "Distância de chanfro nos cantos em mm" },
-        corner_selector: {
-          type: Type.STRING,
-          description: "Seletor de cantos: all, none, left_two, right_two, top_two, bottom_two, top_left, top_right, bottom_left, bottom_right",
-        },
         hole_count: { type: Type.INTEGER, description: "Quantidade de furos" },
         hole_diameter: { type: Type.NUMBER, description: "Diâmetro dos furos em mm" },
-        hole_distribution: {
-          type: Type.STRING,
-          description: "Arranjo dos furos: corner_margins, linear_centerline_x, linear_centerline_y, circular_pcd, grid_4_plus_center, single_center",
-        },
+        hole_distribution: { type: Type.STRING, description: "Arranjo dos furos" },
         margin: { type: Type.NUMBER, description: "Margem até a borda em mm" },
         pitch: { type: Type.NUMBER, description: "Passo centro a centro entre furos em mm" },
-        pcd: { type: Type.NUMBER, description: "Diâmetro do círculo de furação PCD em mm" },
+        pcd: { type: Type.NUMBER, description: "Diâmetro PCD em mm" },
         outer_diameter: { type: Type.NUMBER, description: "Diâmetro externo em mm" },
         inner_diameter: { type: Type.NUMBER, description: "Diâmetro interno em mm" },
       },
-    },
-    unresolved_parameters: {
-      type: Type.ARRAY,
-      items: { type: Type.STRING },
-      description: "Lista de parâmetros ambíguos ou ausentes que exigem confirmação do usuário",
     },
     summary: {
       type: Type.STRING,
@@ -73,103 +68,104 @@ export const CHAMFER_INTENT_GEMINI_RESPONSE_SCHEMA: Schema = {
   required: ["intent_category", "operation_type", "parameters", "summary"],
 };
 
-/**
- * Declarações de Funções (Function Calling) do Catálogo Oficial CHAMFER Intent
- */
-export const CHAMFER_INTENT_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
-  {
-    name: "compile_parametric_plate",
-    description:
-      "Compila uma chapa retangular paramétrica com largura, altura, raios/chanfros de canto e padrão de furação.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        width: { type: Type.NUMBER, description: "Largura da chapa em mm" },
-        height: { type: Type.NUMBER, description: "Altura da chapa em mm" },
-        corner_radius: { type: Type.NUMBER, description: "Raio dos cantos em mm" },
-        corner_selector: {
-          type: Type.STRING,
-          description: "Cantos: all, left_two, right_two, top_two, bottom_two",
-        },
-        hole_count: { type: Type.INTEGER, description: "Quantidade de furos" },
-        hole_diameter: { type: Type.NUMBER, description: "Diâmetro dos furos em mm" },
-        hole_distribution: {
-          type: Type.STRING,
-          description: "corner_margins, linear_centerline_x, linear_centerline_y, circular_pcd",
-        },
-        margin: { type: Type.NUMBER, description: "Margem das bordas em mm" },
-        pcd: { type: Type.NUMBER, description: "Diâmetro PCD em mm se circular_pcd" },
-      },
-      required: ["width", "height"],
-    },
-  },
-  {
-    name: "compile_circular_flange",
-    description: "Compila um flange circular industrial com diâmetro externo, interno, PCD e N furos polares.",
-    parameters: {
-      type: Type.OBJECT,
-      properties: {
-        outer_diameter: { type: Type.NUMBER, description: "Diâmetro externo em mm" },
-        inner_diameter: { type: Type.NUMBER, description: "Diâmetro interno em mm" },
-        pcd: { type: Type.NUMBER, description: "Diâmetro PCD em mm" },
-        hole_count: { type: Type.INTEGER, description: "Número de furos" },
-        hole_diameter: { type: Type.NUMBER, description: "Diâmetro de cada furo em mm" },
-      },
-      required: ["outer_diameter", "pcd", "hole_count", "hole_diameter"],
-    },
-  },
-];
+export const CHAMFER_INTENT_FUNCTION_DECLARATIONS: FunctionDeclaration[] =
+  CHAMFER_DSL_V2_FUNCTION_DECLARATIONS;
 
 /**
- * Interpreta o comando utilizando Structured Outputs da API Gemini quando uma chave de API
- * estiver configurada no servidor/ambiente, e compila determinísticamente pelo motor local.
+ * Executa um turno do Agente Chamfer Intent 2.0 via endpoint server-side `/api/chamfer-intent`
+ * com streaming, dry-run por chamada, validador DFM (§8) e loop de auto-correção (máx. 2 tentativas),
+ * caindo automaticamente para o compilador determinístico local quando offline.
  */
 export async function interpretWithGeminiOrDeterministic(
   prompt: string,
   context: {
     existingEntities?: Entity[];
+    existingDimensions?: Dimension[];
     selectedEntityIds?: string[];
     activeLayer?: LayerId;
     session?: ParametricSessionContext;
     parameterOverrides?: Record<string, unknown>;
-    apiKey?: string;
+    partModel?: PartModel;
+    streamingCallbacks?: AgentStreamingCallbacks;
+    signal?: AbortSignal;
   } = {},
 ): Promise<ChamferIntentPlan> {
-  const apiKey =
-    context.apiKey ||
-    (typeof process !== "undefined" ? process.env?.GEMINI_API_KEY : undefined);
+  const partModel =
+    context.partModel ??
+    buildPartModelFromCanvas({
+      entities: context.existingEntities ?? [],
+      dimensions: context.existingDimensions ?? [],
+      selectedEntityIds: context.selectedEntityIds ?? [],
+      previousModel: createEmptyPartModel(),
+    });
 
-  if (apiKey) {
+  // Se estiver no navegador e online, tenta o endpoint server-side `/api/chamfer-intent` com auto-correção até 2 vezes
+  if (typeof window !== "undefined" && typeof fetch === "function") {
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash",
-        contents: prompt,
-        config: {
-          systemInstruction: CHAMFER_INTENT_SYSTEM_INSTRUCTION,
-          responseMimeType: "application/json",
-          responseSchema: CHAMFER_INTENT_GEMINI_RESPONSE_SCHEMA,
-          temperature: 0.1,
-        },
-      });
+      let dryRunErrors: string[] = [];
+      const maxAutoCorrections = 2;
 
-      if (response.text) {
-        const parsed = JSON.parse(response.text) as {
-          parameters?: Record<string, unknown>;
-        };
-        const mergedOverrides = {
-          ...(parsed.parameters ?? {}),
-          ...(context.parameterOverrides ?? {}),
-        };
-        return ChamferIntentInterpreter.compilePrompt(prompt, {
-          ...context,
-          parameterOverrides: mergedOverrides,
+      for (let attempt = 0; attempt <= maxAutoCorrections; attempt++) {
+        const res = await fetch("/api/chamfer-intent", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prompt,
+            partModel,
+            selectedEntityIds: context.selectedEntityIds ?? [],
+            dryRunErrors,
+            stream: false,
+          }),
+          signal: context.signal,
         });
+
+        if (!res.ok) break;
+        const payload = (await res.json()) as {
+          ok?: boolean;
+          offlineFallback?: boolean;
+          understandingText?: string;
+          toolCalls?: DslV2ToolCall[];
+        };
+
+        if (payload.offlineFallback || !payload.ok || !payload.toolCalls?.length) {
+          break;
+        }
+
+        const v2Turn = executeAgentTurnV2Sync(prompt, {
+          existingEntities: context.existingEntities,
+          existingDimensions: context.existingDimensions,
+          selectedEntityIds: context.selectedEntityIds,
+          activeLayer: context.activeLayer,
+          partModel,
+          parameterOverrides: context.parameterOverrides,
+          precomputedToolCalls: payload.toolCalls,
+          precomputedUnderstandingText: payload.understandingText,
+          callbacks: context.streamingCallbacks,
+        });
+
+        if (v2Turn.manufacturingReport.ok || attempt === maxAutoCorrections) {
+          const basePlan = ChamferIntentInterpreter.compilePrompt(prompt, {
+            ...context,
+            partModel,
+          });
+          basePlan.v2 = {
+            ...v2Turn,
+            autoCorrectionAttempts: attempt,
+          };
+          return basePlan;
+        }
+
+        dryRunErrors = v2Turn.manufacturingReport.errors.map(
+          (e) => `[${e.entity_id}] ${e.message} (${e.suggested_fix})`,
+        );
       }
     } catch {
-      // Fallback determinístico imediato caso offline ou sem rede
+      // Fallback imediato para compilação determinística local V2
     }
   }
 
-  return ChamferIntentInterpreter.compilePrompt(prompt, context);
+  return ChamferIntentInterpreter.compilePrompt(prompt, {
+    ...context,
+    partModel,
+  });
 }

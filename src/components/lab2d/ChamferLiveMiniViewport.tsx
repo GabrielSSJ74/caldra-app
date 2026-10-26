@@ -309,6 +309,9 @@ export const ChamferLiveMiniViewport = React.memo(function ChamferLiveMiniViewpo
   // Cálculo determinístico dos furos na Prévia em Tempo Real
   const holeCenters = useMemo(() => {
     const centers: Array<{ x: number; y: number }> = [];
+    const halfW = safeW / 2;
+    const halfH = safeH / 2;
+
     if (safeN === 1) {
       centers.push({ x: 0, y: 0 });
     } else if (safeN > 1) {
@@ -319,6 +322,31 @@ export const ChamferLiveMiniViewport = React.memo(function ChamferLiveMiniViewpo
           centers.push({
             x: rPcd * Math.cos(theta),
             y: rPcd * Math.sin(theta),
+          });
+        }
+      } else if (holeDistribution === "corner_margins") {
+        const cornerPts = [
+          { x: -halfW + safeMargin, y: -halfH + safeMargin },
+          { x: halfW - safeMargin, y: -halfH + safeMargin },
+          { x: halfW - safeMargin, y: halfH - safeMargin },
+          { x: -halfW + safeMargin, y: halfH - safeMargin },
+        ];
+        centers.push(...cornerPts.slice(0, safeN));
+      } else if (holeDistribution === "grid_4_plus_center") {
+        centers.push(
+          { x: -halfW + safeMargin, y: -halfH + safeMargin },
+          { x: halfW - safeMargin, y: -halfH + safeMargin },
+          { x: halfW - safeMargin, y: halfH - safeMargin },
+          { x: -halfW + safeMargin, y: halfH - safeMargin },
+          { x: 0, y: 0 },
+        );
+      } else if (holeDistribution === "linear_centerline_y") {
+        const yStart = -halfH + safeMargin;
+        const pitchY = (safeH - 2 * safeMargin) / (safeN - 1);
+        for (let i = 0; i < safeN; i++) {
+          centers.push({
+            x: 0,
+            y: yStart + i * pitchY,
           });
         }
       } else {
@@ -335,7 +363,7 @@ export const ChamferLiveMiniViewport = React.memo(function ChamferLiveMiniViewpo
       }
     }
     return centers;
-  }, [safeN, holeDistribution, pcd, safeW, safeMargin]);
+  }, [safeN, holeDistribution, pcd, safeW, safeH, safeMargin]);
 
   const plateStrokeColor = validation.isRadiusError ? "#ef4444" : "#38bdf8";
   const plateFillColor = validation.isRadiusError
@@ -354,8 +382,8 @@ export const ChamferLiveMiniViewport = React.memo(function ChamferLiveMiniViewpo
 
   return (
     <div
-      className={`relative w-full overflow-hidden rounded-xl border transition-all duration-150 ${
-        isExpanded ? "h-[310px]" : "h-[210px]"
+      className={`flex flex-col w-full overflow-hidden rounded-xl border transition-all duration-150 ${
+        isExpanded ? "h-[330px]" : "h-[235px]"
       } ${
         !validation.isValid && isPlateMode
           ? "border-[#ef4444]/80 shadow-[0_0_20px_rgba(239,68,68,0.15)]"
@@ -363,21 +391,24 @@ export const ChamferLiveMiniViewport = React.memo(function ChamferLiveMiniViewpo
       }`}
       style={{ backgroundColor: "#070b14" }}
     >
-      {/* BARRA DE FERRAMENTAS FLUTUANTE MINIMALISTA NO TOPO DA PRÉVIA */}
-      <div className="absolute top-2 left-2.5 right-2.5 z-10 flex items-center justify-between gap-1.5 pointer-events-none">
+      {/* BARRA DE CONTROLES DEDICADA ACIMA DA ÁREA GRÁFICA (§2.1 e §7.4 — ZERO SOBREPOSIÇÃO) */}
+      <div
+        data-testid="live-viewport-dedicated-toolbar"
+        className="flex-shrink-0 flex items-center justify-between gap-1.5 border-b border-slate-800/90 bg-slate-950/95 px-2.5 py-1.5"
+      >
         {/* Telemetria Técnica Esquerda */}
-        <div className="flex items-center gap-1.5 rounded-lg bg-slate-950/85 border border-slate-800/90 px-2 py-1 backdrop-blur-md pointer-events-auto">
+        <div className="flex items-center gap-1.5 min-w-0">
           <span
-            className={`h-1.5 w-1.5 rounded-full ${
+            className={`h-1.5 w-1.5 shrink-0 rounded-full ${
               !validation.isValid && isPlateMode ? "bg-red-500 animate-pulse" : "bg-sky-400"
             }`}
           />
-          <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-slate-300">
+          <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-slate-300 shrink-0">
             CAD 2D LIVE
           </span>
           {isPlateMode && safeN > 1 && (
             <span
-              className={`font-mono text-[9px] border-l border-slate-800 pl-1.5 ${
+              className={`font-mono text-[9px] border-l border-slate-800 pl-1.5 truncate ${
                 validation.isPitchCollision ? "text-red-400 font-bold" : "text-sky-300"
               }`}
             >
@@ -386,8 +417,8 @@ export const ChamferLiveMiniViewport = React.memo(function ChamferLiveMiniViewpo
           )}
         </div>
 
-        {/* 3 Botões Interativos no Canto Superior Direito */}
-        <div className="flex items-center gap-1 pointer-events-auto">
+        {/* Botões Interativos no Canto Superior Direito (fora da área gráfica) */}
+        <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
             onClick={() => setShowDimensions((v) => !v)}
@@ -440,20 +471,22 @@ export const ChamferLiveMiniViewport = React.memo(function ChamferLiveMiniViewpo
             type="button"
             onClick={() => setIsExpanded((v) => !v)}
             className="flex items-center justify-center rounded-lg bg-slate-950/85 border border-slate-800 p-1 text-slate-400 hover:text-white transition-colors cursor-pointer"
-            title={isExpanded ? "Compactar altura (210px)" : "Expandir prévia (310px)"}
+            title={isExpanded ? "Compactar altura" : "Expandir prévia"}
           >
             {isExpanded ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
           </button>
         </div>
       </div>
 
-      {/* VIEWPORT VETORIAL SVG PARAMÉTRICO (60 FPS) */}
-      {isPlateMode ? (
-        <svg
-          className="w-full h-full select-none"
-          viewBox={`${vbMinX} ${vbMinY} ${vbWidth} ${vbHeight}`}
-          preserveAspectRatio="xMidYMid meet"
-        >
+      {/* ÁREA GRÁFICA ISOLADA (ABAIXO DA BARRA DE CONTROLES) */}
+      <div className="relative flex-1 min-h-0 w-full">
+        {/* VIEWPORT VETORIAL SVG PARAMÉTRICO (60 FPS) */}
+        {isPlateMode ? (
+          <svg
+            className="w-full h-full select-none"
+            viewBox={`${vbMinX} ${vbMinY} ${vbWidth} ${vbHeight}`}
+            preserveAspectRatio="xMidYMid meet"
+          >
           <defs>
             {/* Grade Métrica Técnica Sutil */}
             <pattern
@@ -796,19 +829,20 @@ export const ChamferLiveMiniViewport = React.memo(function ChamferLiveMiniViewpo
               )}
             </g>
           )}
-        </svg>
-      ) : (
-        /* FALLBACK PARA PEÇAS DE CALDEIRARIA / FLANGES / SUPORTES NÃO-RETANGULARES */
-        <FallbackEntitiesMiniViewport
-          entities={fallbackEntities}
-          showAxes={showAxes}
-          patternId={patternId}
-        />
-      )}
+          </svg>
+        ) : (
+          /* FALLBACK PARA PEÇAS DE CALDEIRARIA / FLANGES / SUPORTES NÃO-RETANGULARES */
+          <FallbackEntitiesMiniViewport
+            entities={fallbackEntities}
+            showAxes={showAxes}
+            patternId={patternId}
+          />
+        )}
+      </div>
 
-      {/* BARRA INFERIOR DE ALERTA EM TEMPO REAL SE HOUVER CONFLITO GEOMÉTRICO */}
+      {/* BARRA INFERIOR DEDICADA DE ALERTA SE HOUVER CONFLITO GEOMÉTRICO (SEM SOBREPOR COTAS) */}
       {!validation.isValid && isPlateMode && (
-        <div className="absolute bottom-2 left-2.5 right-2.5 z-10 flex items-center gap-1.5 rounded-lg bg-red-950/90 border border-red-500/60 px-2.5 py-1 text-[10px] font-mono text-red-200 backdrop-blur-md">
+        <div className="flex-shrink-0 flex items-center gap-1.5 border-t border-red-500/50 bg-red-950/95 px-2.5 py-1 text-[10px] font-mono text-red-200">
           <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
           <span className="truncate">{validation.errorMessages[0]}</span>
         </div>

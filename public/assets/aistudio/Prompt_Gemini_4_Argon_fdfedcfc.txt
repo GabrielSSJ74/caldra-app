@@ -1,0 +1,147 @@
+# CALDRA — CHAMFER CAD
+# CHAMFER INTENT 2.0 — ASSISTENTE CONVERSACIONAL DE ENGENHARIA, DSL V2 E COMPILADOR GEOMÉTRICO DETERMINÍSTICO
+
+- **Aplicativo:** CALDRA
+- **Módulo:** CHAMFER INTENT / CHAMFER CAD (Workspace 2D SKETCH + Visualização 3D Integrada)
+- **Ambiente:** Projeto existente no Google AI Studio
+- **Princípio Fundamental:** A IA interpreta a intenção do usuário; o interpretador local fornece resposta reativa instantânea (meta <100ms); o Gemini Argon processa o contexto conversacional profundo; o compilador determinístico calcula a geometria; o validador verifica as regras de fabricação (DFM); o CAD executa a alteração; e o usuário confirma explicitamente antes de modificar o desenho definitivo.
+
+---
+
+## 0. DIRETRIZ SUPREMA DE CONTENÇÃO DE ESCOPO
+
+Execute esta especificação **exclusivamente** no módulo **CHAMFER INTENT**, na sua integração com as ferramentas reais do CHAMFER CAD e nos serviços internos estritamente necessários ao funcionamento do assistente conversacional.
+
+É terminantemente proibido modificar o `App.tsx`, a tela inicial (Home) do CALDRA, o Onboarding, a Splash Screen, a navegação global, a barra de navegação inferior global (`Projetar`, `Produzir`, `Início`, `Aprenda`, `Perfil`), os outros módulos do CALDRA ou o sistema global de temas.
+
+- Não reconstrua o CALDRA e não crie uma aplicação CAD paralela.
+- Se uma mudança fora do escopo parecer indispensável, explique a dependência, apresente a alternativa local e solicite autorização antes de prosseguir.
+- Responda sempre em português do Brasil.
+
+---
+
+## 1. MISSÃO E OBJETIVO DO CHAMFER INTENT 2.0
+
+Evolua o CHAMFER INTENT Alpha (DSL v1.0) para uma IA conversacional de engenharia de nível profissional, integrada ao CAD 2D CHAMFER, especializada em desenho técnico, caldeiraria, serralheria, traçagem paramétrica e corte CNC (laser, plasma, oxicorte, punção) e dobra.
+
+O usuário deve conseguir descrever por **texto** ou **voz** (com captação em tempo real e transcrição editável) aquilo que deseja criar, modificar, medir, cotar, verificar ou exportar.
+
+### Exemplo Canônico Obrigatório:
+> *"Chapa de 500 mm por 250 mm. 5 furos centrais concêntricos de 12 mm, divididos igualmente. Bordas arredondadas com 20 mm de raio."*
+
+O sistema deve processar a intenção, resolver ambiguidades de oficina, compilar operações estruturadas, validar as regras de engenharia, apresentar uma prévia editável em tempo real e aguardar confirmação atômica (`Aplicar` ou `ENTER`).
+
+### Princípios Inegociáveis:
+1. **A IA não desenha diretamente nem escreve DXF:** Ela produz uma intenção estruturada (chamadas de função tipadas). O compilador geométrico determinístico calcula as coordenadas, valida e gera as entidades.
+2. **Estenda, não reescreva:** Preserve o compilador existente, garanta compatibilidade com a DSL v1.0, mantenha a prévia 60 FPS, as cotas associativas e os parâmetros editáveis antes de aplicar.
+3. **Correção do Bug de Furação nos Cantos:** Uma solicitação como *"Chapa 500 × 300 com 4 furos Ø12 a 25 mm das bordas"* não pode gerar furos alinhados no eixo central; deve posicionar um furo próximo a cada canto, com os centros a 25 mm das duas bordas correspondentes `(25, 25)`, `(475, 25)`, `(25, 275)` e `(475, 275)`.
+4. **Correção Crítica da Prévia Visual:** A barra de controles da prévia (`CAD 2D LIVE`, `Passo`, `COTAS`, `EIXOS`, `CANVAS`) **nunca** deve ficar sobreposta à geometria ou às cotas. Posicione-a em um cabeçalho dedicado acima da área gráfica do SVG, com enquadramento automático e margem útil de ~35% ao redor da peça.
+5. **Histórico e Ramificações (Estilo Claude):** Permita copiar, editar mensagens anteriores (criando ramificações), regenerar, reverter turnos e desfazer operações de forma atômica (`Ctrl+Z`).
+
+---
+
+## 2. ARQUITETURA DE CADA TURNO CONVERSACIONAL E DUAS CAMADAS
+
+Implemente duas camadas complementares que compartilham o mesmo esquema tipado:
+
+### Camada 1 — Interpretador Local Determinístico (Reatividade Instantânea <100ms)
+- Funciona durante a digitação no composer e durante a captação de voz (`interimResults`).
+- Normaliza números e unidades comuns (ex: *"quinhentos por duzentos e cinquenta"* $\rightarrow 500\times250\text{ mm}$, *"meio metro"* $\rightarrow 500\text{ mm}$, *"raio 20"* $\rightarrow R20$).
+- Reconhece dimensões, raios, diâmetros, quantidades, margens e padrões de furos frequentes, produzindo um plano provisório para a prévia sem latência de rede.
+
+### Camada 2 — Interpretador Gemini (Profundidade Conversacional)
+- Utiliza a integração Gemini existente no projeto com o modelo configurado (`Gemini 4 Argon`).
+- Recebe a instrução de sistema (Anexo / Seção 22), o catálogo de funções, o `PartModel` compacto da peça atual, a seleção e o histórico de mensagens recentes.
+- Executa chamadas tipadas em modo `AUTO` ou com `responseSchema` estruturado.
+- **Autocorreção Limitada:** Se a compilação falhar por erro corrigível, devolve o erro ao modelo para ajuste com a menor mudança possível (máx. 2 tentativas). Se persistir, explica o conflito em linguagem simples e propõe 2 alternativas numéricas.
+
+---
+
+## 3. INTERFACE DO CHAT E COMPOSER (ESTILO CLAUDE)
+
+1. **Painel Persistente e Não-Bloqueante:** Painel lateral redimensionável no desktop e *bottom sheet* adaptável em mobile, mantendo a prévia geométrica sempre visível. Alvos de toque com pelo menos 44 × 44 px.
+2. **Mensagens com Etapas Visíveis:** Mostra o progresso (`Entendendo` $\rightarrow$ `Planejando` $\rightarrow$ `Compilando` $\rightarrow$ `Validando`).
+3. **Cartão de Peça:** Título, resumo, selo de estado (`VALIDADO`, `PROVISÓRIO`, `ALERTA`, `ERRO`), mini-prévia com margem de segurança, parâmetros dinâmicos editáveis, premissas como chips editáveis, avisos/erros de fabricação e botões `Aplicar`, `Descartar` e `Ver DSL`.
+4. **Composer Completo:** Textarea auto-expansível (`Enter` envia a mensagem, `Shift+Enter` quebra linha), histórico de mensagens recentes (`↑` / `↓`), botão de interrupção e suporte a referências por chips (`@selecionado`, `@holes_1`) ao clicar em entidades do canvas.
+5. **Comandos Rápidos:** `/desfazer`, `/refazer`, `/limpar`, `/unidades`, `/exportar`, `/ajuda`.
+
+---
+
+## 4. ENTRADA POR VOZ E NORMALIZAÇÃO TÉCNICA
+
+- **Botão de Microfone:** Estados claros (`Inativo`, `Ouvindo`, `Processando`). Utiliza a `Web Speech API` (`SpeechRecognition` / `webkitSpeechRecognition`, `lang='pt-BR'`, `interimResults`) com fallback para `MediaRecorder` se necessário.
+- **Normalizador Pós-Voz:** Converte números por extenso (*"quinhentos por duzentos e cinquenta"* $\rightarrow 500\times250$), vírgulas decimais, unidades (mm, cm, m, pol), diâmetros (`Ø`) e raios (`R`), utilizando um glossário técnico de oficina (PCD, rasgo oblongo, flange, chanfro, concordância, tronco de cone, gomos).
+
+---
+
+## 5. DSL V2 E PLANO GEOMÉTRICO TIPADO (ASSINATURAS E ÂNCORAS)
+
+O plano geométrico gerado deve utilizar esquema tipado, preservando compatibilidade com a DSL v1.0. 
+
+### Assinaturas Canônicas de Posicionamento (`pos`) e Operações:
+- Convenções: milímetros (mm), ângulos em graus anti-horário positivo, eixo X à direita, eixo Y para cima, origem no canto inferior esquerdo da peça-base.
+- Posição `pos`: `{ abs: [x, y] }`, `{ center: id }`, `{ edge_offset: { id, side: 'left'|'right'|'top'|'bottom', dist: mm } }`, `{ from: { id, anchor: 'center'|'start'|'end'|'mid'|'tl'|'tr'|'br'|'bl'|'top'|'bottom'|'left'|'right' }, dx, dy }`, `{ polar: { center, r, angle } }`.
+- Permite expressões paramétricas verificáveis: `W/2`, `D=2*R`, preservando os parâmetros para recompilação ao editar valores.
+
+---
+
+## 6. CATÁLOGO DE FERRAMENTAS REAIS DO CHAMFER (INVENTÁRIO E ADAPTADOR)
+
+Reutilize o registro de comandos e o motor geométrico existentes através de uma camada de adaptação limpa:
+- **Criação:** `create_plate`, `create_rectangle`, `create_circle`, `create_line`, `create_polyline`, `create_arc`, `create_ellipse`, `create_polygon`, `create_text`, `create_slot`, `create_flange`, `create_cutout`.
+- **Furos e Padrões (`add_holes` com `pattern` tipado):**
+  - `single { pos }`
+  - `points [ { pos } ]`
+  - `corners { inset, which: 'all' | [tl, tr, br, bl] }`
+  - `line { axis: 'horizontal_center' | 'vertical_center' | {p1, p2}, count, distribution, pitch?, margin? }`
+  - `grid { rows, cols, pitch_x, pitch_y | margins, origin }`
+  - `bolt_circle { center, pcd, count, start_angle }`
+  - `along_edge`, `perimeter`.
+  - **Distribuições Lineares:** `equal_division` ($x_i = (i+0.5)L/N$), `between_ends` ($\text{passo} = (L-2m)/(N-1)$), `fixed_pitch`, `equal_gap_including_edges`.
+- **Modificação:** `edit_feature`, `transform` (`move`, `copy`, `rotate`, `mirror`, `scale`), `edit_geometry` (`trim`, `extend`, `fillet`, `chamfer`, `offset`, `break`, `join`, `explode`, `stretch`, `align`), `array`, `delete`, `set_layer`.
+- **Cotas e Sistema:** `add_dimension`, `auto_dimension`, `measure`, `query_model`, `undo`, `redo`, `export`, `declare_assumptions`, `ask_clarification`, `report_unsupported`.
+
+---
+
+## 7. REGRAS DE FABRICAÇÃO (VALIDADOR DFM) E TABELA DE ROSCAS
+
+O validador determinístico verifica a viabilidade de fabricação antes de permitir a aplicação:
+- **Erros Impeditivos (Bloqueiam):** Furo ou recorte cruzando o contorno externo; raio/chanfro maior que o permitido ($raio > \min(w,h)/2$ ou sobreposição de cantos); furos sobrepostos; $\varnothing \le 0$; contorno aberto onde se exige fechado.
+- **Avisos (Alertas com sugestão numérica):** Alma menor que o limite (espessura ou 2 mm); diâmetro menor que a espessura em corte térmico; centro do furo a menos de $1,5\varnothing$ da borda para parafusos; raio interno de dobra menor que a espessura.
+- **Roscas e Folgas (Tabelas Técnicas Validadas):**
+  - *Furo de broca para rosca (M6 a M20):* `M6 = 5.0 mm`, `M8 = 6.8 mm`, `M10 = 8.5 mm`, `M12 = 10.2 mm`, `M16 = 14.0 mm`, `M20 = 17.5 mm`.
+  - *Folga passante para parafuso:* `M6 = 6.6 mm`, `M8 = 9.0 mm`, `M10 = 11.0 mm`, `M12 = 13.5 mm`, `M16 = 17.5 mm`, `M20 = 22.0 mm`.
+
+---
+
+## 8. MODELO DE PROJETO — PartModel (CONTEXTO)
+
+JSON compacto enviado em todo turno contendo: `units`, `material`, `thickness` (CHAPA), `bbox`, `revision`, `selection`, `entities[]` (com `id`, `type`, `params`, `layer`, `derived.centers`), `dimensions[]`, `vars{}`.
+- Agrupe e resuma entidades se ultrapassar ~200 itens.
+- O modelo geométrico real é sempre a fonte de verdade absoluta.
+
+---
+
+## 9. INSTRUÇÃO DE SISTEMA DO INTERPRETADOR (SYSTEM INSTRUCTION)
+
+> **Texto Base Obrigatório:**
+> *"Você é o CHAMFER INTENT, copiloto de engenharia do CAD 2D CHAMFER (app Caldra), especialista em caldeiraria, serralheria, traçagem e desenho 2D de peças para corte (laser, plasma, oxicorte, punção) e dobra. Seu trabalho é transformar o que o usuário diz em operações de CAD exatas e seguras, conversando como um colega de oficina experiente: direto, técnico, sem enrolação. Responda no idioma do usuário (pt-BR), em frases curtas, sem elogios e sem jargão de IA. Nunca mostre JSON, coordenadas ou raciocínio, a menos que solicitado. Siga rigorosamente a ordem de dependência das operações, aplique as convenções de caldeiraria e furação, declare premissas quando necessário e aguarde o resultado do compilador determinístico antes de confirmar qualquer alteração."*
+
+---
+
+## 10. PROTOCOLO DE EXECUÇÃO EM FASES (FASE A A G)
+
+O modo de execução padrão é **PASSO A PASSO**. Não avance para a fase seguinte sem relatar a anterior e aguardar o comando **`"prosseguir"`**.
+
+- **FASE A — Inventário e Planejamento (PARAR E AGUARDAR `PROSSEGUIR`):** Inspecione o código atual do CHAMFER, a DSL v1.0, o compilador, a prévia, o histórico, a integração Gemini e a solução de áudio. Apresente o inventário, o catálogo real, os problemas identificados, os riscos e o plano detalhado. Não altere código nesta fase.
+- **FASE B — Chat e Composer:** Implemente o histórico, os cartões de resposta, o composer estruturado, cópia, edição, ramificação e estados de geração.
+- **FASE C — Interpretação Local, DSL e Contexto:** Implemente o `LocalInterpreter` (debounce 250ms, <100ms), o plano tipado, o `PartModel` e o normalizador de unidades/voz.
+- **FASE D — Catálogo, Adaptador e Gemini:** Integre as ferramentas reais ao modelo de linguagem utilizando o esquema estruturado, function calling, dry-run, premissas e autocorreção limitada.
+- **FASE E — Prévia, Parâmetros e Aplicação:** Implemente o formulário dinâmico, a prévia isolada com margem de segurança de 35% e sem sobreposição de controles, a aplicação transacional atômica e o `Undo/Redo` por turno.
+- **FASE F — Voz:** Implemente a captação por `Web Speech API`, a transcrição editável, o normalizador pós-voz e o fallback.
+- **FASE G — Testes, Observabilidade e Desempenho:** Execute a suíte golden de 40 frases, os testes geométricos, de falha e de regressão, registrando as métricas de desempenho.
+
+---
+
+### Diretriz Final:
+Inicie exclusivamente pela **FASE A**, execute o inventário técnico do código atual do CHAMFER e apresente o diagnóstico e o plano, aguardando o comando `"prosseguir"` para avançar.
