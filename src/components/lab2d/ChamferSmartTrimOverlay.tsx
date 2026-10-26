@@ -64,6 +64,18 @@ export function ChamferSmartTrimSvgOverlay({
         strokeWidth={3 / viewK}
         strokeLinecap="round"
       />
+      {candidate.extraKeptSegments?.map((seg, idx) => (
+        <line
+          key={`extra-kept-${idx}`}
+          x1={seg[0].x}
+          y1={seg[0].y}
+          x2={seg[1].x}
+          y2={seg[1].y}
+          stroke="#10b981"
+          strokeWidth={3 / viewK}
+          strokeLinecap="round"
+        />
+      ))}
 
       {/* Segmento a ser aparado (vermelho tracejado com destaque) */}
       <line
@@ -78,7 +90,7 @@ export function ChamferSmartTrimSvgOverlay({
         strokeOpacity={0.85}
       />
 
-      {/* Marcador no Ponto de Encontro */}
+      {/* Marcador no Ponto de Encontro Principal */}
       <circle
         cx={candidate.intersectionPoint.x}
         cy={candidate.intersectionPoint.y}
@@ -104,6 +116,37 @@ export function ChamferSmartTrimSvgOverlay({
         stroke="#ffffff"
         strokeWidth={1.2 / viewK}
       />
+
+      {/* Segundo Marcador de Interseção (quando aparando entre dois encontros) */}
+      {candidate.secondIntersectionPoint && (
+        <g>
+          <circle
+            cx={candidate.secondIntersectionPoint.x}
+            cy={candidate.secondIntersectionPoint.y}
+            r={5 / viewK}
+            fill="#ef4444"
+            fillOpacity={0.3}
+            stroke="#ef4444"
+            strokeWidth={1.5 / viewK}
+          />
+          <line
+            x1={candidate.secondIntersectionPoint.x - 4 / viewK}
+            y1={candidate.secondIntersectionPoint.y - 4 / viewK}
+            x2={candidate.secondIntersectionPoint.x + 4 / viewK}
+            y2={candidate.secondIntersectionPoint.y + 4 / viewK}
+            stroke="#ffffff"
+            strokeWidth={1.2 / viewK}
+          />
+          <line
+            x1={candidate.secondIntersectionPoint.x + 4 / viewK}
+            y1={candidate.secondIntersectionPoint.y - 4 / viewK}
+            x2={candidate.secondIntersectionPoint.x - 4 / viewK}
+            y2={candidate.secondIntersectionPoint.y + 4 / viewK}
+            stroke="#ffffff"
+            strokeWidth={1.2 / viewK}
+          />
+        </g>
+      )}
 
       {/* Ponto clicado */}
       <circle

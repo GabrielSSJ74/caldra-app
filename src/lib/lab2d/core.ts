@@ -543,6 +543,22 @@ export function offsetEntity(e: Entity, d: number): Entity | null {
   const shift = (pts: Vec2[], closed: boolean): Vec2[] => {
     const out: Vec2[] = [];
     const n = pts.length;
+    if (n < 2) return pts;
+
+    // Para contornos fechados, garante que d > 0 expanda sempre para fora (independente do sentido CW/CCW)
+    let sign = 1;
+    if (closed && n >= 3) {
+      let signedArea2 = 0;
+      for (let i = 0; i < n; i++) {
+        const pA = pts[i]!;
+        const pB = pts[(i + 1) % n]!;
+        signedArea2 += pA.x * pB.y - pB.x * pA.y;
+      }
+      // Com normal à direita (dy, -dx), área positiva (sentido horário em tela / CCW matemático) aponta para fora
+      sign = signedArea2 >= 0 ? 1 : -1;
+    }
+    const effD = d * sign;
+
     for (let i = 0; i < n; i++) {
       const prev = pts[(i - 1 + n) % n]!;
       const cur = pts[i]!;
@@ -555,10 +571,19 @@ export function offsetEntity(e: Entity, d: number): Entity | null {
       };
       const n1 = i === 0 && !closed ? nrm(cur, next) : nrm(prev, cur);
       const n2 = i === n - 1 && !closed ? nrm(prev, cur) : nrm(cur, next);
-      const nx = (n1.x + n2.x) / 2;
-      const ny = (n1.y + n2.y) / 2;
-      const l = Math.hypot(nx, ny) || 1;
-      out.push({ x: cur.x + (nx / l) * d, y: cur.y + (ny / l) * d });
+      const bx = n1.x + n2.x;
+      const by = n1.y + n2.y;
+      const bl = Math.hypot(bx, by);
+      if (bl < 1e-6) {
+        out.push({ x: cur.x + n1.x * effD, y: cur.y + n1.y * effD });
+      } else {
+        const ux = bx / bl;
+        const uy = by / bl;
+        // Projeção exata da bissetriz sobre a normal da aresta (cos(θ/2)) para manter distância perpendicular exata = d
+        const cosHalf = Math.max(0.25, ux * n1.x + uy * n1.y);
+        const miterDist = effD / cosHalf;
+        out.push({ x: cur.x + ux * miterDist, y: cur.y + uy * miterDist });
+      }
     }
     return out;
   };

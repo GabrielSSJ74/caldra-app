@@ -385,12 +385,40 @@ import {
   analyzeTopology,
   autoHealEntities,
 } from "@/lib/lab2d/cadTopologyDiagnostics";
+import {
+  validateAndExtractClosedProfiles,
+  buildConstructionAxisLine,
+  buildCompositePolyline,
+  buildParametricRectangle,
+  buildPolygonParametric,
+  buildMechanicalSlotAdvanced,
+  buildSmoothSpline128,
+  computeSwipeTrimTransaction,
+  extendEntityToNearestBoundary,
+  cleanOverkillGeometry,
+  applyMultiModeGripEdit,
+  insertVertexOnEntitySegment,
+  createValidatedTechnicalHatch,
+  findOverlappingEntitiesAtPoint,
+  runBoolean2DOnSelection,
+  type GripEditMode,
+  type PolylineSegmentMode,
+  type RectCreationMode,
+  type CircleCreationMode,
+  type PolygonCreationMode,
+  type SlotCreationMode,
+} from "@/lib/lab2d/cadcraftEngine";
+import {
+  ChamferTouchDynamicHud,
+  type LockedDimensionsState,
+} from "./ChamferTouchDynamicHud";
 
 export type Tool =
   | "select"
   | "node"
   | "pan"
   | "line"
+  | "construction_line"
   | "polyline"
   | "circle"
   | "arc"
@@ -398,6 +426,7 @@ export type Tool =
   | "rrect"
   | "polygon"
   | "ellipse"
+  | "spline"
   | "point"
   | "text"
   | "measure"
@@ -757,6 +786,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [selection, setSelection] = useState<string[]>([]);
   const [view, setView] = useState({ tx: 80, ty: 80, k: 1 });
   const [cursor, setCursor] = useState<Vec2>({ x: 0, y: 0 });
+  const cursorRef = useRef<Vec2>({ x: 0, y: 0 });
+  cursorRef.current = cursor;
   const [snapHit, setSnapHit] = useState<Snap | null>(null);
   const [grid, setGrid] = useState(10);
   const [snapOn, setSnapOn] = useState(true);
@@ -848,6 +879,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   /* FERRAMENTA DE ÓRBITA 3D UNIFICADA (2D SKETCH INCLINADO + CAD 3D IN-PLACE) */
   const [orbitAzimuthDeg, setOrbitAzimuthDeg] = useState<number>(0);
   const [orbitElevationDeg, setOrbitElevationDeg] = useState<number>(90);
+
+  /* SUB-MODOS PARAMÉTRICOS E MOBILE TOUCH (CADCraft -> CHAMFER CAD) */
+  const [polylineSegMode, setPolylineSegMode] = useState<PolylineSegmentMode>("line");
+  const polylineSegModesRef = useRef<PolylineSegmentMode[]>([]);
+  const [rectMode, setRectMode] = useState<RectCreationMode>("corners");
+  const [circleMode, setCircleMode] = useState<CircleCreationMode>("center_radius");
+  const [polygonMode, setPolygonMode] = useState<PolygonCreationMode>("across_flats");
+  const [polygonSides, setPolygonSides] = useState<number>(6);
+  const [polygonAcrossFlatsMm, setPolygonAcrossFlatsMm] = useState<number>(24);
+  const [slotMode, setSlotMode] = useState<SlotCreationMode>("center_to_center");
+  const [slotWidthMm, setSlotWidthMm] = useState<number>(14);
+  const [gripMode, setGripMode] = useState<GripEditMode>("stretch");
+  const [lockedDims, setLockedDims] = useState<LockedDimensionsState>({
+    lockedLengthMm: null,
+    lockedAngleDeg: null,
+  });
+  const [overlappingCandidates, setOverlappingCandidates] = useState<Entity[]>([]);
+  const swipeTrimFenceRef = useRef<Vec2[]>([]);
+  const [swipeTrimCutPreview, setSwipeTrimCutPreview] = useState<[Vec2, Vec2][]>([]);
   const [orbitPreset, setOrbitPreset] = useState<OrbitPresetId>("top");
   const [isOrbitToolActive, setIsOrbitToolActive] = useState<boolean>(false);
   const [renderStyle3D, setRenderStyle3D] = useState<EdgeMode>("shaded-edges");
@@ -871,7 +921,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [outputMode, setOutputMode] = useState<OutputMode>("completo");
   const [pending, setPending] = useState<Vec2[]>([]);
 
-  const [draft, setDraft] = useState<Entity | null>(null);
+  const [draft, setDraftState] = useState<Entity | null>(null);
+  const draftRef = useRef<Entity | null>(null);
+  const setDraft = useCallback((next: Entity | null) => {
+    draftRef.current = next;
+    setDraftState(next);
+  }, []);
+  const pointerMoveRafRef = useRef<number | null>(null);
+  const pendingPointerMoveRef = useRef<{
+    clientX: number;
+    clientY: number;
+    pointerType: string;
+  } | null>(null);
   const [marquee, setMarquee] = useState<{ a: Vec2; b: Vec2 } | null>(null);
   const [measures, setMeasures] = useState<Measure[]>([]);
   const [liveMeasure, setLiveMeasure] = useState<Measure | null>(null);
@@ -3073,21 +3134,87 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   /* --------------------------------------------------------- interações */
   const finishPolyline = useCallback(
     (close: boolean) => {
-      const points = finishPolylinePoints(pending, close);
-      if (points.length > 1) {
-        const polyId = uid();
-        commit((p) => [
-          ...p,
-          { id: polyId, layer: activeLayer, type: "polyline", pts: points, closed: close },
-        ]);
+      if (tool === "spline") {
+        if (pending.length >= 2) {
+          const spl = buildSmoothSpline128(pending, close, activeLayer);
+          commit((p) => [...p, spl]);
+          setSelection([]);
+          setMobileEditorOpenManual(false);
+        }
+        setPending([]);
+        setDraft(null);
+        polylineSegModesRef.current = [];
+        return;
+      }
+
+      const hasArcSegs = polylineSegModesRef.current.some((m) => m === "tangent_arc");
+      if (hasArcSegs && pending.length >= 2) {
+        const comp = buildCompositePolyline(pending, polylineSegModesRef.current, close, activeLayer);
+        commit((p) => [...p, comp]);
         setSelection([]);
         setMobileEditorOpenManual(false);
+      } else {
+        const points = finishPolylinePoints(pending, close);
+        if (points.length > 1) {
+          const polyId = uid();
+          commit((p) => [
+            ...p,
+            { id: polyId, layer: activeLayer, type: "polyline", pts: points, closed: close },
+          ]);
+          setSelection([]);
+          setMobileEditorOpenManual(false);
+        }
       }
       setPending([]);
       setDraft(null);
+      polylineSegModesRef.current = [];
     },
-    [pending, activeLayer, commit],
+    [pending, activeLayer, commit, tool],
   );
+
+  const handleOverkillClean = useCallback(() => {
+    const { cleanedEntities, removedCount } = cleanOverkillGeometry(entities);
+    if (removedCount > 0) {
+      commit(cleanedEntities);
+      triggerHaptic("success");
+      toast.success(`Overkill: ${removedCount} entidade(s) duplicada(s)/nula(s) removida(s).`);
+    } else {
+      toast.info("Overkill: nenhuma geometria duplicada ou nula encontrada.");
+    }
+  }, [entities, commit]);
+
+  const handleBoolean2D = useCallback(
+    (op: "union" | "subtract" | "intersect") => {
+      const res = runBoolean2DOnSelection(entities, selection, op);
+      if (!res) {
+        toast.info("Selecione pelo menos 2 perfis fechados para operação booleana 2D.");
+        return;
+      }
+      commit(res.updatedEntities);
+      setSelection(res.newSelectedIds);
+      triggerHaptic("success");
+      toast.success(res.message);
+    },
+    [entities, selection, commit],
+  );
+
+  const handleCreateHatch = useCallback(() => {
+    const targetEnts = selected.length > 0 ? selected : entities;
+    const { hatchEntities, profileCount } = createValidatedTechnicalHatch(
+      targetEnts,
+      "ansi31",
+      45,
+      1,
+      "marcacao",
+    );
+    if (profileCount === 0) {
+      toast.info("Nenhum Perfil Fechado Válido encontrado na seleção para hachurar.");
+      return;
+    }
+    commit((prev) => [...prev, ...hatchEntities]);
+    triggerHaptic("success");
+    toast.success(`Hachura técnica aplicada em ${profileCount} perfil(is) fechado(s) com detecção de ilhas.`);
+  }, [selected, entities, commit]);
 
   const cancelOrFinalizeEntityDrag = useCallback(() => {
     if (dragRafRef.current) {
@@ -3161,7 +3288,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         pendingDragEntitiesRef.current = null;
       }
 
-      // c) Cooldown de 150ms após soltar o gesto de 2 dedos antes de aceitar novo início de arraste
+      // c) Cancela imediatamente qualquer traçado, seleção marquee ou Swipe-to-Trim de 1 dedo sem gravar ponto espúrio
+      setDraft(null);
+      setPending([]);
+      setMarquee(null);
+      swipeTrimFenceRef.current = [];
+      setSwipeTrimCutPreview([]);
+      setOverlappingCandidates([]);
+
+      // d) Cooldown de 150ms após soltar o gesto de 2 dedos antes de aceitar novo início de arraste
       dragCooldownUntilRef.current = performance.now() + 150;
       gestureUntilRef.current = Math.max(gestureUntilRef.current, performance.now() + 150);
 
@@ -3227,7 +3362,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     const isDrawingOrEditingTool = (
       tool === "line" ||
+      tool === "construction_line" ||
       tool === "polyline" ||
+      tool === "spline" ||
       tool === "rect" ||
       tool === "circle" ||
       tool === "ellipse" ||
@@ -3334,6 +3471,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         // Prioridade para o Long-Press de Arraste (320ms) / Seleção / Referência:
         // O tempo de pressão serve exclusivamente para destravar o movimento da peça ou acionar menus contextuais específicos da geometria.
         if (hit) {
+          // Desambiguação de Sobreposição no Toque quando >= 2 entidades competem pelo ponto
+          const overlapsHere = findOverlappingEntitiesAtPoint(raw, visible, (pType === "touch" ? 12 : 8) / view.k);
+          if (overlapsHere.length >= 2) {
+            setOverlappingCandidates(overlapsHere);
+          } else {
+            setOverlappingCandidates([]);
+          }
+
           const solo = ev.ctrlKey || ev.metaKey;
           const target = solo ? [hit.id] : expandSelection(entities, [hit.id]);
           const nextSel = ev.shiftKey
@@ -3465,8 +3610,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setIsDraggingUnlocked(false);
 
       if (!ev.shiftKey) setSelection([]);
+      setOverlappingCandidates([]);
 
-      // Inicia retângulo de seleção por janela no vazio
+      // Inicia retângulo de seleção por janela (Esq->Dir Azul) ou captura (Dir->Esq Verde Tracejado) no vazio
       setMarquee({ a: raw, b: raw });
       return;
     }
@@ -3477,13 +3623,29 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
-    if (tool === "polyline") {
+    if (tool === "polyline" || tool === "spline") {
       let nextPoint = p;
       if (pending.length > 0) {
         const lastPoint = pending[pending.length - 1]!;
-        if (drawingProjection === "isometric" && (isoOrtho || orthoOn)) {
+        const hasLockedLen =
+          typeof lockedDims.lockedLengthMm === "number" &&
+          Number.isFinite(lockedDims.lockedLengthMm) &&
+          lockedDims.lockedLengthMm > 0;
+        const hasLockedAng =
+          typeof lockedDims.lockedAngleDeg === "number" &&
+          Number.isFinite(lockedDims.lockedAngleDeg);
+        if (hasLockedLen || hasLockedAng) {
+          const curLen = hasLockedLen ? lockedDims.lockedLengthMm! : dist(lastPoint, nextPoint);
+          const curAngRad = hasLockedAng
+            ? (lockedDims.lockedAngleDeg! * Math.PI) / 180
+            : Math.atan2(nextPoint.y - lastPoint.y, nextPoint.x - lastPoint.x);
+          nextPoint = {
+            x: lastPoint.x + Math.cos(curAngRad) * curLen,
+            y: lastPoint.y + Math.sin(curAngRad) * curLen,
+          };
+        } else if (drawingProjection === "isometric" && (isoOrtho || orthoOn)) {
           nextPoint = constrainToIsoAxes(lastPoint, nextPoint, isoPlane);
-        } else if (orthoOn) {
+        } else if (orthoOn && tool === "polyline" && polylineSegMode === "line") {
           nextPoint = projectOrthoSegment(lastPoint, nextPoint);
         }
       }
@@ -3491,6 +3653,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (shouldClosePolyline(pending, nextPoint, 10 / view.k)) {
         finishPolyline(true);
         return;
+      }
+      if (pending.length > 0) {
+        polylineSegModesRef.current.push(polylineSegMode);
       }
       setPending((q) => [...q, nextPoint]);
       setDraft({
@@ -3612,6 +3777,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
     if (tool === "trim") {
+      swipeTrimFenceRef.current = [raw];
+      setSwipeTrimCutPreview([]);
       const hit = hitTest(raw);
       if (hit) {
         const result = removeEntityOnly(entities, groups, hit.id);
@@ -3619,10 +3786,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setGroups(result.groups);
         setSelection((ids) => ids.filter((id) => id !== hit.id));
         toast.success("Entidade removida.");
+        swipeTrimFenceRef.current = [];
       }
       return;
     }
     if (tool === "smart_trim") {
+      swipeTrimFenceRef.current = [raw];
+      setSwipeTrimCutPreview([]);
       const hit = hitTest(raw);
       if (hit) {
         const preview = computeSmartTrim(hit, entities, raw, smartTrimMode);
@@ -3639,8 +3809,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           });
           toast.success("Geometria aparada até o encontro.");
           setSmartTrimPreview(null);
-        } else {
-          toast.info("Nenhum limite ou interseção válida encontrada.");
+          swipeTrimFenceRef.current = [];
         }
       }
       return;
@@ -3658,7 +3827,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
     if (tool === "extend") {
       const hit = hitTest(raw);
-      if (hit)
+      if (hit) {
+        const extended = extendEntityToNearestBoundary(hit, raw, entities);
+        if (extended) {
+          commit((e) => e.map((x) => (x.id === extended.id ? extended : x)));
+          triggerHaptic("action");
+          toast.success("Entidade estendida até a fronteira mais próxima.");
+          return;
+        }
         for (const other of entities) {
           if (other.id === hit.id) continue;
           const t = extendLine(hit, other);
@@ -3667,6 +3843,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             break;
           }
         }
+      }
       return;
     }
     if (tool === "fillet" || tool === "chamfer") {
@@ -3760,7 +3937,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     // ferramentas de arrasto
     setPending([p]);
-    setDraft(buildDraft(tool, p, p, activeLayer, filletR, drawingProjection, isoPlane));
+    setDraft(
+      buildDraft(tool, p, p, activeLayer, filletR, drawingProjection, isoPlane, {
+        rectMode,
+        circleMode,
+        polygonMode,
+        polygonSides,
+        polygonAcrossFlatsMm,
+        slotMode,
+        slotWidthMm,
+      }),
+    );
   };
 
   const onPointerMove = (ev: React.PointerEvent) => {
@@ -3853,62 +4040,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     lastPointerTypeRef.current = pType;
     if (activePointerType !== pType) setActivePointerType(pType);
 
-    const raw = toWorld(ev);
-    const directTouchWorld = toWorld(ev, true);
-    setCursor(raw);
-
-    const useOffsetMove = shouldUseTouchOffset(
-      pType,
-      tool,
-      dragNode !== null,
-      isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
-      cursorOffsetMode,
-      selection.length > 0,
-    );
-    if (pType === "touch" && useOffsetMove && ptrsRef.current.size === 1 && !panRef.current) {
-      setTouchWorldPos(directTouchWorld);
-      setTouchOffsetActive(true);
-    } else if (pType !== "touch" || ptrsRef.current.size >= 2 || panRef.current || !useOffsetMove) {
-      setTouchOffsetActive(false);
-      setTouchWorldPos(null);
-    }
-
-    // Visor ampliado magnético / Lupa de precisão técnica (3x)
-    const isDrawingOrEditingToolMove = (
-      tool === "line" ||
-      tool === "polyline" ||
-      tool === "rect" ||
-      tool === "circle" ||
-      tool === "ellipse" ||
-      tool === "arc" ||
-      tool.startsWith("dim_") ||
-      tool === "measure" ||
-      tool === "fillet" ||
-      tool === "chamfer" ||
-      tool === "smart_trim" ||
-      tool === "trim" ||
-      tool === "move" ||
-      tool === "node" ||
-      tool === "leader" ||
-      dragNode !== null ||
-      dragEntityRef.current !== null ||
-      (tool === "select" && (isDraggingEntityRef.current || selection.length > 0 || marquee !== null))
-    );
-
-    if (
-      loupeMode !== "off" &&
-      ptrsRef.current.size === 1 &&
-      (loupeMode === "pinned" || isDrawingOrEditingToolMove) &&
-      !panRef.current &&
-      tool !== "pan"
-    ) {
-      setLoupeVisible(true);
-      setLoupeScreenPos({ x: ev.clientX, y: ev.clientY });
-      setLoupeCadPos(raw);
-    } else if (loupeMode === "off" || ptrsRef.current.size !== 1 || panRef.current || tool === "pan") {
-      setLoupeVisible(false);
-    }
-
     if (panRef.current) {
       const dx = ev.clientX - panRef.current.x;
       const dy = ev.clientY - panRef.current.y;
@@ -3918,79 +4049,32 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       markGesture();
       return;
     }
-    if (snapOn) {
-      const tol = 12 / view.k;
-      const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
-      const smart = findSmartSnap(raw, entities, tol, activeStart ?? null, tool, selection);
-      setSmartSnap(smart);
-      if (smart) {
-        setSnapHit(null);
-      } else {
-        setSnapHit(findSnap(raw, near(raw, tol * 2), tol, grid, { grid: showGrid, object: true }));
-      }
-    } else {
-      setSmartSnap(null);
-      setSnapHit(null);
-    }
 
-    // Atualização em tempo real das Cotas Vivas Inteligentes (Live Dimensions)
-    if (activeEdge) {
-      const dims = DynamicDimensionInteraction.generateEdgeOffsetDimensions(raw, activeEdge, activeEdgeSide);
-      setLiveDimensions(dims);
-    } else if (temporaryOrigin) {
-      const dims = DynamicDimensionInteraction.generateRefOriginDimensions(raw, temporaryOrigin);
-      setLiveDimensions(dims);
-    } else if (liveDimensions.length > 0) {
-      setLiveDimensions([]);
-    }
-
-    if (tool === "smart_trim") {
-      const hit = hitTest(raw);
-      if (hit) {
-        const preview = computeSmartTrim(hit, entities, raw, smartTrimMode);
-        setSmartTrimPreview(preview);
-      } else {
-        setSmartTrimPreview(null);
-      }
-    }
-
-    if (tool === "fillet" || tool === "chamfer") {
-      const tol = 16 / view.k;
-      const corner = findCornerAtPoint(raw, entities, tol);
-      if (corner) {
-        if (tool === "fillet") {
-          const calc = calculateFillet(corner.corner, corner.farA, corner.farB, filletR);
-          setFilletPreview(calc ? { corner, calc } : null);
-          setChamferPreview(null);
-        } else {
-          const calc = calculateChamfer(corner.corner, corner.farA, corner.farB, filletR, filletR);
-          setChamferPreview(calc ? { corner, calc } : null);
-          setFilletPreview(null);
+    if ((tool === "smart_trim" || tool === "trim") && swipeTrimFenceRef.current.length > 0 && ptrsRef.current.size === 1) {
+      // Suporte imediato a getCoalescedEvents?.() para não perder interseções em swipes rápidos
+      const nativeEv = ev.nativeEvent as PointerEvent;
+      const coalesced = typeof nativeEv.getCoalescedEvents === "function" ? nativeEv.getCoalescedEvents() : [];
+      if (coalesced.length > 0) {
+        for (const ce of coalesced) {
+          const pt = toWorld({
+            clientX: ce.clientX,
+            clientY: ce.clientY,
+            pointerType: ce.pointerType,
+          });
+          const lastFence = swipeTrimFenceRef.current[swipeTrimFenceRef.current.length - 1];
+          if (!lastFence || dist(lastFence, pt) > 1.5 / view.k) {
+            swipeTrimFenceRef.current.push(pt);
+          }
         }
       } else {
-        setFilletPreview(null);
-        setChamferPreview(null);
+        const rawPt = toWorld(ev);
+        const lastFence = swipeTrimFenceRef.current[swipeTrimFenceRef.current.length - 1];
+        if (!lastFence || dist(lastFence, rawPt) > 1.5 / view.k) {
+          swipeTrimFenceRef.current.push(rawPt);
+        }
       }
     }
 
-    if (dragNode) {
-      const p = snapPoint(raw);
-      setEntities((list) =>
-        list.map((e) => {
-          if (e.id !== dragNode.id) return e;
-          if (e.type === "polyline")
-            return { ...e, pts: e.pts.map((q, i) => (i === dragNode.index ? p : q)) };
-          if (e.type === "line")
-            return dragNode.index === 0 ? { ...e, x1: p.x, y1: p.y } : { ...e, x2: p.x, y2: p.y };
-          if (e.type === "circle")
-            return dragNode.index === 0
-              ? { ...e, cx: p.x, cy: p.y }
-              : { ...e, r: dist(p, { x: e.cx, y: e.cy }) };
-          return e;
-        }),
-      );
-      return;
-    }
     if (dragEntityRef.current && dragEntityRef.current.unlocked && (!ev.pointerId || dragEntityRef.current.pointerId === ev.pointerId)) {
       const drag = dragEntityRef.current;
       const canvasRect = (canvasViewportRef.current ?? svgRef.current)?.getBoundingClientRect();
@@ -4110,13 +4194,179 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       return;
     }
+
+    // Throttle via requestAnimationFrame (máx. 1 atualização de estado por quadro = 60 FPS estável sem lag)
+    pendingPointerMoveRef.current = {
+      clientX: ev.clientX,
+      clientY: ev.clientY,
+      pointerType: pType,
+    };
+
+    if (pointerMoveRafRef.current !== null) return;
+
+    pointerMoveRafRef.current = requestAnimationFrame(() => {
+      pointerMoveRafRef.current = null;
+      const moveEv = pendingPointerMoveRef.current;
+      if (!moveEv) return;
+      pendingPointerMoveRef.current = null;
+      flushPointerMoveFrame(moveEv.clientX, moveEv.clientY, moveEv.pointerType);
+    });
+  };
+
+  const flushPointerMoveFrame = (clientX: number, clientY: number, pType: string) => {
+    const raw = toWorld({ clientX, clientY, pointerType: pType });
+    const directTouchWorld = toWorld({ clientX, clientY, pointerType: pType }, true);
+    cursorRef.current = raw;
+    setCursor(raw);
+
+    const useOffsetMove = shouldUseTouchOffset(
+      pType,
+      tool,
+      dragNode !== null,
+      isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
+      cursorOffsetMode,
+      selection.length > 0,
+    );
+    if (pType === "touch" && useOffsetMove && ptrsRef.current.size === 1 && !panRef.current) {
+      setTouchWorldPos(directTouchWorld);
+      setTouchOffsetActive(true);
+    } else if (pType !== "touch" || ptrsRef.current.size >= 2 || panRef.current || !useOffsetMove) {
+      setTouchOffsetActive(false);
+      setTouchWorldPos(null);
+    }
+
+    // Visor ampliado magnético / Lupa de precisão técnica (3x)
+    const isDrawingOrEditingToolMove = (
+      tool === "line" ||
+      tool === "construction_line" ||
+      tool === "polyline" ||
+      tool === "spline" ||
+      tool === "rect" ||
+      tool === "rrect" ||
+      tool === "circle" ||
+      tool === "polygon" ||
+      tool === "slot" ||
+      tool === "ellipse" ||
+      tool === "arc" ||
+      tool.startsWith("dim_") ||
+      tool === "measure" ||
+      tool === "fillet" ||
+      tool === "chamfer" ||
+      tool === "smart_trim" ||
+      tool === "trim" ||
+      tool === "move" ||
+      tool === "node" ||
+      tool === "leader" ||
+      dragNode !== null ||
+      dragEntityRef.current !== null ||
+      (tool === "select" && (isDraggingEntityRef.current || selection.length > 0 || marquee !== null))
+    );
+
+    if (
+      loupeMode !== "off" &&
+      ptrsRef.current.size === 1 &&
+      (loupeMode === "pinned" || isDrawingOrEditingToolMove) &&
+      !panRef.current &&
+      tool !== "pan"
+    ) {
+      setLoupeVisible(true);
+      setLoupeScreenPos({ x: clientX, y: clientY });
+      setLoupeCadPos(raw);
+    } else if (loupeMode === "off" || ptrsRef.current.size !== 1 || panRef.current || tool === "pan") {
+      setLoupeVisible(false);
+    }
+
+    let currentSnapPt = raw;
+    if (snapOn) {
+      const tol = 12 / view.k;
+      const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
+      const smart = findSmartSnap(raw, entities, tol, activeStart ?? null, tool, selection);
+      setSmartSnap(smart);
+      if (smart) {
+        setSnapHit(null);
+        currentSnapPt = smart.p;
+      } else {
+        if (drawingProjection === "isometric" && showGrid) {
+          const isoG = snapToIsoGrid(raw, grid, isoPlane);
+          if (dist(raw, isoG) <= tol * 1.5) {
+            currentSnapPt = isoG;
+          }
+        }
+        const sh = findSnap(raw, near(raw, tol * 2), tol, grid, { grid: showGrid, object: true });
+        setSnapHit(sh);
+        if (sh) currentSnapPt = sh.p;
+      }
+    } else {
+      setSmartSnap(null);
+      setSnapHit(null);
+    }
+
+    // Atualização em tempo real das Cotas Vivas Inteligentes (Live Dimensions)
+    if (activeEdge) {
+      const dims = DynamicDimensionInteraction.generateEdgeOffsetDimensions(raw, activeEdge, activeEdgeSide);
+      setLiveDimensions(dims);
+    } else if (temporaryOrigin) {
+      const dims = DynamicDimensionInteraction.generateRefOriginDimensions(raw, temporaryOrigin);
+      setLiveDimensions(dims);
+    } else if (liveDimensions.length > 0) {
+      setLiveDimensions([]);
+    }
+
+    if (tool === "smart_trim" || tool === "trim") {
+      if (swipeTrimFenceRef.current.length >= 2) {
+        const tx = computeSwipeTrimTransaction(swipeTrimFenceRef.current, entities);
+        setSwipeTrimCutPreview(tx.cutSegmentsPreview);
+      }
+
+      if (tool === "smart_trim") {
+        const hit = hitTest(raw);
+        if (hit) {
+          const preview = computeSmartTrim(hit, entities, raw, smartTrimMode);
+          setSmartTrimPreview(preview);
+        } else {
+          setSmartTrimPreview(null);
+        }
+      }
+    }
+
+    if (tool === "fillet" || tool === "chamfer") {
+      const tol = 16 / view.k;
+      const corner = findCornerAtPoint(raw, entities, tol);
+      if (corner) {
+        if (tool === "fillet") {
+          const calc = calculateFillet(corner.corner, corner.farA, corner.farB, filletR);
+          setFilletPreview(calc ? { corner, calc } : null);
+          setChamferPreview(null);
+        } else {
+          const calc = calculateChamfer(corner.corner, corner.farA, corner.farB, filletR, filletR);
+          setChamferPreview(calc ? { corner, calc } : null);
+          setFilletPreview(null);
+        }
+      } else {
+        setFilletPreview(null);
+        setChamferPreview(null);
+      }
+    }
+
+    if (dragNode) {
+      const p = currentSnapPt;
+      setEntities((list) =>
+        list.map((e) => {
+          if (e.id !== dragNode.id) return e;
+          const pts = entityPoints(e);
+          const origPt = pts[dragNode.index] ?? p;
+          return applyMultiModeGripEdit(e, dragNode.index, p, gripMode, origPt);
+        }),
+      );
+      return;
+    }
     if (marquee) {
       setMarquee({ a: marquee.a, b: raw });
       return;
     }
     // prévia contínua: arco por 3 pontos e régua
     if (tool === "arc" && pending.length) {
-      const p = snapPoint(raw);
+      const p = currentSnapPt;
       const [a, b] = pending;
       if (pending.length === 1 && a)
         setDraft({
@@ -4132,15 +4382,31 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
     if (tool === "measure" && pending.length === 1) {
-      setLiveMeasure({ a: pending[0]!, b: snapPoint(raw) });
+      setLiveMeasure({ a: pending[0]!, b: currentSnapPt });
       return;
     }
-    if (tool === "polyline" && pending.length) {
+    if ((tool === "polyline" || tool === "spline") && pending.length) {
       const lastPoint = pending[pending.length - 1]!;
-      let pt = snapPoint(raw);
-      if (drawingProjection === "isometric" && (isoOrtho || orthoOn)) {
+      let pt = currentSnapPt;
+      const hasLockedLen =
+        typeof lockedDims.lockedLengthMm === "number" &&
+        Number.isFinite(lockedDims.lockedLengthMm) &&
+        lockedDims.lockedLengthMm > 0;
+      const hasLockedAng =
+        typeof lockedDims.lockedAngleDeg === "number" &&
+        Number.isFinite(lockedDims.lockedAngleDeg);
+      if (hasLockedLen || hasLockedAng) {
+        const curLen = hasLockedLen ? lockedDims.lockedLengthMm! : dist(lastPoint, pt);
+        const curAngRad = hasLockedAng
+          ? (lockedDims.lockedAngleDeg! * Math.PI) / 180
+          : Math.atan2(pt.y - lastPoint.y, pt.x - lastPoint.x);
+        pt = {
+          x: lastPoint.x + Math.cos(curAngRad) * curLen,
+          y: lastPoint.y + Math.sin(curAngRad) * curLen,
+        };
+      } else if (drawingProjection === "isometric" && (isoOrtho || orthoOn)) {
         pt = constrainToIsoAxes(lastPoint, pt, isoPlane);
-      } else if (orthoOn) {
+      } else if (orthoOn && tool === "polyline" && polylineSegMode === "line") {
         pt = projectOrthoSegment(lastPoint, pt);
       }
       setLoupeCadPos(pt);
@@ -4155,33 +4421,81 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       });
       return;
     }
-    if (pending.length === 1 && draft) {
-      let targetP = snapPoint(raw);
-      if (orthoOn && tool === "line") {
-        const p0 = pending[0]!;
+    if (pending.length === 1 && draftRef.current) {
+      let targetP = currentSnapPt;
+      const p0 = pending[0]!;
+      const hasLockedLen =
+        typeof lockedDims.lockedLengthMm === "number" &&
+        Number.isFinite(lockedDims.lockedLengthMm) &&
+        lockedDims.lockedLengthMm > 0;
+      const hasLockedAng =
+        typeof lockedDims.lockedAngleDeg === "number" &&
+        Number.isFinite(lockedDims.lockedAngleDeg);
+
+      // Travamento polar (L, ∠) e restrição ORTO aplicam-se EXCLUSIVAMENTE a ferramentas lineares vetoriais
+      if ((hasLockedLen || hasLockedAng) && (tool === "line" || tool === "construction_line")) {
+        const curLen = hasLockedLen ? lockedDims.lockedLengthMm! : dist(p0, targetP);
+        const curAngRad = hasLockedAng
+          ? (lockedDims.lockedAngleDeg! * Math.PI) / 180
+          : Math.atan2(targetP.y - p0.y, targetP.x - p0.x);
+        targetP = {
+          x: p0.x + Math.cos(curAngRad) * curLen,
+          y: p0.y + Math.sin(curAngRad) * curLen,
+        };
+      } else if (orthoOn && (tool === "line" || tool === "construction_line")) {
         const dx = Math.abs(raw.x - p0.x);
         const dy = Math.abs(raw.y - p0.y);
         targetP = dx >= dy ? { x: targetP.x, y: p0.y } : { x: p0.x, y: targetP.y };
       }
+
+      const activeLockedRadius =
+        hasLockedLen && (tool === "circle" || tool === "polygon")
+          ? lockedDims.lockedLengthMm!
+          : undefined;
+
       if (drawingProjection === "isometric") {
-        if ((isoOrtho || orthoOn) && tool === "line") {
-          targetP = constrainToIsoAxes(pending[0]!, targetP, isoPlane);
+        if ((isoOrtho || orthoOn) && (tool === "line" || tool === "construction_line")) {
+          targetP = constrainToIsoAxes(p0, targetP, isoPlane);
         }
         if (tool === "rect") {
-          setDraft(buildIsoParallelogram(isoPlane, pending[0]!, targetP, activeLayer));
+          setDraft(buildIsoParallelogram(isoPlane, p0, targetP, activeLayer));
           return;
         }
         if (tool === "circle" || tool === "ellipse") {
-          const r = dist(pending[0]!, targetP);
-          setDraft(buildIsoCircle(isoPlane, pending[0]!, r, activeLayer));
+          const r = activeLockedRadius ?? dist(p0, targetP);
+          setDraft(buildIsoCircle(isoPlane, p0, r, activeLayer));
           return;
         }
       }
-      setDraft(buildDraft(tool, pending[0]!, targetP, activeLayer, filletR, drawingProjection, isoPlane));
+      setDraft(
+        buildDraft(tool, p0, targetP, activeLayer, filletR, drawingProjection, isoPlane, {
+          rectMode,
+          circleMode,
+          polygonMode,
+          polygonSides,
+          polygonAcrossFlatsMm,
+          slotMode,
+          slotWidthMm,
+          lockedRadiusMm: activeLockedRadius,
+        }),
+      );
     }
   };
 
   const onPointerUp = (ev?: React.PointerEvent) => {
+    // Descarrega imediatamente qualquer quadro de pointerMove pendente antes de finalizar o comando
+    if (pointerMoveRafRef.current !== null) {
+      cancelAnimationFrame(pointerMoveRafRef.current);
+      pointerMoveRafRef.current = null;
+    }
+    if (pendingPointerMoveRef.current) {
+      const pendingEv = pendingPointerMoveRef.current;
+      pendingPointerMoveRef.current = null;
+      flushPointerMoveFrame(pendingEv.clientX, pendingEv.clientY, pendingEv.pointerType);
+    } else if (ev && pending.length === 1 && draftRef.current && !pinchRef.current && !panRef.current && !orbitDragRef.current) {
+      flushPointerMoveFrame(ev.clientX, ev.clientY, ev.pointerType || lastPointerTypeRef.current || "mouse");
+    }
+
     setLoupeVisible(false);
     setIsDraggingUnlocked(false);
     setTouchOffsetActive(false);
@@ -4267,6 +4581,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       return;
     }
+    // Finaliza Swipe-to-Trim se o usuário arrastou uma cerca de corte sobre segmentos
+    if ((tool === "smart_trim" || tool === "trim") && swipeTrimFenceRef.current.length >= 2) {
+      const tx = computeSwipeTrimTransaction(swipeTrimFenceRef.current, entities);
+      swipeTrimFenceRef.current = [];
+      setSwipeTrimCutPreview([]);
+      if (tx.trimmedCount > 0) {
+        commit(tx.updatedEntities);
+        triggerHaptic("action");
+        toast.success(`Swipe-to-Trim: ${tx.trimmedCount} trecho(s) aparado(s) em 1 operação Undo.`);
+        setSmartTrimPreview(null);
+        return;
+      }
+    }
+    swipeTrimFenceRef.current = [];
+    setSwipeTrimCutPreview([]);
+
     if (marquee) {
       const box = {
         minX: Math.min(marquee.a.x, marquee.b.x),
@@ -4282,14 +4612,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setMarquee(null);
       return;
     }
-    if (draft && pending.length === 1 && tool !== "polyline") {
-      const box = boxOf(draft);
+    const activeDraft = draftRef.current ?? draft;
+    if (activeDraft && pending.length === 1 && tool !== "polyline" && tool !== "spline") {
+      const box = boxOf(activeDraft);
       const empty = box.maxX - box.minX < 0.01 && box.maxY - box.minY < 0.01;
       if (!empty) {
         const finalEntity: Entity =
-          !draft.id || draft.id === "draft" || draft.id.startsWith("draft-")
-            ? { ...draft, id: uid() }
-            : draft;
+          !activeDraft.id || activeDraft.id === "draft" || activeDraft.id.startsWith("draft-")
+            ? { ...activeDraft, id: uid() }
+            : activeDraft;
         commit((e) => [...e, finalEntity]);
         // Desenho contínuo: tela limpa e pronta para o próximo traço (NÃO abre propriedades automaticamente)
         setSelection([]);
@@ -4560,9 +4891,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         const items = loadGlobalClipboard();
         if (items.length > 0) {
           const item = items[0];
+          const cur = cursorRef.current;
           const target =
-            Number.isFinite(cursor.x) && Number.isFinite(cursor.y)
-              ? { x: cursor.x, y: cursor.y }
+            Number.isFinite(cur.x) && Number.isFinite(cur.y)
+              ? { x: cur.x, y: cur.y }
               : {
                   x: (canvasSize.w / 2 - view.tx) / view.k,
                   y: (canvasSize.h / 2 - view.ty) / view.k,
@@ -4574,7 +4906,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           triggerHaptic("action");
           toast.success(`✓ Colado: ${item.title}`);
         } else if (clipboardRef.current) {
-          const pasted = pasteClipboard(clipboardRef.current, { x: cursor.x + 10, y: cursor.y + 10 });
+          const cur = cursorRef.current;
+          const pasted = pasteClipboard(clipboardRef.current, { x: cur.x + 10, y: cur.y + 10 });
           commit((list) => [...list, ...pasted.entities]);
           setGroups((list) => [...list, ...pasted.groups]);
           setSelection(pasted.ids);
@@ -4685,7 +5018,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     fitTo,
     entities,
     groups,
-    cursor,
     nudgeStepMm,
     handleNudge,
     handleConfirmNudgePoint,
@@ -6087,6 +6419,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               toast.info(`Plano Isométrico: ${ISO_PLANES[p].label}`);
             }}
             onOpenPieceBuilder={() => setIsoPieceBuilderOpen(true)}
+            onOverkillClean={handleOverkillClean}
+            onBoolean2D={handleBoolean2D}
+            onCreateHatch={handleCreateHatch}
+            onSetRefZero={() => {
+              setTemporaryOrigin({
+                id: uid(),
+                p: cursor,
+                label: "REF (0,0)",
+                kind: "origin",
+                timestamp: Date.now(),
+              });
+              triggerHaptic("success");
+              toast.success(`REF (0,0) fixada em (${cursor.x.toFixed(1)}, ${cursor.y.toFixed(1)}) mm`);
+            }}
             isDark={isDark}
           />
         )}
@@ -6805,23 +7151,45 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 Number.isFinite(marquee.a.x) &&
                 Number.isFinite(marquee.a.y) &&
                 Number.isFinite(marquee.b.x) &&
-                Number.isFinite(marquee.b.y) && (
-                <rect
-                  x={Math.min(marquee.a.x, marquee.b.x)}
-                  y={Math.min(marquee.a.y, marquee.b.y)}
-                  width={Math.abs(marquee.b.x - marquee.a.x)}
-                  height={Math.abs(marquee.b.y - marquee.a.y)}
-                  fill={isDark ? SELECTION_COLOR : "#DC2626"}
-                  fillOpacity={0.08}
-                  stroke={isDark ? SELECTION_COLOR : "#DC2626"}
-                  strokeWidth={1 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
-                  strokeDasharray={
-                    marquee.b.x < marquee.a.x
-                      ? `${5 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)} ${4 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}`
-                      : undefined
-                  }
-                />
-              )}
+                Number.isFinite(marquee.b.y) && (() => {
+                  const isCrossing = marquee.b.x < marquee.a.x;
+                  const marqueeColor = isCrossing ? "#10B981" : "#38BDF8";
+                  const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                  return (
+                    <rect
+                      x={Math.min(marquee.a.x, marquee.b.x)}
+                      y={Math.min(marquee.a.y, marquee.b.y)}
+                      width={Math.abs(marquee.b.x - marquee.a.x)}
+                      height={Math.abs(marquee.b.y - marquee.a.y)}
+                      fill={marqueeColor}
+                      fillOpacity={0.12}
+                      stroke={marqueeColor}
+                      strokeWidth={1.4 / safeK}
+                      strokeDasharray={isCrossing ? `${6 / safeK} ${4 / safeK}` : undefined}
+                    />
+                  );
+                })()}
+
+              {/* SWIPE-TO-TRIM PREVIEW: trechos cruzados pelo arraste destacados em vermelho */}
+              {swipeTrimCutPreview.length > 0 && (() => {
+                const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                return (
+                  <g pointerEvents="none" aria-label="Pré-visualização Swipe-to-Trim">
+                    {swipeTrimCutPreview.map(([pA, pB], idx) => (
+                      <line
+                        key={`st-cut-${idx}`}
+                        x1={pA.x}
+                        y1={pA.y}
+                        x2={pB.x}
+                        y2={pB.y}
+                        stroke="#EF4444"
+                        strokeWidth={3.2 / safeK}
+                        strokeDasharray={`${5 / safeK} ${3 / safeK}`}
+                      />
+                    ))}
+                  </g>
+                );
+              })()}
 
               {/* FEEDBACK VISUAL TEMPORÁRIO DURANTE EDIÇÃO MOBILE (REGRA 15) */}
               {activeEditingProp && selectedEntity && (() => {
@@ -7447,6 +7815,139 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               <MenuItem label="Cancelar" icon={X} onClick={() => setClipboardMenu(null)} />
             </div>
           )}
+
+          {/* HUD DINÂMICO TOUCH CAD (CHIPS INTERATIVOS + PÍLULAS DE MEDIDA + MINI-KEYPAD + DESAMBIGUAÇÃO + PUSH/PULL Z) */}
+          <ChamferTouchDynamicHud
+            activeTool={tool}
+            pendingCount={pending.length}
+            basePoint={pending.length > 0 ? pending[pending.length - 1]! : null}
+            cursorPoint={cursor}
+            isDark={isDark}
+            polylineSegMode={polylineSegMode}
+            onTogglePolylineSegMode={() =>
+              setPolylineSegMode((prev) => (prev === "line" ? "tangent_arc" : "line"))
+            }
+            onUndoLastPolylineVertex={() => {
+              setPending((prev) => prev.slice(0, -1));
+              polylineSegModesRef.current.pop();
+              triggerHaptic("tap");
+            }}
+            onFinishPolyline={(closed) => finishPolyline(closed)}
+            rectMode={rectMode}
+            onChangeRectMode={setRectMode}
+            circleMode={circleMode}
+            onChangeCircleMode={setCircleMode}
+            polygonMode={polygonMode}
+            onChangePolygonMode={setPolygonMode}
+            polygonSides={polygonSides}
+            onChangePolygonSides={setPolygonSides}
+            polygonAcrossFlatsMm={polygonAcrossFlatsMm}
+            onChangePolygonAcrossFlatsMm={setPolygonAcrossFlatsMm}
+            slotMode={slotMode}
+            onChangeSlotMode={setSlotMode}
+            slotWidthMm={slotWidthMm}
+            onChangeSlotWidthMm={setSlotWidthMm}
+            gripMode={gripMode}
+            onChangeGripMode={setGripMode}
+            onInsertVertexOnSelected={() => {
+              if (selected.length === 0) return;
+              commit((list) =>
+                list.map((e) =>
+                  selection.includes(e.id) ? insertVertexOnEntitySegment(e, cursor) : e,
+                ),
+              );
+              triggerHaptic("action");
+              toast.success("Vértice inserido no segmento mais próximo.");
+            }}
+            smartTrimMode={smartTrimMode === "projected" ? "projected" : "real"}
+            onToggleSmartTrimMode={() =>
+              setSmartTrimMode((prev) => (prev === "real" ? "projected" : "real"))
+            }
+            offsetDistMm={offsetDist}
+            onChangeOffsetDistMm={setOffsetDist}
+            lockedDims={lockedDims}
+            onChangeLockedDims={setLockedDims}
+            onCommitExactPolarOrRadius={({ lengthMm, angleDeg, radiusMm }) => {
+              const base = pending.length > 0 ? pending[pending.length - 1]! : cursor;
+              const curAngRad =
+                typeof angleDeg === "number" && Number.isFinite(angleDeg)
+                  ? (angleDeg * Math.PI) / 180
+                  : Math.atan2(cursor.y - base.y, cursor.x - base.x);
+              const effLen =
+                typeof lengthMm === "number" && Number.isFinite(lengthMm) && lengthMm > 0
+                  ? lengthMm
+                  : typeof radiusMm === "number" && Number.isFinite(radiusMm) && radiusMm > 0
+                    ? radiusMm
+                    : dist(base, cursor);
+              const targetPt: Vec2 = {
+                x: base.x + Math.cos(curAngRad) * effLen,
+                y: base.y + Math.sin(curAngRad) * effLen,
+              };
+
+              if (tool === "polyline" || tool === "spline") {
+                if (pending.length > 0) {
+                  polylineSegModesRef.current.push(polylineSegMode);
+                }
+                setPending((q) => [...q, targetPt]);
+              } else if (pending.length === 1) {
+                const finalDraft = buildDraft(
+                  tool,
+                  pending[0]!,
+                  targetPt,
+                  activeLayer,
+                  filletR,
+                  drawingProjection,
+                  isoPlane,
+                  {
+                    rectMode,
+                    circleMode,
+                    polygonMode,
+                    polygonSides,
+                    polygonAcrossFlatsMm,
+                    slotMode,
+                    slotWidthMm,
+                    lockedRadiusMm: radiusMm ?? lengthMm,
+                  },
+                );
+                if (finalDraft) {
+                  commit((list) => [...list, { ...finalDraft, id: uid() }]);
+                }
+                setDraft(null);
+                setPending([]);
+                setLockedDims({ lockedLengthMm: null, lockedAngleDeg: null });
+              }
+              triggerHaptic("success");
+            }}
+            onCancelActiveCommand={() => {
+              setPending([]);
+              setDraft(null);
+              setLockedDims({ lockedLengthMm: null, lockedAngleDeg: null });
+            }}
+            overlappingCandidates={overlappingCandidates}
+            onPickOverlappingEntity={(id) => {
+              setSelection([id]);
+              setOverlappingCandidates([]);
+              triggerHaptic("selection");
+            }}
+            onDismissOverlapping={() => setOverlappingCandidates([])}
+            showPushPullZHandle={
+              (drawingProjection === "isometric" ||
+                orbitProjection2D.isTilted ||
+                activeMode === "3d") &&
+              selected.length > 0
+            }
+            thicknessMm={thickness}
+            onChangeThicknessMm={(zMm) => {
+              setThickness(zMm);
+              commit((list) =>
+                list.map((e) =>
+                  selection.includes(e.id)
+                    ? { ...e, params: { ...e.params, extrudeHeightMm: zMm } }
+                    : e,
+                ),
+              );
+            }}
+          />
 
           {/* INDICADOR INTERATIVO DE EIXOS 3D (GIZMO X Y Z) — VISÍVEL SOMENTE QUANDO ÓRBITA 3D ESTIVER ATIVA */}
           {isOrbitToolActive && (
@@ -9260,26 +9761,65 @@ function buildDraft(
   radius: number,
   drawingProjection: DrawingProjectionMode = "orthographic",
   isoPlane: IsoPlane = "top",
+  opts?: {
+    rectMode?: RectCreationMode;
+    circleMode?: CircleCreationMode;
+    polygonMode?: PolygonCreationMode;
+    polygonSides?: number;
+    polygonAcrossFlatsMm?: number;
+    slotMode?: SlotCreationMode;
+    slotWidthMm?: number;
+    lockedRadiusMm?: number;
+  },
 ): Entity | null {
   if (drawingProjection === "isometric") {
     if (tool === "rect") {
       return buildIsoParallelogram(isoPlane, a, b, layer);
     }
     if (tool === "circle" || tool === "ellipse") {
-      return buildIsoCircle(isoPlane, a, dist(a, b), layer);
+      return buildIsoCircle(isoPlane, a, opts?.lockedRadiusMm ?? dist(a, b), layer);
     }
   }
   switch (tool) {
     case "line":
       return { id: uid(), layer, type: "line", x1: a.x, y1: a.y, x2: b.x, y2: b.y };
+    case "construction_line":
+      return buildConstructionAxisLine(a, b, "REF");
     case "rect":
-      return rectPolyline(a, b, layer);
+      return buildParametricRectangle(opts?.rectMode ?? "corners", [a, b], {
+        layer,
+        filletRadius: 0,
+      });
     case "rrect":
-      return rectPolyline(a, b, layer, radius);
-    case "circle":
-      return { id: uid(), layer, type: "circle", cx: a.x, cy: a.y, r: dist(a, b) };
-    case "polygon":
-      return polygonEntity(a, dist(a, b), 6, layer);
+      return buildParametricRectangle(opts?.rectMode ?? "corners", [a, b], {
+        layer,
+        filletRadius: Math.max(0.5, radius),
+      });
+    case "circle": {
+      if (opts?.circleMode === "two_point") {
+        const cx = (a.x + b.x) / 2;
+        const cy = (a.y + b.y) / 2;
+        return { id: uid(), layer, type: "circle", cx, cy, r: Math.max(0.5, dist(a, b) / 2) };
+      }
+      const r = opts?.lockedRadiusMm ?? dist(a, b);
+      return { id: uid(), layer, type: "circle", cx: a.x, cy: a.y, r };
+    }
+    case "polygon": {
+      const r = opts?.lockedRadiusMm ?? dist(a, b);
+      const rotRad = Math.atan2(b.y - a.y, b.x - a.x);
+      const targetPt: Vec2 = {
+        x: a.x + Math.cos(rotRad) * r,
+        y: a.y + Math.sin(rotRad) * r,
+      };
+      return buildPolygonParametric(
+        a,
+        targetPt,
+        opts?.polygonSides ?? 6,
+        opts?.polygonMode ?? "inscribed",
+        layer,
+        opts?.polygonAcrossFlatsMm,
+      );
+    }
     case "ellipse":
       return {
         id: uid(),
@@ -9295,9 +9835,8 @@ function buildDraft(
       return { id: uid(), layer, type: "point", x: a.x, y: a.y };
     case "slot": {
       const len = dist(a, b);
-      const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
-      const width = Math.max(12, len / 2.5);
-      return createSlotPolyline(a, len, width, angle, layer);
+      const width = opts?.slotWidthMm ?? Math.max(12, len / 2.5);
+      return buildMechanicalSlotAdvanced(a, b, width, opts?.slotMode ?? "center_to_center", layer);
     }
     default:
       return null;

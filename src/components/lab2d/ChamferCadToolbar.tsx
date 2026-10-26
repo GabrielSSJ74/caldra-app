@@ -191,6 +191,12 @@ interface ChamferCadToolbarProps {
   setActiveLayer?: (l: string) => void;
   onDeactivateOrbitTool?: () => void;
 
+  // Comandos Unificados CADCraft -> CHAMFER CAD
+  onOverkillClean?: () => void;
+  onBoolean2D?: (op: "union" | "subtract" | "intersect") => void;
+  onCreateHatch?: () => void;
+  onSetRefZero?: () => void;
+
   className?: string;
   isDark?: boolean;
 }
@@ -260,6 +266,10 @@ export function ChamferCadToolbar({
   isoPlane = "top",
   onSelectIsoPlane,
   onOpenPieceBuilder,
+  onOverkillClean,
+  onBoolean2D,
+  onCreateHatch,
+  onSetRefZero,
   className,
   isDark = true,
 }: ChamferCadToolbarProps) {
@@ -386,6 +396,7 @@ export function ChamferCadToolbar({
       case "criar":
         return (
           tool === "line" ||
+          tool === "construction_line" ||
           tool === "polyline" ||
           tool === "circle" ||
           tool === "arc" ||
@@ -393,6 +404,8 @@ export function ChamferCadToolbar({
           tool === "rrect" ||
           tool === "polygon" ||
           tool === "ellipse" ||
+          tool === "spline" ||
+          tool === "slot" ||
           tool === "point" ||
           tool === "text"
         );
@@ -775,23 +788,31 @@ export function ChamferCadToolbar({
                       icon={Minus}
                       active={tool === "line"}
                       onClick={() => handleSelectTool("line", "criar")}
-                      desc="Segmento de reta entre dois pontos"
+                      desc="Segmento de reta com entrada dinâmica (L, ∠)"
                     />
                     <FlyoutItem
-                      label="Polilinha"
+                      label="Linha de Construção (Eixo)"
+                      keyLabel="XL"
+                      icon={Crosshair}
+                      active={tool === "construction_line"}
+                      onClick={() => handleSelectTool("construction_line", "criar")}
+                      desc="Eixo infinito de centro ou referência projetada"
+                    />
+                    <FlyoutItem
+                      label="Polilinha (Linha ↔ Arco)"
                       keyLabel="P"
                       icon={PenLine}
                       active={tool === "polyline"}
                       onClick={() => handleSelectTool("polyline", "criar")}
-                      desc="Cadeia contínua de segmentos unidos"
+                      desc="Contorno contínuo alternando retas e arcos tangentes"
                     />
                     <FlyoutItem
-                      label="Círculo"
+                      label="Círculo (Centro / 2P / 3P / TTR)"
                       keyLabel="C"
                       icon={CircleIcon}
                       active={tool === "circle"}
                       onClick={() => handleSelectTool("circle", "criar")}
-                      desc="Centro e raio ou diâmetro"
+                      desc="Centro-Raio, Diâmetro, 2P, 3P ou Tangente-Tangente-R"
                     />
                     <FlyoutItem
                       label="Arco 3 Pontos"
@@ -799,29 +820,45 @@ export function ChamferCadToolbar({
                       icon={Compass}
                       active={tool === "arc"}
                       onClick={() => handleSelectTool("arc", "criar")}
-                      desc="Início, meio e fim de curvatura"
+                      desc="Início, meio e fim de curvatura (≥128 seg)"
                     />
                     <FlyoutItem
-                      label="Retângulo"
+                      label="Retângulo (2 Cantos / Centro / 3P)"
                       keyLabel="R"
                       icon={Square}
                       active={tool === "rect"}
                       onClick={() => handleSelectTool("rect", "criar")}
-                      desc="Dois cantos opostos em milímetros"
+                      desc="2 cantos, pelo centro ou inclinado por 3 pontos"
                     />
                     <FlyoutItem
-                      label="Polígono Regular"
+                      label="Polígono / Sextavado (S mm)"
                       icon={Hexagon}
                       active={tool === "polygon"}
                       onClick={() => handleSelectTool("polygon", "criar")}
-                      desc="Polígono com N lados iguais"
+                      desc="Inscrito, circunscrito ou medida entre faces S (mm)"
                     />
                     <FlyoutItem
-                      label="Elipse"
+                      label="Rasgo Oblongo (Slot Reto / Curvo)"
+                      keyLabel="SL"
+                      icon={Minus}
+                      active={tool === "slot"}
+                      onClick={() => handleSelectTool("slot", "criar")}
+                      desc="Slot mecânico centro-a-centro, total ou em arco"
+                    />
+                    <FlyoutItem
+                      label="Elipse Analítica"
                       icon={Egg}
                       active={tool === "ellipse"}
                       onClick={() => handleSelectTool("ellipse", "criar")}
-                      desc="Eixos maior e menor"
+                      desc="Centro e semieixos Rx/Ry (≥128 segmentos)"
+                    />
+                    <FlyoutItem
+                      label="Spline Suave (Curva)"
+                      keyLabel="SPL"
+                      icon={Sparkles}
+                      active={tool === "spline"}
+                      onClick={() => handleSelectTool("spline", "criar")}
+                      desc="Curva interpolada suave com ≥128 segmentos"
                     />
                     <FlyoutItem
                       label="Ponto de Apoio"
@@ -837,14 +874,6 @@ export function ChamferCadToolbar({
                       active={tool === "text"}
                       onClick={() => handleSelectTool("text", "criar")}
                       desc="Gravação a laser ou marcação técnica"
-                    />
-                    <FlyoutItem
-                      label="Rasgo Oblongo (Slot)"
-                      keyLabel="SL"
-                      icon={Minus}
-                      active={tool === "slot"}
-                      onClick={() => handleSelectTool("slot", "criar")}
-                      desc="Rasgo oblongo com centros e raio"
                     />
                     {onOpenPresets && (
                       <FlyoutItem
@@ -1090,6 +1119,74 @@ export function ChamferCadToolbar({
                       }}
                       desc="Desmembrar polilinha ou bloco"
                     />
+                    {onOverkillClean && (
+                      <FlyoutItem
+                        label="Overkill (Limpar Duplicatas)"
+                        keyLabel="OV"
+                        icon={Sparkles}
+                        onClick={() => {
+                          onOverkillClean();
+                          setOpenCat("none");
+                        }}
+                        desc="Remove linhas duplicadas, nulas e sobreposições colineares"
+                      />
+                    )}
+
+                    {onBoolean2D && (
+                      <>
+                        <div className="my-1 h-px bg-slate-800" />
+                        <p className="text-[9.5px] text-slate-400 font-bold uppercase tracking-wider px-2 py-0.5">
+                          Booleanas de Região 2D
+                        </p>
+                        <FlyoutItem
+                          label="Unir Regiões (Union)"
+                          keyLabel="UNI"
+                          icon={Combine}
+                          disabled={selectedCount < 2}
+                          onClick={() => {
+                            onBoolean2D("union");
+                            setOpenCat("none");
+                          }}
+                          desc="Funde 2+ perfis fechados em contorno único"
+                        />
+                        <FlyoutItem
+                          label="Subtrair Região (Subtract)"
+                          keyLabel="SUB"
+                          icon={Scissors}
+                          disabled={selectedCount < 2}
+                          onClick={() => {
+                            onBoolean2D("subtract");
+                            setOpenCat("none");
+                          }}
+                          desc="Recorta o 1º perfil pelo 2º perfil fechado"
+                        />
+                        <FlyoutItem
+                          label="Interseção 2D (Intersect)"
+                          keyLabel="INT"
+                          icon={Boxes}
+                          disabled={selectedCount < 2}
+                          onClick={() => {
+                            onBoolean2D("intersect");
+                            setOpenCat("none");
+                          }}
+                          desc="Preserva apenas a área comum entre perfis"
+                        />
+                      </>
+                    )}
+
+                    {onCreateHatch && (
+                      <FlyoutItem
+                        label="Hachura Técnica (Com Ilhas)"
+                        keyLabel="H"
+                        icon={Layers}
+                        disabled={!hasSelection}
+                        onClick={() => {
+                          onCreateHatch();
+                          setOpenCat("none");
+                        }}
+                        desc="Preenche perfil fechado respeitando furos internos"
+                      />
+                    )}
 
                     <div className="my-1 h-px bg-slate-800" />
 
@@ -1173,6 +1270,24 @@ export function ChamferCadToolbar({
                       type="button"
                       onClick={() => {
                         triggerHaptic("selection");
+                        setTrackingOn((t) => !t);
+                      }}
+                      className={cn(
+                        "flex items-center justify-between rounded-xl px-2.5 py-1.5 transition-colors",
+                        trackingOn ? "bg-sky-950/60 border border-sky-500/40 text-sky-300" : "bg-slate-900 text-slate-400 hover:text-slate-200",
+                      )}
+                    >
+                      <div className="flex items-center gap-2">
+                        <Compass className="size-4" />
+                        <span>Smart Tracking (15°/30°/45°)</span>
+                      </div>
+                      <span className="font-bold">{trackingOn ? "LIGADO" : "DESLIGADO"}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
                         setShowGrid((g) => !g);
                       }}
                       className={cn(
@@ -1186,6 +1301,24 @@ export function ChamferCadToolbar({
                       </div>
                       <span className="font-bold">{showGrid ? "LIGADO" : "DESLIGADO"}</span>
                     </button>
+
+                    {onSetRefZero && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("action");
+                          onSetRefZero();
+                          setOpenCat("none");
+                        }}
+                        className="flex items-center justify-between rounded-xl px-2.5 py-1.5 bg-amber-950/50 border border-amber-500/40 text-amber-300 hover:bg-amber-900/60 transition-colors"
+                      >
+                        <div className="flex items-center gap-2">
+                          <Crosshair className="size-4" />
+                          <span>Fixar Origem REF (0,0)</span>
+                        </div>
+                        <span className="font-bold">APLICAR</span>
+                      </button>
+                    )}
 
                     {onToggleDrawingProjection && (
                       <button

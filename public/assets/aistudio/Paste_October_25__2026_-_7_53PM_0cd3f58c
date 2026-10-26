@@ -1,0 +1,251 @@
+# CALDRA / CHAMFER CAD — INTEGRAÇÃO UNIFICADA DEFINITIVA: CADCraft → CHAMFER CAD (DESKTOP → MOBILE TOUCH)
+
+Responda sempre em português do Brasil.
+
+---
+
+## 0. DIRETRIZ SUPREMA: CONTENÇÃO DE ESCOPO (PRIORIDADE MÁXIMA; VALE SOBRE QUALQUER OUTRA SEÇÃO)
+
+1. **ISOLAMENTO ESTRITO:** Altere EXCLUSIVAMENTE componentes, motores e estilos do módulo **CHAMFER CAD**. É terminantemente proibido tocar em `App.tsx`, na Splash Screen, na Tela Inicial (`Home`), na Barra de Navegação Inferior global e em qualquer outro módulo do CALDRA. Se uma mudança fora do módulo parecer indispensável, NÃO a faça: pare, explique o motivo e peça autorização.
+2. **LAYOUT PRESERVADO:** Mantenha intactos:
+   - **Barra Superior:** `← SAIR`, nome do projeto, `2D SKETCH | CAD 3D`, `ORTO 2D | ISO 2D`, `ÓRBITA 3D`, `Desfazer / Refazer`, `Salvar`.
+   - **Barra Lateral Esquerda:** `SEL`, `CRI`, `MOD`, `PRE`, `MED`, `COR`.
+   - **Barra Lateral Direita Compacta.**
+   - **Dock do 3D:** `PLANIFICAR`, `PRANCHA 2D`, `ESTRUTURAS`, `CNC / DXF`.
+   - **Barra de Status Inferior:** `P01`, `MM`, `CHAPA`, coordenadas, `REF 0,0`, `SNAP`, `ORTO`, `GRID`, `PRECISÃO`, `FLUXO/CNC`.
+   *Nota:* Esses nomes descrevem o app atual; confirme-os no código. Se divergirem, o código atual vence e você reporta a diferença.
+3. **SEM EMPILHAR BARRAS NEM COBRIR O CANVAS:** O centro da tela é 100% dedicado ao Canvas Interativo de Desenho. Toda ferramenta nova entra DENTRO dos menus recolhíveis dos botões existentes (`SEL`, `CRI`, `MOD`, `PRE`, `MED`, `COR`). Só são permitidos HUDs transitórios sobre o canvas (pílulas dimensionais, lupa, mira deslocada, menu contextual de seleção, banner de comando): surgem apenas durante a interação, não ocupam espaço permanente, nunca cobrem o ponto em edição, exibem no máximo um banner por vez e se fecham ao concluir ou cancelar.
+4. **DESEMPENHO E PRECISÃO VISUAL:** Resposta imediata no `onPointerDown` (aproveitando alta amostragem via `getCoalescedEvents`), zero overhead em repouso (nenhum loop de animação nem uso de CPU sem trabalho visual) e curvas de alta resolução na visualização (`≥ 128` segmentos), mantendo a geometria interna analítica exata. São metas a medir e instrumentar (Seção 9).
+5. **NADA QUE EXISTE PODE QUEBRAR:** Veja e cumpra rigorosamente a lista de não-regressão na Seção 8.
+
+---
+
+## 1. PAPEL, MISSÃO E DESAMBIGUAÇÃO
+
+Atue como Arquiteto Sênior de Software CAD, Engenheiro de Geometria Computacional, Especialista em Interação por Toque/Gestos e Integrador de Sistemas.
+
+- **Missão:** Enriquecer o módulo **CHAMFER CAD** (prioridade: `2D SKETCH` integrado ao `ISO 2D` e `CAD 3D`) com ferramentas REAIS de criação e modificação de peças, precisão geométrica, cotas e restrições, inspiradas na arquitetura e catálogo do **CADCraft (`https://github.com/storytold/cadcraft`)**, fundidas às ferramentas que o CHAMFER CAD já possui, convertendo toda interação de mouse e teclado em dedos, gestos multitoque e HUDs táteis.
+- **O que NÃO é objetivo:** Copiar a interface desktop do CADCraft, substituir o CHAMFER CAD, criar botões ocos de demonstração (cada ferramenta deve executar operação geométrica matemática real) ou inventar um núcleo 3D paralelo.
+- **Regra Fundamental de Unicidade:** Antes de adicionar qualquer ferramenta, verifique se o CHAMFER CAD já tem equivalente. Preserve e aprimore o que funciona, integre só o que traz valor demonstrável e evite duplicação: mantenha **um único sistema de geometria, uma única estrutura de camadas e um único histórico (`Undo/Redo`)**.
+- **Desambiguação de Homônimo:** `"CHAMFER CAD"` é o módulo principal de desenho; `"Chanfro"` (`CHAMFER`) é um comando geométrico de modificação de quinas/arestas. Escreva sempre **"módulo CHAMFER CAD"** e **"comando Chanfro"** no código e na interface.
+
+---
+
+## 2. CONTEXTO E FONTES DE VERDADE
+
+- **Ecossistema CALDRA:** Aplicativo em React + TypeScript. O módulo **CHAMFER CAD** engloba `2D SKETCH`, `ISO 2D`, `ÓRBITA 3D`, `CAD 3D`, saídas de fabricação (`PLANIFICAR`, `PRANCHA 2D`, `ESTRUTURAS`, `CNC / DXF`), `CHAMFER Vision` e as **7 Camadas Semânticas de Fabricação**: `Contorno Base`, `Ressalto +Z`, `Furo Passante`, `Rebaixo/Canal`, `Nervura/Rampa`, `Eixo/Corte A-A` e `Cota Técnica`. Domínio: caldeiraria, serralheria, chapas e peças mecânicas para corte e fabricação.
+- **Dispositivos-Alvo:** Celulares e tablets, operação 100% por toque (caneta estilográfica opcional). Nenhum teclado ou mouse físico pode ser obrigatório para nenhuma operação.
+- **Fonte 1 — Repositório CADCraft:** Se o ambiente do Google AI Studio não permitir abrir o link externo do GitHub diretamente, **NÃO finja tê-lo clonado**: utilize o **Resumo Verificado do CADCraft na Seção 3** abaixo como especificação de referência da arquitetura original, adaptando os algoritmos em TypeScript puro e testado para o código real do CHAMFER CAD.
+- **Fonte 2 — Código Atual do App:** O código-fonte presente no projeto vence qualquer suposição. Nunca invente detalhes do app; inspecione os arquivos reais antes de editar.
+
+---
+
+## 3. RESUMO VERIFICADO DO CADCRAFT (`README.md`, `AGENTS.md` e `ROADMAP.md`)
+
+Utilize este mapeamento verificado da arquitetura do CADCraft:
+- **Natureza:** CAD estilo AutoCAD escrito em `Rust + egui`, com UI desacoplada/substituível e build web via WebAssembly (aplicação monolítica, não uma biblioteca NPM isolada). Licença: `MIT` OU `Apache-2.0`.
+- **Maturidade Real:** `PRE-ALPHA` (≈ 38% pronto para trabalho real segundo autoavaliação do próprio projeto).
+  * **Lacunas declaradas no original:** Sem *object snap tracking* real; opções ainda *stubadas* (incompletas) em `TRIM`, `EXTEND`, `OFFSET`, `ROTATE`, `PLINE`, `SPLINE`, `MTEXT` e `MLEADER`; elipse e spline sem geometria analítica exata; offsets de polilinha com casos incorretos em autointerseções; sem editor de blocos; 3D em apenas 2% (não possui sólidos 3D).
+  * **Paridade declarada no original:** Desenho 2D 60%, Modificação 50%, Precisão Geométrica 40%, Camadas 70%, Cotas 45%, Hachura 35%, Blocos 25%, Restrições 50%.
+- **CONSEQUÊNCIA ARQUITETURAL:** Use o CADCraft como referência de **ARQUITETURA DE COMANDOS, FLUXO DE INTERAÇÃO e CATÁLOGO**, e **NÃO** como prova cega de correção geométrica. Todo algoritmo implementado no CHAMFER CAD deve ser escrito em TypeScript limpo e validado matematicamente.
+- **Filosofia "Tudo é Comando":** Toda ação visível é um comando registrado; botões, menus, gestos, pílulas numéricas e automação chamam os **MESMOS** comandos; chamadas programáticas nunca abrem diálogos bloqueantes (Seção 5).
+- **Arquitetura em Camadas do CADCraft:**
+  `Geometria Pura (sem UI)` $\rightarrow$ `Documento (entidades + Undo barato por Copy-on-Write / Snapshots)` $\rightarrow$ `Render` $\rightarrow$ `Arquivos (DXF/IO)` $\rightarrow$ `Engine (comandos, snaps, seleção, undo)` $\rightarrow$ `UI Fina`, que apenas lê estado e invoca `run(id, params)`, `start(id)` ou entrada de comando.
+- **Filosofia "Nunca Travar":** Entradas numéricas são tratadas como hostis (`NaN`, `±∞`, zero), recursão e laços são estritamente limitados, e cada comando roda protegido: se falhar, o estado anterior do desenho é restaurado intacto e o erro é informado de forma clara.
+- **Fluxos de Ouro do CADCraft a Incorporar (Convertidos para Toque):**
+  1. Tangente e perpendicular "adiados" (*deferred*) no 1º ponto de uma linha.
+  2. Entrada dinâmica com caixas junto ao ponteiro, alternância entre campos e entrada relativa (base das Pílulas Táteis na Seção 6.5).
+  3. Seleção distinta por Janela (*Window*) e Cruzamento (*Crossing*).
+  4. *Grips* multifuncionais nos nós que alternam modos: `Esticar → Mover → Girar → Escalar → Espelhar`.
+- **Fora de Escopo (Ignorar do CADCraft):** DWG proprietário, LISP, MCP, layouts de impressão em papel A0–A4 complexos e XREFs.
+
+---
+
+## 4. AUDITORIA TÉCNICA DO MÓDULO CHAMFER CAD E ESTRATÉGIA DE REUSO
+
+1. **Inspeção Obrigatória no Código do CHAMFER CAD:**
+   Localize nos arquivos atuais do projeto: motor geométrico 2D; modelo de entidades; canvas e sistemas de coordenadas; zoom e pan; seleção e edição de nós; *snapping*; grade e rastreamento angular; entrada dimensional; ferramentas de `SEL`, `CRI`, `MOD`, `PRE`, `MED`, `COR` e da barra lateral direita; cotas e restrições; as 7 camadas semânticas; histórico `Undo/Redo` e persistência; importação/exportação (`PNG`, `SVG`, `DXF`); `CHAMFER Vision`; e a ponte com `ISO 2D`, `ÓRBITA 3D`, `CAD 3D`, `PLANIFICAR`, `PRANCHA 2D`, `ESTRUTURAS` e `CNC / DXF`.
+2. **Decisão de Reuso (Estratégia A — Adaptação Nativa para TypeScript):**
+   Como o CADCraft é escrito em Rust acoplado a `egui` e o CALDRA é uma aplicação React + TypeScript no navegador, **NÃO adicione dependências Rust/WASM pesadas**: implemente e adapte os motores geométricos, o registro de comandos e a máquina de gestos diretamente em **TypeScript modular puro** dentro do diretório do módulo CHAMFER CAD, classificando cada recurso como:
+   - **`PRESERVAR`:** Já existe e funciona bem no CHAMFER CAD.
+   - **`COMPLETAR`:** Existe parcialmente e será enriquecido.
+   - **`IMPLEMENTAR`:** Ausente no CHAMFER CAD e será adicionado agora.
+
+---
+
+## 5. ARQUITETURA DE COMANDOS UNIFICADA E MOTOR GEOMÉTRICO PURO
+
+1. **Registro Central de Comandos (`CommandRegistry`):**
+   Partindo da arquitetura existente no CHAMFER CAD (adapte e unifique, sem criar sistemas paralelos), estruture cada comando com:
+   - `id`: identificador estável em minúsculas (ex: `'line'`, `'polyline_arc'`, `'slot'`, `'offset'`, `'trim_swipe'`, `'fillet'`, `'chamfer'`, `'pushpull_z'`).
+   - `namePtBr`: nome legível em português, `aliases`, `targetMenu`: `'SEL' | 'CRI' | 'MOD' | 'PRE' | 'MED' | 'COR'`.
+   - `paramsSchema`: parâmetros tipados com unidade (`mm` ou `deg`), entradas necessárias, referências geométricas aceitas e regras de validação.
+   - `enabled(state)`: função pura que informa se o comando é válido para a seleção/contexto atual.
+   - `run(params)`: execução determinística **sem UI** (recebe parâmetros validados e retorna a transação geométrica).
+   - `interactivePromptMachine`: estado de interação passo a passo com `[chips de palavras-chave]` para o banner tátil.
+
+2. **Convergência Total de Entrada:**
+   A **MESMA** operação geométrica deve ser acionada por botão de menu, menu contextual de seleção, gesto no canvas, pílula numérica ou teclado físico opcional. **Proibido** criar uma lógica geométrica para mouse e outra para toque: todos os eventos convergem para o mesmo comando.
+
+3. **Ciclo de Vida em 9 Passos e Transações Atômicas:**
+   `1. Validar requisitos` $\rightarrow$ `2. Definir estado de interação` $\rightarrow$ `3. Exibir instruções e chips táteis no banner` $\rightarrow$ `4. Receber pontos/parâmetros` $\rightarrow$ `5. Resolver snaps e referências` $\rightarrow$ `6. Renderizar prévia elástica ao vivo` $\rightarrow$ `7. Validar resultado geométrico` $\rightarrow$ `8. Aplicar em UMA única transação no documento canônico (1 passo de Undo)` $\rightarrow$ `9. Atualizar visualização e histórico`.
+   - **Proteção e Cancelamento:** Fechar um painel, trocar de ferramenta ou tocar em `✕ Cancelar` nunca deixa um comando parcialmente ativo nem lixo geométrico na tela. Execuções rodam protegidas por `try/catch` com *rollback* imediato ao snapshot anterior em caso de falha matemática.
+
+4. **Motor Geométrico Puro e Definição Única de "Perfil Fechado Válido":**
+   - Módulos matemáticos puros e testáveis, desacoplados de DOM/React, operando sempre nas unidades canônicas do documento (`mm`) e nunca em pixels de tela.
+   - Tolerâncias numéricas explícitas ($\epsilon_{\text{dist}} = 10^{-5}\text{ mm}$, $\epsilon_{\text{ang}} = 10^{-6}\text{ rad}$) com tratamento de retas paralelas, colineares, arcos degenerados, raio zero e tangências.
+   - Defina **UMA única função canônica** de validação e extração de **"Perfil Fechado Válido"** (contorno fechado conexo, sem autointerseção, com orientação horária/anti-horária normalizada e detecção de ilhas internas como furos) e reutilize-a em: Hachuras, Booleanas 2D, Conversão `ISO 2D`, `Push/Pull Z`, `CAD 3D`, `PLANIFICAR` e `CNC / DXF`.
+
+---
+
+## 6. CONVERSÃO COMPLETA DE TECLADO E MOUSE PARA DEDOS E GESTOS (MOBILE TOUCH)
+
+### 6.1. Princípios e Máquina de Estados de Arbitragem de Gestos
+- **Regra Suprema Multitoque:** Gesto de **2 ou mais dedos SEMPRE vence** gesto de 1 dedo. Se um 2º dedo pousar na tela durante uma ação de desenho/edição de 1 dedo, **cancele imediatamente a ação parcial de 1 dedo sem confirmar nenhum ponto** e passe para navegação (Zoom por pinça / Pan de 2 dedos).
+- **Exclusão Mútua:** O mesmo arrasto nunca desenha e move o canvas simultaneamente; o mesmo toque longo nunca abre menu e confirma ponto ao mesmo tempo.
+- **Limiares Calibrados:**
+  * `Toque Simples (Tap)`: `< 250 ms` e deslocamento `< 8–10 px`.
+  * `Toque Duplo (Double Tap)`: `< 300 ms` entre toques e distância `< 24 px`.
+  * `Toque Longo (Long Press)`: `≈ 500 ms` parado (`< 8 px`), ativo apenas em estado ocioso ou sobre seleção.
+  * `Arraste (Drag)`: deslocamento `> 8–10 px`.
+- **Isolamento de Controles de UI:** Toques iniciados sobre botões, pílulas, mini-teclado ou banner não entram na arbitragem do canvas (permitindo que o polegar segure um modificador enquanto o indicador opera o canvas).
+- **Mapeamento de Atalhos Desktop $\rightarrow$ Controles Táteis Existentes:**
+  * `F3 / F7 / F8 / F9 / F10` $\rightarrow$ Botões `SNAP`, `GRID`, `ORTO` e `PRECISÃO` já existentes na barra de status inferior (toque simples alterna `ON/OFF`; manter pressionado `ORTO` ativa ortogonal temporário igual à tecla `Shift`).
+  * `Esc` $\rightarrow$ Botão `✕` no banner de comando.
+  * `Enter / Espaço` $\rightarrow$ Botão `✓` no banner ou na mira.
+  * `Delete` $\rightarrow$ Botão `Excluir` no menu contextual.
+  * `Ctrl+Z / Ctrl+Y` $\rightarrow$ Botões `Desfazer / Refazer` da barra superior (com aceleradores opcionais desligados por padrão: toque simples com 2 dedos = desfazer, 3 dedos = refazer).
+
+### 6.2. Navegação Espacial
+- **Pinça com 2 dedos:** Zoom ancorado exatamente no ponto médio entre os dois dedos.
+- **Arrasto com 2 dedos:** Pan (movimentação da prancheta) fluido em qualquer ferramenta ativa, sem alterar geometria.
+
+### 6.3. Modo `PRECISÃO` (Mira Deslocada + Lupa Flutuante + Ajuste Fino Trackpad)
+- **Com `PRECISÃO` Ativo:**
+  * A **Mira Técnica (Cruz)** fica deslocada **`60 px` acima do ponto de toque** (invertendo automaticamente o lado quando próximo às bordas superiores da tela), garantindo que o dedo jamais cubra o vértice desenhado.
+  * A mira exibe as coordenadas relativas à referência (`REF`), o ícone/rótulo do *snap* capturado e destaca o ponto-alvo.
+  * **Lupa Flutuante Automática (`2.5×` a `4×`):** Surge ao aproximar-se de vértices, centros e interseções sem cobrir o ponto em edição.
+  * **Confirmação Segura e Modo Trackpad Relativo:** Com `PRECISÃO` ativo, **soltar o dedo NÃO confirma o ponto prematuramente**. Um novo toque e arraste próximo à mira (`< 44 px`) move a mira de forma relativa com ganho reduzido (ajuste fino milimétrico estilo *trackpad*); tocar diretamente no centro da mira ou no botão `✓` confirma o ponto!
+- **Com `PRECISÃO` Desligado ou Caneta (`pointerType === 'pen'`):** Posicionamento direto sem deslocamento vertical.
+- **PRINCÍPIO CRÍTICO DE TOLERÂNCIA:** O deslocamento de `60 px` afeta **exclusivamente** a posição da mira em relação ao dedo; a coordenada geométrica é extraída da posição exata da mira já com *snap*. As tolerâncias de seleção e captura de *snap* são definidas em pixels de tela (`18–24 px`, adaptadas ao zoom atual) e convertidas para milímetros **apenas para o teste de proximidade (*picking*)**. **NUNCA aumente a tolerância numérica $\epsilon$ do núcleo geométrico para facilitar o toque**, e o *snap* visual nunca deforma a geometria existente.
+
+### 6.4. Motor de Snaps Magnéticos (`Object Snaps`) e *Smart Tracking*
+- **Marcadores Visuais Distintos (Forma + Rótulo Curto, nunca depender apenas de cor):**
+  * `□` **Extremidade (*Endpoint*)**
+  * `✕` **Interseção Real**
+  * `△` **Ponto Médio (*Midpoint*)**
+  * `○` **Centro (*Center*)** de círculo/arco/elipse
+  * `◇` **Quadrante (`0°, 90°, 180°, 270°`)**
+  * `⊥` **Perpendicular** (incluindo modo adiado no 1º ponto)
+  * `⌒` **Tangente** (incluindo modo adiado no 1º ponto)
+  * `⊞` **Centro Geométrico (*Centroid*)** de perfil fechado
+  * `•` **Nó / Ponto** e **Mais Próximo (*Nearest*)**
+- **Ordem de Prioridade Padrão:** `Extremidade > Interseção > Ponto Médio > Centro > Quadrante > Perpendicular / Tangente > Mais Próximo` (com pulso háptico sutil `navigator.vibrate(8)` quando suportado ao capturar um *snap*).
+- **Coordenadas e *Smart Tracking* `[EXT]`:** Suporte a coordenadas absolutas (`#x,y`), relativas à origem explícita `REF` (`@dx,dy`) e polares (`@dist<ang`), além de **Linhas Guias de Rastreamento Inteligente (*Smart Tracking*)** tracejadas quando a mira se alinha a $0^\circ, 15^\circ, 30^\circ, 45^\circ, 90^\circ$ com vértices ou centros existentes.
+
+### 6.5. Entrada Numérica Tátil (*Touch Dynamic Input* — Pílulas + Mini-Teclado)
+- Enquanto o usuário desenha ou edita, exiba **Pílulas Dimensionais Tocáveis ao Vivo** ao lado da geometria: `[ L = 500.0 mm ]`, `[ ∠ 45.0° ]`, `[ Ø 120.0 mm ]`, `[ R = 15.0 mm ]`, `[ Offset = 10.0 mm ]`, `[ N = 6 lados ]`.
+- **Tocar em qualquer pílula** abre o **Mini-Teclado Numérico Técnico Flutuante**:
+  * Dígitos `0–9`, ponto decimal `.`, sinal `-`.
+  * Botões de incremento rápido `+1 / -1` com seletor de passo (`0.1 mm | 1 mm | 10 mm`).
+  * Alternador `Ø ↔ R`, alternador `Absoluta / Relativa / Polar`, botão `Próximo Campo (Tab)`, trava **`🔒 Travar Medida`** (fixa o comprimento ou ângulo enquanto o dedo apenas escolhe a direção no canvas) e **`✓ Confirmar`**.
+
+### 6.6. Seleção Avançada (`SEL`)
+- **Toque simples:** Seleciona entidade (`tolerância ≥ 14 px`). Se houver entidades sobrepostas no mesmo ponto, exibe **Chips de Desambiguação de Sobreposição** para escolher qual selecionar.
+- **Multisseleção Aditiva e Janela Bissetriz:**
+  * Arrastar da **Esquerda $\rightarrow$ Direita**: Caixa Azul Contínua (seleciona apenas entidades 100% contidas na janela).
+  * Arrastar da **Direita $\rightarrow$ Esquerda**: Caixa Verde Tracejada (seleciona qualquer entidade contida ou cruzada pela janela).
+  * Quando um comando de modificação solicitar objetos, o banner oferece `[ Janela ]`, `[ Cruzamento ]`, `[ Tudo ]`, `[ Remover ]` e `[ ✓ Concluir Seleção ]`.
+
+### 6.7. Menu Contextual Inteligente e `Editar Nós` (*Grips* Multifuncionais)
+- **Micro-Menu Contextual Dinâmico:** Ao selecionar entidades (ou aplicar toque longo de `500 ms` em estado ocioso), exiba um micro-menu flutuante filtrado por `enabled(state)` mostrando **apenas as ações válidas para o tipo selecionado**: `Editar Nós`, `Digitar Medida`, `Offset / Duplicar`, `Mover`, `Copiar`, `Rotacionar`, `Escalar`, `Espelhar`, `Chanfrar / Arredondar`, `Camada / Cor`, `Excluir`.
+- **Grips Multifuncionais em `Editar Nós`:** Alças com área de toque invisível generosa (`≥ 44×44 px` e marcador visual técnico limpo) nos vértices, pontos médios e centros de raio. Tocar em um nó ativo permite alternar o modo do *grip* no banner: **`[ Esticar ] → [ Mover ] → [ Girar ] → [ Escalar ] → [ Espelhar ]`**, além de `[ + Inserir Vértice ]` em pontos médios e `[ Converter p/ Arco ]`.
+
+### 6.8. Gestos Diretos de Ferramenta: *Swipe-to-Trim* e *Push/Pull Z*
+- **Riscar para Aparar (*Swipe-to-Trim*) `[EXT]`:** Com `Aparar (Trim)` ativo (em `MOD` ou no botão de tesoura da barra direita), deslizar o dedo cortando segmentos destaca em vermelho os trechos atingidos e, ao soltar, apara matematicamente cada trecho até a interseção real mais próxima (Linha-Linha, Linha-Círculo/Arco, Círculo-Círculo), agrupado em 1 passo de `Undo`. Toque simples no segmento também funciona.
+- **Push/Pull Z Tátil `[EXT]`:** Ao selecionar um perfil fechado válido em `ISO 2D`, `ÓRBITA 3D` ou `CAD 3D`, exibe a **Alça Vertical (`Z-Handle`)** no centroide da face: arrastar para cima eleva um ressalto (`+Z`), arrastar para baixo aplica corte ou rebaixo (`-Z`) com pílula de altura em `mm` ao vivo.
+
+### 6.9. Engenharia de Eventos Web/Mobile no Canvas
+- Aplique `touch-action: none` exclusivamente no elemento `<canvas>`, utilize `setPointerCapture`, trate `pointercancel` com rollback limpo e leia `event.getCoalescedEvents?.()` no `pointermove` para capturar toda a resolução de telas de 120Hz–500Hz.
+
+---
+
+## 7. CATÁLOGO-ALVO DE FERRAMENTAS NOS MENUS EXISTENTES DO CHAMFER CAD
+
+Legenda de origem e validação:
+- **`[CC]`**: Presente no CADCraft (implementar em TS e validar com teste de referência).
+- **`[CC*]`**: Parcial ou com bugs no CADCraft original (implementar versão matemática completa e corrigida).
+- **`[EXT]`**: Extensão própria para caldeiraria/mecânica no CHAMFER CAD.
+
+### 7.1. Menu `CRI` (+) — Criação Geométrica
+1. **Linha `[CC]` e Linhas de Construção / Eixo Infinito `[CC]`:** Ponto a ponto com prévia elástica, pílulas de comprimento/ângulo e suporte a tangente/perpendicular.
+2. **Polilinha Composta (`Linha ↔ Arco Tangente`) `[CC*]`:** Sequência contínua de segmentos retos e arcos tangentes com chips `[ Alternar: Linha / Arco ]`, `[ Desfazer Último Vértice ]` e `[ Fechar Perfil ]` no banner.
+3. **Retângulos Paramétricos:** `Por 2 Cantos [CC]`, `Pelo Centro [EXT]` e `Inclinado por 3 Pontos [EXT]`, todos com opção de `Raio de Canto (R)` ou `Chanfro de Canto` `[CC]` e pílulas de `Largura × Altura`.
+4. **Círculos e Arcos:** Círculo `Centro-Raio [CC]`, `Centro-Diâmetro (Ø) [CC]`, `2 Pontos [CC]`, `3 Pontos [CC]` e `Tangente-Tangente-Raio (TTR) [EXT]`. Arco por `3 Pontos [CC]` e `Centro-Início-Fim [CC]`.
+5. **Rasgo Oblongo Mecânico (*Slot* Reto ou Curvo) `[EXT]`:** Definido por centro-a-centro (ou comprimento total) e largura/diâmetro `Ø`, gerando perfil fechado pronto para corte/furação.
+6. **Polígono Regular ($N$ lados, 3 a 64) `[CC + EXT]`:** Inscrito ou circunscrito por raio ou pela **Medida entre Faces Planas (*Across Flats* `S mm`) `[EXT]`** para sextavados de porcas e parafusos.
+7. **Elipse `[CC*]` e Spline Suave `[CC*]`:** Representadas com curvas matemáticas contínuas e conversão limpa para exportação DXF.
+
+### 7.2. Menu `MOD` (✂) — Modificação, Padrões e Booleanas 2D
+1. **Transformações Base `[CC / CC*]`:** `Mover`, `Copiar` (simples ou múltiplo), `Rotacionar` (por ângulo exato ou referência), `Escalar` (fator ou medida de referência), `Espelhar (Mirror)` por linha/eixo e `Esticar (Stretch)`.
+2. **Offset Paralelo Robusto `[CC*]`:** Por arrasto tátil ou distância numérica `d (mm)` (interno/externo) sobre linhas, arcos, círculos, retângulos e polilinhas fechadas, resolvendo corretamente os cantos (vivos ou arredondados) sem os bugs de autointerseção do original.
+3. **Aparar (`Trim`), Estender (`Extend`) e Dividir (`Split / Break`) `[CC* + EXT]`:** `Trim` por toque ou gesto *Swipe-to-Trim*; `Extend` até a próxima fronteira real; `Split` dividindo uma entidade em um ponto ou interseção.
+4. **Comando Chanfro (`Chamfer`) e Concordância de Raio (`Fillet`) `[CC]`:** Toque diretamente em um vértice de quina ou em duas entidades concorrentes (linhas/arcos), definindo `Raio R (mm)` ou `Distância D1 × D2` / `Distância × Ângulo`, com prévia ao vivo e aparamento automático das pontas.
+5. **Unir (`Join`), Explodir (`Explode`) e Limpar Duplicatas (`Overkill`) `[CC]`:** Conecta segmentos colineares/adjacentes em polilinha fechada, separa compostas ou remove linhas sobrepostas redundantes (essencial para preparar corte CNC/Laser).
+6. **Padrão Linear (Retangular) e Padrão Circular (Polar) `[CC]`:** Multiplica furos, rasgos ou entidades em linhas/colunas (`Nx, Ny`, passo) ou ao redor de um centro (`N` cópias em `360°` ou ângulo parcial) com alças e pílulas de edição.
+7. **Booleanas 2D de Perfis Fechados (`Unir Regiões`, `Subtrair`, `Interseção`) `[EXT]`:** Funde ou subtrai contornos fechados sobrepostos (ex: somar círculos e retângulos para criar um flange ou suporte complexo instantaneamente), preservando furos internos.
+
+### 7.3. Menu `PRE` (⌖) — Precisão, Snaps e Grade
+- Controle central de `Modo PRECISÃO` (mira deslocada + lupa), filtro dos tipos de *Object Snap*, ângulos de *Smart Tracking* (`15°, 30°, 45°, 90°`) e redefinição rápida da origem relativa `REF 0,0` por toque em qualquer vértice.
+
+### 7.4. Menu `MED` (📏) — Cotas Associativas e Restrições Geométricas
+1. **Cotas Associativas `[CC*]`:** `Linear`, `Horizontal`, `Vertical`, `Alinhada`, `Angular`, `Raio (R)`, `Diâmetro (Ø)` e `Distância entre Centros`.
+   - **Edição Dimensional Ativa:** Tocar duas vezes (ou tocar na pílula) de uma cota associativa e digitar um novo valor em `mm` **redimensiona geometricamente a entidade ou distância vinculada**! Diferencie claramente cota condutora (que altera a geometria) de cota apenas informativa.
+2. **Restrições Geométricas Rápidas `[CC*]`:** `Horizontal`, `Vertical`, `Paralela`, `Perpendicular`, `Tangente`, `Concêntrica`, `Igualdade (=)`, `Simétrica` e `Fixar Ponto`. Em caso de sobre-restrição/conflito, bloqueie a aplicação preservando o estado válido e exiba o motivo no banner.
+
+### 7.5. Menu `COR` (●) — As 7 Camadas Semânticas, Hachuras e Blocos
+- Preserva integralmente as **7 Camadas Semânticas de Fabricação** (`1. Contorno Base`, `2. Ressalto +Z`, `3. Furo Passante`, `4. Rebaixo/Canal`, `5. Nervura/Rampa`, `6. Eixo/Corte A-A`, `7. Cota Técnica`), garantindo que a cor semântica da entidade nunca seja sobrescrita pela cor de tema da interface.
+- Adiciona **Hachura Técnica (`Hatch`) `[CC*]`** (diagonal $45^\circ$ ou sólida em perfis fechados, respeitando ilhas e furos sem cobri-los) e **Agrupamento / Bloco Reutilizável (`Group / Block`) `[CC*]`**.
+
+---
+
+## 8. INTEGRAÇÃO 2D → ISO 2D → ÓRBITA 3D → CAD 3D → FABRICAÇÃO E NÃO-REGRESSÃO
+
+1. **Compatibilidade Ponta a Ponta:**
+   Toda peça criada ou modificada com as novas ferramentas (`Polilinha + Arco`, `Slot`, `Polígono Across Flats`, `Offset`, `Swipe-to-Trim`, `Fillet`, `Chamfer`, `Padrões`, `Booleanas 2D`) deve funcionar imediatamente e sem quebras com:
+   - `EDITAR NÓS` (exibindo seus *grips* reais).
+   - Conversor `ORTO 2D → ISO 2D` e `Converter Seleção` (sólido isométrico cotado com espessura real e ocultação de linhas HLR).
+   - `ÓRBITA 3D` e transição contínua sem corte para o `CAD 3D` (malha suave com `≥ 128` segmentos em curvas e suporte a *Push/Pull Z*).
+   - Saídas de fabricação: `PLANIFICAR`, `PRANCHA 2D`, `ESTRUTURAS` e exportação `CNC / DXF`, `SVG` e `PNG`.
+2. **Conversão Explícita para Exportação:** Entidades especiais (como `Rasgo Oblongo` ou `Polígono`) devem expor tanto seus parâmetros nativos (para edição futura) quanto seu contorno exato em arcos e segmentos (para que o `ISO 2D`, `CAD 3D` e `DXF` as processem com 100% de fidelidade).
+3. **Blindagem de Não-Regressão:** É proibido quebrar projetos salvos existentes (mantenha retrocompatibilidade de schema), o `CHAMFER Vision`, o sistema de temas (`Fluido`, `Fluid Aurora`, `Padrão`) ou a resposta instantânea da barra de navegação.
+
+---
+
+## 9. DESEMPENHO, PRECISÃO NUMÉRICA E LICENCIAMENTO (SEÇÕES 9 E 10)
+
+1. **Performance e Zero-Idle Overhead:**
+   - Trate `onPointerDown` imediatamente no evento (meta de processamento síncrono `< 2 ms`).
+   - **Zero-Idle:** Nenhum loop `requestAnimationFrame` ou `setInterval` rodando quando o usuário não estiver tocando na tela ou executando uma transição curta de câmera.
+   - Utilize filtragem por *Bounding Box* (índice espacial) para que o cálculo de *Object Snaps* e *Swipe-to-Trim* avalie apenas entidades próximas à mira, no máximo uma vez por quadro de movimento.
+   - Mantenha a geometria interna exata em `Float64` (`mm`) e utilize tesselação de `≥ 128` segmentos apenas para renderização visual e malha 3D.
+2. **Licenças e Identidade Visual:**
+   - Todo o código novo deve ser escrito de forma limpa em TypeScript para o CALDRA (respeitando a inspiração arquitetural MIT/Apache-2.0 do CADCraft, sem copiar marcas de terceiros e sem introduzir nenhuma dependência GPL/LGPL).
+
+---
+
+## 10. DIRETRIZ DE EXECUÇÃO IMEDIATA NO CÓDIGO E RELATÓRIO DE ENTREGA (SEÇÕES 11 A 13)
+
+**Modo de Execução no Google AI Studio:**
+Não pare apenas em um planejamento teórico sem código. Execute a auditoria interna dos arquivos atuais do módulo **CHAMFER CAD** e **implemente imediatamente em código de produção funcional** dentro do módulo CHAMFER CAD a arquitetura unificada:
+1. O Registro Central de Comandos (`CommandRegistry`) com transações atômicas de `Undo/Redo` e validador canônico de Perfis Fechados.
+2. A Camada Mobile Touch completa: Arbitragem de Gestos (2 dedos cancelam 1 dedo), Modo `PRECISÃO` (Mira deslocada 60px + Lupa + ajuste fino Trackpad), *Object Snaps* (`□, ✕, △, ○, ◇, ⊥, ⌒`) + *Smart Tracking*, Pílulas Dimensionais Tocáveis + Mini-Teclado Numérico Técnico, Seleção por Janela/Cruzamento e Menu Contextual + *Grips* multifuncionais.
+3. As ferramentas enriquecidas integradas nos menus existentes `CRI`, `MOD`, `PRE`, `MED` e `COR` (incluindo `Polilinha Linha/Arco`, `Rasgo Oblongo`, `Polígono Across Flats`, `Offset`, `Swipe-to-Trim`, `Extend`, `Fillet`, `Chamfer`, `Padrão Linear/Circular`, `Booleanas 2D`, `Cotas Associativas Redimensionáveis` e `Push/Pull Z`), totalmente conectadas ao `ISO 2D`, `ÓRBITA 3D`, `CAD 3D` e `CNC / DXF`.
+
+**Critério de Aceite Ponta a Ponta:**
+Garanta que o usuário consiga, usando exclusivamente os dedos na tela do celular: desenhar um contorno base com cantos arredondados/chanfrados, abrir um rasgo oblongo, criar um furo e multiplicá-lo em padrão circular, aparar segmentos riscando com o dedo (*Swipe-to-Trim*), aplicar *offset*, editar uma cota pelo mini-teclado numérico tátil redimensionando a peça, visualizar em `ISO 2D` e `CAD 3D` com curvas perfeitamente suaves (`≥ 128` segmentos) e usar a alça *Push/Pull Z*.
+
+Ao concluir a implementação no código, apresente um resumo objetivo contendo:
+- **(a)** Matriz resumida do que já existia no CHAMFER CAD e do que foi adicionado/aprimorado em cada menu (`SEL`, `CRI`, `MOD`, `PRE`, `MED`, `COR`).
+- **(b)** Lista dos arquivos criados ou alterados (confirmando que 100% deles pertencem exclusivamente ao módulo CHAMFER CAD).
+- **(c)** Passo a passo curto para testar os novos gestos, pílulas numéricas e ferramentas no celular.

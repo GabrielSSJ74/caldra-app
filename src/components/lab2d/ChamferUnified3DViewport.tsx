@@ -75,47 +75,72 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
     treeRef.current = new CadFeatureTree();
   }
 
-  // Inicializa o motor ThreeBRepRenderer uma única vez no container acoplado ao canvas
+  const latestCameraRef = useRef({
+    active,
+    view2D,
+    viewportSize,
+    azimuthDeg,
+    elevationDeg,
+    pivot2D,
+  });
+  latestCameraRef.current = {
+    active,
+    view2D,
+    viewportSize,
+    azimuthDeg,
+    elevationDeg,
+    pivot2D,
+  };
+
+  // Lazy-init: inicializa o motor WebGL ThreeBRepRenderer somente quando o modo 3D é ativado pela primeira vez
   useEffect(() => {
+    if (!active) {
+      if (rendererRef.current) {
+        rendererRef.current.setPaused(true);
+      }
+      return;
+    }
+
     const el = containerRef.current;
     if (!el) return;
 
-    const renderer = new ThreeBRepRenderer({
-      container: el,
-      edgeMode,
-      transparentBackground: true,
-      showFloorGrid: false,
-      disableOrbitControls: true,
-      onDemandRender: true,
-    });
-    renderer.setTheme(isDark ? "dark" : "light");
-    renderer.setPaused(!active);
-    rendererRef.current = renderer;
-
-    return () => {
-      renderer.dispose();
-      rendererRef.current = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Controle de pausa Zero-Idle quando alterna entre 2D plano / Arame e Sólido 3D
-  useEffect(() => {
-    const renderer = rendererRef.current;
-    if (!renderer) return;
-    renderer.setPaused(!active);
-    if (active) {
-      renderer.syncWith2DViewport({
-        view2D,
-        viewportWidth: viewportSize.w,
-        viewportHeight: viewportSize.h,
-        azimuthDeg,
-        elevationDeg,
-        pivot2D,
+    if (!rendererRef.current) {
+      const renderer = new ThreeBRepRenderer({
+        container: el,
+        edgeMode,
+        transparentBackground: true,
+        showFloorGrid: false,
+        disableOrbitControls: true,
+        onDemandRender: true,
       });
+      renderer.setTheme(isDark ? "dark" : "light");
+      rendererRef.current = renderer;
+      // Força reavaliação do fingerprint na primeira ativação
+      lastFingerprintRef.current = "";
     }
+
+    const renderer = rendererRef.current;
+    renderer.setPaused(false);
+    renderer.syncWith2DViewport({
+      view2D,
+      viewportWidth: viewportSize.w,
+      viewportHeight: viewportSize.h,
+      azimuthDeg,
+      elevationDeg,
+      pivot2D,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
+
+  // Descarte seguro do contexto WebGL ao desmontar o componente
+  useEffect(() => {
+    return () => {
+      if (rendererRef.current) {
+        rendererRef.current.dispose();
+        rendererRef.current = null;
+      }
+    };
+  }, []);
 
   // Atualiza tema visual (Dark / Light)
   useEffect(() => {
@@ -131,8 +156,9 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
     renderer.setEdgeMode(edgeMode);
   }, [edgeMode]);
 
-  // Reavalia a geometria B-Rep 3D quando entities ou thickness mudam (cache O(1) por fingerprint)
+  // Reavalia a geometria B-Rep 3D SOMENTE quando active === true e entities ou thickness mudam
   useEffect(() => {
+    if (!active) return;
     const renderer = rendererRef.current;
     const tree = treeRef.current;
     if (!renderer || !tree) return;
@@ -173,14 +199,15 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
               // Ignora falha opcional de serialização
             }
           }
-          if (active) {
+          const cam = latestCameraRef.current;
+          if (cam.active) {
             rendererRef.current.syncWith2DViewport({
-              view2D,
-              viewportWidth: viewportSize.w,
-              viewportHeight: viewportSize.h,
-              azimuthDeg,
-              elevationDeg,
-              pivot2D,
+              view2D: cam.view2D,
+              viewportWidth: cam.viewportSize.w,
+              viewportHeight: cam.viewportSize.h,
+              azimuthDeg: cam.azimuthDeg,
+              elevationDeg: cam.elevationDeg,
+              pivot2D: cam.pivot2D,
             });
           }
         });
@@ -188,21 +215,9 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
         renderer.setShape(null, false);
       }
     }
-  }, [
-    entities,
-    thickness,
-    active,
-    view2D,
-    viewportSize.w,
-    viewportSize.h,
-    azimuthDeg,
-    elevationDeg,
-    pivot2D,
-    initialTreeJson,
-    onTreeChange,
-  ]);
+  }, [entities, thickness, active, initialTreeJson, onTreeChange]);
 
-  // Sincroniza câmera em tempo real durante Órbita 3D, Pan e Zoom
+  // Sincroniza câmera em tempo real durante Órbita 3D, Pan e Zoom (somente quando ativo)
   useEffect(() => {
     if (!active) return;
     const renderer = rendererRef.current;

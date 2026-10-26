@@ -1,0 +1,969 @@
+/**
+ * CALDRA — MÓDULO CHAMFER CAD
+ * CAMADA MOBILE TOUCH DE ENTRADA DINÂMICA, BANNER DE CHIPS CONTEXTUAIS,
+ * DESAMBIGUAÇÃO DE SOBREPOSIÇÃO E ALÇA TÁTIL PUSH/PULL Z
+ *
+ * Regras arquiteturais:
+ *  - Zero barras permanentes novas sobre o canvas.
+ *  - Todos os elementos são 100% transitórios (aparecem apenas durante comando ativo,
+ *    toque em pílula dimensional, sobreposição de entidades ou edição de perfil fechado).
+ *  - Zero-Idle Overhead: sem loops requestAnimationFrame em repouso.
+ */
+
+import React, { useState, useEffect } from "react";
+import type { Vec2 } from "@/lib/geometry/types";
+import type { Entity } from "@/lib/lab2d/core";
+import type {
+  GripEditMode,
+  PolylineSegmentMode,
+  RectCreationMode,
+  CircleCreationMode,
+  PolygonCreationMode,
+  SlotCreationMode,
+} from "@/lib/lab2d/cadcraftEngine";
+import { Lock, Unlock, Check, X, Delete, CornerDownLeft, ArrowUpDown, Sparkles } from "lucide-react";
+import { triggerHaptic } from "@/lib/ui/haptics";
+import { AudioManager } from "@/lib/audio/AudioManager";
+import { cn } from "@/lib/utils";
+
+export type DimensionalFieldKind =
+  | "length"
+  | "angle"
+  | "radius"
+  | "diameter"
+  | "across_flats"
+  | "sides"
+  | "slot_width"
+  | "offset"
+  | "extrude_z";
+
+export interface LockedDimensionsState {
+  lockedLengthMm: number | null;
+  lockedAngleDeg: number | null;
+}
+
+export interface ChamferTouchDynamicHudProps {
+  activeTool: string;
+  pendingCount: number;
+  basePoint: Vec2 | null;
+  cursorPoint: Vec2;
+  isDark?: boolean;
+
+  // Sub-modos paramétricos das ferramentas CRI / MOD / SEL
+  polylineSegMode: PolylineSegmentMode;
+  onTogglePolylineSegMode: () => void;
+  onUndoLastPolylineVertex: () => void;
+  onFinishPolyline: (closed: boolean) => void;
+
+  rectMode: RectCreationMode;
+  onChangeRectMode: (m: RectCreationMode) => void;
+
+  circleMode: CircleCreationMode;
+  onChangeCircleMode: (m: CircleCreationMode) => void;
+
+  polygonMode: PolygonCreationMode;
+  onChangePolygonMode: (m: PolygonCreationMode) => void;
+  polygonSides: number;
+  onChangePolygonSides: (n: number) => void;
+  polygonAcrossFlatsMm: number;
+  onChangePolygonAcrossFlatsMm: (s: number) => void;
+
+  slotMode: SlotCreationMode;
+  onChangeSlotMode: (m: SlotCreationMode) => void;
+  slotWidthMm: number;
+  onChangeSlotWidthMm: (w: number) => void;
+
+  gripMode: GripEditMode;
+  onChangeGripMode: (m: GripEditMode) => void;
+  onInsertVertexOnSelected?: () => void;
+
+  smartTrimMode: "real" | "projected";
+  onToggleSmartTrimMode: () => void;
+
+  offsetDistMm: number;
+  onChangeOffsetDistMm: (d: number) => void;
+
+  // Travamento de medidas dinâmicas (🔒 Travar Medida)
+  lockedDims: LockedDimensionsState;
+  onChangeLockedDims: React.Dispatch<React.SetStateAction<LockedDimensionsState>>;
+
+  // Confirmação direta de ponto / medida numérica
+  onCommitExactPolarOrRadius: (params: {
+    lengthMm?: number;
+    angleDeg?: number;
+    radiusMm?: number;
+    coordMode?: "abs" | "rel" | "polar";
+    rawInput?: string;
+  }) => void;
+  onCancelActiveCommand: () => void;
+
+  // Desambiguação de sobreposição
+  overlappingCandidates: Entity[];
+  onPickOverlappingEntity: (entityId: string) => void;
+  onDismissOverlapping: () => void;
+
+  // Push/Pull Z direto em perfis fechados (ISO 2D / ÓRBITA 3D / CAD 3D)
+  showPushPullZHandle: boolean;
+  thicknessMm: number;
+  onChangeThicknessMm: (nextZ: number) => void;
+}
+
+export function ChamferTouchDynamicHud({
+  activeTool,
+  pendingCount,
+  basePoint,
+  cursorPoint,
+  isDark = true,
+  polylineSegMode,
+  onTogglePolylineSegMode,
+  onUndoLastPolylineVertex,
+  onFinishPolyline,
+  rectMode,
+  onChangeRectMode,
+  circleMode,
+  onChangeCircleMode,
+  polygonMode,
+  onChangePolygonMode,
+  polygonSides,
+  onChangePolygonSides,
+  polygonAcrossFlatsMm,
+  onChangePolygonAcrossFlatsMm,
+  slotMode,
+  onChangeSlotMode,
+  slotWidthMm,
+  onChangeSlotWidthMm,
+  gripMode,
+  onChangeGripMode,
+  onInsertVertexOnSelected,
+  smartTrimMode,
+  onToggleSmartTrimMode,
+  offsetDistMm,
+  onChangeOffsetDistMm,
+  lockedDims,
+  onChangeLockedDims,
+  onCommitExactPolarOrRadius,
+  onCancelActiveCommand,
+  overlappingCandidates,
+  onPickOverlappingEntity,
+  onDismissOverlapping,
+  showPushPullZHandle,
+  thicknessMm,
+  onChangeThicknessMm,
+}: ChamferTouchDynamicHudProps) {
+  const [keypadField, setKeypadField] = useState<DimensionalFieldKind | null>(null);
+  const [inputVal, setInputVal] = useState<string>("");
+  const [stepSize, setStepSize] = useState<0.1 | 1 | 10>(1);
+  const [coordMode, setCoordMode] = useState<"rel" | "abs" | "polar">("polar");
+  const [useDiameter, setUseDiameter] = useState<boolean>(false);
+
+  // Medidas ao vivo calculadas entre basePoint e cursorPoint
+  const liveDistMm = basePoint
+    ? Math.hypot(cursorPoint.x - basePoint.x, cursorPoint.y - basePoint.y)
+    : 0;
+  const liveAngleDeg = basePoint
+    ? (((Math.atan2(-(cursorPoint.y - basePoint.y), cursorPoint.x - basePoint.x) * 180) / Math.PI) +
+        360) %
+      360
+    : 0;
+
+  const effectiveLength = lockedDims.lockedLengthMm ?? liveDistMm;
+  const effectiveAngle = lockedDims.lockedAngleDeg ?? liveAngleDeg;
+
+  const openKeypadForField = (field: DimensionalFieldKind, initialNumber: number) => {
+    triggerHaptic("selection");
+    AudioManager.play("ui_select");
+    setKeypadField(field);
+    setInputVal(String(Number(initialNumber.toFixed(2))));
+  };
+
+  useEffect(() => {
+    setKeypadField(null);
+  }, [activeTool]);
+
+  const handleStepIncrement = (dir: 1 | -1) => {
+    triggerHaptic("tap");
+    const curr = parseFloat(inputVal.replace(",", ".")) || 0;
+    const next = Math.max(
+      keypadField === "sides" ? 3 : 0.1,
+      curr + dir * (keypadField === "sides" ? 1 : stepSize),
+    );
+    setInputVal(String(Number(next.toFixed(2))));
+  };
+
+  const handleLockCurrentField = () => {
+    const parsed = parseFloat(inputVal.replace(",", "."));
+    if (!Number.isFinite(parsed)) return;
+    triggerHaptic("action");
+    if (keypadField === "length") {
+      onChangeLockedDims((prev) => ({
+        ...prev,
+        lockedLengthMm: prev.lockedLengthMm !== null ? null : Math.max(0.1, parsed),
+      }));
+      setKeypadField(null);
+    } else if (keypadField === "angle") {
+      onChangeLockedDims((prev) => ({
+        ...prev,
+        lockedAngleDeg: prev.lockedAngleDeg !== null ? null : ((parsed % 360) + 360) % 360,
+      }));
+      setKeypadField(null);
+    }
+  };
+
+  const handleConfirmKeypad = () => {
+    const raw = inputVal.trim();
+    const parsed = parseFloat(raw.replace(",", "."));
+    if (!Number.isFinite(parsed) && !raw.includes(",") && !raw.includes("<")) {
+      setKeypadField(null);
+      return;
+    }
+    triggerHaptic("success");
+    AudioManager.play("ui_select");
+
+    if (keypadField === "sides") {
+      onChangePolygonSides(Math.max(3, Math.min(64, Math.round(parsed))));
+    } else if (keypadField === "across_flats") {
+      onChangePolygonAcrossFlatsMm(Math.max(1, parsed));
+      if (pendingCount >= 1) {
+        onCommitExactPolarOrRadius({ radiusMm: parsed / 2 });
+      }
+    } else if (keypadField === "slot_width") {
+      onChangeSlotWidthMm(Math.max(1, parsed));
+    } else if (keypadField === "offset") {
+      onChangeOffsetDistMm(Math.max(0.1, parsed));
+    } else if (keypadField === "extrude_z") {
+      onChangeThicknessMm(Math.max(0.2, Math.min(200, parsed)));
+    } else if (keypadField === "radius" || keypadField === "diameter") {
+      const r = keypadField === "diameter" || useDiameter ? parsed / 2 : parsed;
+      onCommitExactPolarOrRadius({ radiusMm: Math.max(0.1, r) });
+    } else if (keypadField === "length") {
+      onCommitExactPolarOrRadius({
+        lengthMm: Math.max(0.1, parsed),
+        angleDeg: effectiveAngle,
+        coordMode,
+        rawInput: raw,
+      });
+    } else if (keypadField === "angle") {
+      onCommitExactPolarOrRadius({
+        lengthMm: Math.max(0.1, effectiveLength),
+        angleDeg: parsed,
+        coordMode,
+        rawInput: raw,
+      });
+    }
+    setKeypadField(null);
+  };
+
+  const hasTransientBanner =
+    activeTool === "polyline" ||
+    activeTool === "rect" ||
+    activeTool === "circle" ||
+    activeTool === "polygon" ||
+    activeTool === "slot" ||
+    activeTool === "node" ||
+    activeTool === "smart_trim" ||
+    activeTool === "trim" ||
+    activeTool === "offset" ||
+    activeTool === "construction_line" ||
+    activeTool === "spline";
+
+  const showDynamicPills =
+    pendingCount >= 1 &&
+    (activeTool === "line" ||
+      activeTool === "polyline" ||
+      activeTool === "rect" ||
+      activeTool === "circle" ||
+      activeTool === "polygon" ||
+      activeTool === "slot" ||
+      activeTool === "arc" ||
+      activeTool === "ellipse");
+
+  return (
+    <>
+      {/* 1. BANNER DE COMANDO TRANSITÓRIO ÚNICO COM CHIPS DE PALAVRAS-CHAVE TÁTEIS */}
+      {hasTransientBanner && (
+        <div
+          className={cn(
+            "pointer-events-auto absolute top-7 left-1/2 -translate-x-1/2 z-35 flex flex-wrap items-center justify-center gap-1 rounded-xl border px-2.5 py-1 font-mono text-[10px] shadow-xl backdrop-blur-md select-none max-w-[92%]",
+            isDark
+              ? "border-slate-700/80 bg-slate-950/92 text-slate-200"
+              : "border-slate-300 bg-white/95 text-slate-800",
+          )}
+        >
+          {/* Chips para POLILINHA COMPOSTA (Linha ↔ Arco Tangente) */}
+          {activeTool === "polyline" && (
+            <>
+              <span className="font-bold text-red-400 mr-1">POLILINHA:</span>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  onTogglePolylineSegMode();
+                }}
+                className={cn(
+                  "rounded-lg px-2 py-0.5 font-bold transition-colors cursor-pointer",
+                  polylineSegMode === "tangent_arc"
+                    ? "bg-sky-600 text-white"
+                    : isDark
+                      ? "bg-slate-800 text-sky-300 hover:bg-slate-700"
+                      : "bg-slate-100 text-sky-700 hover:bg-slate-200",
+                )}
+              >
+                {polylineSegMode === "tangent_arc" ? "⌒ Modo: Arco Tangente" : "╱ Modo: Linha Reta"}
+              </button>
+              {pendingCount >= 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("tap");
+                    onUndoLastPolylineVertex();
+                  }}
+                  className="rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 px-2 py-0.5 font-semibold cursor-pointer"
+                >
+                  ↶ Desfazer Vértice
+                </button>
+              )}
+              {pendingCount >= 2 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    onFinishPolyline(false);
+                  }}
+                  className="rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white px-2 py-0.5 font-bold cursor-pointer"
+                >
+                  ✓ Concluir
+                </button>
+              )}
+              {pendingCount >= 3 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    onFinishPolyline(true);
+                  }}
+                  className="rounded-lg bg-amber-600 hover:bg-amber-500 text-white px-2 py-0.5 font-bold cursor-pointer"
+                >
+                  ◎ Fechar Perfil
+                </button>
+              )}
+            </>
+          )}
+
+          {/* Chips para RETÂNGULO PARAMÉTRICO */}
+          {activeTool === "rect" && (
+            <>
+              <span className="font-bold text-red-400 mr-1">RETÂNGULO:</span>
+              {(
+                [
+                  ["corners", "2 Cantos"],
+                  ["center", "Centro"],
+                  ["three_point", "3 Pontos Inclinado"],
+                ] as const
+              ).map(([mId, label]) => (
+                <button
+                  key={mId}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onChangeRectMode(mId);
+                  }}
+                  className={cn(
+                    "rounded-lg px-2 py-0.5 font-bold transition-colors cursor-pointer",
+                    rectMode === mId
+                      ? "bg-red-600 text-white"
+                      : isDark
+                        ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </>
+          )}
+
+          {/* Chips para CÍRCULO TÉCNICO */}
+          {activeTool === "circle" && (
+            <>
+              <span className="font-bold text-red-400 mr-1">CÍRCULO:</span>
+              {(
+                [
+                  ["center_radius", "Centro-Raio"],
+                  ["center_diameter", "Centro-Ø"],
+                  ["two_point", "2 Pontos"],
+                  ["three_point", "3 Pontos"],
+                  ["ttr", "Tangente-Tangente-R"],
+                ] as const
+              ).map(([mId, label]) => (
+                <button
+                  key={mId}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onChangeCircleMode(mId);
+                  }}
+                  className={cn(
+                    "rounded-lg px-2 py-0.5 font-bold transition-colors cursor-pointer",
+                    circleMode === mId
+                      ? "bg-red-600 text-white"
+                      : isDark
+                        ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </>
+          )}
+
+          {/* Chips para POLÍGONO REGULAR / SEXTAVADO (S mm) */}
+          {activeTool === "polygon" && (
+            <>
+              <span className="font-bold text-red-400 mr-1">POLÍGONO:</span>
+              {(
+                [
+                  ["across_flats", `Entre Faces (S=${polygonAcrossFlatsMm}mm)`],
+                  ["inscribed", "Inscrito"],
+                  ["circumscribed", "Circunscrito"],
+                ] as const
+              ).map(([mId, label]) => (
+                <button
+                  key={mId}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onChangePolygonMode(mId);
+                  }}
+                  className={cn(
+                    "rounded-lg px-2 py-0.5 font-bold transition-colors cursor-pointer",
+                    polygonMode === mId
+                      ? "bg-red-600 text-white"
+                      : isDark
+                        ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => openKeypadForField("sides", polygonSides)}
+                className="rounded-lg bg-sky-950/80 border border-sky-500/40 text-sky-300 px-2 py-0.5 font-bold cursor-pointer"
+              >
+                N = {polygonSides} lados
+              </button>
+              <button
+                type="button"
+                onClick={() => openKeypadForField("across_flats", polygonAcrossFlatsMm)}
+                className="rounded-lg bg-amber-950/80 border border-amber-500/40 text-amber-300 px-2 py-0.5 font-bold cursor-pointer"
+              >
+                S = {polygonAcrossFlatsMm} mm
+              </button>
+            </>
+          )}
+
+          {/* Chips para RASGO OBLONGO MECÂNICO (SLOT RETO / CURVO) */}
+          {activeTool === "slot" && (
+            <>
+              <span className="font-bold text-red-400 mr-1">SLOT (OBLONGO):</span>
+              {(
+                [
+                  ["center_to_center", "Centro-a-Centro"],
+                  ["overall", "Compr. Total"],
+                  ["curved", "Slot Curvo"],
+                ] as const
+              ).map(([mId, label]) => (
+                <button
+                  key={mId}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onChangeSlotMode(mId);
+                  }}
+                  className={cn(
+                    "rounded-lg px-2 py-0.5 font-bold transition-colors cursor-pointer",
+                    slotMode === mId
+                      ? "bg-red-600 text-white"
+                      : isDark
+                        ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => openKeypadForField("slot_width", slotWidthMm)}
+                className="rounded-lg bg-sky-950/80 border border-sky-500/40 text-sky-300 px-2 py-0.5 font-bold cursor-pointer"
+              >
+                Largura Ø = {slotWidthMm} mm
+              </button>
+            </>
+          )}
+
+          {/* Chips para EDITAR NÓS (GRIPS MULTI-MODO) */}
+          {activeTool === "node" && (
+            <>
+              <span className="font-bold text-red-400 mr-1">GRIPS (NÓS):</span>
+              {(
+                [
+                  ["stretch", "Esticar"],
+                  ["move", "Mover"],
+                  ["rotate", "Girar"],
+                  ["scale", "Escalar"],
+                  ["mirror", "Espelhar"],
+                ] as const
+              ).map(([mId, label]) => (
+                <button
+                  key={mId}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onChangeGripMode(mId);
+                  }}
+                  className={cn(
+                    "rounded-lg px-2 py-0.5 font-bold transition-colors cursor-pointer",
+                    gripMode === mId
+                      ? "bg-red-600 text-white"
+                      : isDark
+                        ? "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+              {onInsertVertexOnSelected && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    onInsertVertexOnSelected();
+                  }}
+                  className="rounded-lg bg-sky-950/80 border border-sky-500/40 text-sky-300 px-2 py-0.5 font-bold cursor-pointer"
+                >
+                  + Inserir Vértice
+                </button>
+              )}
+            </>
+          )}
+
+          {/* Chips para APARAR (TOQUE & SWIPE-TO-TRIM) */}
+          {(activeTool === "smart_trim" || activeTool === "trim") && (
+            <>
+              <span className="font-bold text-red-400 mr-1">APARAR (SWIPE-TO-TRIM):</span>
+              <span className="text-slate-400">Toque ou arraste o dedo cortando segmentos</span>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  onToggleSmartTrimMode();
+                }}
+                className="rounded-lg bg-sky-950/80 border border-sky-500/40 text-sky-300 px-2 py-0.5 font-bold cursor-pointer"
+              >
+                Limite: {smartTrimMode === "real" ? "Encontro Real" : "Projetado"}
+              </button>
+            </>
+          )}
+
+          {/* Chips para OFFSET PARALELO */}
+          {activeTool === "offset" && (
+            <>
+              <span className="font-bold text-red-400 mr-1">OFFSET PARALELO:</span>
+              <button
+                type="button"
+                onClick={() => openKeypadForField("offset", offsetDistMm)}
+                className="rounded-lg bg-sky-950/80 border border-sky-500/40 text-sky-300 px-2 py-0.5 font-bold cursor-pointer"
+              >
+                Distância = {offsetDistMm} mm
+              </button>
+            </>
+          )}
+
+          {/* Chips para LINHA DE CONSTRUÇÃO / SPLINE */}
+          {activeTool === "construction_line" && (
+            <>
+              <span className="font-bold text-amber-400">EIXO / LINHA DE CONSTRUÇÃO INFINITA:</span>
+              <span className="text-slate-400">Toque 2 pontos para definir a direção do eixo</span>
+            </>
+          )}
+
+          {activeTool === "spline" && (
+            <>
+              <span className="font-bold text-sky-400 mr-1">SPLINE SUAVE (≥128 SEG):</span>
+              {pendingCount >= 2 && (
+                <button
+                  type="button"
+                  onClick={() => onFinishPolyline(false)}
+                  className="rounded-lg bg-emerald-600 text-white px-2 py-0.5 font-bold cursor-pointer"
+                >
+                  ✓ Concluir Spline
+                </button>
+              )}
+              {pendingCount >= 3 && (
+                <button
+                  type="button"
+                  onClick={() => onFinishPolyline(true)}
+                  className="rounded-lg bg-amber-600 text-white px-2 py-0.5 font-bold cursor-pointer"
+                >
+                  ◎ Fechar Spline
+                </button>
+              )}
+            </>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("tap");
+              onCancelActiveCommand();
+            }}
+            className="ml-1 rounded-lg bg-slate-800/80 hover:bg-red-900/60 text-slate-300 hover:text-white px-1.5 py-0.5 font-bold cursor-pointer"
+            title="Cancelar comando ativo (Esc)"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* 2. PÍLULAS DIMENSIONAIS TÁTEIS FLUTUANTES (DYNAMIC INPUT TOUCH) */}
+      {showDynamicPills && (
+        <div
+          className={cn(
+            "pointer-events-auto absolute bottom-12 left-1/2 -translate-x-1/2 z-35 flex items-center gap-1.5 rounded-xl border px-2.5 py-1 font-mono text-[10.5px] shadow-xl backdrop-blur-md select-none",
+            isDark
+              ? "border-sky-500/40 bg-slate-950/92 text-slate-100"
+              : "border-sky-400 bg-white/95 text-slate-800",
+          )}
+        >
+          {(activeTool === "circle" || activeTool === "arc") ? (
+            <>
+              <button
+                type="button"
+                onClick={() => openKeypadForField("radius", effectiveLength)}
+                className="flex items-center gap-1 rounded-lg bg-sky-950/70 hover:bg-sky-900 border border-sky-500/40 px-2 py-0.5 text-sky-300 font-bold cursor-pointer"
+              >
+                <span>R = {effectiveLength.toFixed(1)} mm</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => openKeypadForField("diameter", effectiveLength * 2)}
+                className="flex items-center gap-1 rounded-lg bg-amber-950/70 hover:bg-amber-900 border border-amber-500/40 px-2 py-0.5 text-amber-300 font-bold cursor-pointer"
+              >
+                <span>Ø = {(effectiveLength * 2).toFixed(1)} mm</span>
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => openKeypadForField("length", effectiveLength)}
+                className={cn(
+                  "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-bold cursor-pointer transition-colors",
+                  lockedDims.lockedLengthMm !== null
+                    ? "border-amber-500 bg-amber-950/80 text-amber-300"
+                    : "border-sky-500/40 bg-sky-950/70 text-sky-300 hover:bg-sky-900",
+                )}
+                title="Toque para digitar ou travar o comprimento exato em mm"
+              >
+                {lockedDims.lockedLengthMm !== null && <Lock className="size-3 text-amber-400" />}
+                <span>L = {effectiveLength.toFixed(1)} mm</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => openKeypadForField("angle", effectiveAngle)}
+                className={cn(
+                  "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-bold cursor-pointer transition-colors",
+                  lockedDims.lockedAngleDeg !== null
+                    ? "border-amber-500 bg-amber-950/80 text-amber-300"
+                    : "border-emerald-500/40 bg-emerald-950/70 text-emerald-300 hover:bg-emerald-900",
+                )}
+                title="Toque para digitar ou travar o ângulo polar em graus"
+              >
+                {lockedDims.lockedAngleDeg !== null && <Lock className="size-3 text-amber-400" />}
+                <span>∠ {effectiveAngle.toFixed(1)}°</span>
+              </button>
+
+              {(lockedDims.lockedLengthMm !== null || lockedDims.lockedAngleDeg !== null) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("tap");
+                    onChangeLockedDims({ lockedLengthMm: null, lockedAngleDeg: null });
+                  }}
+                  className="rounded-lg bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 px-1.5 py-0.5 text-[9.5px] font-bold cursor-pointer"
+                  title="Destravar medidas"
+                >
+                  <Unlock className="size-3" />
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* 3. ALÇA TÁTIL PUSH/PULL Z (EXTRUSÃO / ESPESSURA EM PERFIS FECHADOS) */}
+      {showPushPullZHandle && (
+        <div
+          className={cn(
+            "pointer-events-auto absolute bottom-12 right-4 z-35 flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 font-mono text-[10px] shadow-xl backdrop-blur-md select-none",
+            isDark
+              ? "border-cyan-500/50 bg-slate-950/92 text-cyan-200"
+              : "border-cyan-400 bg-white/95 text-slate-800",
+          )}
+        >
+          <ArrowUpDown className="size-3.5 text-cyan-400 shrink-0" />
+          <span className="font-bold uppercase">Push/Pull Z:</span>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("tap");
+              onChangeThicknessMm(Math.max(0.5, Number((thicknessMm - 1).toFixed(1))));
+            }}
+            className="rounded bg-slate-800 hover:bg-slate-700 text-white px-1.5 py-0.5 font-bold cursor-pointer"
+          >
+            -1
+          </button>
+          <button
+            type="button"
+            onClick={() => openKeypadForField("extrude_z", thicknessMm)}
+            className="rounded-lg bg-cyan-950/80 border border-cyan-500/40 px-2 py-0.5 font-bold text-cyan-300 cursor-pointer"
+          >
+            Z = {thicknessMm.toFixed(1)} mm
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("tap");
+              onChangeThicknessMm(Math.min(200, Number((thicknessMm + 1).toFixed(1))));
+            }}
+            className="rounded bg-slate-800 hover:bg-slate-700 text-white px-1.5 py-0.5 font-bold cursor-pointer"
+          >
+            +1
+          </button>
+        </div>
+      )}
+
+      {/* 4. CHIPS DE DESAMBIGUAÇÃO DE SOBREPOSIÇÃO (QUANDO >= 2 ENTIDADES NO MESMO TOQUE) */}
+      {overlappingCandidates.length >= 2 && (
+        <div
+          className={cn(
+            "pointer-events-auto absolute top-16 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 font-mono text-[10px] shadow-2xl backdrop-blur-md select-none",
+            isDark
+              ? "border-amber-500/50 bg-slate-950/95 text-slate-200"
+              : "border-amber-400 bg-white/95 text-slate-800",
+          )}
+        >
+          <Sparkles className="size-3.5 text-amber-400 shrink-0" />
+          <span className="font-bold text-amber-400">Sobreposição ({overlappingCandidates.length}):</span>
+          {overlappingCandidates.slice(0, 4).map((ent, idx) => (
+            <button
+              key={ent.id}
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                onPickOverlappingEntity(ent.id);
+              }}
+              className="rounded-lg bg-slate-800 hover:bg-amber-600 text-slate-200 hover:text-white px-2 py-0.5 font-bold transition-colors cursor-pointer"
+            >
+              #{idx + 1} {ent.type.toUpperCase()} ({ent.layer})
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={onDismissOverlapping}
+            className="rounded-lg bg-slate-800/60 hover:bg-slate-700 text-slate-400 px-1.5 py-0.5 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* 5. MINI-TECLADO NUMÉRICO FLUTUANTE DE ENGENHARIA (SOB DEMANDA) */}
+      {keypadField !== null && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-[1px] select-none"
+          onClick={() => setKeypadField(null)}
+        >
+          <div
+            className={cn(
+              "w-72 rounded-2xl border p-3 shadow-2xl font-mono text-xs animate-in zoom-in-95 duration-120",
+              isDark
+                ? "border-sky-500/50 bg-slate-950/96 text-slate-100"
+                : "border-slate-300 bg-white/98 text-slate-900",
+            )}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-2 mb-2">
+              <span className="font-bold uppercase text-sky-400">
+                {keypadField === "length" && "Comprimento (L mm)"}
+                {keypadField === "angle" && "Ângulo Polar (∠ °)"}
+                {keypadField === "radius" && (useDiameter ? "Diâmetro (Ø mm)" : "Raio (R mm)")}
+                {keypadField === "diameter" && "Diâmetro (Ø mm)"}
+                {keypadField === "across_flats" && "Medida Entre Faces (S mm)"}
+                {keypadField === "sides" && "Número de Lados (N)"}
+                {keypadField === "slot_width" && "Largura do Rasgo (Ø mm)"}
+                {keypadField === "offset" && "Distância de Offset (mm)"}
+                {keypadField === "extrude_z" && "Altura / Espessura Z (mm)"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setKeypadField(null)}
+                className="rounded-lg p-1 text-slate-400 hover:text-white"
+              >
+                <X className="size-4" />
+              </button>
+            </div>
+
+            {/* Visor numérico + incremento rápido */}
+            <div className="flex items-center gap-1.5 mb-2">
+              <button
+                type="button"
+                onClick={() => handleStepIncrement(-1)}
+                className="h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold active:scale-95"
+              >
+                -{keypadField === "sides" ? 1 : stepSize}
+              </button>
+              <input
+                type="text"
+                inputMode="decimal"
+                value={inputVal}
+                onChange={(e) => setInputVal(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleConfirmKeypad();
+                  if (e.key === "Escape") setKeypadField(null);
+                }}
+                autoFocus
+                className="flex-1 h-9 rounded-xl border border-sky-500/50 bg-slate-900 px-2 text-center font-mono text-base font-bold text-sky-300 outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => handleStepIncrement(1)}
+                className="h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold active:scale-95"
+              >
+                +{keypadField === "sides" ? 1 : stepSize}
+              </button>
+            </div>
+
+            {/* Seletor de passo 0.1 | 1 | 10 mm e alternador Ø ↔ R */}
+            <div className="flex items-center justify-between gap-1 mb-2 text-[10px]">
+              <div className="flex items-center gap-1">
+                <span className="text-slate-400">Passo:</span>
+                {([0.1, 1, 10] as const).map((st) => (
+                  <button
+                    key={st}
+                    type="button"
+                    onClick={() => setStepSize(st)}
+                    className={cn(
+                      "rounded-md px-1.5 py-0.5 font-bold",
+                      stepSize === st
+                        ? "bg-sky-600 text-white"
+                        : "bg-slate-800 text-slate-400 hover:text-white",
+                    )}
+                  >
+                    {st}
+                  </button>
+                ))}
+              </div>
+
+              {(keypadField === "radius" || keypadField === "diameter") && (
+                <button
+                  type="button"
+                  onClick={() => setUseDiameter((d) => !d)}
+                  className="rounded-md bg-amber-950/80 border border-amber-500/40 px-2 py-0.5 font-bold text-amber-300"
+                >
+                  Ø ↔ R
+                </button>
+              )}
+
+              {(keypadField === "length" || keypadField === "angle") && (
+                <div className="flex items-center gap-0.5">
+                  {(["polar", "rel", "abs"] as const).map((cm) => (
+                    <button
+                      key={cm}
+                      type="button"
+                      onClick={() => setCoordMode(cm)}
+                      className={cn(
+                        "rounded-md px-1.5 py-0.5 font-bold uppercase",
+                        coordMode === cm
+                          ? "bg-emerald-600 text-white"
+                          : "bg-slate-800 text-slate-400",
+                      )}
+                    >
+                      {cm}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Grade de teclas 0-9, ., -, Backspace */}
+            <div className="grid grid-cols-4 gap-1.5 mb-2.5">
+              {["7", "8", "9", "DEL", "4", "5", "6", "-", "1", "2", "3", ".", "0", "00", ",", "C"].map(
+                (key) => (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("tap");
+                      if (key === "DEL") {
+                        setInputVal((v) => v.slice(0, -1));
+                      } else if (key === "C") {
+                        setInputVal("");
+                      } else {
+                        setInputVal((v) => v + key);
+                      }
+                    }}
+                    className={cn(
+                      "h-9 rounded-xl font-bold text-sm flex items-center justify-center active:scale-95 transition-transform cursor-pointer",
+                      key === "DEL" || key === "C"
+                        ? "bg-slate-800 text-amber-400 hover:bg-slate-700"
+                        : "bg-slate-900 border border-slate-800 text-slate-100 hover:bg-slate-800",
+                    )}
+                  >
+                    {key === "DEL" ? <Delete className="size-4" /> : key}
+                  </button>
+                ),
+              )}
+            </div>
+
+            {/* Ações Finais: Travar Medida (🔒) + Confirmar (✓) */}
+            <div className="flex items-center gap-1.5">
+              {(keypadField === "length" || keypadField === "angle") && (
+                <button
+                  type="button"
+                  onClick={handleLockCurrentField}
+                  className={cn(
+                    "flex-1 h-9 rounded-xl border font-bold flex items-center justify-center gap-1.5 active:scale-95 transition-all cursor-pointer",
+                    (keypadField === "length" && lockedDims.lockedLengthMm !== null) ||
+                      (keypadField === "angle" && lockedDims.lockedAngleDeg !== null)
+                      ? "border-amber-500 bg-amber-600 text-white"
+                      : "border-amber-500/50 bg-amber-950/60 text-amber-300 hover:bg-amber-900/70",
+                  )}
+                  title="Trava a medida digitada enquanto seu dedo escolhe livremente a direção na prancheta"
+                >
+                  <Lock className="size-3.5" />
+                  <span>Travar Medida</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleConfirmKeypad}
+                className="flex-1 h-9 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-bold flex items-center justify-center gap-1.5 shadow-lg shadow-sky-600/30 active:scale-95 transition-all cursor-pointer"
+              >
+                <Check className="size-4 stroke-[2.5]" />
+                <span>Confirmar</span>
+                <CornerDownLeft className="size-3 opacity-75" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
