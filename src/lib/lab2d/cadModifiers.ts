@@ -23,6 +23,7 @@ import {
   type Entity,
   type LayerId,
 } from "./core";
+import { computeInstances } from "./cadArrayEngine";
 
 const DEG = Math.PI / 180;
 
@@ -406,26 +407,22 @@ export function arrayLinear(
     dy: number;
   },
 ): Entity[] {
-  const rows = Math.max(1, opts.rows);
-  const cols = Math.max(1, opts.cols);
-  const created: Entity[] = [];
-
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (r === 0 && c === 0) continue; // entidade base já existe
-      const shiftX = c * opts.dx;
-      const shiftY = r * opts.dy;
-
-      entities.forEach((e) => {
-        created.push({
-          ...shiftEntity(e, shiftX, shiftY),
-          id: uid(),
-        });
-      });
-    }
-  }
-
-  return created;
+  const { instances } = computeInstances(
+    {
+      id: uid(),
+      type: "linear",
+      sourceEntityIds: entities.map((e) => e.id),
+      linear: {
+        rows: Math.max(1, opts.rows),
+        cols: Math.max(1, opts.cols),
+        dx: opts.dx,
+        dy: opts.dy,
+        includeOriginal: true,
+      },
+    },
+    entities,
+  );
+  return instances;
 }
 
 // -------------------------------------------------------------
@@ -441,38 +438,23 @@ export function arrayCircular(
     rotateItems?: boolean; // padrão true
   },
 ): Entity[] {
-  const count = Math.max(2, opts.count);
-  const totalDeg = opts.totalAngleDeg ?? 360;
-  const isFull = Math.abs(Math.abs(totalDeg) - 360) < 1e-3;
-  const stepDeg = isFull ? totalDeg / count : totalDeg / (count - 1);
-  const rotItems = opts.rotateItems ?? true;
-
-  const created: Entity[] = [];
-  const c = opts.center;
-
-  for (let i = 1; i < count; i++) {
-    const angleRad = (i * stepDeg) * DEG;
-    const cosA = Math.cos(angleRad);
-    const sinA = Math.sin(angleRad);
-
-    entities.forEach((e) => {
-      let rotated: Entity;
-      if (rotItems) {
-        rotated = rotateEntityAroundPoint(e, c, angleRad);
-      } else {
-        // Apenas translada a posição mantendo a orientação
-        const centerE = getEntityCenter(e);
-        const newCenterX = c.x + (centerE.x - c.x) * cosA - (centerE.y - c.y) * sinA;
-        const newCenterY = c.y + (centerE.x - c.x) * sinA + (centerE.y - c.y) * cosA;
-        const dx = newCenterX - centerE.x;
-        const dy = newCenterY - centerE.y;
-        rotated = shiftEntity(e, dx, dy);
-      }
-      created.push({ ...rotated, id: uid() });
-    });
-  }
-
-  return created;
+  const { instances } = computeInstances(
+    {
+      id: uid(),
+      type: "polar",
+      sourceEntityIds: entities.map((e) => e.id),
+      polar: {
+        center: opts.center,
+        count: Math.max(2, opts.count),
+        totalAngleDeg: opts.totalAngleDeg ?? 360,
+        startAngleDeg: 0,
+        rotateItems: opts.rotateItems ?? true,
+        includeOriginal: true,
+      },
+    },
+    entities,
+  );
+  return instances;
 }
 
 // -------------------------------------------------------------

@@ -206,8 +206,19 @@ import {
   ChamferSmartTrimSvgOverlay,
   ChamferSmartTrimControlBar,
 } from "./ChamferSmartTrimOverlay";
-import { type ScaleBasePointType } from "./ChamferScaleDialog";
 import { ChamferFilletChamferHUD } from "./ChamferFilletChamferHUD";
+import { ChamferArrayHUD } from "./ChamferArrayHUD";
+import {
+  detectHostPart,
+  computeInstances,
+  validateArray,
+  getGroupCenter,
+  type ArrayType,
+  type PolarArrayParams,
+  type LinearArrayParams,
+  type HostDetectionResult,
+  type ArraySpec,
+} from "@/lib/lab2d/cadArrayEngine";
 
 import {
   MorphTransitionController,
@@ -955,6 +966,35 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     corner: DetectedCorner;
     calc: ChamferCalculation;
   } | null>(null);
+
+  /* FERRAMENTAS DE ARRAYS INTELIGENTES (POLAR E LINEAR) */
+  const [activeArrayType, setActiveArrayType] = useState<ArrayType | null>(null);
+  const [arrayPolarParams, setArrayPolarParams] = useState<PolarArrayParams>({
+    center: { x: 0, y: 0 },
+    count: 6,
+    totalAngleDeg: 360,
+    startAngleDeg: 0,
+    clockwise: false,
+    rotateItems: true,
+    includeOriginal: true,
+  });
+  const [arrayLinearParams, setArrayLinearParams] = useState<LinearArrayParams>({
+    rows: 2,
+    cols: 3,
+    dx: 40,
+    dy: 40,
+    angleDeg: 0,
+    includeOriginal: true,
+  });
+  const [arrayHostInfo, setArrayHostInfo] = useState<HostDetectionResult>({
+    type: "unknown",
+    confidence: "low",
+    description: "",
+    suggestedType: "polar",
+    candidateCenters: [],
+  });
+  const [isArrayPickingCenter, setIsArrayPickingCenter] = useState<boolean>(false);
+
   /* FERRAMENTA DIVIDIR */
   const [divideEditorOpen, setDivideEditorOpen] = useState(false);
   const [divideParts, setDivideParts] = useState(2);
@@ -2983,27 +3023,111 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setTool("select");
   }, []);
 
-  const handleArrayLinear = useCallback(() => {
+  const handleStartArray = useCallback((type: ArrayType) => {
     if (!selected.length) {
-      toast.info("Selecione entidades para matriz linear.");
+      toast.info("Toque no furo ou geometria que deseja multiplicar.");
+      setActiveArrayType(type);
       return;
     }
-    const copies = arrayLinear(selected, { rows: 2, cols: 3, dx: 40, dy: 40 });
-    commit((e) => [...e, ...copies]);
-    toast.success(`Matriz linear gerada (+${copies.length} entidades).`);
-  }, [selected, commit]);
+
+    const host = detectHostPart(entities, selected, temporaryOrigin?.p ?? { x: 0, y: 0 });
+    setArrayHostInfo(host);
+
+    const baseCenter = getGroupCenter(selected);
+    const chosenCenter = host.center ?? (temporaryOrigin ? temporaryOrigin.p : { x: baseCenter.x - 50, y: baseCenter.y });
+    const radius = dist(chosenCenter, baseCenter);
+    const startAngleDeg = Math.atan2(baseCenter.y - chosenCenter.y, baseCenter.x - chosenCenter.x) * (180 / Math.PI);
+
+    setArrayPolarParams((prev) => ({
+      ...prev,
+      center: chosenCenter,
+      radius,
+      startAngleDeg,
+      count: prev.count || 6,
+    }));
+
+    if (host.sheetBounds) {
+      const stepX = Math.min(60, Math.max(20, Math.round(host.sheetBounds.width / 5)));
+      const stepY = Math.min(60, Math.max(20, Math.round(host.sheetBounds.height / 5)));
+      setArrayLinearParams((prev) => ({
+        ...prev,
+        dx: prev.dx || stepX,
+        dy: prev.dy || stepY,
+      }));
+    }
+
+    setActiveArrayType(type);
+    setIsArrayPickingCenter(false);
+    triggerHaptic("selection");
+  }, [selected, entities, temporaryOrigin]);
+
+  const handleArrayLinear = useCallback(() => {
+    handleStartArray("linear");
+  }, [handleStartArray]);
 
   const handleArrayPolar = useCallback(() => {
-    if (!selected.length) {
-      toast.info("Selecione entidades para matriz polar.");
+    handleStartArray("polar");
+  }, [handleStartArray]);
+
+  const arrayPreview = useMemo(() => {
+    if (!activeArrayType || selected.length === 0) return null;
+    const spec: ArraySpec = {
+      id: "preview-spec",
+      type: activeArrayType,
+      sourceEntityIds: selected.map((e) => e.id),
+      polar: activeArrayType === "polar" ? arrayPolarParams : undefined,
+      linear: activeArrayType === "linear" ? arrayLinearParams : undefined,
+    };
+    return computeInstances(spec, selected);
+  }, [activeArrayType, selected, arrayPolarParams, arrayLinearParams]);
+
+  const arrayValidation = useMemo(() => {
+    if (!activeArrayType || selected.length === 0) {
+      return { isValid: true, errors: [], warnings: [] };
+    }
+    const spec: ArraySpec = {
+      id: "validation-spec",
+      type: activeArrayType,
+      sourceEntityIds: selected.map((e) => e.id),
+      polar: activeArrayType === "polar" ? arrayPolarParams : undefined,
+      linear: activeArrayType === "linear" ? arrayLinearParams : undefined,
+    };
+    return validateArray(spec, selected, arrayHostInfo);
+  }, [activeArrayType, selected, arrayPolarParams, arrayLinearParams, arrayHostInfo]);
+
+  const handleCommitArray = useCallback(() => {
+    if (!activeArrayType || selected.length === 0) return;
+    const spec: ArraySpec = {
+      id: uid(),
+      type: activeArrayType,
+      sourceEntityIds: selected.map((e) => e.id),
+      polar: activeArrayType === "polar" ? arrayPolarParams : undefined,
+      linear: activeArrayType === "linear" ? arrayLinearParams : undefined,
+    };
+    const { instances } = computeInstances(spec, selected);
+    if (instances.length === 0) {
+      toast.info("Nenhuma cópia gerada.");
       return;
     }
-    const box = boxOfEntities(selected);
-    const center = { x: box.minX - 50, y: (box.minY + box.maxY) / 2 };
-    const copies = arrayCircular(selected, { center, count: 6, totalAngleDeg: 360 });
-    commit((e) => [...e, ...copies]);
-    toast.success(`Matriz polar gerada (+${copies.length} entidades).`);
-  }, [selected, boxOfEntities, commit]);
+    commit((prev) => [...prev, ...instances]);
+    setActiveArrayType(null);
+    setIsArrayPickingCenter(false);
+    setSelection([...selected.map((e) => e.id), ...instances.map((e) => e.id)]);
+    triggerHaptic("success");
+    AudioManager.play("ui_select");
+    toast.success(
+      activeArrayType === "polar"
+        ? `Padrão circular gerado (+${instances.length} furos, PCD ${(arrayPolarParams.radius! * 2).toFixed(1)} mm).`
+        : `Padrão linear gerado (+${instances.length} peças).`,
+    );
+  }, [activeArrayType, selected, arrayPolarParams, arrayLinearParams, commit]);
+
+  const handleCancelArray = useCallback(() => {
+    setActiveArrayType(null);
+    setIsArrayPickingCenter(false);
+    triggerHaptic("tap");
+    toast.info("Padrão cancelado. Nenhuma alteração gravada.");
+  }, []);
 
   const handleConvertToBend = useCallback(() => {
     if (!selected.length) {
@@ -3422,6 +3546,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       commit((list) => list.map((e) => (e.id === target.id ? setStartPoint(e, p) : e)));
       setStartPicking(false);
       toast.success("Ponto de partida definido.");
+      return;
+    }
+
+    // SELETOR INTERATIVO DE CENTRO DO ARRAY POLAR
+    if (activeArrayType === "polar" && isArrayPickingCenter) {
+      setArrayPolarParams((prev) => {
+        const baseCenter = selected.length > 0 ? getGroupCenter(selected) : p;
+        const radius = dist(p, baseCenter);
+        return {
+          ...prev,
+          center: p,
+          radius,
+          startAngleDeg: Math.atan2(baseCenter.y - p.y, baseCenter.x - p.x) * (180 / Math.PI),
+        };
+      });
+      setIsArrayPickingCenter(false);
+      triggerHaptic("action");
+      toast.success(`Centro do padrão fixado em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm`);
       return;
     }
 
@@ -4933,6 +5075,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setScaleDialogOpen(false);
         setCenterDialogOpen(false);
         setIsOrbitToolActive(false);
+        setActiveArrayType(null);
+        setIsArrayPickingCenter(false);
         setTool("select");
       }
       if (tool === "polyline") {
@@ -5578,8 +5722,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [selected]);
 
   const operationFeedback = useMemo(() => {
+    if (activeArrayType === "polar") {
+      return {
+        command: "PADRÃO CIRCULAR (POLAR)",
+        instruction: isArrayPickingCenter
+          ? "Toque no canvas para definir o centro do padrão polar (PCD)"
+          : `${arrayPolarParams.count} furos em ${arrayPolarParams.totalAngleDeg}° — altere valores no topo ou clique em Aplicar`,
+      };
+    }
+    if (activeArrayType === "linear") {
+      return {
+        command: "PADRÃO LINEAR (ARRAY)",
+        instruction: `Grade ${arrayLinearParams.cols}×${arrayLinearParams.rows} (passo ${arrayLinearParams.dx}×${arrayLinearParams.dy} mm) — altere valores ou clique em Aplicar`,
+      };
+    }
     return getOperationFeedback(tool, pending.length, selected.length);
-  }, [tool, pending.length, selected.length]);
+  }, [activeArrayType, isArrayPickingCenter, arrayPolarParams, arrayLinearParams, tool, pending.length, selected.length]);
 
   // Pré-aquece o chunk do CHAMFER INTENT e do CAD 3D Stage em background após o canvas 2D estar interativo
   useEffect(() => {
@@ -7750,6 +7908,155 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     </g>
                   );
                 })()}
+
+              {/* PRÉ-VISUALIZAÇÃO DE PADRÃO GEOMÉTRICO (ARRAY POLAR / LINEAR) */}
+              {activeArrayType !== null && arrayPreview && (() => {
+                const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                const isError = !arrayValidation.isValid;
+                const strokeColor = isError ? "#ef4444" : "#06b6d4";
+                const fillColor = isError ? "#ef4444" : "#06b6d4";
+                const guides = arrayPreview.guides;
+
+                return (
+                  <g pointerEvents="none" aria-label="Pré-visualização do padrão geométrico">
+                    {/* CÍRCULO PCD GUIA (POLAR) */}
+                    {guides.pcdCircle && Number.isFinite(guides.pcdCircle.cx) && (
+                      <circle
+                        cx={guides.pcdCircle.cx}
+                        cy={guides.pcdCircle.cy}
+                        r={guides.pcdCircle.r}
+                        fill="none"
+                        stroke={strokeColor}
+                        strokeWidth={1.5 / safeK}
+                        strokeDasharray={`${6 / safeK},${4 / safeK}`}
+                        strokeOpacity={0.7}
+                      />
+                    )}
+
+                    {/* LINHAS RADIAIS (POLAR) */}
+                    {guides.radialLines?.map((line, idx) => (
+                      <line
+                        key={`guide-rad-${idx}`}
+                        x1={line.x1}
+                        y1={line.y1}
+                        x2={line.x2}
+                        y2={line.y2}
+                        stroke={strokeColor}
+                        strokeWidth={1 / safeK}
+                        strokeDasharray={`${3 / safeK},${3 / safeK}`}
+                        strokeOpacity={0.4}
+                      />
+                    ))}
+
+                    {/* EIXOS DIRECIONAIS (LINEAR) */}
+                    {guides.axes?.map((axis, idx) => (
+                      <line
+                        key={`guide-axis-${idx}`}
+                        x1={axis.x1}
+                        y1={axis.y1}
+                        x2={axis.x2}
+                        y2={axis.y2}
+                        stroke={strokeColor}
+                        strokeWidth={1.8 / safeK}
+                        strokeDasharray={`${8 / safeK},${4 / safeK}`}
+                        strokeOpacity={0.75}
+                      />
+                    ))}
+
+                    {/* MARCADOR DE CENTRO PIVÔ ⊕ (POLAR) */}
+                    {guides.center && Number.isFinite(guides.center.x) && (
+                      <g>
+                        <circle
+                          cx={guides.center.x}
+                          cy={guides.center.y}
+                          r={7 / safeK}
+                          fill="none"
+                          stroke={isArrayPickingCenter ? "#f59e0b" : strokeColor}
+                          strokeWidth={2 / safeK}
+                        />
+                        <line
+                          x1={guides.center.x - 12 / safeK}
+                          y1={guides.center.y}
+                          x2={guides.center.x + 12 / safeK}
+                          y2={guides.center.y}
+                          stroke={isArrayPickingCenter ? "#f59e0b" : strokeColor}
+                          strokeWidth={1.5 / safeK}
+                        />
+                        <line
+                          x1={guides.center.x}
+                          y1={guides.center.y - 12 / safeK}
+                          x2={guides.center.x}
+                          y2={guides.center.y + 12 / safeK}
+                          stroke={isArrayPickingCenter ? "#f59e0b" : strokeColor}
+                          strokeWidth={1.5 / safeK}
+                        />
+                      </g>
+                    )}
+
+                    {/* INSTÂNCIAS FANTASMA DO PADRÃO */}
+                    {arrayPreview.instances.map((inst) => {
+                      if (inst.type === "circle") {
+                        return (
+                          <g key={inst.id}>
+                            <circle
+                              cx={inst.cx}
+                              cy={inst.cy}
+                              r={inst.r}
+                              fill={fillColor}
+                              fillOpacity={0.12}
+                              stroke={strokeColor}
+                              strokeWidth={2 / safeK}
+                              strokeDasharray={`${5 / safeK},${3 / safeK}`}
+                            />
+                            <circle
+                              cx={inst.cx}
+                              cy={inst.cy}
+                              r={2 / safeK}
+                              fill={strokeColor}
+                            />
+                          </g>
+                        );
+                      }
+                      if (inst.type === "arc") {
+                        const sweep = inst.a1 - inst.a0;
+                        const large = Math.abs(sweep) > Math.PI ? 1 : 0;
+                        const p0x = inst.cx + inst.r * Math.cos(inst.a0);
+                        const p0y = inst.cy + inst.r * Math.sin(inst.a0);
+                        const p1x = inst.cx + inst.r * Math.cos(inst.a1);
+                        const p1y = inst.cy + inst.r * Math.sin(inst.a1);
+                        const d = `M ${p0x.toFixed(2)} ${p0y.toFixed(2)} A ${inst.r.toFixed(2)} ${inst.r.toFixed(2)} 0 ${large} 1 ${p1x.toFixed(2)} ${p1y.toFixed(2)}`;
+                        return (
+                          <path
+                            key={inst.id}
+                            d={d}
+                            fill="none"
+                            stroke={strokeColor}
+                            strokeWidth={2 / safeK}
+                            strokeDasharray={`${5 / safeK},${3 / safeK}`}
+                          />
+                        );
+                      }
+                      const segs = segmentsOf(inst);
+                      return segs.map((s, sIdx) => {
+                        if (!s || !s[0] || !s[1]) return null;
+                        return (
+                          <line
+                            key={`inst-${inst.id}-${sIdx}`}
+                            x1={s[0].x}
+                            y1={s[0].y}
+                            x2={s[1].x}
+                            y2={s[1].y}
+                            stroke={strokeColor}
+                            strokeWidth={2 / safeK}
+                            strokeDasharray={`${5 / safeK},${3 / safeK}`}
+                            strokeOpacity={0.85}
+                          />
+                        );
+                      });
+                    })}
+                  </g>
+                );
+              })()}
             </g>
           </svg>
 
@@ -8925,8 +9232,42 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
+      {/* HUD FLUTUANTE DE ARRAYS INTELIGENTES (POLAR E LINEAR) */}
+      {activeArrayType !== null && (
+        <ChamferArrayHUD
+          arrayType={activeArrayType}
+          onChangeArrayType={(nextType) => {
+            setActiveArrayType(nextType);
+            setIsArrayPickingCenter(false);
+          }}
+          polarParams={arrayPolarParams}
+          onChangePolarParams={setArrayPolarParams}
+          linearParams={arrayLinearParams}
+          onChangeLinearParams={setArrayLinearParams}
+          hostInfo={arrayHostInfo}
+          validation={arrayValidation}
+          isPickingCenter={isArrayPickingCenter}
+          onTogglePickCenter={() => setIsArrayPickingCenter((v) => !v)}
+          onSelectCandidateCenter={(center) => {
+            setArrayPolarParams((p) => {
+              const baseCenter = selected.length > 0 ? getGroupCenter(selected) : center;
+              const radius = dist(center, baseCenter);
+              return {
+                ...p,
+                center,
+                radius,
+                startAngleDeg: Math.atan2(baseCenter.y - center.y, baseCenter.x - center.x) * (180 / Math.PI),
+              };
+            });
+          }}
+          onApply={handleCommitArray}
+          onCancel={handleCancelArray}
+          isDark={isDark}
+        />
+      )}
+
       {/* BARRA CONTEXTUAL FLUTUANTE DE SELEÇÃO E AGRUPAMENTO (MOBILE/DESKTOP) */}
-      {selection.length > 0 && !solidOpen && tool === "select" && (
+      {selection.length > 0 && !solidOpen && tool === "select" && activeArrayType === null && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-500/40 shadow-2xl backdrop-blur-md text-white select-none pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-150">
           <div className="flex items-center gap-1.5 pr-2 border-r border-slate-700/80 font-mono text-[11px]">
             {activeGroup ? (
