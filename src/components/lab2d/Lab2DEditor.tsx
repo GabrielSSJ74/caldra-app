@@ -255,6 +255,17 @@ import {
   type SmartReferencePoint,
 } from "@/lib/lab2d/cadReferenceSnaps";
 import {
+  loadInteractionGuideMode,
+  saveInteractionGuideMode,
+  validateDimensionalConstraint,
+  applyDimensionalConstraintsToPoint,
+  applyEntityNodeConstraint,
+  type InteractionGuideMode,
+  type TouchInteractionState,
+  type DimensionalConstraints,
+  type ConstrainableMeasureKind,
+} from "@/lib/lab2d/cadInteractionGuides";
+import {
   centerShapes,
   type CenterOptions,
 } from "@/lib/lab2d/cadCenterShapes";
@@ -833,10 +844,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [statusPrecisionMenuOpen, setStatusPrecisionMenuOpen] = useState(false);
   const [statusCncMenuOpen, setStatusCncMenuOpen] = useState(false);
-  /* PRECISÃO AVANÇADA (UPGRADE PRE) */
+  /* PRECISÃO AVANÇADA, GUIAS DE INTERAÇÃO EXCLUSIVAS E RESTRIÇÕES DIMENSIONAIS REAIS */
   const [snapDivision, setSnapDivision] = useState<number>(0);
   const [showAllSnaps, setShowAllSnaps] = useState<boolean>(false);
   const [isSettingReferencePoint, setIsSettingReferencePoint] = useState<boolean>(false);
+  const [interactionGuideMode, setInteractionGuideModeState] = useState<InteractionGuideMode>(() =>
+    loadInteractionGuideMode(),
+  );
+  const [lockedConstraints, setLockedConstraints] = useState<DimensionalConstraints>({});
+  const [touchInteractionState, setTouchInteractionState] = useState<TouchInteractionState>("IDLE");
+  const touchInteractionStateRef = useRef<TouchInteractionState>("IDLE");
+  const cooldownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const preGestureSnapshotRef = useRef<{
+    cursor: Vec2;
+    temporaryOrigin: TemporaryOrigin | null;
+    pending: Vec2[];
+    draft: Entity | null;
+  } | null>(null);
+  const preEditKeypadSnapshotRef = useRef<{
+    cursor: Vec2;
+    draft: Entity | null;
+  } | null>(null);
   /* ESPESSURA — chapa do plano; alimenta a vista 3D / Traçagem */
   const [thickness, setThickness] = useState<number>(() => initialProj?.thickness ?? DEFAULT_PLAN_THICKNESS);
   const [cad3dTreeJson, setCad3dTreeJson] = useState<string | undefined>(() => initialPlan?.cad3dTreeJson);
@@ -1203,7 +1231,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     currentValue: number;
     label: string;
     allowInvert?: boolean;
+    measureKind?: ConstrainableMeasureKind;
+    initialLocked?: boolean;
   } | null>(null);
+
+  const handleSetInteractionGuideMode = useCallback((nextMode: InteractionGuideMode) => {
+    setInteractionGuideModeState(nextMode);
+    saveInteractionGuideMode(nextMode);
+    setLiveDimEditor(null);
+    setLiveDimensions([]);
+    setIsSettingReferencePoint(false);
+  }, []);
   const [showGlobalCoordsPeek, setShowGlobalCoordsPeek] = useState<boolean>(false);
 
   const clipboardRef = useRef<ChamferClipboard | null>(null);
@@ -3413,10 +3451,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
     ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
 
-    // dois dedos sempre navegam, independentemente da ferramenta ativa
+    // dois dedos sempre navegam (MULTITOUCH_NAVIGATION), bloqueando referências e guias
     if (ptrsRef.current.size >= 2) {
+      touchInteractionStateRef.current = "MULTITOUCH_NAVIGATION";
+      setTouchInteractionState("MULTITOUCH_NAVIGATION");
       setLoupeVisible(false);
       setIsDraggingUnlocked(false);
+      setDragNode(null);
+
+      if (pointerMoveRafRef.current !== null) {
+        cancelAnimationFrame(pointerMoveRafRef.current);
+        pointerMoveRafRef.current = null;
+      }
+      pendingPointerMoveRef.current = null;
 
       // a) Cancele imediatamente qualquer timer de Long-Press pendente
       if (dragLongPressRef.current) {
@@ -3438,17 +3485,26 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         pendingDragEntitiesRef.current = null;
       }
 
-      // c) Cancela imediatamente qualquer traçado, seleção marquee ou Swipe-to-Trim de 1 dedo sem gravar ponto espúrio
-      setDraft(null);
-      setPending([]);
+      // c) Restaura a posição estável anterior ao gesto (descarta microdeslocamentos do 1º dedo)
+      if (preGestureSnapshotRef.current) {
+        const snap = preGestureSnapshotRef.current;
+        cursorRef.current = snap.cursor;
+        setCursor(snap.cursor);
+        setTemporaryOrigin(snap.temporaryOrigin);
+        setPending(snap.pending);
+        setDraft(snap.draft);
+      } else {
+        setDraft(null);
+        setPending([]);
+      }
       setMarquee(null);
       swipeTrimFenceRef.current = [];
       setSwipeTrimCutPreview([]);
       setOverlappingCandidates([]);
 
-      // d) Cooldown de 150ms após soltar o gesto de 2 dedos antes de aceitar novo início de arraste
-      dragCooldownUntilRef.current = performance.now() + 150;
-      gestureUntilRef.current = Math.max(gestureUntilRef.current, performance.now() + 150);
+      // d) Cooldown de 200ms após soltar o gesto multitouch
+      dragCooldownUntilRef.current = performance.now() + 200;
+      gestureUntilRef.current = Math.max(gestureUntilRef.current, performance.now() + 200);
 
       const [a, b] = [...ptrsRef.current.values()];
       if (a && b) {
@@ -3462,8 +3518,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       return;
     }
-    // ignora toques fantasma logo após um gesto
-    if (performance.now() < Math.max(gestureUntilRef.current, dragCooldownUntilRef.current)) return;
+
+    // ignora toques fantasma durante MULTITOUCH_NAVIGATION ou POST_GESTURE_COOLDOWN (200ms)
+    if (
+      touchInteractionStateRef.current === "MULTITOUCH_NAVIGATION" ||
+      touchInteractionStateRef.current === "POST_GESTURE_COOLDOWN" ||
+      performance.now() < Math.max(gestureUntilRef.current, dragCooldownUntilRef.current)
+    ) {
+      return;
+    }
+
+    // Salva snapshot estável no início da interação com 1 ponteiro (para restaurar se o 2º dedo tocar)
+    preGestureSnapshotRef.current = {
+      cursor: { ...cursor },
+      temporaryOrigin: temporaryOrigin ? { ...temporaryOrigin, p: { ...temporaryOrigin.p } } : null,
+      pending: pending.map((pt) => ({ ...pt })),
+      draft: draftRef.current ? { ...draftRef.current } : null,
+    };
+    touchInteractionStateRef.current = "SINGLE_POINTER";
+    setTouchInteractionState("SINGLE_POINTER");
 
     // Se o modo ÓRBITA 3D estiver ativo na barra superior, 1 dedo / botão esquerdo rotaciona a órbita
     // (impedindo seleção acidental ou traçado de linhas durante a rotação 3D)
@@ -3481,8 +3554,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     const raw = toWorld(ev);
     const directTouchWorld = toWorld(ev, true);
-    const p = snapPoint(raw);
-    setCursor(raw);
+    let p = snapPoint(raw);
 
     if (isSettingReferencePoint) {
       setTemporaryOrigin({
@@ -3492,10 +3564,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         sourceEntityId: undefined,
       });
       setIsSettingReferencePoint(false);
+      setInteractionGuideModeState("purple_ref");
+      saveInteractionGuideMode("purple_ref");
+      setCursor(p);
       triggerHaptic("action");
       toast.success(`Ponto de Referência fixado: (${p.x.toFixed(2)}, ${p.y.toFixed(2)} mm)`);
       return;
     }
+
+    // Aplica restrições dimensionais reais se houver medidas fixas ativas
+    const constraintBase =
+      interactionGuideMode === "blue_line" && pending.length > 0
+        ? pending[pending.length - 1]!
+        : interactionGuideMode === "purple_ref" && temporaryOrigin
+          ? temporaryOrigin.p
+          : null;
+    if (constraintBase) {
+      p = applyDimensionalConstraintsToPoint(constraintBase, p, lockedConstraints);
+    }
+    setCursor(p);
 
     const useOffsetHere = shouldUseTouchOffset(
       pType,
@@ -4395,10 +4482,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   };
 
   const flushPointerMoveFrame = (clientX: number, clientY: number, pType: string) => {
+    if (
+      touchInteractionStateRef.current === "MULTITOUCH_NAVIGATION" ||
+      touchInteractionStateRef.current === "POST_GESTURE_COOLDOWN" ||
+      ptrsRef.current.size >= 2 ||
+      pinchRef.current !== null
+    ) {
+      return;
+    }
+
     const raw = toWorld({ clientX, clientY, pointerType: pType });
     const directTouchWorld = toWorld({ clientX, clientY, pointerType: pType }, true);
-    cursorRef.current = raw;
-    setCursor(raw);
 
     const useOffsetMove = shouldUseTouchOffset(
       pType,
@@ -4483,12 +4577,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setSnapHit(null);
     }
 
-    // Atualização em tempo real das Cotas Vivas Inteligentes (Live Dimensions)
+    // Aplica restrições dimensionais reais (L, ΔX, ΔY, d) se ativas no modo atual
+    const constraintBase =
+      interactionGuideMode === "blue_line" && pending.length > 0
+        ? pending[pending.length - 1]!
+        : interactionGuideMode === "purple_ref" && temporaryOrigin
+          ? temporaryOrigin.p
+          : null;
+    if (constraintBase) {
+      currentSnapPt = applyDimensionalConstraintsToPoint(constraintBase, currentSnapPt, lockedConstraints);
+    }
+
+    cursorRef.current = currentSnapPt;
+    setCursor(currentSnapPt);
+
+    // Atualização em tempo real apenas das Cotas Vivas de Borda Ativa (evita duplicação com guias azuis/roxas)
     if (activeEdge) {
-      const dims = DynamicDimensionInteraction.generateEdgeOffsetDimensions(raw, activeEdge, activeEdgeSide);
-      setLiveDimensions(dims);
-    } else if (temporaryOrigin) {
-      const dims = DynamicDimensionInteraction.generateRefOriginDimensions(raw, temporaryOrigin);
+      const dims = DynamicDimensionInteraction.generateEdgeOffsetDimensions(currentSnapPt, activeEdge, activeEdgeSide);
       setLiveDimensions(dims);
     } else if (liveDimensions.length > 0) {
       setLiveDimensions([]);
@@ -4535,9 +4640,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setEntities((list) =>
         list.map((e) => {
           if (e.id !== dragNode.id) return e;
+          const { constrainedPoint } = applyEntityNodeConstraint(
+            e,
+            dragNode.index,
+            p,
+            temporaryOrigin?.p ?? null,
+          );
           const pts = entityPoints(e);
-          const origPt = pts[dragNode.index] ?? p;
-          return applyMultiModeGripEdit(e, dragNode.index, p, gripMode, origPt);
+          const origPt = pts[dragNode.index] ?? constrainedPoint;
+          return applyMultiModeGripEdit(e, dragNode.index, constrainedPoint, gripMode, origPt);
         }),
       );
       return;
@@ -4665,16 +4776,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   };
 
   const onPointerUp = (ev?: React.PointerEvent) => {
-    // Descarrega imediatamente qualquer quadro de pointerMove pendente antes de finalizar o comando
+    // Cancela imediatamente qualquer quadro de pointerMove pendente
     if (pointerMoveRafRef.current !== null) {
       cancelAnimationFrame(pointerMoveRafRef.current);
       pointerMoveRafRef.current = null;
     }
-    if (pendingPointerMoveRef.current) {
+    const isMultitouchNow =
+      touchInteractionStateRef.current === "MULTITOUCH_NAVIGATION" ||
+      touchInteractionStateRef.current === "POST_GESTURE_COOLDOWN" ||
+      pinchRef.current !== null ||
+      ptrsRef.current.size >= 2;
+
+    if (isMultitouchNow) {
+      pendingPointerMoveRef.current = null;
+    } else if (pendingPointerMoveRef.current) {
       const pendingEv = pendingPointerMoveRef.current;
       pendingPointerMoveRef.current = null;
       flushPointerMoveFrame(pendingEv.clientX, pendingEv.clientY, pendingEv.pointerType);
-    } else if (ev && pending.length === 1 && draftRef.current && !pinchRef.current && !panRef.current && !orbitDragRef.current) {
+    } else if (ev && pending.length === 1 && draftRef.current && !panRef.current && !orbitDragRef.current) {
       flushPointerMoveFrame(ev.clientX, ev.clientY, ev.pointerType || lastPointerTypeRef.current || "mouse");
     }
 
@@ -4692,21 +4811,34 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (longPressRef.current) clearTimeout(longPressRef.current.timer);
     longPressRef.current = null;
     if (ev) ptrsRef.current.delete(ev.pointerId);
-    const wasPinching = pinchRef.current !== null;
-    if (wasPinching && ptrsRef.current.size < 2) {
-      pinchRef.current = null;
-      gestureUntilRef.current = performance.now() + 350;
-      dragCooldownUntilRef.current = performance.now() + 150;
-      // continua o pan com o dedo restante, sem salto
-      const rest = [...ptrsRef.current.values()][0];
+
+    const wasMultitouch =
+      pinchRef.current !== null || touchInteractionStateRef.current === "MULTITOUCH_NAVIGATION";
+    if (wasMultitouch) {
+      if (ptrsRef.current.size < 2) {
+        pinchRef.current = null;
+      }
       panRef.current = null;
-      return;
-    }
-    if (wasPinching) {
-      dragCooldownUntilRef.current = performance.now() + 150;
       orbitDragRef.current = null;
+      if (ptrsRef.current.size === 0) {
+        touchInteractionStateRef.current = "POST_GESTURE_COOLDOWN";
+        setTouchInteractionState("POST_GESTURE_COOLDOWN");
+        gestureUntilRef.current = performance.now() + 200;
+        dragCooldownUntilRef.current = performance.now() + 200;
+        if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+        cooldownTimerRef.current = setTimeout(() => {
+          touchInteractionStateRef.current = "IDLE";
+          setTouchInteractionState("IDLE");
+        }, 200);
+      }
       return;
     }
+
+    if (ptrsRef.current.size === 0 && touchInteractionStateRef.current === "SINGLE_POINTER") {
+      touchInteractionStateRef.current = "IDLE";
+      setTouchInteractionState("IDLE");
+    }
+
     panRef.current = null;
     if (orbitDragRef.current) {
       orbitDragRef.current = null;
@@ -4799,10 +4931,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const box = boxOf(activeDraft);
       const empty = box.maxX - box.minX < 0.01 && box.maxY - box.minY < 0.01;
       if (!empty) {
-        const finalEntity: Entity =
+        const hasAnyLockedConstraint =
+          lockedConstraints.lockedL != null ||
+          lockedConstraints.lockedDx != null ||
+          lockedConstraints.lockedDy != null ||
+          lockedConstraints.lockedDist != null;
+        const baseFinal: Entity =
           !activeDraft.id || activeDraft.id === "draft" || activeDraft.id.startsWith("draft-")
             ? { ...activeDraft, id: uid() }
             : activeDraft;
+        const finalEntity: Entity = hasAnyLockedConstraint
+          ? {
+              ...baseFinal,
+              params: {
+                ...baseFinal.params,
+                lockedConstraints: { ...lockedConstraints },
+              },
+            }
+          : baseFinal;
         commit((e) => [...e, finalEntity]);
         // Desenho contínuo: tela limpa e pronta para o próximo traço (NÃO abre propriedades automaticamente)
         setSelection([]);
@@ -4861,10 +5007,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
       // 2. Desloca o cursor ativo com precisão cirúrgica e atualiza o draft/cotas em tempo real
       const basePt = (smartSnap ?? snapHit)?.p ?? cursor;
-      const nextCursor = {
+      const rawNextCursor = {
         x: Number((basePt.x + delta.x).toFixed(4)),
         y: Number((basePt.y + delta.y).toFixed(4)),
       };
+      const anchorForConstraint =
+        interactionGuideMode === "purple_ref" && temporaryOrigin
+          ? temporaryOrigin.p
+          : pending.length > 0
+            ? pending[pending.length - 1]!
+            : null;
+      const nextCursor = anchorForConstraint
+        ? applyDimensionalConstraintsToPoint(
+            anchorForConstraint,
+            rawNextCursor,
+            lockedConstraints,
+          )
+        : rawNextCursor;
       setSmartSnap(null);
       setSnapHit(null);
       setCursor(nextCursor);
@@ -4872,8 +5031,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
       if (activeEdge) {
         setLiveDimensions(DynamicDimensionInteraction.generateEdgeOffsetDimensions(nextCursor, activeEdge, activeEdgeSide));
-      } else if (temporaryOrigin) {
-        setLiveDimensions(DynamicDimensionInteraction.generateRefOriginDimensions(nextCursor, temporaryOrigin));
+      } else {
+        setLiveDimensions([]);
       }
 
       if (tool === "polyline" && pending.length > 0) {
@@ -4924,6 +5083,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       temporaryOrigin,
       activeLayer,
       filletR,
+      interactionGuideMode,
+      lockedConstraints,
     ],
   );
 
@@ -6601,7 +6762,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             onSetSnapDivision={setSnapDivision}
             showAllSnaps={showAllSnaps}
             onToggleShowAllSnaps={() => setShowAllSnaps((v) => !v)}
+            interactionGuideMode={interactionGuideMode}
+            onSetInteractionGuideMode={handleSetInteractionGuideMode}
             onStartSetReferencePoint={() => {
+              if (interactionGuideMode !== "purple_ref") {
+                handleSetInteractionGuideMode("purple_ref");
+              }
               setIsSettingReferencePoint(true);
               toast.info("Toque no vértice, centro ou ponto desejado para fixar a REF");
             }}
@@ -7804,55 +7970,161 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               )}
 
               {/* OVERLAY DE COTAS VIVAS, REF 0,0 E BORDA ATIVA */}
-              <ChamferLiveDimensionsOverlay
-                temporaryOrigin={temporaryOrigin}
-                activeEdge={activeEdge}
-                activeEdgeSide={activeEdgeSide}
-                liveDimensions={liveDimensions}
-                viewK={view.k}
-                isDark={isDark}
-                cursor={cursor}
-                pendingShape={pendingShapeSpec}
-                onEditDelta={(axis, currentVal, screenPos) => {
-                  const pStart = temporaryOrigin?.p ?? { x: 0, y: 0 };
-                  const targetDim: LiveDimension = {
-                    id: `ref-${axis}`,
-                    kind: axis,
-                    value: currentVal,
-                    label: `Δ${axis.toUpperCase()}`,
-                    startPoint: pStart,
-                    endPoint: cursor,
-                    midPoint: { x: (pStart.x + cursor.x) / 2, y: (pStart.y + cursor.y) / 2 },
-                    normalDir: axis === "dx" ? { x: 0, y: 1 } : { x: 1, y: 0 },
-                    isEditable: true,
-                    targetKey: axis,
-                  };
-                  setLiveDimEditor({
-                    dim: targetDim,
-                    screenPos,
-                    currentValue: currentVal,
-                    label: `Δ${axis.toUpperCase()} a partir da REF (mm)`,
-                    allowInvert: false,
-                  });
-                }}
-                onDimensionClick={(dim, screenPos) => {
-                  setLiveDimEditor({
-                    dim,
-                    screenPos,
-                    currentValue: dim.value,
-                    label: dim.label,
-                    allowInvert: dim.kind === "offset",
-                  });
-                }}
-                onClearTemporaryOrigin={() => {
-                  setTemporaryOrigin(null);
-                  toast.success("Origem temporária limpa");
-                }}
-                onInvertEdgeSide={() => {
-                  setActiveEdgeSide((prev) => (prev === 1 ? -1 : 1));
-                  triggerHaptic("selection");
-                }}
-              />
+              {(() => {
+                const selectedSingleLine =
+                  selection.length === 1 && pending.length === 0
+                    ? entities.find((e) => e.id === selection[0] && e.type === "line")
+                    : null;
+                const activeStartPt: Vec2 | null =
+                  pending.length > 0
+                    ? pending[pending.length - 1]!
+                    : selectedSingleLine && selectedSingleLine.type === "line"
+                      ? { x: selectedSingleLine.x1, y: selectedSingleLine.y1 }
+                      : null;
+                const overlayCursor: Vec2 =
+                  selectedSingleLine && selectedSingleLine.type === "line" && pending.length === 0
+                    ? { x: selectedSingleLine.x2, y: selectedSingleLine.y2 }
+                    : cursor;
+                const effectiveConstraints: DimensionalConstraints =
+                  selectedSingleLine?.params?.lockedConstraints &&
+                  typeof selectedSingleLine.params.lockedConstraints === "object"
+                    ? {
+                        ...lockedConstraints,
+                        ...(selectedSingleLine.params.lockedConstraints as DimensionalConstraints),
+                      }
+                    : lockedConstraints;
+
+                return (
+                  <ChamferLiveDimensionsOverlay
+                    temporaryOrigin={temporaryOrigin}
+                    activeEdge={activeEdge}
+                    activeEdgeSide={activeEdgeSide}
+                    liveDimensions={liveDimensions}
+                    viewK={view.k}
+                    isDark={isDark}
+                    cursor={overlayCursor}
+                    activeStartPoint={activeStartPt}
+                    pendingShape={pendingShapeSpec}
+                    interactionGuideMode={interactionGuideMode}
+                    lockedConstraints={effectiveConstraints}
+                    isMultitouchNavigating={
+                      touchInteractionState === "MULTITOUCH_NAVIGATION" ||
+                      touchInteractionState === "POST_GESTURE_COOLDOWN"
+                    }
+                    onEditMeasure={(kind, currentVal, screenPos) => {
+                      preEditKeypadSnapshotRef.current = {
+                        cursor: { ...cursor },
+                        draft: draft ? { ...draft } : null,
+                      };
+                      const anchorPt =
+                        interactionGuideMode === "purple_ref" && temporaryOrigin
+                          ? temporaryOrigin.p
+                          : activeStartPt ?? { x: 0, y: 0 };
+                      const dimKindMap: Record<ConstrainableMeasureKind, "dx" | "dy" | "length" | "distance"> = {
+                        dx: "dx",
+                        dy: "dy",
+                        L: "length",
+                        d: "distance",
+                      };
+                      const labelMap: Record<ConstrainableMeasureKind, string> = {
+                        dx:
+                          interactionGuideMode === "purple_ref"
+                            ? "ΔX a partir da REF (mm)"
+                            : "ΔX da Linha (mm)",
+                        dy:
+                          interactionGuideMode === "purple_ref"
+                            ? "ΔY a partir da REF (mm)"
+                            : "ΔY da Linha (mm)",
+                        L: "Comprimento L da Linha (mm)",
+                        d: "Distância Direta d da REF (mm)",
+                      };
+                      const isCurrentlyLocked =
+                        (kind === "L" && effectiveConstraints.lockedL != null) ||
+                        (kind === "dx" && effectiveConstraints.lockedDx != null) ||
+                        (kind === "dy" && effectiveConstraints.lockedDy != null) ||
+                        (kind === "d" && effectiveConstraints.lockedDist != null);
+
+                      const targetDim: LiveDimension = {
+                        id: `guide-${kind}`,
+                        kind: dimKindMap[kind],
+                        value: currentVal,
+                        label: labelMap[kind],
+                        startPoint: anchorPt,
+                        endPoint: overlayCursor,
+                        midPoint: {
+                          x: (anchorPt.x + overlayCursor.x) / 2,
+                          y: (anchorPt.y + overlayCursor.y) / 2,
+                        },
+                        normalDir: kind === "dx" ? { x: 0, y: 1 } : { x: 1, y: 0 },
+                        isEditable: true,
+                        targetKey: kind === "L" ? "length" : kind === "d" ? "distance" : kind,
+                        entityId: selectedSingleLine?.id,
+                      };
+                      setLiveDimEditor({
+                        dim: targetDim,
+                        screenPos,
+                        currentValue: currentVal,
+                        label: labelMap[kind],
+                        allowInvert: false,
+                        measureKind: kind,
+                        initialLocked: isCurrentlyLocked,
+                      });
+                    }}
+                    onEditDelta={(axis, currentVal, screenPos) => {
+                      preEditKeypadSnapshotRef.current = {
+                        cursor: { ...cursor },
+                        draft: draft ? { ...draft } : null,
+                      };
+                      const pStart = temporaryOrigin?.p ?? { x: 0, y: 0 };
+                      const targetDim: LiveDimension = {
+                        id: `ref-${axis}`,
+                        kind: axis,
+                        value: currentVal,
+                        label: `Δ${axis.toUpperCase()}`,
+                        startPoint: pStart,
+                        endPoint: cursor,
+                        midPoint: { x: (pStart.x + cursor.x) / 2, y: (pStart.y + cursor.y) / 2 },
+                        normalDir: axis === "dx" ? { x: 0, y: 1 } : { x: 1, y: 0 },
+                        isEditable: true,
+                        targetKey: axis,
+                      };
+                      setLiveDimEditor({
+                        dim: targetDim,
+                        screenPos,
+                        currentValue: currentVal,
+                        label: `Δ${axis.toUpperCase()} a partir da REF (mm)`,
+                        allowInvert: false,
+                        measureKind: axis,
+                        initialLocked:
+                          axis === "dx"
+                            ? effectiveConstraints.lockedDx != null
+                            : effectiveConstraints.lockedDy != null,
+                      });
+                    }}
+                    onDimensionClick={(dim, screenPos) => {
+                      preEditKeypadSnapshotRef.current = {
+                        cursor: { ...cursor },
+                        draft: draft ? { ...draft } : null,
+                      };
+                      setLiveDimEditor({
+                        dim,
+                        screenPos,
+                        currentValue: dim.value,
+                        label: dim.label,
+                        allowInvert: dim.kind === "offset",
+                      });
+                    }}
+                    onClearTemporaryOrigin={() => {
+                      setTemporaryOrigin(null);
+                      toast.success("Origem temporária limpa");
+                    }}
+                    onInvertEdgeSide={() => {
+                      setActiveEdgeSide((prev) => (prev === 1 ? -1 : 1));
+                      triggerHaptic("selection");
+                    }}
+                  />
+                );
+              })()}
 
               {/* SMART TRIM SVG PREVIEW */}
               {tool === "smart_trim" && (
@@ -9848,20 +10120,160 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
-      {/* EDIÇÃO DIRETA DE COTAS VIVAS NO CANVAS (SMART DIMENSIONS & OFFSET) */}
+      {/* EDIÇÃO DIRETA DE COTAS VIVAS NO CANVAS (TECLADO NUMÉRICO CAD INTEGRADO + RESTRIÇÕES DIMENSIONAIS) */}
       {liveDimEditor && (
         <ChamferDirectDimensionEditor
           open={true}
-          onClose={() => setLiveDimEditor(null)}
+          onClose={() => {
+            if (preEditKeypadSnapshotRef.current) {
+              setCursor(preEditKeypadSnapshotRef.current.cursor);
+              setDraft(preEditKeypadSnapshotRef.current.draft);
+              preEditKeypadSnapshotRef.current = null;
+            }
+            setLiveDimEditor(null);
+          }}
           screenPos={liveDimEditor.screenPos}
           currentValue={liveDimEditor.currentValue}
           label={liveDimEditor.label}
           allowInvert={liveDimEditor.allowInvert}
+          allowLock={Boolean(liveDimEditor.measureKind)}
+          initialLocked={Boolean(liveDimEditor.initialLocked)}
+          allowNegative={
+            liveDimEditor.measureKind === "dx" || liveDimEditor.measureKind === "dy"
+          }
           onInvertSide={() => {
             setActiveEdgeSide((prev) => (prev === 1 ? -1 : 1));
             triggerHaptic("selection");
           }}
-          onConfirm={(newVal) => {
+          onPreviewChange={(previewVal) => {
+            if (!liveDimEditor.measureKind) return;
+            const tempConstraints: DimensionalConstraints = { ...lockedConstraints };
+            if (liveDimEditor.measureKind === "L") tempConstraints.lockedL = previewVal;
+            if (liveDimEditor.measureKind === "dx") {
+              tempConstraints.lockedDx = Math.abs(previewVal);
+              tempConstraints.signDx = previewVal >= 0 ? 1 : -1;
+            }
+            if (liveDimEditor.measureKind === "dy") {
+              tempConstraints.lockedDy = Math.abs(previewVal);
+              tempConstraints.signDy = previewVal >= 0 ? 1 : -1;
+            }
+            if (liveDimEditor.measureKind === "d") tempConstraints.lockedDist = previewVal;
+
+            const anchorPt = liveDimEditor.dim.startPoint;
+            const nextPt = applyDimensionalConstraintsToPoint(
+              anchorPt,
+              liveDimEditor.dim.endPoint,
+              tempConstraints,
+            );
+            setCursor(nextPt);
+            if (pending.length === 1) {
+              setDraft(
+                buildDraft(
+                  tool,
+                  pending[0]!,
+                  nextPt,
+                  activeLayer,
+                  filletR,
+                  drawingProjection,
+                  isoPlane,
+                ),
+              );
+            }
+          }}
+          onConfirm={(newVal, lockMeasure) => {
+            const mKind = liveDimEditor.measureKind;
+            if (mKind) {
+              const anchorPt = liveDimEditor.dim.startPoint;
+              const currentDelta = {
+                dx: liveDimEditor.dim.endPoint.x - anchorPt.x,
+                dy: liveDimEditor.dim.endPoint.y - anchorPt.y,
+              };
+              const validation = validateDimensionalConstraint(
+                lockedConstraints,
+                mKind,
+                newVal,
+                Boolean(lockMeasure),
+                currentDelta,
+              );
+              if (!validation.valid) {
+                toast.error(validation.conflictMessage ?? "Restrição dimensional incompatível.");
+                return;
+              }
+              setLockedConstraints(validation.updatedConstraints);
+
+              // Aplica o valor recém-confirmado sobre o ponto alvo (mesmo que não fique travado permanentemente)
+              const oneShotValidation = validateDimensionalConstraint(
+                lockedConstraints,
+                mKind,
+                newVal,
+                true,
+                currentDelta,
+              );
+              const constrainedPt = applyDimensionalConstraintsToPoint(
+                anchorPt,
+                liveDimEditor.dim.endPoint,
+                oneShotValidation.valid ? oneShotValidation.updatedConstraints : validation.updatedConstraints,
+              );
+
+              setCursor(constrainedPt);
+              setLoupeCadPos(constrainedPt);
+
+              // Se há uma linha única selecionada (em SEL), atualiza atomicamente a entidade + restrição
+              if (liveDimEditor.dim.entityId) {
+                const targetId = liveDimEditor.dim.entityId;
+                commit((prev) =>
+                  prev.map((ent) => {
+                    if (ent.id !== targetId || ent.type !== "line") return ent;
+                    const prevLocked =
+                      (ent.params?.lockedConstraints as DimensionalConstraints | undefined) ?? {};
+                    const nextEntLocked: DimensionalConstraints = { ...prevLocked };
+                    if (lockMeasure) {
+                      if (mKind === "L") nextEntLocked.lockedL = newVal;
+                      if (mKind === "dx") nextEntLocked.lockedDx = newVal;
+                      if (mKind === "dy") nextEntLocked.lockedDy = newVal;
+                      if (mKind === "d") nextEntLocked.lockedDist = newVal;
+                    } else {
+                      if (mKind === "L") delete nextEntLocked.lockedL;
+                      if (mKind === "dx") delete nextEntLocked.lockedDx;
+                      if (mKind === "dy") delete nextEntLocked.lockedDy;
+                      if (mKind === "d") delete nextEntLocked.lockedDist;
+                    }
+                    return {
+                      ...ent,
+                      x2: constrainedPt.x,
+                      y2: constrainedPt.y,
+                      params: {
+                        ...ent.params,
+                        lockedConstraints: nextEntLocked,
+                      },
+                    };
+                  }),
+                );
+              } else if (pending.length === 1) {
+                setDraft(
+                  buildDraft(
+                    tool,
+                    pending[0]!,
+                    constrainedPt,
+                    activeLayer,
+                    filletR,
+                    drawingProjection,
+                    isoPlane,
+                  ),
+                );
+              }
+
+              preEditKeypadSnapshotRef.current = null;
+              triggerHaptic("success");
+              toast.success(
+                lockMeasure
+                  ? `🔒 ${mKind === "dx" ? "ΔX" : mKind === "dy" ? "ΔY" : mKind} fixado em ${newVal.toFixed(1)} mm`
+                  : `✓ ${mKind === "dx" ? "ΔX" : mKind === "dy" ? "ΔY" : mKind} ajustado para ${newVal.toFixed(1)} mm`,
+              );
+              setLiveDimEditor(null);
+              return;
+            }
+
             const result = DimensionInteractionEngine.applyDimension({
               dim: liveDimEditor.dim,
               newValue: newVal,
@@ -9898,6 +10310,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             if (liveDimEditor.dim.kind === "offset") {
               setActiveEdgeOffset(newVal);
             }
+            preEditKeypadSnapshotRef.current = null;
             triggerHaptic("success");
             toast.success(`✓ ${result.message}`);
             setLiveDimEditor(null);

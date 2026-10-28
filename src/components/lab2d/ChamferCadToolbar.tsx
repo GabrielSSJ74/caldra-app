@@ -165,11 +165,13 @@ interface ChamferCadToolbarProps {
   nudgeHudVisible?: boolean;
   onToggleNudgeHud?: () => void;
 
-  // Divisão do Snap e Visualização Global (Upgrade PRE)
+  // Divisão do Snap, Guias de Interação Exclusivas e Visualização Global (Upgrade PRE)
   snapDivision?: number;
   onSetSnapDivision?: (n: number) => void;
   showAllSnaps?: boolean;
   onToggleShowAllSnaps?: () => void;
+  interactionGuideMode?: "off" | "purple_ref" | "blue_line";
+  onSetInteractionGuideMode?: (mode: "off" | "purple_ref" | "blue_line") => void;
   onStartSetReferencePoint?: () => void;
   temporaryOrigin?: { p: { x: number; y: number }; label: string } | null;
   onClearTemporaryOrigin?: () => void;
@@ -260,6 +262,8 @@ export function ChamferCadToolbar({
   onSetSnapDivision,
   showAllSnaps = false,
   onToggleShowAllSnaps,
+  interactionGuideMode = "blue_line",
+  onSetInteractionGuideMode,
   onStartSetReferencePoint,
   temporaryOrigin,
   onClearTemporaryOrigin,
@@ -1322,11 +1326,74 @@ export function ChamferCadToolbar({
                       <span className="font-bold">{showAllSnaps ? "ON" : "OFF"}</span>
                     </button>
 
-                    {/* PONTO DE REFERÊNCIA DINÂMICO (QUADRADO ADAPTÁVEL E CRUZ ROXA) */}
+                    {/* SELETOR EXCLUSIVO: GUIAS DE INTERAÇÃO */}
+                    <div className="flex flex-col gap-1.5 p-2 rounded-xl bg-slate-900/95 border border-slate-800">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-slate-200 font-bold uppercase tracking-wider">
+                          GUIAS DE INTERAÇÃO
+                        </span>
+                        <span className="font-mono text-[9px] text-slate-400">Exclusivo</span>
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        {(
+                          [
+                            {
+                              id: "off" as const,
+                              label: "Desativadas",
+                              activeClass: "bg-slate-700 text-white border-slate-500",
+                            },
+                            {
+                              id: "purple_ref" as const,
+                              label: "Referência Roxa — REF",
+                              activeClass: "bg-purple-950/80 text-purple-300 border-purple-500/60",
+                            },
+                            {
+                              id: "blue_line" as const,
+                              label: "Criação de Linha Azul",
+                              activeClass: "bg-sky-950/80 text-sky-300 border-sky-500/60",
+                            },
+                          ]
+                        ).map((opt) => {
+                          const isSelected = interactionGuideMode === opt.id;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic("selection");
+                                onSetInteractionGuideMode?.(opt.id);
+                              }}
+                              className={cn(
+                                "flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[10.5px] font-bold transition-all border text-left",
+                                isSelected
+                                  ? opt.activeClass
+                                  : "bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200",
+                              )}
+                            >
+                              <span>{opt.label}</span>
+                              <span
+                                className={cn(
+                                  "size-2.5 rounded-full border",
+                                  isSelected
+                                    ? opt.id === "purple_ref"
+                                      ? "bg-purple-400 border-purple-200"
+                                      : opt.id === "blue_line"
+                                        ? "bg-sky-400 border-sky-200"
+                                        : "bg-slate-200 border-white"
+                                    : "border-slate-600 bg-transparent",
+                                )}
+                              />
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* PONTO DE REFERÊNCIA DINÂMICO (REF) */}
                     <div className="flex flex-col gap-1.5 p-2 rounded-xl bg-purple-950/40 border border-purple-500/40">
                       <div className="flex items-center justify-between text-[10px]">
                         <span className="text-purple-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
-                          <Crosshair className="size-3 text-purple-400" />
+                          <Crosshair className="size-3 text-rose-500" />
                           Ponto de Referência (REF)
                         </span>
                         {temporaryOrigin && (
@@ -1338,17 +1405,15 @@ export function ChamferCadToolbar({
                             }}
                             className="text-[9px] text-red-400 hover:text-red-300 font-bold uppercase px-1.5 py-0.5 rounded bg-red-950/60 transition-colors"
                           >
-                            Limpar
+                            Limpar REF
                           </button>
                         )}
                       </div>
-                      <p className="text-[9px] text-purple-200/70 leading-tight">
-                        Fixa âncora com cruz roxa pontilhada e quadrado adaptável com cotas ao vivo (ΔX, ΔY e d).
-                      </p>
                       <button
                         type="button"
                         onClick={() => {
                           triggerHaptic("action");
+                          onSetInteractionGuideMode?.("purple_ref");
                           onStartSetReferencePoint?.();
                           setOpenCat("none");
                         }}
