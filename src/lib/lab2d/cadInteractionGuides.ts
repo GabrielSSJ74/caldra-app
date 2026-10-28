@@ -7,7 +7,7 @@
  */
 
 import type { Vec2 } from "@/lib/geometry/types";
-import type { Entity } from "./types";
+import type { Entity } from "./core";
 
 export type InteractionGuideMode = "off" | "purple_ref" | "blue_line";
 

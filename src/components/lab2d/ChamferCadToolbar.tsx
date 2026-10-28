@@ -1847,7 +1847,7 @@ export function ChamferCadToolbar({
                       icon={CircleDot}
                       onClick={() => {
                         onAddHole();
-                        setOpenCat("none");
+                        if (!isPinned) setOpenCat("none");
                       }}
                       desc="Furo passante, cego ou escareado"
                     />
@@ -1856,7 +1856,7 @@ export function ChamferCadToolbar({
                       icon={Sliders}
                       onClick={() => {
                         triggerHaptic("tap");
-                        setOpenCat("none");
+                        if (!isPinned) setOpenCat("none");
                       }}
                       desc="Especificação de rosca métrica"
                     />
@@ -1865,7 +1865,7 @@ export function ChamferCadToolbar({
                       icon={Copy}
                       onClick={() => {
                         onArrayLinear();
-                        setOpenCat("none");
+                        if (!isPinned) setOpenCat("none");
                       }}
                       desc="Repetição de furos em linha X/Y"
                     />
@@ -1874,7 +1874,7 @@ export function ChamferCadToolbar({
                       icon={RotateCw}
                       onClick={() => {
                         onArrayPolar();
-                        setOpenCat("none");
+                        if (!isPinned) setOpenCat("none");
                       }}
                       desc="Furação distribuída em flange circular (PCD)"
                     />

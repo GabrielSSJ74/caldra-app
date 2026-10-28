@@ -213,6 +213,7 @@ import {
   computeInstances,
   validateArray,
   getGroupCenter,
+  getEntityArraySpec,
   type ArrayType,
   type PolarArrayParams,
   type LinearArrayParams,
@@ -255,6 +256,9 @@ import {
   type SmartReferencePoint,
 } from "@/lib/lab2d/cadReferenceSnaps";
 import {
+  CRIMSON_RED_CENTER,
+  CRIMSON_RED_RING,
+  computeFlowDashOffset,
   loadInteractionGuideMode,
   saveInteractionGuideMode,
   validateDimensionalConstraint,
@@ -1002,6 +1006,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   /* FERRAMENTAS DE ARRAYS INTELIGENTES (POLAR E LINEAR) */
   const [activeArrayType, setActiveArrayType] = useState<ArrayType | null>(null);
+  const [editingArrayGroupId, setEditingArrayGroupId] = useState<string | null>(null);
+  const isDraggingArrayCenterRef = useRef<boolean>(false);
+  const [arrayAnimNowMs, setArrayAnimNowMs] = useState<number>(0);
   const [arrayPolarParams, setArrayPolarParams] = useState<PolarArrayParams>({
     center: { x: 0, y: 0 },
     count: 6,
@@ -1010,14 +1017,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     clockwise: false,
     rotateItems: true,
     includeOriginal: true,
+    skippedIndices: [],
   });
   const [arrayLinearParams, setArrayLinearParams] = useState<LinearArrayParams>({
     rows: 2,
     cols: 3,
     dx: 40,
     dy: 40,
+    modeX: "fixed_step",
+    modeY: "fixed_step",
+    spanX: 80,
+    spanY: 40,
+    marginX: 15,
+    marginY: 15,
     angleDeg: 0,
     includeOriginal: true,
+    skippedIndices: [],
   });
   const [arrayHostInfo, setArrayHostInfo] = useState<HostDetectionResult>({
     type: "unknown",
@@ -1027,6 +1042,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     candidateCenters: [],
   });
   const [isArrayPickingCenter, setIsArrayPickingCenter] = useState<boolean>(false);
+
+  // Animação direcional de lineDashOffset no círculo PCD e eixos do Array (Zero-Idle quando fechado)
+  useEffect(() => {
+    if (activeArrayType === null) return;
+    let raf = 0;
+    let last = 0;
+    const loop = (t: number) => {
+      if (t - last >= 33) {
+        last = t;
+        setArrayAnimNowMs(t);
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, [activeArrayType]);
 
   /* FERRAMENTA DIVIDIR */
   const [divideEditorOpen, setDivideEditorOpen] = useState(false);
@@ -1528,7 +1559,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         shouldUseTouchOffset(
           pType,
           tool,
-          dragNode !== null,
+          dragNode !== null || isDraggingArrayCenterRef.current || isArrayPickingCenter,
           isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
           cursorOffsetMode,
           selection.length > 0,
@@ -1557,7 +1588,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       return projectedPt;
     },
-    [tool, dragNode, cursorOffsetMode, selection.length, isOrbitToolActive, solidOpen],
+    [tool, dragNode, isArrayPickingCenter, cursorOffsetMode, selection.length, isOrbitToolActive, solidOpen],
   );
 
   /** Enquadra uma caixa do desenho na viewport com escala proporcional, centralização exata e limites seguros. */
@@ -3129,43 +3160,136 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setTool("select");
   }, []);
 
-  const handleStartArray = useCallback((type: ArrayType) => {
-    if (!selected.length) {
-      toast.info("Toque no furo ou geometria que deseja multiplicar.");
-      setActiveArrayType(type);
-      return;
-    }
+  const initializeArrayFromEntities = useCallback(
+    (targetEntities: Entity[], preferredType?: ArrayType, existingGroupId?: string | null) => {
+      const hostContextEntities = existingGroupId
+        ? entities.filter(
+            (e) => !(e.params?.arrayGroupId === existingGroupId && e.params?.isArrayInstance),
+          )
+        : entities;
+      const host = detectHostPart(
+        hostContextEntities,
+        targetEntities,
+        temporaryOrigin?.p ?? { x: 0, y: 0 },
+      );
+      setArrayHostInfo(host);
 
-    const host = detectHostPart(entities, selected, temporaryOrigin?.p ?? { x: 0, y: 0 });
-    setArrayHostInfo(host);
+      const baseCenter = getGroupCenter(targetEntities);
+      const chosenCenter =
+        host.center ??
+        (temporaryOrigin ? temporaryOrigin.p : { x: baseCenter.x - 50, y: baseCenter.y });
+      const radius = dist(chosenCenter, baseCenter);
+      const startAngleDeg =
+        Math.atan2(baseCenter.y - chosenCenter.y, baseCenter.x - chosenCenter.x) * (180 / Math.PI);
 
-    const baseCenter = getGroupCenter(selected);
-    const chosenCenter = host.center ?? (temporaryOrigin ? temporaryOrigin.p : { x: baseCenter.x - 50, y: baseCenter.y });
-    const radius = dist(chosenCenter, baseCenter);
-    const startAngleDeg = Math.atan2(baseCenter.y - chosenCenter.y, baseCenter.x - chosenCenter.x) * (180 / Math.PI);
-
-    setArrayPolarParams((prev) => ({
-      ...prev,
-      center: chosenCenter,
-      radius,
-      startAngleDeg,
-      count: prev.count || 6,
-    }));
-
-    if (host.sheetBounds) {
-      const stepX = Math.min(60, Math.max(20, Math.round(host.sheetBounds.width / 5)));
-      const stepY = Math.min(60, Math.max(20, Math.round(host.sheetBounds.height / 5)));
-      setArrayLinearParams((prev) => ({
+      setArrayPolarParams((prev) => ({
         ...prev,
-        dx: prev.dx || stepX,
-        dy: prev.dy || stepY,
+        center: chosenCenter,
+        radius,
+        startAngleDeg,
+        count: prev.count || 6,
+        skippedIndices: [],
       }));
-    }
 
-    setActiveArrayType(type);
-    setIsArrayPickingCenter(false);
-    triggerHaptic("selection");
-  }, [selected, entities, temporaryOrigin]);
+      if (host.sheetBounds) {
+        const stepX = Math.min(60, Math.max(20, Math.round(host.sheetBounds.width / 5)));
+        const stepY = Math.min(60, Math.max(20, Math.round(host.sheetBounds.height / 5)));
+        setArrayLinearParams((prev) => ({
+          ...prev,
+          dx: prev.dx || stepX,
+          dy: prev.dy || stepY,
+          spanX: Math.max(40, Math.round(host.sheetBounds!.width * 0.7)),
+          spanY: Math.max(40, Math.round(host.sheetBounds!.height * 0.7)),
+          skippedIndices: [],
+        }));
+      } else {
+        setArrayLinearParams((prev) => ({
+          ...prev,
+          skippedIndices: [],
+        }));
+      }
+
+      if (preferredType) {
+        setActiveArrayType(preferredType);
+      } else {
+        setActiveArrayType(host.suggestedType);
+      }
+    },
+    [entities, temporaryOrigin],
+  );
+
+  const handleStartArray = useCallback(
+    (type: ArrayType) => {
+      setEditingArrayGroupId(null);
+      setIsArrayPickingCenter(false);
+      if (!selected.length) {
+        toast.info("Toque no furo ou geometria que deseja multiplicar.");
+        setActiveArrayType(type);
+        return;
+      }
+
+      // Se a entidade selecionada já pertence a um Array associativo, abre diretamente em modo de reedição
+      const existing = getEntityArraySpec(selected[0]);
+      if (existing) {
+        const { arrayGroupId, spec } = existing;
+        const seedEntities = entities.filter(
+          (e) => e.params?.arrayGroupId === arrayGroupId && !e.params?.isArrayInstance,
+        );
+        const targetSeeds = seedEntities.length > 0 ? seedEntities : [selected[0]!];
+        setSelection(targetSeeds.map((e) => e.id));
+        setEditingArrayGroupId(arrayGroupId);
+        const hostContextEntities = entities.filter(
+          (e) => !(e.params?.arrayGroupId === arrayGroupId && e.params?.isArrayInstance),
+        );
+        const host = detectHostPart(
+          hostContextEntities,
+          targetSeeds,
+          temporaryOrigin?.p ?? { x: 0, y: 0 },
+        );
+        setArrayHostInfo(host);
+        if (spec.polar) setArrayPolarParams(spec.polar);
+        if (spec.linear) setArrayLinearParams(spec.linear);
+        setActiveArrayType(type);
+        triggerHaptic("selection");
+        return;
+      }
+
+      initializeArrayFromEntities(selected, type, null);
+      triggerHaptic("selection");
+    },
+    [selected, entities, temporaryOrigin, initializeArrayFromEntities],
+  );
+
+  const handleEditExistingArray = useCallback(
+    (targetEntity: Entity) => {
+      const existing = getEntityArraySpec(targetEntity);
+      if (!existing) return;
+      const { arrayGroupId, spec } = existing;
+      const seedEntities = entities.filter(
+        (e) => e.params?.arrayGroupId === arrayGroupId && !e.params?.isArrayInstance,
+      );
+      const targetSeeds = seedEntities.length > 0 ? seedEntities : [targetEntity];
+      setSelection(targetSeeds.map((e) => e.id));
+      setEditingArrayGroupId(arrayGroupId);
+      setIsArrayPickingCenter(false);
+
+      const hostContextEntities = entities.filter(
+        (e) => !(e.params?.arrayGroupId === arrayGroupId && e.params?.isArrayInstance),
+      );
+      const host = detectHostPart(
+        hostContextEntities,
+        targetSeeds,
+        temporaryOrigin?.p ?? { x: 0, y: 0 },
+      );
+      setArrayHostInfo(host);
+      if (spec.polar) setArrayPolarParams(spec.polar);
+      if (spec.linear) setArrayLinearParams(spec.linear);
+      setActiveArrayType(spec.type);
+      triggerHaptic("selection");
+      toast.info("Editando padrão existente em tempo real.");
+    },
+    [entities, temporaryOrigin],
+  );
 
   const handleArrayLinear = useCallback(() => {
     handleStartArray("linear");
@@ -3178,59 +3302,107 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const arrayPreview = useMemo(() => {
     if (!activeArrayType || selected.length === 0) return null;
     const spec: ArraySpec = {
-      id: "preview-spec",
+      id: editingArrayGroupId ?? "preview-spec",
       type: activeArrayType,
       sourceEntityIds: selected.map((e) => e.id),
       polar: activeArrayType === "polar" ? arrayPolarParams : undefined,
       linear: activeArrayType === "linear" ? arrayLinearParams : undefined,
     };
-    return computeInstances(spec, selected);
-  }, [activeArrayType, selected, arrayPolarParams, arrayLinearParams]);
+    return computeInstances(spec, selected, arrayHostInfo);
+  }, [activeArrayType, editingArrayGroupId, selected, arrayPolarParams, arrayLinearParams, arrayHostInfo]);
 
   const arrayValidation = useMemo(() => {
     if (!activeArrayType || selected.length === 0) {
-      return { isValid: true, errors: [], warnings: [] };
+      return {
+        isValid: true,
+        errors: [],
+        warnings: [],
+        slotDiagnostics: {},
+        collidingCount: 0,
+        activeCopiesCount: 0,
+        skippedCount: 0,
+        totalPositionsCount: 0,
+      };
     }
     const spec: ArraySpec = {
-      id: "validation-spec",
+      id: editingArrayGroupId ?? "validation-spec",
       type: activeArrayType,
       sourceEntityIds: selected.map((e) => e.id),
       polar: activeArrayType === "polar" ? arrayPolarParams : undefined,
       linear: activeArrayType === "linear" ? arrayLinearParams : undefined,
     };
     return validateArray(spec, selected, arrayHostInfo);
-  }, [activeArrayType, selected, arrayPolarParams, arrayLinearParams, arrayHostInfo]);
+  }, [activeArrayType, editingArrayGroupId, selected, arrayPolarParams, arrayLinearParams, arrayHostInfo]);
 
   const handleCommitArray = useCallback(() => {
     if (!activeArrayType || selected.length === 0) return;
+    const specId = editingArrayGroupId ?? uid();
     const spec: ArraySpec = {
-      id: uid(),
+      id: specId,
       type: activeArrayType,
       sourceEntityIds: selected.map((e) => e.id),
       polar: activeArrayType === "polar" ? arrayPolarParams : undefined,
       linear: activeArrayType === "linear" ? arrayLinearParams : undefined,
     };
-    const { instances } = computeInstances(spec, selected);
-    if (instances.length === 0) {
+    const { instances, repositionedOriginals } = computeInstances(spec, selected, arrayHostInfo);
+    if (instances.length === 0 && !repositionedOriginals) {
       toast.info("Nenhuma cópia gerada.");
       return;
     }
-    commit((prev) => [...prev, ...instances]);
+
+    const selectedIdSet = new Set(selected.map((e) => e.id));
+    const repoMap = new Map<string, Entity>();
+    if (repositionedOriginals) {
+      for (const ro of repositionedOriginals) {
+        repoMap.set(ro.id, ro);
+      }
+    }
+
+    commit((prev) => {
+      // Se estiver reeditando um Array associativo, substitui as cópias anteriores daquele grupo
+      const cleaned = editingArrayGroupId
+        ? prev.filter(
+            (e) => !(e.params?.arrayGroupId === editingArrayGroupId && e.params?.isArrayInstance),
+          )
+        : prev;
+
+      const updatedOriginals = cleaned.map((e) => {
+        if (!selectedIdSet.has(e.id)) return e;
+        const baseEnt = repoMap.get(e.id) ?? e;
+        return {
+          ...baseEnt,
+          params: {
+            ...(baseEnt.params ?? {}),
+            arrayGroupId: specId,
+            isArrayInstance: false,
+            arrayIndex: 0,
+            arraySpec: spec,
+          },
+        };
+      });
+
+      return [...updatedOriginals, ...instances];
+    });
+
     setActiveArrayType(null);
+    setEditingArrayGroupId(null);
     setIsArrayPickingCenter(false);
+    isDraggingArrayCenterRef.current = false;
     setSelection([...selected.map((e) => e.id), ...instances.map((e) => e.id)]);
     triggerHaptic("success");
     AudioManager.play("ui_select");
     toast.success(
       activeArrayType === "polar"
-        ? `Padrão circular gerado (+${instances.length} furos, PCD ${(arrayPolarParams.radius! * 2).toFixed(1)} mm).`
-        : `Padrão linear gerado (+${instances.length} peças).`,
+        ? `Padrão circular aplicado (+${instances.length} cópias, PCD ${((arrayPolarParams.radius ?? 0) * 2).toFixed(1)} mm).`
+        : `Padrão linear aplicado (+${instances.length} cópias).`,
     );
-  }, [activeArrayType, selected, arrayPolarParams, arrayLinearParams, commit]);
+  }, [activeArrayType, editingArrayGroupId, selected, arrayPolarParams, arrayLinearParams, arrayHostInfo, commit]);
 
   const handleCancelArray = useCallback(() => {
     setActiveArrayType(null);
+    setEditingArrayGroupId(null);
     setIsArrayPickingCenter(false);
+    isDraggingArrayCenterRef.current = false;
     triggerHaptic("tap");
     toast.info("Padrão cancelado. Nenhuma alteração gravada.");
   }, []);
@@ -3727,22 +3899,128 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
-    // SELETOR INTERATIVO DE CENTRO DO ARRAY POLAR
-    if (activeArrayType === "polar" && isArrayPickingCenter) {
-      setArrayPolarParams((prev) => {
-        const baseCenter = selected.length > 0 ? getGroupCenter(selected) : p;
-        const radius = dist(p, baseCenter);
-        return {
-          ...prev,
-          center: p,
-          radius,
-          startAngleDeg: Math.atan2(baseCenter.y - p.y, baseCenter.x - p.x) * (180 / Math.PI),
-        };
-      });
-      setIsArrayPickingCenter(false);
-      triggerHaptic("action");
-      toast.success(`Centro do padrão fixado em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm`);
-      return;
+    // INTERAÇÕES DIRETAS DO MOTOR DE ARRAYS INTELIGENTES (PIVO ARRASTÁVEL, SELEÇÃO DE FURO, OMITIR CÓPIAS)
+    if (activeArrayType !== null) {
+      // 1. Se nenhuma peça foi selecionada antes de abrir o Array, o 1º toque seleciona o furo/entidade
+      if (selected.length === 0) {
+        const hit = hitTest(raw) ?? hitTest(directTouchWorld);
+        if (hit) {
+          const nextIds = expandSelection(entities, [hit.id]);
+          const nextEnts = entities.filter((e) => nextIds.includes(e.id));
+          setSelection(nextIds);
+          initializeArrayFromEntities(nextEnts, activeArrayType, null);
+          triggerHaptic("selection");
+        }
+        return;
+      }
+
+      // 2. Modo Polar: Toque ou arraste no Pivô Central Vermelho Carmesim (#DC143C) ou modo "Escolher Centro"
+      if (activeArrayType === "polar") {
+        const pivotTol = (pType === "touch" ? 22 : 16) / view.k;
+        const distToPivot = Math.min(
+          dist(raw, arrayPolarParams.center),
+          dist(directTouchWorld, arrayPolarParams.center),
+        );
+
+        if (isArrayPickingCenter || distToPivot <= pivotTol) {
+          isDraggingArrayCenterRef.current = true;
+          const nextCenter = isArrayPickingCenter ? p : arrayPolarParams.center;
+          if (isArrayPickingCenter) {
+            setArrayPolarParams((prev) => {
+              const baseCenter = selected.length > 0 ? getGroupCenter(selected) : nextCenter;
+              const radius = dist(nextCenter, baseCenter);
+              return {
+                ...prev,
+                center: nextCenter,
+                radius,
+                startAngleDeg:
+                  Math.atan2(baseCenter.y - nextCenter.y, baseCenter.x - nextCenter.x) *
+                  (180 / Math.PI),
+              };
+            });
+            setIsArrayPickingCenter(false);
+            toast.success(
+              `Centro do padrão fixado em (${nextCenter.x.toFixed(1)}, ${nextCenter.y.toFixed(1)}) mm`,
+            );
+          }
+          triggerHaptic("selection");
+          return;
+        }
+
+        // 2b. Toque em um centro candidato (quando confiança MÉDIA / múltiplos centros candidatos)
+        if (arrayHostInfo.candidateCenters.length > 1) {
+          for (const cand of arrayHostInfo.candidateCenters) {
+            if (
+              Math.min(dist(raw, cand.point), dist(directTouchWorld, cand.point)) <=
+              (pType === "touch" ? 20 : 14) / view.k
+            ) {
+              setArrayPolarParams((prev) => {
+                const baseCenter = selected.length > 0 ? getGroupCenter(selected) : cand.point;
+                const radius = dist(cand.point, baseCenter);
+                return {
+                  ...prev,
+                  center: cand.point,
+                  radius,
+                  startAngleDeg:
+                    Math.atan2(baseCenter.y - cand.point.y, baseCenter.x - cand.point.x) *
+                    (180 / Math.PI),
+                };
+              });
+              triggerHaptic("action");
+              toast.success(`Centro selecionado: ${cand.label}`);
+              return;
+            }
+          }
+        }
+      }
+
+      // 3. Toque em qualquer instância fantasma (k >= 1) para Omitir / Restaurar cópia individual (skippedIndices)
+      if (arrayPreview?.ghostSlots) {
+        const baseBox = bbox(selected);
+        const entRadius = baseBox
+          ? Math.max(8 / view.k, Math.hypot(baseBox.maxX - baseBox.minX, baseBox.maxY - baseBox.minY) / 2)
+          : 14 / view.k;
+        const slotHitTol = Math.max((pType === "touch" ? 18 : 14) / view.k, entRadius);
+
+        let bestSlot: { index: number; isSkipped: boolean; d: number } | null = null;
+        for (const slot of arrayPreview.ghostSlots) {
+          if (slot.isOriginal || slot.index < 1) continue;
+          const d = Math.min(dist(raw, slot.center), dist(directTouchWorld, slot.center));
+          if (d <= slotHitTol && (!bestSlot || d < bestSlot.d)) {
+            bestSlot = { index: slot.index, isSkipped: slot.isSkipped, d };
+          }
+        }
+
+        if (bestSlot) {
+          const targetIdx = bestSlot.index;
+          if (activeArrayType === "polar") {
+            setArrayPolarParams((prev) => {
+              const cur = prev.skippedIndices ?? [];
+              const exists = cur.includes(targetIdx);
+              return {
+                ...prev,
+                skippedIndices: exists ? cur.filter((k) => k !== targetIdx) : [...cur, targetIdx],
+              };
+            });
+          } else {
+            setArrayLinearParams((prev) => {
+              const cur = prev.skippedIndices ?? [];
+              const exists = cur.includes(targetIdx);
+              return {
+                ...prev,
+                skippedIndices: exists ? cur.filter((k) => k !== targetIdx) : [...cur, targetIdx],
+              };
+            });
+          }
+          triggerHaptic("selection");
+          toast.info(
+            bestSlot.isSkipped
+              ? `Posição #${targetIdx + 1} restaurada no padrão.`
+              : `Posição #${targetIdx + 1} omitida do padrão (toque novamente para restaurar).`,
+          );
+          return;
+        }
+      }
     }
 
     if (tool === "select" || tool === "node") {
@@ -4550,7 +4828,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const useOffsetMove = shouldUseTouchOffset(
       pType,
       tool,
-      dragNode !== null,
+      dragNode !== null || isDraggingArrayCenterRef.current || isArrayPickingCenter,
       isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
       cursorOffsetMode,
       selection.length > 0,
@@ -4709,6 +4987,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setFilletPreview(null);
         setChamferPreview(null);
       }
+    }
+
+    if (isDraggingArrayCenterRef.current && activeArrayType === "polar") {
+      const p = currentSnapPt;
+      setArrayPolarParams((prev) => {
+        const baseCenter = selected.length > 0 ? getGroupCenter(selected) : p;
+        const radius = dist(p, baseCenter);
+        return {
+          ...prev,
+          center: p,
+          radius,
+          startAngleDeg: Math.atan2(baseCenter.y - p.y, baseCenter.x - p.x) * (180 / Math.PI),
+        };
+      });
+      return;
     }
 
     if (dragNode) {
@@ -4918,6 +5211,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     panRef.current = null;
     if (orbitDragRef.current) {
       orbitDragRef.current = null;
+      return;
+    }
+
+    if (isDraggingArrayCenterRef.current) {
+      isDraggingArrayCenterRef.current = false;
+      setIsArrayPickingCenter(false);
+      triggerHaptic("action");
       return;
     }
 
@@ -8432,27 +8732,103 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   );
                 })()}
 
-              {/* PRÉ-VISUALIZAÇÃO DE PADRÃO GEOMÉTRICO (ARRAY POLAR / LINEAR) */}
+              {/* PRÉ-VISUALIZAÇÃO DE PADRÃO GEOMÉTRICO (ARRAY POLAR / LINEAR ENRIQUECIDO) */}
               {activeArrayType !== null && arrayPreview && (() => {
                 const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
                 const isError = !arrayValidation.isValid;
-                const strokeColor = isError ? "#ef4444" : "#06b6d4";
-                const fillColor = isError ? "#ef4444" : "#06b6d4";
+                const baseStrokeColor = isError ? "#ef4444" : "#06b6d4";
                 const guides = arrayPreview.guides;
+                const pcdCycle = 10 / safeK;
+                const pcdDashOffset =
+                  (arrayPolarParams.clockwise ? 1 : -1) *
+                  computeFlowDashOffset(arrayAnimNowMs, pcdCycle, 0.025 / safeK);
+                const axisCycle = 12 / safeK;
+                const axisDashOffset = computeFlowDashOffset(
+                  arrayAnimNowMs,
+                  axisCycle,
+                  0.03 / safeK,
+                );
+
+                const renderGhostEntity = (
+                  inst: Entity,
+                  keyPrefix: string,
+                  color: string,
+                  opacity: number,
+                  dashed = true,
+                ) => {
+                  if (inst.type === "circle") {
+                    return (
+                      <g key={keyPrefix} opacity={opacity}>
+                        <circle
+                          cx={inst.cx}
+                          cy={inst.cy}
+                          r={inst.r}
+                          fill={color}
+                          fillOpacity={0.14}
+                          stroke={color}
+                          strokeWidth={2 / safeK}
+                          strokeDasharray={dashed ? `${5 / safeK},${3 / safeK}` : undefined}
+                        />
+                        <circle cx={inst.cx} cy={inst.cy} r={2.2 / safeK} fill={color} />
+                      </g>
+                    );
+                  }
+                  if (inst.type === "arc") {
+                    const sweep = inst.a1 - inst.a0;
+                    const large = Math.abs(sweep) > Math.PI ? 1 : 0;
+                    const p0x = inst.cx + inst.r * Math.cos(inst.a0);
+                    const p0y = inst.cy + inst.r * Math.sin(inst.a0);
+                    const p1x = inst.cx + inst.r * Math.cos(inst.a1);
+                    const p1y = inst.cy + inst.r * Math.sin(inst.a1);
+                    const d = `M ${p0x.toFixed(2)} ${p0y.toFixed(2)} A ${inst.r.toFixed(2)} ${inst.r.toFixed(2)} 0 ${large} 1 ${p1x.toFixed(2)} ${p1y.toFixed(2)}`;
+                    return (
+                      <path
+                        key={keyPrefix}
+                        d={d}
+                        fill="none"
+                        stroke={color}
+                        strokeWidth={2 / safeK}
+                        strokeDasharray={dashed ? `${5 / safeK},${3 / safeK}` : undefined}
+                        opacity={opacity}
+                      />
+                    );
+                  }
+                  const segs = segmentsOf(inst);
+                  return (
+                    <g key={keyPrefix} opacity={opacity}>
+                      {segs.map((s, sIdx) => {
+                        if (!s || !s[0] || !s[1]) return null;
+                        return (
+                          <line
+                            key={`${keyPrefix}-seg-${sIdx}`}
+                            x1={s[0].x}
+                            y1={s[0].y}
+                            x2={s[1].x}
+                            y2={s[1].y}
+                            stroke={color}
+                            strokeWidth={2 / safeK}
+                            strokeDasharray={dashed ? `${5 / safeK},${3 / safeK}` : undefined}
+                          />
+                        );
+                      })}
+                    </g>
+                  );
+                };
 
                 return (
                   <g pointerEvents="none" aria-label="Pré-visualização do padrão geométrico">
-                    {/* CÍRCULO PCD GUIA (POLAR) */}
+                    {/* CÍRCULO PCD GUIA COM ANIMAÇÃO DE FLUXO DIRECIONAL (CW / CCW) */}
                     {guides.pcdCircle && Number.isFinite(guides.pcdCircle.cx) && (
                       <circle
                         cx={guides.pcdCircle.cx}
                         cy={guides.pcdCircle.cy}
                         r={guides.pcdCircle.r}
                         fill="none"
-                        stroke={strokeColor}
-                        strokeWidth={1.5 / safeK}
+                        stroke={baseStrokeColor}
+                        strokeWidth={1.6 / safeK}
                         strokeDasharray={`${6 / safeK},${4 / safeK}`}
-                        strokeOpacity={0.7}
+                        strokeDashoffset={pcdDashOffset}
+                        strokeOpacity={0.78}
                       />
                     )}
 
@@ -8464,14 +8840,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         y1={line.y1}
                         x2={line.x2}
                         y2={line.y2}
-                        stroke={strokeColor}
+                        stroke={baseStrokeColor}
                         strokeWidth={1 / safeK}
                         strokeDasharray={`${3 / safeK},${3 / safeK}`}
-                        strokeOpacity={0.4}
+                        strokeOpacity={0.38}
                       />
                     ))}
 
-                    {/* EIXOS DIRECIONAIS (LINEAR) */}
+                    {/* EIXOS DIRECIONAIS X/Y COM ANIMAÇÃO DE FLUXO DIRECIONAL (LINEAR) */}
                     {guides.axes?.map((axis, idx) => (
                       <line
                         key={`guide-axis-${idx}`}
@@ -8479,103 +8855,185 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         y1={axis.y1}
                         x2={axis.x2}
                         y2={axis.y2}
-                        stroke={strokeColor}
+                        stroke={baseStrokeColor}
                         strokeWidth={1.8 / safeK}
                         strokeDasharray={`${8 / safeK},${4 / safeK}`}
-                        strokeOpacity={0.75}
+                        strokeDashoffset={axisDashOffset}
+                        strokeOpacity={0.8}
                       />
                     ))}
 
-                    {/* MARCADOR DE CENTRO PIVÔ ⊕ (POLAR) */}
+                    {/* CENTROS CANDIDATOS (QUANDO CONFIANÇA MÉDIA / MÚLTIPLOS CENTROS) */}
+                    {activeArrayType === "polar" &&
+                      arrayHostInfo.candidateCenters.length > 1 &&
+                      arrayHostInfo.candidateCenters.map((cand, cIdx) => {
+                        const isSelected =
+                          dist(cand.point, arrayPolarParams.center) < 0.1;
+                        if (isSelected) return null;
+                        return (
+                          <g key={`cand-center-${cIdx}`} opacity={0.85}>
+                            <circle
+                              cx={cand.point.x}
+                              cy={cand.point.y}
+                              r={10 / safeK}
+                              fill="rgba(245, 158, 11, 0.12)"
+                              stroke="#f59e0b"
+                              strokeWidth={1.5 / safeK}
+                              strokeDasharray={`${3 / safeK},${2 / safeK}`}
+                            />
+                            <circle
+                              cx={cand.point.x}
+                              cy={cand.point.y}
+                              r={2.5 / safeK}
+                              fill="#f59e0b"
+                            />
+                          </g>
+                        );
+                      })}
+
+                    {/* PIVÔ CENTRAL ARRASTÁVEL VERMELHO CARMESIM (#DC143C) DO PADRÃO POLAR */}
                     {guides.center && Number.isFinite(guides.center.x) && (
                       <g>
                         <circle
                           cx={guides.center.x}
                           cy={guides.center.y}
+                          r={18 / safeK}
+                          fill="rgba(220, 20, 60, 0.08)"
+                          stroke={isArrayPickingCenter ? "#f59e0b" : CRIMSON_RED_RING}
+                          strokeWidth={1.3 / safeK}
+                          strokeDasharray={`${4 / safeK},${3 / safeK}`}
+                        />
+                        <circle
+                          cx={guides.center.x}
+                          cy={guides.center.y}
                           r={7 / safeK}
                           fill="none"
-                          stroke={isArrayPickingCenter ? "#f59e0b" : strokeColor}
+                          stroke={isArrayPickingCenter ? "#f59e0b" : CRIMSON_RED_CENTER}
                           strokeWidth={2 / safeK}
                         />
+                        <circle
+                          cx={guides.center.x}
+                          cy={guides.center.y}
+                          r={3.2 / safeK}
+                          fill={isArrayPickingCenter ? "#f59e0b" : CRIMSON_RED_CENTER}
+                        />
                         <line
-                          x1={guides.center.x - 12 / safeK}
+                          x1={guides.center.x - 13 / safeK}
                           y1={guides.center.y}
-                          x2={guides.center.x + 12 / safeK}
+                          x2={guides.center.x + 13 / safeK}
                           y2={guides.center.y}
-                          stroke={isArrayPickingCenter ? "#f59e0b" : strokeColor}
+                          stroke={isArrayPickingCenter ? "#f59e0b" : CRIMSON_RED_CENTER}
                           strokeWidth={1.5 / safeK}
                         />
                         <line
                           x1={guides.center.x}
-                          y1={guides.center.y - 12 / safeK}
+                          y1={guides.center.y - 13 / safeK}
                           x2={guides.center.x}
-                          y2={guides.center.y + 12 / safeK}
-                          stroke={isArrayPickingCenter ? "#f59e0b" : strokeColor}
+                          y2={guides.center.y + 13 / safeK}
+                          stroke={isArrayPickingCenter ? "#f59e0b" : CRIMSON_RED_CENTER}
                           strokeWidth={1.5 / safeK}
                         />
                       </g>
                     )}
 
-                    {/* INSTÂNCIAS FANTASMA DO PADRÃO */}
-                    {arrayPreview.instances.map((inst) => {
-                      if (inst.type === "circle") {
-                        return (
-                          <g key={inst.id}>
-                            <circle
-                              cx={inst.cx}
-                              cy={inst.cy}
-                              r={inst.r}
-                              fill={fillColor}
-                              fillOpacity={0.12}
-                              stroke={strokeColor}
-                              strokeWidth={2 / safeK}
-                              strokeDasharray={`${5 / safeK},${3 / safeK}`}
-                            />
-                            <circle
-                              cx={inst.cx}
-                              cy={inst.cy}
-                              r={2 / safeK}
-                              fill={strokeColor}
-                            />
-                          </g>
-                        );
-                      }
-                      if (inst.type === "arc") {
-                        const sweep = inst.a1 - inst.a0;
-                        const large = Math.abs(sweep) > Math.PI ? 1 : 0;
-                        const p0x = inst.cx + inst.r * Math.cos(inst.a0);
-                        const p0y = inst.cy + inst.r * Math.sin(inst.a0);
-                        const p1x = inst.cx + inst.r * Math.cos(inst.a1);
-                        const p1y = inst.cy + inst.r * Math.sin(inst.a1);
-                        const d = `M ${p0x.toFixed(2)} ${p0y.toFixed(2)} A ${inst.r.toFixed(2)} ${inst.r.toFixed(2)} 0 ${large} 1 ${p1x.toFixed(2)} ${p1y.toFixed(2)}`;
-                        return (
-                          <path
-                            key={inst.id}
-                            d={d}
-                            fill="none"
-                            stroke={strokeColor}
-                            strokeWidth={2 / safeK}
-                            strokeDasharray={`${5 / safeK},${3 / safeK}`}
-                          />
-                        );
-                      }
-                      const segs = segmentsOf(inst);
-                      return segs.map((s, sIdx) => {
-                        if (!s || !s[0] || !s[1]) return null;
-                        return (
-                          <line
-                            key={`inst-${inst.id}-${sIdx}`}
-                            x1={s[0].x}
-                            y1={s[0].y}
-                            x2={s[1].x}
-                            y2={s[1].y}
-                            stroke={strokeColor}
-                            strokeWidth={2 / safeK}
-                            strokeDasharray={`${5 / safeK},${3 / safeK}`}
-                            strokeOpacity={0.85}
-                          />
-                        );
-                      });
+                    {/* PRÉ-VISUALIZAÇÃO DA SEMENTE k=0 QUANDO REPOSICIONADA ([ ⌖ Centralizar na aba ] ou Auto-Fit) */}
+                    {arrayPreview.repositionedOriginals?.map((origEnt, oIdx) =>
+                      renderGhostEntity(
+                        origEnt,
+                        `repositioned-orig-${oIdx}`,
+                        "#10b981",
+                        0.95,
+                        true,
+                      ),
+                    )}
+
+                    {/* SLOTS FANTASMA (ATIVOS, OMITIDOS E COM DIAGNÓSTICO DE COLISÃO INDIVIDUAL) */}
+                    {arrayPreview.ghostSlots.map((slot) => {
+                      const diag = arrayValidation.slotDiagnostics[slot.index];
+                      const slotColor =
+                        diag?.status === "error"
+                          ? "#ef4444"
+                          : diag?.status === "warning"
+                            ? "#f59e0b"
+                            : "#06b6d4";
+
+                      return (
+                        <g key={`ghost-slot-${slot.index}`}>
+                          {!slot.isOriginal &&
+                            slot.entities.map((inst, eIdx) =>
+                              renderGhostEntity(
+                                inst,
+                                `slot-${slot.index}-ent-${eIdx}`,
+                                slot.isSkipped ? "#64748b" : slotColor,
+                                slot.isSkipped ? 0.32 : 0.9,
+                                true,
+                              ),
+                            )}
+
+                          {/* Ícone ✕ discreto em instâncias omitidas pelo usuário (1-Tap Skip) */}
+                          {slot.isSkipped && !slot.isOriginal && (
+                            <g>
+                              <circle
+                                cx={slot.center.x}
+                                cy={slot.center.y}
+                                r={8 / safeK}
+                                fill="rgba(15, 23, 42, 0.85)"
+                                stroke="#64748b"
+                                strokeWidth={1.2 / safeK}
+                              />
+                              <line
+                                x1={slot.center.x - 4 / safeK}
+                                y1={slot.center.y - 4 / safeK}
+                                x2={slot.center.x + 4 / safeK}
+                                y2={slot.center.y + 4 / safeK}
+                                stroke="#94a3b8"
+                                strokeWidth={1.6 / safeK}
+                              />
+                              <line
+                                x1={slot.center.x + 4 / safeK}
+                                y1={slot.center.y - 4 / safeK}
+                                x2={slot.center.x - 4 / safeK}
+                                y2={slot.center.y + 4 / safeK}
+                                stroke="#94a3b8"
+                                strokeWidth={1.6 / safeK}
+                              />
+                            </g>
+                          )}
+
+                          {/* Badge de colisão individual ("Fora da peça", "Invade furo central", "Colisão entre furos") */}
+                          {!slot.isSkipped && diag?.badge && (
+                            <g
+                              transform={`translate(${slot.center.x}, ${slot.center.y - 14 / safeK})`}
+                            >
+                              <rect
+                                x={-48 / safeK}
+                                y={-9 / safeK}
+                                width={96 / safeK}
+                                height={15 / safeK}
+                                rx={4 / safeK}
+                                fill={
+                                  diag.status === "error"
+                                    ? "rgba(127, 29, 29, 0.92)"
+                                    : "rgba(120, 53, 15, 0.92)"
+                                }
+                                stroke={slotColor}
+                                strokeWidth={1 / safeK}
+                              />
+                              <text
+                                x={0}
+                                y={1.5 / safeK}
+                                textAnchor="middle"
+                                fill="#ffffff"
+                                fontSize={8.5 / safeK}
+                                fontFamily="monospace"
+                                fontWeight="bold"
+                              >
+                                {diag.badge}
+                              </text>
+                            </g>
+                          )}
+                        </g>
+                      );
                     })}
                   </g>
                 );
@@ -8650,7 +9108,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           )}
 
-          {/* HUD DINÂMICO TOUCH CAD (CHIPS INTERATIVOS + PÍLULAS DE MEDIDA + MINI-KEYPAD + DESAMBIGUAÇÃO + PUSH/PULL Z) */}
+          {/* HUD DINÂMICO TOUCH CAD (OCULTO ENQUANTO O HUD DE ARRAY ESTIVER ABERTO PARA ZERO SOBREPOSIÇÃO) */}
+          {activeArrayType === null && (
           <ChamferTouchDynamicHud
             activeTool={tool}
             pendingCount={pending.length}
@@ -8782,6 +9241,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               );
             }}
           />
+          )}
 
           {/* INDICADOR INTERATIVO DE EIXOS 3D (GIZMO X Y Z) — VISÍVEL SOMENTE QUANDO ÓRBITA 3D ESTIVER ATIVA */}
           {isOrbitToolActive && (
@@ -9841,6 +10301,36 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </span>
             )}
           </div>
+
+          {/* REEDIÇÃO ASSOCIATIVA DE PADRÃO (ARRAY) OU ATALHO RÁPIDO PARA MULTIPLICAR */}
+          {(() => {
+            const arrayOwner = selected.find((e) => getEntityArraySpec(e) !== null);
+            if (arrayOwner) {
+              return (
+                <button
+                  type="button"
+                  onClick={() => handleEditExistingArray(arrayOwner)}
+                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-xs font-bold transition-all shadow-sm active:scale-95"
+                  title="Editar Padrão (Array) existente em tempo real"
+                >
+                  <span>⌗ Editar Padrão (Array)</span>
+                </button>
+              );
+            }
+            return (
+              <button
+                type="button"
+                onClick={() => {
+                  const host = detectHostPart(entities, selected, temporaryOrigin?.p ?? { x: 0, y: 0 });
+                  handleStartArray(host.suggestedType);
+                }}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-cyan-500/30 text-cyan-300 font-mono text-xs font-semibold transition-colors"
+                title="Multiplicar em Padrão Circular ou Linear (Array)"
+              >
+                <span>⌗ Array</span>
+              </button>
+            );
+          })()}
 
           {selection.length >= 2 && (
             <button

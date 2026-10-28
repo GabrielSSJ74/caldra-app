@@ -1,22 +1,30 @@
 /**
- * CALDRA / CHAMFER CAD — MOTOR GEOMÉTRICO PURO DE ARRAYS (MATRIZES)
+ * CALDRA / CHAMFER CAD — MOTOR GEOMÉTRICO INDUSTRIAL DE ARRAYS INTELIGENTES (MATRIZES 2D/3D)
  *
- * Suporte a:
- * - Padrão Linear / Retangular (Array 1D/2D)
- * - Padrão Circular / Polar (Array Polar em Flange / PCD)
- *
- * Características:
- * - Fórmulas analíticas fechadas (sem drift de rotações acumuladas)
- * - Tolerância explícita de coincidência (1e-6 mm)
- * - Leitura e inferência inteligente da peça hospedeira (flange concêntrico, chapa)
- * - Validação física de colisões e margens de segurança para fabricação
+ * Suporte completo a:
+ * - Detecção Topológica Real de Peça Hospedeira (Flange Concêntrico, Disco, Chapa Fechada via Ray-Casting)
+ * - Níveis de Confiança Explícitos (ALTA, MÉDIA, BAIXA) com candidatos selecionáveis no canvas
+ * - Padrão Linear / Retangular com os 4 Modos Matemáticos:
+ *   1. Passo Fixo (fixed_step)
+ *   2. Extensão Total (total_span)
+ *   3. Adaptar à Peça / Auto-Fit (auto_fit)
+ *   4. Preencher / Fill Automático (fill)
+ * - Padrão Circular / Polar (PCD) em forma analítica fechada sem erro acumulado,
+ *   suporte a arco parcial (N-1) vs círculo completo (N), centralização na aba do flange
+ *   ([ ⌖ Centralizar na aba ]) e rotação rígida real de entidades não-circulares (slots, polígonos, grupos)
+ * - Omissão individual de instâncias fantasma (skippedIndices com 1 toque)
+ * - Diagnóstico físico em tempo real por instância (Fora da peça, Invade furo central, Colisão entre furos)
+ * - Herança integral de metadados industriais (Furo Ø, Rosca M, Camada) e Reedição Associativa (arrayGroupId)
  */
 
 import type { Vec2 } from "@/lib/geometry/types";
 import type { Entity } from "@/lib/lab2d/core";
-import { uid, dist, rotate, translate, boxOf } from "@/lib/lab2d/core";
+import { uid, dist, rotate, translate, boxOf, pointInPoly, segmentsOf } from "@/lib/lab2d/core";
 
 export const EPSILON = 1e-6;
+export const CONCENTRIC_TOLERANCE_MM = 1e-3;
+export const FLANGE_CENTERLINE_TOLERANCE_MM = 0.1;
+export const MIN_LIGAMENT_MM = 1.5;
 export const DEG_TO_RAD = Math.PI / 180;
 export const RAD_TO_DEG = 180 / Math.PI;
 
@@ -24,52 +32,100 @@ export type ArrayType = "linear" | "polar";
 
 export type HostType = "flange" | "circular_plate" | "sheet" | "unknown";
 
+export type HostConfidence = "high" | "medium" | "low";
+
+export type HostConfidenceLabel = "ALTA" | "MÉDIA" | "BAIXA";
+
+export type LinearDistributionMode = "fixed_step" | "total_span" | "auto_fit" | "fill";
+
 export interface CandidateCenter {
   point: Vec2;
   label: string;
   source: "concentric_flange" | "circle_center" | "bounding_centroid" | "origin_ref";
-  confidence: "high" | "medium" | "low";
+  confidence: HostConfidence;
+  rOuter?: number;
+  rInner?: number;
+}
+
+export interface HostSheetBounds {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  width: number;
+  height: number;
+  freeSpacePosX: number;
+  freeSpaceNegX: number;
+  freeSpacePosY: number;
+  freeSpaceNegY: number;
+  polygon?: Vec2[];
 }
 
 export interface HostDetectionResult {
   type: HostType;
-  confidence: "high" | "medium" | "low";
+  confidence: HostConfidence;
+  confidenceLabel: HostConfidenceLabel;
   description: string;
   center?: Vec2;
   rInner?: number;
   rOuter?: number;
   radius?: number;
   pcd?: number;
+  flangeMidRadius?: number;
+  flangeMidPcd?: number;
+  isOffFlangeCenterline?: boolean;
+  flangeCenterlineOffsetMm?: number;
   suggestedType: ArrayType;
-  sheetBounds?: {
-    minX: number;
-    minY: number;
-    maxX: number;
-    maxY: number;
-    width: number;
-    height: number;
-  };
+  sheetBounds?: HostSheetBounds;
   candidateCenters: CandidateCenter[];
+  internalCutouts?: { center: Vec2; radius: number; id: string }[];
 }
+
+export type PolarLockedField = "count" | "pcd" | "radius" | "totalAngleDeg" | "startAngleDeg";
+export type LinearLockedField =
+  | "cols"
+  | "rows"
+  | "dx"
+  | "dy"
+  | "spanX"
+  | "spanY"
+  | "marginX"
+  | "marginY"
+  | "angleDeg";
 
 export interface PolarArrayParams {
   center: Vec2;
   count: number;
-  totalAngleDeg: number; // ex: 360° para círculo completo
-  startAngleDeg: number; // ângulo do furo original em relação ao centro (+X = 0°)
-  clockwise?: boolean; // padrão: false (anti-horário padrão CAD)
-  rotateItems?: boolean; // padrão: true
-  includeOriginal?: boolean; // padrão: true (a contagem inclui a peça original)
-  radius?: number; // distância ao centro (PCD / 2)
+  totalAngleDeg: number; // 360° para círculo completo; 0 < θ < 360 para arco parcial
+  startAngleDeg: number; // ângulo inicial em graus (+X = 0°)
+  clockwise?: boolean; // false = anti-horário (+1), true = horário (-1)
+  rotateItems?: boolean; // padrão: true (gira orientação própria de slots/polígonos/grupos)
+  includeOriginal?: boolean; // padrão: true (k=0 é a peça original)
+  radius?: number; // PCD / 2
+  repositionOriginalToPcd?: boolean; // true quando usuário aciona [ ⌖ Centralizar na aba ] ou altera PCD
+  skippedIndices?: number[]; // índices k >= 1 omitidos pelo usuário no canvas
+  lockedFields?: Partial<Record<PolarLockedField, boolean>>;
 }
 
 export interface LinearArrayParams {
-  rows: number; // repetições ao longo do eixo Y / secundário
-  cols: number; // repetições ao longo do eixo X / primário
-  dx: number; // espaçamento no eixo X (passo ou extensão)
-  dy: number; // espaçamento no eixo Y
+  mode?: LinearDistributionMode; // "fixed_step" | "total_span" | "auto_fit" | "fill"
+  modeX?: LinearDistributionMode;
+  modeY?: LinearDistributionMode;
+  rows: number; // N_y >= 1
+  cols: number; // N_x >= 1
+  dx: number; // passo X em mm (ou calculado automaticamente nos modos 2/3)
+  dy: number; // passo Y em mm
+  spanX?: number; // extensão total L_x (Modo 2: do 1º ao último centro)
+  spanY?: number; // extensão total L_y (Modo 2: do 1º ao último centro)
+  marginX?: number; // margem às bordas em X (Modos 3 e 4)
+  marginY?: number; // margem às bordas em Y (Modos 3 e 4)
+  dirX?: 1 | -1; // sentido no eixo X (+1 ou -1)
+  dirY?: 1 | -1; // sentido no eixo Y (+1 ou -1)
   angleDeg?: number; // orientação angular do padrão (padrão: 0°)
+  rotateItems?: boolean; // rotacionar itens junto com angleDeg
   includeOriginal?: boolean; // padrão: true
+  skippedIndices?: number[]; // índices lineares k >= 1 omitidos pelo usuário
+  lockedFields?: Partial<Record<LinearLockedField, boolean>>;
 }
 
 export interface ArraySpec {
@@ -80,15 +136,64 @@ export interface ArraySpec {
   linear?: LinearArrayParams;
 }
 
+export type CollisionReasonBadge =
+  | "Fora da peça"
+  | "Invade furo central"
+  | "Colisão entre furos"
+  | "Margem estreita";
+
+export interface SlotCollisionDiagnostic {
+  index: number;
+  status: "ok" | "warning" | "error";
+  badge?: CollisionReasonBadge;
+  message?: string;
+}
+
+export interface ArrayGhostSlot {
+  index: number;
+  row?: number;
+  col?: number;
+  center: Vec2;
+  angleDeltaDeg: number;
+  entities: Entity[];
+  isOriginal: boolean;
+  isSkipped: boolean;
+}
+
 export interface ArrayGuides {
   type: ArrayType;
   // Polar guides
   center?: Vec2;
   pcdCircle?: { cx: number; cy: number; r: number };
-  radialLines?: { x1: number; y1: number; x2: number; y2: number }[];
+  radialLines?: { x1: number; y1: number; x2: number; y2: number; index: number; isSkipped?: boolean }[];
+  clockwise?: boolean;
   // Linear guides
   gridBounds?: { minX: number; minY: number; maxX: number; maxY: number };
-  axes?: { x1: number; y1: number; x2: number; y2: number }[];
+  axes?: { x1: number; y1: number; x2: number; y2: number; axis: "x" | "y" }[];
+}
+
+export interface ComputeInstancesResult {
+  instances: Entity[];
+  repositionedOriginals?: Entity[];
+  ghostSlots: ArrayGhostSlot[];
+  guides: ArrayGuides;
+  resolvedLinear?: {
+    cols: number;
+    rows: number;
+    stepX: number;
+    stepY: number;
+    spanX: number;
+    spanY: number;
+    startOffsetX: number;
+    startOffsetY: number;
+  };
+  resolvedPolar?: {
+    count: number;
+    stepAngleDeg: number;
+    radius: number;
+    pcd: number;
+    startAngleDeg: number;
+  };
 }
 
 export interface ArrayValidationResult {
@@ -96,6 +201,11 @@ export interface ArrayValidationResult {
   errors: string[];
   warnings: string[];
   minClearanceMm?: number;
+  slotDiagnostics: Record<number, SlotCollisionDiagnostic>;
+  collidingCount: number;
+  activeCopiesCount: number;
+  skippedCount: number;
+  totalPositionsCount: number;
 }
 
 // -------------------------------------------------------------
@@ -143,22 +253,177 @@ export function getGroupCenter(entities: Entity[]): Vec2 {
   return { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
 }
 
+/**
+ * Estima o raio efetivo de ocupação da seleção (para checagem de inclusão, colisão e margem).
+ */
+export function getSelectionEffectiveRadius(sourceEntities: Entity[]): number {
+  if (sourceEntities.length === 0) return 0;
+  if (sourceEntities.length === 1 && sourceEntities[0]!.type === "circle") {
+    return sourceEntities[0]!.r;
+  }
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const e of sourceEntities) {
+    const b = boxOf(e);
+    if (b.minX < minX) minX = b.minX;
+    if (b.maxX > maxX) maxX = b.maxX;
+    if (b.minY < minY) minY = b.minY;
+    if (b.maxY > maxY) maxY = b.maxY;
+  }
+  if (!Number.isFinite(minX)) return 0;
+  return Math.max(maxX - minX, maxY - minY) / 2;
+}
+
 export function normalizeAngleDeg(deg: number): number {
   let a = deg % 360;
   if (a < 0) a += 360;
   return a;
 }
 
+/**
+ * Reconstrói polígonos fechados a partir de polilinhas fechadas ou cadeias de linhas conectadas.
+ */
+export function extractClosedPolygons(entities: Entity[]): { pts: Vec2[]; area: number; bounds: { minX: number; minY: number; maxX: number; maxY: number } }[] {
+  const polygons: { pts: Vec2[]; area: number; bounds: { minX: number; minY: number; maxX: number; maxY: number } }[] = [];
+
+  const computeSignedArea = (pts: Vec2[]) => {
+    let a = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const p1 = pts[i]!;
+      const p2 = pts[(i + 1) % pts.length]!;
+      a += p1.x * p2.y - p2.x * p1.y;
+    }
+    return Math.abs(a) / 2;
+  };
+
+  const computeBounds = (pts: Vec2[]) => {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const p of pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return { minX, minY, maxX, maxY };
+  };
+
+  // 1. Polilinhas fechadas diretas
+  for (const e of entities) {
+    if (e.layer === "construcao" || e.layer === "referencia" || e.layer === "cota") continue;
+    if (e.type === "polyline" && e.closed && e.pts.length >= 3) {
+      const area = computeSignedArea(e.pts);
+      if (area > 1) {
+        polygons.push({ pts: e.pts, area, bounds: computeBounds(e.pts) });
+      }
+    }
+  }
+
+  // 2. Cadeias fechadas de segmentos de linha (ex: retângulo formado por 4 linhas)
+  const lines = entities.filter(
+    (e): e is Extract<Entity, { type: "line" }> =>
+      e.type === "line" &&
+      e.layer !== "construcao" &&
+      e.layer !== "referencia" &&
+      e.layer !== "cota",
+  );
+
+  if (lines.length >= 3) {
+    const used = new Set<string>();
+    const tol = 0.05;
+
+    for (const startLine of lines) {
+      if (used.has(startLine.id)) continue;
+      const chain: Vec2[] = [
+        { x: startLine.x1, y: startLine.y1 },
+        { x: startLine.x2, y: startLine.y2 },
+      ];
+      used.add(startLine.id);
+
+      let closed = false;
+      let progress = true;
+      while (progress && !closed) {
+        progress = false;
+        const tail = chain[chain.length - 1]!;
+        for (const cand of lines) {
+          if (used.has(cand.id)) continue;
+          const p1 = { x: cand.x1, y: cand.y1 };
+          const p2 = { x: cand.x2, y: cand.y2 };
+          if (dist(tail, p1) <= tol) {
+            used.add(cand.id);
+            if (dist(p2, chain[0]!) <= tol && chain.length >= 3) {
+              closed = true;
+            } else {
+              chain.push(p2);
+            }
+            progress = true;
+            break;
+          } else if (dist(tail, p2) <= tol) {
+            used.add(cand.id);
+            if (dist(p1, chain[0]!) <= tol && chain.length >= 3) {
+              closed = true;
+            } else {
+              chain.push(p1);
+            }
+            progress = true;
+            break;
+          }
+        }
+      }
+
+      if (closed && chain.length >= 3) {
+        const area = computeSignedArea(chain);
+        if (area > 1) {
+          polygons.push({ pts: chain, area, bounds: computeBounds(chain) });
+        }
+      }
+    }
+  }
+
+  return polygons.sort((a, b) => b.area - a.area);
+}
+
+/**
+ * Distância mínima de um ponto P a qualquer aresta de um polígono fechado.
+ */
+export function minDistanceToPolygonEdges(p: Vec2, poly: Vec2[]): number {
+  if (poly.length < 2) return Infinity;
+  let minD = Infinity;
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i]!;
+    const b = poly[(i + 1) % poly.length]!;
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const l2 = dx * dx + dy * dy;
+    let proj = a;
+    if (l2 > 1e-12) {
+      const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2));
+      proj = { x: a.x + t * dx, y: a.y + t * dy };
+    }
+    const d = dist(p, proj);
+    if (d < minD) minD = d;
+  }
+  return minD;
+}
+
 // -------------------------------------------------------------
-// 1. LEITURA INTELIGENTE DA PEÇA HOSPEDEIRA
+// 1. DETECÇÃO TOPOLÓGICA REAL DA PEÇA HOSPEDEIRA
 // -------------------------------------------------------------
 
 /**
- * Analisa as entidades do projeto e identifica se a seleção está contida
- * em um flange concêntrico (duas circunferências/arcos concêntricos),
- * em um contorno circular simples ou em uma chapa fechada.
+ * Analisa matematicamente as entidades do projeto e identifica a peça hospedeira:
+ * - Flange (Coroa Circular): Pares concêntricos ||C_ext - C_int|| < 1e-3 mm (ou até 0.5 mm)
+ *   onde R_int + r_f <= d(C, P_f) <= R_ext - r_f.
+ * - Disco Circular: Círculo externo que engloba fisicamente o furo.
+ * - Chapa / Contorno Fechado: Polígono fechado testado via Ray-Casting (pointInPoly)
+ *   com cálculo exato de espaço livre interno (+X, -X, +Y, -Y).
+ * - Níveis de Confiança: ALTA (high), MÉDIA (medium), BAIXA (low).
  */
-export function detectHostPart(
+export function detectHostTopology(
   allEntities: Entity[],
   sourceEntities: Entity[],
   projectOrigin: Vec2 = { x: 0, y: 0 },
@@ -169,6 +434,7 @@ export function detectHostPart(
     return {
       type: "unknown",
       confidence: "low",
+      confidenceLabel: "BAIXA",
       description: "Nenhuma entidade selecionada para análise.",
       suggestedType: "polar",
       candidateCenters: [],
@@ -176,32 +442,38 @@ export function detectHostPart(
   }
 
   const sourceCenter = getGroupCenter(sourceEntities);
+  const holeRadius = getSelectionEffectiveRadius(sourceEntities);
   const sourceIds = new Set(sourceEntities.map((e) => e.id));
 
   // Coleta todas as circunferências e arcos do desenho que NÃO fazem parte da seleção
   const otherCircles = allEntities.filter(
-    (e) => (e.type === "circle" || e.type === "arc") && !sourceIds.has(e.id),
+    (e) =>
+      (e.type === "circle" || e.type === "arc") &&
+      !sourceIds.has(e.id) &&
+      e.layer !== "construcao" &&
+      e.layer !== "referencia" &&
+      e.layer !== "cota",
   ) as ((Entity & { type: "circle" }) | (Entity & { type: "arc" }))[];
 
-  // 1. Procura por pares concêntricos (Flange clássico: furo central + borda externa)
+  // 1. Procura por pares concêntricos (Flange: furo central + borda externa)
   const concentricPairs: {
     cInner: Entity & { type: "circle" | "arc" };
     cOuter: Entity & { type: "circle" | "arc" };
     center: Vec2;
     rInner: number;
     rOuter: number;
+    exactConcentric: boolean;
   }[] = [];
 
   for (let i = 0; i < otherCircles.length; i++) {
     for (let j = i + 1; j < otherCircles.length; j++) {
       const c1 = otherCircles[i]!;
       const c2 = otherCircles[j]!;
-      const d = dist({ x: c1.cx, y: c1.cy }, { x: c2.cx, y: c2.cy });
-      // Se compartilham o mesmo centro dentro de 0.5 mm
-      if (d <= 0.5) {
+      const dCenters = dist({ x: c1.cx, y: c1.cy }, { x: c2.cx, y: c2.cy });
+      if (dCenters <= 0.5) {
         const r1 = c1.r;
         const r2 = c2.r;
-        if (Math.abs(r1 - r2) > 2) {
+        if (Math.abs(r1 - r2) > 1.0) {
           const rInner = Math.min(r1, r2);
           const rOuter = Math.max(r1, r2);
           const cInner = r1 < r2 ? c1 : c2;
@@ -212,234 +484,643 @@ export function detectHostPart(
             center: { x: (c1.cx + c2.cx) / 2, y: (c1.cy + c2.cy) / 2 },
             rInner,
             rOuter,
+            exactConcentric: dCenters <= CONCENTRIC_TOLERANCE_MM,
           });
         }
       }
     }
   }
 
-  // Verifica se o centro da seleção está dentro da coroa circular de algum par concêntrico
-  for (const pair of concentricPairs) {
+  // Ordena priorizando pares estritamente concêntricos (||C_ext - C_int|| < 1e-3 mm)
+  concentricPairs.sort((a, b) => Number(b.exactConcentric) - Number(a.exactConcentric));
+
+  // Filtra os pares concêntricos cuja coroa circular contém fisicamente o furo:
+  // R_int + r_f <= d(C, P_f) <= R_ext - r_f
+  const matchingFlanges = concentricPairs.filter((pair) => {
     const dToCenter = dist(pair.center, sourceCenter);
-    // Se o furo estiver confortavelmente entre o furo central e o diâmetro externo
-    if (dToCenter >= pair.rInner - EPSILON && dToCenter <= pair.rOuter + EPSILON) {
+    return (
+      dToCenter >= pair.rInner + holeRadius - EPSILON &&
+      dToCenter <= pair.rOuter - holeRadius + EPSILON
+    );
+  });
+
+  // Coleta também todos os centros de círculos que englobam o furo para avaliação de ambiguidade
+  const enclosingCircles = otherCircles
+    .filter((c) => {
+      const d = dist({ x: c.cx, y: c.cy }, sourceCenter);
+      return d + holeRadius <= c.r + EPSILON && c.r > holeRadius * 1.5;
+    })
+    .sort((a, b) => b.r - a.r);
+
+  if (matchingFlanges.length > 0) {
+    const primaryFlange = matchingFlanges[0]!;
+    const dToCenter = dist(primaryFlange.center, sourceCenter);
+    const flangeMidRadius = (primaryFlange.rOuter + primaryFlange.rInner) / 2;
+    const flangeMidPcd = flangeMidRadius * 2;
+    const flangeCenterlineOffsetMm = Math.abs(dToCenter - flangeMidRadius);
+    const isOffFlangeCenterline = flangeCenterlineOffsetMm > FLANGE_CENTERLINE_TOLERANCE_MM;
+
+    // Adiciona centros candidatos
+    for (const pair of matchingFlanges) {
       candidateCenters.push({
         point: pair.center,
         label: `Centro do Flange (Øext ${(pair.rOuter * 2).toFixed(1)} / Øint ${(pair.rInner * 2).toFixed(1)} mm)`,
         source: "concentric_flange",
         confidence: "high",
-      });
-
-      return {
-        type: "flange",
-        confidence: "high",
-        description: `Flange detectado (Øext ${(pair.rOuter * 2).toFixed(1)} mm, Øint ${(pair.rInner * 2).toFixed(1)} mm)`,
-        center: pair.center,
-        rInner: pair.rInner,
         rOuter: pair.rOuter,
-        radius: pair.rOuter,
-        pcd: dToCenter * 2,
-        suggestedType: "polar",
-        candidateCenters,
-      };
+        rInner: pair.rInner,
+      });
     }
-  }
 
-  // 2. Procura por círculo maior que contenha a seleção (disco circular sem furo central)
-  const enclosingCircles = otherCircles
-    .filter((c) => {
-      const d = dist({ x: c.cx, y: c.cy }, sourceCenter);
-      return d < c.r && c.r > 15; // maior que um furo comum
-    })
-    .sort((a, b) => b.r - a.r);
+    // Se houver outros círculos não-concêntricos que também englobam o furo, adiciona como candidatos e reduz confiança para MÉDIA
+    for (const enc of enclosingCircles) {
+      const alreadyAdded = candidateCenters.some(
+        (cc) => dist(cc.point, { x: enc.cx, y: enc.cy }) <= 0.5,
+      );
+      if (!alreadyAdded) {
+        candidateCenters.push({
+          point: { x: enc.cx, y: enc.cy },
+          label: `Centro de Círculo (Ø ${(enc.r * 2).toFixed(1)} mm)`,
+          source: "circle_center",
+          confidence: "medium",
+          rOuter: enc.r,
+        });
+      }
+    }
 
-  if (enclosingCircles.length > 0) {
-    const mainCircle = enclosingCircles[0]!;
-    const dToCenter = dist({ x: mainCircle.cx, y: mainCircle.cy }, sourceCenter);
-    candidateCenters.push({
-      point: { x: mainCircle.cx, y: mainCircle.cy },
-      label: `Centro do Disco (Ø ${(mainCircle.r * 2).toFixed(1)} mm)`,
-      source: "circle_center",
-      confidence: "medium",
-    });
+    const isUnambiguous = candidateCenters.length === 1;
+    const confidence: HostConfidence = isUnambiguous ? "high" : "medium";
+    const confidenceLabel: HostConfidenceLabel = isUnambiguous ? "ALTA" : "MÉDIA";
 
     return {
-      type: "circular_plate",
-      confidence: "medium",
-      description: `Disco circular detectado (Ø ${(mainCircle.r * 2).toFixed(1)} mm)`,
-      center: { x: mainCircle.cx, y: mainCircle.cy },
-      radius: mainCircle.r,
+      type: "flange",
+      confidence,
+      confidenceLabel,
+      description: `Centro do flange detectado · Øext ${(primaryFlange.rOuter * 2).toFixed(0)} / Øint ${(primaryFlange.rInner * 2).toFixed(0)} mm`,
+      center: primaryFlange.center,
+      rInner: primaryFlange.rInner,
+      rOuter: primaryFlange.rOuter,
+      radius: primaryFlange.rOuter,
       pcd: dToCenter * 2,
+      flangeMidRadius,
+      flangeMidPcd,
+      isOffFlangeCenterline,
+      flangeCenterlineOffsetMm,
       suggestedType: "polar",
       candidateCenters,
     };
   }
 
-  // 3. Procura por contorno de chapa retangular ou polilinha fechada que contenha a seleção
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  let foundOuterBoundary = false;
+  // 2. Procura por contornos fechados de chapa (polilinhas fechadas ou malha de 4+ linhas) via Ray-Casting
+  const nonSourceEntities = allEntities.filter((e) => !sourceIds.has(e.id));
+  const closedPolygons = extractClosedPolygons(nonSourceEntities);
+  const enclosingPolygons = closedPolygons.filter((poly) =>
+    pointInPoly(sourceCenter, poly.pts),
+  );
 
-  for (const e of allEntities) {
-    if (sourceIds.has(e.id)) continue;
-    if (e.layer === "construcao" || e.layer === "referencia" || e.layer === "cota") continue;
-    const b = boxOf(e);
-    if (b.minX < minX) minX = b.minX;
-    if (b.maxX > maxX) maxX = b.maxX;
-    if (b.minY < minY) minY = b.minY;
-    if (b.maxY > maxY) maxY = b.maxY;
-    foundOuterBoundary = true;
+  // 3. Se houver círculos englobantes (ex: disco circular ou múltiplos círculos candidatos)
+  if (enclosingCircles.length > 0 && enclosingPolygons.length === 0) {
+    for (const c of enclosingCircles) {
+      const already = candidateCenters.some(
+        (cc) => dist(cc.point, { x: c.cx, y: c.cy }) <= 0.5,
+      );
+      if (!already) {
+        candidateCenters.push({
+          point: { x: c.cx, y: c.cy },
+          label: `Centro do Disco (Ø ${(c.r * 2).toFixed(1)} mm)`,
+          source: "circle_center",
+          confidence: enclosingCircles.length === 1 ? "high" : "medium",
+          rOuter: c.r,
+        });
+      }
+    }
+
+    const mainCircle = enclosingCircles[0]!;
+    const dToCenter = dist({ x: mainCircle.cx, y: mainCircle.cy }, sourceCenter);
+    const confidence: HostConfidence = candidateCenters.length === 1 ? "high" : "medium";
+    const confidenceLabel: HostConfidenceLabel = confidence === "high" ? "ALTA" : "MÉDIA";
+
+    // Identifica furos internos existentes dentro do disco (exceto o próprio círculo externo)
+    const internalCutouts = otherCircles
+      .filter((c) => c.id !== mainCircle.id && dist({ x: mainCircle.cx, y: mainCircle.cy }, { x: c.cx, y: c.cy }) + c.r < mainCircle.r)
+      .map((c) => ({ center: { x: c.cx, y: c.cy }, radius: c.r, id: c.id }));
+
+    return {
+      type: "circular_plate",
+      confidence,
+      confidenceLabel,
+      description: `Disco circular detectado · Ø ${(mainCircle.r * 2).toFixed(0)} mm`,
+      center: { x: mainCircle.cx, y: mainCircle.cy },
+      rOuter: mainCircle.r,
+      radius: mainCircle.r,
+      pcd: dToCenter * 2,
+      suggestedType: "polar",
+      candidateCenters,
+      internalCutouts,
+    };
   }
 
-  if (foundOuterBoundary && Number.isFinite(minX) && minX < maxX) {
+  // 4. Se o furo estiver dentro de um polígono fechado (Chapa Metálica) via Ray-Casting
+  if (enclosingPolygons.length > 0) {
+    // O contorno externo da chapa é o maior polígono fechado que contém o furo
+    const outerPoly = enclosingPolygons[0]!;
+    const { minX, minY, maxX, maxY } = outerPoly.bounds;
     const width = maxX - minX;
     const height = maxY - minY;
+    const centroid: Vec2 = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+
+    // Círculos candidatos relevantes (cubos/furos maiores que o furo selecionado) ordenados por proximidade ao furo
+    const relevantHubCircles = otherCircles
+      .filter((c) => c.r > holeRadius * 1.2)
+      .sort(
+        (a, b) =>
+          dist({ x: a.cx, y: a.cy }, sourceCenter) - dist({ x: b.cx, y: b.cy }, sourceCenter),
+      );
+
+    for (const c of relevantHubCircles) {
+      const already = candidateCenters.some(
+        (cc) => dist(cc.point, { x: c.cx, y: c.cy }) <= 0.5,
+      );
+      if (!already) {
+        candidateCenters.push({
+          point: { x: c.cx, y: c.cy },
+          label: `Centro de Círculo (Ø ${(c.r * 2).toFixed(1)} mm)`,
+          source: "circle_center",
+          confidence: "medium",
+          rOuter: c.r,
+        });
+      }
+    }
 
     candidateCenters.push({
-      point: { x: (minX + maxX) / 2, y: (minY + maxY) / 2 },
-      label: `Centroide da Chapa (${width.toFixed(1)} × ${height.toFixed(1)} mm)`,
+      point: centroid,
+      label: `Centro da Chapa (${width.toFixed(0)} × ${height.toFixed(0)} mm)`,
       source: "bounding_centroid",
-      confidence: "medium",
+      confidence: relevantHubCircles.length === 0 ? "high" : "medium",
     });
 
     candidateCenters.push({
       point: projectOrigin,
-      label: "Origem do Projeto (REF 0,0)",
+      label: "Origem REF (0,0)",
       source: "origin_ref",
       confidence: "low",
     });
 
+    const internalCutouts = otherCircles
+      .filter((c) => pointInPoly({ x: c.cx, y: c.cy }, outerPoly.pts))
+      .map((c) => ({ center: { x: c.cx, y: c.cy }, radius: c.r, id: c.id }));
+
+    const hasAmbiguousCircles = relevantHubCircles.length >= 1;
+    const confidence: HostConfidence = !hasAmbiguousCircles ? "high" : "medium";
+    const confidenceLabel: HostConfidenceLabel = confidence === "high" ? "ALTA" : "MÉDIA";
+
     return {
       type: "sheet",
-      confidence: "medium",
-      description: `Chapa metálica (${width.toFixed(1)} × ${height.toFixed(1)} mm)`,
-      suggestedType: "linear",
-      sheetBounds: { minX, minY, maxX, maxY, width, height },
+      confidence,
+      confidenceLabel,
+      description: hasAmbiguousCircles
+        ? `Chapa com ${relevantHubCircles.length} centro(s) circular(es) candidato(s)`
+        : `Chapa detectada · ${width.toFixed(0)} × ${height.toFixed(0)} mm`,
+      center: candidateCenters[0]?.point ?? centroid,
+      suggestedType: hasAmbiguousCircles ? "polar" : "linear",
+      sheetBounds: {
+        minX,
+        minY,
+        maxX,
+        maxY,
+        width,
+        height,
+        freeSpacePosX: Math.max(0, maxX - sourceCenter.x),
+        freeSpaceNegX: Math.max(0, sourceCenter.x - minX),
+        freeSpacePosY: Math.max(0, maxY - sourceCenter.y),
+        freeSpaceNegY: Math.max(0, sourceCenter.y - minY),
+        polygon: outerPoly.pts,
+      },
       candidateCenters,
+      internalCutouts,
     };
   }
 
-  // 4. Sem detecção conclusiva
+  // 5. Caso haja outros círculos no desenho (mesmo que não englobem o furo), oferece como candidatos de confiança MÉDIA
+  if (otherCircles.length > 0) {
+    for (const c of otherCircles.slice(0, 6)) {
+      const already = candidateCenters.some(
+        (cc) => dist(cc.point, { x: c.cx, y: c.cy }) <= 0.5,
+      );
+      if (!already) {
+        candidateCenters.push({
+          point: { x: c.cx, y: c.cy },
+          label: `Centro Ø ${(c.r * 2).toFixed(1)} mm (${c.cx.toFixed(0)}, ${c.cy.toFixed(0)})`,
+          source: "circle_center",
+          confidence: "medium",
+          rOuter: c.r,
+        });
+      }
+    }
+  }
+
   candidateCenters.push({
     point: projectOrigin,
-    label: "Origem do Projeto (REF 0,0)",
+    label: "Origem REF (0,0)",
     source: "origin_ref",
     confidence: "low",
   });
 
+  if (candidateCenters.length > 1) {
+    return {
+      type: "unknown",
+      confidence: "medium",
+      confidenceLabel: "MÉDIA",
+      description: "Múltiplos centros candidatos · Toque em um centro no canvas",
+      center: candidateCenters[0]!.point,
+      suggestedType: "polar",
+      candidateCenters,
+    };
+  }
+
+  // 6. Confiança BAIXA: peça isolada sem hospedeiro detectado
   return {
     type: "unknown",
     confidence: "low",
-    description: "Nenhum contorno hospedeiro evidente detectado.",
+    confidenceLabel: "BAIXA",
+    description: "Sem hospedeiro detectado · Defina centro ou direção",
     suggestedType: "linear",
     candidateCenters,
   };
 }
 
+/** Alias de compatibilidade com chamadas existentes */
+export const detectHostPart = detectHostTopology;
+
 // -------------------------------------------------------------
-// 2. CÁLCULO DE INSTÂNCIAS (NÚCLEO ANALÍTICO FECHADO)
+// 2. RESOLUÇÃO MATEMÁTICA DOS 4 MODOS LINEARES
+// -------------------------------------------------------------
+
+export interface LinearAxisResolutionInput {
+  mode: LinearDistributionMode;
+  count: number; // N >= 1
+  step: number; // passo em mm (pode ter sinal ou usar dir)
+  span?: number; // extensão total L (Modo 2)
+  margin?: number; // margem às bordas (Modos 3 e 4)
+  dir?: 1 | -1; // sentido (+1 ou -1)
+  sourceCoord?: number; // x0 ou y0
+  baseCoord?: number; // alias para sourceCoord
+  hostMin?: number; // borda inicial da peça hospedeira
+  hostMax?: number; // borda final da peça hospedeira
+}
+
+export interface LinearAxisResolutionResult {
+  count: number;
+  step: number; // passo assinado (dir * |passo|)
+  absStep: number;
+  span: number; // distância entre a 1ª e a última instância
+  startCoord: number; // coordenada da instância k=0
+  startOffset: number; // deslocamento da instância k=0 em relação a sourceCoord
+  positions: number[]; // coordenadas absolutas para k = 0 ... count-1
+}
+
+/**
+ * Resolve analiticamente as posições de um eixo linear segundo um dos 4 modos:
+ * 1. "fixed_step": pos_k = x0 + k * s * |passo|
+ * 2. "total_span": passo = L / (N - 1), pos_k = x0 + k * s * passo
+ * 3. "auto_fit": passo = (L_livre - 2 * margem) / (N - 1), 1ª instância em hostMin + margem
+ * 4. "fill": N = floor((L_livre - 2 * margem) / |passo|) + 1, 1ª instância em hostMin + margem
+ */
+export function resolveLinearAxisDistribution(
+  input: LinearAxisResolutionInput,
+): LinearAxisResolutionResult {
+  const srcCoord = input.sourceCoord ?? input.baseCoord ?? 0;
+  const rawCount = Math.max(1, Math.round(input.count || 1));
+  const sign: 1 | -1 = input.dir ?? (input.step < 0 ? -1 : 1);
+  const absInputStep = Math.abs(input.step);
+  const hasHost =
+    typeof input.hostMin === "number" &&
+    typeof input.hostMax === "number" &&
+    Number.isFinite(input.hostMin) &&
+    Number.isFinite(input.hostMax) &&
+    input.hostMax > input.hostMin;
+  const hostLength = hasHost ? input.hostMax! - input.hostMin! : 0;
+  const margin = Math.max(0, input.margin ?? 0);
+
+  if (rawCount === 1 && input.mode !== "fill") {
+    return {
+      count: 1,
+      step: 0,
+      absStep: 0,
+      span: 0,
+      startCoord: srcCoord,
+      startOffset: 0,
+      positions: [srcCoord],
+    };
+  }
+
+  switch (input.mode) {
+    case "total_span": {
+      const span = Math.max(0, input.span ?? absInputStep * Math.max(1, rawCount - 1));
+      const absStep = rawCount > 1 ? span / (rawCount - 1) : 0;
+      const signedStep = sign * absStep;
+      const positions = Array.from(
+        { length: rawCount },
+        (_, k) => srcCoord + k * signedStep,
+      );
+      return {
+        count: rawCount,
+        step: signedStep,
+        absStep,
+        span,
+        startCoord: srcCoord,
+        startOffset: 0,
+        positions,
+      };
+    }
+
+    case "auto_fit": {
+      const usableLength = hasHost
+        ? Math.max(0, hostLength - 2 * margin)
+        : Math.max(0, (input.span ?? absInputStep * Math.max(1, rawCount - 1)));
+      const absStep = rawCount > 1 ? usableLength / (rawCount - 1) : 0;
+      const startCoord = hasHost
+        ? sign >= 0
+          ? input.hostMin! + margin
+          : input.hostMax! - margin
+        : srcCoord;
+      const signedStep = sign * absStep;
+      const positions = Array.from(
+        { length: rawCount },
+        (_, k) => startCoord + k * signedStep,
+      );
+      return {
+        count: rawCount,
+        step: signedStep,
+        absStep,
+        span: usableLength,
+        startCoord,
+        startOffset: startCoord - srcCoord,
+        positions,
+      };
+    }
+
+    case "fill": {
+      const safeAbsStep = absInputStep > EPSILON ? absInputStep : 10;
+      const usableLength = hasHost
+        ? Math.max(0, hostLength - 2 * margin)
+        : Math.max(0, input.span ?? safeAbsStep * Math.max(0, rawCount - 1));
+      const computedCount =
+        usableLength >= 0 ? Math.max(1, Math.floor((usableLength + EPSILON) / safeAbsStep) + 1) : 1;
+      const startCoord = hasHost
+        ? sign >= 0
+          ? input.hostMin! + margin
+          : input.hostMax! - margin
+        : srcCoord;
+      const signedStep = sign * safeAbsStep;
+      const positions = Array.from(
+        { length: computedCount },
+        (_, k) => startCoord + k * signedStep,
+      );
+      return {
+        count: computedCount,
+        step: signedStep,
+        absStep: safeAbsStep,
+        span: (computedCount - 1) * safeAbsStep,
+        startCoord,
+        startOffset: startCoord - srcCoord,
+        positions,
+      };
+    }
+
+    case "fixed_step":
+    default: {
+      const signedStep = sign * absInputStep;
+      const span = (rawCount - 1) * absInputStep;
+      const positions = Array.from(
+        { length: rawCount },
+        (_, k) => srcCoord + k * signedStep,
+      );
+      return {
+        count: rawCount,
+        step: signedStep,
+        absStep: absInputStep,
+        span,
+        startCoord: srcCoord,
+        startOffset: 0,
+        positions,
+      };
+    }
+  }
+}
+
+// -------------------------------------------------------------
+// 3. CÁLCULO DE INSTÂNCIAS (NÚCLEO ANALÍTICO FECHADO)
 // -------------------------------------------------------------
 
 /**
- * Calcula todas as instâncias resultantes da matriz especificada.
- * Utiliza fórmulas analíticas fechadas para evitar acúmulo de erro numérico
- * ou drift de matrizes de rotação encadeadas.
+ * Clona os metadados industriais da entidade original e injeta o vínculo associativo do Array.
+ */
+function buildArrayInstanceEntity(
+  transformed: Entity,
+  orig: Entity,
+  spec: ArraySpec,
+  specId: string,
+  meta: {
+    arrayIndex: number;
+    arrayRow?: number;
+    arrayCol?: number;
+    isOriginal?: boolean;
+    slotGroupId?: string;
+  },
+): Entity {
+  const clonedCnc = orig.cnc ? { ...orig.cnc } : undefined;
+  const serializedSpec: ArraySpec = {
+    id: specId,
+    type: spec.type,
+    sourceEntityIds: [...spec.sourceEntityIds],
+    polar: spec.polar ? { ...spec.polar, center: { ...spec.polar.center } } : undefined,
+    linear: spec.linear ? { ...spec.linear } : undefined,
+  };
+
+  return {
+    ...transformed,
+    id: meta.isOriginal ? orig.id : uid(),
+    layer: orig.layer,
+    group: meta.slotGroupId ?? orig.group,
+    cnc: clonedCnc,
+    isConstruction: orig.isConstruction,
+    params: {
+      ...(orig.params ? { ...orig.params } : {}),
+      ...(transformed.params ? { ...transformed.params } : {}),
+      arrayGroupId: specId,
+      arrayPatternId: specId,
+      arrayType: spec.type,
+      arrayIndex: meta.arrayIndex,
+      arrayRow: meta.arrayRow,
+      arrayCol: meta.arrayCol,
+      isArrayInstance: !meta.isOriginal,
+      arraySpec: serializedSpec,
+    },
+  };
+}
+
+/**
+ * Calcula todas as instâncias resultantes da matriz especificada (Polar ou Linear).
+ * Utiliza fórmulas analíticas fechadas sem erro acumulado.
  */
 export function computeInstances(
   spec: ArraySpec,
   sourceEntities: Entity[],
-): { instances: Entity[]; guides: ArrayGuides } {
+  host?: HostDetectionResult,
+): ComputeInstancesResult {
   if (sourceEntities.length === 0) {
-    return { instances: [], guides: { type: spec.type } };
+    return {
+      instances: [],
+      ghostSlots: [],
+      guides: { type: spec.type },
+    };
   }
 
   const specId = spec.id || uid();
+  const baseCenter = getGroupCenter(sourceEntities);
 
   if (spec.type === "polar") {
     const params = spec.polar;
     if (!params) {
-      return { instances: [], guides: { type: "polar" } };
+      return { instances: [], ghostSlots: [], guides: { type: "polar" } };
     }
 
     const count = Math.max(1, Math.round(params.count));
-    const totalAngleDeg = params.totalAngleDeg ?? 360;
-    const isFullCircle = Math.abs(Math.abs(totalAngleDeg) - 360) < 1e-4;
-    const stepDeg = isFullCircle ? totalAngleDeg / count : count > 1 ? totalAngleDeg / (count - 1) : 0;
+    const totalAngleDeg = Math.abs(params.totalAngleDeg ?? 360);
+    const isFullCircle = Math.abs(totalAngleDeg - 360) < 1e-4;
+    // Regra crítica Seção 1.3:
+    // Círculo completo (360°): Δθ = 360° / N (nunca sobrepõe a última cópia sobre k=0)
+    // Arco parcial (0° < θ < 360°, N >= 2): Δθ = θ / (N - 1) (inclui ambas as extremidades)
+    const stepDeg = isFullCircle
+      ? 360 / count
+      : count > 1
+        ? totalAngleDeg / (count - 1)
+        : 0;
+
     const dir = params.clockwise ? -1 : 1;
     const rotateItems = params.rotateItems ?? true;
     const includeOriginal = params.includeOriginal ?? true;
     const center = params.center;
-    const sourceCenter = getGroupCenter(sourceEntities);
-    const radius = params.radius ?? dist(center, sourceCenter);
+    const skippedSet = new Set((params.skippedIndices ?? []).filter((idx) => idx >= 1));
+
+    const naturalRadius = dist(center, baseCenter);
+    const targetRadius =
+      typeof params.radius === "number" && Number.isFinite(params.radius) && params.radius >= 0
+        ? params.radius
+        : naturalRadius;
+
+    // Ângulo inicial: se o usuário especificou startAngleDeg diferente do natural ou se naturalRadius > 0
+    const naturalStartAngleRad =
+      naturalRadius > EPSILON
+        ? Math.atan2(baseCenter.y - center.y, baseCenter.x - center.x)
+        : (params.startAngleDeg ?? 0) * DEG_TO_RAD;
+    const startAngleDeg =
+      typeof params.startAngleDeg === "number" && Number.isFinite(params.startAngleDeg)
+        ? params.startAngleDeg
+        : naturalStartAngleRad * RAD_TO_DEG;
+    const startAngleRad = startAngleDeg * DEG_TO_RAD;
+
+    // Posição base de k=0 sobre o círculo PCD de raio `targetRadius` e ângulo `startAngleRad`
+    const k0Center: Vec2 = {
+      x: center.x + targetRadius * Math.cos(startAngleRad),
+      y: center.y + targetRadius * Math.sin(startAngleRad),
+    };
+    const radialShiftX = k0Center.x - baseCenter.x;
+    const radialShiftY = k0Center.y - baseCenter.y;
+    const isOriginalRepositioned =
+      Math.hypot(radialShiftX, radialShiftY) > 1e-3 || Boolean(params.repositionOriginalToPcd);
+
+    // Entidades base posicionadas em k=0 no raio alvo
+    const k0Entities = sourceEntities.map((orig) =>
+      Math.hypot(radialShiftX, radialShiftY) > EPSILON
+        ? translate(orig, radialShiftX, radialShiftY)
+        : orig,
+    );
 
     const instances: Entity[] = [];
-    const radialLines: { x1: number; y1: number; x2: number; y2: number }[] = [];
+    const repositionedOriginals: Entity[] = [];
+    const ghostSlots: ArrayGhostSlot[] = [];
+    const radialLines: { x1: number; y1: number; x2: number; y2: number; index: number; isSkipped?: boolean }[] = [];
 
-    // Ângulo inicial analítico da posição original em relação ao centro do padrão
-    const initialAngleRad = Math.atan2(sourceCenter.y - center.y, sourceCenter.x - center.x);
-    const initialAngleDeg = initialAngleRad * RAD_TO_DEG;
+    for (let k = 0; k < count; k++) {
+      // Fórmula fechada sem erro acumulado: θ_k = θ_início + s · k · Δθ
+      const currentAngleDeltaDeg = dir * k * stepDeg;
+      const currentAngleDeltaRad = currentAngleDeltaDeg * DEG_TO_RAD;
+      const thetaKRad = startAngleRad + currentAngleDeltaRad;
 
-    for (let i = 0; i < count; i++) {
-      // Se includeOriginal for verdadeiro, o índice 0 é a própria peça original
-      if (i === 0 && includeOriginal) {
-        // Adiciona linha guia do raio para o furo original
-        radialLines.push({
-          x1: center.x,
-          y1: center.y,
-          x2: sourceCenter.x,
-          y2: sourceCenter.y,
-        });
-        continue;
-      }
-
-      const currentAngleDeltaDeg = i * stepDeg * dir;
-      const angleRad = currentAngleDeltaDeg * DEG_TO_RAD;
-      const currentAbsoluteAngleRad = initialAngleRad + angleRad;
-
-      // Posição calculada por fórmula fechada
-      const cosA = Math.cos(angleRad);
-      const sinA = Math.sin(angleRad);
-
-      const targetCenterX = center.x + radius * Math.cos(currentAbsoluteAngleRad);
-      const targetCenterY = center.y + radius * Math.sin(currentAbsoluteAngleRad);
+      const targetCenterX = center.x + targetRadius * Math.cos(thetaKRad);
+      const targetCenterY = center.y + targetRadius * Math.sin(thetaKRad);
+      const isSkipped = k >= 1 && skippedSet.has(k);
 
       radialLines.push({
         x1: center.x,
         y1: center.y,
         x2: targetCenterX,
         y2: targetCenterY,
+        index: k,
+        isSkipped,
       });
 
-      sourceEntities.forEach((orig) => {
+      if (k === 0 && includeOriginal) {
+        const origTagged = k0Entities.map((e, idx) =>
+          buildArrayInstanceEntity(e, sourceEntities[idx]!, spec, specId, {
+            arrayIndex: 0,
+            isOriginal: true,
+          }),
+        );
+        repositionedOriginals.push(...origTagged);
+        ghostSlots.push({
+          index: 0,
+          center: k0Center,
+          angleDeltaDeg: 0,
+          entities: origTagged,
+          isOriginal: true,
+          isSkipped: false,
+        });
+        continue;
+      }
+
+      const cosDelta = Math.cos(currentAngleDeltaRad);
+      const sinDelta = Math.sin(currentAngleDeltaRad);
+      const slotGroupId = sourceEntities.length > 1 ? `${specId}-slot-${k}` : undefined;
+
+      const slotEntities: Entity[] = k0Entities.map((k0Ent, idx) => {
+        const orig = sourceEntities[idx]!;
         let transformed: Entity;
 
         if (rotateItems) {
-          // Rotaciona a entidade completa em torno do centro do padrão
-          transformed = rotate(orig, center, currentAngleDeltaDeg);
+          // Rotação de corpo rígido em torno de (Cx, Cy): gira posição e orientação interna
+          transformed = rotate(k0Ent, center, currentAngleDeltaDeg);
         } else {
-          // Apenas translada a entidade mantendo sua orientação original
-          const origCenter = getEntityCenter(orig);
-          const newCenterX = center.x + (origCenter.x - center.x) * cosA - (origCenter.y - center.y) * sinA;
-          const newCenterY = center.y + (origCenter.x - center.x) * sinA + (origCenter.y - center.y) * cosA;
-          const dx = newCenterX - origCenter.x;
-          const dy = newCenterY - origCenter.y;
-          transformed = translate(orig, dx, dy);
+          // Rotaciona o centro do item em torno de (Cx, Cy), preservando a orientação interna original
+          const entCenter = getEntityCenter(k0Ent);
+          const newEntCenterX =
+            center.x + (entCenter.x - center.x) * cosDelta - (entCenter.y - center.y) * sinDelta;
+          const newEntCenterY =
+            center.y + (entCenter.x - center.x) * sinDelta + (entCenter.y - center.y) * cosDelta;
+          transformed = translate(k0Ent, newEntCenterX - entCenter.x, newEntCenterY - entCenter.y);
         }
 
-        instances.push({
-          ...transformed,
-          id: uid(),
-          params: {
-            ...transformed.params,
-            arrayPatternId: specId,
-            arrayType: "polar",
-            arrayIndex: i,
-            isArrayInstance: true,
-          },
+        return buildArrayInstanceEntity(transformed, orig, spec, specId, {
+          arrayIndex: k,
+          isOriginal: false,
+          slotGroupId,
         });
       });
+
+      ghostSlots.push({
+        index: k,
+        center: { x: targetCenterX, y: targetCenterY },
+        angleDeltaDeg: currentAngleDeltaDeg,
+        entities: slotEntities,
+        isOriginal: false,
+        isSkipped,
+      });
+
+      if (!isSkipped) {
+        instances.push(...slotEntities);
+      }
     }
 
     const guides: ArrayGuides = {
@@ -448,106 +1129,219 @@ export function computeInstances(
       pcdCircle: {
         cx: center.x,
         cy: center.y,
-        r: radius,
+        r: targetRadius,
       },
       radialLines,
+      clockwise: Boolean(params.clockwise),
     };
 
-    return { instances, guides };
+    return {
+      instances,
+      repositionedOriginals: isOriginalRepositioned ? repositionedOriginals : undefined,
+      ghostSlots,
+      guides,
+      resolvedPolar: {
+        count,
+        stepAngleDeg: stepDeg,
+        radius: targetRadius,
+        pcd: targetRadius * 2,
+        startAngleDeg,
+      },
+    };
   }
 
-  // Padrão Linear / Retangular
+  // -----------------------------------------------------------
+  // PADRÃO LINEAR / RETANGULAR (4 MODOS MATEMÁTICOS)
+  // -----------------------------------------------------------
   const params = spec.linear;
   if (!params) {
-    return { instances: [], guides: { type: "linear" } };
+    return { instances: [], ghostSlots: [], guides: { type: "linear" } };
   }
 
-  const rows = Math.max(1, Math.round(params.rows));
-  const cols = Math.max(1, Math.round(params.cols));
-  const dx = params.dx;
-  const dy = params.dy;
+  const modeX: LinearDistributionMode = params.modeX ?? params.mode ?? "fixed_step";
+  const modeY: LinearDistributionMode =
+    params.rows > 1 ? (params.modeY ?? params.mode ?? modeX) : "fixed_step";
   const angleDeg = params.angleDeg ?? 0;
   const angleRad = angleDeg * DEG_TO_RAD;
   const cosAng = Math.cos(angleRad);
   const sinAng = Math.sin(angleRad);
   const includeOriginal = params.includeOriginal ?? true;
+  const skippedSet = new Set((params.skippedIndices ?? []).filter((idx) => idx >= 1));
 
-  const instances: Entity[] = [];
-  const axes: { x1: number; y1: number; x2: number; y2: number }[] = [];
-  const baseCenter = getGroupCenter(sourceEntities);
-
-  // Eixos guias X e Y orientados pelo ângulo da matriz
-  const totalSpanX = (cols - 1) * dx;
-  const totalSpanY = (rows - 1) * dy;
-
-  axes.push({
-    x1: baseCenter.x,
-    y1: baseCenter.y,
-    x2: baseCenter.x + totalSpanX * cosAng,
-    y2: baseCenter.y + totalSpanX * sinAng,
+  // Resolve eixo X (primário) e eixo Y (secundário) usando os 4 modos matemáticos
+  const resolvedX = resolveLinearAxisDistribution({
+    mode: modeX,
+    count: params.cols,
+    step: params.dx,
+    span: params.spanX,
+    margin: params.marginX,
+    dir: params.dirX,
+    sourceCoord: baseCenter.x,
+    hostMin: host?.sheetBounds?.minX,
+    hostMax: host?.sheetBounds?.maxX,
   });
 
-  if (rows > 1) {
+  const resolvedY = resolveLinearAxisDistribution({
+    mode: modeY,
+    count: params.rows,
+    step: params.dy,
+    span: params.spanY,
+    margin: params.marginY ?? params.marginX,
+    dir: params.dirY,
+    sourceCoord: baseCenter.y,
+    hostMin: host?.sheetBounds?.minY,
+    hostMax: host?.sheetBounds?.maxY,
+  });
+
+  const cols = resolvedX.count;
+  const rows = resolvedY.count;
+
+  const startOffsetX = resolvedX.startCoord - baseCenter.x;
+  const startOffsetY = resolvedY.startCoord - baseCenter.y;
+  const isOriginalRepositioned =
+    Math.hypot(startOffsetX, startOffsetY) > 1e-3 &&
+    (modeX === "auto_fit" || modeX === "fill" || modeY === "auto_fit" || modeY === "fill") &&
+    Boolean(host?.sheetBounds);
+
+  const k0Center: Vec2 = {
+    x: baseCenter.x + startOffsetX,
+    y: baseCenter.y + startOffsetY,
+  };
+
+  const k0Entities = sourceEntities.map((orig) =>
+    isOriginalRepositioned ? translate(orig, startOffsetX, startOffsetY) : orig,
+  );
+
+  const instances: Entity[] = [];
+  const repositionedOriginals: Entity[] = [];
+  const ghostSlots: ArrayGhostSlot[] = [];
+  const axes: { x1: number; y1: number; x2: number; y2: number; axis: "x" | "y" }[] = [];
+
+  const totalSpanSignedX = (cols - 1) * resolvedX.step;
+  const totalSpanSignedY = (rows - 1) * resolvedY.step;
+
+  if (cols > 1 || Math.abs(totalSpanSignedX) > EPSILON) {
     axes.push({
-      x1: baseCenter.x,
-      y1: baseCenter.y,
-      x2: baseCenter.x - totalSpanY * sinAng,
-      y2: baseCenter.y + totalSpanY * cosAng,
+      x1: k0Center.x,
+      y1: k0Center.y,
+      x2: k0Center.x + totalSpanSignedX * cosAng,
+      y2: k0Center.y + totalSpanSignedX * sinAng,
+      axis: "x",
+    });
+  }
+
+  if (rows > 1 && Math.abs(totalSpanSignedY) > EPSILON) {
+    axes.push({
+      x1: k0Center.x,
+      y1: k0Center.y,
+      x2: k0Center.x - totalSpanSignedY * sinAng,
+      y2: k0Center.y + totalSpanSignedY * cosAng,
+      axis: "y",
     });
   }
 
   let index = 0;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
+      const rawX = c * resolvedX.step;
+      const rawY = r * resolvedY.step;
+      const shiftX = rawX * cosAng - rawY * sinAng;
+      const shiftY = rawX * sinAng + rawY * cosAng;
+      const slotCenter: Vec2 = {
+        x: k0Center.x + shiftX,
+        y: k0Center.y + shiftY,
+      };
+      const isSkipped = index >= 1 && skippedSet.has(index);
+
       if (r === 0 && c === 0 && includeOriginal) {
+        const origTagged = k0Entities.map((e, idx) =>
+          buildArrayInstanceEntity(e, sourceEntities[idx]!, spec, specId, {
+            arrayIndex: 0,
+            arrayRow: 0,
+            arrayCol: 0,
+            isOriginal: true,
+          }),
+        );
+        repositionedOriginals.push(...origTagged);
+        ghostSlots.push({
+          index: 0,
+          row: 0,
+          col: 0,
+          center: k0Center,
+          angleDeltaDeg: angleDeg,
+          entities: origTagged,
+          isOriginal: true,
+          isSkipped: false,
+        });
         index++;
         continue;
       }
 
-      // Deslocamento orientado no plano 2D
-      const rawX = c * dx;
-      const rawY = r * dy;
-      const shiftX = rawX * cosAng - rawY * sinAng;
-      const shiftY = rawX * sinAng + rawY * cosAng;
-
-      sourceEntities.forEach((orig) => {
-        const transformed = translate(orig, shiftX, shiftY);
-        instances.push({
-          ...transformed,
-          id: uid(),
-          params: {
-            ...transformed.params,
-            arrayPatternId: specId,
-            arrayType: "linear",
-            arrayRow: r,
-            arrayCol: c,
-            arrayIndex: index,
-            isArrayInstance: true,
-          },
+      const slotGroupId = sourceEntities.length > 1 ? `${specId}-slot-${index}` : undefined;
+      const slotEntities = k0Entities.map((k0Ent, idx) => {
+        const orig = sourceEntities[idx]!;
+        let transformed = translate(k0Ent, shiftX, shiftY);
+        if (params.rotateItems && Math.abs(angleDeg) > EPSILON) {
+          transformed = rotate(transformed, slotCenter, angleDeg);
+        }
+        return buildArrayInstanceEntity(transformed, orig, spec, specId, {
+          arrayIndex: index,
+          arrayRow: r,
+          arrayCol: c,
+          isOriginal: false,
+          slotGroupId,
         });
       });
+
+      ghostSlots.push({
+        index,
+        row: r,
+        col: c,
+        center: slotCenter,
+        angleDeltaDeg: angleDeg,
+        entities: slotEntities,
+        isOriginal: false,
+        isSkipped,
+      });
+
+      if (!isSkipped) {
+        instances.push(...slotEntities);
+      }
 
       index++;
     }
   }
 
-  const guides: ArrayGuides = {
-    type: "linear",
-    axes,
+  return {
+    instances,
+    repositionedOriginals: isOriginalRepositioned ? repositionedOriginals : undefined,
+    ghostSlots,
+    guides: {
+      type: "linear",
+      axes,
+    },
+    resolvedLinear: {
+      cols,
+      rows,
+      stepX: resolvedX.step,
+      stepY: resolvedY.step,
+      spanX: resolvedX.span,
+      spanY: resolvedY.span,
+      startOffsetX,
+      startOffsetY,
+    },
   };
-
-  return { instances, guides };
 }
 
 // -------------------------------------------------------------
-// 3. VALIDAÇÃO FÍSICA E MECÂNICA DO ARRAY
+// 4. VALIDAÇÃO FÍSICA E DIAGNÓSTICO DE COLISÕES POR INSTÂNCIA
 // -------------------------------------------------------------
 
 /**
- * Valida a integridade física do padrão:
- * - Evita furos sobrepostos
- * - Alerta sobre furos que invadem o furo central do flange
- * - Alerta sobre furos muito próximos à borda da peça (margem mínima de caldeiraria)
+ * Valida a integridade física do padrão em tempo real:
+ * (a) Sai para fora do contorno externo da peça hospedeira ("Fora da peça")
+ * (b) Invade o furo central do flange ou recorte interno existente ("Invade furo central")
+ * (c) Colide ou sobrepõe-se a outro furo do padrão ("Colisão entre furos")
  */
 export function validateArray(
   spec: ArraySpec,
@@ -556,118 +1350,220 @@ export function validateArray(
 ): ArrayValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
+  const slotDiagnostics: Record<number, SlotCollisionDiagnostic> = {};
 
   if (sourceEntities.length === 0) {
     errors.push("Nenhuma geometria selecionada para multiplicação.");
-    return { isValid: false, errors, warnings };
+    return {
+      isValid: false,
+      errors,
+      warnings,
+      slotDiagnostics,
+      collidingCount: 0,
+      activeCopiesCount: 0,
+      skippedCount: 0,
+      totalPositionsCount: 0,
+    };
   }
 
-  // Raio representativo de furos circulares (para checagem de margem)
-  const circleEnts = sourceEntities.filter((e) => e.type === "circle") as (Entity & {
-    type: "circle";
-  })[];
-  const holeRadius = circleEnts.length > 0 ? circleEnts[0]!.r : 0;
-  const holeDia = holeRadius * 2;
+  const effRadius = getSelectionEffectiveRadius(sourceEntities);
+  const holeDia = effRadius * 2;
+
+  const computed = computeInstances(spec, sourceEntities, host);
+  const { ghostSlots } = computed;
+  const activeSlots = ghostSlots.filter((s) => !s.isSkipped);
+  const skippedCount = ghostSlots.filter((s) => s.isSkipped).length;
+  const activeCopiesCount = activeSlots.filter((s) => !s.isOriginal).length;
+
+  // Inicializa todos os slots ativos como "ok"
+  for (const slot of ghostSlots) {
+    slotDiagnostics[slot.index] = {
+      index: slot.index,
+      status: "ok",
+    };
+  }
+
+  const markSlotIssue = (
+    slotIndex: number,
+    status: "warning" | "error",
+    badge: CollisionReasonBadge,
+    message: string,
+  ) => {
+    const current = slotDiagnostics[slotIndex];
+    if (!current || current.status === "ok" || (current.status === "warning" && status === "error")) {
+      slotDiagnostics[slotIndex] = { index: slotIndex, status, badge, message };
+    }
+    if (status === "error") {
+      if (!errors.includes(message)) errors.push(message);
+    } else {
+      if (!warnings.includes(message)) warnings.push(message);
+    }
+  };
 
   if (spec.type === "polar") {
     const p = spec.polar;
-    if (!p) {
-      errors.push("Parâmetros do padrão circular não informados.");
-      return { isValid: false, errors, warnings };
-    }
-
-    if (p.count < 1) {
+    if (!p || p.count < 1) {
       errors.push("Quantidade de itens deve ser no mínimo 1.");
-      return { isValid: false, errors, warnings };
-    }
-
-    const { instances } = computeInstances(spec, sourceEntities);
-    const allInstances = [...sourceEntities, ...instances];
-
-    // Validação com base no hospedeiro flange
-    if (host && host.type === "flange" && host.rInner !== undefined && host.rOuter !== undefined) {
-      const minMargin = Math.max(2, holeRadius * 1.5); // Margem mínima de segurança (1.5x raio)
-
-      for (const ent of allInstances) {
-        const entCenter = getEntityCenter(ent);
-        const d = dist(p.center, entCenter);
-
-        // Checa se o furo corta o furo central do flange
-        if (d - holeRadius < host.rInner + EPSILON) {
-          errors.push(
-            `Furo invade o furo central do flange (distância ao centro: ${d.toFixed(1)} mm, limite interno: ${host.rInner.toFixed(1)} mm).`,
-          );
-          break;
-        }
-
-        // Checa se o furo ultrapassa a borda externa do flange
-        if (d + holeRadius > host.rOuter - EPSILON) {
-          errors.push(
-            `Furo ultrapassa o diâmetro externo do flange (distância: ${(d + holeRadius).toFixed(1)} mm, limite externo: ${host.rOuter.toFixed(1)} mm).`,
-          );
-          break;
-        }
-
-        // Aviso de borda muito estreita
-        if (d + holeRadius > host.rOuter - minMargin) {
-          warnings.push(
-            `Margem externa de segurança estreita (< ${minMargin.toFixed(1)} mm da borda).`,
-          );
-          break;
-        }
-      }
-    }
-
-    // Checagem de sobreposição mútua entre instâncias adjacentes
-    if (allInstances.length >= 2 && holeRadius > 0) {
-      const pcd = p.radius ? p.radius * 2 : host?.pcd ?? 0;
-      if (pcd > 0 && p.count > 1) {
-        const perimeter = Math.PI * pcd;
-        const arcPitch = perimeter / p.count;
-        if (arcPitch < holeDia) {
-          errors.push(
-            `Passo entre furos (${arcPitch.toFixed(1)} mm) é menor que o diâmetro (Ø ${holeDia.toFixed(1)} mm): furos se sobrepõem!`,
-          );
-        } else if (arcPitch < holeDia * 1.25) {
-          warnings.push(
-            `Distância entre furos muito pequena (${(arcPitch - holeDia).toFixed(1)} mm entre bordas).`,
-          );
-        }
-      }
+      return {
+        isValid: false,
+        errors,
+        warnings,
+        slotDiagnostics,
+        collidingCount: 0,
+        activeCopiesCount,
+        skippedCount,
+        totalPositionsCount: ghostSlots.length,
+      };
     }
   } else {
-    // Validação Linear
     const l = spec.linear;
-    if (!l) {
-      errors.push("Parâmetros do padrão linear não informados.");
-      return { isValid: false, errors, warnings };
-    }
-
-    if (l.rows < 1 || l.cols < 1) {
+    if (!l || l.rows < 1 || l.cols < 1) {
       errors.push("Quantidade de linhas e colunas deve ser maior ou igual a 1.");
-      return { isValid: false, errors, warnings };
+      return {
+        isValid: false,
+        errors,
+        warnings,
+        slotDiagnostics,
+        collidingCount: 0,
+        activeCopiesCount,
+        skippedCount,
+        totalPositionsCount: ghostSlots.length,
+      };
     }
+  }
 
-    if (l.cols > 1 && Math.abs(l.dx) < EPSILON) {
-      errors.push("Passo em X não pode ser zero para mais de 1 coluna.");
-    }
-    if (l.rows > 1 && Math.abs(l.dy) < EPSILON) {
-      errors.push("Passo em Y não pode ser zero para mais de 1 linha.");
-    }
+  // 1. Checagem contra a peça hospedeira (Flange, Disco ou Chapa Fechada)
+  for (const slot of activeSlots) {
+    const pt = slot.center;
 
-    if (holeRadius > 0) {
-      if (l.cols > 1 && Math.abs(l.dx) < holeDia) {
-        errors.push(`Passo em X (${Math.abs(l.dx).toFixed(1)} mm) é menor que o diâmetro do furo (Ø ${holeDia.toFixed(1)} mm).`);
+    if (host?.type === "flange" && host.center && host.rInner !== undefined && host.rOuter !== undefined) {
+      const d = dist(host.center, pt);
+      const minMargin = Math.max(2, effRadius * 0.5);
+
+      if (d - effRadius < host.rInner + EPSILON) {
+        markSlotIssue(
+          slot.index,
+          "error",
+          "Invade furo central",
+          `Invade furo central (distância: ${d.toFixed(1)} mm, limite interno: ${(host.rInner + effRadius).toFixed(1)} mm).`,
+        );
+      } else if (d + effRadius > host.rOuter - EPSILON) {
+        markSlotIssue(
+          slot.index,
+          "error",
+          "Fora da peça",
+          `Fora da peça: ultrapassa borda externa do flange (limite: ${host.rOuter.toFixed(1)} mm).`,
+        );
+      } else if (d + effRadius > host.rOuter - minMargin) {
+        markSlotIssue(
+          slot.index,
+          "warning",
+          "Margem estreita",
+          `Margem externa estreita (< ${minMargin.toFixed(1)} mm da borda).`,
+        );
       }
-      if (l.rows > 1 && Math.abs(l.dy) < holeDia) {
-        errors.push(`Passo em Y (${Math.abs(l.dy).toFixed(1)} mm) é menor que o diâmetro do furo (Ø ${holeDia.toFixed(1)} mm).`);
+    } else if (host?.type === "circular_plate" && host.center && host.rOuter !== undefined) {
+      const d = dist(host.center, pt);
+      if (d + effRadius > host.rOuter - EPSILON) {
+        markSlotIssue(
+          slot.index,
+          "error",
+          "Fora da peça",
+          `Fora da peça: ultrapassa borda do disco (Ø ${(host.rOuter * 2).toFixed(1)} mm).`,
+        );
+      }
+    } else if (host?.type === "sheet" && host.sheetBounds) {
+      const sb = host.sheetBounds;
+      const outsideBox =
+        pt.x - effRadius < sb.minX - EPSILON ||
+        pt.x + effRadius > sb.maxX + EPSILON ||
+        pt.y - effRadius < sb.minY - EPSILON ||
+        pt.y + effRadius > sb.maxY + EPSILON;
+      const outsidePoly = sb.polygon ? !pointInPoly(pt, sb.polygon) : false;
+      const edgeClearance = sb.polygon ? minDistanceToPolygonEdges(pt, sb.polygon) : Infinity;
+
+      if (outsideBox || outsidePoly || edgeClearance < effRadius - EPSILON) {
+        markSlotIssue(
+          slot.index,
+          "error",
+          "Fora da peça",
+          `Fora da peça: instância #${slot.index + 1} sai do contorno da chapa.`,
+        );
+      }
+    }
+
+    // Checa colisão com recortes/furos internos pré-existentes da peça hospedeira
+    if (host?.internalCutouts && host.internalCutouts.length > 0) {
+      for (const cutout of host.internalCutouts) {
+        const dCut = dist(pt, cutout.center);
+        if (dCut < effRadius + cutout.radius - EPSILON) {
+          markSlotIssue(
+            slot.index,
+            "error",
+            "Invade furo central",
+            `Invade recorte interno existente na peça.`,
+          );
+        }
       }
     }
   }
+
+  // 2. Checagem par-a-par de colisão/sobreposição entre instâncias ativas do Array
+  let minClearanceMm = Infinity;
+  if (activeSlots.length >= 2 && effRadius > 0) {
+    for (let i = 0; i < activeSlots.length; i++) {
+      for (let j = i + 1; j < activeSlots.length; j++) {
+        const sA = activeSlots[i]!;
+        const sB = activeSlots[j]!;
+        const centerDist = dist(sA.center, sB.center);
+        const clearance = centerDist - holeDia;
+        if (clearance < minClearanceMm) {
+          minClearanceMm = clearance;
+        }
+
+        if (centerDist < holeDia - EPSILON) {
+          const msg = `Colisão entre furos: distância centro a centro (${centerDist.toFixed(1)} mm) menor que Ø ${holeDia.toFixed(1)} mm.`;
+          markSlotIssue(sA.index, "error", "Colisão entre furos", msg);
+          markSlotIssue(sB.index, "error", "Colisão entre furos", msg);
+        } else if (centerDist < holeDia + MIN_LIGAMENT_MM) {
+          const msg = `Parede mínima estreita entre furos (${Math.max(0, clearance).toFixed(1)} mm < ${MIN_LIGAMENT_MM} mm).`;
+          markSlotIssue(sA.index, "warning", "Colisão entre furos", msg);
+          markSlotIssue(sB.index, "warning", "Colisão entre furos", msg);
+        }
+      }
+    }
+  }
+
+  const collidingCount = Object.values(slotDiagnostics).filter(
+    (d) => d.status === "error",
+  ).length;
 
   return {
     isValid: errors.length === 0,
     errors,
     warnings,
+    minClearanceMm: Number.isFinite(minClearanceMm) ? minClearanceMm : undefined,
+    slotDiagnostics,
+    collidingCount,
+    activeCopiesCount,
+    skippedCount,
+    totalPositionsCount: ghostSlots.length,
   };
+}
+
+/**
+ * Extrai a especificação associativa de Array (`ArraySpec`) se a entidade selecionada
+ * fizer parte de um padrão previamente confirmado.
+ */
+export function getEntityArraySpec(entity: Entity | undefined | null): {
+  arrayGroupId: string;
+  spec: ArraySpec;
+} | null {
+  if (!entity?.params) return null;
+  const groupId =
+    (entity.params.arrayGroupId as string | undefined) ??
+    (entity.params.arrayPatternId as string | undefined);
+  const spec = entity.params.arraySpec as ArraySpec | undefined;
+  if (!groupId || !spec || typeof spec !== "object") return null;
+  return { arrayGroupId: groupId, spec };
 }
