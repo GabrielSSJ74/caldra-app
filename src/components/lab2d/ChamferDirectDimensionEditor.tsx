@@ -37,6 +37,8 @@ export interface ChamferDirectDimensionEditorProps {
   allowInvert?: boolean;
   onInvertSide?: () => void;
   unit?: string;
+  /** Atalhos rápidos sob demanda exibidos dentro do mini-teclado numérico (ex: N = 3, 4, 6, 8, 12, 16 ou Ângulo = 360°, 180°, 90°) */
+  presets?: { label: string; value: number }[];
 }
 
 type StepOption = 0.1 | 1 | 10;
@@ -55,6 +57,7 @@ export function ChamferDirectDimensionEditor({
   allowInvert = false,
   onInvertSide,
   unit = "mm",
+  presets,
 }: ChamferDirectDimensionEditorProps) {
   const formatInitial = (val: number) => {
     if (!Number.isFinite(val)) return "0";
@@ -250,6 +253,12 @@ export function ChamferDirectDimensionEditor({
   const posX = Math.max(cardW / 2 + 8, Math.min(vw - cardW / 2 - 8, screenPos.x));
   const posY = Math.max(cardH / 2 + 12, Math.min(vh - cardH / 2 - 12, screenPos.y));
 
+  const isDark =
+    typeof document !== "undefined"
+      ? !document.documentElement.classList.contains("light") &&
+        document.documentElement.getAttribute("data-theme") !== "light"
+      : true;
+
   return (
     <div
       className="fixed z-50 transform -translate-x-1/2 -translate-y-1/2 select-none animate-in zoom-in-95 duration-100"
@@ -257,11 +266,28 @@ export function ChamferDirectDimensionEditor({
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <div className="flex flex-col gap-2 p-2.5 bg-[#0B1017]/98 border border-slate-700/90 shadow-[0_14px_44px_rgba(0,0,0,0.9)] rounded-2xl backdrop-blur-xl text-slate-100">
+      <div
+        className={cn(
+          "flex flex-col gap-2 p-2.5 border rounded-2xl backdrop-blur-xl",
+          isDark
+            ? "bg-[#151C27]/98 border-[#293444] shadow-[0_14px_44px_rgba(0,0,0,0.9)] text-[#E6EDF5]"
+            : "bg-[#FFFFFF]/98 border-[#CBD5E1] shadow-[0_14px_44px_rgba(15,23,42,0.18)] text-[#1E293B]",
+        )}
+      >
         {/* CABEÇALHO TÉCNICO: TÍTULO E ESTADO DA MEDIDA */}
-        <div className="flex items-center justify-between border-b border-slate-800/90 pb-1.5">
+        <div
+          className={cn(
+            "flex items-center justify-between border-b pb-1.5",
+            isDark ? "border-[#293444]" : "border-[#CBD5E1]",
+          )}
+        >
           <div className="flex items-center gap-1.5 truncate">
-            <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-sky-400 truncate">
+            <span
+              className={cn(
+                "text-[10px] font-mono font-bold uppercase tracking-wider truncate",
+                isDark ? "text-[#38BDF8]" : "text-[#0284C7]",
+              )}
+            >
               {label || "Medida CAD"}
             </span>
           </div>
@@ -270,8 +296,10 @@ export function ChamferDirectDimensionEditor({
               className={cn(
                 "px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase",
                 isLocked
-                  ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
-                  : "bg-slate-800 text-slate-400",
+                  ? "bg-[#F59E0B]/20 text-[#F59E0B] border border-[#F59E0B]/40"
+                  : isDark
+                    ? "bg-[#0D121B] text-[#94A3B8] border border-[#293444]"
+                    : "bg-[#F1F5F9] text-[#64748B] border border-[#CBD5E1]",
               )}
             >
               {isLocked ? "🔒 FIXA" : "LIVRE"}
@@ -279,7 +307,12 @@ export function ChamferDirectDimensionEditor({
             <button
               type="button"
               onClick={onClose}
-              className="size-5 rounded-lg bg-slate-800/70 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center cursor-pointer"
+              className={cn(
+                "size-5 rounded-lg flex items-center justify-center cursor-pointer transition-colors",
+                isDark
+                  ? "bg-[#0D121B] hover:bg-[#293444] text-[#94A3B8] hover:text-white"
+                  : "bg-[#F1F5F9] hover:bg-[#CBD5E1] text-[#64748B] hover:text-[#1E293B]",
+              )}
               title="Cancelar"
             >
               <X className="size-3.5" />
@@ -293,18 +326,26 @@ export function ChamferDirectDimensionEditor({
           aria-label={label}
           aria-valuenow={parseNormalized(displayStr) ?? currentValue}
           className={cn(
-            "flex items-center justify-between rounded-xl px-2.5 py-1.5 bg-slate-950 border transition-colors",
+            "flex items-center justify-between rounded-xl px-2.5 py-1.5 border transition-colors",
+            isDark ? "bg-[#0D121B]" : "bg-[#F8FAFC]",
             errorMsg
-              ? "border-rose-500/80"
+              ? "border-[#EF4444]"
               : isLocked
-                ? "border-amber-500/70"
-                : "border-sky-500/60",
+                ? "border-[#F59E0B]"
+                : isDark
+                  ? "border-[#38BDF8]"
+                  : "border-[#0284C7]",
           )}
         >
           <button
             type="button"
             onClick={() => handleStep(-1)}
-            className="size-7 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 flex items-center justify-center active:scale-95 transition-transform cursor-pointer"
+            className={cn(
+              "size-7 rounded-lg flex items-center justify-center active:scale-95 transition-transform cursor-pointer border",
+              isDark
+                ? "bg-[#151C27] border-[#293444] hover:bg-[#293444] text-[#E6EDF5]"
+                : "bg-[#FFFFFF] border-[#CBD5E1] hover:bg-[#F1F5F9] text-[#1E293B]",
+            )}
             title={`-${stepMm} ${unit}`}
           >
             <Minus className="size-3.5" />
@@ -316,14 +357,22 @@ export function ChamferDirectDimensionEditor({
                 data-testid="cad-keypad-display"
                 className={cn(
                   "font-mono font-bold text-base tracking-tight",
-                  freshEntry ? "text-sky-300" : "text-white",
+                  freshEntry
+                    ? isDark
+                      ? "text-[#38BDF8]"
+                      : "text-[#0284C7]"
+                    : isDark
+                      ? "text-[#E6EDF5]"
+                      : "text-[#1E293B]",
                 )}
               >
                 {displayStr}
               </span>
-              <span className="font-mono text-[10px] text-slate-400 font-semibold">{unit}</span>
+              <span className={cn("font-mono text-[10px] font-semibold", isDark ? "text-[#94A3B8]" : "text-[#64748B]")}>
+                {unit}
+              </span>
             </div>
-            <span className="font-mono text-[8.5px] text-slate-500">
+            <span className={cn("font-mono text-[8.5px]", isDark ? "text-[#94A3B8]" : "text-[#64748B]")}>
               Atual: {String(Number(currentValue.toFixed(2))).replace(".", ",")} {unit}
             </span>
           </div>
@@ -331,7 +380,12 @@ export function ChamferDirectDimensionEditor({
           <button
             type="button"
             onClick={() => handleStep(1)}
-            className="size-7 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 flex items-center justify-center active:scale-95 transition-transform cursor-pointer"
+            className={cn(
+              "size-7 rounded-lg flex items-center justify-center active:scale-95 transition-transform cursor-pointer border",
+              isDark
+                ? "bg-[#151C27] border-[#293444] hover:bg-[#293444] text-[#E6EDF5]"
+                : "bg-[#FFFFFF] border-[#CBD5E1] hover:bg-[#F1F5F9] text-[#1E293B]",
+            )}
             title={`+${stepMm} ${unit}`}
           >
             <Plus className="size-3.5" />
@@ -340,8 +394,47 @@ export function ChamferDirectDimensionEditor({
 
         {/* MENSAGEM DE VALIDAÇÃO OU CONFLITO */}
         {errorMsg && (
-          <div className="px-2 py-1 rounded-lg bg-rose-950/80 border border-rose-500/50 text-[9.5px] font-mono text-rose-200 leading-tight">
+          <div className="px-2 py-1 rounded-lg bg-[#EF4444]/15 border border-[#EF4444]/50 text-[9.5px] font-mono text-[#EF4444] leading-tight">
             {errorMsg}
+          </div>
+        )}
+
+        {/* ATALHOS RÁPIDOS SOB DEMANDA (EX: N = 3, 4, 6, 8, 12, 16 OU ÂNGULO = 360°, 180°, 90°) */}
+        {presets && presets.length > 0 && (
+          <div className="flex items-center gap-1 flex-wrap py-0.5">
+            <span className={cn("text-[8.5px] font-mono font-bold uppercase mr-0.5", isDark ? "text-[#94A3B8]" : "text-[#64748B]")}>
+              Rápido:
+            </span>
+            {presets.map((p) => {
+              const curNum = parseNormalized(displayStr) ?? currentValue;
+              const isActive = Math.abs(curNum - p.value) < 1e-3;
+              return (
+                <button
+                  key={`preset-${p.label}-${p.value}`}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    const formatted = String(p.value).replace(".", ",");
+                    setDisplayStr(formatted);
+                    setFreshEntry(false);
+                    setErrorMsg(null);
+                    onPreviewChange?.(p.value);
+                  }}
+                  className={cn(
+                    "px-2 py-0.5 rounded-md font-mono text-[9.5px] font-bold transition-colors cursor-pointer active:scale-95",
+                    isActive
+                      ? isDark
+                        ? "bg-[#38BDF8] text-[#0B0F14] shadow-xs"
+                        : "bg-[#0284C7] text-white shadow-xs"
+                      : isDark
+                        ? "bg-[#0D121B] border border-[#293444] text-[#E6EDF5] hover:border-[#38BDF8]"
+                        : "bg-[#F1F5F9] border border-[#CBD5E1] text-[#1E293B] hover:border-[#0284C7]",
+                  )}
+                >
+                  {p.label}
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -358,8 +451,12 @@ export function ChamferDirectDimensionEditor({
               className={cn(
                 "py-1 rounded-lg font-mono text-[9.5px] font-bold transition-colors cursor-pointer",
                 stepMm === s
-                  ? "bg-sky-600/30 border border-sky-500/60 text-sky-300"
-                  : "bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200",
+                  ? isDark
+                    ? "bg-[#38BDF8]/20 border border-[#38BDF8]/60 text-[#38BDF8]"
+                    : "bg-[#0284C7]/15 border border-[#0284C7]/60 text-[#0284C7]"
+                  : isDark
+                    ? "bg-[#0D121B] border border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
+                    : "bg-[#F1F5F9] border border-[#CBD5E1] text-[#64748B] hover:text-[#1E293B]",
               )}
             >
               ±{String(s).replace(".", ",")} {unit}
@@ -374,7 +471,12 @@ export function ChamferDirectDimensionEditor({
               key={d}
               type="button"
               onClick={() => handleDigit(d)}
-              className="h-8 rounded-lg bg-slate-900 hover:bg-slate-800 active:bg-sky-900/50 border border-slate-800 text-xs font-bold text-slate-100 active:scale-95 transition-all cursor-pointer"
+              className={cn(
+                "h-8 rounded-lg border text-xs font-bold active:scale-95 transition-all cursor-pointer",
+                isDark
+                  ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#E6EDF5]"
+                  : "bg-[#F8FAFC] hover:bg-[#F1F5F9] border-[#CBD5E1] text-[#1E293B]",
+              )}
             >
               {d}
             </button>
@@ -382,7 +484,12 @@ export function ChamferDirectDimensionEditor({
           <button
             type="button"
             onClick={handleBackspace}
-            className="h-8 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-amber-300 flex items-center justify-center active:scale-95 transition-all cursor-pointer"
+            className={cn(
+              "h-8 rounded-lg border text-xs font-bold flex items-center justify-center active:scale-95 transition-all cursor-pointer",
+              isDark
+                ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#F59E0B]"
+                : "bg-[#F1F5F9] hover:bg-[#E9EEF4] border-[#CBD5E1] text-[#D97706]",
+            )}
             title="Apagar último dígito (⌫)"
           >
             <Delete className="size-3.5" />
@@ -393,7 +500,12 @@ export function ChamferDirectDimensionEditor({
               key={d}
               type="button"
               onClick={() => handleDigit(d)}
-              className="h-8 rounded-lg bg-slate-900 hover:bg-slate-800 active:bg-sky-900/50 border border-slate-800 text-xs font-bold text-slate-100 active:scale-95 transition-all cursor-pointer"
+              className={cn(
+                "h-8 rounded-lg border text-xs font-bold active:scale-95 transition-all cursor-pointer",
+                isDark
+                  ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#E6EDF5]"
+                  : "bg-[#F8FAFC] hover:bg-[#F1F5F9] border-[#CBD5E1] text-[#1E293B]",
+              )}
             >
               {d}
             </button>
@@ -401,7 +513,12 @@ export function ChamferDirectDimensionEditor({
           <button
             type="button"
             onClick={handleClear}
-            className="h-8 rounded-lg bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-[11px] font-bold text-rose-300 flex items-center justify-center active:scale-95 transition-all cursor-pointer"
+            className={cn(
+              "h-8 rounded-lg border text-[11px] font-bold flex items-center justify-center active:scale-95 transition-all cursor-pointer",
+              isDark
+                ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#FB7185]"
+                : "bg-[#F1F5F9] hover:bg-[#E9EEF4] border-[#CBD5E1] text-[#E11D48]",
+            )}
             title="Limpar entrada (C)"
           >
             C
@@ -412,7 +529,12 @@ export function ChamferDirectDimensionEditor({
               key={d}
               type="button"
               onClick={() => handleDigit(d)}
-              className="h-8 rounded-lg bg-slate-900 hover:bg-slate-800 active:bg-sky-900/50 border border-slate-800 text-xs font-bold text-slate-100 active:scale-95 transition-all cursor-pointer"
+              className={cn(
+                "h-8 rounded-lg border text-xs font-bold active:scale-95 transition-all cursor-pointer",
+                isDark
+                  ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#E6EDF5]"
+                  : "bg-[#F8FAFC] hover:bg-[#F1F5F9] border-[#CBD5E1] text-[#1E293B]",
+              )}
             >
               {d}
             </button>
@@ -423,8 +545,12 @@ export function ChamferDirectDimensionEditor({
             className={cn(
               "h-8 rounded-lg border text-xs font-bold flex items-center justify-center active:scale-95 transition-all cursor-pointer",
               allowNegative
-                ? "bg-slate-800/80 hover:bg-slate-700 border-slate-700 text-slate-200"
-                : "bg-slate-900/40 border-slate-800/50 text-slate-600",
+                ? isDark
+                  ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#E6EDF5]"
+                  : "bg-[#F1F5F9] hover:bg-[#E9EEF4] border-[#CBD5E1] text-[#1E293B]"
+                : isDark
+                  ? "bg-[#0D121B]/50 border-[#293444]/60 text-[#94A3B8]/50"
+                  : "bg-[#F1F5F9]/60 border-[#CBD5E1]/60 text-[#64748B]/50",
             )}
             title="Inverter sinal (±)"
           >
@@ -434,14 +560,24 @@ export function ChamferDirectDimensionEditor({
           <button
             type="button"
             onClick={() => handleDigit("0")}
-            className="col-span-2 h-8 rounded-lg bg-slate-900 hover:bg-slate-800 active:bg-sky-900/50 border border-slate-800 text-xs font-bold text-slate-100 active:scale-95 transition-all cursor-pointer"
+            className={cn(
+              "col-span-2 h-8 rounded-lg border text-xs font-bold active:scale-95 transition-all cursor-pointer",
+              isDark
+                ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#E6EDF5]"
+                : "bg-[#F8FAFC] hover:bg-[#F1F5F9] border-[#CBD5E1] text-[#1E293B]",
+            )}
           >
             0
           </button>
           <button
             type="button"
             onClick={handleDecimal}
-            className="h-8 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 text-sm font-bold text-sky-300 active:scale-95 transition-all cursor-pointer"
+            className={cn(
+              "h-8 rounded-lg border text-sm font-bold active:scale-95 transition-all cursor-pointer",
+              isDark
+                ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#38BDF8]"
+                : "bg-[#F8FAFC] hover:bg-[#F1F5F9] border-[#CBD5E1] text-[#0284C7]",
+            )}
             title="Separador decimal (,)"
           >
             ,
@@ -450,7 +586,7 @@ export function ChamferDirectDimensionEditor({
             <button
               type="button"
               onClick={onInvertSide}
-              className="h-8 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 flex items-center justify-center active:scale-95 transition-all cursor-pointer"
+              className="h-8 rounded-lg bg-[#F59E0B]/20 hover:bg-[#F59E0B]/30 border border-[#F59E0B]/40 text-[#F59E0B] flex items-center justify-center active:scale-95 transition-all cursor-pointer"
               title="Inverter Lado"
             >
               <ArrowLeftRight className="size-3.5" />
@@ -464,7 +600,12 @@ export function ChamferDirectDimensionEditor({
                 setFreshEntry(true);
                 setErrorMsg(null);
               }}
-              className="h-8 rounded-lg bg-slate-800/60 hover:bg-slate-700 border border-slate-800 text-slate-400 flex items-center justify-center active:scale-95 transition-all cursor-pointer"
+              className={cn(
+                "h-8 rounded-lg border flex items-center justify-center active:scale-95 transition-all cursor-pointer",
+                isDark
+                  ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#94A3B8]"
+                  : "bg-[#F1F5F9] hover:bg-[#E9EEF4] border-[#CBD5E1] text-[#64748B]",
+              )}
               title="Restaurar valor original"
             >
               <RotateCcw className="size-3" />
@@ -480,11 +621,13 @@ export function ChamferDirectDimensionEditor({
             className={cn(
               "w-full py-1.5 px-2.5 rounded-xl font-mono text-[10.5px] font-bold flex items-center justify-center gap-1.5 border transition-all active:scale-98 cursor-pointer",
               isLocked
-                ? "bg-amber-500/25 border-amber-400 text-amber-200 shadow-xs"
-                : "bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-300",
+                ? "bg-[#F59E0B]/20 border-[#F59E0B] text-[#F59E0B] shadow-xs"
+                : isDark
+                  ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#E6EDF5]"
+                  : "bg-[#F1F5F9] hover:bg-[#E9EEF4] border-[#CBD5E1] text-[#1E293B]",
             )}
           >
-            {isLocked ? <Unlock className="size-3.5 text-amber-300" /> : <Lock className="size-3.5 text-amber-400" />}
+            {isLocked ? <Unlock className="size-3.5 text-[#F59E0B]" /> : <Lock className="size-3.5 text-[#F59E0B]" />}
             <span>{isLocked ? "🔓 Destravar Medida (Restrição Ativa)" : "🔒 Fixar Medida"}</span>
           </button>
         )}
@@ -494,7 +637,12 @@ export function ChamferDirectDimensionEditor({
           <button
             type="button"
             onClick={onClose}
-            className="py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 font-mono text-[10.5px] font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform cursor-pointer"
+            className={cn(
+              "py-1.5 rounded-xl border font-mono text-[10.5px] font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform cursor-pointer",
+              isDark
+                ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#E6EDF5]"
+                : "bg-[#F1F5F9] hover:bg-[#E9EEF4] border-[#CBD5E1] text-[#1E293B]",
+            )}
           >
             <X className="size-3.5" />
             <span>Cancelar</span>
@@ -502,7 +650,12 @@ export function ChamferDirectDimensionEditor({
           <button
             type="button"
             onClick={() => handleConfirm()}
-            className="py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white font-mono text-[10.5px] font-bold flex items-center justify-center gap-1 shadow-md shadow-sky-600/30 active:scale-95 transition-transform cursor-pointer"
+            className={cn(
+              "py-1.5 rounded-xl font-mono text-[10.5px] font-bold flex items-center justify-center gap-1 shadow-md active:scale-95 transition-transform cursor-pointer",
+              isDark
+                ? "bg-[#34D399] hover:bg-emerald-300 text-[#0B0F14] shadow-[#34D399]/20"
+                : "bg-[#059669] hover:bg-emerald-700 text-white shadow-[#059669]/20",
+            )}
           >
             <Check className="size-3.5 stroke-[2.5]" />
             <span>Confirmar</span>

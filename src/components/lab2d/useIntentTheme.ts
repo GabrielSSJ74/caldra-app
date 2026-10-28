@@ -26,6 +26,23 @@ export interface IntentThemeTokens {
   isDark: boolean;
   prefersReducedMotion: boolean;
   prefersHighContrast: boolean;
+  // Semantic CAD & UI Tokens
+  background: string;
+  canvas: string;
+  panel: string;
+  panelElevated: string;
+  border: string;
+  textPrimary: string;
+  textSecondary: string;
+  accent: string;
+  selection: string;
+  axisX: string;
+  axisY: string;
+  snap: string;
+  dimension: string;
+  warning: string;
+  error: string;
+  confirm: string;
   // UI Tokens
   ciBg: string;
   ciSurface: string;
@@ -61,60 +78,92 @@ export const FALLBACK_DARK_TOKENS: Omit<
   IntentThemeTokens,
   "mode" | "isDark" | "prefersReducedMotion" | "prefersHighContrast"
 > = {
-  ciBg: "#060B14",
-  ciSurface: "#0B1220",
-  ciSurface2: "#0F172A",
-  ciBorder: "#1E293B",
-  ciText: "#F8FAFC",
+  background: "#0B0F14",
+  canvas: "#10151D",
+  panel: "#151C27",
+  panelElevated: "#0D121B",
+  border: "#293444",
+  textPrimary: "#E6EDF5",
+  textSecondary: "#94A3B8",
+  accent: "#E11D48",
+  selection: "#E11D48",
+  axisX: "#E11D48",
+  axisY: "#38BDF8",
+  snap: "#38BDF8",
+  dimension: "#38BDF8",
+  warning: "#F59E0B",
+  error: "#EF4444",
+  confirm: "#34D399",
+  ciBg: "#0B0F14",
+  ciSurface: "#151C27",
+  ciSurface2: "#0D121B",
+  ciBorder: "#293444",
+  ciText: "#E6EDF5",
   ciTextMuted: "#94A3B8",
-  ciAccent: "#0284C7",
-  ciAccentContrast: "#F8FAFC",
-  ciSuccess: "#10B981",
+  ciAccent: "#38BDF8",
+  ciAccentContrast: "#E6EDF5",
+  ciSuccess: "#34D399",
   ciWarning: "#F59E0B",
   ciDanger: "#EF4444",
-  cadCanvas: "#050912",
-  cadGridMinor: "#0F172A",
-  cadGridMajor: "#1E293B",
-  cadAxisX: "#DC2626",
-  cadAxisY: "#16A34A",
+  cadCanvas: "#10151D",
+  cadGridMinor: "#1E293B",
+  cadGridMajor: "#293444",
+  cadAxisX: "#E11D48",
+  cadAxisY: "#38BDF8",
   cadCenter: "#64748B",
   cadHidden: "#64748B",
-  cadDim: "#7DD3FC",
-  cadText: "#E2E8F0",
-  cadSelection: "#38BDF8",
+  cadDim: "#38BDF8",
+  cadText: "#E6EDF5",
+  cadSelection: "#E11D48",
   cadProvisional: "#F59E0B",
   cadSheet: "#F8FAFC",
-  cadSheetInk: "#0F172A",
+  cadSheetInk: "#1E293B",
 };
 
 export const FALLBACK_LIGHT_TOKENS: Omit<
   IntentThemeTokens,
   "mode" | "isDark" | "prefersReducedMotion" | "prefersHighContrast"
 > = {
-  ciBg: "#F8FAFC",
+  background: "#E9EEF4",
+  canvas: "#F8FAFC",
+  panel: "#FFFFFF",
+  panelElevated: "#F1F5F9",
+  border: "#CBD5E1",
+  textPrimary: "#1E293B",
+  textSecondary: "#64748B",
+  accent: "#E11D48",
+  selection: "#E11D48",
+  axisX: "#E11D48",
+  axisY: "#0284C7",
+  snap: "#0284C7",
+  dimension: "#0284C7",
+  warning: "#D97706",
+  error: "#DC2626",
+  confirm: "#059669",
+  ciBg: "#E9EEF4",
   ciSurface: "#FFFFFF",
   ciSurface2: "#F1F5F9",
-  ciBorder: "#E2E8F0",
-  ciText: "#0F172A",
-  ciTextMuted: "#475569",
+  ciBorder: "#CBD5E1",
+  ciText: "#1E293B",
+  ciTextMuted: "#64748B",
   ciAccent: "#0284C7",
   ciAccentContrast: "#FFFFFF",
   ciSuccess: "#059669",
   ciWarning: "#D97706",
   ciDanger: "#DC2626",
   cadCanvas: "#F8FAFC",
-  cadGridMinor: "#E2E8F0",
-  cadGridMajor: "#CBD5E1",
-  cadAxisX: "#DC2626",
-  cadAxisY: "#15803D",
+  cadGridMinor: "#CBD5E1",
+  cadGridMajor: "#94A3B8",
+  cadAxisX: "#E11D48",
+  cadAxisY: "#0284C7",
   cadCenter: "#64748B",
   cadHidden: "#64748B",
   cadDim: "#0284C7",
-  cadText: "#0F172A",
-  cadSelection: "#0284C7",
+  cadText: "#1E293B",
+  cadSelection: "#E11D48",
   cadProvisional: "#D97706",
   cadSheet: "#FFFFFF",
-  cadSheetInk: "#0F172A",
+  cadSheetInk: "#1E293B",
 };
 
 /**
@@ -447,6 +496,22 @@ export function resolveIntentThemeFromDom(rootEl?: HTMLElement | null): IntentTh
     isDark,
     prefersReducedMotion,
     prefersHighContrast,
+    background: base.background,
+    canvas: cadCanvas,
+    panel: base.panel,
+    panelElevated: base.panelElevated,
+    border: base.border,
+    textPrimary: base.textPrimary,
+    textSecondary: base.textSecondary,
+    accent: base.accent,
+    selection: base.selection,
+    axisX: base.axisX,
+    axisY: base.axisY,
+    snap: base.snap,
+    dimension: base.dimension,
+    warning: base.warning,
+    error: base.error,
+    confirm: base.confirm,
     ciBg,
     ciSurface,
     ciSurface2: base.ciSurface2,
@@ -482,6 +547,22 @@ export function buildIntentCssVariables(
   viewportVars?: { vvhPx?: number; kbdPx?: number },
 ): React.CSSProperties {
   const vars: Record<string, string> = {
+    "--cad-token-background": tokens.background,
+    "--cad-token-canvas": tokens.canvas,
+    "--cad-token-panel": tokens.panel,
+    "--cad-token-panel-elevated": tokens.panelElevated,
+    "--cad-token-border": tokens.border,
+    "--cad-token-text-primary": tokens.textPrimary,
+    "--cad-token-text-secondary": tokens.textSecondary,
+    "--cad-token-accent": tokens.accent,
+    "--cad-token-selection": tokens.selection,
+    "--cad-token-axis-x": tokens.axisX,
+    "--cad-token-axis-y": tokens.axisY,
+    "--cad-token-snap": tokens.snap,
+    "--cad-token-dimension": tokens.dimension,
+    "--cad-token-warning": tokens.warning,
+    "--cad-token-error": tokens.error,
+    "--cad-token-confirm": tokens.confirm,
     "--ci-bg": tokens.ciBg,
     "--ci-surface": tokens.ciSurface,
     "--ci-surface-2": tokens.ciSurface2,

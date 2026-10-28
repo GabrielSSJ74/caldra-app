@@ -302,7 +302,11 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     if (e.layer !== currentLayer) {
       currentLayer = e.layer;
       const isCutOrWhite = style.color === "#FFFFFF" || e.layer === "corte";
-      ctx.strokeStyle = opts.isLight && isCutOrWhite ? "#0F172A" : style.color;
+      ctx.strokeStyle = isCutOrWhite
+        ? opts.isLight
+          ? "#1E293B"
+          : "#E6EDF5"
+        : style.color;
       ctx.lineWidth = 1.4 * style.weight * inv;
       const dash = !lod && style.dash(inv);
       ctx.setLineDash(dash ? dash.split(" ").map(Number) : []);
@@ -364,13 +368,13 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     if (opts.isDraggingUnlocked) {
       // Destaque visual ao destravar movimento: contorno laranja brilhante com dash técnico
       ctx.setLineDash([8 * inv, 4 * inv]);
-      ctx.strokeStyle = "#FF8800";
+      ctx.strokeStyle = "#F59E0B";
       ctx.globalAlpha = 0.95;
       ctx.lineWidth = 6 * inv;
     } else {
       ctx.setLineDash([]);
-      ctx.strokeStyle = opts.isLight ? "#DC2626" : SELECTION_COLOR;
-      ctx.globalAlpha = opts.isLight ? 0.75 : 0.65;
+      ctx.strokeStyle = opts.isLight ? "#E11D48" : SELECTION_COLOR;
+      ctx.globalAlpha = opts.isLight ? 0.8 : 0.72;
       ctx.lineWidth = 4.5 * inv;
     }
     const selTopOffset = is3DWireframeActive

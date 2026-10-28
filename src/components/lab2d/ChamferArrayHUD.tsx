@@ -1,112 +1,71 @@
-/**
- * CALDRA CHAMFER — HUD COMPACTO DE ARRAYS INTELIGENTES (PADRÃO LINEAR E PADRÃO CIRCULAR / POLAR)
- *
- * Especificação Industrial:
- * - Zero Teclado Nativo do Celular: Todas as pílulas numéricas abrem o teclado numérico próprio do CAD
- *   (`ChamferDirectDimensionEditor`) com suporte a `🔒 Fixar Medida`.
- * - Detecção Topológica Real com Nível de Confiança (`ALTA`, `MÉDIA`, `BAIXA`) e seleção de centros candidatos.
- * - Chip inteligente `[ ⌖ Centralizar na aba ]` quando o furo no flange está fora do raio médio (R_médio).
- * - 4 Modos Matemáticos no Padrão Linear:
- *   1. Passo Fixo (`fixed_step`)
- *   2. Extensão Total (`total_span`)
- *   3. Adaptar à Peça / Auto-Fit (`auto_fit`)
- *   4. Preencher / Fill (`fill`)
- * - Contador dinâmico de instâncias ativas e omitidas (`skippedIndices`) + Diagnóstico de Colisões em tempo real.
- */
-
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   RotateCw,
-  Copy,
+  Grid,
   Check,
   X,
-  Target,
-  AlertTriangle,
-  ArrowRightLeft,
-  CircleDot,
-  Lock,
   Crosshair,
-  RefreshCw,
+  AlertTriangle,
+  Sparkles,
+  RotateCcw,
+  Lock,
+  Compass,
+  ArrowLeftRight,
+  ArrowUpDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import type { Vec2 } from "@/lib/geometry/types";
 import type {
   ArrayType,
-  HostDetectionResult,
-  ArrayValidationResult,
   PolarArrayParams,
   LinearArrayParams,
   LinearDistributionMode,
-  PolarLockedField,
-  LinearLockedField,
+  HostDetectionResult,
+  ArrayValidationResult,
+  ComputeInstancesResult,
 } from "@/lib/lab2d/cadArrayEngine";
-import { ChamferDirectDimensionEditor } from "@/components/lab2d/ChamferDirectDimensionEditor";
+import { ChamferDirectDimensionEditor } from "./ChamferDirectDimensionEditor";
 
 export interface ChamferArrayHUDProps {
   arrayType: ArrayType;
   onChangeArrayType: (type: ArrayType) => void;
-
   polarParams: PolarArrayParams;
-  onChangePolarParams: (params: PolarArrayParams) => void;
-
+  onChangePolarParams: React.Dispatch<React.SetStateAction<PolarArrayParams>>;
   linearParams: LinearArrayParams;
-  onChangeLinearParams: (params: LinearArrayParams) => void;
-
+  onChangeLinearParams: React.Dispatch<React.SetStateAction<LinearArrayParams>>;
   hostInfo: HostDetectionResult;
   validation: ArrayValidationResult;
-
-  resolvedLinearInfo?: {
-    cols: number;
-    rows: number;
-    stepX: number;
-    stepY: number;
-    spanX: number;
-    spanY: number;
-  };
-  resolvedPolarInfo?: {
-    count: number;
-    stepAngleDeg: number;
-    radius: number;
-    pcd: number;
-    startAngleDeg: number;
-  };
-
+  resolvedLinear?: ComputeInstancesResult["resolvedLinear"];
   isPickingCenter: boolean;
   onTogglePickCenter: () => void;
-  onSelectCandidateCenter: (center: Vec2) => void;
-  onCenterOnFlangeTab?: () => void;
-
-  isEditingExistingArray?: boolean;
+  onSelectCandidateCenter?: (center: Vec2) => void;
   onApply: () => void;
   onCancel: () => void;
-  isDark?: boolean;
+  isDark: boolean;
+  isCanvasInteracting?: boolean;
 }
 
-interface ActiveKeypadField {
-  id: string;
-  label: string;
-  value: number;
-  unit: string;
-  allowNegative: boolean;
-  isInteger?: boolean;
-  minVal?: number;
-  initialLocked: boolean;
-  screenPos: { x: number; y: number };
-  onUpdateValue: (val: number, locked?: boolean) => void;
-}
+type ActiveKeypadField =
+  | "polar_count"
+  | "polar_pcd"
+  | "polar_radius"
+  | "polar_angle"
+  | "polar_start_angle"
+  | "linear_nx"
+  | "linear_ny"
+  | "linear_dx"
+  | "linear_dy"
+  | "linear_span_x"
+  | "linear_span_y"
+  | "linear_margin"
+  | "linear_angle";
 
-const POLAR_COUNT_PRESETS = [3, 4, 6, 8, 12, 16];
-const POLAR_ANGLE_PRESETS = [360, 180, 90];
+const COUNT_PRESETS = [3, 4, 6, 8, 12, 16];
+const ANGLE_PRESETS = [360, 180, 90];
+const LINEAR_ANGLE_PRESETS = [0, 30, 45, 90];
 
-const LINEAR_MODE_LABELS: { id: LinearDistributionMode; label: string; short: string }[] = [
-  { id: "fixed_step", label: "Passo Fixo", short: "Passo Fixo" },
-  { id: "total_span", label: "Extensão Total", short: "Extensão" },
-  { id: "auto_fit", label: "Adaptar à Peça (Auto-Fit)", short: "Auto-Fit" },
-  { id: "fill", label: "Preencher (Fill)", short: "Fill" },
-];
-
-export function ChamferArrayHUD({
+export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
   arrayType,
   onChangeArrayType,
   polarParams,
@@ -115,969 +74,1426 @@ export function ChamferArrayHUD({
   onChangeLinearParams,
   hostInfo,
   validation,
-  resolvedLinearInfo,
-  resolvedPolarInfo,
+  resolvedLinear,
   isPickingCenter,
   onTogglePickCenter,
   onSelectCandidateCenter,
-  onCenterOnFlangeTab,
-  isEditingExistingArray = false,
   onApply,
   onCancel,
-  isDark = true,
-}: ChamferArrayHUDProps) {
-  const isPolar = arrayType === "polar";
-  const linearMode: LinearDistributionMode = linearParams.mode ?? "fixed_step";
-  const [keypadField, setKeypadField] = useState<ActiveKeypadField | null>(null);
+  isDark,
+}) => {
+  const [keypadState, setKeypadState] = useState<{
+    field: ActiveKeypadField;
+    label: string;
+    value: number;
+    screenPos: { x: number; y: number };
+    allowInvert?: boolean;
+    initialLocked?: boolean;
+  } | null>(null);
 
-  const openKeypadFromButton = (
-    e: React.MouseEvent<HTMLButtonElement>,
-    config: Omit<ActiveKeypadField, "screenPos">,
-  ) => {
-    triggerHaptic("selection");
-    const rect = e.currentTarget.getBoundingClientRect();
-    setKeypadField({
-      ...config,
-      screenPos: {
-        x: rect.left + rect.width / 2,
-        y: rect.bottom + 8,
-      },
-    });
-  };
+  const safePolarRadius = Number.isFinite(polarParams.radius) ? (polarParams.radius ?? 50) : 50;
+  const pcdValue = Number((safePolarRadius * 2).toFixed(2));
+  const radiusValue = Number(safePolarRadius.toFixed(2));
+  const startAngleValue = Number((polarParams.startAngleDeg ?? 0).toFixed(1));
+  const linearMode: LinearDistributionMode =
+    linearParams.mode ?? linearParams.modeX ?? "fixed_step";
+  const linearAngleValue = Number((linearParams.angleDeg ?? 0).toFixed(1));
+  const marginValue = Number((linearParams.marginX ?? 15).toFixed(1));
+  const spanXValue = Number((linearParams.spanX ?? 160).toFixed(1));
+  const spanYValue = Number((linearParams.spanY ?? 100).toFixed(1));
 
-  const currentRadius =
-    resolvedPolarInfo?.radius ??
-    polarParams.radius ??
-    (hostInfo.pcd ? hostInfo.pcd / 2 : 50);
-  const currentPcd = currentRadius * 2;
-  const currentStartAngle =
-    resolvedPolarInfo?.startAngleDeg ?? polarParams.startAngleDeg ?? 0;
+  const effectiveCols = resolvedLinear?.cols ?? linearParams.cols ?? 1;
+  const effectiveRows = resolvedLinear?.rows ?? linearParams.rows ?? 1;
+  const effectiveStepX = Number(
+    (resolvedLinear?.stepX ?? linearParams.dx ?? 40).toFixed(1),
+  );
+  const effectiveStepY = Number(
+    (resolvedLinear?.stepY ?? linearParams.dy ?? 40).toFixed(1),
+  );
 
-  const isPolarLocked = (field: PolarLockedField) =>
-    Boolean(polarParams.lockedFields?.[field]);
-  const isLinearLocked = (field: LinearLockedField) =>
-    Boolean(linearParams.lockedFields?.[field]);
+  const openNumericKeypad = useCallback(
+    (
+      ev: React.MouseEvent<HTMLElement>,
+      field: ActiveKeypadField,
+      label: string,
+      value: number,
+      allowInvert = false,
+      initialLocked = false,
+    ) => {
+      ev.stopPropagation();
+      triggerHaptic("selection");
+      const rect = ev.currentTarget.getBoundingClientRect();
+      const safeX =
+        typeof window !== "undefined"
+          ? Math.max(160, Math.min(window.innerWidth - 180, rect.left - 145))
+          : rect.left;
+      const safeY =
+        typeof window !== "undefined"
+          ? Math.max(150, Math.min(window.innerHeight - 190, rect.top))
+          : rect.top;
+      setKeypadState({
+        field,
+        label,
+        value,
+        screenPos: { x: safeX, y: safeY },
+        allowInvert,
+        initialLocked,
+      });
+    },
+    [],
+  );
 
-  const confidenceBadgeColor =
-    hostInfo.confidence === "high"
-      ? "bg-emerald-950/70 border-emerald-500/40 text-emerald-300"
-      : hostInfo.confidence === "medium"
-        ? "bg-amber-950/70 border-amber-500/40 text-amber-300"
-        : "bg-slate-900 border-slate-700 text-slate-400";
+  const applyKeypadValue = useCallback(
+    (rawVal: number, isFinal: boolean) => {
+      if (!keypadState || !Number.isFinite(rawVal)) return;
+      const f = keypadState.field;
 
-  const skippedCount = validation.skippedCount;
+      if (f === "polar_count") {
+        const nextCount = Math.max(2, Math.min(360, Math.round(Math.abs(rawVal))));
+        onChangePolarParams((p) => ({ ...p, count: nextCount }));
+      } else if (f === "polar_pcd") {
+        const nextPcd = Math.max(1, Math.abs(rawVal));
+        onChangePolarParams((p) => ({ ...p, radius: nextPcd / 2 }));
+      } else if (f === "polar_radius") {
+        const nextR = Math.max(0.5, Math.abs(rawVal));
+        onChangePolarParams((p) => ({ ...p, radius: nextR }));
+      } else if (f === "polar_angle") {
+        const nextAng = Math.max(1, Math.min(360, Math.abs(rawVal)));
+        onChangePolarParams((p) => ({ ...p, totalAngleDeg: nextAng }));
+      } else if (f === "polar_start_angle") {
+        onChangePolarParams((p) => ({ ...p, startAngleDeg: rawVal }));
+      } else if (f === "linear_nx") {
+        const nextNx = Math.max(1, Math.min(200, Math.round(Math.abs(rawVal))));
+        onChangeLinearParams((p) => ({
+          ...p,
+          mode: p.mode === "fill" ? "fixed_step" : p.mode,
+          modeX: p.modeX === "fill" ? "fixed_step" : p.modeX,
+          cols: nextNx,
+        }));
+      } else if (f === "linear_ny") {
+        const nextNy = Math.max(1, Math.min(200, Math.round(Math.abs(rawVal))));
+        onChangeLinearParams((p) => ({ ...p, rows: nextNy }));
+      } else if (f === "linear_dx") {
+        onChangeLinearParams((p) => ({
+          ...p,
+          dx: rawVal,
+          dirX: rawVal < 0 ? -1 : 1,
+        }));
+      } else if (f === "linear_dy") {
+        onChangeLinearParams((p) => ({
+          ...p,
+          dy: rawVal,
+          dirY: rawVal < 0 ? -1 : 1,
+        }));
+      } else if (f === "linear_span_x") {
+        onChangeLinearParams((p) => ({ ...p, spanX: Math.max(1, Math.abs(rawVal)) }));
+      } else if (f === "linear_span_y") {
+        onChangeLinearParams((p) => ({ ...p, spanY: Math.max(0, Math.abs(rawVal)) }));
+      } else if (f === "linear_margin") {
+        const nextMargin = Math.max(0, Math.abs(rawVal));
+        onChangeLinearParams((p) => ({
+          ...p,
+          marginX: nextMargin,
+          marginY: nextMargin,
+        }));
+      } else if (f === "linear_angle") {
+        onChangeLinearParams((p) => ({ ...p, angleDeg: rawVal }));
+      }
 
-  const handleClearSkipped = () => {
-    triggerHaptic("selection");
-    if (isPolar) {
-      onChangePolarParams({ ...polarParams, skippedIndices: [] });
-    } else {
-      onChangeLinearParams({ ...linearParams, skippedIndices: [] });
-    }
-  };
+      if (isFinal) {
+        setKeypadState(null);
+      }
+    },
+    [keypadState, onChangePolarParams, onChangeLinearParams],
+  );
+
+  const primaryDiagnostic =
+    validation.errors[0] ??
+    validation.warnings[0] ??
+    (validation.collidingCount > 0
+      ? "Colisão entre furos: ajuste o passo ou o raio."
+      : null);
+
+  const cardClass = cn(
+    "rounded-xl border p-2.5 transition-colors",
+    isDark
+      ? "border-slate-800/90 bg-slate-900/55"
+      : "border-slate-200 bg-slate-50/90",
+  );
+
+  const rowClass = cn(
+    "flex items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 transition-colors",
+    isDark
+      ? "border-slate-800/80 bg-slate-950/65"
+      : "border-slate-200/90 bg-white",
+  );
+
+  const stepBtnClass = cn(
+    "flex size-6 shrink-0 items-center justify-center rounded-md border font-mono text-xs font-bold transition-colors cursor-pointer",
+    isDark
+      ? "border-slate-700 bg-slate-900 text-slate-300 hover:border-cyan-500/50 hover:text-white"
+      : "border-slate-300 bg-slate-100 text-slate-700 hover:border-cyan-500 hover:text-slate-950",
+  );
+
+  const valuePillClass = cn(
+    "min-w-[68px] rounded-md border px-2 py-0.5 text-center font-mono text-[11px] font-bold tabular-nums transition-colors cursor-pointer",
+    isDark
+      ? "border-cyan-500/35 bg-cyan-950/40 text-cyan-300 hover:border-cyan-400 hover:bg-cyan-900/50"
+      : "border-cyan-400 bg-cyan-50 text-cyan-800 hover:bg-cyan-100",
+  );
 
   return (
     <>
-      <div
-        role="toolbar"
-        aria-label="Controle de Padrão Geométrico (Array)"
+      <aside
+        id="chamfer-array-right-panel"
+        aria-label="Janela Lateral Direita de Padrão de Repetição (Array)"
+        onPointerDown={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
         className={cn(
-          "pointer-events-auto fixed top-14 sm:top-16 left-1/2 -translate-x-1/2 z-40 flex flex-col gap-1.5 rounded-2xl border px-3 py-2 shadow-2xl backdrop-blur-xl transition-all select-none",
-          "max-w-[calc(100vw-16px)] md:max-w-[920px] text-xs",
+          "z-40 flex h-full w-[285px] sm:w-[310px] max-w-[86vw] shrink-0 flex-col overflow-hidden border-l select-none shadow-2xl backdrop-blur-md transition-all",
+          "max-sm:absolute max-sm:right-1 max-sm:top-1 max-sm:bottom-1 max-sm:rounded-2xl max-sm:border sm:relative",
           isDark
-            ? "border-cyan-800/60 bg-slate-950/95 text-slate-100 shadow-black/80"
-            : "border-slate-300 bg-white/95 text-slate-800 shadow-slate-300/50",
+            ? "border-[#293444] bg-[#151C27]/98 text-[#E6EDF5]"
+            : "border-[#CBD5E1] bg-[#FFFFFF]/98 text-[#1E293B]",
         )}
       >
-        {/* LINHA 1: COMUTADOR DE TIPO + CONFIANÇA DO HOSPEDEIRO + CENTRALIZAR NA ABA + SELEÇÃO DE CENTRO */}
-        <div className="flex flex-wrap items-center justify-between gap-1.5 border-b pb-1.5 border-slate-700/50">
-          <div className="flex items-center gap-1.5">
-            {/* COMUTADOR DE TIPO DE ARRAY */}
-            <div className="flex items-center gap-1 bg-slate-900/80 p-0.5 rounded-xl border border-slate-700/50">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  onChangeArrayType("polar");
-                }}
-                className={cn(
-                  "flex items-center gap-1 px-2.5 py-1 rounded-lg font-mono text-[11px] font-bold transition-all cursor-pointer",
-                  isPolar
-                    ? "bg-cyan-600 text-white shadow-xs"
-                    : "text-slate-400 hover:text-white hover:bg-slate-800",
-                )}
-              >
-                <RotateCw className="size-3.5" />
-                <span>Padrão Circular</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  onChangeArrayType("linear");
-                }}
-                className={cn(
-                  "flex items-center gap-1 px-2.5 py-1 rounded-lg font-mono text-[11px] font-bold transition-all cursor-pointer",
-                  !isPolar
-                    ? "bg-cyan-600 text-white shadow-xs"
-                    : "text-slate-400 hover:text-white hover:bg-slate-800",
-                )}
-              >
-                <Copy className="size-3.5" />
-                <span>Padrão Linear</span>
-              </button>
-            </div>
-
-            {isEditingExistingArray && (
-              <span className="px-2 py-0.5 rounded-md bg-purple-950/80 border border-purple-500/40 text-purple-300 font-mono text-[10px] font-bold">
-                ⌗ Editando Array
-              </span>
-            )}
-          </div>
-
-          {/* DETECÇÃO TOPOLÓGICA DA PEÇA HOSPEDEIRA + NÍVEL DE CONFIANÇA */}
-          <div className="flex flex-wrap items-center gap-1.5">
-            <div
-              className={cn(
-                "flex items-center gap-1.5 px-2 py-0.5 rounded-lg border font-mono text-[10px]",
-                confidenceBadgeColor,
-              )}
-              title={`Confiança da detecção topológica: ${hostInfo.confidenceLabel}`}
-            >
-              <CircleDot className="size-3 shrink-0" />
-              <span className="font-bold uppercase">[{hostInfo.confidenceLabel}]</span>
-              <span className="truncate max-w-[210px] sm:max-w-[300px]">
-                {hostInfo.description}
+        {/* ================================================================= */}
+        {/* CABEÇALHO FIXO DA JANELA DIREITA                                   */}
+        {/* ================================================================= */}
+        <div
+          className={cn(
+            "flex shrink-0 flex-col gap-2 border-b px-3 py-2.5",
+            isDark
+              ? "border-[#293444] bg-[#0D121B]"
+              : "border-[#CBD5E1] bg-[#F1F5F9]",
+          )}
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Sparkles className={cn("size-3.5 shrink-0", isDark ? "text-[#38BDF8]" : "text-[#0284C7]")} />
+              <span className="truncate font-mono text-[10px] font-bold uppercase tracking-wider">
+                PADRÃO DE REPETIÇÃO (ARRAY)
               </span>
             </div>
-
-            {/* CHIP INTELIGENTE: [ ⌖ Centralizar na aba ] (SEÇÃO 1.3) */}
-            {isPolar &&
-              hostInfo.type === "flange" &&
-              hostInfo.isOffFlangeCenterline &&
-              hostInfo.flangeMidPcd !== undefined && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("action");
-                    if (onCenterOnFlangeTab) {
-                      onCenterOnFlangeTab();
-                    } else if (hostInfo.flangeMidRadius !== undefined) {
-                      onChangePolarParams({
-                        ...polarParams,
-                        radius: hostInfo.flangeMidRadius,
-                        repositionOriginalToPcd: true,
-                      });
-                    }
-                  }}
-                  className={cn(
-                    "flex items-center gap-1 px-2 py-0.5 rounded-lg border font-mono text-[10px] font-bold transition-all cursor-pointer active:scale-95",
-                    polarParams.repositionOriginalToPcd &&
-                      Math.abs(currentPcd - hostInfo.flangeMidPcd) < 0.2
-                      ? "bg-emerald-600/30 border-emerald-400 text-emerald-200"
-                      : "bg-amber-500/20 hover:bg-amber-500/30 border-amber-400/60 text-amber-200",
-                  )}
-                  title={`Centralizar furação na linha média da aba do flange (PCD = ${hostInfo.flangeMidPcd.toFixed(1)} mm)`}
-                >
-                  <Crosshair className="size-3 text-amber-300" />
-                  <span>⌖ Centralizar na aba (Ø{hostInfo.flangeMidPcd.toFixed(0)})</span>
-                </button>
-              )}
-          </div>
-
-          {/* SELETOR INTERATIVO DE PIVÔ / CENTRO (POLAR) */}
-          {isPolar && (
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("tap");
-                  onTogglePickCenter();
-                }}
-                className={cn(
-                  "flex items-center gap-1 px-2 py-1 rounded-lg border font-mono text-[10px] font-bold transition-all cursor-pointer",
-                  isPickingCenter
-                    ? "bg-rose-600 border-rose-400 text-white animate-pulse"
-                    : "bg-slate-900 border-rose-500/50 text-rose-300 hover:border-rose-400 hover:text-rose-200",
-                )}
-                title="Toque no canvas ou arraste o pivô vermelho carmesim (#DC143C) para reposicionar o centro"
-              >
-                <Target className="size-3 text-rose-400" />
-                <span>{isPickingCenter ? "Toque no Centro..." : "Pivô ⊕"}</span>
-              </button>
-
-              {hostInfo.candidateCenters.length > 1 && (
-                <div className="flex items-center gap-1">
-                  {hostInfo.candidateCenters.slice(0, 3).map((cand, idx) => {
-                    const isSelected =
-                      Math.hypot(
-                        cand.point.x - polarParams.center.x,
-                        cand.point.y - polarParams.center.y,
-                      ) < 0.5;
-                    return (
-                      <button
-                        key={`cand-chip-${idx}`}
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          onSelectCandidateCenter(cand.point);
-                        }}
-                        className={cn(
-                          "px-1.5 py-0.5 rounded-md border font-mono text-[9.5px] transition-colors cursor-pointer",
-                          isSelected
-                            ? "border-cyan-400 bg-cyan-950/80 text-cyan-200 font-bold"
-                            : "border-slate-700 bg-slate-900 text-slate-400 hover:text-white",
-                        )}
-                        title={cand.label}
-                      >
-                        C{idx + 1} ({cand.point.x.toFixed(0)},{cand.point.y.toFixed(0)})
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* SUB-LINHA DE MODOS MATEMÁTICOS (APENAS PARA PADRÃO LINEAR — SEÇÃO 1.2) */}
-        {!isPolar && (
-          <div className="flex flex-wrap items-center justify-between gap-1.5 border-b pb-1.5 border-slate-800/80">
-            <div className="flex items-center gap-1">
-              <span className="font-mono text-[10px] text-slate-400 uppercase font-bold mr-1">
-                Modo Linear:
-              </span>
-              {LINEAR_MODE_LABELS.map((m) => {
-                const active = linearMode === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      onChangeLinearParams({
-                        ...linearParams,
-                        mode: m.id,
-                        marginX: linearParams.marginX ?? 15,
-                        marginY: linearParams.marginY ?? 15,
-                        spanX:
-                          linearParams.spanX ??
-                          Math.abs(linearParams.dx) * Math.max(1, linearParams.cols - 1),
-                        spanY:
-                          linearParams.spanY ??
-                          Math.abs(linearParams.dy) * Math.max(1, linearParams.rows - 1),
-                      });
-                    }}
-                    className={cn(
-                      "px-2 py-0.5 rounded-lg border font-mono text-[10px] font-bold transition-all cursor-pointer",
-                      active
-                        ? "border-cyan-500 bg-cyan-600/30 text-cyan-200 shadow-2xs"
-                        : "border-slate-800 bg-slate-900/90 text-slate-400 hover:text-slate-200",
-                    )}
-                    title={m.label}
-                  >
-                    {m.short}
-                  </button>
-                );
-              })}
-            </div>
-
-            {resolvedLinearInfo && (
-              <span className="font-mono text-[10px] text-cyan-300/90">
-                Passo efetivo: {Math.abs(resolvedLinearInfo.stepX).toFixed(1)} mm · Extensão:{" "}
-                {resolvedLinearInfo.spanX.toFixed(1)} mm
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* LINHA 2: PÍLULAS NUMÉRICAS INTERATIVAS (TECLADO CAD INTEGRADO SEM <input> NATIVO) */}
-        <div className="flex flex-wrap items-center gap-2">
-          {isPolar ? (
-            <>
-              {/* QUANTIDADE DE ITENS NO POLAR (N) */}
-              <div className="flex items-center gap-1">
-                <span className="font-mono text-[10px] text-slate-400 uppercase">Qtd N:</span>
-                <button
-                  type="button"
-                  onClick={(e) =>
-                    openKeypadFromButton(e, {
-                      id: "polar-count",
-                      label: "Quantidade de Furos / Itens (N)",
-                      value: polarParams.count,
-                      unit: "un",
-                      allowNegative: false,
-                      isInteger: true,
-                      minVal: 1,
-                      initialLocked: isPolarLocked("count"),
-                      onUpdateValue: (val, locked) => {
-                        const n = Math.max(1, Math.round(val));
-                        onChangePolarParams({
-                          ...polarParams,
-                          count: n,
-                          lockedFields: { ...polarParams.lockedFields, count: locked },
-                        });
-                      },
-                    })
-                  }
-                  className={cn(
-                    "flex items-center gap-1 min-w-[44px] justify-center rounded-lg border px-2 py-0.5 font-mono text-xs font-bold text-cyan-300 transition-colors cursor-pointer",
-                    isPolarLocked("count")
-                      ? "border-amber-500/70 bg-amber-950/40 text-amber-300"
-                      : isDark
-                        ? "border-slate-700 bg-slate-900 hover:border-cyan-500"
-                        : "border-slate-300 bg-white",
-                  )}
-                  title="Toque para digitar a quantidade N no teclado numérico CAD"
-                >
-                  {isPolarLocked("count") && <Lock className="size-2.5 text-amber-400" />}
-                  <span>{polarParams.count}</span>
-                </button>
-              </div>
-
-              {/* PRESETS DE QUANTIDADE POLAR */}
-              <div className="flex items-center gap-0.5">
-                {POLAR_COUNT_PRESETS.map((p) => (
-                  <button
-                    key={`polar-count-${p}`}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      onChangePolarParams({ ...polarParams, count: p });
-                    }}
-                    className={cn(
-                      "px-1.5 py-0.5 rounded-md border font-mono text-[10px] font-medium transition-colors cursor-pointer",
-                      polarParams.count === p
-                        ? "border-cyan-500 bg-cyan-600/30 text-cyan-300 font-bold"
-                        : isDark
-                          ? "border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
-                          : "border-slate-200 bg-slate-100 text-slate-600 hover:text-black",
-                    )}
-                  >
-                    {p}
-                  </button>
-                ))}
-              </div>
-
-              <div className="h-4 w-px bg-slate-700/60 hidden sm:block" />
-
-              {/* PCD (DIÂMETRO DO CÍRCULO PRIMITIVO) */}
-              <div className="flex items-center gap-1">
-                <span className="font-mono text-[10px] text-slate-400 uppercase">PCD:</span>
-                <button
-                  type="button"
-                  onClick={(e) =>
-                    openKeypadFromButton(e, {
-                      id: "polar-pcd",
-                      label: "Diâmetro do Círculo de Furação — PCD (mm)",
-                      value: Number(currentPcd.toFixed(2)),
-                      unit: "mm",
-                      allowNegative: false,
-                      initialLocked: isPolarLocked("pcd"),
-                      onUpdateValue: (dia, locked) => {
-                        if (dia > 0) {
-                          onChangePolarParams({
-                            ...polarParams,
-                            radius: dia / 2,
-                            repositionOriginalToPcd: true,
-                            lockedFields: {
-                              ...polarParams.lockedFields,
-                              pcd: locked,
-                              radius: locked,
-                            },
-                          });
-                        }
-                      },
-                    })
-                  }
-                  className={cn(
-                    "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-mono text-xs font-bold text-cyan-300 transition-colors cursor-pointer",
-                    isPolarLocked("pcd")
-                      ? "border-amber-500/70 bg-amber-950/40 text-amber-300"
-                      : isDark
-                        ? "border-slate-700 bg-slate-900 hover:border-cyan-500"
-                        : "border-slate-300 bg-white",
-                  )}
-                  title="Toque para editar o PCD (Ø = 2R) no teclado CAD"
-                >
-                  {isPolarLocked("pcd") && <Lock className="size-2.5 text-amber-400" />}
-                  <span>Ø {currentPcd.toFixed(1)} mm</span>
-                </button>
-              </div>
-
-              {/* RAIO (R = PCD / 2) */}
-              <div className="flex items-center gap-1">
-                <span className="font-mono text-[10px] text-slate-400 uppercase">Raio:</span>
-                <button
-                  type="button"
-                  onClick={(e) =>
-                    openKeypadFromButton(e, {
-                      id: "polar-radius",
-                      label: "Raio do Círculo de Furação — R (mm)",
-                      value: Number(currentRadius.toFixed(2)),
-                      unit: "mm",
-                      allowNegative: false,
-                      initialLocked: isPolarLocked("radius"),
-                      onUpdateValue: (r, locked) => {
-                        if (r > 0) {
-                          onChangePolarParams({
-                            ...polarParams,
-                            radius: r,
-                            repositionOriginalToPcd: true,
-                            lockedFields: {
-                              ...polarParams.lockedFields,
-                              radius: locked,
-                              pcd: locked,
-                            },
-                          });
-                        }
-                      },
-                    })
-                  }
-                  className={cn(
-                    "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-mono text-xs font-bold text-cyan-300 transition-colors cursor-pointer",
-                    isPolarLocked("radius")
-                      ? "border-amber-500/70 bg-amber-950/40 text-amber-300"
-                      : isDark
-                        ? "border-slate-700 bg-slate-900 hover:border-cyan-500"
-                        : "border-slate-300 bg-white",
-                  )}
-                  title="Toque para editar o Raio R no teclado CAD"
-                >
-                  <span>R {currentRadius.toFixed(1)}</span>
-                </button>
-              </div>
-
-              <div className="h-4 w-px bg-slate-700/60 hidden sm:block" />
-
-              {/* ÂNGULO TOTAL */}
-              <div className="flex items-center gap-1">
-                <span className="font-mono text-[10px] text-slate-400 uppercase">Ângulo:</span>
-                <button
-                  type="button"
-                  onClick={(e) =>
-                    openKeypadFromButton(e, {
-                      id: "polar-total-angle",
-                      label: "Ângulo Total de Distribuição (°)",
-                      value: Number(polarParams.totalAngleDeg.toFixed(1)),
-                      unit: "°",
-                      allowNegative: false,
-                      initialLocked: isPolarLocked("totalAngleDeg"),
-                      onUpdateValue: (ang, locked) => {
-                        const clamped = Math.max(1, Math.min(360, ang));
-                        onChangePolarParams({
-                          ...polarParams,
-                          totalAngleDeg: clamped,
-                          lockedFields: { ...polarParams.lockedFields, totalAngleDeg: locked },
-                        });
-                      },
-                    })
-                  }
-                  className={cn(
-                    "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-mono text-xs font-bold text-cyan-300 transition-colors cursor-pointer",
-                    isPolarLocked("totalAngleDeg")
-                      ? "border-amber-500/70 bg-amber-950/40 text-amber-300"
-                      : isDark
-                        ? "border-slate-700 bg-slate-900 hover:border-cyan-500"
-                        : "border-slate-300 bg-white",
-                  )}
-                >
-                  {isPolarLocked("totalAngleDeg") && <Lock className="size-2.5 text-amber-400" />}
-                  <span>{polarParams.totalAngleDeg.toFixed(0)}°</span>
-                </button>
-              </div>
-
-              {/* PRESETS DE ÂNGULO POLAR */}
-              <div className="hidden sm:flex items-center gap-0.5">
-                {POLAR_ANGLE_PRESETS.map((ang) => (
-                  <button
-                    key={`polar-ang-${ang}`}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      onChangePolarParams({ ...polarParams, totalAngleDeg: ang });
-                    }}
-                    className={cn(
-                      "px-1.5 py-0.5 rounded-md border font-mono text-[10px] font-medium transition-colors cursor-pointer",
-                      Math.abs(polarParams.totalAngleDeg - ang) < 0.1
-                        ? "border-cyan-500 bg-cyan-600/30 text-cyan-300 font-bold"
-                        : isDark
-                          ? "border-slate-800 bg-slate-900 text-slate-400 hover:text-white"
-                          : "border-slate-200 bg-slate-100 text-slate-600 hover:text-black",
-                    )}
-                  >
-                    {ang}°
-                  </button>
-                ))}
-              </div>
-
-              {/* ÂNGULO INICIAL (θ0) */}
-              <div className="flex items-center gap-1">
-                <span className="font-mono text-[10px] text-slate-400 uppercase">θ₀:</span>
-                <button
-                  type="button"
-                  onClick={(e) =>
-                    openKeypadFromButton(e, {
-                      id: "polar-start-angle",
-                      label: "Ângulo Inicial θ₀ (°)",
-                      value: Number(currentStartAngle.toFixed(1)),
-                      unit: "°",
-                      allowNegative: true,
-                      initialLocked: isPolarLocked("startAngleDeg"),
-                      onUpdateValue: (ang, locked) => {
-                        onChangePolarParams({
-                          ...polarParams,
-                          startAngleDeg: ang,
-                          repositionOriginalToPcd: true,
-                          lockedFields: { ...polarParams.lockedFields, startAngleDeg: locked },
-                        });
-                      },
-                    })
-                  }
-                  className={cn(
-                    "flex items-center gap-1 rounded-lg border px-1.5 py-0.5 font-mono text-[11px] font-bold text-slate-200 transition-colors cursor-pointer",
-                    isPolarLocked("startAngleDeg")
-                      ? "border-amber-500/70 bg-amber-950/40 text-amber-300"
-                      : "border-slate-700 bg-slate-900 hover:border-cyan-500",
-                  )}
-                  title="Ângulo inicial θ₀ em relação ao centro (+X = 0°)"
-                >
-                  <span>{currentStartAngle.toFixed(0)}°</span>
-                </button>
-              </div>
-
-              {/* SENTIDO (HORÁRIO / ANTI-HORÁRIO) */}
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  onChangePolarParams({
-                    ...polarParams,
-                    clockwise: !polarParams.clockwise,
-                  });
-                }}
-                className={cn(
-                  "px-2 py-0.5 rounded-lg border text-[10px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer",
-                  polarParams.clockwise
-                    ? "bg-amber-950/60 border-amber-500/50 text-amber-300"
-                    : "bg-slate-900 border-slate-700 text-slate-300 hover:text-white",
-                )}
-                title="Alternar sentido: Anti-Horário (CCW) ou Horário (CW)"
-              >
-                <ArrowRightLeft className="size-3" />
-                <span>{polarParams.clockwise ? "CW (Horário)" : "CCW"}</span>
-              </button>
-
-              {/* GIRAR ITENS: ON / OFF (PARA SLOTS, RETÂNGULOS, POLÍGONOS, GRUPOS) */}
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  onChangePolarParams({
-                    ...polarParams,
-                    rotateItems: !(polarParams.rotateItems ?? true),
-                  });
-                }}
-                className={cn(
-                  "px-2 py-0.5 rounded-lg border text-[10px] font-mono font-bold flex items-center gap-1 transition-colors cursor-pointer",
-                  (polarParams.rotateItems ?? true)
-                    ? "bg-cyan-950/60 border-cyan-500/50 text-cyan-300"
-                    : "bg-slate-900 border-slate-700 text-slate-400 hover:text-white",
-                )}
-                title="Girar orientação própria de rasgos oblongos (slots), retângulos e polígonos ao longo do círculo"
-              >
-                <RotateCw className="size-3" />
-                <span>Girar itens: {(polarParams.rotateItems ?? true) ? "ON" : "OFF"}</span>
-              </button>
-            </>
-          ) : (
-            <>
-              {/* MODO LINEAR: COLUNAS X (EXCETO NO MODO FILL ONDE N É CALCULADO AUTOMATICAMENTE) */}
-              {linearMode !== "fill" ? (
-                <div className="flex items-center gap-1">
-                  <span className="font-mono text-[10px] text-slate-400 uppercase">Col X (N):</span>
-                  <button
-                    type="button"
-                    onClick={(e) =>
-                      openKeypadFromButton(e, {
-                        id: "linear-cols",
-                        label: "Quantidade de Colunas em X (Nx)",
-                        value: linearParams.cols,
-                        unit: "un",
-                        allowNegative: false,
-                        isInteger: true,
-                        minVal: 1,
-                        initialLocked: isLinearLocked("cols"),
-                        onUpdateValue: (val, locked) => {
-                          onChangeLinearParams({
-                            ...linearParams,
-                            cols: Math.max(1, Math.round(val)),
-                            lockedFields: { ...linearParams.lockedFields, cols: locked },
-                          });
-                        },
-                      })
-                    }
-                    className={cn(
-                      "flex items-center gap-1 min-w-[40px] justify-center rounded-lg border px-2 py-0.5 font-mono text-xs font-bold text-cyan-300 cursor-pointer",
-                      isLinearLocked("cols")
-                        ? "border-amber-500/70 bg-amber-950/40 text-amber-300"
-                        : "border-slate-700 bg-slate-900 hover:border-cyan-500",
-                    )}
-                  >
-                    {isLinearLocked("cols") && <Lock className="size-2.5 text-amber-400" />}
-                    <span>{linearParams.cols}</span>
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-cyan-950/50 border border-cyan-500/30 font-mono text-[10px] text-cyan-300">
-                  <span>Auto Nx:</span>
-                  <strong>{resolvedLinearInfo?.cols ?? linearParams.cols}</strong>
-                </div>
-              )}
-
-              {/* CONTROLE ESPECÍFICO DE EIXO X CONFORME O MODO */}
-              {(linearMode === "fixed_step" || linearMode === "fill") && (
-                <div className="flex items-center gap-1">
-                  <span className="font-mono text-[10px] text-slate-400 uppercase">Passo X:</span>
-                  <button
-                    type="button"
-                    onClick={(e) =>
-                      openKeypadFromButton(e, {
-                        id: "linear-dx",
-                        label: "Passo entre Centros no Eixo X (mm)",
-                        value: Number(linearParams.dx.toFixed(2)),
-                        unit: "mm",
-                        allowNegative: true,
-                        initialLocked: isLinearLocked("dx"),
-                        onUpdateValue: (val, locked) => {
-                          onChangeLinearParams({
-                            ...linearParams,
-                            dx: val,
-                            dirX: val < 0 ? -1 : 1,
-                            lockedFields: { ...linearParams.lockedFields, dx: locked },
-                          });
-                        },
-                      })
-                    }
-                    className={cn(
-                      "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-mono text-xs font-bold text-cyan-300 cursor-pointer",
-                      isLinearLocked("dx")
-                        ? "border-amber-500/70 bg-amber-950/40 text-amber-300"
-                        : "border-slate-700 bg-slate-900 hover:border-cyan-500",
-                    )}
-                  >
-                    {isLinearLocked("dx") && <Lock className="size-2.5 text-amber-400" />}
-                    <span>{linearParams.dx.toFixed(1)} mm</span>
-                  </button>
-                </div>
-              )}
-
-              {linearMode === "total_span" && (
-                <div className="flex items-center gap-1">
-                  <span className="font-mono text-[10px] text-slate-400 uppercase">Extensão X:</span>
-                  <button
-                    type="button"
-                    onClick={(e) =>
-                      openKeypadFromButton(e, {
-                        id: "linear-span-x",
-                        label: "Extensão Total Lx do 1º ao Último Centro (mm)",
-                        value: Number(
-                          (
-                            linearParams.spanX ??
-                            Math.abs(linearParams.dx) * Math.max(1, linearParams.cols - 1)
-                          ).toFixed(2),
-                        ),
-                        unit: "mm",
-                        allowNegative: false,
-                        initialLocked: isLinearLocked("spanX"),
-                        onUpdateValue: (val, locked) => {
-                          onChangeLinearParams({
-                            ...linearParams,
-                            spanX: val,
-                            lockedFields: { ...linearParams.lockedFields, spanX: locked },
-                          });
-                        },
-                      })
-                    }
-                    className={cn(
-                      "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-mono text-xs font-bold text-cyan-300 cursor-pointer",
-                      isLinearLocked("spanX")
-                        ? "border-amber-500/70 bg-amber-950/40 text-amber-300"
-                        : "border-slate-700 bg-slate-900 hover:border-cyan-500",
-                    )}
-                  >
-                    {isLinearLocked("spanX") && <Lock className="size-2.5 text-amber-400" />}
-                    <span>
-                      {(
-                        linearParams.spanX ??
-                        Math.abs(linearParams.dx) * Math.max(1, linearParams.cols - 1)
-                      ).toFixed(1)}{" "}
-                      mm
-                    </span>
-                  </button>
-                </div>
-              )}
-
-              {(linearMode === "auto_fit" || linearMode === "fill") && (
-                <div className="flex items-center gap-1">
-                  <span className="font-mono text-[10px] text-slate-400 uppercase">Margem:</span>
-                  <button
-                    type="button"
-                    onClick={(e) =>
-                      openKeypadFromButton(e, {
-                        id: "linear-margin-x",
-                        label: "Margem às Bordas da Peça Hospedeira (mm)",
-                        value: Number((linearParams.marginX ?? 15).toFixed(2)),
-                        unit: "mm",
-                        allowNegative: false,
-                        initialLocked: isLinearLocked("marginX"),
-                        onUpdateValue: (val, locked) => {
-                          onChangeLinearParams({
-                            ...linearParams,
-                            marginX: val,
-                            marginY: val,
-                            lockedFields: { ...linearParams.lockedFields, marginX: locked },
-                          });
-                        },
-                      })
-                    }
-                    className={cn(
-                      "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-mono text-xs font-bold text-cyan-300 cursor-pointer",
-                      isLinearLocked("marginX")
-                        ? "border-amber-500/70 bg-amber-950/40 text-amber-300"
-                        : "border-slate-700 bg-slate-900 hover:border-cyan-500",
-                    )}
-                  >
-                    {isLinearLocked("marginX") && <Lock className="size-2.5 text-amber-400" />}
-                    <span>{(linearParams.marginX ?? 15).toFixed(1)} mm</span>
-                  </button>
-                </div>
-              )}
-
-              <div className="h-4 w-px bg-slate-700/60 hidden sm:block" />
-
-              {/* EIXO SECUNDÁRIO Y (LINHAS Y E PASSO Y) */}
-              <div className="flex items-center gap-1">
-                <span className="font-mono text-[10px] text-slate-400 uppercase">Lin Y:</span>
-                <button
-                  type="button"
-                  onClick={(e) =>
-                    openKeypadFromButton(e, {
-                      id: "linear-rows",
-                      label: "Quantidade de Linhas em Y (Ny)",
-                      value: linearParams.rows,
-                      unit: "un",
-                      allowNegative: false,
-                      isInteger: true,
-                      minVal: 1,
-                      initialLocked: isLinearLocked("rows"),
-                      onUpdateValue: (val, locked) => {
-                        onChangeLinearParams({
-                          ...linearParams,
-                          rows: Math.max(1, Math.round(val)),
-                          lockedFields: { ...linearParams.lockedFields, rows: locked },
-                        });
-                      },
-                    })
-                  }
-                  className={cn(
-                    "flex items-center gap-1 min-w-[38px] justify-center rounded-lg border px-2 py-0.5 font-mono text-xs font-bold text-cyan-300 cursor-pointer",
-                    isLinearLocked("rows")
-                      ? "border-amber-500/70 bg-amber-950/40 text-amber-300"
-                      : "border-slate-700 bg-slate-900 hover:border-cyan-500",
-                  )}
-                >
-                  {isLinearLocked("rows") && <Lock className="size-2.5 text-amber-400" />}
-                  <span>{resolvedLinearInfo?.rows ?? linearParams.rows}</span>
-                </button>
-              </div>
-
-              <div className="flex items-center gap-1">
-                <span className="font-mono text-[10px] text-slate-400 uppercase">Passo Y:</span>
-                <button
-                  type="button"
-                  onClick={(e) =>
-                    openKeypadFromButton(e, {
-                      id: "linear-dy",
-                      label: "Passo entre Centros no Eixo Y (mm)",
-                      value: Number(linearParams.dy.toFixed(2)),
-                      unit: "mm",
-                      allowNegative: true,
-                      initialLocked: isLinearLocked("dy"),
-                      onUpdateValue: (val, locked) => {
-                        onChangeLinearParams({
-                          ...linearParams,
-                          dy: val,
-                          dirY: val < 0 ? -1 : 1,
-                          lockedFields: { ...linearParams.lockedFields, dy: locked },
-                        });
-                      },
-                    })
-                  }
-                  className={cn(
-                    "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-mono text-xs font-bold text-cyan-300 cursor-pointer",
-                    isLinearLocked("dy")
-                      ? "border-amber-500/70 bg-amber-950/40 text-amber-300"
-                      : "border-slate-700 bg-slate-900 hover:border-cyan-500",
-                  )}
-                >
-                  {isLinearLocked("dy") && <Lock className="size-2.5 text-amber-400" />}
-                  <span>{(resolvedLinearInfo?.stepY ?? linearParams.dy).toFixed(1)} mm</span>
-                </button>
-              </div>
-
-              {/* ÂNGULO DE INCLINAÇÃO DO PADRÃO LINEAR */}
-              <div className="flex items-center gap-1">
-                <span className="font-mono text-[10px] text-slate-400 uppercase">∠:</span>
-                <button
-                  type="button"
-                  onClick={(e) =>
-                    openKeypadFromButton(e, {
-                      id: "linear-angle",
-                      label: "Ângulo de Inclinação da Matriz Linear (°)",
-                      value: Number((linearParams.angleDeg ?? 0).toFixed(1)),
-                      unit: "°",
-                      allowNegative: true,
-                      initialLocked: isLinearLocked("angleDeg"),
-                      onUpdateValue: (val, locked) => {
-                        onChangeLinearParams({
-                          ...linearParams,
-                          angleDeg: val,
-                          lockedFields: { ...linearParams.lockedFields, angleDeg: locked },
-                        });
-                      },
-                    })
-                  }
-                  className={cn(
-                    "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-mono text-xs font-bold text-cyan-300 cursor-pointer",
-                    isLinearLocked("angleDeg")
-                      ? "border-amber-500/70 bg-amber-950/40 text-amber-300"
-                      : "border-slate-700 bg-slate-900 hover:border-cyan-500",
-                  )}
-                >
-                  <span>{(linearParams.angleDeg ?? 0).toFixed(0)}°</span>
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* CONTADOR DE INSTÂNCIAS ATIVAS / OMITIDAS */}
-          <div
-            className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-900/90 border border-slate-700/80 font-mono text-[10px] text-slate-300"
-            title="Toque em qualquer cópia fantasma (k >= 1) no canvas para omitir ou reativar essa posição"
-          >
-            <span>
-              {validation.totalPositionsCount} pos = 1 orig +{" "}
-              <strong className="text-cyan-300">{validation.activeCopiesCount}</strong> cópias
-            </span>
-            {skippedCount > 0 && (
-              <>
-                <span className="text-amber-300 font-bold">
-                  ({skippedCount} omitida{skippedCount > 1 ? "s" : ""})
-                </span>
-                <button
-                  type="button"
-                  onClick={handleClearSkipped}
-                  className="ml-1 p-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300"
-                  title="Restaurar todas as cópias omitidas"
-                >
-                  <RefreshCw className="size-2.5" />
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* FEEDBACK DE VALIDAÇÃO / COLISÃO EM TEMPO REAL */}
-          {!validation.isValid && validation.errors.length > 0 && (
-            <div
-              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-red-950/80 border border-red-500/60 text-red-200 font-mono text-[10px]"
-              title={validation.errors.join(" | ")}
-            >
-              <AlertTriangle className="size-3 text-red-400 shrink-0" />
-              <span className="truncate max-w-[210px]">{validation.errors[0]}</span>
-            </div>
-          )}
-
-          {validation.isValid && validation.warnings.length > 0 && (
-            <div
-              className="flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-950/80 border border-amber-500/60 text-amber-200 font-mono text-[10px]"
-              title={validation.warnings.join(" | ")}
-            >
-              <AlertTriangle className="size-3 text-amber-400 shrink-0" />
-              <span className="truncate max-w-[210px]">{validation.warnings[0]}</span>
-            </div>
-          )}
-
-          {/* AÇÕES DE CONFIRMAÇÃO (CONFIRMAR EM 1 TRANSAÇÃO ATÔMICA OU CANCELAR) */}
-          <div className="ml-auto flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("action");
-                onApply();
-              }}
-              disabled={validation.activeCopiesCount < 1 && !polarParams.repositionOriginalToPcd}
-              className={cn(
-                "flex items-center gap-1 px-3 py-1 rounded-xl font-mono text-xs font-bold shadow-md transition-all cursor-pointer active:scale-95",
-                validation.isValid
-                  ? "bg-emerald-600 hover:bg-emerald-500 text-white"
-                  : "bg-amber-600 hover:bg-amber-500 text-white",
-              )}
-              title="Confirmar e gravar instâncias no projeto CAD (1 transação atômica de Undo)"
-            >
-              <Check className="size-3.5" />
-              <span>✓ Confirmar</span>
-            </button>
-
             <button
               type="button"
               onClick={() => {
                 triggerHaptic("tap");
                 onCancel();
               }}
+              title="Fechar e Cancelar Padrão"
+              aria-label="Fechar janela de Array"
               className={cn(
-                "flex items-center gap-1 px-2 py-1 rounded-xl border font-mono text-[11px] transition-colors cursor-pointer",
+                "flex size-6 shrink-0 items-center justify-center rounded-lg border transition-colors cursor-pointer",
                 isDark
-                  ? "border-slate-800 bg-slate-900 text-slate-300 hover:text-white hover:bg-slate-800"
-                  : "border-slate-200 bg-slate-100 text-slate-600 hover:text-black",
+                  ? "border-[#293444] bg-[#151C27] text-[#94A3B8] hover:border-[#E11D48] hover:text-white"
+                  : "border-[#CBD5E1] bg-[#FFFFFF] text-[#64748B] hover:border-[#E11D48] hover:text-[#E11D48]",
               )}
-              title="Cancelar e descartar prévia"
             >
               <X className="size-3.5" />
-              <span className="hidden sm:inline">Cancelar</span>
+            </button>
+          </div>
+
+          {/* Seletor Segmentado de Largura Total no Topo */}
+          <div
+            className={cn(
+              "grid grid-cols-2 gap-1 rounded-xl border p-1",
+              isDark
+                ? "border-[#293444] bg-[#151C27]"
+                : "border-[#CBD5E1] bg-[#FFFFFF]",
+            )}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                onChangeArrayType("polar");
+              }}
+              className={cn(
+                "flex items-center justify-center gap-1.5 rounded-lg py-1.5 font-mono text-[10px] font-bold transition-all cursor-pointer",
+                arrayType === "polar"
+                  ? "bg-cyan-500 text-slate-950 shadow-sm"
+                  : isDark
+                    ? "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+              )}
+            >
+              <RotateCw className="size-3" />
+              <span>Padrão Circular</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                onChangeArrayType("linear");
+              }}
+              className={cn(
+                "flex items-center justify-center gap-1.5 rounded-lg py-1.5 font-mono text-[10px] font-bold transition-all cursor-pointer",
+                arrayType === "linear"
+                  ? "bg-cyan-500 text-slate-950 shadow-sm"
+                  : isDark
+                    ? "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+              )}
+            >
+              <Grid className="size-3" />
+              <span>Padrão Linear</span>
             </button>
           </div>
         </div>
-      </div>
 
-      {/* TECLADO NUMÉRICO CAD INTEGRADO (ZERO TECLADO NATIVO DO CELULAR) */}
-      {keypadField && (
+        {/* ================================================================= */}
+        {/* CORPO VERTICAL ORGANIZADO EM CARTÕES LIMPOS (ZERO SOBREPOSIÇÃO)    */}
+        {/* ================================================================= */}
+        <div className="flex-1 space-y-2.5 overflow-y-auto p-2.5 scrollbar-thin">
+          {/* --------------------------------------------------------------- */}
+          {/* SEÇÃO 1 — STATUS E HOSPEDEIRO / PIVÔ                            */}
+          {/* --------------------------------------------------------------- */}
+          <div className={cardClass}>
+            <div className="mb-1.5 flex items-center justify-between gap-1.5">
+              <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                1. Status e Hospedeiro / Pivô
+              </span>
+              <span
+                className={cn(
+                  "rounded px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase",
+                  hostInfo.confidence === "high"
+                    ? "bg-emerald-500/20 text-emerald-400"
+                    : hostInfo.confidence === "medium"
+                      ? "bg-amber-500/20 text-amber-400"
+                      : "bg-slate-500/20 text-slate-400",
+                )}
+              >
+                {hostInfo.confidenceLabel}
+              </span>
+            </div>
+
+            <div
+              className={cn(
+                "rounded-lg border px-2.5 py-1.5 font-mono text-[10px] leading-snug",
+                isDark
+                  ? "border-slate-800 bg-slate-950/70 text-slate-300"
+                  : "border-slate-200 bg-white text-slate-700",
+              )}
+            >
+              {hostInfo.description}
+            </div>
+
+            {arrayType === "polar" && (
+              <div className="mt-2 space-y-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onTogglePickCenter();
+                  }}
+                  className={cn(
+                    "flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-bold transition-all cursor-pointer",
+                    isPickingCenter
+                      ? "border-amber-400 bg-amber-500 text-slate-950 shadow-sm"
+                      : isDark
+                        ? "border-slate-700 bg-slate-950 text-slate-200 hover:border-cyan-500/50 hover:text-cyan-300"
+                        : "border-slate-300 bg-white text-slate-800 hover:border-cyan-500",
+                  )}
+                >
+                  <span className="flex items-center gap-1.5">
+                    <Crosshair className="size-3.5 text-rose-500" />
+                    <span>
+                      {isPickingCenter
+                        ? "Toque no canvas para fixar..."
+                        : "Definir Pivô / Centro ⊕"}
+                    </span>
+                  </span>
+                  <span className="font-mono text-[9px] opacity-80 tabular-nums">
+                    ({polarParams.center.x.toFixed(0)}, {polarParams.center.y.toFixed(0)})
+                  </span>
+                </button>
+
+                {hostInfo.isOffFlangeCenterline && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("action");
+                      onChangePolarParams((p) => {
+                        const nextActive = !p.repositionOriginalToPcd;
+                        return {
+                          ...p,
+                          repositionOriginalToPcd: nextActive,
+                          ...(hostInfo.flangeMidRadius && nextActive
+                            ? { radius: hostInfo.flangeMidRadius }
+                            : {}),
+                        };
+                      });
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-bold transition-all cursor-pointer",
+                      polarParams.repositionOriginalToPcd
+                        ? "border-emerald-500/50 bg-emerald-500/20 text-emerald-300"
+                        : "border-amber-500/40 bg-amber-500/15 text-amber-300 hover:bg-amber-500/25",
+                    )}
+                  >
+                    <Compass className="size-3.5" />
+                    <span>
+                      ⌖ Centralizar na Aba:{" "}
+                      {polarParams.repositionOriginalToPcd ? "ATIVO" : "APLICAR"}
+                    </span>
+                  </button>
+                )}
+
+                {hostInfo.candidateCenters.length > 1 && onSelectCandidateCenter && (
+                  <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                    <span className="font-mono text-[9px] text-slate-400 mr-1">
+                      Centros:
+                    </span>
+                    {hostInfo.candidateCenters.map((cand, idx) => (
+                      <button
+                        key={`${cand.source}-${cand.point.x.toFixed(2)}-${cand.point.y.toFixed(2)}-${idx}`}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          onSelectCandidateCenter(cand.point);
+                        }}
+                        title={cand.label}
+                        className={cn(
+                          "rounded-md border px-2 py-0.5 font-mono text-[9px] font-bold transition-colors cursor-pointer",
+                          Math.hypot(
+                            cand.point.x - polarParams.center.x,
+                            cand.point.y - polarParams.center.y,
+                          ) < 0.5
+                            ? "border-cyan-400 bg-cyan-500/20 text-cyan-300"
+                            : isDark
+                              ? "border-slate-700 bg-slate-900 text-slate-400 hover:text-white"
+                              : "border-slate-300 bg-white text-slate-700",
+                        )}
+                      >
+                        C{idx + 1}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* --------------------------------------------------------------- */}
+          {/* SEÇÃO 2 — MODO DE DISTRIBUIÇÃO (LINEAR) OU ÂNGULO (POLAR)        */}
+          {/* --------------------------------------------------------------- */}
+          <div className={cardClass}>
+            {arrayType === "linear" ? (
+              <>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                    2. Modo de Distribuição
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(
+                    [
+                      { id: "fixed_step", label: "Passo Fixo" },
+                      { id: "total_span", label: "Extensão" },
+                      { id: "auto_fit", label: "Auto-Fit (Adaptar)" },
+                      { id: "fill", label: "Fill (Preencher)" },
+                    ] as const
+                  ).map((m) => (
+                    <button
+                      key={m.id}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        onChangeLinearParams((p) => ({
+                          ...p,
+                          mode: m.id,
+                          modeX: m.id,
+                          modeY: m.id,
+                        }));
+                      }}
+                      className={cn(
+                        "flex items-center justify-center rounded-lg border px-2 py-1.5 font-mono text-[10px] font-bold transition-all cursor-pointer",
+                        linearMode === m.id
+                          ? "border-cyan-400 bg-cyan-500/20 text-cyan-300 shadow-xs"
+                          : isDark
+                            ? "border-slate-800 bg-slate-950/80 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                            : "border-slate-200 bg-white text-slate-600 hover:bg-slate-100",
+                      )}
+                    >
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                    2. Ângulo Total e Sentido
+                  </span>
+                </div>
+                <div className="space-y-2">
+                  <div className={rowClass}>
+                    <span className="font-mono text-[10px] font-semibold">
+                      Ângulo Total (°)
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("tap");
+                          onChangePolarParams((p) => ({
+                            ...p,
+                            totalAngleDeg: Math.max(15, p.totalAngleDeg - 15),
+                          }));
+                        }}
+                        className={stepBtnClass}
+                      >
+                        -
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(ev) =>
+                          openNumericKeypad(
+                            ev,
+                            "polar_angle",
+                            "Ângulo Total do Padrão (°)",
+                            polarParams.totalAngleDeg,
+                          )
+                        }
+                        className={valuePillClass}
+                      >
+                        {polarParams.totalAngleDeg}°
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("tap");
+                          onChangePolarParams((p) => ({
+                            ...p,
+                            totalAngleDeg: Math.min(360, p.totalAngleDeg + 15),
+                          }));
+                        }}
+                        className={stepBtnClass}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Atalhos 360°, 180°, 90° + Sentido CCW/CW */}
+                  <div className="grid grid-cols-4 gap-1">
+                    {ANGLE_PRESETS.map((ang) => (
+                      <button
+                        key={ang}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          onChangePolarParams((p) => ({ ...p, totalAngleDeg: ang }));
+                        }}
+                        className={cn(
+                          "rounded-lg border py-1 font-mono text-[10px] font-bold transition-colors cursor-pointer",
+                          polarParams.totalAngleDeg === ang
+                            ? "border-cyan-400 bg-cyan-500/20 text-cyan-300"
+                            : isDark
+                              ? "border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
+                              : "border-slate-200 bg-white text-slate-700",
+                        )}
+                      >
+                        {ang}°
+                      </button>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        onChangePolarParams((p) => ({ ...p, clockwise: !p.clockwise }));
+                      }}
+                      title="Alternar sentido de giro (Anti-horário CCW / Horário CW)"
+                      className={cn(
+                        "rounded-lg border py-1 font-mono text-[10px] font-bold transition-colors cursor-pointer",
+                        polarParams.clockwise
+                          ? "border-amber-500/50 bg-amber-500/15 text-amber-300"
+                          : "border-cyan-500/40 bg-cyan-500/15 text-cyan-300",
+                      )}
+                    >
+                      {polarParams.clockwise ? "↻ CW" : "↺ CCW"}
+                    </button>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* --------------------------------------------------------------- */}
+          {/* SEÇÃO 3 — PARÂMETROS DIMENSIONAIS E QUANTIDADES (LINHAS LIMPAS)  */}
+          {/* --------------------------------------------------------------- */}
+          <div className={cardClass}>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                3. Parâmetros Dimensionais
+              </span>
+            </div>
+
+            {arrayType === "polar" ? (
+              <div className="space-y-1.5">
+                {/* Linha 1: Quantidade (N) */}
+                <div className={rowClass}>
+                  <span className="font-mono text-[10px] font-semibold">
+                    Quantidade (N)
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangePolarParams((p) => ({
+                          ...p,
+                          count: Math.max(2, p.count - 1),
+                        }));
+                      }}
+                      className={stepBtnClass}
+                    >
+                      -
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(ev) =>
+                        openNumericKeypad(
+                          ev,
+                          "polar_count",
+                          "Quantidade de Furos / Cópias (N)",
+                          polarParams.count,
+                        )
+                      }
+                      className={valuePillClass}
+                    >
+                      {polarParams.count} un
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangePolarParams((p) => ({
+                          ...p,
+                          count: Math.min(360, p.count + 1),
+                        }));
+                      }}
+                      className={stepBtnClass}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* Presets rápidos de quantidade */}
+                <div className="grid grid-cols-6 gap-1">
+                  {COUNT_PRESETS.map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        onChangePolarParams((p) => ({ ...p, count: n }));
+                      }}
+                      className={cn(
+                        "rounded-md border py-1 font-mono text-[9px] font-bold transition-colors cursor-pointer",
+                        polarParams.count === n
+                          ? "border-cyan-400 bg-cyan-500/20 text-cyan-300"
+                          : isDark
+                            ? "border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
+                            : "border-slate-200 bg-white text-slate-600",
+                      )}
+                    >
+                      {n}x
+                    </button>
+                  ))}
+                </div>
+
+                {/* Linha 2: Diâmetro PCD (mm) */}
+                <div className={rowClass}>
+                  <span className="font-mono text-[10px] font-semibold">
+                    Diâmetro PCD (mm)
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangePolarParams((p) => ({
+                          ...p,
+                          radius: Math.max(1, Number(((p.radius ?? 50) - 2.5).toFixed(2))),
+                        }));
+                      }}
+                      className={stepBtnClass}
+                    >
+                      -
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(ev) =>
+                        openNumericKeypad(
+                          ev,
+                          "polar_pcd",
+                          "Diâmetro Primitivo PCD (mm)",
+                          pcdValue,
+                        )
+                      }
+                      className={valuePillClass}
+                    >
+                      Ø {pcdValue}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangePolarParams((p) => ({
+                          ...p,
+                          radius: Number(((p.radius ?? 50) + 2.5).toFixed(2)),
+                        }));
+                      }}
+                      className={stepBtnClass}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* Linha 3: Raio (mm) */}
+                <div className={rowClass}>
+                  <span className="font-mono text-[10px] font-semibold">
+                    Raio (mm)
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangePolarParams((p) => ({
+                          ...p,
+                          radius: Math.max(0.5, Number(((p.radius ?? 50) - 1).toFixed(2))),
+                        }));
+                      }}
+                      className={stepBtnClass}
+                    >
+                      -
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(ev) =>
+                        openNumericKeypad(
+                          ev,
+                          "polar_radius",
+                          "Raio do Padrão Circular (mm)",
+                          radiusValue,
+                        )
+                      }
+                      className={valuePillClass}
+                    >
+                      R {radiusValue}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangePolarParams((p) => ({
+                          ...p,
+                          radius: Number(((p.radius ?? 50) + 1).toFixed(2)),
+                        }));
+                      }}
+                      className={stepBtnClass}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* Linha 4: Ângulo Inicial (θ₀) */}
+                <div className={rowClass}>
+                  <span className="font-mono text-[10px] font-semibold">
+                    Ângulo Inicial (θ₀)
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangePolarParams((p) => ({
+                          ...p,
+                          startAngleDeg: Number(((p.startAngleDeg ?? 0) - 15).toFixed(1)),
+                        }));
+                      }}
+                      className={stepBtnClass}
+                    >
+                      -
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(ev) =>
+                        openNumericKeypad(
+                          ev,
+                          "polar_start_angle",
+                          "Ângulo Inicial θ₀ (°)",
+                          startAngleValue,
+                        )
+                      }
+                      className={valuePillClass}
+                    >
+                      {startAngleValue}°
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangePolarParams((p) => ({
+                          ...p,
+                          startAngleDeg: Number(((p.startAngleDeg ?? 0) + 15).toFixed(1)),
+                        }));
+                      }}
+                      className={stepBtnClass}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {/* Linha 1: Colunas (Nx) */}
+                <div className={rowClass}>
+                  <span className="font-mono text-[10px] font-semibold">
+                    {linearMode === "fill" ? "Colunas (Auto Nx)" : "Colunas (Nx)"}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangeLinearParams((p) => ({
+                          ...p,
+                          mode: p.mode === "fill" ? "fixed_step" : p.mode,
+                          modeX: p.modeX === "fill" ? "fixed_step" : p.modeX,
+                          cols: Math.max(1, (p.cols ?? 1) - 1),
+                        }));
+                      }}
+                      className={stepBtnClass}
+                    >
+                      -
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(ev) =>
+                        openNumericKeypad(
+                          ev,
+                          "linear_nx",
+                          "Colunas / Quantidade em X (Nx)",
+                          effectiveCols,
+                        )
+                      }
+                      className={valuePillClass}
+                    >
+                      {effectiveCols} un
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangeLinearParams((p) => ({
+                          ...p,
+                          mode: p.mode === "fill" ? "fixed_step" : p.mode,
+                          modeX: p.modeX === "fill" ? "fixed_step" : p.modeX,
+                          cols: Math.min(200, (p.cols ?? 1) + 1),
+                        }));
+                      }}
+                      className={stepBtnClass}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* Linha 2: Passo X (mm) ou Extensão X (mm) */}
+                {linearMode === "total_span" ? (
+                  <div className={rowClass}>
+                    <span className="font-mono text-[10px] font-semibold">
+                      Extensão X (mm)
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("tap");
+                          onChangeLinearParams((p) => ({
+                            ...p,
+                            spanX: Math.max(5, Number(((p.spanX ?? 160) - 10).toFixed(1))),
+                          }));
+                        }}
+                        className={stepBtnClass}
+                      >
+                        -
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(ev) =>
+                          openNumericKeypad(
+                            ev,
+                            "linear_span_x",
+                            "Extensão Total X (mm)",
+                            spanXValue,
+                          )
+                        }
+                        className={valuePillClass}
+                      >
+                        {spanXValue} mm
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("tap");
+                          onChangeLinearParams((p) => ({
+                            ...p,
+                            spanX: Number(((p.spanX ?? 160) + 10).toFixed(1)),
+                          }));
+                        }}
+                        className={stepBtnClass}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className={rowClass}>
+                    <span className="font-mono text-[10px] font-semibold">
+                      Passo X (mm)
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("tap");
+                          onChangeLinearParams((p) => ({
+                            ...p,
+                            dx: Number((p.dx - 5).toFixed(2)),
+                          }));
+                        }}
+                        className={stepBtnClass}
+                      >
+                        -
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(ev) =>
+                          openNumericKeypad(
+                            ev,
+                            "linear_dx",
+                            "Passo X entre Centros (mm)",
+                            effectiveStepX,
+                            true,
+                            linearMode === "fill",
+                          )
+                        }
+                        className={cn(
+                          valuePillClass,
+                          linearMode === "fill" &&
+                            "border-amber-500/45 bg-amber-500/15 text-amber-300",
+                        )}
+                      >
+                        {linearMode === "fill" && (
+                          <Lock className="mr-1 inline size-2.5" />
+                        )}
+                        {effectiveStepX.toFixed(1)}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("tap");
+                          onChangeLinearParams((p) => ({
+                            ...p,
+                            dx: Number((p.dx + 5).toFixed(2)),
+                          }));
+                        }}
+                        className={stepBtnClass}
+                      >
+                        +
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          onChangeLinearParams((p) => ({
+                            ...p,
+                            dx: -p.dx,
+                            dirX: (p.dirX ?? 1) === 1 ? -1 : 1,
+                          }));
+                        }}
+                        title="Inverter direção X (±)"
+                        className={stepBtnClass}
+                      >
+                        <ArrowLeftRight className="size-3" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Linha 3: Linhas (Ny) */}
+                <div className={rowClass}>
+                  <span className="font-mono text-[10px] font-semibold">
+                    Linhas (Ny)
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangeLinearParams((p) => ({
+                          ...p,
+                          rows: Math.max(1, (p.rows ?? 1) - 1),
+                        }));
+                      }}
+                      className={stepBtnClass}
+                    >
+                      -
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(ev) =>
+                        openNumericKeypad(
+                          ev,
+                          "linear_ny",
+                          "Linhas / Quantidade em Y (Ny)",
+                          effectiveRows,
+                        )
+                      }
+                      className={valuePillClass}
+                    >
+                      {effectiveRows} un
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangeLinearParams((p) => ({
+                          ...p,
+                          rows: Math.min(200, (p.rows ?? 1) + 1),
+                        }));
+                      }}
+                      className={stepBtnClass}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* Linha 4: Passo Y (mm) ou Extensão Y (mm) */}
+                {linearMode === "total_span" ? (
+                  <div className={rowClass}>
+                    <span className="font-mono text-[10px] font-semibold">
+                      Extensão Y (mm)
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("tap");
+                          onChangeLinearParams((p) => ({
+                            ...p,
+                            spanY: Math.max(0, Number(((p.spanY ?? 100) - 10).toFixed(1))),
+                          }));
+                        }}
+                        className={stepBtnClass}
+                      >
+                        -
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(ev) =>
+                          openNumericKeypad(
+                            ev,
+                            "linear_span_y",
+                            "Extensão Total Y (mm)",
+                            spanYValue,
+                          )
+                        }
+                        className={valuePillClass}
+                      >
+                        {spanYValue} mm
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("tap");
+                          onChangeLinearParams((p) => ({
+                            ...p,
+                            spanY: Number(((p.spanY ?? 100) + 10).toFixed(1)),
+                          }));
+                        }}
+                        className={stepBtnClass}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className={rowClass}>
+                    <span className="font-mono text-[10px] font-semibold">
+                      Passo Y (mm)
+                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("tap");
+                          onChangeLinearParams((p) => ({
+                            ...p,
+                            dy: Number((p.dy - 5).toFixed(2)),
+                          }));
+                        }}
+                        className={stepBtnClass}
+                      >
+                        -
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(ev) =>
+                          openNumericKeypad(
+                            ev,
+                            "linear_dy",
+                            "Passo Y entre Linhas (mm)",
+                            effectiveStepY,
+                            true,
+                          )
+                        }
+                        className={valuePillClass}
+                      >
+                        {effectiveStepY.toFixed(1)}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("tap");
+                          onChangeLinearParams((p) => ({
+                            ...p,
+                            dy: Number((p.dy + 5).toFixed(2)),
+                          }));
+                        }}
+                        className={stepBtnClass}
+                      >
+                        +
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          onChangeLinearParams((p) => ({
+                            ...p,
+                            dy: -p.dy,
+                            dirY: (p.dirY ?? 1) === 1 ? -1 : 1,
+                          }));
+                        }}
+                        title="Inverter direção Y (±)"
+                        className={stepBtnClass}
+                      >
+                        <ArrowUpDown className="size-3" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Linha 5: Inclinação (∠°) */}
+                <div className={rowClass}>
+                  <span className="font-mono text-[10px] font-semibold">
+                    Inclinação (∠°)
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangeLinearParams((p) => ({
+                          ...p,
+                          angleDeg: Number(((p.angleDeg ?? 0) - 15).toFixed(1)),
+                        }));
+                      }}
+                      className={stepBtnClass}
+                    >
+                      -
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(ev) =>
+                        openNumericKeypad(
+                          ev,
+                          "linear_angle",
+                          "Ângulo de Inclinação da Grade (°)",
+                          linearAngleValue,
+                        )
+                      }
+                      className={valuePillClass}
+                    >
+                      {linearAngleValue}°
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangeLinearParams((p) => ({
+                          ...p,
+                          angleDeg: Number(((p.angleDeg ?? 0) + 15).toFixed(1)),
+                        }));
+                      }}
+                      className={stepBtnClass}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* Atalhos rápidos de inclinação */}
+                <div className="grid grid-cols-4 gap-1">
+                  {LINEAR_ANGLE_PRESETS.map((ang) => (
+                    <button
+                      key={ang}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        onChangeLinearParams((p) => ({ ...p, angleDeg: ang }));
+                      }}
+                      className={cn(
+                        "rounded-md border py-1 font-mono text-[9px] font-bold transition-colors cursor-pointer",
+                        linearAngleValue === ang
+                          ? "border-cyan-400 bg-cyan-500/20 text-cyan-300"
+                          : isDark
+                            ? "border-slate-800 bg-slate-950 text-slate-400 hover:text-white"
+                            : "border-slate-200 bg-white text-slate-600",
+                      )}
+                    >
+                      {ang}°
+                    </button>
+                  ))}
+                </div>
+
+                {/* Linha 6: Margem (mm) */}
+                <div className={rowClass}>
+                  <span className="font-mono text-[10px] font-semibold">
+                    Margem (mm)
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangeLinearParams((p) => {
+                          const next = Math.max(
+                            0,
+                            Number(((p.marginX ?? 15) - 2.5).toFixed(1)),
+                          );
+                          return { ...p, marginX: next, marginY: next };
+                        });
+                      }}
+                      className={stepBtnClass}
+                    >
+                      -
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(ev) =>
+                        openNumericKeypad(
+                          ev,
+                          "linear_margin",
+                          "Margem da Borda (mm)",
+                          marginValue,
+                        )
+                      }
+                      className={valuePillClass}
+                    >
+                      {marginValue} mm
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("tap");
+                        onChangeLinearParams((p) => {
+                          const next = Number(((p.marginX ?? 15) + 2.5).toFixed(1));
+                          return { ...p, marginX: next, marginY: next };
+                        });
+                      }}
+                      className={stepBtnClass}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* --------------------------------------------------------------- */}
+          {/* SEÇÃO 4 — OPÇÕES E DIAGNÓSTICO ÚNICO                            */}
+          {/* --------------------------------------------------------------- */}
+          <div className={cardClass}>
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                4. Opções e Diagnóstico
+              </span>
+            </div>
+
+            <div className="space-y-1.5">
+              {arrayType === "polar" && (
+                <div className={rowClass}>
+                  <span className="font-mono text-[10px] font-semibold">
+                    Girar itens junto ao arco
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      onChangePolarParams((p) => ({
+                        ...p,
+                        rotateItems: !p.rotateItems,
+                      }));
+                    }}
+                    className={cn(
+                      "rounded-md border px-2.5 py-0.5 font-mono text-[10px] font-bold transition-colors cursor-pointer",
+                      polarParams.rotateItems
+                        ? "border-cyan-400 bg-cyan-500/20 text-cyan-300"
+                        : isDark
+                          ? "border-slate-700 bg-slate-900 text-slate-400"
+                          : "border-slate-300 bg-slate-100 text-slate-600",
+                    )}
+                  >
+                    {polarParams.rotateItems ? "ON" : "OFF"}
+                  </button>
+                </div>
+              )}
+
+              {/* Resumo de posições geradas */}
+              <div className={rowClass}>
+                <span className="font-mono text-[10px] text-slate-400">
+                  Resumo do Padrão
+                </span>
+                <span className="font-mono text-[10px] font-bold tabular-nums">
+                  {validation.totalPositionsCount} pos = 1 orig +{" "}
+                  <span className="text-cyan-400">{validation.activeCopiesCount}</span>{" "}
+                  cópias
+                </span>
+              </div>
+
+              {validation.skippedCount > 0 && (
+                <div className="flex items-center justify-between gap-2 rounded-lg border border-amber-500/35 bg-amber-500/10 px-2.5 py-1.5">
+                  <span className="font-mono text-[10px] text-amber-300">
+                    {validation.skippedCount} posição(ões) omitida(s)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      if (arrayType === "polar") {
+                        onChangePolarParams((p) => ({ ...p, skippedIndices: [] }));
+                      } else {
+                        onChangeLinearParams((p) => ({ ...p, skippedIndices: [] }));
+                      }
+                    }}
+                    className="flex items-center gap-1 rounded border border-amber-400/50 bg-amber-500/20 px-2 py-0.5 font-mono text-[9px] font-bold text-amber-200 hover:bg-amber-500/30 cursor-pointer"
+                  >
+                    <RotateCcw className="size-2.5" />
+                    <span>Restaurar</span>
+                  </button>
+                </div>
+              )}
+
+              {/* 1 ÚNICO CARD LIMPO DE AVISO / COLISÃO */}
+              {primaryDiagnostic ? (
+                <div
+                  className={cn(
+                    "flex items-start gap-2 rounded-lg border px-2.5 py-2 font-mono text-[10px] leading-snug",
+                    !validation.isValid
+                      ? "border-red-500/50 bg-red-950/55 text-red-200"
+                      : "border-amber-500/50 bg-amber-950/50 text-amber-200",
+                  )}
+                >
+                  <AlertTriangle
+                    className={cn(
+                      "mt-0.5 size-3.5 shrink-0",
+                      !validation.isValid ? "text-red-400" : "text-amber-400",
+                    )}
+                  />
+                  <span>{primaryDiagnostic}</span>
+                </div>
+              ) : (
+                <div
+                  className={cn(
+                    "flex items-center gap-2 rounded-lg border px-2.5 py-1.5 font-mono text-[10px]",
+                    isDark
+                      ? "border-emerald-500/30 bg-emerald-950/30 text-emerald-300"
+                      : "border-emerald-300 bg-emerald-50 text-emerald-800",
+                  )}
+                >
+                  <Check className="size-3.5 shrink-0 text-emerald-400" />
+                  <span>Geometria válida e sem colisões detectadas.</span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* ================================================================= */}
+        {/* RODAPÉ FIXO DA JANELA DIREITA                                      */}
+        {/* ================================================================= */}
+        <div
+          className={cn(
+            "grid shrink-0 grid-cols-2 gap-2 border-t px-3 py-2.5",
+            isDark
+              ? "border-[#293444] bg-[#0D121B]"
+              : "border-[#CBD5E1] bg-[#F1F5F9]",
+          )}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("tap");
+              onCancel();
+            }}
+            className={cn(
+              "flex items-center justify-center gap-1.5 rounded-xl border py-2 font-mono text-[11px] font-bold transition-colors cursor-pointer",
+              isDark
+                ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:border-[#94A3B8] hover:text-white"
+                : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:bg-[#F8FAFC]",
+            )}
+          >
+            <X className="size-3.5" />
+            <span>Cancelar</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("success");
+              onApply();
+            }}
+            className={cn(
+              "flex items-center justify-center gap-1.5 rounded-xl py-2 font-mono text-[11px] font-bold shadow-md transition-all cursor-pointer",
+              !validation.isValid
+                ? "bg-[#F59E0B] text-[#0B0F14] hover:bg-amber-400"
+                : isDark
+                  ? "bg-[#34D399] text-[#0B0F14] hover:bg-emerald-300"
+                  : "bg-[#059669] text-white hover:bg-emerald-700",
+            )}
+          >
+            <Check className="size-3.5 stroke-[2.5]" />
+            <span>Confirmar</span>
+          </button>
+        </div>
+      </aside>
+
+      {/* TECLADO NUMÉRICO PRÓPRIO DO CHAMFER CAD */}
+      {keypadState && (
         <ChamferDirectDimensionEditor
-          open={true}
-          onClose={() => setKeypadField(null)}
-          screenPos={keypadField.screenPos}
-          currentValue={keypadField.value}
-          label={keypadField.label}
-          unit={keypadField.unit}
-          allowLock={true}
-          initialLocked={keypadField.initialLocked}
-          allowNegative={keypadField.allowNegative}
-          onPreviewChange={(previewVal) => {
-            const normalized = keypadField.isInteger
-              ? Math.max(keypadField.minVal ?? 1, Math.round(previewVal))
-              : previewVal;
-            keypadField.onUpdateValue(normalized, keypadField.initialLocked);
-          }}
-          onConfirm={(finalVal, lockMeasure) => {
-            const normalized = keypadField.isInteger
-              ? Math.max(keypadField.minVal ?? 1, Math.round(finalVal))
-              : finalVal;
-            keypadField.onUpdateValue(normalized, lockMeasure);
-            setKeypadField(null);
-          }}
+          label={keypadState.label}
+          initialValue={keypadState.value}
+          screenPos={keypadState.screenPos}
+          allowInvert={keypadState.allowInvert}
+          initialLocked={keypadState.initialLocked}
+          onLiveChange={(val) => applyKeypadValue(val, false)}
+          onConfirm={(val) => applyKeypadValue(val, true)}
+          onCancel={() => setKeypadState(null)}
         />
       )}
     </>
   );
-}
+};

@@ -12,19 +12,17 @@ export const CUT_COLOR = "#FFFFFF"; // branco técnico — linha principal de co
 export const BEND_COLOR = "#EC4899"; // rosa técnico — dobra
 export const MARK_COLOR = "#3B82F6"; // azul técnico — marcação
 export const RECORTE_COLOR = "#F59E0B"; // âmbar técnico — recorte interno
-export const CONSTRUCTION_COLOR = "#9AA4B0"; // cinza técnico claro — construção
-export const REFERENCE_COLOR = "#6B7480"; // cinza discreto — referência
+export const CONSTRUCTION_COLOR = "#94A3B8"; // cinza técnico claro — construção
+export const REFERENCE_COLOR = "#64748B"; // cinza discreto — referência
 /**
- * COTAS — âmbar técnico, independente do tema e da cor primária.
- * ATENÇÃO: DIMENSION ≠ RECORTE. Compartilham a família cromática âmbar na
- * interface, mas são funções completamente diferentes no modelo interno.
+ * COTAS — azul técnico (#38BDF8 no escuro / #0284C7 no claro).
  */
-export const DIMENSION_COLOR = "#F59E0B"; // âmbar técnico — cotas ABNT
-export const AXIS_COLOR = "#5A636E"; // cinza discreto — eixos
-/** Destaques de interface — ciano de alto contraste para destacar sobre a linha branca. */
-export const SELECTION_COLOR = "#38BDF8"; // destaque temporário de seleção/snap (ciano de alta visibilidade)
-export const PREVIEW_COLOR = "#E2E8F0"; // destaque temporário de criação
-export const WARNING_COLOR = "#FB7185"; // alertas de validação (não é camada)
+export const DIMENSION_COLOR = "#38BDF8"; // azul técnico — cotas ABNT e medidas
+export const AXIS_COLOR = "#64748B"; // cinza discreto — eixos
+/** Destaques de interface — ciano/vermelho de alto contraste para destacar sobre a geometria. */
+export const SELECTION_COLOR = "#E11D48"; // destaque temporário de seleção (Vermelho Caldra)
+export const PREVIEW_COLOR = "#E6EDF5"; // destaque temporário de criação
+export const WARNING_COLOR = "#F59E0B"; // alertas de validação (não é camada)
 /** Tinta única da folha exportada (PDF/PNG): sempre preto puro. */
 export const SHEET_INK = "#000000";
 

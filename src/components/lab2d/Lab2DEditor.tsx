@@ -2150,7 +2150,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         const nextH = Math.round(r.height);
         setCanvasSize((prev) => {
           if (prev.w === nextW && prev.h === nextH) return prev;
-          if (initialFitDoneRef.current && prev.w > 20 && prev.h > 20) {
+          if (
+            initialFitDoneRef.current &&
+            prev.w > 20 &&
+            prev.h > 20 &&
+            arrayFrameAnimRafRef.current === null
+          ) {
             // Preserva o ponto central do mundo CAD (cx, cy) e a proporção 1:1 (k_x === k_y === k)
             // ao girar o aparelho entre Retrato (Portrait) e Paisagem (Landscape)
             const dw = (nextW - prev.w) / 2;
@@ -3160,6 +3165,159 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setTool("select");
   }, []);
 
+  const arrayFrameAnimRafRef = useRef<number | null>(null);
+  const lastFramedArrayBoxRef = useRef<{
+    type: ArrayType | null;
+    w: number;
+    h: number;
+    cx: number;
+    cy: number;
+  } | null>(null);
+
+  const fitArrayAndHostToVisibleCanvas = useCallback(
+    (
+      seedEntities: Entity[],
+      previewEntities: Entity[],
+      polarCenter?: Vec2 | null,
+      polarRadius?: number,
+      hostBounds?: { minX: number; minY: number; maxX: number; maxY: number } | null,
+    ) => {
+      const allToFrame: Entity[] = [
+        ...entities,
+        ...seedEntities,
+        ...previewEntities,
+      ];
+      const baseBox = bbox(allToFrame);
+      let minX = baseBox ? baseBox.minX : Infinity;
+      let minY = baseBox ? baseBox.minY : Infinity;
+      let maxX = baseBox ? baseBox.maxX : -Infinity;
+      let maxY = baseBox ? baseBox.maxY : -Infinity;
+
+      if (hostBounds) {
+        minX = Math.min(minX, hostBounds.minX);
+        minY = Math.min(minY, hostBounds.minY);
+        maxX = Math.max(maxX, hostBounds.maxX);
+        maxY = Math.max(maxY, hostBounds.maxY);
+      }
+
+      if (
+        polarCenter &&
+        Number.isFinite(polarCenter.x) &&
+        Number.isFinite(polarCenter.y)
+      ) {
+        const r =
+          typeof polarRadius === "number" && Number.isFinite(polarRadius) && polarRadius > 0
+            ? polarRadius
+            : 20;
+        minX = Math.min(minX, polarCenter.x - r);
+        minY = Math.min(minY, polarCenter.y - r);
+        maxX = Math.max(maxX, polarCenter.x + r);
+        maxY = Math.max(maxY, polarCenter.y + r);
+      }
+
+      if (
+        !Number.isFinite(minX) ||
+        !Number.isFinite(minY) ||
+        !Number.isFinite(maxX) ||
+        !Number.isFinite(maxY)
+      ) {
+        return;
+      }
+
+      const el = canvasViewportRef.current ?? svgRef.current;
+      const rect = el?.getBoundingClientRect();
+      const screenW = typeof window !== "undefined" ? window.innerWidth : 1024;
+      const leftBarW = rect ? Math.max(0, rect.left) : 64;
+      const panelEl =
+        typeof document !== "undefined"
+          ? document.getElementById("chamfer-array-right-panel")
+          : null;
+      const rightPanelW = panelEl
+        ? panelEl.getBoundingClientRect().width
+        : screenW >= 640
+          ? 310
+          : 285;
+
+      // X_centro_útil = W_barra_esquerda + (W_tela - W_barra_esquerda - W_painel_direito) / 2
+      const usableW = Math.max(140, screenW - leftBarW - rightPanelW);
+      const usableH = Math.max(
+        120,
+        rect?.height || canvasSize.h || (typeof window !== "undefined" ? window.innerHeight - 96 : 500),
+      );
+      const localCenterX = usableW / 2;
+      const localCenterY = usableH / 2;
+
+      const geomW = Math.max(maxX - minX, 15);
+      const geomH = Math.max(maxY - minY, 15);
+      const cx = (minX + maxX) / 2;
+      const cy = (minY + maxY) / 2;
+
+      // 20% de margem de respiro ao redor (fator útil = 0.78)
+      const rawK = Math.min((usableW * 0.78) / geomW, (usableH * 0.78) / geomH);
+      const targetK = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, rawK));
+      const targetTx = localCenterX - cx * targetK;
+      const targetTy = localCenterY - cy * targetK;
+
+      if (
+        !Number.isFinite(targetK) ||
+        !Number.isFinite(targetTx) ||
+        !Number.isFinite(targetTy)
+      ) {
+        return;
+      }
+
+      if (arrayFrameAnimRafRef.current !== null) {
+        cancelAnimationFrame(arrayFrameAnimRafRef.current);
+        arrayFrameAnimRafRef.current = null;
+      }
+
+      const startView = viewRef.current ?? { k: 1, tx: 0, ty: 0 };
+      const startTime = performance.now();
+      const durationMs = 300;
+
+      // Aproximação precisa de cubic-bezier(0.22, 1, 0.36, 1)
+      const easeOutCubicBezier = (t: number) => 1 - Math.pow(1 - t, 3.2);
+
+      const step = (now: number) => {
+        const elapsed = now - startTime;
+        const progress = Math.min(1, Math.max(0, elapsed / durationMs));
+        const eased = easeOutCubicBezier(progress);
+
+        const nextView = {
+          k: startView.k + (targetK - startView.k) * eased,
+          tx: startView.tx + (targetTx - startView.tx) * eased,
+          ty: startView.ty + (targetTy - startView.ty) * eased,
+        };
+        viewRef.current = nextView;
+        setView(nextView);
+
+        if (progress < 1) {
+          arrayFrameAnimRafRef.current = requestAnimationFrame(step);
+        } else {
+          arrayFrameAnimRafRef.current = null;
+        }
+      };
+
+      arrayFrameAnimRafRef.current = requestAnimationFrame(step);
+    },
+    [entities, canvasSize.h],
+  );
+
+  const applyArraySmartFraming = useCallback(
+    (targetEntities: Entity[], pivotCenter?: Vec2 | null) => {
+      fitArrayAndHostToVisibleCanvas(
+        targetEntities,
+        [],
+        pivotCenter,
+        pivotCenter && targetEntities.length > 0
+          ? dist(pivotCenter, getGroupCenter(targetEntities))
+          : undefined,
+        arrayHostInfo.sheetBounds,
+      );
+    },
+    [fitArrayAndHostToVisibleCanvas, arrayHostInfo.sheetBounds],
+  );
+
   const initializeArrayFromEntities = useCallback(
     (targetEntities: Entity[], preferredType?: ArrayType, existingGroupId?: string | null) => {
       const hostContextEntities = existingGroupId
@@ -3214,17 +3372,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       } else {
         setActiveArrayType(host.suggestedType);
       }
+      lastFramedArrayBoxRef.current = null;
+      applyArraySmartFraming(targetEntities, chosenCenter);
     },
-    [entities, temporaryOrigin],
+    [entities, temporaryOrigin, applyArraySmartFraming],
   );
 
   const handleStartArray = useCallback(
     (type: ArrayType) => {
       setEditingArrayGroupId(null);
       setIsArrayPickingCenter(false);
+      lastFramedArrayBoxRef.current = null;
       if (!selected.length) {
         toast.info("Toque no furo ou geometria que deseja multiplicar.");
         setActiveArrayType(type);
+        fitArrayAndHostToVisibleCanvas([], []);
         return;
       }
 
@@ -3250,6 +3412,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         if (spec.polar) setArrayPolarParams(spec.polar);
         if (spec.linear) setArrayLinearParams(spec.linear);
         setActiveArrayType(type);
+        applyArraySmartFraming(targetSeeds, spec.polar?.center ?? host.center);
         triggerHaptic("selection");
         return;
       }
@@ -3257,7 +3420,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       initializeArrayFromEntities(selected, type, null);
       triggerHaptic("selection");
     },
-    [selected, entities, temporaryOrigin, initializeArrayFromEntities],
+    [selected, entities, temporaryOrigin, initializeArrayFromEntities, applyArraySmartFraming, fitArrayAndHostToVisibleCanvas],
   );
 
   const handleEditExistingArray = useCallback(
@@ -3272,6 +3435,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setSelection(targetSeeds.map((e) => e.id));
       setEditingArrayGroupId(arrayGroupId);
       setIsArrayPickingCenter(false);
+      lastFramedArrayBoxRef.current = null;
 
       const hostContextEntities = entities.filter(
         (e) => !(e.params?.arrayGroupId === arrayGroupId && e.params?.isArrayInstance),
@@ -3285,10 +3449,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (spec.polar) setArrayPolarParams(spec.polar);
       if (spec.linear) setArrayLinearParams(spec.linear);
       setActiveArrayType(spec.type);
+      applyArraySmartFraming(targetSeeds, spec.polar?.center ?? host.center);
       triggerHaptic("selection");
       toast.info("Editando padrão existente em tempo real.");
     },
-    [entities, temporaryOrigin],
+    [entities, temporaryOrigin, applyArraySmartFraming],
   );
 
   const handleArrayLinear = useCallback(() => {
@@ -3310,6 +3475,52 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     };
     return computeInstances(spec, selected, arrayHostInfo);
   }, [activeArrayType, editingArrayGroupId, selected, arrayPolarParams, arrayLinearParams, arrayHostInfo]);
+
+  // Auto-Frame on Open e quando as dimensões do Array mudarem significativamente
+  useEffect(() => {
+    if (!activeArrayType) {
+      lastFramedArrayBoxRef.current = null;
+      return;
+    }
+    if (isDraggingArrayCenterRef.current) return;
+
+    const previewEnts = arrayPreview ? arrayPreview.ghostSlots.flatMap((s) => s.entities) : [];
+    const combinedBox = bbox([...entities, ...selected, ...previewEnts]);
+    if (!combinedBox) return;
+
+    const w = Math.max(10, combinedBox.maxX - combinedBox.minX);
+    const h = Math.max(10, combinedBox.maxY - combinedBox.minY);
+    const cx = (combinedBox.minX + combinedBox.maxX) / 2;
+    const cy = (combinedBox.minY + combinedBox.maxY) / 2;
+
+    const prev = lastFramedArrayBoxRef.current;
+    const shouldReFrame =
+      !prev ||
+      prev.type !== activeArrayType ||
+      Math.abs(w - prev.w) / prev.w > 0.16 ||
+      Math.abs(h - prev.h) / prev.h > 0.16 ||
+      Math.hypot(cx - prev.cx, cy - prev.cy) > Math.max(w, h) * 0.15;
+
+    if (shouldReFrame) {
+      lastFramedArrayBoxRef.current = { type: activeArrayType, w, h, cx, cy };
+      fitArrayAndHostToVisibleCanvas(
+        selected,
+        previewEnts,
+        activeArrayType === "polar" ? arrayPolarParams.center : null,
+        activeArrayType === "polar" ? arrayPolarParams.radius : undefined,
+        arrayHostInfo.sheetBounds,
+      );
+    }
+  }, [
+    activeArrayType,
+    arrayPreview,
+    entities,
+    selected,
+    arrayPolarParams.center,
+    arrayPolarParams.radius,
+    arrayHostInfo.sheetBounds,
+    fitArrayAndHostToVisibleCanvas,
+  ]);
 
   const arrayValidation = useMemo(() => {
     if (!activeArrayType || selected.length === 0) {
@@ -5920,48 +6131,48 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const gridStyles = useMemo(() => {
     if (isDark) {
-      // TEMA ESCURO — Fundo escuro (#0b0f17 / #090d14)
-      // Paleta técnica em tons ardósia fria (slate-400/300) que evita cansaço visual
-      const secOpacity = Math.max(0, Math.min(0.16, 0.14 * gridConfig.subFade));
-      const majOpacity = Math.max(0, Math.min(0.32, 0.28 * gridConfig.majorFade));
-      const macOpacity = 0.38;
+      // TEMA ESCURO — Grafite Técnico (#10151D canvas / #293444 bordas)
+      // Grade secundária (~15% opacidade), Grade principal (~35% opacidade) e Eixos X/Y distintos
+      const secOpacity = Math.max(0, Math.min(0.16, 0.15 * gridConfig.subFade));
+      const majOpacity = Math.max(0, Math.min(0.36, 0.35 * gridConfig.majorFade));
+      const macOpacity = 0.42;
 
       return {
         secondaryStroke: `rgba(148, 163, 184, ${secOpacity.toFixed(3)})`,
         secondaryWidth: 0.75,
         majorStroke: `rgba(148, 163, 184, ${majOpacity.toFixed(3)})`,
         majorWidth: 1.0,
-        macroStroke: `rgba(203, 213, 225, ${macOpacity.toFixed(3)})`,
-        macroWidth: 1.35,
-        // Eixos do sistema CAD (X vermelho técnico, Y verde técnico, destaque 85%)
-        axisX: "rgba(239, 68, 68, 0.88)",
-        axisY: "rgba(34, 197, 94, 0.88)",
+        macroStroke: `rgba(230, 237, 245, ${macOpacity.toFixed(3)})`,
+        macroWidth: 1.25,
+        // Eixos do sistema CAD (X Vermelho Caldra #E11D48, Y Azul Técnico #38BDF8)
+        axisX: "rgba(225, 29, 72, 0.88)",
+        axisY: "rgba(56, 189, 248, 0.88)",
         axisWidth: 1.75,
-        originFill: "#ef4444",
-        originRing: "rgba(255, 255, 255, 0.90)",
-        originText: "rgba(239, 68, 68, 0.95)",
+        originFill: "#E11D48",
+        originRing: "rgba(230, 237, 245, 0.92)",
+        originText: "rgba(225, 29, 72, 0.95)",
       };
     } else {
-      // TEMA CLARO — Fundo claro (#f1f5f9 / papel técnico de engenharia)
-      // Linhas em ardósia neutra (slate-600/700) com contraste equilibrado sem competir com a geometria
-      const secOpacity = Math.max(0, Math.min(0.14, 0.12 * gridConfig.subFade));
-      const majOpacity = Math.max(0, Math.min(0.28, 0.24 * gridConfig.majorFade));
-      const macOpacity = 0.34;
+      // TEMA CLARO — Cinza Técnico (#F8FAFC canvas / #CBD5E1 bordas)
+      // Grade secundária (~15% opacidade), Grade principal (~35% opacidade) e Eixos X/Y distintos
+      const secOpacity = Math.max(0, Math.min(0.16, 0.15 * gridConfig.subFade));
+      const majOpacity = Math.max(0, Math.min(0.36, 0.35 * gridConfig.majorFade));
+      const macOpacity = 0.42;
 
       return {
-        secondaryStroke: `rgba(71, 85, 105, ${secOpacity.toFixed(3)})`,
+        secondaryStroke: `rgba(100, 116, 139, ${secOpacity.toFixed(3)})`,
         secondaryWidth: 0.75,
-        majorStroke: `rgba(51, 65, 85, ${majOpacity.toFixed(3)})`,
+        majorStroke: `rgba(100, 116, 139, ${majOpacity.toFixed(3)})`,
         majorWidth: 1.0,
         macroStroke: `rgba(30, 41, 59, ${macOpacity.toFixed(3)})`,
-        macroWidth: 1.35,
-        // Eixos do sistema CAD (destaque 80%)
-        axisX: "rgba(220, 38, 38, 0.85)",
-        axisY: "rgba(22, 163, 74, 0.85)",
+        macroWidth: 1.25,
+        // Eixos do sistema CAD (X Vermelho Caldra #E11D48, Y Azul Técnico #0284C7)
+        axisX: "rgba(225, 29, 72, 0.85)",
+        axisY: "rgba(2, 132, 199, 0.85)",
         axisWidth: 1.75,
-        originFill: "#dc2626",
-        originRing: "rgba(15, 23, 42, 0.85)",
-        originText: "rgba(220, 38, 38, 0.95)",
+        originFill: "#E11D48",
+        originRing: "rgba(30, 41, 59, 0.88)",
+        originText: "rgba(225, 29, 72, 0.95)",
       };
     }
   }, [isDark, gridConfig]);
@@ -6357,7 +6568,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       ref={wrapRef}
       className={cn(
         "fixed inset-0 z-50 flex h-[100dvh] w-[100vw] max-w-none flex-col gap-1 overflow-hidden rounded-none p-1 transition-colors select-none",
-        isDark ? "bg-[#0b0f17] text-slate-100" : "bg-[#f1f5f9] text-slate-900",
+        isDark ? "bg-[#0B0F14] text-[#E6EDF5]" : "bg-[#E9EEF4] text-[#1E293B]",
         isMestre && "glow-ring",
       )}
     >
@@ -6374,8 +6585,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             "flex h-12 shrink-0 w-full items-center justify-between gap-3 border-b px-3 shadow-xs backdrop-blur-md transition-colors select-none",
             "overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing",
             isDark
-              ? "border-slate-800 bg-slate-950/95 text-slate-100"
-              : "border-slate-200 bg-white/95 text-slate-800 shadow-xs",
+              ? "border-[#293444] bg-[#0D121B] text-[#E6EDF5]"
+              : "border-[#CBD5E1] bg-[#F1F5F9] text-[#1E293B] shadow-xs",
           )}
         >
           {/* LADO ESQUERDO: [ ← SAIR ] + [ CHAMFER • NOME DO PROJETO ] + [ DOSSIÊ ] */}
@@ -6395,17 +6606,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               className={cn(
                 "flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors whitespace-nowrap",
                 isDark
-                  ? "border-slate-700/80 bg-slate-900/90 text-slate-300 hover:bg-slate-800 hover:text-white"
-                  : "border-slate-200 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900",
+                  ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:bg-[#1E293B] hover:text-white"
+                  : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:bg-[#F1F5F9] hover:text-[#0F172A]",
               )}
             >
               <ArrowLeft className="size-3.5 shrink-0" /> SAIR
             </button>
 
-            <span className={cn("h-4 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
+            <span className={cn("h-4 w-px shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
 
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="font-mono text-xs font-bold tracking-wider text-red-600 shrink-0">CHAMFER</span>
+              <span className="font-mono text-xs font-bold tracking-wider text-[#E11D48] shrink-0">CHAMFER</span>
               {project && (
                 <button
                   type="button"
@@ -6417,7 +6628,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   style={{ textOverflow: "ellipsis" }}
                   className={cn(
                     "inline-block font-mono text-[11px] font-semibold transition-colors truncate whitespace-nowrap max-w-[160px] sm:max-w-[200px]",
-                    isDark ? "text-slate-200 hover:text-white" : "text-slate-800 hover:text-slate-950",
+                    isDark ? "text-[#E6EDF5] hover:text-white" : "text-[#1E293B] hover:text-[#0F172A]",
                   )}
                   title={`Documento: ${project.name} (clique para alternar/criar)`}
                 >
@@ -6436,8 +6647,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   className={cn(
                     "hidden lg:inline rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase border truncate max-w-[120px]",
                     isDark
-                      ? "bg-red-950/50 text-red-300 border-red-500/30"
-                      : "bg-red-50 text-red-700 border-red-200",
+                      ? "bg-[#E11D48]/15 text-[#FB7185] border-[#E11D48]/40"
+                      : "bg-[#E11D48]/10 text-[#E11D48] border-[#E11D48]/30",
                   )}
                 >
                   {dossier.partCode || dossier.partName}
@@ -6451,7 +6662,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             <div
               className={cn(
                 "flex items-center rounded-lg border p-0.5 shadow-xs",
-                isDark ? "border-slate-800 bg-slate-900/90" : "border-slate-200 bg-slate-100",
+                isDark ? "border-[#293444] bg-[#151C27]" : "border-[#CBD5E1] bg-[#FFFFFF]",
               )}
             >
               <button
@@ -6463,10 +6674,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 className={cn(
                   "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
                   activeMode === "2d"
-                    ? "bg-red-600 text-white shadow-xs"
+                    ? "bg-[#E11D48] text-white shadow-xs"
                     : isDark
-                      ? "text-slate-400 hover:text-slate-200"
-                      : "text-slate-600 hover:text-slate-900",
+                      ? "text-[#94A3B8] hover:text-[#E6EDF5]"
+                      : "text-[#64748B] hover:text-[#1E293B]",
                 )}
               >
                 2D SKETCH
@@ -6480,10 +6691,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 className={cn(
                   "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
                   activeMode === "3d"
-                    ? "bg-red-600 text-white shadow-xs"
+                    ? "bg-[#E11D48] text-white shadow-xs"
                     : isDark
-                      ? "text-slate-400 hover:text-slate-200"
-                      : "text-slate-600 hover:text-slate-900",
+                      ? "text-[#94A3B8] hover:text-[#E6EDF5]"
+                      : "text-[#64748B] hover:text-[#1E293B]",
                 )}
               >
                 CAD 3D
@@ -6495,7 +6706,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               <div
                 className={cn(
                   "flex items-center rounded-lg border p-0.5 shadow-xs shrink-0",
-                  isDark ? "border-slate-800 bg-slate-900/90" : "border-slate-200 bg-slate-100",
+                  isDark ? "border-[#293444] bg-[#151C27]" : "border-[#CBD5E1] bg-[#FFFFFF]",
                 )}
               >
                 <button
@@ -6509,8 +6720,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   className={cn(
                     "rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
                     drawingProjection === "orthographic" && !orbitProjection2D.isTilted && activeMode === "2d"
-                      ? "bg-slate-700 text-white shadow-xs"
-                      : "text-slate-400 hover:text-slate-200",
+                      ? isDark
+                        ? "bg-[#293444] text-[#E6EDF5] shadow-xs"
+                        : "bg-[#E9EEF4] text-[#1E293B] shadow-xs"
+                      : isDark
+                        ? "text-[#94A3B8] hover:text-[#E6EDF5]"
+                        : "text-[#64748B] hover:text-[#1E293B]",
                   )}
                   title="Modo Ortogonal 2D (Eixos X/Y convencionais a 0°)"
                 >
@@ -6529,8 +6744,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   className={cn(
                     "rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors flex items-center gap-1",
                     drawingProjection === "isometric"
-                      ? "bg-sky-600 text-white shadow-xs"
-                      : "text-slate-400 hover:text-slate-200",
+                      ? isDark
+                        ? "bg-[#38BDF8]/20 text-[#38BDF8] border border-[#38BDF8]/40 shadow-xs"
+                        : "bg-[#0284C7] text-white shadow-xs"
+                      : isDark
+                        ? "text-[#94A3B8] hover:text-[#E6EDF5]"
+                        : "text-[#64748B] hover:text-[#1E293B]",
                   )}
                   title="Modo Isométrico 2D (Eixos 30°/90°/150° e 3 Planos Técnicos)"
                 >
@@ -6577,7 +6796,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 data-testid="chamfer-topbar-3d-style-selector"
                 className={cn(
                   "flex items-center rounded-lg border p-0.5 shadow-xs",
-                  isDark ? "border-slate-800 bg-slate-900/90" : "border-slate-200 bg-slate-100",
+                  isDark ? "border-[#293444] bg-[#151C27]" : "border-[#CBD5E1] bg-[#FFFFFF]",
                 )}
               >
                 <button
@@ -6595,10 +6814,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   className={cn(
                     "rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
                     renderStyle3D === "shaded-edges"
-                      ? "bg-cyan-600 text-white shadow-xs"
+                      ? isDark
+                        ? "bg-[#38BDF8] text-[#0B0F14] shadow-xs"
+                        : "bg-[#0284C7] text-white shadow-xs"
                       : isDark
-                        ? "text-slate-400 hover:text-slate-200"
-                        : "text-slate-600 hover:text-slate-900",
+                        ? "text-[#94A3B8] hover:text-[#E6EDF5]"
+                        : "text-[#64748B] hover:text-[#1E293B]",
                   )}
                   title="Sólido Metálico 3D com Arestas Técnicas Visíveis"
                 >
@@ -6619,10 +6840,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   className={cn(
                     "rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
                     renderStyle3D === "shaded"
-                      ? "bg-cyan-600 text-white shadow-xs"
+                      ? isDark
+                        ? "bg-[#38BDF8] text-[#0B0F14] shadow-xs"
+                        : "bg-[#0284C7] text-white shadow-xs"
                       : isDark
-                        ? "text-slate-400 hover:text-slate-200"
-                        : "text-slate-600 hover:text-slate-900",
+                        ? "text-[#94A3B8] hover:text-[#E6EDF5]"
+                        : "text-[#64748B] hover:text-[#1E293B]",
                   )}
                   title="Sólido Metálico 3D Puro (Sem Arestas)"
                 >
@@ -6639,10 +6862,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   className={cn(
                     "rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
                     renderStyle3D === "wireframe"
-                      ? "bg-cyan-600 text-white shadow-xs"
+                      ? isDark
+                        ? "bg-[#38BDF8] text-[#0B0F14] shadow-xs"
+                        : "bg-[#0284C7] text-white shadow-xs"
                       : isDark
-                        ? "text-slate-400 hover:text-slate-200"
-                        : "text-slate-600 hover:text-slate-900",
+                        ? "text-[#94A3B8] hover:text-[#E6EDF5]"
+                        : "text-[#64748B] hover:text-[#1E293B]",
                   )}
                   title="Wireframe Técnico 3D com Hierarquia de Arestas e Profundidade Óptica"
                 >
@@ -6658,7 +6883,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             <div
               className={cn(
                 "flex items-center rounded-lg border p-0.5",
-                isDark ? "border-slate-800 bg-slate-900/90" : "border-slate-200 bg-slate-100",
+                isDark ? "border-[#293444] bg-[#151C27]" : "border-[#CBD5E1] bg-[#FFFFFF]",
               )}
             >
               <button
@@ -6671,9 +6896,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "flex h-7 items-center gap-1 rounded-md px-2 font-mono text-[10px] font-semibold transition-colors",
                   historyState.canUndo || pending.length > 0
                     ? isDark
-                      ? "text-slate-200 hover:bg-slate-800 hover:text-white cursor-pointer"
-                      : "text-slate-700 hover:bg-slate-200 hover:text-slate-900 cursor-pointer"
-                    : "opacity-35 cursor-not-allowed text-slate-500",
+                      ? "text-[#E6EDF5] hover:bg-[#293444] hover:text-white cursor-pointer"
+                      : "text-[#1E293B] hover:bg-[#F1F5F9] hover:text-[#0F172A] cursor-pointer"
+                    : "opacity-35 cursor-not-allowed text-[#94A3B8]",
                 )}
               >
                 <Undo2 className="size-3.5" />
@@ -6689,9 +6914,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "flex h-7 items-center gap-1 rounded-md px-2 font-mono text-[10px] font-semibold transition-colors",
                   historyState.canRedo
                     ? isDark
-                      ? "text-slate-200 hover:bg-slate-800 hover:text-white cursor-pointer"
-                      : "text-slate-700 hover:bg-slate-200 hover:text-slate-900 cursor-pointer"
-                    : "opacity-35 cursor-not-allowed text-slate-500",
+                      ? "text-[#E6EDF5] hover:bg-[#293444] hover:text-white cursor-pointer"
+                      : "text-[#1E293B] hover:bg-[#F1F5F9] hover:text-[#0F172A] cursor-pointer"
+                    : "opacity-35 cursor-not-allowed text-[#94A3B8]",
                 )}
               >
                 <Redo2 className="size-3.5" />
@@ -6709,17 +6934,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold transition-all shadow-xs",
                   saveStatus === "pendente"
                     ? isDark
-                      ? "border-amber-500/60 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60"
-                      : "border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100"
+                      ? "border-[#F59E0B]/60 bg-[#F59E0B]/15 text-[#FBBF24] hover:bg-[#F59E0B]/25"
+                      : "border-[#D97706]/50 bg-[#D97706]/10 text-[#D97706] hover:bg-[#D97706]/20"
                     : isDark
-                      ? "border-slate-700/80 bg-slate-900/90 text-slate-200 hover:bg-slate-800 hover:text-white"
-                      : "border-slate-200 bg-slate-100 text-slate-800 hover:bg-slate-200 hover:text-slate-950",
+                      ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:bg-[#293444] hover:text-white"
+                      : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:bg-[#F1F5F9] hover:text-[#0F172A]",
                 )}
               >
                 {saveStatus === "salvando" ? (
-                  <Loader2 className="size-3 animate-spin text-amber-500" />
+                  <Loader2 className="size-3 animate-spin text-[#F59E0B]" />
                 ) : (
-                  <Check className="size-3 text-emerald-500" />
+                  <Check className={cn("size-3", isDark ? "text-[#34D399]" : "text-[#059669]")} />
                 )}
                 <span>Salvar</span>
               </button>
@@ -6730,16 +6955,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[9px] font-mono border font-semibold uppercase tracking-wider transition-colors",
                   saveStatus === "salvo" &&
                     (isDark
-                      ? "text-emerald-400 bg-emerald-950/60 border-emerald-500/30"
-                      : "text-emerald-700 bg-emerald-50 border-emerald-300"),
+                      ? "text-[#34D399] bg-[#34D399]/10 border-[#34D399]/30"
+                      : "text-[#059669] bg-[#059669]/10 border-[#059669]/30"),
                   saveStatus === "salvando" &&
                     (isDark
-                      ? "text-amber-400 bg-amber-950/60 border-amber-500/30"
-                      : "text-amber-800 bg-amber-50 border-amber-300"),
+                      ? "text-[#F59E0B] bg-[#F59E0B]/10 border-[#F59E0B]/30"
+                      : "text-[#D97706] bg-[#D97706]/10 border-[#D97706]/30"),
                   saveStatus === "pendente" &&
                     (isDark
-                      ? "text-amber-300 bg-amber-950/60 border-amber-500/50 animate-pulse"
-                      : "text-amber-900 bg-amber-100/90 border-amber-400"),
+                      ? "text-[#FBBF24] bg-[#F59E0B]/15 border-[#F59E0B]/50 animate-pulse"
+                      : "text-[#D97706] bg-[#D97706]/15 border-[#D97706]/40"),
                 )}
                 title={
                   chamferSettings.autoSave
@@ -6749,19 +6974,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               >
                 {saveStatus === "salvo" && (
                   <>
-                    <span className="size-1.5 rounded-full bg-emerald-500" />
+                    <span className={cn("size-1.5 rounded-full", isDark ? "bg-[#34D399]" : "bg-[#059669]")} />
                     <span>Salvo</span>
                   </>
                 )}
                 {saveStatus === "salvando" && (
                   <>
-                    <Loader2 className="size-2.5 animate-spin text-amber-500" />
+                    <Loader2 className="size-2.5 animate-spin text-[#F59E0B]" />
                     <span>Salvando...</span>
                   </>
                 )}
                 {saveStatus === "pendente" && (
                   <>
-                    <span className="size-1.5 rounded-full bg-amber-500 animate-ping" />
+                    <span className="size-1.5 rounded-full bg-[#F59E0B] animate-ping" />
                     <span className="hidden md:inline">Alterações não salvas</span>
                     <span className="md:hidden">Não salvo</span>
                   </>
@@ -6769,7 +6994,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </span>
             </div>
 
-            <span className={cn("h-4 w-px", isDark ? "bg-slate-800" : "bg-slate-200")} />
+            <span className={cn("h-4 w-px", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
 
             {/* FERRAMENTAS GLOBAIS */}
             {/* CHAMFER VISION — FERRAMENTA OFICIAL DO CHAMFER COM ÍCONE OFICIAL */}
@@ -6784,11 +7009,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               className={cn(
                 "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
                 isDark
-                  ? "border-red-500/40 bg-red-950/40 text-red-300 hover:bg-red-900/60 hover:text-white hover:border-red-400"
-                  : "border-red-300 bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-950 hover:border-red-400",
+                  ? "border-[#E11D48]/45 bg-[#E11D48]/15 text-[#FB7185] hover:bg-[#E11D48]/25 hover:text-white"
+                  : "border-[#E11D48]/35 bg-[#E11D48]/10 text-[#E11D48] hover:bg-[#E11D48]/15",
               )}
             >
-              <ScanEye className="size-3.5 text-red-500" />
+              <ScanEye className="size-3.5 text-[#E11D48]" />
               <span className="hidden xl:inline">CHAMFER VISION</span>
               <span className="xl:hidden">VISION</span>
             </button>
@@ -6803,11 +7028,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               className={cn(
                 "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
                 isDark
-                  ? "border-sky-500/40 bg-sky-950/40 text-sky-300 hover:bg-sky-900/60 hover:text-white hover:border-sky-400"
-                  : "border-sky-300 bg-sky-50 text-sky-800 hover:bg-sky-100 hover:text-sky-950 hover:border-sky-400",
+                  ? "border-[#38BDF8]/40 bg-[#38BDF8]/12 text-[#38BDF8] hover:bg-[#38BDF8]/20 hover:text-white"
+                  : "border-[#0284C7]/35 bg-[#0284C7]/10 text-[#0284C7] hover:bg-[#0284C7]/15",
               )}
             >
-              <Sparkles className="size-3.5 text-sky-400" />
+              <Sparkles className={cn("size-3.5", isDark ? "text-[#38BDF8]" : "text-[#0284C7]")} />
               <span className="hidden xl:inline">CHAMFER INTENT</span>
               <span className="xl:hidden">INTENT</span>
             </button>
@@ -6821,11 +7046,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               className={cn(
                 "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
                 isDark
-                  ? "border-amber-500/40 bg-amber-950/40 text-amber-300 hover:bg-amber-900/60 hover:text-white hover:border-amber-400"
-                  : "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:text-amber-950 hover:border-amber-400",
+                  ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:border-[#38BDF8]/50 hover:text-white"
+                  : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:border-[#0284C7]/50",
               )}
             >
-              <Boxes className="size-3.5 text-amber-500" />
+              <Boxes className={cn("size-3.5", isDark ? "text-[#38BDF8]" : "text-[#0284C7]")} />
               <span className="hidden xl:inline">OFICINA & CORTE</span>
               <span className="xl:hidden">CORTE/BOM</span>
             </button>
@@ -7221,11 +7446,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               orbitProjection2D.isTilted ||
               entities.some((e) => e.params?.isIsoSolidFace)
               ? isDark
-                ? "border-slate-800/90 bg-[#050914] bg-[radial-gradient(ellipse_at_center,#0A1528_0%,#050914_78%)]"
-                : "border-slate-200 bg-[#F8FAFC]"
+                ? "border-[#293444] bg-[#10151D] bg-[radial-gradient(ellipse_at_center,#151C27_0%,#10151D_78%)]"
+                : "border-[#CBD5E1] bg-[#F8FAFC]"
               : isDark
-                ? "border-slate-800 bg-[#0d121c]"
-                : "border-slate-200 bg-[#ffffff]",
+                ? "border-[#293444] bg-[#10151D]"
+                : "border-[#CBD5E1] bg-[#F8FAFC]",
           )}
         >
           {solidOpen && (
@@ -8058,17 +8283,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 );
               })()}
 
-              {/* COTAS ASSOCIATIVAS — âmbar técnico, sempre medidas na geometria */}
+              {/* COTAS ASSOCIATIVAS — azul técnico (#38BDF8 escuro / #0284C7 claro), sempre medidas na geometria */}
               {drawnDims.map(({ d, draw }) => {
                 const on = dimSel === d.id;
                 const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                const dimColor = isDark ? "#38BDF8" : "#0284C7";
                 return (
                   <g
                     key={d.id}
-                    stroke={DIMENSION_COLOR}
-                    fill={DIMENSION_COLOR}
-                    strokeWidth={(on ? 1.8 : 1) / safeK}
-                    opacity={on ? 1 : 0.9}
+                    stroke={dimColor}
+                    fill={dimColor}
+                    strokeWidth={(on ? 1.8 : 1.1) / safeK}
+                    opacity={on ? 1 : 0.94}
                     onPointerDown={() => setDimSel(d.id)}
                   >
                     {draw.lines.map((l, i) => {
@@ -8136,21 +8362,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         <g key={`t${i}`} transform={`rotate(${rot} ${l.p.x} ${l.p.y})`}>
                           {/* Máscara de respiro ABNT para proteger a legibilidade do texto contra linhas de fundo */}
                           <rect
-                            x={l.p.x - (txtLen * sz * 0.3 + 3 / safeK)}
-                            y={l.p.y - sz * 0.95}
-                            width={txtLen * sz * 0.6 + 6 / safeK}
-                            height={sz * 1.25}
-                            fill={
-                              isDark
-                                ? drawingProjection === "isometric" ||
-                                  entities.some((e) => e.params?.isIsoSolidFace)
-                                  ? "#050914"
-                                  : "#1A2028"
-                                : "#ffffff"
-                            }
-                            fillOpacity={0.94}
-                            rx={2 / safeK}
-                            stroke="none"
+                            x={l.p.x - (txtLen * sz * 0.3 + 4 / safeK)}
+                            y={l.p.y - sz * 1.0}
+                            width={txtLen * sz * 0.6 + 8 / safeK}
+                            height={sz * 1.35}
+                            fill={isDark ? "#151C27" : "#FFFFFF"}
+                            fillOpacity={0.96}
+                            rx={3 / safeK}
+                            stroke={dimColor}
+                            strokeOpacity={0.55}
+                            strokeWidth={0.85 / safeK}
                           />
                           <text
                             x={l.p.x}
@@ -8158,8 +8379,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             fontSize={sz}
                             textAnchor="middle"
                             stroke="none"
-                            fill={DIMENSION_COLOR}
-                            className="font-mono cursor-pointer hover:font-bold hover:fill-accent select-none font-medium"
+                            fill={dimColor}
+                            className="font-mono cursor-pointer hover:font-bold select-none font-semibold"
                             onPointerDown={(ev) => {
                               ev.stopPropagation();
                               const r = svgRef.current?.getBoundingClientRect();
@@ -8201,8 +8422,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   const my = (d.a.y + d.b.y) / 2;
                   const ang = (Math.atan2(d.b.y - d.a.y, d.b.x - d.a.x) * 180) / Math.PI;
                   const flip = ang > 90 || ang < -90 ? 180 : 0;
+                  const dimColor = isDark ? "#38BDF8" : "#0284C7";
                   return (
-                    <g key={`dim-${i}`} stroke={DIMENSION_COLOR} fill={DIMENSION_COLOR}>
+                    <g key={`dim-${i}`} stroke={dimColor} fill={dimColor}>
                       <line
                         x1={d.a.x}
                         y1={d.a.y}
@@ -8220,7 +8442,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         fontSize={10 / safeK}
                         textAnchor="middle"
                         stroke="none"
-                        className="font-mono"
+                        className="font-mono font-medium"
                       >
                         {d.label}
                       </text>
@@ -8240,8 +8462,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 )
                   return null;
                 const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                const dimColor = isDark ? "#38BDF8" : "#0284C7";
                 return (
-                  <g key={`measure-${i}`} stroke={DIMENSION_COLOR} fill={DIMENSION_COLOR}>
+                  <g key={`measure-${i}`} stroke={dimColor} fill={dimColor}>
                     <line
                       x1={m.a.x}
                       y1={m.a.y}
@@ -8260,7 +8483,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       fontSize={11 / safeK}
                       textAnchor="middle"
                       stroke="none"
-                      className="font-mono"
+                      className="font-mono font-medium"
                     >
                       {dist(m.a, m.b).toFixed(2)} mm ·{" "}
                       {(
@@ -9000,38 +9223,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             </g>
                           )}
 
-                          {/* Badge de colisão individual ("Fora da peça", "Invade furo central", "Colisão entre furos") */}
-                          {!slot.isSkipped && diag?.badge && (
-                            <g
-                              transform={`translate(${slot.center.x}, ${slot.center.y - 14 / safeK})`}
-                            >
-                              <rect
-                                x={-48 / safeK}
-                                y={-9 / safeK}
-                                width={96 / safeK}
-                                height={15 / safeK}
-                                rx={4 / safeK}
-                                fill={
-                                  diag.status === "error"
-                                    ? "rgba(127, 29, 29, 0.92)"
-                                    : "rgba(120, 53, 15, 0.92)"
-                                }
-                                stroke={slotColor}
-                                strokeWidth={1 / safeK}
-                              />
-                              <text
-                                x={0}
-                                y={1.5 / safeK}
-                                textAnchor="middle"
-                                fill="#ffffff"
-                                fontSize={8.5 / safeK}
-                                fontFamily="monospace"
-                                fontWeight="bold"
-                              >
-                                {diag.badge}
-                              </text>
-                            </g>
-                          )}
+                          {/* Sem rótulos de texto sobrepostos no canvas: colisão indicada apenas pelo contorno tracejado vermelho/âmbar */}
                         </g>
                       );
                     })}
@@ -9259,25 +9451,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           )}
 
-          {/* BARRA FLUTUANTE DE COMANDO / FEEDBACK CAD TÉCNICO (CANVAS 2D) */}
-          <div
-            className={cn(
-              "pointer-events-none absolute bottom-3 left-4 z-20 hidden md:flex items-center gap-2 rounded-xl border px-3 py-1.5 font-mono text-[10px] shadow-lg backdrop-blur-md transition-colors",
-              isDark
-                ? "border-slate-800/80 bg-slate-950/90 text-slate-300"
-                : "border-slate-200 bg-white/95 text-slate-700 shadow-md",
-            )}
-          >
-            <span className={cn("font-bold uppercase tracking-wider", isOrbitToolActive ? "text-cyan-400" : isDark ? "text-red-400" : "text-red-600")}>
-              {isOrbitToolActive ? "ÓRBITA 3D" : operationFeedback.command}
-            </span>
-            <span className={isDark ? "text-slate-600" : "text-slate-300"}>|</span>
-            <span className={isDark ? "text-slate-300" : "text-slate-700"}>
-              {isOrbitToolActive
-                ? `Arraste com 1 dedo/mouse para orbitar (θ ${Math.round(orbitAzimuthDeg)}° · φ ${Math.round(orbitElevationDeg)}°)`
-                : operationFeedback.instruction}
-            </span>
-          </div>
+          {/* BARRA FLUTUANTE DE COMANDO / FEEDBACK CAD TÉCNICO (OCULTA ENQUANTO O HUD DE ARRAY ESTIVER ABERTO) */}
+          {activeArrayType === null && (
+            <div
+              className={cn(
+                "pointer-events-none absolute bottom-3 left-4 z-20 hidden md:flex items-center gap-2 rounded-xl border px-3 py-1.5 font-mono text-[10px] shadow-lg backdrop-blur-md transition-colors",
+                isDark
+                  ? "border-slate-800/80 bg-slate-950/90 text-slate-300"
+                  : "border-slate-200 bg-white/95 text-slate-700 shadow-md",
+              )}
+            >
+              <span className={cn("font-bold uppercase tracking-wider", isOrbitToolActive ? "text-cyan-400" : isDark ? "text-red-400" : "text-red-600")}>
+                {isOrbitToolActive ? "ÓRBITA 3D" : operationFeedback.command}
+              </span>
+              <span className={isDark ? "text-slate-600" : "text-slate-300"}>|</span>
+              <span className={isDark ? "text-slate-300" : "text-slate-700"}>
+                {isOrbitToolActive
+                  ? `Arraste com 1 dedo/mouse para orbitar (θ ${Math.round(orbitAzimuthDeg)}° · φ ${Math.round(orbitElevationDeg)}°)`
+                  : operationFeedback.instruction}
+              </span>
+            </div>
+          )}
 
           {zoomHud !== null && (
             <div className="metal pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 font-mono text-[11px] text-accent tabular-nums">
@@ -9305,7 +9499,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           )}
 
           {/* NOVO SISTEMA DE EDIÇÃO CONTEXTUAL MOBILE DO CHAMFER (REGRAS 1 A 18) */}
-          {mobileEditorOpen && (
+          {mobileEditorOpen && activeArrayType === null && (
             <div
               className={cn(
                 "absolute z-40 transition-all",
@@ -9357,62 +9551,98 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </div>
         </div>
 
-        {/* REGIÃO D — JANELA LATERAL DIREITA DO CHAMFER 2D (PROPRIEDADES / CAMADAS / CORTE) */}
+        {/* REGIÃO D — JANELA LATERAL DIREITA DO CHAMFER 2D (ARRAY FIXO OU PROPRIEDADES / CAMADAS / CORTE) */}
         {!solidOpen && !focus && (
-          <ChamferRightSidebar
-            open={rightSidebarOpen}
-            onToggleOpen={() => setRightSidebarOpen((v) => !v)}
-            activeTab={activeSidebarTab}
-            onTabChange={setActiveSidebarTab}
-            entities={entities}
-            selection={selection}
-            setSelection={setSelection}
-            commit={commit}
-            layers={layers}
-            setLayers={setLayers}
-            activeLayer={activeLayer}
-            setActiveLayer={setActiveLayer}
-            thickness={thickness}
-            onThicknessChange={setThickness}
-            projectName={project?.name ?? "Peça Chamfer"}
-            onProjectNameChange={(name) => {
-              setProject((prev) => (prev ? { ...prev, name } : prev));
-            }}
-            material={project?.settings?.material ?? "Aço carbono (1020)"}
-            onMaterialChange={(mat) => {
-              setProject((prev) =>
-                prev ? { ...prev, settings: { ...prev.settings, material: mat } } : prev
-              );
-            }}
-            onDivideEntity={handleOpenDivide}
-            dims={dims}
-            onDimsChange={setDims}
-            dimKind={dimKind}
-            onDimKindChange={setDimKind}
-            dimSel={dimSel}
-            onDimSelect={setDimSel}
-            renderCotas={() => (
-              <DimensionsPanel
-                dims={dims}
-                entities={entities}
-                kind={dimKind}
-                onKind={(k) => {
-                  setDimKind(k);
-                  setDimPicks([]);
-                  setTool("dim");
-                }}
-                selected={dimSel}
-                onSelect={setDimSel}
-                onChange={(d) => setDims((list) => list.map((x) => (x.id === d.id ? d : x)))}
-                onDelete={(id) => {
-                  setDims((list) => list.filter((x) => x.id !== id));
-                  setDimSel(null);
-                }}
-              />
-            )}
-            onHighlightCut={setShareHint}
-            isDark={isDark}
-          />
+          activeArrayType !== null ? (
+            <ChamferArrayHUD
+              arrayType={activeArrayType}
+              onChangeArrayType={(nextType) => {
+                setActiveArrayType(nextType);
+                setIsArrayPickingCenter(false);
+              }}
+              polarParams={arrayPolarParams}
+              onChangePolarParams={setArrayPolarParams}
+              linearParams={arrayLinearParams}
+              onChangeLinearParams={setArrayLinearParams}
+              hostInfo={arrayHostInfo}
+              validation={arrayValidation}
+              resolvedLinear={arrayPreview?.resolvedLinear}
+              isPickingCenter={isArrayPickingCenter}
+              onTogglePickCenter={() => setIsArrayPickingCenter((v) => !v)}
+              onSelectCandidateCenter={(center) => {
+                setArrayPolarParams((p) => {
+                  const baseCenter = selected.length > 0 ? getGroupCenter(selected) : center;
+                  const radius = dist(center, baseCenter);
+                  return {
+                    ...p,
+                    center,
+                    radius,
+                    startAngleDeg:
+                      Math.atan2(baseCenter.y - center.y, baseCenter.x - center.x) *
+                      (180 / Math.PI),
+                  };
+                });
+              }}
+              onApply={handleCommitArray}
+              onCancel={handleCancelArray}
+              isDark={isDark}
+            />
+          ) : (
+            <ChamferRightSidebar
+              open={rightSidebarOpen}
+              onToggleOpen={() => setRightSidebarOpen((v) => !v)}
+              activeTab={activeSidebarTab}
+              onTabChange={setActiveSidebarTab}
+              entities={entities}
+              selection={selection}
+              setSelection={setSelection}
+              commit={commit}
+              layers={layers}
+              setLayers={setLayers}
+              activeLayer={activeLayer}
+              setActiveLayer={setActiveLayer}
+              thickness={thickness}
+              onThicknessChange={setThickness}
+              projectName={project?.name ?? "Peça Chamfer"}
+              onProjectNameChange={(name) => {
+                setProject((prev) => (prev ? { ...prev, name } : prev));
+              }}
+              material={project?.settings?.material ?? "Aço carbono (1020)"}
+              onMaterialChange={(mat) => {
+                setProject((prev) =>
+                  prev ? { ...prev, settings: { ...prev.settings, material: mat } } : prev
+                );
+              }}
+              onDivideEntity={handleOpenDivide}
+              dims={dims}
+              onDimsChange={setDims}
+              dimKind={dimKind}
+              onDimKindChange={setDimKind}
+              dimSel={dimSel}
+              onDimSelect={setDimSel}
+              renderCotas={() => (
+                <DimensionsPanel
+                  dims={dims}
+                  entities={entities}
+                  kind={dimKind}
+                  onKind={(k) => {
+                    setDimKind(k);
+                    setDimPicks([]);
+                    setTool("dim");
+                  }}
+                  selected={dimSel}
+                  onSelect={setDimSel}
+                  onChange={(d) => setDims((list) => list.map((x) => (x.id === d.id ? d : x)))}
+                  onDelete={(id) => {
+                    setDims((list) => list.filter((x) => x.id !== id));
+                    setDimSel(null);
+                  }}
+                />
+              )}
+              onHighlightCut={setShareHint}
+              isDark={isDark}
+            />
+          )
         )}
       </div>
 
@@ -9423,8 +9653,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           className={cn(
             "relative flex h-8 shrink-0 items-center justify-between gap-2 border-t px-2.5 font-mono text-[10px] backdrop-blur-md select-none transition-colors z-30",
             isDark
-              ? "border-slate-800/80 bg-slate-950/95 text-slate-400"
-              : "border-slate-200 bg-white/95 text-slate-600 shadow-xs",
+              ? "border-[#293444] bg-[#0D121B] text-[#94A3B8]"
+              : "border-[#CBD5E1] bg-[#F1F5F9] text-[#64748B] shadow-xs",
           )}
         >
           {/* FAIXA UNIFICADA COM SWIPE HORIZONTAL SUAVE (SEM CORTAR BOTÕES EM MODO RETRATO) */}
@@ -9469,9 +9699,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     "shrink-0 rounded px-2 py-0.5 font-bold transition-colors",
                     pl.id === planId
                       ? isDark
-                        ? "bg-red-950/60 text-red-400 border border-red-500/30"
-                        : "bg-red-50 text-red-600 border border-red-200"
-                      : "hover:text-foreground",
+                        ? "bg-[#E11D48]/20 text-[#FB7185] border border-[#E11D48]/50"
+                        : "bg-[#FFFFFF] text-[#E11D48] border border-[#E11D48]/45"
+                      : isDark
+                        ? "text-[#94A3B8] hover:text-[#E6EDF5]"
+                        : "text-[#64748B] hover:text-[#1E293B]",
                   )}
                 >
                   {pl.name}
@@ -9504,22 +9736,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     setSelection([]);
                     toast.success(`${plan.name} criado.`);
                   }}
-                  className="shrink-0 rounded px-1.5 py-0.5 text-muted-foreground hover:text-accent font-bold"
+                  className={cn(
+                    "shrink-0 rounded px-1.5 py-0.5 font-bold transition-colors",
+                    isDark ? "text-[#94A3B8] hover:text-[#E6EDF5]" : "text-[#64748B] hover:text-[#1E293B]",
+                  )}
                   title="Adicionar novo plano de corte ao projeto"
                 >
                   +
                 </button>
               )}
 
-              <div className={cn("mx-1 h-3.5 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
+              <div className={cn("mx-1 h-3.5 w-px shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
 
               {/* UNIDADE DE MEDIDA CANÔNICA */}
               <span
                 className={cn(
                   "flex shrink-0 items-center px-1.5 py-0.2 rounded border font-mono font-bold text-[9px] tracking-wider",
                   isDark
-                    ? "border-slate-700/80 bg-slate-900 text-slate-200"
-                    : "border-slate-300 bg-slate-100 text-slate-700",
+                    ? "border-[#293444] bg-[#151C27] text-[#E6EDF5]"
+                    : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B]",
                 )}
                 title="Unidade de medida: Milímetros (mm)"
               >
@@ -9536,10 +9771,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 className={cn(
                   "flex shrink-0 items-center gap-1 px-2 py-0.5 rounded border font-mono font-bold text-[9px] tracking-wider transition-colors cursor-pointer",
                   mobileEditorOpenManual
-                    ? "border-red-500 bg-red-600 text-white shadow-xs"
+                    ? "border-[#E11D48] bg-[#E11D48] text-white shadow-xs"
                     : isDark
-                    ? "border-slate-700/80 bg-slate-900 text-slate-300 hover:text-white hover:border-slate-600"
-                    : "border-slate-300 bg-slate-100 text-slate-700 hover:text-slate-900"
+                    ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:text-white hover:border-[#38BDF8]/50"
+                    : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A] hover:border-[#0284C7]/40"
                 )}
               >
                 <span>CHAPA {thickness.toFixed(1)}MM</span>
@@ -9548,22 +9783,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               {/* LEITURA DE COORDENADAS E PAINEL CONTEXTUAL INTELIGENTE (REF 0,0 & BORDAS) */}
               {temporaryOrigin ? (
                 <div className="flex shrink-0 items-center gap-1.5 font-mono text-[9.5px]">
-                  <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold shrink-0">
-                    <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
+                  <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#E11D48]/20 border border-[#E11D48]/50 text-[#FB7185] font-bold shrink-0">
+                    <span className="size-1.5 rounded-full bg-[#E11D48] animate-pulse" />
                     REF [{temporaryOrigin.label}]:
                   </span>
-                  <span className="text-amber-400 font-bold">ΔX:</span>
-                  <strong className="text-amber-200">
+                  <span className="text-[#FB7185] font-bold">ΔX:</span>
+                  <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>
                     {(cursor.x - temporaryOrigin.p.x >= 0 ? "+" : "") + (cursor.x - temporaryOrigin.p.x).toFixed(1)}
                   </strong>
-                  <span className="text-slate-600">|</span>
-                  <span className="text-amber-400 font-bold">ΔY:</span>
-                  <strong className="text-amber-200">
+                  <span className={isDark ? "text-[#293444]" : "text-[#CBD5E1]"}>|</span>
+                  <span className="text-[#FB7185] font-bold">ΔY:</span>
+                  <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>
                     {(cursor.y - temporaryOrigin.p.y >= 0 ? "+" : "") + (cursor.y - temporaryOrigin.p.y).toFixed(1)} mm
                   </strong>
 
                   {showGlobalCoordsPeek && (
-                    <span className="text-slate-400 text-[8.5px] ml-1">
+                    <span className="text-[#94A3B8] text-[8.5px] ml-1">
                       (G: {cursor.x.toFixed(1)}, {cursor.y.toFixed(1)})
                     </span>
                   )}
@@ -9572,7 +9807,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     type="button"
                     onClick={() => setShowGlobalCoordsPeek((v) => !v)}
                     title="Alternar coordenadas globais"
-                    className="px-1 py-0.5 rounded text-[8px] bg-slate-800 hover:bg-slate-700 text-slate-300 ml-0.5"
+                    className={cn(
+                      "px-1 py-0.5 rounded text-[8px] ml-0.5 border",
+                      isDark
+                        ? "bg-[#151C27] border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
+                        : "bg-[#FFFFFF] border-[#CBD5E1] text-[#64748B] hover:text-[#1E293B]",
+                    )}
                   >
                     {showGlobalCoordsPeek ? "Ocultar G" : "G"}
                   </button>
@@ -9585,7 +9825,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       toast.success("Origem temporária limpa (retornado ao 0,0 global)");
                     }}
                     title="Limpar REF 0,0 e voltar ao documento global"
-                    className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-red-950/60 hover:bg-red-900 border border-red-500/40 text-red-300 font-bold text-[8.5px] active:scale-95"
+                    className={cn(
+                      "flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold text-[8.5px] active:scale-95 border",
+                      isDark
+                        ? "bg-[#E11D48]/20 hover:bg-[#E11D48]/30 border-[#E11D48]/50 text-[#FB7185]"
+                        : "bg-[#E11D48]/10 hover:bg-[#E11D48]/20 border-[#E11D48]/40 text-[#E11D48]",
+                    )}
                   >
                     ✕ Limpar REF
                   </button>
@@ -9595,15 +9840,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   const { u, v } = CoordinateFrameManager.worldToUV(cursor, activeEdge);
                   return (
                     <div className="flex shrink-0 items-center gap-1.5 font-mono text-[9.5px]">
-                      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-bold shrink-0">
-                        <span className="size-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                      <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#38BDF8]/15 border border-[#38BDF8]/40 text-[#38BDF8] font-bold shrink-0">
+                        <span className="size-1.5 rounded-full bg-[#38BDF8] animate-pulse" />
                         BORDA [L = {activeEdge.length.toFixed(0)} mm]:
                       </span>
-                      <span className="text-slate-400">u:</span>
-                      <strong className="text-cyan-200">{u.toFixed(1)}</strong>
-                      <span className="text-slate-600">|</span>
-                      <span className="text-slate-400">v (afast.):</span>
-                      <strong className="text-emerald-300">
+                      <span className="text-[#94A3B8]">u:</span>
+                      <strong className={isDark ? "text-[#38BDF8]" : "text-[#0284C7]"}>{u.toFixed(1)}</strong>
+                      <span className={isDark ? "text-[#293444]" : "text-[#CBD5E1]"}>|</span>
+                      <span className="text-[#94A3B8]">v (afast.):</span>
+                      <strong className={isDark ? "text-[#34D399]" : "text-[#059669]"}>
                         {(v >= 0 ? "+" : "") + v.toFixed(1)} mm
                       </strong>
 
@@ -9614,7 +9859,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           triggerHaptic("selection");
                         }}
                         title="Inverter Lado do Afastamento"
-                        className="px-1.5 py-0.5 rounded bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/40 text-cyan-300 font-bold text-[8.5px] active:scale-95"
+                        className="px-1.5 py-0.5 rounded bg-[#151C27] hover:bg-[#293444] border border-[#38BDF8]/40 text-[#38BDF8] font-bold text-[8.5px] active:scale-95"
                       >
                         ⇄ Lado {activeEdgeSide === 1 ? "A" : "B"}
                       </button>
@@ -9634,7 +9879,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           toast.success(`✓ Linha de marcação gerada a ${activeEdgeOffset} mm da borda!`);
                         }}
                         title={`Criar linha de marcação paralela a ${activeEdgeOffset} mm`}
-                        className="px-1.5 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 font-bold text-[8.5px] active:scale-95"
+                        className="px-1.5 py-0.5 rounded bg-[#F59E0B]/15 hover:bg-[#F59E0B]/25 border border-[#F59E0B]/40 text-[#FBBF24] font-bold text-[8.5px] active:scale-95"
                       >
                         + MAR ({activeEdgeOffset}mm)
                       </button>
@@ -9654,7 +9899,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           toast.success(`✓ Linha de dobra gerada a ${activeEdgeOffset} mm da borda!`);
                         }}
                         title={`Criar linha de dobra paralela a ${activeEdgeOffset} mm`}
-                        className="px-1.5 py-0.5 rounded bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-500/40 text-indigo-300 font-bold text-[8.5px] active:scale-95"
+                        className="px-1.5 py-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 text-purple-300 font-bold text-[8.5px] active:scale-95"
                       >
                         + Dobra ({activeEdgeOffset}mm)
                       </button>
@@ -9667,7 +9912,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           triggerHaptic("tap");
                         }}
                         title="Desmarcar borda"
-                        className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-400 font-bold text-[8.5px]"
+                        className="px-1.5 py-0.5 rounded bg-[#151C27] hover:bg-[#293444] text-[#94A3B8] font-bold text-[8.5px]"
                       >
                         ✕
                       </button>
@@ -9676,10 +9921,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 })()
               ) : (
                 <div className="flex shrink-0 items-center gap-1 font-mono text-[9.5px]">
-                  <span className={isDark ? "text-slate-500" : "text-slate-400"}>X:</span>
-                  <strong className={isDark ? "text-slate-200" : "text-slate-800"}>{cursor.x.toFixed(2)}</strong>
-                  <span className={isDark ? "text-slate-500" : "text-slate-400"}>Y:</span>
-                  <strong className={isDark ? "text-slate-200" : "text-slate-800"}>{cursor.y.toFixed(2)}</strong>
+                  <span className={isDark ? "text-[#94A3B8]" : "text-[#64748B]"}>X:</span>
+                  <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>{cursor.x.toFixed(2)}</strong>
+                  <span className={isDark ? "text-[#94A3B8]" : "text-[#64748B]"}>Y:</span>
+                  <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>{cursor.y.toFixed(2)}</strong>
 
                   <button
                     type="button"
@@ -9699,7 +9944,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       toast.success(`✓ REF 0,0 fixada em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm`);
                     }}
                     title="Definir ponto sob o cursor / snap como origem temporária REF (0,0)"
-                    className="ml-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-300 font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all"
+                    className={cn(
+                      "ml-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all",
+                      isDark
+                        ? "bg-[#E11D48]/15 hover:bg-[#E11D48]/25 border-[#E11D48]/50 text-[#E6EDF5]"
+                        : "bg-[#FFFFFF] hover:bg-[#E11D48]/10 border-[#E11D48]/45 text-[#E11D48]",
+                    )}
                   >
                     <span>📍</span>
                     <span>REF 0,0</span>
@@ -9722,7 +9972,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         }
                       }}
                       title="Definir borda da seleção para afastamento e cotas vivas"
-                      className="ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-300 font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all"
+                      className={cn(
+                        "ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all",
+                        isDark
+                          ? "bg-[#38BDF8]/15 hover:bg-[#38BDF8]/25 border-[#38BDF8]/40 text-[#38BDF8]"
+                          : "bg-[#0284C7]/10 hover:bg-[#0284C7]/20 border-[#0284C7]/40 text-[#0284C7]",
+                      )}
                     >
                       <span>📐</span>
                       <span>Usar Borda</span>
@@ -9733,7 +9988,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
               {/* HUD DE COMPRIMENTO / ÂNGULO QUANDO DESENHANDO LINHA OU POLILINHA */}
               {pending.length >= 1 && (tool === "line" || tool === "polyline") && (
-                <div className="flex shrink-0 items-center gap-1.5 rounded bg-red-950/60 border border-red-500/30 px-1.5 py-0.5 text-[9.5px] text-red-300">
+                <div
+                  className={cn(
+                    "flex shrink-0 items-center gap-1.5 rounded border px-1.5 py-0.5 text-[9.5px]",
+                    isDark
+                      ? "bg-[#38BDF8]/15 border-[#38BDF8]/40 text-[#38BDF8]"
+                      : "bg-[#0284C7]/10 border-[#0284C7]/40 text-[#0284C7]",
+                  )}
+                >
                   <span>
                     L: {Math.hypot(
                       cursor.x - pending[pending.length - 1]!.x,
@@ -9755,7 +10017,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     °
                   </span>
                   {tool === "polyline" && (
-                    <span className="font-mono text-[9px] text-slate-400">
+                    <span className="font-mono text-[9px] text-[#94A3B8]">
                       ({pending.length} {pending.length === 1 ? "vértice" : "vértices"})
                     </span>
                   )}
@@ -9771,7 +10033,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       triggerHaptic("action");
                       finishPolyline(false);
                     }}
-                    className="rounded bg-emerald-600 hover:bg-emerald-500 text-white font-mono text-[9.5px] font-bold px-2 py-0.5 shadow transition-colors flex items-center gap-1"
+                    className={cn(
+                      "rounded text-white font-mono text-[9.5px] font-bold px-2 py-0.5 shadow transition-colors flex items-center gap-1",
+                      isDark ? "bg-[#34D399] hover:bg-[#10B981] text-[#0B0F14]" : "bg-[#059669] hover:bg-[#047857]",
+                    )}
                     title="Concluir Polilinha aberta (Enter)"
                   >
                     <Check className="size-3" />
@@ -9784,7 +10049,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         triggerHaptic("action");
                         finishPolyline(true);
                       }}
-                      className="rounded bg-sky-600 hover:bg-sky-500 text-white font-mono text-[9.5px] font-bold px-2 py-0.5 shadow transition-colors"
+                      className={cn(
+                        "rounded font-mono text-[9.5px] font-bold px-2 py-0.5 shadow transition-colors",
+                        isDark ? "bg-[#38BDF8] text-[#0B0F14] hover:bg-sky-300" : "bg-[#0284C7] text-white hover:bg-sky-700",
+                      )}
                       title="Fechar Polilinha no ponto inicial (C)"
                     >
                       Fechar
@@ -9793,21 +10061,31 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 </div>
               )}
 
-              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
+              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
 
               {/* ESTADO DA OPERAÇÃO CAD */}
               <div className="hidden lg:flex items-center gap-1.5 text-[9.5px] truncate max-w-[260px]">
-                <span className="size-1.5 rounded-full bg-red-500 animate-pulse shrink-0" />
-                <strong className="text-red-500 uppercase">{operationFeedback.command}:</strong>
-                <span className={cn("truncate", isDark ? "text-slate-400" : "text-slate-600")}>{operationFeedback.instruction}</span>
+                <span className="size-1.5 rounded-full bg-[#E11D48] animate-pulse shrink-0" />
+                <strong className="text-[#E11D48] uppercase">{operationFeedback.command}:</strong>
+                <span className={cn("truncate", isDark ? "text-[#94A3B8]" : "text-[#64748B]")}>{operationFeedback.instruction}</span>
               </div>
 
-              <div className={cn("mx-0.5 h-3.5 w-px hidden sm:block shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
+              <div className={cn("mx-0.5 h-3.5 w-px hidden sm:block shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
 
               {/* INFORMAÇÕES DA SELEÇÃO */}
               <div className="hidden sm:flex shrink-0 items-center gap-1 text-[9.5px]">
-                <span className={isDark ? "text-slate-500" : "text-slate-400"}>SEL:</span>
-                <strong className={cn(selected.length > 0 ? (isDark ? "text-cyan-400 font-bold" : "text-red-600 font-bold") : (isDark ? "text-slate-400 font-normal" : "text-slate-500 font-normal"))}>
+                <span className={isDark ? "text-[#94A3B8]" : "text-[#64748B]"}>SEL:</span>
+                <strong
+                  className={cn(
+                    selected.length > 0
+                      ? isDark
+                        ? "text-[#38BDF8] font-bold"
+                        : "text-[#0284C7] font-bold"
+                      : isDark
+                        ? "text-[#94A3B8] font-normal"
+                        : "text-[#64748B] font-normal",
+                  )}
+                >
                   {selectionText}
                 </strong>
               </div>
@@ -9820,8 +10098,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 type="button"
                 onClick={() => setSnapOn((s) => !s)}
                 className={cn(
-                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
-                  snapOn ? "text-accent bg-accent/15" : "text-muted-foreground hover:text-foreground",
+                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors border",
+                  snapOn
+                    ? isDark
+                      ? "text-[#38BDF8] bg-[#38BDF8]/15 border-[#38BDF8]/45"
+                      : "text-[#0284C7] bg-[#FFFFFF] border-[#0284C7]/45"
+                    : isDark
+                      ? "border-transparent text-[#94A3B8] hover:text-[#E6EDF5]"
+                      : "border-transparent text-[#64748B] hover:text-[#1E293B]",
                 )}
                 title="Alternar Snap Geométrico"
               >
@@ -9832,10 +10116,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 type="button"
                 onClick={() => setOrthoOn((o) => !o)}
                 className={cn(
-                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
+                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors border",
                   orthoOn
-                    ? "text-emerald-400 bg-emerald-500/15"
-                    : "text-muted-foreground hover:text-foreground",
+                    ? isDark
+                      ? "text-[#34D399] bg-[#34D399]/15 border-[#34D399]/40"
+                      : "text-[#059669] bg-[#059669]/10 border-[#059669]/40"
+                    : isDark
+                      ? "border-transparent text-[#94A3B8] hover:text-[#E6EDF5]"
+                      : "border-transparent text-[#64748B] hover:text-[#1E293B]",
                 )}
                 title="Modo Ortogonal (0°, 90°, 180°, 270°)"
               >
@@ -9846,19 +10134,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 type="button"
                 onClick={() => setShowGrid((s) => !s)}
                 className={cn(
-                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors",
+                  "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors border",
                   showGrid
                     ? isDark
-                      ? "text-red-400 bg-red-950/50 border border-red-500/30"
-                      : "text-red-600 bg-red-50 border border-red-300 font-bold"
-                    : "text-muted-foreground hover:text-foreground",
+                      ? "text-[#FB7185] bg-[#E11D48]/18 border-[#E11D48]/50"
+                      : "text-[#E11D48] bg-[#FFFFFF] border-[#E11D48]/45 font-bold"
+                    : isDark
+                      ? "border-transparent text-[#94A3B8] hover:text-[#E6EDF5]"
+                      : "border-transparent text-[#64748B] hover:text-[#1E293B]",
                 )}
                 title="Alternar visibilidade da grade"
               >
                 GRID: {showGrid ? `${grid}MM` : "OFF"}
               </button>
 
-              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
+              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
 
               {/* GRUPO 2 — BOTÃO DE ABERTURA DO POPOVER PRECISÃO */}
               <button
@@ -9871,11 +10161,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors cursor-pointer",
                   statusPrecisionMenuOpen || nudgeHudVisible || cursorOffsetMode === "offset"
                     ? isDark
-                      ? "border-sky-500/40 bg-sky-950/60 text-sky-300"
-                      : "border-sky-300 bg-sky-50 text-sky-700"
+                      ? "border-[#38BDF8]/45 bg-[#38BDF8]/15 text-[#38BDF8]"
+                      : "border-[#0284C7]/40 bg-[#0284C7]/10 text-[#0284C7]"
                     : isDark
-                      ? "border-slate-800 bg-slate-900/80 text-slate-300 hover:text-white"
-                      : "border-slate-200 bg-slate-100 text-slate-700 hover:text-slate-900",
+                      ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:text-white"
+                      : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A]",
                 )}
                 title="Controles de Precisão: Mira, Lupa, Ajuste Fino e Quadro"
               >
@@ -9894,11 +10184,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors cursor-pointer",
                   statusCncMenuOpen || showArrows || showOrder || simOn
                     ? isDark
-                      ? "border-red-500/40 bg-red-950/60 text-red-300"
-                      : "border-red-300 bg-red-50 text-red-700"
+                      ? "border-[#E11D48]/50 bg-[#E11D48]/18 text-[#FB7185]"
+                      : "border-[#E11D48]/40 bg-[#E11D48]/10 text-[#E11D48]"
                     : isDark
-                      ? "border-slate-800 bg-slate-900/80 text-slate-300 hover:text-white"
-                      : "border-slate-200 bg-slate-100 text-slate-700 hover:text-slate-900",
+                      ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:text-white"
+                      : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A]",
                 )}
                 title="Fabricação e Apresentação: Fluxo, Ordem de Corte e Prévia CNC"
               >
@@ -9906,13 +10196,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 <span>Fluxo/CNC</span>
               </button>
 
-              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-slate-800" : "bg-slate-200")} />
+              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
 
               {/* ZOOM ATUAL (SEMPRE VISÍVEL) */}
               <button
                 type="button"
                 onClick={() => fitTo(entities)}
-                className="rounded bg-background/60 px-2 py-0.5 font-mono text-[9px] font-bold text-accent hover:bg-background whitespace-nowrap transition-colors"
+                className={cn(
+                  "rounded border px-2 py-0.5 font-mono text-[9px] font-bold whitespace-nowrap transition-colors",
+                  isDark
+                    ? "border-[#293444] bg-[#151C27] text-[#38BDF8] hover:border-[#38BDF8]/50"
+                    : "border-[#CBD5E1] bg-[#FFFFFF] text-[#0284C7] hover:border-[#0284C7]/50",
+                )}
                 title="Clique para enquadrar desenho (100%)"
               >
                 {Math.round(view.k * 100)}%
@@ -9926,16 +10221,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               className={cn(
                 "absolute bottom-9 right-2 z-50 flex w-52 max-w-[92vw] flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md",
                 isDark
-                  ? "border-slate-800 bg-slate-950/96 text-slate-200"
-                  : "border-slate-200 bg-white/98 text-slate-800",
+                  ? "border-[#293444] bg-[#151C27]/98 text-[#E6EDF5]"
+                  : "border-[#CBD5E1] bg-[#FFFFFF]/98 text-[#1E293B]",
               )}
             >
-              <div className="flex items-center justify-between border-b border-slate-800/40 pb-1 text-[8.5px] font-bold uppercase tracking-wider text-muted-foreground">
+              <div className={cn("flex items-center justify-between border-b pb-1 text-[8.5px] font-bold uppercase tracking-wider", isDark ? "border-[#293444] text-[#94A3B8]" : "border-[#CBD5E1] text-[#64748B]")}>
                 <span>Módulos de Precisão</span>
                 <button
                   type="button"
                   onClick={() => setStatusPrecisionMenuOpen(false)}
-                  className="text-slate-400 hover:text-foreground"
+                  className="text-[#94A3B8] hover:text-foreground"
                 >
                   <X className="size-3" />
                 </button>
@@ -9947,8 +10242,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
                   cursorOffsetMode === "offset"
-                    ? "text-sky-400 bg-sky-950/60 border border-sky-500/40"
-                    : "hover:bg-slate-800/40",
+                    ? isDark
+                      ? "text-[#38BDF8] bg-[#38BDF8]/15 border border-[#38BDF8]/40"
+                      : "text-[#0284C7] bg-[#0284C7]/10 border border-[#0284C7]/40"
+                    : isDark
+                      ? "hover:bg-[#0D121B]"
+                      : "hover:bg-[#F1F5F9]",
                 )}
               >
                 <span>MIRA</span>
@@ -9961,10 +10260,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
                   loupeMode === "pinned"
-                    ? "text-cyan-400 bg-cyan-950/60 border border-cyan-500/40"
+                    ? isDark
+                      ? "text-[#38BDF8] bg-[#38BDF8]/15 border border-[#38BDF8]/40"
+                      : "text-[#0284C7] bg-[#0284C7]/10 border border-[#0284C7]/40"
                     : loupeMode === "floating"
-                      ? "text-accent bg-accent/15"
-                      : "hover:bg-slate-800/40",
+                      ? "text-[#E11D48] bg-[#E11D48]/15"
+                      : isDark
+                        ? "hover:bg-[#0D121B]"
+                        : "hover:bg-[#F1F5F9]",
                 )}
               >
                 <span>LUPA</span>
@@ -9984,8 +10287,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
                   nudgeHudVisible
-                    ? "text-accent bg-accent/15 border border-accent/40"
-                    : "hover:bg-slate-800/40",
+                    ? "text-[#E11D48] bg-[#E11D48]/15 border border-[#E11D48]/40"
+                    : isDark
+                      ? "hover:bg-[#0D121B]"
+                      : "hover:bg-[#F1F5F9]",
                 )}
               >
                 <span>FINO</span>
@@ -9997,7 +10302,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 onClick={() => updateFrame({ visible: !frame.visible })}
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                  frame.visible ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
+                  frame.visible
+                    ? "text-[#E11D48] bg-[#E11D48]/15"
+                    : isDark
+                      ? "hover:bg-[#0D121B]"
+                      : "hover:bg-[#F1F5F9]",
                 )}
               >
                 <span>QUADRO</span>
@@ -10016,8 +10325,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
                   snapDivision > 0
-                    ? "text-amber-400 bg-amber-950/60 border border-amber-500/40"
-                    : "hover:bg-slate-800/40",
+                    ? "text-[#F59E0B] bg-[#F59E0B]/15 border border-[#F59E0B]/40"
+                    : isDark
+                      ? "hover:bg-[#0D121B]"
+                      : "hover:bg-[#F1F5F9]",
                 )}
               >
                 <span>DIVISÃO SNAP</span>
@@ -10033,8 +10344,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
                   showAllSnaps
-                    ? "text-emerald-400 bg-emerald-950/60 border border-emerald-500/40"
-                    : "hover:bg-slate-800/40",
+                    ? isDark
+                      ? "text-[#34D399] bg-[#34D399]/15 border border-[#34D399]/40"
+                      : "text-[#059669] bg-[#059669]/10 border border-[#059669]/40"
+                    : isDark
+                      ? "hover:bg-[#0D121B]"
+                      : "hover:bg-[#F1F5F9]",
                 )}
               >
                 <span>TODOS OS SNAPS</span>
@@ -10048,16 +10363,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               className={cn(
                 "absolute bottom-9 right-2 z-50 flex w-48 max-w-[92vw] flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md",
                 isDark
-                  ? "border-slate-800 bg-slate-950/96 text-slate-200"
-                  : "border-slate-200 bg-white/98 text-slate-800",
+                  ? "border-[#293444] bg-[#151C27]/98 text-[#E6EDF5]"
+                  : "border-[#CBD5E1] bg-[#FFFFFF]/98 text-[#1E293B]",
               )}
             >
-              <div className="flex items-center justify-between border-b border-slate-800/40 pb-1 text-[8.5px] font-bold uppercase tracking-wider text-muted-foreground">
+              <div className={cn("flex items-center justify-between border-b pb-1 text-[8.5px] font-bold uppercase tracking-wider", isDark ? "border-[#293444] text-[#94A3B8]" : "border-[#CBD5E1] text-[#64748B]")}>
                 <span>Fabricação & CNC</span>
                 <button
                   type="button"
                   onClick={() => setStatusCncMenuOpen(false)}
-                  className="text-slate-400 hover:text-foreground"
+                  className="text-[#94A3B8] hover:text-foreground"
                 >
                   <X className="size-3" />
                 </button>
@@ -10068,7 +10383,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 onClick={() => setShowArrows((s) => !s)}
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                  showArrows ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
+                  showArrows
+                    ? "text-[#E11D48] bg-[#E11D48]/15"
+                    : isDark
+                      ? "hover:bg-[#0D121B]"
+                      : "hover:bg-[#F1F5F9]",
                 )}
               >
                 <span>FLUXO</span>
@@ -10080,7 +10399,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 onClick={() => setShowOrder((s) => !s)}
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                  showOrder ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
+                  showOrder
+                    ? "text-[#E11D48] bg-[#E11D48]/15"
+                    : isDark
+                      ? "hover:bg-[#0D121B]"
+                      : "hover:bg-[#F1F5F9]",
                 )}
               >
                 <span>ORDEM</span>
@@ -10099,7 +10422,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 }}
                 className={cn(
                   "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
-                  simOn ? "text-accent bg-accent/15" : "hover:bg-slate-800/40",
+                  simOn
+                    ? "text-[#E11D48] bg-[#E11D48]/15"
+                    : isDark
+                      ? "hover:bg-[#0D121B]"
+                      : "hover:bg-[#F1F5F9]",
                 )}
               >
                 <span>PRÉVIA CNC</span>
@@ -10248,40 +10575,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             setFilletPreview(null);
             setChamferPreview(null);
           }}
-          isDark={isDark}
-        />
-      )}
-
-      {/* HUD FLUTUANTE DE ARRAYS INTELIGENTES (POLAR E LINEAR) */}
-      {activeArrayType !== null && (
-        <ChamferArrayHUD
-          arrayType={activeArrayType}
-          onChangeArrayType={(nextType) => {
-            setActiveArrayType(nextType);
-            setIsArrayPickingCenter(false);
-          }}
-          polarParams={arrayPolarParams}
-          onChangePolarParams={setArrayPolarParams}
-          linearParams={arrayLinearParams}
-          onChangeLinearParams={setArrayLinearParams}
-          hostInfo={arrayHostInfo}
-          validation={arrayValidation}
-          isPickingCenter={isArrayPickingCenter}
-          onTogglePickCenter={() => setIsArrayPickingCenter((v) => !v)}
-          onSelectCandidateCenter={(center) => {
-            setArrayPolarParams((p) => {
-              const baseCenter = selected.length > 0 ? getGroupCenter(selected) : center;
-              const radius = dist(center, baseCenter);
-              return {
-                ...p,
-                center,
-                radius,
-                startAngleDeg: Math.atan2(baseCenter.y - center.y, baseCenter.x - center.x) * (180 / Math.PI),
-              };
-            });
-          }}
-          onApply={handleCommitArray}
-          onCancel={handleCancelArray}
           isDark={isDark}
         />
       )}
@@ -11459,9 +11752,13 @@ export const EntityShape = React.memo(function EntityShape({
   const style = techStyle(e.layer);
   const isCutOrWhite = style.color === "#FFFFFF" || e.layer === "corte";
   const stroke = preview
-    ? PREVIEW_COLOR
-    : !isDark && isCutOrWhite
-      ? "#0F172A"
+    ? isDark
+      ? PREVIEW_COLOR
+      : "#1E293B"
+    : isCutOrWhite
+      ? isDark
+        ? "#E6EDF5"
+        : "#1E293B"
       : style.color;
   const isIsoSolid = !!e.params?.isIsoSolidFace;
   const fillColor = isIsoSolid ? ((e.params?.fillColor as string) || "rgba(18, 40, 74, 0.25)") : "none";
@@ -11489,8 +11786,8 @@ export const EntityShape = React.memo(function EntityShape({
   const halo = selected
     ? {
         fill: "none",
-        stroke: !isDark ? "#DC2626" : SELECTION_COLOR,
-        strokeOpacity: !isDark ? 0.75 : 0.65,
+        stroke: !isDark ? "#E11D48" : SELECTION_COLOR,
+        strokeOpacity: !isDark ? 0.8 : 0.72,
         strokeWidth: 4.5 / k,
         strokeLinecap: "round" as const,
         strokeLinejoin: "round" as const,
@@ -11688,8 +11985,8 @@ const Rulers = React.memo(function Rulers({
         className={cn(
           "absolute left-0 top-0 z-10 flex size-5 items-center justify-center border-b border-r font-mono text-[8px] font-bold uppercase",
           isDark
-            ? "border-slate-800 bg-slate-950/80 text-slate-400"
-            : "border-slate-300 bg-slate-100/90 text-slate-600"
+            ? "border-[#293444] bg-[#0D121B]/90 text-[#94A3B8]"
+            : "border-[#CBD5E1] bg-[#F1F5F9]/90 text-[#64748B]"
         )}
       >
         {unit}
@@ -11700,8 +11997,8 @@ const Rulers = React.memo(function Rulers({
         className={cn(
           "pointer-events-none absolute inset-x-0 top-0 h-5 border-b backdrop-blur-sm",
           isDark
-            ? "border-slate-800/80 bg-slate-950/60 text-slate-400"
-            : "border-slate-300/80 bg-slate-100/75 text-slate-600"
+            ? "border-[#293444] bg-[#0D121B]/75 text-[#94A3B8]"
+            : "border-[#CBD5E1] bg-[#F1F5F9]/85 text-[#64748B]"
         )}
       >
         {ticksX.map((t, idx) => (
@@ -11715,8 +12012,8 @@ const Rulers = React.memo(function Rulers({
               className={cn(
                 "w-px",
                 t.isMajor
-                  ? isDark ? "h-2.5 bg-slate-400" : "h-2.5 bg-slate-600"
-                  : isDark ? "h-1 bg-slate-700" : "h-1 bg-slate-300"
+                  ? isDark ? "h-2.5 bg-[#94A3B8]" : "h-2.5 bg-[#64748B]"
+                  : isDark ? "h-1 bg-[#293444]" : "h-1 bg-[#CBD5E1]"
               )}
             />
             {/* Rótulo Numérico nas Divisões Principais */}
@@ -11726,8 +12023,8 @@ const Rulers = React.memo(function Rulers({
                 className={cn(
                   "absolute top-0.5 font-mono text-[7.5px] tracking-tight",
                   t.val === 0
-                    ? isDark ? "text-red-400 font-bold" : "text-red-600 font-bold"
-                    : isDark ? "text-slate-400" : "text-slate-600"
+                    ? "text-[#E11D48] font-bold"
+                    : isDark ? "text-[#94A3B8]" : "text-[#64748B]"
                 )}
               >
                 {t.val}
@@ -11742,8 +12039,8 @@ const Rulers = React.memo(function Rulers({
         className={cn(
           "pointer-events-none absolute inset-y-0 left-0 w-5 border-r backdrop-blur-sm",
           isDark
-            ? "border-slate-800/80 bg-slate-950/60 text-slate-400"
-            : "border-slate-300/80 bg-slate-100/75 text-slate-600"
+            ? "border-[#293444] bg-[#0D121B]/75 text-[#94A3B8]"
+            : "border-[#CBD5E1] bg-[#F1F5F9]/85 text-[#64748B]"
         )}
       >
         {ticksY.map((t, idx) => (
@@ -11759,8 +12056,8 @@ const Rulers = React.memo(function Rulers({
                 className={cn(
                   "absolute right-3 font-mono text-[7.5px] tracking-tight",
                   t.val === 0
-                    ? isDark ? "text-green-400 font-bold" : "text-green-600 font-bold"
-                    : isDark ? "text-slate-400" : "text-slate-600"
+                    ? isDark ? "text-[#38BDF8] font-bold" : "text-[#0284C7] font-bold"
+                    : isDark ? "text-[#94A3B8]" : "text-[#64748B]"
                 )}
               >
                 {t.val}
@@ -11771,8 +12068,8 @@ const Rulers = React.memo(function Rulers({
               className={cn(
                 "h-px",
                 t.isMajor
-                  ? isDark ? "w-2.5 bg-slate-400" : "w-2.5 bg-slate-600"
-                  : isDark ? "w-1 bg-slate-700" : "w-1 bg-slate-300"
+                  ? isDark ? "w-2.5 bg-[#94A3B8]" : "w-2.5 bg-[#64748B]"
+                  : isDark ? "w-1 bg-[#293444]" : "w-1 bg-[#CBD5E1]"
               )}
             />
           </div>

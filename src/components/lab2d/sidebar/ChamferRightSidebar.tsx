@@ -122,8 +122,10 @@ export function ChamferRightSidebar({
     return (
       <aside
         className={cn(
-          "relative z-30 flex flex-col items-center justify-start border-l bg-slate-950/90 py-2 select-none shadow-md backdrop-blur-md transition-all w-8 sm:w-9 shrink-0 rounded-xl sm:rounded-none",
-          isDark ? "border-slate-800 text-slate-400" : "border-slate-200 bg-white/90 text-slate-600"
+          "relative z-30 flex flex-col items-center justify-start border py-2 select-none shadow-md backdrop-blur-md transition-all w-8 sm:w-9 shrink-0 rounded-2xl",
+          isDark
+            ? "border-[#293444] bg-[#151C27]/96 text-[#94A3B8]"
+            : "border-[#CBD5E1] bg-[#FFFFFF]/96 text-[#64748B]"
         )}
       >
         {/* Botão de Expandir Painel */}
@@ -135,7 +137,12 @@ export function ChamferRightSidebar({
           }}
           title="Expandir Janela Lateral Direita (Propriedades / Camadas / Corte)"
           aria-label="Expandir Janela Lateral"
-          className="mb-3 flex size-7 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-200 hover:border-red-500 hover:text-white transition-colors cursor-pointer"
+          className={cn(
+            "mb-3 flex size-7 items-center justify-center rounded-full border transition-colors cursor-pointer",
+            isDark
+              ? "border-[#293444] bg-[#0D121B] text-[#E6EDF5] hover:border-[#E11D48] hover:text-white"
+              : "border-[#CBD5E1] bg-[#F1F5F9] text-[#1E293B] hover:border-[#E11D48] hover:text-[#0F172A]",
+          )}
         >
           <ChevronLeft className="size-4" />
         </button>
@@ -152,10 +159,12 @@ export function ChamferRightSidebar({
             }}
             title="Propriedades CAD"
             className={cn(
-              "flex size-7 items-center justify-center rounded-lg transition-colors cursor-pointer",
+              "flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer",
               activeTab === "propriedades"
-                ? "bg-red-600 text-white"
-                : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                ? "bg-[#E11D48] text-white shadow-xs"
+                : isDark
+                  ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
+                  : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]"
             )}
           >
             <Sliders className="size-3.5" />
@@ -171,10 +180,12 @@ export function ChamferRightSidebar({
             }}
             title="Camadas Técnicas"
             className={cn(
-              "flex size-7 items-center justify-center rounded-lg transition-colors cursor-pointer",
+              "flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer",
               activeTab === "camadas"
-                ? "bg-red-600 text-white"
-                : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                ? "bg-[#E11D48] text-white shadow-xs"
+                : isDark
+                  ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
+                  : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]"
             )}
           >
             <Layers className="size-3.5" />
@@ -190,10 +201,12 @@ export function ChamferRightSidebar({
             }}
             title="Plano de Corte e Fabricação"
             className={cn(
-              "flex size-7 items-center justify-center rounded-lg transition-colors cursor-pointer",
+              "flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer",
               activeTab === "corte"
-                ? "bg-red-600 text-white"
-                : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                ? "bg-[#E11D48] text-white shadow-xs"
+                : isDark
+                  ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
+                  : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]"
             )}
           >
             <Scissors className="size-3.5" />
@@ -210,10 +223,12 @@ export function ChamferRightSidebar({
               }}
               title="Cotas"
               className={cn(
-                "flex size-7 items-center justify-center rounded-lg transition-colors cursor-pointer",
+                "flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer",
                 activeTab === "cotas"
-                  ? "bg-red-600 text-white"
-                  : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                  ? "bg-[#E11D48] text-white shadow-xs"
+                  : isDark
+                    ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
+                    : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]"
               )}
             >
               <Ruler className="size-3.5" />
@@ -233,15 +248,22 @@ export function ChamferRightSidebar({
         "z-40 flex w-[265px] max-w-[86vw] sm:w-[285px] shrink-0 flex-col overflow-hidden border-l select-none shadow-2xl backdrop-blur-md transition-all",
         "max-md:absolute max-md:right-1 max-md:top-1 max-md:bottom-1 max-md:rounded-2xl max-md:border md:relative",
         isDark
-          ? "border-slate-800 bg-slate-950/95 text-slate-100"
-          : "border-slate-200 bg-white/95 text-slate-800",
+          ? "border-[#293444] bg-[#151C27]/98 text-[#E6EDF5]"
+          : "border-[#CBD5E1] bg-[#FFFFFF]/98 text-[#1E293B]",
         className
       )}
     >
       {/* ---------------------------------------------------- */}
       {/* CABEÇALHO COM ABAS (PROPRIEDADES, CAMADAS, CORTE)    */}
       {/* ---------------------------------------------------- */}
-      <div className="flex h-10 shrink-0 items-center justify-between border-b border-slate-800/80 px-2 bg-slate-900/60">
+      <div
+        className={cn(
+          "flex h-10 shrink-0 items-center justify-between border-b px-2",
+          isDark
+            ? "border-[#293444] bg-[#0D121B]"
+            : "border-[#CBD5E1] bg-[#F1F5F9]",
+        )}
+      >
         <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
           {/* ABA PROPRIEDADES */}
           <button
@@ -253,8 +275,10 @@ export function ChamferRightSidebar({
             className={cn(
               "flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer",
               activeTab === "propriedades"
-                ? "bg-red-600 text-white shadow-xs"
-                : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                ? "bg-[#E11D48] text-white shadow-xs"
+                : isDark
+                  ? "text-[#94A3B8] hover:bg-[#151C27] hover:text-[#E6EDF5]"
+                  : "text-[#64748B] hover:bg-[#FFFFFF] hover:text-[#1E293B]"
             )}
           >
             <Sliders className="size-3" />
@@ -271,8 +295,10 @@ export function ChamferRightSidebar({
             className={cn(
               "flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer",
               activeTab === "camadas"
-                ? "bg-red-600 text-white shadow-xs"
-                : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                ? "bg-[#E11D48] text-white shadow-xs"
+                : isDark
+                  ? "text-[#94A3B8] hover:bg-[#151C27] hover:text-[#E6EDF5]"
+                  : "text-[#64748B] hover:bg-[#FFFFFF] hover:text-[#1E293B]"
             )}
           >
             <Layers className="size-3" />
@@ -289,8 +315,10 @@ export function ChamferRightSidebar({
             className={cn(
               "flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer",
               activeTab === "corte"
-                ? "bg-red-600 text-white shadow-xs"
-                : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                ? "bg-[#E11D48] text-white shadow-xs"
+                : isDark
+                  ? "text-[#94A3B8] hover:bg-[#151C27] hover:text-[#E6EDF5]"
+                  : "text-[#64748B] hover:bg-[#FFFFFF] hover:text-[#1E293B]"
             )}
           >
             <Scissors className="size-3" />
@@ -308,8 +336,10 @@ export function ChamferRightSidebar({
               className={cn(
                 "flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer",
                 activeTab === "cotas"
-                  ? "bg-red-600 text-white shadow-xs"
-                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+                  ? "bg-[#E11D48] text-white shadow-xs"
+                  : isDark
+                    ? "text-[#94A3B8] hover:bg-[#151C27] hover:text-[#E6EDF5]"
+                    : "text-[#64748B] hover:bg-[#FFFFFF] hover:text-[#1E293B]"
               )}
             >
               <Ruler className="size-3" />
@@ -327,7 +357,12 @@ export function ChamferRightSidebar({
           }}
           title="Recolher janela lateral (recuperar espaço do canvas)"
           aria-label="Recolher janela lateral"
-          className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer ml-1"
+          className={cn(
+            "rounded-lg p-1 transition-colors cursor-pointer ml-1",
+            isDark
+              ? "text-[#94A3B8] hover:bg-[#151C27] hover:text-white"
+              : "text-[#64748B] hover:bg-[#FFFFFF] hover:text-[#1E293B]",
+          )}
         >
           <ChevronRight className="size-4" />
         </button>

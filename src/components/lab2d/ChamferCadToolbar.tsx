@@ -521,14 +521,14 @@ export function ChamferCadToolbar({
       aria-label="Barra de ferramentas CAD"
       style={{
         backgroundColor: isDark
-          ? "rgba(15, 23, 42, var(--ui-opacity, 0.92))"
-          : "rgba(255, 255, 255, var(--ui-opacity, 0.94))",
+          ? "rgba(21, 28, 39, var(--ui-opacity, 0.96))"
+          : "rgba(255, 255, 255, var(--ui-opacity, 0.98))",
       }}
       className={cn(
         "relative flex h-full max-h-full w-11 sm:w-12 shrink-0 flex-col items-center rounded-2xl border p-1 shadow-xl backdrop-blur-md select-none z-40 transition-colors",
         isDark
-          ? "border-slate-800/80 text-slate-300"
-          : "border-slate-200 text-slate-700 shadow-md",
+          ? "border-[#293444] text-[#94A3B8]"
+          : "border-[#CBD5E1] text-[#64748B] shadow-md",
         className,
       )}
     >
@@ -568,14 +568,14 @@ export function ChamferCadToolbar({
                 className={cn(
                   "group relative flex min-h-[40px] size-10 w-full flex-col items-center justify-center rounded-xl transition-all touch-manipulation cursor-pointer",
                   isOpen
-                    ? "bg-red-600 text-white shadow-md shadow-red-600/30 scale-[1.02]"
+                    ? "bg-[#E11D48] text-white shadow-md shadow-[#E11D48]/30 scale-[1.02]"
                     : active
                       ? isDark
-                        ? "border border-red-500/40 bg-red-950/50 text-red-400 shadow-xs"
-                        : "border border-red-300 bg-red-50 text-red-600 font-bold shadow-xs"
+                        ? "border border-[#E11D48]/55 bg-[#E11D48]/18 text-[#FB7185] shadow-xs"
+                        : "border border-[#E11D48]/45 bg-[#E11D48]/10 text-[#E11D48] font-bold shadow-xs"
                       : isDark
-                        ? "text-slate-400 hover:border-slate-700/60 hover:bg-slate-900/80 hover:text-slate-100"
-                        : "text-slate-600 hover:border-slate-300 hover:bg-slate-100 hover:text-slate-900",
+                        ? "text-[#94A3B8] hover:border-[#293444] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
+                        : "text-[#64748B] hover:border-[#CBD5E1] hover:bg-[#F1F5F9] hover:text-[#1E293B]",
                 )}
               >
                 <Icon className="size-4 transition-transform group-hover:scale-110" />
@@ -585,7 +585,7 @@ export function ChamferCadToolbar({
 
                 {/* Indicador de ferramenta ativa no grupo */}
                 {active && !isOpen && (
-                  <span className="absolute top-1 right-1 size-1.5 rounded-full bg-red-500 shadow-xs animate-pulse" />
+                  <span className="absolute top-1 right-1 size-1.5 rounded-full bg-[#E11D48] shadow-xs animate-pulse" />
                 )}
               </button>
             </div>
@@ -595,7 +595,12 @@ export function ChamferCadToolbar({
 
       {/* SELETOR RÁPIDO DE CAMADA ATIVA (CORTE, DOBRA, RECORTE, MARCAÇÃO) */}
       {setActiveLayer && (
-        <div className="w-full pt-1 border-t border-slate-800/80 flex flex-col items-center shrink-0">
+        <div
+          className={cn(
+            "w-full pt-1 border-t flex flex-col items-center shrink-0",
+            isDark ? "border-[#293444]" : "border-[#CBD5E1]",
+          )}
+        >
           <button
             type="button"
             onClick={() => {
@@ -610,8 +615,8 @@ export function ChamferCadToolbar({
             className={cn(
               "group relative flex size-9 w-full flex-col items-center justify-center rounded-xl transition-all border",
               isDark
-                ? "border-slate-800 bg-slate-900/90 hover:border-slate-700 hover:bg-slate-800"
-                : "border-slate-200 bg-slate-100 hover:border-slate-300 hover:bg-slate-200",
+                ? "border-[#293444] bg-[#0D121B] hover:border-[#38BDF8]/50 hover:bg-[#1E293B]"
+                : "border-[#CBD5E1] bg-[#F1F5F9] hover:border-[#0284C7]/50 hover:bg-[#E9EEF4]",
             )}
           >
             <span
@@ -624,10 +629,17 @@ export function ChamferCadToolbar({
                     ? "#F59E0B"
                     : activeLayer === "marcacao"
                     ? "#3B82F6"
-                    : "#FFFFFF",
+                    : isDark
+                    ? "#E6EDF5"
+                    : "#1E293B",
               }}
             />
-            <span className="text-[7px] font-mono font-bold tracking-wider mt-0.5 leading-none uppercase text-slate-400 group-hover:text-white">
+            <span
+              className={cn(
+                "text-[7px] font-mono font-bold tracking-wider mt-0.5 leading-none uppercase",
+                isDark ? "text-[#94A3B8] group-hover:text-[#E6EDF5]" : "text-[#64748B] group-hover:text-[#1E293B]",
+              )}
+            >
               {activeLayer === "dobra"
                 ? "DOB"
                 : activeLayer === "recorte"
@@ -666,8 +678,8 @@ export function ChamferCadToolbar({
           "absolute z-50 flex items-center gap-1 overflow-hidden shadow-lg select-none",
           openCat === "selecionar" ? "border" : "border-0",
           isDark
-            ? "border-slate-700/80 bg-slate-900/94 text-slate-200 shadow-black/50"
-            : "border-slate-200/90 bg-white/94 text-slate-700 shadow-slate-900/12",
+            ? "border-[#293444] bg-[#151C27]/96 text-[#E6EDF5] shadow-black/50"
+            : "border-[#CBD5E1] bg-[#FFFFFF]/96 text-[#1E293B] shadow-slate-900/12",
         )}
       >
         {/* 1. Ponteiro (Seleção Geral + Fusão Gestual de Vértices) */}
@@ -680,10 +692,10 @@ export function ChamferCadToolbar({
           className={cn(
             "flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation",
             tool === "select"
-              ? "bg-red-600 text-white shadow-xs"
+              ? "bg-[#E11D48] text-white shadow-xs"
               : isDark
-                ? "text-slate-300 hover:bg-slate-800 hover:text-white"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+                ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
+                : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]",
           )}
         >
           <MousePointer2 className="size-3.5" />
@@ -699,10 +711,10 @@ export function ChamferCadToolbar({
           className={cn(
             "flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation",
             tool === "node"
-              ? "bg-red-600 text-white shadow-xs"
+              ? "bg-[#E11D48] text-white shadow-xs"
               : isDark
-                ? "text-slate-300 hover:bg-slate-800 hover:text-white"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+                ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
+                : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]",
           )}
         >
           <ControlNodesIcon className="size-3.5" />
@@ -718,10 +730,10 @@ export function ChamferCadToolbar({
           className={cn(
             "flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation",
             tool === "pan"
-              ? "bg-red-600 text-white shadow-xs"
+              ? "bg-[#E11D48] text-white shadow-xs"
               : isDark
-                ? "text-slate-300 hover:bg-slate-800 hover:text-white"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+                ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
+                : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]",
           )}
         >
           <Hand className="size-3.5" />
@@ -734,8 +746,8 @@ export function ChamferCadToolbar({
           className={cn(
             "absolute left-full ml-1.5 sm:ml-2 z-50 w-64 max-w-[calc(100vw-60px)] sm:max-w-[92vw] rounded-2xl border p-2 shadow-2xl backdrop-blur-lg animate-in fade-in zoom-in-95 duration-150 overflow-y-auto",
             isDark
-              ? "border-slate-800 bg-slate-950/95 text-slate-200"
-              : "border-slate-200 bg-white/95 text-slate-800 shadow-2xl",
+              ? "border-[#293444] bg-[#151C27]/98 text-[#E6EDF5]"
+              : "border-[#CBD5E1] bg-[#FFFFFF]/98 text-[#1E293B] shadow-2xl",
           )}
           style={{
             ...getFlyoutPosition(openCat),
@@ -746,15 +758,15 @@ export function ChamferCadToolbar({
           <div
             className={cn(
               "flex items-center justify-between border-b pb-1.5 mb-1.5",
-              isDark ? "border-slate-800/80" : "border-slate-200",
+              isDark ? "border-[#293444]" : "border-[#CBD5E1]",
             )}
           >
             <div className="flex items-center gap-1.5">
-              <activeCategoryData.icon className="size-3.5 text-red-500" />
+              <activeCategoryData.icon className="size-3.5 text-[#E11D48]" />
               <span
                 className={cn(
                   "font-mono text-xs font-bold uppercase tracking-wide",
-                  isDark ? "text-slate-100" : "text-slate-800",
+                  isDark ? "text-[#E6EDF5]" : "text-[#1E293B]",
                 )}
               >
                 {activeCategoryData.label}
@@ -770,10 +782,10 @@ export function ChamferCadToolbar({
                 className={cn(
                   "size-5 rounded-md grid place-items-center transition-colors",
                   isPinned
-                    ? "bg-red-600 text-white shadow-xs"
+                    ? "bg-[#E11D48] text-white shadow-xs"
                     : isDark
-                      ? "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
-                      : "text-slate-500 hover:bg-slate-100 hover:text-slate-800",
+                      ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
+                      : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]",
                 )}
                 title={
                   isPinned
