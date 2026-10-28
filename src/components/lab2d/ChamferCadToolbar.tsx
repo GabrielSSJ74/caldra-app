@@ -165,6 +165,15 @@ interface ChamferCadToolbarProps {
   nudgeHudVisible?: boolean;
   onToggleNudgeHud?: () => void;
 
+  // Divisão do Snap e Visualização Global (Upgrade PRE)
+  snapDivision?: number;
+  onSetSnapDivision?: (n: number) => void;
+  showAllSnaps?: boolean;
+  onToggleShowAllSnaps?: () => void;
+  onStartSetReferencePoint?: () => void;
+  temporaryOrigin?: { p: { x: number; y: number }; label: string } | null;
+  onClearTemporaryOrigin?: () => void;
+
   // Medição e Cotas
   dimKind: DimKind;
   onPickDimKind: (k: DimKind) => void;
@@ -247,6 +256,13 @@ export function ChamferCadToolbar({
   onCycleLoupeMode,
   nudgeHudVisible = false,
   onToggleNudgeHud,
+  snapDivision = 0,
+  onSetSnapDivision,
+  showAllSnaps = false,
+  onToggleShowAllSnaps,
+  onStartSetReferencePoint,
+  temporaryOrigin,
+  onClearTemporaryOrigin,
   dimKind,
   onPickDimKind,
   thickness,
@@ -1247,6 +1263,101 @@ export function ChamferCadToolbar({
                       </div>
                       <span className="font-bold">{snapOn ? "LIGADO" : "DESLIGADO"}</span>
                     </button>
+
+                    {/* DIVISÃO VIRTUAL DE FORMAS NO SNAP (NÃO-DESTRUTIVA) */}
+                    <div className="flex flex-col gap-1 p-2 rounded-xl bg-slate-900/90 border border-slate-800">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-slate-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                          <Divide className="size-3 text-cyan-400" />
+                          Divisão do Snap (Virtual)
+                        </span>
+                        <span className="font-mono font-bold text-cyan-400">
+                          {snapDivision && snapDivision >= 2 ? `${snapDivision} partes` : "OFF"}
+                        </span>
+                      </div>
+                      <p className="text-[9px] text-slate-400 leading-tight">
+                        Gera pontos magnéticos virtuais em $N$ partes iguais (linhas, arcos, círculos e polígonos) sem cortar a peça.
+                      </p>
+                      <div className="grid grid-cols-4 gap-1 mt-1">
+                        {[0, 2, 3, 4, 6, 8, 12, 16].map((n) => (
+                          <button
+                            key={`snap-div-${n}`}
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic("selection");
+                              onSetSnapDivision?.(n);
+                            }}
+                            className={cn(
+                              "py-1 rounded-lg font-mono text-[10px] font-bold transition-all text-center",
+                              (snapDivision === n || (n === 0 && (!snapDivision || snapDivision < 2)))
+                                ? "bg-cyan-600 text-white shadow-xs"
+                                : "bg-slate-800 text-slate-400 hover:text-slate-200",
+                            )}
+                          >
+                            {n === 0 ? "OFF" : `${n}p`}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* MOSTRAR TODOS OS SNAPS DA PEÇA */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        onToggleShowAllSnaps?.();
+                      }}
+                      className={cn(
+                        "flex items-center justify-between rounded-xl px-2.5 py-1.5 transition-colors",
+                        showAllSnaps
+                          ? "bg-emerald-950/60 border border-emerald-500/40 text-emerald-300"
+                          : "bg-slate-900 text-slate-400 hover:text-slate-200",
+                      )}
+                      title="Exibir simultaneamente todos os pontos de snap de todas as formas existentes no canvas"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Eye className="size-4" />
+                        <span>Mostrar Todos os Snaps</span>
+                      </div>
+                      <span className="font-bold">{showAllSnaps ? "ON" : "OFF"}</span>
+                    </button>
+
+                    {/* PONTO DE REFERÊNCIA DINÂMICO (QUADRADO ADAPTÁVEL E CRUZ ROXA) */}
+                    <div className="flex flex-col gap-1.5 p-2 rounded-xl bg-purple-950/40 border border-purple-500/40">
+                      <div className="flex items-center justify-between text-[10px]">
+                        <span className="text-purple-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                          <Crosshair className="size-3 text-purple-400" />
+                          Ponto de Referência (REF)
+                        </span>
+                        {temporaryOrigin && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic("selection");
+                              onClearTemporaryOrigin?.();
+                            }}
+                            className="text-[9px] text-red-400 hover:text-red-300 font-bold uppercase px-1.5 py-0.5 rounded bg-red-950/60 transition-colors"
+                          >
+                            Limpar
+                          </button>
+                        )}
+                      </div>
+                      <p className="text-[9px] text-purple-200/70 leading-tight">
+                        Fixa âncora com cruz roxa pontilhada e quadrado adaptável com cotas ao vivo (ΔX, ΔY e d).
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("action");
+                          onStartSetReferencePoint?.();
+                          setOpenCat("none");
+                        }}
+                        className="mt-0.5 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-mono text-[10.5px] font-bold shadow-sm transition-all active:scale-95"
+                      >
+                        <Crosshair className="size-3.5" />
+                        <span>{temporaryOrigin ? "Redefinir Ponto de REF" : "Definir Ponto de Referência"}</span>
+                      </button>
+                    </div>
 
                     <button
                       type="button"

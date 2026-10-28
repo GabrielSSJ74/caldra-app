@@ -251,6 +251,7 @@ import { canDivideEntity, divideEntity, type DivideOptions } from "@/lib/lab2d/c
 import {
   findSmartSnap,
   extractEntitySmartReferences,
+  extractIntersections,
   type SmartReferencePoint,
 } from "@/lib/lab2d/cadReferenceSnaps";
 import {
@@ -832,6 +833,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [moreOpen, setMoreOpen] = useState(false);
   const [statusPrecisionMenuOpen, setStatusPrecisionMenuOpen] = useState(false);
   const [statusCncMenuOpen, setStatusCncMenuOpen] = useState(false);
+  /* PRECISÃO AVANÇADA (UPGRADE PRE) */
+  const [snapDivision, setSnapDivision] = useState<number>(0);
+  const [showAllSnaps, setShowAllSnaps] = useState<boolean>(false);
+  const [isSettingReferencePoint, setIsSettingReferencePoint] = useState<boolean>(false);
   /* ESPESSURA — chapa do plano; alimenta a vista 3D / Traçagem */
   const [thickness, setThickness] = useState<number>(() => initialProj?.thickness ?? DEFAULT_PLAN_THICKNESS);
   const [cad3dTreeJson, setCad3dTreeJson] = useState<string | undefined>(() => initialPlan?.cad3dTreeJson);
@@ -2003,9 +2008,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const snapPoint = useCallback(
     (p: Vec2): Vec2 => {
       if (!snapOn) return p;
-      const tol = 12 / view.k;
+      const tol = (nudgeHudVisible ? 6 : 12) / view.k;
       const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
-      const smart = findSmartSnap(p, entities, tol, activeStart ?? null, tool, selection);
+      const smart = findSmartSnap(p, entities, tol, activeStart ?? null, tool, selection, snapDivision);
       if (smart) return smart.p;
 
       // Snapping prioritário à grade isométrica quando em modo isométrico
@@ -2017,7 +2022,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const s = findSnap(p, near(p, tol * 2), tol, grid, { grid: showGrid, object: true });
       return s ? s.p : p;
     },
-    [snapOn, view.k, pending, entities, tool, selection, near, grid, showGrid, drawingProjection, isoPlane],
+    [snapOn, view.k, pending, entities, tool, selection, snapDivision, nudgeHudVisible, near, grid, showGrid, drawingProjection, isoPlane],
   );
 
   /* ---------------------------------------- pintura em canvas (por sujidade) */
@@ -2948,10 +2953,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     ].includes(tool);
     const isModifying = selection.length > 0 || tool === "smart_trim" || tool === "offset" || tool === "trim";
 
+    const caldDivs = tool === "caldeiraria_div" || tool === "divide" ? 12 : 0;
+
+    // Se "Exibir Todos os Snaps da Peça" estiver ATIVO, gera todos os snaps de todas as entidades
+    if (showAllSnaps) {
+      const all: SmartReferencePoint[] = [];
+      for (const ent of entities) {
+        if (ent) all.push(...extractEntitySmartReferences(ent, activeStart ?? null, caldDivs, snapDivision));
+      }
+      all.push(...extractIntersections(entities));
+      return all;
+    }
+
     if (!isCreating && !isModifying) {
       if (!cursor) return [];
       const nearEnt = hitTest(cursor) ?? near(cursor, 30 / view.k)[0];
-      if (nearEnt) return extractEntitySmartReferences(nearEnt, null, 12);
+      if (nearEnt) return extractEntitySmartReferences(nearEnt, null, caldDivs, snapDivision);
       return [];
     }
 
@@ -2959,22 +2976,30 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (selection.length > 0) {
       for (const id of selection) {
         const ent = entities.find((e) => e && e.id === id);
-        if (ent) refs.push(...extractEntitySmartReferences(ent, activeStart ?? null, 12));
+        if (ent) refs.push(...extractEntitySmartReferences(ent, activeStart ?? null, caldDivs, snapDivision));
       }
     }
 
     const probe = activeStart ?? cursor;
+    const consideredEntities: Entity[] = [];
     if (probe) {
       const nearby = near(probe, 80 / view.k);
       for (const item of nearby) {
-        if (item && !selection.includes(item.id)) {
-          refs.push(...extractEntitySmartReferences(item, activeStart ?? null, 12));
+        if (item) {
+          consideredEntities.push(item);
+          if (!selection.includes(item.id)) {
+            refs.push(...extractEntitySmartReferences(item, activeStart ?? null, caldDivs, snapDivision));
+          }
         }
       }
     }
 
-    return refs.slice(0, 32);
-  }, [snapOn, selection, tool, pending, cursor, view.k, entities, hitTest, near]);
+    if (consideredEntities.length > 1) {
+      refs.push(...extractIntersections(consideredEntities));
+    }
+
+    return refs.slice(0, 64);
+  }, [snapOn, showAllSnaps, snapDivision, selection, tool, pending, cursor, view.k, entities, hitTest, near]);
 
   /* FERRAMENTA DIVIDIR EM PARTES IGUAIS (2 a 50) */
   const handleOpenDivide = useCallback(
@@ -3458,6 +3483,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const directTouchWorld = toWorld(ev, true);
     const p = snapPoint(raw);
     setCursor(raw);
+
+    if (isSettingReferencePoint) {
+      setTemporaryOrigin({
+        id: "ref_origin",
+        p,
+        label: "REF 0,0",
+        sourceEntityId: undefined,
+      });
+      setIsSettingReferencePoint(false);
+      triggerHaptic("action");
+      toast.success(`Ponto de Referência fixado: (${p.x.toFixed(2)}, ${p.y.toFixed(2)} mm)`);
+      return;
+    }
 
     const useOffsetHere = shouldUseTouchOffset(
       pType,
@@ -4421,9 +4459,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     let currentSnapPt = raw;
     if (snapOn) {
-      const tol = 12 / view.k;
+      const tol = (nudgeHudVisible ? 6 : 12) / view.k;
+      const hysteresisTol = smartSnap ? tol * 1.35 : tol;
       const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
-      const smart = findSmartSnap(raw, entities, tol, activeStart ?? null, tool, selection);
+      const smart = findSmartSnap(raw, entities, hysteresisTol, activeStart ?? null, tool, selection, snapDivision);
       setSmartSnap(smart);
       if (smart) {
         setSnapHit(null);
@@ -5759,6 +5798,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [showDims, drawable],
   );
 
+  const pendingShapeSpec = useMemo(() => {
+    const activeDraft = draftRef.current ?? draft;
+    if (activeDraft && pending.length > 0) {
+      if (activeDraft.type === "circle") {
+        return { type: "circle", center: { x: activeDraft.cx, y: activeDraft.cy }, r: activeDraft.r };
+      }
+      if (activeDraft.type === "rect") {
+        return {
+          type: "rect",
+          width: Math.abs(activeDraft.x2 - activeDraft.x1),
+          height: Math.abs(activeDraft.y2 - activeDraft.y1),
+        };
+      }
+    }
+    return null;
+  }, [draft, pending]);
+
   return (
     <div
       ref={wrapRef}
@@ -6540,6 +6596,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 globalCADInteractionHub.toggleModifier("nudge_dpad", next);
                 return next;
               });
+            }}
+            snapDivision={snapDivision}
+            onSetSnapDivision={setSnapDivision}
+            showAllSnaps={showAllSnaps}
+            onToggleShowAllSnaps={() => setShowAllSnaps((v) => !v)}
+            onStartSetReferencePoint={() => {
+              setIsSettingReferencePoint(true);
+              toast.info("Toque no vértice, centro ou ponto desejado para fixar a REF");
+            }}
+            temporaryOrigin={temporaryOrigin}
+            onClearTemporaryOrigin={() => {
+              setTemporaryOrigin(null);
+              toast.success("Ponto de referência limpo");
             }}
             dimKind={dimKind}
             onPickDimKind={(k) => {
@@ -7726,9 +7795,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 <ChamferSmartSnapOverlay
                   activeSnap={smartSnap}
                   referencePoints={relevantRefs}
+                  cursor={cursor}
                   viewK={view.k}
                   unit={unit}
                   isDark={isDark}
+                  showAllSnaps={showAllSnaps}
                 />
               )}
 
@@ -7740,6 +7811,30 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 liveDimensions={liveDimensions}
                 viewK={view.k}
                 isDark={isDark}
+                cursor={cursor}
+                pendingShape={pendingShapeSpec}
+                onEditDelta={(axis, currentVal, screenPos) => {
+                  const pStart = temporaryOrigin?.p ?? { x: 0, y: 0 };
+                  const targetDim: LiveDimension = {
+                    id: `ref-${axis}`,
+                    kind: axis,
+                    value: currentVal,
+                    label: `Δ${axis.toUpperCase()}`,
+                    startPoint: pStart,
+                    endPoint: cursor,
+                    midPoint: { x: (pStart.x + cursor.x) / 2, y: (pStart.y + cursor.y) / 2 },
+                    normalDir: axis === "dx" ? { x: 0, y: 1 } : { x: 1, y: 0 },
+                    isEditable: true,
+                    targetKey: axis,
+                  };
+                  setLiveDimEditor({
+                    dim: targetDim,
+                    screenPos,
+                    currentValue: currentVal,
+                    label: `Δ${axis.toUpperCase()} a partir da REF (mm)`,
+                    allowInvert: false,
+                  });
+                }}
                 onDimensionClick={(dim, screenPos) => {
                   setLiveDimEditor({
                     dim,
@@ -9020,6 +9115,43 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 <span>QUADRO</span>
                 <span>{frame.visible ? "ON" : "OFF"}</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const opts = [0, 2, 3, 4, 6, 8, 12, 16];
+                  const idx = opts.indexOf(snapDivision);
+                  const next = opts[(idx + 1) % opts.length];
+                  setSnapDivision(next);
+                  triggerHaptic("selection");
+                }}
+                className={cn(
+                  "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                  snapDivision > 0
+                    ? "text-amber-400 bg-amber-950/60 border border-amber-500/40"
+                    : "hover:bg-slate-800/40",
+                )}
+              >
+                <span>DIVISÃO SNAP</span>
+                <span>{snapDivision > 0 ? `${snapDivision}X` : "OFF"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowAllSnaps((v) => !v);
+                  triggerHaptic("selection");
+                }}
+                className={cn(
+                  "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer",
+                  showAllSnaps
+                    ? "text-emerald-400 bg-emerald-950/60 border border-emerald-500/40"
+                    : "hover:bg-slate-800/40",
+                )}
+              >
+                <span>TODOS OS SNAPS</span>
+                <span>{showAllSnaps ? "ON" : "OFF"}</span>
+              </button>
             </div>
           )}
 
@@ -9268,7 +9400,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
       {/* BARRA CONTEXTUAL FLUTUANTE DE SELEÇÃO E AGRUPAMENTO (MOBILE/DESKTOP) */}
       {selection.length > 0 && !solidOpen && tool === "select" && activeArrayType === null && (
-        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-500/40 shadow-2xl backdrop-blur-md text-white select-none pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-150">
+        <div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-500/40 shadow-2xl backdrop-blur-md text-white select-none pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-150">
           <div className="flex items-center gap-1.5 pr-2 border-r border-slate-700/80 font-mono text-[11px]">
             {activeGroup ? (
               <span className="flex items-center gap-1 text-cyan-400 font-bold bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-500/40">

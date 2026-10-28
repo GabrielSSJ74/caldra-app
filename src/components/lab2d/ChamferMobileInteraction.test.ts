@@ -340,10 +340,9 @@ describe("CHAMFER — Testes de Interação Mobile e Tarefas-Âncora (Especifica
       expect(disposedCount).toBe(1);
     });
 
-    it("Fusão Gestual no modo Ponteiro ('select'): ativa offset de 55px quando há peça selecionada e desativa em modo Direto", () => {
-      // Sem seleção e sem arrasto no modo select: 1:1 para toque inicial
-      expect(shouldUseTouchOffset("touch", "select", false, false, "offset", false)).toBe(false);
-      // Com peça selecionada no modo select: ativa offset 55px para mirar e arrastar vértices diretamente
+    it("Mira Técnica no modo Ponteiro ('select'): ativa offset de 55px para seleção e nós, e desativa em modo Direto", () => {
+      // Modo select com offset ativo: mira 55px acima do toque
+      expect(shouldUseTouchOffset("touch", "select", false, false, "offset", false)).toBe(true);
       expect(shouldUseTouchOffset("touch", "select", false, false, "offset", true)).toBe(true);
       // Se o modificador Cursor Offset estiver em 'direct' (Stylus), desativa offset em qualquer ferramenta
       expect(shouldUseTouchOffset("touch", "line", false, false, "direct", true)).toBe(false);

@@ -445,7 +445,7 @@ function buildOpenPolylineFromChain(
 /**
  * Calcula o corte exato para uma entidade `line` simples.
  */
-function computeSmartTrimForLine(
+export function computeSmartTrimForLine(
   target: Extract<Entity, { type: "line" }>,
   allEntities: Entity[],
   click: Vec2,
@@ -459,7 +459,12 @@ function computeSmartTrimForLine(
 
   const hits = collectInteriorIntersectionsOnSegment(seg, segLen, target, allEntities, mode);
   if (hits.length === 0) {
-    return null;
+    return {
+      targetEntity: target,
+      clickPoint: click,
+      activeCandidate: null,
+      allCandidates: [],
+    };
   }
 
   const clickT = projectOnSegT(click, seg);

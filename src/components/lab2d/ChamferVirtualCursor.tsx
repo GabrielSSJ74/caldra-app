@@ -46,7 +46,7 @@ export function shouldUseTouchOffset(
   if (pointerType !== "touch") return false;
   if (tool === "pan") return false;
   if (isDraggingNode || isDraggingEntity) return true;
-  if (tool === "select" && hasSelection) return true;
+  if (tool === "select") return true;
 
   return (
     tool === "line" ||

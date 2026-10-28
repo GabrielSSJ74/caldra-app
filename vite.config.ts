@@ -17,11 +17,10 @@ export default defineConfig({
       allowedHosts: true,
     },
     optimizeDeps: {
-      exclude: ["occt-wasm"],
+      exclude: ["occt-wasm", "@lovable.dev/cloud-auth-js"],
       holdUntilCrawlEnd: true,
       include: [
         "@google/genai",
-        "@lovable.dev/cloud-auth-js",
         "@radix-ui/react-checkbox",
         "@radix-ui/react-dialog",
         "@radix-ui/react-dropdown-menu",
