@@ -1,6 +1,9 @@
 /**
- * CALDRA CHAMFER — MOTOR DE GUIAS DE INTERAÇÃO EXCLUSIVAS (AZUL / ROXO),
- * PREVENÇÃO DE COLISÃO DE BOLHAS, BLOQUEIO MULTITOUCH E RESTRIÇÕES DIMENSIONAIS REAIS
+ * CALDRA CHAMFER — MOTOR DE GUIAS DE INTERAÇÃO EXCLUSIVAS:
+ *  - "blue_line": Referência de Criação de Linha (Azul — ângulos livres 0° a 360°, L, ∠, ΔX, ΔY)
+ *  - "purple_ref": Referência de Ponto de Encontro (Roxa — ΔX, ΔY, d e Cruz '+' roxa pontilhada adaptável)
+ *  - "off": Desativadas
+ * Inclui prevenção de colisão de bolhas, bloqueio multitouch, animação de fluxo direcional e restrições dimensionais reais.
  */
 
 import type { Vec2 } from "@/lib/geometry/types";
@@ -16,6 +19,7 @@ export type TouchInteractionState =
 
 export type ConstrainableMeasureKind =
   | "L"
+  | "angle"
   | "dx"
   | "dy"
   | "d"
@@ -26,6 +30,7 @@ export type ConstrainableMeasureKind =
 
 export interface DimensionalConstraints {
   lockedL?: number | null;
+  lockedAngle?: number | null;
   lockedDx?: number | null;
   lockedDy?: number | null;
   lockedDist?: number | null;
@@ -66,6 +71,12 @@ export const CRIMSON_RED_RING = "#E11D48";
 export const PURPLE_GUIDE_STROKE = "#A855F7";
 export const BLUE_GUIDE_STROKE = "#38BDF8";
 
+export const GUIDE_MODE_LABELS: Record<InteractionGuideMode, string> = {
+  off: "Desativadas",
+  purple_ref: "Referência de Ponto de Encontro",
+  blue_line: "Referência de Criação de Linha",
+};
+
 export function loadInteractionGuideMode(): InteractionGuideMode {
   try {
     if (typeof localStorage !== "undefined" && typeof localStorage.getItem === "function") {
@@ -93,6 +104,28 @@ export function saveInteractionGuideMode(mode: InteractionGuideMode): void {
 }
 
 /**
+ * Calcula o ângulo livre técnico em graus [0°, 360°) de basePoint (X0, Y0) para targetPoint (X, Y).
+ */
+export function computeGuideAngleDeg(basePoint: Vec2, targetPoint: Vec2): number {
+  const dx = targetPoint.x - basePoint.x;
+  const dy = targetPoint.y - basePoint.y;
+  if (Math.hypot(dx, dy) < 1e-6) return 0;
+  return (((Math.atan2(-dy, dx) * 180) / Math.PI) + 360) % 360;
+}
+
+/**
+ * Calcula o deslocamento negativo suave do tracejado (marching ants direcional)
+ * para fluir continuamente no sentido de (X0, Y0) -> (X, Y).
+ */
+export function computeFlowDashOffset(
+  timestampMs: number,
+  cyclePx = 16,
+  speedPxPerMs = 0.035,
+): number {
+  return -((timestampMs * speedPxPerMs) % cyclePx);
+}
+
+/**
  * Valida se um valor e uma trava dimensional são matematicamente compatíveis
  * com as demais restrições já fixadas.
  */
@@ -112,18 +145,26 @@ export function validateDimensionalConstraint(
     };
   }
 
-  const absVal = Math.abs(newValue);
   const next: DimensionalConstraints = { ...current };
 
   if (!lock) {
     if (kind === "L") next.lockedL = null;
+    if (kind === "angle") next.lockedAngle = null;
     if (kind === "dx") next.lockedDx = null;
     if (kind === "dy") next.lockedDy = null;
     if (kind === "d") next.lockedDist = null;
     return { valid: true, updatedConstraints: next };
   }
 
-  const hypLocked = kind === "L" ? absVal : kind === "d" ? absVal : (next.lockedL ?? next.lockedDist ?? null);
+  if (kind === "angle") {
+    const normAngle = ((newValue % 360) + 360) % 360;
+    next.lockedAngle = normAngle;
+    return { valid: true, updatedConstraints: next };
+  }
+
+  const absVal = Math.abs(newValue);
+  const hypLocked =
+    kind === "L" ? absVal : kind === "d" ? absVal : (next.lockedL ?? next.lockedDist ?? null);
   const dxLocked = kind === "dx" ? absVal : (next.lockedDx ?? null);
   const dyLocked = kind === "dy" ? absVal : (next.lockedDy ?? null);
 
@@ -175,8 +216,8 @@ export function validateDimensionalConstraint(
 }
 
 /**
- * Aplica as restrições dimensionais ativas (L, ΔX, ΔY, d) sobre a posição atual do ponteiro
- * em relação ao ponto base (início da linha no modo azul ou Ponto de Referência no modo roxo).
+ * Aplica as restrições dimensionais ativas (L, ∠, ΔX, ΔY, d) sobre a posição atual do ponteiro
+ * em relação ao ponto base (Centro de Referência Vermelho Carmesim X0, Y0 ou início da linha).
  */
 export function applyDimensionalConstraintsToPoint(
   basePoint: Vec2,
@@ -185,10 +226,12 @@ export function applyDimensionalConstraintsToPoint(
 ): Vec2 {
   const hasL = typeof constraints.lockedL === "number" && constraints.lockedL > 0;
   const hasD = typeof constraints.lockedDist === "number" && constraints.lockedDist > 0;
+  const hasAngle =
+    typeof constraints.lockedAngle === "number" && Number.isFinite(constraints.lockedAngle);
   const hasDx = typeof constraints.lockedDx === "number" && constraints.lockedDx >= 0;
   const hasDy = typeof constraints.lockedDy === "number" && constraints.lockedDy >= 0;
 
-  if (!hasL && !hasD && !hasDx && !hasDy) {
+  if (!hasL && !hasD && !hasAngle && !hasDx && !hasDy) {
     return rawTarget;
   }
 
@@ -198,6 +241,15 @@ export function applyDimensionalConstraintsToPoint(
   const signY = rawDy !== 0 ? (rawDy >= 0 ? 1 : -1) : (constraints.signDy ?? 1);
 
   const hyp = hasL ? constraints.lockedL! : hasD ? constraints.lockedDist! : null;
+
+  // Caso 0: Comprimento/Distância (L ou d) e Ângulo (∠) ambos fixos
+  if (hyp !== null && hasAngle) {
+    const rad = (constraints.lockedAngle! * Math.PI) / 180;
+    return {
+      x: basePoint.x + hyp * Math.cos(rad),
+      y: basePoint.y - hyp * Math.sin(rad),
+    };
+  }
 
   // Caso 1: ΔX e ΔY ambos fixos
   if (hasDx && hasDy) {
@@ -227,7 +279,17 @@ export function applyDimensionalConstraintsToPoint(
     };
   }
 
-  // Caso 4: Apenas ΔX fixo (Y permanece livre acompanhando o ponteiro)
+  // Caso 4: Apenas Ângulo (∠) fixo -> projeta o ponteiro ao longo do raio angular fixo
+  if (hasAngle && !hasDx && !hasDy) {
+    const rad = (constraints.lockedAngle! * Math.PI) / 180;
+    const distRaw = Math.max(1, Math.hypot(rawDx, rawDy));
+    return {
+      x: basePoint.x + distRaw * Math.cos(rad),
+      y: basePoint.y - distRaw * Math.sin(rad),
+    };
+  }
+
+  // Caso 5: Apenas ΔX fixo (Y permanece livre acompanhando o ponteiro)
   if (hasDx) {
     return {
       x: basePoint.x + signX * constraints.lockedDx!,
@@ -235,7 +297,7 @@ export function applyDimensionalConstraintsToPoint(
     };
   }
 
-  // Caso 5: Apenas ΔY fixo (X permanece livre acompanhando o ponteiro)
+  // Caso 6: Apenas ΔY fixo (X permanece livre acompanhando o ponteiro)
   if (hasDy) {
     return {
       x: rawTarget.x,
@@ -243,7 +305,7 @@ export function applyDimensionalConstraintsToPoint(
     };
   }
 
-  // Caso 6: Apenas comprimento L ou distância d fixos (orientação/ângulo livre)
+  // Caso 7: Apenas comprimento L ou distância d fixos (orientação/ângulo livre)
   if (hyp !== null) {
     const distRaw = Math.hypot(rawDx, rawDy);
     const angle = distRaw > 1e-5 ? Math.atan2(rawDy, rawDx) : 0;
@@ -268,9 +330,9 @@ export function applyEntityNodeConstraint(
 ): { constrainedPoint: Vec2; conflictMessage?: string } {
   const locked = entity.params?.lockedConstraints as DimensionalConstraints | undefined;
 
-  // Se houver referência roxa ativa com restrições para entidade pontual/círculo
   if (entity.type === "line" && locked) {
-    const anchor: Vec2 = nodeIndex === 0 ? { x: entity.x2, y: entity.y2 } : { x: entity.x1, y: entity.y1 };
+    const anchor: Vec2 =
+      nodeIndex === 0 ? { x: entity.x2, y: entity.y2 } : { x: entity.x1, y: entity.y1 };
     const constrained = applyDimensionalConstraintsToPoint(anchor, targetPoint, locked);
     return { constrainedPoint: constrained };
   }
@@ -322,7 +384,8 @@ export function resolveBubbleCollisions(
 
         // 1ª tentativa (pass === 0): inverter o lado normal da segunda bolha
         if (pass === 0 && (Math.abs(b.normal.x) > 0.01 || Math.abs(b.normal.y) > 0.01)) {
-          const distFromAnchor = Math.hypot(b.pos.x - b.anchor.x, b.pos.y - b.anchor.y) || 16 / safeK;
+          const distFromAnchor =
+            Math.hypot(b.pos.x - b.anchor.x, b.pos.y - b.anchor.y) || 16 / safeK;
           const flippedPos = {
             x: b.anchor.x - b.normal.x * distFromAnchor,
             y: b.anchor.y - b.normal.y * distFromAnchor,

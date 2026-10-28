@@ -1280,7 +1280,7 @@ export function ChamferCadToolbar({
                         </span>
                       </div>
                       <p className="text-[9px] text-slate-400 leading-tight">
-                        Gera pontos magnéticos virtuais em $N$ partes iguais (linhas, arcos, círculos e polígonos) sem cortar a peça.
+                        Gera pontos magnéticos virtuais em N partes iguais (linhas, arcos, círculos e polígonos) sem cortar a peça.
                       </p>
                       <div className="grid grid-cols-4 gap-1 mt-1">
                         {[0, 2, 3, 4, 6, 8, 12, 16].map((n) => (
@@ -1344,12 +1344,12 @@ export function ChamferCadToolbar({
                             },
                             {
                               id: "purple_ref" as const,
-                              label: "Referência Roxa — REF",
+                              label: "Referência de Ponto de Encontro",
                               activeClass: "bg-purple-950/80 text-purple-300 border-purple-500/60",
                             },
                             {
                               id: "blue_line" as const,
-                              label: "Criação de Linha Azul",
+                              label: "Referência de Criação de Linha",
                               activeClass: "bg-sky-950/80 text-sky-300 border-sky-500/60",
                             },
                           ]
@@ -1413,7 +1413,9 @@ export function ChamferCadToolbar({
                         type="button"
                         onClick={() => {
                           triggerHaptic("action");
-                          onSetInteractionGuideMode?.("purple_ref");
+                          if (!interactionGuideMode || interactionGuideMode === "off") {
+                            onSetInteractionGuideMode?.("purple_ref");
+                          }
                           onStartSetReferencePoint?.();
                           setOpenCat("none");
                         }}

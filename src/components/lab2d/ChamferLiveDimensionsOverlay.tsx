@@ -1,24 +1,22 @@
 /**
  * CALDRA CHAMFER — OVERLAY PROFISSIONAL DE GUIAS DE INTERAÇÃO EXCLUSIVAS
- * (MODO AZUL DE CRIAÇÃO DE LINHA vs. MODO ROXO DE PONTO DE REFERÊNCIA REF)
- *
- * Especificação Técnica:
- *  1. Exclusividade estrita entre Guias Azuis ("blue_line"), Guias Roxas ("purple_ref") e Desativadas ("off");
- *  2. Remoção total do cartão flutuante "REF (0,0)" sobre o canvas;
- *  3. Centro do Ponto de Referência em Vermelho Carmesim Técnico (#DC143C / #E11D48) com anel fino e centro nítido;
- *  4. Hierarquia visual limpa (guias roxas 1.25px tracejadas 5,4; guias azuis uniformes com projeções discretas);
- *  5. Posicionamento externo inteligente das bolhas (L, d, ΔX, ΔY) com prevenção matemática de colisões (>= 8px);
- *  6. Exibição do ícone de cadeado (🔒) nas medidas fixadas por restrição dimensional real;
- *  7. Bloqueio de eventos de toque nas bolhas durante navegação multitouch (zoom/pan).
+ *  - "blue_line": Referência de Criação de Linha (Azul — ângulos livres 0°–360°, L, ∠, ΔX, ΔY)
+ *  - "purple_ref": Referência de Ponto de Encontro (Roxa — ΔX, ΔY, d + Cruz '+' Roxa Pontilhada Adaptável)
+ *  - Centro de Referência Clássico em Vermelho Carmesim (#DC143C) com gatilho de confirmação [ ✓ Confirmar ] [ ✕ Cancelar ]
+ *  - Animação de fluxo direcional contínuo (marching ants) de (X0, Y0) -> (X, Y)
  */
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import type { Vec2 } from "@/lib/geometry/types";
 import type { TemporaryOrigin } from "@/lib/lab2d/cadCoordinateFrames";
 import type { EdgeReference } from "@/lib/lab2d/cadGeometricReferences";
 import type { LiveDimension } from "@/lib/lab2d/cadDynamicDimensions";
+import type { Entity } from "@/lib/lab2d/types";
 import {
+  CRIMSON_RED_CENTER,
   resolveBubbleCollisions,
+  computeGuideAngleDeg,
+  computeFlowDashOffset,
   type InteractionGuideMode,
   type DimensionalConstraints,
   type ConstrainableMeasureKind,
@@ -33,14 +31,18 @@ export interface ChamferLiveDimensionsOverlayProps {
   viewK: number;
   isDark?: boolean;
   cursor?: Vec2 | null;
-  /** Ponto inicial ativo da operação de criação (ex: início da linha em CRI) */
+  /** Ponto inicial ativo da operação (ou centro de referência X0, Y0) */
   activeStartPoint?: Vec2 | null;
   /** Modo exclusivo de guias de interação selecionado em PRE */
   interactionGuideMode?: InteractionGuideMode;
-  /** Restrições dimensionais reais ativas (L, ΔX, ΔY, d) */
+  /** Restrições dimensionais reais ativas (L, ∠, ΔX, ΔY, d) */
   lockedConstraints?: DimensionalConstraints;
   /** Bloqueio de eventos durante gestos multitouch (zoom/pan) */
   isMultitouchNavigating?: boolean;
+  /** Pontos de encontro roxos (+) já confirmados/fixados no canvas */
+  pinnedMeetingPoints?: Vec2[];
+  /** Entidades do desenho para adaptar a cruz (+) ponta a ponta sobre furos/formas */
+  entities?: Entity[];
   pendingShape?: {
     type: string;
     center?: Vec2;
@@ -57,8 +59,95 @@ export interface ChamferLiveDimensionsOverlayProps {
     screenPos: Vec2,
     isLocked: boolean,
   ) => void;
+  /** Confirmação acionada ao tocar no Centro de Referência Vermelho Carmesim e clicar em [ ✓ Confirmar ] */
+  onConfirmReferenceAction?: (
+    originPt: Vec2,
+    targetPt: Vec2,
+    mode: InteractionGuideMode,
+  ) => void;
+  /** Cancelamento acionado ao clicar em [ ✕ Cancelar ] na barra do Centro de Referência */
+  onCancelReferenceAction?: () => void;
   /** Mantido para compatibilidade com chamadas legadas */
   onEditDelta?: (axis: "dx" | "dy", currentVal: number, screenPos: Vec2) => void;
+}
+
+/**
+ * Calcula a extensão ponta-a-ponta (meio-braço horizontal e vertical) da Cruz (+) Roxa Pontilhada
+ * adaptando-se automaticamente a qualquer círculo de furação ou forma desenhada sobre o ponto (X, Y).
+ */
+function computeAdaptiveCrossArms(
+  pt: Vec2,
+  safeK: number,
+  pendingShape?: ChamferLiveDimensionsOverlayProps["pendingShape"],
+  entities?: Entity[],
+): { armX: number; armY: number; isAdaptedToShape: boolean } {
+  const defaultArm = 16 / safeK;
+  let armX = defaultArm;
+  let armY = defaultArm;
+  let adapted = false;
+  const matchTol = 14 / safeK;
+
+  // 1. Verifica forma em criação (draft ativo)
+  if (pendingShape) {
+    const sc = pendingShape.center;
+    const isNear = !sc || Math.hypot(sc.x - pt.x, sc.y - pt.y) <= matchTol;
+    if (isNear) {
+      if (pendingShape.type === "circle" && pendingShape.r && pendingShape.r > 0.5) {
+        const span = pendingShape.r + 6 / safeK;
+        armX = Math.max(armX, span);
+        armY = Math.max(armY, span);
+        adapted = true;
+      } else if (
+        pendingShape.width &&
+        pendingShape.height &&
+        (pendingShape.width > 1 || pendingShape.height > 1)
+      ) {
+        armX = Math.max(armX, pendingShape.width / 2 + 6 / safeK);
+        armY = Math.max(armY, pendingShape.height / 2 + 6 / safeK);
+        adapted = true;
+      }
+    }
+  }
+
+  // 2. Verifica círculos de furação ou formas já existentes centradas nesse ponto de encontro
+  if (entities && entities.length > 0) {
+    for (const ent of entities) {
+      if (ent.type === "circle") {
+        if (Math.hypot(ent.cx - pt.x, ent.cy - pt.y) <= matchTol && ent.r > 0.5) {
+          const span = ent.r + 6 / safeK;
+          armX = Math.max(armX, span);
+          armY = Math.max(armY, span);
+          adapted = true;
+        }
+      } else if (ent.type === "ellipse") {
+        if (Math.hypot(ent.cx - pt.x, ent.cy - pt.y) <= matchTol) {
+          armX = Math.max(armX, ent.rx + 6 / safeK);
+          armY = Math.max(armY, ent.ry + 6 / safeK);
+          adapted = true;
+        }
+      } else if (ent.type === "polyline" && ent.closed && ent.pts.length >= 3) {
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let minY = Infinity;
+        let maxY = -Infinity;
+        for (const p of ent.pts) {
+          if (p.x < minX) minX = p.x;
+          if (p.x > maxX) maxX = p.x;
+          if (p.y < minY) minY = p.y;
+          if (p.y > maxY) maxY = p.y;
+        }
+        const cx = (minX + maxX) / 2;
+        const cy = (minY + maxY) / 2;
+        if (Math.hypot(cx - pt.x, cy - pt.y) <= matchTol) {
+          armX = Math.max(armX, (maxX - minX) / 2 + 6 / safeK);
+          armY = Math.max(armY, (maxY - minY) / 2 + 6 / safeK);
+          adapted = true;
+        }
+      }
+    }
+  }
+
+  return { armX, armY, isAdaptedToShape: adapted };
 }
 
 export function ChamferLiveDimensionsOverlay({
@@ -73,19 +162,23 @@ export function ChamferLiveDimensionsOverlay({
   interactionGuideMode = "blue_line",
   lockedConstraints = {},
   isMultitouchNavigating = false,
+  pinnedMeetingPoints = [],
+  entities = [],
+  pendingShape = null,
   onDimensionClick,
   onInvertEdgeSide,
   onEditMeasure,
+  onConfirmReferenceAction,
+  onCancelReferenceAction,
   onEditDelta,
 }: ChamferLiveDimensionsOverlayProps) {
   const safeK = Number.isFinite(viewK) && viewK > 0 ? viewK : 1;
 
   // Paleta técnica CAD de alto contraste
-  const crimsonMain = "#DC143C"; // Vermelho carmesim técnico principal
-  const crimsonContrast = isDark ? "#E11D48" : "#DC143C"; // Alternativa acessível para contraste
-  const purpleStroke = isDark ? "#A855F7" : "#9333EA";
-  const blueMain = isDark ? "#38BDF8" : "#0284C7";
-  const blueProj = isDark ? "rgba(56, 189, 248, 0.52)" : "rgba(2, 132, 199, 0.48)";
+  const crimsonMain = CRIMSON_RED_CENTER; // #DC143C (Vermelho Carmesim Clássico)
+  const purpleStroke = "#A855F7";
+  const blueMain = isDark ? "#38BDF8" : "#0EA5E9";
+  const blueProj = isDark ? "rgba(56, 189, 248, 0.72)" : "rgba(14, 165, 233, 0.68)";
   const amber = isDark ? "#FBBF24" : "#D97706";
   const bgBadge = isDark ? "rgba(11, 16, 23, 0.94)" : "rgba(255, 255, 255, 0.96)";
 
@@ -96,24 +189,64 @@ export function ChamferLiveDimensionsOverlay({
       ? activeStartPoint
       : null;
 
-  // Regras de exclusividade estrita (Seção 1.3)
-  const showPurpleGuides =
-    interactionGuideMode === "purple_ref" && refPt !== null && curPt !== null;
-  const showBlueGuides =
-    interactionGuideMode === "blue_line" && startPt !== null && curPt !== null;
+  // Tanto "Referência de Criação de Linha" (Azul) quanto "Referência de Ponto de Encontro" (Roxa)
+  // partem do Centro de Referência Vermelho Carmesim (X0, Y0) até a posição atual (X, Y)
+  const effectiveOriginPt = showOriginForMode(interactionGuideMode, startPt, refPt);
 
-  // Cálculo de geometria e bolhas anti-colisão para o modo ativo (ÚNICA FONTE ATIVA POR VEZ)
+  const showPurpleGuides =
+    interactionGuideMode === "purple_ref" && effectiveOriginPt !== null && curPt !== null;
+  const showBlueGuides =
+    interactionGuideMode === "blue_line" && effectiveOriginPt !== null && curPt !== null;
+
+  // Estado da Barra Flutuante de Confirmação ao clicar no Centro de Referência Vermelho Carmesim
+  const [confirmBarOpen, setConfirmBarOpen] = useState(false);
+
+  useEffect(() => {
+    if (interactionGuideMode === "off" || !effectiveOriginPt) {
+      setConfirmBarOpen(false);
+    }
+  }, [interactionGuideMode, effectiveOriginPt]);
+
+  // Loop controlado de animação de fluxo direcional (marching ants de X0,Y0 -> X,Y)
+  const [flowOffsetPx, setFlowOffsetPx] = useState<number>(0);
+  const isAnyGuideActive = Boolean(
+    (showPurpleGuides || showBlueGuides) && !isMultitouchNavigating,
+  );
+
+  useEffect(() => {
+    if (!isAnyGuideActive) {
+      setFlowOffsetPx(0);
+      return;
+    }
+    let rafId = 0;
+    let active = true;
+    const step = (now: number) => {
+      if (!active) return;
+      setFlowOffsetPx(computeFlowDashOffset(now, 16, 0.035));
+      rafId = requestAnimationFrame(step);
+    };
+    rafId = requestAnimationFrame(step);
+    return () => {
+      active = false;
+      cancelAnimationFrame(rafId);
+    };
+  }, [isAnyGuideActive]);
+
+  const flowDashOffsetWorld = flowOffsetPx / safeK;
+
+  // Cálculo de geometria e bolhas anti-colisão para o modo ativo
   const activeGuideData = useMemo(() => {
-    const basePt = showBlueGuides ? startPt : showPurpleGuides ? refPt : null;
-    if (!basePt || !curPt) return null;
+    const basePt = effectiveOriginPt;
+    if (!basePt || !curPt || (!showBlueGuides && !showPurpleGuides)) return null;
 
     const dx = curPt.x - basePt.x;
     const dy = curPt.y - basePt.y;
     const absDx = Math.abs(dx);
     const absDy = Math.abs(dy);
     const totalLen = Math.hypot(dx, dy);
+    const angleDeg = computeGuideAngleDeg(basePt, curPt);
 
-    if (totalLen < 0.5 / safeK) return null;
+    if (totalLen < 0.25 / safeK) return null;
 
     const minX = Math.min(basePt.x, curPt.x);
     const maxX = Math.max(basePt.x, curPt.x);
@@ -139,13 +272,13 @@ export function ChamferLiveDimensionsOverlay({
     const rawBubbles: GuideBubble[] = [];
     const pillH = 18 / safeK;
 
-    // 1. Bolha principal: "L" (Modo Azul) ou "d" (Modo Roxo)
+    // 1. Bolha principal da hipotenusa: "L" (Modo Azul) ou "d" (Modo Roxo)
     const mainKind: ConstrainableMeasureKind = showBlueGuides ? "L" : "d";
     const isMainLocked = showBlueGuides
       ? typeof lockedConstraints.lockedL === "number"
       : typeof lockedConstraints.lockedDist === "number";
     const mainText = `${isMainLocked ? "🔒 " : ""}${mainKind} ${totalLen.toFixed(1)} mm`;
-    const mainW = Math.max(66, mainText.length * 5.6 + 12) / safeK;
+    const mainW = Math.max(68, mainText.length * 5.6 + 12) / safeK;
     const diagOffset = 16 / safeK;
 
     rawBubbles.push({
@@ -164,13 +297,40 @@ export function ChamferLiveDimensionsOverlay({
       heightWorld: pillH,
     });
 
-    // 2. Bolha Horizontal: ΔX (exibida quando houver projeção horizontal relevante)
-    if (absDx > 6 / safeK && (absDy > 2 / safeK || isMainLocked || lockedConstraints.lockedDx != null)) {
+    // 2. Bolha de Ângulo Livre "∠ (°)" (Exclusiva para Referência de Criação de Linha Azul)
+    if (showBlueGuides) {
+      const isAngleLocked = typeof lockedConstraints.lockedAngle === "number";
+      const angleText = `${isAngleLocked ? "🔒 " : ""}∠ ${angleDeg.toFixed(1)}°`;
+      const angleW = Math.max(60, angleText.length * 5.6 + 12) / safeK;
+      const arcRadius = Math.min(Math.max(24 / safeK, totalLen * 0.25), 42 / safeK);
+      const halfRad = ((angleDeg / 2) * Math.PI) / 180;
+      const anchorAngle: Vec2 = {
+        x: basePt.x + arcRadius * Math.cos(halfRad),
+        y: basePt.y - arcRadius * Math.sin(halfRad),
+      };
+      rawBubbles.push({
+        id: "bubble-angle",
+        kind: "angle",
+        text: angleText,
+        value: Number(angleDeg.toFixed(2)),
+        locked: isAngleLocked,
+        anchor: anchorAngle,
+        pos: {
+          x: basePt.x + (arcRadius + 16 / safeK) * Math.cos(halfRad),
+          y: basePt.y - (arcRadius + 16 / safeK) * Math.sin(halfRad),
+        },
+        normal: { x: Math.cos(halfRad), y: -Math.sin(halfRad) },
+        widthWorld: angleW,
+        heightWorld: pillH,
+      });
+    }
+
+    // 3. Bolha Horizontal: ΔX
+    if (absDx > 2 / safeK || lockedConstraints.lockedDx != null) {
       const isDxLocked = typeof lockedConstraints.lockedDx === "number";
       const dxText = `${isDxLocked ? "🔒 " : ""}ΔX ${absDx.toFixed(1)} mm`;
       const dxW = Math.max(68, dxText.length * 5.6 + 12) / safeK;
       const anchorDx: Vec2 = { x: (basePt.x + curPt.x) / 2, y: basePt.y };
-      // Posiciona para fora do triângulo de projeção
       const normalY = dy >= 0 ? -1 : 1;
       rawBubbles.push({
         id: "bubble-dx",
@@ -181,7 +341,7 @@ export function ChamferLiveDimensionsOverlay({
         anchor: anchorDx,
         pos: {
           x: anchorDx.x,
-          y: anchorDx.y + normalY * (14 / safeK),
+          y: anchorDx.y + normalY * (15 / safeK),
         },
         normal: { x: 0, y: normalY },
         widthWorld: dxW,
@@ -189,8 +349,8 @@ export function ChamferLiveDimensionsOverlay({
       });
     }
 
-    // 3. Bolha Vertical: ΔY (exibida quando houver projeção vertical relevante)
-    if (absDy > 6 / safeK && (absDx > 2 / safeK || isMainLocked || lockedConstraints.lockedDy != null)) {
+    // 4. Bolha Vertical: ΔY
+    if (absDy > 2 / safeK || lockedConstraints.lockedDy != null) {
       const isDyLocked = typeof lockedConstraints.lockedDy === "number";
       const dyText = `${isDyLocked ? "🔒 " : ""}ΔY ${absDy.toFixed(1)} mm`;
       const dyW = Math.max(68, dyText.length * 5.6 + 12) / safeK;
@@ -204,7 +364,7 @@ export function ChamferLiveDimensionsOverlay({
         locked: isDyLocked,
         anchor: anchorDy,
         pos: {
-          x: anchorDy.x + normalX * (dxWOffset(dyW, safeK)),
+          x: anchorDy.x + normalX * dxWOffset(dyW, safeK),
           y: anchorDy.y,
         },
         normal: { x: normalX, y: 0 },
@@ -226,9 +386,10 @@ export function ChamferLiveDimensionsOverlay({
       absDx,
       absDy,
       totalLen,
+      angleDeg,
       bubbles: resolvedBubbles,
     };
-  }, [showBlueGuides, showPurpleGuides, startPt, refPt, curPt, safeK, lockedConstraints]);
+  }, [showBlueGuides, showPurpleGuides, effectiveOriginPt, curPt, safeK, lockedConstraints]);
 
   const handleBubbleTap = (b: GuideBubble, e: React.MouseEvent | React.PointerEvent) => {
     e.stopPropagation();
@@ -241,60 +402,107 @@ export function ChamferLiveDimensionsOverlay({
     }
   };
 
+  // Braços adaptativos da Cruz (+) Roxa Pontilhada no ponto de encontro ativo
+  const activeMeetingCross = useMemo(() => {
+    if (!showPurpleGuides || !activeGuideData) return null;
+    return computeAdaptiveCrossArms(activeGuideData.curPt, safeK, pendingShape, entities);
+  }, [showPurpleGuides, activeGuideData, safeK, pendingShape, entities]);
+
   return (
     <g className="select-none pointer-events-none">
       {/* =====================================================================
-          1. MODO ROXO EXCLUSIVO ("purple_ref"): GUIAS ROXAS DO PONTO DE REFERÊNCIA
+          0. PONTOS DE ENCONTRO ROXOS (+) CONFIRMADOS / FIXADOS NO CANVAS
+             Adaptam-se automaticamente ponta a ponta a círculos/formas!
+          ===================================================================== */}
+      {pinnedMeetingPoints.map((pt, idx) => {
+        const arms = computeAdaptiveCrossArms(pt, safeK, pendingShape, entities);
+        return (
+          <g key={`pinned-meeting-${idx}`} aria-label="Cruz Roxa Pontilhada de Ponto de Encontro Confirmado">
+            <line
+              x1={pt.x - arms.armX}
+              y1={pt.y}
+              x2={pt.x + arms.armX}
+              y2={pt.y}
+              stroke={purpleStroke}
+              strokeWidth={1.5 / safeK}
+              strokeDasharray={`${4 / safeK},${3 / safeK}`}
+              strokeDashoffset={flowDashOffsetWorld}
+            />
+            <line
+              x1={pt.x}
+              y1={pt.y - arms.armY}
+              x2={pt.x}
+              y2={pt.y + arms.armY}
+              stroke={purpleStroke}
+              strokeWidth={1.5 / safeK}
+              strokeDasharray={`${4 / safeK},${3 / safeK}`}
+              strokeDashoffset={flowDashOffsetWorld}
+            />
+            <circle
+              cx={pt.x}
+              cy={pt.y}
+              r={2.2 / safeK}
+              fill={purpleStroke}
+            />
+          </g>
+        );
+      })}
+
+      {/* =====================================================================
+          1. MODO ROXO EXCLUSIVO ("purple_ref"): REFERÊNCIA DE PONTO DE ENCONTRO
           ===================================================================== */}
       {showPurpleGuides && activeGuideData && (
-        <g aria-label="Guias Roxas do Ponto de Referência REF">
-          {/* Preenchimento auxiliar muito discreto quando há área retangular */}
-          {activeGuideData.absDx > 2 / safeK && activeGuideData.absDy > 2 / safeK && (
+        <g aria-label="Referência de Ponto de Encontro Roxa">
+          {/* Preenchimento auxiliar discreto na área retangular */}
+          {activeGuideData.absDx > 1 / safeK && activeGuideData.absDy > 1 / safeK && (
             <rect
               x={activeGuideData.minX}
               y={activeGuideData.minY}
               width={activeGuideData.absDx}
               height={activeGuideData.absDy}
-              fill={isDark ? "rgba(168, 85, 247, 0.035)" : "rgba(147, 51, 234, 0.03)"}
+              fill={isDark ? "rgba(168, 85, 247, 0.04)" : "rgba(147, 51, 234, 0.03)"}
               stroke="none"
             />
           )}
 
-          {/* Projeções auxiliares ortogonais roxas (1.25px, dasharray 5,4, intensidade secundária) */}
-          {activeGuideData.absDx > 1 / safeK && activeGuideData.absDy > 1 / safeK && (
+          {/* Projeções auxiliares ortogonais roxas orientadas de (X0,Y0) -> (X,Y) com fluxo contínuo */}
+          {activeGuideData.absDx > 0.5 / safeK && activeGuideData.absDy > 0.5 / safeK && (
             <>
-              {/* Projeção Horizontal ΔX */}
+              {/* Cateto Horizontal ΔX: (X0, Y0) -> (X, Y0) */}
               <line
                 x1={activeGuideData.basePt.x}
                 y1={activeGuideData.basePt.y}
                 x2={activeGuideData.cornerPt.x}
                 y2={activeGuideData.cornerPt.y}
                 stroke={purpleStroke}
-                strokeWidth={1.15 / safeK}
-                strokeDasharray={`${5 / safeK},${4 / safeK}`}
-                strokeOpacity={0.68}
+                strokeWidth={1.25 / safeK}
+                strokeDasharray={`${5 / safeK},${3 / safeK}`}
+                strokeDashoffset={flowDashOffsetWorld}
+                strokeOpacity={0.82}
               />
-              {/* Projeção Vertical ΔY */}
+              {/* Cateto Vertical ΔY: (X, Y0) -> (X, Y) */}
               <line
                 x1={activeGuideData.cornerPt.x}
                 y1={activeGuideData.cornerPt.y}
                 x2={activeGuideData.curPt.x}
                 y2={activeGuideData.curPt.y}
                 stroke={purpleStroke}
-                strokeWidth={1.15 / safeK}
-                strokeDasharray={`${5 / safeK},${4 / safeK}`}
-                strokeOpacity={0.68}
+                strokeWidth={1.25 / safeK}
+                strokeDasharray={`${5 / safeK},${3 / safeK}`}
+                strokeDashoffset={flowDashOffsetWorld}
+                strokeOpacity={0.82}
               />
-              {/* Lados complementares discretos do quadro adaptável */}
+              {/* Lados complementares orientados de (X0, Y0) -> (X0, Y) -> (X, Y) */}
               <line
                 x1={activeGuideData.basePt.x}
                 y1={activeGuideData.basePt.y}
                 x2={activeGuideData.basePt.x}
                 y2={activeGuideData.curPt.y}
                 stroke={purpleStroke}
-                strokeWidth={0.95 / safeK}
-                strokeDasharray={`${5 / safeK},${4 / safeK}`}
-                strokeOpacity={0.32}
+                strokeWidth={1.05 / safeK}
+                strokeDasharray={`${5 / safeK},${3 / safeK}`}
+                strokeDashoffset={flowDashOffsetWorld}
+                strokeOpacity={0.45}
               />
               <line
                 x1={activeGuideData.basePt.x}
@@ -302,108 +510,158 @@ export function ChamferLiveDimensionsOverlay({
                 x2={activeGuideData.curPt.x}
                 y2={activeGuideData.curPt.y}
                 stroke={purpleStroke}
-                strokeWidth={0.95 / safeK}
-                strokeDasharray={`${5 / safeK},${4 / safeK}`}
-                strokeOpacity={0.32}
+                strokeWidth={1.05 / safeK}
+                strokeDasharray={`${5 / safeK},${3 / safeK}`}
+                strokeDashoffset={flowDashOffsetWorld}
+                strokeOpacity={0.45}
               />
             </>
           )}
 
-          {/* Ligação principal roxa entre a referência e o ponto atual (1.25px, stroke-dasharray: 5,4) */}
+          {/* Diagonal principal roxa de (X0, Y0) -> (X, Y) com fluxo contínuo */}
           <line
             x1={activeGuideData.basePt.x}
             y1={activeGuideData.basePt.y}
             x2={activeGuideData.curPt.x}
             y2={activeGuideData.curPt.y}
             stroke={purpleStroke}
-            strokeWidth={1.25 / safeK}
-            strokeDasharray={`${5 / safeK},${4 / safeK}`}
-            strokeOpacity={0.92}
+            strokeWidth={1.35 / safeK}
+            strokeDasharray={`${5 / safeK},${3 / safeK}`}
+            strokeDashoffset={flowDashOffsetWorld}
+            strokeOpacity={0.95}
           />
 
-          {/* Marcador quadrado móvel do ponteiro no modo REF */}
-          <rect
-            x={activeGuideData.curPt.x - 3.2 / safeK}
-            y={activeGuideData.curPt.y - 3.2 / safeK}
-            width={6.4 / safeK}
-            height={6.4 / safeK}
-            fill={isDark ? "rgba(15, 23, 42, 0.85)" : "rgba(255, 255, 255, 0.9)"}
-            stroke={purpleStroke}
-            strokeWidth={1.3 / safeK}
-          />
+          {/* CRUZ TÉCNICA EM FORMATO DE MAIS (+) ROXA PONTILHADA NO PONTO DIAGONAL DE ENCONTRO (X, Y) */}
+          {activeMeetingCross && (
+            <g aria-label="Cruz Roxa Pontilhada no Ponto de Encontro">
+              <line
+                x1={activeGuideData.curPt.x - activeMeetingCross.armX}
+                y1={activeGuideData.curPt.y}
+                x2={activeGuideData.curPt.x + activeMeetingCross.armX}
+                y2={activeGuideData.curPt.y}
+                stroke={purpleStroke}
+                strokeWidth={1.6 / safeK}
+                strokeDasharray={`${4 / safeK},${3 / safeK}`}
+                strokeDashoffset={flowDashOffsetWorld}
+              />
+              <line
+                x1={activeGuideData.curPt.x}
+                y1={activeGuideData.curPt.y - activeMeetingCross.armY}
+                x2={activeGuideData.curPt.x}
+                y2={activeGuideData.curPt.y + activeMeetingCross.armY}
+                stroke={purpleStroke}
+                strokeWidth={1.6 / safeK}
+                strokeDasharray={`${4 / safeK},${3 / safeK}`}
+                strokeDashoffset={flowDashOffsetWorld}
+              />
+              <circle
+                cx={activeGuideData.curPt.x}
+                cy={activeGuideData.curPt.y}
+                r={2.2 / safeK}
+                fill={purpleStroke}
+              />
+            </g>
+          )}
         </g>
       )}
 
       {/* =====================================================================
-          2. MODO AZUL EXCLUSIVO ("blue_line"): GUIAS AZUIS DE CRIAÇÃO DE LINHA
+          2. MODO AZUL EXCLUSIVO ("blue_line"): REFERÊNCIA DE CRIAÇÃO DE LINHA
+             Funciona imediatamente em qualquer ângulo livre (0° a 360°)
           ===================================================================== */}
       {showBlueGuides && activeGuideData && (
-        <g aria-label="Guias Azuis de Criação de Linha">
-          {/* Projeções ortogonais horizontais e verticais com menor intensidade */}
-          {activeGuideData.absDx > 2 / safeK && activeGuideData.absDy > 2 / safeK && (
+        <g aria-label="Referência de Criação de Linha Azul">
+          {/* Linhas auxiliares de cateto (ΔX horizontal e ΔY vertical) com fluxo direcional */}
+          {(activeGuideData.absDx > 0.5 / safeK || activeGuideData.absDy > 0.5 / safeK) && (
             <>
+              {/* Cateto Horizontal ΔX: (X0, Y0) -> (X, Y0) */}
               <line
                 x1={activeGuideData.basePt.x}
                 y1={activeGuideData.basePt.y}
                 x2={activeGuideData.cornerPt.x}
                 y2={activeGuideData.cornerPt.y}
                 stroke={blueProj}
-                strokeWidth={1.05 / safeK}
-                strokeDasharray={`${4 / safeK},${3 / safeK}`}
+                strokeWidth={1.2 / safeK}
+                strokeDasharray={`${5 / safeK},${3 / safeK}`}
+                strokeDashoffset={flowDashOffsetWorld}
               />
+              {/* Cateto Vertical ΔY: (X, Y0) -> (X, Y) */}
               <line
                 x1={activeGuideData.cornerPt.x}
                 y1={activeGuideData.cornerPt.y}
                 x2={activeGuideData.curPt.x}
                 y2={activeGuideData.curPt.y}
                 stroke={blueProj}
-                strokeWidth={1.05 / safeK}
-                strokeDasharray={`${4 / safeK},${3 / safeK}`}
+                strokeWidth={1.2 / safeK}
+                strokeDasharray={`${5 / safeK},${3 / safeK}`}
+                strokeDashoffset={flowDashOffsetWorld}
               />
-              {/* Indicador técnico de ângulo reto no vértice de projeção */}
-              {activeGuideData.absDx > 12 / safeK && activeGuideData.absDy > 12 / safeK && (
+              {/* Indicador técnico de ângulo reto (90°) entre ΔX e ΔY */}
+              {activeGuideData.absDx > 10 / safeK && activeGuideData.absDy > 10 / safeK && (
                 <polyline
                   points={`${
-                    activeGuideData.cornerPt.x - Math.sign(activeGuideData.curPt.x - activeGuideData.basePt.x) * (5 / safeK)
+                    activeGuideData.cornerPt.x -
+                    Math.sign(activeGuideData.curPt.x - activeGuideData.basePt.x) * (5.5 / safeK)
                   },${activeGuideData.cornerPt.y} ${
-                    activeGuideData.cornerPt.x - Math.sign(activeGuideData.curPt.x - activeGuideData.basePt.x) * (5 / safeK)
+                    activeGuideData.cornerPt.x -
+                    Math.sign(activeGuideData.curPt.x - activeGuideData.basePt.x) * (5.5 / safeK)
                   },${
-                    activeGuideData.cornerPt.y + Math.sign(activeGuideData.curPt.y - activeGuideData.basePt.y) * (5 / safeK)
+                    activeGuideData.cornerPt.y +
+                    Math.sign(activeGuideData.curPt.y - activeGuideData.basePt.y) * (5.5 / safeK)
                   } ${activeGuideData.cornerPt.x},${
-                    activeGuideData.cornerPt.y + Math.sign(activeGuideData.curPt.y - activeGuideData.basePt.y) * (5 / safeK)
+                    activeGuideData.cornerPt.y +
+                    Math.sign(activeGuideData.curPt.y - activeGuideData.basePt.y) * (5.5 / safeK)
                   }`}
                   fill="none"
                   stroke={blueProj}
-                  strokeWidth={0.9 / safeK}
+                  strokeWidth={1.0 / safeK}
                 />
               )}
             </>
           )}
 
-          {/* Guia principal acompanhando o segmento provisório */}
+          {/* Arco indicador de ângulo livre ∠ (°) partindo de (X0, Y0) */}
+          {activeGuideData.totalLen > 18 / safeK && (
+            <path
+              d={describeAngleArc(
+                activeGuideData.basePt,
+                Math.min(Math.max(22 / safeK, activeGuideData.totalLen * 0.22), 38 / safeK),
+                activeGuideData.angleDeg,
+              )}
+              fill="none"
+              stroke={blueMain}
+              strokeWidth={1.1 / safeK}
+              strokeDasharray={`${3 / safeK},${2.5 / safeK}`}
+              strokeOpacity={0.75}
+            />
+          )}
+
+          {/* Linha principal inclinada (hipotenusa) ligando (X0, Y0) -> (X, Y) em qualquer ângulo livre com fluxo direcional */}
           <line
             x1={activeGuideData.basePt.x}
             y1={activeGuideData.basePt.y}
             x2={activeGuideData.curPt.x}
             y2={activeGuideData.curPt.y}
             stroke={blueMain}
-            strokeWidth={1.4 / safeK}
-            strokeOpacity={0.9}
+            strokeWidth={1.65 / safeK}
+            strokeDasharray={`${6 / safeK},${3.5 / safeK}`}
+            strokeDashoffset={flowDashOffsetWorld}
+            strokeOpacity={0.98}
           />
 
-          {/* Marcadores de Ponto Inicial e Ponto Final */}
+          {/* Marcador técnico no Ponto Final (X, Y) da linha inclinada */}
           <circle
-            cx={activeGuideData.basePt.x}
-            cy={activeGuideData.basePt.y}
-            r={2.8 / safeK}
+            cx={activeGuideData.curPt.x}
+            cy={activeGuideData.curPt.y}
+            r={3.5 / safeK}
             fill={isDark ? "#090D16" : "#FFFFFF"}
             stroke={blueMain}
-            strokeWidth={1.35 / safeK}
+            strokeWidth={1.6 / safeK}
           />
           <circle
             cx={activeGuideData.curPt.x}
             cy={activeGuideData.curPt.y}
-            r={2.8 / safeK}
+            r={1.5 / safeK}
             fill={blueMain}
           />
         </g>
@@ -448,7 +706,11 @@ export function ChamferLiveDimensionsOverlay({
               />
               <g
                 transform={`translate(${b.pos.x}, ${b.pos.y})`}
-                className={isMultitouchNavigating ? "pointer-events-none" : "pointer-events-auto cursor-pointer"}
+                className={
+                  isMultitouchNavigating
+                    ? "pointer-events-none"
+                    : "pointer-events-auto cursor-pointer"
+                }
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => handleBubbleTap(b, e)}
               >
@@ -479,73 +741,152 @@ export function ChamferLiveDimensionsOverlay({
         })}
 
       {/* =====================================================================
-          4. CENTRO DO PONTO DE REFERÊNCIA EM VERMELHO CARMESIM (#DC143C)
-             Sem cartão flutuante "REF (0,0)", nítido nos temas claro e escuro
+          4. CENTRO DE REFERÊNCIA CLÁSSICO EM VERMELHO CARMESIM (#DC143C)
+             - Ponto central sólido preenchido (r = 4px)
+             - Círculo interno contínuo (r = 7px, strokeWidth: 1.8px)
+             - Anel externo tracejado amplo (r = 18px, stroke-dasharray: 4, 3, strokeWidth: 1.5px)
+             - Toque no centro (44x44px) abre a barra [ ✓ Confirmar ] [ ✕ Cancelar ]
           ===================================================================== */}
-      {refPt && (
-        <g aria-label="Marcador Central do Ponto de Referência em Vermelho Carmesim">
-          {/* Halo sutil de contraste para visibilidade sobre qualquer fundo ou grade */}
+      {effectiveOriginPt && interactionGuideMode !== "off" && (
+        <g aria-label="Centro de Referência Clássico em Vermelho Carmesim">
+          {/* Anel externo tracejado amplo (r = 18px, stroke-dasharray: 4, 3, strokeWidth: 1.5px, #DC143C) */}
           <circle
-            cx={refPt.x}
-            cy={refPt.y}
-            r={6.5 / safeK}
+            cx={effectiveOriginPt.x}
+            cy={effectiveOriginPt.y}
+            r={18 / safeK}
             fill="none"
-            stroke={isDark ? "rgba(9, 13, 22, 0.85)" : "rgba(255, 255, 255, 0.9)"}
-            strokeWidth={2.6 / safeK}
+            stroke={crimsonMain}
+            strokeWidth={1.5 / safeK}
+            strokeDasharray={`${4 / safeK},${3 / safeK}`}
+            strokeDashoffset={flowDashOffsetWorld}
           />
-          {/* Anel técnico fino carmesim */}
+          {/* Círculo interno contínuo (r = 7px, strokeWidth: 1.8px, #DC143C) */}
           <circle
-            cx={refPt.x}
-            cy={refPt.y}
-            r={6.5 / safeK}
+            cx={effectiveOriginPt.x}
+            cy={effectiveOriginPt.y}
+            r={7 / safeK}
             fill="none"
-            stroke={crimsonContrast}
-            strokeWidth={1.35 / safeK}
-          />
-          {/* Cruz carmesim de precisão do ponto fixo */}
-          <line
-            x1={refPt.x - 10.5 / safeK}
-            y1={refPt.y}
-            x2={refPt.x - 3.2 / safeK}
-            y2={refPt.y}
             stroke={crimsonMain}
-            strokeWidth={1.25 / safeK}
-            strokeLinecap="round"
+            strokeWidth={1.8 / safeK}
           />
-          <line
-            x1={refPt.x + 3.2 / safeK}
-            y1={refPt.y}
-            x2={refPt.x + 10.5 / safeK}
-            y2={refPt.y}
-            stroke={crimsonMain}
-            strokeWidth={1.25 / safeK}
-            strokeLinecap="round"
-          />
-          <line
-            x1={refPt.x}
-            y1={refPt.y - 10.5 / safeK}
-            x2={refPt.x}
-            y2={refPt.y - 3.2 / safeK}
-            stroke={crimsonMain}
-            strokeWidth={1.25 / safeK}
-            strokeLinecap="round"
-          />
-          <line
-            x1={refPt.x}
-            y1={refPt.y + 3.2 / safeK}
-            x2={refPt.x}
-            y2={refPt.y + 10.5 / safeK}
-            stroke={crimsonMain}
-            strokeWidth={1.25 / safeK}
-            strokeLinecap="round"
-          />
-          {/* Ponto central nítido carmesim */}
+          {/* Ponto central sólido preenchido (r = 4px) com fino anel de contraste */}
           <circle
-            cx={refPt.x}
-            cy={refPt.y}
-            r={2.0 / safeK}
+            cx={effectiveOriginPt.x}
+            cy={effectiveOriginPt.y}
+            r={4 / safeK}
             fill={crimsonMain}
+            stroke={isDark ? "#FFFFFF" : "#0F172A"}
+            strokeWidth={1.0 / safeK}
           />
+
+          {/* Gatilho de Toque Confortável (44 × 44 px => r = 22px) no Centro de Referência */}
+          <circle
+            cx={effectiveOriginPt.x}
+            cy={effectiveOriginPt.y}
+            r={22 / safeK}
+            fill="transparent"
+            className={
+              isMultitouchNavigating
+                ? "pointer-events-none"
+                : "pointer-events-auto cursor-pointer"
+            }
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isMultitouchNavigating) {
+                setConfirmBarOpen((prev) => !prev);
+              }
+            }}
+          />
+
+          {/* BARRA FLUTUANTE COMPACTA DE CONFIRMAÇÃO: [ ✓ Confirmar ]  [ ✕ Cancelar ] */}
+          {confirmBarOpen && curPt && (
+            <g
+              transform={`translate(${effectiveOriginPt.x}, ${
+                effectiveOriginPt.y - 36 / safeK
+              })`}
+              className="pointer-events-auto"
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              {/* Fundo da barra flutuante */}
+              <rect
+                x={-86 / safeK}
+                y={-14 / safeK}
+                width={172 / safeK}
+                height={28 / safeK}
+                rx={8 / safeK}
+                fill={isDark ? "rgba(9, 13, 22, 0.96)" : "rgba(255, 255, 255, 0.98)"}
+                stroke={crimsonMain}
+                strokeWidth={1.4 / safeK}
+              />
+
+              {/* Botão [ ✓ Confirmar ] */}
+              <g
+                transform={`translate(${-42 / safeK}, 0)`}
+                className="cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmBarOpen(false);
+                  onConfirmReferenceAction?.(
+                    effectiveOriginPt,
+                    curPt,
+                    interactionGuideMode,
+                  );
+                }}
+              >
+                <rect
+                  x={-39 / safeK}
+                  y={-10 / safeK}
+                  width={78 / safeK}
+                  height={20 / safeK}
+                  rx={5 / safeK}
+                  fill="#059669"
+                />
+                <text
+                  x={0}
+                  y={3.3 / safeK}
+                  fill="#FFFFFF"
+                  fontSize={8.5 / safeK}
+                  fontWeight="bold"
+                  fontFamily="ui-monospace, monospace"
+                  textAnchor="middle"
+                >
+                  ✓ Confirmar
+                </text>
+              </g>
+
+              {/* Botão [ ✕ Cancelar ] */}
+              <g
+                transform={`translate(${42 / safeK}, 0)`}
+                className="cursor-pointer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setConfirmBarOpen(false);
+                  onCancelReferenceAction?.();
+                }}
+              >
+                <rect
+                  x={-39 / safeK}
+                  y={-10 / safeK}
+                  width={78 / safeK}
+                  height={20 / safeK}
+                  rx={5 / safeK}
+                  fill={isDark ? "#334155" : "#E2E8F0"}
+                />
+                <text
+                  x={0}
+                  y={3.3 / safeK}
+                  fill={isDark ? "#F8FAFC" : "#1E293B"}
+                  fontSize={8.5 / safeK}
+                  fontWeight="bold"
+                  fontFamily="ui-monospace, monospace"
+                  textAnchor="middle"
+                >
+                  ✕ Cancelar
+                </text>
+              </g>
+            </g>
+          )}
         </g>
       )}
 
@@ -588,7 +929,11 @@ export function ChamferLiveDimensionsOverlay({
             transform={`translate(${activeEdge.midpoint.x + activeEdge.normal.x * (38 / safeK) * activeEdgeSide}, ${
               activeEdge.midpoint.y + activeEdge.normal.y * (38 / safeK) * activeEdgeSide
             })`}
-            className={isMultitouchNavigating ? "pointer-events-none" : "pointer-events-auto cursor-pointer"}
+            className={
+              isMultitouchNavigating
+                ? "pointer-events-none"
+                : "pointer-events-auto cursor-pointer"
+            }
             onPointerDown={(e) => e.stopPropagation()}
             onClick={(e) => {
               e.stopPropagation();
@@ -620,7 +965,7 @@ export function ChamferLiveDimensionsOverlay({
         </g>
       )}
 
-      {/* Cotas vivas de Borda Ativa (somente quando activeEdge estiver presente para não duplicar guias de REF) */}
+      {/* Cotas vivas de Borda Ativa */}
       {activeEdge &&
         liveDimensions.map((dim) => {
           const dx = dim.endPoint.x - dim.startPoint.x;
@@ -647,7 +992,11 @@ export function ChamferLiveDimensionsOverlay({
 
               <g
                 transform={`translate(${dim.midPoint.x}, ${dim.midPoint.y})`}
-                className={isMultitouchNavigating ? "pointer-events-none" : "pointer-events-auto cursor-pointer"}
+                className={
+                  isMultitouchNavigating
+                    ? "pointer-events-none"
+                    : "pointer-events-auto cursor-pointer"
+                }
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -683,6 +1032,29 @@ export function ChamferLiveDimensionsOverlay({
         })}
     </g>
   );
+}
+
+function showOriginForMode(
+  mode: InteractionGuideMode,
+  startPt: Vec2 | null,
+  refPt: Vec2 | null,
+): Vec2 | null {
+  if (mode === "off") return null;
+  if (mode === "blue_line") {
+    return startPt ?? refPt;
+  }
+  return refPt ?? startPt;
+}
+
+function describeAngleArc(center: Vec2, radius: number, angleDeg: number): string {
+  const clampedAngle = Math.max(1, Math.min(359, angleDeg));
+  const endRad = (clampedAngle * Math.PI) / 180;
+  const startX = center.x + radius;
+  const startY = center.y;
+  const endX = center.x + radius * Math.cos(endRad);
+  const endY = center.y - radius * Math.sin(endRad);
+  const largeArcFlag = clampedAngle > 180 ? 1 : 0;
+  return `M ${startX} ${startY} A ${radius} ${radius} 0 ${largeArcFlag} 0 ${endX} ${endY}`;
 }
 
 function dxWOffset(widthWorld: number, safeK: number): number {

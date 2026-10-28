@@ -4,8 +4,11 @@ import {
   CRIMSON_RED_RING,
   PURPLE_GUIDE_STROKE,
   BLUE_GUIDE_STROKE,
+  GUIDE_MODE_LABELS,
   loadInteractionGuideMode,
   saveInteractionGuideMode,
+  computeGuideAngleDeg,
+  computeFlowDashOffset,
   validateDimensionalConstraint,
   applyDimensionalConstraintsToPoint,
   applyEntityNodeConstraint,
@@ -17,15 +20,19 @@ import {
 import { findSmartSnap } from "../cadReferenceSnaps";
 import type { Entity, Vec2 } from "../core";
 
-describe("CHAMFER CAD — Refinamento Profissional de Guias, REF Carmesim, Multitoque, Teclado CAD e Restrições Dimensionais (Testes A a M)", () => {
+describe("CHAMFER CAD — Refinamento Profissional de Guias, REF Carmesim Clássico, Fluxo Direcional, Cruz (+) e Restrições (Testes A a M)", () => {
   beforeEach(() => {
     saveInteractionGuideMode("blue_line");
   });
 
   // ---------------------------------------------------------------------------
-  // TESTE A — Exclusividade entre Guias Azuis e Guias Roxas e Modo Desativado
+  // TESTE A — Exclusividade entre Guias e Nomenclaturas Oficializadas em PRE
   // ---------------------------------------------------------------------------
-  it("Teste A: garante exclusividade estrita entre modos 'off', 'purple_ref' e 'blue_line' com persistência", () => {
+  it("Teste A: garante exclusividade estrita e nomenclaturas 'Referência de Ponto de Encontro' e 'Referência de Criação de Linha'", () => {
+    expect(GUIDE_MODE_LABELS.off).toBe("Desativadas");
+    expect(GUIDE_MODE_LABELS.purple_ref).toBe("Referência de Ponto de Encontro");
+    expect(GUIDE_MODE_LABELS.blue_line).toBe("Referência de Criação de Linha");
+
     expect(loadInteractionGuideMode()).toBe("blue_line");
 
     saveInteractionGuideMode("purple_ref");
@@ -36,91 +43,114 @@ describe("CHAMFER CAD — Refinamento Profissional de Guias, REF Carmesim, Multi
 
     saveInteractionGuideMode("blue_line");
     expect(loadInteractionGuideMode()).toBe("blue_line");
-
-    // Verificação lógica de visibilidade mútua exclusiva:
-    const shouldRenderPurple = (mode: string, hasRef: boolean) =>
-      mode === "purple_ref" && hasRef;
-    const shouldRenderBlue = (mode: string, hasActiveLine: boolean) =>
-      mode === "blue_line" && hasActiveLine;
-
-    expect(shouldRenderPurple("blue_line", true)).toBe(false);
-    expect(shouldRenderBlue("blue_line", true)).toBe(true);
-
-    expect(shouldRenderPurple("purple_ref", true)).toBe(true);
-    expect(shouldRenderBlue("purple_ref", true)).toBe(false);
-
-    expect(shouldRenderPurple("off", true)).toBe(false);
-    expect(shouldRenderBlue("off", true)).toBe(false);
   });
 
   // ---------------------------------------------------------------------------
-  // TESTE B — Remoção do Card Flutuante "REF (0,0)" no Canvas
+  // TESTE B — Ângulos Livres (0° a 360°) e Restrição de Ângulo na Referência Azul
   // ---------------------------------------------------------------------------
-  it("Teste B: certifica que o card flutuante 'REF (0,0)' foi removido das bolhas da guia roxa", () => {
-    const purpleMeasureKinds = ["dx", "dy", "d"];
-    expect(purpleMeasureKinds).not.toContain("ref_card");
-    expect(purpleMeasureKinds.every((k) => k === "dx" || k === "dy" || k === "d")).toBe(true);
+  it("Teste B: calcula e fixa qualquer ângulo livre (0° a 360°) na Referência de Criação de Linha", () => {
+    const origin: Vec2 = { x: 100, y: 100 };
+
+    // 0° (direita)
+    expect(computeGuideAngleDeg(origin, { x: 200, y: 100 })).toBeCloseTo(0, 3);
+    // 45° (diagonal superior direita em coordenadas de tela onde Y cresce para baixo)
+    expect(computeGuideAngleDeg(origin, { x: 200, y: 0 })).toBeCloseTo(45, 3);
+    // 90° (acima)
+    expect(computeGuideAngleDeg(origin, { x: 100, y: 0 })).toBeCloseTo(90, 3);
+    // 180° (esquerda)
+    expect(computeGuideAngleDeg(origin, { x: 0, y: 100 })).toBeCloseTo(180, 3);
+    // 315° (diagonal inferior direita)
+    expect(computeGuideAngleDeg(origin, { x: 200, y: 200 })).toBeCloseTo(315, 3);
+
+    // Fixar comprimento L = 200 mm e ângulo ∠ = 30° simultaneamente
+    const v1 = validateDimensionalConstraint({}, "L", 200, true);
+    const v2 = validateDimensionalConstraint(v1.updatedConstraints, "angle", 30, true);
+    expect(v2.valid).toBe(true);
+
+    const pt = applyDimensionalConstraintsToPoint(
+      origin,
+      { x: 500, y: 500 },
+      v2.updatedConstraints,
+    );
+    expect(Math.hypot(pt.x - origin.x, pt.y - origin.y)).toBeCloseTo(200, 3);
+    expect(computeGuideAngleDeg(origin, pt)).toBeCloseTo(30, 3);
   });
 
   // ---------------------------------------------------------------------------
-  // TESTE C — Centro Vermelho Carmesim (#DC143C / #E11D48) no Ponto de Referência
+  // TESTE C — Centro Vermelho Carmesim Clássico (#DC143C) e Animação de Fluxo Direcional
   // ---------------------------------------------------------------------------
-  it("Teste C: utiliza vermelho carmesim técnico (#DC143C / #E11D48) em vez de laranja no centro do ponto de referência", () => {
+  it("Teste C: utiliza vermelho carmesim (#DC143C) e deslocamento negativo contínuo para fluxo direcional (X0,Y0 -> X,Y)", () => {
     expect(CRIMSON_RED_CENTER).toBe("#DC143C");
     expect(CRIMSON_RED_RING).toBe("#E11D48");
-    expect(CRIMSON_RED_CENTER).not.toBe("#F97316"); // Não é laranja
     expect(PURPLE_GUIDE_STROKE).toBe("#A855F7");
     expect(BLUE_GUIDE_STROKE).toBe("#38BDF8");
+
+    // Verifica que o dashOffset avança negativamente no sentido de apontamento (X0,Y0 -> X,Y)
+    const offsetT1 = computeFlowDashOffset(100, 16, 0.035);
+    const offsetT2 = computeFlowDashOffset(200, 16, 0.035);
+    expect(offsetT1).toBeLessThan(0);
+    expect(offsetT2).toBeLessThan(offsetT1);
   });
 
   // ---------------------------------------------------------------------------
-  // TESTE D — Organização e Anti-Colisão das Bolhas de Medida (L, d, ΔX, ΔY)
+  // TESTE D — Organização e Anti-Colisão das Bolhas de Medida (L, ∠, d, ΔX, ΔY)
   // ---------------------------------------------------------------------------
   it("Teste D: posiciona bolhas de medida sem sobreposição com separação mínima >= 8 px", () => {
-    const viewK = 1; // 1 px = 1 mm
+    const viewK = 1;
     const rawBubbles: GuideBubble[] = [
       {
         id: "blue-L",
         kind: "L",
-        text: "L 250.0",
+        text: "L 250.0 mm",
         value: 250,
         locked: false,
         anchor: { x: 100, y: 100 },
         pos: { x: 100, y: 100 },
         normal: { x: 0, y: -1 },
         widthWorld: 84,
-        heightWorld: 24,
+        heightWorld: 18,
+      },
+      {
+        id: "blue-angle",
+        kind: "angle",
+        text: "∠ 36.9°",
+        value: 36.9,
+        locked: false,
+        anchor: { x: 100, y: 100 },
+        pos: { x: 101, y: 101 },
+        normal: { x: 0.8, y: -0.6 },
+        widthWorld: 68,
+        heightWorld: 18,
       },
       {
         id: "blue-dx",
         kind: "dx",
-        text: "ΔX 200.0",
+        text: "ΔX 200.0 mm",
         value: 200,
         locked: false,
         anchor: { x: 100, y: 100 },
         pos: { x: 100, y: 102 },
         normal: { x: 0, y: 1 },
         widthWorld: 88,
-        heightWorld: 24,
+        heightWorld: 18,
       },
       {
         id: "blue-dy",
         kind: "dy",
-        text: "ΔY 150.0",
+        text: "ΔY 150.0 mm",
         value: 150,
         locked: false,
         anchor: { x: 100, y: 100 },
         pos: { x: 102, y: 100 },
         normal: { x: 1, y: 0 },
         widthWorld: 88,
-        heightWorld: 24,
+        heightWorld: 18,
       },
     ];
 
     const placed = resolveBubbleCollisions(rawBubbles, viewK);
-    expect(placed).toHaveLength(3);
+    expect(placed).toHaveLength(4);
 
-    // Verifica que nenhum par de bolhas se sobrepõe considerando a margem mínima de 8 px
     for (let i = 0; i < placed.length; i++) {
       for (let j = i + 1; j < placed.length; j++) {
         const a = placed[i]!;
@@ -151,7 +181,6 @@ describe("CHAMFER CAD — Refinamento Profissional de Guias, REF Carmesim, Multi
     let state: TouchInteractionState = "SINGLE_POINTER";
     let liveCursor: Vec2 = { x: 525, y: 630 };
 
-    // 2º dedo toca -> transição imediata para MULTITOUCH_NAVIGATION e restauração do snapshot
     const activePointersCount = 2;
     if (activePointersCount >= 2) {
       state = "MULTITOUCH_NAVIGATION";
@@ -185,16 +214,13 @@ describe("CHAMFER CAD — Refinamento Profissional de Guias, REF Carmesim, Multi
     expect(rawText).toBe("250,5");
     expect(parseVal(rawText)).toBeCloseTo(250.5, 4);
 
-    // Vírgula duplicada é ignorada
     pressDecimal();
     expect(rawText).toBe("250,5");
 
-    // Backspace
     pressBackspace();
     pressBackspace();
     expect(rawText).toBe("250");
 
-    // Passo fino +0.1 mm e +10 mm
     const stepAdd = (step: number) => {
       const next = Number((parseVal(rawText) + step).toFixed(4));
       rawText = String(next).replace(".", ",");
@@ -213,10 +239,10 @@ describe("CHAMFER CAD — Refinamento Profissional de Guias, REF Carmesim, Multi
     const constraints: DimensionalConstraints = { lockedL: 300 };
 
     const rawPointers: Vec2[] = [
-      { x: 950, y: 100 }, // 0°
-      { x: 100, y: 800 }, // 90°
-      { x: 400, y: 400 }, // 45°
-      { x: 50, y: 20 },   // Quadrante negativo
+      { x: 950, y: 100 },
+      { x: 100, y: 800 },
+      { x: 400, y: 400 },
+      { x: 50, y: 20 },
     ];
 
     for (const raw of rawPointers) {
@@ -225,7 +251,6 @@ describe("CHAMFER CAD — Refinamento Profissional de Guias, REF Carmesim, Multi
       expect(actualLen).toBeCloseTo(300, 3);
     }
 
-    // Também verifica ao arrastar nó de uma linha já existente com lockedL = 300
     const lineEntity: Entity = {
       id: "line-1",
       layer: "corte",
@@ -266,27 +291,23 @@ describe("CHAMFER CAD — Refinamento Profissional de Guias, REF Carmesim, Multi
   // TESTE I — Detecção de Conflito entre Restrições (ΔX = 500 mm vs L = 300 mm)
   // ---------------------------------------------------------------------------
   it("Teste I: detecta conflito geométrico quando |ΔX| > L ou quando L != hypot(ΔX, ΔY) e preserva estado íntegro", () => {
-    // Caso 1: L = 300 mm já fixado; usuário tenta fixar ΔX = 500 mm (impossível pois |ΔX| > L)
     const initialConstraints: DimensionalConstraints = { lockedL: 300 };
     const res1 = validateDimensionalConstraint(initialConstraints, "dx", 500, true);
     expect(res1.valid).toBe(false);
     expect(res1.conflictMessage).toContain("Conflito de restrição");
-    expect(res1.updatedConstraints).toEqual({ lockedL: 300 }); // Estado anterior intacto
+    expect(res1.updatedConstraints).toEqual({ lockedL: 300 });
 
-    // Caso 2: ΔX = 500 mm já fixado; usuário tenta fixar L = 300 mm
     const initialDx: DimensionalConstraints = { lockedDx: 500 };
     const res2 = validateDimensionalConstraint(initialDx, "L", 300, true);
     expect(res2.valid).toBe(false);
     expect(res2.conflictMessage).toContain("Conflito de restrição");
     expect(res2.updatedConstraints).toEqual({ lockedDx: 500 });
 
-    // Caso 3: ΔX = 300 mm e ΔY = 400 mm fixados (hipotenusa = 500 mm); usuário tenta fixar L = 450 mm
     const initialDxDy: DimensionalConstraints = { lockedDx: 300, lockedDy: 400 };
     const res3 = validateDimensionalConstraint(initialDxDy, "L", 450, true);
     expect(res3.valid).toBe(false);
     expect(res3.conflictMessage).toContain("500.0 mm");
 
-    // Caso 4: ΔX = 300 mm e L = 500 mm -> compatível (|ΔY| será 400 mm)
     const resValid = validateDimensionalConstraint({ lockedL: 500 }, "dx", 300, true);
     expect(resValid.valid).toBe(true);
     const pt = applyDimensionalConstraintsToPoint(
@@ -307,7 +328,6 @@ describe("CHAMFER CAD — Refinamento Profissional de Guias, REF Carmesim, Multi
       { id: "c1", layer: "corte", type: "circle", cx: 0, cy: 0, r: 100 },
       { id: "c2", layer: "corte", type: "circle", cx: 120, cy: 0, r: 100 },
     ];
-    // Verifica que o motor de SNAP universal continua capturando interseção círculo-círculo com precisão
     const snapRes = findSmartSnap(
       { x: 60.5, y: 79.8 },
       entities,
@@ -321,7 +341,6 @@ describe("CHAMFER CAD — Refinamento Profissional de Guias, REF Carmesim, Multi
     expect(snapRes?.p.x).toBeCloseTo(60, 2);
     expect(snapRes?.p.y).toBeCloseTo(80, 2);
 
-    // E quando uma restrição dimensional está ativa (ex: lockedDy = 80), o ponto resultante preserva precisão milimétrica
     const constrained = applyDimensionalConstraintsToPoint(
       { x: 0, y: 0 },
       snapRes!.p,

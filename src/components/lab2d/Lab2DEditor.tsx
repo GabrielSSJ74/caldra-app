@@ -1235,13 +1235,48 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     initialLocked?: boolean;
   } | null>(null);
 
-  const handleSetInteractionGuideMode = useCallback((nextMode: InteractionGuideMode) => {
-    setInteractionGuideModeState(nextMode);
-    saveInteractionGuideMode(nextMode);
-    setLiveDimEditor(null);
-    setLiveDimensions([]);
-    setIsSettingReferencePoint(false);
-  }, []);
+  const [pinnedMeetingPoints, setPinnedMeetingPoints] = useState<Vec2[]>([]);
+
+  const handleSetInteractionGuideMode = useCallback(
+    (nextMode: InteractionGuideMode) => {
+      setInteractionGuideModeState(nextMode);
+      saveInteractionGuideMode(nextMode);
+      setLiveDimEditor(null);
+      setLiveDimensions([]);
+      setIsSettingReferencePoint(false);
+
+      if (nextMode !== "off") {
+        const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+        const viewportCenter: Vec2 = {
+          x: Number(((canvasSize.w / 2 - view.tx) / safeK).toFixed(2)),
+          y: Number(((canvasSize.h / 2 - view.ty) / safeK).toFixed(2)),
+        };
+        const currentOrigin =
+          temporaryOrigin?.p ??
+          (pending.length > 0 ? pending[pending.length - 1]! : viewportCenter);
+
+        if (!temporaryOrigin) {
+          setTemporaryOrigin({
+            id: "ref_origin",
+            p: currentOrigin,
+            label: "REF 0,0",
+          });
+        }
+
+        // Garante que o ponto final (X, Y) esteja deslocado de (X0, Y0) para aparição imediata no canvas
+        const cur = cursorRef.current;
+        if (Math.hypot(cur.x - currentOrigin.x, cur.y - currentOrigin.y) < 8 / safeK) {
+          const initialTarget: Vec2 = {
+            x: Number((currentOrigin.x + 120 / safeK).toFixed(2)),
+            y: Number((currentOrigin.y - 80 / safeK).toFixed(2)),
+          };
+          cursorRef.current = initialTarget;
+          setCursor(initialTarget);
+        }
+      }
+    },
+    [view.k, view.tx, view.ty, canvasSize.w, canvasSize.h, temporaryOrigin, pending],
+  );
   const [showGlobalCoordsPeek, setShowGlobalCoordsPeek] = useState<boolean>(false);
 
   const clipboardRef = useRef<ChamferClipboard | null>(null);
@@ -2047,6 +2082,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     (p: Vec2): Vec2 => {
       if (!snapOn) return p;
       const tol = (nudgeHudVisible ? 6 : 12) / view.k;
+
+      // Prioridade máxima para Pontos de Encontro Roxos (+) confirmados
+      for (const mp of pinnedMeetingPoints) {
+        if (dist(p, mp) <= tol * 1.35) {
+          return { x: mp.x, y: mp.y };
+        }
+      }
+
       const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
       const smart = findSmartSnap(p, entities, tol, activeStart ?? null, tool, selection, snapDivision);
       if (smart) return smart.p;
@@ -2060,7 +2103,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const s = findSnap(p, near(p, tol * 2), tol, grid, { grid: showGrid, object: true });
       return s ? s.p : p;
     },
-    [snapOn, view.k, pending, entities, tool, selection, snapDivision, nudgeHudVisible, near, grid, showGrid, drawingProjection, isoPlane],
+    [snapOn, view.k, pinnedMeetingPoints, pending, entities, tool, selection, snapDivision, nudgeHudVisible, near, grid, showGrid, drawingProjection, isoPlane],
   );
 
   /* ---------------------------------------- pintura em canvas (por sujidade) */
@@ -3564,9 +3607,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         sourceEntityId: undefined,
       });
       setIsSettingReferencePoint(false);
-      setInteractionGuideModeState("purple_ref");
-      saveInteractionGuideMode("purple_ref");
-      setCursor(p);
+      if (interactionGuideMode === "off") {
+        setInteractionGuideModeState("purple_ref");
+        saveInteractionGuideMode("purple_ref");
+      }
+      const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+      const displacedCursor: Vec2 = {
+        x: Number((p.x + 100 / safeK).toFixed(2)),
+        y: Number((p.y - 70 / safeK).toFixed(2)),
+      };
+      cursorRef.current = displacedCursor;
+      setCursor(displacedCursor);
       triggerHaptic("action");
       toast.success(`Ponto de Referência fixado: (${p.x.toFixed(2)}, ${p.y.toFixed(2)} mm)`);
       return;
@@ -3574,8 +3625,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     // Aplica restrições dimensionais reais se houver medidas fixas ativas
     const constraintBase =
-      interactionGuideMode === "blue_line" && pending.length > 0
-        ? pending[pending.length - 1]!
+      interactionGuideMode === "blue_line"
+        ? pending.length > 0
+          ? pending[pending.length - 1]!
+          : temporaryOrigin?.p ?? null
         : interactionGuideMode === "purple_ref" && temporaryOrigin
           ? temporaryOrigin.p
           : null;
@@ -4555,32 +4608,55 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (snapOn) {
       const tol = (nudgeHudVisible ? 6 : 12) / view.k;
       const hysteresisTol = smartSnap ? tol * 1.35 : tol;
-      const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
-      const smart = findSmartSnap(raw, entities, hysteresisTol, activeStart ?? null, tool, selection, snapDivision);
-      setSmartSnap(smart);
-      if (smart) {
-        setSnapHit(null);
-        currentSnapPt = smart.p;
-      } else {
-        if (drawingProjection === "isometric" && showGrid) {
-          const isoG = snapToIsoGrid(raw, grid, isoPlane);
-          if (dist(raw, isoG) <= tol * 1.5) {
-            currentSnapPt = isoG;
-          }
+
+      // Verifica primeiro os Pontos de Encontro Roxos (+) confirmados
+      let matchedPinned: Vec2 | null = null;
+      for (const mp of pinnedMeetingPoints) {
+        if (dist(raw, mp) <= hysteresisTol) {
+          matchedPinned = mp;
+          break;
         }
-        const sh = findSnap(raw, near(raw, tol * 2), tol, grid, { grid: showGrid, object: true });
-        setSnapHit(sh);
-        if (sh) currentSnapPt = sh.p;
+      }
+
+      if (matchedPinned) {
+        setSmartSnap({
+          p: matchedPinned,
+          kind: "intersection",
+          label: "Ponto de Encontro (+)",
+          priority: 100,
+        });
+        setSnapHit(null);
+        currentSnapPt = matchedPinned;
+      } else {
+        const activeStart = pending.length > 0 ? pending[pending.length - 1] : null;
+        const smart = findSmartSnap(raw, entities, hysteresisTol, activeStart ?? null, tool, selection, snapDivision);
+        setSmartSnap(smart);
+        if (smart) {
+          setSnapHit(null);
+          currentSnapPt = smart.p;
+        } else {
+          if (drawingProjection === "isometric" && showGrid) {
+            const isoG = snapToIsoGrid(raw, grid, isoPlane);
+            if (dist(raw, isoG) <= tol * 1.5) {
+              currentSnapPt = isoG;
+            }
+          }
+          const sh = findSnap(raw, near(raw, tol * 2), tol, grid, { grid: showGrid, object: true });
+          setSnapHit(sh);
+          if (sh) currentSnapPt = sh.p;
+        }
       }
     } else {
       setSmartSnap(null);
       setSnapHit(null);
     }
 
-    // Aplica restrições dimensionais reais (L, ΔX, ΔY, d) se ativas no modo atual
+    // Aplica restrições dimensionais reais (L, ∠, ΔX, ΔY, d) se ativas no modo atual
     const constraintBase =
-      interactionGuideMode === "blue_line" && pending.length > 0
-        ? pending[pending.length - 1]!
+      interactionGuideMode === "blue_line"
+        ? pending.length > 0
+          ? pending[pending.length - 1]!
+          : temporaryOrigin?.p ?? null
         : interactionGuideMode === "purple_ref" && temporaryOrigin
           ? temporaryOrigin.p
           : null;
@@ -6765,15 +6841,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             interactionGuideMode={interactionGuideMode}
             onSetInteractionGuideMode={handleSetInteractionGuideMode}
             onStartSetReferencePoint={() => {
-              if (interactionGuideMode !== "purple_ref") {
+              if (interactionGuideMode === "off") {
                 handleSetInteractionGuideMode("purple_ref");
               }
               setIsSettingReferencePoint(true);
-              toast.info("Toque no vértice, centro ou ponto desejado para fixar a REF");
+              toast.info("Toque no vértice, centro ou ponto desejado para fixar o Centro de Referência");
             }}
             temporaryOrigin={temporaryOrigin}
             onClearTemporaryOrigin={() => {
               setTemporaryOrigin(null);
+              setPinnedMeetingPoints([]);
+              setLockedConstraints({});
               toast.success("Ponto de referência limpo");
             }}
             dimKind={dimKind}
@@ -7969,7 +8047,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               )}
 
-              {/* OVERLAY DE COTAS VIVAS, REF 0,0 E BORDA ATIVA */}
+              {/* OVERLAY DE COTAS VIVAS, REFERÊNCIA DE CRIAÇÃO DE LINHA (AZUL) E REFERÊNCIA DE PONTO DE ENCONTRO (ROXA) */}
               {(() => {
                 const selectedSingleLine =
                   selection.length === 1 && pending.length === 0
@@ -7980,7 +8058,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     ? pending[pending.length - 1]!
                     : selectedSingleLine && selectedSingleLine.type === "line"
                       ? { x: selectedSingleLine.x1, y: selectedSingleLine.y1 }
-                      : null;
+                      : temporaryOrigin?.p ?? null;
                 const overlayCursor: Vec2 =
                   selectedSingleLine && selectedSingleLine.type === "line" && pending.length === 0
                     ? { x: selectedSingleLine.x2, y: selectedSingleLine.y2 }
@@ -8004,6 +8082,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     isDark={isDark}
                     cursor={overlayCursor}
                     activeStartPoint={activeStartPt}
+                    pinnedMeetingPoints={pinnedMeetingPoints}
+                    entities={entities}
                     pendingShape={pendingShapeSpec}
                     interactionGuideMode={interactionGuideMode}
                     lockedConstraints={effectiveConstraints}
@@ -8011,6 +8091,70 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       touchInteractionState === "MULTITOUCH_NAVIGATION" ||
                       touchInteractionState === "POST_GESTURE_COOLDOWN"
                     }
+                    onConfirmReferenceAction={(originPt, targetPt, mode) => {
+                      if (mode === "blue_line") {
+                        // Cria e grava definitivamente no desenho CAD o segmento de linha real de (X0, Y0) até (X, Y)
+                        const len = Math.hypot(targetPt.x - originPt.x, targetPt.y - originPt.y);
+                        if (len < 0.05) {
+                          toast.info("Desloque o ponto final para criar a linha.");
+                          return;
+                        }
+                        const newLine: Entity = {
+                          id: uid(),
+                          layer: activeLayer,
+                          type: "line",
+                          x1: Number(originPt.x.toFixed(4)),
+                          y1: Number(originPt.y.toFixed(4)),
+                          x2: Number(targetPt.x.toFixed(4)),
+                          y2: Number(targetPt.y.toFixed(4)),
+                          params:
+                            Object.keys(effectiveConstraints).length > 0
+                              ? { lockedConstraints: { ...effectiveConstraints } }
+                              : undefined,
+                        };
+                        commit((prev) => [...prev, newLine]);
+                        setPending([]);
+                        setDraft(null);
+                        setTemporaryOrigin({
+                          id: "ref_origin",
+                          p: { x: targetPt.x, y: targetPt.y },
+                          label: "REF 0,0",
+                        });
+                        triggerHaptic("success");
+                        toast.success(
+                          `✓ Linha criada (L = ${len.toFixed(1)} mm) no desenho CAD.`,
+                        );
+                      } else if (mode === "purple_ref") {
+                        // Fixa definitivamente a Cruz (+) Roxa Pontilhada no ponto de encontro diagonal (X, Y)
+                        const fixedPt: Vec2 = {
+                          x: Number(targetPt.x.toFixed(4)),
+                          y: Number(targetPt.y.toFixed(4)),
+                        };
+                        setPinnedMeetingPoints((prev) => [...prev, fixedPt]);
+                        cursorRef.current = fixedPt;
+                        setCursor(fixedPt);
+                        triggerHaptic("success");
+                        toast.success(
+                          `✓ Cruz (+) de Ponto de Encontro fixada em (${fixedPt.x.toFixed(1)}, ${fixedPt.y.toFixed(1)}) mm.`,
+                        );
+                      }
+                    }}
+                    onCancelReferenceAction={() => {
+                      setLockedConstraints({});
+                      if (temporaryOrigin) {
+                        const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                        const resetTarget: Vec2 = {
+                          x: Number((temporaryOrigin.p.x + 80 / safeK).toFixed(2)),
+                          y: Number((temporaryOrigin.p.y - 60 / safeK).toFixed(2)),
+                        };
+                        cursorRef.current = resetTarget;
+                        setCursor(resetTarget);
+                      }
+                      setPending([]);
+                      setDraft(null);
+                      triggerHaptic("selection");
+                      toast.info("Deslocamento da referência cancelado.");
+                    }}
                     onEditMeasure={(kind, currentVal, screenPos) => {
                       preEditKeypadSnapshotRef.current = {
                         cursor: { ...cursor },
@@ -8019,27 +8163,38 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       const anchorPt =
                         interactionGuideMode === "purple_ref" && temporaryOrigin
                           ? temporaryOrigin.p
-                          : activeStartPt ?? { x: 0, y: 0 };
-                      const dimKindMap: Record<ConstrainableMeasureKind, "dx" | "dy" | "length" | "distance"> = {
+                          : activeStartPt ?? temporaryOrigin?.p ?? { x: 0, y: 0 };
+                      const dimKindMap: Record<ConstrainableMeasureKind, LiveDimension["kind"]> = {
                         dx: "dx",
                         dy: "dy",
                         L: "length",
+                        angle: "angle",
                         d: "distance",
+                        offset: "offset",
+                        u_along: "u_along",
+                        radius: "radius",
+                        diameter: "diameter",
                       };
                       const labelMap: Record<ConstrainableMeasureKind, string> = {
                         dx:
                           interactionGuideMode === "purple_ref"
-                            ? "ΔX a partir da REF (mm)"
+                            ? "ΔX do Ponto de Encontro (mm)"
                             : "ΔX da Linha (mm)",
                         dy:
                           interactionGuideMode === "purple_ref"
-                            ? "ΔY a partir da REF (mm)"
+                            ? "ΔY do Ponto de Encontro (mm)"
                             : "ΔY da Linha (mm)",
                         L: "Comprimento L da Linha (mm)",
-                        d: "Distância Direta d da REF (mm)",
+                        angle: "Ângulo Livre ∠ da Linha (°)",
+                        d: "Distância Diagonal d (mm)",
+                        offset: "Offset (mm)",
+                        u_along: "Posição Longitudinal u (mm)",
+                        radius: "Raio R (mm)",
+                        diameter: "Diâmetro Ø (mm)",
                       };
                       const isCurrentlyLocked =
                         (kind === "L" && effectiveConstraints.lockedL != null) ||
+                        (kind === "angle" && effectiveConstraints.lockedAngle != null) ||
                         (kind === "dx" && effectiveConstraints.lockedDx != null) ||
                         (kind === "dy" && effectiveConstraints.lockedDy != null) ||
                         (kind === "d" && effectiveConstraints.lockedDist != null);
@@ -8116,6 +8271,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     }}
                     onClearTemporaryOrigin={() => {
                       setTemporaryOrigin(null);
+                      setPinnedMeetingPoints([]);
                       toast.success("Origem temporária limpa");
                     }}
                     onInvertEdgeSide={() => {
@@ -10138,8 +10294,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           allowInvert={liveDimEditor.allowInvert}
           allowLock={Boolean(liveDimEditor.measureKind)}
           initialLocked={Boolean(liveDimEditor.initialLocked)}
+          unit={liveDimEditor.measureKind === "angle" ? "°" : "mm"}
           allowNegative={
-            liveDimEditor.measureKind === "dx" || liveDimEditor.measureKind === "dy"
+            liveDimEditor.measureKind === "dx" ||
+            liveDimEditor.measureKind === "dy" ||
+            liveDimEditor.measureKind === "angle"
           }
           onInvertSide={() => {
             setActiveEdgeSide((prev) => (prev === 1 ? -1 : 1));
@@ -10149,6 +10308,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             if (!liveDimEditor.measureKind) return;
             const tempConstraints: DimensionalConstraints = { ...lockedConstraints };
             if (liveDimEditor.measureKind === "L") tempConstraints.lockedL = previewVal;
+            if (liveDimEditor.measureKind === "angle") {
+              tempConstraints.lockedAngle = ((previewVal % 360) + 360) % 360;
+            }
             if (liveDimEditor.measureKind === "dx") {
               tempConstraints.lockedDx = Math.abs(previewVal);
               tempConstraints.signDx = previewVal >= 0 ? 1 : -1;
@@ -10229,11 +10391,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     const nextEntLocked: DimensionalConstraints = { ...prevLocked };
                     if (lockMeasure) {
                       if (mKind === "L") nextEntLocked.lockedL = newVal;
+                      if (mKind === "angle") nextEntLocked.lockedAngle = ((newVal % 360) + 360) % 360;
                       if (mKind === "dx") nextEntLocked.lockedDx = newVal;
                       if (mKind === "dy") nextEntLocked.lockedDy = newVal;
                       if (mKind === "d") nextEntLocked.lockedDist = newVal;
                     } else {
                       if (mKind === "L") delete nextEntLocked.lockedL;
+                      if (mKind === "angle") delete nextEntLocked.lockedAngle;
                       if (mKind === "dx") delete nextEntLocked.lockedDx;
                       if (mKind === "dy") delete nextEntLocked.lockedDy;
                       if (mKind === "d") delete nextEntLocked.lockedDist;
@@ -10265,10 +10429,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
               preEditKeypadSnapshotRef.current = null;
               triggerHaptic("success");
+              const unitSuffix = mKind === "angle" ? "°" : " mm";
+              const kindDisplay =
+                mKind === "dx"
+                  ? "ΔX"
+                  : mKind === "dy"
+                    ? "ΔY"
+                    : mKind === "angle"
+                      ? "∠"
+                      : mKind;
               toast.success(
                 lockMeasure
-                  ? `🔒 ${mKind === "dx" ? "ΔX" : mKind === "dy" ? "ΔY" : mKind} fixado em ${newVal.toFixed(1)} mm`
-                  : `✓ ${mKind === "dx" ? "ΔX" : mKind === "dy" ? "ΔY" : mKind} ajustado para ${newVal.toFixed(1)} mm`,
+                  ? `🔒 ${kindDisplay} fixado em ${newVal.toFixed(1)}${unitSuffix}`
+                  : `✓ ${kindDisplay} ajustado para ${newVal.toFixed(1)}${unitSuffix}`,
               );
               setLiveDimEditor(null);
               return;
