@@ -25,6 +25,7 @@ import {
   Maximize2,
   Minimize2,
   Box,
+  ScanEye,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
@@ -35,7 +36,7 @@ import { ChamferPropertiesTab } from "./ChamferPropertiesTab";
 import { ChamferLayersTab } from "./ChamferLayersTab";
 import { ChamferCutTab } from "./ChamferCutTab";
 
-export type ChamferSidebarTab = "propriedades" | "camadas" | "corte" | "cotas";
+export type ChamferSidebarTab = "propriedades" | "camadas" | "corte" | "cotas" | "eng_rev";
 
 interface ChamferRightSidebarProps {
   open: boolean;
@@ -73,6 +74,7 @@ interface ChamferRightSidebarProps {
   dimSel?: string | null;
   onDimSelect?: (id: string | null) => void;
   renderCotas?: () => React.ReactNode;
+  renderRevEng?: () => React.ReactNode;
   onDivideEntity?: (e: Entity) => void;
   // Callbacks de corte
   onHighlightCut?: (cand: ShareCandidate | null) => void;
@@ -112,6 +114,7 @@ export function ChamferRightSidebar({
   dimSel = null,
   onDimSelect,
   renderCotas,
+  renderRevEng,
   onDivideEntity,
   onHighlightCut,
   isDark = true,
@@ -135,7 +138,7 @@ export function ChamferRightSidebar({
             triggerHaptic("selection");
             onToggleOpen();
           }}
-          title="Expandir Janela Lateral Direita (Propriedades / Camadas / Corte)"
+          title="Expandir Janela Lateral Direita (Propriedades / Camadas / Corte / Eng. Reversa)"
           aria-label="Expandir Janela Lateral"
           className={cn(
             "mb-3 flex size-7 items-center justify-center rounded-full border transition-colors cursor-pointer",
@@ -211,6 +214,30 @@ export function ChamferRightSidebar({
           >
             <Scissors className="size-3.5" />
           </button>
+
+          {/* ENG. REV. (ENGENHARIA REVERSA E BANCADA MECÂNICA) */}
+          {renderRevEng && (
+            <button
+              type="button"
+              data-testid="chamfer-minidock-tab-eng-rev"
+              onClick={() => {
+                triggerHaptic("selection");
+                onTabChange("eng_rev");
+                onToggleOpen();
+              }}
+              title="Engenharia Reversa e Bancada Mecânica (ENG. REV.)"
+              className={cn(
+                "flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer",
+                activeTab === "eng_rev"
+                  ? "bg-[#E11D48] text-white shadow-xs"
+                  : isDark
+                    ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
+                    : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]"
+              )}
+            >
+              <ScanEye className="size-3.5" />
+            </button>
+          )}
 
           {/* COTAS */}
           {dims.length > 0 && (
@@ -325,6 +352,29 @@ export function ChamferRightSidebar({
             <span>CORTE</span>
           </button>
 
+          {/* ABA ENG. REV. (ENGENHARIA REVERSA E BANCADA MECÂNICA) */}
+          {renderRevEng && (
+            <button
+              type="button"
+              data-testid="chamfer-sidebar-tab-eng-rev"
+              onClick={() => {
+                triggerHaptic("selection");
+                onTabChange("eng_rev");
+              }}
+              className={cn(
+                "flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer shrink-0",
+                activeTab === "eng_rev"
+                  ? "bg-[#E11D48] text-white shadow-xs"
+                  : isDark
+                    ? "text-[#94A3B8] hover:bg-[#151C27] hover:text-[#E6EDF5]"
+                    : "text-[#64748B] hover:bg-[#FFFFFF] hover:text-[#1E293B]"
+              )}
+            >
+              <ScanEye className="size-3" />
+              <span>ENG. REV.</span>
+            </button>
+          )}
+
           {/* ABA COTAS (quando disponível) */}
           {renderCotas && (
             <button
@@ -334,7 +384,7 @@ export function ChamferRightSidebar({
                 onTabChange("cotas");
               }}
               className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer",
+                "flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer shrink-0",
                 activeTab === "cotas"
                   ? "bg-[#E11D48] text-white shadow-xs"
                   : isDark
@@ -431,6 +481,8 @@ export function ChamferRightSidebar({
             isDark={isDark}
           />
         )}
+
+        {activeTab === "eng_rev" && renderRevEng?.()}
 
         {activeTab === "cotas" && (
           <div className="p-1">

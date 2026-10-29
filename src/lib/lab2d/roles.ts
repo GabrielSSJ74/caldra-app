@@ -55,11 +55,19 @@ export const ROLE_LABEL: Record<ManufacturingRole, string> = {
 /** Camada semântica do desenho → papel de fabricação. Nunca por cor. */
 export const ROLE_BY_LAYER: Record<string, ManufacturingRole> = {
   corte: "CUT",
+  corte_externo: "CUT",
+  corte_interno_furos: "CUT",
   recorte: "RECORTE",
+  cavidade_rebaixo: "RECORTE",
   marcacao: "MARK",
   dobra: "BEND",
   referencia: "REFERENCE",
   construcao: "REFERENCE",
+  linhas_centro: "REFERENCE",
+  ref_imagem: "REFERENCE",
+  ref_pontos_medidos: "REFERENCE",
+  ref_cotas_campo: "DIMENSION",
+  ref_hipoteses: "REFERENCE",
   cota: "DIMENSION",
 };
 

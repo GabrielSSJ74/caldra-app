@@ -373,7 +373,7 @@ export function ChamferDirectDimensionEditor({
               </span>
             </div>
             <span className={cn("font-mono text-[8.5px]", isDark ? "text-[#94A3B8]" : "text-[#64748B]")}>
-              Atual: {String(Number(currentValue.toFixed(2))).replace(".", ",")} {unit}
+              Atual: {String(Number((Number.isFinite(currentValue) ? currentValue : 0).toFixed(2))).replace(".", ",")} {unit}
             </span>
           </div>
 

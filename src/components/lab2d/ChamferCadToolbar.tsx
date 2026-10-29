@@ -74,6 +74,7 @@ import {
 import type { Tool } from "./Lab2DEditor";
 import type { DimKind } from "@/lib/lab2d/dimensions";
 import type { CursorOffsetMode, LoupeHudMode } from "@/lib/lab2d/cadInteractionHub";
+import type { RevEngCategoryId, RevEngWizardStep } from "@/lib/lab2d/revEngTypes";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
@@ -207,6 +208,7 @@ interface ChamferCadToolbarProps {
   onBoolean2D?: (op: "union" | "subtract" | "intersect") => void;
   onCreateHatch?: () => void;
   onSetRefZero?: () => void;
+  onOpenRevEngCategory?: (category: RevEngCategoryId, wizardStep?: RevEngWizardStep) => void;
 
   className?: string;
   isDark?: boolean;
@@ -290,6 +292,7 @@ export function ChamferCadToolbar({
   onBoolean2D,
   onCreateHatch,
   onSetRefZero,
+  onOpenRevEngCategory,
   className,
   isDark = true,
 }: ChamferCadToolbarProps) {
@@ -940,6 +943,20 @@ export function ChamferCadToolbar({
                         desc="Transforma a seleção ativa do documento para perspectiva isométrica analítica 2D/2.5D"
                       />
                     )}
+                    {onOpenRevEngCategory && (
+                      <FlyoutItem
+                        label="Reconstruir Peça (Eng. Reversa)"
+                        keyLabel="REV"
+                        badge="1:1"
+                        icon={Compass}
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          onOpenRevEngCategory("referencias", "A");
+                          setOpenCat("none");
+                        }}
+                        desc="Assistente guiado (A→F), captura de contorno e ajuste ortogonal"
+                      />
+                    )}
 
                     <div className="my-1 h-px bg-slate-800" />
 
@@ -1254,6 +1271,19 @@ export function ChamferCadToolbar({
                           setOpenCat("none");
                         }}
                         desc="Busca instantânea de comandos e operações"
+                      />
+                    )}
+                    {onOpenRevEngCategory && (
+                      <FlyoutItem
+                        label="Ajustar Contorno Medido (LSQ)"
+                        keyLabel="FIT"
+                        icon={Compass}
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          onOpenRevEngCategory("contorno_ajuste", "C");
+                          setOpenCat("none");
+                        }}
+                        desc="Ajuste ortogonal de reta, círculo, arco curto e polilinha RDP"
                       />
                     )}
                   </div>
@@ -1739,6 +1769,23 @@ export function ChamferCadToolbar({
                       }}
                       desc="Ângulo entre duas retas"
                     />
+                    {onOpenRevEngCategory && (
+                      <>
+                        <div className="my-1 h-px bg-slate-800" />
+                        <FlyoutItem
+                          label="Caderno de Medições & Calibração 1:1"
+                          keyLabel="REV"
+                          badge="ENG"
+                          icon={Ruler}
+                          onClick={() => {
+                            triggerHaptic("selection");
+                            onOpenRevEngCategory("caderno", "B");
+                            setOpenCat("none");
+                          }}
+                          desc="Paquímetro, trena, micrômetro, incerteza ±mm e calibração multi-ref"
+                        />
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -1890,6 +1937,22 @@ export function ChamferCadToolbar({
                       }}
                       desc="Furação distribuída em flange circular (PCD)"
                     />
+                    {onOpenRevEngCategory && (
+                      <>
+                        <div className="my-1 h-px bg-slate-800" />
+                        <FlyoutItem
+                          label="Bancada de Furos e Cadeias (Eng. Rev.)"
+                          keyLabel="PCD"
+                          icon={CircleDot}
+                          onClick={() => {
+                            triggerHaptic("selection");
+                            onOpenRevEngCategory("furos_cadeias", "D");
+                            if (!isPinned) setOpenCat("none");
+                          }}
+                          desc="Cálculo de PCD por corda, furos por borda/parede e rasgos"
+                        />
+                      </>
+                    )}
                   </div>
                 )}
         </div>

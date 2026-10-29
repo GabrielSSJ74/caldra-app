@@ -353,6 +353,16 @@ import { DynamicDimensionInteraction, DimensionInteractionEngine, type LiveDimen
 import { GeometricConstraintResolver } from "@/lib/lab2d/cadConstraintResolver";
 import { ChamferLiveDimensionsOverlay } from "./ChamferLiveDimensionsOverlay";
 import {
+  createDefaultRevEngPlanData,
+  sanitizeRevEngPlanData,
+  type RevEngPlanData,
+  type RevEngCategoryId,
+  type RevEngWizardStep,
+  type RevEngCanvasInteractionMode,
+  type FittedPrimitiveCandidate,
+} from "@/lib/lab2d/revEngTypes";
+import { ChamferRevEngTab } from "./sidebar/ChamferRevEngTab";
+import {
   type IsoPlane,
   type DrawingProjectionMode,
   ISO_PLANES,
@@ -991,6 +1001,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [importOpen, setImportOpen] = useState(false);
   const [visionOpen, setVisionOpen] = useState(false);
   const [imageLayer, setImageLayer] = useState<VisionImageLayer | null>(null);
+  /* ENGENHARIA REVERSA E BANCADA MECÂNICA (FASE B — PERSISTIDO POR PLANO) */
+  const [revEngData, setRevEngData] = useState<RevEngPlanData>(() =>
+    sanitizeRevEngPlanData(initialPlan?.revEng),
+  );
+  const [revEngCanvasMode, setRevEngCanvasMode] = useState<RevEngCanvasInteractionMode>("none");
+  const [revEngPickPoints, setRevEngPickPoints] = useState<Vec2[]>([]);
+  const [revEngFittedPreview, setRevEngFittedPreview] = useState<FittedPrimitiveCandidate | null>(null);
   const [issues, setIssues] = useState<{ message: string; p: Vec2 }[] | null>(null);
   const [offsetDist, setOffsetDist] = useState(5);
   const [filletR, setFilletR] = useState(10);
@@ -1679,6 +1696,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setGroups(plan.groups ?? []);
     setDims(plan.dims ?? []);
     setCad3dTreeJson(plan.cad3dTreeJson);
+    setRevEngData(sanitizeRevEngPlanData(plan.revEng));
+    setRevEngCanvasMode("none");
+    setRevEngPickPoints([]);
+    setRevEngFittedPreview(null);
     setThickness(p.thickness ?? DEFAULT_PLAN_THICKNESS);
     past.current = [];
     future.current = [];
@@ -1743,7 +1764,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       lastPlanId: planId,
       plans: project.plans.map((pl) =>
         pl.id === planId
-          ? { ...pl, entities, groups: live, dims: pruneDimensions(dims, entities), cad3dTreeJson }
+          ? {
+              ...pl,
+              entities,
+              groups: live,
+              dims: pruneDimensions(dims, entities),
+              cad3dTreeJson,
+              revEng: revEngData,
+            }
           : pl,
       ),
     };
@@ -1752,7 +1780,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setTimeout(() => {
       setSaveStatus("salvo");
     }, 400);
-  }, [project, planId, entities, groups, layers, thickness, dims, cad3dTreeJson]);
+  }, [project, planId, entities, groups, layers, thickness, dims, cad3dTreeJson, revEngData]);
 
   const handleManualSave = useCallback(() => {
     triggerHaptic("action");
@@ -4096,6 +4124,59 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
+    // CAPTURA DE PONTOS E CALIBRAÇÃO DA ENGENHARIA REVERSA (FASE B)
+    if (revEngCanvasMode !== "none") {
+      if (revEngCanvasMode === "capture_contour_pts") {
+        const ptIdx = revEngData.capturedPoints.length + 1;
+        setRevEngData((prev) => ({
+          ...prev,
+          capturedPoints: [
+            ...prev.capturedPoints,
+            {
+              id: uid(),
+              x: Number(p.x.toFixed(3)),
+              y: Number(p.y.toFixed(3)),
+              source: "manual_touch",
+              uncertaintyMm: 0.1,
+            },
+          ],
+        }));
+        triggerHaptic("selection");
+        toast.success(`✓ Ponto P${ptIdx} capturado (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm`);
+        return;
+      }
+
+      if (revEngCanvasMode === "pick_cal_2pt" || revEngCanvasMode === "pick_cal_multiref") {
+        setRevEngPickPoints((prev) => {
+          const next = prev.length >= 2 ? [p] : [...prev, p];
+          triggerHaptic("selection");
+          if (next.length === 1) {
+            toast.info("1º ponto de referência marcado — toque no 2º ponto da cota conhecida.");
+          } else {
+            toast.success(
+              `✓ 2º ponto marcado (distância: ${dist(next[0]!, next[1]!).toFixed(2)} unid.) — informe o comprimento real em mm na aba ENG. REV.`,
+            );
+          }
+          return next;
+        });
+        return;
+      }
+
+      if (revEngCanvasMode === "pick_homography_4pt") {
+        setRevEngPickPoints((prev) => {
+          const next = prev.length >= 4 ? [p] : [...prev, p];
+          triggerHaptic("selection");
+          if (next.length < 4) {
+            toast.info(`Canto C${next.length}/4 marcado — toque no canto C${next.length + 1}.`);
+          } else {
+            toast.success("✓ 4 cantos C1–C4 marcados! Clique em Retificar Perspectiva na aba ENG. REV.");
+          }
+          return next;
+        });
+        return;
+      }
+    }
+
     // DEFINIR PARTIDA: o próximo clique com snap vira o início do caminho
     if (startPicking) {
       const target = entities.find((e) => selection.includes(e.id) && isCutPath(e));
@@ -6238,10 +6319,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     canvasHeight: canvasSize.h,
   });
 
-  // Contextual CAD: ao selecionar entidade(s), foca na aba Propriedades
+  // Contextual CAD: ao selecionar entidade(s), foca na aba Propriedades (exceto se o usuário estiver na bancada ENG. REV.)
   useEffect(() => {
     if (selected.length > 0) {
-      setActiveSidebarTab((prev) => (prev === "propriedades" ? prev : "propriedades"));
+      setActiveSidebarTab((prev) =>
+        prev === "propriedades" || prev === "eng_rev" ? prev : "propriedades",
+      );
     }
   }, [selected.length]);
 
@@ -7433,6 +7516,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               triggerHaptic("success");
               toast.success(`REF (0,0) fixada em (${cursor.x.toFixed(1)}, ${cursor.y.toFixed(1)}) mm`);
             }}
+            onOpenRevEngCategory={(category: RevEngCategoryId, wizardStep?: RevEngWizardStep) => {
+              setRevEngData((prev) => ({
+                ...prev,
+                activeCategory: category,
+                activeWizardStep: wizardStep ?? prev.activeWizardStep,
+              }));
+              setActiveSidebarTab("eng_rev");
+              setRightSidebarOpen(true);
+            }}
             isDark={isDark}
           />
         )}
@@ -7741,6 +7833,39 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 />
               )}
 
+              {/* IMAGENS DE REFERÊNCIA DA BANCADA DE ENGENHARIA REVERSA (CALIBRADAS 1:1 — NUNCA VIRAM CORTE CNC) */}
+              {!solidOpen &&
+                outputMode === "completo" &&
+                revEngData.referenceImages
+                  .filter((img) => img.visible && (img.rectifiedSrc || img.src))
+                  .map((img) => {
+                    const wMm = Math.max(1, img.widthMm || img.naturalWidthPx * img.mmPerPx);
+                    const hMm = Math.max(1, img.heightMm || img.naturalHeightPx * img.mmPerPx);
+                    const cx = img.xMm + wMm / 2;
+                    const cy = img.yMm + hMm / 2;
+                    return (
+                      <g
+                        key={`reveng-img-${img.id}`}
+                        pointerEvents="none"
+                        transform={
+                          Math.abs(img.rotationDeg) > 1e-3
+                            ? `rotate(${img.rotationDeg} ${cx} ${cy})`
+                            : undefined
+                        }
+                      >
+                        <image
+                          href={img.rectifiedSrc || img.src}
+                          x={img.xMm}
+                          y={img.yMm}
+                          width={wMm}
+                          height={hMm}
+                          opacity={img.opacity}
+                          preserveAspectRatio="none"
+                        />
+                      </g>
+                    );
+                  })}
+
               {/* Eixos do Sistema de Coordenadas CAD (alinhados a (0,0) - visíveis quando showGrid está ativo) */}
               {!solidOpen && showGrid && (
                 <g pointerEvents="none" aria-label="Eixos do sistema CAD">
@@ -8011,6 +8136,83 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     ))}
                   </g>
                 )}
+
+              {/* PRÉVIA E MARCADORES DA ENGENHARIA REVERSA (PONTOS CAPTURADOS, CALIBRAÇÃO E AJUSTE ORTOGONAL LSQ) */}
+              {!solidOpen && (() => {
+                const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                return (
+                  <g className="chamfer-reveng-overlay pointer-events-none">
+                    {/* Pontos de contorno capturados */}
+                    {revEngData.capturedPoints.map((pt, idx) => (
+                      <g key={`reveng-cap-pt-${pt.id || idx}`}>
+                        <circle
+                          cx={pt.x}
+                          cy={pt.y}
+                          r={3.5 / safeK}
+                          fill="#F59E0B"
+                          stroke="#0B0F14"
+                          strokeWidth={1.2 / safeK}
+                        />
+                        <text
+                          x={pt.x + 5 / safeK}
+                          y={pt.y - 4 / safeK}
+                          fontSize={8.5 / safeK}
+                          fontFamily="ui-monospace, monospace"
+                          fontWeight="700"
+                          fill="#FBBF24"
+                        >
+                          {`P${idx + 1}`}
+                        </text>
+                      </g>
+                    ))}
+
+                    {/* Pontos de calibração / homografia marcados no canvas */}
+                    {revEngPickPoints.length >= 2 && (
+                      <polyline
+                        points={[
+                          ...revEngPickPoints.map((p) => `${p.x},${p.y}`),
+                          ...(revEngPickPoints.length === 4
+                            ? [`${revEngPickPoints[0]!.x},${revEngPickPoints[0]!.y}`]
+                            : []),
+                        ].join(" ")}
+                        fill={revEngPickPoints.length === 4 ? "rgba(56, 189, 248, 0.08)" : "none"}
+                        stroke="#38BDF8"
+                        strokeWidth={1.6 / safeK}
+                        strokeDasharray={`${5 / safeK} ${3 / safeK}`}
+                      />
+                    )}
+                    {revEngPickPoints.map((pt, idx) => (
+                      <g key={`reveng-pick-${idx}`}>
+                        <circle
+                          cx={pt.x}
+                          cy={pt.y}
+                          r={4.5 / safeK}
+                          fill="#E11D48"
+                          stroke="#FFFFFF"
+                          strokeWidth={1.4 / safeK}
+                        />
+                        <text
+                          x={pt.x + 6 / safeK}
+                          y={pt.y - 5 / safeK}
+                          fontSize={9.5 / safeK}
+                          fontFamily="ui-monospace, monospace"
+                          fontWeight="700"
+                          fill="#38BDF8"
+                        >
+                          {revEngCanvasMode === "pick_homography_4pt" ? `C${idx + 1}` : `REF ${idx + 1}`}
+                        </text>
+                      </g>
+                    ))}
+
+                    {/* Prévia da primitiva ajustada por mínimos quadrados ortogonais */}
+                    {revEngFittedPreview?.entityPreview && (
+                      <g opacity={0.95}>
+                        <EntityShape e={revEngFittedPreview.entityPreview} k={safeK} preview />
+                      </g>
+                    )}
+                  </g>
+                );
+              })()}
 
               {!solidOpen && pending.length > 0 && tool === "polyline" && (
                 <polyline
@@ -9639,6 +9841,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   }}
                 />
               )}
+              renderRevEng={() => (
+                <ChamferRevEngTab
+                  revEng={revEngData}
+                  onChangeRevEng={setRevEngData}
+                  entities={entities}
+                  selection={selection}
+                  setSelection={setSelection}
+                  commit={commit}
+                  activeLayer={activeLayer}
+                  thickness={thickness}
+                  onThicknessChange={setThickness}
+                  canvasInteractionMode={revEngCanvasMode}
+                  onSetCanvasInteractionMode={setRevEngCanvasMode}
+                  pendingPickPointsWorld={revEngPickPoints}
+                  onClearPendingPickPoints={() => setRevEngPickPoints([])}
+                  fittedPreviewCandidate={revEngFittedPreview}
+                  onSetFittedPreviewCandidate={setRevEngFittedPreview}
+                  onOpenVisionModal={() => setVisionOpen(true)}
+                  isDark={isDark}
+                />
+              )}
               onHighlightCut={setShareHint}
               isDark={isDark}
             />
@@ -9672,7 +9895,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         ? {
                             ...prev,
                             plans: prev.plans.map((x) =>
-                              x.id === planId ? { ...x, entities, groups, dims, cad3dTreeJson } : x,
+                              x.id === planId
+                                ? { ...x, entities, groups, dims, cad3dTreeJson, revEng: revEngData }
+                                : x,
                             ),
                           }
                         : prev,
@@ -9691,6 +9916,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     setGroups(pl.groups ?? []);
                     setDims(pl.dims ?? []);
                     setCad3dTreeJson(pl.cad3dTreeJson);
+                    setRevEngData(sanitizeRevEngPlanData(pl.revEng));
+                    setRevEngCanvasMode("none");
+                    setRevEngPickPoints([]);
+                    setRevEngFittedPreview(null);
                     setSelection([]);
                     past.current = [];
                     future.current = [];
@@ -9720,7 +9949,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       ...project,
                       plans: [
                         ...project.plans.map((x) =>
-                          x.id === planId ? { ...x, entities, groups, dims, cad3dTreeJson } : x,
+                          x.id === planId
+                            ? { ...x, entities, groups, dims, cad3dTreeJson, revEng: revEngData }
+                            : x,
                         ),
                         plan,
                       ],
@@ -9733,6 +9964,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     setGroups([]);
                     setDims([]);
                     setCad3dTreeJson(undefined);
+                    setRevEngData(createDefaultRevEngPlanData());
+                    setRevEngCanvasMode("none");
+                    setRevEngPickPoints([]);
+                    setRevEngFittedPreview(null);
                     setSelection([]);
                     toast.success(`${plan.name} criado.`);
                   }}

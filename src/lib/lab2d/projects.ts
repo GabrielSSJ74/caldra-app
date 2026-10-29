@@ -7,6 +7,7 @@ import { DEFAULT_LAYERS, uid, type Entity, type Layer } from "./core";
 import type { GroupDef } from "./groups";
 import type { Dimension } from "./dimensions";
 import { techColor } from "./technical";
+import { sanitizeRevEngPlanData, type RevEngPlanData } from "./revEngTypes";
 
 const KEY = "caldra.lab2d.projects";
 const LEGACY_KEY = "chameleon.lab2d.projects";
@@ -23,6 +24,8 @@ export type Plan = {
   dims?: Dimension[];
   /** Árvore paramétrica 3D serializada associada ao plano (extrude_sketch vinculado + recursos 3D). */
   cad3dTreeJson?: string;
+  /** Dados persistentes de Engenharia Reversa e Bancada Mecânica (schema versionado). */
+  revEng?: RevEngPlanData;
 };
 
 export type Project = {
@@ -76,6 +79,7 @@ export function sanitizeProject(p: Project): Project {
       id: planId,
       name: pl.name || planLabel(idx),
       entities,
+      revEng: pl.revEng ? sanitizeRevEngPlanData(pl.revEng) : undefined,
     };
   });
 
