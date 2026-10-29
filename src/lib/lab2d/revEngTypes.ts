@@ -527,6 +527,15 @@ export interface RevEngPlanData {
   sectionLineAA?: RevEngSectionLineAA;
   measuredSections?: RevEngMeasuredSectionProfile[];
   constraints?: RevEngGeometricConstraint[];
+  // Campos da Fase F (Verificação, Tolerâncias Separadas, Mapa de Confiança e Prova 1:1)
+  /** Tolerância geométrica de fechamento de contorno aberto (mm) — distinta da tolerância de fabricação */
+  closingToleranceMm?: number;
+  /** Tolerância dimensional de fabricação/inspeção (mm) */
+  fabricationToleranceMm?: number;
+  /** Exibe ou oculta o Mapa Visual de Confiança sobre o projeto sem alterar entidades */
+  showConfidenceMap?: boolean;
+  /** Largura medida em pixels de um cartão ID-1 (85,60 × 53,98 mm) para o modo Tamanho Real na Tela */
+  id1CardWidthPx?: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -559,6 +568,10 @@ export function createDefaultRevEngPlanData(): RevEngPlanData {
     },
     measuredSections: [],
     constraints: [],
+    closingToleranceMm: 2.0,
+    fabricationToleranceMm: 0.15,
+    showConfidenceMap: false,
+    id1CardWidthPx: 320,
     createdAt: now,
     updatedAt: now,
   };
@@ -631,8 +644,26 @@ export function sanitizeRevEngPlanData(raw: unknown): RevEngPlanData {
         : base.sectionLineAA,
     measuredSections: Array.isArray(obj.measuredSections) ? obj.measuredSections : [],
     constraints: Array.isArray(obj.constraints) ? obj.constraints : [],
+    closingToleranceMm:
+      typeof obj.closingToleranceMm === "number" &&
+      Number.isFinite(obj.closingToleranceMm) &&
+      obj.closingToleranceMm > 0
+        ? obj.closingToleranceMm
+        : 2.0,
+    fabricationToleranceMm:
+      typeof obj.fabricationToleranceMm === "number" &&
+      Number.isFinite(obj.fabricationToleranceMm) &&
+      obj.fabricationToleranceMm > 0
+        ? obj.fabricationToleranceMm
+        : 0.15,
+    showConfidenceMap: typeof obj.showConfidenceMap === "boolean" ? obj.showConfidenceMap : false,
+    id1CardWidthPx:
+      typeof obj.id1CardWidthPx === "number" && Number.isFinite(obj.id1CardWidthPx) && obj.id1CardWidthPx > 20
+        ? obj.id1CardWidthPx
+        : 320,
     createdAt: typeof obj.createdAt === "number" ? obj.createdAt : base.createdAt,
     updatedAt: typeof obj.updatedAt === "number" ? obj.updatedAt : base.updatedAt,
   };
 }
+
 

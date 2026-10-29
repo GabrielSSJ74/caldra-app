@@ -1994,6 +1994,7 @@ export function ChamferRevEngTab({
         }}
         entities={entities}
         selection={selection}
+        syncedMeasurements={syncedMeasurements}
         commit={(nextEnts) => commit(nextEnts)}
         activeLayer={activeLayer as LayerId}
         openKeypad={openKeypad}

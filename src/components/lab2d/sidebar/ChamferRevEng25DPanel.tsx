@@ -48,12 +48,15 @@ import {
   sliceStlMeshByPlaneZ,
   syncRegions25DFromEntities,
 } from "@/lib/lab2d/revEng25D";
+import type { MeasurementRecord } from "@/lib/lab2d/revEngTypes";
+import { ChamferRevEngVerificationPanel } from "./ChamferRevEngVerificationPanel";
 
 export interface ChamferRevEng25DPanelProps {
   revEng: RevEngPlanData;
   onChangeRevEng: (updater: (prev: RevEngPlanData) => RevEngPlanData) => void;
   entities: Entity[];
   selection: string[];
+  syncedMeasurements?: MeasurementRecord[];
   commit: (nextEntities: Entity[], label?: string) => void;
   activeLayer: LayerId;
   openKeypad: (
@@ -77,6 +80,7 @@ export const ChamferRevEng25DPanel: React.FC<ChamferRevEng25DPanelProps> = ({
   onChangeRevEng,
   entities,
   selection,
+  syncedMeasurements,
   commit,
   activeLayer,
   openKeypad,
@@ -1366,6 +1370,20 @@ export const ChamferRevEng25DPanel: React.FC<ChamferRevEng25DPanelProps> = ({
               </div>
             </div>
           )}
+
+          {/* =============================================================== */}
+          {/* PAINEL INTEGRADO DA FASE F: ERROS (T15), COMPARADOR (T17),       */}
+          {/* PROVA 1:1 (T18) E MAPA VISUAL DE CONFIANÇA                      */}
+          {/* =============================================================== */}
+          <ChamferRevEngVerificationPanel
+            revEng={revEng}
+            onChangeRevEng={onChangeRevEng}
+            entities={entities}
+            syncedMeasurements={syncedMeasurements ?? revEng.measurements}
+            commit={commit}
+            openKeypad={openKeypad}
+            isDark={isDark}
+          />
         </div>
       )}
     </div>
