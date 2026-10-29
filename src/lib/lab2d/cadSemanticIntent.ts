@@ -18,6 +18,7 @@ import { uid, type Entity, type LayerId, rectPolyline } from "@/lib/lab2d/core";
 import type { Vec2 } from "@/lib/geometry/types";
 import { createSlotPolyline } from "@/lib/lab2d/cadGeometryCore";
 import { makeDimension, type Dimension } from "@/lib/lab2d/dimensions";
+import { parseAndExecuteRevEngIntent } from "@/lib/lab2d/revEngClosure";
 
 export interface SemanticIntentPlan {
   id: string;
@@ -25,6 +26,9 @@ export interface SemanticIntentPlan {
   intentSummary: string;
   description: string;
   generatedEntities: Entity[];
+  entities?: Entity[];
+  isAmbiguous?: boolean;
+  clarificationNeeded?: string;
   generatedDimensions?: Dimension[];
   targetAction?: "create" | "modify" | "fabrication" | "analyze";
   suggestedViewport?: { x: number; y: number; width: number; height: number };
@@ -114,6 +118,8 @@ export class CadSemanticIntentEngine {
         intentSummary: "Criação de contorno de corte externo e 4 furos circulares simétricos.",
         description: `Retângulo de ${width}×${height} mm com 4 furos de Ø${holeDiam} mm a ${margin} mm de distância de cada borda.`,
         generatedEntities: entities,
+        entities,
+        isAmbiguous: false,
         generatedDimensions: dimensions,
         targetAction: "create",
         suggestedViewport: { x: 0, y: 0, width, height },
@@ -418,6 +424,36 @@ export class CadSemanticIntentEngine {
           description: `Calculado a partir da caixa envolvente da geometria ativa.`,
           generatedEntities: newHoles,
           targetAction: "modify",
+        };
+      }
+    }
+
+    // TAREFA 6 (ENGENHARIA REVERSA — SEÇÃO 15 / T21): Olhais, Pontes Tangentes, Corda e Flecha
+    if (q.includes("olhal") || q.includes("ponte") || (q.includes("corda") && q.includes("flecha"))) {
+      const revRes = parseAndExecuteRevEngIntent(query, activeLayer);
+      if ((revRes.status === "ok" || revRes.status === "executed") && revRes.entities.length > 0) {
+        return {
+          id: "plan-reveng-intent",
+          title: "Construção Analítica de Engenharia Reversa",
+          intentSummary: revRes.summaryPtBr,
+          description: revRes.summaryPtBr,
+          generatedEntities: revRes.entities,
+          entities: revRes.entities,
+          isAmbiguous: false,
+          targetAction: "create",
+        };
+      }
+      if (revRes.status === "needs_clarification") {
+        return {
+          id: "plan-reveng-clarification",
+          title: "Esclarecimento Necessário (Engenharia Reversa)",
+          intentSummary: revRes.summaryPtBr,
+          description: revRes.clarificationQuestionPtBr ?? revRes.summaryPtBr,
+          generatedEntities: [],
+          entities: [],
+          isAmbiguous: true,
+          clarificationNeeded: revRes.clarificationQuestionPtBr ?? revRes.summaryPtBr,
+          targetAction: "analyze",
         };
       }
     }

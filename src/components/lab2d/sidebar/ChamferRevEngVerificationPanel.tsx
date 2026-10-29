@@ -30,6 +30,12 @@ import {
   generatePrintProof1to1Svg,
   type RevEngDetectedErrorItem,
 } from "@/lib/lab2d/revEngVerification";
+import {
+  computeBendDevelopmentKFactor,
+  exportRevEngSelectiveManufacturing,
+  generateRevEngTechnicalDossier,
+  parseAndExecuteRevEngIntent,
+} from "@/lib/lab2d/revEngClosure";
 
 export interface ChamferRevEngVerificationPanelProps {
   revEng: RevEngPlanData;
@@ -50,7 +56,12 @@ export interface ChamferRevEngVerificationPanelProps {
   isDark: boolean;
 }
 
-type VerificationSubTab = "erros_t15" | "comparador_t17" | "prova_1to1_t18" | "confianca";
+type VerificationSubTab =
+  | "erros_t15"
+  | "comparador_t17"
+  | "prova_1to1_t18"
+  | "confianca"
+  | "dossie_cnc_g";
 
 export const ChamferRevEngVerificationPanel: React.FC<
   ChamferRevEngVerificationPanelProps
@@ -67,6 +78,15 @@ export const ChamferRevEngVerificationPanel: React.FC<
   const [severityFilter, setSeverityFilter] = useState<
     "todos" | "critico" | "aviso" | "sugestao"
   >("todos");
+
+  // Estado de Caldeiraria / Dobra com Fator K (Seção 11.3 — Fase G)
+  const [bendThicknessMm, setBendThicknessMm] = useState<number>(2.0);
+  const [bendInnerRadiusMm, setBendInnerRadiusMm] = useState<number>(2.0);
+  const [bendAngleDeg, setBendAngleDeg] = useState<number>(90);
+  const [bendKFactor, setBendKFactor] = useState<number>(0.44);
+  const [flange1OuterMm, setFlange1OuterMm] = useState<number>(50);
+  const [flange2OuterMm, setFlange2OuterMm] = useState<number>(40);
+  const [has3DConeTransition, setHas3DConeTransition] = useState<boolean>(false);
 
   const closingToleranceMm = revEng.closingToleranceMm ?? 2.0;
   const fabricationToleranceMm = revEng.fabricationToleranceMm ?? 0.15;
@@ -121,6 +141,37 @@ export const ChamferRevEngVerificationPanel: React.FC<
     });
   }, [entities, syncedMeasurements, revEng.regions25D, revEng.referenceImages]);
 
+  // 5. Fase G: Caldeiraria Fator K, Exportação Seletiva e Dossiê Técnico
+  const bendDevelopment = useMemo(() => {
+    return computeBendDevelopmentKFactor({
+      thicknessMm: bendThicknessMm,
+      innerRadiusMm: bendInnerRadiusMm,
+      bendAngleDeg,
+      kFactor: bendKFactor,
+      flange1OuterMm,
+      flange2OuterMm,
+      stripWidthMm: 30,
+      has3DTransitionConeOrReduction: has3DConeTransition,
+    });
+  }, [
+    bendThicknessMm,
+    bendInnerRadiusMm,
+    bendAngleDeg,
+    bendKFactor,
+    flange1OuterMm,
+    flange2OuterMm,
+    has3DConeTransition,
+  ]);
+
+  const selectiveExport = useMemo(() => {
+    return exportRevEngSelectiveManufacturing(entities, {
+      includeCutLayer: true,
+      includeBendLayer: true,
+      includeMarkLayer: true,
+      includeAuxiliaryRevEng: false,
+    });
+  }, [entities]);
+
   const handleApplySafeFix = (errItem: RevEngDetectedErrorItem) => {
     const res = applyControlledErrorFix({
       entities,
@@ -165,28 +216,92 @@ export const ChamferRevEngVerificationPanel: React.FC<
     toast.success("Prova 1:1 (SVG) com barra de 100,000 mm exportada.");
   };
 
+  const handleInsertDevelopedBend = () => {
+    commit(
+      [...entities, ...bendDevelopment.entities],
+      `Inserir Chapa Planificada K=${bendKFactor.toFixed(2)} (L=${bendDevelopment.developedFlatLengthMm.toFixed(2)}mm)`,
+    );
+    toast.success(
+      `Planificação inserida: L_plano = ${bendDevelopment.developedFlatLengthMm.toFixed(2)} mm (Camadas CORTE + DOBRA).`,
+    );
+  };
+
+  const handleDownloadCleanDxf = () => {
+    const blob = new Blob([selectiveExport.dxfContent], {
+      type: "application/dxf;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `chamfer_fabricacao_limpa_${Date.now()}.dxf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(
+      `DXF exportado (${selectiveExport.exportedEntities.length} ent. fabricação; ${selectiveExport.excludedAuxiliaryCount} auxiliares excluídas).`,
+    );
+  };
+
+  const handleDownloadDossierMd = () => {
+    const dossier = generateRevEngTechnicalDossier({
+      partName: "Peça Reconstruída — CHAMFER CAD",
+      entities,
+      revEng: {
+        ...revEng,
+        measurements: syncedMeasurements,
+      },
+    });
+    const blob = new Blob([dossier.markdownReport], {
+      type: "text/markdown;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `dossie_engenharia_reversa_${Date.now()}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success("Dossiê Técnico completo (.MD) gerado com dados reais da peça.");
+  };
+
+  const handleExecuteT21IntentDemo = () => {
+    const res = parseAndExecuteRevEngIntent(
+      "Crie um olhal R20 no furo Ø20 e ligue com ponte côncava R120 ao olhal R35 do furo Ø30 a 132,4 mm",
+      entities,
+    );
+    if (res.status === "ok" && res.entities.length > 0) {
+      commit([...entities, ...res.entities], "CHAMFER INTENT (T21): Olhais + Ponte R120");
+      toast.success(res.messagePtBr);
+    } else {
+      toast.error(res.clarificationQuestionPtBr ?? res.messagePtBr);
+    }
+  };
+
   return (
     <div className="mt-2.5 flex flex-col gap-2 border-t border-[#293444]/90 pt-2.5 text-[9.5px]">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-1.5">
           <FileCheck2 className="size-3.5 text-emerald-400" />
           <span className="text-[9.5px] font-bold uppercase tracking-wider text-emerald-300">
-            Verificação, Comparador e Prova 1:1 (Fase F)
+            Verificação, Prova 1:1, Caldeiraria & Dossiê (Fases F & G)
           </span>
         </div>
         <span className="rounded bg-emerald-500/20 border border-emerald-500/40 px-1.5 py-0.5 text-[8px] font-bold text-emerald-300">
-          ETAPA F
+          F & G
         </span>
       </div>
 
-      {/* Sub-abas da Fase F */}
-      <div className="grid grid-cols-4 gap-1">
+      {/* Sub-abas das Fases F & G */}
+      <div className="grid grid-cols-5 gap-1">
         {(
           [
             { id: "erros_t15" as const, label: `Erros (${errorReport.totalCount})` },
             { id: "comparador_t17" as const, label: "Comparador" },
             { id: "prova_1to1_t18" as const, label: "Prova 1:1" },
             { id: "confianca" as const, label: "Confiança" },
+            { id: "dossie_cnc_g" as const, label: "Dossiê/CNC" },
           ] as const
         ).map((tb) => (
           <button
@@ -194,7 +309,7 @@ export const ChamferRevEngVerificationPanel: React.FC<
             type="button"
             onClick={() => setSubTab(tb.id)}
             className={cn(
-              "rounded-lg border px-1.5 py-1 text-[8.5px] font-bold transition-all cursor-pointer truncate text-center",
+              "rounded-lg border px-1 py-1 text-[8px] font-bold transition-all cursor-pointer truncate text-center",
               subTab === tb.id
                 ? "border-[#E11D48] bg-[#E11D48]/20 text-white"
                 : isDark
@@ -604,6 +719,259 @@ export const ChamferRevEngVerificationPanel: React.FC<
                 <div className="text-[7.5px] text-[#94A3B8]">{entry.criteriaJustification}</div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* SUB-ABA 5: FASE G — CALDEIRARIA (FATOR K), EXPORTAÇÃO & DOSSIÊ      */}
+      {/* =================================================================== */}
+      {subTab === "dossie_cnc_g" && (
+        <div className="flex flex-col gap-2">
+          {/* 1. Caldeiraria / Dobra com Fator K (Seção 11.3) */}
+          <div className="rounded-lg border border-[#38BDF8]/40 bg-[#0D121B]/90 p-2 flex flex-col gap-1.5 text-[8px]">
+            <div className="flex items-center justify-between font-bold text-[#38BDF8]">
+              <span>CALDEIRARIA & DOBRA — FATOR K (SEÇÃO 11.3)</span>
+              <span className="font-mono text-emerald-300">
+                L_plano = {bendDevelopment.developedFlatLengthMm.toFixed(2)} mm
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1">
+              <button
+                type="button"
+                onClick={(ev) =>
+                  openKeypad(ev, {
+                    label: "Espessura da Chapa t (mm)",
+                    currentValue: bendThicknessMm,
+                    unit: "mm",
+                    onConfirm: (v) => setBendThicknessMm(Math.max(0.2, v)),
+                  })
+                }
+                className="rounded border border-[#293444] bg-[#151C27] p-1 text-left cursor-pointer"
+              >
+                <div className="text-[7px] text-[#94A3B8]">Espessura t</div>
+                <div className="font-mono font-bold text-white">
+                  {bendThicknessMm.toFixed(2)} mm
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={(ev) =>
+                  openKeypad(ev, {
+                    label: "Raio Interno de Dobra Ri (mm)",
+                    currentValue: bendInnerRadiusMm,
+                    unit: "mm",
+                    onConfirm: (v) => setBendInnerRadiusMm(Math.max(0.1, v)),
+                  })
+                }
+                className="rounded border border-[#293444] bg-[#151C27] p-1 text-left cursor-pointer"
+              >
+                <div className="text-[7px] text-[#94A3B8]">Raio Int. Ri</div>
+                <div className="font-mono font-bold text-white">
+                  {bendInnerRadiusMm.toFixed(2)} mm
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={(ev) =>
+                  openKeypad(ev, {
+                    label: "Fator K da Linha Neutra (0.10 a 0.90)",
+                    currentValue: bendKFactor,
+                    unit: "mm",
+                    onConfirm: (v) => setBendKFactor(Math.max(0.1, Math.min(0.9, v))),
+                  })
+                }
+                className="rounded border border-[#38BDF8]/50 bg-[#151C27] p-1 text-left cursor-pointer"
+              >
+                <div className="text-[7px] text-[#94A3B8]">Fator K</div>
+                <div className="font-mono font-bold text-[#38BDF8]">
+                  {bendKFactor.toFixed(2)}
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={(ev) =>
+                  openKeypad(ev, {
+                    label: "Ângulo de Dobra α (°)",
+                    currentValue: bendAngleDeg,
+                    unit: "°",
+                    onConfirm: (v) => setBendAngleDeg(Math.max(5, Math.min(175, v))),
+                  })
+                }
+                className="rounded border border-[#293444] bg-[#151C27] p-1 text-left cursor-pointer"
+              >
+                <div className="text-[7px] text-[#94A3B8]">Ângulo ∠</div>
+                <div className="font-mono font-bold text-amber-300">
+                  {bendAngleDeg.toFixed(1)}°
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={(ev) =>
+                  openKeypad(ev, {
+                    label: "Comprimento Externo Aba 1 (mm)",
+                    currentValue: flange1OuterMm,
+                    unit: "mm",
+                    onConfirm: (v) => setFlange1OuterMm(Math.max(5, v)),
+                  })
+                }
+                className="rounded border border-[#293444] bg-[#151C27] p-1 text-left cursor-pointer"
+              >
+                <div className="text-[7px] text-[#94A3B8]">Aba 1 (L1)</div>
+                <div className="font-mono font-bold text-white">
+                  {flange1OuterMm.toFixed(1)} mm
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={(ev) =>
+                  openKeypad(ev, {
+                    label: "Comprimento Externo Aba 2 (mm)",
+                    currentValue: flange2OuterMm,
+                    unit: "mm",
+                    onConfirm: (v) => setFlange2OuterMm(Math.max(5, v)),
+                  })
+                }
+                className="rounded border border-[#293444] bg-[#151C27] p-1 text-left cursor-pointer"
+              >
+                <div className="text-[7px] text-[#94A3B8]">Aba 2 (L2)</div>
+                <div className="font-mono font-bold text-white">
+                  {flange2OuterMm.toFixed(1)} mm
+                </div>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1 rounded bg-[#151C27]/80 p-1 font-mono text-[7.5px] text-center">
+              <div>
+                <span className="text-[#94A3B8]">BA: </span>
+                <strong className="text-emerald-300">
+                  {bendDevelopment.bendAllowanceMm.toFixed(2)}mm
+                </strong>
+              </div>
+              <div>
+                <span className="text-[#94A3B8]">BD: </span>
+                <strong className="text-amber-300">
+                  {bendDevelopment.bendDeductionMm.toFixed(2)}mm
+                </strong>
+              </div>
+              <div>
+                <span className="text-[#94A3B8]">Rn: </span>
+                <strong className="text-[#38BDF8]">
+                  {bendDevelopment.neutralRadiusMm.toFixed(2)}mm
+                </strong>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between gap-1">
+              <button
+                type="button"
+                onClick={() => setHas3DConeTransition((p) => !p)}
+                className={cn(
+                  "rounded border px-1.5 py-0.5 text-[7.5px] font-bold cursor-pointer",
+                  has3DConeTransition
+                    ? "border-amber-500/60 bg-amber-950/40 text-amber-300"
+                    : "border-[#293444] bg-[#151C27] text-[#94A3B8]",
+                )}
+              >
+                {has3DConeTransition ? "Transição 3D (Cone): SIM" : "Transição 3D: NÃO"}
+              </button>
+
+              <button
+                type="button"
+                onClick={handleInsertDevelopedBend}
+                className="rounded bg-[#38BDF8] hover:bg-[#0284C7] text-slate-950 font-bold px-2 py-0.5 text-[8px] cursor-pointer"
+              >
+                + Inserir Planificação (CORTE + DOBRA)
+              </button>
+            </div>
+
+            {bendDevelopment.transition3DWarningPtBr && (
+              <div className="rounded border border-amber-500/50 bg-amber-950/30 p-1 text-[7.5px] text-amber-200 leading-tight">
+                {bendDevelopment.transition3DWarningPtBr}
+              </div>
+            )}
+          </div>
+
+          {/* 2. Exportação Seletiva de Fabricação & Dossiê Técnico (Seção 11.5 & 14) */}
+          <div className="rounded-lg border border-emerald-500/40 bg-[#0D121B]/90 p-2 flex flex-col gap-1.5 text-[8px]">
+            <div className="flex items-center justify-between font-bold text-emerald-300">
+              <span>EXPORTAÇÃO SELETIVA CNC & DOSSIÊ (SEÇÃO 11.5 / 14)</span>
+              <span className="font-mono text-[7.5px]">
+                {selectiveExport.exportedEntities.length} CNC /{" "}
+                {selectiveExport.excludedAuxiliaryCount} Aux Excluídas
+              </span>
+            </div>
+
+            <div className="grid grid-cols-4 gap-1 text-center font-mono text-[7.5px]">
+              <div className="rounded bg-[#151C27] p-1">
+                <div className="text-[#94A3B8]">CORTE</div>
+                <div className="font-bold text-white">{selectiveExport.cutCount}</div>
+              </div>
+              <div className="rounded bg-[#151C27] p-1">
+                <div className="text-[#94A3B8]">DOBRA</div>
+                <div className="font-bold text-amber-300">{selectiveExport.bendCount}</div>
+              </div>
+              <div className="rounded bg-[#151C27] p-1">
+                <div className="text-[#94A3B8]">MARCA</div>
+                <div className="font-bold text-[#38BDF8]">{selectiveExport.markCount}</div>
+              </div>
+              <div className="rounded bg-rose-950/30 border border-rose-500/30 p-1">
+                <div className="text-rose-300">AUX (BLOQ)</div>
+                <div className="font-bold text-rose-300">
+                  {selectiveExport.excludedAuxiliaryCount}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-1.5">
+              <button
+                type="button"
+                onClick={handleDownloadCleanDxf}
+                className="flex items-center justify-center gap-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 px-2 font-bold cursor-pointer"
+              >
+                <Download className="size-3" />
+                <span>DXF Limpo (Sem Aux)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadDossierMd}
+                className="flex items-center justify-center gap-1 rounded bg-[#E11D48] hover:bg-rose-600 text-white py-1.5 px-2 font-bold cursor-pointer"
+              >
+                <Download className="size-3" />
+                <span>Dossiê Técnico (.MD)</span>
+              </button>
+            </div>
+
+            <p className="text-[7px] text-[#94A3B8] leading-tight">
+              {selectiveExport.parametricLossWarningPtBr}
+            </p>
+          </div>
+
+          {/* 3. Integração CHAMFER INTENT Tipada (Seção 15 / Teste T21) */}
+          <div className="rounded-lg border border-purple-500/40 bg-purple-950/20 p-2 flex items-center justify-between gap-1.5 text-[8px]">
+            <div className="min-w-0 flex-1">
+              <div className="font-bold text-purple-300">
+                CHAMFER INTENT Tipado (Teste T21)
+              </div>
+              <div className="text-[7.5px] text-[#94A3B8] truncate">
+                &ldquo;Crie um olhal R20 no furo Ø20 e ligue com ponte côncava R120 ao olhal R35...&rdquo;
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleExecuteT21IntentDemo}
+              className="flex items-center gap-1 rounded bg-purple-600 hover:bg-purple-500 text-white px-2 py-1 font-bold shrink-0 cursor-pointer"
+            >
+              <Sparkles className="size-3" />
+              <span>Executar T21</span>
+            </button>
           </div>
         </div>
       )}
