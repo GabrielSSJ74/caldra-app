@@ -226,6 +226,11 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
   // Coleta entidades planas elegíveis para o motor de Hierarquia de Arestas e Profundidade Óptica 3D
   const planarFor3D: Entity[] = [];
 
+  // Camada 4 — Peças e Entidades do CAD (100% de Nitidez e Contraste Máximo)
+  ctx.save();
+  ctx.globalAlpha = 1.0;
+  ctx.globalCompositeOperation = "source-over";
+
   // agrupa por estilo para minimizar trocas de estado do contexto
   let currentLayer = "";
   for (const e of list) {
@@ -261,11 +266,13 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
           fillCol = "rgba(241, 245, 249, 0.65)";
         }
       }
-      const strokeW = (typeof e.params.strokeWidth === "number" ? e.params.strokeWidth : 1.7) * inv;
+      const strokeW = (typeof e.params.strokeWidth === "number" ? e.params.strokeWidth : 2.0) * inv;
       const noStroke = !!e.params.noStroke;
       const customDash = Array.isArray(e.params.dash) ? (e.params.dash as number[]) : null;
 
       ctx.save();
+      ctx.globalAlpha = 1.0;
+      ctx.globalCompositeOperation = "source-over";
       if (!lod && customDash && customDash.length > 0) {
         ctx.setLineDash(customDash.map((d) => d * inv));
       } else {
@@ -292,7 +299,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       continue;
     }
 
-    // 2. COleta ENTIDADES PLANAS PARA O MOTOR 3D WIREFRAME TÉCNICO COM PROFUNDIDADE ÓPTICA
+    // 2. COLETA ENTIDADES PLANAS PARA O MOTOR 3D WIREFRAME TÉCNICO COM PROFUNDIDADE ÓPTICA
     if (is3DWireframeActive && e.type !== "point") {
       planarFor3D.push(e);
       continue;
@@ -301,13 +308,15 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     const style = techStyle(e.layer);
     if (e.layer !== currentLayer) {
       currentLayer = e.layer;
+      ctx.globalAlpha = 1.0;
+      ctx.globalCompositeOperation = "source-over";
       const isCutOrWhite = style.color === "#FFFFFF" || e.layer === "corte";
       ctx.strokeStyle = isCutOrWhite
         ? opts.isLight
-          ? "#1E293B"
-          : "#E6EDF5"
+          ? "#0F172A"
+          : "#F8FAFC"
         : style.color;
-      ctx.lineWidth = 1.4 * style.weight * inv;
+      ctx.lineWidth = (isCutOrWhite ? Math.max(2.1, 1.65 * style.weight) : Math.max(1.6, 1.45 * style.weight)) * inv;
       const dash = !lod && style.dash(inv);
       ctx.setLineDash(dash ? dash.split(" ").map(Number) : []);
     }
@@ -315,6 +324,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     traceEntity(ctx, e, lod);
     ctx.stroke();
   }
+  ctx.restore();
 
   // Renderiza em lote ordenado (Painter's Algorithm + 5 Categorias + Recorte Even-Odd dos Furos)
   if (planarFor3D.length > 0) {

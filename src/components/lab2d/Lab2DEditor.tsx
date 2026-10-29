@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import {
   ArrowLeft,
+  ArrowLeftRight,
   Circle as CircleIcon,
   Copy,
   Crosshair,
@@ -163,6 +164,7 @@ import { takeHandoff } from "@/lib/lab2d/handoff";
 import { findChamferLink } from "@/lib/projects/chamfer";
 import { getProject as getDossier } from "@/lib/projects/store";
 import {
+  WORKSPACE_INDUSTRIAL_PRESETS,
   centerOffset,
   fitsInFrame,
   frameBox,
@@ -829,7 +831,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   /* WORKSPACE_FRAME — moldura técnica de trabalho (não é geometria) */
   const [frame, setFrame] = useState<WorkspaceFrame>(() =>
     typeof window === "undefined"
-      ? { w: 1500, h: 3000, visible: true, showDims: true }
+      ? { w: 1500, h: 1000, visible: true, showDims: true, locked: false }
       : loadFrame(),
   );
   const updateFrame = useCallback((patch: Partial<WorkspaceFrame>) => {
@@ -856,6 +858,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [startPicking, setStartPicking] = useState(false);
   const [shareHint, setShareHint] = useState<ShareCandidate | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [statusWorkspaceMenuOpen, setStatusWorkspaceMenuOpen] = useState(false);
+  const [workspaceKeypadEditor, setWorkspaceKeypadEditor] = useState<{
+    axis: "w" | "h";
+    currentValue: number;
+    screenPos: { x: number; y: number };
+  } | null>(null);
   const [statusPrecisionMenuOpen, setStatusPrecisionMenuOpen] = useState(false);
   const [statusCncMenuOpen, setStatusCncMenuOpen] = useState(false);
   /* PRECISÃO AVANÇADA, GUIAS DE INTERAÇÃO EXCLUSIVAS E RESTRIÇÕES DIMENSIONAIS REAIS */
@@ -7538,11 +7546,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               orbitProjection2D.isTilted ||
               entities.some((e) => e.params?.isIsoSolidFace)
               ? isDark
-                ? "border-[#293444] bg-[#10151D] bg-[radial-gradient(ellipse_at_center,#151C27_0%,#10151D_78%)]"
-                : "border-[#CBD5E1] bg-[#F8FAFC]"
+                ? "border-[#293444] bg-[#060A12] bg-[radial-gradient(ellipse_at_center,#10151D_0%,#060A12_78%)]"
+                : "border-[#CBD5E1] bg-[#E2E8F0]"
               : isDark
-                ? "border-[#293444] bg-[#10151D]"
-                : "border-[#CBD5E1] bg-[#F8FAFC]",
+                ? frame.visible
+                  ? "border-[#293444] bg-[#060A12]"
+                  : "border-[#293444] bg-[#10151D]"
+                : frame.visible
+                  ? "border-[#CBD5E1] bg-[#E2E8F0]"
+                  : "border-[#CBD5E1] bg-[#F8FAFC]",
           )}
         >
           {solidOpen && (
@@ -7587,8 +7599,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               solidOpen && morphState !== "PREPARING_3D" && "pointer-events-none",
             )}
           >
-              {/* GRADE CAD REAL E FUNCIONAL (ACOMPANHA ZOOM, PAN E ORIGEM DE COORDENADAS) */}
-              {showGrid && (!solidOpen || morphState === "PREPARING_3D") && (
+              {/* CAMADAS 1 E 2 (FUNDO DA PRANCHETA + GRADE TÉCNICA — RENDERIZADAS ABAIXO DO CANVAS DE PEÇAS) */}
+              {(showGrid || frame.visible) && (!solidOpen || morphState === "PREPARING_3D") && (
                 <svg className="pointer-events-none absolute inset-0 size-full">
                   <defs>
                     {/* 1. GRID SECUNDÁRIO — subdivisões finas (10-18% Dark / 10-15% Light, adaptável ao zoom) */}
@@ -7733,22 +7745,44 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     )}
                   </defs>
 
-                  {/* Renderização em camadas ordenadas de profundidade e contraste */}
-                  {drawingProjection === "isometric" ? (
-                    <rect width="100%" height="100%" fill="url(#chamfer-grid-isometric)" />
-                  ) : (
-                    <>
-                      {gridConfig.subFade > 0.02 && (
-                        <rect width="100%" height="100%" fill="url(#chamfer-grid-secondary)" />
-                      )}
-                      {gridConfig.majorFade > 0.02 && (
-                        <rect width="100%" height="100%" fill="url(#chamfer-grid-major)" />
-                      )}
-                      {gridConfig.macroStep * view.k >= 8 && (
-                        <rect width="100%" height="100%" fill="url(#chamfer-grid-macro)" />
-                      )}
-                    </>
-                  )}
+                  {/* CAMADA 1 — Superfície Interna da Área de Trabalho (Prancheta #FFFFFF no Claro / #0F172A no Escuro) */}
+                  {frame.visible &&
+                    Number.isFinite(frame.w) &&
+                    Number.isFinite(frame.h) &&
+                    frame.w > 0 &&
+                    frame.h > 0 && (
+                      <g
+                        transform={`translate(${view.tx} ${view.ty}) scale(${view.k})${
+                          orbitProjection2D.isTilted ? ` ${orbitProjection2D.svgMatrix}` : ""
+                        }`}
+                      >
+                        <rect
+                          x={0}
+                          y={0}
+                          width={frame.w}
+                          height={frame.h}
+                          fill={isDark ? "#0F172A" : "#FFFFFF"}
+                        />
+                      </g>
+                    )}
+
+                  {/* CAMADA 2 — Grade Técnica (GRID: 10MM) pintada por cima da superfície da Área de Trabalho */}
+                  {showGrid &&
+                    (drawingProjection === "isometric" ? (
+                      <rect width="100%" height="100%" fill="url(#chamfer-grid-isometric)" />
+                    ) : (
+                      <>
+                        {gridConfig.subFade > 0.02 && (
+                          <rect width="100%" height="100%" fill="url(#chamfer-grid-secondary)" />
+                        )}
+                        {gridConfig.majorFade > 0.02 && (
+                          <rect width="100%" height="100%" fill="url(#chamfer-grid-major)" />
+                        )}
+                        {gridConfig.macroStep * view.k >= 8 && (
+                          <rect width="100%" height="100%" fill="url(#chamfer-grid-macro)" />
+                        )}
+                      </>
+                    ))}
                 </svg>
               )}
           <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
@@ -7866,7 +7900,238 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     );
                   })}
 
-              {/* Eixos do Sistema de Coordenadas CAD (alinhados a (0,0) - visíveis quando showGrid está ativo) */}
+              {/* CAMADA 3 — Moldura, Cantoneiras, Margem e Cotas da Área de Trabalho (ZERO preenchimento sobre as peças!) */}
+              {frame.visible &&
+                !solidOpen &&
+                Number.isFinite(frame.w) &&
+                Number.isFinite(frame.h) &&
+                frame.w > 0 &&
+                frame.h > 0 &&
+                (() => {
+                  const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+                  const cornerLen = Math.max(14 / safeK, Math.min(frame.w, frame.h) * 0.045);
+                  const marginInset = Math.min(20, Math.min(frame.w, frame.h) * 0.025);
+                  const borderColor = isDark ? "#38BDF8" : "#0284C7";
+                  const cornerColor = "#DC143C";
+                  const dimOffsetPx = 18 / safeK;
+                  const headerBadgeText = `⬚ ÁREA DE TRABALHO • ${Math.round(frame.w)} × ${Math.round(frame.h)} mm${frame.locked ? " 🔒" : ""}`;
+                  const headerFontSize = 10.5 / safeK;
+                  const headerPadX = 8 / safeK;
+                  const headerPadY = 4 / safeK;
+                  const headerW = (headerBadgeText.length * 6.2 + 16) / safeK;
+                  const headerH = 20 / safeK;
+                  const headerY = (frame.showDims ? -52 : -28) / safeK;
+                  const widthPillW = 92 / safeK;
+                  const widthPillCenterX =
+                    frame.w > headerW + widthPillW + 24 / safeK
+                      ? Math.max(frame.w / 2, headerW + widthPillW / 2 + 14 / safeK)
+                      : frame.w / 2;
+
+                  return (
+                    <g aria-label="Área de Trabalho CAD">
+                      {/* Contorno Técnico da Moldura (fill="none" estrito para NUNCA apagar peças ou grade) */}
+                      <rect
+                        x={0}
+                        y={0}
+                        width={frame.w}
+                        height={frame.h}
+                        fill="none"
+                        stroke={borderColor}
+                        strokeOpacity={isDark ? 0.85 : 0.9}
+                        strokeWidth={1.8 / safeK}
+                        pointerEvents="none"
+                      />
+
+                      {/* Margem operacional interna tracejada sutil (fill="none") */}
+                      {frame.w > marginInset * 3 && frame.h > marginInset * 3 && (
+                        <rect
+                          x={marginInset}
+                          y={marginInset}
+                          width={frame.w - marginInset * 2}
+                          height={frame.h - marginInset * 2}
+                          fill="none"
+                          stroke={borderColor}
+                          strokeOpacity={isDark ? 0.28 : 0.35}
+                          strokeWidth={1 / safeK}
+                          strokeDasharray={`${6 / safeK} ${4 / safeK}`}
+                          pointerEvents="none"
+                        />
+                      )}
+
+                      {/* 4 Cantoneiras Técnicas Reforçadas (⌜ ⌝ ⌞ ⌟) nos vértices da área */}
+                      {(
+                        [
+                          [0, 0, 1, 1],
+                          [frame.w, 0, -1, 1],
+                          [0, frame.h, 1, -1],
+                          [frame.w, frame.h, -1, -1],
+                        ] as const
+                      ).map(([cx, cy, sx, sy]) => (
+                        <g key={`corner-${cx}-${cy}`} pointerEvents="none">
+                          <path
+                            d={`M ${cx + sx * cornerLen} ${cy} L ${cx} ${cy} L ${cx} ${cy + sy * cornerLen}`}
+                            fill="none"
+                            stroke={cornerColor}
+                            strokeWidth={2.8 / safeK}
+                            strokeLinecap="square"
+                          />
+                          <path
+                            d={`M ${cx + sx * (cornerLen * 0.55)} ${cy} L ${cx} ${cy + sy * (cornerLen * 0.55)}`}
+                            fill="none"
+                            stroke={borderColor}
+                            strokeOpacity={0.55}
+                            strokeWidth={1 / safeK}
+                          />
+                        </g>
+                      ))}
+
+                      {/* Selo Técnico Interativo da Área de Trabalho (alinhado acima da borda superior esquerda, sem colidir com a pílula de largura) */}
+                      <g
+                        pointerEvents="auto"
+                        style={{ cursor: "pointer" }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerHaptic("selection");
+                          setStatusWorkspaceMenuOpen(true);
+                          setStatusPrecisionMenuOpen(false);
+                          setStatusCncMenuOpen(false);
+                        }}
+                      >
+                        <rect
+                          x={0}
+                          y={headerY}
+                          width={headerW}
+                          height={headerH}
+                          rx={5 / safeK}
+                          fill={isDark ? "#0D121B" : "#F1F5F9"}
+                          stroke={isDark ? "#293444" : "#CBD5E1"}
+                          strokeWidth={1.1 / safeK}
+                        />
+                        <text
+                          x={headerPadX}
+                          y={headerY + headerH - headerPadY - 1.5 / safeK}
+                          fontSize={headerFontSize}
+                          fontFamily='"JetBrains Mono", "Inter", ui-monospace, monospace'
+                          fontWeight="700"
+                          fill={isDark ? "#E6EDF5" : "#0F172A"}
+                        >
+                          {headerBadgeText}
+                        </text>
+                      </g>
+
+                      {/* Cotas Totais Desobstruídas da Área de Trabalho (Largura e Altura) */}
+                      {frame.showDims && (
+                        <g pointerEvents="none" fontFamily='"JetBrains Mono", "Inter", ui-monospace, monospace'>
+                          {/* Linha de Cota Superior (Largura Total) */}
+                          <line
+                            x1={0}
+                            y1={-dimOffsetPx}
+                            x2={frame.w}
+                            y2={-dimOffsetPx}
+                            stroke={borderColor}
+                            strokeOpacity={0.55}
+                            strokeWidth={1 / safeK}
+                            strokeDasharray={`${4 / safeK} ${3 / safeK}`}
+                          />
+                          <line
+                            x1={0}
+                            y1={-4 / safeK}
+                            x2={0}
+                            y2={-dimOffsetPx - 4 / safeK}
+                            stroke={borderColor}
+                            strokeOpacity={0.7}
+                            strokeWidth={1.1 / safeK}
+                          />
+                          <line
+                            x1={frame.w}
+                            y1={-4 / safeK}
+                            x2={frame.w}
+                            y2={-dimOffsetPx - 4 / safeK}
+                            stroke={borderColor}
+                            strokeOpacity={0.7}
+                            strokeWidth={1.1 / safeK}
+                          />
+                          <rect
+                            x={widthPillCenterX - widthPillW / 2}
+                            y={-dimOffsetPx - 8.5 / safeK}
+                            width={widthPillW}
+                            height={17 / safeK}
+                            rx={4 / safeK}
+                            fill={isDark ? "#0D121B" : "#FFFFFF"}
+                            stroke={borderColor}
+                            strokeOpacity={0.65}
+                            strokeWidth={1 / safeK}
+                          />
+                          <text
+                            x={widthPillCenterX}
+                            y={-dimOffsetPx + 3.5 / safeK}
+                            fontSize={10.5 / safeK}
+                            fontWeight="700"
+                            fill={borderColor}
+                            textAnchor="middle"
+                          >
+                            {frame.w.toFixed(2)} mm
+                          </text>
+
+                          {/* Linha de Cota Lateral Esquerda (Altura Total) */}
+                          <line
+                            x1={-dimOffsetPx}
+                            y1={0}
+                            x2={-dimOffsetPx}
+                            y2={frame.h}
+                            stroke={borderColor}
+                            strokeOpacity={0.5}
+                            strokeWidth={1 / safeK}
+                            strokeDasharray={`${4 / safeK} ${3 / safeK}`}
+                          />
+                          <line
+                            x1={-4 / safeK}
+                            y1={0}
+                            x2={-dimOffsetPx - 4 / safeK}
+                            y2={0}
+                            stroke={borderColor}
+                            strokeOpacity={0.65}
+                            strokeWidth={1.1 / safeK}
+                          />
+                          <line
+                            x1={-4 / safeK}
+                            y1={frame.h}
+                            x2={-dimOffsetPx - 4 / safeK}
+                            y2={frame.h}
+                            stroke={borderColor}
+                            strokeOpacity={0.65}
+                            strokeWidth={1.1 / safeK}
+                          />
+                          <g transform={`translate(${-dimOffsetPx} ${frame.h / 2}) rotate(-90)`}>
+                            <rect
+                              x={-46 / safeK}
+                              y={-9 / safeK}
+                              width={92 / safeK}
+                              height={18 / safeK}
+                              rx={4 / safeK}
+                              fill={isDark ? "#0D121B" : "#FFFFFF"}
+                              stroke={borderColor}
+                              strokeOpacity={0.6}
+                              strokeWidth={1 / safeK}
+                            />
+                            <text
+                              x={0}
+                              y={3.5 / safeK}
+                              fontSize={10.5 / safeK}
+                              fontWeight="700"
+                              fill={borderColor}
+                              textAnchor="middle"
+                            >
+                              {frame.h.toFixed(2)} mm
+                            </text>
+                          </g>
+                        </g>
+                      )}
+                    </g>
+                  );
+                })()}
+
+              {/* Eixos do Sistema de Coordenadas CAD e Tríade de Origem (0,0) (visíveis quando showGrid está ativo) */}
               {!solidOpen && showGrid && (
                 <g pointerEvents="none" aria-label="Eixos do sistema CAD">
                   {drawingProjection === "isometric" ? (
@@ -7936,7 +8201,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     </>
                   ) : (
                     <>
-                      {/* Eixo X: Vermelho técnico com destaque nítido sobre a grade */}
+                      {/* Eixo X Contínuo */}
                       <line
                         x1={-1e5}
                         y1={0}
@@ -7945,7 +8210,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         stroke={gridStyles.axisX}
                         strokeWidth={gridStyles.axisWidth / view.k}
                       />
-                      {/* Eixo Y: Verde técnico com destaque nítido sobre a grade */}
+                      {/* Eixo Y Contínuo */}
                       <line
                         x1={0}
                         y1={-1e5}
@@ -7955,22 +8220,48 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         strokeWidth={gridStyles.axisWidth / view.k}
                       />
 
-                      {/* Marcadores discretos de orientação positiva +X e +Y */}
+                      {/* Setas Vetoriais Limpas da Tríade de Origem (+X e +Y) */}
+                      <line
+                        x1={0}
+                        y1={0}
+                        x2={44 / view.k}
+                        y2={0}
+                        stroke="#DC143C"
+                        strokeWidth={2 / view.k}
+                      />
+                      <polygon
+                        points={`${48 / view.k},0 ${40 / view.k},${-3.2 / view.k} ${40 / view.k},${3.2 / view.k}`}
+                        fill="#DC143C"
+                      />
+                      <line
+                        x1={0}
+                        y1={0}
+                        x2={0}
+                        y2={44 / view.k}
+                        stroke={gridStyles.axisY}
+                        strokeWidth={2 / view.k}
+                      />
+                      <polygon
+                        points={`0,${48 / view.k} ${-3.2 / view.k},${40 / view.k} ${3.2 / view.k},${40 / view.k}`}
+                        fill={gridStyles.axisY}
+                      />
+
+                      {/* Marcadores de orientação positiva +X e +Y com offset seguro (zero colisão) */}
                       <text
-                        x={40 / view.k}
+                        x={53 / view.k}
                         y={-5 / view.k}
-                        fontSize={8.5 / view.k}
-                        fontFamily="ui-monospace, monospace"
+                        fontSize={9 / view.k}
+                        fontFamily='"JetBrains Mono", ui-monospace, monospace'
                         fontWeight="700"
-                        fill={gridStyles.axisX}
+                        fill="#DC143C"
                       >
                         +X
                       </text>
                       <text
-                        x={6 / view.k}
-                        y={40 / view.k}
-                        fontSize={8.5 / view.k}
-                        fontFamily="ui-monospace, monospace"
+                        x={7 / view.k}
+                        y={56 / view.k}
+                        fontSize={9 / view.k}
+                        fontFamily='"JetBrains Mono", ui-monospace, monospace'
                         fontWeight="700"
                         fill={gridStyles.axisY}
                       >
@@ -7979,95 +8270,32 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     </>
                   )}
 
-                  {/* Ponto e Rótulo de Origem (0,0) */}
+                  {/* Alvo Circular de Origem (0,0) em Vermelho Carmesim (#DC143C) */}
                   <circle
                     cx={0}
                     cy={0}
-                    r={3.8 / view.k}
-                    fill={gridStyles.originFill}
-                    stroke={gridStyles.originRing}
-                    strokeWidth={1.2 / view.k}
+                    r={6 / view.k}
+                    fill="none"
+                    stroke="#DC143C"
+                    strokeOpacity={0.75}
+                    strokeWidth={1.3 / view.k}
+                  />
+                  <circle
+                    cx={0}
+                    cy={0}
+                    r={2.6 / view.k}
+                    fill="#DC143C"
                   />
                   <text
-                    x={6 / view.k}
-                    y={-6 / view.k}
-                    fontSize={10 / view.k}
-                    fontFamily="ui-monospace, monospace"
-                    fontWeight="bold"
-                    fill={gridStyles.originText}
+                    x={9 / view.k}
+                    y={15 / view.k}
+                    fontSize={9.5 / view.k}
+                    fontFamily='"JetBrains Mono", ui-monospace, monospace'
+                    fontWeight="700"
+                    fill="#DC143C"
                   >
                     {drawingProjection === "isometric" ? "(0,0,0) ISO" : "(0,0)"}
                   </text>
-                </g>
-              )}
-
-              {/* WORKSPACE_FRAME — área de trabalho (oculta no modo 3D Traçagem) */}
-              {frame.visible && !solidOpen && Number.isFinite(frame.w) && Number.isFinite(frame.h) && frame.w > 0 && frame.h > 0 && (
-                <g pointerEvents="none">
-                  <rect
-                    x={0}
-                    y={0}
-                    width={frame.w}
-                    height={frame.h}
-                    fill="none"
-                    stroke={REFERENCE_COLOR}
-                    strokeOpacity={0.85}
-                    strokeWidth={1.6 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
-                  />
-                  {/* diagonais de canto que fecham a moldura */}
-                  {(
-                    [
-                      [0, 0, 1, 1],
-                      [frame.w, 0, -1, 1],
-                      [0, frame.h, 1, -1],
-                      [frame.w, frame.h, -1, -1],
-                    ] as const
-                  ).map(([x, y, sx, sy]) => {
-                    const c = Math.min(frame.w, frame.h) * 0.06;
-                    return (
-                      <path
-                        key={`${x}-${y}`}
-                        d={`M ${x + sx * c} ${y} L ${x} ${y + sy * c}`}
-                        fill="none"
-                        stroke={REFERENCE_COLOR}
-                        strokeOpacity={0.6}
-                        strokeWidth={1 / view.k}
-                      />
-                    );
-                  })}
-                  {frame.showDims && (
-                    <g
-                      fill={REFERENCE_COLOR}
-                      fillOpacity={0.9}
-                      fontFamily="ui-monospace, monospace"
-                    >
-                      <text
-                        x={frame.w / 2}
-                        y={-8 / view.k}
-                        fontSize={13 / view.k}
-                        textAnchor="middle"
-                      >
-                        {frame.w.toFixed(2)} mm
-                      </text>
-                      <text
-                        x={-8 / view.k}
-                        y={frame.h / 2}
-                        fontSize={13 / view.k}
-                        textAnchor="middle"
-                        transform={`rotate(-90 ${-8 / view.k} ${frame.h / 2})`}
-                      >
-                        {frame.h.toFixed(2)} mm
-                      </text>
-                      <text
-                        x={6 / view.k}
-                        y={18 / view.k}
-                        fontSize={10 / view.k}
-                        fillOpacity={0.55}
-                      >
-                        ÁREA DE TRABALHO
-                      </text>
-                    </g>
-                  )}
                 </g>
               )}
 
@@ -9442,6 +9670,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             unit={unit}
             width={canvasSize.w}
             height={canvasSize.h}
+            cursor={cursor}
+            frame={frame}
+            onCenterWorkspace={() => {
+              triggerHaptic("selection");
+              fitFrame();
+              toast.info(`Área de Trabalho (${Math.round(frame.w)} × ${Math.round(frame.h)} mm) enquadrada na tela`);
+            }}
           />
 
           {clipboardMenu && clipboardRef.current && (
@@ -10383,6 +10618,37 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 GRID: {showGrid ? `${grid}MM` : "OFF"}
               </button>
 
+              {/* NOVO BOTÃO DE PERSONALIZAÇÃO DA ÁREA DE TRABALHO (IMEDIATAMENTE À DIREITA DO GRID) */}
+              <button
+                type="button"
+                data-testid="status-workspace-area-button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setStatusWorkspaceMenuOpen((v) => !v);
+                  setStatusPrecisionMenuOpen(false);
+                  setStatusCncMenuOpen(false);
+                }}
+                className={cn(
+                  "rounded px-1.5 py-0.5 font-mono text-[9px] uppercase font-bold whitespace-nowrap transition-colors border cursor-pointer",
+                  statusWorkspaceMenuOpen
+                    ? isDark
+                      ? "text-[#38BDF8] bg-[#38BDF8]/20 border-[#38BDF8]/65 shadow-xs"
+                      : "text-[#0284C7] bg-[#0284C7]/15 border-[#0284C7]/65 shadow-xs"
+                    : frame.visible
+                      ? isDark
+                        ? "text-[#FB7185] bg-[#E11D48]/18 border-[#E11D48]/50 hover:bg-[#E11D48]/28"
+                        : "text-[#E11D48] bg-[#FFFFFF] border-[#E11D48]/45 hover:bg-[#E11D48]/10 font-bold"
+                      : isDark
+                        ? "border-transparent text-[#94A3B8] hover:text-[#E6EDF5]"
+                        : "border-transparent text-[#64748B] hover:text-[#1E293B]",
+                )}
+                title="Personalizar Área de Trabalho (Chapa / Mesa CAD)"
+              >
+                {frame.visible
+                  ? `⬚ ÁREA: ${Math.round(frame.w)}×${Math.round(frame.h)}MM${frame.locked ? " 🔒" : ""}`
+                  : "⬚ ÁREA: OFF"}
+              </button>
+
               <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
 
               {/* GRUPO 2 — BOTÃO DE ABERTURA DO POPOVER PRECISÃO */}
@@ -10390,6 +10656,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 type="button"
                 onClick={() => {
                   setStatusPrecisionMenuOpen((v) => !v);
+                  setStatusWorkspaceMenuOpen(false);
                   setStatusCncMenuOpen(false);
                 }}
                 className={cn(
@@ -10413,6 +10680,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 type="button"
                 onClick={() => {
                   setStatusCncMenuOpen((v) => !v);
+                  setStatusWorkspaceMenuOpen(false);
                   setStatusPrecisionMenuOpen(false);
                 }}
                 className={cn(
@@ -10451,6 +10719,287 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </div>
 
           {/* POPOVERS FLUTUANTES DA BARRA DE STATUS (RENDERIZADOS FORA DO CONTAINER OVERFLOW-X-AUTO PARA NUNCA CORTAR) */}
+          {statusWorkspaceMenuOpen && (
+            <div
+              data-testid="workspace-customization-popover"
+              className={cn(
+                "absolute bottom-9 right-2 z-50 flex w-72 max-w-[94vw] flex-col gap-2 rounded-xl border p-2.5 shadow-2xl backdrop-blur-md",
+                isDark
+                  ? "border-[#293444] bg-[#151C27]/98 text-[#E6EDF5]"
+                  : "border-[#CBD5E1] bg-[#FFFFFF]/98 text-[#1E293B]",
+              )}
+            >
+              {/* Cabeçalho */}
+              <div
+                className={cn(
+                  "flex items-center justify-between border-b pb-1.5 text-[9px] font-mono font-bold uppercase tracking-wider",
+                  isDark ? "border-[#293444] text-[#38BDF8]" : "border-[#CBD5E1] text-[#0284C7]",
+                )}
+              >
+                <span>⬚ Área de Trabalho (Chapa / Mesa)</span>
+                <button
+                  type="button"
+                  onClick={() => setStatusWorkspaceMenuOpen(false)}
+                  className="text-[#94A3B8] hover:text-foreground cursor-pointer"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+
+              {/* Chaves Rápidas: Exibir Área, Cotas da Área e Travar Limites */}
+              <div className="flex flex-col gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    updateFrame({ visible: !frame.visible });
+                  }}
+                  className={cn(
+                    "flex items-center justify-between rounded-lg px-2 py-1 text-[9px] uppercase font-bold transition-colors cursor-pointer border",
+                    frame.visible
+                      ? "text-[#FB7185] bg-[#E11D48]/15 border-[#E11D48]/40"
+                      : isDark
+                        ? "border-transparent hover:bg-[#0D121B] text-[#94A3B8]"
+                        : "border-transparent hover:bg-[#F1F5F9] text-[#64748B]",
+                  )}
+                >
+                  <span>Exibir Área de Trabalho</span>
+                  <span className="font-mono">{frame.visible ? "ON" : "OFF"}</span>
+                </button>
+
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      updateFrame({ showDims: !frame.showDims });
+                    }}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg px-2 py-1 text-[8.5px] uppercase font-bold transition-colors cursor-pointer border",
+                      frame.showDims
+                        ? isDark
+                          ? "text-[#38BDF8] bg-[#38BDF8]/15 border-[#38BDF8]/40"
+                          : "text-[#0284C7] bg-[#0284C7]/10 border-[#0284C7]/40"
+                        : isDark
+                          ? "border-[#293444] bg-[#0D121B] text-[#94A3B8]"
+                          : "border-[#CBD5E1] bg-[#F8FAFC] text-[#64748B]",
+                    )}
+                  >
+                    <span>Cotas Área</span>
+                    <span className="font-mono">{frame.showDims ? "ON" : "OFF"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      updateFrame({ locked: !frame.locked });
+                    }}
+                    className={cn(
+                      "flex items-center justify-between rounded-lg px-2 py-1 text-[8.5px] uppercase font-bold transition-colors cursor-pointer border",
+                      frame.locked
+                        ? "text-[#F59E0B] bg-[#F59E0B]/15 border-[#F59E0B]/40"
+                        : isDark
+                          ? "border-[#293444] bg-[#0D121B] text-[#94A3B8]"
+                          : "border-[#CBD5E1] bg-[#F8FAFC] text-[#64748B]",
+                    )}
+                  >
+                    <span>Travar Limites</span>
+                    <span className="font-mono">{frame.locked ? "🔒 FIXA" : "LIVRE"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Presets Industriais de Chapa/Mesa (1 Toque) */}
+              <div className="flex flex-col gap-1">
+                <span
+                  className={cn(
+                    "text-[8px] font-mono font-bold uppercase tracking-wider",
+                    isDark ? "text-[#94A3B8]" : "text-[#64748B]",
+                  )}
+                >
+                  Presets Industriais (1 Toque)
+                </span>
+                <div className="grid grid-cols-2 gap-1">
+                  {WORKSPACE_INDUSTRIAL_PRESETS.map((preset) => {
+                    const isSelected =
+                      Math.abs(frame.w - preset.w) < 0.5 && Math.abs(frame.h - preset.h) < 0.5;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => {
+                          if (frame.locked) {
+                            toast.warning("Destrave os limites da Área de Trabalho para alterar o tamanho.");
+                            return;
+                          }
+                          triggerHaptic("selection");
+                          const nextFrame: WorkspaceFrame = {
+                            ...frame,
+                            w: preset.w,
+                            h: preset.h,
+                            visible: true,
+                          };
+                          updateFrame({ w: preset.w, h: preset.h, visible: true });
+                          fitBox(frameBox(nextFrame));
+                          toast.success(`Área de Trabalho: ${preset.label} (${preset.subtitle})`);
+                        }}
+                        className={cn(
+                          "flex flex-col items-start rounded-lg border px-2 py-1 text-left transition-all cursor-pointer active:scale-98",
+                          isSelected
+                            ? isDark
+                              ? "border-[#E11D48] bg-[#E11D48]/18 text-[#E6EDF5]"
+                              : "border-[#E11D48] bg-[#E11D48]/10 text-[#1E293B]"
+                            : isDark
+                              ? "border-[#293444] bg-[#0D121B] hover:border-[#38BDF8]/50 text-[#E6EDF5]"
+                              : "border-[#CBD5E1] bg-[#F8FAFC] hover:border-[#0284C7]/50 text-[#1E293B]",
+                        )}
+                      >
+                        <span className="font-mono text-[9.5px] font-bold leading-tight">
+                          {preset.label}
+                        </span>
+                        <span
+                          className={cn(
+                            "text-[7.5px] leading-tight truncate w-full",
+                            isDark ? "text-[#94A3B8]" : "text-[#64748B]",
+                          )}
+                        >
+                          {preset.subtitle}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Dimensões Personalizadas (Largura X × Altura Y em mm — Teclado Numérico CAD Integrado) */}
+              <div className="flex flex-col gap-1">
+                <span
+                  className={cn(
+                    "text-[8px] font-mono font-bold uppercase tracking-wider",
+                    isDark ? "text-[#94A3B8]" : "text-[#64748B]",
+                  )}
+                >
+                  Dimensões Personalizadas (Teclado CAD)
+                </span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      if (frame.locked) {
+                        toast.warning("Destrave os limites da Área de Trabalho para editar a Largura X.");
+                        return;
+                      }
+                      triggerHaptic("selection");
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setWorkspaceKeypadEditor({
+                        axis: "w",
+                        currentValue: frame.w,
+                        screenPos: { x: rect.left, y: Math.max(180, rect.top - 150) },
+                      });
+                    }}
+                    className={cn(
+                      "flex flex-col items-start rounded-lg border px-2 py-1.5 transition-colors cursor-pointer",
+                      isDark
+                        ? "border-[#293444] bg-[#0D121B] hover:border-[#38BDF8] text-[#E6EDF5]"
+                        : "border-[#CBD5E1] bg-[#F8FAFC] hover:border-[#0284C7] text-[#1E293B]",
+                    )}
+                  >
+                    <span className={cn("text-[8px] font-mono uppercase", isDark ? "text-[#94A3B8]" : "text-[#64748B]")}>
+                      Largura X (mm)
+                    </span>
+                    <span className={cn("font-mono text-xs font-bold", isDark ? "text-[#38BDF8]" : "text-[#0284C7]")}>
+                      {Math.round(frame.w)} mm
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      if (frame.locked) {
+                        toast.warning("Destrave os limites da Área de Trabalho para editar a Altura Y.");
+                        return;
+                      }
+                      triggerHaptic("selection");
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      setWorkspaceKeypadEditor({
+                        axis: "h",
+                        currentValue: frame.h,
+                        screenPos: { x: rect.left, y: Math.max(180, rect.top - 150) },
+                      });
+                    }}
+                    className={cn(
+                      "flex flex-col items-start rounded-lg border px-2 py-1.5 transition-colors cursor-pointer",
+                      isDark
+                        ? "border-[#293444] bg-[#0D121B] hover:border-[#38BDF8] text-[#E6EDF5]"
+                        : "border-[#CBD5E1] bg-[#F8FAFC] hover:border-[#0284C7] text-[#1E293B]",
+                    )}
+                  >
+                    <span className={cn("text-[8px] font-mono uppercase", isDark ? "text-[#94A3B8]" : "text-[#64748B]")}>
+                      Altura Y (mm)
+                    </span>
+                    <span className={cn("font-mono text-xs font-bold", isDark ? "text-[#38BDF8]" : "text-[#0284C7]")}>
+                      {Math.round(frame.h)} mm
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Ações Rápidas: Inverter X/Y e Enquadrar Área na Tela */}
+              <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (frame.locked) {
+                      toast.warning("Destrave os limites da Área de Trabalho para inverter X/Y.");
+                      return;
+                    }
+                    triggerHaptic("selection");
+                    const swapped: WorkspaceFrame = {
+                      ...frame,
+                      w: frame.h,
+                      h: frame.w,
+                      visible: true,
+                    };
+                    updateFrame({ w: swapped.w, h: swapped.h, visible: true });
+                    fitBox(frameBox(swapped));
+                    toast.info(`Orientação invertida: ${Math.round(swapped.w)} × ${Math.round(swapped.h)} mm`);
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 font-mono text-[8.5px] font-bold uppercase transition-colors cursor-pointer",
+                    isDark
+                      ? "border-[#293444] bg-[#0D121B] hover:bg-[#293444] text-[#E6EDF5]"
+                      : "border-[#CBD5E1] bg-[#F1F5F9] hover:bg-[#E2E8F0] text-[#1E293B]",
+                  )}
+                  title="Inverter Largura X e Altura Y (Paisagem / Retrato)"
+                >
+                  <ArrowLeftRight className="size-3 shrink-0" />
+                  <span>⇄ Inverter X/Y</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    updateFrame({ visible: true });
+                    fitBox(frameBox({ ...frame, visible: true }));
+                    toast.info("Área de Trabalho enquadrada na tela");
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-1 rounded-lg border px-2 py-1.5 font-mono text-[8.5px] font-bold uppercase transition-colors cursor-pointer",
+                    isDark
+                      ? "border-[#E11D48]/50 bg-[#E11D48]/18 hover:bg-[#E11D48]/28 text-[#FB7185]"
+                      : "border-[#E11D48]/45 bg-[#E11D48]/10 hover:bg-[#E11D48]/20 text-[#E11D48]",
+                  )}
+                  title="Centralizar e enquadrar a Área de Trabalho na tela"
+                >
+                  <Crosshair className="size-3 shrink-0" />
+                  <span>⌖ Enquadrar Área</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {statusPrecisionMenuOpen && (
             <div
               className={cn(
@@ -11294,6 +11843,47 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
+      {/* TECLADO NUMÉRICO CAD INTEGRADO PARA PERSONALIZAÇÃO DE LARGURA X / ALTURA Y DA ÁREA DE TRABALHO */}
+      {workspaceKeypadEditor && (
+        <ChamferDirectDimensionEditor
+          open={true}
+          onClose={() => setWorkspaceKeypadEditor(null)}
+          screenPos={workspaceKeypadEditor.screenPos}
+          currentValue={workspaceKeypadEditor.currentValue}
+          label={
+            workspaceKeypadEditor.axis === "w"
+              ? "Largura X da Área (mm)"
+              : "Altura Y da Área (mm)"
+          }
+          allowLock={true}
+          initialLocked={Boolean(frame.locked)}
+          allowNegative={false}
+          unit="mm"
+          presets={[
+            { label: "1000", value: 1000 },
+            { label: "1200", value: 1200 },
+            { label: "1500", value: 1500 },
+            { label: "2000", value: 2000 },
+            { label: "3000", value: 3000 },
+            { label: "6000", value: 6000 },
+          ]}
+          onConfirm={(newVal, lockMeasure) => {
+            const clamped = clampSide(newVal, workspaceKeypadEditor.currentValue);
+            const patch: Partial<WorkspaceFrame> =
+              workspaceKeypadEditor.axis === "w"
+                ? { w: clamped, visible: true, locked: Boolean(lockMeasure) }
+                : { h: clamped, visible: true, locked: Boolean(lockMeasure) };
+            const nextFrame: WorkspaceFrame = { ...frame, ...patch };
+            updateFrame(patch);
+            setWorkspaceKeypadEditor(null);
+            fitBox(frameBox(nextFrame));
+            toast.success(
+              `Área de Trabalho ajustada para ${Math.round(nextFrame.w)} × ${Math.round(nextFrame.h)} mm`,
+            );
+          }}
+        />
+      )}
+
       {/* EDIÇÃO DIRETA DE COTAS VIVAS NO CANVAS (TECLADO NUMÉRICO CAD INTEGRADO + RESTRIÇÕES DIMENSIONAIS) */}
       {liveDimEditor && (
         <ChamferDirectDimensionEditor
@@ -11989,24 +12579,25 @@ export const EntityShape = React.memo(function EntityShape({
   const stroke = preview
     ? isDark
       ? PREVIEW_COLOR
-      : "#1E293B"
+      : "#0F172A"
     : isCutOrWhite
       ? isDark
-        ? "#E6EDF5"
-        : "#1E293B"
+        ? "#F8FAFC"
+        : "#0F172A"
       : style.color;
   const isIsoSolid = !!e.params?.isIsoSolidFace;
   const fillColor = isIsoSolid ? ((e.params?.fillColor as string) || "rgba(18, 40, 74, 0.25)") : "none";
   const customStroke = isIsoSolid ? ((e.params?.strokeColor as string) || "#E8F4FF") : stroke;
   const customWidth = isIsoSolid
-    ? (typeof e.params?.strokeWidth === "number" ? e.params.strokeWidth : 1.4) / k
-    : (1.4 * style.weight) / k;
+    ? (typeof e.params?.strokeWidth === "number" ? e.params.strokeWidth : 2.0) / k
+    : (isCutOrWhite ? Math.max(2.1, 1.65 * style.weight) : Math.max(1.6, 1.45 * style.weight)) / k;
   const noStroke = isIsoSolid && !!e.params?.noStroke;
   const customDashArr = Array.isArray(e.params?.dash) ? (e.params.dash as number[]) : null;
 
   const props = {
     fill: fillColor,
     stroke: noStroke ? "none" : customStroke,
+    strokeOpacity: 1,
     strokeWidth: customWidth,
     strokeLinecap: "round" as const,
     strokeLinejoin: "round" as const,
@@ -12016,7 +12607,6 @@ export const EntityShape = React.memo(function EntityShape({
         : customDashArr && customDashArr.length > 0
           ? customDashArr.map((d) => d / k).join(" ")
           : style.dash(1 / k),
-    vectorEffect: "non-scaling-stroke" as const,
   };
   const halo = selected
     ? {
@@ -12162,6 +12752,9 @@ const Rulers = React.memo(function Rulers({
   unit = "mm",
   width,
   height,
+  cursor,
+  frame,
+  onCenterWorkspace,
 }: {
   view: { tx: number; ty: number; k: number };
   isDark: boolean;
@@ -12169,147 +12762,275 @@ const Rulers = React.memo(function Rulers({
   unit?: string;
   width: number;
   height: number;
+  cursor?: Vec2;
+  frame?: WorkspaceFrame;
+  onCenterWorkspace?: () => void;
 }) {
-  const vw = width || (typeof window !== "undefined" ? window.innerWidth : 1920);
-  const vh = height || (typeof window !== "undefined" ? window.innerHeight : 1080);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const vw = Math.max(1, width || (typeof window !== "undefined" ? window.innerWidth : 1920));
+  const vh = Math.max(1, height || (typeof window !== "undefined" ? window.innerHeight : 1080));
 
-  // Passo dos rótulos numéricos principais (ex: 50, 100, 200, 500...)
-  // Mantém rótulos espaçados por no mínimo 65 pixels para evitar aglomeração de texto
-  let labelStep = Math.max(1, majorStep);
-  while (labelStep * view.k < 65) {
-    labelStep *= 2;
-  }
-
-  // Subdivisão intermediária de entalhes (notches de 3px)
-  const tickStep = labelStep / 5;
-
-  // Limites em coordenadas mundiais (CAD mm) visíveis na tela
-  const minWorldX = -view.tx / view.k;
-  const maxWorldX = (vw - view.tx) / view.k;
-  const minWorldY = -view.ty / view.k;
-  const maxWorldY = (vh - view.ty) / view.k;
-
-  const startTickX = Math.floor(minWorldX / tickStep) * tickStep;
-  const endTickX = Math.ceil(maxWorldX / tickStep) * tickStep;
-
-  const startTickY = Math.floor(minWorldY / tickStep) * tickStep;
-  const endTickY = Math.ceil(maxWorldY / tickStep) * tickStep;
-
-  const ticksX: { val: number; isMajor: boolean; screenX: number }[] = [];
-  for (let x = startTickX; x <= endTickX; x += tickStep) {
-    const screenX = view.tx + x * view.k;
-    if (screenX >= 20 && screenX <= vw) {
-      const isMajor = Math.abs(Math.round(x / labelStep) * labelStep - x) < 0.001;
-      ticksX.push({ val: Math.round(x), isMajor, screenX });
+  useLayoutEffect(() => {
+    const cvs = canvasRef.current;
+    if (!cvs) return;
+    const dpr = typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2.5) : 1;
+    const targetW = Math.round(vw * dpr);
+    const targetH = Math.round(vh * dpr);
+    if (cvs.width !== targetW || cvs.height !== targetH) {
+      cvs.width = targetW;
+      cvs.height = targetH;
     }
-  }
 
-  const ticksY: { val: number; isMajor: boolean; screenY: number }[] = [];
-  for (let y = startTickY; y <= endTickY; y += tickStep) {
-    const screenY = view.ty + y * view.k;
-    if (screenY >= 20 && screenY <= vh) {
-      const isMajor = Math.abs(Math.round(y / labelStep) * labelStep - y) < 0.001;
-      ticksY.push({ val: Math.round(y), isMajor, screenY });
+    const ctx = cvs.getContext("2d");
+    if (!ctx) return;
+
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, vw, vh);
+
+    const V_RULER_W = 30;
+    const H_RULER_H = 26;
+    const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+
+    // Seleção de passo principal técnico (1, 2, 5 × 10^n) garantindo espaçamento >= 76px
+    const NICE_STEPS = [
+      1, 2, 5, 10, 20, 25, 50, 100, 200, 250, 500, 1000, 2000, 2500, 5000, 10000, 20000, 50000,
+    ];
+    let labelStep = Math.max(1, majorStep || 10);
+    for (const s of NICE_STEPS) {
+      if (s * safeK >= 76) {
+        labelStep = s;
+        break;
+      }
     }
-  }
+    while (labelStep * safeK < 76) {
+      labelStep *= 2;
+    }
+
+    const midStep = labelStep / 2;
+    const minorDivisions = labelStep * safeK >= 140 ? 10 : 5;
+    const minorStep = labelStep / minorDivisions;
+
+    const bgColor = isDark ? "rgba(13, 18, 27, 0.92)" : "rgba(241, 245, 249, 0.94)";
+    const borderColor = isDark ? "#293444" : "#CBD5E1";
+    const majorTickColor = isDark ? "#94A3B8" : "#64748B";
+    const midTickColor = isDark ? "#475569" : "#94A3B8";
+    const minorTickColor = isDark ? "#293444" : "#CBD5E1";
+    const textColor = isDark ? "#E6EDF5" : "#1E293B";
+    const zeroColor = "#DC143C";
+    const workspaceBandFill = isDark ? "rgba(220, 20, 60, 0.11)" : "rgba(220, 20, 60, 0.08)";
+    const workspaceBandEdge = "rgba(220, 20, 60, 0.65)";
+
+    /* =====================================================================
+     * 1. RÉGUA HORIZONTAL SUPERIOR (Altura = 26px, Clipping x: 30..vw, y: 0..26)
+     * ===================================================================== */
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(V_RULER_W, 0, Math.max(0, vw - V_RULER_W), H_RULER_H);
+    ctx.clip();
+
+    // Fundo da régua horizontal
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(V_RULER_W, 0, vw - V_RULER_W, H_RULER_H);
+
+    // Faixa iluminada do intervalo da Área de Trabalho [0, frame.w]
+    if (frame?.visible && Number.isFinite(frame.w) && frame.w > 0) {
+      const x0 = Math.max(V_RULER_W, view.tx);
+      const x1 = Math.min(vw, view.tx + frame.w * safeK);
+      if (x1 > x0) {
+        ctx.fillStyle = workspaceBandFill;
+        ctx.fillRect(x0, 0, x1 - x0, H_RULER_H);
+        ctx.fillStyle = workspaceBandEdge;
+        ctx.fillRect(x0, H_RULER_H - 2, x1 - x0, 2);
+      }
+    }
+
+    // Borda inferior da régua horizontal
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(V_RULER_W, H_RULER_H - 0.5);
+    ctx.lineTo(vw, H_RULER_H - 0.5);
+    ctx.stroke();
+
+    // Ticks de 3 níveis + Números posicionados +5px à direita do traço principal (zero colisão)
+    const minWorldX = (V_RULER_W - view.tx) / safeK;
+    const maxWorldX = (vw - view.tx) / safeK;
+    const startIdxX = Math.floor(minWorldX / minorStep) - 1;
+    const endIdxX = Math.ceil(maxWorldX / minorStep) + 1;
+
+    ctx.font = '600 10px "JetBrains Mono", "Inter", ui-monospace, monospace';
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+
+    for (let i = startIdxX; i <= endIdxX; i++) {
+      const worldX = i * minorStep;
+      const screenX = Math.round(view.tx + worldX * safeK) + 0.5;
+      if (screenX < V_RULER_W - 2 || screenX > vw + 2) continue;
+
+      const isMajor = Math.abs(worldX / labelStep - Math.round(worldX / labelStep)) < 1e-4;
+      const isMid = !isMajor && Math.abs(worldX / midStep - Math.round(worldX / midStep)) < 1e-4;
+
+      const tickLen = isMajor ? 12 : isMid ? 7 : 4;
+      ctx.strokeStyle = isMajor ? majorTickColor : isMid ? midTickColor : minorTickColor;
+      ctx.lineWidth = isMajor ? 1.2 : 1;
+      ctx.beginPath();
+      ctx.moveTo(screenX, H_RULER_H - tickLen);
+      ctx.lineTo(screenX, H_RULER_H);
+      ctx.stroke();
+
+      if (isMajor) {
+        const val = Math.round(worldX);
+        ctx.fillStyle = val === 0 ? zeroColor : textColor;
+        // +5px à direita do traço principal com textAlign: 'left' — impede colisão com o traço
+        ctx.fillText(String(val), screenX + 5, 4);
+      }
+    }
+
+    // Hairline Tracker do Cursor na Régua Horizontal (#DC143C)
+    if (cursor && Number.isFinite(cursor.x)) {
+      const cx = view.tx + cursor.x * safeK;
+      if (cx >= V_RULER_W && cx <= vw) {
+        ctx.strokeStyle = "#DC143C";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(cx, 0);
+        ctx.lineTo(cx, H_RULER_H);
+        ctx.stroke();
+
+        ctx.fillStyle = "#DC143C";
+        ctx.beginPath();
+        ctx.moveTo(cx - 3.5, 0);
+        ctx.lineTo(cx + 3.5, 0);
+        ctx.lineTo(cx, 5);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+
+    /* =====================================================================
+     * 2. RÉGUA VERTICAL ESQUERDA (Largura = 30px, Clipping x: 0..30, y: 26..vh)
+     * ===================================================================== */
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, H_RULER_H, V_RULER_W, Math.max(0, vh - H_RULER_H));
+    ctx.clip();
+
+    // Fundo da régua vertical
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, H_RULER_H, V_RULER_W, vh - H_RULER_H);
+
+    // Faixa iluminada do intervalo da Área de Trabalho [0, frame.h]
+    if (frame?.visible && Number.isFinite(frame.h) && frame.h > 0) {
+      const y0 = Math.max(H_RULER_H, view.ty);
+      const y1 = Math.min(vh, view.ty + frame.h * safeK);
+      if (y1 > y0) {
+        ctx.fillStyle = workspaceBandFill;
+        ctx.fillRect(0, y0, V_RULER_W, y1 - y0);
+        ctx.fillStyle = workspaceBandEdge;
+        ctx.fillRect(V_RULER_W - 2, y0, 2, y1 - y0);
+      }
+    }
+
+    // Borda direita da régua vertical
+    ctx.strokeStyle = borderColor;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(V_RULER_W - 0.5, H_RULER_H);
+    ctx.lineTo(V_RULER_W - 0.5, vh);
+    ctx.stroke();
+
+    // Ticks de 3 níveis + Números rotacionados a -90° (-Math.PI / 2) 100% legíveis sem corte
+    const minWorldY = (H_RULER_H - view.ty) / safeK;
+    const maxWorldY = (vh - view.ty) / safeK;
+    const startIdxY = Math.floor(minWorldY / minorStep) - 1;
+    const endIdxY = Math.ceil(maxWorldY / minorStep) + 1;
+
+    ctx.font = '600 10px "JetBrains Mono", "Inter", ui-monospace, monospace';
+
+    for (let i = startIdxY; i <= endIdxY; i++) {
+      const worldY = i * minorStep;
+      const screenY = Math.round(view.ty + worldY * safeK) + 0.5;
+      if (screenY < H_RULER_H - 2 || screenY > vh + 2) continue;
+
+      const isMajor = Math.abs(worldY / labelStep - Math.round(worldY / labelStep)) < 1e-4;
+      const isMid = !isMajor && Math.abs(worldY / midStep - Math.round(worldY / midStep)) < 1e-4;
+
+      const tickLen = isMajor ? 12 : isMid ? 7 : 4;
+      ctx.strokeStyle = isMajor ? majorTickColor : isMid ? midTickColor : minorTickColor;
+      ctx.lineWidth = isMajor ? 1.2 : 1;
+      ctx.beginPath();
+      ctx.moveTo(V_RULER_W - tickLen, screenY);
+      ctx.lineTo(V_RULER_W, screenY);
+      ctx.stroke();
+
+      if (isMajor) {
+        const val = Math.round(worldY);
+        ctx.save();
+        // Posiciona o texto rotacionado a -90° paralelamente à régua a +5px do traço principal
+        ctx.translate(10, screenY - 5);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = val === 0 ? zeroColor : textColor;
+        ctx.fillText(String(val), 0, 0);
+        ctx.restore();
+      }
+    }
+
+    // Hairline Tracker do Cursor na Régua Vertical (#DC143C)
+    if (cursor && Number.isFinite(cursor.y)) {
+      const cy = view.ty + cursor.y * safeK;
+      if (cy >= H_RULER_H && cy <= vh) {
+        ctx.strokeStyle = "#DC143C";
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(0, cy);
+        ctx.lineTo(V_RULER_W, cy);
+        ctx.stroke();
+
+        ctx.fillStyle = "#DC143C";
+        ctx.beginPath();
+        ctx.moveTo(0, cy - 3.5);
+        ctx.lineTo(0, cy + 3.5);
+        ctx.lineTo(5, cy);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+    ctx.restore();
+  }, [view.tx, view.ty, view.k, isDark, majorStep, vw, vh, cursor?.x, cursor?.y, frame?.visible, frame?.w, frame?.h]);
 
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-      {/* Canto superior esquerdo: badge técnico de unidade */}
-      <div
+    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden z-10">
+      {/* Canvas de Alta Precisão para as Réguas Horizontal (26px) e Vertical (30px) */}
+      <canvas
+        ref={canvasRef}
+        style={{ width: `${vw}px`, height: `${vh}px` }}
+        className="pointer-events-none absolute inset-0"
+      />
+
+      {/* Bloco de Canto Interativo [ MM ] (30px × 26px): toca para enquadrar a Área de Trabalho */}
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onCenterWorkspace?.();
+        }}
+        title="Toque para centralizar e enquadrar a Área de Trabalho na tela"
         className={cn(
-          "absolute left-0 top-0 z-10 flex size-5 items-center justify-center border-b border-r font-mono text-[8px] font-bold uppercase",
+          "pointer-events-auto absolute left-0 top-0 z-20 flex w-[30px] h-[26px] items-center justify-center border-b border-r font-mono text-[8.5px] font-bold uppercase transition-colors cursor-pointer active:scale-95",
           isDark
-            ? "border-[#293444] bg-[#0D121B]/90 text-[#94A3B8]"
-            : "border-[#CBD5E1] bg-[#F1F5F9]/90 text-[#64748B]"
+            ? "border-[#293444] bg-[#0D121B]/95 text-[#94A3B8] hover:text-[#38BDF8] hover:bg-[#151C27]"
+            : "border-[#CBD5E1] bg-[#F1F5F9]/95 text-[#64748B] hover:text-[#0284C7] hover:bg-[#FFFFFF]",
         )}
       >
         {unit}
-      </div>
-
-      {/* Régua Horizontal Superior */}
-      <div
-        className={cn(
-          "pointer-events-none absolute inset-x-0 top-0 h-5 border-b backdrop-blur-sm",
-          isDark
-            ? "border-[#293444] bg-[#0D121B]/75 text-[#94A3B8]"
-            : "border-[#CBD5E1] bg-[#F1F5F9]/85 text-[#64748B]"
-        )}
-      >
-        {ticksX.map((t, idx) => (
-          <div
-            key={`rx-${idx}-${t.val}`}
-            style={{ left: t.screenX }}
-            className="absolute bottom-0 flex flex-col items-center"
-          >
-            {/* Notch / Entalhe */}
-            <div
-              className={cn(
-                "w-px",
-                t.isMajor
-                  ? isDark ? "h-2.5 bg-[#94A3B8]" : "h-2.5 bg-[#64748B]"
-                  : isDark ? "h-1 bg-[#293444]" : "h-1 bg-[#CBD5E1]"
-              )}
-            />
-            {/* Rótulo Numérico nas Divisões Principais */}
-            {t.isMajor && (
-              <span
-                style={{ transform: "translateX(-50%)" }}
-                className={cn(
-                  "absolute top-0.5 font-mono text-[7.5px] tracking-tight",
-                  t.val === 0
-                    ? "text-[#E11D48] font-bold"
-                    : isDark ? "text-[#94A3B8]" : "text-[#64748B]"
-                )}
-              >
-                {t.val}
-              </span>
-            )}
-          </div>
-        ))}
-      </div>
-
-      {/* Régua Vertical Esquerda */}
-      <div
-        className={cn(
-          "pointer-events-none absolute inset-y-0 left-0 w-5 border-r backdrop-blur-sm",
-          isDark
-            ? "border-[#293444] bg-[#0D121B]/75 text-[#94A3B8]"
-            : "border-[#CBD5E1] bg-[#F1F5F9]/85 text-[#64748B]"
-        )}
-      >
-        {ticksY.map((t, idx) => (
-          <div
-            key={`ry-${idx}-${t.val}`}
-            style={{ top: t.screenY }}
-            className="absolute right-0 flex items-center"
-          >
-            {/* Rótulo Numérico */}
-            {t.isMajor && (
-              <span
-                style={{ transform: "translateY(-50%)" }}
-                className={cn(
-                  "absolute right-3 font-mono text-[7.5px] tracking-tight",
-                  t.val === 0
-                    ? isDark ? "text-[#38BDF8] font-bold" : "text-[#0284C7] font-bold"
-                    : isDark ? "text-[#94A3B8]" : "text-[#64748B]"
-                )}
-              >
-                {t.val}
-              </span>
-            )}
-            {/* Notch / Entalhe */}
-            <div
-              className={cn(
-                "h-px",
-                t.isMajor
-                  ? isDark ? "w-2.5 bg-[#94A3B8]" : "w-2.5 bg-[#64748B]"
-                  : isDark ? "w-1 bg-[#293444]" : "w-1 bg-[#CBD5E1]"
-              )}
-            />
-          </div>
-        ))}
-      </div>
+      </button>
     </div>
   );
 });
