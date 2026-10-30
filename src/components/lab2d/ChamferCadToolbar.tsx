@@ -523,15 +523,12 @@ export function ChamferCadToolbar({
       ref={toolbarRef}
       aria-label="Barra de ferramentas CAD"
       style={{
-        backgroundColor: isDark
-          ? "rgba(21, 28, 39, var(--ui-opacity, 0.96))"
-          : "rgba(255, 255, 255, var(--ui-opacity, 0.98))",
+        backgroundColor: "var(--chamfer-bar-bg)",
+        borderColor: "var(--chamfer-border)",
+        color: "var(--chamfer-text-secondary)",
       }}
       className={cn(
         "relative flex h-full max-h-full w-11 sm:w-12 shrink-0 flex-col items-center rounded-2xl border p-1 shadow-xl backdrop-blur-md select-none z-40 transition-colors",
-        isDark
-          ? "border-[#293444] text-[#94A3B8]"
-          : "border-[#CBD5E1] text-[#64748B] shadow-md",
         className,
       )}
     >
@@ -568,17 +565,27 @@ export function ChamferCadToolbar({
                 }}
                 title={`${cat.label} — ${cat.desc}`}
                 aria-label={cat.label}
-                className={cn(
-                  "group relative flex min-h-[40px] size-10 w-full flex-col items-center justify-center rounded-xl transition-all touch-manipulation cursor-pointer",
+                style={
                   isOpen
-                    ? "bg-[#E11D48] text-white shadow-md shadow-[#E11D48]/30 scale-[1.02]"
+                    ? {
+                        backgroundColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent-contrast)",
+                        borderColor: "var(--chamfer-accent)",
+                      }
                     : active
-                      ? isDark
-                        ? "border border-[#E11D48]/55 bg-[#E11D48]/18 text-[#FB7185] shadow-xs"
-                        : "border border-[#E11D48]/45 bg-[#E11D48]/10 text-[#E11D48] font-bold shadow-xs"
-                      : isDark
-                        ? "text-[#94A3B8] hover:border-[#293444] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
-                        : "text-[#64748B] hover:border-[#CBD5E1] hover:bg-[#F1F5F9] hover:text-[#1E293B]",
+                      ? {
+                          backgroundColor: "var(--chamfer-accent-soft)",
+                          borderColor: "var(--chamfer-accent-border)",
+                          color: "var(--chamfer-accent)",
+                        }
+                      : {
+                          borderColor: "transparent",
+                          color: "var(--chamfer-text-secondary)",
+                        }
+                }
+                className={cn(
+                  "group relative flex min-h-[40px] size-10 w-full flex-col items-center justify-center rounded-xl border transition-all touch-manipulation cursor-pointer",
+                  isOpen && "shadow-md scale-[1.02]",
                 )}
               >
                 <Icon className="size-4 transition-transform group-hover:scale-110" />
@@ -588,7 +595,10 @@ export function ChamferCadToolbar({
 
                 {/* Indicador de ferramenta ativa no grupo */}
                 {active && !isOpen && (
-                  <span className="absolute top-1 right-1 size-1.5 rounded-full bg-[#E11D48] shadow-xs animate-pulse" />
+                  <span
+                    style={{ backgroundColor: "var(--chamfer-accent)" }}
+                    className="absolute top-1 right-1 size-1.5 rounded-full shadow-xs animate-pulse"
+                  />
                 )}
               </button>
             </div>
@@ -599,10 +609,8 @@ export function ChamferCadToolbar({
       {/* SELETOR RÁPIDO DE CAMADA ATIVA (CORTE, DOBRA, RECORTE, MARCAÇÃO) */}
       {setActiveLayer && (
         <div
-          className={cn(
-            "w-full pt-1 border-t flex flex-col items-center shrink-0",
-            isDark ? "border-[#293444]" : "border-[#CBD5E1]",
-          )}
+          style={{ borderColor: "var(--chamfer-border)" }}
+          className="w-full pt-1 border-t flex flex-col items-center shrink-0"
         >
           <button
             type="button"
@@ -615,12 +623,12 @@ export function ChamferCadToolbar({
             }}
             title={`Camada ativa: ${activeLayer}. Toque para alternar (Corte, Dobra, Recorte, Marcação).`}
             aria-label={`Camada ativa: ${activeLayer}`}
-            className={cn(
-              "group relative flex size-9 w-full flex-col items-center justify-center rounded-xl transition-all border",
-              isDark
-                ? "border-[#293444] bg-[#0D121B] hover:border-[#38BDF8]/50 hover:bg-[#1E293B]"
-                : "border-[#CBD5E1] bg-[#F1F5F9] hover:border-[#0284C7]/50 hover:bg-[#E9EEF4]",
-            )}
+            style={{
+              backgroundColor: "var(--chamfer-surface-elevated)",
+              borderColor: "var(--chamfer-border)",
+              color: "var(--chamfer-text-secondary)",
+            }}
+            className="group relative flex size-9 w-full flex-col items-center justify-center rounded-xl transition-all border cursor-pointer"
           >
             <span
               className="size-3 rounded-full border border-slate-500/50 shadow-2xs transition-transform group-hover:scale-110"
@@ -629,27 +637,22 @@ export function ChamferCadToolbar({
                   activeLayer === "dobra"
                     ? "#EC4899"
                     : activeLayer === "recorte"
-                    ? "#F59E0B"
-                    : activeLayer === "marcacao"
-                    ? "#3B82F6"
-                    : isDark
-                    ? "#E6EDF5"
-                    : "#1E293B",
+                      ? "#F59E0B"
+                      : activeLayer === "marcacao"
+                        ? "#3B82F6"
+                        : isDark
+                          ? "#F3F4F6"
+                          : "#111827",
               }}
             />
-            <span
-              className={cn(
-                "text-[7px] font-mono font-bold tracking-wider mt-0.5 leading-none uppercase",
-                isDark ? "text-[#94A3B8] group-hover:text-[#E6EDF5]" : "text-[#64748B] group-hover:text-[#1E293B]",
-              )}
-            >
+            <span className="text-[7px] font-mono font-bold tracking-wider mt-0.5 leading-none uppercase">
               {activeLayer === "dobra"
                 ? "DOB"
                 : activeLayer === "recorte"
-                ? "REC"
-                : activeLayer === "marcacao"
-                ? "MAR"
-                : "COR"}
+                  ? "REC"
+                  : activeLayer === "marcacao"
+                    ? "MAR"
+                    : "COR"}
             </span>
           </button>
         </div>
@@ -676,13 +679,13 @@ export function ChamferCadToolbar({
           transition: "all 200ms cubic-bezier(0.22, 1, 0.36, 1)",
           backdropFilter: "blur(16px)",
           WebkitBackdropFilter: "blur(16px)",
+          backgroundColor: "var(--chamfer-popover-bg)",
+          borderColor: "var(--chamfer-border)",
+          color: "var(--chamfer-text-primary)",
         }}
         className={cn(
           "absolute z-50 flex items-center gap-1 overflow-hidden shadow-lg select-none",
           openCat === "selecionar" ? "border" : "border-0",
-          isDark
-            ? "border-[#293444] bg-[#151C27]/96 text-[#E6EDF5] shadow-black/50"
-            : "border-[#CBD5E1] bg-[#FFFFFF]/96 text-[#1E293B] shadow-slate-900/12",
         )}
       >
         {/* 1. Ponteiro (Seleção Geral + Fusão Gestual de Vértices) */}
@@ -692,14 +695,15 @@ export function ChamferCadToolbar({
           aria-label="Ponteiro (Seleção Geral)"
           title="Ponteiro (Seleção Geral e Vértices Diretos)"
           onClick={() => handleSelectTool("select", "selecionar")}
-          className={cn(
-            "flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation",
+          style={
             tool === "select"
-              ? "bg-[#E11D48] text-white shadow-xs"
-              : isDark
-                ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
-                : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]",
-          )}
+              ? {
+                  backgroundColor: "var(--chamfer-accent)",
+                  color: "var(--chamfer-accent-contrast)",
+                }
+              : { color: "var(--chamfer-text-secondary)" }
+          }
+          className="flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation"
         >
           <MousePointer2 className="size-3.5" />
         </button>
@@ -711,14 +715,15 @@ export function ChamferCadToolbar({
           aria-label="Nós (Vértices Isolados)"
           title="Nós (Vértices Isolados)"
           onClick={() => handleSelectTool("node", "selecionar")}
-          className={cn(
-            "flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation",
+          style={
             tool === "node"
-              ? "bg-[#E11D48] text-white shadow-xs"
-              : isDark
-                ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
-                : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]",
-          )}
+              ? {
+                  backgroundColor: "var(--chamfer-accent)",
+                  color: "var(--chamfer-accent-contrast)",
+                }
+              : { color: "var(--chamfer-text-secondary)" }
+          }
+          className="flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation"
         >
           <ControlNodesIcon className="size-3.5" />
         </button>
@@ -730,14 +735,15 @@ export function ChamferCadToolbar({
           aria-label="Pan (Mover Prancheta)"
           title="Pan (Mover Prancheta com 1 Dedo)"
           onClick={() => handleSelectTool("pan", "selecionar")}
-          className={cn(
-            "flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation",
+          style={
             tool === "pan"
-              ? "bg-[#E11D48] text-white shadow-xs"
-              : isDark
-                ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
-                : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]",
-          )}
+              ? {
+                  backgroundColor: "var(--chamfer-accent)",
+                  color: "var(--chamfer-accent-contrast)",
+                }
+              : { color: "var(--chamfer-text-secondary)" }
+          }
+          className="flex size-[28px] shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer touch-manipulation"
         >
           <Hand className="size-3.5" />
         </button>
@@ -746,31 +752,28 @@ export function ChamferCadToolbar({
       {/* FLYOUT CONTEXTUAL FLUTUANTE PARA AS DEMAIS CATEGORIAS (EXCETO 'selecionar') */}
       {openCat !== "none" && openCat !== "selecionar" && activeCategoryData && (
         <div
-          className={cn(
-            "absolute left-full ml-1.5 sm:ml-2 z-50 w-64 max-w-[calc(100vw-60px)] sm:max-w-[92vw] rounded-2xl border p-2 shadow-2xl backdrop-blur-lg animate-in fade-in zoom-in-95 duration-150 overflow-y-auto",
-            isDark
-              ? "border-[#293444] bg-[#151C27]/98 text-[#E6EDF5]"
-              : "border-[#CBD5E1] bg-[#FFFFFF]/98 text-[#1E293B] shadow-2xl",
-          )}
+          className="absolute left-full ml-1.5 sm:ml-2 z-50 w-64 max-w-[calc(100vw-60px)] sm:max-w-[92vw] rounded-2xl border p-2 shadow-2xl backdrop-blur-lg animate-in fade-in zoom-in-95 duration-150 overflow-y-auto"
           style={{
             ...getFlyoutPosition(openCat),
             maxHeight: "calc(100% - 8px)",
+            backgroundColor: "var(--chamfer-popover-bg)",
+            borderColor: "var(--chamfer-border)",
+            color: "var(--chamfer-text-primary)",
           }}
         >
           {/* CABEÇALHO DO FLYOUT */}
           <div
-            className={cn(
-              "flex items-center justify-between border-b pb-1.5 mb-1.5",
-              isDark ? "border-[#293444]" : "border-[#CBD5E1]",
-            )}
+            style={{ borderColor: "var(--chamfer-border-subtle)" }}
+            className="flex items-center justify-between border-b pb-1.5 mb-1.5"
           >
             <div className="flex items-center gap-1.5">
-              <activeCategoryData.icon className="size-3.5 text-[#E11D48]" />
+              <activeCategoryData.icon
+                style={{ color: "var(--chamfer-accent)" }}
+                className="size-3.5"
+              />
               <span
-                className={cn(
-                  "font-mono text-xs font-bold uppercase tracking-wide",
-                  isDark ? "text-[#E6EDF5]" : "text-[#1E293B]",
-                )}
+                style={{ color: "var(--chamfer-text-primary)" }}
+                className="font-mono text-xs font-bold uppercase tracking-wide"
               >
                 {activeCategoryData.label}
               </span>
@@ -782,14 +785,15 @@ export function ChamferCadToolbar({
                   triggerHaptic("tap");
                   setIsPinned((p) => !p);
                 }}
-                className={cn(
-                  "size-5 rounded-md grid place-items-center transition-colors",
+                style={
                   isPinned
-                    ? "bg-[#E11D48] text-white shadow-xs"
-                    : isDark
-                      ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
-                      : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]",
-                )}
+                    ? {
+                        backgroundColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent-contrast)",
+                      }
+                    : { color: "var(--chamfer-text-secondary)" }
+                }
+                className="size-5 rounded-md grid place-items-center transition-colors cursor-pointer"
                 title={
                   isPinned
                     ? "Menu fixado (clique para recolher automaticamente)"
@@ -801,12 +805,8 @@ export function ChamferCadToolbar({
               <button
                 type="button"
                 onClick={() => setOpenCat("none")}
-                className={cn(
-                  "size-5 rounded-md grid place-items-center transition-colors",
-                  isDark
-                    ? "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
-                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-800",
-                )}
+                style={{ color: "var(--chamfer-text-secondary)" }}
+                className="size-5 rounded-md grid place-items-center transition-colors cursor-pointer"
                 title="Fechar menu"
               >
                 <X className="size-3.5" />
@@ -1970,7 +1970,6 @@ function FlyoutItem({
   badge,
   onClick,
   desc,
-  isDark: propIsDark,
 }: {
   label: string;
   keyLabel?: string;
@@ -1982,61 +1981,60 @@ function FlyoutItem({
   desc?: string;
   isDark?: boolean;
 }) {
-  const isDark =
-    propIsDark ??
-    (typeof document !== "undefined" ? document.documentElement.classList.contains("dark") : true);
-
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={cn(
-        "group flex w-full flex-col rounded-xl px-2.5 py-1.5 text-left transition-colors",
+      style={
         disabled
-          ? "opacity-35 cursor-not-allowed text-slate-400"
+          ? { color: "var(--chamfer-text-muted)" }
           : active
-            ? isDark
-              ? "border border-red-500/40 bg-red-950/70 text-red-300 shadow-xs"
-              : "border border-red-300 bg-red-50 text-red-600 shadow-xs font-semibold"
-            : isDark
-              ? "text-slate-300 hover:bg-slate-900 hover:text-white"
-              : "text-slate-700 hover:bg-slate-100 hover:text-slate-900",
+            ? {
+                backgroundColor: "var(--chamfer-accent-soft)",
+                borderColor: "var(--chamfer-accent-border)",
+                color: "var(--chamfer-accent)",
+              }
+            : {
+                borderColor: "transparent",
+                color: "var(--chamfer-text-primary)",
+              }
+      }
+      className={cn(
+        "group flex w-full flex-col rounded-xl border px-2.5 py-1.5 text-left transition-colors cursor-pointer",
+        disabled && "opacity-35 cursor-not-allowed",
       )}
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Icon
-            className={cn(
-              "size-3.5",
-              active
-                ? "text-red-500"
-                : isDark
-                  ? "text-slate-400 group-hover:text-red-400"
-                  : "text-slate-500 group-hover:text-red-600",
-            )}
+            style={{
+              color: active ? "var(--chamfer-accent)" : "var(--chamfer-text-secondary)",
+            }}
+            className="size-3.5"
           />
           <span className="font-semibold">{label}</span>
         </div>
         <div className="flex items-center gap-1.5">
           {badge && (
             <span
-              className={cn(
-                "rounded px-1 py-0.2 text-[8px] font-bold uppercase",
-                isDark ? "bg-red-600/30 text-red-400" : "bg-red-100 text-red-600",
-              )}
+              style={{
+                backgroundColor: "var(--chamfer-accent-soft)",
+                color: "var(--chamfer-accent)",
+              }}
+              className="rounded px-1 py-0.2 text-[8px] font-bold uppercase"
             >
               {badge}
             </span>
           )}
           {keyLabel && (
             <kbd
-              className={cn(
-                "rounded border px-1.5 py-0.2 text-[9px] font-bold",
-                isDark
-                  ? "border-slate-700 bg-slate-800/80 text-slate-400"
-                  : "border-slate-300 bg-slate-100 text-slate-600",
-              )}
+              style={{
+                backgroundColor: "var(--chamfer-surface-elevated)",
+                borderColor: "var(--chamfer-border)",
+                color: "var(--chamfer-text-secondary)",
+              }}
+              className="rounded border px-1.5 py-0.2 text-[9px] font-bold"
             >
               {keyLabel}
             </kbd>
@@ -2045,10 +2043,8 @@ function FlyoutItem({
       </div>
       {desc && (
         <span
-          className={cn(
-            "mt-0.5 text-[9px] line-clamp-1",
-            isDark ? "text-slate-400" : "text-slate-500",
-          )}
+          style={{ color: "var(--chamfer-text-secondary)" }}
+          className="mt-0.5 text-[9px] line-clamp-1"
         >
           {desc}
         </span>

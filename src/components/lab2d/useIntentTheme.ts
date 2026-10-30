@@ -1,25 +1,103 @@
 /**
- * CALDRA — CHAMFER INTENT: ADAPTADOR DE TEMA E VIEWPORT VISUAL (SOMENTE LEITURA)
+ * CALDRA — CHAMFER CAD & CHAMFER INTENT: SISTEMA UNIFICADO DE TEMA, APARÊNCIA E TOKENS (--chamfer-*)
  *
- * Implementa as seções §2 (Teclado virtual e layout responsivo) e §4 (Tema adaptável)
- * da especificação unificada do CHAMFER INTENT:
- *  - Observa (somente leitura) classes, atributos e variáveis CSS de `document.documentElement`
- *    via MutationObserver + matchMedia; NUNCA modifica o tema global;
- *  - Alimenta tokens semânticos escopados no elemento raiz do Intent:
- *    UI:  --ci-bg, --ci-surface, --ci-surface-2, --ci-border, --ci-text, --ci-text-muted,
- *         --ci-accent, --ci-accent-contrast, --ci-success, --ci-warning, --ci-danger
- *    CAD: --cad-canvas, --cad-grid-minor, --cad-grid-major, --cad-axis-x, --cad-axis-y,
- *         --cad-center, --cad-hidden, --cad-dim, --cad-text, --cad-selection,
- *         --cad-provisional, --cad-sheet, --cad-sheet-ink
- *  - Isola todas as paletas de contingência (hex) exclusivamente dentro deste adaptador;
- *  - Calcula `displayColor(layerTechnicalColor, canvasBg)` garantindo contraste WCAG ≥ 3:1
- *    sobre o fundo do canvas preservando o matiz original sem alterar a cor técnica da entidade;
- *  - Monitora `window.visualViewport` (resize e scroll) expondo `--vvh` e `--kbd`.
+ * Responsabilidades:
+ *  1. Ler de forma síncrona (antes do primeiro render) e reativa as preferências de aparência
+ *     do usuário via `useSettings()` + fallback em `localStorage` (`caldra_theme_mode`,
+ *     `caldra.settings.theme`, `caldra_bg_style`, `caldra.settings.auroraStyle`,
+ *     `caldra_accent_color`, `caldra.settings.accent`, `caldra.settings.cardOpacity`,
+ *     `caldra.settings.bubbleOpacity`).
+ *  2. Gerar todos os tokens CSS `--chamfer-*` para barras, painéis, gavetas, popovers,
+ *     pílulas flutuantes, bordas, textos, cor de destaque (`accent`), opacidade e canvas.
+ *  3. Expor `themeColors` (`ChamferThemeColors`) e `themeVersion` para repintura imediata
+ *     do Canvas 2D, Grid e Área de Trabalho em ambos os layouts (Paisagem e Vertical).
+ *  4. Preservar total compatibilidade retroativa com `useIntentTheme()` e `displayColor()`.
  */
 
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import {
+  useSettings,
+  type AccentOption,
+  type AuroraStyleOption,
+  type ThemeOption,
+} from "@/lib/settings/SettingsProvider";
 
 export type IntentThemeMode = "dark" | "light" | "amoled" | "mestre";
+export type ChamferResolvedThemeMode = "dark" | "light" | "amoled";
+
+export interface RgbColor {
+  r: number;
+  g: number;
+  b: number;
+}
+
+export interface HslColor {
+  h: number;
+  s: number;
+  l: number;
+}
+
+export interface ChamferThemeColors {
+  mode: ChamferResolvedThemeMode;
+  isDark: boolean;
+  isAmoled: boolean;
+  bgStyle: AuroraStyleOption;
+  accentKey: AccentOption;
+  accent: string;
+  accentRgb: string;
+  accentContrast: string;
+  accentSoft: string;
+  accentBorder: string;
+  cardOpacity: number;
+  panelOpacity: number;
+  bubbleOpacity: number;
+  // Superfícies de UI
+  bgRoot: string;
+  barBgSolid: string;
+  barBg: string;
+  surfaceElevatedSolid: string;
+  surfaceElevated: string;
+  popoverBgSolid: string;
+  popoverBg: string;
+  floatingBg: string;
+  bubbleBg: string;
+  border: string;
+  borderStrong: string;
+  borderSubtle: string;
+  textPrimary: string;
+  textSecondary: string;
+  textMuted: string;
+  // Canvas, Área de Trabalho e Grid
+  canvasBg: string;
+  workAreaFill: string;
+  workAreaStroke: string;
+  workAreaBadgeBg: string;
+  workAreaBadgeBorder: string;
+  workAreaBadgeText: string;
+  canvasOverlayGradient: string;
+  luminanceStepRatio: number;
+  gridMinor: string;
+  gridMajor: string;
+  gridOuterMinor: string;
+  gridOuterMajor: string;
+  gridMinorColor: string;
+  gridMajorColor: string;
+  gridOuterOpacityFactor: number;
+  rulerBg: string;
+  rulerBorder: string;
+  rulerText: string;
+  rulerTickMajor: string;
+  rulerTickMinor: string;
+  // Dados CAD Semânticos e Status
+  defaultCutStroke: string;
+  axisX: string;
+  axisY: string;
+  originFill: string;
+  statusSuccess: string;
+  statusWarning: string;
+  statusError: string;
+  statusInfo: string;
+}
 
 export interface IntentThemeTokens {
   mode: IntentThemeMode;
@@ -71,50 +149,60 @@ export interface IntentThemeTokens {
   cadSheetInk: string;
 }
 
-/**
- * Paletas de contingência (§4) — único local do módulo autorizado a conter literais hex.
- */
+const ACCENT_MAP: Record<string, { hex: string; rgb: string }> = {
+  blue: { hex: "#0066FF", rgb: "0, 102, 255" },
+  cyan: { hex: "#06B6D4", rgb: "6, 182, 212" },
+  indigo: { hex: "#6366F1", rgb: "99, 102, 241" },
+  emerald: { hex: "#10B981", rgb: "16, 185, 129" },
+  amber: { hex: "#FF6B00", rgb: "255, 107, 0" },
+  crimson: { hex: "#DC143C", rgb: "220, 20, 60" },
+  rose: { hex: "#F43F5E", rgb: "244, 63, 94" },
+  magenta: { hex: "#E6007E", rgb: "230, 0, 126" },
+  violet: { hex: "#8B5CF6", rgb: "139, 92, 246" },
+  default: { hex: "#3B82F6", rgb: "59, 130, 246" },
+};
+
 export const FALLBACK_DARK_TOKENS: Omit<
   IntentThemeTokens,
   "mode" | "isDark" | "prefersReducedMotion" | "prefersHighContrast"
 > = {
-  background: "#0B0F14",
-  canvas: "#10151D",
-  panel: "#151C27",
-  panelElevated: "#0D121B",
-  border: "#293444",
-  textPrimary: "#E6EDF5",
-  textSecondary: "#94A3B8",
-  accent: "#E11D48",
-  selection: "#E11D48",
-  axisX: "#E11D48",
-  axisY: "#38BDF8",
+  background: "#0B0D11",
+  canvas: "#0E1116",
+  panel: "#11141A",
+  panelElevated: "#161A22",
+  border: "#232A35",
+  textPrimary: "#ECEFF4",
+  textSecondary: "#9AA4B2",
+  accent: "#0066FF",
+  selection: "#0066FF",
+  axisX: "#D97706",
+  axisY: "#059669",
   snap: "#38BDF8",
-  dimension: "#38BDF8",
+  dimension: "#10B981",
   warning: "#F59E0B",
   error: "#EF4444",
-  confirm: "#34D399",
-  ciBg: "#0B0F14",
-  ciSurface: "#151C27",
-  ciSurface2: "#0D121B",
-  ciBorder: "#293444",
-  ciText: "#E6EDF5",
-  ciTextMuted: "#94A3B8",
+  confirm: "#10B981",
+  ciBg: "#0B0D11",
+  ciSurface: "#11141A",
+  ciSurface2: "#161A22",
+  ciBorder: "#232A35",
+  ciText: "#ECEFF4",
+  ciTextMuted: "#9AA4B2",
   ciAccent: "#38BDF8",
-  ciAccentContrast: "#E6EDF5",
-  ciSuccess: "#34D399",
+  ciAccentContrast: "#FFFFFF",
+  ciSuccess: "#10B981",
   ciWarning: "#F59E0B",
   ciDanger: "#EF4444",
-  cadCanvas: "#10151D",
-  cadGridMinor: "#1E293B",
-  cadGridMajor: "#293444",
-  cadAxisX: "#E11D48",
-  cadAxisY: "#38BDF8",
+  cadCanvas: "#0E1116",
+  cadGridMinor: "rgba(148, 163, 184, 0.035)",
+  cadGridMajor: "rgba(148, 163, 184, 0.08)",
+  cadAxisX: "#D97706",
+  cadAxisY: "#059669",
   cadCenter: "#64748B",
   cadHidden: "#64748B",
-  cadDim: "#38BDF8",
-  cadText: "#E6EDF5",
-  cadSelection: "#E11D48",
+  cadDim: "#10B981",
+  cadText: "#ECEFF4",
+  cadSelection: "#38BDF8",
   cadProvisional: "#F59E0B",
   cadSheet: "#F8FAFC",
   cadSheetInk: "#1E293B",
@@ -124,52 +212,48 @@ export const FALLBACK_LIGHT_TOKENS: Omit<
   IntentThemeTokens,
   "mode" | "isDark" | "prefersReducedMotion" | "prefersHighContrast"
 > = {
-  background: "#E9EEF4",
-  canvas: "#F8FAFC",
-  panel: "#FFFFFF",
-  panelElevated: "#F1F5F9",
-  border: "#CBD5E1",
-  textPrimary: "#1E293B",
-  textSecondary: "#64748B",
-  accent: "#E11D48",
-  selection: "#E11D48",
-  axisX: "#E11D48",
-  axisY: "#0284C7",
+  background: "#EAEEF3",
+  canvas: "#F3F5F8",
+  panel: "#F8FAFC",
+  panelElevated: "#FFFFFF",
+  border: "#D5DCE4",
+  textPrimary: "#0F141A",
+  textSecondary: "#4B5563",
+  accent: "#0066FF",
+  selection: "#0066FF",
+  axisX: "#B45309",
+  axisY: "#047857",
   snap: "#0284C7",
-  dimension: "#0284C7",
+  dimension: "#047857",
   warning: "#D97706",
   error: "#DC2626",
   confirm: "#059669",
-  ciBg: "#E9EEF4",
-  ciSurface: "#FFFFFF",
-  ciSurface2: "#F1F5F9",
-  ciBorder: "#CBD5E1",
-  ciText: "#1E293B",
-  ciTextMuted: "#64748B",
+  ciBg: "#EAEEF3",
+  ciSurface: "#F8FAFC",
+  ciSurface2: "#FFFFFF",
+  ciBorder: "#D5DCE4",
+  ciText: "#0F141A",
+  ciTextMuted: "#4B5563",
   ciAccent: "#0284C7",
   ciAccentContrast: "#FFFFFF",
   ciSuccess: "#059669",
   ciWarning: "#D97706",
   ciDanger: "#DC2626",
-  cadCanvas: "#F8FAFC",
-  cadGridMinor: "#CBD5E1",
-  cadGridMajor: "#94A3B8",
-  cadAxisX: "#E11D48",
-  cadAxisY: "#0284C7",
-  cadCenter: "#64748B",
-  cadHidden: "#64748B",
-  cadDim: "#0284C7",
-  cadText: "#1E293B",
-  cadSelection: "#E11D48",
-  cadProvisional: "#D97706",
+  cadCanvas: "#F3F5F8",
+  cadGridMinor: "rgba(15, 23, 42, 0.04)",
+  cadGridMajor: "rgba(15, 23, 42, 0.09)",
+  cadAxisX: "#B45309",
+  cadAxisY: "#047857",
+  cadCenter: "#475569",
+  cadHidden: "#475569",
+  cadDim: "#047857",
+  cadText: "#0F141A",
+  cadSelection: "#0284C7",
+  cadProvisional: "#B45309",
   cadSheet: "#FFFFFF",
-  cadSheetInk: "#1E293B",
+  cadSheetInk: "#0F141A",
 };
 
-/**
- * Mapa de cores técnicas de camadas CAD (CORTE, GRAVACAO, LINHA_CENTRO, etc.).
- * Preserva a cor técnica da camada e permite ajuste apenas de exibição via `displayColor`.
- */
 export const TECHNICAL_LAYER_COLORS: Record<string, string> = {
   CORTE: "#38BDF8",
   CONTORNO: "#38BDF8",
@@ -190,21 +274,6 @@ export function getTechnicalLayerColor(layerName?: string): string {
   return TECHNICAL_LAYER_COLORS[normalized] ?? TECHNICAL_LAYER_COLORS.CORTE;
 }
 
-export interface RgbColor {
-  r: number;
-  g: number;
-  b: number;
-}
-
-export interface HslColor {
-  h: number;
-  s: number;
-  l: number;
-}
-
-/**
- * Converte string de cor (#RRGGBB, #RGB, rgb(r,g,b), ou ternário "R G B") em RGB [0..255].
- */
 export function parseColorToRgb(input: string | undefined | null): RgbColor | null {
   if (!input) return null;
   const trimmed = input.trim();
@@ -238,7 +307,7 @@ export function parseColorToRgb(input: string | undefined | null): RgbColor | nu
     };
   }
 
-  const tripletMatch = trimmed.match(/^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/);
+  const tripletMatch = trimmed.match(/^(\d{1,3})\s*[, ]\s*(\d{1,3})\s*[, ]\s*(\d{1,3})$/);
   if (tripletMatch) {
     return {
       r: Math.min(255, Math.max(0, Number(tripletMatch[1]))),
@@ -290,7 +359,7 @@ export function rgbToHsl({ r, g, b }: RgbColor): HslColor {
 }
 
 export function hslToRgb({ h, s, l }: HslColor): RgbColor {
-  const hn = ((h % 360) + 360) % 360 / 360;
+  const hn = (((h % 360) + 360) % 360) / 360;
   if (s === 0) {
     const v = Math.round(l * 255);
     return { r: v, g: v, b: v };
@@ -313,9 +382,6 @@ export function hslToRgb({ h, s, l }: HslColor): RgbColor {
   };
 }
 
-/**
- * Luminância relativa WCAG 2.1 (0.0 = preto a 1.0 = branco).
- */
 export function getRelativeLuminance(rgb: RgbColor): number {
   const transform = (channel: number) => {
     const c = channel / 255;
@@ -327,9 +393,6 @@ export function getRelativeLuminance(rgb: RgbColor): number {
   return 0.2126 * R + 0.7152 * G + 0.0722 * B;
 }
 
-/**
- * Razão de contraste WCAG 2.1 (1.0 a 21.0).
- */
 export function getContrastRatio(fg: RgbColor, bg: RgbColor): number {
   const l1 = getRelativeLuminance(fg);
   const l2 = getRelativeLuminance(bg);
@@ -339,10 +402,62 @@ export function getContrastRatio(fg: RgbColor, bg: RgbColor): number {
 }
 
 /**
- * Ajusta apenas a cor de EXIBIÇÃO da camada técnica (`layerColor`) sobre `canvasBg`
- * preservando o matiz (H) e garantindo razão de contraste ≥ `minContrast` (padrão 3.0:1).
- * A cor técnica subjacente da camada NUNCA é mutada nos dados ou na exportação.
+ * Calcula a razão de degrau de luminância WCAG `(Lmax + 0.05) / (Lmin + 0.05)`
+ * entre `canvasBg` (exterior da prancheta) e `workAreaFill` (interior da Área de Trabalho).
  */
+export function computeLuminanceStepRatio(hexA: string, hexB: string): number {
+  const rgbA = parseColorToRgb(hexA) ?? { r: 11, g: 13, b: 17 };
+  const rgbB = parseColorToRgb(hexB) ?? { r: 14, g: 17, b: 22 };
+  return getContrastRatio(rgbA, rgbB);
+}
+
+/**
+ * Guarda de Luminância da Área de Trabalho (Seção 6.4):
+ * Garante que o degrau de luminância entre `canvasBg` e `workAreaFill` permaneça discreto
+ * e confortável à vista (nunca ultrapassando 1.25 no tema escuro/AMOLED ou 1.20 no tema claro).
+ */
+export function enforceWorkspaceLuminanceGuard(
+  canvasBgHex: string,
+  workAreaFillHex: string,
+  isDark: boolean,
+): { workAreaFill: string; ratio: number } {
+  const maxRatio = isDark ? 1.25 : 1.20;
+  let currentFill = workAreaFillHex;
+  let ratio = computeLuminanceStepRatio(canvasBgHex, currentFill);
+
+  if (ratio > maxRatio) {
+    for (let step = 1; step <= 25; step++) {
+      const candidate = lerpHexColor(currentFill, canvasBgHex, step / 25);
+      const candRatio = computeLuminanceStepRatio(canvasBgHex, candidate);
+      if (candRatio <= maxRatio) {
+        currentFill = candidate;
+        ratio = candRatio;
+        break;
+      }
+    }
+  }
+
+  return { workAreaFill: currentFill, ratio: Number(ratio.toFixed(4)) };
+}
+
+export function hexWithAlpha(hex: string, alpha: number): string {
+  const rgb = parseColorToRgb(hex);
+  const clamped = Math.max(0, Math.min(1, alpha));
+  if (!rgb) return hex;
+  return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${Number(clamped.toFixed(3))})`;
+}
+
+export function lerpHexColor(hexA: string, hexB: string, t: number): string {
+  const clamped = Math.max(0, Math.min(1, t));
+  const a = parseColorToRgb(hexA) ?? { r: 0, g: 0, b: 0 };
+  const b = parseColorToRgb(hexB) ?? { r: 0, g: 0, b: 0 };
+  return rgbToHex({
+    r: a.r + (b.r - a.r) * clamped,
+    g: a.g + (b.g - a.g) * clamped,
+    b: a.b + (b.b - a.b) * clamped,
+  });
+}
+
 export function displayColor(
   layerColor: string,
   canvasBg: string,
@@ -383,9 +498,435 @@ export function displayColor(
 }
 
 /**
- * Lê de forma pura (somente leitura) o tema ativo no documento (`<html>` / `document.documentElement`)
- * e deriva os tokens `--ci-*` e `--cad-*`.
+ * Resolve o modo de tema real ("light" | "dark" | "amoled") de forma síncrona
+ * antes do primeiro render, respeitando `SettingsProvider` e `localStorage`.
  */
+export function resolveChamferThemeMode(themeOption?: ThemeOption): ChamferResolvedThemeMode {
+  let raw: string | null = themeOption ?? null;
+  if (!raw && typeof window !== "undefined") {
+    try {
+      raw =
+        window.localStorage.getItem("caldra.settings.theme") ||
+        window.localStorage.getItem("caldra_theme_mode");
+    } catch {
+      raw = null;
+    }
+  }
+  if (raw === "amoled") return "amoled";
+  if (raw === "dark") return "dark";
+  if (raw === "light") return "light";
+  if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+  return "dark";
+}
+
+export interface BuildChamferThemeParams {
+  mode: ChamferResolvedThemeMode;
+  bgStyle: AuroraStyleOption;
+  accentKey: AccentOption;
+  cardOpacityPct: number;
+  bubbleOpacityPct: number;
+}
+
+/**
+ * Constrói o conjunto de cores e tokens (`ChamferThemeColors`) com a identidade
+ * GRAPHITE TITANIUM (Escuro), PAPEL TÉCNICO MATE (Claro) e PRETO PURO (AMOLED),
+ * aplicando Estilo de Fundo (`padrao` | `suave` | `fluido`), Cor de Destaque (`accent`),
+ * Opacidade (`cardOpacity` e `bubbleOpacity`), Guarda de Luminância WCAG e Grade Externa a 65%.
+ */
+export function buildChamferThemeColors(
+  modeOrParams: ChamferResolvedThemeMode | BuildChamferThemeParams,
+  bgStyleArg?: AuroraStyleOption,
+  accentKeyArg?: AccentOption,
+  cardOpacityArg?: number,
+  bubbleOpacityArg?: number,
+): ChamferThemeColors {
+  const normalized: BuildChamferThemeParams =
+    typeof modeOrParams === "object" && modeOrParams !== null
+      ? modeOrParams
+      : {
+          mode: modeOrParams ?? "dark",
+          bgStyle: bgStyleArg ?? "padrao",
+          accentKey: accentKeyArg ?? "blue",
+          cardOpacityPct: typeof cardOpacityArg === "number" ? cardOpacityArg : 90,
+          bubbleOpacityPct: typeof bubbleOpacityArg === "number" ? bubbleOpacityArg : 35,
+        };
+
+  const { mode, bgStyle, accentKey, cardOpacityPct, bubbleOpacityPct } = normalized;
+  const isDark = mode !== "light";
+  const isAmoled = mode === "amoled";
+
+  const accentEntry = ACCENT_MAP[accentKey] ?? ACCENT_MAP.blue;
+  const accent = accentEntry.hex;
+  const accentRgb = accentEntry.rgb;
+  const parsedAccent = parseColorToRgb(accent) ?? { r: 0, g: 102, b: 255 };
+  const accentContrast = getRelativeLuminance(parsedAccent) > 0.44 ? "#0F141A" : "#FFFFFF";
+  const accentSoft = hexWithAlpha(accent, isDark ? 0.18 : 0.12);
+  const accentBorder = hexWithAlpha(accent, isDark ? 0.55 : 0.45);
+
+  const panelOpacity = Math.max(0.25, Math.min(1, (Number(cardOpacityPct) || 90) / 100));
+  const rawBubble = Math.max(0.2, Math.min(1, (Number(bubbleOpacityPct) || 35) / 100));
+  const bubbleOpacity = Math.max(0.32, Math.min(0.98, rawBubble));
+
+  // 6.1 GRAPHITE TITANIUM (Escuro) | 6.2 PAPEL TÉCNICO MATE (Claro) | 6.3 AMOLED (Preto Puro)
+  let canvasBg: string;
+  let rawWorkAreaFill: string;
+  let workAreaStroke: string;
+  let barBgSolid: string;
+  let surfaceElevatedSolid: string;
+  let popoverBgSolid: string;
+  let border: string;
+  let borderStrong: string;
+  let borderSubtle: string;
+  let textPrimary: string;
+  let textSecondary: string;
+  let textMuted: string;
+  let gridMajor: string;
+  let gridMinor: string;
+  let gridOuterMajor: string;
+  let gridOuterMinor: string;
+  let axisX: string;
+  let axisY: string;
+  let statusSuccess: string;
+  let statusWarning: string;
+  let statusError: string;
+  let statusInfo: string;
+
+  if (isAmoled) {
+    // 6.3 Tema AMOLED (Preto Puro)
+    canvasBg =
+      bgStyle === "suave"
+        ? "#030406"
+        : bgStyle === "fluido"
+          ? "#000000"
+          : "#000000";
+    rawWorkAreaFill =
+      bgStyle === "suave"
+        ? "#080B10"
+        : bgStyle === "fluido"
+          ? "#040609"
+          : "#05070A";
+    workAreaStroke = "#1F2630";
+    barBgSolid = "#080A0E";
+    surfaceElevatedSolid = "#0E1117";
+    popoverBgSolid = "#12161E";
+    border = "#1A2029";
+    borderStrong = "#262F3D";
+    borderSubtle = "rgba(255, 255, 255, 0.06)";
+    textPrimary = "#ECEFF4";
+    textSecondary = "#9AA4B2";
+    textMuted = "#647080";
+    gridMajor = "rgba(148, 163, 184, 0.075)";
+    gridMinor = "rgba(148, 163, 184, 0.032)";
+    // 65% da opacidade da grade interna
+    gridOuterMajor = "rgba(148, 163, 184, 0.049)";
+    gridOuterMinor = "rgba(148, 163, 184, 0.021)";
+    axisX = "#D97706";
+    axisY = "#059669";
+    statusSuccess = "#10B981";
+    statusWarning = "#F59E0B";
+    statusError = "#EF4444";
+    statusInfo = "#3B82F6";
+  } else if (isDark) {
+    // 6.1 Paleta Graphite Titanium (Tema Escuro — Padrão)
+    canvasBg =
+      bgStyle === "suave"
+        ? "#0F1218"
+        : bgStyle === "fluido"
+          ? "#080A0D"
+          : "#0B0D11";
+    rawWorkAreaFill =
+      bgStyle === "suave"
+        ? "#12161D"
+        : bgStyle === "fluido"
+          ? "#0C0F14"
+          : "#0E1116";
+    workAreaStroke = "#2B3442";
+    barBgSolid = "#11141A";
+    surfaceElevatedSolid = "#161A22";
+    popoverBgSolid = "#1A1F29";
+    border = "#232A35";
+    borderStrong = "#2F3847";
+    borderSubtle = "rgba(255, 255, 255, 0.07)";
+    textPrimary = "#ECEFF4";
+    textSecondary = "#9AA4B2";
+    textMuted = "#647080";
+    gridMajor = "rgba(148, 163, 184, 0.08)";
+    gridMinor = "rgba(148, 163, 184, 0.035)";
+    // 65% da opacidade da grade interna (0.08 * 0.65 = 0.052; 0.035 * 0.65 = 0.023)
+    gridOuterMajor = "rgba(148, 163, 184, 0.052)";
+    gridOuterMinor = "rgba(148, 163, 184, 0.023)";
+    axisX = "#D97706";
+    axisY = "#059669";
+    statusSuccess = "#10B981";
+    statusWarning = "#F59E0B";
+    statusError = "#EF4444";
+    statusInfo = "#3B82F6";
+  } else {
+    // 6.2 Tema Claro (Papel Técnico Mate)
+    canvasBg =
+      bgStyle === "suave"
+        ? "#EEF2F6"
+        : bgStyle === "fluido"
+          ? "#E5EAF0"
+          : "#EAEEF3";
+    rawWorkAreaFill =
+      bgStyle === "suave"
+        ? "#F7F9FB"
+        : bgStyle === "fluido"
+          ? "#EFF2F6"
+          : "#F3F5F8";
+    workAreaStroke = "#B8C2CC";
+    barBgSolid = "#F8FAFC";
+    surfaceElevatedSolid = "#FFFFFF";
+    popoverBgSolid = "#FFFFFF";
+    border = "#D5DCE4";
+    borderStrong = "#B8C2CC";
+    borderSubtle = "rgba(15, 23, 42, 0.08)";
+    textPrimary = "#0F141A";
+    textSecondary = "#4B5563";
+    textMuted = "#6B7280";
+    gridMajor = "rgba(15, 23, 42, 0.09)";
+    gridMinor = "rgba(15, 23, 42, 0.04)";
+    // 65% da opacidade da grade interna (0.09 * 0.65 = 0.0585; 0.04 * 0.65 = 0.026)
+    gridOuterMajor = "rgba(15, 23, 42, 0.058)";
+    gridOuterMinor = "rgba(15, 23, 42, 0.026)";
+    axisX = "#B45309";
+    axisY = "#047857";
+    statusSuccess = "#059669";
+    statusWarning = "#D97706";
+    statusError = "#DC2626";
+    statusInfo = "#2563EB";
+  }
+
+  // 6.4 Guarda de Luminância WCAG entre o fundo externo e a Área de Trabalho
+  const guarded = enforceWorkspaceLuminanceGuard(canvasBg, rawWorkAreaFill, isDark);
+  const workAreaFill = guarded.workAreaFill;
+  const luminanceStepRatio = guarded.ratio;
+  const bgRoot = canvasBg;
+
+  const workAreaBadgeBg = hexWithAlpha(surfaceElevatedSolid, panelOpacity);
+  const workAreaBadgeBorder = borderStrong;
+  const workAreaBadgeText = textPrimary;
+
+  const canvasOverlayGradient =
+    bgStyle === "fluido"
+      ? `radial-gradient(circle at 50% 42%, rgba(${accentRgb}, ${isDark ? "0.045" : "0.035"}) 0%, transparent 72%)`
+      : bgStyle === "suave"
+        ? `radial-gradient(circle at 50% 50%, ${isDark ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.38)"} 0%, transparent 75%)`
+        : "none";
+
+  // Superfícies com opacidade real controlada por cardOpacity e bubbleOpacity
+  const barBg = hexWithAlpha(barBgSolid, panelOpacity);
+  const surfaceElevated = hexWithAlpha(surfaceElevatedSolid, panelOpacity);
+  const popoverBg = hexWithAlpha(popoverBgSolid, panelOpacity);
+  const floatingBg = hexWithAlpha(surfaceElevatedSolid, panelOpacity);
+  const bubbleBg = hexWithAlpha(surfaceElevatedSolid, bubbleOpacity);
+
+  return {
+    mode,
+    isDark,
+    isAmoled,
+    bgStyle,
+    accentKey,
+    accent,
+    accentRgb,
+    accentContrast,
+    accentSoft,
+    accentBorder,
+    cardOpacity: panelOpacity,
+    panelOpacity,
+    bubbleOpacity,
+    bgRoot,
+    barBgSolid,
+    barBg,
+    surfaceElevatedSolid,
+    surfaceElevated,
+    popoverBgSolid,
+    popoverBg,
+    floatingBg,
+    bubbleBg,
+    border,
+    borderStrong,
+    borderSubtle,
+    textPrimary,
+    textSecondary,
+    textMuted,
+    canvasBg,
+    workAreaFill,
+    workAreaStroke,
+    workAreaBadgeBg,
+    workAreaBadgeBorder,
+    workAreaBadgeText,
+    canvasOverlayGradient,
+    luminanceStepRatio,
+    gridMinor,
+    gridMajor,
+    gridOuterMinor,
+    gridOuterMajor,
+    gridMinorColor: gridMinor,
+    gridMajorColor: gridMajor,
+    gridOuterOpacityFactor: 0.65,
+    rulerBg: barBg,
+    rulerBorder: border,
+    rulerText: textPrimary,
+    rulerTickMajor: textSecondary,
+    rulerTickMinor: borderStrong,
+    defaultCutStroke: isDark ? "#ECEFF4" : "#0F141A",
+    axisX,
+    axisY,
+    originFill: "#DC143C",
+    statusSuccess,
+    statusWarning,
+    statusError,
+    statusInfo,
+  };
+}
+
+/**
+ * Gera o mapa de variáveis CSS `--chamfer-*` para injeção no container raiz do CHAMFER CAD
+ * e espelhamento para Portals.
+ */
+export function buildChamferCssVariables(colors: ChamferThemeColors): Record<string, string> {
+  return {
+    "--chamfer-bg-root": colors.bgRoot,
+    "--chamfer-bar-bg-solid": colors.barBgSolid,
+    "--chamfer-bar-bg": colors.barBg,
+    "--chamfer-surface-elevated-solid": colors.surfaceElevatedSolid,
+    "--chamfer-surface-elevated": colors.surfaceElevated,
+    "--chamfer-popover-bg-solid": colors.popoverBgSolid,
+    "--chamfer-popover-bg": colors.popoverBg,
+    "--chamfer-floating-bg": colors.floatingBg,
+    "--chamfer-bubble-bg": colors.bubbleBg,
+    "--chamfer-border": colors.border,
+    "--chamfer-border-strong": colors.borderStrong,
+    "--chamfer-border-subtle": colors.borderSubtle,
+    "--chamfer-text-primary": colors.textPrimary,
+    "--chamfer-text-secondary": colors.textSecondary,
+    "--chamfer-text-muted": colors.textMuted,
+    "--chamfer-accent": colors.accent,
+    "--chamfer-accent-rgb": colors.accentRgb,
+    "--chamfer-accent-contrast": colors.accentContrast,
+    "--chamfer-accent-soft": colors.accentSoft,
+    "--chamfer-accent-border": colors.accentBorder,
+    "--chamfer-card-opacity": String(colors.panelOpacity),
+    "--chamfer-panel-opacity": String(colors.panelOpacity),
+    "--chamfer-bubble-opacity": String(colors.bubbleOpacity),
+    "--chamfer-canvas-bg": colors.canvasBg,
+    "--chamfer-work-area-fill": colors.workAreaFill,
+    "--chamfer-workarea-fill": colors.workAreaFill,
+    "--chamfer-work-area-stroke": colors.workAreaStroke,
+    "--chamfer-workarea-stroke": colors.workAreaStroke,
+    "--chamfer-workarea-badge-bg": colors.workAreaBadgeBg,
+    "--chamfer-workarea-badge-border": colors.workAreaBadgeBorder,
+    "--chamfer-workarea-badge-text": colors.workAreaBadgeText,
+    "--chamfer-canvas-overlay-gradient": colors.canvasOverlayGradient,
+    "--chamfer-canvas-overlay": colors.canvasOverlayGradient,
+    "--chamfer-grid-minor": colors.gridMinor,
+    "--chamfer-grid-major": colors.gridMajor,
+    "--chamfer-grid-outer-minor": colors.gridOuterMinor,
+    "--chamfer-grid-outer-major": colors.gridOuterMajor,
+    "--chamfer-axis-x": colors.axisX,
+    "--chamfer-axis-y": colors.axisY,
+    "--chamfer-status-success": colors.statusSuccess,
+    "--chamfer-status-warning": colors.statusWarning,
+    "--chamfer-status-error": colors.statusError,
+    "--chamfer-status-info": colors.statusInfo,
+    "--chamfer-ruler-bg": colors.rulerBg,
+    "--chamfer-ruler-border": colors.rulerBorder,
+    "--chamfer-ruler-text": colors.rulerText,
+  };
+}
+
+/**
+ * Hook principal de aparência do CHAMFER CAD: conecta `SettingsProvider` (tema, estilo de fundo,
+ * cor de destaque, opacidade de cartões e opacidade de bolhas) aos tokens `--chamfer-*`,
+ * `themeColors` e `themeVersion`.
+ */
+export function useChamferAppearance() {
+  const settings = useSettings();
+  const [systemDark, setSystemDark] = useState<boolean>(() => {
+    if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    return true;
+  });
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const handler = (ev: MediaQueryListEvent) => setSystemDark(ev.matches);
+    mq.addEventListener?.("change", handler);
+    return () => mq.removeEventListener?.("change", handler);
+  }, []);
+
+  const resolvedMode: ChamferResolvedThemeMode = useMemo(() => {
+    if (settings.theme === "amoled") return "amoled";
+    if (settings.theme === "dark") return "dark";
+    if (settings.theme === "light") return "light";
+    return systemDark ? "dark" : "light";
+  }, [settings.theme, systemDark]);
+
+  const themeColors = useMemo(
+    () =>
+      buildChamferThemeColors({
+        mode: resolvedMode,
+        bgStyle: settings.auroraStyle,
+        accentKey: settings.accent,
+        cardOpacityPct: settings.cardOpacity,
+        bubbleOpacityPct: settings.bubbleOpacity,
+      }),
+    [
+      resolvedMode,
+      settings.auroraStyle,
+      settings.accent,
+      settings.cardOpacity,
+      settings.bubbleOpacity,
+    ],
+  );
+
+  const cssVariablesMap = useMemo(
+    () => buildChamferCssVariables(themeColors),
+    [themeColors],
+  );
+
+  const cssVariables = useMemo(
+    () => cssVariablesMap as unknown as React.CSSProperties,
+    [cssVariablesMap],
+  );
+
+  // Espelha as variáveis escopadas `--chamfer-*` no document.documentElement enquanto o CHAMFER
+  // está ativo para que Portals (createPortal em document.body) recebam os mesmos tokens em tempo real.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    for (const [key, val] of Object.entries(cssVariablesMap)) {
+      root.style.setProperty(key, val);
+    }
+  }, [cssVariablesMap]);
+
+  const themeVersion = useMemo(
+    () =>
+      `${themeColors.mode}|${themeColors.bgStyle}|${themeColors.accentKey}|${themeColors.panelOpacity}|${themeColors.bubbleOpacity}`,
+    [themeColors],
+  );
+
+  return {
+    themeColors,
+    cssVariables,
+    themeVersion,
+    resolvedMode,
+    isDark: themeColors.isDark,
+    isAmoled: themeColors.isAmoled,
+    bgStyle: settings.auroraStyle,
+    accentKey: settings.accent,
+    cardOpacity: settings.cardOpacity,
+    bubbleOpacity: settings.bubbleOpacity,
+    settings,
+  };
+}
+
 export function resolveIntentThemeFromDom(rootEl?: HTMLElement | null): IntentThemeTokens {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return {
@@ -402,11 +943,22 @@ export function resolveIntentThemeFromDom(rootEl?: HTMLElement | null): IntentTh
   const dataTheme = (docEl.getAttribute("data-theme") ?? "").toLowerCase();
 
   const style = window.getComputedStyle(docEl);
-  const rawBg = style.getPropertyValue("--background").trim() || style.backgroundColor;
-  const rawFg = style.getPropertyValue("--foreground").trim() || style.color;
-  const rawCard = style.getPropertyValue("--card").trim();
-  const rawBorder = style.getPropertyValue("--border").trim();
+  const rawBg =
+    style.getPropertyValue("--chamfer-bg-root").trim() ||
+    style.getPropertyValue("--background").trim() ||
+    style.backgroundColor;
+  const rawFg =
+    style.getPropertyValue("--chamfer-text-primary").trim() ||
+    style.getPropertyValue("--foreground").trim() ||
+    style.color;
+  const rawCard =
+    style.getPropertyValue("--chamfer-bar-bg-solid").trim() ||
+    style.getPropertyValue("--card").trim();
+  const rawBorder =
+    style.getPropertyValue("--chamfer-border").trim() ||
+    style.getPropertyValue("--border").trim();
   const rawAccent =
+    style.getPropertyValue("--chamfer-accent").trim() ||
     style.getPropertyValue("--accent-color").trim() ||
     style.getPropertyValue("--accent").trim() ||
     style.getPropertyValue("--accent-rgb").trim();
@@ -430,12 +982,8 @@ export function resolveIntentThemeFromDom(rootEl?: HTMLElement | null): IntentTh
     const lum = getRelativeLuminance(bgRgb);
     mode = lum > 0.45 ? "light" : "dark";
   } else {
-    const stored =
-      typeof localStorage !== "undefined" ? localStorage.getItem("caldra-theme") : null;
-    if (stored === "light") mode = "light";
-    else if (stored === "amoled") mode = "amoled";
-    else if (stored === "mestre") mode = "mestre";
-    else mode = "dark";
+    const resolved = resolveChamferThemeMode();
+    mode = resolved;
   }
 
   const isDark = mode !== "light";
@@ -465,20 +1013,8 @@ export function resolveIntentThemeFromDom(rootEl?: HTMLElement | null): IntentTh
   const ciText = fgRgb ? rgbToHex(fgRgb) : base.ciText;
   const ciBorder = borderRgb ? rgbToHex(borderRgb) : base.ciBorder;
 
-  // Cor de destaque: evita vermelho como cor de botão Enviar se o tema não for erro,
-  // ou garante contraste adequado sobre o superfície.
-  let ciAccent = accentRgb ? rgbToHex(accentRgb) : base.ciAccent;
-  const parsedAccent = parseColorToRgb(ciAccent);
-  if (parsedAccent) {
-    const hslAccent = rgbToHsl(parsedAccent);
-    // §1.f & §3: "Vermelho só para erro ou ação destrutiva: o selo DSL e o botão de enviar usam tons neutros e a cor de destaque do tema"
-    // Se o tema usar vermelho puro (hue ~0..15 ou 345..360) que pareça estado de erro no enviar, usamos azul técnico industrial
-    if ((hslAccent.h <= 14 || hslAccent.h >= 346) && hslAccent.s > 0.6) {
-      ciAccent = base.ciAccent;
-    } else {
-      ciAccent = displayColor(ciAccent, ciSurface, 3.0);
-    }
-  }
+  const resolvedAccent = accentRgb ? rgbToHex(accentRgb) : base.accent;
+  const ciAccent = displayColor(resolvedAccent, ciSurface, 3.0);
 
   const accentFinalRgb = parseColorToRgb(ciAccent) ?? parseColorToRgb(base.ciAccent)!;
   const ciAccentContrast =
@@ -487,24 +1023,22 @@ export function resolveIntentThemeFromDom(rootEl?: HTMLElement | null): IntentTh
   const cadCanvas =
     mode === "amoled"
       ? "#02050A"
-      : isDark
-        ? base.cadCanvas
-        : base.cadCanvas;
+      : style.getPropertyValue("--chamfer-workarea-fill").trim() || base.cadCanvas;
 
   return {
     mode,
     isDark,
     prefersReducedMotion,
     prefersHighContrast,
-    background: base.background,
+    background: ciBg,
     canvas: cadCanvas,
-    panel: base.panel,
+    panel: ciSurface,
     panelElevated: base.panelElevated,
-    border: base.border,
-    textPrimary: base.textPrimary,
+    border: ciBorder,
+    textPrimary: ciText,
     textSecondary: base.textSecondary,
-    accent: base.accent,
-    selection: base.selection,
+    accent: resolvedAccent,
+    selection: resolvedAccent,
     axisX: base.axisX,
     axisY: base.axisY,
     snap: base.snap,
@@ -532,16 +1066,13 @@ export function resolveIntentThemeFromDom(rootEl?: HTMLElement | null): IntentTh
     cadHidden: base.cadHidden,
     cadDim: displayColor(base.cadDim, cadCanvas, 3.5),
     cadText: displayColor(base.cadText, cadCanvas, 4.5),
-    cadSelection: displayColor(base.cadSelection, cadCanvas, 3.5),
+    cadSelection: displayColor(resolvedAccent, cadCanvas, 3.5),
     cadProvisional: displayColor(base.cadProvisional, cadCanvas, 3.2),
     cadSheet: base.cadSheet,
     cadSheetInk: base.cadSheetInk,
   };
 }
 
-/**
- * Converte `IntentThemeTokens` em mapa de variáveis CSS para aplicar no container raiz do Intent.
- */
 export function buildIntentCssVariables(
   tokens: IntentThemeTokens,
   viewportVars?: { vvhPx?: number; kbdPx?: number },
@@ -599,9 +1130,6 @@ export function buildIntentCssVariables(
   return vars as unknown as React.CSSProperties;
 }
 
-/**
- * Hook reativo somente-leitura que sincroniza o tema do CHAMFER INTENT com o tema global do CALDRA.
- */
 export function useIntentTheme(): {
   tokens: IntentThemeTokens;
   cssVariables: React.CSSProperties;
@@ -623,11 +1151,18 @@ export function useIntentTheme(): {
 
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ["class", "data-theme", "style"],
+      attributeFilter: ["class", "data-theme", "data-bg-style", "style"],
     });
 
     const handleStorage = (e: StorageEvent) => {
-      if (!e.key || e.key.includes("theme") || e.key.includes("accent")) {
+      if (
+        !e.key ||
+        e.key.includes("theme") ||
+        e.key.includes("accent") ||
+        e.key.includes("opacity") ||
+        e.key.includes("bg_style") ||
+        e.key.includes("aurora")
+      ) {
         refreshTheme();
       }
     };
@@ -672,10 +1207,6 @@ export interface VisualViewportState {
   layoutMode: "compact" | "medium" | "expanded";
 }
 
-/**
- * Hook que acompanha `window.visualViewport` (resize e scroll) para adaptação
- * exata ao teclado virtual no Android/iOS e cálculo do breakpoint responsivo (§2).
- */
 export function useVisualViewportState(enabled = true): VisualViewportState {
   const [state, setState] = useState<VisualViewportState>(() => {
     if (typeof window === "undefined") {

@@ -235,6 +235,7 @@ export interface ChamferPortraitTopBarProps {
   onToggleTheme: () => void;
   focus: boolean;
   onToggleFullscreen: () => void;
+  onOpenProjectSettings?: () => void;
 }
 
 export function ChamferPortraitTopBar({
@@ -292,6 +293,7 @@ export function ChamferPortraitTopBar({
   onToggleTheme,
   focus,
   onToggleFullscreen,
+  onOpenProjectSettings,
 }: ChamferPortraitTopBarProps) {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
@@ -467,7 +469,7 @@ export function ChamferPortraitTopBar({
   const formattedThickness = `${thickness.toFixed(1).replace(".", ",")} mm`;
   const compactThickness = `${thickness.toFixed(1).replace(".", ",")}mm`;
 
-  // Cor viva exibida na bolinha do chip "• 3,0mm ▾"
+  // Cor viva exibida na bolinha do chip "• 3,0mm ▾" (dado CAD semântico legítimo)
   const activeColorHex =
     activeStrokeColor ||
     (activeLayer === "dobra"
@@ -504,17 +506,11 @@ export function ChamferPortraitTopBar({
         style={{
           height: topBarHeightPx,
           padding: "0 6px",
-          backgroundColor: isDark ? "#11141C" : "#F8FAFC",
-          borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
-          color: isDark ? "#F8FAFC" : "#0F172A",
-          opacity: 1,
+          backgroundColor: "var(--chamfer-bar-bg)",
+          borderColor: "var(--chamfer-border)",
+          color: "var(--chamfer-text-primary)",
         }}
-        className={cn(
-          "chamfer-theme-fade-2s relative z-30 flex w-full shrink-0 items-center justify-between gap-1 border-b select-none",
-          isDark
-            ? "border-white/[0.08] bg-[#11141C] text-[#F8FAFC]"
-            : "border-[#E2E8F0] bg-[#F8FAFC] text-[#0F172A]",
-        )}
+        className="chamfer-theme-fade-2s relative z-30 flex w-full shrink-0 items-center justify-between gap-1 border-b backdrop-blur-md select-none"
       >
         {/* ESQUERDA: P1 [←] SAIR + P4 Chip Compacto "● 3,0mm ▾" */}
         <div className="flex min-w-0 items-center gap-1">
@@ -527,22 +523,15 @@ export function ChamferPortraitTopBar({
             }}
             aria-label="Sair do CHAMFER CAD e voltar aos Projetos"
             title="Sair do editor e voltar"
-            style={{ opacity: 1 }}
             className="group flex h-[44px] w-[36px] shrink-0 items-center justify-center touch-manipulation cursor-pointer"
           >
             <span
               style={{
-                backgroundColor: isDark ? "#181C26" : "#FFFFFF",
-                borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
-                color: isDark ? "#F8FAFC" : "#0F172A",
-                opacity: 1,
+                backgroundColor: "var(--chamfer-surface-elevated)",
+                borderColor: "var(--chamfer-border)",
+                color: "var(--chamfer-text-primary)",
               }}
-              className={cn(
-                "chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border group-active:scale-95",
-                isDark
-                  ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:bg-[#222836]"
-                  : "border-[#E2E8F0] bg-white text-[#0F172A] group-hover:bg-[#F1F5F9]",
-              )}
+              className="chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border group-active:scale-95"
             >
               <ArrowLeft className="size-4" />
             </span>
@@ -557,7 +546,6 @@ export function ChamferPortraitTopBar({
             aria-expanded={projectMenuOpen}
             aria-label={`Projeto ${projectName}, espessura ${formattedThickness}, estado ${saveStatusText}. Toque para trocar folha, espessura ou cor. Segure para Diagnóstico.`}
             title={`${projectName} · CHAPA ${formattedThickness} (${saveStatusText})`}
-            style={{ opacity: 1 }}
             onPointerDown={() => {
               if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current);
               longPressTimerRef.current = window.setTimeout(() => {
@@ -590,22 +578,18 @@ export function ChamferPortraitTopBar({
             <span
               style={
                 projectMenuOpen
-                  ? { opacity: 1 }
+                  ? {
+                      backgroundColor: "var(--chamfer-accent-soft)",
+                      borderColor: "var(--chamfer-accent)",
+                      color: "var(--chamfer-accent)",
+                    }
                   : {
-                      backgroundColor: isDark ? "#181C26" : "#FFFFFF",
-                      borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
-                      color: isDark ? "#F8FAFC" : "#0F172A",
-                      opacity: 1,
+                      backgroundColor: "var(--chamfer-surface-elevated)",
+                      borderColor: "var(--chamfer-border)",
+                      color: "var(--chamfer-text-primary)",
                     }
               }
-              className={cn(
-                "chamfer-theme-fade-2s flex h-8 items-center gap-1 rounded-lg border px-2 font-mono text-[10.5px] font-bold group-active:scale-95 whitespace-nowrap",
-                projectMenuOpen
-                  ? "border-[#E11D48] bg-[#E11D48]/15 text-[#E11D48]"
-                  : isDark
-                    ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:border-[#E11D48]/40"
-                    : "border-[#E2E8F0] bg-white text-[#0F172A] group-hover:border-[#E11D48]/40",
-              )}
+              className="chamfer-theme-fade-2s flex h-8 items-center gap-1 rounded-lg border px-2 font-mono text-[10.5px] font-bold group-active:scale-95 whitespace-nowrap"
             >
               <span
                 aria-hidden="true"
@@ -627,24 +611,26 @@ export function ChamferPortraitTopBar({
             role="group"
             aria-label="Seletor de Ambiente 2D ou 3D"
             style={{
-              backgroundColor: isDark ? "#181C26" : "#FFFFFF",
-              borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
-              opacity: 1,
+              backgroundColor: "var(--chamfer-surface-elevated)",
+              borderColor: "var(--chamfer-border)",
             }}
-            className={cn(
-              "chamfer-theme-fade-2s flex h-8 shrink-0 items-center rounded-lg border p-0.5",
-              isDark ? "border-white/[0.08] bg-[#181C26]" : "border-[#E2E8F0] bg-white",
-            )}
+            className="chamfer-theme-fade-2s flex h-8 shrink-0 items-center rounded-lg border p-0.5"
           >
             <button
               type="button"
               data-testid="chamfer-portrait-mode-2d"
               data-cmd-id="mode.2d_sketch"
               aria-label="Ambiente 2D Sketch"
-              style={{
-                opacity: 1,
-                color: activeMode === "2d" ? "#FFFFFF" : isDark ? "#E2E8F0" : "#334155",
-              }}
+              style={
+                activeMode === "2d"
+                  ? {
+                      backgroundColor: "var(--chamfer-accent)",
+                      color: "var(--chamfer-accent-contrast)",
+                    }
+                  : {
+                      color: "var(--chamfer-text-secondary)",
+                    }
+              }
               onClick={(e) => {
                 e.stopPropagation();
                 triggerHaptic("selection");
@@ -657,14 +643,7 @@ export function ChamferPortraitTopBar({
                   onSelect2D();
                 }
               }}
-              className={cn(
-                "chamfer-theme-fade-2s h-7 rounded-md px-2 font-mono text-[10px] font-bold tracking-wider uppercase cursor-pointer",
-                activeMode === "2d"
-                  ? "bg-[#E11D48] text-white shadow-xs"
-                  : isDark
-                    ? "text-[#E2E8F0] hover:text-white"
-                    : "text-[#334155] hover:text-[#0F172A]",
-              )}
+              className="chamfer-theme-fade-2s h-7 rounded-md px-2 font-mono text-[10px] font-bold tracking-wider uppercase cursor-pointer"
             >
               {mergeViewIntoModeSelector && activeMode === "2d"
                 ? `2D·${compactViewLabel}▾`
@@ -675,10 +654,16 @@ export function ChamferPortraitTopBar({
               data-testid="chamfer-portrait-mode-3d"
               data-cmd-id="mode.cad_3d"
               aria-label="Ambiente CAD 3D Sólido"
-              style={{
-                opacity: 1,
-                color: activeMode === "3d" ? "#FFFFFF" : isDark ? "#E2E8F0" : "#334155",
-              }}
+              style={
+                activeMode === "3d"
+                  ? {
+                      backgroundColor: "var(--chamfer-accent)",
+                      color: "var(--chamfer-accent-contrast)",
+                    }
+                  : {
+                      color: "var(--chamfer-text-secondary)",
+                    }
+              }
               onClick={(e) => {
                 e.stopPropagation();
                 triggerHaptic("selection");
@@ -691,14 +676,7 @@ export function ChamferPortraitTopBar({
                   onSelect3D();
                 }
               }}
-              className={cn(
-                "chamfer-theme-fade-2s h-7 rounded-md px-2 font-mono text-[10px] font-bold tracking-wider uppercase cursor-pointer",
-                activeMode === "3d"
-                  ? "bg-[#E11D48] text-white shadow-xs"
-                  : isDark
-                    ? "text-[#E2E8F0] hover:text-white"
-                    : "text-[#334155] hover:text-[#0F172A]",
-              )}
+              className="chamfer-theme-fade-2s h-7 rounded-md px-2 font-mono text-[10px] font-bold tracking-wider uppercase cursor-pointer"
             >
               {mergeViewIntoModeSelector && activeMode === "3d"
                 ? `3D·${compactViewLabel}▾`
@@ -715,7 +693,6 @@ export function ChamferPortraitTopBar({
               aria-expanded={viewMenuOpen}
               aria-label={`Vista ativa: ${fullViewLabel}. Toque para configurar vista, plano isométrico F5 ou órbita 3D.`}
               title={`Vista: ${fullViewLabel} (toque para alternar ou escolher Plano ISO F5)`}
-              style={{ opacity: 1 }}
               onClick={(e) => {
                 e.stopPropagation();
                 triggerHaptic("tap");
@@ -729,24 +706,18 @@ export function ChamferPortraitTopBar({
               <span
                 style={
                   viewMenuOpen || isOrbitToolActive || isOrbitTilted || drawingProjection === "isometric"
-                    ? { opacity: 1 }
+                    ? {
+                        backgroundColor: "var(--chamfer-accent-soft)",
+                        borderColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent)",
+                      }
                     : {
-                        backgroundColor: isDark ? "#181C26" : "#FFFFFF",
-                        borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
-                        color: isDark ? "#E2E8F0" : "#334155",
-                        opacity: 1,
+                        backgroundColor: "var(--chamfer-surface-elevated)",
+                        borderColor: "var(--chamfer-border)",
+                        color: "var(--chamfer-text-secondary)",
                       }
                 }
-                className={cn(
-                  "chamfer-theme-fade-2s flex h-8 items-center gap-0.5 rounded-lg border px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase group-active:scale-95 whitespace-nowrap",
-                  viewMenuOpen || isOrbitToolActive || isOrbitTilted || drawingProjection === "isometric"
-                    ? isDark
-                      ? "border-[#E11D48]/60 bg-[#E11D48]/15 text-[#F8FAFC]"
-                      : "border-[#E11D48]/55 bg-[#E11D48]/10 text-[#E11D48]"
-                    : isDark
-                      ? "border-white/[0.08] bg-[#181C26] text-[#E2E8F0] group-hover:text-white"
-                      : "border-[#E2E8F0] bg-white text-[#334155] group-hover:text-[#0F172A]",
-                )}
+                className="chamfer-theme-fade-2s flex h-8 items-center gap-0.5 rounded-lg border px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase group-active:scale-95 whitespace-nowrap"
               >
                 <span>{displayedViewLabel}</span>
                 <ChevronDown className="size-2.5 opacity-70" />
@@ -777,24 +748,16 @@ export function ChamferPortraitTopBar({
               style={
                 canUndo
                   ? {
-                      backgroundColor: isDark ? "#181C26" : "#FFFFFF",
-                      borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
-                      color: isDark ? "#F8FAFC" : "#0F172A",
-                      opacity: 1,
+                      backgroundColor: "var(--chamfer-surface-elevated)",
+                      borderColor: "var(--chamfer-border)",
+                      color: "var(--chamfer-text-primary)",
                     }
                   : {
-                      color: isDark ? "#94A3B8" : "#64748B",
-                      opacity: 1,
+                      borderColor: "transparent",
+                      color: "var(--chamfer-text-muted)",
                     }
               }
-              className={cn(
-                "chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border",
-                canUndo
-                  ? isDark
-                    ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:bg-[#222836] group-active:scale-95"
-                    : "border-[#E2E8F0] bg-white text-[#0F172A] group-hover:bg-[#F1F5F9] group-active:scale-95"
-                  : "border-transparent text-[#94A3B8]",
-              )}
+              className="chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border"
             >
               <Undo2 className="size-4" />
             </span>
@@ -820,24 +783,16 @@ export function ChamferPortraitTopBar({
               style={
                 canRedo
                   ? {
-                      backgroundColor: isDark ? "#181C26" : "#FFFFFF",
-                      borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
-                      color: isDark ? "#F8FAFC" : "#0F172A",
-                      opacity: 1,
+                      backgroundColor: "var(--chamfer-surface-elevated)",
+                      borderColor: "var(--chamfer-border)",
+                      color: "var(--chamfer-text-primary)",
                     }
                   : {
-                      color: isDark ? "#94A3B8" : "#64748B",
-                      opacity: 1,
+                      borderColor: "transparent",
+                      color: "var(--chamfer-text-muted)",
                     }
               }
-              className={cn(
-                "chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border",
-                canRedo
-                  ? isDark
-                    ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:bg-[#222836] group-active:scale-95"
-                    : "border-[#E2E8F0] bg-white text-[#0F172A] group-hover:bg-[#F1F5F9] group-active:scale-95"
-                  : "border-transparent text-[#94A3B8]",
-              )}
+              className="chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border"
             >
               <Redo2 className="size-4" />
             </span>
@@ -854,22 +809,15 @@ export function ChamferPortraitTopBar({
             }}
             aria-label={isDark ? "Mudar para Tema Claro" : "Mudar para Tema Escuro"}
             title={isDark ? "Alternar para Tema Claro" : "Alternar para Tema Escuro"}
-            style={{ opacity: 1 }}
             className="group flex h-[44px] w-[32px] shrink-0 items-center justify-center touch-manipulation cursor-pointer"
           >
             <span
               style={{
-                backgroundColor: isDark ? "#181C26" : "#FFFFFF",
-                borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
-                color: isDark ? "#F8FAFC" : "#0F172A",
-                opacity: 1,
+                backgroundColor: "var(--chamfer-surface-elevated)",
+                borderColor: "var(--chamfer-border)",
+                color: "var(--chamfer-text-primary)",
               }}
-              className={cn(
-                "chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border group-active:scale-95",
-                isDark
-                  ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:bg-[#222836]"
-                  : "border-[#E2E8F0] bg-white text-[#0F172A] group-hover:bg-[#F1F5F9]",
-              )}
+              className="chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border group-active:scale-95"
             >
               {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
             </span>
@@ -882,7 +830,6 @@ export function ChamferPortraitTopBar({
             data-cmd-id="topbar.more_menu"
             aria-expanded={moreMenuOpen}
             aria-haspopup="menu"
-            style={{ opacity: 1 }}
             onClick={(e) => {
               e.stopPropagation();
               triggerHaptic("tap");
@@ -899,26 +846,17 @@ export function ChamferPortraitTopBar({
               style={
                 moreMenuOpen
                   ? {
-                      backgroundColor: "#E11D48",
-                      borderColor: "#E11D48",
-                      color: "#FFFFFF",
-                      opacity: 1,
+                      backgroundColor: "var(--chamfer-accent)",
+                      borderColor: "var(--chamfer-accent)",
+                      color: "var(--chamfer-accent-contrast)",
                     }
                   : {
-                      backgroundColor: isDark ? "#181C26" : "#FFFFFF",
-                      borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
-                      color: isDark ? "#F8FAFC" : "#0F172A",
-                      opacity: 1,
+                      backgroundColor: "var(--chamfer-surface-elevated)",
+                      borderColor: "var(--chamfer-border)",
+                      color: "var(--chamfer-text-primary)",
                     }
               }
-              className={cn(
-                "chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border group-active:scale-95",
-                moreMenuOpen
-                  ? "border-[#E11D48] bg-[#E11D48] text-white"
-                  : isDark
-                    ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:bg-[#222836]"
-                    : "border-[#E2E8F0] bg-white text-[#0F172A] group-hover:bg-[#F1F5F9]",
-              )}
+              className="chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border group-active:scale-95"
             >
               <MoreVertical className="size-4" />
             </span>
@@ -943,15 +881,16 @@ export function ChamferPortraitTopBar({
               top: projectMenuCoords.top,
               left: projectMenuCoords.left,
               zIndex: 9999,
+              backgroundColor: "var(--chamfer-popover-bg)",
+              borderColor: "var(--chamfer-border)",
+              color: "var(--chamfer-text-primary)",
             }}
-            className={cn(
-              "chamfer-theme-fade-2s w-76 max-w-[calc(100vw-16px)] max-h-[calc(100dvh-70px)] overflow-y-auto rounded-2xl border p-3 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
-              isDark
-                ? "border-white/[0.12] bg-[#181C26]/98 text-[#F8FAFC]"
-                : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
-            )}
+            className="chamfer-theme-fade-2s w-76 max-w-[calc(100vw-16px)] max-h-[calc(100dvh-70px)] overflow-y-auto rounded-2xl border p-3 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
           >
-            <div className="flex items-center justify-between border-b pb-2 mb-2.5 border-white/[0.08]">
+            <div
+              style={{ borderColor: "var(--chamfer-border-subtle)" }}
+              className="flex items-center justify-between border-b pb-2 mb-2.5"
+            >
                 <div className="min-w-0 pr-2">
                   <div className="flex items-center gap-1.5">
                     <span className={cn("size-1.5 rounded-full shrink-0", saveDotClass)} />
@@ -1181,15 +1120,16 @@ export function ChamferPortraitTopBar({
               top: viewMenuCoords.top,
               left: viewMenuCoords.left,
               zIndex: 9999,
+              backgroundColor: "var(--chamfer-popover-bg)",
+              borderColor: "var(--chamfer-border)",
+              color: "var(--chamfer-text-primary)",
             }}
-            className={cn(
-              "chamfer-theme-fade-2s w-68 max-w-[calc(100vw-16px)] rounded-2xl border p-3 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
-              isDark
-                ? "border-white/[0.12] bg-[#181C26]/98 text-[#F8FAFC]"
-                : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
-            )}
+            className="chamfer-theme-fade-2s w-68 max-w-[calc(100vw-16px)] rounded-2xl border p-3 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
           >
-            <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1.5">
+            <span
+              style={{ color: "var(--chamfer-text-secondary)" }}
+              className="block font-mono text-[9px] font-bold uppercase tracking-wider mb-1.5"
+            >
               Vista & Projeção do Canvas
             </span>
             <div className="grid grid-cols-3 gap-1 mb-2">
@@ -1203,17 +1143,21 @@ export function ChamferPortraitTopBar({
                   onSelect2D();
                   setViewMenuOpen(false);
                 }}
-                className={cn(
-                  "min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                style={
                   activeMode === "2d" &&
-                    drawingProjection === "orthographic" &&
-                    !isOrbitToolActive &&
-                    !isOrbitTilted
-                    ? "bg-[#E11D48] text-white"
-                    : isDark
-                      ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
-                      : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
-                )}
+                  drawingProjection === "orthographic" &&
+                  !isOrbitToolActive &&
+                  !isOrbitTilted
+                    ? {
+                        backgroundColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent-contrast)",
+                      }
+                    : {
+                        backgroundColor: "var(--chamfer-surface-elevated)",
+                        color: "var(--chamfer-text-secondary)",
+                      }
+                }
+                className="min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer"
               >
                 ORTO 2D
               </button>
@@ -1226,14 +1170,18 @@ export function ChamferPortraitTopBar({
                   onSetDrawingProjection("isometric");
                   onSelect2D();
                 }}
-                className={cn(
-                  "min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                style={
                   activeMode === "2d" && drawingProjection === "isometric" && !isOrbitToolActive
-                    ? "bg-[#E11D48] text-white"
-                    : isDark
-                      ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
-                      : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
-                )}
+                    ? {
+                        backgroundColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent-contrast)",
+                      }
+                    : {
+                        backgroundColor: "var(--chamfer-surface-elevated)",
+                        color: "var(--chamfer-text-secondary)",
+                      }
+                }
+                className="min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer"
               >
                 ISO 2D
               </button>
@@ -1245,14 +1193,18 @@ export function ChamferPortraitTopBar({
                   onToggleOrbitTool(!isOrbitToolActive);
                   setViewMenuOpen(false);
                 }}
-                className={cn(
-                  "min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                style={
                   isOrbitToolActive || isOrbitTilted
-                    ? "bg-[#E11D48] text-white"
-                    : isDark
-                      ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
-                      : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
-                )}
+                    ? {
+                        backgroundColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent-contrast)",
+                      }
+                    : {
+                        backgroundColor: "var(--chamfer-surface-elevated)",
+                        color: "var(--chamfer-text-secondary)",
+                      }
+                }
+                className="min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer"
               >
                 ÓRBITA 3D
               </button>
@@ -1260,8 +1212,14 @@ export function ChamferPortraitTopBar({
 
             {/* SELETOR DE PLANO ISOMÉTRICO (F5): SUPERIOR | ESQUERDO | DIREITO */}
             {onSelectIsoPlane && (
-              <div className="mb-2 pt-1.5 border-t border-white/[0.07]">
-                <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1">
+              <div
+                style={{ borderColor: "var(--chamfer-border-subtle)" }}
+                className="mb-2 pt-1.5 border-t"
+              >
+                <span
+                  style={{ color: "var(--chamfer-text-secondary)" }}
+                  className="block font-mono text-[9px] font-bold uppercase tracking-wider mb-1"
+                >
                   Plano Isométrico Ativo (F5)
                 </span>
                 <div className="grid grid-cols-3 gap-1">
@@ -1282,14 +1240,18 @@ export function ChamferPortraitTopBar({
                         onSelectIsoPlane(pl.id);
                         setViewMenuOpen(false);
                       }}
-                      className={cn(
-                        "min-h-[32px] rounded-lg py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                      style={
                         drawingProjection === "isometric" && isoPlane === pl.id
-                          ? "bg-[#E11D48] text-white"
-                          : isDark
-                            ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
-                            : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
-                      )}
+                          ? {
+                              backgroundColor: "var(--chamfer-accent)",
+                              color: "var(--chamfer-accent-contrast)",
+                            }
+                          : {
+                              backgroundColor: "var(--chamfer-surface-elevated)",
+                              color: "var(--chamfer-text-secondary)",
+                            }
+                      }
+                      className="min-h-[32px] rounded-lg py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer"
                     >
                       {pl.label}
                     </button>
@@ -1299,8 +1261,14 @@ export function ChamferPortraitTopBar({
             )}
 
             {/* ESTILO DE RENDERIZAÇÃO 3D: SÓLIDO | SOMBREADO | ARAME */}
-            <div className="pt-1.5 border-t border-white/[0.07]">
-              <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1">
+            <div
+              style={{ borderColor: "var(--chamfer-border-subtle)" }}
+              className="pt-1.5 border-t"
+            >
+              <span
+                style={{ color: "var(--chamfer-text-secondary)" }}
+                className="block font-mono text-[9px] font-bold uppercase tracking-wider mb-1"
+              >
                 Representação 3D (Sólido / Somb / Arame)
               </span>
               <div className="grid grid-cols-3 gap-1">
@@ -1320,14 +1288,18 @@ export function ChamferPortraitTopBar({
                       onChangeRenderStyle3D(st.id);
                       setViewMenuOpen(false);
                     }}
-                    className={cn(
-                      "min-h-[32px] rounded-lg py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                    style={
                       renderStyle3D === st.id
-                        ? "bg-[#E11D48] text-white"
-                        : isDark
-                          ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
-                          : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
-                    )}
+                        ? {
+                            backgroundColor: "var(--chamfer-accent)",
+                            color: "var(--chamfer-accent-contrast)",
+                          }
+                        : {
+                            backgroundColor: "var(--chamfer-surface-elevated)",
+                            color: "var(--chamfer-text-secondary)",
+                          }
+                    }
+                    className="min-h-[32px] rounded-lg py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer"
                   >
                     {st.label}
                   </button>
@@ -1354,25 +1326,24 @@ export function ChamferPortraitTopBar({
               top: moreMenuCoords.top,
               right: moreMenuCoords.right,
               zIndex: 9999,
+              backgroundColor: "var(--chamfer-popover-bg)",
+              borderColor: "var(--chamfer-border)",
+              color: "var(--chamfer-text-primary)",
             }}
-            className={cn(
-              "chamfer-theme-fade-2s max-h-[calc(100dvh-64px)] w-72 max-w-[calc(100vw-16px)] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
-              isDark
-                ? "border-white/[0.14] bg-[#11141C] text-[#F8FAFC]"
-                : "border-[#CBD5E1] bg-white text-[#0F172A]",
-            )}
+            className="chamfer-theme-fade-2s max-h-[calc(100dvh-64px)] w-72 max-w-[calc(100vw-16px)] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
           >
             {/* CABEÇALHO DE DETALHES DO PROJETO + BOTÃO SALVAR */}
             <div
-              className={cn(
-                "mb-1.5 flex items-center justify-between rounded-xl px-2.5 py-2",
-                isDark ? "bg-[#181C26]" : "bg-[#F8FAFC]",
-              )}
+              style={{ backgroundColor: "var(--chamfer-surface-elevated)" }}
+              className="mb-1.5 flex items-center justify-between rounded-xl px-2.5 py-2"
             >
               <div className="min-w-0 pr-2">
                 <div className="flex items-center gap-1.5">
                   <span className={cn("size-1.5 rounded-full shrink-0", saveDotClass)} />
-                  <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8]">
+                  <span
+                    style={{ color: "var(--chamfer-text-secondary)" }}
+                    className="font-mono text-[9px] font-bold uppercase tracking-wider"
+                  >
                     {saveStatusText}
                   </span>
                 </div>
@@ -1387,7 +1358,11 @@ export function ChamferPortraitTopBar({
                   setMoreMenuOpen(false);
                   onManualSave();
                 }}
-                className="shrink-0 rounded-lg bg-[#E11D48] px-2.5 py-1 font-mono text-[10px] font-bold text-white cursor-pointer"
+                style={{
+                  backgroundColor: "var(--chamfer-accent)",
+                  color: "var(--chamfer-accent-contrast)",
+                }}
+                className="shrink-0 rounded-lg px-2.5 py-1 font-mono text-[10px] font-bold cursor-pointer"
               >
                 Salvar
               </button>
@@ -1460,8 +1435,24 @@ export function ChamferPortraitTopBar({
               }}
               isDark={isDark}
             />
+            {onOpenProjectSettings && (
+              <PortraitMenuItem
+                cmdId="ui.project_settings"
+                icon={Sliders}
+                accentColor="text-[#38BDF8]"
+                label="🎨 Aparência, Destaque, Opacidade & Prefs"
+                onClick={() => {
+                  setMoreMenuOpen(false);
+                  onOpenProjectSettings();
+                }}
+                isDark={isDark}
+              />
+            )}
 
-            <div className={cn("my-1.5 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
+            <div
+              style={{ backgroundColor: "var(--chamfer-border-subtle)" }}
+              className="my-1.5 h-px"
+            />
 
             {/* SELETOR DE LAYOUT: COMPACTO (LIGHTROOM) | CLÁSSICO */}
             {onChangeLayoutPreference && (
@@ -1855,13 +1846,16 @@ export function ChamferPortraitCanvasMicroPill({
       >
         {/* Pílula compacta de 24px com pointer-events-auto apenas nos segmentos interativos */}
         <div
-          style={{ height: 24, paddingLeft: 8, paddingRight: 8, borderRadius: 9999 }}
-          className={cn(
-            "pointer-events-auto flex max-w-full items-center gap-1.5 overflow-x-auto scrollbar-none border font-mono text-[10px] shadow-md backdrop-blur-md tabular-nums",
-            isDark
-              ? "border-white/[0.09] bg-[#11141C]/88 text-[#E2E8F0]"
-              : "border-[#CBD5E1]/90 bg-white/92 text-[#0F172A]",
-          )}
+          style={{
+            height: 24,
+            paddingLeft: 8,
+            paddingRight: 8,
+            borderRadius: 9999,
+            backgroundColor: "var(--chamfer-bubble-bg)",
+            borderColor: "var(--chamfer-border)",
+            color: "var(--chamfer-text-primary)",
+          }}
+          className="pointer-events-auto flex max-w-full items-center gap-1.5 overflow-x-auto scrollbar-none border font-mono text-[10px] shadow-md backdrop-blur-md tabular-nums"
         >
           {/* Segmento 1: P01 (troca rápida de folha) */}
           <button
@@ -1874,10 +1868,8 @@ export function ChamferPortraitCanvasMicroPill({
               setZoomGridPopoverOpen(false);
             }}
             title="Toque para alternar ou criar Folha (P01, P02...)"
-            className={cn(
-              "shrink-0 font-bold tracking-wider cursor-pointer",
-              isDark ? "text-[#FB7185]" : "text-[#E11D48]",
-            )}
+            style={{ color: "var(--chamfer-accent)" }}
+            className="shrink-0 font-bold tracking-wider cursor-pointer"
           >
             {planName}
           </button>
@@ -2285,22 +2277,18 @@ export function ChamferPortraitCompactDrawer({
         bottom: bottomOffsetPx,
         height: `${dvhValue}dvh`,
         maxHeight: `${dvhValue}dvh`,
+        backgroundColor: "var(--chamfer-popover-bg)",
+        borderColor: "var(--chamfer-border)",
+        color: "var(--chamfer-text-primary)",
       }}
-      className={cn(
-        "fixed inset-x-0 z-50 flex flex-col rounded-t-2xl border-t shadow-2xl backdrop-blur-xl transition-[height,max-height] duration-180 ease-out motion-reduce:transition-none",
-        isDark
-          ? "border-white/[0.12] bg-[#11141C]/98 text-[#F8FAFC]"
-          : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
-      )}
+      className="fixed inset-x-0 z-50 flex flex-col rounded-t-2xl border-t shadow-2xl backdrop-blur-xl transition-[height,max-height] duration-180 ease-out motion-reduce:transition-none"
     >
       {/* Alça de arraste superior (36px × 4px) + Cabeçalho com alternador 45%/70% e Fechar */}
       <div
         onPointerDown={handleDragPointerDown}
         onPointerUp={handleDragPointerUp}
-        className={cn(
-          "flex shrink-0 flex-col border-b select-none touch-none",
-          isDark ? "border-white/[0.08]" : "border-[#E2E8F0]",
-        )}
+        style={{ borderColor: "var(--chamfer-border-subtle)" }}
+        className="flex shrink-0 flex-col border-b select-none touch-none"
       >
         <div className="flex items-center justify-center pt-1.5 pb-0.5 cursor-ns-resize">
           <span
@@ -2310,7 +2298,10 @@ export function ChamferPortraitCompactDrawer({
         </div>
 
         <div className="flex h-8 items-center justify-between px-3">
-          <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#38BDF8]">
+          <span
+            style={{ color: "var(--chamfer-accent)" }}
+            className="font-mono text-[10px] font-bold uppercase tracking-wider"
+          >
             {activeTab === "propriedades"
               ? "Propriedades da Peça"
               : activeTab === "camadas"
@@ -2336,14 +2327,20 @@ export function ChamferPortraitCompactDrawer({
                   ? "Expandir gaveta para 70% da tela"
                   : "Reduzir gaveta para 45% da tela"
               }
-              className={cn(
-                "flex h-6 items-center gap-1 rounded-lg border px-2 font-mono text-[9px] font-bold transition-colors cursor-pointer",
+              style={
                 heightMode === "expanded_70"
-                  ? "border-[#0EA5E9] bg-[#0EA5E9]/20 text-[#38BDF8]"
-                  : isDark
-                    ? "border-white/[0.1] bg-[#181C26] text-[#94A3B8] hover:text-white"
-                    : "border-[#CBD5E1] bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
-              )}
+                  ? {
+                      backgroundColor: "var(--chamfer-accent-soft)",
+                      borderColor: "var(--chamfer-accent)",
+                      color: "var(--chamfer-accent)",
+                    }
+                  : {
+                      backgroundColor: "var(--chamfer-surface-elevated)",
+                      borderColor: "var(--chamfer-border)",
+                      color: "var(--chamfer-text-secondary)",
+                    }
+              }
+              className="flex h-6 items-center gap-1 rounded-lg border px-2 font-mono text-[9px] font-bold transition-colors cursor-pointer"
             >
               <span>{heightMode === "compact_45" ? "45% ▴" : "70% ▾"}</span>
             </button>
@@ -2352,12 +2349,12 @@ export function ChamferPortraitCompactDrawer({
               type="button"
               onClick={onClose}
               aria-label="Fechar gaveta"
-              className={cn(
-                "flex size-6 items-center justify-center rounded-lg border transition-colors cursor-pointer",
-                isDark
-                  ? "border-white/[0.1] bg-[#181C26] text-[#94A3B8] hover:text-white"
-                  : "border-[#CBD5E1] bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
-              )}
+              style={{
+                backgroundColor: "var(--chamfer-surface-elevated)",
+                borderColor: "var(--chamfer-border)",
+                color: "var(--chamfer-text-secondary)",
+              }}
+              className="flex size-6 items-center justify-center rounded-lg border transition-colors cursor-pointer"
             >
               <X className="size-3.5" />
             </button>
@@ -2376,14 +2373,20 @@ export function ChamferPortraitCompactDrawer({
                   triggerHaptic("selection");
                   onSelectTab(tab.id);
                 }}
-                className={cn(
-                  "shrink-0 rounded-lg border px-2.5 py-1 font-mono text-[9.5px] font-bold uppercase tracking-wide transition-colors cursor-pointer",
+                style={
                   isActive
-                    ? "border-[#E11D48] bg-[#E11D48] text-white"
-                    : isDark
-                      ? "border-white/[0.08] bg-[#181C26] text-[#94A3B8] hover:text-white"
-                      : "border-[#CBD5E1] bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
-                )}
+                    ? {
+                        backgroundColor: "var(--chamfer-accent)",
+                        borderColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent-contrast)",
+                      }
+                    : {
+                        backgroundColor: "var(--chamfer-surface-elevated)",
+                        borderColor: "var(--chamfer-border)",
+                        color: "var(--chamfer-text-secondary)",
+                      }
+                }
+                className="shrink-0 rounded-lg border px-2.5 py-1 font-mono text-[9.5px] font-bold uppercase tracking-wide transition-colors cursor-pointer"
               >
                 {tab.label}
               </button>
@@ -5025,13 +5028,13 @@ export function ChamferPortraitBottomBars({
     >
       {/* BARRA INFERIOR NÍVEL 1 (Slot Contextual Único — 60px normal / 54px em < 700px) */}
       <div
-        style={{ height: stripHeightPx }}
-        className={cn(
-          "flex w-full shrink-0 items-center border-t transition-colors motion-reduce:transition-none",
-          isDark
-            ? "border-white/[0.07] bg-[#181C26] text-[#F8FAFC]"
-            : "border-[#E2E8F0] bg-white text-[#0F172A]",
-        )}
+        style={{
+          height: stripHeightPx,
+          backgroundColor: "var(--chamfer-surface-elevated)",
+          borderColor: "var(--chamfer-border)",
+          color: "var(--chamfer-text-primary)",
+        }}
+        className="flex w-full shrink-0 items-center border-t backdrop-blur-md transition-colors motion-reduce:transition-none"
       >
         {renderLevel1Content()}
       </div>
@@ -5042,13 +5045,11 @@ export function ChamferPortraitBottomBars({
         style={{
           minHeight: dockHeightPx,
           paddingBottom: "env(safe-area-inset-bottom, 0px)",
+          backgroundColor: "var(--chamfer-bar-bg)",
+          borderColor: "var(--chamfer-border)",
+          color: "var(--chamfer-text-secondary)",
         }}
-        className={cn(
-          "grid w-full shrink-0 grid-cols-5 items-center border-t px-1 transition-colors motion-reduce:transition-none",
-          isDark
-            ? "border-white/[0.07] bg-[#11141C] text-[#94A3B8]"
-            : "border-[#E2E8F0] bg-[#F8FAFC] text-[#475569]",
-        )}
+        className="grid w-full shrink-0 grid-cols-5 items-center border-t px-1 backdrop-blur-md transition-colors motion-reduce:transition-none"
       >
         {dockModes.map((m) => {
           const Icon = m.icon;
@@ -5063,38 +5064,47 @@ export function ChamferPortraitBottomBars({
               style={{ height: dockHeightPx }}
               className="group relative flex w-full flex-col items-center justify-center cursor-pointer touch-manipulation"
             >
-              {/* Barra superior de 2px na aba ativa (#E11D48) */}
+              {/* Barra superior de 2px na aba ativa (usa cor de destaque --chamfer-accent) */}
               {isActive && (
-                <span className="absolute top-0 inset-x-3 h-[2px] rounded-full bg-[#E11D48]" />
+                <span
+                  style={{ backgroundColor: "var(--chamfer-accent)" }}
+                  className="absolute top-0 inset-x-3 h-[2px] rounded-full"
+                />
               )}
 
               <div
-                style={{ width: 40, height: dockHeightPx <= 50 ? 28 : 32 }}
-                className={cn(
-                  "relative flex items-center justify-center rounded-xl transition-all duration-150",
-                  isActive
-                    ? "bg-[#E11D48]/15 text-[#E11D48]"
-                    : isDark
-                      ? "text-[#94A3B8] group-hover:text-[#F8FAFC]"
-                      : "text-[#475569] group-hover:text-[#0F172A]",
-                )}
+                style={{
+                  width: 40,
+                  height: dockHeightPx <= 50 ? 28 : 32,
+                  ...(isActive
+                    ? {
+                        backgroundColor: "var(--chamfer-accent-soft)",
+                        color: "var(--chamfer-accent)",
+                      }
+                    : {
+                        color: "var(--chamfer-text-secondary)",
+                      }),
+                }}
+                className="relative flex items-center justify-center rounded-xl transition-all duration-150"
               >
                 <Icon className="size-5" />
                 {Boolean(m.badgeCount && m.badgeCount > 0) && (
-                  <span className="absolute -top-0.5 -right-0.5 flex min-w-[14px] h-[14px] items-center justify-center rounded-full bg-[#E11D48] px-1 font-mono text-[8.5px] font-bold text-white">
+                  <span
+                    style={{
+                      backgroundColor: "var(--chamfer-accent)",
+                      color: "var(--chamfer-accent-contrast)",
+                    }}
+                    className="absolute -top-0.5 -right-0.5 flex min-w-[14px] h-[14px] items-center justify-center rounded-full px-1 font-mono text-[8.5px] font-bold"
+                  >
                     {m.badgeCount}
                   </span>
                 )}
               </div>
               <span
-                className={cn(
-                  "mt-0.5 font-mono text-[10px] font-bold tracking-tight leading-none whitespace-nowrap",
-                  isActive
-                    ? "text-[#E11D48]"
-                    : isDark
-                      ? "text-[#94A3B8]"
-                      : "text-[#475569]",
-                )}
+                style={{
+                  color: isActive ? "var(--chamfer-accent)" : "var(--chamfer-text-secondary)",
+                }}
+                className="mt-0.5 font-mono text-[10px] font-bold tracking-tight leading-none whitespace-nowrap"
               >
                 {m.label}
               </span>
@@ -5118,7 +5128,6 @@ function CarouselToolItem({
   swatchColor,
   heightPx = 52,
   onClick,
-  isDark,
 }: {
   cmdId?: string;
   icon: typeof Minus;
@@ -5128,7 +5137,7 @@ function CarouselToolItem({
   swatchColor?: string;
   heightPx?: number;
   onClick: () => void;
-  isDark: boolean;
+  isDark?: boolean;
 }) {
   return (
     <button
@@ -5139,24 +5148,31 @@ function CarouselToolItem({
         triggerHaptic("selection");
         onClick();
       }}
-      style={{ minWidth: 60, height: heightPx }}
+      style={{
+        minWidth: 60,
+        height: heightPx,
+        ...(disabled
+          ? { borderColor: "transparent" }
+          : active
+            ? {
+                backgroundColor: "var(--chamfer-accent-soft)",
+                borderColor: "var(--chamfer-accent-border)",
+                color: "var(--chamfer-accent)",
+              }
+            : {
+                borderColor: "transparent",
+                color: "var(--chamfer-text-secondary)",
+              }),
+      }}
       className={cn(
         "relative flex shrink-0 flex-col items-center justify-center rounded-xl px-2 transition-all touch-manipulation cursor-pointer border",
-        disabled
-          ? "opacity-35 cursor-not-allowed border-transparent"
-          : active
-            ? "bg-[#E11D48]/[0.14] border-[#E11D48]/[0.55] text-[#E11D48]"
-            : isDark
-              ? "border-transparent text-[#94A3B8] hover:bg-white/[0.04] hover:text-[#F8FAFC]"
-              : "border-transparent text-[#475569] hover:bg-[#0F172A]/[0.04] hover:text-[#0F172A]",
+        disabled ? "opacity-35 cursor-not-allowed" : "hover:opacity-95",
       )}
     >
       <div className="relative flex items-center justify-center">
         <Icon
-          className={cn(
-            "size-5 transition-transform",
-            active && "scale-105 text-[#E11D48]",
-          )}
+          style={active ? { color: "var(--chamfer-accent)" } : undefined}
+          className={cn("size-5 transition-transform", active && "scale-105")}
         />
         {swatchColor && (
           <span
@@ -5166,18 +5182,22 @@ function CarouselToolItem({
         )}
       </div>
       <span
-        style={{ fontSize: "10.5px" }}
+        style={{
+          fontSize: "10.5px",
+          color: active ? "var(--chamfer-accent)" : undefined,
+        }}
         className={cn(
           "mt-1 font-mono leading-none tracking-tight whitespace-nowrap",
-          active ? "font-bold text-[#E11D48]" : "font-medium",
+          active ? "font-bold" : "font-medium",
         )}
       >
         {label}
       </span>
       <span
+        style={active ? { backgroundColor: "var(--chamfer-accent)" } : undefined}
         className={cn(
           "mt-0.5 size-1 rounded-full transition-opacity",
-          active ? "bg-[#E11D48] opacity-100 shadow-[0_0_6px_#E11D48]" : "opacity-0",
+          active ? "opacity-100" : "opacity-0",
         )}
       />
     </button>
@@ -5187,10 +5207,8 @@ function CarouselToolItem({
 function CarouselDivider({ isDark }: { isDark: boolean }) {
   return (
     <div
-      className={cn(
-        "mx-1 h-6 w-px shrink-0",
-        isDark ? "bg-white/[0.1]" : "bg-[#CBD5E1]",
-      )}
+      style={{ backgroundColor: "var(--chamfer-border)" }}
+      className={cn("mx-1 h-6 w-px shrink-0", isDark ? "opacity-60" : "opacity-80")}
     />
   );
 }
@@ -5198,11 +5216,10 @@ function CarouselDivider({ isDark }: { isDark: boolean }) {
 function InlineBackButton({
   onClick,
   label,
-  isDark,
 }: {
   onClick: () => void;
   label: string;
-  isDark: boolean;
+  isDark?: boolean;
 }) {
   return (
     <button
@@ -5211,14 +5228,14 @@ function InlineBackButton({
         triggerHaptic("tap");
         onClick();
       }}
-      className={cn(
-        "flex h-9 shrink-0 items-center gap-1 rounded-xl border px-2.5 font-mono text-[10.5px] font-bold transition-colors active:scale-95 cursor-pointer",
-        isDark
-          ? "border-white/[0.1] bg-[#11141C] text-[#F8FAFC] hover:bg-[#222836]"
-          : "border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] hover:bg-[#E2E8F0]",
-      )}
+      style={{
+        backgroundColor: "var(--chamfer-bar-bg)",
+        borderColor: "var(--chamfer-border)",
+        color: "var(--chamfer-text-primary)",
+      }}
+      className="flex h-9 shrink-0 items-center gap-1 rounded-xl border px-2.5 font-mono text-[10.5px] font-bold transition-colors active:scale-95 cursor-pointer"
     >
-      <ArrowLeft className="size-3.5 text-[#E11D48]" />
+      <ArrowLeft style={{ color: "var(--chamfer-accent)" }} className="size-3.5" />
       <span>{label}</span>
     </button>
   );
@@ -5238,7 +5255,11 @@ function InlineConfirmButton({
         triggerHaptic("action");
         onClick();
       }}
-      className="flex h-9 shrink-0 items-center gap-1 rounded-xl bg-[#E11D48] px-3 font-mono text-[10.5px] font-bold text-white shadow-sm shadow-[#E11D48]/30 active:scale-95 cursor-pointer"
+      style={{
+        backgroundColor: "var(--chamfer-accent)",
+        color: "var(--chamfer-accent-contrast)",
+      }}
+      className="flex h-9 shrink-0 items-center gap-1 rounded-xl px-3 font-mono text-[10.5px] font-bold shadow-sm active:scale-95 cursor-pointer"
     >
       <Check className="size-3.5 stroke-[2.5]" />
       <span>{label}</span>

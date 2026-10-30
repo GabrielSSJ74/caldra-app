@@ -67,6 +67,11 @@ import {
 import { getChamferSettings, type ChamferSettings } from "@/lib/lab2d/projectSettings";
 import { useSettings } from "@/lib/settings/SettingsProvider";
 import {
+  useChamferAppearance,
+  buildChamferThemeColors,
+} from "@/components/lab2d/useIntentTheme";
+import { ChamferProjectSettingsDialog } from "@/components/lab2d/ChamferProjectSettingsDialog";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -714,17 +719,20 @@ function getOperationFeedback(
 
 export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const { isMestre } = useFeatureAccess();
-  const { theme: appTheme, setTheme: setAppTheme, unit } = useSettings();
-  const isDark = useMemo(() => {
-    if (appTheme === "light") return false;
-    if (appTheme === "dark" || appTheme === "amoled") return true;
-    if (typeof window !== "undefined" && window.matchMedia) {
-      return window.matchMedia("(prefers-color-scheme: dark)").matches;
-    }
-    return true;
-  }, [appTheme]);
+  const { setTheme: setAppTheme, unit } = useSettings();
+  const {
+    isDark,
+    isAmoled,
+    bgStyle,
+    accentKey,
+    cardOpacity,
+    bubbleOpacity,
+    themeColors,
+    cssVariables,
+    themeVersion,
+  } = useChamferAppearance();
 
-  // Interpolação suave de 2000ms (lerp por performance.now()) da cor de fundo do Canvas 2D (#FAFBFD <-> #0D1526)
+  // Interpolação suave de 2000ms (lerp por performance.now()) da cor de fundo do Canvas 2D
   const [themeLerpT, setThemeLerpT] = useState<number>(() => (isDark ? 1 : 0));
   const themeLerpTRef = useRef<number>(isDark ? 1 : 0);
   const themeAnimRafRef = useRef<number | null>(null);
@@ -773,13 +781,29 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     };
   }, [isDark]);
 
+  const lightPaletteRef = useMemo(
+    () => buildChamferThemeColors("light", bgStyle, accentKey, cardOpacity, bubbleOpacity),
+    [bgStyle, accentKey, cardOpacity, bubbleOpacity],
+  );
+  const darkPaletteRef = useMemo(
+    () =>
+      buildChamferThemeColors(
+        isAmoled ? "amoled" : "dark",
+        bgStyle,
+        accentKey,
+        cardOpacity,
+        bubbleOpacity,
+      ),
+    [isAmoled, bgStyle, accentKey, cardOpacity, bubbleOpacity],
+  );
+
   const canvasBgColor = useMemo(
-    () => lerpHexColor("#FAFBFD", "#0D1526", themeLerpT),
-    [themeLerpT],
+    () => lerpHexColor(lightPaletteRef.workAreaFill, darkPaletteRef.workAreaFill, themeLerpT),
+    [lightPaletteRef.workAreaFill, darkPaletteRef.workAreaFill, themeLerpT],
   );
   const canvasOuterBgColor = useMemo(
-    () => lerpHexColor("#DCE3EC", "#060A11", themeLerpT),
-    [themeLerpT],
+    () => lerpHexColor(lightPaletteRef.canvasBg, darkPaletteRef.canvasBg, themeLerpT),
+    [lightPaletteRef.canvasBg, darkPaletteRef.canvasBg, themeLerpT],
   );
 
   const toggleTheme = useCallback(() => {
@@ -902,8 +926,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   cursorRef.current = cursor;
   const [snapHit, setSnapHit] = useState<Snap | null>(null);
   const [grid, setGrid] = useState(10);
-  const [snapOn, setSnapOn] = useState(true);
-  const [showGrid, setShowGrid] = useState(true);
+  const [snapOn, setSnapOn] = useState<boolean>(() => chamferSettings.snapOnLoad ?? true);
+  const [showGrid, setShowGrid] = useState<boolean>(() => chamferSettings.showGridOnLoad ?? true);
+  const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   /* WORKSPACE_FRAME — moldura técnica de trabalho (não é geometria) */
   const [frame, setFrame] = useState<WorkspaceFrame>(() =>
     typeof window === "undefined"
@@ -2462,7 +2487,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       showGrid,
       gridStep: Math.max(15, grid * 2.5),
     });
-  }, [cadPhase, drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isInPlaceSolid3DActive, isDark, canvasBgColor, themeLerpT, drawingProjection, entities, isDraggingUnlocked, isoPlane, thickness, orbitProjection2D, wireframe3DStyle, showGrid, grid]);
+  }, [cadPhase, drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isInPlaceSolid3DActive, isDark, canvasBgColor, themeLerpT, themeVersion, drawingProjection, entities, isDraggingUnlocked, isoPlane, thickness, orbitProjection2D, wireframe3DStyle, showGrid, grid]);
 
   /* ------------------------------------------------------- FLUXO CALDRA */
   /*
@@ -6543,68 +6568,87 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [grid, view.k]);
 
   const gridStyles = useMemo(() => {
-    if (isDark) {
-      // TEMA ESCURO — Azul-Noite Técnico (#060A11 externo / #0D1526 interno / #293444 bordas)
-      const intSecOpacity = Math.max(0, Math.min(0.36, 0.35 * gridConfig.subFade));
-      const intMajOpacity = Math.max(0, Math.min(0.52, 0.50 * gridConfig.majorFade));
-      const intMacOpacity = 0.56;
+    const parseRgbaColor = (
+      colorStr: string | undefined | null,
+      fallbackRgb: [number, number, number],
+      fallbackAlpha: number,
+    ): { rgb: [number, number, number]; alpha: number } => {
+      if (!colorStr || typeof colorStr !== "string") {
+        return { rgb: fallbackRgb, alpha: fallbackAlpha };
+      }
+      const m = colorStr.match(
+        /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([0-9.]+))?\s*\)/i,
+      );
+      if (m) {
+        const a = m[4] !== undefined ? Number(m[4]) : fallbackAlpha;
+        return {
+          rgb: [Number(m[1]), Number(m[2]), Number(m[3])],
+          alpha: Number.isFinite(a) ? a : fallbackAlpha,
+        };
+      }
+      const clean = colorStr.replace(/^#/, "").trim();
+      if (clean.length === 6) {
+        const n = parseInt(clean, 16);
+        if (Number.isFinite(n)) {
+          return {
+            rgb: [(n >> 16) & 255, (n >> 8) & 255, n & 255],
+            alpha: fallbackAlpha,
+          };
+        }
+      }
+      return { rgb: fallbackRgb, alpha: fallbackAlpha };
+    };
 
-      // Grade externa (~40% mais suave que a grade interna)
-      const extSecOpacity = Math.max(0, Math.min(0.15, 0.14 * gridConfig.subFade));
-      const extMajOpacity = Math.max(0, Math.min(0.23, 0.22 * gridConfig.majorFade));
-      const extMacOpacity = 0.22;
+    const minorParsed = parseRgbaColor(
+      themeColors.gridMinor,
+      isDark ? [148, 163, 184] : [15, 23, 42],
+      isDark ? 0.035 : 0.04,
+    );
+    const majorParsed = parseRgbaColor(
+      themeColors.gridMajor,
+      isDark ? [148, 163, 184] : [15, 23, 42],
+      isDark ? 0.08 : 0.09,
+    );
+    const outerMinorParsed = parseRgbaColor(
+      themeColors.gridOuterMinor,
+      minorParsed.rgb,
+      minorParsed.alpha * 0.65,
+    );
+    const outerMajorParsed = parseRgbaColor(
+      themeColors.gridOuterMajor,
+      majorParsed.rgb,
+      majorParsed.alpha * 0.65,
+    );
 
-      return {
-        secondaryStroke: `rgba(71, 85, 105, ${intSecOpacity.toFixed(3)})`,
-        secondaryWidth: 0.75,
-        majorStroke: `rgba(100, 116, 139, ${intMajOpacity.toFixed(3)})`,
-        majorWidth: 1.0,
-        macroStroke: `rgba(100, 116, 139, ${intMacOpacity.toFixed(3)})`,
-        macroWidth: 1.2,
-        extSecondaryStroke: `rgba(51, 65, 85, ${extSecOpacity.toFixed(3)})`,
-        extMajorStroke: `rgba(51, 65, 85, ${extMajOpacity.toFixed(3)})`,
-        extMacroStroke: `rgba(51, 65, 85, ${extMacOpacity.toFixed(3)})`,
-        // Eixos do sistema CAD (+X Vermelho Caldra #E11D48, +Y Verde Técnico #10B981)
-        axisX: "#E11D48",
-        axisY: "#10B981",
-        axisInfinite: "rgba(148, 163, 184, 0.15)",
-        axisWidth: 1.75,
-        originFill: "#DC143C",
-        originRing: "rgba(230, 237, 245, 0.92)",
-        originText: "#DC143C",
-      };
-    } else {
-      // TEMA CLARO — Papel Técnico (#DCE3EC externo / #FAFBFD interno / #CBD5E1 bordas)
-      const intSecOpacity = Math.max(0, Math.min(0.19, 0.18 * gridConfig.subFade));
-      const intMajOpacity = Math.max(0, Math.min(0.31, 0.30 * gridConfig.majorFade));
-      const intMacOpacity = 0.36;
+    const intSecOpacity = Math.max(0, minorParsed.alpha * gridConfig.subFade);
+    const intMajOpacity = Math.max(0, majorParsed.alpha * gridConfig.majorFade);
+    const intMacOpacity = Math.min(0.16, majorParsed.alpha * 1.25);
 
-      // Grade externa discreta sobre a superfície de apoio
-      const extSecOpacity = Math.max(0, Math.min(0.12, 0.11 * gridConfig.subFade));
-      const extMajOpacity = Math.max(0, Math.min(0.17, 0.16 * gridConfig.majorFade));
-      const extMacOpacity = 0.16;
+    // Seção 6.4: Grade externa com opacidade fixa em 65% da grade interna
+    const outerFactor = themeColors.gridOuterOpacityFactor ?? 0.65;
+    const extSecOpacity = intSecOpacity * outerFactor;
+    const extMajOpacity = intMajOpacity * outerFactor;
+    const extMacOpacity = intMacOpacity * outerFactor;
 
-      return {
-        secondaryStroke: `rgba(71, 85, 105, ${intSecOpacity.toFixed(3)})`,
-        secondaryWidth: 0.75,
-        majorStroke: `rgba(51, 65, 85, ${intMajOpacity.toFixed(3)})`,
-        majorWidth: 1.0,
-        macroStroke: `rgba(51, 65, 85, ${intMacOpacity.toFixed(3)})`,
-        macroWidth: 1.2,
-        extSecondaryStroke: `rgba(100, 116, 139, ${extSecOpacity.toFixed(3)})`,
-        extMajorStroke: `rgba(100, 116, 139, ${extMajOpacity.toFixed(3)})`,
-        extMacroStroke: `rgba(100, 116, 139, ${extMacOpacity.toFixed(3)})`,
-        // Eixos do sistema CAD (+X Vermelho Caldra #E11D48, +Y Verde Técnico #059669)
-        axisX: "#E11D48",
-        axisY: "#059669",
-        axisInfinite: "rgba(100, 116, 139, 0.16)",
-        axisWidth: 1.75,
-        originFill: "#DC143C",
-        originRing: "rgba(30, 41, 59, 0.88)",
-        originText: "#DC143C",
-      };
-    }
-  }, [isDark, gridConfig]);
+    return {
+      secondaryStroke: `rgba(${minorParsed.rgb[0]}, ${minorParsed.rgb[1]}, ${minorParsed.rgb[2]}, ${intSecOpacity.toFixed(4)})`,
+      secondaryWidth: 0.75,
+      majorStroke: `rgba(${majorParsed.rgb[0]}, ${majorParsed.rgb[1]}, ${majorParsed.rgb[2]}, ${intMajOpacity.toFixed(4)})`,
+      majorWidth: 1.0,
+      macroStroke: `rgba(${majorParsed.rgb[0]}, ${majorParsed.rgb[1]}, ${majorParsed.rgb[2]}, ${intMacOpacity.toFixed(4)})`,
+      macroWidth: 1.15,
+      extSecondaryStroke: `rgba(${outerMinorParsed.rgb[0]}, ${outerMinorParsed.rgb[1]}, ${outerMinorParsed.rgb[2]}, ${extSecOpacity.toFixed(4)})`,
+      extMajorStroke: `rgba(${outerMajorParsed.rgb[0]}, ${outerMajorParsed.rgb[1]}, ${outerMajorParsed.rgb[2]}, ${extMajOpacity.toFixed(4)})`,
+      extMacroStroke: `rgba(${outerMajorParsed.rgb[0]}, ${outerMajorParsed.rgb[1]}, ${outerMajorParsed.rgb[2]}, ${extMacOpacity.toFixed(4)})`,
+      axisX: themeColors.axisX,
+      axisY: themeColors.axisY,
+      axisInfinite: isDark ? "rgba(148, 163, 184, 0.11)" : "rgba(15, 23, 42, 0.12)",
+      axisWidth: 1.75,
+      originFill: "#DC143C",
+      originRing: isDark ? "rgba(236, 239, 244, 0.92)" : "rgba(15, 20, 26, 0.88)",
+      originText: "#DC143C",
+    };
+  }, [isDark, gridConfig, themeColors, themeVersion]);
 
   const isMobile = useIsMobile();
   const verticalLayout = useVerticalLayout();
@@ -6991,10 +7035,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   return (
     <div
       ref={wrapRef}
+      style={{
+        ...cssVariables,
+        backgroundColor: "var(--chamfer-bg-root)",
+        color: "var(--chamfer-text-primary)",
+      }}
       className={cn(
         "chamfer-theme-fade-root chamfer-theme-fade-2s fixed inset-0 z-50 flex h-[100dvh] w-[100vw] max-w-none flex-col overflow-hidden rounded-none select-none",
         isLandscape ? "gap-1 p-1" : "gap-0 p-0",
-        isDark ? "bg-[#0B0F14] text-[#F8FAFC]" : "bg-[#E9EEF4] text-[#0F172A]",
         isMestre && "glow-ring",
       )}
     >
@@ -7175,6 +7223,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           activeLayer={activeLayer}
           activeStrokeColor={activeStrokeColor}
           onSelectColorAndLayer={handleSelectColorAndLayer}
+          onOpenProjectSettings={() => setProjectSettingsOpen(true)}
         />
       )}
 
@@ -7187,17 +7236,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onPointerCancel={handleTopBarPointerUp}
           onWheel={handleTopBarWheel}
           style={{
-            backgroundColor: isDark ? "#0F172A" : "#F8FAFC",
-            borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
-            color: isDark ? "#F8FAFC" : "#0F172A",
-            opacity: 1,
+            backgroundColor: "var(--chamfer-bar-bg)",
+            borderColor: "var(--chamfer-border)",
+            color: "var(--chamfer-text-primary)",
           }}
           className={cn(
             "chamfer-theme-fade-2s flex h-12 shrink-0 w-full items-center justify-between gap-3 border-b px-3 shadow-xs backdrop-blur-md select-none",
             "overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing",
-            isDark
-              ? "border-white/[0.08] bg-[#0F172A] text-[#F8FAFC]"
-              : "border-[#E2E8F0] bg-[#F8FAFC] text-[#0F172A] shadow-xs",
           )}
         >
           {/* LADO ESQUERDO: [ ← SAIR ] + [ CHAMFER • NOME DO PROJETO ] + [ DOSSIÊ ] */}
@@ -7214,20 +7259,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               }}
               aria-label="Sair do editor e voltar aos Projetos"
               title="Sair do editor (salvar e voltar)"
-              className={cn(
-                "flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors whitespace-nowrap",
-                isDark
-                  ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:bg-[#1E293B] hover:text-white"
-                  : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:bg-[#F1F5F9] hover:text-[#0F172A]",
-              )}
+              style={{
+                backgroundColor: "var(--chamfer-surface-elevated)",
+                borderColor: "var(--chamfer-border-strong)",
+                color: "var(--chamfer-text-primary)",
+              }}
+              className="flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors whitespace-nowrap hover:brightness-110"
             >
               <ArrowLeft className="size-3.5 shrink-0" /> SAIR
             </button>
 
-            <span className={cn("h-4 w-px shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
+            <span
+              style={{ backgroundColor: "var(--chamfer-border-strong)" }}
+              className="h-4 w-px shrink-0"
+            />
 
             <div className="flex items-center gap-1.5 min-w-0">
-              <span className="font-mono text-xs font-bold tracking-wider text-[#E11D48] shrink-0">CHAMFER</span>
+              <span
+                style={{ color: "var(--chamfer-accent)" }}
+                className="font-mono text-xs font-bold tracking-wider shrink-0"
+              >
+                CHAMFER
+              </span>
               {project && (
                 <button
                   type="button"
@@ -7236,11 +7289,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
                     setNewProjectDialogOpen(true);
                   }}
-                  style={{ textOverflow: "ellipsis" }}
-                  className={cn(
-                    "inline-block font-mono text-[11px] font-semibold transition-colors truncate whitespace-nowrap max-w-[160px] sm:max-w-[200px]",
-                    isDark ? "text-[#E6EDF5] hover:text-white" : "text-[#1E293B] hover:text-[#0F172A]",
-                  )}
+                  style={{ textOverflow: "ellipsis", color: "var(--chamfer-text-primary)" }}
+                  className="inline-block font-mono text-[11px] font-semibold transition-colors truncate whitespace-nowrap max-w-[160px] sm:max-w-[200px]"
                   title={`Documento: ${project.name} (clique para alternar/criar)`}
                 >
                   • {project.name}
@@ -7255,12 +7305,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     })
                   }
                   title={`${dossier.projectName} · ${dossier.partName}`}
-                  className={cn(
-                    "hidden lg:inline rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase border truncate max-w-[120px]",
-                    isDark
-                      ? "bg-[#E11D48]/15 text-[#FB7185] border-[#E11D48]/40"
-                      : "bg-[#E11D48]/10 text-[#E11D48] border-[#E11D48]/30",
-                  )}
+                  style={{
+                    backgroundColor: "var(--chamfer-accent-soft)",
+                    borderColor: "var(--chamfer-accent-border)",
+                    color: "var(--chamfer-accent)",
+                  }}
+                  className="hidden lg:inline rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase border truncate max-w-[120px]"
                 >
                   {dossier.partCode || dossier.partName}
                 </button>
@@ -7271,10 +7321,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           {/* REGIÃO CENTRAL: CONTROLE PRINCIPAL DE MUDANÇA DE AMBIENTE [ 2D SKETCH | 3D SÓLIDO ] E MODO [ ORTO 2D | ISO 2D ] */}
           <div className="flex shrink-0 items-center justify-center gap-1.5">
             <div
-              className={cn(
-                "flex items-center rounded-lg border p-0.5 shadow-xs",
-                isDark ? "border-[#293444] bg-[#151C27]" : "border-[#CBD5E1] bg-[#FFFFFF]",
-              )}
+              style={{
+                backgroundColor: "var(--chamfer-surface-elevated)",
+                borderColor: "var(--chamfer-border-strong)",
+              }}
+              className="flex items-center rounded-lg border p-0.5 shadow-xs"
             >
               <button
                 type="button"
@@ -7282,14 +7333,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   triggerHaptic("selection");
                   transitionTo2D();
                 }}
-                className={cn(
-                  "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
+                style={
                   activeMode === "2d"
-                    ? "bg-[#E11D48] text-white shadow-xs"
-                    : isDark
-                      ? "text-[#94A3B8] hover:text-[#E6EDF5]"
-                      : "text-[#64748B] hover:text-[#1E293B]",
-                )}
+                    ? {
+                        backgroundColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent-contrast)",
+                      }
+                    : { color: "var(--chamfer-text-secondary)" }
+                }
+                className="rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors"
               >
                 2D SKETCH
               </button>
@@ -7299,14 +7351,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   triggerHaptic("selection");
                   transitionTo3D("3d");
                 }}
-                className={cn(
-                  "rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
+                style={
                   activeMode === "3d"
-                    ? "bg-[#E11D48] text-white shadow-xs"
-                    : isDark
-                      ? "text-[#94A3B8] hover:text-[#E6EDF5]"
-                      : "text-[#64748B] hover:text-[#1E293B]",
-                )}
+                    ? {
+                        backgroundColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent-contrast)",
+                      }
+                    : { color: "var(--chamfer-text-secondary)" }
+                }
+                className="rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors"
               >
                 CAD 3D
               </button>
@@ -7315,10 +7368,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             {/* SELETOR DE PROJEÇÃO: [ ORTO 2D | ISO 2D ] (SEMPRE PRESENTE NO WORKSPACE UNIFICADO EM PAISAGEM E RETRATO) */}
             {!solidOpen && (
               <div
-                className={cn(
-                  "flex items-center rounded-lg border p-0.5 shadow-xs shrink-0",
-                  isDark ? "border-[#293444] bg-[#151C27]" : "border-[#CBD5E1] bg-[#FFFFFF]",
-                )}
+                style={{
+                  backgroundColor: "var(--chamfer-surface-elevated)",
+                  borderColor: "var(--chamfer-border-strong)",
+                }}
+                className="flex items-center rounded-lg border p-0.5 shadow-xs shrink-0"
               >
                 <button
                   type="button"
@@ -7328,16 +7382,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     setDrawingProjection("orthographic");
                     transitionTo2D();
                   }}
-                  className={cn(
-                    "rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
+                  style={
                     drawingProjection === "orthographic" && !orbitProjection2D.isTilted && activeMode === "2d"
-                      ? isDark
-                        ? "bg-[#293444] text-[#E6EDF5] shadow-xs"
-                        : "bg-[#E9EEF4] text-[#1E293B] shadow-xs"
-                      : isDark
-                        ? "text-[#94A3B8] hover:text-[#E6EDF5]"
-                        : "text-[#64748B] hover:text-[#1E293B]",
-                  )}
+                      ? {
+                          backgroundColor: "var(--chamfer-accent-soft)",
+                          color: "var(--chamfer-text-primary)",
+                        }
+                      : { color: "var(--chamfer-text-secondary)" }
+                  }
+                  className="rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors"
                   title="Modo Ortogonal 2D (Eixos X/Y convencionais a 0°)"
                 >
                   ORTO 2D
@@ -7352,16 +7405,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       `Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label} · F5 para alternar)`,
                     );
                   }}
-                  className={cn(
-                    "rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors flex items-center gap-1",
+                  style={
                     drawingProjection === "isometric"
-                      ? isDark
-                        ? "bg-[#38BDF8]/20 text-[#38BDF8] border border-[#38BDF8]/40 shadow-xs"
-                        : "bg-[#0284C7] text-white shadow-xs"
-                      : isDark
-                        ? "text-[#94A3B8] hover:text-[#E6EDF5]"
-                        : "text-[#64748B] hover:text-[#1E293B]",
-                  )}
+                      ? {
+                          backgroundColor: "var(--chamfer-accent)",
+                          color: "var(--chamfer-accent-contrast)",
+                        }
+                      : { color: "var(--chamfer-text-secondary)" }
+                  }
+                  className="rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors flex items-center gap-1"
                   title="Modo Isométrico 2D (Eixos 30°/90°/150° e 3 Planos Técnicos)"
                 >
                   <BoxIcon className="w-3 h-3" />
@@ -7405,10 +7457,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             {(activeMode === "3d" || isOrbitToolActive || orbitProjection2D.isTilted) && (
               <div
                 data-testid="chamfer-topbar-3d-style-selector"
-                className={cn(
-                  "flex items-center rounded-lg border p-0.5 shadow-xs",
-                  isDark ? "border-[#293444] bg-[#151C27]" : "border-[#CBD5E1] bg-[#FFFFFF]",
-                )}
+                style={{
+                  backgroundColor: "var(--chamfer-surface-elevated)",
+                  borderColor: "var(--chamfer-border-strong)",
+                }}
+                className="flex items-center rounded-lg border p-0.5 shadow-xs"
               >
                 <button
                   type="button"
@@ -7422,16 +7475,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
                     }
                   }}
-                  className={cn(
-                    "rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
+                  style={
                     renderStyle3D === "shaded-edges"
-                      ? isDark
-                        ? "bg-[#38BDF8] text-[#0B0F14] shadow-xs"
-                        : "bg-[#0284C7] text-white shadow-xs"
-                      : isDark
-                        ? "text-[#94A3B8] hover:text-[#E6EDF5]"
-                        : "text-[#64748B] hover:text-[#1E293B]",
-                  )}
+                      ? {
+                          backgroundColor: "var(--chamfer-accent)",
+                          color: "var(--chamfer-accent-contrast)",
+                        }
+                      : { color: "var(--chamfer-text-secondary)" }
+                  }
+                  className="rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer"
                   title="Sólido Metálico 3D com Arestas Técnicas Visíveis"
                 >
                   SÓLIDO
@@ -7448,16 +7500,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
                     }
                   }}
-                  className={cn(
-                    "rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
+                  style={
                     renderStyle3D === "shaded"
-                      ? isDark
-                        ? "bg-[#38BDF8] text-[#0B0F14] shadow-xs"
-                        : "bg-[#0284C7] text-white shadow-xs"
-                      : isDark
-                        ? "text-[#94A3B8] hover:text-[#E6EDF5]"
-                        : "text-[#64748B] hover:text-[#1E293B]",
-                  )}
+                      ? {
+                          backgroundColor: "var(--chamfer-accent)",
+                          color: "var(--chamfer-accent-contrast)",
+                        }
+                      : { color: "var(--chamfer-text-secondary)" }
+                  }
+                  className="rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer"
                   title="Sólido Metálico 3D Puro (Sem Arestas)"
                 >
                   SOMB
@@ -7470,16 +7521,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     AudioManager.play("ui_select");
                     setRenderStyle3D("wireframe");
                   }}
-                  className={cn(
-                    "rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
+                  style={
                     renderStyle3D === "wireframe"
-                      ? isDark
-                        ? "bg-[#38BDF8] text-[#0B0F14] shadow-xs"
-                        : "bg-[#0284C7] text-white shadow-xs"
-                      : isDark
-                        ? "text-[#94A3B8] hover:text-[#E6EDF5]"
-                        : "text-[#64748B] hover:text-[#1E293B]",
-                  )}
+                      ? {
+                          backgroundColor: "var(--chamfer-accent)",
+                          color: "var(--chamfer-accent-contrast)",
+                        }
+                      : { color: "var(--chamfer-text-secondary)" }
+                  }
+                  className="rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer"
                   title="Wireframe Técnico 3D com Hierarquia de Arestas e Profundidade Óptica"
                 >
                   ARAME
@@ -7492,10 +7542,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           <div className="flex shrink-0 items-center gap-1.5">
             {/* HISTÓRICO: [ DESFAZER | REFAZER ] */}
             <div
-              className={cn(
-                "flex items-center rounded-lg border p-0.5",
-                isDark ? "border-[#293444] bg-[#151C27]" : "border-[#CBD5E1] bg-[#FFFFFF]",
-              )}
+              style={{
+                backgroundColor: "var(--chamfer-surface-elevated)",
+                borderColor: "var(--chamfer-border-strong)",
+              }}
+              className="flex items-center rounded-lg border p-0.5"
             >
               <button
                 type="button"
@@ -7503,13 +7554,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 onClick={undo}
                 title="Desfazer alteração (Ctrl+Z)"
                 aria-label="Desfazer ação anterior"
+                style={{
+                  color:
+                    historyState.canUndo || pending.length > 0
+                      ? "var(--chamfer-text-primary)"
+                      : "var(--chamfer-text-muted)",
+                }}
                 className={cn(
                   "flex h-7 items-center gap-1 rounded-md px-2 font-mono text-[10px] font-semibold transition-colors",
                   historyState.canUndo || pending.length > 0
-                    ? isDark
-                      ? "text-[#E6EDF5] hover:bg-[#293444] hover:text-white cursor-pointer"
-                      : "text-[#1E293B] hover:bg-[#F1F5F9] hover:text-[#0F172A] cursor-pointer"
-                    : "opacity-35 cursor-not-allowed text-[#94A3B8]",
+                    ? "hover:brightness-110 cursor-pointer"
+                    : "opacity-35 cursor-not-allowed",
                 )}
               >
                 <Undo2 className="size-3.5" />
@@ -7521,13 +7576,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 onClick={redo}
                 title="Refazer alteração (Ctrl+Y)"
                 aria-label="Refazer ação desfeita"
+                style={{
+                  color: historyState.canRedo
+                    ? "var(--chamfer-text-primary)"
+                    : "var(--chamfer-text-muted)",
+                }}
                 className={cn(
                   "flex h-7 items-center gap-1 rounded-md px-2 font-mono text-[10px] font-semibold transition-colors",
                   historyState.canRedo
-                    ? isDark
-                      ? "text-[#E6EDF5] hover:bg-[#293444] hover:text-white cursor-pointer"
-                      : "text-[#1E293B] hover:bg-[#F1F5F9] hover:text-[#0F172A] cursor-pointer"
-                    : "opacity-35 cursor-not-allowed text-[#94A3B8]",
+                    ? "hover:brightness-110 cursor-pointer"
+                    : "opacity-35 cursor-not-allowed",
                 )}
               >
                 <Redo2 className="size-3.5" />
@@ -7541,15 +7599,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 type="button"
                 onClick={handleManualSave}
                 title="Salvar documento agora (Ctrl+S)"
+                style={
+                  saveStatus !== "pendente"
+                    ? {
+                        backgroundColor: "var(--chamfer-surface-elevated)",
+                        borderColor: "var(--chamfer-border-strong)",
+                        color: "var(--chamfer-text-primary)",
+                      }
+                    : undefined
+                }
                 className={cn(
                   "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold transition-all shadow-xs",
                   saveStatus === "pendente"
                     ? isDark
                       ? "border-[#F59E0B]/60 bg-[#F59E0B]/15 text-[#FBBF24] hover:bg-[#F59E0B]/25"
                       : "border-[#D97706]/50 bg-[#D97706]/10 text-[#D97706] hover:bg-[#D97706]/20"
-                    : isDark
-                      ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:bg-[#293444] hover:text-white"
-                      : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:bg-[#F1F5F9] hover:text-[#0F172A]",
+                    : "hover:brightness-110",
                 )}
               >
                 {saveStatus === "salvando" ? (
@@ -7605,7 +7670,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </span>
             </div>
 
-            <span className={cn("h-4 w-px", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
+            <span
+              style={{ backgroundColor: "var(--chamfer-border-strong)" }}
+              className="h-4 w-px"
+            />
 
             {/* FERRAMENTAS GLOBAIS */}
             {/* CHAMFER VISION — FERRAMENTA OFICIAL DO CHAMFER COM ÍCONE OFICIAL */}
@@ -7617,14 +7685,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               }}
               title="CHAMFER VISION — Reconhecimento e vetorização inteligente de peças"
               aria-label="Abrir CHAMFER VISION"
-              className={cn(
-                "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
-                isDark
-                  ? "border-[#E11D48]/45 bg-[#E11D48]/15 text-[#FB7185] hover:bg-[#E11D48]/25 hover:text-white"
-                  : "border-[#E11D48]/35 bg-[#E11D48]/10 text-[#E11D48] hover:bg-[#E11D48]/15",
-              )}
+              style={{
+                backgroundColor: "var(--chamfer-accent-soft)",
+                borderColor: "var(--chamfer-accent-border)",
+                color: "var(--chamfer-accent)",
+              }}
+              className="flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs hover:brightness-110"
             >
-              <ScanEye className="size-3.5 text-[#E11D48]" />
+              <ScanEye className="size-3.5" style={{ color: "var(--chamfer-accent)" }} />
               <span className="hidden xl:inline">CHAMFER VISION</span>
               <span className="xl:hidden">VISION</span>
             </button>
@@ -7636,14 +7704,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               }}
               title="CHAMFER INTENT — Compilador Geométrico Paramétrico por Linguagem Natural (Atalho: Q)"
               aria-label="Abrir CHAMFER INTENT"
-              className={cn(
-                "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
-                isDark
-                  ? "border-[#38BDF8]/40 bg-[#38BDF8]/12 text-[#38BDF8] hover:bg-[#38BDF8]/20 hover:text-white"
-                  : "border-[#0284C7]/35 bg-[#0284C7]/10 text-[#0284C7] hover:bg-[#0284C7]/15",
-              )}
+              style={{
+                backgroundColor: "var(--chamfer-surface-elevated)",
+                borderColor: "var(--chamfer-accent-border)",
+                color: "var(--chamfer-accent)",
+              }}
+              className="flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs hover:brightness-110"
             >
-              <Sparkles className={cn("size-3.5", isDark ? "text-[#38BDF8]" : "text-[#0284C7]")} />
+              <Sparkles className="size-3.5" style={{ color: "var(--chamfer-accent)" }} />
               <span className="hidden xl:inline">CHAMFER INTENT</span>
               <span className="xl:hidden">INTENT</span>
             </button>
@@ -7654,14 +7722,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 setIntegratedWorkshopOpen(true);
               }}
               title="Oficina Digital Integrada: Catálogo Costa Ferro, Dossiê Multi-Vistas, Lista de Corte 6m, BOM e Orçamento"
-              className={cn(
-                "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs",
-                isDark
-                  ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:border-[#38BDF8]/50 hover:text-white"
-                  : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:border-[#0284C7]/50",
-              )}
+              style={{
+                backgroundColor: "var(--chamfer-surface-elevated)",
+                borderColor: "var(--chamfer-border-strong)",
+                color: "var(--chamfer-text-primary)",
+              }}
+              className="flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs hover:brightness-110"
             >
-              <Boxes className={cn("size-3.5", isDark ? "text-[#38BDF8]" : "text-[#0284C7]")} />
+              <Boxes className="size-3.5" style={{ color: "var(--chamfer-accent)" }} />
               <span className="hidden xl:inline">OFICINA & CORTE</span>
               <span className="xl:hidden">CORTE/BOM</span>
             </button>
@@ -7743,16 +7811,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       top: landscapeMoreCoords.top,
                       right: landscapeMoreCoords.right,
                       zIndex: 9999,
-                      backgroundColor: isDark ? "#11141C" : "#FFFFFF",
-                      borderColor: isDark ? "rgba(255,255,255,0.12)" : "#E2E8F0",
-                      color: isDark ? "#F8FAFC" : "#0F172A",
+                      backgroundColor: "var(--chamfer-popover-bg)",
+                      borderColor: "var(--chamfer-border-strong)",
+                      color: "var(--chamfer-text-primary)",
                     }}
-                    className={cn(
-                      "chamfer-theme-fade-2s max-h-[calc(100dvh-64px)] w-68 max-w-[calc(100vw-16px)] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
-                      isDark
-                        ? "border-white/[0.12] bg-[#11141C] text-[#F8FAFC]"
-                        : "border-[#E2E8F0] bg-white text-[#0F172A]",
-                    )}
+                    className="chamfer-theme-fade-2s max-h-[calc(100dvh-64px)] w-68 max-w-[calc(100vw-16px)] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
                   >
                     {/* 6 ITENS OBRIGATÓRIOS EM DESTAQUE NO TOPO DO MENU */}
                     <MenuItem
@@ -7809,8 +7872,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         toggleTheme();
                       }}
                     />
+                    <MenuItem
+                      label="⚙ Aparência e Preferências do Projeto"
+                      icon={Sliders}
+                      isDark={isDark}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setProjectSettingsOpen(true);
+                      }}
+                    />
 
-                    <div className={cn("my-1.5 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
+                    <div
+                      style={{ backgroundColor: "var(--chamfer-border)" }}
+                      className="my-1.5 h-px"
+                    />
 
                     {verticalLayout.isVerticalViewport && (
                       <MenuItem
@@ -8160,21 +8235,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           ref={canvasViewportRef}
           style={{
             backgroundColor: frame.visible ? canvasOuterBgColor : canvasBgColor,
+            borderColor: "var(--chamfer-border-strong)",
           }}
           className={cn(
             "chamfer-theme-fade-2s relative min-h-0 min-w-0 flex-1 overflow-hidden",
             isLandscape ? "rounded-xl border shadow-inner" : "rounded-none border-0",
-            drawingProjection === "isometric" ||
-              orbitProjection2D.isTilted ||
-              entities.some((e) => e.params?.isIsoSolidFace)
-              ? isDark
-                ? "border-[#293444]"
-                : "border-[#CBD5E1]"
-              : isDark
-                ? "border-[#293444]"
-                : "border-[#CBD5E1]",
           )}
         >
+          {themeColors.canvasOverlayGradient !== "none" && (
+            <div
+              aria-hidden="true"
+              style={{ background: themeColors.canvasOverlayGradient }}
+              className="pointer-events-none absolute inset-0 z-[1]"
+            />
+          )}
           {solidOpen && (
             <div
               className={cn(
@@ -8661,7 +8735,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
                   const cornerLen = Math.max(12 / safeK, Math.min(frame.w, frame.h) * 0.035);
                   const marginInset = Math.min(20, Math.min(frame.w, frame.h) * 0.025);
-                  const borderColor = isDark ? "#38BDF8" : "#0284C7";
+                  const borderColor = themeColors.workAreaStroke;
                   const cornerColor = borderColor;
                   const dimOffsetPx = 18 / safeK;
                   const headerBadgeText = `⬚ ÁREA DE TRABALHO • ${Math.round(frame.w)} × ${Math.round(frame.h)} mm${frame.locked ? " 🔒" : ""}`;
@@ -8682,7 +8756,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
                   return (
                     <g aria-label="Área de Trabalho CAD">
-                      {/* Contorno Técnico Uniforme nos 4 Lados (#0284C7 no Claro / #38BDF8 no Escuro — NUNCA vermelho no topo) */}
+                      {/* Contorno Técnico Uniforme nos 4 Lados */}
                       <rect
                         x={0}
                         y={0}
@@ -8731,7 +8805,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         </g>
                       ))}
 
-                      {/* Selo Técnico Interativo da Área de Trabalho (alinhado acima da borda superior esquerda, sem colidir com a pílula de largura) */}
+                      {/* Selo Técnico Interativo da Área de Trabalho */}
                       <g
                         pointerEvents="auto"
                         style={{ cursor: "pointer" }}
@@ -8749,8 +8823,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           width={headerW}
                           height={headerH}
                           rx={5 / safeK}
-                          fill={isDark ? "#151C27" : "#FFFFFF"}
-                          stroke={isDark ? "#293444" : "#CBD5E1"}
+                          fill={themeColors.surfaceElevated}
+                          stroke={themeColors.borderStrong}
                           strokeWidth={1.1 / safeK}
                         />
                         <text
@@ -8759,7 +8833,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           fontSize={headerFontSize}
                           fontFamily='"JetBrains Mono", "Inter", ui-monospace, monospace'
                           fontWeight="700"
-                          fill={isDark ? "#E6EDF5" : "#1E293B"}
+                          fill={themeColors.textPrimary}
                         >
                           {headerBadgeText}
                         </text>
@@ -8803,9 +8877,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             width={widthPillW}
                             height={17 / safeK}
                             rx={4 / safeK}
-                            fill={isDark ? "#151C27" : "#FFFFFF"}
-                            stroke={borderColor}
-                            strokeOpacity={0.65}
+                            fill={themeColors.surfaceElevated}
+                            stroke={themeColors.borderStrong}
+                            strokeOpacity={0.85}
                             strokeWidth={1 / safeK}
                           />
                           <text
@@ -8813,7 +8887,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             y={-dimOffsetPx + 3.5 / safeK}
                             fontSize={10.5 / safeK}
                             fontWeight="700"
-                            fill={borderColor}
+                            fill={themeColors.textSecondary}
                             textAnchor="middle"
                           >
                             {frame.w.toFixed(2)} mm
@@ -8855,9 +8929,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                               width={92 / safeK}
                               height={18 / safeK}
                               rx={4 / safeK}
-                              fill={isDark ? "#151C27" : "#FFFFFF"}
-                              stroke={borderColor}
-                              strokeOpacity={0.6}
+                              fill={themeColors.surfaceElevated}
+                              stroke={themeColors.borderStrong}
+                              strokeOpacity={0.85}
                               strokeWidth={1 / safeK}
                             />
                             <text
@@ -8865,7 +8939,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                               y={3.5 / safeK}
                               fontSize={10.5 / safeK}
                               fontWeight="700"
-                              fill={borderColor}
+                              fill={themeColors.textSecondary}
                               textAnchor="middle"
                             >
                               {frame.h.toFixed(2)} mm
@@ -10393,6 +10467,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           <Rulers
             view={view}
             isDark={isDark}
+            themeColors={themeColors}
             majorStep={gridConfig.majorStep}
             unit={unit}
             width={canvasSize.w}
@@ -10730,18 +10805,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           {/* BARRA FLUTUANTE DE COMANDO / FEEDBACK CAD TÉCNICO (OCULTA ENQUANTO O HUD DE ARRAY ESTIVER ABERTO) */}
           {activeArrayType === null && (
             <div
-              className={cn(
-                "pointer-events-none absolute bottom-3 left-4 z-20 hidden md:flex items-center gap-2 rounded-xl border px-3 py-1.5 font-mono text-[10px] shadow-lg backdrop-blur-md transition-colors",
-                isDark
-                  ? "border-slate-800/80 bg-slate-950/90 text-slate-300"
-                  : "border-slate-200 bg-white/95 text-slate-700 shadow-md",
-              )}
+              style={{
+                backgroundColor: "var(--chamfer-bubble-bg)",
+                borderColor: "var(--chamfer-border)",
+                color: "var(--chamfer-text-secondary)",
+              }}
+              className="pointer-events-none absolute bottom-3 left-4 z-20 hidden md:flex items-center gap-2 rounded-xl border px-3 py-1.5 font-mono text-[10px] shadow-lg backdrop-blur-md transition-colors"
             >
-              <span className={cn("font-bold uppercase tracking-wider", isOrbitToolActive ? "text-cyan-400" : isDark ? "text-red-400" : "text-red-600")}>
+              <span
+                style={{ color: "var(--chamfer-accent)" }}
+                className="font-bold uppercase tracking-wider"
+              >
                 {isOrbitToolActive ? "ÓRBITA 3D" : operationFeedback.command}
               </span>
-              <span className={isDark ? "text-slate-600" : "text-slate-300"}>|</span>
-              <span className={isDark ? "text-slate-300" : "text-slate-700"}>
+              <span style={{ color: "var(--chamfer-border-strong)" }}>|</span>
+              <span style={{ color: "var(--chamfer-text-primary)" }}>
                 {isOrbitToolActive
                   ? `Arraste com 1 dedo/mouse para orbitar (θ ${Math.round(orbitAzimuthDeg)}° · φ ${Math.round(orbitElevationDeg)}°)`
                   : operationFeedback.instruction}
@@ -11245,12 +11323,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       {!focus && isLandscape && (
         <footer
           aria-label="Barra de status do CHAMFER"
-          className={cn(
-            "relative flex h-8 shrink-0 items-center justify-between gap-2 border-t px-2.5 font-mono text-[10px] backdrop-blur-md select-none transition-colors z-30",
-            isDark
-              ? "border-[#293444] bg-[#0D121B] text-[#94A3B8]"
-              : "border-[#CBD5E1] bg-[#F1F5F9] text-[#64748B] shadow-xs",
-          )}
+          style={{
+            backgroundColor: "var(--chamfer-bar-bg)",
+            borderColor: "var(--chamfer-border)",
+            color: "var(--chamfer-text-secondary)",
+          }}
+          className="relative flex h-8 shrink-0 items-center justify-between gap-2 border-t px-2.5 font-mono text-[10px] backdrop-blur-md select-none transition-colors z-30"
         >
           {/* FAIXA UNIFICADA COM SWIPE HORIZONTAL SUAVE (SEM CORTAR BOTÕES EM MODO RETRATO) */}
           <div className="flex flex-1 min-w-0 items-center justify-between gap-2 overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x whitespace-nowrap">
@@ -11296,15 +11374,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     past.current = [];
                     future.current = [];
                   }}
+                  style={
+                    pl.id === planId
+                      ? {
+                          backgroundColor: "var(--chamfer-accent-soft)",
+                          borderColor: "var(--chamfer-accent-border)",
+                          color: "var(--chamfer-accent)",
+                        }
+                      : { color: "var(--chamfer-text-secondary)" }
+                  }
                   className={cn(
                     "shrink-0 rounded px-2 py-0.5 font-bold transition-colors",
-                    pl.id === planId
-                      ? isDark
-                        ? "bg-[#E11D48]/20 text-[#FB7185] border border-[#E11D48]/50"
-                        : "bg-[#FFFFFF] text-[#E11D48] border border-[#E11D48]/45"
-                      : isDark
-                        ? "text-[#94A3B8] hover:text-[#E6EDF5]"
-                        : "text-[#64748B] hover:text-[#1E293B]",
+                    pl.id === planId ? "border" : "hover:brightness-110",
                   )}
                 >
                   {pl.name}
@@ -11375,14 +11456,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   setMobileEditorOpenManual((prev) => !prev);
                 }}
                 title="Abrir editor contextual de chapa e projeto"
-                className={cn(
-                  "flex shrink-0 items-center gap-1 px-2 py-0.5 rounded border font-mono font-bold text-[9px] tracking-wider transition-colors cursor-pointer",
+                style={
                   mobileEditorOpenManual
-                    ? "border-[#E11D48] bg-[#E11D48] text-white shadow-xs"
-                    : isDark
-                    ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:text-white hover:border-[#38BDF8]/50"
-                    : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A] hover:border-[#0284C7]/40"
-                )}
+                    ? {
+                        backgroundColor: "var(--chamfer-accent)",
+                        borderColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent-contrast)",
+                      }
+                    : {
+                        backgroundColor: "var(--chamfer-surface-elevated)",
+                        borderColor: "var(--chamfer-border-strong)",
+                        color: "var(--chamfer-text-primary)",
+                      }
+                }
+                className="flex shrink-0 items-center gap-1 px-2 py-0.5 rounded border font-mono font-bold text-[9px] tracking-wider transition-colors cursor-pointer"
               >
                 <span>CHAPA {thickness.toFixed(1)}MM</span>
               </button>
@@ -11686,9 +11773,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
               {/* ESTADO DA OPERAÇÃO CAD */}
               <div className="hidden lg:flex items-center gap-1.5 text-[9.5px] truncate max-w-[260px]">
-                <span className="size-1.5 rounded-full bg-[#E11D48] animate-pulse shrink-0" />
-                <strong className="text-[#E11D48] uppercase">{operationFeedback.command}:</strong>
-                <span className={cn("truncate", isDark ? "text-[#94A3B8]" : "text-[#64748B]")}>{operationFeedback.instruction}</span>
+                <span
+                  style={{ backgroundColor: "var(--chamfer-accent)" }}
+                  className="size-1.5 rounded-full animate-pulse shrink-0"
+                />
+                <strong style={{ color: "var(--chamfer-accent)" }} className="uppercase">
+                  {operationFeedback.command}:
+                </strong>
+                <span className="truncate" style={{ color: "var(--chamfer-text-secondary)" }}>
+                  {operationFeedback.instruction}
+                </span>
               </div>
 
               <div className={cn("mx-0.5 h-3.5 w-px hidden sm:block shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
@@ -11873,12 +11967,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           {statusWorkspaceMenuOpen && (
             <div
               data-testid="workspace-customization-popover"
-              className={cn(
-                "absolute bottom-9 right-2 z-50 flex w-72 max-w-[94vw] flex-col gap-2 rounded-xl border p-2.5 shadow-2xl backdrop-blur-md",
-                isDark
-                  ? "border-[#293444] bg-[#151C27]/98 text-[#E6EDF5]"
-                  : "border-[#CBD5E1] bg-[#FFFFFF]/98 text-[#1E293B]",
-              )}
+              style={{
+                backgroundColor: "var(--chamfer-popover-bg)",
+                borderColor: "var(--chamfer-border-strong)",
+                color: "var(--chamfer-text-primary)",
+              }}
+              className="absolute bottom-9 right-2 z-50 flex w-72 max-w-[94vw] flex-col gap-2 rounded-xl border p-2.5 shadow-2xl backdrop-blur-md"
             >
               {/* Cabeçalho */}
               <div
@@ -12153,12 +12247,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
           {statusPrecisionMenuOpen && (
             <div
-              className={cn(
-                "absolute bottom-9 right-2 z-50 flex w-52 max-w-[92vw] flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md",
-                isDark
-                  ? "border-[#293444] bg-[#151C27]/98 text-[#E6EDF5]"
-                  : "border-[#CBD5E1] bg-[#FFFFFF]/98 text-[#1E293B]",
-              )}
+              style={{
+                backgroundColor: "var(--chamfer-popover-bg)",
+                borderColor: "var(--chamfer-border-strong)",
+                color: "var(--chamfer-text-primary)",
+              }}
+              className="absolute bottom-9 right-2 z-50 flex w-52 max-w-[92vw] flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md"
             >
               <div className={cn("flex items-center justify-between border-b pb-1 text-[8.5px] font-bold uppercase tracking-wider", isDark ? "border-[#293444] text-[#94A3B8]" : "border-[#CBD5E1] text-[#64748B]")}>
                 <span>Módulos de Precisão</span>
@@ -12295,12 +12389,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
           {statusCncMenuOpen && (
             <div
-              className={cn(
-                "absolute bottom-9 right-2 z-50 flex w-48 max-w-[92vw] flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md",
-                isDark
-                  ? "border-[#293444] bg-[#151C27]/98 text-[#E6EDF5]"
-                  : "border-[#CBD5E1] bg-[#FFFFFF]/98 text-[#1E293B]",
-              )}
+              style={{
+                backgroundColor: "var(--chamfer-popover-bg)",
+                borderColor: "var(--chamfer-border-strong)",
+                color: "var(--chamfer-text-primary)",
+              }}
+              className="absolute bottom-9 right-2 z-50 flex w-48 max-w-[92vw] flex-col gap-1.5 rounded-xl border p-2 shadow-2xl backdrop-blur-md"
             >
               <div className={cn("flex items-center justify-between border-b pb-1 text-[8.5px] font-bold uppercase tracking-wider", isDark ? "border-[#293444] text-[#94A3B8]" : "border-[#CBD5E1] text-[#64748B]")}>
                 <span>Fabricação & CNC</span>
@@ -12519,19 +12613,34 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       {/* BARRA CONTEXTUAL FLUTUANTE DE SELEÇÃO E AGRUPAMENTO (MOBILE/DESKTOP) */}
       {selection.length > 0 && !solidOpen && tool === "select" && activeArrayType === null && (
         <div
+          style={{
+            backgroundColor: "var(--chamfer-bubble-bg)",
+            borderColor: "var(--chamfer-accent-border)",
+            color: "var(--chamfer-text-primary)",
+          }}
           className={cn(
-            "fixed left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-500/40 shadow-2xl backdrop-blur-md text-white select-none pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-150",
+            "fixed left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shadow-2xl backdrop-blur-md select-none pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-150",
             isLandscape ? "bottom-24 sm:bottom-28" : "bottom-[120px]",
           )}
         >
-          <div className="flex items-center gap-1.5 pr-2 border-r border-slate-700/80 font-mono text-[11px]">
+          <div
+            style={{ borderColor: "var(--chamfer-border)" }}
+            className="flex items-center gap-1.5 pr-2 border-r font-mono text-[11px]"
+          >
             {activeGroup ? (
-              <span className="flex items-center gap-1 text-cyan-400 font-bold bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-500/40">
+              <span
+                style={{
+                  backgroundColor: "var(--chamfer-accent-soft)",
+                  borderColor: "var(--chamfer-accent-border)",
+                  color: "var(--chamfer-accent)",
+                }}
+                className="flex items-center gap-1 font-bold px-2 py-0.5 rounded-md border"
+              >
                 <Boxes className="size-3.5" />
                 {activeGroup.name}
               </span>
             ) : (
-              <span className="text-slate-300 font-semibold">
+              <span style={{ color: "var(--chamfer-text-primary)" }} className="font-semibold">
                 {selection.length} {selection.length === 1 ? "peça" : "peças"}
               </span>
             )}
@@ -13291,6 +13400,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           />
         </Suspense>
       )}
+
+      {/* DIÁLOGO DE APARÊNCIA E PREFERÊNCIAS DO PROJETO CHAMFER */}
+      <ChamferProjectSettingsDialog
+        open={projectSettingsOpen}
+        onOpenChange={setProjectSettingsOpen}
+        projectId={project?.id ?? projectId}
+        projectName={project?.name}
+        onSettingsChange={(next) => {
+          setChamferSettings(next);
+          setShowGrid(next.showGridOnLoad);
+          setSnapOn(next.snapOnLoad);
+        }}
+      />
     </div>
   );
 }
@@ -13508,7 +13630,6 @@ const IconBtn = React.memo(function IconBtn({
   flat,
   active,
   title,
-  isDark = true,
   buttonRef,
 }: {
   label: string;
@@ -13531,31 +13652,19 @@ const IconBtn = React.memo(function IconBtn({
       title={title ?? label}
       aria-label={label}
       style={{
-        opacity: 1,
         backgroundColor: active
-          ? "#E11D48"
+          ? "var(--chamfer-accent)"
           : flat
             ? "transparent"
-            : isDark
-              ? "#151C27"
-              : "#FFFFFF",
+            : "var(--chamfer-surface-elevated)",
         borderColor: active
-          ? "#E11D48"
+          ? "var(--chamfer-accent)"
           : flat
             ? "transparent"
-            : isDark
-              ? "rgba(255,255,255,0.08)"
-              : "#E2E8F0",
-        color: active ? "#FFFFFF" : isDark ? "#F8FAFC" : "#0F172A",
+            : "var(--chamfer-border)",
+        color: active ? "var(--chamfer-accent-contrast)" : "var(--chamfer-text-primary)",
       }}
-      className={cn(
-        "chamfer-theme-fade-2s grid size-8 shrink-0 place-items-center rounded-lg border cursor-pointer active:scale-95",
-        active
-          ? "border-[#E11D48] bg-[#E11D48] text-white"
-          : isDark
-            ? "border-white/[0.08] bg-[#151C27] text-[#F8FAFC] hover:bg-[#1E293B]"
-            : "border-[#E2E8F0] bg-white text-[#0F172A] hover:bg-[#F1F5F9]",
-      )}
+      className="chamfer-theme-fade-2s grid size-8 shrink-0 place-items-center rounded-lg border cursor-pointer active:scale-95 hover:brightness-110 transition-all"
     >
       <Icon className="size-[15px]" />
     </button>
@@ -13612,7 +13721,6 @@ const MenuItem = React.memo(function MenuItem({
   label,
   icon: Icon,
   onClick,
-  isDark = true,
 }: {
   label: string;
   icon: typeof Minus;
@@ -13623,14 +13731,10 @@ const MenuItem = React.memo(function MenuItem({
     <button
       type="button"
       onClick={onClick}
-      className={cn(
-        "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left font-mono text-[11px] font-semibold transition-colors cursor-pointer",
-        isDark
-          ? "text-[#E2E8F0] hover:bg-[#181C26] hover:text-white"
-          : "text-[#0F172A] hover:bg-[#F1F5F9] hover:text-[#0F172A]",
-      )}
+      style={{ color: "var(--chamfer-text-primary)" }}
+      className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left font-mono text-[11px] font-semibold transition-colors cursor-pointer hover:bg-white/[0.06]"
     >
-      <Icon className="size-3.5 shrink-0 text-[#E11D48]" /> {label}
+      <Icon className="size-3.5 shrink-0" style={{ color: "var(--chamfer-accent)" }} /> {label}
     </button>
   );
 });
@@ -13768,19 +13872,36 @@ export const EntityShape = React.memo(function EntityShape({
 }) {
   const isDark =
     typeof document !== "undefined"
-      ? document.documentElement.classList.contains("dark")
+      ? document.documentElement.classList.contains("dark") ||
+        document.documentElement.classList.contains("amoled")
       : true;
   const style = techStyle(e.layer);
   const isCutOrWhite = style.color === "#FFFFFF" || e.layer === "corte";
+  const lightSafeLayerColor =
+    e.layer === "construcao" || e.layer === "referencia"
+      ? "#475569"
+      : e.layer === "recorte"
+        ? "#B45309"
+        : e.layer === "cota" || e.layer === "anotacoes"
+          ? "#0284C7"
+          : e.layer === "dobra"
+            ? "#BE185D"
+            : e.layer === "marcacao"
+              ? "#1D4ED8"
+              : e.layer === "auxiliar"
+                ? "#7E22CE"
+                : style.color;
   const stroke = preview
     ? isDark
       ? PREVIEW_COLOR
-      : "#0F172A"
+      : "#0F141A"
     : isCutOrWhite
       ? isDark
-        ? "#F8FAFC"
-        : "#0F172A"
-      : style.color;
+        ? "#ECEFF4"
+        : "#0F141A"
+      : isDark
+        ? style.color
+        : lightSafeLayerColor;
   const isIsoSolid = !!e.params?.isIsoSolidFace;
   const fillColor = isIsoSolid ? ((e.params?.fillColor as string) || "rgba(18, 40, 74, 0.25)") : "none";
   const customStroke =
@@ -13949,6 +14070,7 @@ export const EntityShape = React.memo(function EntityShape({
 const Rulers = React.memo(function Rulers({
   view,
   isDark,
+  themeColors,
   majorStep,
   unit = "mm",
   width,
@@ -13960,6 +14082,7 @@ const Rulers = React.memo(function Rulers({
 }: {
   view: { tx: number; ty: number; k: number };
   isDark: boolean;
+  themeColors?: ChamferThemeColors;
   majorStep: number;
   unit?: string;
   width: number;
@@ -14014,16 +14137,15 @@ const Rulers = React.memo(function Rulers({
     const minorDivisions = labelStep * safeK >= 140 ? 10 : 5;
     const minorStep = labelStep / minorDivisions;
 
-    const bgColor = isDark ? "rgba(13, 18, 27, 0.92)" : "rgba(241, 245, 249, 0.94)";
-    const borderColor = isDark ? "#293444" : "#CBD5E1";
-    const majorTickColor = isDark ? "#94A3B8" : "#64748B";
-    const midTickColor = isDark ? "#475569" : "#94A3B8";
-    const minorTickColor = isDark ? "#293444" : "#CBD5E1";
-    const textColor = isDark ? "#E6EDF5" : "#1E293B";
+    const bgColor = themeColors?.rulerBg ?? (isDark ? "rgba(17, 20, 26, 0.90)" : "rgba(248, 250, 252, 0.90)");
+    const borderColor = themeColors?.border ?? (isDark ? "#232A35" : "#D5DCE4");
+    const majorTickColor = themeColors?.textSecondary ?? (isDark ? "#9AA4B2" : "#4B5563");
+    const midTickColor = themeColors?.textMuted ?? (isDark ? "#647080" : "#6B7280");
+    const minorTickColor = themeColors?.borderStrong ?? (isDark ? "#2F3847" : "#B8C2CC");
+    const textColor = themeColors?.textPrimary ?? (isDark ? "#ECEFF4" : "#0F141A");
     const zeroColor = "#DC143C";
-    // Faixa técnica azul-ciano discreta para a extensão da Área de Trabalho nas réguas (nunca rosa/carmesim)
-    const workspaceBandFill = isDark ? "rgba(56, 189, 248, 0.08)" : "rgba(2, 132, 199, 0.08)";
-    const workspaceBandEdge = isDark ? "#0EA5E9" : "#0284C7";
+    const workspaceBandFill = themeColors?.accentSoft ?? (isDark ? "rgba(0, 102, 255, 0.14)" : "rgba(0, 102, 255, 0.10)");
+    const workspaceBandEdge = themeColors?.accent ?? "#0066FF";
 
     /* =====================================================================
      * 1. RÉGUA HORIZONTAL SUPERIOR (Altura = 26px, Clipping x: 30..vw, y: 0..26)
@@ -14088,7 +14210,6 @@ const Rulers = React.memo(function Rulers({
       if (isMajor) {
         const val = Math.round(worldX);
         ctx.fillStyle = val === 0 ? zeroColor : textColor;
-        // +4px/+5px à direita do traço principal com textAlign: 'left' — impede colisão com o traço
         ctx.fillText(String(val), screenX + (compactPortrait ? 4 : 5), compactPortrait ? 2.5 : 4);
       }
     }
@@ -14177,7 +14298,6 @@ const Rulers = React.memo(function Rulers({
       if (isMajor) {
         const val = Math.round(worldY);
         ctx.save();
-        // Posiciona o texto rotacionado a -90° paralelamente à régua a +5px do traço principal
         ctx.translate(compactPortrait ? 7 : 10, screenY - (compactPortrait ? 4 : 5));
         ctx.rotate(-Math.PI / 2);
         ctx.textAlign = "left";
@@ -14211,7 +14331,7 @@ const Rulers = React.memo(function Rulers({
 
     ctx.restore();
     ctx.restore();
-  }, [view.tx, view.ty, view.k, isDark, majorStep, vw, vh, cursor?.x, cursor?.y, frame?.visible, frame?.w, frame?.h, compactPortrait]);
+  }, [view.tx, view.ty, view.k, isDark, themeColors, majorStep, vw, vh, cursor?.x, cursor?.y, frame?.visible, frame?.w, frame?.h, compactPortrait]);
 
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden z-10">
@@ -14230,12 +14350,14 @@ const Rulers = React.memo(function Rulers({
           onCenterWorkspace?.();
         }}
         title="Toque para centralizar e enquadrar a Área de Trabalho na tela"
+        style={{
+          backgroundColor: "var(--chamfer-bar-bg)",
+          borderColor: "var(--chamfer-border)",
+          color: "var(--chamfer-text-secondary)",
+        }}
         className={cn(
-          "pointer-events-auto absolute left-0 top-0 z-20 flex items-center justify-center border-b border-r font-mono font-bold uppercase transition-colors cursor-pointer active:scale-95",
+          "pointer-events-auto absolute left-0 top-0 z-20 flex items-center justify-center border-b border-r font-mono font-bold uppercase transition-colors cursor-pointer active:scale-95 hover:brightness-110",
           compactPortrait ? "w-[20px] h-[20px] text-[7.5px]" : "w-[30px] h-[26px] text-[8.5px]",
-          isDark
-            ? "border-[#293444] bg-[#0D121B]/95 text-[#94A3B8] hover:text-[#38BDF8] hover:bg-[#151C27]"
-            : "border-[#CBD5E1] bg-[#F1F5F9]/95 text-[#64748B] hover:text-[#0284C7] hover:bg-[#FFFFFF]",
         )}
       >
         {unit}

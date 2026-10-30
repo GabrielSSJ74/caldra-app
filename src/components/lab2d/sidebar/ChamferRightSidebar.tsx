@@ -124,12 +124,12 @@ export function ChamferRightSidebar({
   if (!open) {
     return (
       <aside
-        className={cn(
-          "relative z-30 flex flex-col items-center justify-start border py-2 select-none shadow-md backdrop-blur-md transition-all w-8 sm:w-9 shrink-0 rounded-2xl",
-          isDark
-            ? "border-[#293444] bg-[#151C27]/96 text-[#94A3B8]"
-            : "border-[#CBD5E1] bg-[#FFFFFF]/96 text-[#64748B]"
-        )}
+        style={{
+          backgroundColor: "var(--chamfer-bar-bg)",
+          borderColor: "var(--chamfer-border)",
+          color: "var(--chamfer-text-secondary)",
+        }}
+        className="relative z-30 flex flex-col items-center justify-start border py-2 select-none shadow-md backdrop-blur-md transition-all w-8 sm:w-9 shrink-0 rounded-2xl"
       >
         {/* Botão de Expandir Painel */}
         <button
@@ -140,12 +140,12 @@ export function ChamferRightSidebar({
           }}
           title="Expandir Janela Lateral Direita (Propriedades / Camadas / Corte / Eng. Reversa)"
           aria-label="Expandir Janela Lateral"
-          className={cn(
-            "mb-3 flex size-7 items-center justify-center rounded-full border transition-colors cursor-pointer",
-            isDark
-              ? "border-[#293444] bg-[#0D121B] text-[#E6EDF5] hover:border-[#E11D48] hover:text-white"
-              : "border-[#CBD5E1] bg-[#F1F5F9] text-[#1E293B] hover:border-[#E11D48] hover:text-[#0F172A]",
-          )}
+          style={{
+            backgroundColor: "var(--chamfer-surface-elevated)",
+            borderColor: "var(--chamfer-border)",
+            color: "var(--chamfer-text-primary)",
+          }}
+          className="mb-3 flex size-7 items-center justify-center rounded-full border transition-colors cursor-pointer"
         >
           <ChevronLeft className="size-4" />
         </button>
@@ -161,14 +161,15 @@ export function ChamferRightSidebar({
               onToggleOpen();
             }}
             title="Propriedades CAD"
-            className={cn(
-              "flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer",
+            style={
               activeTab === "propriedades"
-                ? "bg-[#E11D48] text-white shadow-xs"
-                : isDark
-                  ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
-                  : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]"
-            )}
+                ? {
+                    backgroundColor: "var(--chamfer-accent)",
+                    color: "var(--chamfer-accent-contrast)",
+                  }
+                : { color: "var(--chamfer-text-secondary)" }
+            }
+            className="flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer"
           >
             <Sliders className="size-3.5" />
           </button>
@@ -182,14 +183,15 @@ export function ChamferRightSidebar({
               onToggleOpen();
             }}
             title="Camadas Técnicas"
-            className={cn(
-              "flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer",
+            style={
               activeTab === "camadas"
-                ? "bg-[#E11D48] text-white shadow-xs"
-                : isDark
-                  ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
-                  : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]"
-            )}
+                ? {
+                    backgroundColor: "var(--chamfer-accent)",
+                    color: "var(--chamfer-accent-contrast)",
+                  }
+                : { color: "var(--chamfer-text-secondary)" }
+            }
+            className="flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer"
           >
             <Layers className="size-3.5" />
           </button>
@@ -203,14 +205,15 @@ export function ChamferRightSidebar({
               onToggleOpen();
             }}
             title="Plano de Corte e Fabricação"
-            className={cn(
-              "flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer",
+            style={
               activeTab === "corte"
-                ? "bg-[#E11D48] text-white shadow-xs"
-                : isDark
-                  ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
-                  : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]"
-            )}
+                ? {
+                    backgroundColor: "var(--chamfer-accent)",
+                    color: "var(--chamfer-accent-contrast)",
+                  }
+                : { color: "var(--chamfer-text-secondary)" }
+            }
+            className="flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer"
           >
             <Scissors className="size-3.5" />
           </button>
@@ -226,14 +229,15 @@ export function ChamferRightSidebar({
                 onToggleOpen();
               }}
               title="Engenharia Reversa e Bancada Mecânica (ENG. REV.)"
-              className={cn(
-                "flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer",
+              style={
                 activeTab === "eng_rev"
-                  ? "bg-[#E11D48] text-white shadow-xs"
-                  : isDark
-                    ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
-                    : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]"
-              )}
+                  ? {
+                      backgroundColor: "var(--chamfer-accent)",
+                      color: "var(--chamfer-accent-contrast)",
+                    }
+                  : { color: "var(--chamfer-text-secondary)" }
+              }
+              className="flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer"
             >
               <ScanEye className="size-3.5" />
             </button>
@@ -249,14 +253,15 @@ export function ChamferRightSidebar({
                 onToggleOpen();
               }}
               title="Cotas"
-              className={cn(
-                "flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer",
+              style={
                 activeTab === "cotas"
-                  ? "bg-[#E11D48] text-white shadow-xs"
-                  : isDark
-                    ? "text-[#94A3B8] hover:bg-[#0D121B] hover:text-[#E6EDF5]"
-                    : "text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1E293B]"
-              )}
+                  ? {
+                      backgroundColor: "var(--chamfer-accent)",
+                      color: "var(--chamfer-accent-contrast)",
+                    }
+                  : { color: "var(--chamfer-text-secondary)" }
+              }
+              className="flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer"
             >
               <Ruler className="size-3.5" />
             </button>
@@ -271,25 +276,26 @@ export function ChamferRightSidebar({
   // -------------------------------------------------------------------------
   return (
     <aside
+      style={{
+        backgroundColor: "var(--chamfer-bar-bg)",
+        borderColor: "var(--chamfer-border)",
+        color: "var(--chamfer-text-primary)",
+      }}
       className={cn(
         "z-40 flex w-[265px] max-w-[86vw] sm:w-[285px] shrink-0 flex-col overflow-hidden border-l select-none shadow-2xl backdrop-blur-md transition-all",
         "max-md:absolute max-md:right-1 max-md:top-1 max-md:bottom-1 max-md:rounded-2xl max-md:border md:relative",
-        isDark
-          ? "border-[#293444] bg-[#151C27]/98 text-[#E6EDF5]"
-          : "border-[#CBD5E1] bg-[#FFFFFF]/98 text-[#1E293B]",
-        className
+        className,
       )}
     >
       {/* ---------------------------------------------------- */}
       {/* CABEÇALHO COM ABAS (PROPRIEDADES, CAMADAS, CORTE)    */}
       {/* ---------------------------------------------------- */}
       <div
-        className={cn(
-          "flex h-10 shrink-0 items-center justify-between border-b px-2",
-          isDark
-            ? "border-[#293444] bg-[#0D121B]"
-            : "border-[#CBD5E1] bg-[#F1F5F9]",
-        )}
+        style={{
+          backgroundColor: "var(--chamfer-surface-elevated)",
+          borderColor: "var(--chamfer-border)",
+        }}
+        className="flex h-10 shrink-0 items-center justify-between border-b px-2"
       >
         <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
           {/* ABA PROPRIEDADES */}
@@ -299,14 +305,15 @@ export function ChamferRightSidebar({
               triggerHaptic("selection");
               onTabChange("propriedades");
             }}
-            className={cn(
-              "flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer",
+            style={
               activeTab === "propriedades"
-                ? "bg-[#E11D48] text-white shadow-xs"
-                : isDark
-                  ? "text-[#94A3B8] hover:bg-[#151C27] hover:text-[#E6EDF5]"
-                  : "text-[#64748B] hover:bg-[#FFFFFF] hover:text-[#1E293B]"
-            )}
+                ? {
+                    backgroundColor: "var(--chamfer-accent)",
+                    color: "var(--chamfer-accent-contrast)",
+                  }
+                : { color: "var(--chamfer-text-secondary)" }
+            }
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer"
           >
             <Sliders className="size-3" />
             <span>PROPRIEDADES</span>
@@ -319,14 +326,15 @@ export function ChamferRightSidebar({
               triggerHaptic("selection");
               onTabChange("camadas");
             }}
-            className={cn(
-              "flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer",
+            style={
               activeTab === "camadas"
-                ? "bg-[#E11D48] text-white shadow-xs"
-                : isDark
-                  ? "text-[#94A3B8] hover:bg-[#151C27] hover:text-[#E6EDF5]"
-                  : "text-[#64748B] hover:bg-[#FFFFFF] hover:text-[#1E293B]"
-            )}
+                ? {
+                    backgroundColor: "var(--chamfer-accent)",
+                    color: "var(--chamfer-accent-contrast)",
+                  }
+                : { color: "var(--chamfer-text-secondary)" }
+            }
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer"
           >
             <Layers className="size-3" />
             <span>CAMADAS</span>
@@ -339,14 +347,15 @@ export function ChamferRightSidebar({
               triggerHaptic("selection");
               onTabChange("corte");
             }}
-            className={cn(
-              "flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer",
+            style={
               activeTab === "corte"
-                ? "bg-[#E11D48] text-white shadow-xs"
-                : isDark
-                  ? "text-[#94A3B8] hover:bg-[#151C27] hover:text-[#E6EDF5]"
-                  : "text-[#64748B] hover:bg-[#FFFFFF] hover:text-[#1E293B]"
-            )}
+                ? {
+                    backgroundColor: "var(--chamfer-accent)",
+                    color: "var(--chamfer-accent-contrast)",
+                  }
+                : { color: "var(--chamfer-text-secondary)" }
+            }
+            className="flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer"
           >
             <Scissors className="size-3" />
             <span>CORTE</span>
@@ -361,14 +370,15 @@ export function ChamferRightSidebar({
                 triggerHaptic("selection");
                 onTabChange("eng_rev");
               }}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer shrink-0",
+              style={
                 activeTab === "eng_rev"
-                  ? "bg-[#E11D48] text-white shadow-xs"
-                  : isDark
-                    ? "text-[#94A3B8] hover:bg-[#151C27] hover:text-[#E6EDF5]"
-                    : "text-[#64748B] hover:bg-[#FFFFFF] hover:text-[#1E293B]"
-              )}
+                  ? {
+                      backgroundColor: "var(--chamfer-accent)",
+                      color: "var(--chamfer-accent-contrast)",
+                    }
+                  : { color: "var(--chamfer-text-secondary)" }
+              }
+              className="flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer shrink-0"
             >
               <ScanEye className="size-3" />
               <span>ENG. REV.</span>
@@ -383,14 +393,15 @@ export function ChamferRightSidebar({
                 triggerHaptic("selection");
                 onTabChange("cotas");
               }}
-              className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer shrink-0",
+              style={
                 activeTab === "cotas"
-                  ? "bg-[#E11D48] text-white shadow-xs"
-                  : isDark
-                    ? "text-[#94A3B8] hover:bg-[#151C27] hover:text-[#E6EDF5]"
-                    : "text-[#64748B] hover:bg-[#FFFFFF] hover:text-[#1E293B]"
-              )}
+                  ? {
+                      backgroundColor: "var(--chamfer-accent)",
+                      color: "var(--chamfer-accent-contrast)",
+                    }
+                  : { color: "var(--chamfer-text-secondary)" }
+              }
+              className="flex items-center gap-1.5 rounded-lg px-2 py-1 font-mono text-[10px] font-bold tracking-wider transition-all cursor-pointer shrink-0"
             >
               <Ruler className="size-3" />
               <span>COTAS</span>
@@ -407,12 +418,8 @@ export function ChamferRightSidebar({
           }}
           title="Recolher janela lateral (recuperar espaço do canvas)"
           aria-label="Recolher janela lateral"
-          className={cn(
-            "rounded-lg p-1 transition-colors cursor-pointer ml-1",
-            isDark
-              ? "text-[#94A3B8] hover:bg-[#151C27] hover:text-white"
-              : "text-[#64748B] hover:bg-[#FFFFFF] hover:text-[#1E293B]",
-          )}
+          style={{ color: "var(--chamfer-text-secondary)" }}
+          className="rounded-lg p-1 transition-colors cursor-pointer ml-1"
         >
           <ChevronRight className="size-4" />
         </button>

@@ -347,15 +347,31 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       ctx.globalAlpha = 1.0;
       ctx.globalCompositeOperation = "source-over";
       const isCutOrWhite = style.color === "#FFFFFF" || e.layer === "corte";
+      const lightLayerStroke =
+        e.layer === "construcao" || e.layer === "referencia"
+          ? "#475569"
+          : e.layer === "recorte"
+            ? "#B45309"
+            : e.layer === "cota" || e.layer === "anotacoes"
+              ? "#0284C7"
+              : e.layer === "dobra"
+                ? "#BE185D"
+                : e.layer === "marcacao"
+                  ? "#1D4ED8"
+                  : e.layer === "auxiliar"
+                    ? "#7E22CE"
+                    : style.color;
       ctx.strokeStyle =
         customStrokeColor ??
         (isCutOrWhite
           ? typeof opts.themeLerpT === "number"
-            ? lerpHexColor("#0F172A", "#F8FAFC", opts.themeLerpT)
+            ? lerpHexColor("#0F141A", "#ECEFF4", opts.themeLerpT)
             : opts.isLight
-              ? "#0F172A"
-              : "#F8FAFC"
-          : style.color);
+              ? "#0F141A"
+              : "#ECEFF4"
+          : opts.isLight
+            ? lightLayerStroke
+            : style.color);
       ctx.lineWidth = (isCutOrWhite ? Math.max(2.1, 1.65 * style.weight) : Math.max(1.6, 1.45 * style.weight)) * inv;
       const dash = !lod && style.dash(inv);
       ctx.setLineDash(dash ? dash.split(" ").map(Number) : []);
@@ -456,7 +472,19 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
   ctx.setLineDash([]);
   for (const e of list) {
     if (e.type !== "text") continue;
-    ctx.fillStyle = techStyle(e.layer).color;
+    const rawTextColor = techStyle(e.layer).color;
+    const isWhiteOrCut = rawTextColor === "#FFFFFF" || e.layer === "corte";
+    ctx.fillStyle = isWhiteOrCut
+      ? opts.isLight
+        ? "#0F141A"
+        : "#ECEFF4"
+      : opts.isLight && (e.layer === "construcao" || e.layer === "referencia")
+        ? "#334155"
+        : opts.isLight && e.layer === "recorte"
+          ? "#92400E"
+          : opts.isLight && (e.layer === "cota" || e.layer === "anotacoes")
+            ? "#0369A1"
+            : rawTextColor;
     ctx.font = `${e.italic ? "italic " : ""}${e.bold ? "700 " : "400 "}${e.size}px var(--font-display-family), ui-sans-serif, system-ui`;
     ctx.save();
     ctx.translate(e.x, e.y);
