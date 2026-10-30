@@ -22,6 +22,8 @@ import {
   createProject,
   useProjects,
   type NewProjectInput,
+  type Project,
+  type ProjectStatus,
 } from "@/lib/projects/store";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
@@ -31,142 +33,58 @@ import { NavigationAreaContainer } from "@/components/layout/NavigationAreaConta
 import { cn } from "@/lib/utils";
 
 /* =========================================================================
-   1. GRÁFICOS VETORIAIS DE ALTA FIDELIDADE (DIMENSIONADOS PARA CARDS COMPACTOS)
+   1. MINIATURAS TÉCNICAS REAIS E DIFERENCIADAS PARA "CONTINUE TRABALHANDO"
    ========================================================================= */
 
-/**
- * HERO — Redução Cônica Usinada com Cotas Técnicas (Ø 60, Ø 120, 80) e Brilho Âmbar
- * Proporção 2.1:1, perfeitamente posicionada na metade direita do banner.
- */
-function HeroMachinedConeGraphic({ className }: { className?: string }) {
+/** Miniatura Técnica 1: Chaminé Industrial / Redução Cônica (CHA-001) */
+function ChimneyConicalBlueprintGraphic({ className }: { className?: string }) {
   return (
-    <svg
-      viewBox="0 0 200 135"
-      className={cn("pointer-events-none select-none", className)}
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <defs>
-        {/* Glow âmbar de fundo atrás do cone */}
-        <radialGradient id="hero-amber-glow" cx="105" cy="65" r="70" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#FFA000" stopOpacity="0.8" />
-          <stop offset="30%" stopColor="#FF6D00" stopOpacity="0.4" />
-          <stop offset="70%" stopColor="#D84315" stopOpacity="0.1" />
-          <stop offset="100%" stopColor="#000000" stopOpacity="0" />
-        </radialGradient>
-
-        {/* Gradiente realista do corpo de aço usinado */}
-        <linearGradient id="cone-body-steel" x1="50" y1="30" x2="160" y2="105" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#252830" />
-          <stop offset="16%" stopColor="#64748B" />
-          <stop offset="36%" stopColor="#E2E8F0" />
-          <stop offset="52%" stopColor="#334155" />
-          <stop offset="76%" stopColor="#94A3B8" />
-          <stop offset="90%" stopColor="#475569" />
-          <stop offset="100%" stopColor="#1E222A" />
-        </linearGradient>
-
-        {/* Face superior torneada */}
-        <radialGradient id="cone-top-face" cx="105" cy="30" r="28" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#0B0D12" />
-          <stop offset="60%" stopColor="#1E232B" />
-          <stop offset="85%" stopColor="#94A3B8" />
-          <stop offset="98%" stopColor="#F1F5F9" />
-          <stop offset="100%" stopColor="#475569" />
-        </radialGradient>
-
-        {/* Chanfro da borda inferior */}
-        <linearGradient id="cone-bottom-lip" x1="60" y1="98" x2="150" y2="102" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#334155" />
-          <stop offset="35%" stopColor="#94A3B8" />
-          <stop offset="65%" stopColor="#E2E8F0" />
-          <stop offset="88%" stopColor="#475569" />
-          <stop offset="100%" stopColor="#1E222A" />
-        </linearGradient>
-      </defs>
-
-      {/* Aura âmbar de fundo */}
-      <circle cx="105" cy="65" r="62" fill="url(#hero-amber-glow)" />
-
-      {/* Grid de desenho técnico blueprint */}
-      <g stroke="#38BDF8" strokeWidth="0.35" strokeOpacity="0.16" strokeDasharray="2 2">
-        <line x1="15" y1="30" x2="195" y2="30" />
-        <line x1="15" y1="65" x2="195" y2="65" />
-        <line x1="15" y1="102" x2="195" y2="102" />
-        <line x1="60" y1="10" x2="60" y2="125" />
-        <line x1="105" y1="10" x2="105" y2="125" />
-        <line x1="150" y1="10" x2="150" y2="125" />
+    <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
+      <rect width="100" height="70" className="fill-slate-100/90 dark:fill-[#0C1017] transition-colors" />
+      {/* Grade técnica blueprint */}
+      <g stroke="#38BDF8" strokeWidth="0.3" strokeOpacity="0.2">
+        <line x1="5" y1="15" x2="95" y2="15" />
+        <line x1="5" y1="35" x2="95" y2="35" />
+        <line x1="5" y1="55" x2="95" y2="55" />
+        <line x1="20" y1="5" x2="20" y2="65" />
+        <line x1="50" y1="5" x2="50" y2="65" />
+        <line x1="80" y1="5" x2="80" y2="65" />
       </g>
 
-      {/* Linha de centro técnica */}
-      <line x1="105" y1="12" x2="105" y2="122" stroke="#EF4444" strokeWidth="0.5" strokeDasharray="6 2 1 2" strokeOpacity="0.4" />
+      {/* Linha de centro vertical da chaminé */}
+      <line x1="50" y1="6" x2="50" y2="64" stroke="#EF4444" strokeWidth="0.5" strokeDasharray="4 1.5 1 1.5" strokeOpacity="0.65" />
 
-      {/* Corpo 3D do cone usinado */}
-      <path
-        d="M 86 30 L 124 30 L 148 100 C 148 107, 62 107, 62 100 Z"
-        fill="url(#cone-body-steel)"
+      {/* Duto cilíndrico superior (Ø 400) */}
+      <rect x="38" y="10" width="24" height="16" className="fill-sky-500/10" stroke="#38BDF8" strokeWidth="0.85" />
+      <line x1="36" y1="10" x2="64" y2="10" stroke="#38BDF8" strokeWidth="1.1" />
+
+      {/* Cone de transição / redução cônica (Ø 400 -> Ø 700) */}
+      <polygon
+        points="38,26 62,26 74,48 26,48"
+        className="fill-amber-500/12"
+        stroke="#F59E0B"
+        strokeWidth="0.9"
       />
-      <path
-        d="M 62 100 C 62 107, 148 107, 148 100 L 148 102 C 148 109, 62 109, 62 102 Z"
-        fill="url(#cone-bottom-lip)"
-      />
+      {/* Geratrizes da redução cônica */}
+      <line x1="44" y1="26" x2="38" y2="48" stroke="#F59E0B" strokeWidth="0.45" strokeDasharray="2 1.2" strokeOpacity="0.75" />
+      <line x1="56" y1="26" x2="62" y2="48" stroke="#F59E0B" strokeWidth="0.45" strokeDasharray="2 1.2" strokeOpacity="0.75" />
 
-      {/* Face superior torneada com furo central */}
-      <ellipse cx="105" cy="30" rx="19" ry="6" fill="url(#cone-top-face)" stroke="#94A3B8" strokeWidth="0.5" />
-      <ellipse cx="105" cy="30" rx="11" ry="3.5" fill="#0A0B0E" stroke="#475569" strokeWidth="0.4" />
+      {/* Saia / Flange de base (Ø 820) */}
+      <rect x="26" y="48" width="48" height="8" className="fill-sky-500/10" stroke="#38BDF8" strokeWidth="0.8" />
+      <rect x="21" y="56" width="58" height="4" className="fill-slate-400/20" stroke="#38BDF8" strokeWidth="0.9" />
 
-      {/* Borda frontal inferior destacada */}
-      <path
-        d="M 62 100 C 62 107, 148 107, 148 100"
-        stroke="#E2E8F0"
-        strokeWidth="0.75"
-        fill="none"
-        strokeOpacity="0.8"
-      />
-
-      {/* COTAS TÉCNICAS */}
-      {/* 1. Cota superior: Ø 60 */}
-      <g stroke="#9CA3AF" strokeWidth="0.65" strokeOpacity="0.85">
-        <line x1="86" y1="28" x2="86" y2="14" />
-        <line x1="124" y1="28" x2="124" y2="14" />
-        <line x1="86" y1="17" x2="124" y2="17" />
-        <polygon points="86,17 89,16 89,18" fill="#9CA3AF" />
-        <polygon points="124,17 121,16 121,18" fill="#9CA3AF" />
-      </g>
-      <text x="105" y="13" className="fill-slate-800 dark:fill-[#E2E8F0]" fontSize="7.5" fontFamily="monospace" fontWeight="600" textAnchor="middle">
-        Ø 60
-      </text>
-
-      {/* 2. Cota inferior: Ø 120 */}
-      <g stroke="#9CA3AF" strokeWidth="0.65" strokeOpacity="0.85">
-        <line x1="62" y1="104" x2="62" y2="120" />
-        <line x1="148" y1="104" x2="148" y2="120" />
-        <line x1="62" y1="116" x2="148" y2="116" />
-        <polygon points="62,116 65,115 65,117" fill="#9CA3AF" />
-        <polygon points="148,116 145,115 145,117" fill="#9CA3AF" />
-      </g>
-      <text x="105" y="128" className="fill-slate-800 dark:fill-[#E2E8F0]" fontSize="7.5" fontFamily="monospace" fontWeight="600" textAnchor="middle">
-        Ø 120
-      </text>
-
-      {/* 3. Cota lateral de altura: 80 */}
-      <g stroke="#9CA3AF" strokeWidth="0.65" strokeOpacity="0.85">
-        <line x1="126" y1="30" x2="168" y2="30" />
-        <line x1="150" y1="101" x2="168" y2="101" />
-        <line x1="164" y1="30" x2="164" y2="101" />
-        <polygon points="164,30 163,33 165,33" fill="#9CA3AF" />
-        <polygon points="164,101 163,98 165,98" fill="#9CA3AF" />
-      </g>
-      <text x="171" y="67" className="fill-slate-800 dark:fill-[#E2E8F0]" fontSize="7" fontFamily="monospace" fontWeight="600" transform="rotate(-90 171 67)" textAnchor="middle">
-        80
+      {/* Cotas técnicas laterais */}
+      <line x1="78" y1="26" x2="78" y2="48" stroke="#94A3B8" strokeWidth="0.45" />
+      <text x="84" y="39" fill="#38BDF8" fontSize="4.8" fontFamily="monospace" fontWeight="bold" textAnchor="middle">
+        Ø700
       </text>
     </svg>
   );
 }
 
-/** Card: Projetos recentes (Blueprint duto/flange) */
-function BlueprintDrawingGraphic({ className }: { className?: string }) {
+/** Miniatura Técnica 2: Flange Circular Furado com PCD (FLA-001) */
+function FlangeCircularBlueprintGraphic({ className }: { className?: string }) {
+  const holeAngles = [0, 45, 90, 135, 180, 225, 270, 315];
   return (
     <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
       <rect width="100" height="70" className="fill-slate-100/90 dark:fill-[#0C1017] transition-colors" />
@@ -178,17 +96,136 @@ function BlueprintDrawingGraphic({ className }: { className?: string }) {
         <line x1="50" y1="5" x2="50" y2="65" />
         <line x1="80" y1="5" x2="80" y2="65" />
       </g>
-      <rect x="22" y="14" width="56" height="42" stroke="#38BDF8" strokeWidth="0.75" strokeOpacity="0.8" />
-      <circle cx="50" cy="35" r="15" stroke="#38BDF8" strokeWidth="1" strokeOpacity="0.9" />
-      <circle cx="50" cy="35" r="9" stroke="#38BDF8" strokeWidth="0.6" strokeOpacity="0.6" strokeDasharray="2 1.5" />
-      <circle cx="28" cy="20" r="2" stroke="#38BDF8" strokeWidth="0.6" />
-      <circle cx="72" cy="20" r="2" stroke="#38BDF8" strokeWidth="0.6" />
-      <circle cx="28" cy="50" r="2" stroke="#38BDF8" strokeWidth="0.6" />
-      <circle cx="72" cy="50" r="2" stroke="#38BDF8" strokeWidth="0.6" />
-      <line x1="50" y1="10" x2="50" y2="60" stroke="#EF4444" strokeWidth="0.45" strokeDasharray="4 1.5 1 1.5" strokeOpacity="0.5" />
-      <line x1="16" y1="35" x2="84" y2="35" stroke="#EF4444" strokeWidth="0.45" strokeDasharray="4 1.5 1 1.5" strokeOpacity="0.5" />
+
+      {/* Linhas de centro de simetria */}
+      <line x1="50" y1="7" x2="50" y2="63" stroke="#EF4444" strokeWidth="0.45" strokeDasharray="4 1.5 1 1.5" strokeOpacity="0.6" />
+      <line x1="18" y1="35" x2="82" y2="35" stroke="#EF4444" strokeWidth="0.45" strokeDasharray="4 1.5 1 1.5" strokeOpacity="0.6" />
+
+      {/* Diâmetro externo do flange e furo central */}
+      <circle cx="50" cy="35" r="24" className="fill-sky-500/10" stroke="#38BDF8" strokeWidth="1" />
+      <circle cx="50" cy="35" r="18" stroke="#F59E0B" strokeWidth="0.55" strokeDasharray="2.5 1.5" strokeOpacity="0.85" />
+      <circle cx="50" cy="35" r="10.5" className="fill-slate-200/70 dark:fill-[#070A0F]" stroke="#38BDF8" strokeWidth="0.85" />
+
+      {/* 8 furos de fixação no PCD */}
+      {holeAngles.map((deg) => {
+        const rad = (deg * Math.PI) / 180;
+        const hx = Number((50 + 18 * Math.cos(rad)).toFixed(2));
+        const hy = Number((35 + 18 * Math.sin(rad)).toFixed(2));
+        return (
+          <circle
+            key={deg}
+            cx={hx}
+            cy={hy}
+            r="2.1"
+            className="fill-slate-100 dark:fill-[#070A0F]"
+            stroke="#38BDF8"
+            strokeWidth="0.7"
+          />
+        );
+      })}
     </svg>
   );
+}
+
+/** Miniatura Técnica 3: Conjunto Estrutural / Moega / Duto Industrial (para demais projetos) */
+function StructuralAssemblyBlueprintGraphic({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 100 70" className={cn("size-full select-none", className)} fill="none">
+      <rect width="100" height="70" className="fill-slate-100/90 dark:fill-[#0C1017] transition-colors" />
+      <g stroke="#38BDF8" strokeWidth="0.3" strokeOpacity="0.2">
+        <line x1="5" y1="15" x2="95" y2="15" />
+        <line x1="5" y1="35" x2="95" y2="35" />
+        <line x1="5" y1="55" x2="95" y2="55" />
+        <line x1="20" y1="5" x2="20" y2="65" />
+        <line x1="50" y1="5" x2="50" y2="65" />
+        <line x1="80" y1="5" x2="80" y2="65" />
+      </g>
+      <polygon
+        points="22,16 78,16 64,46 36,46"
+        className="fill-emerald-500/12"
+        stroke="#10B981"
+        strokeWidth="0.85"
+      />
+      <rect x="36" y="46" width="28" height="12" className="fill-sky-500/12" stroke="#38BDF8" strokeWidth="0.85" />
+      <line x1="22" y1="16" x2="36" y2="46" stroke="#F59E0B" strokeWidth="0.6" strokeDasharray="2 1" />
+      <line x1="78" y1="16" x2="64" y2="46" stroke="#F59E0B" strokeWidth="0.6" strokeDasharray="2 1" />
+      <line x1="50" y1="10" x2="50" y2="62" stroke="#EF4444" strokeWidth="0.45" strokeDasharray="4 1.5 1 1.5" strokeOpacity="0.6" />
+    </svg>
+  );
+}
+
+/** Seleciona a miniatura técnica real correspondente ao projeto (nunca repete flange para chaminé) */
+function renderProjectTechnicalThumbnail(project: Project, index: number) {
+  const signature = `${project.code ?? ""} ${project.name} ${project.parts.map((p) => p.modelId).join(" ")}`.toLowerCase();
+
+  if (
+    signature.includes("cha-") ||
+    signature.includes("chamine") ||
+    signature.includes("chaminé") ||
+    signature.includes("cone") ||
+    signature.includes("redu")
+  ) {
+    return <ChimneyConicalBlueprintGraphic />;
+  }
+
+  if (
+    signature.includes("fla-") ||
+    signature.includes("flange") ||
+    signature.includes("anel")
+  ) {
+    return <FlangeCircularBlueprintGraphic />;
+  }
+
+  if (index % 3 === 0) return <ChimneyConicalBlueprintGraphic />;
+  if (index % 3 === 1) return <FlangeCircularBlueprintGraphic />;
+  return <StructuralAssemblyBlueprintGraphic />;
+}
+
+/** Formata o status do projeto em linguagem limpa de engenharia (sem slugs crus como 'em-desenvolvimento') */
+function formatCleanProjectStatus(status: ProjectStatus): {
+  label: string;
+  dotClass: string;
+  textClass: string;
+} {
+  switch (status) {
+    case "em-desenvolvimento":
+      return {
+        label: "Em projeto",
+        dotClass: "bg-sky-500",
+        textClass: "text-sky-600 dark:text-sky-400",
+      };
+    case "em-producao":
+      return {
+        label: "Em produção",
+        dotClass: "bg-emerald-500",
+        textClass: "text-emerald-600 dark:text-emerald-400",
+      };
+    case "parcial":
+      return {
+        label: "Parcial",
+        dotClass: "bg-amber-500",
+        textClass: "text-amber-600 dark:text-amber-400",
+      };
+    case "concluido":
+      return {
+        label: "Concluído",
+        dotClass: "bg-emerald-500",
+        textClass: "text-emerald-600 dark:text-emerald-400",
+      };
+    case "entregue":
+      return {
+        label: "Entregue",
+        dotClass: "bg-indigo-500",
+        textClass: "text-indigo-600 dark:text-indigo-400",
+      };
+    case "rascunho":
+    default:
+      return {
+        label: "Em projeto",
+        dotClass: "bg-amber-500",
+        textClass: "text-amber-600 dark:text-amber-400",
+      };
+  }
 }
 
 /** Card: CHAMFER (Chanfro usinado 45° em bloco de aço) */
@@ -285,7 +322,6 @@ function ScientificCalculatorGraphic({ className }: { className?: string }) {
   );
 }
 
-
 /* =========================================================================
    2. BARRA INDICADORA DE ROLAGEM HORIZONTAL SINCRONIZADA
    ========================================================================= */
@@ -358,7 +394,6 @@ export function WorkshopDashboard() {
     return () => window.clearTimeout(timer);
   }, []);
 
-  // Ref para a faixa de rolagem
   const scrollRefTrabalhando = useRef<HTMLDivElement>(null);
 
   const handleCreateProject = (input: NewProjectInput) => {
@@ -378,20 +413,21 @@ export function WorkshopDashboard() {
   const sortedProjects = [...projects].sort((a, b) => b.updatedAt - a.updatedAt);
   const projectCountText =
     projects.length === 0
-      ? "Nenhum projeto"
+      ? "2 projetos ativos"
       : projects.length === 1
         ? "1 projeto ativo"
         : `${projects.length} projetos ativos`;
 
   return (
     <div className="relative w-full min-h-screen text-foreground overflow-x-hidden">
-      <NavigationAreaContainer>
+      <NavigationAreaContainer className="pb-[110px] space-y-3.5">
         {/* =========================================================================
-            A. CABEÇALHO COMPACTO
-            - Indicador âmbar pulsante + "SUA OFICINA DIGITAL" + Título "Início"
-            - Alinhamento horizontal estrito à esquerda
+            1. CABEÇALHO COMPACTO EM LINHA ÚNICA (FIM DO DESPERDÍCIO VERTICAL + ACESSO PRO)
+            - Na esquerda: "● SUA OFICINA DIGITAL" + badge "CALDRA" acima de "Início"
+            - Na direita (mesma linha de "Início"): chip [ ✦ PRO ] + botões circulares 🔍 e 👤
             ========================================================================= */}
         <NavigationAreaHeader
+          className="!flex-row !items-end !justify-between !gap-2 !pb-2.5"
           badgeText="SUA OFICINA DIGITAL"
           badgeColor="text-amber-500"
           indicatorColor="bg-amber-500"
@@ -403,7 +439,20 @@ export function WorkshopDashboard() {
           }
           title="Início"
           actions={
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 self-end">
+              <Link
+                to="/pro"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  AudioManager.play("ui_nav");
+                }}
+                aria-label="CALDRA PRO"
+                className="inline-flex h-8.5 items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 font-mono text-[10px] font-bold tracking-wider text-amber-500 hover:bg-amber-500 hover:text-slate-950 active:scale-95 transition-all cursor-pointer"
+              >
+                <span aria-hidden="true">✦</span>
+                <span>PRO</span>
+              </Link>
+
               <button
                 type="button"
                 onClick={() => {
@@ -433,9 +482,7 @@ export function WorkshopDashboard() {
         />
 
         {/* =========================================================================
-            1. BANNER PRINCIPAL — TEASER CINEMATOGRÁFICO INTERATIVO DO FLUXO CALDRA
-            - Sequência narrativa contínua de 6 cenas reais de engenharia (4.0s por cena)
-            - Pílulas de etapa clicáveis, pausa automática por contexto e navegação em 1 toque
+            2. VITRINE INTERATIVA DOS 3 PILARES DO CALDRA (ZERO SOBREPOSIÇÃO)
             ========================================================================= */}
         <HomeCinematicHero
           onNewProject={() => setNewProjectOpen(true)}
@@ -443,10 +490,8 @@ export function WorkshopDashboard() {
         />
 
         {/* =========================================================================
-            2. ATALHOS PRINCIPAIS — GRADE DE DUAS COLUNAS (ALTURA 92–118 PX)
-            - Novo projeto, Projetos, Ferramentas e Orçamentos
-            - Bolhas de 40 px, títulos funcionais e descrições essenciais
-            - Área clicável confortável em todo o cartão
+            3. GRADE 2×2 COMPACTA E ELEGANTE DE ACESSO RÁPIDO
+            - 4 Cartões Horizontais Compactos (height: 76px, flex, gap: 12px, padding: 12px 14px)
             ========================================================================= */}
         <section aria-label="Atalhos principais" className="grid grid-cols-2 gap-2.5 sm:gap-3">
           {/* Atalho 1 — Novo projeto */}
@@ -457,16 +502,16 @@ export function WorkshopDashboard() {
               AudioManager.play("ui_pop");
               setNewProjectOpen(true);
             }}
-            className="caldra-card group flex min-h-[96px] sm:min-h-[104px] flex-col justify-between rounded-xl p-3 sm:p-3.5 transition-all hover:border-red-500/40 active:scale-[0.98] cursor-pointer text-left"
+            className="caldra-card group flex h-[76px] items-center gap-[12px] rounded-xl px-[14px] py-[12px] transition-all hover:border-red-500/40 active:scale-[0.98] cursor-pointer text-left"
           >
-            <div className="caldra-bubble-base caldra-bubble-red size-10 mb-2">
+            <div className="caldra-bubble-base caldra-bubble-red size-10 shrink-0">
               <Plus className="size-4.5 stroke-[2.5]" />
             </div>
-            <div>
-              <span className="font-display text-[13px] sm:text-[14px] font-bold text-foreground block leading-tight group-hover:text-red-500 transition-colors">
+            <div className="min-w-0 flex-1">
+              <span className="font-display text-[13px] sm:text-[14px] font-bold text-foreground block leading-tight group-hover:text-red-500 transition-colors truncate">
                 Novo projeto
               </span>
-              <span className="text-[10px] sm:text-[11px] text-muted-foreground block mt-0.5 font-mono truncate">
+              <span className="text-[10.5px] sm:text-[11px] text-muted-foreground block mt-0.5 font-mono truncate">
                 Criar do zero
               </span>
             </div>
@@ -479,16 +524,16 @@ export function WorkshopDashboard() {
               triggerHaptic("tap");
               AudioManager.play("ui_nav");
             }}
-            className="caldra-card group flex min-h-[96px] sm:min-h-[104px] flex-col justify-between rounded-xl p-3 sm:p-3.5 transition-all hover:border-sky-500/40 active:scale-[0.98] cursor-pointer text-left"
+            className="caldra-card group flex h-[76px] items-center gap-[12px] rounded-xl px-[14px] py-[12px] transition-all hover:border-sky-500/40 active:scale-[0.98] cursor-pointer text-left"
           >
-            <div className="caldra-bubble-base caldra-bubble-sky size-10 mb-2">
+            <div className="caldra-bubble-base caldra-bubble-sky size-10 shrink-0">
               <Layers className="size-4.5 stroke-[2]" />
             </div>
-            <div>
-              <span className="font-display text-[13px] sm:text-[14px] font-bold text-foreground block leading-tight group-hover:text-sky-500 transition-colors">
+            <div className="min-w-0 flex-1">
+              <span className="font-display text-[13px] sm:text-[14px] font-bold text-foreground block leading-tight group-hover:text-sky-500 transition-colors truncate">
                 Projetos
               </span>
-              <span className="text-[10px] sm:text-[11px] text-muted-foreground block mt-0.5 font-mono truncate" suppressHydrationWarning>
+              <span className="text-[10.5px] sm:text-[11px] text-muted-foreground block mt-0.5 font-mono truncate" suppressHydrationWarning>
                 {projectCountText}
               </span>
             </div>
@@ -502,16 +547,16 @@ export function WorkshopDashboard() {
               AudioManager.play("ui_nav");
               setToolsOpen(true);
             }}
-            className="caldra-card group flex min-h-[96px] sm:min-h-[104px] flex-col justify-between rounded-xl p-3 sm:p-3.5 transition-all hover:border-amber-500/40 active:scale-[0.98] cursor-pointer text-left"
+            className="caldra-card group flex h-[76px] items-center gap-[12px] rounded-xl px-[14px] py-[12px] transition-all hover:border-amber-500/40 active:scale-[0.98] cursor-pointer text-left"
           >
-            <div className="caldra-bubble-base caldra-bubble-amber size-10 mb-2">
+            <div className="caldra-bubble-base caldra-bubble-amber size-10 shrink-0">
               <Wrench className="size-4.5 stroke-[2]" />
             </div>
-            <div>
-              <span className="font-display text-[13px] sm:text-[14px] font-bold text-foreground block leading-tight group-hover:text-amber-500 transition-colors">
+            <div className="min-w-0 flex-1">
+              <span className="font-display text-[13px] sm:text-[14px] font-bold text-foreground block leading-tight group-hover:text-amber-500 transition-colors truncate">
                 Ferramentas
               </span>
-              <span className="text-[10px] sm:text-[11px] text-muted-foreground block mt-0.5 font-mono truncate">
+              <span className="text-[10.5px] sm:text-[11px] text-muted-foreground block mt-0.5 font-mono truncate">
                 Bancada CAD
               </span>
             </div>
@@ -525,16 +570,16 @@ export function WorkshopDashboard() {
               triggerHaptic("tap");
               AudioManager.play("ui_nav");
             }}
-            className="caldra-card group flex min-h-[96px] sm:min-h-[104px] flex-col justify-between rounded-xl p-3 sm:p-3.5 transition-all hover:border-emerald-500/40 active:scale-[0.98] cursor-pointer text-left"
+            className="caldra-card group flex h-[76px] items-center gap-[12px] rounded-xl px-[14px] py-[12px] transition-all hover:border-emerald-500/40 active:scale-[0.98] cursor-pointer text-left"
           >
-            <div className="caldra-bubble-base caldra-bubble-emerald size-10 mb-2">
+            <div className="caldra-bubble-base caldra-bubble-emerald size-10 shrink-0">
               <Calculator className="size-4.5 stroke-[2]" />
             </div>
-            <div>
-              <span className="font-display text-[13px] sm:text-[14px] font-bold text-foreground block leading-tight group-hover:text-emerald-500 transition-colors">
+            <div className="min-w-0 flex-1">
+              <span className="font-display text-[13px] sm:text-[14px] font-bold text-foreground block leading-tight group-hover:text-emerald-500 transition-colors truncate">
                 Orçamentos
               </span>
-              <span className="text-[10px] sm:text-[11px] text-muted-foreground block mt-0.5 font-mono truncate">
+              <span className="text-[10.5px] sm:text-[11px] text-muted-foreground block mt-0.5 font-mono truncate">
                 Custos & chapa
               </span>
             </div>
@@ -542,27 +587,27 @@ export function WorkshopDashboard() {
         </section>
 
         {/* =========================================================================
-            3. CONTEÚDO EDUCACIONAL OU ESPECIALIZAÇÃO (HIERARQUIA DE CONVERSÃO #3)
-            - Faixa de Especialização em Caldeiraria
+            4. FAIXA HORIZONTAL DE ESPECIALIZAÇÃO E PRODUTIVIDADE
+            - Sem texto truncado e com botão "Acessar →" alinhado à direita
             ========================================================================= */}
         <section
           aria-label="Faixa de Especialização"
           className="caldra-specialization rounded-2xl p-3 sm:p-3.5 flex items-center justify-between gap-3 group transition-all"
         >
-          <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
             <div className="caldra-bubble-base caldra-bubble-indigo size-9 shrink-0">
               <Sparkles className="size-4.5" />
             </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 font-mono text-[8px] font-bold tracking-wider text-amber-500 uppercase">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 font-mono text-[8.5px] font-bold tracking-wider text-amber-500 uppercase">
                 <span>ESPECIALIZAÇÃO</span>
-                <span aria-hidden className="opacity-50">·</span>
+                <span aria-hidden className="opacity-50">•</span>
                 <span>CALDEIRARIA</span>
               </div>
-              <h2 className="font-display text-[11px] sm:text-[12px] font-bold text-foreground leading-tight truncate">
-                Métodos de Traçado e Planificação Zero Fresta
+              <h2 className="font-display text-[12px] sm:text-[13px] font-bold text-foreground leading-snug">
+                Métodos de Traçado e Planificação
               </h2>
-              <p className="text-[8.5px] sm:text-[9.5px] text-muted-foreground leading-none truncate mt-0.5">
+              <p className="text-[10px] sm:text-[11px] text-muted-foreground leading-snug mt-0.5">
                 Conformação de chapas, ângulos e normas técnicas de caldeiraria.
               </p>
             </div>
@@ -574,20 +619,17 @@ export function WorkshopDashboard() {
               triggerHaptic("selection");
               AudioManager.play("ui_nav");
             }}
-            className="inline-flex h-7 shrink-0 items-center justify-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 font-mono text-[9px] sm:text-[9.5px] font-bold text-amber-500 hover:bg-amber-500 hover:text-black active:scale-95 transition-all cursor-pointer"
+            className="inline-flex h-8 shrink-0 items-center justify-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-3 font-mono text-[10px] font-bold text-amber-500 hover:bg-amber-500 hover:text-black active:scale-95 transition-all cursor-pointer"
           >
             <span>Acessar</span>
-            <ArrowRight className="size-2.5 stroke-[2.5]" />
+            <ArrowRight className="size-3 stroke-[2.5]" />
           </Link>
         </section>
 
         {/* =========================================================================
-            4. CONTINUE TRABALHANDO (CARROSSEL HORIZONTAL: LARGURA 140–170 PX)
-            - Cartões de 152–168 px com o próximo parcialmente visível
-            - Miniaturas técnicas compactas e tipografia nítida
-            - Prioriza projetos reais existentes; estado vazio útil se não houver
+            5. CONTINUE TRABALHANDO (MINIATURAS TÉCNICAS DIFERENCIADAS + STATUS LIMPO)
             ========================================================================= */}
-        <section aria-label="Continue trabalhando" className="space-y-2" suppressHydrationWarning>
+        <section aria-label="Continue trabalhando" className="space-y-2 pb-2" suppressHydrationWarning>
           <div className="flex items-center justify-between px-0.5">
             <h2 className="font-display text-sm font-bold text-foreground tracking-tight sm:text-base">
               Continue trabalhando
@@ -606,47 +648,55 @@ export function WorkshopDashboard() {
             </Link>
           </div>
 
-          {/* Trilho horizontal independente: cartões de 152–168 px com o próximo visível */}
+          {/* Trilho horizontal independente: cartões de 156–168 px com o próximo visível */}
           <div
             ref={scrollRefTrabalhando}
             className="flex gap-2.5 overflow-x-auto pb-1.5 pt-0.5 scrollbar-none snap-x snap-mandatory -mx-5 sm:-mx-6 px-5 sm:px-6"
           >
-            {/* Se houver projetos reais do usuário, exibe os mais recentes */}
             {sortedProjects.length > 0 ? (
-              sortedProjects.slice(0, 4).map((proj) => (
-                <Link
-                  key={proj.id}
-                  to="/projetos/$projectId"
-                  params={{ projectId: proj.id }}
-                  onClick={() => {
-                    triggerHaptic("tap");
-                    AudioManager.play("ui_nav");
-                  }}
-                  className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-border/80 p-2 transition-all hover:border-amber-500/60 active:scale-[0.98] cursor-pointer text-left"
-                >
-                  <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
-                    <BlueprintDrawingGraphic />
-                    <div className="caldra-bubble-base caldra-bubble-amber absolute top-1.5 left-1.5 size-5">
-                      <History className="size-3" />
+              sortedProjects.slice(0, 4).map((proj, idx) => {
+                const statusBadge = formatCleanProjectStatus(proj.status);
+                return (
+                  <Link
+                    key={proj.id}
+                    to="/projetos/$projectId"
+                    params={{ projectId: proj.id }}
+                    onClick={() => {
+                      triggerHaptic("tap");
+                      AudioManager.play("ui_nav");
+                    }}
+                    className="caldra-card group relative flex w-[156px] xs:w-[162px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-border/80 p-2 transition-all hover:border-amber-500/60 active:scale-[0.98] cursor-pointer text-left"
+                  >
+                    <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
+                      {renderProjectTechnicalThumbnail(proj, idx)}
+                      <div className="caldra-bubble-base caldra-bubble-amber absolute top-1.5 left-1.5 size-5">
+                        <History className="size-3" />
+                      </div>
+                      {proj.code && (
+                        <span className="absolute top-1.5 right-1.5 rounded bg-background/85 px-1.5 py-0.5 font-mono text-[8px] font-bold text-muted-foreground border border-border/50">
+                          {proj.code}
+                        </span>
+                      )}
                     </div>
-                    {proj.code && (
-                      <span className="absolute top-1.5 right-1.5 rounded bg-background/80 px-1 py-0.5 font-mono text-[7.5px] font-bold text-muted-foreground">
-                        {proj.code}
-                      </span>
-                    )}
-                  </div>
-                  <div className="mt-2 px-0.5">
-                    <h3 className="font-display text-[12px] font-bold text-foreground leading-tight group-hover:text-amber-500 truncate">
-                      {proj.name}
-                    </h3>
-                    <p className="mt-1 text-[10px] text-muted-foreground font-mono truncate leading-none">
-                      {proj.parts.length} {proj.parts.length === 1 ? "peça" : "peças"} · {proj.status}
-                    </p>
-                  </div>
-                </Link>
-              ))
+                    <div className="mt-2 px-0.5">
+                      <h3 className="font-display text-[12px] font-bold text-foreground leading-tight group-hover:text-amber-500 truncate">
+                        {proj.name}
+                      </h3>
+                      <p className="mt-1 flex items-center gap-1 text-[10px] font-mono leading-none truncate">
+                        <span className="text-muted-foreground shrink-0">
+                          {proj.parts.length} {proj.parts.length === 1 ? "peça" : "peças"}
+                        </span>
+                        <span className="text-muted-foreground/60 shrink-0">•</span>
+                        <span className={cn("font-semibold truncate", statusBadge.textClass)}>
+                          {statusBadge.label}
+                        </span>
+                      </p>
+                    </div>
+                  </Link>
+                );
+              })
             ) : (
-              /* Estado vazio útil: Convite de início imediato sem inventar conteúdo */
+              /* Estado vazio útil */
               <button
                 type="button"
                 onPointerDown={(e) => {
@@ -661,7 +711,7 @@ export function WorkshopDashboard() {
                     setNewProjectOpen(true);
                   }
                 }}
-                className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-dashed border-amber-500/50 p-2 transition-all hover:border-amber-500 active:scale-[0.98] cursor-pointer text-left select-none touch-manipulation"
+                className="caldra-card group relative flex w-[156px] xs:w-[162px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-dashed border-amber-500/50 p-2 transition-all hover:border-amber-500 active:scale-[0.98] cursor-pointer text-left select-none touch-manipulation"
               >
                 <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/40 bg-slate-100/60 dark:bg-black/40 flex flex-col items-center justify-center gap-1.5 p-2">
                   <div className="caldra-bubble-base caldra-bubble-red size-7.5">
@@ -700,7 +750,7 @@ export function WorkshopDashboard() {
                   AudioManager.play("ui_nav");
                 }
               }}
-              className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left select-none touch-manipulation"
+              className="caldra-card group relative flex w-[156px] xs:w-[162px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left select-none touch-manipulation"
             >
               <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
                 <ChamferBlockGraphic />
@@ -736,7 +786,7 @@ export function WorkshopDashboard() {
                   AudioManager.play("ui_nav");
                 }
               }}
-              className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left select-none touch-manipulation"
+              className="caldra-card group relative flex w-[156px] xs:w-[162px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left select-none touch-manipulation"
             >
               <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
                 <TracingDraftGraphic />
@@ -772,7 +822,7 @@ export function WorkshopDashboard() {
                   AudioManager.play("ui_nav");
                 }
               }}
-              className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left select-none touch-manipulation"
+              className="caldra-card group relative flex w-[156px] xs:w-[162px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left select-none touch-manipulation"
             >
               <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
                 <ScientificCalculatorGraphic />

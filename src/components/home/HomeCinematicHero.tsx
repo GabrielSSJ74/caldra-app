@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo, startTransition } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { Compass, Flame, Zap } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
@@ -71,10 +72,61 @@ export const CINEMATIC_WORKFLOW_SCENES: CinematicWorkflowScene[] = [
   },
 ];
 
-/** Duração exata de 6.0 segundos por cena sincronizando Ato 1 (0%..55%) e Ato 2 (55%..100%) */
+/**
+ * VITRINE INTERATIVA DOS 3 PILARES DO CALDRA (Zona A, Zona B e Zona C sem colisão)
+ */
+export interface CaldraHeroPillar {
+  id: CinematicSceneId;
+  tabNumber: string;
+  tabLabel: string;
+  title: string;
+  subtitle: string;
+  telemetryPill: string;
+  ctaLabel: string;
+  routeTo: "/desenho-2d" | "/tracagem" | "/oficina";
+  routeSearch?: { tab: "orcamento" };
+}
+
+export const PILLAR_DURATION_MS = 5500;
+
+export const CALDRA_THREE_PILLARS: CaldraHeroPillar[] = [
+  {
+    id: "chamfer-cad",
+    tabNumber: "1.",
+    tabLabel: "CAD 2D/3D",
+    title: "CHAMFER CAD 2D & 3D",
+    subtitle: "Desenho técnico no toque, arrays, engenharia reversa 1:1 e órbita 3D.",
+    telemetryPill: "Ø160 • 6x Ø18 • 3D OK",
+    ctaLabel: "Abrir no CAD →",
+    routeTo: "/desenho-2d",
+  },
+  {
+    id: "caldeiraria-tracagem",
+    tabNumber: "2.",
+    tabLabel: "Caldeiraria",
+    title: "Traçagem e Planificação 1:1",
+    subtitle: "Desenvolva cones, transições, curvas de gomos e chapas dobradas.",
+    telemetryPill: "CONE Ø120×60 • PLANIFICADO",
+    ctaLabel: "Traçar peça →",
+    routeTo: "/tracagem",
+  },
+  {
+    id: "preparacao-fabricacao",
+    tabNumber: "3.",
+    tabLabel: "Corte & Custo",
+    title: "Corte CNC, Peso e Orçamento",
+    subtitle: "Aproveitamento de chapa, tempo de laser, peso e custo imediato.",
+    telemetryPill: "CORTE 5.92m • R$ 433,56",
+    ctaLabel: "Simular custo →",
+    routeTo: "/oficina",
+    routeSearch: { tab: "orcamento" },
+  },
+];
+
+/** Duração padrão de 6.0 segundos por cena para compatibilidade de testes do motor */
 export const SCENE_DURATION_MS = 6000;
 
-/** Limiar do Ato 2 (55% do progresso = 3.3s..6.0s) onde a peça entra em Órbita 3D Frontal e o Micro-CTA acende em Âmbar */
+/** Limiar do Ato 2 (55% do progresso) onde a peça entra em Órbita 3D Frontal */
 export const ACT2_PROGRESS_THRESHOLD = 0.55;
 
 /** Centro único do palco cinematográfico (viewBox 420 × 210) */
@@ -97,7 +149,7 @@ export function subProgress(progress: number, start: number, end: number): numbe
 }
 
 /**
- * Retorna a micro-tag de Telemetria de Operação ao Vivo sincronizada com o segundo exato da cena (0.0s..6.0s).
+ * Retorna a micro-tag de Telemetria de Operação ao Vivo sincronizada com o segundo exato da cena.
  */
 export function resolveSceneLiveTelemetry(
   sceneId: CinematicSceneId,
@@ -172,7 +224,6 @@ export function runChamferSandboxDemo(): ChamferSandboxData {
   const holeCount = 6;
   const thicknessMm = 3.0;
 
-  // Entidade semente real do 1º furo em (x = pcd/2, y = 0) no sistema da peça (centro 0,0)
   const seedHole: CircleEntity = {
     id: "sandbox-hole-0",
     type: "circle",
@@ -228,7 +279,6 @@ export function runChamferSandboxDemo(): ChamferSandboxData {
 export function buildChamferPlaygroundProject(
   data: ChamferSandboxData = runChamferSandboxDemo(),
 ): Project {
-  // Centro da Área de Trabalho padrão (1500 × 1000 mm -> centro em 750, 500)
   const centerX = 750;
   const centerY = 500;
   const groupId = "playground-polar-group";
@@ -277,7 +327,6 @@ export function buildChamferPlaygroundProject(
   }));
 
   const entities: Entity[] = [
-    // Linhas de centro de simetria na camada de referência
     {
       id: "playground-centerline-h",
       type: "line",
@@ -296,7 +345,6 @@ export function buildChamferPlaygroundProject(
       x2: centerX,
       y2: centerY + 96,
     },
-    // Círculo Guia PCD Ø 116.0 mm
     {
       id: pcdId,
       type: "circle",
@@ -305,7 +353,6 @@ export function buildChamferPlaygroundProject(
       cy: centerY,
       r: data.pcdMm / 2,
     },
-    // Anel do Cubo Ø 84.0 mm
     {
       id: hubId,
       type: "circle",
@@ -314,7 +361,6 @@ export function buildChamferPlaygroundProject(
       cy: centerY,
       r: data.hubDiameterMm / 2,
     },
-    // Contorno Externo Ø 160.0 mm
     {
       id: outerId,
       type: "circle",
@@ -323,7 +369,6 @@ export function buildChamferPlaygroundProject(
       cy: centerY,
       r: data.outerDiameterMm / 2,
     },
-    // Furo Central Ø 60.0 mm
     {
       id: innerId,
       type: "circle",
@@ -332,7 +377,6 @@ export function buildChamferPlaygroundProject(
       cy: centerY,
       r: data.innerBoreMm / 2,
     },
-    // 6 Furos do Array Polar (6× Ø 18.0 mm em PCD 116.0 mm)
     ...holeEntities,
   ];
 
@@ -388,8 +432,7 @@ export interface ChamferStageFrame {
 }
 
 /**
- * Calcula o estado exato da coreografia de 7 etapas do CHAMFER CAD em palco único centralizado,
- * sincronizado com a janela de 6.0s (Ato 1: 0.0s..3.3s | Ato 2: 3.3s..6.0s).
+ * Calcula o estado exato da coreografia de 7 etapas do CHAMFER CAD em palco único centralizado.
  */
 export function computeChamferStageFrame(progress: number): ChamferStageFrame {
   const p = clamp01(progress);
@@ -412,19 +455,14 @@ export function computeChamferStageFrame(progress: number): ChamferStageFrame {
   const pcdGuideOpacity =
     p < 0.20 ? 0 : p < 0.56 ? easeOutCubicBezier(subProgress(p, 0.20, 0.28)) : 1 - 0.35 * subProgress(p, 0.56, 0.72);
 
-  // Cotas 2D aparecem na Etapa 4 e permanecem legíveis
   const dimIn = easeOutCubicBezier(subProgress(p, 0.40, 0.50));
   const dimOut = subProgress(p, 0.58, 0.70);
   const dimensionsOpacity = Math.max(0, dimIn * (1 - dimOut * 0.55));
 
-  // Pulso de validação na Etapa 5 (0.48 .. 0.56)
   const pulseRaw = subProgress(p, 0.48, 0.56);
   const validationPulse = Math.sin(pulseRaw * Math.PI);
 
-  // Etapa 6: Transformação In-Place 2D -> 3D (inicia em 0.55 = 3.3s)
   const extrudeProg = easeOutCubicBezier(subProgress(p, 0.55, 0.72));
-
-  // Etapa 7: Órbita 3D contínua (0.70 .. 0.96) até estabilizar na Vista Frontal-Oblíqua Heroica
   const orbitProg = subProgress(p, 0.70, 0.96);
 
   let azimuthDeg = 0;
@@ -527,10 +565,7 @@ export interface CalculatorSandboxData {
 }
 
 /**
- * Executa o motor real da Calculadora Científica (`evaluateExpression`) em sandbox isolado:
- * - Raio por Corda/Flecha: c = 120 mm, f = 16.08 mm ➔ R = (c² / 8f) + (f / 2) = 120.0 mm
- * - Triangulação de Geratriz: √(100² + 30²) = 104.40 mm
- * - Peso de Chapa SAE 1020 (3.0 mm • 1500 × 3000 mm): 105.98 kg
+ * Executa o motor real da Calculadora Científica (`evaluateExpression`) em sandbox isolado.
  */
 export function runCalculatorSandboxDemo(): CalculatorSandboxData {
   const chordInputMm = 120;
@@ -701,11 +736,12 @@ export function prepareInstantPlaygroundForScene(sceneId: CinematicSceneId): {
 }
 
 /* =========================================================================
-   CENAS CINEMATOGRÁFICAS EM PALCO ÚNICO CENTRALIZADO (100% DO CARTÃO)
+   CENAS TÉCNICAS VETORIAIS DA VITRINE DOS 3 PILARES (ZONA B)
    ========================================================================= */
 
 /**
- * CENA 1 — "Desenho técnico no CHAMFER"
+ * PILAR 1 — "CHAMFER CAD 2D & 3D"
+ * Construção do Flange (Ø 160.0 mm • PCD 116 • 6x Ø18) no centro da Área de Trabalho com transição in-place para vista 3D orbital frontal.
  */
 function SceneChamferCadUnified({
   progress,
@@ -716,10 +752,9 @@ function SceneChamferCadUnified({
 }) {
   const frame = computeChamferStageFrame(progress);
   const cx = STAGE_CENTER.x;
-  const cy = STAGE_CENTER.y + 4;
+  const cy = STAGE_CENTER.y - 2;
 
-  // Escala visual: 1 mm = 0.64 px no palco central (Ø 160 mm -> R = 51.2 px)
-  const scaleMmToPx = 0.64;
+  const scaleMmToPx = 0.62;
   const rOuterPx = Number(((data.outerDiameterMm / 2) * scaleMmToPx).toFixed(2));
   const rHubPx = Number(((data.hubDiameterMm / 2) * scaleMmToPx).toFixed(2));
   const rInnerPx = Number(((data.innerBoreMm / 2) * scaleMmToPx).toFixed(2));
@@ -735,7 +770,7 @@ function SceneChamferCadUnified({
   const gizmoAxes = computeGizmoAxesProjection(frame.azimuthDeg, frame.elevationDeg);
 
   const plateDepthPx = Number((12 * frame.extrusionFactor).toFixed(2));
-  const neckHeightPx = Number((20 * frame.extrusionFactor).toFixed(2));
+  const neckHeightPx = Number((18 * frame.extrusionFactor).toFixed(2));
 
   const outerCircumference = Number((2 * Math.PI * rOuterPx).toFixed(1));
   const innerCircumference = Number((2 * Math.PI * rInnerPx).toFixed(1));
@@ -759,7 +794,7 @@ function SceneChamferCadUnified({
 
   return (
     <svg
-      viewBox="0 0 420 210"
+      viewBox="0 0 420 185"
       preserveAspectRatio="xMidYMid meet"
       className="size-full select-none pointer-events-none"
       fill="none"
@@ -771,29 +806,29 @@ function SceneChamferCadUnified({
         x="0"
         y="0"
         width="420"
-        height="14"
+        height="13"
         className="fill-slate-200/80 dark:fill-slate-900/90"
       />
       <rect
         x="0"
-        y="14"
-        width="18"
-        height="196"
+        y="13"
+        width="16"
+        height="172"
         className="fill-slate-200/80 dark:fill-slate-900/90"
       />
       <line
         x1="0"
-        y1="14"
+        y1="13"
         x2="420"
-        y2="14"
+        y2="13"
         className="stroke-slate-300 dark:stroke-slate-800"
         strokeWidth="0.8"
       />
       <line
-        x1="18"
-        y1="14"
-        x2="18"
-        y2="210"
+        x1="16"
+        y1="13"
+        x2="16"
+        y2="185"
         className="stroke-slate-300 dark:stroke-slate-800"
         strokeWidth="0.8"
       />
@@ -803,15 +838,15 @@ function SceneChamferCadUnified({
         <g key={rx}>
           <line
             x1={rx}
-            y1="8.5"
+            y1="8"
             x2={rx}
-            y2="14"
+            y2="13"
             className="stroke-slate-400 dark:stroke-slate-600"
             strokeWidth="0.8"
           />
           <text
             x={rx + 3}
-            y="10.5"
+            y="10"
             className={cn(
               "font-mono text-[5.8px] font-semibold",
               i === 3
@@ -824,56 +859,55 @@ function SceneChamferCadUnified({
         </g>
       ))}
 
-      {/* Área de Trabalho Centralizada (Palco Único) */}
+      {/* Área de Trabalho Centralizada */}
       <rect
-        x="32"
-        y="28"
-        width="368"
-        height="166"
+        x="26"
+        y="20"
+        width="380"
+        height="156"
         rx="5"
         className="fill-[#FAFBFD] dark:fill-[#0D1526] stroke-[#0284C7] dark:stroke-[#38BDF8]"
-        strokeWidth="1.25"
+        strokeWidth="1.2"
       />
 
       {/* Grade Técnica da Área de Trabalho */}
       <g className="stroke-slate-400/20 dark:stroke-slate-600/30" strokeWidth="0.5">
-        {[56, 86, 116, 146, 174].map((gy) => (
-          <line key={gy} x1="32" y1={gy} x2="400" y2={gy} />
+        {[50, 80, 110, 140, 166].map((gy) => (
+          <line key={gy} x1="26" y1={gy} x2="406" y2={gy} />
         ))}
         {[74, 119, 164, 210, 256, 301, 346].map((gx) => (
-          <line key={gx} x1={gx} y1="28" x2={gx} y2="194" />
+          <line key={gx} x1={gx} y1="20" x2={gx} y2="176" />
         ))}
       </g>
 
-      {/* Vetores de Origem (0,0) no canto da Área de Trabalho */}
+      {/* Vetores de Origem (0,0) */}
       <g>
-        <line x1="32" y1="28" x2="64" y2="28" stroke="#E11D48" strokeWidth="1.6" />
-        <polygon points="68,28 62.5,26 62.5,30" fill="#E11D48" />
+        <line x1="26" y1="20" x2="56" y2="20" stroke="#E11D48" strokeWidth="1.5" />
+        <polygon points="60,20 54.5,18 54.5,22" fill="#E11D48" />
         <line
-          x1="32"
-          y1="28"
-          x2="32"
-          y2="60"
+          x1="26"
+          y1="20"
+          x2="26"
+          y2="50"
           className="stroke-[#059669] dark:stroke-[#10B981]"
-          strokeWidth="1.6"
+          strokeWidth="1.5"
         />
         <polygon
-          points="32,64 30,58.5 34,58.5"
+          points="26,54 24,48.5 28,48.5"
           className="fill-[#059669] dark:fill-[#10B981]"
         />
-        <circle cx="32" cy="28" r="2.4" fill="#DC143C" />
+        <circle cx="26" cy="20" r="2.2" fill="#DC143C" />
       </g>
 
       {/* PALCO CENTRAL COM ENQUADRAMENTO DINÂMICO DE CÂMERA */}
       <g
-        transform={`translate(${cx} ${cy}) scale(${frame.cameraScale.toFixed(3)}) translate(${-cx} ${-cy})`}
+        transform={`translate(${cx} ${cy - 10}) scale(${frame.cameraScale.toFixed(3)}) translate(${-cx} ${-cy})`}
       >
-        {/* Linhas de centro de simetria no centro do palco */}
         <g opacity={Number((0.35 + 0.55 * frame.outerStrokeProgress).toFixed(2))}>
           <line
-            x1={cx - 72}
+            x1={cx - 68}
             y1={cy}
-            x2={cx + 72}
+            x2={cx + 68}
             y2={cy}
             stroke="#DC143C"
             strokeWidth="0.7"
@@ -881,16 +915,15 @@ function SceneChamferCadUnified({
           />
           <line
             x1={cx}
-            y1={cy - 68}
+            y1={cy - 64}
             x2={cx}
-            y2={cy + 68}
+            y2={cy + 64}
             stroke="#DC143C"
             strokeWidth="0.7"
             strokeDasharray="6 2.5 1.5 2.5"
           />
         </g>
 
-        {/* Pulso de validação da geometria fechada (Etapa 5) */}
         {frame.validationPulse > 0.02 && (
           <circle
             cx={cx}
@@ -902,7 +935,6 @@ function SceneChamferCadUnified({
           />
         )}
 
-        {/* CAMADA DE VOLUME 3D IN-PLACE (Etapas 6 e 7: Sólido Extrudado sob o Plano Projetado) */}
         {frame.extrusionFactor > 0.01 && (
           <g opacity={Number(frame.extrusionFactor.toFixed(2))}>
             <g transform={`translate(0 ${plateDepthPx})`}>
@@ -936,7 +968,6 @@ function SceneChamferCadUnified({
           </g>
         )}
 
-        {/* PLANO PRINCIPAL DA PEÇA (2D -> 3D ORBITAL IN-PLACE NO MESMO CENTRO) */}
         <g transform={orbitProj.svgMatrix || undefined}>
           {frame.extrusionFactor > 0.01 && (
             <circle
@@ -948,7 +979,6 @@ function SceneChamferCadUnified({
             />
           )}
 
-          {/* Etapa 1: Contorno Circular Externo Ø 160.0 mm */}
           <circle
             cx={cx}
             cy={cy}
@@ -963,7 +993,6 @@ function SceneChamferCadUnified({
             strokeDashoffset={outerDashOffset}
           />
 
-          {/* Etapa 2: Base do Cubo Central Ø 84.0 mm + Furo Interno Ø 60.0 mm */}
           {frame.innerStrokeProgress > 0.01 && (
             <>
               <circle
@@ -987,7 +1016,6 @@ function SceneChamferCadUnified({
             </>
           )}
 
-          {/* Etapa 3: Círculo Guia PCD Ø 116.0 mm + 6 Furos do Array Polar Real */}
           {frame.pcdGuideOpacity > 0.01 && (
             <circle
               cx={cx}
@@ -1029,22 +1057,11 @@ function SceneChamferCadUnified({
                   )}
                   strokeWidth="1.4"
                 />
-                {isSeed && (
-                  <rect
-                    x={Number((hx - 4.2).toFixed(2))}
-                    y={Number((hy - 4.2).toFixed(2))}
-                    width="8.4"
-                    height="8.4"
-                    stroke="#F59E0B"
-                    strokeWidth="1.1"
-                  />
-                )}
               </g>
             );
           })}
         </g>
 
-        {/* RESSALTO CILÍNDRICO SUPERIOR 3D (COLARINHO CHANFRADO ELEVADO NA ETAPA 6 E 7) */}
         {frame.extrusionFactor > 0.05 && (
           <g
             transform={`translate(0 ${-neckHeightPx})`}
@@ -1069,7 +1086,6 @@ function SceneChamferCadUnified({
           </g>
         )}
 
-        {/* Mira Dinâmica de Construção CAD (Etapas 1 e 2) */}
         {showDrawingCursor && (
           <g transform={`translate(${cursorX} ${cursorY})`}>
             <circle r="4.5" stroke="#F59E0B" strokeWidth="1.2" />
@@ -1078,46 +1094,31 @@ function SceneChamferCadUnified({
           </g>
         )}
 
-        {/* Etapa 4: Cotas Diametrais Reais (Ø 160.0 mm • PCD 116 (6x Ø18)) */}
-        {frame.dimensionsOpacity > 0.02 && (
-          <g opacity={Number(frame.dimensionsOpacity.toFixed(2))}>
-            <g className="stroke-[#0284C7] dark:stroke-[#38BDF8]" strokeWidth="0.9">
-              <line x1={cx - rOuterPx} y1={cy} x2={cx - rOuterPx} y2={cy + 61} strokeOpacity="0.6" />
-              <line x1={cx + rOuterPx} y1={cy} x2={cx + rOuterPx} y2={cy + 61} strokeOpacity="0.6" />
-              <line x1={cx - rOuterPx} y1={cy + 57} x2={cx + rOuterPx} y2={cy + 57} />
-              <polygon
-                points={`${cx - rOuterPx},${cy + 57} ${cx - rOuterPx + 4.5},${cy + 55.4} ${cx - rOuterPx + 4.5},${cy + 58.6}`}
-                className="fill-[#0284C7] dark:fill-[#38BDF8]"
-              />
-              <polygon
-                points={`${cx + rOuterPx},${cy + 57} ${cx + rOuterPx - 4.5},${cy + 55.4} ${cx + rOuterPx - 4.5},${cy + 58.6}`}
-                className="fill-[#0284C7] dark:fill-[#38BDF8]"
-              />
-            </g>
-            <text
-              x={cx}
-              y={cy + 53.5}
-              textAnchor="middle"
-              className="fill-[#0284C7] dark:fill-[#38BDF8] font-mono text-[8px] font-bold"
-            >
-              Ø {data.outerDiameterMm.toFixed(1)} mm • PCD {data.pcdMm} ({data.holeCount}x Ø{data.holeDiameterMm})
-            </text>
-          </g>
-        )}
+        {/* Cota Diametral Real sempre legível */}
+        <g opacity={Number(Math.max(0.65, frame.dimensionsOpacity).toFixed(2))}>
+          <text
+            x={cx}
+            y={cy + 64}
+            textAnchor="middle"
+            className="fill-[#0284C7] dark:fill-[#38BDF8] font-mono text-[8px] font-bold"
+          >
+            Ø {data.outerDiameterMm.toFixed(1)} mm • PCD {data.pcdMm} • {data.holeCount}x Ø{data.holeDiameterMm}
+          </text>
+        </g>
       </g>
 
-      {/* Gizmo 3D X-Y-Z real (computeGizmoAxesProjection) */}
+      {/* Gizmo 3D X-Y-Z real */}
       <g
-        transform="translate(372, 152)"
-        opacity={Number((0.25 + 0.75 * frame.extrusionFactor).toFixed(2))}
+        transform="translate(382, 152)"
+        opacity={Number((0.35 + 0.65 * frame.extrusionFactor).toFixed(2))}
       >
         {gizmoAxes.map((ax) => (
           <line
             key={ax.axis}
             x1="0"
             y1="0"
-            x2={Number((ax.dx * 15).toFixed(2))}
-            y2={Number((ax.dy * 15).toFixed(2))}
+            x2={Number((ax.dx * 14).toFixed(2))}
+            y2={Number((ax.dy * 14).toFixed(2))}
             stroke={ax.color}
             strokeWidth="1.5"
           />
@@ -1129,7 +1130,9 @@ function SceneChamferCadUnified({
 }
 
 /**
- * CENA 2 — "Caldeiraria e planificação 1:1"
+ * PILAR 2 — "Traçagem e Planificação 1:1"
+ * Mostra simultaneamente e de forma animada a relação direta entre o Tronco de Cone 3D metálico (Ø 120 × Ø 60 × H 100 mm)
+ * e a sua chapa aberta planificada com geratrizes (α = 103.5° • R1 = 208.8 mm).
  */
 function SceneBoilermakingUnified({
   progress,
@@ -1139,52 +1142,53 @@ function SceneBoilermakingUnified({
   data: BoilermakingSandboxData;
 }) {
   const p = clamp01(progress);
-  const cx = STAGE_CENTER.x;
 
-  const devTraceProg = easeOutCubicBezier(subProgress(p, 0.0, 0.36));
-  const foldMorphProg = easeOutCubicBezier(subProgress(p, 0.48, 0.76));
-  const orbit3dProg = easeOutCubicBezier(subProgress(p, 0.70, 0.96));
+  const traceProg = easeOutCubicBezier(subProgress(p, 0.0, 0.55));
+  const highlightPulse = 0.5 + 0.5 * Math.sin(p * Math.PI * 2);
 
-  const apexY = Number((54 + 16 * foldMorphProg).toFixed(2));
-  const halfSpreadDeg = Number((52 * (1 - 0.68 * foldMorphProg)).toFixed(2));
-  const rInnerPx = Number((40 * (1 - 0.45 * foldMorphProg)).toFixed(2));
-  const rOuterPx = Number((108 * (1 - 0.32 * foldMorphProg)).toFixed(2));
+  // Esquerda: Modelo 3D Metálico do Tronco de Cone (cx = 114)
+  const coneCx = 112;
+  const topY = 48;
+  const botY = 134;
+  const topRx = 26;
+  const botRx = 52;
+  const tiltRyTop = 7.5;
+  const tiltRyBot = 14;
+
+  // Direita: Chapa Aberta Planificada 1:1 com Geratrizes (cx = 304)
+  const flatCx = 304;
+  const apexY = 26;
+  const rInnerPx = 44;
+  const rOuterPx = 114;
+  const halfSpreadDeg = 48;
 
   const aStart = ((-halfSpreadDeg + 90) * Math.PI) / 180;
   const aEnd = ((halfSpreadDeg + 90) * Math.PI) / 180;
 
   const p1In = {
-    x: Number((cx + rInnerPx * Math.cos(aStart)).toFixed(2)),
+    x: Number((flatCx + rInnerPx * Math.cos(aStart)).toFixed(2)),
     y: Number((apexY + rInnerPx * Math.sin(aStart)).toFixed(2)),
   };
   const p2In = {
-    x: Number((cx + rInnerPx * Math.cos(aEnd)).toFixed(2)),
+    x: Number((flatCx + rInnerPx * Math.cos(aEnd)).toFixed(2)),
     y: Number((apexY + rInnerPx * Math.sin(aEnd)).toFixed(2)),
   };
   const p1Out = {
-    x: Number((cx + rOuterPx * Math.cos(aStart)).toFixed(2)),
+    x: Number((flatCx + rOuterPx * Math.cos(aStart)).toFixed(2)),
     y: Number((apexY + rOuterPx * Math.sin(aStart)).toFixed(2)),
   };
   const p2Out = {
-    x: Number((cx + rOuterPx * Math.cos(aEnd)).toFixed(2)),
+    x: Number((flatCx + rOuterPx * Math.cos(aEnd)).toFixed(2)),
     y: Number((apexY + rOuterPx * Math.sin(aEnd)).toFixed(2)),
   };
 
   const sectorPath = `M ${p1In.x} ${p1In.y} A ${rInnerPx} ${rInnerPx} 0 0 1 ${p2In.x} ${p2In.y} L ${p2Out.x} ${p2Out.y} A ${rOuterPx} ${rOuterPx} 0 0 0 ${p1Out.x} ${p1Out.y} Z`;
-
   const divisionFractions = [-1, -0.667, -0.333, 0, 0.333, 0.667, 1];
-  const visibleDivisions = Math.ceil(devTraceProg * divisionFractions.length);
-
-  const tiltRyTop = Number((10.5 - 4.2 * orbit3dProg).toFixed(2));
-  const tiltRyBot = Number((19.5 - 8.0 * orbit3dProg).toFixed(2));
-  const topY = 68;
-  const botY = 148;
-  const topRx = 30;
-  const botRx = 60;
+  const visibleDivisions = Math.max(2, Math.ceil(traceProg * divisionFractions.length));
 
   return (
     <svg
-      viewBox="0 0 420 210"
+      viewBox="0 0 420 185"
       preserveAspectRatio="xMidYMid meet"
       className="size-full select-none pointer-events-none"
       fill="none"
@@ -1192,333 +1196,212 @@ function SceneBoilermakingUnified({
       aria-hidden="true"
     >
       <defs>
-        <linearGradient id="c3-cone-steel" x1={cx - 60} y1={topY} x2={cx + 60} y2={botY} gradientUnits="userSpaceOnUse">
+        <linearGradient
+          id="pillar2-cone-steel"
+          x1={coneCx - 52}
+          y1={topY}
+          x2={coneCx + 52}
+          y2={botY}
+          gradientUnits="userSpaceOnUse"
+        >
           <stop offset="0%" stopColor="#334155" />
           <stop offset="24%" stopColor="#94A3B8" />
-          <stop offset="46%" stopColor="#F1F5F9" />
-          <stop offset="68%" stopColor="#475569" />
+          <stop offset="48%" stopColor="#F1F5F9" />
+          <stop offset="70%" stopColor="#475569" />
           <stop offset="90%" stopColor="#CBD5E1" />
           <stop offset="100%" stopColor="#1E293B" />
         </linearGradient>
       </defs>
 
+      {/* Grade técnica de fundo */}
       <g
         className="stroke-slate-400/20 dark:stroke-slate-700/35"
         strokeWidth="0.5"
         strokeDasharray="2.5 2.5"
       >
-        {[46, 86, 126, 166].map((gy) => (
-          <line key={gy} x1="20" y1={gy} x2="400" y2={gy} />
+        {[38, 76, 114, 152].map((gy) => (
+          <line key={gy} x1="16" y1={gy} x2="404" y2={gy} />
         ))}
         {[70, 140, 210, 280, 350].map((gx) => (
-          <line key={gx} x1={gx} y1="26" x2={gx} y2="192" />
+          <line key={gx} x1={gx} y1="14" x2={gx} y2="172" />
         ))}
       </g>
 
-      {/* MOMENTO 1: DESENVOLVIMENTO PLANO 1:1 */}
-      {foldMorphProg < 0.95 && (
-        <g opacity={Number((1 - foldMorphProg * 0.92).toFixed(2))}>
-          <path
-            d={sectorPath}
-            className="fill-sky-500/[0.12] dark:fill-sky-400/[0.15] stroke-[#0284C7] dark:stroke-[#38BDF8]"
-            strokeWidth="1.65"
-          />
+      {/* LADO ESQUERDO: TRONCO DE CONE 3D METÁLICO (Ø 120 × Ø 60 × H 100 mm) */}
+      <g>
+        <line
+          x1={coneCx}
+          y1="26"
+          x2={coneCx}
+          y2="156"
+          stroke="#DC143C"
+          strokeWidth="0.75"
+          strokeDasharray="5 2 1.5 2"
+        />
 
-          {divisionFractions.slice(0, visibleDivisions).map((frac, idx) => {
-            const deg = frac * halfSpreadDeg;
-            const rad = ((deg + 90) * Math.PI) / 180;
-            const xIn = Number((cx + rInnerPx * Math.cos(rad)).toFixed(2));
-            const yIn = Number((apexY + rInnerPx * Math.sin(rad)).toFixed(2));
-            const xOut = Number((cx + rOuterPx * Math.cos(rad)).toFixed(2));
-            const yOut = Number((apexY + rOuterPx * Math.sin(rad)).toFixed(2));
-            return (
-              <g key={idx}>
-                <line
-                  x1={xIn}
-                  y1={yIn}
-                  x2={xOut}
-                  y2={yOut}
-                  stroke={idx === 3 ? "#DC143C" : "#F59E0B"}
-                  strokeWidth={idx === 3 ? "1.1" : "0.75"}
-                  strokeDasharray={idx === 3 ? "5 2" : "2.5 2"}
-                />
-                <circle
-                  cx={xOut}
-                  cy={yOut}
-                  r="1.9"
-                  className="fill-[#0284C7] dark:fill-[#38BDF8]"
-                />
-              </g>
-            );
-          })}
+        <path
+          d={`M ${coneCx - topRx} ${topY} L ${coneCx + topRx} ${topY} L ${coneCx + botRx} ${botY} A ${botRx} ${tiltRyBot} 0 0 1 ${coneCx - botRx} ${botY} Z`}
+          fill="url(#pillar2-cone-steel)"
+          className="stroke-slate-700 dark:stroke-slate-200"
+          strokeWidth="1.2"
+        />
 
-          <circle cx={cx} cy={apexY} r="2.8" fill="#DC143C" />
-          <text
-            x={cx}
-            y={Number((apexY + 26).toFixed(2))}
-            textAnchor="middle"
-            className="fill-amber-600 dark:fill-amber-400 font-mono text-[8px] font-bold"
-          >
-            α = {data.sectorAngleDeg}° • R1 = {data.outerRadiusMm} mm • {data.divisions} div
-          </text>
-        </g>
-      )}
+        {/* Geratrizes no Cone 3D */}
+        {[-0.65, -0.22, 0.22, 0.65].map((f, idx) => {
+          const xT = Number((coneCx + topRx * f).toFixed(2));
+          const xB = Number((coneCx + botRx * f).toFixed(2));
+          const yB = Number((botY + tiltRyBot * Math.sqrt(Math.max(0, 1 - f * f)) * 0.7).toFixed(2));
+          return (
+            <line
+              key={idx}
+              x1={xT}
+              y1={topY}
+              x2={xB}
+              y2={yB}
+              stroke="#F59E0B"
+              strokeWidth="0.75"
+              strokeOpacity="0.8"
+              strokeDasharray="2.5 1.8"
+            />
+          );
+        })}
 
-      {/* MOMENTO 2: TRONCO DE CONE 3D COM ÓRBITA FRONTAL */}
-      {foldMorphProg > 0.12 && (
-        <g opacity={Number(clamp01((foldMorphProg - 0.12) / 0.65).toFixed(2))}>
-          <line
-            x1={cx}
-            y1="44"
-            x2={cx}
-            y2="174"
-            stroke="#DC143C"
-            strokeWidth="0.8"
-            strokeDasharray="6 2 1.5 2"
-          />
+        <ellipse
+          cx={coneCx}
+          cy={topY}
+          rx={topRx}
+          ry={tiltRyTop}
+          className="fill-slate-800 dark:fill-slate-950 stroke-[#0284C7] dark:stroke-[#38BDF8]"
+          strokeWidth="1.25"
+        />
+        <ellipse
+          cx={coneCx}
+          cy={topY}
+          rx={Number((topRx * 0.65).toFixed(2))}
+          ry={Number((tiltRyTop * 0.65).toFixed(2))}
+          className="fill-slate-950 dark:fill-black stroke-slate-500"
+          strokeWidth="0.75"
+        />
 
-          <path
-            d={`M ${cx - topRx} ${topY} L ${cx + topRx} ${topY} L ${cx + botRx} ${botY} A ${botRx} ${tiltRyBot} 0 0 1 ${cx - botRx} ${botY} Z`}
-            fill="url(#c3-cone-steel)"
-            className="stroke-slate-700 dark:stroke-slate-200"
-            strokeWidth="1.2"
-          />
+        {/* Cotas 3D: Ø 60, Ø 120, H 100 */}
+        <text
+          x={coneCx}
+          y="34"
+          textAnchor="middle"
+          className="fill-slate-800 dark:fill-slate-200 font-mono text-[7.5px] font-bold"
+        >
+          Ø {data.d2Mm} mm
+        </text>
+        <text
+          x={coneCx}
+          y="162"
+          textAnchor="middle"
+          className="fill-[#0284C7] dark:fill-[#38BDF8] font-mono text-[8px] font-bold"
+        >
+          Ø {data.d1Mm} × H {data.heightMm} mm
+        </text>
+      </g>
 
-          <ellipse
-            cx={cx}
-            cy={botY}
-            rx={botRx}
-            ry={tiltRyBot}
-            className="fill-slate-400/20 dark:fill-slate-900/40 stroke-[#0284C7] dark:stroke-[#38BDF8]"
-            strokeWidth="1.2"
-            strokeDasharray="4 2"
-          />
+      {/* SETA DE PROJEÇÃO / PLANIFICAÇÃO 1:1 NO CENTRO */}
+      <g transform="translate(182, 86)">
+        <line
+          x1="0"
+          y1="8"
+          x2="32"
+          y2="8"
+          stroke="#F59E0B"
+          strokeWidth="1.4"
+          strokeDasharray="3 2"
+        />
+        <polygon points="36,8 30,5 30,11" fill="#F59E0B" />
+        <text
+          x="18"
+          y="2"
+          textAnchor="middle"
+          className="fill-amber-600 dark:fill-amber-400 font-mono text-[6.8px] font-bold"
+        >
+          1:1
+        </text>
+      </g>
 
-          {[-0.65, -0.25, 0.25, 0.65].map((gFrac, idx) => {
-            const shift = (orbit3dProg - 0.5) * 0.18;
-            const f = Math.max(-0.9, Math.min(0.9, gFrac + shift));
-            const xT = Number((cx + topRx * f).toFixed(2));
-            const xB = Number((cx + botRx * f).toFixed(2));
-            const yB = Number((botY + tiltRyBot * Math.sqrt(Math.max(0, 1 - f * f)) * 0.65).toFixed(2));
-            return (
+      {/* LADO DIREITO: CHAPA ABERTA PLANIFICADA COM GERATRIZES */}
+      <g>
+        <path
+          d={sectorPath}
+          className="fill-sky-500/[0.14] dark:fill-sky-400/[0.16] stroke-[#0284C7] dark:stroke-[#38BDF8]"
+          strokeWidth="1.6"
+        />
+
+        {divisionFractions.slice(0, visibleDivisions).map((frac, idx) => {
+          const deg = frac * halfSpreadDeg;
+          const rad = ((deg + 90) * Math.PI) / 180;
+          const xIn = Number((flatCx + rInnerPx * Math.cos(rad)).toFixed(2));
+          const yIn = Number((apexY + rInnerPx * Math.sin(rad)).toFixed(2));
+          const xOut = Number((flatCx + rOuterPx * Math.cos(rad)).toFixed(2));
+          const yOut = Number((apexY + rOuterPx * Math.sin(rad)).toFixed(2));
+          return (
+            <g key={idx}>
               <line
-                key={idx}
-                x1={xT}
-                y1={topY}
-                x2={xB}
-                y2={yB}
-                stroke="#F59E0B"
-                strokeWidth="0.75"
-                strokeOpacity="0.75"
-                strokeDasharray="3 2"
+                x1={xIn}
+                y1={yIn}
+                x2={xOut}
+                y2={yOut}
+                stroke={idx === 3 ? "#DC143C" : "#F59E0B"}
+                strokeWidth={idx === 3 ? "1.1" : "0.75"}
+                strokeDasharray={idx === 3 ? "4 2" : "2.5 2"}
               />
-            );
-          })}
+              <circle
+                cx={xOut}
+                cy={yOut}
+                r="1.8"
+                className="fill-[#0284C7] dark:fill-[#38BDF8]"
+              />
+            </g>
+          );
+        })}
 
-          <ellipse
-            cx={cx}
-            cy={topY}
-            rx={topRx}
-            ry={tiltRyTop}
-            className="fill-slate-800 dark:fill-slate-950 stroke-[#0284C7] dark:stroke-[#38BDF8]"
-            strokeWidth="1.35"
-          />
-          <ellipse
-            cx={cx}
-            cy={topY}
-            rx={Number((topRx * 0.68).toFixed(2))}
-            ry={Number((tiltRyTop * 0.68).toFixed(2))}
-            className="fill-slate-950 dark:fill-black stroke-slate-600"
-            strokeWidth="0.8"
-          />
-
-          <g opacity={Number(orbit3dProg.toFixed(2))}>
-            <line x1={cx - topRx} y1="52" x2={cx + topRx} y2="52" className="stroke-slate-600 dark:stroke-slate-300" strokeWidth="0.85" />
-            <text x={cx} y="47" textAnchor="middle" className="fill-slate-900 dark:fill-slate-100 font-mono text-[8px] font-bold">
-              Ø {data.d2Mm} mm
-            </text>
-
-            <line x1={cx - botRx} y1="168" x2={cx + botRx} y2="168" className="stroke-[#0284C7] dark:stroke-[#38BDF8]" strokeWidth="0.95" />
-            <text x={cx} y="177" textAnchor="middle" className="fill-[#0284C7] dark:fill-[#38BDF8] font-mono text-[8px] font-bold">
-              Ø {data.d1Mm} mm • G = {data.slantHeightMm} mm
-            </text>
-
-            <line x1={cx + botRx + 14} y1={topY} x2={cx + botRx + 14} y2={botY} stroke="#F59E0B" strokeWidth="0.9" />
-            <text
-              x={cx + botRx + 22}
-              y={(topY + botY) / 2 + 3}
-              className="fill-amber-600 dark:fill-amber-400 font-mono text-[8px] font-bold"
-            >
-              H {data.heightMm}
-            </text>
-          </g>
-        </g>
-      )}
-    </svg>
-  );
-}
-
-/**
- * CENA 3 — "Bancada de cálculos mecânicos"
- * Raio por Corda/Flecha (c = 120 mm, f = 16.08 mm -> R = 120.0 mm), Triangulação e Peso de Chapa SAE 1020 • 3.0 mm.
- */
-function SceneEngineeringCalcUnified({
-  progress,
-  data,
-}: {
-  progress: number;
-  data: CalculatorSandboxData;
-}) {
-  const p = clamp01(progress);
-
-  const calcProg = easeOutCubicBezier(subProgress(p, 0.0, 0.45));
-  const presentProg = easeOutCubicBezier(subProgress(p, 0.45, 0.85));
-
-  const liveRadius = (data.radiusResultMm * calcProg).toFixed(1);
-
-  return (
-    <svg
-      viewBox="0 0 420 210"
-      preserveAspectRatio="xMidYMid meet"
-      className="size-full select-none pointer-events-none"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <g className="stroke-slate-400/20 dark:stroke-slate-700/35" strokeWidth="0.5">
-        {[50, 90, 130, 170].map((gy) => (
-          <line key={gy} x1="20" y1={gy} x2="400" y2={gy} />
-        ))}
-        {[70, 140, 210, 280, 350].map((gx) => (
-          <line key={gx} x1={gx} y1="28" x2={gx} y2="190" />
-        ))}
-      </g>
-
-      {/* PALCO CENTRAL UNIFICADO DE CÁLCULO E GEOMETRIA */}
-      <g transform="translate(56, 40)">
-        <rect
-          x="0"
-          y="0"
-          width="308"
-          height="132"
-          rx="10"
-          className="fill-white/95 dark:fill-[#0D1526]/95 stroke-[#0284C7] dark:stroke-[#38BDF8]"
-          strokeWidth="1.3"
+        {/* Linhas de raio de traçagem do vértice */}
+        <line
+          x1={flatCx}
+          y1={apexY}
+          x2={p1In.x}
+          y2={p1In.y}
+          stroke="#94A3B8"
+          strokeWidth="0.6"
+          strokeDasharray="2 2"
+        />
+        <line
+          x1={flatCx}
+          y1={apexY}
+          x2={p2In.x}
+          y2={p2In.y}
+          stroke="#94A3B8"
+          strokeWidth="0.6"
+          strokeDasharray="2 2"
+        />
+        <circle
+          cx={flatCx}
+          cy={apexY}
+          r={Number((2.4 + 0.8 * highlightPulse).toFixed(2))}
+          fill="#DC143C"
         />
 
-        {/* Visor de Expressão Matemática Real no Topo Central */}
-        <rect
-          x="12"
-          y="10"
-          width="284"
-          height="38"
-          rx="6"
-          className="fill-slate-100 dark:fill-[#070B12] stroke-slate-300 dark:stroke-slate-800"
-          strokeWidth="0.9"
-        />
         <text
-          x="20"
-          y="24"
-          className="fill-slate-500 dark:fill-slate-400 font-mono text-[8px]"
+          x={flatCx}
+          y="162"
+          textAnchor="middle"
+          className="fill-amber-600 dark:fill-amber-400 font-mono text-[8px] font-bold"
         >
-          Corda c={data.chordInputMm} • Flecha f={data.sagittaInputMm} • {data.expressionG}
+          α = {data.sectorAngleDeg}° • G = {data.slantHeightMm} mm ({data.divisions}x)
         </text>
-        <text
-          x="286"
-          y="40"
-          textAnchor="end"
-          className="fill-[#059669] dark:fill-[#10B981] font-mono text-[13px] font-bold"
-        >
-          R = {liveRadius} mm
-        </text>
-
-        {/* Arco por Corda/Flecha + Triangulação no Centro */}
-        <g transform="translate(22, 56)">
-          <path
-            d="M 8 52 A 64 64 0 0 1 116 52"
-            className="fill-sky-500/15 stroke-[#0284C7] dark:stroke-[#38BDF8]"
-            strokeWidth="1.8"
-          />
-          <line
-            x1="8"
-            y1="52"
-            x2="116"
-            y2="52"
-            stroke="#F59E0B"
-            strokeWidth="1.2"
-            strokeDasharray="4 2"
-          />
-          <line
-            x1="62"
-            y1="26"
-            x2="62"
-            y2="52"
-            stroke="#DC143C"
-            strokeWidth="1.3"
-          />
-          <text
-            x="62"
-            y="21"
-            textAnchor="middle"
-            className="fill-[#0284C7] dark:fill-[#38BDF8] font-mono text-[7.5px] font-bold"
-          >
-            f = {data.sagittaInputMm} mm
-          </text>
-          <text
-            x="62"
-            y="64"
-            textAnchor="middle"
-            className="fill-slate-600 dark:fill-slate-300 font-mono text-[7.5px] font-bold"
-          >
-            c = {data.chordInputMm} mm • G = {data.geratrizMm}
-          </text>
-        </g>
-
-        {/* Cartões de Resultado Consolidado (Triangulação + Peso de Chapa SAE 1020 3.0mm) */}
-        <g
-          transform="translate(168, 54)"
-          opacity={Number((0.35 + 0.65 * presentProg).toFixed(2))}
-          fontFamily='"JetBrains Mono", monospace'
-        >
-          <rect
-            x="0"
-            y="0"
-            width="128"
-            height="32"
-            rx="5"
-            className="fill-slate-100 dark:fill-slate-900 stroke-slate-300 dark:stroke-slate-800"
-            strokeWidth="0.85"
-          />
-          <text x="8" y="12" className="fill-slate-500 dark:fill-slate-400 text-[6.8px]">
-            TRIANGULAÇÃO GERATRIZ
-          </text>
-          <text x="8" y="24" className="fill-[#0284C7] dark:fill-[#38BDF8] text-[9.5px] font-bold">
-            G = {data.geratrizMm} mm ({data.angleDeg}°)
-          </text>
-
-          <rect
-            x="0"
-            y="36"
-            width="128"
-            height="32"
-            rx="5"
-            className="fill-amber-500/15 dark:fill-amber-500/20 stroke-amber-500/60"
-            strokeWidth="0.9"
-          />
-          <text x="8" y="48" className="fill-amber-700 dark:fill-amber-300 text-[6.8px] font-bold">
-            CHAPA SAE 1020 • 3.0 MM
-          </text>
-          <text x="8" y="60" className="fill-amber-600 dark:fill-amber-400 text-[9.5px] font-bold">
-            {data.sheetMassKg} kg (1.5×3.0m)
-          </text>
-        </g>
       </g>
     </svg>
   );
 }
 
 /**
- * CENA 4 — "Corte CNC, peso e orçamento"
+ * PILAR 3 — "Corte CNC, Peso e Orçamento"
+ * Animação do plano de corte (1500 × 3000 mm • #3.0mm) com a cabeça laser percorrendo as peças e consolidando o custo (R$ 433,56).
  */
 function SceneManufacturingPrepUnified({
   progress,
@@ -1529,115 +1412,117 @@ function SceneManufacturingPrepUnified({
 }) {
   const p = clamp01(progress);
 
-  const scanProg = easeOutCubicBezier(subProgress(p, 0.0, 0.56));
-  const summaryProg = easeOutCubicBezier(subProgress(p, 0.52, 0.9));
+  const scanProg = easeOutCubicBezier(subProgress(p, 0.0, 0.65));
+  const summaryProg = easeOutCubicBezier(subProgress(p, 0.35, 0.85));
 
-  const laserX = Number((54 + 312 * scanProg).toFixed(2));
-  const liftY = Number((-4 * summaryProg).toFixed(2));
+  const laserX = Number((46 + 324 * scanProg).toFixed(2));
+  const laserY = Number((72 + 22 * Math.sin(scanProg * Math.PI * 3)).toFixed(2));
 
   return (
     <svg
-      viewBox="0 0 420 210"
+      viewBox="0 0 420 185"
       preserveAspectRatio="xMidYMid meet"
       className="size-full select-none pointer-events-none"
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       aria-hidden="true"
     >
-      {/* Mesa de Corte CNC Centralizada (Chapa 1500 × 3000 mm • SAE 1020 3.0 mm) */}
+      {/* Mesa de Corte CNC Centralizada (Chapa 1500 × 3000 mm • #3.0mm) */}
       <rect
-        x="42"
-        y="40"
-        width="336"
-        height="104"
+        x="34"
+        y="22"
+        width="352"
+        height="112"
         rx="6"
         className="fill-[#FAFBFD] dark:fill-[#0D1526] stroke-[#0284C7] dark:stroke-[#38BDF8]"
         strokeWidth="1.35"
       />
 
       <g className="stroke-slate-300/60 dark:stroke-slate-800/85" strokeWidth="0.6">
-        {[66, 92, 118].map((gy) => (
-          <line key={gy} x1="42" y1={gy} x2="378" y2={gy} />
+        {[50, 78, 106].map((gy) => (
+          <line key={gy} x1="34" y1={gy} x2="386" y2={gy} />
         ))}
-        {[98, 154, 210, 266, 322].map((gx) => (
-          <line key={gx} x1={gx} y1="40" x2={gx} y2="144" />
+        {[92, 150, 210, 270, 328].map((gx) => (
+          <line key={gx} x1={gx} y1="22" x2={gx} y2="134" />
         ))}
       </g>
 
-      <g transform={`translate(0 ${liftY})`}>
+      {/* Peças aninhadas (Nesting) na chapa */}
+      <g>
         <g
           className="fill-emerald-500/[0.16] stroke-[#059669] dark:stroke-[#10B981]"
           strokeWidth="1.35"
         >
-          <circle cx="84" cy="74" r="22" />
-          <circle cx="84" cy="74" r="8" className="fill-[#FAFBFD] dark:fill-[#0D1526]" />
-          <circle cx="138" cy="74" r="22" />
-          <circle cx="138" cy="74" r="8" className="fill-[#FAFBFD] dark:fill-[#0D1526]" />
-          <rect x="60" y="104" width="102" height="28" rx="3" />
-          <circle cx="76" cy="118" r="4" className="fill-[#FAFBFD] dark:fill-[#0D1526]" />
-          <circle cx="146" cy="118" r="4" className="fill-[#FAFBFD] dark:fill-[#0D1526]" />
+          <circle cx="78" cy="58" r="23" />
+          <circle cx="78" cy="58" r="8.5" className="fill-[#FAFBFD] dark:fill-[#0D1526]" />
+          <circle cx="134" cy="58" r="23" />
+          <circle cx="134" cy="58" r="8.5" className="fill-[#FAFBFD] dark:fill-[#0D1526]" />
+          <rect x="52" y="92" width="108" height="30" rx="3" />
+          <circle cx="68" cy="107" r="4.2" className="fill-[#FAFBFD] dark:fill-[#0D1526]" />
+          <circle cx="144" cy="107" r="4.2" className="fill-[#FAFBFD] dark:fill-[#0D1526]" />
         </g>
 
         <g
           className="fill-sky-500/[0.16] stroke-[#0284C7] dark:stroke-[#38BDF8]"
           strokeWidth="1.35"
         >
-          <path d="M 180 56 C 216 44, 268 44, 304 56 L 288 96 C 260 88, 224 88, 196 96 Z" />
-          <rect x="178" y="104" width="60" height="28" rx="3" />
-          <rect x="246" y="104" width="58" height="28" rx="3" />
+          <path d="M 176 40 C 214 27, 268 27, 306 40 L 290 82 C 260 73, 222 73, 192 82 Z" />
+          <rect x="174" y="92" width="62" height="30" rx="3" />
+          <rect x="244" y="92" width="60" height="30" rx="3" />
         </g>
 
         <g
           className="fill-amber-500/[0.18] stroke-amber-600 dark:stroke-amber-400"
           strokeWidth="1.35"
         >
-          <polygon points="314,50 366,50 366,94 328,94 314,80" />
-          <rect x="314" y="104" width="52" height="28" rx="3" />
+          <polygon points="316,34 372,34 372,80 332,80 316,66" />
+          <rect x="316" y="92" width="56" height="30" rx="3" />
         </g>
       </g>
 
+      {/* Cabeçote Laser CNC Percorrendo a Chapa */}
       <g>
         <line
           x1={laserX}
-          y1="40"
+          y1="22"
           x2={laserX}
-          y2="144"
+          y2="134"
           stroke="#DC143C"
           strokeWidth="1.4"
           strokeDasharray="4 2"
         />
-        <circle cx={laserX} cy="80" r="3.8" fill="#DC143C" />
-        <circle cx={laserX} cy="80" r="7" stroke="#F59E0B" strokeWidth="1" strokeOpacity="0.8" />
+        <circle cx={laserX} cy={laserY} r="4" fill="#DC143C" />
+        <circle cx={laserX} cy={laserY} r="7.5" stroke="#F59E0B" strokeWidth="1.1" strokeOpacity="0.85" />
       </g>
 
-      {/* Painel compacto de resumo de corte e orçamento */}
+      {/* Barra consolidada de Chapa + Custo dentro do palco */}
       <g
-        transform="translate(42, 149)"
-        opacity={Number((0.4 + 0.6 * summaryProg).toFixed(2))}
+        transform="translate(34, 142)"
+        opacity={Number((0.55 + 0.45 * summaryProg).toFixed(2))}
       >
         <rect
           x="0"
           y="0"
-          width="336"
-          height="24"
+          width="352"
+          height="28"
           rx="5"
           className="fill-white/95 dark:fill-slate-900/95 stroke-slate-300 dark:stroke-slate-700"
           strokeWidth="1"
         />
         <text
           x="10"
-          y="15"
-          className="fill-[#0284C7] dark:fill-[#38BDF8] font-mono text-[8px] font-bold"
+          y="17.5"
+          className="fill-[#0284C7] dark:fill-[#38BDF8] font-mono text-[8.5px] font-bold"
         >
-          {data.sheetWidthMm}×{data.sheetLengthMm} (#{data.thicknessMm.toFixed(1)}mm) • CORTE {(data.cutLengthMm * data.quantity / 1000).toFixed(2)}m ({data.cutTimeMin} min)
+          {data.sheetWidthMm} × {data.sheetLengthMm} mm • #{data.thicknessMm.toFixed(1)}mm • TEMPO {data.cutTimeMin} min
         </text>
         <text
-          x="326"
-          y="15.5"
+          x="342"
+          y="18"
           textAnchor="end"
-          className="fill-[#059669] dark:fill-[#10B981] font-mono text-[9.5px] font-bold"
+          className="fill-[#059669] dark:fill-[#10B981] font-mono text-[10px] font-bold"
         >
-          R$ {data.totalCostBrl.toFixed(2)}
+          R$ {data.totalCostBrl.toFixed(2).replace(".", ",")}
         </text>
       </g>
     </svg>
@@ -1645,7 +1530,8 @@ function SceneManufacturingPrepUnified({
 }
 
 /* =========================================================================
-   COMPONENTE PRINCIPAL — LIVE ENGINEERING PLAYGROUND & MICRO-HUD DE CONVERSÃO
+   COMPONENTE PRINCIPAL — VITRINE INTERATIVA DOS 3 PILARES DO CALDRA
+   3 Zonas Empilhadas com Separação Flexível Estrita (Zero Sobreposição)
    ========================================================================= */
 
 interface HomeCinematicHeroProps {
@@ -1665,10 +1551,9 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
   const containerRef = useRef<HTMLElement | null>(null);
   const sceneStartRef = useRef<number>(0);
 
-  // Calcula os dados de demonstração em sandbox isolado uma única vez (Zero Overhead por quadro)
+  // Calcula os dados de demonstração em sandbox isolado uma única vez
   const chamferSandbox = useMemo(() => runChamferSandboxDemo(), []);
   const boilermakingSandbox = useMemo(() => runBoilermakingSandboxDemo(), []);
-  const calculatorSandbox = useMemo(() => runCalculatorSandboxDemo(), []);
   const fabricationSandbox = useMemo(() => runFabricationSandboxDemo(), []);
 
   useEffect(() => {
@@ -1707,28 +1592,28 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
 
   const isRunning = isInViewport && isDocVisible;
 
-  // Loop contínuo de 60 FPS sincronizando progresso interno da cena (6.0s) e avanço automático
+  // Loop contínuo sincronizando progresso de 5.5s por pilar e avanço automático
   useEffect(() => {
     if (!isRunning) return;
     if (prefersReducedMotion) {
       setSceneProgress(0.88);
       const slowTimer = window.setInterval(() => {
-        setActiveIndex((prev) => (prev + 1) % CINEMATIC_WORKFLOW_SCENES.length);
-      }, SCENE_DURATION_MS);
+        setActiveIndex((prev) => (prev + 1) % CALDRA_THREE_PILLARS.length);
+      }, PILLAR_DURATION_MS);
       return () => window.clearInterval(slowTimer);
     }
 
     let rafId = 0;
-    sceneStartRef.current = performance.now() - sceneProgress * SCENE_DURATION_MS;
+    sceneStartRef.current = performance.now() - sceneProgress * PILLAR_DURATION_MS;
 
     const tick = (now: number) => {
       const elapsed = now - sceneStartRef.current;
-      if (elapsed >= SCENE_DURATION_MS) {
+      if (elapsed >= PILLAR_DURATION_MS) {
         sceneStartRef.current = now;
         setSceneProgress(0);
-        setActiveIndex((prev) => (prev + 1) % CINEMATIC_WORKFLOW_SCENES.length);
+        setActiveIndex((prev) => (prev + 1) % CALDRA_THREE_PILLARS.length);
       } else {
-        const rawP = elapsed / SCENE_DURATION_MS;
+        const rawP = elapsed / PILLAR_DURATION_MS;
         const quantized = Math.round(rawP * 100) / 100;
         setSceneProgress((prev) => (Math.abs(prev - quantized) >= 0.01 ? quantized : prev));
       }
@@ -1740,18 +1625,11 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isRunning, prefersReducedMotion, activeIndex]);
 
-  const currentScene =
-    CINEMATIC_WORKFLOW_SCENES[activeIndex] ?? CINEMATIC_WORKFLOW_SCENES[0]!;
+  const currentPillar =
+    CALDRA_THREE_PILLARS[activeIndex] ?? CALDRA_THREE_PILLARS[0]!;
 
-  const liveTelemetryText = useMemo(
-    () => resolveSceneLiveTelemetry(currentScene.id, sceneProgress),
-    [currentScene.id, sceneProgress],
-  );
-
-  const isAct2 = sceneProgress >= ACT2_PROGRESS_THRESHOLD;
-
-  // Selecionar diretamente um dos 4 segmentos de progresso na base (sem navegar para fora da Home)
-  const handleSelectSceneSegment = useCallback(
+  // Selecionar diretamente um dos 3 Pilares no topo (Zona A)
+  const handleSelectPillar = useCallback(
     (index: number, e: React.MouseEvent | React.KeyboardEvent) => {
       e.stopPropagation();
       triggerHaptic("tap");
@@ -1762,161 +1640,201 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
     [],
   );
 
-  // Toque no cartão ou no Micro-CTA abre o Instant Playground com a peça pré-carregada em sandbox
-  const handleCardActivation = useCallback(() => {
-    triggerHaptic("selection");
-    AudioManager.play("ui_pop");
+  // Acionamento do CTA ou do Palco abre o módulo real correspondente com a peça demonstrada
+  const handlePillarCtaActivation = useCallback(
+    (e?: React.MouseEvent | React.KeyboardEvent) => {
+      e?.stopPropagation();
+      triggerHaptic("selection");
+      AudioManager.play("ui_pop");
 
-    const target = prepareInstantPlaygroundForScene(currentScene.id);
+      const target = prepareInstantPlaygroundForScene(currentPillar.id);
 
-    startTransition(() => {
-      void navigate(target as any);
-    });
-  }, [currentScene.id, navigate]);
+      startTransition(() => {
+        void navigate(target as any);
+      });
+    },
+    [currentPillar.id, navigate],
+  );
 
   return (
     <section
       ref={containerRef}
-      role="button"
-      tabIndex={0}
-      aria-label={`${currentScene.title} — ${currentScene.ctaLabel}`}
+      aria-label={`${currentPillar.title} — ${currentPillar.ctaLabel}`}
       data-testid="home-cinematic-hero"
-      data-active-scene={currentScene.id}
-      onClick={handleCardActivation}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          handleCardActivation();
-        }
-      }}
+      data-active-scene={currentPillar.id}
       className={cn(
-        "caldra-hero group relative w-full h-[200px] xs:h-[210px] sm:h-[220px] min-h-[192px] max-h-[228px] overflow-hidden rounded-2xl p-0 shadow-xl transition-transform active:scale-[0.99] cursor-pointer select-none touch-pan-y focus-visible:ring-2 focus-visible:ring-amber-500/60",
+        "caldra-hero relative flex w-full flex-col justify-between overflow-hidden rounded-2xl p-3 sm:p-3.5 shadow-xl select-none",
         className,
       )}
     >
-      {/* PALCO CINEMATOGRÁFICO EM 100% DA SUPERFÍCIE INTERNA DO CARTÃO */}
-      <div className="relative inset-0 size-full overflow-hidden">
-        {CINEMATIC_WORKFLOW_SCENES.map((scene, idx) => {
+      {/* =====================================================================
+          ZONA A — SELETOR SUPERIOR DOS 3 PILARES (IDENTIDADE IMEDIATA DO APP)
+          Avança automaticamente a cada 5.5s com barra fina de progresso
+          ===================================================================== */}
+      <div
+        role="tablist"
+        aria-label="Pilares do CALDRA"
+        className="grid grid-cols-3 gap-1.5 rounded-xl border border-slate-300/70 dark:border-slate-800/90 bg-slate-200/75 dark:bg-[#080C14]/90 p-1"
+      >
+        {CALDRA_THREE_PILLARS.map((pillar, idx) => {
           const isActive = idx === activeIndex;
-          const activeProg = isActive ? sceneProgress : 0;
+          const isCompleted = idx < activeIndex;
+          const fillPct = isActive
+            ? Math.round(clamp01(sceneProgress) * 100)
+            : isCompleted
+              ? 100
+              : 0;
+
           return (
-            <div
-              key={scene.id}
-              aria-hidden={!isActive}
+            <button
+              key={pillar.id}
+              type="button"
+              role="tab"
+              aria-selected={isActive}
+              data-testid={`home-pillar-tab-${idx}`}
+              onClick={(e) => handleSelectPillar(idx, e)}
               className={cn(
-                "absolute inset-0 size-full transition-all duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[transform,opacity]",
+                "relative flex flex-col justify-between overflow-hidden rounded-lg px-2 pt-1.5 pb-2 text-left transition-all cursor-pointer focus:outline-none",
                 isActive
-                  ? "opacity-100 scale-100 z-10"
-                  : "opacity-0 scale-[1.02] pointer-events-none z-0",
+                  ? "bg-white dark:bg-[#131C2E] text-slate-950 dark:text-white shadow-sm border border-amber-500/40"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent",
               )}
             >
-              {scene.id === "chamfer-cad" && (
-                <SceneChamferCadUnified progress={activeProg} data={chamferSandbox} />
-              )}
-              {scene.id === "caldeiraria-tracagem" && (
-                <SceneBoilermakingUnified progress={activeProg} data={boilermakingSandbox} />
-              )}
-              {scene.id === "calculos-engenharia" && (
-                <SceneEngineeringCalcUnified progress={activeProg} data={calculatorSandbox} />
-              )}
-              {scene.id === "preparacao-fabricacao" && (
-                <SceneManufacturingPrepUnified progress={activeProg} data={fabricationSandbox} />
-              )}
-            </div>
+              <span className="flex items-center justify-center gap-1 font-mono text-[10px] sm:text-[11px] font-bold tracking-tight whitespace-nowrap">
+                {idx === 0 && (
+                  <Compass
+                    className={cn(
+                      "size-3 shrink-0",
+                      isActive ? "text-sky-500" : "text-slate-400 dark:text-slate-500",
+                    )}
+                  />
+                )}
+                {idx === 1 && (
+                  <Flame
+                    className={cn(
+                      "size-3 shrink-0",
+                      isActive ? "text-amber-500" : "text-slate-400 dark:text-slate-500",
+                    )}
+                  />
+                )}
+                {idx === 2 && (
+                  <Zap
+                    className={cn(
+                      "size-3 shrink-0",
+                      isActive ? "text-emerald-500" : "text-slate-400 dark:text-slate-500",
+                    )}
+                  />
+                )}
+                <span>
+                  {pillar.tabNumber} {pillar.tabLabel}
+                </span>
+              </span>
+
+              {/* Barra fina de progresso de 5.5s embutida na base da aba */}
+              <span className="absolute inset-x-1.5 bottom-0.5 h-[2px] overflow-hidden rounded-full bg-slate-300/60 dark:bg-slate-800">
+                <span
+                  className={cn(
+                    "block h-full rounded-full transition-[width] duration-75",
+                    isActive
+                      ? "bg-[#F59E0B]"
+                      : isCompleted
+                        ? "bg-amber-500/50"
+                        : "bg-transparent",
+                  )}
+                  style={{ width: `${fillPct}%` }}
+                />
+              </span>
+            </button>
           );
         })}
+      </div>
 
-        {/* Tratamento localizado de contraste no topo e na base para leitura cristalina do Micro-HUD */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-0 z-20 h-14 bg-gradient-to-b from-white/90 via-white/60 to-transparent dark:from-[#090D16]/90 dark:via-[#090D16]/60 dark:to-transparent"
-        />
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 bottom-0 z-20 h-12 bg-gradient-to-t from-white/85 via-white/35 to-transparent dark:from-[#090D16]/90 dark:via-[#090D16]/40 dark:to-transparent"
-        />
-
-        {/* 2.1 CABEÇALHO DUPLO DE ALTO IMPACTO (TÍTULO 15PX + SUBTÍTULO DE VALOR 11.5PX) */}
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-30 flex flex-col px-3.5 pt-2 sm:px-4 sm:pt-2.5">
-          <h1
-            key={`scene-title-${currentScene.id}`}
+      {/* =====================================================================
+          ZONA B — CABEÇALHO COMPLETO (SEM TRUNCAMENTO) + PALCO TÉCNICO CENTRAL
+          ===================================================================== */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={handlePillarCtaActivation}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handlePillarCtaActivation(e);
+          }
+        }}
+        className="mt-2.5 flex flex-col cursor-pointer group/stage focus:outline-none"
+      >
+        {/* Título e Subtítulo completos (sem cortar com ...) */}
+        <div className="px-0.5 pb-2">
+          <h2
+            key={`pillar-title-${currentPillar.id}`}
             data-testid="home-cinematic-title"
-            className="font-display text-[15px] font-semibold tracking-tight text-slate-900 dark:text-slate-100 leading-tight truncate"
+            className="font-display text-[15px] sm:text-[16px] font-bold tracking-tight text-slate-900 dark:text-slate-100 leading-tight"
           >
-            {currentScene.title}
-          </h1>
+            {currentPillar.title}
+          </h2>
           <p
-            key={`scene-subtitle-${currentScene.id}`}
+            key={`pillar-subtitle-${currentPillar.id}`}
             data-testid="home-cinematic-subtitle"
-            className="mt-0.5 truncate text-[11.5px] font-normal leading-tight text-[#475569] dark:text-[#94A3B8]"
+            className="mt-0.5 text-[11.5px] sm:text-[12px] font-normal leading-snug text-slate-600 dark:text-slate-300"
           >
-            {currentScene.subtitle}
+            {currentPillar.subtitle}
           </p>
         </div>
 
-        {/* 2.2 TELEMETRIA DE OPERAÇÃO AO VIVO (CANTO INFERIOR ESQUERDO) */}
-        <div
-          data-testid="home-cinematic-telemetry"
-          className="pointer-events-none absolute bottom-[14px] left-[14px] z-30 max-w-[56%] truncate rounded-md border border-slate-700/80 bg-[rgba(15,23,42,0.75)] px-2 py-1 font-mono text-[9.5px] sm:text-[10px] font-medium tracking-tight text-sky-300 backdrop-blur-sm"
-        >
-          {liveTelemetryText}
-        </div>
-
-        {/* 3. MICRO-CTA FLUTUANTE COM PULSO SINCRONIZADO AO ATO 2 (CANTO INFERIOR DIREITO) */}
-        <div
-          data-testid="home-cinematic-cta"
-          data-cta-act={isAct2 ? "act2" : "act1"}
-          className={cn(
-            "pointer-events-none absolute bottom-[14px] right-[14px] z-30 inline-flex h-[30px] items-center justify-center rounded-full px-3 text-[11.5px] font-semibold tracking-tight transition-all duration-300",
-            isAct2
-              ? "border border-amber-300 bg-[#F59E0B] text-[#0F172A] shadow-[0_0_16px_rgba(245,158,11,0.45)]"
-              : "border border-[rgba(245,158,11,0.35)] bg-[rgba(15,23,42,0.75)] text-slate-100 backdrop-blur-sm",
-          )}
-        >
-          {currentScene.ctaLabel}
-        </div>
-
-        {/* 4. BARRA DE PROGRESSO SEGMENTADA DE 4 ETAPAS NA BASE (HEIGHT: 2.5PX, HIT-AREA: 28PX) */}
-        <div
-          data-testid="home-cinematic-progress-bar"
-          className="absolute inset-x-3.5 bottom-0 z-40 flex items-end gap-[6px]"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {CINEMATIC_WORKFLOW_SCENES.map((scene, idx) => {
-            const isSegmentActive = idx === activeIndex;
-            const isSegmentCompleted = idx < activeIndex;
-            const fillPct = isSegmentActive
-              ? Math.round(clamp01(sceneProgress) * 100)
-              : isSegmentCompleted
-                ? 100
-                : 0;
-
+        {/* Palco Gráfico Vetorial Limpo */}
+        <div className="relative h-[148px] xs:h-[156px] sm:h-[168px] w-full overflow-hidden rounded-xl border border-slate-300/75 dark:border-slate-800/90 bg-slate-100/75 dark:bg-[#080D18]">
+          {CALDRA_THREE_PILLARS.map((pillar, idx) => {
+            const isActive = idx === activeIndex;
+            const activeProg = isActive ? sceneProgress : 0;
             return (
-              <button
-                key={scene.id}
-                type="button"
-                aria-label={`Ir para demonstração: ${scene.title}`}
-                data-testid={`home-cinematic-segment-${idx}`}
-                onClick={(e) => handleSelectSceneSegment(idx, e)}
-                className="group/seg relative flex h-[28px] flex-1 items-end pb-[3px] cursor-pointer focus:outline-none"
+              <div
+                key={pillar.id}
+                aria-hidden={!isActive}
+                className={cn(
+                  "absolute inset-0 size-full transition-all duration-300 ease-out",
+                  isActive
+                    ? "opacity-100 scale-100 z-10"
+                    : "opacity-0 scale-[1.01] pointer-events-none z-0",
+                )}
               >
-                <span className="relative block h-[2.5px] w-full overflow-hidden rounded-full bg-slate-400/35 dark:bg-slate-700/60">
-                  <span
-                    className={cn(
-                      "block h-full rounded-full transition-[width] duration-75",
-                      isSegmentActive
-                        ? "bg-[#F59E0B]"
-                        : isSegmentCompleted
-                          ? "bg-amber-500/70"
-                          : "bg-transparent",
-                    )}
-                    style={{ width: `${fillPct}%` }}
-                  />
-                </span>
-              </button>
+                {pillar.id === "chamfer-cad" && (
+                  <SceneChamferCadUnified progress={activeProg} data={chamferSandbox} />
+                )}
+                {pillar.id === "caldeiraria-tracagem" && (
+                  <SceneBoilermakingUnified progress={activeProg} data={boilermakingSandbox} />
+                )}
+                {pillar.id === "preparacao-fabricacao" && (
+                  <SceneManufacturingPrepUnified progress={activeProg} data={fabricationSandbox} />
+                )}
+              </div>
             );
           })}
         </div>
+      </div>
+
+      {/* =====================================================================
+          ZONA C — RODAPÉ TÉCNICO BIPARTIDO (FLEXBOX ANTI-COLISÃO — ZERO SOBREPOSIÇÃO)
+          display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px
+          ===================================================================== */}
+      <div className="flex items-center justify-between gap-[10px] pt-[10px]">
+        {/* Lado Esquerdo (flex: 1; min-width: 0): Pílula técnica escura/translúcida em 1 linha */}
+        <div
+          data-testid="home-cinematic-telemetry"
+          className="flex-1 min-w-0 truncate rounded-lg border border-slate-300/80 dark:border-slate-700/80 bg-slate-900/90 dark:bg-[#0B1120]/95 px-2.5 py-1.5 font-mono text-[10px] sm:text-[11px] font-semibold tracking-tight text-sky-300"
+        >
+          {currentPillar.telemetryPill}
+        </div>
+
+        {/* Lado Direito (flex-shrink: 0): Botão CTA Âmbar de alta conversão (height: 36px, padding: 0 14px, border-radius: 999px) */}
+        <button
+          type="button"
+          data-testid="home-cinematic-cta"
+          onClick={handlePillarCtaActivation}
+          className="shrink-0 inline-flex h-[36px] items-center justify-center rounded-full border border-amber-300/80 bg-[#F59E0B] px-[14px] font-display text-[12px] font-bold tracking-tight text-[#0F172A] shadow-[0_0_14px_rgba(245,158,11,0.35)] hover:bg-amber-400 active:scale-95 transition-all cursor-pointer"
+        >
+          {currentPillar.ctaLabel}
+        </button>
       </div>
     </section>
   );
