@@ -213,8 +213,23 @@ import { ChamferArrayHUD } from "./ChamferArrayHUD";
 import {
   ChamferPortraitTopBar,
   ChamferPortraitCanvasMicroPill,
+  ChamferPortraitCompactDrawer,
   ChamferPortraitBottomBars,
 } from "@/components/lab2d/ChamferPortraitLightroomUI";
+import {
+  createConcentricEyeletEntities,
+  createIndustrialHoleEntity,
+  createThreadedHoleEntities,
+  createSerratedTeethEntities,
+  createPocket2DEntity,
+  createTangentBridgeEntities,
+  applyColorAndLayerToEntities,
+  type ChamferTechnicalColorOption,
+} from "@/lib/lab2d/chamferCommandRegistry";
+import {
+  shouldAutoCollapseDrawerOnCanvasTouch,
+  useVerticalLayout,
+} from "@/lib/lab2d/useVerticalLayout";
 import {
   detectHostPart,
   computeInstances,
@@ -1864,6 +1879,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   /* Orientação livre (Portrait e Landscape) — sem bloqueio forçado de tela */
 
+  const [activeStrokeColor, setActiveStrokeColor] = useState<string | null>(null);
+  const activeStrokeColorRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeStrokeColorRef.current = activeStrokeColor;
+  }, [activeStrokeColor]);
+
   const layerOf = useCallback((id: string) => layers.find((l) => l.id === id), [layers]);
 
   const commit = useCallback((next: Entity[] | ((p: Entity[]) => Entity[])) => {
@@ -1873,13 +1894,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setHistoryState({ canUndo: past.current.length > 0, canRedo: false });
       const updated = typeof next === "function" ? next(prev) : next;
       const seenIds = new Set<string>();
+      const prevIds = new Set(prev.map((e) => e.id));
+      const strokeOverride = activeStrokeColorRef.current;
       return updated.map((ent) => {
         let entId = ent.id;
+        const isBrandNew =
+          !entId || entId === "draft" || entId.startsWith("draft-") || !prevIds.has(entId);
         if (!entId || entId === "draft" || entId.startsWith("draft-") || seenIds.has(entId)) {
           entId = uid();
         }
         seenIds.add(entId);
-        return ent.id === entId ? ent : { ...ent, id: entId };
+        let nextEnt = ent.id === entId ? ent : { ...ent, id: entId };
+        if (isBrandNew && strokeOverride && !nextEnt.params?.strokeColor) {
+          nextEnt = {
+            ...nextEnt,
+            params: {
+              ...(nextEnt.params ?? {}),
+              strokeColor: strokeOverride,
+            },
+          };
+        }
+        return nextEnt;
       });
     });
   }, []);
@@ -3697,25 +3732,185 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     toast.success("Linha(s) convertida(s) em linha de dobra.");
   }, [selected.length, selection, commit]);
 
-  const handleAddHole = useCallback(() => {
-    const b = selected.length
-      ? boxOfEntities(selected)
-      : { minX: cursor.x - 5, maxX: cursor.x + 5, minY: cursor.y - 5, maxY: cursor.y + 5 };
-    const cx = (b.minX + b.maxX) / 2;
-    const cy = (b.minY + b.maxY) / 2;
-    const hole: Entity = {
-      id: uid(),
-      layer: "corte",
-      type: "circle",
-      cx,
-      cy,
-      r: 5,
-    };
-    commit((e) => [...e, hole]);
+  const handleAddHole = useCallback(
+    (diameterMm = 10) => {
+      const b = selected.length
+        ? boxOfEntities(selected)
+        : { minX: cursor.x - 5, maxX: cursor.x + 5, minY: cursor.y - 5, maxY: cursor.y + 5 };
+      const cx = (b.minX + b.maxX) / 2;
+      const cy = (b.minY + b.maxY) / 2;
+      const hole = createIndustrialHoleEntity({
+        cx,
+        cy,
+        diameterMm,
+        layer: "corte",
+        strokeColor: activeStrokeColorRef.current,
+      });
+      commit((e) => [...e, hole]);
+      setSelection([hole.id]);
+      setMobileEditorOpenManual(false);
+      toast.success(`Furo industrial Ø${diameterMm}mm adicionado em (${cx.toFixed(1)}, ${cy.toFixed(1)}) mm.`);
+    },
+    [boxOfEntities, selected, cursor.x, cursor.y, commit],
+  );
+
+  const handleAddThread = useCallback(
+    (nominalDiaMm: number, pitchMm: number) => {
+      const b = selected.length
+        ? boxOfEntities(selected)
+        : { minX: cursor.x - 5, maxX: cursor.x + 5, minY: cursor.y - 5, maxY: cursor.y + 5 };
+      const cx = (b.minX + b.maxX) / 2;
+      const cy = (b.minY + b.maxY) / 2;
+      const threadEnts = createThreadedHoleEntities({
+        cx,
+        cy,
+        nominalM: nominalDiaMm,
+        pitchMm,
+        strokeColor: activeStrokeColorRef.current,
+      });
+      commit((e) => [...e, ...threadEnts]);
+      setSelection(threadEnts.map((x) => x.id));
+      setMobileEditorOpenManual(false);
+      toast.success(
+        `Rosca métrica M${nominalDiaMm}×${pitchMm} (furo Ø${Math.max(1, nominalDiaMm - pitchMm).toFixed(1)}mm) inserida.`,
+      );
+    },
+    [boxOfEntities, selected, cursor.x, cursor.y, commit],
+  );
+
+  const handleAddEyelet = useCallback(
+    (outerDiaMm: number, innerDiaMm: number) => {
+      const b = selected.length
+        ? boxOfEntities(selected)
+        : { minX: cursor.x - 5, maxX: cursor.x + 5, minY: cursor.y - 5, maxY: cursor.y + 5 };
+      const cx = (b.minX + b.maxX) / 2;
+      const cy = (b.minY + b.maxY) / 2;
+      const eyeletEnts = createConcentricEyeletEntities({
+        cx,
+        cy,
+        outerDiameterMm: outerDiaMm,
+        innerDiameterMm: innerDiaMm,
+        layer: activeLayer,
+        strokeColor: activeStrokeColorRef.current,
+      });
+      commit((e) => [...e, ...eyeletEnts]);
+      setSelection(eyeletEnts.map((x) => x.id));
+      toast.success(`Olhal concêntrico Ø${outerDiaMm}/Ø${innerDiaMm} mm inserido.`);
+    },
+    [boxOfEntities, selected, cursor.x, cursor.y, activeLayer, commit],
+  );
+
+  const handleAddTangentBridge = useCallback(() => {
+    const bridgeEnts = createTangentBridgeEntities({
+      selectedEntities: selected.length >= 2 ? selected : entities,
+      fallbackCx: cursor.x,
+      fallbackCy: cursor.y,
+      layer: activeLayer,
+      strokeColor: activeStrokeColorRef.current,
+    });
+    commit((e) => [...e, ...bridgeEnts]);
+    setSelection(bridgeEnts.map((x) => x.id));
+    toast.success("Ponte tangente (TTR) gerada.");
+  }, [selected, entities, activeLayer, cursor.x, cursor.y, commit]);
+
+  const handleAddSerratedTeeth = useCallback(
+    (toothHeightMm: number, toothPitchMm: number) => {
+      const targetLine = selected.find(
+        (e): e is Extract<Entity, { type: "line" }> => e.type === "line",
+      );
+      const startX = targetLine ? targetLine.x1 : cursor.x - 40;
+      const startY = targetLine ? targetLine.y1 : cursor.y;
+      const totalSpan = targetLine
+        ? Math.max(10, Math.hypot(targetLine.x2 - targetLine.x1, targetLine.y2 - targetLine.y1))
+        : 80;
+      const toothCount = Math.max(3, Math.round(totalSpan / Math.max(1, toothPitchMm)));
+      const teethEnt = createSerratedTeethEntities({
+        startX,
+        startY,
+        toothCount,
+        pitchMm: toothPitchMm,
+        toothHeightMm,
+        layer: activeLayer,
+        strokeColor: activeStrokeColorRef.current,
+      });
+      commit((e) => [
+        ...(targetLine ? e.filter((x) => x.id !== targetLine.id) : e),
+        teethEnt,
+      ]);
+      setSelection([teethEnt.id]);
+      toast.success(`Perfil serrilhado (${toothCount} dentes · passo ${toothPitchMm}mm × h ${toothHeightMm}mm) gerado.`);
+    },
+    [selected, cursor.x, cursor.y, activeLayer, commit],
+  );
+
+  const handleAddPocket2D = useCallback(
+    (widthMm: number, heightMm: number, cornerRadiusMm: number) => {
+      const b = selected.length
+        ? boxOfEntities(selected)
+        : { minX: cursor.x - 5, maxX: cursor.x + 5, minY: cursor.y - 5, maxY: cursor.y + 5 };
+      const cx = (b.minX + b.maxX) / 2;
+      const cy = (b.minY + b.maxY) / 2;
+      const pocket = createPocket2DEntity({
+        cx,
+        cy,
+        widthMm,
+        heightMm,
+        cornerRadiusMm,
+        layer: "recorte",
+        strokeColor: activeStrokeColorRef.current,
+      });
+      commit((e) => [...e, pocket]);
+      setSelection([pocket.id]);
+      toast.success(`Cavidade 2D ${widthMm}×${heightMm}mm (R${cornerRadiusMm}) inserida.`);
+    },
+    [boxOfEntities, selected, cursor.x, cursor.y, commit],
+  );
+
+  const handleSelectColorAndLayer = useCallback(
+    (opt: ChamferTechnicalColorOption) => {
+      setActiveLayer(opt.layer);
+      setActiveStrokeColor(opt.hex);
+      activeStrokeColorRef.current = opt.hex;
+      if (selection.length > 0) {
+        commit((list) => applyColorAndLayerToEntities(list, selection, opt));
+        toast.success(
+          `Cor "${opt.label}" (${opt.hex}) e camada [${opt.layer.toUpperCase()}] aplicadas a ${selection.length} peça(s).`,
+        );
+      } else {
+        toast.success(
+          `Cor ativa: ${opt.label} (${opt.hex}) • Camada: ${opt.layer.toUpperCase()}`,
+        );
+      }
+    },
+    [selection, commit],
+  );
+
+  const handleDeleteSelection = useCallback(() => {
+    if (!selection.length) {
+      toast.info("Selecione uma ou mais entidades para apagar.");
+      return;
+    }
+    const count = selection.length;
+    commit((list) => list.filter((x) => !selection.includes(x.id)));
     setSelection([]);
-    setMobileEditorOpenManual(false);
-    toast.success("Furo paramétrico Ø10mm adicionado.");
-  }, [boxOfEntities, selected, cursor.x, cursor.y, commit]);
+    triggerHaptic("action");
+    toast.success(`${count} entidade(s) removida(s).`);
+  }, [selection, commit]);
+
+  const handleUseSelectedEdge = useCallback(() => {
+    const sourceEntities =
+      selection.length > 0 ? entities.filter((e) => selection.includes(e.id)) : entities;
+    const edges = GeometricReferenceEngine.extractEdges(sourceEntities);
+    if (edges.length > 0) {
+      const bestEdge =
+        GeometricReferenceEngine.findNearestEdge(cursor, edges, 1000)?.edge ?? edges[0]!;
+      setActiveEdge(bestEdge);
+      triggerHaptic("action");
+      toast.success(`✓ Borda de referência ativa: ${bestEdge.label} (${bestEdge.length.toFixed(1)} mm)`);
+    } else {
+      toast.info("Nenhuma borda linear encontrada. Desenhe ou selecione uma peça com aresta reta.");
+    }
+  }, [selection, entities, cursor]);
 
   const handlePlanificar = useCallback(() => {
     transitionTo3D("3d");
@@ -6317,9 +6512,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   }, [isDark, gridConfig]);
 
   const isMobile = useIsMobile();
-  const [isLandscape, setIsLandscape] = useState(
-    typeof window !== "undefined" ? window.innerWidth >= window.innerHeight : true
-  );
+  const verticalLayout = useVerticalLayout();
+  const isLandscape = !verticalLayout.isVerticalCompactActive;
 
   // Janela lateral direita estruturada do CHAMFER (Propriedades / Camadas / Corte / Cotas)
   // Inicia recolhida no modo retrato ou em telas menores para liberar toda a largura central para o desenho
@@ -6333,21 +6527,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [portraitDrawerOpen, setPortraitDrawerOpen] = useState(false);
 
   useEffect(() => {
-    const handleResize = () => {
-      const nextLandscape = window.innerWidth >= window.innerHeight;
-      setIsLandscape((prev) => {
-        if (prev && !nextLandscape) {
-          // Ao girar para modo retrato (vertical), recolhe automaticamente a barra lateral direita
-          setRightSidebarOpen(false);
-        } else if (!prev && nextLandscape) {
-          setPortraitDrawerOpen(false);
-        }
-        return nextLandscape;
-      });
-    };
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+    if (!isLandscape) {
+      setRightSidebarOpen(false);
+    } else {
+      setPortraitDrawerOpen(false);
+    }
+  }, [isLandscape]);
 
   const [mobileEditorOpenManual, setMobileEditorOpenManual] = useState(false);
   const [activeEditingProp, setActiveEditingProp] = useState<{
@@ -6722,6 +6907,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       {!focus && !isLandscape && (
         <ChamferPortraitTopBar
           isDark={isDark}
+          topBarHeightPx={verticalLayout.chromeHeights.topBarPx}
+          viewportWidth={verticalLayout.viewportWidth}
           projectName={project?.name ?? "Projeto 26"}
           thickness={thickness}
           onThicknessChange={setThickness}
@@ -6822,6 +7009,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               toast.info(`Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label})`);
             }
           }}
+          isoPlane={isoPlane}
+          onSelectIsoPlane={(p) => {
+            setIsoPlane(p);
+            toast.info(`Plano Isométrico: ${ISO_PLANES[p].label}`);
+          }}
           isOrbitToolActive={isOrbitToolActive}
           isOrbitTilted={orbitProjection2D.isTilted}
           onToggleOrbitTool={(next) => {
@@ -6857,11 +7049,37 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onOpenTechnicalSheet={() => setTechnicalSheetModalOpen(true)}
           onOpenTopologyHealth={() => setTopologyHealthOpen(true)}
           onOpenVariables={() => setVariablesModalOpen(true)}
+          onVerifyGeometry={() => {
+            const found = verify(entities);
+            setIssues(found);
+            if (found.length) {
+              toast.warning(`${found.length} problemas encontrados`);
+            } else {
+              toast.success("Geometria válida");
+            }
+          }}
+          onOptimizeGeometry={() => {
+            const res = optimize(entities);
+            commit(res.entities);
+            toast.success(`${res.removed + res.tiny} entidades limpas`);
+          }}
           showDims={showDims}
           onToggleShowDims={() => setShowDims((s) => !s)}
           onToggleTheme={toggleTheme}
           focus={focus}
           onToggleFullscreen={toggleFullscreen}
+          layoutPreference={verticalLayout.layoutPreference}
+          onChangeLayoutPreference={(pref) => {
+            verticalLayout.setLayoutPreference(pref);
+            toast.info(
+              pref === "compact"
+                ? "Layout Vertical Compacto ativado."
+                : "Layout Clássico ativado.",
+            );
+          }}
+          activeLayer={activeLayer}
+          activeStrokeColor={activeStrokeColor}
+          onSelectColorAndLayer={handleSelectColorAndLayer}
         />
       )}
 
@@ -7400,6 +7618,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               />
               {moreOpen && (
                 <div className="metal hairline pop-in fixed top-12 right-3 z-[70] w-56 rounded-2xl p-1.5 shadow-xl">
+                  {verticalLayout.isVerticalViewport && (
+                    <MenuItem
+                      label="Modo Vertical Compacto"
+                      icon={Maximize}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        verticalLayout.setLayoutPreference("compact");
+                        toast.info("Layout Vertical Compacto ativado.");
+                      }}
+                    />
+                  )}
                   <MenuItem
                     label="Oficina Digital (Corte, BOM e Orçamento)"
                     icon={Boxes}
@@ -8107,7 +8336,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               "absolute inset-0 size-full touch-none",
               isOrbitToolActive && "cursor-grab active:cursor-grabbing",
             )}
-            onPointerDown={onPointerDown}
+            onPointerDown={(e) => {
+              if (
+                !isLandscape &&
+                shouldAutoCollapseDrawerOnCanvasTouch({
+                  drawerOpen: portraitDrawerOpen,
+                  isPickingCanvasPoints: revEngCanvasMode !== "none",
+                })
+              ) {
+                setPortraitDrawerOpen(false);
+              }
+              onPointerDown(e);
+            }}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
@@ -8120,9 +8360,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               const hit = hitTest(toWorld(e, true));
               if (hit) {
                 setSelection([hit.id]);
-                setMobileEditorOpenManual(true);
-                setRightSidebarOpen(true);
                 setActiveSidebarTab("propriedades");
+                if (isLandscape) {
+                  setMobileEditorOpenManual(true);
+                  setRightSidebarOpen(true);
+                } else {
+                  setPortraitDrawerOpen(true);
+                }
                 triggerHaptic("action");
               }
             }}
@@ -9976,11 +10220,64 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             }}
           />
 
-          {/* MICRO-PÍLULA TRANSLÚCIDA FLUTUANTE NO CANVAS EM MODO RETRATO (P01 • X/Y • SNAP: ON) */}
+          {/* MICRO-PÍLULA TRANSLÚCIDA FLUTUANTE NO CANTO INFERIOR ESQUERDO DO CANVAS EM MODO RETRATO (24PX: P01 • X/Y • Z% • G:MM • SNAP:ON) */}
           {!isLandscape && !focus && !solidOpen && (
             <ChamferPortraitCanvasMicroPill
               isDark={isDark}
               planName={project?.plans.find((p) => p.id === planId)?.name ?? "P01"}
+              plans={project?.plans.map((p) => ({ id: p.id, name: p.name })) ?? [{ id: planId, name: "P01" }]}
+              activePlanId={planId}
+              onSelectPlan={(nextPlanId) => {
+                if (!project || nextPlanId === planId) return;
+                const targetPlan = project.plans.find((x) => x.id === nextPlanId);
+                if (!targetPlan) return;
+                setProject((prev) =>
+                  prev
+                    ? {
+                        ...prev,
+                        plans: prev.plans.map((x) =>
+                          x.id === planId
+                            ? { ...x, entities, groups, dims, cad3dTreeJson, revEng: revEngData }
+                            : x,
+                        ),
+                      }
+                    : prev,
+                );
+                setPlanId(targetPlan.id);
+                setEntities(targetPlan.entities ?? []);
+                setGroups(targetPlan.groups ?? []);
+                setDims(targetPlan.dims ?? []);
+                setCad3dTreeJson(targetPlan.cad3dTreeJson);
+                setRevEngData(sanitizeRevEngPlanData(targetPlan.revEng));
+                setSelection([]);
+              }}
+              onCreatePlan={() => {
+                if (!project) return;
+                const plan = emptyPlan(project.plans.length);
+                plan.name = planLabel(project.plans.length);
+                const next: Project = {
+                  ...project,
+                  plans: [
+                    ...project.plans.map((x) =>
+                      x.id === planId
+                        ? { ...x, entities, groups, dims, cad3dTreeJson, revEng: revEngData }
+                        : x,
+                    ),
+                    plan,
+                  ],
+                  lastPlanId: plan.id,
+                };
+                saveProject(next);
+                setProject(next);
+                setPlanId(plan.id);
+                setEntities([]);
+                setGroups([]);
+                setDims([]);
+                setCad3dTreeJson(undefined);
+                setRevEngData(createDefaultRevEngPlanData());
+                setSelection([]);
+                toast.success(`${plan.name} criado.`);
+              }}
               cursor={cursor}
               snapOn={snapOn}
               onToggleSnap={() => setSnapOn((s) => !s)}
@@ -10002,6 +10299,35 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 triggerHaptic("success");
                 toast.success(`REF (0,0) fixada em (${cursor.x.toFixed(1)}, ${cursor.y.toFixed(1)}) mm`);
               }}
+              zoomPercent={Math.round(view.k * 100)}
+              onFitPiece={() => fitTo(entities)}
+              onFitWorkspace={() => fitFrame()}
+              onResetZoom100={() =>
+                setView((v) => ({
+                  ...v,
+                  k: 1,
+                }))
+              }
+              onZoomStep={(factor) =>
+                setView((v) => {
+                  const nextK = Math.max(0.05, Math.min(40, v.k * factor));
+                  const cx = canvasSize.w / 2;
+                  const cy = canvasSize.h / 2;
+                  return {
+                    k: nextK,
+                    tx: cx - ((cx - v.tx) / v.k) * nextK,
+                    ty: cy - ((cy - v.ty) / v.k) * nextK,
+                  };
+                })
+              }
+              gridMm={grid}
+              showGrid={showGrid}
+              onToggleGrid={() => setShowGrid((s) => !s)}
+              onSelectGridMm={(mm) => {
+                setGrid(mm);
+                setShowGrid(() => true);
+              }}
+              selectedCount={selection.length}
             />
           )}
 
@@ -10429,136 +10755,103 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           )
         )}
 
-        {/* BOTTOM SHEET COMPACTO EM MODO RETRATO PARA PAINÉIS LONGOS (PROPRIEDADES, CAMADAS, CORTE, COTAS, ENG. REV.) */}
-        {!solidOpen && !focus && !isLandscape && portraitDrawerOpen && (
-          <div
-            role="dialog"
-            aria-label="Painel Inspetor do CHAMFER"
-            className={cn(
-              "fixed inset-x-0 bottom-[114px] z-45 flex max-h-[46dvh] flex-col rounded-t-2xl border-t shadow-2xl backdrop-blur-xl animate-in slide-in-from-bottom-4 duration-150",
-              isDark
-                ? "border-white/[0.12] bg-[#11141C]/98 text-[#F8FAFC]"
-                : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
-            )}
+        {/* GAVETA COMPACTA EM MODO RETRATO (45% DVH PADRÃO / 70% DVH EXPANDIDA + AUTO-COLAPSO AO TOCAR NO CANVAS) */}
+        {!solidOpen && !focus && !isLandscape && (
+          <ChamferPortraitCompactDrawer
+            open={portraitDrawerOpen}
+            onClose={() => setPortraitDrawerOpen(false)}
+            isDark={isDark}
+            bottomOffsetPx={
+              verticalLayout.chromeHeights.stripPx + verticalLayout.chromeHeights.dockPx
+            }
+            activeTab={activeSidebarTab}
+            onSelectTab={setActiveSidebarTab}
           >
-            <div
-              className={cn(
-                "flex h-8 shrink-0 items-center justify-between border-b px-3",
-                isDark ? "border-white/[0.08]" : "border-[#E2E8F0]",
+            <ChamferRightSidebar
+              open={true}
+              onToggleOpen={() => setPortraitDrawerOpen(false)}
+              activeTab={activeSidebarTab}
+              onTabChange={setActiveSidebarTab}
+              entities={entities}
+              selection={selection}
+              setSelection={setSelection}
+              commit={commit}
+              layers={layers}
+              setLayers={setLayers}
+              activeLayer={activeLayer}
+              setActiveLayer={setActiveLayer}
+              thickness={thickness}
+              onThicknessChange={setThickness}
+              projectName={project?.name ?? "Peça Chamfer"}
+              onProjectNameChange={(name) => {
+                setProject((prev) => (prev ? { ...prev, name } : prev));
+              }}
+              material={project?.settings?.material ?? "Aço carbono (1020)"}
+              onMaterialChange={(mat) => {
+                setProject((prev) =>
+                  prev ? { ...prev, settings: { ...prev.settings, material: mat } } : prev
+                );
+              }}
+              onDivideEntity={handleOpenDivide}
+              dims={dims}
+              onDimsChange={setDims}
+              dimKind={dimKind}
+              onDimKindChange={setDimKind}
+              dimSel={dimSel}
+              onDimSelect={setDimSel}
+              renderCotas={() => (
+                <DimensionsPanel
+                  dims={dims}
+                  entities={entities}
+                  kind={dimKind}
+                  onKind={(k) => {
+                    setDimKind(k);
+                    setDimPicks([]);
+                    setTool("dim");
+                  }}
+                  selected={dimSel}
+                  onSelect={setDimSel}
+                  onChange={(d) => setDims((list) => list.map((x) => (x.id === d.id ? d : x)))}
+                  onDelete={(id) => {
+                    setDims((list) => list.filter((x) => x.id !== id));
+                    setDimSel(null);
+                  }}
+                />
               )}
-            >
-              <div className="flex items-center gap-2">
-                <span className="h-1 w-7 rounded-full bg-[#64748B]/50" />
-                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#38BDF8]">
-                  {activeSidebarTab === "propriedades"
-                    ? "Propriedades da Peça"
-                    : activeSidebarTab === "camadas"
-                      ? "Camadas Semânticas"
-                      : activeSidebarTab === "corte"
-                        ? "Plano de Corte CNC"
-                        : activeSidebarTab === "cotas"
-                          ? "Cotas & Tolerâncias"
-                          : "Engenharia Reversa 1:1"}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPortraitDrawerOpen(false)}
-                className={cn(
-                  "flex size-6 items-center justify-center rounded-lg border transition-colors",
-                  isDark
-                    ? "border-white/[0.1] bg-[#181C26] text-[#94A3B8] hover:text-white"
-                    : "border-[#CBD5E1] bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
-                )}
-              >
-                <X className="size-3.5" />
-              </button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto flex justify-center [&>aside]:!w-full [&>aside]:!border-0">
-              <ChamferRightSidebar
-                open={true}
-                onToggleOpen={() => setPortraitDrawerOpen(false)}
-                activeTab={activeSidebarTab}
-                onTabChange={setActiveSidebarTab}
-                entities={entities}
-                selection={selection}
-                setSelection={setSelection}
-                commit={commit}
-                layers={layers}
-                setLayers={setLayers}
-                activeLayer={activeLayer}
-                setActiveLayer={setActiveLayer}
-                thickness={thickness}
-                onThicknessChange={setThickness}
-                projectName={project?.name ?? "Peça Chamfer"}
-                onProjectNameChange={(name) => {
-                  setProject((prev) => (prev ? { ...prev, name } : prev));
-                }}
-                material={project?.settings?.material ?? "Aço carbono (1020)"}
-                onMaterialChange={(mat) => {
-                  setProject((prev) =>
-                    prev ? { ...prev, settings: { ...prev.settings, material: mat } } : prev
-                  );
-                }}
-                onDivideEntity={handleOpenDivide}
-                dims={dims}
-                onDimsChange={setDims}
-                dimKind={dimKind}
-                onDimKindChange={setDimKind}
-                dimSel={dimSel}
-                onDimSelect={setDimSel}
-                renderCotas={() => (
-                  <DimensionsPanel
-                    dims={dims}
-                    entities={entities}
-                    kind={dimKind}
-                    onKind={(k) => {
-                      setDimKind(k);
-                      setDimPicks([]);
-                      setTool("dim");
-                    }}
-                    selected={dimSel}
-                    onSelect={setDimSel}
-                    onChange={(d) => setDims((list) => list.map((x) => (x.id === d.id ? d : x)))}
-                    onDelete={(id) => {
-                      setDims((list) => list.filter((x) => x.id !== id));
-                      setDimSel(null);
-                    }}
-                  />
-                )}
-                renderRevEng={() => (
-                  <ChamferRevEngTab
-                    revEng={revEngData}
-                    onChangeRevEng={setRevEngData}
-                    entities={entities}
-                    selection={selection}
-                    setSelection={setSelection}
-                    commit={commit}
-                    activeLayer={activeLayer}
-                    thickness={thickness}
-                    onThicknessChange={setThickness}
-                    canvasInteractionMode={revEngCanvasMode}
-                    onSetCanvasInteractionMode={setRevEngCanvasMode}
-                    pendingPickPointsWorld={revEngPickPoints}
-                    onClearPendingPickPoints={() => setRevEngPickPoints([])}
-                    fittedPreviewCandidate={revEngFittedPreview}
-                    onSetFittedPreviewCandidate={setRevEngFittedPreview}
-                    onOpenVisionModal={() => setVisionOpen(true)}
-                    isDark={isDark}
-                  />
-                )}
-                onHighlightCut={setShareHint}
-                isDark={isDark}
-              />
-            </div>
-          </div>
+              renderRevEng={() => (
+                <ChamferRevEngTab
+                  revEng={revEngData}
+                  onChangeRevEng={setRevEngData}
+                  entities={entities}
+                  selection={selection}
+                  setSelection={setSelection}
+                  commit={commit}
+                  activeLayer={activeLayer}
+                  thickness={thickness}
+                  onThicknessChange={setThickness}
+                  canvasInteractionMode={revEngCanvasMode}
+                  onSetCanvasInteractionMode={setRevEngCanvasMode}
+                  pendingPickPointsWorld={revEngPickPoints}
+                  onClearPendingPickPoints={() => setRevEngPickPoints([])}
+                  fittedPreviewCandidate={revEngFittedPreview}
+                  onSetFittedPreviewCandidate={setRevEngFittedPreview}
+                  onOpenVisionModal={() => setVisionOpen(true)}
+                  isDark={isDark}
+                />
+              )}
+              onHighlightCut={setShareHint}
+              isDark={isDark}
+            />
+          </ChamferPortraitCompactDrawer>
         )}
       </div>
 
-      {/* REGIÃO E — EM MODO RETRATO: NO MÁXIMO 2 BARRAS INFERIORES ESTILO LIGHTROOM MOBILE (60PX + 54PX) */}
+      {/* REGIÃO E — EM MODO RETRATO: NO MÁXIMO 2 BARRAS INFERIORES ESTILO LIGHTROOM MOBILE (60PX/54PX + 54PX/50PX) */}
       {!focus && !isLandscape && (
         <ChamferPortraitBottomBars
           isDark={isDark}
+          stripHeightPx={verticalLayout.chromeHeights.stripPx}
+          dockHeightPx={verticalLayout.chromeHeights.dockPx}
           tool={tool}
           onPickTool={pickTool}
           activeMode={activeMode}
@@ -10572,6 +10865,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           }}
           hasSelection={selected.length > 0}
           selectedCount={selected.length}
+          onSelectAll={() => setSelection(drawable.map((e) => e.id))}
+          onInvertSelection={() =>
+            setSelection(drawable.filter((e) => !selection.includes(e.id)).map((e) => e.id))
+          }
+          onClearSelection={() => setSelection([])}
           offsetDist={offsetDist}
           setOffsetDist={setOffsetDist}
           filletR={filletR}
@@ -10682,7 +10980,34 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             setPortraitDrawerOpen(true);
           }}
           activeLayer={activeLayer}
-          setActiveLayer={setActiveLayer}
+          setActiveLayer={(layerId) => {
+            setActiveLayer(layerId);
+            setActiveStrokeColor(null);
+            activeStrokeColorRef.current = null;
+          }}
+          activeStrokeColor={activeStrokeColor}
+          onSelectColorAndLayer={handleSelectColorAndLayer}
+          onDeleteSelection={handleDeleteSelection}
+          onUseSelectedEdge={handleUseSelectedEdge}
+          onAddThread={handleAddThread}
+          onAddEyelet={handleAddEyelet}
+          onAddTangentBridge={handleAddTangentBridge}
+          onAddSerratedTeeth={handleAddSerratedTeeth}
+          onAddPocket2D={handleAddPocket2D}
+          onVerifyGeometry={() => {
+            const found = verify(entities);
+            setIssues(found);
+            if (found.length) {
+              toast.warning(`${found.length} problemas encontrados`);
+            } else {
+              toast.success("Geometria CNC válida");
+            }
+          }}
+          onOptimizeGeometry={() => {
+            const res = optimize(entities);
+            commit(res.entities);
+            toast.success(`${res.removed + res.tiny} entidades limpas`);
+          }}
           showGrid={showGrid}
           setShowGrid={setShowGrid}
           grid={grid}
@@ -13233,7 +13558,12 @@ export const EntityShape = React.memo(function EntityShape({
       : style.color;
   const isIsoSolid = !!e.params?.isIsoSolidFace;
   const fillColor = isIsoSolid ? ((e.params?.fillColor as string) || "rgba(18, 40, 74, 0.25)") : "none";
-  const customStroke = isIsoSolid ? ((e.params?.strokeColor as string) || "#E8F4FF") : stroke;
+  const customStroke =
+    typeof e.params?.strokeColor === "string" && e.params.strokeColor.trim().length > 0
+      ? e.params.strokeColor.trim()
+      : isIsoSolid
+        ? "#E8F4FF"
+        : stroke;
   const customWidth = isIsoSolid
     ? (typeof e.params?.strokeWidth === "number" ? e.params.strokeWidth : 2.0) / k
     : (isCutOrWhite ? Math.max(2.1, 1.65 * style.weight) : Math.max(1.6, 1.45 * style.weight)) / k;

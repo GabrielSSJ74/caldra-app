@@ -3,8 +3,8 @@
  *
  * Arquitetura exclusiva para Tela Vertical (Modo Retrato / Portrait):
  * - Zero Barras Laterais (Canvas 100% de ponta a ponta — 100vw)
- * - 1 Barra Superior Única Compacta (height: 48px, zero corte lateral)
- * - Micro-Pílula Translúcida Flutuante no Canvas (height: 24px: P01 • X/Y • SNAP: ON)
+ * - 1 Barra Superior Única Compacta (height: 48px, zero corte lateral, menus em React Portal z-[60])
+ * - Micro-Pílula Translúcida Flutuante no Canvas (height: 24px: P01 • X/Y • Z/G • SNAP: ON)
  * - Estritamente no máximo 2 Barras Inferiores Empilhadas:
  *   • Nível 1 (Acima do Dock — height: 60px): Carrossel Contextual Horizontal com
  *     Substituição Contextual Inline ([ ← Voltar ] + pílulas editáveis + [ ✓ Confirmar ])
@@ -14,6 +14,7 @@
  */
 
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   ArrowLeftRight,
@@ -56,7 +57,6 @@ import {
   Disc,
   Flame,
   AlignCenter,
-  Search,
   FileText,
   Activity,
   Eye,
@@ -75,10 +75,31 @@ import {
   Lock,
   Unlock,
   Loader2,
+  Delete,
+  Palette,
+  Trash2,
+  Bug,
+  CopyCheck,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
+import {
+  applyNumericKeypadKey,
+  createNumericKeypadBuffer,
+  parseNumericKeypadValue,
+  resolvePortraitDrawerDragGesture,
+  resolvePortraitDrawerDvh,
+  resolveSingleSlotKind,
+  type NumericKeypadBufferState,
+  type PortraitDrawerHeightMode,
+} from "@/lib/lab2d/useVerticalLayout";
+import {
+  CHAMFER_TECHNICAL_PALETTE,
+  runVerticalParityMatrixAudit,
+  type ChamferTechnicalColorOption,
+  type VerticalParityDiagnosticReport,
+} from "@/lib/lab2d/chamferCommandRegistry";
 import type { Tool } from "./Lab2DEditor";
 import type { DimKind } from "@/lib/lab2d/dimensions";
 import type { CursorOffsetMode, LoupeHudMode } from "@/lib/lab2d/cadInteractionHub";
@@ -105,7 +126,19 @@ type InlineSubPanelId =
   | "thickness"
   | "boolean"
   | "layer"
-  | "cotar";
+  | "cotar"
+  | "hole"
+  | "thread"
+  | "eyelet"
+  | "teeth"
+  | "pocket";
+
+interface InlineNumericKeypadSession {
+  label: string;
+  unit: string;
+  bufferState: NumericKeypadBufferState;
+  onCommit: (val: number) => void;
+}
 
 /** Ícone vetorial de Nós / Vértices para o carrossel */
 function ControlNodesIcon({ className }: { className?: string }) {
@@ -129,26 +162,44 @@ function ControlNodesIcon({ className }: { className?: string }) {
   );
 }
 
+/** Renderiza elemento em Portal no document.body para evitar qualquer corte por overflow/contain */
+function renderInBodyPortal(node: React.ReactNode): React.ReactNode {
+  if (typeof document === "undefined" || !document.body) {
+    return node;
+  }
+  return createPortal(node, document.body);
+}
+
 export interface ChamferPortraitTopBarProps {
   isDark: boolean;
+  topBarHeightPx?: number;
+  viewportWidth?: number;
   projectName: string;
   thickness: number;
   onThicknessChange: (v: number) => void;
+  onOpenCustomThicknessKeypad?: (screenPos: { x: number; y: number }) => void;
   plans: { id: string; name: string }[];
   activePlanId: string;
   onSelectPlan: (id: string) => void;
   onCreatePlan: () => void;
   onOpenNewProjectDialog: () => void;
-  saveStatus: "salvo" | "salvando" | "pendente";
+  saveStatus: "salvo" | "salvando" | "pendente" | "erro";
   onManualSave: () => void;
   onLeaveEditor: () => void;
 
-  // Modos 2D / 3D / Projeção / Órbita
+  // Cor / Camada ativa (para bolinha viva no chip • 3,0mm ▾ e seletor COR)
+  activeLayer?: string;
+  activeStrokeColor?: string | null;
+  onSelectColorAndLayer?: (option: ChamferTechnicalColorOption) => void;
+
+  // Modos 2D / 3D / Projeção / Órbita / Plano ISO F5
   activeMode: "2d" | "3d" | "flanges";
   onSelect2D: () => void;
   onSelect3D: () => void;
   drawingProjection: "orthographic" | "isometric";
   onSetDrawingProjection: (mode: "orthographic" | "isometric") => void;
+  isoPlane?: "top" | "left" | "right";
+  onSelectIsoPlane?: (plane: "top" | "left" | "right") => void;
   isOrbitToolActive: boolean;
   isOrbitTilted: boolean;
   onToggleOrbitTool: (next?: boolean) => void;
@@ -160,6 +211,10 @@ export interface ChamferPortraitTopBarProps {
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
+
+  // Preferência de Layout Vertical (Compacto | Clássico)
+  layoutPreference?: "compact" | "classic";
+  onChangeLayoutPreference?: (pref: "compact" | "classic") => void;
 
   // Ações Globais no Menu ⋮
   onOpenVision: () => void;
@@ -173,6 +228,8 @@ export interface ChamferPortraitTopBarProps {
   onOpenTechnicalSheet: () => void;
   onOpenTopologyHealth: () => void;
   onOpenVariables: () => void;
+  onVerifyGeometry?: () => void;
+  onOptimizeGeometry?: () => void;
   showDims: boolean;
   onToggleShowDims: () => void;
   onToggleTheme: () => void;
@@ -182,9 +239,12 @@ export interface ChamferPortraitTopBarProps {
 
 export function ChamferPortraitTopBar({
   isDark,
+  topBarHeightPx = 48,
+  viewportWidth = 390,
   projectName,
   thickness,
   onThicknessChange,
+  onOpenCustomThicknessKeypad,
   plans,
   activePlanId,
   onSelectPlan,
@@ -193,11 +253,16 @@ export function ChamferPortraitTopBar({
   saveStatus,
   onManualSave,
   onLeaveEditor,
+  activeLayer = "corte",
+  activeStrokeColor = null,
+  onSelectColorAndLayer,
   activeMode,
   onSelect2D,
   onSelect3D,
   drawingProjection,
   onSetDrawingProjection,
+  isoPlane = "top",
+  onSelectIsoPlane,
   isOrbitToolActive,
   isOrbitTilted,
   onToggleOrbitTool,
@@ -207,6 +272,8 @@ export function ChamferPortraitTopBar({
   canRedo,
   onUndo,
   onRedo,
+  layoutPreference = "compact",
+  onChangeLayoutPreference,
   onOpenVision,
   onOpenIntent,
   onOpenWorkshop,
@@ -218,6 +285,8 @@ export function ChamferPortraitTopBar({
   onOpenTechnicalSheet,
   onOpenTopologyHealth,
   onOpenVariables,
+  onVerifyGeometry,
+  onOptimizeGeometry,
   showDims,
   onToggleShowDims,
   onToggleTheme,
@@ -225,145 +294,450 @@ export function ChamferPortraitTopBar({
   onToggleFullscreen,
 }: ChamferPortraitTopBarProps) {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
+  const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
-  const projectMenuRef = useRef<HTMLDivElement>(null);
-  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  // Diagnóstico de Paridade & Depurador de Toque (DIAG_ENABLED — acionado por long-press no chip • 3,0mm ▾ ou pelo menu)
+  const [diagModalOpen, setDiagModalOpen] = useState(false);
+  const [diagReport, setDiagReport] = useState<VerticalParityDiagnosticReport | null>(null);
+  const [touchDebuggerOn, setTouchDebuggerOn] = useState(false);
+  const [lastTouchDebugInfo, setLastTouchDebugInfo] = useState<string>("Aguardando toque...");
+  const [copiedReport, setCopiedReport] = useState(false);
+  const longPressTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!projectMenuOpen && !moreMenuOpen) return;
-    const onPointerDown = (e: PointerEvent) => {
-      const target = e.target as Node;
-      if (projectMenuOpen && projectMenuRef.current && !projectMenuRef.current.contains(target)) {
-        setProjectMenuOpen(false);
-      }
-      if (moreMenuOpen && moreMenuRef.current && !moreMenuRef.current.contains(target)) {
-        setMoreMenuOpen(false);
-      }
+    if (!touchDebuggerOn) return;
+    const handleGlobalTouchDebug = (ev: PointerEvent) => {
+      const target = ev.target as HTMLElement | null;
+      const cmdBtn = target?.closest?.("[data-cmd-id]") as HTMLElement | null;
+      const cmdId = cmdBtn?.getAttribute("data-cmd-id") || target?.tagName?.toLowerCase() || "desconhecido";
+      setLastTouchDebugInfo(
+        `cmdId: ${cmdId} | (${Math.round(ev.clientX)}, ${Math.round(ev.clientY)})`,
+      );
     };
-    document.addEventListener("pointerdown", onPointerDown, { passive: true });
-    return () => document.removeEventListener("pointerdown", onPointerDown);
-  }, [projectMenuOpen, moreMenuOpen]);
+    window.addEventListener("pointerdown", handleGlobalTouchDebug, true);
+    return () => window.removeEventListener("pointerdown", handleGlobalTouchDebug, true);
+  }, [touchDebuggerOn]);
 
-  // Determina o rótulo e estado do Chip de Vista Ativa (1 toque alterna ORTO 2D -> ISO 2D -> ÓRBITA 3D)
-  const viewChipLabel =
-    isOrbitToolActive || isOrbitTilted || activeMode === "3d"
-      ? "ÓRBITA 3D"
-      : drawingProjection === "isometric"
-        ? "ISO 2D"
-        : "ORTO 2D";
-
-  const handleCycleViewChip = () => {
-    triggerHaptic("selection");
-    AudioManager.play("ui_select");
-    if (activeMode === "3d") {
-      // Em modo 3D alterna entre SÓLIDO / SOMB / ARAME com 1 toque
-      const nextStyle: EdgeMode =
-        renderStyle3D === "shaded-edges"
-          ? "shaded"
-          : renderStyle3D === "shaded"
-            ? "wireframe"
-            : "shaded-edges";
-      onChangeRenderStyle3D(nextStyle);
-      return;
-    }
-    if (!isOrbitToolActive && !isOrbitTilted && drawingProjection === "orthographic") {
-      onSetDrawingProjection("isometric");
-    } else if (!isOrbitToolActive && !isOrbitTilted && drawingProjection === "isometric") {
-      onSetDrawingProjection("orthographic");
-      onToggleOrbitTool(true);
-    } else {
-      onToggleOrbitTool(false);
-      onSetDrawingProjection("orthographic");
-      onSelect2D();
-    }
+  const handleRunParityAudit = () => {
+    const rep = runVerticalParityMatrixAudit(typeof document !== "undefined" ? document : null);
+    setDiagReport(rep);
+    setDiagModalOpen(true);
+    setProjectMenuOpen(false);
+    setViewMenuOpen(false);
+    setMoreMenuOpen(false);
   };
 
-  return (
-    <header
-      aria-label="Barra superior CHAMFER CAD Retrato"
-      style={{ height: 48, padding: "0 10px" }}
-      className={cn(
-        "relative z-40 flex w-full shrink-0 items-center justify-between border-b select-none transition-colors",
-        isDark
-          ? "border-white/[0.07] bg-[#11141C] text-[#F8FAFC]"
-          : "border-[#E2E8F0] bg-[#F8FAFC] text-[#0F172A]",
-      )}
-    >
-      {/* ESQUERDA: Botão Voltar (←) + Botão Único Compacto do Projeto/Chapa */}
-      <div className="flex min-w-0 items-center gap-1.5" ref={projectMenuRef}>
-        <button
-          type="button"
-          onClick={onLeaveEditor}
-          aria-label="Voltar ao Início"
-          title="Sair do editor e voltar"
-          className={cn(
-            "flex size-8 shrink-0 items-center justify-center rounded-lg border transition-colors active:scale-95",
-            isDark
-              ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] hover:bg-[#222836]"
-              : "border-[#E2E8F0] bg-white text-[#0F172A] hover:bg-[#F1F5F9]",
-          )}
-        >
-          <ArrowLeft className="size-4" />
-        </button>
+  // Colapso determinístico por prioridade (P1 > P2 > P3 > P4) para 320..430 px (zero sobreposição!)
+  const safeW = Number.isFinite(viewportWidth) && viewportWidth > 0 ? viewportWidth : 390;
+  const mergeViewIntoModeSelector = safeW < 340;
+  // Em celulares retrato (< 450px), exibe o chip compacto "● 3,0mm ▾" para nunca colidir com [2D|3D]
+  const showProjectNameInChip = safeW >= 450;
+  const shortViewLabel = safeW < 415;
 
-        <div className="relative min-w-0">
+  const fullViewLabel =
+    activeMode === "3d"
+      ? renderStyle3D === "shaded-edges"
+        ? "SÓLIDO"
+        : renderStyle3D === "shaded"
+          ? "SOMB"
+          : "ARAME"
+      : isOrbitToolActive || isOrbitTilted
+        ? "ÓRBITA 3D"
+        : drawingProjection === "isometric"
+          ? "ISO 2D"
+          : "ORTO 2D";
+
+  const compactViewLabel =
+    activeMode === "3d"
+      ? renderStyle3D === "shaded-edges"
+        ? "SÓL"
+        : renderStyle3D === "shaded"
+          ? "SOMB"
+          : "ARAME"
+      : isOrbitToolActive || isOrbitTilted
+        ? "ÓRB"
+        : drawingProjection === "isometric"
+          ? "ISO"
+          : "ORTO";
+
+  const displayedViewLabel = shortViewLabel ? compactViewLabel : fullViewLabel;
+
+  const formattedThickness = `${thickness.toFixed(1).replace(".", ",")} mm`;
+  const compactThickness = `${thickness.toFixed(1).replace(".", ",")}mm`;
+
+  // Cor viva exibida na bolinha do chip "• 3,0mm ▾"
+  const activeColorHex =
+    activeStrokeColor ||
+    (activeLayer === "dobra"
+      ? "#EC4899"
+      : activeLayer === "recorte"
+        ? "#F59E0B"
+        : activeLayer === "marcacao"
+          ? "#3B82F6"
+          : isDark
+            ? "#F8FAFC"
+            : "#0F172A");
+
+  const saveDotClass =
+    saveStatus === "erro"
+      ? "bg-[#EF4444]"
+      : saveStatus === "pendente" || saveStatus === "salvando"
+        ? "bg-[#F59E0B] animate-pulse"
+        : "bg-[#10B981]";
+
+  const saveStatusText =
+    saveStatus === "erro"
+      ? "Erro ao salvar"
+      : saveStatus === "salvando"
+        ? "Salvando..."
+        : saveStatus === "pendente"
+          ? "Alterações pendentes"
+          : "Salvo";
+
+  return (
+    <>
+      <header
+        aria-label="Barra superior CHAMFER CAD Retrato"
+        data-testid="chamfer-portrait-topbar"
+        style={{
+          height: topBarHeightPx,
+          padding: "0 6px",
+        }}
+        className={cn(
+          "relative z-30 flex w-full shrink-0 items-center justify-between gap-1 border-b select-none transition-colors",
+          isDark
+            ? "border-white/[0.07] bg-[#11141C] text-[#F8FAFC]"
+            : "border-[#E2E8F0] bg-[#F8FAFC] text-[#0F172A]",
+        )}
+      >
+        {/* ESQUERDA: P1 [←] SAIR + P4 Chip Compacto "● 3,0mm ▾" */}
+        <div className="flex min-w-0 items-center gap-1">
           <button
             type="button"
-            onClick={() => {
-              triggerHaptic("tap");
-              setProjectMenuOpen((v) => !v);
-              setMoreMenuOpen(false);
+            data-cmd-id="nav.exit"
+            onClick={(e) => {
+              e.stopPropagation();
+              onLeaveEditor();
             }}
-            className={cn(
-              "flex h-8 max-w-[132px] xs:max-w-[148px] items-center gap-1 rounded-lg border px-2 font-mono text-[10.5px] font-semibold transition-colors active:scale-98",
-              isDark
-                ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] hover:border-[#38BDF8]/40"
-                : "border-[#E2E8F0] bg-white text-[#0F172A] hover:border-[#0284C7]/40",
-            )}
-            title="Projeto, Planos (P01) e Espessura da Chapa"
+            aria-label="Sair do CHAMFER CAD e voltar aos Projetos"
+            title="Sair do editor e voltar"
+            className="group flex h-[44px] w-[36px] shrink-0 items-center justify-center touch-manipulation cursor-pointer"
           >
             <span
               className={cn(
-                "size-1.5 shrink-0 rounded-full",
-                saveStatus === "pendente"
-                  ? "bg-[#F59E0B] animate-pulse"
-                  : saveStatus === "salvando"
-                    ? "bg-[#38BDF8] animate-ping"
-                    : "bg-[#10B981]",
+                "flex size-8 items-center justify-center rounded-lg border transition-colors group-active:scale-95",
+                isDark
+                  ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:bg-[#222836]"
+                  : "border-[#E2E8F0] bg-white text-[#0F172A] group-hover:bg-[#F1F5F9]",
               )}
-            />
-            <span className="truncate">{projectName}</span>
-            <span className={cn("shrink-0 font-bold", isDark ? "text-[#38BDF8]" : "text-[#0284C7]")}>
-              • {thickness.toFixed(1)}mm
+            >
+              <ArrowLeft className="size-4" />
             </span>
-            <ChevronDown className="size-3 shrink-0 opacity-70" />
           </button>
 
-          {/* POPOVER RÁPIDO DE PROJETO, PLANOS E ESPESSURA */}
-          {projectMenuOpen && (
-            <div
+          {/* P4: Chip Compacto "● 3,0mm ▾" (Toque abre Projeto/Chapa/Cor; Pressão longa ~750ms abre Diagnóstico) */}
+          <button
+            type="button"
+            data-testid="chamfer-portrait-project-chip"
+            data-cmd-id="doc.project_sheet_chip"
+            aria-expanded={projectMenuOpen}
+            aria-label={`Projeto ${projectName}, espessura ${formattedThickness}, estado ${saveStatusText}. Toque para trocar folha, espessura ou cor. Segure para Diagnóstico.`}
+            title={`${projectName} · CHAPA ${formattedThickness} (${saveStatusText})`}
+            onPointerDown={() => {
+              if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current);
+              longPressTimerRef.current = window.setTimeout(() => {
+                triggerHaptic("action");
+                handleRunParityAudit();
+              }, 750);
+            }}
+            onPointerUp={() => {
+              if (longPressTimerRef.current) {
+                window.clearTimeout(longPressTimerRef.current);
+                longPressTimerRef.current = null;
+              }
+            }}
+            onPointerCancel={() => {
+              if (longPressTimerRef.current) {
+                window.clearTimeout(longPressTimerRef.current);
+                longPressTimerRef.current = null;
+              }
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("tap");
+              setProjectMenuOpen((v) => !v);
+              setViewMenuOpen(false);
+              setMoreMenuOpen(false);
+            }}
+            className="group flex h-[44px] shrink-0 items-center touch-manipulation cursor-pointer"
+          >
+            <span
               className={cn(
-                "fixed top-[52px] left-2.5 z-[80] w-64 rounded-2xl border p-2.5 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
+                "flex h-8 items-center gap-1 rounded-lg border px-2 font-mono text-[10.5px] font-bold transition-colors group-active:scale-95 whitespace-nowrap",
+                projectMenuOpen
+                  ? "border-[#E11D48] bg-[#E11D48]/15 text-[#E11D48]"
+                  : isDark
+                    ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:border-[#E11D48]/40"
+                    : "border-[#E2E8F0] bg-white text-[#0F172A] group-hover:border-[#E11D48]/40",
+              )}
+            >
+              <span
+                aria-hidden="true"
+                style={{ backgroundColor: activeColorHex }}
+                className="size-2.5 shrink-0 rounded-full border border-black/20 shadow-xs"
+              />
+              {showProjectNameInChip && (
+                <span className="max-w-[90px] truncate text-left">{projectName} ·</span>
+              )}
+              <span className="shrink-0 font-bold">{compactThickness}</span>
+              <ChevronDown className="size-3 shrink-0 opacity-70" />
+            </span>
+          </button>
+        </div>
+
+        {/* CENTRO: P2 Seletor Segmentado [ 2D | 3D ] + P3 Chip de Vista ("ORTO ▾") */}
+        <div className="flex shrink-0 items-center gap-1">
+          <div
+            role="group"
+            aria-label="Seletor de Ambiente 2D ou 3D"
+            className={cn(
+              "flex h-8 shrink-0 items-center rounded-lg border p-0.5",
+              isDark ? "border-white/[0.08] bg-[#181C26]" : "border-[#E2E8F0] bg-white",
+            )}
+          >
+            <button
+              type="button"
+              data-testid="chamfer-portrait-mode-2d"
+              data-cmd-id="mode.2d_sketch"
+              aria-label="Ambiente 2D Sketch"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic("selection");
+                if (mergeViewIntoModeSelector && activeMode === "2d") {
+                  setViewMenuOpen((v) => !v);
+                  setProjectMenuOpen(false);
+                  setMoreMenuOpen(false);
+                } else {
+                  onSelect2D();
+                }
+              }}
+              className={cn(
+                "h-7 rounded-md px-2 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
+                activeMode === "2d"
+                  ? "bg-[#E11D48] text-white shadow-xs"
+                  : isDark
+                    ? "text-[#94A3B8] hover:text-white"
+                    : "text-[#475569] hover:text-[#0F172A]",
+              )}
+            >
+              {mergeViewIntoModeSelector && activeMode === "2d"
+                ? `2D·${compactViewLabel}▾`
+                : "2D"}
+            </button>
+            <button
+              type="button"
+              data-testid="chamfer-portrait-mode-3d"
+              data-cmd-id="mode.cad_3d"
+              aria-label="Ambiente CAD 3D Sólido"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic("selection");
+                if (mergeViewIntoModeSelector && activeMode === "3d") {
+                  setViewMenuOpen((v) => !v);
+                  setProjectMenuOpen(false);
+                  setMoreMenuOpen(false);
+                } else {
+                  onSelect3D();
+                }
+              }}
+              className={cn(
+                "h-7 rounded-md px-2 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
+                activeMode === "3d"
+                  ? "bg-[#E11D48] text-white shadow-xs"
+                  : isDark
+                    ? "text-[#94A3B8] hover:text-white"
+                    : "text-[#475569] hover:text-[#0F172A]",
+              )}
+            >
+              {mergeViewIntoModeSelector && activeMode === "3d"
+                ? `3D·${compactViewLabel}▾`
+                : "3D"}
+            </button>
+          </div>
+
+          {!mergeViewIntoModeSelector && (
+            <button
+              type="button"
+              data-testid="chamfer-portrait-view-chip"
+              data-cmd-id="view.ortho_2d"
+              aria-expanded={viewMenuOpen}
+              aria-label={`Vista ativa: ${fullViewLabel}. Toque para configurar vista, plano isométrico F5 ou órbita 3D.`}
+              title={`Vista: ${fullViewLabel} (toque para alternar ou escolher Plano ISO F5)`}
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic("tap");
+                setViewMenuOpen((v) => !v);
+                setProjectMenuOpen(false);
+                setMoreMenuOpen(false);
+              }}
+              className="group flex h-[44px] shrink-0 items-center touch-manipulation cursor-pointer"
+            >
+              <span
+                className={cn(
+                  "flex h-8 items-center gap-0.5 rounded-lg border px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors group-active:scale-95 whitespace-nowrap",
+                  viewMenuOpen || isOrbitToolActive || isOrbitTilted || drawingProjection === "isometric"
+                    ? isDark
+                      ? "border-[#E11D48]/60 bg-[#E11D48]/15 text-[#F8FAFC]"
+                      : "border-[#E11D48]/55 bg-[#E11D48]/10 text-[#E11D48]"
+                    : isDark
+                      ? "border-white/[0.08] bg-[#181C26] text-[#94A3B8] group-hover:text-white"
+                      : "border-[#E2E8F0] bg-white text-[#475569] group-hover:text-[#0F172A]",
+                )}
+              >
+                <span>{displayedViewLabel}</span>
+                <ChevronDown className="size-2.5 opacity-70" />
+              </span>
+            </button>
+          )}
+        </div>
+
+        {/* DIREITA: P1 Histórico Direto (↶ ↷) + Menu Mais Ações (⋮) */}
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            data-cmd-id="history.undo"
+            disabled={!canUndo}
+            onClick={(e) => {
+              e.stopPropagation();
+              onUndo();
+            }}
+            aria-label="Desfazer última alteração"
+            title="Desfazer (Ctrl+Z)"
+            className={cn(
+              "group flex h-[44px] w-[34px] shrink-0 items-center justify-center touch-manipulation",
+              canUndo ? "cursor-pointer" : "cursor-not-allowed opacity-35",
+            )}
+          >
+            <span
+              className={cn(
+                "flex size-8 items-center justify-center rounded-lg border transition-colors",
+                canUndo
+                  ? isDark
+                    ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:bg-[#222836] group-active:scale-95"
+                    : "border-[#E2E8F0] bg-white text-[#0F172A] group-hover:bg-[#F1F5F9] group-active:scale-95"
+                  : "border-transparent text-[#94A3B8]",
+              )}
+            >
+              <Undo2 className="size-4" />
+            </span>
+          </button>
+
+          <button
+            type="button"
+            data-cmd-id="history.redo"
+            disabled={!canRedo}
+            onClick={(e) => {
+              e.stopPropagation();
+              onRedo();
+            }}
+            aria-label="Refazer alteração desfeita"
+            title="Refazer (Ctrl+Y)"
+            className={cn(
+              "group flex h-[44px] w-[34px] shrink-0 items-center justify-center touch-manipulation",
+              canRedo ? "cursor-pointer" : "cursor-not-allowed opacity-35",
+            )}
+          >
+            <span
+              className={cn(
+                "flex size-8 items-center justify-center rounded-lg border transition-colors",
+                canRedo
+                  ? isDark
+                    ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:bg-[#222836] group-active:scale-95"
+                    : "border-[#E2E8F0] bg-white text-[#0F172A] group-hover:bg-[#F1F5F9] group-active:scale-95"
+                  : "border-transparent text-[#94A3B8]",
+              )}
+            >
+              <Redo2 className="size-4" />
+            </span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="chamfer-portrait-more-btn"
+            data-cmd-id="topbar.more_menu"
+            aria-expanded={moreMenuOpen}
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("tap");
+              setMoreMenuOpen((v) => !v);
+              setProjectMenuOpen(false);
+              setViewMenuOpen(false);
+            }}
+            aria-label="Mais ações e configurações do CHAMFER CAD"
+            title="Mais Ações (Salvar, Vision, Intent, Corte/BOM, Exportar, Layout)"
+            className="group flex h-[44px] w-[36px] shrink-0 items-center justify-center touch-manipulation cursor-pointer"
+          >
+            <span
+              className={cn(
+                "flex size-8 items-center justify-center rounded-lg border transition-colors group-active:scale-95",
+                moreMenuOpen
+                  ? "border-[#E11D48] bg-[#E11D48] text-white"
+                  : isDark
+                    ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:bg-[#222836]"
+                    : "border-[#E2E8F0] bg-white text-[#0F172A] group-hover:bg-[#F1F5F9]",
+              )}
+            >
+              <MoreVertical className="size-4" />
+            </span>
+          </button>
+        </div>
+      </header>
+
+      {/* ====================================================================
+       * PORTAL 1: POPOVER DE PROJETO, FOLHAS (P01/P02), ESPESSURA E COR (COR)
+       * Renderizado no document.body com z-[60] — impossível ser cortado!
+       * ==================================================================== */}
+      {projectMenuOpen &&
+        renderInBodyPortal(
+          <div className="fixed inset-0 z-[60]" data-testid="portrait-project-menu-portal">
+            <div
+              aria-hidden="true"
+              className="fixed inset-0 bg-black/20"
+              onClick={() => setProjectMenuOpen(false)}
+            />
+            <div
+              role="dialog"
+              aria-label="Seletor de Folhas, Nome do Projeto, Espessura da Chapa e Cor Técnica"
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "fixed top-[52px] left-2 z-[61] w-76 max-w-[calc(100vw-16px)] max-h-[calc(100dvh-70px)] overflow-y-auto rounded-2xl border p-3 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
                 isDark
-                  ? "border-white/[0.1] bg-[#181C26]/98 text-[#F8FAFC]"
+                  ? "border-white/[0.12] bg-[#181C26]/98 text-[#F8FAFC]"
                   : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
               )}
             >
-              <div className="flex items-center justify-between border-b pb-2 mb-2 border-white/[0.07]">
-                <div className="min-w-0">
-                  <p className="font-mono text-[9px] uppercase tracking-wider text-[#94A3B8]">
-                    Documento Ativo
+              <div className="flex items-center justify-between border-b pb-2 mb-2.5 border-white/[0.08]">
+                <div className="min-w-0 pr-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className={cn("size-1.5 rounded-full shrink-0", saveDotClass)} />
+                    <p className="font-mono text-[9px] uppercase tracking-wider text-[#94A3B8]">
+                      {saveStatusText}
+                    </p>
+                  </div>
+                  <p className="font-mono text-xs font-bold truncate" title={projectName}>
+                    {projectName}
                   </p>
-                  <p className="font-mono text-xs font-bold truncate">{projectName}</p>
                 </div>
                 <button
                   type="button"
+                  data-cmd-id="doc.save"
                   onClick={() => {
                     setProjectMenuOpen(false);
                     onManualSave();
                   }}
                   className={cn(
-                    "flex items-center gap-1 rounded-lg border px-2 py-1 font-mono text-[10px] font-bold transition-colors",
+                    "flex shrink-0 items-center gap-1 rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-bold transition-colors cursor-pointer",
                     isDark
                       ? "border-[#10B981]/40 bg-[#10B981]/15 text-[#34D399]"
                       : "border-[#059669]/40 bg-[#059669]/10 text-[#059669]",
@@ -378,23 +752,24 @@ export function ChamferPortraitTopBar({
                 </button>
               </div>
 
-              {/* Seletor de Planos P01 / P02 / + */}
-              <div className="mb-2.5">
+              {/* 1. Seletor de Folhas P01 / P02 / + */}
+              <div className="mb-3">
                 <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1">
-                  Planos de Corte
+                  Folhas do Projeto (Planos de Corte)
                 </span>
                 <div className="flex flex-wrap items-center gap-1">
                   {plans.map((pl) => (
                     <button
                       key={pl.id}
                       type="button"
+                      data-cmd-id="doc.switch_plan"
                       onClick={() => {
                         triggerHaptic("selection");
                         onSelectPlan(pl.id);
                         setProjectMenuOpen(false);
                       }}
                       className={cn(
-                        "rounded-lg px-2.5 py-1 font-mono text-[10.5px] font-bold transition-colors",
+                        "min-h-[32px] rounded-lg px-2.5 py-1 font-mono text-[10.5px] font-bold transition-colors cursor-pointer",
                         pl.id === activePlanId
                           ? "bg-[#E11D48] text-white shadow-xs"
                           : isDark
@@ -407,35 +782,52 @@ export function ChamferPortraitTopBar({
                   ))}
                   <button
                     type="button"
+                    data-cmd-id="doc.create_plan"
+                    aria-label="Criar nova folha de corte"
                     onClick={() => {
                       triggerHaptic("action");
                       onCreatePlan();
                       setProjectMenuOpen(false);
                     }}
                     className={cn(
-                      "flex items-center gap-1 rounded-lg border px-2 py-1 font-mono text-[10px] font-bold",
+                      "flex min-h-[32px] items-center gap-1 rounded-lg border px-2.5 py-1 font-mono text-[10px] font-bold cursor-pointer",
                       isDark
-                        ? "border-white/[0.1] bg-[#11141C] text-[#38BDF8]"
-                        : "border-[#CBD5E1] bg-[#F8FAFC] text-[#0284C7]",
+                        ? "border-white/[0.1] bg-[#11141C] text-[#F8FAFC]"
+                        : "border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A]",
                     )}
                   >
-                    <Plus className="size-3" /> Plano
+                    <Plus className="size-3 text-[#E11D48]" /> Folha
                   </button>
                 </div>
               </div>
 
-              {/* Espessura da Chapa */}
-              <div className="mb-2.5">
+              {/* 2. Espessura da Chapa (mm) */}
+              <div className="mb-3">
                 <div className="flex items-center justify-between mb-1">
                   <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8]">
-                    Espessura da Chapa
+                    Espessura CHAPA (mm)
                   </span>
-                  <span className="font-mono text-[10.5px] font-bold text-[#E11D48]">
-                    CHAPA {thickness.toFixed(1)}MM
-                  </span>
+                  {onOpenCustomThicknessKeypad ? (
+                    <button
+                      type="button"
+                      data-cmd-id="chp.thickness"
+                      onClick={(e) => {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setProjectMenuOpen(false);
+                        onOpenCustomThicknessKeypad({ x: rect.left, y: rect.bottom + 12 });
+                      }}
+                      className="rounded-md border border-[#E11D48]/40 bg-[#E11D48]/12 px-2 py-0.5 font-mono text-[10px] font-bold text-[#E11D48] cursor-pointer"
+                    >
+                      Digitar {formattedThickness} ✎
+                    </button>
+                  ) : (
+                    <span className="font-mono text-[10.5px] font-bold text-[#E11D48]">
+                      CHAPA {formattedThickness}
+                    </span>
+                  )}
                 </div>
                 <div className="grid grid-cols-4 gap-1">
-                  {[1.0, 1.5, 2.0, 3.0, 4.75, 6.35, 9.5, 12.7].map((th) => (
+                  {[0.8, 1.0, 1.5, 2.0, 3.0, 4.75, 6.35, 9.5, 12.7].slice(0, 8).map((th) => (
                     <button
                       key={th}
                       type="button"
@@ -444,9 +836,9 @@ export function ChamferPortraitTopBar({
                         onThicknessChange(th);
                       }}
                       className={cn(
-                        "rounded-lg py-1 font-mono text-[10px] font-bold transition-colors",
+                        "min-h-[32px] rounded-lg py-1 font-mono text-[10px] font-bold transition-colors cursor-pointer",
                         Math.abs(thickness - th) < 0.05
-                          ? "bg-[#0EA5E9] text-white"
+                          ? "bg-[#E11D48] text-white"
                           : isDark
                             ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
                             : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
@@ -458,171 +850,372 @@ export function ChamferPortraitTopBar({
                 </div>
               </div>
 
-              <button
-                type="button"
-                onClick={() => {
-                  setProjectMenuOpen(false);
-                  onOpenNewProjectDialog();
-                }}
-                className={cn(
-                  "flex w-full items-center justify-center gap-1.5 rounded-xl border py-1.5 font-mono text-[10.5px] font-bold transition-colors",
-                  isDark
-                    ? "border-white/[0.08] bg-[#11141C] text-[#F8FAFC] hover:bg-[#222836]"
-                    : "border-[#E2E8F0] bg-[#F8FAFC] text-[#0F172A] hover:bg-[#E2E8F0]/60",
-                )}
-              >
-                <FolderPlus className="size-3.5 text-[#E11D48]" />
-                <span>Novo / Renomear Projeto</span>
-              </button>
+              {/* 3. Seletor Rápido de Cor Técnica & Camada (COR — incluindo Preto Técnico #0F172A) */}
+              {onSelectColorAndLayer && (
+                <div className="mb-3 pt-2 border-t border-white/[0.08]">
+                  <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1.5">
+                    Cor Técnica & Camada (COR)
+                  </span>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {CHAMFER_TECHNICAL_PALETTE.map((col) => {
+                      const isCurrent =
+                        (activeStrokeColor &&
+                          activeStrokeColor.toUpperCase() === col.hex.toUpperCase()) ||
+                        (!activeStrokeColor && activeLayer === col.layer && col.id !== "preto_tecnico" && col.id !== "branco_tecnico");
+                      return (
+                        <button
+                          key={col.id}
+                          type="button"
+                          data-testid={`top-color-swatch-${col.id}`}
+                          data-cmd-id="cor.palette"
+                          onClick={() => {
+                            triggerHaptic("selection");
+                            onSelectColorAndLayer(col);
+                            setProjectMenuOpen(false);
+                          }}
+                          className={cn(
+                            "flex min-h-[34px] items-center gap-1.5 rounded-lg border px-2 py-1 font-mono text-[9.5px] font-bold transition-colors cursor-pointer",
+                            isCurrent
+                              ? "border-[#E11D48] bg-[#E11D48]/18 text-[#E11D48]"
+                              : isDark
+                                ? "border-white/[0.08] bg-[#11141C] text-[#E2E8F0] hover:border-white/25"
+                                : "border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] hover:border-[#94A3B8]",
+                          )}
+                        >
+                          <span
+                            style={{ backgroundColor: col.hex }}
+                            className="size-3 shrink-0 rounded-full border border-white/30 shadow-xs"
+                          />
+                          <span className="truncate">{col.shortLabel}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProjectMenuOpen(false);
+                    onOpenNewProjectDialog();
+                  }}
+                  className={cn(
+                    "flex min-h-[36px] flex-1 items-center justify-center gap-1.5 rounded-xl border py-1.5 font-mono text-[10px] font-bold transition-colors cursor-pointer",
+                    isDark
+                      ? "border-white/[0.08] bg-[#11141C] text-[#F8FAFC] hover:bg-[#222836]"
+                      : "border-[#E2E8F0] bg-[#F8FAFC] text-[#0F172A] hover:bg-[#E2E8F0]/60",
+                  )}
+                >
+                  <FolderPlus className="size-3.5 text-[#E11D48]" />
+                  <span>Novo / Renomear</span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="open-parity-diag-btn"
+                  onClick={handleRunParityAudit}
+                  title="Diagnóstico de Paridade Vertical × Paisagem"
+                  className={cn(
+                    "flex min-h-[36px] items-center justify-center gap-1 rounded-xl border px-2.5 py-1.5 font-mono text-[10px] font-bold transition-colors cursor-pointer",
+                    isDark
+                      ? "border-white/[0.08] bg-[#11141C] text-[#38BDF8] hover:bg-[#222836]"
+                      : "border-[#CBD5E1] bg-[#F8FAFC] text-[#0284C7]",
+                  )}
+                >
+                  <Bug className="size-3.5" />
+                  <span>Diag</span>
+                </button>
+              </div>
             </div>
-          )}
-        </div>
-      </div>
+          </div>,
+        )}
 
-      {/* CENTRO: Seletor Segmentado Compacto [ 2D | 3D ] + Chip da Vista Ativa */}
-      <div className="flex shrink-0 items-center gap-1">
-        <div
-          className={cn(
-            "flex items-center rounded-lg border p-0.5",
-            isDark ? "border-white/[0.08] bg-[#181C26]" : "border-[#E2E8F0] bg-white",
-          )}
-        >
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("selection");
-              onSelect2D();
-            }}
-            className={cn(
-              "rounded-md px-2 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
-              activeMode === "2d"
-                ? "bg-[#E11D48] text-white shadow-xs"
-                : isDark
-                  ? "text-[#94A3B8] hover:text-white"
-                  : "text-[#475569] hover:text-[#0F172A]",
-            )}
-          >
-            2D
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("selection");
-              onSelect3D();
-            }}
-            className={cn(
-              "rounded-md px-2 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors",
-              activeMode === "3d"
-                ? "bg-[#E11D48] text-white shadow-xs"
-                : isDark
-                  ? "text-[#94A3B8] hover:text-white"
-                  : "text-[#475569] hover:text-[#0F172A]",
-            )}
-          >
-            3D
-          </button>
-        </div>
-
-        <button
-          type="button"
-          onClick={handleCycleViewChip}
-          title="Toque para alternar vista: ORTO 2D → ISO 2D → ÓRBITA 3D"
-          className={cn(
-            "flex h-7 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors active:scale-95",
-            isOrbitToolActive || isOrbitTilted || drawingProjection === "isometric"
-              ? isDark
-                ? "border-[#0EA5E9]/50 bg-[#0EA5E9]/18 text-[#38BDF8]"
-                : "border-[#0284C7]/45 bg-[#0284C7]/12 text-[#0284C7]"
-              : isDark
-                ? "border-white/[0.08] bg-[#181C26] text-[#94A3B8] hover:text-white"
-                : "border-[#E2E8F0] bg-white text-[#475569] hover:text-[#0F172A]",
-          )}
-        >
-          <span>
-            {activeMode === "3d"
-              ? renderStyle3D === "shaded-edges"
-                ? "SÓLIDO"
-                : renderStyle3D === "shaded"
-                  ? "SOMB"
-                  : "ARAME"
-              : viewChipLabel}
-          </span>
-        </button>
-      </div>
-
-      {/* DIREITA: Histórico Direto (↶ ↷) + Botão Mais Ações (⋮) */}
-      <div className="flex shrink-0 items-center gap-1" ref={moreMenuRef}>
-        <button
-          type="button"
-          disabled={!canUndo}
-          onClick={onUndo}
-          aria-label="Desfazer"
-          title="Desfazer (Ctrl+Z)"
-          className={cn(
-            "flex size-8 items-center justify-center rounded-lg border transition-colors",
-            canUndo
-              ? isDark
-                ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] hover:bg-[#222836] active:scale-95"
-                : "border-[#E2E8F0] bg-white text-[#0F172A] hover:bg-[#F1F5F9] active:scale-95"
-              : "opacity-35 cursor-not-allowed border-transparent text-[#94A3B8]",
-          )}
-        >
-          <Undo2 className="size-4" />
-        </button>
-
-        <button
-          type="button"
-          disabled={!canRedo}
-          onClick={onRedo}
-          aria-label="Refazer"
-          title="Refazer (Ctrl+Y)"
-          className={cn(
-            "flex size-8 items-center justify-center rounded-lg border transition-colors",
-            canRedo
-              ? isDark
-                ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] hover:bg-[#222836] active:scale-95"
-                : "border-[#E2E8F0] bg-white text-[#0F172A] hover:bg-[#F1F5F9] active:scale-95"
-              : "opacity-35 cursor-not-allowed border-transparent text-[#94A3B8]",
-          )}
-        >
-          <Redo2 className="size-4" />
-        </button>
-
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("tap");
-              setMoreMenuOpen((v) => !v);
-              setProjectMenuOpen(false);
-            }}
-            aria-label="Mais Ações"
-            title="Mais Ações (Vision, Intent, Corte/BOM, Exportar, Enquadrar)"
-            className={cn(
-              "flex size-8 items-center justify-center rounded-lg border transition-colors active:scale-95",
-              moreMenuOpen
-                ? "border-[#E11D48] bg-[#E11D48] text-white"
-                : isDark
-                  ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] hover:bg-[#222836]"
-                  : "border-[#E2E8F0] bg-white text-[#0F172A] hover:bg-[#F1F5F9]",
-            )}
-          >
-            <MoreVertical className="size-4" />
-          </button>
-
-          {moreMenuOpen && (
+      {/* ====================================================================
+       * PORTAL 2: POPOVER DE VISTA (ORTO 2D | ISO 2D + F5 | ÓRBITA 3D + SÓLIDO/SOMB/ARAME)
+       * Renderizado no document.body com z-[60]
+       * ==================================================================== */}
+      {viewMenuOpen &&
+        renderInBodyPortal(
+          <div className="fixed inset-0 z-[60]" data-testid="portrait-view-menu-portal">
             <div
+              aria-hidden="true"
+              className="fixed inset-0 bg-black/20"
+              onClick={() => setViewMenuOpen(false)}
+            />
+            <div
+              role="dialog"
+              aria-label="Seletor de Vista, Projeção Isométrica e Estilo 3D"
+              onClick={(e) => e.stopPropagation()}
               className={cn(
-                "fixed top-[52px] right-2.5 z-[80] w-60 rounded-2xl border p-1.5 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
+                "fixed top-[52px] left-1/2 -translate-x-1/2 z-[61] w-68 max-w-[calc(100vw-16px)] rounded-2xl border p-3 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
                 isDark
-                  ? "border-white/[0.1] bg-[#181C26]/98 text-[#F8FAFC]"
+                  ? "border-white/[0.12] bg-[#181C26]/98 text-[#F8FAFC]"
                   : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
               )}
             >
+              <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1.5">
+                Vista & Projeção do Canvas
+              </span>
+              <div className="grid grid-cols-3 gap-1 mb-2">
+                <button
+                  type="button"
+                  data-cmd-id="view.ortho_2d"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onToggleOrbitTool(false);
+                    onSetDrawingProjection("orthographic");
+                    onSelect2D();
+                    setViewMenuOpen(false);
+                  }}
+                  className={cn(
+                    "min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                    activeMode === "2d" &&
+                      drawingProjection === "orthographic" &&
+                      !isOrbitToolActive &&
+                      !isOrbitTilted
+                      ? "bg-[#E11D48] text-white"
+                      : isDark
+                        ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
+                        : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
+                  )}
+                >
+                  ORTO 2D
+                </button>
+                <button
+                  type="button"
+                  data-cmd-id="view.iso_2d"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onToggleOrbitTool(false);
+                    onSetDrawingProjection("isometric");
+                    onSelect2D();
+                  }}
+                  className={cn(
+                    "min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                    activeMode === "2d" && drawingProjection === "isometric" && !isOrbitToolActive
+                      ? "bg-[#E11D48] text-white"
+                      : isDark
+                        ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
+                        : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
+                  )}
+                >
+                  ISO 2D
+                </button>
+                <button
+                  type="button"
+                  data-cmd-id="view.orbit_3d"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onToggleOrbitTool(!isOrbitToolActive);
+                    setViewMenuOpen(false);
+                  }}
+                  className={cn(
+                    "min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                    isOrbitToolActive || isOrbitTilted
+                      ? "bg-[#E11D48] text-white"
+                      : isDark
+                        ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
+                        : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
+                  )}
+                >
+                  ÓRBITA 3D
+                </button>
+              </div>
+
+              {/* SELETOR DE PLANO ISOMÉTRICO (F5): SUPERIOR | ESQUERDO | DIREITO */}
+              {onSelectIsoPlane && (
+                <div className="mb-2 pt-1.5 border-t border-white/[0.07]">
+                  <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1">
+                    Plano Isométrico Ativo (F5)
+                  </span>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(
+                      [
+                        { id: "top" as const, label: "Superior" },
+                        { id: "left" as const, label: "Esquerdo" },
+                        { id: "right" as const, label: "Direito" },
+                      ]
+                    ).map((pl) => (
+                      <button
+                        key={pl.id}
+                        type="button"
+                        data-cmd-id="view.iso_plane_f5"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          onSetDrawingProjection("isometric");
+                          onSelectIsoPlane(pl.id);
+                          setViewMenuOpen(false);
+                        }}
+                        className={cn(
+                          "min-h-[32px] rounded-lg py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                          drawingProjection === "isometric" && isoPlane === pl.id
+                            ? "bg-[#E11D48] text-white"
+                            : isDark
+                              ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
+                              : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
+                        )}
+                      >
+                        {pl.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ESTILO DE RENDERIZAÇÃO 3D: SÓLIDO | SOMBREADO | ARAME */}
+              <div className="pt-1.5 border-t border-white/[0.07]">
+                <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1">
+                  Representação 3D (Sólido / Somb / Arame)
+                </span>
+                <div className="grid grid-cols-3 gap-1">
+                  {(
+                    [
+                      { id: "shaded-edges" as EdgeMode, label: "Sólido" },
+                      { id: "shaded" as EdgeMode, label: "Somb." },
+                      { id: "wireframe" as EdgeMode, label: "Arame" },
+                    ]
+                  ).map((st) => (
+                    <button
+                      key={st.id}
+                      type="button"
+                      data-cmd-id="view.style_3d"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        onChangeRenderStyle3D(st.id);
+                        setViewMenuOpen(false);
+                      }}
+                      className={cn(
+                        "min-h-[32px] rounded-lg py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                        renderStyle3D === st.id
+                          ? "bg-[#E11D48] text-white"
+                          : isDark
+                            ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
+                            : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
+                      )}
+                    >
+                      {st.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>,
+        )}
+
+      {/* ====================================================================
+       * PORTAL 3: MENU MAIS AÇÕES (⋮) COMPLETO
+       * Renderizado no document.body com z-[60]
+       * ==================================================================== */}
+      {moreMenuOpen &&
+        renderInBodyPortal(
+          <div className="fixed inset-0 z-[60]" data-testid="portrait-more-menu-portal">
+            <div
+              aria-hidden="true"
+              className="fixed inset-0 bg-black/20"
+              onClick={() => setMoreMenuOpen(false)}
+            />
+            <div
+              role="menu"
+              aria-label="Menu de ações globais do CHAMFER CAD"
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "fixed top-[52px] right-2 z-[61] max-h-[calc(100dvh-68px)] w-68 max-w-[calc(100vw-16px)] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
+                isDark
+                  ? "border-white/[0.12] bg-[#181C26]/98 text-[#F8FAFC]"
+                  : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
+              )}
+            >
+              {/* CABEÇALHO DE DETALHES DO PROJETO + BOTÃO SALVAR */}
+              <div
+                className={cn(
+                  "mb-1.5 flex items-center justify-between rounded-xl px-2.5 py-2",
+                  isDark ? "bg-[#11141C]" : "bg-[#F8FAFC]",
+                )}
+              >
+                <div className="min-w-0 pr-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className={cn("size-1.5 rounded-full shrink-0", saveDotClass)} />
+                    <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8]">
+                      {saveStatusText}
+                    </span>
+                  </div>
+                  <p className="font-mono text-[11px] font-bold truncate" title={projectName}>
+                    {projectName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  data-cmd-id="doc.save"
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    onManualSave();
+                  }}
+                  className="shrink-0 rounded-lg bg-[#E11D48] px-2.5 py-1 font-mono text-[10px] font-bold text-white cursor-pointer"
+                >
+                  Salvar
+                </button>
+              </div>
+
+              {/* SELETOR DE LAYOUT: COMPACTO (LIGHTROOM) | CLÁSSICO */}
+              {onChangeLayoutPreference && (
+                <div
+                  className={cn(
+                    "mb-1.5 rounded-xl border px-2.5 py-1.5",
+                    isDark ? "border-white/[0.06] bg-[#11141C]/60" : "border-[#E2E8F0] bg-[#F8FAFC]",
+                  )}
+                >
+                  <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1">
+                    Layout Vertical
+                  </span>
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      data-cmd-id="ui.layout_mode_toggle"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        onChangeLayoutPreference("compact");
+                        setMoreMenuOpen(false);
+                      }}
+                      className={cn(
+                        "min-h-[30px] rounded-lg font-mono text-[10px] font-bold transition-colors cursor-pointer",
+                        layoutPreference === "compact"
+                          ? "bg-[#E11D48] text-white"
+                          : isDark
+                            ? "bg-[#181C26] text-[#94A3B8] hover:text-white"
+                            : "bg-white text-[#475569] hover:text-[#0F172A]",
+                      )}
+                    >
+                      Compacto
+                    </button>
+                    <button
+                      type="button"
+                      data-cmd-id="ui.layout_mode_toggle"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        onChangeLayoutPreference("classic");
+                        setMoreMenuOpen(false);
+                      }}
+                      className={cn(
+                        "min-h-[30px] rounded-lg font-mono text-[10px] font-bold transition-colors cursor-pointer",
+                        layoutPreference === "classic"
+                          ? "bg-[#E11D48] text-white"
+                          : isDark
+                            ? "bg-[#181C26] text-[#94A3B8] hover:text-white"
+                            : "bg-white text-[#475569] hover:text-[#0F172A]",
+                      )}
+                    >
+                      Clássico
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <PortraitMenuItem
+                cmdId="global.vision"
                 icon={ScanEye}
                 accentColor="text-[#E11D48]"
-                label="VISION (Eng. Reversa 1:1)"
+                label="VISION — Eng. Reversa 1:1"
                 onClick={() => {
                   setMoreMenuOpen(false);
                   onOpenVision();
@@ -630,9 +1223,9 @@ export function ChamferPortraitTopBar({
                 isDark={isDark}
               />
               <PortraitMenuItem
+                cmdId="global.intent"
                 icon={Sparkles}
-                accentColor="text-[#38BDF8]"
-                label="CHAMFER INTENT (IA)"
+                label="CHAMFER INTENT (Assistente IA)"
                 onClick={() => {
                   setMoreMenuOpen(false);
                   onOpenIntent();
@@ -640,8 +1233,8 @@ export function ChamferPortraitTopBar({
                 isDark={isDark}
               />
               <PortraitMenuItem
+                cmdId="global.workshop_bom"
                 icon={Boxes}
-                accentColor="text-[#10B981]"
                 label="CORTE / BOM & Oficina"
                 onClick={() => {
                   setMoreMenuOpen(false);
@@ -650,6 +1243,7 @@ export function ChamferPortraitTopBar({
                 isDark={isDark}
               />
               <PortraitMenuItem
+                cmdId="global.export"
                 icon={Download}
                 label="Exportar CNC / DXF / PDF"
                 onClick={() => {
@@ -659,6 +1253,7 @@ export function ChamferPortraitTopBar({
                 isDark={isDark}
               />
               <PortraitMenuItem
+                cmdId="global.cnc_direct"
                 icon={Scissors}
                 label="Plano de Corte CNC Direto"
                 onClick={() => {
@@ -671,6 +1266,7 @@ export function ChamferPortraitTopBar({
               <div className={cn("my-1 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
 
               <PortraitMenuItem
+                cmdId="view.fit_piece"
                 icon={Crosshair}
                 label="Enquadrar Peça na Tela"
                 onClick={() => {
@@ -680,6 +1276,7 @@ export function ChamferPortraitTopBar({
                 isDark={isDark}
               />
               <PortraitMenuItem
+                cmdId="view.fit_workspace"
                 icon={Maximize2}
                 label="Enquadrar Área de Trabalho"
                 onClick={() => {
@@ -689,6 +1286,7 @@ export function ChamferPortraitTopBar({
                 isDark={isDark}
               />
               <PortraitMenuItem
+                cmdId="view.center_piece_in_workspace"
                 icon={AlignCenter}
                 label="Centralizar Peça na Área"
                 onClick={() => {
@@ -701,6 +1299,7 @@ export function ChamferPortraitTopBar({
               <div className={cn("my-1 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
 
               <PortraitMenuItem
+                cmdId="det.presets"
                 icon={Boxes}
                 label="Presets Paramétricos"
                 onClick={() => {
@@ -710,8 +1309,9 @@ export function ChamferPortraitTopBar({
                 isDark={isDark}
               />
               <PortraitMenuItem
+                cmdId="out.technical_sheet"
                 icon={FileText}
-                label="Folha Técnica e Legenda"
+                label="Prancha 2D e Legenda (A4/A3)"
                 onClick={() => {
                   setMoreMenuOpen(false);
                   onOpenTechnicalSheet();
@@ -719,6 +1319,7 @@ export function ChamferPortraitTopBar({
                 isDark={isDark}
               />
               <PortraitMenuItem
+                cmdId="insp.topology_health"
                 icon={Activity}
                 label="Topologia & Auto-Heal"
                 onClick={() => {
@@ -728,6 +1329,7 @@ export function ChamferPortraitTopBar({
                 isDark={isDark}
               />
               <PortraitMenuItem
+                cmdId="insp.variables"
                 icon={Sliders}
                 label="Tabela de Variáveis"
                 onClick={() => {
@@ -736,7 +1338,32 @@ export function ChamferPortraitTopBar({
                 }}
                 isDark={isDark}
               />
+              {onVerifyGeometry && (
+                <PortraitMenuItem
+                  cmdId="insp.verify_geometry"
+                  icon={Check}
+                  label="Verificar Geometria p/ CNC"
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    onVerifyGeometry();
+                  }}
+                  isDark={isDark}
+                />
+              )}
+              {onOptimizeGeometry && (
+                <PortraitMenuItem
+                  cmdId="insp.optimize_vectors"
+                  icon={Sparkles}
+                  label="Otimizar Vetores"
+                  onClick={() => {
+                    setMoreMenuOpen(false);
+                    onOptimizeGeometry();
+                  }}
+                  isDark={isDark}
+                />
+              )}
               <PortraitMenuItem
+                cmdId="insp.toggle_support_dims"
                 icon={Ruler}
                 label={showDims ? "Ocultar Medidas de Apoio" : "Mostrar Medidas de Apoio"}
                 onClick={() => {
@@ -749,6 +1376,7 @@ export function ChamferPortraitTopBar({
               <div className={cn("my-1 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
 
               <PortraitMenuItem
+                cmdId="ui.theme_toggle"
                 icon={isDark ? Sun : Moon}
                 label={isDark ? "Mudar para Tema Claro" : "Mudar para Tema Escuro"}
                 onClick={() => {
@@ -758,6 +1386,7 @@ export function ChamferPortraitTopBar({
                 isDark={isDark}
               />
               <PortraitMenuItem
+                cmdId="ui.fullscreen_toggle"
                 icon={focus ? Minimize : Maximize}
                 label={focus ? "Sair do Modo Tela Cheia" : "Modo Tela Cheia (Foco)"}
                 onClick={() => {
@@ -766,21 +1395,133 @@ export function ChamferPortraitTopBar({
                 }}
                 isDark={isDark}
               />
+              <PortraitMenuItem
+                cmdId="diag.matrix"
+                icon={Bug}
+                accentColor="text-[#38BDF8]"
+                label="Diagnóstico de Paridade 1:1"
+                onClick={handleRunParityAudit}
+                isDark={isDark}
+              />
             </div>
-          )}
-        </div>
-      </div>
-    </header>
+          </div>,
+        )}
+
+      {/* ====================================================================
+       * PORTAL 4: MODAL DE DIAGNÓSTICO DE PARIDADE E DEPURADOR DE TOQUE (z-[80])
+       * ==================================================================== */}
+      {diagModalOpen &&
+        diagReport &&
+        renderInBodyPortal(
+          <div
+            role="dialog"
+            aria-label="Diagnóstico de Paridade Vertical vs Paisagem"
+            data-testid="portrait-parity-diag-modal"
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-black/60 p-3 backdrop-blur-sm"
+            onClick={() => setDiagModalOpen(false)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "flex max-h-[82dvh] w-full max-w-md flex-col rounded-2xl border p-3.5 shadow-2xl font-mono",
+                isDark
+                  ? "border-white/[0.14] bg-[#11141C] text-[#F8FAFC]"
+                  : "border-[#CBD5E1] bg-white text-[#0F172A]",
+              )}
+            >
+              <div className="flex items-center justify-between border-b pb-2.5 mb-2.5 border-white/[0.08]">
+                <div>
+                  <span className="text-[9px] font-bold uppercase tracking-wider text-[#38BDF8]">
+                    DIAG_ENABLED • MATRIZ DE PARIDADE 1:1
+                  </span>
+                  <h3 className="text-xs font-bold">
+                    {diagReport.passedCount}/{diagReport.totalChecked} Comandos Aprovados (0 Órfãos)
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDiagModalOpen(false)}
+                  className="rounded-lg p-1 text-[#94A3B8] hover:text-white cursor-pointer"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+
+              <div className="mb-2.5 flex items-center justify-between gap-2 rounded-xl border border-white/[0.08] bg-black/20 px-2.5 py-2">
+                <div className="min-w-0">
+                  <span className="block text-[9.5px] font-bold">Depurador de Toque em Tempo Real</span>
+                  <span className="block truncate text-[9px] text-[#94A3B8]">
+                    {lastTouchDebugInfo}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setTouchDebuggerOn((v) => !v)}
+                  className={cn(
+                    "shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-bold cursor-pointer",
+                    touchDebuggerOn
+                      ? "bg-[#10B981] text-white"
+                      : "bg-white/10 text-[#94A3B8]",
+                  )}
+                >
+                  {touchDebuggerOn ? "ON" : "OFF"}
+                </button>
+              </div>
+
+              <pre
+                className={cn(
+                  "min-h-0 flex-1 overflow-y-auto rounded-xl border p-2.5 text-[9.5px] leading-relaxed whitespace-pre-wrap",
+                  isDark
+                    ? "border-white/[0.08] bg-[#0B0E14] text-[#E2E8F0]"
+                    : "border-[#CBD5E1] bg-[#F8FAFC] text-[#1E293B]",
+                )}
+              >
+                {diagReport.summaryText}
+              </pre>
+
+              <div className="mt-2.5 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  data-testid="copy-parity-report-btn"
+                  onClick={() => {
+                    try {
+                      navigator.clipboard?.writeText(diagReport.summaryText);
+                      setCopiedReport(true);
+                      setTimeout(() => setCopiedReport(false), 2000);
+                    } catch {
+                      setCopiedReport(true);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 rounded-xl bg-[#E11D48] px-3 py-2 text-[10.5px] font-bold text-white cursor-pointer"
+                >
+                  <CopyCheck className="size-3.5" />
+                  <span>{copiedReport ? "Relatório Copiado!" : "📋 Copiar Relatório"}</span>
+                </button>
+              </div>
+            </div>
+          </div>,
+        )}
+
+      {/* Banner flutuante do Depurador de Toque quando ativo */}
+      {touchDebuggerOn &&
+        renderInBodyPortal(
+          <div className="pointer-events-none fixed top-[52px] left-1/2 -translate-x-1/2 z-[75] rounded-full border border-[#38BDF8]/50 bg-[#0B0E14]/90 px-3 py-0.5 font-mono text-[9.5px] font-bold text-[#38BDF8] shadow-lg">
+            🎯 {lastTouchDebugInfo}
+          </div>,
+        )}
+    </>
   );
 }
 
 function PortraitMenuItem({
+  cmdId,
   icon: Icon,
   label,
   onClick,
   accentColor,
   isDark,
 }: {
+  cmdId?: string;
   icon: typeof Minus;
   label: string;
   onClick: () => void;
@@ -790,9 +1531,11 @@ function PortraitMenuItem({
   return (
     <button
       type="button"
+      role="menuitem"
+      data-cmd-id={cmdId}
       onClick={onClick}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left font-mono text-[11px] font-semibold transition-colors",
+        "flex min-h-[40px] w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left font-mono text-[11px] font-semibold transition-colors cursor-pointer",
         isDark
           ? "text-[#E2E8F0] hover:bg-[#11141C] hover:text-white"
           : "text-[#1E293B] hover:bg-[#F1F5F9] hover:text-[#0F172A]",
@@ -805,116 +1548,624 @@ function PortraitMenuItem({
 }
 
 /* ============================================================================
- * MICRO-PÍLULA FLUTUANTE DE COORDENADAS X/Y, PLANO P01 E SNAP NO CANVAS
+ * MICRO-PÍLULA FLUTUANTE DE COORDENADAS X/Y, ZOOM, GRADE E SNAP NO CANVAS (24PX)
  * ============================================================================ */
 export interface ChamferPortraitCanvasMicroPillProps {
   isDark: boolean;
   planName: string;
+  plans?: { id: string; name: string }[];
+  activePlanId?: string;
+  onSelectPlan?: (id: string) => void;
+  onCreatePlan?: () => void;
   cursor: Vec2;
   snapOn: boolean;
   onToggleSnap: () => void;
   temporaryOrigin: { p: Vec2; label: string } | null;
   onClearTemporaryOrigin: () => void;
   onSetRefAtCursor: () => void;
+  zoomPercent?: number;
+  onFitPiece?: () => void;
+  onFitWorkspace?: () => void;
+  onResetZoom100?: () => void;
+  onZoomStep?: (factor: number) => void;
+  gridMm?: number;
+  showGrid?: boolean;
+  onToggleGrid?: () => void;
+  onSelectGridMm?: (mm: number) => void;
+  selectedCount?: number;
 }
 
 export function ChamferPortraitCanvasMicroPill({
   isDark,
   planName,
+  plans = [],
+  activePlanId,
+  onSelectPlan,
+  onCreatePlan,
   cursor,
   snapOn,
   onToggleSnap,
   temporaryOrigin,
   onClearTemporaryOrigin,
   onSetRefAtCursor,
+  zoomPercent = 100,
+  onFitPiece,
+  onFitWorkspace,
+  onResetZoom100,
+  onZoomStep,
+  gridMm = 10,
+  showGrid = true,
+  onToggleGrid,
+  onSelectGridMm,
+  selectedCount = 0,
 }: ChamferPortraitCanvasMicroPillProps) {
+  const [zoomGridPopoverOpen, setZoomGridPopoverOpen] = useState(false);
+  const [planPopoverOpen, setPlanPopoverOpen] = useState(false);
+
   const dx = temporaryOrigin ? cursor.x - temporaryOrigin.p.x : cursor.x;
   const dy = temporaryOrigin ? cursor.y - temporaryOrigin.p.y : cursor.y;
+  const safeZoom = Number.isFinite(zoomPercent) && zoomPercent > 0 ? Math.round(zoomPercent) : 100;
+
+  return (
+    <>
+      <div
+        data-testid="portrait-canvas-micro-pill"
+        className="pointer-events-none absolute bottom-2 left-[24px] right-2 z-20 flex items-center select-none"
+      >
+        {/* Pílula compacta de 24px com pointer-events-auto apenas nos segmentos interativos */}
+        <div
+          style={{ height: 24, paddingLeft: 8, paddingRight: 8, borderRadius: 9999 }}
+          className={cn(
+            "pointer-events-auto flex max-w-full items-center gap-1.5 overflow-x-auto scrollbar-none border font-mono text-[10px] shadow-md backdrop-blur-md tabular-nums",
+            isDark
+              ? "border-white/[0.09] bg-[#11141C]/88 text-[#E2E8F0]"
+              : "border-[#CBD5E1]/90 bg-white/92 text-[#0F172A]",
+          )}
+        >
+          {/* Segmento 1: P01 (troca rápida de folha) */}
+          <button
+            type="button"
+            data-cmd-id="doc.switch_plan"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("selection");
+              setPlanPopoverOpen((v) => !v);
+              setZoomGridPopoverOpen(false);
+            }}
+            title="Toque para alternar ou criar Folha (P01, P02...)"
+            className={cn(
+              "shrink-0 font-bold tracking-wider cursor-pointer",
+              isDark ? "text-[#FB7185]" : "text-[#E11D48]",
+            )}
+          >
+            {planName}
+          </button>
+
+          <span className={cn("h-2.5 w-px shrink-0", isDark ? "bg-white/[0.12]" : "bg-[#CBD5E1]")} />
+
+          {/* Segmento 2: X / Y ou REF ΔX/ΔY */}
+          {temporaryOrigin ? (
+            <div className="flex shrink-0 items-center gap-1">
+              <span className="font-bold text-[#F59E0B]">REF</span>
+              <span className="tabular-nums">
+                ΔX:{(dx >= 0 ? "+" : "") + dx.toFixed(1)} ΔY:{(dy >= 0 ? "+" : "") + dy.toFixed(1)}
+              </span>
+              <button
+                type="button"
+                data-cmd-id="pre.ref_origin"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClearTemporaryOrigin();
+                }}
+                title="Limpar REF 0,0"
+                className="ml-0.5 rounded px-1 text-[8.5px] font-bold text-[#F87171] hover:bg-red-500/20 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              data-cmd-id="pre.ref_origin"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSetRefAtCursor();
+              }}
+              title="Toque para fixar REF (0,0) na posição atual"
+              className="flex shrink-0 items-center gap-1 tabular-nums hover:opacity-80 cursor-pointer"
+            >
+              <span className="text-[#94A3B8]">X:</span>
+              <strong className="font-semibold">{cursor.x.toFixed(1)}</strong>
+              <span className="text-[#94A3B8] ml-0.5">Y:</span>
+              <strong className="font-semibold">{cursor.y.toFixed(1)}</strong>
+            </button>
+          )}
+
+          <span className={cn("h-2.5 w-px shrink-0", isDark ? "bg-white/[0.12]" : "bg-[#CBD5E1]")} />
+
+          {/* Segmento 3: Z:% · G:mm */}
+          <button
+            type="button"
+            data-cmd-id="grid.settings"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("selection");
+              setZoomGridPopoverOpen((v) => !v);
+              setPlanPopoverOpen(false);
+            }}
+            title="Toque para ajustar Zoom e Passo da Grade"
+            className={cn(
+              "flex shrink-0 items-center gap-1 tabular-nums transition-colors cursor-pointer",
+              zoomGridPopoverOpen
+                ? "font-bold text-[#38BDF8]"
+                : isDark
+                  ? "text-[#94A3B8] hover:text-[#E2E8F0]"
+                  : "text-[#475569] hover:text-[#0F172A]",
+            )}
+          >
+            <span>Z:{safeZoom}%</span>
+            <span className="opacity-50">·</span>
+            <span>G:{showGrid ? `${gridMm}mm` : "OFF"}</span>
+          </button>
+
+          <span className={cn("h-2.5 w-px shrink-0", isDark ? "bg-white/[0.12]" : "bg-[#CBD5E1]")} />
+
+          {/* Segmento 4: ● SNAP:ON */}
+          <button
+            type="button"
+            data-cmd-id="pre.snap_toggle"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("selection");
+              onToggleSnap();
+            }}
+            className={cn(
+              "flex shrink-0 items-center gap-1 font-bold uppercase tracking-wider transition-colors cursor-pointer",
+              snapOn
+                ? isDark
+                  ? "text-[#38BDF8]"
+                  : "text-[#0284C7]"
+                : "text-[#94A3B8]",
+            )}
+          >
+            <span
+              className={cn(
+                "size-1.5 rounded-full",
+                snapOn ? "bg-[#0EA5E9]" : "bg-[#64748B]",
+              )}
+            />
+            <span>SNAP:{snapOn ? "ON" : "OFF"}</span>
+          </button>
+
+          {selectedCount > 0 && (
+            <>
+              <span className={cn("h-2.5 w-px shrink-0", isDark ? "bg-white/[0.12]" : "bg-[#CBD5E1]")} />
+              <span className="shrink-0 font-bold text-[#38BDF8]">SEL:{selectedCount}</span>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* PORTAL DE TROCA RÁPIDA DE FOLHA (P01/P02/+) */}
+      {planPopoverOpen &&
+        plans.length > 0 &&
+        renderInBodyPortal(
+          <div className="fixed inset-0 z-[60]" onClick={() => setPlanPopoverOpen(false)}>
+            <div
+              role="dialog"
+              aria-label="Seletor rápido de Folha"
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "fixed bottom-[154px] left-6 z-[61] flex items-center gap-1.5 rounded-2xl border p-2 font-mono text-[10px] shadow-2xl backdrop-blur-xl",
+                isDark
+                  ? "border-white/[0.12] bg-[#161922]/98 text-[#F8FAFC]"
+                  : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
+              )}
+            >
+              {plans.map((pl) => (
+                <button
+                  key={pl.id}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onSelectPlan?.(pl.id);
+                    setPlanPopoverOpen(false);
+                  }}
+                  className={cn(
+                    "rounded-lg px-2.5 py-1 font-bold transition-colors cursor-pointer",
+                    pl.id === activePlanId
+                      ? "bg-[#E11D48] text-white"
+                      : isDark
+                        ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
+                        : "bg-[#F1F5F9] text-[#475569]",
+                  )}
+                >
+                  {pl.name}
+                </button>
+              ))}
+              {onCreatePlan && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    onCreatePlan();
+                    setPlanPopoverOpen(false);
+                  }}
+                  className={cn(
+                    "flex items-center gap-1 rounded-lg border px-2.5 py-1 font-bold cursor-pointer",
+                    isDark
+                      ? "border-white/[0.1] bg-[#11141C] text-[#F8FAFC]"
+                      : "border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A]",
+                  )}
+                >
+                  <Plus className="size-3 text-[#E11D48]" /> Folha
+                </button>
+              )}
+            </div>
+          </div>,
+        )}
+
+      {/* PORTAL DE ZOOM & GRADE DA MICRO-PÍLULA (z-[60]) */}
+      {zoomGridPopoverOpen &&
+        renderInBodyPortal(
+          <div className="fixed inset-0 z-[60]" onClick={() => setZoomGridPopoverOpen(false)}>
+            <div
+              role="dialog"
+              aria-label="Ajuste rápido de Zoom e Grade"
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                "fixed bottom-[154px] left-6 z-[61] flex w-64 max-w-[calc(100vw-32px)] flex-col gap-2 rounded-2xl border p-2.5 font-mono text-[10px] shadow-2xl backdrop-blur-xl animate-in fade-in slide-in-from-bottom-1 duration-150",
+                isDark
+                  ? "border-white/[0.12] bg-[#161922]/98 text-[#F8FAFC]"
+                  : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
+              )}
+            >
+              <div className="flex items-center justify-between border-b border-white/[0.08] pb-1.5">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-[#38BDF8]">
+                  Zoom ({safeZoom}%) & Grade ({showGrid ? `${gridMm}mm` : "OFF"})
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setZoomGridPopoverOpen(false)}
+                  className="rounded p-0.5 text-[#94A3B8] hover:text-white cursor-pointer"
+                >
+                  <X className="size-3" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-4 gap-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onZoomStep?.(0.8);
+                  }}
+                  className={cn(
+                    "rounded-lg border py-1 font-bold transition-colors cursor-pointer",
+                    isDark
+                      ? "border-white/[0.08] bg-[#11141C] text-[#E2E8F0] hover:border-[#38BDF8]/40"
+                      : "border-[#CBD5E1] bg-[#F1F5F9] text-[#1E293B]",
+                  )}
+                >
+                  − Zoom
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onResetZoom100?.();
+                    setZoomGridPopoverOpen(false);
+                  }}
+                  className={cn(
+                    "rounded-lg border py-1 font-bold transition-colors cursor-pointer",
+                    isDark
+                      ? "border-white/[0.08] bg-[#11141C] text-[#38BDF8] hover:border-[#38BDF8]/40"
+                      : "border-[#CBD5E1] bg-[#F1F5F9] text-[#0284C7]",
+                  )}
+                >
+                  100%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onZoomStep?.(1.25);
+                  }}
+                  className={cn(
+                    "rounded-lg border py-1 font-bold transition-colors cursor-pointer",
+                    isDark
+                      ? "border-white/[0.08] bg-[#11141C] text-[#E2E8F0] hover:border-[#38BDF8]/40"
+                      : "border-[#CBD5E1] bg-[#F1F5F9] text-[#1E293B]",
+                  )}
+                >
+                  + Zoom
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onFitPiece?.();
+                    setZoomGridPopoverOpen(false);
+                  }}
+                  className="rounded-lg border border-[#E11D48]/45 bg-[#E11D48]/18 py-1 font-bold text-[#FB7185] transition-colors cursor-pointer"
+                >
+                  Fit
+                </button>
+              </div>
+
+              {onFitWorkspace && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    onFitWorkspace();
+                    setZoomGridPopoverOpen(false);
+                  }}
+                  className={cn(
+                    "flex items-center justify-center gap-1 rounded-lg border py-1 font-bold uppercase transition-colors cursor-pointer",
+                    isDark
+                      ? "border-white/[0.08] bg-[#11141C] text-[#E2E8F0] hover:border-[#38BDF8]/40"
+                      : "border-[#CBD5E1] bg-[#F1F5F9] text-[#1E293B]",
+                  )}
+                >
+                  <Maximize2 className="size-3 text-[#38BDF8]" />
+                  <span>Enquadrar Área de Trabalho</span>
+                </button>
+              )}
+
+              <div className="flex flex-col gap-1">
+                <div className="flex items-center justify-between text-[9px] text-[#94A3B8]">
+                  <span>PASSO DA GRADE (MM)</span>
+                  {onToggleGrid && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        onToggleGrid();
+                      }}
+                      className={cn(
+                        "rounded px-1.5 py-0.5 font-bold uppercase cursor-pointer",
+                        showGrid ? "bg-[#0EA5E9]/20 text-[#38BDF8]" : "bg-white/10 text-[#94A3B8]",
+                      )}
+                    >
+                      {showGrid ? "GRADE: ON" : "GRADE: OFF"}
+                    </button>
+                  )}
+                </div>
+                <div className="grid grid-cols-7 gap-1">
+                  {[0.5, 1, 2, 5, 10, 25, 50].map((step) => {
+                    const active = showGrid && Math.abs(gridMm - step) < 0.01;
+                    return (
+                      <button
+                        key={step}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          onSelectGridMm?.(step);
+                        }}
+                        className={cn(
+                          "rounded-md border py-1 text-center text-[9px] font-bold tabular-nums transition-colors cursor-pointer",
+                          active
+                            ? "border-[#0EA5E9] bg-[#0EA5E9] text-white"
+                            : isDark
+                              ? "border-white/[0.08] bg-[#11141C] text-[#94A3B8] hover:text-white"
+                              : "border-[#CBD5E1] bg-[#F1F5F9] text-[#475569]",
+                        )}
+                      >
+                        {step}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>,
+        )}
+    </>
+  );
+}
+
+/* ============================================================================
+ * GAVETA COMPACTA INFERIOR EM MODO RETRATO (45% DVH PADRÃO / 70% DVH EXPANDIDA)
+ * ============================================================================ */
+export interface ChamferPortraitCompactDrawerProps {
+  open: boolean;
+  onClose: () => void;
+  isDark: boolean;
+  bottomOffsetPx: number;
+  activeTab: ChamferSidebarTab;
+  onSelectTab: (tab: ChamferSidebarTab) => void;
+  children: React.ReactNode;
+}
+
+const PORTRAIT_DRAWER_TABS: Array<{ id: ChamferSidebarTab; label: string }> = [
+  { id: "propriedades", label: "Propriedades" },
+  { id: "camadas", label: "Camadas" },
+  { id: "corte", label: "Corte CNC" },
+  { id: "cotas", label: "Cotas" },
+  { id: "eng_rev", label: "Eng. Reversa" },
+];
+
+export function ChamferPortraitCompactDrawer({
+  open,
+  onClose,
+  isDark,
+  bottomOffsetPx,
+  activeTab,
+  onSelectTab,
+  children,
+}: ChamferPortraitCompactDrawerProps) {
+  const [heightMode, setHeightMode] = useState<PortraitDrawerHeightMode>("compact_45");
+  const dragStartYRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setHeightMode("compact_45");
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const dvhValue = resolvePortraitDrawerDvh(open, heightMode);
+
+  const handleDragPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragStartYRef.current = e.clientY;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
+  const handleDragPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (dragStartYRef.current === null) return;
+    const deltaY = e.clientY - dragStartYRef.current;
+    dragStartYRef.current = null;
+    e.currentTarget.releasePointerCapture?.(e.pointerId);
+
+    const result = resolvePortraitDrawerDragGesture({
+      currentMode: heightMode,
+      deltaY,
+    });
+    if (!result.open) {
+      triggerHaptic("selection");
+      onClose();
+      return;
+    }
+    if (result.nextMode !== heightMode) {
+      triggerHaptic("selection");
+      setHeightMode(result.nextMode);
+    }
+  };
 
   return (
     <div
-      style={{ height: 24 }}
+      role="dialog"
+      aria-label="Painel Inspetor do CHAMFER"
+      data-testid="portrait-compact-drawer"
+      data-drawer-dvh={dvhValue}
+      style={{
+        bottom: bottomOffsetPx,
+        height: `${dvhValue}dvh`,
+        maxHeight: `${dvhValue}dvh`,
+      }}
       className={cn(
-        "pointer-events-auto absolute top-[24px] right-2 z-20 flex items-center gap-1.5 rounded-full border px-2.5 font-mono text-[9.5px] shadow-md backdrop-blur-md select-none",
+        "fixed inset-x-0 z-50 flex flex-col rounded-t-2xl border-t shadow-2xl backdrop-blur-xl transition-[height,max-height] duration-180 ease-out motion-reduce:transition-none",
         isDark
-          ? "border-white/[0.09] bg-[#11141C]/88 text-[#E2E8F0]"
-          : "border-[#CBD5E1]/90 bg-white/90 text-[#0F172A]",
+          ? "border-white/[0.12] bg-[#11141C]/98 text-[#F8FAFC]"
+          : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
       )}
     >
-      <span
+      {/* Alça de arraste superior (36px × 4px) + Cabeçalho com alternador 45%/70% e Fechar */}
+      <div
+        onPointerDown={handleDragPointerDown}
+        onPointerUp={handleDragPointerUp}
         className={cn(
-          "font-bold tracking-wider",
-          isDark ? "text-[#FB7185]" : "text-[#E11D48]",
+          "flex shrink-0 flex-col border-b select-none touch-none",
+          isDark ? "border-white/[0.08]" : "border-[#E2E8F0]",
         )}
       >
-        {planName}
-      </span>
-
-      <span className={cn("h-2.5 w-px", isDark ? "bg-white/[0.12]" : "bg-[#CBD5E1]")} />
-
-      {temporaryOrigin ? (
-        <div className="flex items-center gap-1">
-          <span className="font-bold text-[#F59E0B]">REF</span>
-          <span className="tabular-nums">
-            ΔX:{(dx >= 0 ? "+" : "") + dx.toFixed(1)} ΔY:{(dy >= 0 ? "+" : "") + dy.toFixed(1)}
-          </span>
-          <button
-            type="button"
-            onClick={onClearTemporaryOrigin}
-            title="Limpar REF 0,0"
-            className="ml-0.5 rounded px-1 text-[8.5px] font-bold text-[#F87171] hover:bg-red-500/20"
-          >
-            ✕
-          </button>
+        <div className="flex items-center justify-center pt-1.5 pb-0.5 cursor-ns-resize">
+          <span
+            style={{ width: 36, height: 4 }}
+            className="rounded-full bg-[#64748B]/60"
+          />
         </div>
-      ) : (
-        <button
-          type="button"
-          onClick={onSetRefAtCursor}
-          title="Toque para fixar REF (0,0) na posição atual"
-          className="flex items-center gap-1 tabular-nums hover:opacity-80"
-        >
-          <span className="text-[#94A3B8]">X:</span>
-          <strong className="font-semibold">{cursor.x.toFixed(1)}</strong>
-          <span className="text-[#94A3B8] ml-0.5">Y:</span>
-          <strong className="font-semibold">{cursor.y.toFixed(1)}</strong>
-        </button>
-      )}
 
-      <span className={cn("h-2.5 w-px", isDark ? "bg-white/[0.12]" : "bg-[#CBD5E1]")} />
+        <div className="flex h-8 items-center justify-between px-3">
+          <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#38BDF8]">
+            {activeTab === "propriedades"
+              ? "Propriedades da Peça"
+              : activeTab === "camadas"
+                ? "Camadas Semânticas"
+                : activeTab === "corte"
+                  ? "Plano de Corte CNC"
+                  : activeTab === "cotas"
+                    ? "Cotas & Tolerâncias"
+                    : "Engenharia Reversa 1:1"}
+          </span>
 
-      <button
-        type="button"
-        onClick={() => {
-          triggerHaptic("selection");
-          onToggleSnap();
-        }}
-        className={cn(
-          "flex items-center gap-1 font-bold uppercase tracking-wider transition-colors",
-          snapOn
-            ? isDark
-              ? "text-[#38BDF8]"
-              : "text-[#0284C7]"
-            : "text-[#94A3B8]",
-        )}
-      >
-        <span
-          className={cn(
-            "size-1.5 rounded-full",
-            snapOn ? "bg-[#0EA5E9]" : "bg-[#64748B]",
-          )}
-        />
-        <span>SNAP:{snapOn ? "ON" : "OFF"}</span>
-      </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                setHeightMode((prev) =>
+                  prev === "compact_45" ? "expanded_70" : "compact_45",
+                );
+              }}
+              title={
+                heightMode === "compact_45"
+                  ? "Expandir gaveta para 70% da tela"
+                  : "Reduzir gaveta para 45% da tela"
+              }
+              className={cn(
+                "flex h-6 items-center gap-1 rounded-lg border px-2 font-mono text-[9px] font-bold transition-colors cursor-pointer",
+                heightMode === "expanded_70"
+                  ? "border-[#0EA5E9] bg-[#0EA5E9]/20 text-[#38BDF8]"
+                  : isDark
+                    ? "border-white/[0.1] bg-[#181C26] text-[#94A3B8] hover:text-white"
+                    : "border-[#CBD5E1] bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
+              )}
+            >
+              <span>{heightMode === "compact_45" ? "45% ▴" : "70% ▾"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Fechar gaveta"
+              className={cn(
+                "flex size-6 items-center justify-center rounded-lg border transition-colors cursor-pointer",
+                isDark
+                  ? "border-white/[0.1] bg-[#181C26] text-[#94A3B8] hover:text-white"
+                  : "border-[#CBD5E1] bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
+              )}
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Barra de Abas Internas da Gaveta (Propriedades | Camadas | Corte CNC | Cotas | Eng. Reversa) */}
+        <div className="flex items-center gap-1 overflow-x-auto px-2.5 pb-1.5 scrollbar-none touch-pan-x">
+          {PORTRAIT_DRAWER_TABS.map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  onSelectTab(tab.id);
+                }}
+                className={cn(
+                  "shrink-0 rounded-lg border px-2.5 py-1 font-mono text-[9.5px] font-bold uppercase tracking-wide transition-colors cursor-pointer",
+                  isActive
+                    ? "border-[#E11D48] bg-[#E11D48] text-white"
+                    : isDark
+                      ? "border-white/[0.08] bg-[#181C26] text-[#94A3B8] hover:text-white"
+                      : "border-[#CBD5E1] bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
+                )}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Corpo rolável da gaveta */}
+      <div className="min-h-0 flex-1 overflow-y-auto flex justify-center [&>aside]:!w-full [&>aside]:!border-0">
+        {children}
+      </div>
     </div>
   );
 }
 
 /* ============================================================================
- * ARQUITETURA INFERIOR ESTILO LIGHTROOM MOBILE (NÍVEL 1 CARROSSEL + NÍVEL 2 DOCK)
+ * ARQUITETURA INFERIOR ESTILO LIGHTROOM MOBILE (NÍVEL 1 SLOT ÚNICO + NÍVEL 2 DOCK)
  * ============================================================================ */
 export interface ChamferPortraitBottomBarsProps {
   isDark: boolean;
+  stripHeightPx?: number;
+  dockHeightPx?: number;
   tool: Tool;
   onPickTool: (tool: Tool) => void;
   activeMode: "2d" | "3d" | "flanges";
@@ -923,6 +2174,10 @@ export interface ChamferPortraitBottomBarsProps {
   // Seleção e Modificação
   hasSelection: boolean;
   selectedCount: number;
+  onSelectAll?: () => void;
+  onInvertSelection?: () => void;
+  onClearSelection?: () => void;
+  onDeleteSelection?: () => void;
   offsetDist: number;
   setOffsetDist: (v: number) => void;
   filletR: number;
@@ -979,6 +2234,7 @@ export interface ChamferPortraitBottomBarsProps {
   onStartSetReferencePoint: () => void;
   temporaryOrigin: { p: Vec2; label: string } | null;
   onClearTemporaryOrigin: () => void;
+  onUseSelectedEdge?: () => void;
   orthoOn: boolean;
   setOrthoOn: (fn: (v: boolean) => boolean) => void;
   trackingOn: boolean;
@@ -992,11 +2248,20 @@ export interface ChamferPortraitBottomBarsProps {
   nudgeHudVisible: boolean;
   onToggleNudgeHud: () => void;
 
+  // Criação Avançada, Detalhes Mecânicos e Paleta de Cores (COR)
+  activeStrokeColor?: string | null;
+  onSelectColorAndLayer?: (option: ChamferTechnicalColorOption) => void;
+  onAddHole: (diameterMm?: number) => void;
+  onAddThread?: (nominalM: number) => void;
+  onAddEyelet?: (innerD: number, outerD: number) => void;
+  onAddTangentBridge?: () => void;
+  onAddSerratedTeeth?: (count: number, pitchMm: number, heightMm: number) => void;
+  onAddPocket2D?: (w: number, h: number, r: number) => void;
+
   // Chapa, Estrutura & Vision
   thickness: number;
   onThicknessChange: (v: number) => void;
   onConvertToBend: () => void;
-  onAddHole: () => void;
   onPlanificar: () => void;
   onOpenFlanges: () => void;
   onApplyRelief: () => void;
@@ -1022,6 +2287,10 @@ export interface ChamferPortraitBottomBarsProps {
   onOpenTopologyHealth: () => void;
   onOpenVariables: () => void;
   onOpenPieceBuilder: () => void;
+  onVerifyGeometry?: () => void;
+  onOptimizeGeometry?: () => void;
+  showDims?: boolean;
+  onToggleShowDims?: () => void;
   simOn: boolean;
   onToggleSim: () => void;
   showArrows: boolean;
@@ -1034,14 +2303,47 @@ export interface ChamferPortraitBottomBarsProps {
   onSelectSidebarTab: (tab: ChamferSidebarTab) => void;
 }
 
+const TOOL_LABELS_PT: Record<string, string> = {
+  select: "Ponteiro",
+  node: "Nós",
+  pan: "Pan",
+  line: "Linha",
+  polyline: "Polilinha",
+  circle: "Círculo",
+  rect: "Retângulo",
+  arc: "Arco 3P",
+  slot: "Rasgo",
+  polygon: "Polígono",
+  ellipse: "Elipse",
+  spline: "Spline",
+  construction_line: "Eixo XL",
+  point: "Ponto",
+  text: "Texto",
+  trim: "Aparar",
+  smart_trim: "Encontro",
+  extend: "Estender",
+  offset: "Offset",
+  fillet: "Filete R",
+  chamfer: "Chanfro",
+  divide: "Dividir",
+  dim: "Cotar",
+  measure: "Medir",
+};
+
 export function ChamferPortraitBottomBars({
   isDark,
+  stripHeightPx = 60,
+  dockHeightPx = 54,
   tool,
   onPickTool,
   activeMode,
   onModeChange,
   hasSelection,
   selectedCount,
+  onSelectAll,
+  onInvertSelection,
+  onClearSelection,
+  onDeleteSelection,
   offsetDist,
   setOffsetDist,
   filletR,
@@ -1091,6 +2393,7 @@ export function ChamferPortraitBottomBars({
   onStartSetReferencePoint,
   temporaryOrigin,
   onClearTemporaryOrigin,
+  onUseSelectedEdge,
   orthoOn,
   setOrthoOn,
   trackingOn,
@@ -1103,10 +2406,17 @@ export function ChamferPortraitBottomBars({
   onCycleLoupeMode,
   nudgeHudVisible,
   onToggleNudgeHud,
+  activeStrokeColor = null,
+  onSelectColorAndLayer,
+  onAddHole,
+  onAddThread,
+  onAddEyelet,
+  onAddTangentBridge,
+  onAddSerratedTeeth,
+  onAddPocket2D,
   thickness,
   onThicknessChange,
   onConvertToBend,
-  onAddHole,
   onPlanificar,
   onOpenFlanges,
   onApplyRelief,
@@ -1124,12 +2434,15 @@ export function ChamferPortraitBottomBars({
   onUpdateFrame,
   onFitWorkspace,
   onCenterPiece,
-  onOpenWorkspaceKeypad,
   onOpenPresets,
   onOpenTechnicalSheet,
   onOpenTopologyHealth,
   onOpenVariables,
   onOpenPieceBuilder,
+  onVerifyGeometry,
+  onOptimizeGeometry,
+  showDims,
+  onToggleShowDims,
   simOn,
   onToggleSim,
   showArrows,
@@ -1141,32 +2454,142 @@ export function ChamferPortraitBottomBars({
 }: ChamferPortraitBottomBarsProps) {
   const [dockMode, setDockMode] = useState<PortraitDockMode>("desenho");
   const [inlineSubPanel, setInlineSubPanel] = useState<InlineSubPanelId>("none");
+  const [keypadSession, setKeypadSession] = useState<InlineNumericKeypadSession | null>(null);
 
-  // Fecha sub-painel inline se trocar de modo principal no Dock Nível 2
+  // Parâmetros locais para os subpainéis de Detalhes Mecânicos (Furo, Rosca, Olhal, Dentes, Cavidade)
+  const [holeDiameterMm, setHoleDiameterMm] = useState<number>(10);
+  const [threadNominalM, setThreadNominalM] = useState<number>(8);
+  const [eyeletInnerMm, setEyeletInnerMm] = useState<number>(12);
+  const [eyeletOuterMm, setEyeletOuterMm] = useState<number>(28);
+  const [teethCount, setTeethCount] = useState<number>(8);
+  const [teethPitchMm, setTeethPitchMm] = useState<number>(10);
+  const [teethHeightMm, setTeethHeightMm] = useState<number>(5);
+  const [pocketWidthMm, setPocketWidthMm] = useState<number>(50);
+  const [pocketHeightMm, setPocketHeightMm] = useState<number>(30);
+  const [pocketRadiusMm, setPocketRadiusMm] = useState<number>(4);
+
+  // Abre a Telinha de Dígitos Própria (Estado D do Slot Único — sem teclado nativo!)
+  const handleOpenInlineKeypad = (
+    label: string,
+    currentValue: number,
+    unit: string,
+    onCommit: (val: number) => void,
+    min?: number,
+    max?: number,
+  ) => {
+    triggerHaptic("tap");
+    if (portraitDrawerOpen) {
+      onSetPortraitDrawerOpen(false);
+    }
+    setKeypadSession({
+      label,
+      unit,
+      bufferState: createNumericKeypadBuffer(currentValue, min, max),
+      onCommit,
+    });
+  };
+
+  // Abre subpainel inline (Estado B do Slot Único) fechando eventual gaveta (C) ou telinha (D)
+  const handleOpenInlineSubPanel = (panel: InlineSubPanelId) => {
+    triggerHaptic("selection");
+    setKeypadSession(null);
+    if (panel !== "none" && portraitDrawerOpen) {
+      onSetPortraitDrawerOpen(false);
+    }
+    setInlineSubPanel(panel);
+  };
+
+  // Abre a Gaveta Compacta (Estado C do Slot Único) fechando subpainel (B) e telinha (D)
+  const handleToggleDrawerTab = (tab: ChamferSidebarTab) => {
+    triggerHaptic("selection");
+    setKeypadSession(null);
+    setInlineSubPanel("none");
+    if (portraitDrawerOpen && activeSidebarTab === tab) {
+      onSetPortraitDrawerOpen(false);
+    } else {
+      onSelectSidebarTab(tab);
+      onSetPortraitDrawerOpen(true);
+    }
+  };
+
+  // Fecha sub-painel inline e telinha se trocar de modo principal no Dock Nível 2
   const handleSelectDockMode = (nextMode: PortraitDockMode) => {
     triggerHaptic("selection");
     AudioManager.play("ui_select");
     setDockMode(nextMode);
     setInlineSubPanel("none");
+    setKeypadSession(null);
   };
 
-  const layerLabel =
-    activeLayer === "dobra"
-      ? "Dobra"
-      : activeLayer === "recorte"
-        ? "Recorte"
-        : activeLayer === "marcacao"
-          ? "Marcação"
-          : "Corte";
+  const currentColorLabel =
+    activeStrokeColor?.toUpperCase() === "#0F172A"
+      ? "Preto"
+      : activeStrokeColor?.toUpperCase() === "#F8FAFC"
+        ? "Branco"
+        : activeLayer === "dobra"
+          ? "Dobra"
+          : activeLayer === "recorte"
+            ? "Recorte"
+            : activeLayer === "marcacao"
+              ? "Marcação"
+              : "Corte";
 
-  // Verifica se a Barra Nível 1 deve entrar em modo de Substituição Contextual Inline
+  const activeColorHex =
+    activeStrokeColor ||
+    (activeLayer === "dobra"
+      ? "#EC4899"
+      : activeLayer === "recorte"
+        ? "#F59E0B"
+        : activeLayer === "marcacao"
+          ? "#3B82F6"
+          : isDark
+            ? "#F8FAFC"
+            : "#0F172A");
+
+  // Verifica se a Barra Nível 1 deve entrar em modo de Substituição Contextual Inline (B)
   const isInlineArrayActive = activeArrayType !== null;
   const isInlineDivideActive = divideEditorOpen;
   const isInlineFilletChamfer = tool === "fillet" || tool === "chamfer";
   const isInlineOffset = tool === "offset";
+  const hasInlineParams =
+    isInlineArrayActive ||
+    isInlineDivideActive ||
+    isInlineFilletChamfer ||
+    isInlineOffset ||
+    inlineSubPanel !== "none";
+
+  // Resolve estado único do Slot Contextual (A, B, C ou D)
+  const singleSlotResolution = resolveSingleSlotKind({
+    keypadOpen: keypadSession !== null,
+    drawerOpen: portraitDrawerOpen,
+    hasInlineParams,
+  });
 
   const renderLevel1Content = () => {
-    /* 1. SUBSTITUIÇÃO INLINE: ARRAY POLAR / LINEAR */
+    /* ESTADO D — TELINHA DE DÍGITOS PRÓPRIA (NUNCA ABRE TECLADO NATIVO DO CELULAR) */
+    if (keypadSession !== null) {
+      return (
+        <ChamferInlineNumericKeypad
+          session={keypadSession}
+          isDark={isDark}
+          onUpdateBuffer={(nextBuf) =>
+            setKeypadSession((prev) => (prev ? { ...prev, bufferState: nextBuf } : null))
+          }
+          onCancel={() => {
+            triggerHaptic("tap");
+            setKeypadSession(null);
+          }}
+          onConfirm={() => {
+            triggerHaptic("action");
+            const finalVal = parseNumericKeypadValue(keypadSession.bufferState);
+            keypadSession.onCommit(finalVal);
+            setKeypadSession(null);
+          }}
+        />
+      );
+    }
+
+    /* 1. SUBSTITUIÇÃO INLINE (B): ARRAY POLAR / LINEAR */
     if (isInlineArrayActive) {
       return (
         <div className="flex h-full w-full items-center gap-2 overflow-x-auto px-2.5 scrollbar-none touch-pan-x whitespace-nowrap">
@@ -1182,9 +2605,9 @@ export function ChamferPortraitBottomBars({
               type="button"
               onClick={() => onChangeArrayType("polar")}
               className={cn(
-                "rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase",
+                "rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase cursor-pointer",
                 activeArrayType === "polar"
-                  ? "bg-[#0EA5E9] text-white"
+                  ? "bg-[#E11D48] text-white"
                   : "text-[#94A3B8]",
               )}
             >
@@ -1194,9 +2617,9 @@ export function ChamferPortraitBottomBars({
               type="button"
               onClick={() => onChangeArrayType("linear")}
               className={cn(
-                "rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase",
+                "rounded-md px-2 py-1 font-mono text-[10px] font-bold uppercase cursor-pointer",
                 activeArrayType === "linear"
-                  ? "bg-[#0EA5E9] text-white"
+                  ? "bg-[#E11D48] text-white"
                   : "text-[#94A3B8]",
               )}
             >
@@ -1218,8 +2641,15 @@ export function ChamferPortraitBottomBars({
                 label="PCD Ø"
                 value={Number(((arrayPolarParams.radius || 0) * 2).toFixed(1))}
                 unit="mm"
-                onChange={(v) =>
-                  onChangePolarParams((p) => ({ ...p, radius: Math.max(1, v / 2) }))
+                onOpenKeypad={() =>
+                  handleOpenInlineKeypad(
+                    "PCD Ø",
+                    Number(((arrayPolarParams.radius || 0) * 2).toFixed(1)),
+                    "mm",
+                    (v) => onChangePolarParams((p) => ({ ...p, radius: Math.max(1, v / 2) })),
+                    2,
+                    5000,
+                  )
                 }
                 isDark={isDark}
               />
@@ -1227,11 +2657,19 @@ export function ChamferPortraitBottomBars({
                 label="Âng"
                 value={arrayPolarParams.totalAngleDeg}
                 unit="°"
-                onChange={(v) =>
-                  onChangePolarParams((p) => ({
-                    ...p,
-                    totalAngleDeg: Math.max(5, Math.min(360, v)),
-                  }))
+                onOpenKeypad={() =>
+                  handleOpenInlineKeypad(
+                    "Ângulo Total",
+                    arrayPolarParams.totalAngleDeg,
+                    "°",
+                    (v) =>
+                      onChangePolarParams((p) => ({
+                        ...p,
+                        totalAngleDeg: Math.max(5, Math.min(360, v)),
+                      })),
+                    5,
+                    360,
+                  )
                 }
                 isDark={isDark}
               />
@@ -1239,7 +2677,7 @@ export function ChamferPortraitBottomBars({
                 type="button"
                 onClick={onTogglePickArrayCenter}
                 className={cn(
-                  "flex h-9 shrink-0 items-center gap-1 rounded-xl border px-2.5 font-mono text-[10px] font-bold uppercase transition-colors",
+                  "flex h-9 shrink-0 items-center gap-1 rounded-xl border px-2.5 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
                   isArrayPickingCenter
                     ? "border-[#F59E0B] bg-[#F59E0B]/20 text-[#FBBF24]"
                     : isDark
@@ -1265,7 +2703,16 @@ export function ChamferPortraitBottomBars({
                 label="Passo X"
                 value={arrayLinearParams.dx}
                 unit="mm"
-                onChange={(v) => onChangeLinearParams((p) => ({ ...p, dx: v }))}
+                onOpenKeypad={() =>
+                  handleOpenInlineKeypad(
+                    "Passo X",
+                    arrayLinearParams.dx,
+                    "mm",
+                    (v) => onChangeLinearParams((p) => ({ ...p, dx: v })),
+                    -5000,
+                    5000,
+                  )
+                }
                 isDark={isDark}
               />
               <InlineStepperPill
@@ -1280,7 +2727,16 @@ export function ChamferPortraitBottomBars({
                 label="Passo Y"
                 value={arrayLinearParams.dy}
                 unit="mm"
-                onChange={(v) => onChangeLinearParams((p) => ({ ...p, dy: v }))}
+                onOpenKeypad={() =>
+                  handleOpenInlineKeypad(
+                    "Passo Y",
+                    arrayLinearParams.dy,
+                    "mm",
+                    (v) => onChangeLinearParams((p) => ({ ...p, dy: v })),
+                    -5000,
+                    5000,
+                  )
+                }
                 isDark={isDark}
               />
             </>
@@ -1291,7 +2747,7 @@ export function ChamferPortraitBottomBars({
       );
     }
 
-    /* 2. SUBSTITUIÇÃO INLINE: DIVIDIR EM PARTES */
+    /* 2. SUBSTITUIÇÃO INLINE (B): DIVIDIR EM PARTES */
     if (isInlineDivideActive) {
       return (
         <div className="flex h-full w-full items-center gap-2 overflow-x-auto px-2.5 scrollbar-none touch-pan-x whitespace-nowrap">
@@ -1302,13 +2758,29 @@ export function ChamferPortraitBottomBars({
             onStep={(d) => onDividePartsChange(Math.max(2, Math.min(64, divideParts + d)))}
             isDark={isDark}
           />
+          <InlineNumberInputPill
+            label="N"
+            value={divideParts}
+            unit="p"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Dividir Partes",
+                divideParts,
+                "p",
+                (v) => onDividePartsChange(Math.max(2, Math.min(64, Math.round(v)))),
+                2,
+                64,
+              )
+            }
+            isDark={isDark}
+          />
           {[2, 3, 4, 6, 8, 12].map((n) => (
             <button
               key={n}
               type="button"
               onClick={() => onDividePartsChange(n)}
               className={cn(
-                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10.5px] font-bold transition-colors",
+                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10.5px] font-bold transition-colors cursor-pointer",
                 divideParts === n
                   ? "bg-[#E11D48] text-white"
                   : isDark
@@ -1324,7 +2796,7 @@ export function ChamferPortraitBottomBars({
       );
     }
 
-    /* 3. SUBSTITUIÇÃO INLINE: FILETE R / CHANFRO */
+    /* 3. SUBSTITUIÇÃO INLINE (B): FILETE R / CHANFRO */
     if (isInlineFilletChamfer) {
       return (
         <div className="flex h-full w-full items-center gap-2 overflow-x-auto px-2.5 scrollbar-none touch-pan-x whitespace-nowrap">
@@ -1337,7 +2809,16 @@ export function ChamferPortraitBottomBars({
             label={tool === "fillet" ? "Raio R" : "Chanfro"}
             value={filletR}
             unit="mm"
-            onChange={(v) => setFilletR(Math.max(0.5, v))}
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                tool === "fillet" ? "Raio R" : "Chanfro",
+                filletR,
+                "mm",
+                (v) => setFilletR(Math.max(0.5, v)),
+                0.5,
+                1000,
+              )
+            }
             isDark={isDark}
           />
           {[2, 5, 10, 15, 20, 30].map((rVal) => (
@@ -1346,7 +2827,7 @@ export function ChamferPortraitBottomBars({
               type="button"
               onClick={() => setFilletR(rVal)}
               className={cn(
-                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10.5px] font-bold transition-colors",
+                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10.5px] font-bold transition-colors cursor-pointer",
                 Math.abs(filletR - rVal) < 0.05
                   ? "bg-[#E11D48] text-white"
                   : isDark
@@ -1367,7 +2848,7 @@ export function ChamferPortraitBottomBars({
       );
     }
 
-    /* 4. SUBSTITUIÇÃO INLINE: OFFSET */
+    /* 4. SUBSTITUIÇÃO INLINE (B): OFFSET */
     if (isInlineOffset) {
       return (
         <div className="flex h-full w-full items-center gap-2 overflow-x-auto px-2.5 scrollbar-none touch-pan-x whitespace-nowrap">
@@ -1380,7 +2861,16 @@ export function ChamferPortraitBottomBars({
             label="Offset"
             value={offsetDist}
             unit="mm"
-            onChange={(v) => setOffsetDist(Math.max(0.1, v))}
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Distância Offset",
+                offsetDist,
+                "mm",
+                (v) => setOffsetDist(Math.max(0.1, v)),
+                0.1,
+                5000,
+              )
+            }
             isDark={isDark}
           />
           {[2, 5, 10, 15, 25, 50].map((dVal) => (
@@ -1389,9 +2879,9 @@ export function ChamferPortraitBottomBars({
               type="button"
               onClick={() => setOffsetDist(dVal)}
               className={cn(
-                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10.5px] font-bold transition-colors",
+                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10.5px] font-bold transition-colors cursor-pointer",
                 Math.abs(offsetDist - dVal) < 0.05
-                  ? "bg-[#0EA5E9] text-white"
+                  ? "bg-[#E11D48] text-white"
                   : isDark
                     ? "bg-[#11141C] text-[#94A3B8]"
                     : "bg-white text-[#475569] border border-[#E2E8F0]",
@@ -1404,7 +2894,7 @@ export function ChamferPortraitBottomBars({
       );
     }
 
-    /* 5. SUB-PAINÉIS INLINE ACIONADOS PELO CARROSSEL */
+    /* 5. SUB-PAINÉIS INLINE (B) ACIONADOS PELO CARROSSEL */
     if (inlineSubPanel === "workspace") {
       return (
         <div className="flex h-full w-full items-center gap-2 overflow-x-auto px-2.5 scrollbar-none touch-pan-x whitespace-nowrap">
@@ -1413,9 +2903,9 @@ export function ChamferPortraitBottomBars({
             type="button"
             onClick={() => onUpdateFrame({ visible: !frame.visible })}
             className={cn(
-              "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10px] font-bold uppercase",
+              "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10px] font-bold uppercase cursor-pointer",
               frame.visible
-                ? "bg-[#0EA5E9] text-white"
+                ? "bg-[#E11D48] text-white"
                 : isDark
                   ? "bg-[#11141C] text-[#94A3B8]"
                   : "bg-white text-[#475569] border border-[#E2E8F0]",
@@ -1424,37 +2914,39 @@ export function ChamferPortraitBottomBars({
             {frame.visible ? "Área: ON" : "Área: OFF"}
           </button>
 
-          <button
-            type="button"
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              onOpenWorkspaceKeypad("w", { x: r.left, y: Math.max(160, r.top - 160) });
-            }}
-            className={cn(
-              "flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 font-mono text-[10px] font-bold",
-              isDark
-                ? "border-white/[0.1] bg-[#11141C] text-[#38BDF8]"
-                : "border-[#CBD5E1] bg-white text-[#0284C7]",
-            )}
-          >
-            <span>X: {Math.round(frame.w)}mm</span>
-          </button>
+          <InlineNumberInputPill
+            label="X"
+            value={Math.round(frame.w)}
+            unit="mm"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Largura X da Área",
+                Math.round(frame.w),
+                "mm",
+                (v) => onUpdateFrame({ w: Math.max(50, Math.round(v)), visible: true }),
+                50,
+                20000,
+              )
+            }
+            isDark={isDark}
+          />
 
-          <button
-            type="button"
-            onClick={(e) => {
-              const r = e.currentTarget.getBoundingClientRect();
-              onOpenWorkspaceKeypad("h", { x: r.left, y: Math.max(160, r.top - 160) });
-            }}
-            className={cn(
-              "flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 font-mono text-[10px] font-bold",
-              isDark
-                ? "border-white/[0.1] bg-[#11141C] text-[#38BDF8]"
-                : "border-[#CBD5E1] bg-white text-[#0284C7]",
-            )}
-          >
-            <span>Y: {Math.round(frame.h)}mm</span>
-          </button>
+          <InlineNumberInputPill
+            label="Y"
+            value={Math.round(frame.h)}
+            unit="mm"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Altura Y da Área",
+                Math.round(frame.h),
+                "mm",
+                (v) => onUpdateFrame({ h: Math.max(50, Math.round(v)), visible: true }),
+                50,
+                20000,
+              )
+            }
+            isDark={isDark}
+          />
 
           {WORKSPACE_INDUSTRIAL_PRESETS.map((pr) => (
             <button
@@ -1465,7 +2957,7 @@ export function ChamferPortraitBottomBars({
                 setTimeout(() => onFitWorkspace(), 20);
               }}
               className={cn(
-                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10px] font-bold",
+                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10px] font-bold cursor-pointer",
                 Math.round(frame.w) === pr.w && Math.round(frame.h) === pr.h
                   ? "bg-[#E11D48] text-white"
                   : isDark
@@ -1484,7 +2976,7 @@ export function ChamferPortraitBottomBars({
               setTimeout(() => onFitWorkspace(), 20);
             }}
             className={cn(
-              "flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 font-mono text-[10px] font-bold",
+              "flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 font-mono text-[10px] font-bold cursor-pointer",
               isDark
                 ? "border-white/[0.08] bg-[#11141C] text-[#E2E8F0]"
                 : "border-[#CBD5E1] bg-white text-[#0F172A]",
@@ -1498,7 +2990,7 @@ export function ChamferPortraitBottomBars({
             type="button"
             onClick={() => onUpdateFrame({ locked: !frame.locked })}
             className={cn(
-              "flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 font-mono text-[10px] font-bold",
+              "flex h-8 shrink-0 items-center gap-1 rounded-lg border px-2.5 font-mono text-[10px] font-bold cursor-pointer",
               frame.locked
                 ? "border-[#F59E0B] bg-[#F59E0B]/20 text-[#FBBF24]"
                 : isDark
@@ -1525,9 +3017,22 @@ export function ChamferPortraitBottomBars({
       return (
         <div className="flex h-full w-full items-center gap-2 overflow-x-auto px-2.5 scrollbar-none touch-pan-x whitespace-nowrap">
           <InlineBackButton onClick={() => setInlineSubPanel("none")} isDark={isDark} label="Voltar" />
-          <span className="font-mono text-[10px] font-bold uppercase text-[#94A3B8]">
-            Divisão Snap:
-          </span>
+          <InlineNumberInputPill
+            label="Div. Snap"
+            value={snapDivision}
+            unit="p"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Divisão do Snap",
+                snapDivision,
+                "p",
+                (v) => onSetSnapDivision(Math.max(0, Math.min(64, Math.round(v)))),
+                0,
+                64,
+              )
+            }
+            isDark={isDark}
+          />
           {[0, 2, 3, 4, 6, 8, 12, 16].map((n) => (
             <button
               key={n}
@@ -1537,9 +3042,9 @@ export function ChamferPortraitBottomBars({
                 onSetSnapDivision(n);
               }}
               className={cn(
-                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10.5px] font-bold transition-colors",
+                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10.5px] font-bold transition-colors cursor-pointer",
                 snapDivision === n || (n === 0 && snapDivision < 2)
-                  ? "bg-[#0EA5E9] text-white"
+                  ? "bg-[#E11D48] text-white"
                   : isDark
                     ? "bg-[#11141C] text-[#94A3B8]"
                     : "bg-white text-[#475569] border border-[#E2E8F0]",
@@ -1560,9 +3065,9 @@ export function ChamferPortraitBottomBars({
             type="button"
             onClick={() => setShowGrid((g) => !g)}
             className={cn(
-              "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10px] font-bold uppercase",
+              "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10px] font-bold uppercase cursor-pointer",
               showGrid
-                ? "bg-[#0EA5E9] text-white"
+                ? "bg-[#E11D48] text-white"
                 : isDark
                   ? "bg-[#11141C] text-[#94A3B8]"
                   : "bg-white text-[#475569] border border-[#E2E8F0]",
@@ -1570,6 +3075,25 @@ export function ChamferPortraitBottomBars({
           >
             {showGrid ? "Grid: ON" : "Grid: OFF"}
           </button>
+          <InlineNumberInputPill
+            label="Passo"
+            value={grid}
+            unit="mm"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Passo da Grade",
+                grid,
+                "mm",
+                (v) => {
+                  setGrid(Math.max(0.5, v));
+                  setShowGrid(() => true);
+                },
+                0.5,
+                1000,
+              )
+            }
+            isDark={isDark}
+          />
           {[1, 2, 5, 10, 20, 25, 50, 100].map((gVal) => (
             <button
               key={gVal}
@@ -1579,7 +3103,7 @@ export function ChamferPortraitBottomBars({
                 setShowGrid(() => true);
               }}
               className={cn(
-                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10.5px] font-bold",
+                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10.5px] font-bold cursor-pointer",
                 grid === gVal && showGrid
                   ? "bg-[#E11D48] text-white"
                   : isDark
@@ -1598,9 +3122,22 @@ export function ChamferPortraitBottomBars({
       return (
         <div className="flex h-full w-full items-center gap-2 overflow-x-auto px-2.5 scrollbar-none touch-pan-x whitespace-nowrap">
           <InlineBackButton onClick={() => setInlineSubPanel("none")} isDark={isDark} label="Voltar" />
-          <span className="font-mono text-[10px] font-bold uppercase text-[#94A3B8]">
-            Chapa (mm):
-          </span>
+          <InlineNumberInputPill
+            label="Chapa"
+            value={thickness}
+            unit="mm"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Espessura da Chapa",
+                thickness,
+                "mm",
+                (v) => onThicknessChange(Math.max(0.2, Math.min(100, v))),
+                0.2,
+                100,
+              )
+            }
+            isDark={isDark}
+          />
           {[0.8, 1.0, 1.2, 1.5, 2.0, 3.0, 4.75, 6.35, 9.5, 12.7, 15.8, 19.0].map((th) => (
             <button
               key={th}
@@ -1610,7 +3147,7 @@ export function ChamferPortraitBottomBars({
                 onThicknessChange(th);
               }}
               className={cn(
-                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10.5px] font-bold",
+                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10.5px] font-bold cursor-pointer",
                 Math.abs(thickness - th) < 0.05
                   ? "bg-[#E11D48] text-white"
                   : isDark
@@ -1637,7 +3174,7 @@ export function ChamferPortraitBottomBars({
               setInlineSubPanel("none");
             }}
             className={cn(
-              "flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 font-mono text-[10.5px] font-bold",
+              "flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 font-mono text-[10.5px] font-bold cursor-pointer",
               selectedCount >= 2
                 ? "border-[#0EA5E9]/50 bg-[#0EA5E9]/20 text-[#38BDF8]"
                 : "opacity-40 cursor-not-allowed border-white/[0.08] text-[#94A3B8]",
@@ -1654,7 +3191,7 @@ export function ChamferPortraitBottomBars({
               setInlineSubPanel("none");
             }}
             className={cn(
-              "flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 font-mono text-[10.5px] font-bold",
+              "flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 font-mono text-[10.5px] font-bold cursor-pointer",
               selectedCount >= 2
                 ? "border-[#E11D48]/50 bg-[#E11D48]/20 text-[#FB7185]"
                 : "opacity-40 cursor-not-allowed border-white/[0.08] text-[#94A3B8]",
@@ -1671,7 +3208,7 @@ export function ChamferPortraitBottomBars({
               setInlineSubPanel("none");
             }}
             className={cn(
-              "flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 font-mono text-[10.5px] font-bold",
+              "flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-3 font-mono text-[10.5px] font-bold cursor-pointer",
               selectedCount >= 2
                 ? "border-[#10B981]/50 bg-[#10B981]/20 text-[#34D399]"
                 : "opacity-40 cursor-not-allowed border-white/[0.08] text-[#94A3B8]",
@@ -1684,49 +3221,330 @@ export function ChamferPortraitBottomBars({
       );
     }
 
+    /* SELETOR COMPLETO DE CORES TÉCNICAS E PRETO (#0F172A) + CAMADAS (COR) */
     if (inlineSubPanel === "layer") {
-      const layerChoices = [
-        { id: "corte", label: "Corte", color: isDark ? "#F8FAFC" : "#0F172A" },
-        { id: "dobra", label: "Dobra", color: "#EC4899" },
-        { id: "recorte", label: "Recorte", color: "#F59E0B" },
-        { id: "marcacao", label: "Marcação", color: "#3B82F6" },
-      ];
+      return (
+        <div
+          data-testid="chamfer-inline-color-strip"
+          className="flex h-full w-full items-center gap-1.5 overflow-x-auto px-2.5 scrollbar-none touch-pan-x whitespace-nowrap"
+        >
+          <InlineBackButton onClick={() => setInlineSubPanel("none")} isDark={isDark} label="Voltar" />
+          {CHAMFER_TECHNICAL_PALETTE.map((col) => {
+            const isSelected =
+              (activeStrokeColor && activeStrokeColor.toUpperCase() === col.hex.toUpperCase()) ||
+              (!activeStrokeColor &&
+                activeLayer === col.layer &&
+                col.id !== "preto_tecnico" &&
+                col.id !== "branco_tecnico");
+            return (
+              <button
+                key={col.id}
+                type="button"
+                data-testid={`strip-color-swatch-${col.id}`}
+                data-cmd-id="cor.palette"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  if (onSelectColorAndLayer) {
+                    onSelectColorAndLayer(col);
+                  } else {
+                    setActiveLayer(col.layer);
+                  }
+                }}
+                className={cn(
+                  "flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold transition-colors cursor-pointer",
+                  isSelected
+                    ? "border-[#E11D48] bg-[#E11D48]/20 text-[#E11D48]"
+                    : isDark
+                      ? "border-white/[0.08] bg-[#11141C] text-[#E2E8F0]"
+                      : "border-[#E2E8F0] bg-white text-[#0F172A]",
+                )}
+              >
+                <span
+                  className="size-3 rounded-full border border-white/30 shadow-xs"
+                  style={{ backgroundColor: col.hex }}
+                />
+                <span>{col.shortLabel}</span>
+              </button>
+            );
+          })}
+          <button
+            type="button"
+            onClick={() => handleToggleDrawerTab("camadas")}
+            className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-[#E11D48] px-2.5 font-mono text-[10px] font-bold text-white cursor-pointer"
+          >
+            <Layers className="size-3" />
+            <span>Camadas</span>
+          </button>
+        </div>
+      );
+    }
+
+    /* SUB-PAINEL INLINE: FURO INDUSTRIAL (Ø) */
+    if (inlineSubPanel === "hole") {
       return (
         <div className="flex h-full w-full items-center gap-2 overflow-x-auto px-2.5 scrollbar-none touch-pan-x whitespace-nowrap">
           <InlineBackButton onClick={() => setInlineSubPanel("none")} isDark={isDark} label="Voltar" />
-          {layerChoices.map((lc) => (
+          <InlineNumberInputPill
+            label="Furo Ø"
+            value={holeDiameterMm}
+            unit="mm"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Diâmetro do Furo Ø",
+                holeDiameterMm,
+                "mm",
+                (v) => setHoleDiameterMm(Math.max(0.5, Math.min(2000, v))),
+                0.5,
+                2000,
+              )
+            }
+            isDark={isDark}
+          />
+          {[5, 6, 8, 10, 12, 16, 20, 25].map((d) => (
             <button
-              key={lc.id}
+              key={d}
               type="button"
               onClick={() => {
-                triggerHaptic("selection");
-                setActiveLayer(lc.id);
+                setHoleDiameterMm(d);
+                onAddHole(d);
               }}
               className={cn(
-                "flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10.5px] font-bold",
-                activeLayer === lc.id
-                  ? "border-[#E11D48] bg-[#E11D48]/20 text-white"
+                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10px] font-bold transition-colors cursor-pointer",
+                Math.abs(holeDiameterMm - d) < 0.05
+                  ? "bg-[#E11D48] text-white"
                   : isDark
-                    ? "border-white/[0.08] bg-[#11141C] text-[#94A3B8]"
-                    : "border-[#E2E8F0] bg-white text-[#475569]",
+                    ? "bg-[#11141C] text-[#94A3B8]"
+                    : "bg-white text-[#475569] border border-[#E2E8F0]",
               )}
             >
-              <span className="size-2.5 rounded-full" style={{ backgroundColor: lc.color }} />
-              <span>{lc.label}</span>
+              Ø{d}
             </button>
           ))}
-          <button
-            type="button"
+          <InlineConfirmButton
             onClick={() => {
-              onSelectSidebarTab("camadas");
-              onSetPortraitDrawerOpen(true);
+              onAddHole(holeDiameterMm);
               setInlineSubPanel("none");
             }}
-            className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-[#0EA5E9] px-2.5 font-mono text-[10px] font-bold text-white"
-          >
-            <Layers className="size-3" />
-            <span>Gerenciar Camadas</span>
-          </button>
+            label={`Inserir Ø${holeDiameterMm}mm`}
+          />
+        </div>
+      );
+    }
+
+    /* SUB-PAINEL INLINE: ROSCA TÉCNICA MÉTRICA (M) */
+    if (inlineSubPanel === "thread") {
+      return (
+        <div className="flex h-full w-full items-center gap-2 overflow-x-auto px-2.5 scrollbar-none touch-pan-x whitespace-nowrap">
+          <InlineBackButton onClick={() => setInlineSubPanel("none")} isDark={isDark} label="Voltar" />
+          <InlineNumberInputPill
+            label="Rosca M"
+            value={threadNominalM}
+            unit="mm"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Rosca Métrica M",
+                threadNominalM,
+                "mm",
+                (v) => setThreadNominalM(Math.max(2, Math.min(100, Math.round(v)))),
+                2,
+                100,
+              )
+            }
+            isDark={isDark}
+          />
+          {[3, 4, 5, 6, 8, 10, 12, 16, 20].map((mVal) => (
+            <button
+              key={mVal}
+              type="button"
+              onClick={() => {
+                setThreadNominalM(mVal);
+                onAddThread?.(mVal);
+              }}
+              className={cn(
+                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10px] font-bold transition-colors cursor-pointer",
+                threadNominalM === mVal
+                  ? "bg-[#E11D48] text-white"
+                  : isDark
+                    ? "bg-[#11141C] text-[#94A3B8]"
+                    : "bg-white text-[#475569] border border-[#E2E8F0]",
+              )}
+            >
+              M{mVal}
+            </button>
+          ))}
+          <InlineConfirmButton
+            onClick={() => {
+              onAddThread?.(threadNominalM);
+              setInlineSubPanel("none");
+            }}
+            label={`Inserir M${threadNominalM}`}
+          />
+        </div>
+      );
+    }
+
+    /* SUB-PAINEL INLINE: OLHAL CONCÊNTRICO */
+    if (inlineSubPanel === "eyelet") {
+      return (
+        <div className="flex h-full w-full items-center gap-2 overflow-x-auto px-2.5 scrollbar-none touch-pan-x whitespace-nowrap">
+          <InlineBackButton onClick={() => setInlineSubPanel("none")} isDark={isDark} label="Voltar" />
+          <InlineNumberInputPill
+            label="Ø Int"
+            value={eyeletInnerMm}
+            unit="mm"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Ø Interno do Olhal",
+                eyeletInnerMm,
+                "mm",
+                (v) => setEyeletInnerMm(Math.max(1, v)),
+                1,
+                2000,
+              )
+            }
+            isDark={isDark}
+          />
+          <InlineNumberInputPill
+            label="Ø Ext"
+            value={eyeletOuterMm}
+            unit="mm"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Ø Externo do Olhal",
+                eyeletOuterMm,
+                "mm",
+                (v) => setEyeletOuterMm(Math.max(eyeletInnerMm + 2, v)),
+                2,
+                3000,
+              )
+            }
+            isDark={isDark}
+          />
+          <InlineConfirmButton
+            onClick={() => {
+              onAddEyelet?.(eyeletInnerMm, eyeletOuterMm);
+              setInlineSubPanel("none");
+            }}
+            label="Criar Olhal"
+          />
+        </div>
+      );
+    }
+
+    /* SUB-PAINEL INLINE: DENTES / SERRILHADO */
+    if (inlineSubPanel === "teeth") {
+      return (
+        <div className="flex h-full w-full items-center gap-2 overflow-x-auto px-2.5 scrollbar-none touch-pan-x whitespace-nowrap">
+          <InlineBackButton onClick={() => setInlineSubPanel("none")} isDark={isDark} label="Voltar" />
+          <InlineStepperPill
+            label="Dentes"
+            value={teethCount}
+            onStep={(d) => setTeethCount((c) => Math.max(2, Math.min(80, c + d)))}
+            isDark={isDark}
+          />
+          <InlineNumberInputPill
+            label="Passo"
+            value={teethPitchMm}
+            unit="mm"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Passo entre Dentes",
+                teethPitchMm,
+                "mm",
+                (v) => setTeethPitchMm(Math.max(1, v)),
+                1,
+                500,
+              )
+            }
+            isDark={isDark}
+          />
+          <InlineNumberInputPill
+            label="Alt"
+            value={teethHeightMm}
+            unit="mm"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Altura do Dente",
+                teethHeightMm,
+                "mm",
+                (v) => setTeethHeightMm(Math.max(0.5, v)),
+                0.5,
+                500,
+              )
+            }
+            isDark={isDark}
+          />
+          <InlineConfirmButton
+            onClick={() => {
+              onAddSerratedTeeth?.(teethCount, teethPitchMm, teethHeightMm);
+              setInlineSubPanel("none");
+            }}
+            label="Gerar Dentes"
+          />
+        </div>
+      );
+    }
+
+    /* SUB-PAINEL INLINE: CAVIDADE 2D (POCKET) */
+    if (inlineSubPanel === "pocket") {
+      return (
+        <div className="flex h-full w-full items-center gap-2 overflow-x-auto px-2.5 scrollbar-none touch-pan-x whitespace-nowrap">
+          <InlineBackButton onClick={() => setInlineSubPanel("none")} isDark={isDark} label="Voltar" />
+          <InlineNumberInputPill
+            label="Larg"
+            value={pocketWidthMm}
+            unit="mm"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Largura da Cavidade",
+                pocketWidthMm,
+                "mm",
+                (v) => setPocketWidthMm(Math.max(4, v)),
+                4,
+                5000,
+              )
+            }
+            isDark={isDark}
+          />
+          <InlineNumberInputPill
+            label="Alt"
+            value={pocketHeightMm}
+            unit="mm"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Altura da Cavidade",
+                pocketHeightMm,
+                "mm",
+                (v) => setPocketHeightMm(Math.max(4, v)),
+                4,
+                5000,
+              )
+            }
+            isDark={isDark}
+          />
+          <InlineNumberInputPill
+            label="Raio R"
+            value={pocketRadiusMm}
+            unit="mm"
+            onOpenKeypad={() =>
+              handleOpenInlineKeypad(
+                "Raio de Canto da Cavidade",
+                pocketRadiusMm,
+                "mm",
+                (v) => setPocketRadiusMm(Math.max(0, v)),
+                0,
+                1000,
+              )
+            }
+            isDark={isDark}
+          />
+          <InlineConfirmButton
+            onClick={() => {
+              onAddPocket2D?.(pocketWidthMm, pocketHeightMm, pocketRadiusMm);
+              setInlineSubPanel("none");
+            }}
+            label="Criar Cavidade"
+          />
         </div>
       );
     }
@@ -1739,6 +3557,10 @@ export function ChamferPortraitBottomBars({
         { id: "diameter", label: "Diâmetro Ø" },
         { id: "radius", label: "Raio R" },
         { id: "angle", label: "Ângulo °" },
+        { id: "arc", label: "Arco" },
+        { id: "chamfer", label: "Chanfro" },
+        { id: "chain", label: "Contínua" },
+        { id: "baseline", label: "Linha Base" },
       ];
       return (
         <div className="flex h-full w-full items-center gap-2 overflow-x-auto px-2.5 scrollbar-none touch-pan-x whitespace-nowrap">
@@ -1752,9 +3574,9 @@ export function ChamferPortraitBottomBars({
                 onPickTool("dim");
               }}
               className={cn(
-                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10.5px] font-bold transition-colors",
+                "h-8 shrink-0 rounded-lg px-2.5 font-mono text-[10.5px] font-bold transition-colors cursor-pointer",
                 tool === "dim" && dimKind === dc.id
-                  ? "bg-[#0EA5E9] text-white"
+                  ? "bg-[#E11D48] text-white"
                   : isDark
                     ? "bg-[#11141C] text-[#94A3B8]"
                     : "bg-white text-[#475569] border border-[#E2E8F0]",
@@ -1767,705 +3589,1176 @@ export function ChamferPortraitBottomBars({
       );
     }
 
-    /* CARROSSEL PADRÃO DO MODO ATIVO NO DOCK */
+    const activeToolLabel = tool !== "select" ? TOOL_LABELS_PT[tool] ?? tool : null;
+    const itemHeightPx = stripHeightPx <= 54 ? 48 : 52;
+
+    /* ESTADO A — CARROSSEL PADRÃO DO MODO ATIVO NO DOCK */
     return (
-      <div className="flex h-full w-full items-center gap-0.5 overflow-x-auto px-1.5 scrollbar-none touch-pan-x">
-        {/* MODO 1: DESENHO & CRIAÇÃO (SEL + CRI + DET) */}
-        {dockMode === "desenho" && (
-          <>
-            <CarouselToolItem
-              icon={MousePointer2}
-              label="Ponteiro"
-              active={tool === "select"}
-              onClick={() => onPickTool("select")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={ControlNodesIcon as unknown as typeof Minus}
-              label="Nós"
-              active={tool === "node"}
-              onClick={() => onPickTool("node")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Hand}
-              label="Pan"
-              active={tool === "pan"}
-              onClick={() => onPickTool("pan")}
-              isDark={isDark}
-            />
+      <div className="relative flex h-full w-full items-center overflow-hidden">
+        {/* Degradê sutil esquerdo (16px) indicando scroll horizontal */}
+        <div
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute inset-y-0 left-0 z-10 w-4 bg-gradient-to-r to-transparent",
+            isDark ? "from-[#181C26]" : "from-white",
+          )}
+        />
+        {/* Degradê sutil direito (24px) garantindo peek claro do próximo item */}
+        <div
+          aria-hidden="true"
+          className={cn(
+            "pointer-events-none absolute inset-y-0 right-0 z-10 w-6 bg-gradient-to-l to-transparent",
+            isDark ? "from-[#181C26]" : "from-white",
+          )}
+        />
 
-            <CarouselDivider isDark={isDark} />
+        <div className="flex h-full w-full items-center gap-0.5 overflow-x-auto px-2 scrollbar-none touch-pan-x">
+          {/* Chip de Ferramenta Contínua Ativa: permite voltar a Selecionar com 1 toque */}
+          {activeToolLabel && (
+            <>
+              <button
+                type="button"
+                data-testid="chamfer-active-tool-chip"
+                onClick={() => {
+                  triggerHaptic("tap");
+                  onPickTool("select");
+                }}
+                title="Toque para encerrar a ferramenta atual e voltar a Selecionar"
+                className="flex h-8 shrink-0 items-center gap-1 rounded-xl border border-[#E11D48]/60 bg-[#E11D48]/16 px-2 font-mono text-[9.5px] font-bold text-[#FB7185] transition-colors active:scale-95 cursor-pointer"
+              >
+                <span>Ativa: {activeToolLabel}</span>
+                <X className="size-3 text-[#E11D48]" />
+              </button>
+              <CarouselDivider isDark={isDark} />
+            </>
+          )}
 
-            <CarouselToolItem
-              icon={Minus}
-              label="Linha"
-              active={tool === "line"}
-              onClick={() => onPickTool("line")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={PenLine}
-              label="Polilinha"
-              active={tool === "polyline"}
-              onClick={() => onPickTool("polyline")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={CircleIcon}
-              label="Círculo"
-              active={tool === "circle"}
-              onClick={() => onPickTool("circle")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Square}
-              label="Retângulo"
-              active={tool === "rect"}
-              onClick={() => onPickTool("rect")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Compass}
-              label="Arco"
-              active={tool === "arc"}
-              onClick={() => onPickTool("arc")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Minus}
-              label="Rasgo"
-              active={tool === "slot"}
-              onClick={() => onPickTool("slot")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Hexagon}
-              label="Polígono"
-              active={tool === "polygon"}
-              onClick={() => onPickTool("polygon")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Egg}
-              label="Elipse"
-              active={tool === "ellipse"}
-              onClick={() => onPickTool("ellipse")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Sparkles}
-              label="Spline"
-              active={tool === "spline"}
-              onClick={() => onPickTool("spline")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Crosshair}
-              label="Eixo XL"
-              active={tool === "construction_line"}
-              onClick={() => onPickTool("construction_line")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Dot}
-              label="Ponto"
-              active={tool === "point"}
-              onClick={() => onPickTool("point")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Type}
-              label="Texto"
-              active={tool === "text"}
-              onClick={() => onPickTool("text")}
-              isDark={isDark}
-            />
-
-            <CarouselDivider isDark={isDark} />
-
-            <CarouselToolItem
-              icon={CircleDot}
-              label="Furo Ø"
-              active={false}
-              onClick={onAddHole}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Boxes}
-              label="Presets"
-              active={false}
-              onClick={onOpenPresets}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Sparkles}
-              label="Projeção Iso"
-              active={false}
-              onClick={onOpenPieceBuilder}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Box}
-              label="Extrude 3D"
-              active={activeMode === "3d"}
-              onClick={() => onModeChange("3d")}
-              isDark={isDark}
-            />
-          </>
-        )}
-
-        {/* MODO 2: MODIFICAR & EDIÇÃO */}
-        {dockMode === "modificar" && (
-          <>
-            <CarouselToolItem
-              icon={Scissors}
-              label="Aparar"
-              active={tool === "trim"}
-              onClick={() => onPickTool("trim")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Scissors}
-              label="Encontro"
-              active={tool === "smart_trim"}
-              onClick={() => onPickTool("smart_trim")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={CornerDownRight}
-              label="Offset"
-              active={tool === "offset"}
-              onClick={() => onPickTool("offset")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Sparkles}
-              label="Filete R"
-              active={tool === "fillet"}
-              onClick={() => onPickTool("fillet")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Sparkles}
-              label="Chanfro"
-              active={tool === "chamfer"}
-              onClick={() => onPickTool("chamfer")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={RotateCw}
-              label="Array Polar"
-              active={activeArrayType === "polar"}
-              onClick={onArrayPolar}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Copy}
-              label="Array Linear"
-              active={activeArrayType === "linear"}
-              onClick={onArrayLinear}
-              isDark={isDark}
-            />
-
-            <CarouselDivider isDark={isDark} />
-
-            <CarouselToolItem
-              icon={Move}
-              label="Mover"
-              disabled={!hasSelection}
-              onClick={onMoveSelection}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Copy}
-              label="Copiar"
-              disabled={!hasSelection}
-              onClick={onCopySelection}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={ClipboardList}
-              label="Colar/Clip"
-              onClick={onOpenClipboard}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={RotateCw}
-              label="Girar 90°"
-              disabled={!hasSelection}
-              onClick={onRotateSelection}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={FlipHorizontal}
-              label="Espelhar"
-              disabled={!hasSelection}
-              onClick={onMirrorSelection}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Maximize2}
-              label="Escalar"
-              disabled={!hasSelection}
-              onClick={onScaleSelection}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={AlignCenter}
-              label="Centralizar"
-              disabled={!hasSelection}
-              onClick={onCenterSelection}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Divide}
-              label="Dividir"
-              active={tool === "divide" || divideEditorOpen}
-              onClick={() => {
-                if (hasSelection) {
-                  onDivideSelection();
-                } else {
-                  onPickTool("divide");
-                }
-              }}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Maximize}
-              label="Estender"
-              active={tool === "extend"}
-              onClick={() => onPickTool("extend")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Combine}
-              label="Unir"
-              disabled={!hasSelection}
-              onClick={onJoinSelection}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Split}
-              label="Quebrar"
-              disabled={!hasSelection}
-              onClick={onBreakSelection}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Split}
-              label="Explodir"
-              disabled={!hasSelection}
-              onClick={onExplodeSelection}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Combine}
-              label="Booleana"
-              onClick={() => setInlineSubPanel("boolean")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Layers}
-              label="Hachura"
-              disabled={!hasSelection}
-              onClick={onCreateHatch}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Sparkles}
-              label="Overkill"
-              onClick={onOverkillClean}
-              isDark={isDark}
-            />
-          </>
-        )}
-
-        {/* MODO 3: PRECISÃO & MEDIÇÃO */}
-        {dockMode === "precisao" && (
-          <>
-            <CarouselToolItem
-              icon={Magnet}
-              label={snapOn ? "Snap: ON" : "Snap: OFF"}
-              active={snapOn}
-              onClick={() => setSnapOn((s) => !s)}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Divide}
-              label={snapDivision >= 2 ? `Div. ${snapDivision}p` : "Div. Snap"}
-              active={snapDivision >= 2}
-              onClick={() => setInlineSubPanel("snap_div")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Eye}
-              label="Todos Snaps"
-              active={showAllSnaps}
-              onClick={onToggleShowAllSnaps}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Crosshair}
-              label="Guia Azul"
-              active={interactionGuideMode === "blue_line"}
-              onClick={() =>
-                onSetInteractionGuideMode(
-                  interactionGuideMode === "blue_line" ? "off" : "blue_line",
-                )
-              }
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Crosshair}
-              label="Guia Roxa"
-              active={interactionGuideMode === "purple_ref"}
-              onClick={() =>
-                onSetInteractionGuideMode(
-                  interactionGuideMode === "purple_ref" ? "off" : "purple_ref",
-                )
-              }
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Crosshair}
-              label="REF 0,0"
-              active={Boolean(temporaryOrigin)}
-              onClick={onStartSetReferencePoint}
-              isDark={isDark}
-            />
-            {temporaryOrigin && (
+          {/* ================================================================
+           * MODO 1: DESENHO (SEL | CRI | DET | COR)
+           * Organizado para mostrar Seleção + Criação + Cor logo de cara e
+           * todos os detalhes mecânicos (Furo, Rosca, Rasgo, Dentes, Cavidade)
+           * ================================================================ */}
+          {dockMode === "desenho" && (
+            <>
+              {/* GRUPO SEL */}
               <CarouselToolItem
-                icon={X}
-                label="Limpar REF"
-                onClick={onClearTemporaryOrigin}
+                cmdId="tool.select"
+                icon={MousePointer2}
+                label="Ponteiro"
+                active={tool === "select"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("select")}
                 isDark={isDark}
               />
-            )}
-            <CarouselToolItem
-              icon={Crosshair}
-              label="Orto 90°"
-              active={orthoOn}
-              onClick={() => setOrthoOn((o) => !o)}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Compass}
-              label="Tracking"
-              active={trackingOn}
-              onClick={() => setTrackingOn((t) => !t)}
-              isDark={isDark}
-            />
+              <CarouselToolItem
+                cmdId="tool.node"
+                icon={ControlNodesIcon as unknown as typeof Minus}
+                label="Editar Nós"
+                active={tool === "node"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("node")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="tool.pan"
+                icon={Hand}
+                label="Pan"
+                active={tool === "pan"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("pan")}
+                isDark={isDark}
+              />
 
-            <CarouselDivider isDark={isDark} />
+              <CarouselDivider isDark={isDark} />
 
-            <CarouselToolItem
-              icon={Ruler}
-              label="Cotar"
-              active={tool === "dim"}
-              onClick={() => setInlineSubPanel("cotar")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Disc}
-              label="Cota Ø"
-              active={tool === "dim" && dimKind === "diameter"}
-              onClick={() => {
-                onPickDimKind("diameter");
-                onPickTool("dim");
-              }}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Compass}
-              label="Cota Âng."
-              active={tool === "dim" && dimKind === "angle"}
-              onClick={() => {
-                onPickDimKind("angle");
-                onPickTool("dim");
-              }}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Ruler}
-              label="Medir"
-              active={tool === "measure"}
-              onClick={() => onPickTool("measure")}
-              isDark={isDark}
-            />
+              {/* GRUPO CRI (Primitivas & Construção) */}
+              <CarouselToolItem
+                cmdId="tool.line"
+                icon={Minus}
+                label="Linha"
+                active={tool === "line"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("line")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="tool.rect"
+                icon={Square}
+                label="Retângulo"
+                active={tool === "rect"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("rect")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="tool.circle"
+                icon={CircleIcon}
+                label="Círculo"
+                active={tool === "circle"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("circle")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="tool.arc"
+                icon={Compass}
+                label="Arco 3P"
+                active={tool === "arc"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("arc")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="tool.polyline"
+                icon={PenLine}
+                label="Polilinha"
+                active={tool === "polyline"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("polyline")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="tool.ellipse"
+                icon={Egg}
+                label="Elipse"
+                active={tool === "ellipse"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("ellipse")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="tool.polygon"
+                icon={Hexagon}
+                label="Polígono"
+                active={tool === "polygon"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("polygon")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="tool.spline"
+                icon={Sparkles}
+                label="Spline"
+                active={tool === "spline"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("spline")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="cri.eyelet"
+                icon={Disc}
+                label="Olhal"
+                heightPx={itemHeightPx}
+                onClick={() => handleOpenInlineSubPanel("eyelet")}
+                isDark={isDark}
+              />
+              {onAddTangentBridge && (
+                <CarouselToolItem
+                  cmdId="cri.ttr_bridge"
+                  icon={Combine}
+                  label="Ponte TTR"
+                  heightPx={itemHeightPx}
+                  onClick={onAddTangentBridge}
+                  isDark={isDark}
+                />
+              )}
+              <CarouselToolItem
+                cmdId="tool.construction_line"
+                icon={Crosshair}
+                label="Eixo XL"
+                active={tool === "construction_line"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("construction_line")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="tool.point"
+                icon={Dot}
+                label="Ponto"
+                active={tool === "point"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("point")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="tool.text"
+                icon={Type}
+                label="Texto"
+                active={tool === "text"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("text")}
+                isDark={isDark}
+              />
 
-            <CarouselDivider isDark={isDark} />
+              <CarouselDivider isDark={isDark} />
 
-            <CarouselToolItem
-              icon={Crosshair}
-              label={cursorOffsetMode === "offset" ? "Mira 55px" : "Mira 1:1"}
-              active={cursorOffsetMode === "offset"}
-              onClick={onToggleCursorOffsetMode}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Eye}
-              label={`Lupa: ${loupeMode === "off" ? "OFF" : loupeMode === "pinned" ? "Fixa" : "Auto"}`}
-              active={loupeMode !== "off"}
-              onClick={onCycleLoupeMode}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Sliders}
-              label="Nudge Fino"
-              active={nudgeHudVisible}
-              onClick={onToggleNudgeHud}
-              isDark={isDark}
-            />
-          </>
-        )}
+              {/* GRUPO DET (Detalhes Mecânicos) */}
+              <CarouselToolItem
+                cmdId="det.hole"
+                icon={CircleDot}
+                label="Furo Ø"
+                heightPx={itemHeightPx}
+                onClick={() => handleOpenInlineSubPanel("hole")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="det.thread"
+                icon={Disc}
+                label="Rosca M"
+                heightPx={itemHeightPx}
+                onClick={() => handleOpenInlineSubPanel("thread")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="tool.slot"
+                icon={Minus}
+                label="Rasgo"
+                active={tool === "slot"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("slot")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="det.teeth"
+                icon={Activity}
+                label="Dentes"
+                heightPx={itemHeightPx}
+                onClick={() => handleOpenInlineSubPanel("teeth")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="det.pocket"
+                icon={Square}
+                label="Cavidade"
+                heightPx={itemHeightPx}
+                onClick={() => handleOpenInlineSubPanel("pocket")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="det.presets"
+                icon={Boxes}
+                label="Presets"
+                heightPx={itemHeightPx}
+                onClick={onOpenPresets}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="det.extrude_3d"
+                icon={Box}
+                label="Extrude 3D"
+                active={activeMode === "3d"}
+                heightPx={itemHeightPx}
+                onClick={() => onModeChange("3d")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="det.revolve_3d"
+                icon={RotateCw}
+                label="Revolve 3D"
+                heightPx={itemHeightPx}
+                onClick={() => onModeChange("3d")}
+                isDark={isDark}
+              />
 
-        {/* MODO 4: CHAPA, ESTRUTURA & VISION */}
-        {dockMode === "chapa_vision" && (
-          <>
-            <CarouselToolItem
-              icon={Layers}
-              label="Flange/Aba"
-              active={activeMode === "flanges"}
-              onClick={onOpenFlanges}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={FoldHorizontal}
-              label="Linha Dobra"
-              onClick={onConvertToBend}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Sparkles}
-              label="Alívio"
-              onClick={onApplyRelief}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={ArrowRightLeft}
-              label="Planificar"
-              onClick={onPlanificar}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={FoldHorizontal}
-              label="Desdobrar"
-              onClick={onUnfold}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Layers}
-              label="Dobrar 3D"
-              onClick={onFold}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Sliders}
-              label={`${thickness.toFixed(1)}mm`}
-              onClick={() => setInlineSubPanel("thickness")}
-              isDark={isDark}
-            />
+              <CarouselDivider isDark={isDark} />
 
-            <CarouselDivider isDark={isDark} />
+              {/* GRUPO COR (Paleta Técnica + Preto #0F172A) */}
+              <CarouselToolItem
+                cmdId="cor.palette"
+                icon={Palette}
+                label={`Cor: ${currentColorLabel}`}
+                swatchColor={activeColorHex}
+                heightPx={itemHeightPx}
+                onClick={() => handleOpenInlineSubPanel("layer")}
+                isDark={isDark}
+              />
 
-            <CarouselToolItem
-              icon={ScanEye}
-              label="Foto 1:1"
-              onClick={onOpenVisionModal}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Compass}
-              label="Eng. Rev A→F"
-              active={portraitDrawerOpen && activeSidebarTab === "eng_rev"}
-              onClick={() => {
-                onOpenRevEngCategory("referencias", "A");
-                onSelectSidebarTab("eng_rev");
-                onSetPortraitDrawerOpen(true);
-              }}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Ruler}
-              label="Paquímetro"
-              onClick={() => {
-                onOpenRevEngCategory("caderno", "B");
-                onSelectSidebarTab("eng_rev");
-                onSetPortraitDrawerOpen(true);
-              }}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={CircleDot}
-              label="Bancada PCD"
-              onClick={() => {
-                onOpenRevEngCategory("furos_cadeias", "D");
-                onSelectSidebarTab("eng_rev");
-                onSetPortraitDrawerOpen(true);
-              }}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Boxes}
-              label="Cavidades"
-              onClick={() => {
-                onOpenRevEngCategory("cavidades_dentes", "E");
-                onSelectSidebarTab("eng_rev");
-                onSetPortraitDrawerOpen(true);
-              }}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Compass}
-              label="Ajuste LSQ"
-              onClick={() => {
-                onOpenRevEngCategory("contorno_ajuste", "C");
-                onSelectSidebarTab("eng_rev");
-                onSetPortraitDrawerOpen(true);
-              }}
-              isDark={isDark}
-            />
+              <CarouselDivider isDark={isDark} />
 
-            <CarouselDivider isDark={isDark} />
+              {/* UTILITÁRIOS DE SELEÇÃO EM LOTE */}
+              {onSelectAll && (
+                <CarouselToolItem
+                  cmdId="sel.all"
+                  icon={Maximize2}
+                  label="Sel. Tudo"
+                  heightPx={itemHeightPx}
+                  onClick={onSelectAll}
+                  isDark={isDark}
+                />
+              )}
+              {onInvertSelection && (
+                <CarouselToolItem
+                  cmdId="sel.invert"
+                  icon={ArrowLeftRight}
+                  label="Inv. Sel."
+                  heightPx={itemHeightPx}
+                  onClick={onInvertSelection}
+                  isDark={isDark}
+                />
+              )}
+              {hasSelection && onClearSelection && (
+                <CarouselToolItem
+                  icon={X}
+                  label="Limpar Sel."
+                  heightPx={itemHeightPx}
+                  onClick={onClearSelection}
+                  isDark={isDark}
+                />
+              )}
+            </>
+          )}
 
-            <CarouselToolItem
-              icon={Boxes}
-              label="Perfil/Tubo"
-              onClick={onOpenPresets}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Flame}
-              label="Solda"
-              onClick={() => {
-                onSelectSidebarTab("propriedades");
-                onSetPortraitDrawerOpen(true);
-              }}
-              isDark={isDark}
-            />
-          </>
-        )}
+          {/* ================================================================
+           * MODO 2: MODIFICAR (MOD | PADRÕES | BOOLEANAS)
+           * ================================================================ */}
+          {dockMode === "modificar" && (
+            <>
+              <CarouselToolItem
+                cmdId="mod.trim"
+                icon={Scissors}
+                label="Aparar"
+                active={tool === "trim"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("trim")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.smart_trim"
+                icon={Scissors}
+                label="Até Encontro"
+                active={tool === "smart_trim"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("smart_trim")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.extend"
+                icon={Maximize}
+                label="Estender"
+                active={tool === "extend"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("extend")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.offset"
+                icon={CornerDownRight}
+                label="Offset"
+                active={tool === "offset"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("offset")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.fillet"
+                icon={Sparkles}
+                label="Filete R"
+                active={tool === "fillet"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("fillet")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.chamfer"
+                icon={Sparkles}
+                label="Chanfro"
+                active={tool === "chamfer"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("chamfer")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.divide"
+                icon={Divide}
+                label="Dividir N"
+                active={tool === "divide" || divideEditorOpen}
+                heightPx={itemHeightPx}
+                onClick={() => {
+                  if (hasSelection) {
+                    onDivideSelection();
+                  } else {
+                    onPickTool("divide");
+                  }
+                }}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.break"
+                icon={Split}
+                label="Quebrar"
+                disabled={!hasSelection}
+                heightPx={itemHeightPx}
+                onClick={onBreakSelection}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.join"
+                icon={Combine}
+                label="Unir"
+                disabled={!hasSelection}
+                heightPx={itemHeightPx}
+                onClick={onJoinSelection}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.explode"
+                icon={Split}
+                label="Explodir"
+                disabled={!hasSelection}
+                heightPx={itemHeightPx}
+                onClick={onExplodeSelection}
+                isDark={isDark}
+              />
+              {onDeleteSelection && (
+                <CarouselToolItem
+                  cmdId="mod.delete"
+                  icon={Trash2}
+                  label="Apagar"
+                  disabled={!hasSelection}
+                  heightPx={itemHeightPx}
+                  onClick={onDeleteSelection}
+                  isDark={isDark}
+                />
+              )}
 
-        {/* MODO 5: INSPETOR & MESA */}
-        {dockMode === "inspetor" && (
-          <>
-            <CarouselToolItem
-              icon={Sliders}
-              label="Propriedades"
-              active={portraitDrawerOpen && activeSidebarTab === "propriedades"}
-              onClick={() => {
-                if (portraitDrawerOpen && activeSidebarTab === "propriedades") {
-                  onSetPortraitDrawerOpen(false);
-                } else {
-                  onSelectSidebarTab("propriedades");
+              <CarouselDivider isDark={isDark} />
+
+              <CarouselToolItem
+                cmdId="mod.move"
+                icon={Move}
+                label="Mover"
+                disabled={!hasSelection}
+                heightPx={itemHeightPx}
+                onClick={onMoveSelection}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.copy"
+                icon={Copy}
+                label="Copiar"
+                disabled={!hasSelection}
+                heightPx={itemHeightPx}
+                onClick={onCopySelection}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.clipboard"
+                icon={ClipboardList}
+                label="Colar/Clip"
+                heightPx={itemHeightPx}
+                onClick={onOpenClipboard}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.rotate"
+                icon={RotateCw}
+                label="Girar"
+                disabled={!hasSelection}
+                heightPx={itemHeightPx}
+                onClick={onRotateSelection}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.mirror"
+                icon={FlipHorizontal}
+                label="Espelhar"
+                disabled={!hasSelection}
+                heightPx={itemHeightPx}
+                onClick={onMirrorSelection}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.scale"
+                icon={Maximize2}
+                label="Escalar"
+                disabled={!hasSelection}
+                heightPx={itemHeightPx}
+                onClick={onScaleSelection}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.stretch"
+                icon={ArrowLeftRight}
+                label="Esticar"
+                disabled={!hasSelection}
+                heightPx={itemHeightPx}
+                onClick={onStretchSelection}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.center"
+                icon={AlignCenter}
+                label="Centralizar"
+                disabled={!hasSelection}
+                heightPx={itemHeightPx}
+                onClick={onCenterSelection}
+                isDark={isDark}
+              />
+
+              <CarouselDivider isDark={isDark} />
+
+              <CarouselToolItem
+                cmdId="mod.array_polar"
+                icon={RotateCw}
+                label="Array Polar"
+                active={activeArrayType === "polar"}
+                heightPx={itemHeightPx}
+                onClick={onArrayPolar}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.array_linear"
+                icon={Copy}
+                label="Array Linear"
+                active={activeArrayType === "linear"}
+                heightPx={itemHeightPx}
+                onClick={onArrayLinear}
+                isDark={isDark}
+              />
+
+              <CarouselDivider isDark={isDark} />
+
+              <CarouselToolItem
+                cmdId="mod.boolean_2d"
+                icon={Combine}
+                label="Booleana 2D"
+                heightPx={itemHeightPx}
+                onClick={() => handleOpenInlineSubPanel("boolean")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.hatch"
+                icon={Layers}
+                label="Hachura"
+                disabled={!hasSelection}
+                heightPx={itemHeightPx}
+                onClick={onCreateHatch}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.overkill"
+                icon={Sparkles}
+                label="Overkill"
+                heightPx={itemHeightPx}
+                onClick={onOverkillClean}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.fit_lsq"
+                icon={Compass}
+                label="Ajuste LSQ"
+                heightPx={itemHeightPx}
+                onClick={() => {
+                  setKeypadSession(null);
+                  setInlineSubPanel("none");
+                  onOpenRevEngCategory("contorno_ajuste", "C");
+                  onSelectSidebarTab("eng_rev");
                   onSetPortraitDrawerOpen(true);
+                }}
+                isDark={isDark}
+              />
+            </>
+          )}
+
+          {/* ================================================================
+           * MODO 3: PRECISÃO (PRE | MED | MIRA & LUPA)
+           * ================================================================ */}
+          {dockMode === "precisao" && (
+            <>
+              <CarouselToolItem
+                cmdId="pre.snap_toggle"
+                icon={Magnet}
+                label={snapOn ? "Snap: ON" : "Snap: OFF"}
+                active={snapOn}
+                heightPx={itemHeightPx}
+                onClick={() => setSnapOn((s) => !s)}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="pre.snap_division"
+                icon={Divide}
+                label={snapDivision >= 2 ? `Div. ${snapDivision}p` : "Div. Snap"}
+                active={snapDivision >= 2}
+                heightPx={itemHeightPx}
+                onClick={() => handleOpenInlineSubPanel("snap_div")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="pre.show_all_snaps"
+                icon={Eye}
+                label="Ver Snaps"
+                active={showAllSnaps}
+                heightPx={itemHeightPx}
+                onClick={onToggleShowAllSnaps}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="pre.ortho_lock"
+                icon={Crosshair}
+                label="ORTO ⊥"
+                active={orthoOn}
+                heightPx={itemHeightPx}
+                onClick={() => setOrthoOn((o) => !o)}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="pre.smart_tracking"
+                icon={Compass}
+                label="Tracking"
+                active={trackingOn}
+                heightPx={itemHeightPx}
+                onClick={() => setTrackingOn((t) => !t)}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="pre.interaction_guides"
+                icon={Crosshair}
+                label={
+                  interactionGuideMode === "blue_line"
+                    ? "Guia Azul"
+                    : interactionGuideMode === "purple_ref"
+                      ? "Guia Roxa"
+                      : "Guias: OFF"
                 }
-              }}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Layers}
-              label={`Cor: ${layerLabel}`}
-              onClick={() => setInlineSubPanel("layer")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Layers}
-              label="Camadas"
-              active={portraitDrawerOpen && activeSidebarTab === "camadas"}
-              onClick={() => {
-                if (portraitDrawerOpen && activeSidebarTab === "camadas") {
-                  onSetPortraitDrawerOpen(false);
-                } else {
-                  onSelectSidebarTab("camadas");
+                active={interactionGuideMode !== "off"}
+                heightPx={itemHeightPx}
+                onClick={() =>
+                  onSetInteractionGuideMode(
+                    interactionGuideMode === "blue_line"
+                      ? "purple_ref"
+                      : interactionGuideMode === "purple_ref"
+                        ? "off"
+                        : "blue_line",
+                  )
+                }
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="pre.ref_origin"
+                icon={Crosshair}
+                label="REF 0,0"
+                active={Boolean(temporaryOrigin)}
+                heightPx={itemHeightPx}
+                onClick={onStartSetReferencePoint}
+                isDark={isDark}
+              />
+              {temporaryOrigin && (
+                <CarouselToolItem
+                  icon={X}
+                  label="Limpar REF"
+                  heightPx={itemHeightPx}
+                  onClick={onClearTemporaryOrigin}
+                  isDark={isDark}
+                />
+              )}
+              {onUseSelectedEdge && (
+                <CarouselToolItem
+                  cmdId="pre.use_edge"
+                  icon={CornerDownRight}
+                  label="Usar Borda"
+                  disabled={!hasSelection}
+                  heightPx={itemHeightPx}
+                  onClick={onUseSelectedEdge}
+                  isDark={isDark}
+                />
+              )}
+              <CarouselToolItem
+                cmdId="pre.nudge_dpad"
+                icon={Sliders}
+                label="Ajuste Fino"
+                active={nudgeHudVisible}
+                heightPx={itemHeightPx}
+                onClick={onToggleNudgeHud}
+                isDark={isDark}
+              />
+
+              <CarouselDivider isDark={isDark} />
+
+              <CarouselToolItem
+                cmdId="med.measure"
+                icon={Ruler}
+                label="Medir"
+                active={tool === "measure"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("measure")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="med.cotar"
+                icon={Ruler}
+                label="Cotar"
+                active={tool === "dim"}
+                heightPx={itemHeightPx}
+                onClick={() => handleOpenInlineSubPanel("cotar")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                icon={Disc}
+                label="Cota Ø"
+                active={tool === "dim" && dimKind === "diameter"}
+                heightPx={itemHeightPx}
+                onClick={() => {
+                  onPickDimKind("diameter");
+                  onPickTool("dim");
+                }}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                icon={CircleDot}
+                label="Cota Raio"
+                active={tool === "dim" && dimKind === "radius"}
+                heightPx={itemHeightPx}
+                onClick={() => {
+                  onPickDimKind("radius");
+                  onPickTool("dim");
+                }}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                icon={Compass}
+                label="Cota Âng."
+                active={tool === "dim" && dimKind === "angle"}
+                heightPx={itemHeightPx}
+                onClick={() => {
+                  onPickDimKind("angle");
+                  onPickTool("dim");
+                }}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="grid.settings"
+                icon={Grid}
+                label={`Grade ${grid}mm`}
+                active={showGrid}
+                heightPx={itemHeightPx}
+                onClick={() => handleOpenInlineSubPanel("grid")}
+                isDark={isDark}
+              />
+
+              <CarouselDivider isDark={isDark} />
+
+              <CarouselToolItem
+                cmdId="pre.cursor_offset"
+                icon={Crosshair}
+                label={cursorOffsetMode === "offset" ? "Mira 55px" : "Mira 1:1"}
+                active={cursorOffsetMode === "offset"}
+                heightPx={itemHeightPx}
+                onClick={onToggleCursorOffsetMode}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="pre.loupe_hud"
+                icon={Eye}
+                label={`Lupa: ${loupeMode === "off" ? "OFF" : loupeMode === "pinned" ? "Fixa" : "Auto"}`}
+                active={loupeMode !== "off"}
+                heightPx={itemHeightPx}
+                onClick={onCycleLoupeMode}
+                isDark={isDark}
+              />
+            </>
+          )}
+
+          {/* ================================================================
+           * MODO 4: CHAPA & 1:1 (CHP & MESA | EST | ENG. REVERSA 1:1 | SAÍDA)
+           * ================================================================ */}
+          {dockMode === "chapa_vision" && (
+            <>
+              <CarouselToolItem
+                cmdId="chp.thickness"
+                icon={Sliders}
+                label={`Chapa ${thickness.toFixed(1)}`}
+                heightPx={itemHeightPx}
+                onClick={() => handleOpenInlineSubPanel("thickness")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="chp.workspace_area"
+                icon={Maximize2}
+                label={`Área ${Math.round(frame.w)}×${Math.round(frame.h)}`}
+                active={frame.visible}
+                heightPx={itemHeightPx}
+                onClick={() => handleOpenInlineSubPanel("workspace")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="chp.flanges"
+                icon={Layers}
+                label="Flanges"
+                active={activeMode === "flanges"}
+                heightPx={itemHeightPx}
+                onClick={onOpenFlanges}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="chp.convert_bend"
+                icon={FoldHorizontal}
+                label="Linha Dobra"
+                heightPx={itemHeightPx}
+                onClick={onConvertToBend}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="chp.corner_relief"
+                icon={Sparkles}
+                label="Alívio Canto"
+                heightPx={itemHeightPx}
+                onClick={onApplyRelief}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="chp.flat_pattern"
+                icon={ArrowRightLeft}
+                label="Planificar"
+                heightPx={itemHeightPx}
+                onClick={onPlanificar}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="chp.unfold"
+                icon={FoldHorizontal}
+                label="Desdobrar"
+                heightPx={itemHeightPx}
+                onClick={onUnfold}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="chp.fold"
+                icon={Layers}
+                label="Dobrar 3D"
+                heightPx={itemHeightPx}
+                onClick={onFold}
+                isDark={isDark}
+              />
+
+              <CarouselDivider isDark={isDark} />
+
+              <CarouselToolItem
+                cmdId="est.structural_profile"
+                icon={Boxes}
+                label="Perfil/Tubo"
+                heightPx={itemHeightPx}
+                onClick={onOpenPresets}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="est.miter_cut"
+                icon={Scissors}
+                label="Esquadria 45°"
+                active={tool === "chamfer"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("chamfer")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="est.weld_symbol"
+                icon={Flame}
+                label="Solda"
+                heightPx={itemHeightPx}
+                onClick={() => handleToggleDrawerTab("propriedades")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="est.iso_converter"
+                icon={Sparkles}
+                label="Projeção ISO"
+                heightPx={itemHeightPx}
+                onClick={onOpenPieceBuilder}
+                isDark={isDark}
+              />
+
+              <CarouselDivider isDark={isDark} />
+
+              <CarouselToolItem
+                cmdId="rev.vision_photo"
+                icon={ScanEye}
+                label="Vision 1:1"
+                heightPx={itemHeightPx}
+                onClick={onOpenVisionModal}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="rev.caliper_notebook"
+                icon={Ruler}
+                label="Calibração 1:1"
+                heightPx={itemHeightPx}
+                onClick={() => {
+                  setKeypadSession(null);
+                  setInlineSubPanel("none");
+                  onOpenRevEngCategory("caderno", "B");
+                  onSelectSidebarTab("eng_rev");
                   onSetPortraitDrawerOpen(true);
-                }
-              }}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Maximize2}
-              label={`Área ${Math.round(frame.w)}×${Math.round(frame.h)}`}
-              active={frame.visible}
-              onClick={() => setInlineSubPanel("workspace")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Grid}
-              label={`Grid: ${grid}mm`}
-              active={showGrid}
-              onClick={() => setInlineSubPanel("grid")}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Crosshair}
-              label="Enquadrar"
-              onClick={() => onCenterPiece(false)}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Scissors}
-              label="Corte CNC"
-              active={portraitDrawerOpen && activeSidebarTab === "corte"}
-              onClick={() => {
-                if (portraitDrawerOpen && activeSidebarTab === "corte") {
-                  onSetPortraitDrawerOpen(false);
-                } else {
-                  onSelectSidebarTab("corte");
+                }}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="rev.Wizard_reconstruct"
+                icon={Compass}
+                label="Assistente A→F"
+                active={portraitDrawerOpen && activeSidebarTab === "eng_rev"}
+                heightPx={itemHeightPx}
+                onClick={() => {
+                  setKeypadSession(null);
+                  setInlineSubPanel("none");
+                  onOpenRevEngCategory("referencias", "A");
+                  onSelectSidebarTab("eng_rev");
                   onSetPortraitDrawerOpen(true);
-                }
-              }}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Activity}
-              label="Simular CNC"
-              active={simOn}
-              onClick={onToggleSim}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={ArrowRightLeft}
-              label="Fluxo Corte"
-              active={showArrows}
-              onClick={onToggleArrows}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Ruler}
-              label="Painel Cotas"
-              active={portraitDrawerOpen && activeSidebarTab === "cotas"}
-              onClick={() => {
-                if (portraitDrawerOpen && activeSidebarTab === "cotas") {
-                  onSetPortraitDrawerOpen(false);
-                } else {
-                  onSelectSidebarTab("cotas");
+                }}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="rev.holes_pcd"
+                icon={CircleDot}
+                label="Furos & PCD"
+                heightPx={itemHeightPx}
+                onClick={() => {
+                  setKeypadSession(null);
+                  setInlineSubPanel("none");
+                  onOpenRevEngCategory("furos_cadeias", "D");
+                  onSelectSidebarTab("eng_rev");
                   onSetPortraitDrawerOpen(true);
+                }}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="rev.cavities_teeth"
+                icon={Boxes}
+                label="Cavidades"
+                heightPx={itemHeightPx}
+                onClick={() => {
+                  setKeypadSession(null);
+                  setInlineSubPanel("none");
+                  onOpenRevEngCategory("cavidades_dentes", "E");
+                  onSelectSidebarTab("eng_rev");
+                  onSetPortraitDrawerOpen(true);
+                }}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="rev.triangulator"
+                icon={Compass}
+                label="Triangulador"
+                heightPx={itemHeightPx}
+                onClick={() => {
+                  setKeypadSession(null);
+                  setInlineSubPanel("none");
+                  onOpenRevEngCategory("furos_cadeias", "D");
+                  onSelectSidebarTab("eng_rev");
+                  onSetPortraitDrawerOpen(true);
+                }}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="rev.chord_sagitta"
+                icon={CircleIcon}
+                label="Corda/Flecha"
+                heightPx={itemHeightPx}
+                onClick={() => {
+                  setKeypadSession(null);
+                  setInlineSubPanel("none");
+                  onOpenRevEngCategory("contorno_ajuste", "C");
+                  onSelectSidebarTab("eng_rev");
+                  onSetPortraitDrawerOpen(true);
+                }}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="rev.capture_contour"
+                icon={PenLine}
+                label="Capt. Contorno"
+                heightPx={itemHeightPx}
+                onClick={() => {
+                  setKeypadSession(null);
+                  setInlineSubPanel("none");
+                  onOpenRevEngCategory("contorno_ajuste", "C");
+                  onSelectSidebarTab("eng_rev");
+                  onSetPortraitDrawerOpen(true);
+                }}
+                isDark={isDark}
+              />
+
+              <CarouselDivider isDark={isDark} />
+
+              <CarouselToolItem
+                cmdId="out.technical_sheet"
+                icon={FileText}
+                label="Prancha 2D"
+                heightPx={itemHeightPx}
+                onClick={onOpenTechnicalSheet}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="out.cnc_sim"
+                icon={Activity}
+                label="Simular CNC"
+                active={simOn}
+                heightPx={itemHeightPx}
+                onClick={onToggleSim}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="out.cnc_arrows"
+                icon={ArrowRightLeft}
+                label="Fluxo CNC"
+                active={showArrows}
+                heightPx={itemHeightPx}
+                onClick={onToggleArrows}
+                isDark={isDark}
+              />
+            </>
+          )}
+
+          {/* ================================================================
+           * MODO 5: INSPETOR (PROPRIEDADES | CAMADAS & COR | COTAS | DIAGNÓSTICO)
+           * ================================================================ */}
+          {dockMode === "inspetor" && (
+            <>
+              <CarouselToolItem
+                cmdId="insp.properties"
+                icon={Sliders}
+                label="Propriedades"
+                active={portraitDrawerOpen && activeSidebarTab === "propriedades"}
+                heightPx={itemHeightPx}
+                onClick={() => handleToggleDrawerTab("propriedades")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="insp.layers_drawer"
+                icon={Layers}
+                label="Camadas"
+                active={portraitDrawerOpen && activeSidebarTab === "camadas"}
+                heightPx={itemHeightPx}
+                onClick={() => handleToggleDrawerTab("camadas")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="insp.active_layer_color"
+                icon={Palette}
+                label={`Cor: ${currentColorLabel}`}
+                swatchColor={activeColorHex}
+                heightPx={itemHeightPx}
+                onClick={() => handleOpenInlineSubPanel("layer")}
+                isDark={isDark}
+              />
+
+              <CarouselDivider isDark={isDark} />
+
+              <CarouselToolItem
+                cmdId="insp.cotas_list"
+                icon={Ruler}
+                label="Lista Cotas"
+                active={portraitDrawerOpen && activeSidebarTab === "cotas"}
+                heightPx={itemHeightPx}
+                onClick={() => handleToggleDrawerTab("cotas")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="insp.cut_entities_list"
+                icon={Scissors}
+                label="Entidades/CNC"
+                active={portraitDrawerOpen && activeSidebarTab === "corte"}
+                heightPx={itemHeightPx}
+                onClick={() => handleToggleDrawerTab("corte")}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="insp.rev_eng_drawer"
+                icon={Compass}
+                label="Painel 1:1"
+                active={portraitDrawerOpen && activeSidebarTab === "eng_rev"}
+                heightPx={itemHeightPx}
+                onClick={() => handleToggleDrawerTab("eng_rev")}
+                isDark={isDark}
+              />
+
+              <CarouselDivider isDark={isDark} />
+
+              <CarouselToolItem
+                cmdId="insp.topology_health"
+                icon={Activity}
+                label="Topologia"
+                heightPx={itemHeightPx}
+                onClick={onOpenTopologyHealth}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="insp.variables"
+                icon={Sliders}
+                label="Variáveis"
+                heightPx={itemHeightPx}
+                onClick={onOpenVariables}
+                isDark={isDark}
+              />
+              {onVerifyGeometry && (
+                <CarouselToolItem
+                  cmdId="insp.verify_geometry"
+                  icon={Check}
+                  label="Verificar CNC"
+                  heightPx={itemHeightPx}
+                  onClick={onVerifyGeometry}
+                  isDark={isDark}
+                />
+              )}
+              {onOptimizeGeometry && (
+                <CarouselToolItem
+                  cmdId="insp.optimize_vectors"
+                  icon={Sparkles}
+                  label="Otimizar"
+                  heightPx={itemHeightPx}
+                  onClick={onOptimizeGeometry}
+                  isDark={isDark}
+                />
+              )}
+
+              <CarouselDivider isDark={isDark} />
+
+              {onToggleShowDims && (
+                <CarouselToolItem
+                  cmdId="insp.toggle_support_dims"
+                  icon={Ruler}
+                  label="Medidas Apoio"
+                  active={Boolean(showDims)}
+                  heightPx={itemHeightPx}
+                  onClick={onToggleShowDims}
+                  isDark={isDark}
+                />
+              )}
+              <CarouselToolItem
+                cmdId="insp.toggle_workspace_dims"
+                icon={Ruler}
+                label="Cotas Área"
+                active={frame.showDimensions !== false}
+                heightPx={itemHeightPx}
+                onClick={() =>
+                  onUpdateFrame({ showDimensions: frame.showDimensions === false ? true : false })
                 }
-              }}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Activity}
-              label="Topologia"
-              onClick={onOpenTopologyHealth}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={Sliders}
-              label="Variáveis"
-              onClick={onOpenVariables}
-              isDark={isDark}
-            />
-            <CarouselToolItem
-              icon={FileText}
-              label="Folha A4/A3"
-              onClick={onOpenTechnicalSheet}
-              isDark={isDark}
-            />
-          </>
-        )}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="insp.toggle_workspace_frame"
+                icon={Maximize2}
+                label="Quadro Área"
+                active={frame.visible}
+                heightPx={itemHeightPx}
+                onClick={() => onUpdateFrame({ visible: !frame.visible })}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                icon={Crosshair}
+                label="Enquadrar"
+                heightPx={itemHeightPx}
+                onClick={() => onCenterPiece(false)}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                icon={Maximize}
+                label="Enq. Área"
+                heightPx={itemHeightPx}
+                onClick={onFitWorkspace}
+                isDark={isDark}
+              />
+            </>
+          )}
+        </div>
       </div>
     );
   };
@@ -2474,25 +4767,26 @@ export function ChamferPortraitBottomBars({
     id: PortraitDockMode;
     label: string;
     icon: typeof Minus;
-    accent: "crimson" | "blue";
+    badgeCount?: number;
   }[] = [
-    { id: "desenho", label: "Desenho", icon: Compass, accent: "crimson" },
-    { id: "modificar", label: "Modificar", icon: Scissors, accent: "crimson" },
-    { id: "precisao", label: "Precisão", icon: Crosshair, accent: "blue" },
-    { id: "chapa_vision", label: "Chapa & 1:1", icon: Layers, accent: "crimson" },
-    { id: "inspetor", label: "Inspetor", icon: Sliders, accent: "blue" },
+    { id: "desenho", label: "Desenho", icon: Compass },
+    { id: "modificar", label: "Modificar", icon: Scissors, badgeCount: selectedCount },
+    { id: "precisao", label: "Precisão", icon: Crosshair },
+    { id: "chapa_vision", label: "Chapa & 1:1", icon: Layers },
+    { id: "inspetor", label: "Inspetor", icon: Sliders },
   ];
 
   return (
     <section
       aria-label="Controles Inferiores CHAMFER CAD Retrato"
+      data-single-slot-state={singleSlotResolution.activeSlot}
       className="relative z-40 flex w-full shrink-0 flex-col select-none"
     >
-      {/* BARRA INFERIOR NÍVEL 1 (Acima do Dock — Carrossel Contextual Horizontal — height: 60px) */}
+      {/* BARRA INFERIOR NÍVEL 1 (Slot Contextual Único — 60px normal / 54px em < 700px) */}
       <div
-        style={{ height: 60 }}
+        style={{ height: stripHeightPx }}
         className={cn(
-          "flex w-full shrink-0 items-center border-t transition-colors",
+          "flex w-full shrink-0 items-center border-t transition-colors motion-reduce:transition-none",
           isDark
             ? "border-white/[0.07] bg-[#181C26] text-[#F8FAFC]"
             : "border-[#E2E8F0] bg-white text-[#0F172A]",
@@ -2501,12 +4795,15 @@ export function ChamferPortraitBottomBars({
         {renderLevel1Content()}
       </div>
 
-      {/* BARRA INFERIOR NÍVEL 2 (Base da Tela — Seletor de 5 Modos Estilo Lightroom — height: 54px) */}
+      {/* BARRA INFERIOR NÍVEL 2 (Dock Principal de 5 Modos Fixos — 54px normal / 50px em < 700px) */}
       <nav
         aria-label="Modos principais CHAMFER CAD"
-        style={{ height: 54 }}
+        style={{
+          minHeight: dockHeightPx,
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        }}
         className={cn(
-          "grid w-full shrink-0 grid-cols-5 items-center border-t px-1 transition-colors",
+          "grid w-full shrink-0 grid-cols-5 items-center border-t px-1 transition-colors motion-reduce:transition-none",
           isDark
             ? "border-white/[0.07] bg-[#11141C] text-[#94A3B8]"
             : "border-[#E2E8F0] bg-[#F8FAFC] text-[#475569]",
@@ -2519,31 +4816,40 @@ export function ChamferPortraitBottomBars({
             <button
               key={m.id}
               type="button"
+              data-testid={`portrait-dock-tab-${m.id}`}
+              data-cmd-id={`dock.${m.id}`}
               onClick={() => handleSelectDockMode(m.id)}
-              className="group relative flex h-full w-full flex-col items-center justify-center cursor-pointer touch-manipulation"
+              style={{ height: dockHeightPx }}
+              className="group relative flex w-full flex-col items-center justify-center cursor-pointer touch-manipulation"
             >
+              {/* Barra superior de 2px na aba ativa (#E11D48) */}
+              {isActive && (
+                <span className="absolute top-0 inset-x-3 h-[2px] rounded-full bg-[#E11D48]" />
+              )}
+
               <div
-                style={{ width: 40, height: 34 }}
+                style={{ width: 40, height: dockHeightPx <= 50 ? 28 : 32 }}
                 className={cn(
-                  "flex flex-col items-center justify-center rounded-xl transition-all duration-150",
+                  "relative flex items-center justify-center rounded-xl transition-all duration-150",
                   isActive
-                    ? m.accent === "crimson"
-                      ? "bg-[#E11D48] text-white shadow-sm shadow-[#E11D48]/30"
-                      : "bg-[#0EA5E9] text-white shadow-sm shadow-[#0EA5E9]/30"
+                    ? "bg-[#E11D48]/15 text-[#E11D48]"
                     : isDark
                       ? "text-[#94A3B8] group-hover:text-[#F8FAFC]"
                       : "text-[#475569] group-hover:text-[#0F172A]",
                 )}
               >
-                <Icon className="size-4" />
+                <Icon className="size-5" />
+                {Boolean(m.badgeCount && m.badgeCount > 0) && (
+                  <span className="absolute -top-0.5 -right-0.5 flex min-w-[14px] h-[14px] items-center justify-center rounded-full bg-[#E11D48] px-1 font-mono text-[8.5px] font-bold text-white">
+                    {m.badgeCount}
+                  </span>
+                )}
               </div>
               <span
                 className={cn(
-                  "mt-0.5 font-mono text-[9px] font-bold tracking-tight leading-none",
+                  "mt-0.5 font-mono text-[10px] font-bold tracking-tight leading-none whitespace-nowrap",
                   isActive
-                    ? isDark
-                      ? "text-[#F8FAFC]"
-                      : "text-[#0F172A]"
+                    ? "text-[#E11D48]"
                     : isDark
                       ? "text-[#94A3B8]"
                       : "text-[#475569]",
@@ -2551,14 +4857,6 @@ export function ChamferPortraitBottomBars({
               >
                 {m.label}
               </span>
-              {isActive && (
-                <span
-                  className={cn(
-                    "absolute bottom-0.5 size-1 rounded-full",
-                    m.accent === "crimson" ? "bg-[#E11D48]" : "bg-[#0EA5E9]",
-                  )}
-                />
-              )}
             </button>
           );
         })}
@@ -2568,63 +4866,76 @@ export function ChamferPortraitBottomBars({
 }
 
 /* ============================================================================
- * SUBCOMPONENTES DE ITEM DE CARROSSEL E SUBSTITUIÇÃO INLINE
+ * SUBCOMPONENTES DE ITEM DE CARROSSEL, SUBSTITUIÇÃO INLINE E TELINHA NUMÉRICA (D)
  * ============================================================================ */
 function CarouselToolItem({
+  cmdId,
   icon: Icon,
   label,
   active,
   disabled,
+  swatchColor,
+  heightPx = 52,
   onClick,
   isDark,
 }: {
+  cmdId?: string;
   icon: typeof Minus;
   label: string;
   active?: boolean;
   disabled?: boolean;
+  swatchColor?: string;
+  heightPx?: number;
   onClick: () => void;
   isDark: boolean;
 }) {
   return (
     <button
       type="button"
+      data-cmd-id={cmdId}
       disabled={disabled}
       onClick={() => {
         triggerHaptic("selection");
         onClick();
       }}
-      style={{ minWidth: 64 }}
+      style={{ minWidth: 60, height: heightPx }}
       className={cn(
-        "relative flex h-[52px] shrink-0 flex-col items-center justify-center rounded-xl px-1.5 transition-all touch-manipulation cursor-pointer",
+        "relative flex shrink-0 flex-col items-center justify-center rounded-xl px-2 transition-all touch-manipulation cursor-pointer border",
         disabled
-          ? "opacity-35 cursor-not-allowed"
+          ? "opacity-35 cursor-not-allowed border-transparent"
           : active
-            ? isDark
-              ? "bg-white/[0.08] text-[#F8FAFC]"
-              : "bg-[#0F172A]/[0.06] text-[#0F172A]"
+            ? "bg-[#E11D48]/[0.14] border-[#E11D48]/[0.55] text-[#E11D48]"
             : isDark
-              ? "text-[#94A3B8] hover:bg-white/[0.04] hover:text-[#F8FAFC]"
-              : "text-[#475569] hover:bg-[#0F172A]/[0.04] hover:text-[#0F172A]",
+              ? "border-transparent text-[#94A3B8] hover:bg-white/[0.04] hover:text-[#F8FAFC]"
+              : "border-transparent text-[#475569] hover:bg-[#0F172A]/[0.04] hover:text-[#0F172A]",
       )}
     >
-      <Icon
-        className={cn(
-          "size-4 transition-transform",
-          active && "scale-105 text-[#E11D48]",
+      <div className="relative flex items-center justify-center">
+        <Icon
+          className={cn(
+            "size-5 transition-transform",
+            active && "scale-105 text-[#E11D48]",
+          )}
+        />
+        {swatchColor && (
+          <span
+            style={{ backgroundColor: swatchColor }}
+            className="absolute -bottom-0.5 -right-1 size-2.5 rounded-full border border-white/40 shadow-xs"
+          />
         )}
-      />
+      </div>
       <span
         style={{ fontSize: "10.5px" }}
         className={cn(
           "mt-1 font-mono leading-none tracking-tight whitespace-nowrap",
-          active ? "font-bold" : "font-medium",
+          active ? "font-bold text-[#E11D48]" : "font-medium",
         )}
       >
         {label}
       </span>
       <span
         className={cn(
-          "mt-1 size-1 rounded-full transition-opacity",
+          "mt-0.5 size-1 rounded-full transition-opacity",
           active ? "bg-[#E11D48] opacity-100 shadow-[0_0_6px_#E11D48]" : "opacity-0",
         )}
       />
@@ -2636,8 +4947,8 @@ function CarouselDivider({ isDark }: { isDark: boolean }) {
   return (
     <div
       className={cn(
-        "mx-1 h-7 w-px shrink-0",
-        isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]",
+        "mx-1 h-6 w-px shrink-0",
+        isDark ? "bg-white/[0.1]" : "bg-[#CBD5E1]",
       )}
     />
   );
@@ -2660,7 +4971,7 @@ function InlineBackButton({
         onClick();
       }}
       className={cn(
-        "flex h-9 shrink-0 items-center gap-1 rounded-xl border px-2.5 font-mono text-[10.5px] font-bold transition-colors active:scale-95",
+        "flex h-9 shrink-0 items-center gap-1 rounded-xl border px-2.5 font-mono text-[10.5px] font-bold transition-colors active:scale-95 cursor-pointer",
         isDark
           ? "border-white/[0.1] bg-[#11141C] text-[#F8FAFC] hover:bg-[#222836]"
           : "border-[#CBD5E1] bg-[#F8FAFC] text-[#0F172A] hover:bg-[#E2E8F0]",
@@ -2686,7 +4997,7 @@ function InlineConfirmButton({
         triggerHaptic("action");
         onClick();
       }}
-      className="flex h-9 shrink-0 items-center gap-1 rounded-xl bg-[#E11D48] px-3 font-mono text-[10.5px] font-bold text-white shadow-sm shadow-[#E11D48]/30 active:scale-95"
+      className="flex h-9 shrink-0 items-center gap-1 rounded-xl bg-[#E11D48] px-3 font-mono text-[10.5px] font-bold text-white shadow-sm shadow-[#E11D48]/30 active:scale-95 cursor-pointer"
     >
       <Check className="size-3.5 stroke-[2.5]" />
       <span>{label}</span>
@@ -2719,18 +5030,18 @@ function InlineStepperPill({
           triggerHaptic("tap");
           onStep(-1);
         }}
-        className="px-1.5 font-bold text-[#94A3B8] hover:text-foreground"
+        className="px-1.5 font-bold text-[#94A3B8] hover:text-foreground cursor-pointer"
       >
         −
       </button>
-      <span className="min-w-[18px] text-center font-bold text-[#38BDF8]">{value}</span>
+      <span className="min-w-[18px] text-center font-bold text-[#38BDF8] tabular-nums">{value}</span>
       <button
         type="button"
         onClick={() => {
           triggerHaptic("tap");
           onStep(1);
         }}
-        className="px-1.5 font-bold text-[#94A3B8] hover:text-foreground"
+        className="px-1.5 font-bold text-[#94A3B8] hover:text-foreground cursor-pointer"
       >
         +
       </button>
@@ -2738,41 +5049,208 @@ function InlineStepperPill({
   );
 }
 
+/**
+ * Pílula numérica 100% livre de campo de entrada nativo do navegador:
+ * tocar abre a Telinha de Dígitos Própria do CHAMFER (Estado D do Slot Único),
+ * evitando que o teclado nativo do celular empurre ou cubra o canvas.
+ */
 function InlineNumberInputPill({
   label,
   value,
   unit,
-  onChange,
+  onOpenKeypad,
   isDark,
 }: {
   label: string;
   value: number;
   unit: string;
-  onChange: (val: number) => void;
+  onOpenKeypad: () => void;
   isDark: boolean;
 }) {
   return (
-    <label
+    <button
+      type="button"
+      data-testid={`chamfer-inline-num-pill-${label}`}
+      onClick={onOpenKeypad}
+      title={`Editar ${label} (${unit}) na telinha de dígitos do CHAMFER`}
       className={cn(
-        "flex h-9 shrink-0 items-center gap-1 rounded-xl border px-2 font-mono text-[10.5px]",
-        isDark ? "border-white/[0.08] bg-[#11141C]" : "border-[#CBD5E1] bg-white",
+        "flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 font-mono text-[10.5px] transition-colors active:scale-95 cursor-pointer",
+        isDark
+          ? "border-white/[0.12] bg-[#11141C] hover:border-[#E11D48]/50"
+          : "border-[#CBD5E1] bg-white hover:border-[#E11D48]/50",
       )}
     >
       <span className="text-[#94A3B8] font-bold">{label}:</span>
-      <input
-        type="number"
-        inputMode="decimal"
-        value={value}
-        onChange={(e) => {
-          const v = Number(e.target.value);
-          if (Number.isFinite(v)) onChange(v);
-        }}
+      <span
         className={cn(
-          "w-12 bg-transparent text-center font-mono text-[10.5px] font-bold outline-none",
+          "font-mono text-[11px] font-bold tabular-nums underline decoration-[#E11D48]/50 underline-offset-2",
           isDark ? "text-[#F8FAFC]" : "text-[#0F172A]",
         )}
-      />
+      >
+        {value}
+      </span>
       <span className="text-[9.5px] text-[#94A3B8]">{unit}</span>
-    </label>
+    </button>
+  );
+}
+
+/**
+ * ESTADO D DO SLOT ÚNICO — TELINHA DE DÍGITOS PRÓPRIA COMPACTA DO CHAMFER CAD
+ * Nunca dispara o teclado virtual nativo do sistema operacional.
+ */
+function ChamferInlineNumericKeypad({
+  session,
+  isDark,
+  onUpdateBuffer,
+  onCancel,
+  onConfirm,
+}: {
+  session: InlineNumericKeypadSession;
+  isDark: boolean;
+  onUpdateBuffer: (next: NumericKeypadBufferState) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const digitKeys = ["7", "8", "9", "4", "5", "6", "1", "2", "3", "0", ".", "±"] as const;
+
+  const handleStep = (delta: number) => {
+    triggerHaptic("tap");
+    const current = parseNumericKeypadValue(session.bufferState);
+    const nextVal = Number((current + delta).toFixed(2));
+    onUpdateBuffer(
+      createNumericKeypadBuffer(nextVal, session.bufferState.min, session.bufferState.max),
+    );
+  };
+
+  return (
+    <div
+      data-testid="chamfer-inline-numeric-keypad"
+      className="relative flex h-full w-full items-center gap-1.5 overflow-x-auto px-2 scrollbar-none touch-pan-x whitespace-nowrap"
+    >
+      {/* Botão Cancelar */}
+      <button
+        type="button"
+        onClick={onCancel}
+        aria-label="Cancelar edição numérica"
+        className={cn(
+          "flex h-9 shrink-0 items-center gap-1 rounded-xl border px-2 font-mono text-[10px] font-bold cursor-pointer",
+          isDark
+            ? "border-white/[0.1] bg-[#11141C] text-[#94A3B8] hover:text-white"
+            : "border-[#CBD5E1] bg-[#F8FAFC] text-[#475569] hover:text-[#0F172A]",
+        )}
+      >
+        <X className="size-3.5 text-[#E11D48]" />
+      </button>
+
+      {/* Visor Digital do Parâmetro */}
+      <div
+        className={cn(
+          "flex h-9 shrink-0 items-center gap-1.5 rounded-xl border px-2.5 font-mono",
+          isDark
+            ? "border-[#E11D48]/50 bg-[#11141C] text-[#F8FAFC]"
+            : "border-[#E11D48]/50 bg-[#FFF1F2] text-[#0F172A]",
+        )}
+      >
+        <span className="text-[9.5px] font-bold uppercase text-[#94A3B8]">{session.label}:</span>
+        <span
+          data-testid="chamfer-keypad-display"
+          className="min-w-[40px] text-right text-[12px] font-bold tabular-nums text-[#E11D48]"
+        >
+          {session.bufferState.buffer}
+        </span>
+        <span className="text-[9.5px] font-semibold text-[#94A3B8]">{session.unit}</span>
+      </div>
+
+      {/* Teclas de Dígitos (0-9, ., ±) */}
+      <div className="flex shrink-0 items-center gap-1">
+        {digitKeys.map((k) => (
+          <button
+            key={k}
+            type="button"
+            data-testid={`chamfer-keypad-key-${k}`}
+            onClick={() => {
+              triggerHaptic("tap");
+              onUpdateBuffer(applyNumericKeypadKey(session.bufferState, k));
+            }}
+            className={cn(
+              "flex h-9 min-w-[30px] shrink-0 items-center justify-center rounded-lg border px-2 font-mono text-[11.5px] font-bold transition-colors active:scale-95 cursor-pointer",
+              isDark
+                ? "border-white/[0.08] bg-[#11141C] text-[#F8FAFC] hover:bg-[#222836]"
+                : "border-[#CBD5E1] bg-white text-[#0F172A] hover:bg-[#F1F5F9]",
+            )}
+          >
+            {k}
+          </button>
+        ))}
+
+        {/* Backspace */}
+        <button
+          type="button"
+          data-testid="chamfer-keypad-key-backspace"
+          onClick={() => {
+            triggerHaptic("tap");
+            onUpdateBuffer(applyNumericKeypadKey(session.bufferState, "BACKSPACE"));
+          }}
+          aria-label="Apagar último dígito"
+          className={cn(
+            "flex h-9 min-w-[32px] shrink-0 items-center justify-center rounded-lg border px-2 font-mono text-[11px] font-bold cursor-pointer",
+            isDark
+              ? "border-white/[0.08] bg-[#11141C] text-[#94A3B8] hover:text-white"
+              : "border-[#CBD5E1] bg-white text-[#475569] hover:text-[#0F172A]",
+          )}
+        >
+          <Delete className="size-3.5" />
+        </button>
+
+        {/* Limpar (C) */}
+        <button
+          type="button"
+          data-testid="chamfer-keypad-key-clear"
+          onClick={() => {
+            triggerHaptic("tap");
+            onUpdateBuffer(applyNumericKeypadKey(session.bufferState, "CLEAR"));
+          }}
+          className={cn(
+            "flex h-9 min-w-[30px] shrink-0 items-center justify-center rounded-lg border px-2 font-mono text-[10px] font-bold cursor-pointer",
+            isDark
+              ? "border-white/[0.08] bg-[#11141C] text-[#FB7185]"
+              : "border-[#CBD5E1] bg-white text-[#E11D48]",
+          )}
+        >
+          C
+        </button>
+      </div>
+
+      {/* Steppers Rápidos (-1, +1) */}
+      <div className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          onClick={() => handleStep(-1)}
+          className={cn(
+            "h-9 shrink-0 rounded-lg border px-2 font-mono text-[10px] font-bold cursor-pointer",
+            isDark
+              ? "border-white/[0.08] bg-[#11141C] text-[#94A3B8]"
+              : "border-[#CBD5E1] bg-white text-[#475569]",
+          )}
+        >
+          -1
+        </button>
+        <button
+          type="button"
+          onClick={() => handleStep(1)}
+          className={cn(
+            "h-9 shrink-0 rounded-lg border px-2 font-mono text-[10px] font-bold cursor-pointer",
+            isDark
+              ? "border-white/[0.08] bg-[#11141C] text-[#94A3B8]"
+              : "border-[#CBD5E1] bg-white text-[#475569]",
+          )}
+        >
+          +1
+        </button>
+      </div>
+
+      {/* Confirmar Valor */}
+      <InlineConfirmButton onClick={onConfirm} label="OK" />
+    </div>
   );
 }

@@ -306,16 +306,23 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     }
 
     const style = techStyle(e.layer);
-    if (e.layer !== currentLayer) {
-      currentLayer = e.layer;
+    const customStrokeColor =
+      typeof e.params?.strokeColor === "string" && e.params.strokeColor.trim().length > 0
+        ? e.params.strokeColor.trim()
+        : null;
+    const styleKey = `${e.layer}::${customStrokeColor ?? ""}`;
+    if (styleKey !== currentLayer) {
+      currentLayer = styleKey;
       ctx.globalAlpha = 1.0;
       ctx.globalCompositeOperation = "source-over";
       const isCutOrWhite = style.color === "#FFFFFF" || e.layer === "corte";
-      ctx.strokeStyle = isCutOrWhite
-        ? opts.isLight
-          ? "#0F172A"
-          : "#F8FAFC"
-        : style.color;
+      ctx.strokeStyle =
+        customStrokeColor ??
+        (isCutOrWhite
+          ? opts.isLight
+            ? "#0F172A"
+            : "#F8FAFC"
+          : style.color);
       ctx.lineWidth = (isCutOrWhite ? Math.max(2.1, 1.65 * style.weight) : Math.max(1.6, 1.45 * style.weight)) * inv;
       const dash = !lod && style.dash(inv);
       ctx.setLineDash(dash ? dash.split(" ").map(Number) : []);
