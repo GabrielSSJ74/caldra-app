@@ -297,6 +297,107 @@ export function ChamferPortraitTopBar({
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
 
+  // Refs e coordenadas calculadas via getBoundingClientRect() para os Portals (z-index: 9999)
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement | null>(null);
+  const projectTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const projectMenuRef = useRef<HTMLDivElement | null>(null);
+  const viewTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const viewMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const [moreMenuCoords, setMoreMenuCoords] = useState<{ top: number; right: number }>({
+    top: 52,
+    right: 8,
+  });
+  const [projectMenuCoords, setProjectMenuCoords] = useState<{ top: number; left: number }>({
+    top: 52,
+    left: 8,
+  });
+  const [viewMenuCoords, setViewMenuCoords] = useState<{ top: number; left: number }>({
+    top: 52,
+    left: 120,
+  });
+
+  const updateMoreMenuPosition = () => {
+    if (typeof window === "undefined" || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setMoreMenuCoords({
+      top: Math.max(48, Math.round(rect.bottom + 6)),
+      right: Math.max(8, Math.round(window.innerWidth - rect.right)),
+    });
+  };
+
+  const updateProjectMenuPosition = () => {
+    if (typeof window === "undefined" || !projectTriggerRef.current) return;
+    const rect = projectTriggerRef.current.getBoundingClientRect();
+    setProjectMenuCoords({
+      top: Math.max(48, Math.round(rect.bottom + 6)),
+      left: Math.max(8, Math.round(rect.left)),
+    });
+  };
+
+  const updateViewMenuPosition = () => {
+    if (typeof window === "undefined" || !viewTriggerRef.current) return;
+    const rect = viewTriggerRef.current.getBoundingClientRect();
+    setViewMenuCoords({
+      top: Math.max(48, Math.round(rect.bottom + 6)),
+      left: Math.max(8, Math.min(window.innerWidth - 280, Math.round(rect.left))),
+    });
+  };
+
+  // Prevenção de fechamento acidental ao clicar fora (onClickOutside com guarda explícita no triggerRef)
+  useEffect(() => {
+    if (!moreMenuOpen && !projectMenuOpen && !viewMenuOpen) return;
+
+    const handleOutsidePointerDown = (event: MouseEvent | PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+
+      if (moreMenuOpen) {
+        if (triggerRef.current && triggerRef.current.contains(target)) {
+          return; // Não executa o fechar se o clique foi no próprio botão disparador
+        }
+        if (moreMenuRef.current && moreMenuRef.current.contains(target)) {
+          return;
+        }
+        setMoreMenuOpen(false);
+      }
+
+      if (projectMenuOpen) {
+        if (projectTriggerRef.current && projectTriggerRef.current.contains(target)) {
+          return;
+        }
+        if (projectMenuRef.current && projectMenuRef.current.contains(target)) {
+          return;
+        }
+        setProjectMenuOpen(false);
+      }
+
+      if (viewMenuOpen) {
+        if (viewTriggerRef.current && viewTriggerRef.current.contains(target)) {
+          return;
+        }
+        if (viewMenuRef.current && viewMenuRef.current.contains(target)) {
+          return;
+        }
+        setViewMenuOpen(false);
+      }
+    };
+
+    const handleResize = () => {
+      if (moreMenuOpen) updateMoreMenuPosition();
+      if (projectMenuOpen) updateProjectMenuPosition();
+      if (viewMenuOpen) updateViewMenuPosition();
+    };
+
+    document.addEventListener("pointerdown", handleOutsidePointerDown);
+    window.addEventListener("resize", handleResize);
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsidePointerDown);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [moreMenuOpen, projectMenuOpen, viewMenuOpen]);
+
   // Diagnóstico de Paridade & Depurador de Toque (DIAG_ENABLED — acionado por long-press no chip • 3,0mm ▾ ou pelo menu)
   const [diagModalOpen, setDiagModalOpen] = useState(false);
   const [diagReport, setDiagReport] = useState<VerticalParityDiagnosticReport | null>(null);
@@ -403,11 +504,15 @@ export function ChamferPortraitTopBar({
         style={{
           height: topBarHeightPx,
           padding: "0 6px",
+          backgroundColor: isDark ? "#11141C" : "#F8FAFC",
+          borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+          color: isDark ? "#F8FAFC" : "#0F172A",
+          opacity: 1,
         }}
         className={cn(
-          "relative z-30 flex w-full shrink-0 items-center justify-between gap-1 border-b select-none transition-colors",
+          "chamfer-theme-fade-2s relative z-30 flex w-full shrink-0 items-center justify-between gap-1 border-b select-none",
           isDark
-            ? "border-white/[0.07] bg-[#11141C] text-[#F8FAFC]"
+            ? "border-white/[0.08] bg-[#11141C] text-[#F8FAFC]"
             : "border-[#E2E8F0] bg-[#F8FAFC] text-[#0F172A]",
         )}
       >
@@ -422,11 +527,18 @@ export function ChamferPortraitTopBar({
             }}
             aria-label="Sair do CHAMFER CAD e voltar aos Projetos"
             title="Sair do editor e voltar"
+            style={{ opacity: 1 }}
             className="group flex h-[44px] w-[36px] shrink-0 items-center justify-center touch-manipulation cursor-pointer"
           >
             <span
+              style={{
+                backgroundColor: isDark ? "#181C26" : "#FFFFFF",
+                borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+                color: isDark ? "#F8FAFC" : "#0F172A",
+                opacity: 1,
+              }}
               className={cn(
-                "flex size-8 items-center justify-center rounded-lg border transition-colors group-active:scale-95",
+                "chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border group-active:scale-95",
                 isDark
                   ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:bg-[#222836]"
                   : "border-[#E2E8F0] bg-white text-[#0F172A] group-hover:bg-[#F1F5F9]",
@@ -438,12 +550,14 @@ export function ChamferPortraitTopBar({
 
           {/* P4: Chip Compacto "● 3,0mm ▾" (Toque abre Projeto/Chapa/Cor; Pressão longa ~750ms abre Diagnóstico) */}
           <button
+            ref={projectTriggerRef}
             type="button"
             data-testid="chamfer-portrait-project-chip"
             data-cmd-id="doc.project_sheet_chip"
             aria-expanded={projectMenuOpen}
             aria-label={`Projeto ${projectName}, espessura ${formattedThickness}, estado ${saveStatusText}. Toque para trocar folha, espessura ou cor. Segure para Diagnóstico.`}
             title={`${projectName} · CHAPA ${formattedThickness} (${saveStatusText})`}
+            style={{ opacity: 1 }}
             onPointerDown={() => {
               if (longPressTimerRef.current) window.clearTimeout(longPressTimerRef.current);
               longPressTimerRef.current = window.setTimeout(() => {
@@ -466,6 +580,7 @@ export function ChamferPortraitTopBar({
             onClick={(e) => {
               e.stopPropagation();
               triggerHaptic("tap");
+              updateProjectMenuPosition();
               setProjectMenuOpen((v) => !v);
               setViewMenuOpen(false);
               setMoreMenuOpen(false);
@@ -473,8 +588,18 @@ export function ChamferPortraitTopBar({
             className="group flex h-[44px] shrink-0 items-center touch-manipulation cursor-pointer"
           >
             <span
+              style={
+                projectMenuOpen
+                  ? { opacity: 1 }
+                  : {
+                      backgroundColor: isDark ? "#181C26" : "#FFFFFF",
+                      borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+                      color: isDark ? "#F8FAFC" : "#0F172A",
+                      opacity: 1,
+                    }
+              }
               className={cn(
-                "flex h-8 items-center gap-1 rounded-lg border px-2 font-mono text-[10.5px] font-bold transition-colors group-active:scale-95 whitespace-nowrap",
+                "chamfer-theme-fade-2s flex h-8 items-center gap-1 rounded-lg border px-2 font-mono text-[10.5px] font-bold group-active:scale-95 whitespace-nowrap",
                 projectMenuOpen
                   ? "border-[#E11D48] bg-[#E11D48]/15 text-[#E11D48]"
                   : isDark
@@ -501,8 +626,13 @@ export function ChamferPortraitTopBar({
           <div
             role="group"
             aria-label="Seletor de Ambiente 2D ou 3D"
+            style={{
+              backgroundColor: isDark ? "#181C26" : "#FFFFFF",
+              borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+              opacity: 1,
+            }}
             className={cn(
-              "flex h-8 shrink-0 items-center rounded-lg border p-0.5",
+              "chamfer-theme-fade-2s flex h-8 shrink-0 items-center rounded-lg border p-0.5",
               isDark ? "border-white/[0.08] bg-[#181C26]" : "border-[#E2E8F0] bg-white",
             )}
           >
@@ -511,10 +641,15 @@ export function ChamferPortraitTopBar({
               data-testid="chamfer-portrait-mode-2d"
               data-cmd-id="mode.2d_sketch"
               aria-label="Ambiente 2D Sketch"
+              style={{
+                opacity: 1,
+                color: activeMode === "2d" ? "#FFFFFF" : isDark ? "#E2E8F0" : "#334155",
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 triggerHaptic("selection");
                 if (mergeViewIntoModeSelector && activeMode === "2d") {
+                  updateViewMenuPosition();
                   setViewMenuOpen((v) => !v);
                   setProjectMenuOpen(false);
                   setMoreMenuOpen(false);
@@ -523,12 +658,12 @@ export function ChamferPortraitTopBar({
                 }
               }}
               className={cn(
-                "h-7 rounded-md px-2 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
+                "chamfer-theme-fade-2s h-7 rounded-md px-2 font-mono text-[10px] font-bold tracking-wider uppercase cursor-pointer",
                 activeMode === "2d"
                   ? "bg-[#E11D48] text-white shadow-xs"
                   : isDark
-                    ? "text-[#94A3B8] hover:text-white"
-                    : "text-[#475569] hover:text-[#0F172A]",
+                    ? "text-[#E2E8F0] hover:text-white"
+                    : "text-[#334155] hover:text-[#0F172A]",
               )}
             >
               {mergeViewIntoModeSelector && activeMode === "2d"
@@ -540,10 +675,15 @@ export function ChamferPortraitTopBar({
               data-testid="chamfer-portrait-mode-3d"
               data-cmd-id="mode.cad_3d"
               aria-label="Ambiente CAD 3D Sólido"
+              style={{
+                opacity: 1,
+                color: activeMode === "3d" ? "#FFFFFF" : isDark ? "#E2E8F0" : "#334155",
+              }}
               onClick={(e) => {
                 e.stopPropagation();
                 triggerHaptic("selection");
                 if (mergeViewIntoModeSelector && activeMode === "3d") {
+                  updateViewMenuPosition();
                   setViewMenuOpen((v) => !v);
                   setProjectMenuOpen(false);
                   setMoreMenuOpen(false);
@@ -552,12 +692,12 @@ export function ChamferPortraitTopBar({
                 }
               }}
               className={cn(
-                "h-7 rounded-md px-2 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors cursor-pointer",
+                "chamfer-theme-fade-2s h-7 rounded-md px-2 font-mono text-[10px] font-bold tracking-wider uppercase cursor-pointer",
                 activeMode === "3d"
                   ? "bg-[#E11D48] text-white shadow-xs"
                   : isDark
-                    ? "text-[#94A3B8] hover:text-white"
-                    : "text-[#475569] hover:text-[#0F172A]",
+                    ? "text-[#E2E8F0] hover:text-white"
+                    : "text-[#334155] hover:text-[#0F172A]",
               )}
             >
               {mergeViewIntoModeSelector && activeMode === "3d"
@@ -568,15 +708,18 @@ export function ChamferPortraitTopBar({
 
           {!mergeViewIntoModeSelector && (
             <button
+              ref={viewTriggerRef}
               type="button"
               data-testid="chamfer-portrait-view-chip"
               data-cmd-id="view.ortho_2d"
               aria-expanded={viewMenuOpen}
               aria-label={`Vista ativa: ${fullViewLabel}. Toque para configurar vista, plano isométrico F5 ou órbita 3D.`}
               title={`Vista: ${fullViewLabel} (toque para alternar ou escolher Plano ISO F5)`}
+              style={{ opacity: 1 }}
               onClick={(e) => {
                 e.stopPropagation();
                 triggerHaptic("tap");
+                updateViewMenuPosition();
                 setViewMenuOpen((v) => !v);
                 setProjectMenuOpen(false);
                 setMoreMenuOpen(false);
@@ -584,15 +727,25 @@ export function ChamferPortraitTopBar({
               className="group flex h-[44px] shrink-0 items-center touch-manipulation cursor-pointer"
             >
               <span
+                style={
+                  viewMenuOpen || isOrbitToolActive || isOrbitTilted || drawingProjection === "isometric"
+                    ? { opacity: 1 }
+                    : {
+                        backgroundColor: isDark ? "#181C26" : "#FFFFFF",
+                        borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+                        color: isDark ? "#E2E8F0" : "#334155",
+                        opacity: 1,
+                      }
+                }
                 className={cn(
-                  "flex h-8 items-center gap-0.5 rounded-lg border px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors group-active:scale-95 whitespace-nowrap",
+                  "chamfer-theme-fade-2s flex h-8 items-center gap-0.5 rounded-lg border px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase group-active:scale-95 whitespace-nowrap",
                   viewMenuOpen || isOrbitToolActive || isOrbitTilted || drawingProjection === "isometric"
                     ? isDark
                       ? "border-[#E11D48]/60 bg-[#E11D48]/15 text-[#F8FAFC]"
                       : "border-[#E11D48]/55 bg-[#E11D48]/10 text-[#E11D48]"
                     : isDark
-                      ? "border-white/[0.08] bg-[#181C26] text-[#94A3B8] group-hover:text-white"
-                      : "border-[#E2E8F0] bg-white text-[#475569] group-hover:text-[#0F172A]",
+                      ? "border-white/[0.08] bg-[#181C26] text-[#E2E8F0] group-hover:text-white"
+                      : "border-[#E2E8F0] bg-white text-[#334155] group-hover:text-[#0F172A]",
                 )}
               >
                 <span>{displayedViewLabel}</span>
@@ -602,7 +755,7 @@ export function ChamferPortraitTopBar({
           )}
         </div>
 
-        {/* DIREITA: P1 Histórico Direto (↶ ↷) + Menu Mais Ações (⋮) */}
+        {/* DIREITA: P1 Histórico Direto (↶ ↷) + Botão de Tema (☀/☾) + Menu Mais Ações (⋮) */}
         <div className="flex shrink-0 items-center gap-0.5">
           <button
             type="button"
@@ -614,14 +767,28 @@ export function ChamferPortraitTopBar({
             }}
             aria-label="Desfazer última alteração"
             title="Desfazer (Ctrl+Z)"
+            style={{ opacity: canUndo ? 1 : 0.45 }}
             className={cn(
-              "group flex h-[44px] w-[34px] shrink-0 items-center justify-center touch-manipulation",
-              canUndo ? "cursor-pointer" : "cursor-not-allowed opacity-35",
+              "group flex h-[44px] w-[32px] shrink-0 items-center justify-center touch-manipulation",
+              canUndo ? "cursor-pointer" : "cursor-not-allowed",
             )}
           >
             <span
+              style={
+                canUndo
+                  ? {
+                      backgroundColor: isDark ? "#181C26" : "#FFFFFF",
+                      borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+                      color: isDark ? "#F8FAFC" : "#0F172A",
+                      opacity: 1,
+                    }
+                  : {
+                      color: isDark ? "#94A3B8" : "#64748B",
+                      opacity: 1,
+                    }
+              }
               className={cn(
-                "flex size-8 items-center justify-center rounded-lg border transition-colors",
+                "chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border",
                 canUndo
                   ? isDark
                     ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:bg-[#222836] group-active:scale-95"
@@ -643,14 +810,28 @@ export function ChamferPortraitTopBar({
             }}
             aria-label="Refazer alteração desfeita"
             title="Refazer (Ctrl+Y)"
+            style={{ opacity: canRedo ? 1 : 0.45 }}
             className={cn(
-              "group flex h-[44px] w-[34px] shrink-0 items-center justify-center touch-manipulation",
-              canRedo ? "cursor-pointer" : "cursor-not-allowed opacity-35",
+              "group flex h-[44px] w-[32px] shrink-0 items-center justify-center touch-manipulation",
+              canRedo ? "cursor-pointer" : "cursor-not-allowed",
             )}
           >
             <span
+              style={
+                canRedo
+                  ? {
+                      backgroundColor: isDark ? "#181C26" : "#FFFFFF",
+                      borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+                      color: isDark ? "#F8FAFC" : "#0F172A",
+                      opacity: 1,
+                    }
+                  : {
+                      color: isDark ? "#94A3B8" : "#64748B",
+                      opacity: 1,
+                    }
+              }
               className={cn(
-                "flex size-8 items-center justify-center rounded-lg border transition-colors",
+                "chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border",
                 canRedo
                   ? isDark
                     ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:bg-[#222836] group-active:scale-95"
@@ -662,25 +843,76 @@ export function ChamferPortraitTopBar({
             </span>
           </button>
 
+          {/* Botão de Alternância de Tema (Sol / Lua) com alto contraste em ambos os temas */}
           <button
+            type="button"
+            data-testid="chamfer-portrait-theme-btn"
+            data-cmd-id="ui.theme_toggle"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleTheme();
+            }}
+            aria-label={isDark ? "Mudar para Tema Claro" : "Mudar para Tema Escuro"}
+            title={isDark ? "Alternar para Tema Claro" : "Alternar para Tema Escuro"}
+            style={{ opacity: 1 }}
+            className="group flex h-[44px] w-[32px] shrink-0 items-center justify-center touch-manipulation cursor-pointer"
+          >
+            <span
+              style={{
+                backgroundColor: isDark ? "#181C26" : "#FFFFFF",
+                borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+                color: isDark ? "#F8FAFC" : "#0F172A",
+                opacity: 1,
+              }}
+              className={cn(
+                "chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border group-active:scale-95",
+                isDark
+                  ? "border-white/[0.08] bg-[#181C26] text-[#F8FAFC] group-hover:bg-[#222836]"
+                  : "border-[#E2E8F0] bg-white text-[#0F172A] group-hover:bg-[#F1F5F9]",
+              )}
+            >
+              {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+            </span>
+          </button>
+
+          <button
+            ref={triggerRef}
             type="button"
             data-testid="chamfer-portrait-more-btn"
             data-cmd-id="topbar.more_menu"
             aria-expanded={moreMenuOpen}
+            aria-haspopup="menu"
+            style={{ opacity: 1 }}
             onClick={(e) => {
               e.stopPropagation();
               triggerHaptic("tap");
+              updateMoreMenuPosition();
               setMoreMenuOpen((v) => !v);
               setProjectMenuOpen(false);
               setViewMenuOpen(false);
             }}
             aria-label="Mais ações e configurações do CHAMFER CAD"
-            title="Mais Ações (Salvar, Vision, Intent, Corte/BOM, Exportar, Layout)"
+            title="Mais Ações (VISION, INTENT, CORTE/BOM, Exportar, Enquadrar, Tema)"
             className="group flex h-[44px] w-[36px] shrink-0 items-center justify-center touch-manipulation cursor-pointer"
           >
             <span
+              style={
+                moreMenuOpen
+                  ? {
+                      backgroundColor: "#E11D48",
+                      borderColor: "#E11D48",
+                      color: "#FFFFFF",
+                      opacity: 1,
+                    }
+                  : {
+                      backgroundColor: isDark ? "#181C26" : "#FFFFFF",
+                      borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+                      color: isDark ? "#F8FAFC" : "#0F172A",
+                      opacity: 1,
+                    }
+              }
               className={cn(
-                "flex size-8 items-center justify-center rounded-lg border transition-colors group-active:scale-95",
+                "chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border group-active:scale-95",
                 moreMenuOpen
                   ? "border-[#E11D48] bg-[#E11D48] text-white"
                   : isDark
@@ -696,28 +928,30 @@ export function ChamferPortraitTopBar({
 
       {/* ====================================================================
        * PORTAL 1: POPOVER DE PROJETO, FOLHAS (P01/P02), ESPESSURA E COR (COR)
-       * Renderizado no document.body com z-[60] — impossível ser cortado!
+       * Renderizado no document.body com position: fixed e zIndex: 9999
        * ==================================================================== */}
       {projectMenuOpen &&
         renderInBodyPortal(
-          <div className="fixed inset-0 z-[60]" data-testid="portrait-project-menu-portal">
-            <div
-              aria-hidden="true"
-              className="fixed inset-0 bg-black/20"
-              onClick={() => setProjectMenuOpen(false)}
-            />
-            <div
-              role="dialog"
-              aria-label="Seletor de Folhas, Nome do Projeto, Espessura da Chapa e Cor Técnica"
-              onClick={(e) => e.stopPropagation()}
-              className={cn(
-                "fixed top-[52px] left-2 z-[61] w-76 max-w-[calc(100vw-16px)] max-h-[calc(100dvh-70px)] overflow-y-auto rounded-2xl border p-3 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
-                isDark
-                  ? "border-white/[0.12] bg-[#181C26]/98 text-[#F8FAFC]"
-                  : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
-              )}
-            >
-              <div className="flex items-center justify-between border-b pb-2 mb-2.5 border-white/[0.08]">
+          <div
+            ref={projectMenuRef}
+            data-testid="portrait-project-menu-portal"
+            role="dialog"
+            aria-label="Seletor de Folhas, Nome do Projeto, Espessura da Chapa e Cor Técnica"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "fixed",
+              top: projectMenuCoords.top,
+              left: projectMenuCoords.left,
+              zIndex: 9999,
+            }}
+            className={cn(
+              "chamfer-theme-fade-2s w-76 max-w-[calc(100vw-16px)] max-h-[calc(100dvh-70px)] overflow-y-auto rounded-2xl border p-3 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
+              isDark
+                ? "border-white/[0.12] bg-[#181C26]/98 text-[#F8FAFC]"
+                : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
+            )}
+          >
+            <div className="flex items-center justify-between border-b pb-2 mb-2.5 border-white/[0.08]">
                 <div className="min-w-0 pr-2">
                   <div className="flex items-center gap-1.5">
                     <span className={cn("size-1.5 rounded-full shrink-0", saveDotClass)} />
@@ -927,483 +1161,490 @@ export function ChamferPortraitTopBar({
                   <span>Diag</span>
                 </button>
               </div>
-            </div>
           </div>,
         )}
 
       {/* ====================================================================
        * PORTAL 2: POPOVER DE VISTA (ORTO 2D | ISO 2D + F5 | ÓRBITA 3D + SÓLIDO/SOMB/ARAME)
-       * Renderizado no document.body com z-[60]
+       * Renderizado no document.body com position: fixed e zIndex: 9999
        * ==================================================================== */}
       {viewMenuOpen &&
         renderInBodyPortal(
-          <div className="fixed inset-0 z-[60]" data-testid="portrait-view-menu-portal">
-            <div
-              aria-hidden="true"
-              className="fixed inset-0 bg-black/20"
-              onClick={() => setViewMenuOpen(false)}
-            />
-            <div
-              role="dialog"
-              aria-label="Seletor de Vista, Projeção Isométrica e Estilo 3D"
-              onClick={(e) => e.stopPropagation()}
-              className={cn(
-                "fixed top-[52px] left-1/2 -translate-x-1/2 z-[61] w-68 max-w-[calc(100vw-16px)] rounded-2xl border p-3 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
-                isDark
-                  ? "border-white/[0.12] bg-[#181C26]/98 text-[#F8FAFC]"
-                  : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
-              )}
-            >
-              <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1.5">
-                Vista & Projeção do Canvas
-              </span>
-              <div className="grid grid-cols-3 gap-1 mb-2">
-                <button
-                  type="button"
-                  data-cmd-id="view.ortho_2d"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    onToggleOrbitTool(false);
-                    onSetDrawingProjection("orthographic");
-                    onSelect2D();
-                    setViewMenuOpen(false);
-                  }}
-                  className={cn(
-                    "min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
-                    activeMode === "2d" &&
-                      drawingProjection === "orthographic" &&
-                      !isOrbitToolActive &&
-                      !isOrbitTilted
-                      ? "bg-[#E11D48] text-white"
-                      : isDark
-                        ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
-                        : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
-                  )}
-                >
-                  ORTO 2D
-                </button>
-                <button
-                  type="button"
-                  data-cmd-id="view.iso_2d"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    onToggleOrbitTool(false);
-                    onSetDrawingProjection("isometric");
-                    onSelect2D();
-                  }}
-                  className={cn(
-                    "min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
-                    activeMode === "2d" && drawingProjection === "isometric" && !isOrbitToolActive
-                      ? "bg-[#E11D48] text-white"
-                      : isDark
-                        ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
-                        : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
-                  )}
-                >
-                  ISO 2D
-                </button>
-                <button
-                  type="button"
-                  data-cmd-id="view.orbit_3d"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    onToggleOrbitTool(!isOrbitToolActive);
-                    setViewMenuOpen(false);
-                  }}
-                  className={cn(
-                    "min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
-                    isOrbitToolActive || isOrbitTilted
-                      ? "bg-[#E11D48] text-white"
-                      : isDark
-                        ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
-                        : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
-                  )}
-                >
-                  ÓRBITA 3D
-                </button>
-              </div>
+          <div
+            ref={viewMenuRef}
+            data-testid="portrait-view-menu-portal"
+            role="dialog"
+            aria-label="Seletor de Vista, Projeção Isométrica e Estilo 3D"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "fixed",
+              top: viewMenuCoords.top,
+              left: viewMenuCoords.left,
+              zIndex: 9999,
+            }}
+            className={cn(
+              "chamfer-theme-fade-2s w-68 max-w-[calc(100vw-16px)] rounded-2xl border p-3 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
+              isDark
+                ? "border-white/[0.12] bg-[#181C26]/98 text-[#F8FAFC]"
+                : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
+            )}
+          >
+            <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1.5">
+              Vista & Projeção do Canvas
+            </span>
+            <div className="grid grid-cols-3 gap-1 mb-2">
+              <button
+                type="button"
+                data-cmd-id="view.ortho_2d"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  onToggleOrbitTool(false);
+                  onSetDrawingProjection("orthographic");
+                  onSelect2D();
+                  setViewMenuOpen(false);
+                }}
+                className={cn(
+                  "min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                  activeMode === "2d" &&
+                    drawingProjection === "orthographic" &&
+                    !isOrbitToolActive &&
+                    !isOrbitTilted
+                    ? "bg-[#E11D48] text-white"
+                    : isDark
+                      ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
+                      : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
+                )}
+              >
+                ORTO 2D
+              </button>
+              <button
+                type="button"
+                data-cmd-id="view.iso_2d"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  onToggleOrbitTool(false);
+                  onSetDrawingProjection("isometric");
+                  onSelect2D();
+                }}
+                className={cn(
+                  "min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                  activeMode === "2d" && drawingProjection === "isometric" && !isOrbitToolActive
+                    ? "bg-[#E11D48] text-white"
+                    : isDark
+                      ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
+                      : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
+                )}
+              >
+                ISO 2D
+              </button>
+              <button
+                type="button"
+                data-cmd-id="view.orbit_3d"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  onToggleOrbitTool(!isOrbitToolActive);
+                  setViewMenuOpen(false);
+                }}
+                className={cn(
+                  "min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                  isOrbitToolActive || isOrbitTilted
+                    ? "bg-[#E11D48] text-white"
+                    : isDark
+                      ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
+                      : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
+                )}
+              >
+                ÓRBITA 3D
+              </button>
+            </div>
 
-              {/* SELETOR DE PLANO ISOMÉTRICO (F5): SUPERIOR | ESQUERDO | DIREITO */}
-              {onSelectIsoPlane && (
-                <div className="mb-2 pt-1.5 border-t border-white/[0.07]">
-                  <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1">
-                    Plano Isométrico Ativo (F5)
-                  </span>
-                  <div className="grid grid-cols-3 gap-1">
-                    {(
-                      [
-                        { id: "top" as const, label: "Superior" },
-                        { id: "left" as const, label: "Esquerdo" },
-                        { id: "right" as const, label: "Direito" },
-                      ]
-                    ).map((pl) => (
-                      <button
-                        key={pl.id}
-                        type="button"
-                        data-cmd-id="view.iso_plane_f5"
-                        onClick={() => {
-                          triggerHaptic("selection");
-                          onSetDrawingProjection("isometric");
-                          onSelectIsoPlane(pl.id);
-                          setViewMenuOpen(false);
-                        }}
-                        className={cn(
-                          "min-h-[32px] rounded-lg py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
-                          drawingProjection === "isometric" && isoPlane === pl.id
-                            ? "bg-[#E11D48] text-white"
-                            : isDark
-                              ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
-                              : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
-                        )}
-                      >
-                        {pl.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* ESTILO DE RENDERIZAÇÃO 3D: SÓLIDO | SOMBREADO | ARAME */}
-              <div className="pt-1.5 border-t border-white/[0.07]">
+            {/* SELETOR DE PLANO ISOMÉTRICO (F5): SUPERIOR | ESQUERDO | DIREITO */}
+            {onSelectIsoPlane && (
+              <div className="mb-2 pt-1.5 border-t border-white/[0.07]">
                 <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1">
-                  Representação 3D (Sólido / Somb / Arame)
+                  Plano Isométrico Ativo (F5)
                 </span>
                 <div className="grid grid-cols-3 gap-1">
                   {(
                     [
-                      { id: "shaded-edges" as EdgeMode, label: "Sólido" },
-                      { id: "shaded" as EdgeMode, label: "Somb." },
-                      { id: "wireframe" as EdgeMode, label: "Arame" },
+                      { id: "top" as const, label: "Superior" },
+                      { id: "left" as const, label: "Esquerdo" },
+                      { id: "right" as const, label: "Direito" },
                     ]
-                  ).map((st) => (
+                  ).map((pl) => (
                     <button
-                      key={st.id}
+                      key={pl.id}
                       type="button"
-                      data-cmd-id="view.style_3d"
+                      data-cmd-id="view.iso_plane_f5"
                       onClick={() => {
                         triggerHaptic("selection");
-                        onChangeRenderStyle3D(st.id);
+                        onSetDrawingProjection("isometric");
+                        onSelectIsoPlane(pl.id);
                         setViewMenuOpen(false);
                       }}
                       className={cn(
                         "min-h-[32px] rounded-lg py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
-                        renderStyle3D === st.id
+                        drawingProjection === "isometric" && isoPlane === pl.id
                           ? "bg-[#E11D48] text-white"
                           : isDark
                             ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
                             : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
                       )}
                     >
-                      {st.label}
+                      {pl.label}
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* ESTILO DE RENDERIZAÇÃO 3D: SÓLIDO | SOMBREADO | ARAME */}
+            <div className="pt-1.5 border-t border-white/[0.07]">
+              <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1">
+                Representação 3D (Sólido / Somb / Arame)
+              </span>
+              <div className="grid grid-cols-3 gap-1">
+                {(
+                  [
+                    { id: "shaded-edges" as EdgeMode, label: "Sólido" },
+                    { id: "shaded" as EdgeMode, label: "Somb." },
+                    { id: "wireframe" as EdgeMode, label: "Arame" },
+                  ]
+                ).map((st) => (
+                  <button
+                    key={st.id}
+                    type="button"
+                    data-cmd-id="view.style_3d"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      onChangeRenderStyle3D(st.id);
+                      setViewMenuOpen(false);
+                    }}
+                    className={cn(
+                      "min-h-[32px] rounded-lg py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                      renderStyle3D === st.id
+                        ? "bg-[#E11D48] text-white"
+                        : isDark
+                          ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
+                          : "bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
+                    )}
+                  >
+                    {st.label}
+                  </button>
+                ))}
               </div>
             </div>
           </div>,
         )}
 
       {/* ====================================================================
-       * PORTAL 3: MENU MAIS AÇÕES (⋮) COMPLETO
-       * Renderizado no document.body com z-[60]
+       * PORTAL 3: MENU DE TRÊS PONTINHOS (⋮) — RENDERIZADO EM PORTAL NO document.body
+       * position: fixed, coordenadas de getBoundingClientRect(), zIndex: 9999
        * ==================================================================== */}
       {moreMenuOpen &&
         renderInBodyPortal(
-          <div className="fixed inset-0 z-[60]" data-testid="portrait-more-menu-portal">
+          <div
+            ref={moreMenuRef}
+            data-testid="portrait-more-menu-portal"
+            role="menu"
+            aria-label="Menu de ações globais do CHAMFER CAD"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "fixed",
+              top: moreMenuCoords.top,
+              right: moreMenuCoords.right,
+              zIndex: 9999,
+            }}
+            className={cn(
+              "chamfer-theme-fade-2s max-h-[calc(100dvh-64px)] w-72 max-w-[calc(100vw-16px)] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
+              isDark
+                ? "border-white/[0.14] bg-[#11141C] text-[#F8FAFC]"
+                : "border-[#CBD5E1] bg-white text-[#0F172A]",
+            )}
+          >
+            {/* CABEÇALHO DE DETALHES DO PROJETO + BOTÃO SALVAR */}
             <div
-              aria-hidden="true"
-              className="fixed inset-0 bg-black/20"
-              onClick={() => setMoreMenuOpen(false)}
-            />
-            <div
-              role="menu"
-              aria-label="Menu de ações globais do CHAMFER CAD"
-              onClick={(e) => e.stopPropagation()}
               className={cn(
-                "fixed top-[52px] right-2 z-[61] max-h-[calc(100dvh-68px)] w-68 max-w-[calc(100vw-16px)] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
-                isDark
-                  ? "border-white/[0.12] bg-[#181C26]/98 text-[#F8FAFC]"
-                  : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
+                "mb-1.5 flex items-center justify-between rounded-xl px-2.5 py-2",
+                isDark ? "bg-[#181C26]" : "bg-[#F8FAFC]",
               )}
             >
-              {/* CABEÇALHO DE DETALHES DO PROJETO + BOTÃO SALVAR */}
+              <div className="min-w-0 pr-2">
+                <div className="flex items-center gap-1.5">
+                  <span className={cn("size-1.5 rounded-full shrink-0", saveDotClass)} />
+                  <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8]">
+                    {saveStatusText}
+                  </span>
+                </div>
+                <p className="font-mono text-[11px] font-bold truncate" title={projectName}>
+                  {projectName}
+                </p>
+              </div>
+              <button
+                type="button"
+                data-cmd-id="doc.save"
+                onClick={() => {
+                  setMoreMenuOpen(false);
+                  onManualSave();
+                }}
+                className="shrink-0 rounded-lg bg-[#E11D48] px-2.5 py-1 font-mono text-[10px] font-bold text-white cursor-pointer"
+              >
+                Salvar
+              </button>
+            </div>
+
+            {/* 6 ITENS OBRIGATÓRIOS EM DESTAQUE NO TOPO DO MENU DE TRÊS PONTINHOS */}
+            <PortraitMenuItem
+              cmdId="global.vision"
+              icon={ScanEye}
+              accentColor="text-[#E11D48]"
+              label="👁 VISION (Engenharia Reversa 1:1)"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onOpenVision();
+              }}
+              isDark={isDark}
+            />
+            <PortraitMenuItem
+              cmdId="global.intent"
+              icon={Sparkles}
+              accentColor="text-[#38BDF8]"
+              label="✨ CHAMFER INTENT (Assistente IA)"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onOpenIntent();
+              }}
+              isDark={isDark}
+            />
+            <PortraitMenuItem
+              cmdId="global.workshop_bom"
+              icon={Boxes}
+              accentColor="text-[#10B981]"
+              label="⚙ CORTE / BOM (Lista e Nesting)"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onOpenWorkshop();
+              }}
+              isDark={isDark}
+            />
+            <PortraitMenuItem
+              cmdId="global.export"
+              icon={Download}
+              accentColor="text-[#F59E0B]"
+              label="⬇ Exportar CNC / DXF / Prancha"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onOpenExport();
+              }}
+              isDark={isDark}
+            />
+            <PortraitMenuItem
+              cmdId="view.fit_piece"
+              icon={Crosshair}
+              accentColor="text-[#38BDF8]"
+              label="⌖ Enquadrar Peça na Tela"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onCenterPiece(false);
+              }}
+              isDark={isDark}
+            />
+            <PortraitMenuItem
+              cmdId="ui.theme_toggle"
+              icon={isDark ? Sun : Moon}
+              accentColor="text-[#FBBF24]"
+              label="◐ Alternar Tema Claro / Escuro"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onToggleTheme();
+              }}
+              isDark={isDark}
+            />
+
+            <div className={cn("my-1.5 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
+
+            {/* SELETOR DE LAYOUT: COMPACTO (LIGHTROOM) | CLÁSSICO */}
+            {onChangeLayoutPreference && (
               <div
                 className={cn(
-                  "mb-1.5 flex items-center justify-between rounded-xl px-2.5 py-2",
-                  isDark ? "bg-[#11141C]" : "bg-[#F8FAFC]",
+                  "mb-1.5 rounded-xl border px-2.5 py-1.5",
+                  isDark ? "border-white/[0.06] bg-[#181C26]/60" : "border-[#E2E8F0] bg-[#F8FAFC]",
                 )}
               >
-                <div className="min-w-0 pr-2">
-                  <div className="flex items-center gap-1.5">
-                    <span className={cn("size-1.5 rounded-full shrink-0", saveDotClass)} />
-                    <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8]">
-                      {saveStatusText}
-                    </span>
-                  </div>
-                  <p className="font-mono text-[11px] font-bold truncate" title={projectName}>
-                    {projectName}
-                  </p>
+                <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1">
+                  Layout Vertical
+                </span>
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    data-cmd-id="ui.layout_mode_toggle"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      onChangeLayoutPreference("compact");
+                      setMoreMenuOpen(false);
+                    }}
+                    className={cn(
+                      "min-h-[30px] rounded-lg font-mono text-[10px] font-bold transition-colors cursor-pointer",
+                      layoutPreference === "compact"
+                        ? "bg-[#E11D48] text-white"
+                        : isDark
+                          ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
+                          : "bg-white text-[#475569] hover:text-[#0F172A]",
+                    )}
+                  >
+                    Compacto
+                  </button>
+                  <button
+                    type="button"
+                    data-cmd-id="ui.layout_mode_toggle"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      onChangeLayoutPreference("classic");
+                      setMoreMenuOpen(false);
+                    }}
+                    className={cn(
+                      "min-h-[30px] rounded-lg font-mono text-[10px] font-bold transition-colors cursor-pointer",
+                      layoutPreference === "classic"
+                        ? "bg-[#E11D48] text-white"
+                        : isDark
+                          ? "bg-[#11141C] text-[#94A3B8] hover:text-white"
+                          : "bg-white text-[#475569] hover:text-[#0F172A]",
+                    )}
+                  >
+                    Clássico
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  data-cmd-id="doc.save"
-                  onClick={() => {
-                    setMoreMenuOpen(false);
-                    onManualSave();
-                  }}
-                  className="shrink-0 rounded-lg bg-[#E11D48] px-2.5 py-1 font-mono text-[10px] font-bold text-white cursor-pointer"
-                >
-                  Salvar
-                </button>
               </div>
+            )}
 
-              {/* SELETOR DE LAYOUT: COMPACTO (LIGHTROOM) | CLÁSSICO */}
-              {onChangeLayoutPreference && (
-                <div
-                  className={cn(
-                    "mb-1.5 rounded-xl border px-2.5 py-1.5",
-                    isDark ? "border-white/[0.06] bg-[#11141C]/60" : "border-[#E2E8F0] bg-[#F8FAFC]",
-                  )}
-                >
-                  <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1">
-                    Layout Vertical
-                  </span>
-                  <div className="grid grid-cols-2 gap-1">
-                    <button
-                      type="button"
-                      data-cmd-id="ui.layout_mode_toggle"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        onChangeLayoutPreference("compact");
-                        setMoreMenuOpen(false);
-                      }}
-                      className={cn(
-                        "min-h-[30px] rounded-lg font-mono text-[10px] font-bold transition-colors cursor-pointer",
-                        layoutPreference === "compact"
-                          ? "bg-[#E11D48] text-white"
-                          : isDark
-                            ? "bg-[#181C26] text-[#94A3B8] hover:text-white"
-                            : "bg-white text-[#475569] hover:text-[#0F172A]",
-                      )}
-                    >
-                      Compacto
-                    </button>
-                    <button
-                      type="button"
-                      data-cmd-id="ui.layout_mode_toggle"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        onChangeLayoutPreference("classic");
-                        setMoreMenuOpen(false);
-                      }}
-                      className={cn(
-                        "min-h-[30px] rounded-lg font-mono text-[10px] font-bold transition-colors cursor-pointer",
-                        layoutPreference === "classic"
-                          ? "bg-[#E11D48] text-white"
-                          : isDark
-                            ? "bg-[#181C26] text-[#94A3B8] hover:text-white"
-                            : "bg-white text-[#475569] hover:text-[#0F172A]",
-                      )}
-                    >
-                      Clássico
-                    </button>
-                  </div>
-                </div>
-              )}
+            <PortraitMenuItem
+              cmdId="global.cnc_direct"
+              icon={Scissors}
+              label="Plano de Corte CNC Direto"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onOpenCnc();
+              }}
+              isDark={isDark}
+            />
+            <PortraitMenuItem
+              cmdId="view.fit_workspace"
+              icon={Maximize2}
+              label="Enquadrar Área de Trabalho"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onFitWorkspace();
+              }}
+              isDark={isDark}
+            />
+            <PortraitMenuItem
+              cmdId="view.center_piece_in_workspace"
+              icon={AlignCenter}
+              label="Centralizar Peça na Área"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onCenterPiece(true);
+              }}
+              isDark={isDark}
+            />
 
+            <div className={cn("my-1 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
+
+            <PortraitMenuItem
+              cmdId="det.presets"
+              icon={Boxes}
+              label="Presets Paramétricos"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onOpenPresets();
+              }}
+              isDark={isDark}
+            />
+            <PortraitMenuItem
+              cmdId="out.technical_sheet"
+              icon={FileText}
+              label="Prancha 2D e Legenda (A4/A3)"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onOpenTechnicalSheet();
+              }}
+              isDark={isDark}
+            />
+            <PortraitMenuItem
+              cmdId="insp.topology_health"
+              icon={Activity}
+              label="Topologia & Auto-Heal"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onOpenTopologyHealth();
+              }}
+              isDark={isDark}
+            />
+            <PortraitMenuItem
+              cmdId="insp.variables"
+              icon={Sliders}
+              label="Tabela de Variáveis"
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onOpenVariables();
+              }}
+              isDark={isDark}
+            />
+            {onVerifyGeometry && (
               <PortraitMenuItem
-                cmdId="global.vision"
-                icon={ScanEye}
-                accentColor="text-[#E11D48]"
-                label="VISION — Eng. Reversa 1:1"
+                cmdId="insp.verify_geometry"
+                icon={Check}
+                label="Verificar Geometria p/ CNC"
                 onClick={() => {
                   setMoreMenuOpen(false);
-                  onOpenVision();
+                  onVerifyGeometry();
                 }}
                 isDark={isDark}
               />
+            )}
+            {onOptimizeGeometry && (
               <PortraitMenuItem
-                cmdId="global.intent"
+                cmdId="insp.optimize_vectors"
                 icon={Sparkles}
-                label="CHAMFER INTENT (Assistente IA)"
+                label="Otimizar Vetores"
                 onClick={() => {
                   setMoreMenuOpen(false);
-                  onOpenIntent();
+                  onOptimizeGeometry();
                 }}
                 isDark={isDark}
               />
-              <PortraitMenuItem
-                cmdId="global.workshop_bom"
-                icon={Boxes}
-                label="CORTE / BOM & Oficina"
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  onOpenWorkshop();
-                }}
-                isDark={isDark}
-              />
-              <PortraitMenuItem
-                cmdId="global.export"
-                icon={Download}
-                label="Exportar CNC / DXF / PDF"
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  onOpenExport();
-                }}
-                isDark={isDark}
-              />
-              <PortraitMenuItem
-                cmdId="global.cnc_direct"
-                icon={Scissors}
-                label="Plano de Corte CNC Direto"
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  onOpenCnc();
-                }}
-                isDark={isDark}
-              />
+            )}
+            <PortraitMenuItem
+              cmdId="insp.toggle_support_dims"
+              icon={Ruler}
+              label={showDims ? "Ocultar Medidas de Apoio" : "Mostrar Medidas de Apoio"}
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onToggleShowDims();
+              }}
+              isDark={isDark}
+            />
 
-              <div className={cn("my-1 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
+            <div className={cn("my-1 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
 
-              <PortraitMenuItem
-                cmdId="view.fit_piece"
-                icon={Crosshair}
-                label="Enquadrar Peça na Tela"
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  onCenterPiece(false);
-                }}
-                isDark={isDark}
-              />
-              <PortraitMenuItem
-                cmdId="view.fit_workspace"
-                icon={Maximize2}
-                label="Enquadrar Área de Trabalho"
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  onFitWorkspace();
-                }}
-                isDark={isDark}
-              />
-              <PortraitMenuItem
-                cmdId="view.center_piece_in_workspace"
-                icon={AlignCenter}
-                label="Centralizar Peça na Área"
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  onCenterPiece(true);
-                }}
-                isDark={isDark}
-              />
-
-              <div className={cn("my-1 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
-
-              <PortraitMenuItem
-                cmdId="det.presets"
-                icon={Boxes}
-                label="Presets Paramétricos"
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  onOpenPresets();
-                }}
-                isDark={isDark}
-              />
-              <PortraitMenuItem
-                cmdId="out.technical_sheet"
-                icon={FileText}
-                label="Prancha 2D e Legenda (A4/A3)"
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  onOpenTechnicalSheet();
-                }}
-                isDark={isDark}
-              />
-              <PortraitMenuItem
-                cmdId="insp.topology_health"
-                icon={Activity}
-                label="Topologia & Auto-Heal"
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  onOpenTopologyHealth();
-                }}
-                isDark={isDark}
-              />
-              <PortraitMenuItem
-                cmdId="insp.variables"
-                icon={Sliders}
-                label="Tabela de Variáveis"
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  onOpenVariables();
-                }}
-                isDark={isDark}
-              />
-              {onVerifyGeometry && (
-                <PortraitMenuItem
-                  cmdId="insp.verify_geometry"
-                  icon={Check}
-                  label="Verificar Geometria p/ CNC"
-                  onClick={() => {
-                    setMoreMenuOpen(false);
-                    onVerifyGeometry();
-                  }}
-                  isDark={isDark}
-                />
-              )}
-              {onOptimizeGeometry && (
-                <PortraitMenuItem
-                  cmdId="insp.optimize_vectors"
-                  icon={Sparkles}
-                  label="Otimizar Vetores"
-                  onClick={() => {
-                    setMoreMenuOpen(false);
-                    onOptimizeGeometry();
-                  }}
-                  isDark={isDark}
-                />
-              )}
-              <PortraitMenuItem
-                cmdId="insp.toggle_support_dims"
-                icon={Ruler}
-                label={showDims ? "Ocultar Medidas de Apoio" : "Mostrar Medidas de Apoio"}
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  onToggleShowDims();
-                }}
-                isDark={isDark}
-              />
-
-              <div className={cn("my-1 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
-
-              <PortraitMenuItem
-                cmdId="ui.theme_toggle"
-                icon={isDark ? Sun : Moon}
-                label={isDark ? "Mudar para Tema Claro" : "Mudar para Tema Escuro"}
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  onToggleTheme();
-                }}
-                isDark={isDark}
-              />
-              <PortraitMenuItem
-                cmdId="ui.fullscreen_toggle"
-                icon={focus ? Minimize : Maximize}
-                label={focus ? "Sair do Modo Tela Cheia" : "Modo Tela Cheia (Foco)"}
-                onClick={() => {
-                  setMoreMenuOpen(false);
-                  onToggleFullscreen();
-                }}
-                isDark={isDark}
-              />
-              <PortraitMenuItem
-                cmdId="diag.matrix"
-                icon={Bug}
-                accentColor="text-[#38BDF8]"
-                label="Diagnóstico de Paridade 1:1"
-                onClick={handleRunParityAudit}
-                isDark={isDark}
-              />
-            </div>
+            <PortraitMenuItem
+              cmdId="ui.fullscreen_toggle"
+              icon={focus ? Minimize : Maximize}
+              label={focus ? "Sair do Modo Tela Cheia" : "Modo Tela Cheia (Foco)"}
+              onClick={() => {
+                setMoreMenuOpen(false);
+                onToggleFullscreen();
+              }}
+              isDark={isDark}
+            />
+            <PortraitMenuItem
+              cmdId="diag.matrix"
+              icon={Bug}
+              accentColor="text-[#38BDF8]"
+              label="Diagnóstico de Paridade 1:1"
+              onClick={handleRunParityAudit}
+              isDark={isDark}
+            />
           </div>,
         )}
 

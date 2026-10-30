@@ -23,6 +23,33 @@ import {
 
 export type SceneView = { tx: number; ty: number; k: number };
 
+/**
+ * Interpola linearmente (lerp) duas cores hexadecimais (#RRGGBB) para a transição
+ * suave de 2000ms do fundo do canvas 2D entre o Tema Claro (#FAFBFD) e o Tema Escuro (#0D1526).
+ */
+export function lerpHexColor(fromHex: string, toHex: string, t: number): string {
+  const clamped = Math.max(0, Math.min(1, Number.isFinite(t) ? t : 1));
+  const parseHex = (hex: string): [number, number, number] => {
+    const clean = hex.replace(/^#/, "").trim();
+    if (clean.length === 3) {
+      return [
+        parseInt(clean[0]! + clean[0]!, 16) || 0,
+        parseInt(clean[1]! + clean[1]!, 16) || 0,
+        parseInt(clean[2]! + clean[2]!, 16) || 0,
+      ];
+    }
+    const n = parseInt(clean.slice(0, 6), 16);
+    if (!Number.isFinite(n)) return [13, 21, 38];
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  const [r1, g1, b1] = parseHex(fromHex);
+  const [r2, g2, b2] = parseHex(toHex);
+  const r = Math.round(r1 + (r2 - r1) * clamped);
+  const g = Math.round(g1 + (g2 - g1) * clamped);
+  const b = Math.round(b1 + (b2 - b1) * clamped);
+  return `#${r.toString(16).padStart(2, "0")}${g.toString(16).padStart(2, "0")}${b.toString(16).padStart(2, "0")}`;
+}
+
 export type SceneOptions = {
   index: SpatialIndex;
   view: SceneView;
@@ -34,6 +61,10 @@ export type SceneOptions = {
   lod: boolean;
   /** Tema claro ativo para contraste da seleção */
   isLight?: boolean;
+  /** Cor interpolada do fundo do canvas (transição suave de 2000ms: #FAFBFD <-> #0D1526) */
+  canvasBgColor?: string;
+  /** Fator de interpolação do tema (0 = Claro #FAFBFD, 1 = Escuro #0D1526) ao longo de 2000ms */
+  themeLerpT?: number;
   /** Movimento destravado via Long-Press (destaque ciano/laranja brilhante de arraste ativo) */
   isDraggingUnlocked?: boolean;
   /** Modo Isométrico (ISO 2D) ativo para renderização Isometric Wireframe Solid (X-Ray) */
@@ -319,9 +350,11 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       ctx.strokeStyle =
         customStrokeColor ??
         (isCutOrWhite
-          ? opts.isLight
-            ? "#0F172A"
-            : "#F8FAFC"
+          ? typeof opts.themeLerpT === "number"
+            ? lerpHexColor("#0F172A", "#F8FAFC", opts.themeLerpT)
+            : opts.isLight
+              ? "#0F172A"
+              : "#F8FAFC"
           : style.color);
       ctx.lineWidth = (isCutOrWhite ? Math.max(2.1, 1.65 * style.weight) : Math.max(1.6, 1.45 * style.weight)) * inv;
       const dash = !lod && style.dash(inv);

@@ -2987,3 +2987,21 @@
   background-color: #0D131A;
   border: 1px solid #222E3A;
 }
+
+/* =====================================================================
+ * CHAMFER CAD — TRANSIÇÃO CINEMATOGRÁFICA DE TEMA (FADE SUAVE DE 2 SEGUNDOS)
+ * Aplicada no contêiner raiz, barras superior/inferior/lateral, painéis, menus e cartões
+ * ===================================================================== */
+.chamfer-theme-fade-2s,
+.chamfer-theme-fade-root,
+.chamfer-theme-fade-root > header,
+.chamfer-theme-fade-root > div,
+.chamfer-theme-fade-root aside,
+.chamfer-theme-fade-root nav {
+  transition:
+    background-color 2s cubic-bezier(0.4, 0, 0.2, 1),
+    color 2s cubic-bezier(0.4, 0, 0.2, 1),
+    border-color 2s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+

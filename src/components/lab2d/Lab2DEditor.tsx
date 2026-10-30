@@ -1,4 +1,5 @@
 import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { triggerHaptic } from "@/lib/ui/haptics";
@@ -175,7 +176,7 @@ import {
   type WorkspaceFrame,
 } from "@/lib/lab2d/workspace";
 import { buildIndex } from "@/lib/lab2d/spatialIndex";
-import { drawScene } from "@/lib/lab2d/canvasScene";
+import { drawScene, lerpHexColor } from "@/lib/lab2d/canvasScene";
 import {
   DEFAULT_CHAMFER_WIREFRAME_3D_STYLE,
   type ChamferWireframe3DStyleConfig,
@@ -715,16 +716,71 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const { isMestre } = useFeatureAccess();
   const { theme: appTheme, setTheme: setAppTheme, unit } = useSettings();
   const isDark = useMemo(() => {
-    return (
-      appTheme === "dark" ||
-      appTheme === "amoled" ||
-      (appTheme === "system" &&
-        (typeof window !== "undefined"
-          ? window.matchMedia?.("(prefers-color-scheme: dark)").matches
-          : true)) ||
-      (typeof document !== "undefined" && document.documentElement.classList.contains("dark"))
-    );
+    if (appTheme === "light") return false;
+    if (appTheme === "dark" || appTheme === "amoled") return true;
+    if (typeof window !== "undefined" && window.matchMedia) {
+      return window.matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+    return true;
   }, [appTheme]);
+
+  // Interpolação suave de 2000ms (lerp por performance.now()) da cor de fundo do Canvas 2D (#FAFBFD <-> #0D1526)
+  const [themeLerpT, setThemeLerpT] = useState<number>(() => (isDark ? 1 : 0));
+  const themeLerpTRef = useRef<number>(isDark ? 1 : 0);
+  const themeAnimRafRef = useRef<number | null>(null);
+  const prevIsDarkRef = useRef<boolean>(isDark);
+
+  useEffect(() => {
+    if (prevIsDarkRef.current === isDark) return;
+    prevIsDarkRef.current = isDark;
+
+    if (themeAnimRafRef.current !== null) {
+      cancelAnimationFrame(themeAnimRafRef.current);
+      themeAnimRafRef.current = null;
+    }
+
+    const startVal = themeLerpTRef.current;
+    const targetVal = isDark ? 1 : 0;
+    const startTime = performance.now();
+    const durationMs = 2000;
+
+    const easeInOutCubic = (x: number): number =>
+      x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+
+    const step = (now: number) => {
+      const elapsed = Math.max(0, now - startTime);
+      const rawT = Math.min(1, elapsed / durationMs);
+      const easedT = easeInOutCubic(rawT);
+      const nextVal = startVal + (targetVal - startVal) * easedT;
+      themeLerpTRef.current = nextVal;
+      setThemeLerpT(nextVal);
+
+      if (rawT < 1) {
+        themeAnimRafRef.current = requestAnimationFrame(step);
+      } else {
+        themeLerpTRef.current = targetVal;
+        setThemeLerpT(targetVal);
+        themeAnimRafRef.current = null;
+      }
+    };
+
+    themeAnimRafRef.current = requestAnimationFrame(step);
+    return () => {
+      if (themeAnimRafRef.current !== null) {
+        cancelAnimationFrame(themeAnimRafRef.current);
+        themeAnimRafRef.current = null;
+      }
+    };
+  }, [isDark]);
+
+  const canvasBgColor = useMemo(
+    () => lerpHexColor("#FAFBFD", "#0D1526", themeLerpT),
+    [themeLerpT],
+  );
+  const canvasOuterBgColor = useMemo(
+    () => lerpHexColor("#DCE3EC", "#060A11", themeLerpT),
+    [themeLerpT],
+  );
 
   const toggleTheme = useCallback(() => {
     triggerHaptic("tap");
@@ -878,6 +934,43 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [startPicking, setStartPicking] = useState(false);
   const [shareHint, setShareHint] = useState<ShareCandidate | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const landscapeMoreTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const landscapeMoreMenuRef = useRef<HTMLDivElement | null>(null);
+  const [landscapeMoreCoords, setLandscapeMoreCoords] = useState<{ top: number; right: number }>({
+    top: 52,
+    right: 12,
+  });
+
+  const updateLandscapeMorePosition = useCallback(() => {
+    if (typeof window === "undefined" || !landscapeMoreTriggerRef.current) return;
+    const rect = landscapeMoreTriggerRef.current.getBoundingClientRect();
+    setLandscapeMoreCoords({
+      top: Math.max(48, Math.round(rect.bottom + 6)),
+      right: Math.max(8, Math.round(window.innerWidth - rect.right)),
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!moreOpen) return;
+    const handleOutsideClick = (event: MouseEvent | PointerEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (landscapeMoreTriggerRef.current && landscapeMoreTriggerRef.current.contains(target)) {
+        return; // Não executa o fechar se o clique foi no próprio botão
+      }
+      if (landscapeMoreMenuRef.current && landscapeMoreMenuRef.current.contains(target)) {
+        return;
+      }
+      setMoreOpen(false);
+    };
+    const handleResize = () => updateLandscapeMorePosition();
+    document.addEventListener("pointerdown", handleOutsideClick);
+    window.addEventListener("resize", handleResize);
+    return () => {
+      document.removeEventListener("pointerdown", handleOutsideClick);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [moreOpen, updateLandscapeMorePosition]);
   const [statusWorkspaceMenuOpen, setStatusWorkspaceMenuOpen] = useState(false);
   const [workspaceKeypadEditor, setWorkspaceKeypadEditor] = useState<{
     axis: "w" | "h";
@@ -2358,6 +2451,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       selection: selectionSet,
       lod: gesturing,
       isLight: !isDark,
+      canvasBgColor,
+      themeLerpT,
       isDraggingUnlocked,
       isIsometric: isIsoView,
       isoPlane,
@@ -2367,7 +2462,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       showGrid,
       gridStep: Math.max(15, grid * 2.5),
     });
-  }, [cadPhase, drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isInPlaceSolid3DActive, isDark, drawingProjection, entities, isDraggingUnlocked, isoPlane, thickness, orbitProjection2D, wireframe3DStyle, showGrid, grid]);
+  }, [cadPhase, drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isInPlaceSolid3DActive, isDark, canvasBgColor, themeLerpT, drawingProjection, entities, isDraggingUnlocked, isoPlane, thickness, orbitProjection2D, wireframe3DStyle, showGrid, grid]);
 
   /* ------------------------------------------------------- FLUXO CALDRA */
   /*
@@ -6897,9 +6992,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     <div
       ref={wrapRef}
       className={cn(
-        "fixed inset-0 z-50 flex h-[100dvh] w-[100vw] max-w-none flex-col overflow-hidden rounded-none transition-colors select-none",
+        "chamfer-theme-fade-root chamfer-theme-fade-2s fixed inset-0 z-50 flex h-[100dvh] w-[100vw] max-w-none flex-col overflow-hidden rounded-none select-none",
         isLandscape ? "gap-1 p-1" : "gap-0 p-0",
-        isDark ? "bg-[#0B0F14] text-[#E6EDF5]" : "bg-[#E9EEF4] text-[#1E293B]",
+        isDark ? "bg-[#0B0F14] text-[#F8FAFC]" : "bg-[#E9EEF4] text-[#0F172A]",
         isMestre && "glow-ring",
       )}
     >
@@ -7091,12 +7186,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onPointerUp={handleTopBarPointerUp}
           onPointerCancel={handleTopBarPointerUp}
           onWheel={handleTopBarWheel}
+          style={{
+            backgroundColor: isDark ? "#0F172A" : "#F8FAFC",
+            borderColor: isDark ? "rgba(255,255,255,0.08)" : "#E2E8F0",
+            color: isDark ? "#F8FAFC" : "#0F172A",
+            opacity: 1,
+          }}
           className={cn(
-            "flex h-12 shrink-0 w-full items-center justify-between gap-3 border-b px-3 shadow-xs backdrop-blur-md transition-colors select-none",
+            "chamfer-theme-fade-2s flex h-12 shrink-0 w-full items-center justify-between gap-3 border-b px-3 shadow-xs backdrop-blur-md select-none",
             "overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing",
             isDark
-              ? "border-[#293444] bg-[#0D121B] text-[#E6EDF5]"
-              : "border-[#CBD5E1] bg-[#F1F5F9] text-[#1E293B] shadow-xs",
+              ? "border-white/[0.08] bg-[#0F172A] text-[#F8FAFC]"
+              : "border-[#E2E8F0] bg-[#F8FAFC] text-[#0F172A] shadow-xs",
           )}
         >
           {/* LADO ESQUERDO: [ ← SAIR ] + [ CHAMFER • NOME DO PROJETO ] + [ DOSSIÊ ] */}
@@ -7577,222 +7678,307 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               icon={LayersIcon}
               active={rightSidebarOpen && activeSidebarTab === "camadas"}
               title="Gerenciamento de camadas técnicas"
+              isDark={isDark}
             />
             <IconBtn
               label="Exportar"
               onClick={() => setExportOpen(true)}
               icon={Download}
               title="Exportar DXF, SVG, PNG, PDF"
+              isDark={isDark}
             />
             <IconBtn
               label="Corte CNC"
               onClick={() => setCncOpen(true)}
               icon={Scissors}
               title="Ferramenta de Corte e Exportação DXF CNC direta"
+              isDark={isDark}
             />
             <IconBtn
               label="Comando (Q)"
               onClick={() => setQuickCommandOpen(true)}
               icon={Search}
               title="Busca rápida de comandos CAD (Atalho: Q ou Ctrl+K)"
+              isDark={isDark}
             />
             <IconBtn
               label="Topologia"
               onClick={() => setTopologyHealthOpen(true)}
               icon={Activity}
               title="Auditoria de topologia e Auto-Heal (saúde do desenho)"
+              isDark={isDark}
             />
             <IconBtn
               label="Presets"
               onClick={() => setPresetsModalOpen(true)}
               icon={Boxes}
               title="Catálogo de presets paramétricos (Flanges, tubos, sapatas)"
+              isDark={isDark}
             />
             <div className="relative">
               <IconBtn
+                buttonRef={landscapeMoreTriggerRef}
                 label="Mais"
-                onClick={() => setMoreOpen((m) => !m)}
+                onClick={() => {
+                  updateLandscapeMorePosition();
+                  setMoreOpen((m) => !m);
+                }}
                 icon={MoreHorizontal}
                 active={moreOpen}
                 title="Mais opções e ferramentas avançadas"
+                isDark={isDark}
               />
-              {moreOpen && (
-                <div className="metal hairline pop-in fixed top-12 right-3 z-[70] w-56 rounded-2xl p-1.5 shadow-xl">
-                  {verticalLayout.isVerticalViewport && (
+              {moreOpen &&
+                typeof document !== "undefined" &&
+                document.body &&
+                createPortal(
+                  <div
+                    ref={landscapeMoreMenuRef}
+                    data-testid="landscape-more-menu-portal"
+                    role="menu"
+                    aria-label="Mais opções do CHAMFER CAD"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                      position: "fixed",
+                      top: landscapeMoreCoords.top,
+                      right: landscapeMoreCoords.right,
+                      zIndex: 9999,
+                      backgroundColor: isDark ? "#11141C" : "#FFFFFF",
+                      borderColor: isDark ? "rgba(255,255,255,0.12)" : "#E2E8F0",
+                      color: isDark ? "#F8FAFC" : "#0F172A",
+                    }}
+                    className={cn(
+                      "chamfer-theme-fade-2s max-h-[calc(100dvh-64px)] w-68 max-w-[calc(100vw-16px)] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150",
+                      isDark
+                        ? "border-white/[0.12] bg-[#11141C] text-[#F8FAFC]"
+                        : "border-[#E2E8F0] bg-white text-[#0F172A]",
+                    )}
+                  >
+                    {/* 6 ITENS OBRIGATÓRIOS EM DESTAQUE NO TOPO DO MENU */}
                     <MenuItem
-                      label="Modo Vertical Compacto"
-                      icon={Maximize}
+                      label="👁 VISION (Engenharia Reversa 1:1)"
+                      icon={ScanEye}
+                      isDark={isDark}
                       onClick={() => {
                         setMoreOpen(false);
-                        verticalLayout.setLayoutPreference("compact");
-                        toast.info("Layout Vertical Compacto ativado.");
+                        setVisionOpen(true);
                       }}
                     />
-                  )}
-                  <MenuItem
-                    label="Oficina Digital (Corte, BOM e Orçamento)"
-                    icon={Boxes}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      setIntegratedWorkshopOpen(true);
-                    }}
-                  />
-                  <MenuItem
-                    label="Folha Técnica e Legenda"
-                    icon={FileText}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      setTechnicalSheetModalOpen(true);
-                    }}
-                  />
-                  <MenuItem
-                    label="Tabela de Variáveis"
-                    icon={Sliders}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      setVariablesModalOpen(true);
-                    }}
-                  />
-                  <MenuItem
-                    label="Novo projeto CHAMFER"
-                    icon={FolderPlus}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
-                      setNewProjectDialogOpen(true);
-                    }}
-                  />
-                  <MenuItem
-                    label="Projetos salvos"
-                    icon={FolderOpen}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      leaveEditor();
-                    }}
-                  />
-                  <div className="my-1 h-px bg-line" />
-                  <MenuItem
-                    label="Centralizar peça"
-                    icon={Crosshair}
-                    onClick={() => {
-                      centerPiece(true);
-                      setMoreOpen(false);
-                    }}
-                  />
-                  <MenuItem
-                    label="Enquadrar área de trabalho"
-                    icon={Frame}
-                    onClick={() => {
-                      fitFrame();
-                      setMoreOpen(false);
-                    }}
-                  />
-                  <div className="my-1 h-px bg-line" />
-                  <div className="px-2 py-1.5">
-                    <p className="tick-label mb-1 text-muted-foreground">Área de trabalho (mm)</p>
-                    <div className="flex items-center gap-1">
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        aria-label="Largura da área de trabalho"
-                        value={frame.w}
-                        onChange={(ev) =>
-                          updateFrame({ w: clampSide(Number(ev.target.value), frame.w) })
-                        }
-                        className="w-16 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-center font-mono text-[10px] outline-none"
-                      />
-                      <span className="font-mono text-[10px] text-muted-foreground">×</span>
-                      <input
-                        type="number"
-                        inputMode="decimal"
-                        aria-label="Altura da área de trabalho"
-                        value={frame.h}
-                        onChange={(ev) =>
-                          updateFrame({ h: clampSide(Number(ev.target.value), frame.h) })
-                        }
-                        className="w-16 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-center font-mono text-[10px] outline-none"
-                      />
-                    </div>
-                    <button
-                      onClick={() => updateFrame({ showDims: !frame.showDims })}
-                      className="mt-1.5 w-full rounded-lg border border-line px-2 py-1 font-mono text-[9px] tracking-widest text-muted-foreground uppercase hover:text-foreground"
-                    >
-                      {frame.showDims ? "Ocultar dimensões" : "Mostrar dimensões"}
-                    </button>
-                  </div>
-                  <div className="my-1 h-px bg-line" />
-                  <MenuItem
-                    label={showDims ? "Ocultar medidas" : "Mostrar medidas"}
-                    icon={Ruler}
-                    onClick={() => {
-                      setShowDims((s) => !s);
-                      setMoreOpen(false);
-                    }}
-                  />
-                  <MenuItem
-                    label="Verificar geometria"
-                    icon={Triangle}
-                    onClick={() => {
-                      const found = verify(entities);
-                      setIssues(found);
-                      if (found.length) {
-                        toast.warning(`${found.length} problemas encontrados`);
-                      } else {
-                        toast.success("Geometria válida");
-                      }
-                      setMoreOpen(false);
-                    }}
-                  />
-                  <MenuItem
-                    label="Otimizar"
-                    icon={Spline}
-                    onClick={() => {
-                      const res = optimize(entities);
-                      commit(res.entities);
-                      toast.success(`${res.removed + res.tiny} entidades limpas`);
-                      setMoreOpen(false);
-                    }}
-                  />
-                  <MenuItem
-                    label={isMestre ? "CHAMFER VISION" : "CHAMFER VISION · Mestre"}
-                    icon={ScanEye}
-                    onClick={() => {
-                      setMoreOpen(false);
-                      if (!isMestre) {
-                        toast.info("CHAMFER VISION é exclusivo do Modo Mestre.");
-                        return;
-                      }
-                      setVisionOpen(true);
-                    }}
-                  />
-                  {imageLayer && (
-                    <>
+                    <MenuItem
+                      label="✨ CHAMFER INTENT (Assistente IA)"
+                      icon={Sparkles}
+                      isDark={isDark}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setQuickCommandOpen(true);
+                      }}
+                    />
+                    <MenuItem
+                      label="⚙ CORTE / BOM (Lista e Nesting)"
+                      icon={Boxes}
+                      isDark={isDark}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setIntegratedWorkshopOpen(true);
+                      }}
+                    />
+                    <MenuItem
+                      label="⬇ Exportar CNC / DXF / Prancha"
+                      icon={Download}
+                      isDark={isDark}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setExportOpen(true);
+                      }}
+                    />
+                    <MenuItem
+                      label="⌖ Enquadrar Peça na Tela"
+                      icon={Crosshair}
+                      isDark={isDark}
+                      onClick={() => {
+                        centerPiece(false);
+                        setMoreOpen(false);
+                      }}
+                    />
+                    <MenuItem
+                      label="◐ Alternar Tema Claro / Escuro"
+                      icon={isDark ? Sun : Moon}
+                      isDark={isDark}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        toggleTheme();
+                      }}
+                    />
+
+                    <div className={cn("my-1.5 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
+
+                    {verticalLayout.isVerticalViewport && (
                       <MenuItem
-                        label={imageLayer.visible ? "Ocultar imagem" : "Mostrar imagem"}
-                        icon={ImageIcon}
+                        label="Modo Vertical Compacto"
+                        icon={Maximize}
+                        isDark={isDark}
                         onClick={() => {
-                          setImageLayer({ ...imageLayer, visible: !imageLayer.visible });
                           setMoreOpen(false);
+                          verticalLayout.setLayoutPreference("compact");
+                          toast.info("Layout Vertical Compacto ativado.");
                         }}
                       />
-                      <label className="flex items-center gap-2 rounded-xl px-2 py-2 text-[11px] text-muted-foreground">
-                        <ImageIcon className="size-3.5" />
+                    )}
+                    <MenuItem
+                      label="Folha Técnica e Legenda"
+                      icon={FileText}
+                      isDark={isDark}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setTechnicalSheetModalOpen(true);
+                      }}
+                    />
+                    <MenuItem
+                      label="Tabela de Variáveis"
+                      icon={Sliders}
+                      isDark={isDark}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setVariablesModalOpen(true);
+                      }}
+                    />
+                    <MenuItem
+                      label="Novo projeto CHAMFER"
+                      icon={FolderPlus}
+                      isDark={isDark}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
+                        setNewProjectDialogOpen(true);
+                      }}
+                    />
+                    <MenuItem
+                      label="Projetos salvos"
+                      icon={FolderOpen}
+                      isDark={isDark}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        leaveEditor();
+                      }}
+                    />
+                    <div className={cn("my-1.5 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
+                    <MenuItem
+                      label="Centralizar peça na prancheta"
+                      icon={Crosshair}
+                      isDark={isDark}
+                      onClick={() => {
+                        centerPiece(true);
+                        setMoreOpen(false);
+                      }}
+                    />
+                    <MenuItem
+                      label="Enquadrar área de trabalho"
+                      icon={Frame}
+                      isDark={isDark}
+                      onClick={() => {
+                        fitFrame();
+                        setMoreOpen(false);
+                      }}
+                    />
+                    <div className={cn("my-1.5 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
+                    <div className="px-2 py-1.5">
+                      <p className="tick-label mb-1 text-muted-foreground">Área de trabalho (mm)</p>
+                      <div className="flex items-center gap-1">
                         <input
-                          type="range"
-                          min={0.05}
-                          max={1}
-                          step={0.05}
-                          value={imageLayer.opacity}
+                          type="number"
+                          inputMode="decimal"
+                          aria-label="Largura da área de trabalho"
+                          value={frame.w}
                           onChange={(ev) =>
-                            setImageLayer({ ...imageLayer, opacity: Number(ev.target.value) })
+                            updateFrame({ w: clampSide(Number(ev.target.value), frame.w) })
                           }
-                          className="w-full accent-[var(--accent)]"
+                          className="w-16 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-center font-mono text-[10px] outline-none"
                         />
-                      </label>
-                    </>
-                  )}
-                </div>
-              )}
+                        <span className="font-mono text-[10px] text-muted-foreground">×</span>
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          aria-label="Altura da área de trabalho"
+                          value={frame.h}
+                          onChange={(ev) =>
+                            updateFrame({ h: clampSide(Number(ev.target.value), frame.h) })
+                          }
+                          className="w-16 rounded-lg border border-line bg-background/40 px-1.5 py-1 text-center font-mono text-[10px] outline-none"
+                        />
+                      </div>
+                      <button
+                        onClick={() => updateFrame({ showDims: !frame.showDims })}
+                        className="mt-1.5 w-full rounded-lg border border-line px-2 py-1 font-mono text-[9px] tracking-widest text-muted-foreground uppercase hover:text-foreground"
+                      >
+                        {frame.showDims ? "Ocultar dimensões" : "Mostrar dimensões"}
+                      </button>
+                    </div>
+                    <div className={cn("my-1.5 h-px", isDark ? "bg-white/[0.08]" : "bg-[#E2E8F0]")} />
+                    <MenuItem
+                      label={showDims ? "Ocultar medidas" : "Mostrar medidas"}
+                      icon={Ruler}
+                      isDark={isDark}
+                      onClick={() => {
+                        setShowDims((s) => !s);
+                        setMoreOpen(false);
+                      }}
+                    />
+                    <MenuItem
+                      label="Verificar geometria"
+                      icon={Triangle}
+                      isDark={isDark}
+                      onClick={() => {
+                        const found = verify(entities);
+                        setIssues(found);
+                        if (found.length) {
+                          toast.warning(`${found.length} problemas encontrados`);
+                        } else {
+                          toast.success("Geometria válida");
+                        }
+                        setMoreOpen(false);
+                      }}
+                    />
+                    <MenuItem
+                      label="Otimizar"
+                      icon={Spline}
+                      isDark={isDark}
+                      onClick={() => {
+                        const res = optimize(entities);
+                        commit(res.entities);
+                        toast.success(`${res.removed + res.tiny} entidades limpas`);
+                        setMoreOpen(false);
+                      }}
+                    />
+                    {imageLayer && (
+                      <>
+                        <MenuItem
+                          label={imageLayer.visible ? "Ocultar imagem" : "Mostrar imagem"}
+                          icon={ImageIcon}
+                          isDark={isDark}
+                          onClick={() => {
+                            setImageLayer({ ...imageLayer, visible: !imageLayer.visible });
+                            setMoreOpen(false);
+                          }}
+                        />
+                        <label className="flex items-center gap-2 rounded-xl px-2 py-2 text-[11px] text-muted-foreground">
+                          <ImageIcon className="size-3.5" />
+                          <input
+                            type="range"
+                            min={0.05}
+                            max={1}
+                            step={0.05}
+                            value={imageLayer.opacity}
+                            onChange={(ev) =>
+                              setImageLayer({ ...imageLayer, opacity: Number(ev.target.value) })
+                            }
+                            className="w-full accent-[var(--accent)]"
+                          />
+                        </label>
+                      </>
+                    )}
+                  </div>,
+                  document.body,
+                )}
             </div>
 
             <IconBtn
@@ -7800,12 +7986,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               onClick={toggleTheme}
               icon={isDark ? Sun : Moon}
               title={isDark ? "Mudar para Tema Claro" : "Mudar para Tema Escuro"}
+              isDark={isDark}
             />
             <IconBtn
               label="Tela Cheia"
               onClick={toggleFullscreen}
               icon={focus ? Minimize : Maximize}
               title="Alternar modo tela cheia / foco"
+              isDark={isDark}
             />
           </div>
         </header>
@@ -7970,22 +8158,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         {/* REGIÃO C — CANVAS CAD PRINCIPAL (100% PONTA A PONTA EM MODO RETRATO) */}
         <div
           ref={canvasViewportRef}
+          style={{
+            backgroundColor: frame.visible ? canvasOuterBgColor : canvasBgColor,
+          }}
           className={cn(
-            "relative min-h-0 min-w-0 flex-1 overflow-hidden transition-colors",
+            "chamfer-theme-fade-2s relative min-h-0 min-w-0 flex-1 overflow-hidden",
             isLandscape ? "rounded-xl border shadow-inner" : "rounded-none border-0",
             drawingProjection === "isometric" ||
               orbitProjection2D.isTilted ||
               entities.some((e) => e.params?.isIsoSolidFace)
               ? isDark
-                ? "border-[#293444] bg-[#060A11] bg-[radial-gradient(ellipse_at_center,#0D1526_0%,#060A11_78%)]"
-                : "border-[#CBD5E1] bg-[#DCE3EC]"
+                ? "border-[#293444]"
+                : "border-[#CBD5E1]"
               : isDark
-                ? frame.visible
-                  ? "border-[#293444] bg-[#060A11]"
-                  : "border-[#293444] bg-[#0D1526]"
-                : frame.visible
-                  ? "border-[#CBD5E1] bg-[#DCE3EC]"
-                  : "border-[#CBD5E1] bg-[#FAFBFD]",
+                ? "border-[#293444]"
+                : "border-[#CBD5E1]",
           )}
         >
           {solidOpen && (
@@ -8287,7 +8474,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           y={0}
                           width={frame.w}
                           height={frame.h}
-                          fill={isDark ? "#0D1526" : "#FAFBFD"}
+                          fill={canvasBgColor}
                         />
                       </g>
                     )}
@@ -13321,6 +13508,8 @@ const IconBtn = React.memo(function IconBtn({
   flat,
   active,
   title,
+  isDark = true,
+  buttonRef,
 }: {
   label: string;
   onClick: () => void;
@@ -13328,16 +13517,44 @@ const IconBtn = React.memo(function IconBtn({
   flat?: boolean;
   active?: boolean;
   title?: string;
+  isDark?: boolean;
+  buttonRef?: React.Ref<HTMLButtonElement>;
 }) {
   return (
     <button
-      onClick={onClick}
+      ref={buttonRef}
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
       title={title ?? label}
       aria-label={label}
+      style={{
+        opacity: 1,
+        backgroundColor: active
+          ? "#E11D48"
+          : flat
+            ? "transparent"
+            : isDark
+              ? "#151C27"
+              : "#FFFFFF",
+        borderColor: active
+          ? "#E11D48"
+          : flat
+            ? "transparent"
+            : isDark
+              ? "rgba(255,255,255,0.08)"
+              : "#E2E8F0",
+        color: active ? "#FFFFFF" : isDark ? "#F8FAFC" : "#0F172A",
+      }}
       className={cn(
-        "grid size-9 place-items-center rounded-xl text-muted-foreground transition-colors hover:text-accent",
-        !flat && "bg-background/40",
-        active && "bg-accent/15 text-accent",
+        "chamfer-theme-fade-2s grid size-8 shrink-0 place-items-center rounded-lg border cursor-pointer active:scale-95",
+        active
+          ? "border-[#E11D48] bg-[#E11D48] text-white"
+          : isDark
+            ? "border-white/[0.08] bg-[#151C27] text-[#F8FAFC] hover:bg-[#1E293B]"
+            : "border-[#E2E8F0] bg-white text-[#0F172A] hover:bg-[#F1F5F9]",
       )}
     >
       <Icon className="size-[15px]" />
@@ -13395,17 +13612,25 @@ const MenuItem = React.memo(function MenuItem({
   label,
   icon: Icon,
   onClick,
+  isDark = true,
 }: {
   label: string;
   icon: typeof Minus;
   onClick: () => void;
+  isDark?: boolean;
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className="flex w-full items-center gap-2 rounded-xl px-2 py-2 text-left text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+      className={cn(
+        "flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left font-mono text-[11px] font-semibold transition-colors cursor-pointer",
+        isDark
+          ? "text-[#E2E8F0] hover:bg-[#181C26] hover:text-white"
+          : "text-[#0F172A] hover:bg-[#F1F5F9] hover:text-[#0F172A]",
+      )}
     >
-      <Icon className="size-3.5 shrink-0" /> {label}
+      <Icon className="size-3.5 shrink-0 text-[#E11D48]" /> {label}
     </button>
   );
 });
