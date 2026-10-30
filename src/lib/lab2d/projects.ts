@@ -179,7 +179,56 @@ function writeAll(list: Project[]) {
   }
 }
 
+const PLAYGROUND_SANDBOX_STORAGE_KEY = "caldra.lab2d.playground_sandbox";
+export const PLAYGROUND_SANDBOX_ID = "playground-flange-sandbox";
+let playgroundSandboxMemory: Project | null = null;
+
+export function isPlaygroundSandboxId(id: string | undefined | null): boolean {
+  return Boolean(id && (id === PLAYGROUND_SANDBOX_ID || id.startsWith("playground-")));
+}
+
+export function registerPlaygroundSandboxProject(project: Project): Project {
+  const clean: Project = {
+    ...project,
+    id: PLAYGROUND_SANDBOX_ID,
+    updatedAt: Date.now(),
+  };
+  playgroundSandboxMemory = clean;
+  if (typeof window !== "undefined") {
+    try {
+      window.sessionStorage.setItem(PLAYGROUND_SANDBOX_STORAGE_KEY, JSON.stringify(clean));
+    } catch {
+      /* sessionStorage indisponível */
+    }
+  }
+  return clean;
+}
+
+function readPlaygroundSandboxProject(id: string): Project | null {
+  if (playgroundSandboxMemory && playgroundSandboxMemory.id === id) {
+    return playgroundSandboxMemory;
+  }
+  if (typeof window !== "undefined") {
+    try {
+      const raw = window.sessionStorage.getItem(PLAYGROUND_SANDBOX_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as Project;
+        if (parsed && parsed.id === id) {
+          playgroundSandboxMemory = parsed;
+          return parsed;
+        }
+      }
+    } catch {
+      /* ignora erro de leitura */
+    }
+  }
+  return null;
+}
+
 export function getProject(id: string): Project | null {
+  if (isPlaygroundSandboxId(id)) {
+    return readPlaygroundSandboxProject(id);
+  }
   // Procura diretamente no mapa em memória primeiro para resposta imediata em 0ms
   if (projectMap.has(id)) {
     return projectMap.get(id)!;
@@ -192,11 +241,26 @@ export function preloadProject(id: string): Project | null {
 }
 
 export function saveProject(project: Project) {
+  if (isPlaygroundSandboxId(project.id)) {
+    registerPlaygroundSandboxProject(project);
+    return;
+  }
   const list = listProjects().filter((p) => p.id !== project.id);
   writeAll([{ ...project, updatedAt: Date.now() }, ...list]);
 }
 
 export function deleteProject(id: string) {
+  if (isPlaygroundSandboxId(id)) {
+    playgroundSandboxMemory = null;
+    if (typeof window !== "undefined") {
+      try {
+        window.sessionStorage.removeItem(PLAYGROUND_SANDBOX_STORAGE_KEY);
+      } catch {
+        /* ignora */
+      }
+    }
+    return;
+  }
   writeAll(listProjects().filter((p) => p.id !== id));
 }
 

@@ -199,7 +199,64 @@ function Oficina() {
 
   const [quote, setQuote] = useState<Quote>(() => newQuote(regionConfig));
 
-  useEffect(() => setProjects(listProjects()), []);
+  useEffect(() => {
+    setProjects(listProjects());
+    if (typeof window !== "undefined") {
+      try {
+        const rawSeed = window.sessionStorage.getItem("caldra.playground.oficina");
+        if (rawSeed) {
+          window.sessionStorage.removeItem("caldra.playground.oficina");
+          const seed = JSON.parse(rawSeed) as {
+            thicknessMm?: number;
+            parts?: ProductionPart[];
+          };
+          if (typeof seed.thicknessMm === "number") {
+            setThickness(seed.thicknessMm);
+          }
+          if (Array.isArray(seed.parts) && seed.parts.length > 0) {
+            setParts(seed.parts);
+            const demoMat = materials.get(materials.defaultMaterialId) ?? materials.visible[0];
+            const demoThick = seed.thicknessMm ?? 3;
+            setQuote((q) => ({
+              ...q,
+              notes: "Simulação gerada pelo Playground Interativo CALDRA (Chapa 1500 × 3000 mm • SAE 1020 3.0 mm).",
+              items: seed.parts!.map((p) => {
+                const mKg = plateMassKg(p.areaMm2, demoThick, demoMat?.density ?? 7850);
+                const matCost = materialCostBRL({
+                  massKg: mKg,
+                  pricePerKg: demoMat?.pricePerKg ?? 12.5,
+                  quantity: p.quantity,
+                  lossPct: materials.lossPct,
+                });
+                const fabCost = fabricationCost({
+                  cutLengthMm: p.cutLengthMm,
+                  pierces: p.pierces,
+                  bends: p.bends,
+                  weldLengthMm: 0,
+                  laborHours: 0,
+                  thicknessMm: demoThick,
+                  quantity: p.quantity,
+                  rates: DEFAULT_RATES,
+                  includeSetup: false,
+                });
+                return {
+                  id: p.id,
+                  description: p.name,
+                  detail: `${p.w.toFixed(0)} × ${p.h.toFixed(0)} mm · ${demoThick.toFixed(1)} mm · ${demoMat?.name ?? "Aço SAE 1020"}`,
+                  quantity: p.quantity,
+                  materialCost: matCost,
+                  fabricationCost: fabCost.total,
+                };
+              }),
+            }));
+          }
+        }
+      } catch {
+        /* ignora semente inválida */
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const material = materials.get(materialId) ?? materials.visible[0];
   const sheet = regionConfig.sheets.find((s) => s.id === sheetId) ?? regionConfig.sheets[0]!;

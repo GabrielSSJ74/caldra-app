@@ -2542,95 +2542,118 @@
 }
 
 /* =========================================================================
-   SISTEMA DE TEMAS E OPACIDADE DINÂMICA CALDRA
+   SISTEMA DE TEMAS, HOME E NAVEGAÇÃO CALIBRADOS CALDRA (CLARO & ESCURO)
    ========================================================================= */
 
-/* Cartões com transparência controlada por --card-opacity */
+:root {
+  --caldra-home-bg: #E9F0F8;
+  --caldra-home-surface-sec: #F1F5FB;
+  --caldra-home-card: #FFFFFF;
+  --caldra-home-card-elevated: #FAFBFD;
+  --caldra-home-border: #D7E1EC;
+  --caldra-home-text: #172334;
+  --caldra-home-text-muted: #637185;
+  --caldra-home-amber: #F59E0B;
+  --caldra-home-amber-soft: #FFF3D5;
+  --caldra-home-on-amber: #291B05;
+  --caldra-home-blue: #0284C7;
+  --caldra-home-cyan: #06B6D4;
+  --caldra-home-green: #059669;
+  --caldra-home-red: #E11D48;
+}
+
+.dark {
+  --caldra-home-bg: #080F12;
+  --caldra-home-surface-sec: #0D141B;
+  --caldra-home-card: #111820;
+  --caldra-home-card-elevated: #151D26;
+  --caldra-home-border: #293642;
+  --caldra-home-text: #F1F5F9;
+  --caldra-home-text-muted: #A1AFBF;
+  --caldra-home-amber: #F59E0B;
+  --caldra-home-amber-soft: #30230D;
+  --caldra-home-on-amber: #211704;
+  --caldra-home-blue: #38BDF8;
+  --caldra-home-cyan: #22D3EE;
+  --caldra-home-green: #34D399;
+  --caldra-home-red: #FB7185;
+}
+
+.amoled {
+  --caldra-home-bg: #04080A;
+  --caldra-home-surface-sec: #090E13;
+  --caldra-home-card: #0D131A;
+  --caldra-home-card-elevated: #111820;
+  --caldra-home-border: #222E3A;
+}
+
+/* Superfície geral da Home */
+.caldra-home-screen {
+  background-color: var(--caldra-home-bg);
+  color: var(--caldra-home-text);
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Cartões principais (#FFFFFF no Claro / #111820 no Escuro) */
 .caldra-card {
-  background-color: color-mix(in oklab, #FFFFFF calc(var(--card-opacity, 0.90) * 100%), transparent);
-  border: 1px solid color-mix(in oklab, var(--foreground) 9%, transparent);
-  box-shadow: 0 4px 18px -2px oklch(0 0 0 / 6%), 0 2px 6px -1px oklch(0 0 0 / 3%);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  color: var(--foreground);
+  background-color: #FFFFFF;
+  border: 1px solid #D7E1EC;
+  box-shadow: 0 2px 10px -2px rgba(23, 35, 52, 0.05), 0 1px 3px rgba(23, 35, 52, 0.03);
+  color: #172334;
 }
 
 .dark .caldra-card {
-  background-color: color-mix(in oklab, #16181D calc(var(--card-opacity, 0.90) * 100%), transparent);
-  border: 1px solid oklch(1 0 0 / 8%);
-  box-shadow: 0 12px 32px -10px oklch(0 0 0 / 60%), 0 1px 3px oklch(0 0 0 / 25%);
-  color: var(--foreground);
+  background-color: #111820;
+  border: 1px solid #293642;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.48), 0 1px 2px rgba(0, 0, 0, 0.28);
+  color: #F1F5F9;
 }
 
 .amoled .caldra-card {
-  background-color: color-mix(in oklab, #000000 calc(var(--card-opacity, 0.90) * 100%), transparent);
-  border: 1px solid oklch(1 0 0 / 12%);
-  box-shadow: 0 0 0 1px oklch(1 0 0 / 4%);
+  background-color: #0D131A;
+  border: 1px solid #222E3A;
+  box-shadow: 0 4px 16px -6px rgba(0, 0, 0, 0.65);
 }
 
-/* Área de apresentação Hero */
+/* Card Principal Elevado — Abrir CHAMFER CAD (#FAFBFD → #FFFFFF no Claro / #151D26 → #111820 no Escuro) */
 .caldra-hero {
-  background: linear-gradient(
-    135deg,
-    color-mix(in oklab, #FFFFFF calc(var(--card-opacity, 0.90) * 100%), transparent),
-    color-mix(in oklab, #F1F5F9 calc(var(--card-opacity, 0.90) * 100%), transparent)
-  );
-  border: 1px solid color-mix(in oklab, var(--foreground) 10%, transparent);
-  box-shadow: 0 10px 30px -4px oklch(0 0 0 / 7%);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: linear-gradient(145deg, #FFFFFF 0%, #FAFBFD 65%, #F1F5FB 100%);
+  border: 1px solid #D7E1EC;
+  box-shadow: 0 6px 20px -6px rgba(23, 35, 52, 0.07), 0 1px 3px rgba(23, 35, 52, 0.04);
+  color: #172334;
 }
 
 .dark .caldra-hero {
-  background: linear-gradient(
-    135deg,
-    color-mix(in oklab, #181A20 calc(var(--card-opacity, 0.90) * 100%), transparent),
-    color-mix(in oklab, #141519 calc(var(--card-opacity, 0.90) * 100%), transparent),
-    color-mix(in oklab, #0E0F12 calc(var(--card-opacity, 0.90) * 100%), transparent)
-  );
-  border: 1px solid oklch(1 0 0 / 8%);
-  box-shadow: 0 16px 40px -10px oklch(0 0 0 / 70%);
+  background: linear-gradient(145deg, #151D26 0%, #111820 65%, #0D141B 100%);
+  border: 1px solid #293642;
+  box-shadow: 0 12px 30px -10px rgba(0, 0, 0, 0.6);
+  color: #F1F5F9;
 }
 
 .amoled .caldra-hero {
-  background: color-mix(in oklab, #060709 calc(var(--card-opacity, 0.90) * 100%), transparent);
-  border: 1px solid oklch(1 0 0 / 12%);
+  background: linear-gradient(145deg, #111820 0%, #0D131A 100%);
+  border: 1px solid #222E3A;
 }
 
-/* Faixa Especialização */
+/* Faixa de Especialização — Superfície elevada equilibrada */
 .caldra-specialization {
-  background: linear-gradient(
-    90deg,
-    color-mix(in oklab, #FFFBEB calc(var(--card-opacity, 0.90) * 100%), transparent),
-    color-mix(in oklab, #FEF3C7 calc(var(--card-opacity, 0.90) * 100%), transparent)
-  );
-  border: 1px solid color-mix(in oklab, #F59E0B 40%, transparent);
-  box-shadow: 0 6px 20px -2px oklch(0.7 0.15 70 / 12%);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: linear-gradient(90deg, #FFFFFF 0%, #FAFBFD 60%, #FFF9EB 100%);
+  border: 1px solid #D7E1EC;
+  box-shadow: 0 3px 12px -3px rgba(23, 35, 52, 0.05);
 }
 
 .dark .caldra-specialization {
-  background: linear-gradient(
-    90deg,
-    color-mix(in oklab, #181A20 calc(var(--card-opacity, 0.90) * 100%), transparent),
-    color-mix(in oklab, #1C1E26 calc(var(--card-opacity, 0.90) * 100%), transparent),
-    color-mix(in oklab, #25201A calc(var(--card-opacity, 0.90) * 100%), transparent)
-  );
-  border: 1px solid oklch(0.77 0.163 70 / 25%);
-  box-shadow: 0 12px 30px -8px oklch(0 0 0 / 50%);
+  background: linear-gradient(90deg, #111820 0%, #151D26 65%, #1F1B12 100%);
+  border: 1px solid #293642;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.45);
 }
 
 .amoled .caldra-specialization {
-  background: linear-gradient(
-    90deg,
-    color-mix(in oklab, #000000 calc(var(--card-opacity, 0.90) * 100%), transparent),
-    color-mix(in oklab, #17120A calc(var(--card-opacity, 0.90) * 100%), transparent)
-  );
-  border: 1px solid oklch(0.77 0.163 70 / 35%);
+  background: linear-gradient(90deg, #0D131A 0%, #17130B 100%);
+  border: 1px solid #222E3A;
 }
 
-/* Barra inferior de navegação em Pílula Flutuante com Cápsula Deslizante Tonal (Vinculada à Cor de Destaque do CALDRA) */
+/* Barra inferior de navegação — Cinco Seções (Projetar · Produzir · Início · Aprenda · Perfil) */
 .caldra-floating-nav {
   position: fixed;
   bottom: calc(16px + env(safe-area-inset-bottom, 0px));
@@ -2638,16 +2661,16 @@
   transform: translateX(-50%);
   z-index: 50;
   width: calc(100% - 32px);
-  max-width: 380px;
+  max-width: 396px;
   height: 62px;
   border-radius: 9999px;
-  background-color: rgba(255, 255, 255, var(--ui-opacity, 0.90));
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(15, 23, 42, 0.08);
+  background-color: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid #D7E1EC;
   box-shadow:
-    0 12px 32px rgba(15, 23, 42, 0.14),
-    0 2px 6px rgba(15, 23, 42, 0.06);
+    0 10px 26px -4px rgba(23, 35, 52, 0.11),
+    0 2px 6px rgba(23, 35, 52, 0.05);
   overflow: hidden;
   user-select: none;
   -webkit-user-select: none;
@@ -2660,19 +2683,19 @@
 }
 
 .dark .caldra-floating-nav {
-  background-color: rgba(20, 24, 33, var(--ui-opacity, 0.90));
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background-color: rgba(14, 20, 28, 0.97);
+  border: 1px solid #2B3745;
   box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.45),
-    0 2px 8px rgba(0, 0, 0, 0.3);
+    0 12px 30px -4px rgba(0, 0, 0, 0.55),
+    0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
 .amoled .caldra-floating-nav {
-  background-color: rgba(0, 0, 0, var(--ui-opacity, 0.90));
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background-color: rgba(10, 15, 21, 0.98);
+  border: 1px solid #2B3745;
   box-shadow:
-    0 12px 32px rgba(0, 0, 0, 0.65),
-    0 2px 8px rgba(0, 0, 0, 0.4);
+    0 12px 30px -4px rgba(0, 0, 0, 0.72),
+    0 2px 8px rgba(0, 0, 0, 0.45);
 }
 
 /* Barras de ferramentas CAD reativas à opacidade */
@@ -2688,45 +2711,45 @@
   background-color: rgba(0, 0, 0, var(--ui-opacity, 0.92));
 }
 
-/* Cápsula Deslizante Tonal (Sliding Pill) — Modo Claro */
+/* Cápsula do Item Ativo da Barra Inferior — Harmonizada em Âmbar */
 .caldra-nav-sliding-pill {
-  width: calc(100% - 12px);
-  max-width: 56px;
-  min-width: 44px;
-  height: 44px;
+  width: calc(100% - 8px);
+  max-width: 68px;
+  min-width: 52px;
+  height: 48px;
   border-radius: 9999px;
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), 0.12);
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), 0.22);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+  background-color: #FFF0CC;
+  border: 1px solid #F5C96A;
+  box-shadow: none;
   pointer-events: none;
   flex-shrink: 0;
   will-change: transform, opacity;
   transform: translate3d(0, 0, 0);
   transition:
-    background-color 0.25s ease,
-    border-color 0.25s ease,
-    box-shadow 0.25s ease;
+    background-color 0.2s ease,
+    border-color 0.2s ease;
 }
 
-/* Cápsula Deslizante Tonal (Sliding Pill) — Modo Escuro & AMOLED */
 .dark .caldra-nav-sliding-pill,
 .amoled .caldra-nav-sliding-pill {
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), 0.18);
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), 0.30);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  background-color: #30230D;
+  border: 1px solid #76561A;
+  box-shadow: none;
 }
 
-/* Botões e ícones da barra flutuante com resposta a 500Hz / 2ms */
+/* Botões, ícones e rótulos das 5 seções da barra flutuante */
 .caldra-nav-item-btn {
   position: relative;
   z-index: 10;
   display: flex;
+  flex-direction: column;
   flex: 1 1 20%;
   width: 20%;
   height: 100%;
   align-items: center;
   justify-content: center;
-  padding: 0;
+  gap: 2px;
+  padding: 0 2px;
   border: none;
   background: transparent;
   outline: none;
@@ -2738,30 +2761,95 @@
   will-change: transform, opacity;
   transform: translate3d(0, 0, 0);
   color: #64748B;
-  opacity: 0.72;
+  opacity: 1;
   transition:
     transform 60ms cubic-bezier(0.16, 1, 0.3, 1),
-    color 0.15s ease,
-    opacity 0.15s ease;
+    color 0.15s ease;
 }
 
 .caldra-nav-item-btn:active {
-  transform: scale(0.92) translate3d(0, 0, 0);
+  transform: scale(0.94) translate3d(0, 0, 0);
 }
 
 .dark .caldra-nav-item-btn,
 .amoled .caldra-nav-item-btn {
   color: #94A3B8;
-  opacity: 0.72;
 }
 
-.caldra-nav-item-btn:hover:not([data-active="true"]) {
-  opacity: 0.94;
+.caldra-nav-item-icon {
+  width: 19px;
+  height: 19px;
+  color: #64748B;
+  flex-shrink: 0;
+  transition:
+    transform 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.18s ease;
 }
 
+.dark .caldra-nav-item-icon,
+.amoled .caldra-nav-item-icon {
+  color: #94A3B8;
+}
+
+.caldra-nav-item-label {
+  font-family: var(--font-sans);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: #526174;
+  white-space: nowrap;
+  transition: color 0.18s ease;
+}
+
+.dark .caldra-nav-item-label,
+.amoled .caldra-nav-item-label {
+  color: #A1AFBF;
+}
+
+.caldra-nav-item-btn:hover:not([data-active="true"]) .caldra-nav-item-icon,
+.caldra-nav-item-btn:hover:not([data-active="true"]) .caldra-nav-item-label {
+  color: #172334;
+}
+
+.dark .caldra-nav-item-btn:hover:not([data-active="true"]) .caldra-nav-item-icon,
+.dark .caldra-nav-item-btn:hover:not([data-active="true"]) .caldra-nav-item-label,
+.amoled .caldra-nav-item-btn:hover:not([data-active="true"]) .caldra-nav-item-icon,
+.amoled .caldra-nav-item-btn:hover:not([data-active="true"]) .caldra-nav-item-label {
+  color: #F1F5F9;
+}
+
+/* Estado Ativo da Navegação — Tema Claro (#B96D00 ícone / #9A5B00 rótulo) */
 .caldra-nav-item-btn[data-active="true"] {
-  color: var(--accent-color, var(--accent));
-  opacity: 1;
+  color: #B96D00;
+}
+
+.caldra-nav-item-btn[data-active="true"] .caldra-nav-item-icon {
+  color: #B96D00;
+  transform: scale(1.04);
+}
+
+.caldra-nav-item-btn[data-active="true"] .caldra-nav-item-label {
+  color: #9A5B00;
+  font-weight: 700;
+}
+
+/* Estado Ativo da Navegação — Tema Escuro (#FBBF24 ícone e rótulo) */
+.dark .caldra-nav-item-btn[data-active="true"],
+.amoled .caldra-nav-item-btn[data-active="true"] {
+  color: #FBBF24;
+}
+
+.dark .caldra-nav-item-btn[data-active="true"] .caldra-nav-item-icon,
+.amoled .caldra-nav-item-btn[data-active="true"] .caldra-nav-item-icon {
+  color: #FBBF24;
+  transform: scale(1.04);
+}
+
+.dark .caldra-nav-item-btn[data-active="true"] .caldra-nav-item-label,
+.amoled .caldra-nav-item-btn[data-active="true"] .caldra-nav-item-label {
+  color: #FBBF24;
+  font-weight: 700;
 }
 
 /* Keep-Alive Tab Layering com interpolação acelerada por GPU */
@@ -2788,117 +2876,114 @@
   transform: scale(0.98) translate3d(0, 0, 0);
 }
 
-.caldra-nav-item-icon {
-  width: 22px;
-  height: 22px;
-  transform: scale(1);
-  transition:
-    transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
-    color 0.25s ease;
-  will-change: transform;
-}
-
-.caldra-nav-item-btn[data-active="true"] .caldra-nav-item-icon {
-  transform: scale(1.06);
-}
-
-/* Bolhas de ícones e acentos controladas por --bubble-opacity */
+/* Bolhas de ícones e anéis funcionais controlados */
 .caldra-bubble-base {
   border-radius: 9999px;
   display: flex;
   align-items: center;
   justify-content: center;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
 
-/* Bolha Vermelha CALDRA */
-.caldra-bubble-red {
-  background-color: color-mix(in oklab, #FEE2E2 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
-  border: 1px solid color-mix(in oklab, #EF4444 38%, transparent);
-  color: #DC2626;
+/* Bolha Âmbar Principal (Novo Projeto / Ação Principal) */
+.caldra-bubble-amber-primary {
+  background-color: #FFF3D5;
+  border: 1px solid #F5C96A;
+  color: #B96D00;
 }
-.dark .caldra-bubble-red {
-  background-color: color-mix(in oklab, #450A0A calc(var(--bubble-opacity, 0.35) * 100%), transparent);
-  border: 1px solid oklch(0.64 0.19 25 / 32%);
-  color: #EF4444;
-}
-
-/* Bolha Azul CAD */
-.caldra-bubble-sky {
-  background-color: color-mix(in oklab, #E0F2FE calc(var(--bubble-opacity, 0.35) * 100%), transparent);
-  border: 1px solid color-mix(in oklab, #0284C7 38%, transparent);
-  color: #0284C7;
-}
-.dark .caldra-bubble-sky {
-  background-color: color-mix(in oklab, #082F49 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
-  border: 1px solid oklch(0.7 0.14 230 / 32%);
-  color: #38BDF8;
-}
-
-/* Bolha Âmbar Técnica */
-.caldra-bubble-amber {
-  background-color: color-mix(in oklab, #FEF3C7 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
-  border: 1px solid color-mix(in oklab, #D97706 40%, transparent);
-  color: #D97706;
-}
-.dark .caldra-bubble-amber {
-  background-color: color-mix(in oklab, #451A03 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
-  border: 1px solid oklch(0.77 0.163 70 / 32%);
+.dark .caldra-bubble-amber-primary {
+  background-color: #30230D;
+  border: 1px solid #76561A;
   color: #FBBF24;
 }
 
-/* Bolha Verde Orçamentos */
+/* Bolha Âmbar Secundária (Ferramentas) */
+.caldra-bubble-amber {
+  background-color: rgba(245, 158, 11, 0.10);
+  border: 1px solid rgba(217, 119, 6, 0.26);
+  color: #B96D00;
+}
+.dark .caldra-bubble-amber {
+  background-color: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  color: #FBBF24;
+}
+
+/* Bolha Azul/Ciano Técnico (Projetos & Engenharia) */
+.caldra-bubble-sky {
+  background-color: rgba(2, 132, 199, 0.09);
+  border: 1px solid rgba(2, 132, 199, 0.25);
+  color: #0284C7;
+}
+.dark .caldra-bubble-sky {
+  background-color: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  color: #38BDF8;
+}
+
+/* Bolha Verde de Confirmação (Orçamentos) */
 .caldra-bubble-emerald {
-  background-color: color-mix(in oklab, #D1FAE5 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
-  border: 1px solid color-mix(in oklab, #059669 40%, transparent);
+  background-color: rgba(5, 150, 105, 0.09);
+  border: 1px solid rgba(5, 150, 105, 0.25);
   color: #059669;
 }
 .dark .caldra-bubble-emerald {
-  background-color: color-mix(in oklab, #022C22 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
-  border: 1px solid oklch(0.7 0.15 150 / 32%);
+  background-color: rgba(52, 211, 153, 0.12);
+  border: 1px solid rgba(52, 211, 153, 0.28);
   color: #34D399;
 }
 
-/* Bolha Índigo / Roxa Especialização */
+/* Bolha Vermelha de Alerta/Erro Crítico (#E11D48 Claro / #FB7185 Escuro) */
+.caldra-bubble-red {
+  background-color: rgba(225, 29, 72, 0.09);
+  border: 1px solid rgba(225, 29, 72, 0.25);
+  color: #E11D48;
+}
+.dark .caldra-bubble-red {
+  background-color: rgba(251, 113, 133, 0.12);
+  border: 1px solid rgba(251, 113, 133, 0.28);
+  color: #FB7185;
+}
+
+/* Bolha Ciano/Azul Complementar (Especialização / Técnico) */
 .caldra-bubble-indigo {
-  background-color: color-mix(in oklab, #EEF2FF calc(var(--bubble-opacity, 0.35) * 100%), transparent);
-  border: 1px solid color-mix(in oklab, #6366F1 40%, transparent);
-  color: #4F46E5;
+  background-color: rgba(6, 182, 212, 0.10);
+  border: 1px solid rgba(2, 132, 199, 0.24);
+  color: #0284C7;
 }
 .dark .caldra-bubble-indigo {
-  background-color: color-mix(in oklab, #1E1B4B calc(var(--bubble-opacity, 0.35) * 100%), transparent);
-  border: 1px solid oklch(0.65 0.16 270 / 32%);
-  color: #A5B4FC;
+  background-color: rgba(34, 211, 238, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  color: #22D3EE;
 }
 
-/* Bolha Neutra (Botões de cabeçalho, atalhos, etc.) */
+/* Bolha Neutra (Botões de pesquisa e perfil no cabeçalho) */
 .caldra-bubble-neutral {
-  background-color: color-mix(in oklab, var(--card) calc(var(--bubble-opacity, 0.35) * 100%), transparent);
-  border: 1px solid color-mix(in oklab, var(--foreground) 12%, transparent);
-  color: var(--foreground);
+  background-color: #FFFFFF;
+  border: 1px solid #D7E1EC;
+  color: #172334;
 }
 .dark .caldra-bubble-neutral {
-  background-color: color-mix(in oklab, #1E2028 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
-  border: 1px solid oklch(1 0 0 / 10%);
-  color: oklch(0.85 0.005 80);
+  background-color: #111820;
+  border: 1px solid #293642;
+  color: #F1F5F9;
 }
 .amoled .caldra-bubble-neutral {
-  background-color: color-mix(in oklab, #111114 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
-  border: 1px solid oklch(1 0 0 / 14%);
+  background-color: #0D131A;
+  border: 1px solid #222E3A;
+  color: #F1F5F9;
 }
 
-/* Bolha Central do Logotipo CALDRA (Botão Home na barra inferior) */
+/* Bolha Central do Logotipo CALDRA */
 .caldra-bubble-center {
-  background-color: color-mix(in oklab, #FFFFFF calc(var(--bubble-opacity, 0.35) * 100%), transparent);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background-color: #FFFFFF;
+  border: 1px solid #D7E1EC;
 }
 .dark .caldra-bubble-center {
-  background-color: color-mix(in oklab, #16181D calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  background-color: #111820;
+  border: 1px solid #293642;
 }
 .amoled .caldra-bubble-center {
-  background-color: color-mix(in oklab, #000000 calc(var(--bubble-opacity, 0.35) * 100%), transparent);
+  background-color: #0D131A;
+  border: 1px solid #222E3A;
 }
-

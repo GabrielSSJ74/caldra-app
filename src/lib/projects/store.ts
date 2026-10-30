@@ -398,10 +398,12 @@ function subscribe(l: () => void) {
 
 let globalHydrated = false;
 
-const snapshot = (): State => (typeof window === "undefined" ? EMPTY : load());
+const snapshot = (): State =>
+  !globalHydrated || typeof window === "undefined" ? EMPTY : load();
+const getServerSnapshot = (): State => EMPTY;
 
 export function useProjects(): Project[] {
-  const [mounted, setMounted] = useState(() => globalHydrated);
+  const [mounted, setMounted] = useState(false);
   useEffect(() => {
     if (!globalHydrated) {
       globalHydrated = true;
@@ -410,7 +412,7 @@ export function useProjects(): Project[] {
     }
     setMounted(true);
   }, []);
-  const store = useSyncExternalStore(subscribe, snapshot, () => EMPTY);
+  const store = useSyncExternalStore(subscribe, snapshot, getServerSnapshot);
   return mounted ? store.projects : EMPTY.projects;
 }
 
@@ -420,7 +422,7 @@ export function useProject(id: string): Project | null {
 }
 
 export function listProjects(): Project[] {
-  return snapshot().projects;
+  return (typeof window === "undefined" ? EMPTY : load()).projects;
 }
 
 export function getProject(id: string): Project | null {

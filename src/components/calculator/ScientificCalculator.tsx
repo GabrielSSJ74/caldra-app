@@ -235,6 +235,38 @@ export function ScientificCalculator() {
     if (savedHistory.length > 0 && Number.isFinite(savedHistory[0]?.value)) {
       setAns(savedHistory[0]!.value);
     }
+
+    if (typeof window !== "undefined") {
+      try {
+        const rawSeed = window.sessionStorage.getItem("caldra.playground.calculator");
+        if (rawSeed) {
+          window.sessionStorage.removeItem("caldra.playground.calculator");
+          const seed = JSON.parse(rawSeed) as {
+            expression?: string;
+            lastCalculationExpr?: string;
+            value?: number;
+            sheetLengthMm?: string;
+            sheetWidthMm?: string;
+            sheetThicknessMm?: string;
+            boltDiameter?: string;
+            boltHoles?: string;
+          };
+          if (seed.expression) setExpression(seed.expression);
+          if (seed.lastCalculationExpr) setLastCalculationExpr(seed.lastCalculationExpr);
+          if (typeof seed.value === "number") {
+            setValue(seed.value);
+            setAns(seed.value);
+          }
+          if (seed.sheetLengthMm) setSheetLengthMm(seed.sheetLengthMm);
+          if (seed.sheetWidthMm) setSheetWidthMm(seed.sheetWidthMm);
+          if (seed.sheetThicknessMm) setSheetThicknessMm(seed.sheetThicknessMm);
+          if (seed.boltDiameter) setBoltDiameter(seed.boltDiameter);
+          if (seed.boltHoles) setBoltHoles(seed.boltHoles);
+        }
+      } catch {
+        /* ignora semente inválida */
+      }
+    }
   }, []);
 
   useEffect(() => {

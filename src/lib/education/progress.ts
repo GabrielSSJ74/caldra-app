@@ -81,10 +81,12 @@ function subscribe(l: () => void) {
 }
 
 let academyGlobalHydrated = false;
-const snapshot = (): AcademyState => (typeof window === "undefined" ? empty : load());
+const snapshot = (): AcademyState =>
+  !academyGlobalHydrated || typeof window === "undefined" ? empty : load();
+const getServerSnapshot = (): AcademyState => empty;
 
 export function useAcademy(): AcademyState {
-  const [mounted, setMounted] = useState(() => academyGlobalHydrated);
+  const [mounted, setMounted] = useState(false);
   useEffect(() => {
     if (!academyGlobalHydrated) {
       academyGlobalHydrated = true;
@@ -93,7 +95,7 @@ export function useAcademy(): AcademyState {
     }
     setMounted(true);
   }, []);
-  const s = useSyncExternalStore(subscribe, snapshot, () => empty);
+  const s = useSyncExternalStore(subscribe, snapshot, getServerSnapshot);
   return mounted ? s : empty;
 }
 

@@ -269,12 +269,13 @@ export function BubbleNav() {
                   WebkitTapHighlightColor: "transparent",
                   willChange: "transform, opacity",
                 }}
-                className="caldra-nav-item-btn focus-visible:ring-1 focus-visible:ring-[var(--accent-color)]/50 focus-visible:ring-inset"
+                className="caldra-nav-item-btn focus-visible:ring-1 focus-visible:ring-[#F59E0B]/50 focus-visible:ring-inset"
               >
                 <Icon
                   className="caldra-nav-item-icon"
                   strokeWidth={isCurrent ? 2.2 : 1.85}
                 />
+                <span className="caldra-nav-item-label">{dest.label}</span>
               </button>
             );
           })}
@@ -305,28 +306,28 @@ function NavToolsModal({ open, onClose }: { open: boolean; onClose: () => void }
       title: "Calculadora Científica",
       desc: "Trigonometria, caldeiraria e conversões angulares",
       icon: Calculator,
-      color: "caldra-bubble-amber text-amber-500",
+      color: "caldra-bubble-amber",
       to: "/calculadora",
     },
     {
       title: "Traçagem Paramétrica",
       desc: "Modelos 3D, planificação zero fresta e traçagem passo a passo",
       icon: DraftingCompass,
-      color: "caldra-bubble-sky text-sky-500",
+      color: "caldra-bubble-sky",
       to: "/tracagem",
     },
     {
       title: "Prancheta CAD 2D CHAMFER",
       desc: "Desenho vetorial técnico, cotas e exportação DXF",
       icon: PenTool,
-      color: "caldra-bubble-red text-red-500",
+      color: "caldra-bubble-amber-primary",
       to: "/desenho-2d",
     },
     {
       title: "Bancada de Chapas e Nesting",
       desc: "Aproveitamento de retalho e plano de corte na chapa",
       icon: Layers,
-      color: "caldra-bubble-emerald text-emerald-500",
+      color: "caldra-bubble-emerald",
       to: "/oficina",
       search: { tab: "chapa" as const },
     },

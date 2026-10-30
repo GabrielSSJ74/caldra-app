@@ -211,6 +211,11 @@ import {
 import { ChamferFilletChamferHUD } from "./ChamferFilletChamferHUD";
 import { ChamferArrayHUD } from "./ChamferArrayHUD";
 import {
+  ChamferPortraitTopBar,
+  ChamferPortraitCanvasMicroPill,
+  ChamferPortraitBottomBars,
+} from "@/components/lab2d/ChamferPortraitLightroomUI";
+import {
   detectHostPart,
   computeInstances,
   validateArray,
@@ -1634,22 +1639,37 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const rh = canvasSize.h > 20 ? canvasSize.h : r?.height || el?.clientHeight || window.innerHeight || 600;
     if (rw <= 0 || rh <= 0) return;
 
-    const margin = Math.min(rw, rh) * 0.08 + 24;
+    const isPortraitViewport = rw < rh;
+    const rulerLeft = isPortraitViewport ? 20 : 30;
+    const rulerTop = isPortraitViewport ? 20 : 26;
+    const usableW = Math.max(rw - rulerLeft, 40);
+    const usableH = Math.max(rh - rulerTop, 40);
+
+    // Em tela vertical (Portrait), usa margem limpa de 12% e reserva folga superior/esquerda
+    // para o selo "⬚ ÁREA DE TRABALHO • 1500 × 3000 mm" e as cotas externas sem qualquer corte.
+    const marginX = isPortraitViewport ? Math.max(usableW * 0.12, 28) : Math.min(usableW, usableH) * 0.08 + 24;
+    const marginY = isPortraitViewport ? Math.max(usableH * 0.10, 32) : Math.min(usableW, usableH) * 0.08 + 24;
+    const topBadgeAllowance = isPortraitViewport ? 56 : 42;
+    const leftDimAllowance = isPortraitViewport ? 24 : 18;
+
     const w = Math.max(box.maxX - box.minX, 1);
     const h = Math.max(box.maxY - box.minY, 1);
-    const availW = Math.max(rw - margin * 2, 40);
-    const availH = Math.max(rh - margin * 2, 40);
+    const availW = Math.max(usableW - marginX * 2 - leftDimAllowance, 40);
+    const availH = Math.max(usableH - marginY * 2 - topBadgeAllowance, 40);
 
     const rawK = Math.min(availW / w, availH / h);
     const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, rawK));
 
     const cx = (box.minX + box.maxX) / 2;
-    const cy = (box.minY + box.maxY) / 2;
+    const cy = (box.minY + box.minY + h) / 2;
+
+    const centerScreenX = rulerLeft + leftDimAllowance * 0.5 + usableW / 2;
+    const centerScreenY = rulerTop + topBadgeAllowance * 0.45 + usableH / 2;
 
     const nextView = {
       k,
-      tx: rw / 2 - cx * k,
-      ty: rh / 2 - cy * k,
+      tx: centerScreenX - cx * k,
+      ty: centerScreenY - cy * k,
     };
 
     if (Number.isFinite(nextView.k) && Number.isFinite(nextView.tx) && Number.isFinite(nextView.ty)) {
@@ -2186,26 +2206,40 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         const nextH = Math.round(r.height);
         setCanvasSize((prev) => {
           if (prev.w === nextW && prev.h === nextH) return prev;
+          const prevPortrait = prev.w > 20 && prev.h > 20 && prev.w < prev.h;
+          const nextPortrait = nextW < nextH;
           if (
             initialFitDoneRef.current &&
             prev.w > 20 &&
             prev.h > 20 &&
             arrayFrameAnimRafRef.current === null
           ) {
-            // Preserva o ponto central do mundo CAD (cx, cy) e a proporção 1:1 (k_x === k_y === k)
-            // ao girar o aparelho entre Retrato (Portrait) e Paisagem (Landscape)
-            const dw = (nextW - prev.w) / 2;
-            const dh = (nextH - prev.h) / 2;
-            const curV = viewRef.current;
-            if (
-              curV &&
-              Number.isFinite(curV.tx) &&
-              Number.isFinite(curV.ty) &&
-              Number.isFinite(curV.k)
-            ) {
-              const adjusted = { k: curV.k, tx: curV.tx + dw, ty: curV.ty + dh };
-              viewRef.current = adjusted;
-              setView(adjusted);
+            if (prevPortrait !== nextPortrait) {
+              // Auto-Fit Portrait: ao alternar entre Paisagem e Retrato, recalcula o bounding box
+              // das peças (ou da Área de Trabalho) com 12% de margem limpa sem cortar cotas/selo
+              requestAnimationFrame(() => {
+                const list = entitiesRef.current;
+                const b = list.length > 0 ? bbox(list) : null;
+                if (b && Number.isFinite(b.minX) && b.maxX - b.minX > 1) {
+                  fitBoxRef.current(b);
+                } else {
+                  fitBoxRef.current(frameBox(loadFrame()));
+                }
+              });
+            } else {
+              const dw = (nextW - prev.w) / 2;
+              const dh = (nextH - prev.h) / 2;
+              const curV = viewRef.current;
+              if (
+                curV &&
+                Number.isFinite(curV.tx) &&
+                Number.isFinite(curV.ty) &&
+                Number.isFinite(curV.k)
+              ) {
+                const adjusted = { k: curV.k, tx: curV.tx + dw, ty: curV.ty + dh };
+                viewRef.current = adjusted;
+                setView(adjusted);
+              }
             }
           }
           return { w: nextW, h: nextH };
@@ -6220,48 +6254,64 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const gridStyles = useMemo(() => {
     if (isDark) {
-      // TEMA ESCURO — Grafite Técnico (#10151D canvas / #293444 bordas)
-      // Grade secundária (~15% opacidade), Grade principal (~35% opacidade) e Eixos X/Y distintos
-      const secOpacity = Math.max(0, Math.min(0.16, 0.15 * gridConfig.subFade));
-      const majOpacity = Math.max(0, Math.min(0.36, 0.35 * gridConfig.majorFade));
-      const macOpacity = 0.42;
+      // TEMA ESCURO — Azul-Noite Técnico (#060A11 externo / #0D1526 interno / #293444 bordas)
+      const intSecOpacity = Math.max(0, Math.min(0.36, 0.35 * gridConfig.subFade));
+      const intMajOpacity = Math.max(0, Math.min(0.52, 0.50 * gridConfig.majorFade));
+      const intMacOpacity = 0.56;
+
+      // Grade externa (~40% mais suave que a grade interna)
+      const extSecOpacity = Math.max(0, Math.min(0.15, 0.14 * gridConfig.subFade));
+      const extMajOpacity = Math.max(0, Math.min(0.23, 0.22 * gridConfig.majorFade));
+      const extMacOpacity = 0.22;
 
       return {
-        secondaryStroke: `rgba(148, 163, 184, ${secOpacity.toFixed(3)})`,
+        secondaryStroke: `rgba(71, 85, 105, ${intSecOpacity.toFixed(3)})`,
         secondaryWidth: 0.75,
-        majorStroke: `rgba(148, 163, 184, ${majOpacity.toFixed(3)})`,
+        majorStroke: `rgba(100, 116, 139, ${intMajOpacity.toFixed(3)})`,
         majorWidth: 1.0,
-        macroStroke: `rgba(230, 237, 245, ${macOpacity.toFixed(3)})`,
-        macroWidth: 1.25,
-        // Eixos do sistema CAD (X Vermelho Caldra #E11D48, Y Azul Técnico #38BDF8)
-        axisX: "rgba(225, 29, 72, 0.88)",
-        axisY: "rgba(56, 189, 248, 0.88)",
+        macroStroke: `rgba(100, 116, 139, ${intMacOpacity.toFixed(3)})`,
+        macroWidth: 1.2,
+        extSecondaryStroke: `rgba(51, 65, 85, ${extSecOpacity.toFixed(3)})`,
+        extMajorStroke: `rgba(51, 65, 85, ${extMajOpacity.toFixed(3)})`,
+        extMacroStroke: `rgba(51, 65, 85, ${extMacOpacity.toFixed(3)})`,
+        // Eixos do sistema CAD (+X Vermelho Caldra #E11D48, +Y Verde Técnico #10B981)
+        axisX: "#E11D48",
+        axisY: "#10B981",
+        axisInfinite: "rgba(148, 163, 184, 0.15)",
         axisWidth: 1.75,
-        originFill: "#E11D48",
+        originFill: "#DC143C",
         originRing: "rgba(230, 237, 245, 0.92)",
-        originText: "rgba(225, 29, 72, 0.95)",
+        originText: "#DC143C",
       };
     } else {
-      // TEMA CLARO — Cinza Técnico (#F8FAFC canvas / #CBD5E1 bordas)
-      // Grade secundária (~15% opacidade), Grade principal (~35% opacidade) e Eixos X/Y distintos
-      const secOpacity = Math.max(0, Math.min(0.16, 0.15 * gridConfig.subFade));
-      const majOpacity = Math.max(0, Math.min(0.36, 0.35 * gridConfig.majorFade));
-      const macOpacity = 0.42;
+      // TEMA CLARO — Papel Técnico (#DCE3EC externo / #FAFBFD interno / #CBD5E1 bordas)
+      const intSecOpacity = Math.max(0, Math.min(0.19, 0.18 * gridConfig.subFade));
+      const intMajOpacity = Math.max(0, Math.min(0.31, 0.30 * gridConfig.majorFade));
+      const intMacOpacity = 0.36;
+
+      // Grade externa discreta sobre a superfície de apoio
+      const extSecOpacity = Math.max(0, Math.min(0.12, 0.11 * gridConfig.subFade));
+      const extMajOpacity = Math.max(0, Math.min(0.17, 0.16 * gridConfig.majorFade));
+      const extMacOpacity = 0.16;
 
       return {
-        secondaryStroke: `rgba(100, 116, 139, ${secOpacity.toFixed(3)})`,
+        secondaryStroke: `rgba(71, 85, 105, ${intSecOpacity.toFixed(3)})`,
         secondaryWidth: 0.75,
-        majorStroke: `rgba(100, 116, 139, ${majOpacity.toFixed(3)})`,
+        majorStroke: `rgba(51, 65, 85, ${intMajOpacity.toFixed(3)})`,
         majorWidth: 1.0,
-        macroStroke: `rgba(30, 41, 59, ${macOpacity.toFixed(3)})`,
-        macroWidth: 1.25,
-        // Eixos do sistema CAD (X Vermelho Caldra #E11D48, Y Azul Técnico #0284C7)
-        axisX: "rgba(225, 29, 72, 0.85)",
-        axisY: "rgba(2, 132, 199, 0.85)",
+        macroStroke: `rgba(51, 65, 85, ${intMacOpacity.toFixed(3)})`,
+        macroWidth: 1.2,
+        extSecondaryStroke: `rgba(100, 116, 139, ${extSecOpacity.toFixed(3)})`,
+        extMajorStroke: `rgba(100, 116, 139, ${extMajOpacity.toFixed(3)})`,
+        extMacroStroke: `rgba(100, 116, 139, ${extMacOpacity.toFixed(3)})`,
+        // Eixos do sistema CAD (+X Vermelho Caldra #E11D48, +Y Verde Técnico #059669)
+        axisX: "#E11D48",
+        axisY: "#059669",
+        axisInfinite: "rgba(100, 116, 139, 0.16)",
         axisWidth: 1.75,
-        originFill: "#E11D48",
+        originFill: "#DC143C",
         originRing: "rgba(30, 41, 59, 0.88)",
-        originText: "rgba(225, 29, 72, 0.95)",
+        originText: "#DC143C",
       };
     }
   }, [isDark, gridConfig]);
@@ -6279,6 +6329,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       : true
   );
   const [activeSidebarTab, setActiveSidebarTab] = useState<ChamferSidebarTab>("propriedades");
+  // Bottom Sheet Compacto em modo retrato para painéis longos (Propriedades, Camadas, Corte, Cotas, Eng. Reversa)
+  const [portraitDrawerOpen, setPortraitDrawerOpen] = useState(false);
 
   useEffect(() => {
     const handleResize = () => {
@@ -6287,6 +6339,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         if (prev && !nextLandscape) {
           // Ao girar para modo retrato (vertical), recolhe automaticamente a barra lateral direita
           setRightSidebarOpen(false);
+        } else if (!prev && nextLandscape) {
+          setPortraitDrawerOpen(false);
         }
         return nextLandscape;
       });
@@ -6658,13 +6712,160 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     <div
       ref={wrapRef}
       className={cn(
-        "fixed inset-0 z-50 flex h-[100dvh] w-[100vw] max-w-none flex-col gap-1 overflow-hidden rounded-none p-1 transition-colors select-none",
+        "fixed inset-0 z-50 flex h-[100dvh] w-[100vw] max-w-none flex-col overflow-hidden rounded-none transition-colors select-none",
+        isLandscape ? "gap-1 p-1" : "gap-0 p-0",
         isDark ? "bg-[#0B0F14] text-[#E6EDF5]" : "bg-[#E9EEF4] text-[#1E293B]",
         isMestre && "glow-ring",
       )}
     >
-      {/* REGIÃO A — HEADER SUPERIOR DEFINITIVO CAD (BARRA FIXA COM SWIPE HORIZONTAL) */}
-      {!focus && (
+      {/* REGIÃO A — HEADER SUPERIOR DEFINITIVO CAD (EM MODO RETRATO: BARRA COMPACTA 48PX ESTILO LIGHTROOM) */}
+      {!focus && !isLandscape && (
+        <ChamferPortraitTopBar
+          isDark={isDark}
+          projectName={project?.name ?? "Projeto 26"}
+          thickness={thickness}
+          onThicknessChange={setThickness}
+          plans={project?.plans.map((p) => ({ id: p.id, name: p.name })) ?? [{ id: planId, name: "P01" }]}
+          activePlanId={planId}
+          onSelectPlan={(nextPlanId) => {
+            if (!project || nextPlanId === planId) return;
+            const targetPlan = project.plans.find((x) => x.id === nextPlanId);
+            if (!targetPlan) return;
+            setProject((prev) =>
+              prev
+                ? {
+                    ...prev,
+                    plans: prev.plans.map((x) =>
+                      x.id === planId
+                        ? { ...x, entities, groups, dims, cad3dTreeJson, revEng: revEngData }
+                        : x,
+                    ),
+                  }
+                : prev,
+            );
+            setPlanId(targetPlan.id);
+            const seenPlanIds = new Set<string>();
+            const sanitizedPlanEntities = (targetPlan.entities ?? []).map((ent) => {
+              let entId = ent.id;
+              if (!entId || entId === "draft" || entId.startsWith("draft-") || seenPlanIds.has(entId)) {
+                entId = uid();
+              }
+              seenPlanIds.add(entId);
+              return ent.id === entId ? ent : { ...ent, id: entId };
+            });
+            setEntities(sanitizedPlanEntities);
+            setGroups(targetPlan.groups ?? []);
+            setDims(targetPlan.dims ?? []);
+            setCad3dTreeJson(targetPlan.cad3dTreeJson);
+            setRevEngData(sanitizeRevEngPlanData(targetPlan.revEng));
+            setRevEngCanvasMode("none");
+            setRevEngPickPoints([]);
+            setRevEngFittedPreview(null);
+            setSelection([]);
+            past.current = [];
+            future.current = [];
+          }}
+          onCreatePlan={() => {
+            if (!project) return;
+            const plan = emptyPlan(project.plans.length);
+            plan.name = planLabel(project.plans.length);
+            const next: Project = {
+              ...project,
+              plans: [
+                ...project.plans.map((x) =>
+                  x.id === planId
+                    ? { ...x, entities, groups, dims, cad3dTreeJson, revEng: revEngData }
+                    : x,
+                ),
+                plan,
+              ],
+              lastPlanId: plan.id,
+            };
+            saveProject(next);
+            setProject(next);
+            setPlanId(plan.id);
+            setEntities([]);
+            setGroups([]);
+            setDims([]);
+            setCad3dTreeJson(undefined);
+            setRevEngData(createDefaultRevEngPlanData());
+            setRevEngCanvasMode("none");
+            setRevEngPickPoints([]);
+            setRevEngFittedPreview(null);
+            setSelection([]);
+            toast.success(`${plan.name} criado.`);
+          }}
+          onOpenNewProjectDialog={() => {
+            setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
+            setNewProjectDialogOpen(true);
+          }}
+          saveStatus={saveStatus}
+          onManualSave={handleManualSave}
+          onLeaveEditor={() => {
+            if (
+              saveStatus === "pendente" &&
+              (chamferSettings.autoSave || chamferSettings.recoveryEnabled)
+            ) {
+              performSave();
+            }
+            leaveEditor();
+          }}
+          activeMode={activeMode}
+          onSelect2D={() => transitionTo2D()}
+          onSelect3D={() => transitionTo3D("3d")}
+          drawingProjection={drawingProjection}
+          onSetDrawingProjection={(mode) => {
+            setDrawingProjection(mode);
+            if (mode === "orthographic") {
+              transitionTo2D();
+            } else {
+              toast.info(`Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label})`);
+            }
+          }}
+          isOrbitToolActive={isOrbitToolActive}
+          isOrbitTilted={orbitProjection2D.isTilted}
+          onToggleOrbitTool={(next) => {
+            const target = typeof next === "boolean" ? next : !isOrbitToolActive;
+            setIsOrbitToolActive(target);
+            if (target) {
+              if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+                animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+              }
+              toast.info("Modo Órbita 3D ativo — arraste na área de desenho para rotacionar a perspectiva.");
+            }
+          }}
+          renderStyle3D={renderStyle3D}
+          onChangeRenderStyle3D={(style) => {
+            setRenderStyle3D(style);
+            if (style !== "wireframe" && isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+              setIsOrbitToolActive(true);
+              animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+            }
+          }}
+          canUndo={historyState.canUndo || pending.length > 0}
+          canRedo={historyState.canRedo}
+          onUndo={undo}
+          onRedo={redo}
+          onOpenVision={() => setVisionOpen(true)}
+          onOpenIntent={() => setQuickCommandOpen(true)}
+          onOpenWorkshop={() => setIntegratedWorkshopOpen(true)}
+          onOpenExport={() => setExportOpen(true)}
+          onOpenCnc={() => setCncOpen(true)}
+          onCenterPiece={(moveGeometry) => centerPiece(moveGeometry)}
+          onFitWorkspace={() => fitFrame()}
+          onOpenPresets={() => setPresetsModalOpen(true)}
+          onOpenTechnicalSheet={() => setTechnicalSheetModalOpen(true)}
+          onOpenTopologyHealth={() => setTopologyHealthOpen(true)}
+          onOpenVariables={() => setVariablesModalOpen(true)}
+          showDims={showDims}
+          onToggleShowDims={() => setShowDims((s) => !s)}
+          onToggleTheme={toggleTheme}
+          focus={focus}
+          onToggleFullscreen={toggleFullscreen}
+        />
+      )}
+
+      {!focus && isLandscape && (
         <header
           ref={topBarRef}
           onPointerDown={handleTopBarPointerDown}
@@ -7381,10 +7582,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </header>
       )}
 
-      {/* CORPO DO WORKSPACE CAD: TOOLBAR VERTICAL (ESQUERDA) + CANVAS (CENTRO) + PROPRIEDADES (DIREITA) */}
-      <div className="flex min-h-0 min-w-0 flex-1 gap-1.5 p-1 pt-0">
-        {/* REGIÃO B — TOOLBAR VERTICAL ESQUERDA (8 GRUPOS CANÔNICOS CAD) */}
-        {!focus && (
+      {/* CORPO DO WORKSPACE CAD: EM MODO RETRATO ZERO BARRAS LATERAIS E CANVAS 100% PONTA A PONTA */}
+      <div className={cn("flex min-h-0 min-w-0 flex-1", isLandscape ? "gap-1.5 p-1 pt-0" : "gap-0 p-0")}>
+        {/* REGIÃO B — TOOLBAR VERTICAL ESQUERDA (EXCLUSIVA DO MODO PAISAGEM) */}
+        {!focus && isLandscape && (
           <ChamferCadToolbar
             tool={tool}
             onPickTool={pickTool}
@@ -7537,24 +7738,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           />
         )}
 
-        {/* REGIÃO C — CANVAS CAD PRINCIPAL (DOMINANTE, OCUPANDO A MAIOR ÁREA POSSÍVEL) */}
+        {/* REGIÃO C — CANVAS CAD PRINCIPAL (100% PONTA A PONTA EM MODO RETRATO) */}
         <div
           ref={canvasViewportRef}
           className={cn(
-            "relative min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border shadow-inner transition-colors",
+            "relative min-h-0 min-w-0 flex-1 overflow-hidden transition-colors",
+            isLandscape ? "rounded-xl border shadow-inner" : "rounded-none border-0",
             drawingProjection === "isometric" ||
               orbitProjection2D.isTilted ||
               entities.some((e) => e.params?.isIsoSolidFace)
               ? isDark
-                ? "border-[#293444] bg-[#060A12] bg-[radial-gradient(ellipse_at_center,#10151D_0%,#060A12_78%)]"
-                : "border-[#CBD5E1] bg-[#E2E8F0]"
+                ? "border-[#293444] bg-[#060A11] bg-[radial-gradient(ellipse_at_center,#0D1526_0%,#060A11_78%)]"
+                : "border-[#CBD5E1] bg-[#DCE3EC]"
               : isDark
                 ? frame.visible
-                  ? "border-[#293444] bg-[#060A12]"
-                  : "border-[#293444] bg-[#10151D]"
+                  ? "border-[#293444] bg-[#060A11]"
+                  : "border-[#293444] bg-[#0D1526]"
                 : frame.visible
-                  ? "border-[#CBD5E1] bg-[#E2E8F0]"
-                  : "border-[#CBD5E1] bg-[#F8FAFC]",
+                  ? "border-[#CBD5E1] bg-[#DCE3EC]"
+                  : "border-[#CBD5E1] bg-[#FAFBFD]",
           )}
         >
           {solidOpen && (
@@ -7599,11 +7801,30 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               solidOpen && morphState !== "PREPARING_3D" && "pointer-events-none",
             )}
           >
-              {/* CAMADAS 1 E 2 (FUNDO DA PRANCHETA + GRADE TÉCNICA — RENDERIZADAS ABAIXO DO CANVAS DE PEÇAS) */}
+              {/* CAMADAS 1 E 2 (FUNDO DA PRANCHETA + GRADE TÉCNICA INTERNA/EXTERNA — RENDERIZADAS ABAIXO DO CANVAS DE PEÇAS) */}
               {(showGrid || frame.visible) && (!solidOpen || morphState === "PREPARING_3D") && (
                 <svg className="pointer-events-none absolute inset-0 size-full">
                   <defs>
-                    {/* 1. GRID SECUNDÁRIO — subdivisões finas (10-18% Dark / 10-15% Light, adaptável ao zoom) */}
+                    {/* CLIP PATH DA ÁREA DE TRABALHO PARA SEPARAR GRADE INTERNA DA GRADE EXTERNA */}
+                    {frame.visible &&
+                      Number.isFinite(frame.w) &&
+                      Number.isFinite(frame.h) &&
+                      frame.w > 0 &&
+                      frame.h > 0 && (
+                        <clipPath id="chamfer-workspace-sheet-clip">
+                          <rect
+                            x={0}
+                            y={0}
+                            width={frame.w}
+                            height={frame.h}
+                            transform={`translate(${view.tx} ${view.ty}) scale(${view.k})${
+                              orbitProjection2D.isTilted ? ` ${orbitProjection2D.svgMatrix}` : ""
+                            }`}
+                          />
+                        </clipPath>
+                      )}
+
+                    {/* 1A. GRID SECUNDÁRIO INTERNO (DENTRO DA ÁREA DE TRABALHO) */}
                     {gridConfig.subFade > 0.02 && (
                       <pattern
                         id="chamfer-grid-secondary"
@@ -7623,7 +7844,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       </pattern>
                     )}
 
-                    {/* 2. GRID PRINCIPAL — divisões intermediárias (25-35% Dark / 22-32% Light, ex: 50mm) */}
+                    {/* 1B. GRID SECUNDÁRIO EXTERNO (FORA DA ÁREA DE TRABALHO — ~40% MAIS SUAVE) */}
+                    {gridConfig.subFade > 0.02 && (
+                      <pattern
+                        id="chamfer-grid-secondary-ext"
+                        width={Math.max(0.1, gridConfig.subStep * view.k)}
+                        height={Math.max(0.1, gridConfig.subStep * view.k)}
+                        patternUnits="userSpaceOnUse"
+                        x={((view.tx % (gridConfig.subStep * view.k)) + (gridConfig.subStep * view.k)) % (gridConfig.subStep * view.k)}
+                        y={((view.ty % (gridConfig.subStep * view.k)) + (gridConfig.subStep * view.k)) % (gridConfig.subStep * view.k)}
+                      >
+                        <path
+                          d={`M ${gridConfig.subStep * view.k} 0 H 0 V ${gridConfig.subStep * view.k}`}
+                          fill="none"
+                          stroke={gridStyles.extSecondaryStroke}
+                          strokeWidth={gridStyles.secondaryWidth}
+                          shapeRendering="crispEdges"
+                        />
+                      </pattern>
+                    )}
+
+                    {/* 2A. GRID PRINCIPAL INTERNO (DENTRO DA ÁREA DE TRABALHO) */}
                     {gridConfig.majorFade > 0.02 && (
                       <pattern
                         id="chamfer-grid-major"
@@ -7643,7 +7884,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       </pattern>
                     )}
 
-                    {/* 3. GRID MACRO / LINHA PRINCIPAL DE REFERÊNCIA — intervalos maiores (~35-40%, ex: 100mm) */}
+                    {/* 2B. GRID PRINCIPAL EXTERNO (FORA DA ÁREA DE TRABALHO — ~40% MAIS SUAVE) */}
+                    {gridConfig.majorFade > 0.02 && (
+                      <pattern
+                        id="chamfer-grid-major-ext"
+                        width={Math.max(0.1, gridConfig.majorStep * view.k)}
+                        height={Math.max(0.1, gridConfig.majorStep * view.k)}
+                        patternUnits="userSpaceOnUse"
+                        x={((view.tx % (gridConfig.majorStep * view.k)) + (gridConfig.majorStep * view.k)) % (gridConfig.majorStep * view.k)}
+                        y={((view.ty % (gridConfig.majorStep * view.k)) + (gridConfig.majorStep * view.k)) % (gridConfig.majorStep * view.k)}
+                      >
+                        <path
+                          d={`M ${gridConfig.majorStep * view.k} 0 H 0 V ${gridConfig.majorStep * view.k}`}
+                          fill="none"
+                          stroke={gridStyles.extMajorStroke}
+                          strokeWidth={gridStyles.majorWidth}
+                          shapeRendering="crispEdges"
+                        />
+                      </pattern>
+                    )}
+
+                    {/* 3A. GRID MACRO INTERNO */}
                     <pattern
                       id="chamfer-grid-macro"
                       width={Math.max(0.1, gridConfig.macroStep * view.k)}
@@ -7660,6 +7921,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         shapeRendering="crispEdges"
                       />
                     </pattern>
+
+                    {/* 3B. GRID MACRO EXTERNO */}
+                    <pattern
+                      id="chamfer-grid-macro-ext"
+                      width={Math.max(0.1, gridConfig.macroStep * view.k)}
+                      height={Math.max(0.1, gridConfig.macroStep * view.k)}
+                      patternUnits="userSpaceOnUse"
+                      x={((view.tx % (gridConfig.macroStep * view.k)) + (gridConfig.macroStep * view.k)) % (gridConfig.macroStep * view.k)}
+                      y={((view.ty % (gridConfig.macroStep * view.k)) + (gridConfig.macroStep * view.k)) % (gridConfig.macroStep * view.k)}
+                    >
+                      <path
+                        d={`M ${gridConfig.macroStep * view.k} 0 H 0 V ${gridConfig.macroStep * view.k}`}
+                        fill="none"
+                        stroke={gridStyles.extMacroStroke}
+                        strokeWidth={gridStyles.macroWidth}
+                        shapeRendering="crispEdges"
+                      />
+                    </pattern>
+
                     {/* 4. GRADE ISOMÉTRICA ESPACIAL (EIXOS A 30°, 90°, 150°) */}
                     {drawingProjection === "isometric" && (
                       <pattern
@@ -7745,7 +8025,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     )}
                   </defs>
 
-                  {/* CAMADA 1 — Superfície Interna da Área de Trabalho (Prancheta #FFFFFF no Claro / #0F172A no Escuro) */}
+                  {/* PASSO 1 — Grade Externa Suave sobre a Superfície de Apoio (#DCE3EC no Claro / #060A11 no Escuro) */}
+                  {showGrid &&
+                    frame.visible &&
+                    drawingProjection !== "isometric" && (
+                      <>
+                        {gridConfig.subFade > 0.02 && (
+                          <rect width="100%" height="100%" fill="url(#chamfer-grid-secondary-ext)" />
+                        )}
+                        {gridConfig.majorFade > 0.02 && (
+                          <rect width="100%" height="100%" fill="url(#chamfer-grid-major-ext)" />
+                        )}
+                        {gridConfig.macroStep * view.k >= 8 && (
+                          <rect width="100%" height="100%" fill="url(#chamfer-grid-macro-ext)" />
+                        )}
+                      </>
+                    )}
+
+                  {/* PASSO 2 — Superfície Interna da Área de Trabalho (Papel Técnico #FAFBFD no Claro / Azul-Noite #0D1526 no Escuro) */}
                   {frame.visible &&
                     Number.isFinite(frame.w) &&
                     Number.isFinite(frame.h) &&
@@ -7761,17 +8058,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           y={0}
                           width={frame.w}
                           height={frame.h}
-                          fill={isDark ? "#0F172A" : "#FFFFFF"}
+                          fill={isDark ? "#0D1526" : "#FAFBFD"}
                         />
                       </g>
                     )}
 
-                  {/* CAMADA 2 — Grade Técnica (GRID: 10MM) pintada por cima da superfície da Área de Trabalho */}
+                  {/* PASSO 3 — Grade Técnica Interna Nítida (Recortada à Área de Trabalho ou em tela cheia se frame.visible=false) */}
                   {showGrid &&
                     (drawingProjection === "isometric" ? (
                       <rect width="100%" height="100%" fill="url(#chamfer-grid-isometric)" />
                     ) : (
-                      <>
+                      <g clipPath={frame.visible ? "url(#chamfer-workspace-sheet-clip)" : undefined}>
                         {gridConfig.subFade > 0.02 && (
                           <rect width="100%" height="100%" fill="url(#chamfer-grid-secondary)" />
                         )}
@@ -7781,7 +8078,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         {gridConfig.macroStep * view.k >= 8 && (
                           <rect width="100%" height="100%" fill="url(#chamfer-grid-macro)" />
                         )}
-                      </>
+                      </g>
                     ))}
                 </svg>
               )}
@@ -7900,7 +8197,29 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     );
                   })}
 
-              {/* CAMADA 3 — Moldura, Cantoneiras, Margem e Cotas da Área de Trabalho (ZERO preenchimento sobre as peças!) */}
+              {/* LINHAS DE REFERÊNCIA ORTOGONAL INFINITAS SUAVIZADAS (DESENHADAS ANTES DA MOLDURA PARA NUNCA TINGIR A BORDA SUPERIOR DE VERMELHO) */}
+              {!solidOpen && showGrid && drawingProjection !== "isometric" && (
+                <g pointerEvents="none" aria-hidden="true">
+                  <line
+                    x1={-1e5}
+                    y1={0}
+                    x2={1e5}
+                    y2={0}
+                    stroke={gridStyles.axisInfinite}
+                    strokeWidth={1 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
+                  />
+                  <line
+                    x1={0}
+                    y1={-1e5}
+                    x2={0}
+                    y2={1e5}
+                    stroke={gridStyles.axisInfinite}
+                    strokeWidth={1 / (Number.isFinite(view.k) && view.k > 0 ? view.k : 1)}
+                  />
+                </g>
+              )}
+
+              {/* CAMADA 3 — Moldura Uniforme nos 4 Lados, Cantoneiras Discretas, Margem e Cotas da Área de Trabalho */}
               {frame.visible &&
                 !solidOpen &&
                 Number.isFinite(frame.w) &&
@@ -7909,19 +8228,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 frame.h > 0 &&
                 (() => {
                   const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
-                  const cornerLen = Math.max(14 / safeK, Math.min(frame.w, frame.h) * 0.045);
+                  const cornerLen = Math.max(12 / safeK, Math.min(frame.w, frame.h) * 0.035);
                   const marginInset = Math.min(20, Math.min(frame.w, frame.h) * 0.025);
                   const borderColor = isDark ? "#38BDF8" : "#0284C7";
-                  const cornerColor = "#DC143C";
+                  const cornerColor = borderColor;
                   const dimOffsetPx = 18 / safeK;
                   const headerBadgeText = `⬚ ÁREA DE TRABALHO • ${Math.round(frame.w)} × ${Math.round(frame.h)} mm${frame.locked ? " 🔒" : ""}`;
-                  const headerFontSize = 10.5 / safeK;
-                  const headerPadX = 8 / safeK;
+                  const rawHeaderPx = headerBadgeText.length * 6.2 + 16;
+                  const maxAllowedHeaderPx = Math.max(140, frame.w * safeK);
+                  const badgeScale = rawHeaderPx > maxAllowedHeaderPx ? maxAllowedHeaderPx / rawHeaderPx : 1;
+                  const headerFontSize = (10.5 * badgeScale) / safeK;
+                  const headerPadX = (8 * badgeScale) / safeK;
                   const headerPadY = 4 / safeK;
-                  const headerW = (headerBadgeText.length * 6.2 + 16) / safeK;
+                  const headerW = (rawHeaderPx * badgeScale) / safeK;
                   const headerH = 20 / safeK;
                   const headerY = (frame.showDims ? -52 : -28) / safeK;
-                  const widthPillW = 92 / safeK;
+                  const widthPillW = Math.min(92 / safeK, frame.w * 0.85);
                   const widthPillCenterX =
                     frame.w > headerW + widthPillW + 24 / safeK
                       ? Math.max(frame.w / 2, headerW + widthPillW / 2 + 14 / safeK)
@@ -7929,7 +8251,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
                   return (
                     <g aria-label="Área de Trabalho CAD">
-                      {/* Contorno Técnico da Moldura (fill="none" estrito para NUNCA apagar peças ou grade) */}
+                      {/* Contorno Técnico Uniforme nos 4 Lados (#0284C7 no Claro / #38BDF8 no Escuro — NUNCA vermelho no topo) */}
                       <rect
                         x={0}
                         y={0}
@@ -7937,8 +8259,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         height={frame.h}
                         fill="none"
                         stroke={borderColor}
-                        strokeOpacity={isDark ? 0.85 : 0.9}
-                        strokeWidth={1.8 / safeK}
+                        strokeOpacity={isDark ? 0.92 : 0.95}
+                        strokeWidth={1.6 / safeK}
                         pointerEvents="none"
                       />
 
@@ -7951,14 +8273,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           height={frame.h - marginInset * 2}
                           fill="none"
                           stroke={borderColor}
-                          strokeOpacity={isDark ? 0.28 : 0.35}
+                          strokeOpacity={isDark ? 0.24 : 0.28}
                           strokeWidth={1 / safeK}
                           strokeDasharray={`${6 / safeK} ${4 / safeK}`}
                           pointerEvents="none"
                         />
                       )}
 
-                      {/* 4 Cantoneiras Técnicas Reforçadas (⌜ ⌝ ⌞ ⌟) nos vértices da área */}
+                      {/* 4 Cantoneiras Técnicas Discretas e Alinhadas na Mesma Cor Técnica da Moldura */}
                       {(
                         [
                           [0, 0, 1, 1],
@@ -7972,15 +8294,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             d={`M ${cx + sx * cornerLen} ${cy} L ${cx} ${cy} L ${cx} ${cy + sy * cornerLen}`}
                             fill="none"
                             stroke={cornerColor}
-                            strokeWidth={2.8 / safeK}
+                            strokeWidth={2.2 / safeK}
                             strokeLinecap="square"
-                          />
-                          <path
-                            d={`M ${cx + sx * (cornerLen * 0.55)} ${cy} L ${cx} ${cy + sy * (cornerLen * 0.55)}`}
-                            fill="none"
-                            stroke={borderColor}
-                            strokeOpacity={0.55}
-                            strokeWidth={1 / safeK}
                           />
                         </g>
                       ))}
@@ -8003,7 +8318,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           width={headerW}
                           height={headerH}
                           rx={5 / safeK}
-                          fill={isDark ? "#0D121B" : "#F1F5F9"}
+                          fill={isDark ? "#151C27" : "#FFFFFF"}
                           stroke={isDark ? "#293444" : "#CBD5E1"}
                           strokeWidth={1.1 / safeK}
                         />
@@ -8013,7 +8328,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           fontSize={headerFontSize}
                           fontFamily='"JetBrains Mono", "Inter", ui-monospace, monospace'
                           fontWeight="700"
-                          fill={isDark ? "#E6EDF5" : "#0F172A"}
+                          fill={isDark ? "#E6EDF5" : "#1E293B"}
                         >
                           {headerBadgeText}
                         </text>
@@ -8057,7 +8372,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             width={widthPillW}
                             height={17 / safeK}
                             rx={4 / safeK}
-                            fill={isDark ? "#0D121B" : "#FFFFFF"}
+                            fill={isDark ? "#151C27" : "#FFFFFF"}
                             stroke={borderColor}
                             strokeOpacity={0.65}
                             strokeWidth={1 / safeK}
@@ -8109,7 +8424,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                               width={92 / safeK}
                               height={18 / safeK}
                               rx={4 / safeK}
-                              fill={isDark ? "#0D121B" : "#FFFFFF"}
+                              fill={isDark ? "#151C27" : "#FFFFFF"}
                               stroke={borderColor}
                               strokeOpacity={0.6}
                               strokeWidth={1 / safeK}
@@ -8131,7 +8446,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   );
                 })()}
 
-              {/* Eixos do Sistema de Coordenadas CAD e Tríade de Origem (0,0) (visíveis quando showGrid está ativo) */}
+              {/* Eixos e Tríade de Origem (0,0) Separados da Moldura (+X em #E11D48, +Y em #10B981/#059669, Origem em #DC143C) */}
               {!solidOpen && showGrid && (
                 <g pointerEvents="none" aria-label="Eixos do sistema CAD">
                   {drawingProjection === "isometric" ? (
@@ -8201,66 +8516,47 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     </>
                   ) : (
                     <>
-                      {/* Eixo X Contínuo */}
+                      {/* Setas Curtas e Nítidas de Orientação (~90 px visuais): +X (#E11D48) e +Y (#10B981 Escuro / #059669 Claro) */}
                       <line
-                        x1={-1e5}
+                        x1={0}
                         y1={0}
-                        x2={1e5}
+                        x2={84 / view.k}
                         y2={0}
                         stroke={gridStyles.axisX}
-                        strokeWidth={gridStyles.axisWidth / view.k}
-                      />
-                      {/* Eixo Y Contínuo */}
-                      <line
-                        x1={0}
-                        y1={-1e5}
-                        x2={0}
-                        y2={1e5}
-                        stroke={gridStyles.axisY}
-                        strokeWidth={gridStyles.axisWidth / view.k}
-                      />
-
-                      {/* Setas Vetoriais Limpas da Tríade de Origem (+X e +Y) */}
-                      <line
-                        x1={0}
-                        y1={0}
-                        x2={44 / view.k}
-                        y2={0}
-                        stroke="#DC143C"
                         strokeWidth={2 / view.k}
                       />
                       <polygon
-                        points={`${48 / view.k},0 ${40 / view.k},${-3.2 / view.k} ${40 / view.k},${3.2 / view.k}`}
-                        fill="#DC143C"
+                        points={`${90 / view.k},0 ${81 / view.k},${-3.4 / view.k} ${81 / view.k},${3.4 / view.k}`}
+                        fill={gridStyles.axisX}
                       />
                       <line
                         x1={0}
                         y1={0}
                         x2={0}
-                        y2={44 / view.k}
+                        y2={84 / view.k}
                         stroke={gridStyles.axisY}
                         strokeWidth={2 / view.k}
                       />
                       <polygon
-                        points={`0,${48 / view.k} ${-3.2 / view.k},${40 / view.k} ${3.2 / view.k},${40 / view.k}`}
+                        points={`0,${90 / view.k} ${-3.4 / view.k},${81 / view.k} ${3.4 / view.k},${81 / view.k}`}
                         fill={gridStyles.axisY}
                       />
 
-                      {/* Marcadores de orientação positiva +X e +Y com offset seguro (zero colisão) */}
+                      {/* Marcadores de orientação positiva +X e +Y com offset seguro */}
                       <text
-                        x={53 / view.k}
+                        x={95 / view.k}
                         y={-5 / view.k}
-                        fontSize={9 / view.k}
+                        fontSize={9.5 / view.k}
                         fontFamily='"JetBrains Mono", ui-monospace, monospace'
                         fontWeight="700"
-                        fill="#DC143C"
+                        fill={gridStyles.axisX}
                       >
                         +X
                       </text>
                       <text
                         x={7 / view.k}
-                        y={56 / view.k}
-                        fontSize={9 / view.k}
+                        y={98 / view.k}
+                        fontSize={9.5 / view.k}
                         fontFamily='"JetBrains Mono", ui-monospace, monospace'
                         fontWeight="700"
                         fill={gridStyles.axisY}
@@ -8270,26 +8566,26 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     </>
                   )}
 
-                  {/* Alvo Circular de Origem (0,0) em Vermelho Carmesim (#DC143C) */}
+                  {/* Marcador Circular Pequeno e Nítido de Origem (0,0) em Vermelho Carmesim (#DC143C) */}
                   <circle
                     cx={0}
                     cy={0}
-                    r={6 / view.k}
+                    r={4.5 / view.k}
                     fill="none"
                     stroke="#DC143C"
-                    strokeOpacity={0.75}
+                    strokeOpacity={0.85}
                     strokeWidth={1.3 / view.k}
                   />
                   <circle
                     cx={0}
                     cy={0}
-                    r={2.6 / view.k}
+                    r={2.1 / view.k}
                     fill="#DC143C"
                   />
                   <text
-                    x={9 / view.k}
-                    y={15 / view.k}
-                    fontSize={9.5 / view.k}
+                    x={8 / view.k}
+                    y={14 / view.k}
+                    fontSize={9 / view.k}
                     fontFamily='"JetBrains Mono", ui-monospace, monospace'
                     fontWeight="700"
                     fill="#DC143C"
@@ -9672,12 +9968,42 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             height={canvasSize.h}
             cursor={cursor}
             frame={frame}
+            compactPortrait={!isLandscape}
             onCenterWorkspace={() => {
               triggerHaptic("selection");
               fitFrame();
               toast.info(`Área de Trabalho (${Math.round(frame.w)} × ${Math.round(frame.h)} mm) enquadrada na tela`);
             }}
           />
+
+          {/* MICRO-PÍLULA TRANSLÚCIDA FLUTUANTE NO CANVAS EM MODO RETRATO (P01 • X/Y • SNAP: ON) */}
+          {!isLandscape && !focus && !solidOpen && (
+            <ChamferPortraitCanvasMicroPill
+              isDark={isDark}
+              planName={project?.plans.find((p) => p.id === planId)?.name ?? "P01"}
+              cursor={cursor}
+              snapOn={snapOn}
+              onToggleSnap={() => setSnapOn((s) => !s)}
+              temporaryOrigin={temporaryOrigin}
+              onClearTemporaryOrigin={() => {
+                setTemporaryOrigin(null);
+                setPinnedMeetingPoints([]);
+                setLockedConstraints({});
+                toast.success("Ponto de referência limpo");
+              }}
+              onSetRefAtCursor={() => {
+                setTemporaryOrigin({
+                  id: uid(),
+                  p: cursor,
+                  label: "REF (0,0)",
+                  kind: "origin",
+                  timestamp: Date.now(),
+                });
+                triggerHaptic("success");
+                toast.success(`REF (0,0) fixada em (${cursor.x.toFixed(1)}, ${cursor.y.toFixed(1)}) mm`);
+              }}
+            />
+          )}
 
           {clipboardMenu && clipboardRef.current && (
             <div
@@ -9988,8 +10314,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </div>
         </div>
 
-        {/* REGIÃO D — JANELA LATERAL DIREITA DO CHAMFER 2D (ARRAY FIXO OU PROPRIEDADES / CAMADAS / CORTE) */}
-        {!solidOpen && !focus && (
+        {/* REGIÃO D — JANELA LATERAL DIREITA DO CHAMFER 2D (EXCLUSIVA DO MODO PAISAGEM; EM RETRATO ABRE EM BOTTOM SHEET) */}
+        {!solidOpen && !focus && isLandscape && (
           activeArrayType !== null ? (
             <ChamferArrayHUD
               arrayType={activeArrayType}
@@ -10102,10 +10428,309 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             />
           )
         )}
+
+        {/* BOTTOM SHEET COMPACTO EM MODO RETRATO PARA PAINÉIS LONGOS (PROPRIEDADES, CAMADAS, CORTE, COTAS, ENG. REV.) */}
+        {!solidOpen && !focus && !isLandscape && portraitDrawerOpen && (
+          <div
+            role="dialog"
+            aria-label="Painel Inspetor do CHAMFER"
+            className={cn(
+              "fixed inset-x-0 bottom-[114px] z-45 flex max-h-[46dvh] flex-col rounded-t-2xl border-t shadow-2xl backdrop-blur-xl animate-in slide-in-from-bottom-4 duration-150",
+              isDark
+                ? "border-white/[0.12] bg-[#11141C]/98 text-[#F8FAFC]"
+                : "border-[#CBD5E1] bg-white/98 text-[#0F172A]",
+            )}
+          >
+            <div
+              className={cn(
+                "flex h-8 shrink-0 items-center justify-between border-b px-3",
+                isDark ? "border-white/[0.08]" : "border-[#E2E8F0]",
+              )}
+            >
+              <div className="flex items-center gap-2">
+                <span className="h-1 w-7 rounded-full bg-[#64748B]/50" />
+                <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-[#38BDF8]">
+                  {activeSidebarTab === "propriedades"
+                    ? "Propriedades da Peça"
+                    : activeSidebarTab === "camadas"
+                      ? "Camadas Semânticas"
+                      : activeSidebarTab === "corte"
+                        ? "Plano de Corte CNC"
+                        : activeSidebarTab === "cotas"
+                          ? "Cotas & Tolerâncias"
+                          : "Engenharia Reversa 1:1"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPortraitDrawerOpen(false)}
+                className={cn(
+                  "flex size-6 items-center justify-center rounded-lg border transition-colors",
+                  isDark
+                    ? "border-white/[0.1] bg-[#181C26] text-[#94A3B8] hover:text-white"
+                    : "border-[#CBD5E1] bg-[#F1F5F9] text-[#475569] hover:text-[#0F172A]",
+                )}
+              >
+                <X className="size-3.5" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto flex justify-center [&>aside]:!w-full [&>aside]:!border-0">
+              <ChamferRightSidebar
+                open={true}
+                onToggleOpen={() => setPortraitDrawerOpen(false)}
+                activeTab={activeSidebarTab}
+                onTabChange={setActiveSidebarTab}
+                entities={entities}
+                selection={selection}
+                setSelection={setSelection}
+                commit={commit}
+                layers={layers}
+                setLayers={setLayers}
+                activeLayer={activeLayer}
+                setActiveLayer={setActiveLayer}
+                thickness={thickness}
+                onThicknessChange={setThickness}
+                projectName={project?.name ?? "Peça Chamfer"}
+                onProjectNameChange={(name) => {
+                  setProject((prev) => (prev ? { ...prev, name } : prev));
+                }}
+                material={project?.settings?.material ?? "Aço carbono (1020)"}
+                onMaterialChange={(mat) => {
+                  setProject((prev) =>
+                    prev ? { ...prev, settings: { ...prev.settings, material: mat } } : prev
+                  );
+                }}
+                onDivideEntity={handleOpenDivide}
+                dims={dims}
+                onDimsChange={setDims}
+                dimKind={dimKind}
+                onDimKindChange={setDimKind}
+                dimSel={dimSel}
+                onDimSelect={setDimSel}
+                renderCotas={() => (
+                  <DimensionsPanel
+                    dims={dims}
+                    entities={entities}
+                    kind={dimKind}
+                    onKind={(k) => {
+                      setDimKind(k);
+                      setDimPicks([]);
+                      setTool("dim");
+                    }}
+                    selected={dimSel}
+                    onSelect={setDimSel}
+                    onChange={(d) => setDims((list) => list.map((x) => (x.id === d.id ? d : x)))}
+                    onDelete={(id) => {
+                      setDims((list) => list.filter((x) => x.id !== id));
+                      setDimSel(null);
+                    }}
+                  />
+                )}
+                renderRevEng={() => (
+                  <ChamferRevEngTab
+                    revEng={revEngData}
+                    onChangeRevEng={setRevEngData}
+                    entities={entities}
+                    selection={selection}
+                    setSelection={setSelection}
+                    commit={commit}
+                    activeLayer={activeLayer}
+                    thickness={thickness}
+                    onThicknessChange={setThickness}
+                    canvasInteractionMode={revEngCanvasMode}
+                    onSetCanvasInteractionMode={setRevEngCanvasMode}
+                    pendingPickPointsWorld={revEngPickPoints}
+                    onClearPendingPickPoints={() => setRevEngPickPoints([])}
+                    fittedPreviewCandidate={revEngFittedPreview}
+                    onSetFittedPreviewCandidate={setRevEngFittedPreview}
+                    onOpenVisionModal={() => setVisionOpen(true)}
+                    isDark={isDark}
+                  />
+                )}
+                onHighlightCut={setShareHint}
+                isDark={isDark}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* REGIÃO E — STATUS BAR AGRUPADA (32px) — ROLAGEM HORIZONTAL SUAVE EM MODO RETRATO */}
-      {!focus && (
+      {/* REGIÃO E — EM MODO RETRATO: NO MÁXIMO 2 BARRAS INFERIORES ESTILO LIGHTROOM MOBILE (60PX + 54PX) */}
+      {!focus && !isLandscape && (
+        <ChamferPortraitBottomBars
+          isDark={isDark}
+          tool={tool}
+          onPickTool={pickTool}
+          activeMode={activeMode}
+          onModeChange={(m) => {
+            triggerHaptic("selection");
+            if (m === "3d" || m === "flanges") {
+              transitionTo3D(m);
+            } else {
+              transitionTo2D();
+            }
+          }}
+          hasSelection={selected.length > 0}
+          selectedCount={selected.length}
+          offsetDist={offsetDist}
+          setOffsetDist={setOffsetDist}
+          filletR={filletR}
+          setFilletR={setFilletR}
+          selectedCornersCount={selectedCorners.length}
+          onApplyAllSelectionCorners={handleApplyAllSelectionCorners}
+          onMoveSelection={handleMoveSelection}
+          onCopySelection={handleCopySelection}
+          onRotateSelection={handleRotateSelection}
+          onMirrorSelection={handleMirrorSelection}
+          onScaleSelection={handleScaleSelection}
+          onStretchSelection={handleStretchSelection}
+          onBreakSelection={handleBreakSelection}
+          onJoinSelection={handleJoinSelection}
+          onExplodeSelection={handleExplodeSelection}
+          onDivideSelection={() => handleOpenDivide()}
+          onCenterSelection={handleOpenCenterDialog}
+          onArrayLinear={handleArrayLinear}
+          onArrayPolar={handleArrayPolar}
+          onOverkillClean={handleOverkillClean}
+          onBoolean2D={handleBoolean2D}
+          onCreateHatch={handleCreateHatch}
+          onOpenClipboard={() => {
+            setClipboardAnchorWorld({
+              x: (canvasSize.w / 2 - view.tx) / view.k,
+              y: (canvasSize.h / 2 - view.ty) / view.k,
+            });
+            setClipboardModalOpen(true);
+          }}
+          activeArrayType={activeArrayType}
+          onChangeArrayType={(nextType) => {
+            setActiveArrayType(nextType);
+            setIsArrayPickingCenter(false);
+          }}
+          arrayPolarParams={arrayPolarParams}
+          onChangePolarParams={setArrayPolarParams}
+          arrayLinearParams={arrayLinearParams}
+          onChangeLinearParams={setArrayLinearParams}
+          isArrayPickingCenter={isArrayPickingCenter}
+          onTogglePickArrayCenter={() => setIsArrayPickingCenter((v) => !v)}
+          onCommitArray={handleCommitArray}
+          onCancelArray={handleCancelArray}
+          divideEditorOpen={divideEditorOpen}
+          divideParts={divideParts}
+          onDividePartsChange={setDivideParts}
+          onConfirmDivide={handleConfirmDivide}
+          onCancelDivide={handleCancelDivide}
+          snapOn={snapOn}
+          setSnapOn={setSnapOn}
+          snapDivision={snapDivision}
+          onSetSnapDivision={setSnapDivision}
+          showAllSnaps={showAllSnaps}
+          onToggleShowAllSnaps={() => setShowAllSnaps((v) => !v)}
+          interactionGuideMode={interactionGuideMode}
+          onSetInteractionGuideMode={handleSetInteractionGuideMode}
+          onStartSetReferencePoint={() => {
+            if (interactionGuideMode === "off") {
+              handleSetInteractionGuideMode("purple_ref");
+            }
+            setIsSettingReferencePoint(true);
+            toast.info("Toque no vértice, centro ou ponto desejado para fixar o Centro de Referência");
+          }}
+          temporaryOrigin={temporaryOrigin}
+          onClearTemporaryOrigin={() => {
+            setTemporaryOrigin(null);
+            setPinnedMeetingPoints([]);
+            setLockedConstraints({});
+            toast.success("Ponto de referência limpo");
+          }}
+          orthoOn={orthoOn}
+          setOrthoOn={setOrthoOn}
+          trackingOn={trackingOn}
+          setTrackingOn={setTrackingOn}
+          dimKind={dimKind}
+          onPickDimKind={(k) => {
+            setDimKind(k);
+            setTool("dim");
+          }}
+          cursorOffsetMode={cursorOffsetMode}
+          onToggleCursorOffsetMode={toggleCursorOffsetMode}
+          loupeMode={loupeMode}
+          onCycleLoupeMode={handleCycleLoupeMode}
+          nudgeHudVisible={nudgeHudVisible}
+          onToggleNudgeHud={() => {
+            setNudgeHudVisible((prev) => {
+              const next = !prev;
+              globalCADInteractionHub.toggleModifier("nudge_dpad", next);
+              return next;
+            });
+          }}
+          thickness={thickness}
+          onThicknessChange={setThickness}
+          onConvertToBend={handleConvertToBend}
+          onAddHole={handleAddHole}
+          onPlanificar={handlePlanificar}
+          onOpenFlanges={handleOpenFlanges}
+          onApplyRelief={handleApplyRelief}
+          onUnfold={handleUnfold}
+          onFold={handleFold}
+          onOpenVisionModal={() => setVisionOpen(true)}
+          onOpenRevEngCategory={(category: RevEngCategoryId, wizardStep?: RevEngWizardStep) => {
+            setRevEngData((prev) => ({
+              ...prev,
+              activeCategory: category,
+              activeWizardStep: wizardStep ?? prev.activeWizardStep,
+            }));
+            setActiveSidebarTab("eng_rev");
+            setPortraitDrawerOpen(true);
+          }}
+          activeLayer={activeLayer}
+          setActiveLayer={setActiveLayer}
+          showGrid={showGrid}
+          setShowGrid={setShowGrid}
+          grid={grid}
+          setGrid={setGrid}
+          frame={frame}
+          onUpdateFrame={updateFrame}
+          onFitWorkspace={() => fitFrame()}
+          onCenterPiece={(moveGeometry) => centerPiece(moveGeometry)}
+          onOpenWorkspaceKeypad={(axis, screenPos) => {
+            setWorkspaceKeypadEditor({
+              axis,
+              currentValue: axis === "w" ? frame.w : frame.h,
+              screenPos,
+            });
+          }}
+          onOpenPresets={() => setPresetsModalOpen(true)}
+          onOpenTechnicalSheet={() => setTechnicalSheetModalOpen(true)}
+          onOpenTopologyHealth={() => setTopologyHealthOpen(true)}
+          onOpenVariables={() => setVariablesModalOpen(true)}
+          onOpenPieceBuilder={() => setIsoPieceBuilderOpen(true)}
+          simOn={simOn}
+          onToggleSim={() => {
+            setSimOn((s) => {
+              const next = !s;
+              setSimPlaying(next);
+              setSimDist(0);
+              return next;
+            });
+          }}
+          showArrows={showArrows}
+          onToggleArrows={() => setShowArrows((s) => !s)}
+          portraitDrawerOpen={portraitDrawerOpen}
+          onSetPortraitDrawerOpen={(open) => {
+            setPortraitDrawerOpen(open);
+            if (open) {
+              const b = entities.length > 0 ? bbox(entities) : null;
+              if (b && Number.isFinite(b.minX) && b.maxX - b.minX > 1) {
+                fitBox(b);
+              }
+            }
+          }}
+          activeSidebarTab={activeSidebarTab}
+          onSelectSidebarTab={setActiveSidebarTab}
+        />
+      )}
+
+      {/* REGIÃO E — STATUS BAR AGRUPADA (32px) — MODO PAISAGEM */}
+      {!focus && isLandscape && (
         <footer
           aria-label="Barra de status do CHAMFER"
           className={cn(
@@ -10250,19 +10875,31 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 <span>CHAPA {thickness.toFixed(1)}MM</span>
               </button>
 
-              {/* LEITURA DE COORDENADAS E PAINEL CONTEXTUAL INTELIGENTE (REF 0,0 & BORDAS) */}
+              {/* LEITURA DE COORDENADAS E PAINEL CONTEXTUAL INTELIGENTE (REF 0,0 EM ÂMBAR TÉCNICO & BORDAS) */}
               {temporaryOrigin ? (
                 <div className="flex shrink-0 items-center gap-1.5 font-mono text-[9.5px]">
-                  <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#E11D48]/20 border border-[#E11D48]/50 text-[#FB7185] font-bold shrink-0">
-                    <span className="size-1.5 rounded-full bg-[#E11D48] animate-pulse" />
+                  <span
+                    className={cn(
+                      "flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold shrink-0",
+                      isDark
+                        ? "bg-[#F59E0B]/15 border-[#F59E0B]/45 text-[#F59E0B]"
+                        : "bg-[#D97706]/10 border-[#D97706]/40 text-[#D97706]",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "size-1.5 rounded-full animate-pulse",
+                        isDark ? "bg-[#F59E0B]" : "bg-[#D97706]",
+                      )}
+                    />
                     REF [{temporaryOrigin.label}]:
                   </span>
-                  <span className="text-[#FB7185] font-bold">ΔX:</span>
+                  <span className={cn("font-bold", isDark ? "text-[#F59E0B]" : "text-[#D97706]")}>ΔX:</span>
                   <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>
                     {(cursor.x - temporaryOrigin.p.x >= 0 ? "+" : "") + (cursor.x - temporaryOrigin.p.x).toFixed(1)}
                   </strong>
                   <span className={isDark ? "text-[#293444]" : "text-[#CBD5E1]"}>|</span>
-                  <span className="text-[#FB7185] font-bold">ΔY:</span>
+                  <span className={cn("font-bold", isDark ? "text-[#F59E0B]" : "text-[#D97706]")}>ΔY:</span>
                   <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>
                     {(cursor.y - temporaryOrigin.p.y >= 0 ? "+" : "") + (cursor.y - temporaryOrigin.p.y).toFixed(1)} mm
                   </strong>
@@ -10298,8 +10935,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     className={cn(
                       "flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold text-[8.5px] active:scale-95 border",
                       isDark
-                        ? "bg-[#E11D48]/20 hover:bg-[#E11D48]/30 border-[#E11D48]/50 text-[#FB7185]"
-                        : "bg-[#E11D48]/10 hover:bg-[#E11D48]/20 border-[#E11D48]/40 text-[#E11D48]",
+                        ? "bg-[#1E293B] hover:bg-[#334155] border-[#334155] text-[#E2E8F0]"
+                        : "bg-[#FFFFFF] hover:bg-[#F1F5F9] border-[#CBD5E1] text-[#334155]",
                     )}
                   >
                     ✕ Limpar REF
@@ -10416,9 +11053,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     title="Definir ponto sob o cursor / snap como origem temporária REF (0,0)"
                     className={cn(
                       "ml-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all",
-                      isDark
-                        ? "bg-[#E11D48]/15 hover:bg-[#E11D48]/25 border-[#E11D48]/50 text-[#E6EDF5]"
-                        : "bg-[#FFFFFF] hover:bg-[#E11D48]/10 border-[#E11D48]/45 text-[#E11D48]",
+                      isSettingReferencePoint
+                        ? "bg-[#DC143C]/20 border-[#DC143C] text-[#DC143C]"
+                        : isDark
+                          ? "bg-[#1E293B] hover:bg-[#F59E0B]/15 border-[#F59E0B]/45 text-[#F59E0B]"
+                          : "bg-[#FFFFFF] hover:bg-[#D97706]/10 border-[#D97706]/45 text-[#D97706]",
                     )}
                   >
                     <span>📍</span>
@@ -10563,7 +11202,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
             {/* LADO DIREITO: 3 GRUPOS LÓGICOS (1. PRIMÁRIOS VISÍVEIS | 2. PRECISÃO | 3. FLUXO/CNC) */}
             <div className="flex items-center gap-1.5 shrink-0">
-              {/* GRUPO 1 — PRIMÁRIOS (SEMPRE VISÍVEIS NA BARRA): SNAP, ORTO, GRID, ZOOM */}
+              {/* GRUPO 1 — PRIMÁRIOS (SEMPRE VISÍVEIS NA BARRA): SNAP, ORTO, GRID, ÁREA */}
               <button
                 type="button"
                 onClick={() => setSnapOn((s) => !s)}
@@ -10574,8 +11213,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       ? "text-[#38BDF8] bg-[#38BDF8]/15 border-[#38BDF8]/45"
                       : "text-[#0284C7] bg-[#FFFFFF] border-[#0284C7]/45"
                     : isDark
-                      ? "border-transparent text-[#94A3B8] hover:text-[#E6EDF5]"
-                      : "border-transparent text-[#64748B] hover:text-[#1E293B]",
+                      ? "border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
+                      : "border-[#CBD5E1] text-[#64748B] hover:text-[#1E293B]",
                 )}
                 title="Alternar Snap Geométrico"
               >
@@ -10589,11 +11228,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors border",
                   orthoOn
                     ? isDark
-                      ? "text-[#34D399] bg-[#34D399]/15 border-[#34D399]/40"
-                      : "text-[#059669] bg-[#059669]/10 border-[#059669]/40"
+                      ? "text-[#38BDF8] bg-[#38BDF8]/15 border-[#38BDF8]/45"
+                      : "text-[#0284C7] bg-[#FFFFFF] border-[#0284C7]/45"
                     : isDark
-                      ? "border-transparent text-[#94A3B8] hover:text-[#E6EDF5]"
-                      : "border-transparent text-[#64748B] hover:text-[#1E293B]",
+                      ? "border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
+                      : "border-[#CBD5E1] text-[#64748B] hover:text-[#1E293B]",
                 )}
                 title="Modo Ortogonal (0°, 90°, 180°, 270°)"
               >
@@ -10607,18 +11246,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "rounded px-1.5 py-0.5 text-[9px] uppercase font-bold whitespace-nowrap transition-colors border",
                   showGrid
                     ? isDark
-                      ? "text-[#FB7185] bg-[#E11D48]/18 border-[#E11D48]/50"
-                      : "text-[#E11D48] bg-[#FFFFFF] border-[#E11D48]/45 font-bold"
+                      ? "bg-[#1E293B] border-[#334155] text-[#E2E8F0] hover:border-[#38BDF8]/50"
+                      : "bg-[#FFFFFF] border-[#CBD5E1] text-[#334155] hover:border-[#0284C7]/50"
                     : isDark
-                      ? "border-transparent text-[#94A3B8] hover:text-[#E6EDF5]"
-                      : "border-transparent text-[#64748B] hover:text-[#1E293B]",
+                      ? "border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
+                      : "border-[#CBD5E1] text-[#64748B] hover:text-[#1E293B]",
                 )}
                 title="Alternar visibilidade da grade"
               >
                 GRID: {showGrid ? `${grid}MM` : "OFF"}
               </button>
 
-              {/* NOVO BOTÃO DE PERSONALIZAÇÃO DA ÁREA DE TRABALHO (IMEDIATAMENTE À DIREITA DO GRID) */}
+              {/* BOTÃO DE PERSONALIZAÇÃO DA ÁREA DE TRABALHO (NEUTRO POR PADRÃO, AZUL-CIANO QUANDO SELETOR/EDITOR ABERTO) */}
               <button
                 type="button"
                 data-testid="status-workspace-area-button"
@@ -10630,17 +11269,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 }}
                 className={cn(
                   "rounded px-1.5 py-0.5 font-mono text-[9px] uppercase font-bold whitespace-nowrap transition-colors border cursor-pointer",
-                  statusWorkspaceMenuOpen
+                  statusWorkspaceMenuOpen || workspaceKeypadEditor !== null
                     ? isDark
                       ? "text-[#38BDF8] bg-[#38BDF8]/20 border-[#38BDF8]/65 shadow-xs"
                       : "text-[#0284C7] bg-[#0284C7]/15 border-[#0284C7]/65 shadow-xs"
                     : frame.visible
                       ? isDark
-                        ? "text-[#FB7185] bg-[#E11D48]/18 border-[#E11D48]/50 hover:bg-[#E11D48]/28"
-                        : "text-[#E11D48] bg-[#FFFFFF] border-[#E11D48]/45 hover:bg-[#E11D48]/10 font-bold"
+                        ? "bg-[#1E293B] border-[#334155] text-[#E2E8F0] hover:border-[#38BDF8]/50"
+                        : "bg-[#FFFFFF] border-[#CBD5E1] text-[#334155] hover:border-[#0284C7]/50"
                       : isDark
-                        ? "border-transparent text-[#94A3B8] hover:text-[#E6EDF5]"
-                        : "border-transparent text-[#64748B] hover:text-[#1E293B]",
+                        ? "border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
+                        : "border-[#CBD5E1] text-[#64748B] hover:text-[#1E293B]",
                 )}
                 title="Personalizar Área de Trabalho (Chapa / Mesa CAD)"
               >
@@ -11251,21 +11890,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </Suspense>
       )}
 
-      {/* FERRAMENTA DIVIDIR: EDITOR COMPACTO EM N PARTES IGUAIS */}
-      <ChamferDivideEditor
-        open={divideEditorOpen}
-        selectedEntity={divideTargetEntity}
-        parts={divideParts}
-        onPartsChange={setDivideParts}
-        options={divideOptions}
-        onOptionsChange={setDivideOptions}
-        onConfirm={handleConfirmDivide}
-        onCancel={handleCancelDivide}
-        isDark={isDark}
-      />
+      {/* FERRAMENTA DIVIDIR: EDITOR COMPACTO EM N PARTES IGUAIS (EM RETRATO OCORRE VIA INLINE CONTEXTUAL SWAP NA BARRA NÍVEL 1) */}
+      {isLandscape && (
+        <ChamferDivideEditor
+          open={divideEditorOpen}
+          selectedEntity={divideTargetEntity}
+          parts={divideParts}
+          onPartsChange={setDivideParts}
+          options={divideOptions}
+          onOptionsChange={setDivideOptions}
+          onConfirm={handleConfirmDivide}
+          onCancel={handleCancelDivide}
+          isDark={isDark}
+        />
+      )}
 
-      {/* BARRA FLUTUANTE DE CONFIRMAÇÃO DA FERRAMENTA DIVIDIR (GARANTIA TOTAL EM MODO PAISAGEM) */}
-      {divideEditorOpen && divideTargetEntity && (
+      {/* BARRA FLUTUANTE DE CONFIRMAÇÃO DA FERRAMENTA DIVIDIR (MODO PAISAGEM) */}
+      {isLandscape && divideEditorOpen && divideTargetEntity && (
         <div
           role="region"
           aria-label="Confirmar divisão geométrica"
@@ -11346,8 +11987,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </Suspense>
       )}
 
-      {/* CONTROLE FLUTUANTE DE FILETE E CHANFRO */}
-      {(tool === "fillet" || tool === "chamfer") && (
+      {/* CONTROLE FLUTUANTE DE FILETE E CHANFRO (MODO PAISAGEM; EM RETRATO OCORRE NA BARRA NÍVEL 1) */}
+      {isLandscape && (tool === "fillet" || tool === "chamfer") && (
         <ChamferFilletChamferHUD
           tool={tool}
           value={filletR}
@@ -11365,7 +12006,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
       {/* BARRA CONTEXTUAL FLUTUANTE DE SELEÇÃO E AGRUPAMENTO (MOBILE/DESKTOP) */}
       {selection.length > 0 && !solidOpen && tool === "select" && activeArrayType === null && (
-        <div className="fixed bottom-24 sm:bottom-28 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-500/40 shadow-2xl backdrop-blur-md text-white select-none pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-150">
+        <div
+          className={cn(
+            "fixed left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/95 border border-cyan-500/40 shadow-2xl backdrop-blur-md text-white select-none pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-150",
+            isLandscape ? "bottom-24 sm:bottom-28" : "bottom-[120px]",
+          )}
+        >
           <div className="flex items-center gap-1.5 pr-2 border-r border-slate-700/80 font-mono text-[11px]">
             {activeGroup ? (
               <span className="flex items-center gap-1 text-cyan-400 font-bold bg-cyan-950/60 px-2 py-0.5 rounded-md border border-cyan-500/40">
@@ -12754,6 +13400,7 @@ const Rulers = React.memo(function Rulers({
   height,
   cursor,
   frame,
+  compactPortrait = false,
   onCenterWorkspace,
 }: {
   view: { tx: number; ty: number; k: number };
@@ -12764,6 +13411,7 @@ const Rulers = React.memo(function Rulers({
   height: number;
   cursor?: Vec2;
   frame?: WorkspaceFrame;
+  compactPortrait?: boolean;
   onCenterWorkspace?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -12788,8 +13436,8 @@ const Rulers = React.memo(function Rulers({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, vw, vh);
 
-    const V_RULER_W = 30;
-    const H_RULER_H = 26;
+    const V_RULER_W = compactPortrait ? 20 : 30;
+    const H_RULER_H = compactPortrait ? 20 : 26;
     const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
 
     // Seleção de passo principal técnico (1, 2, 5 × 10^n) garantindo espaçamento >= 76px
@@ -12818,8 +13466,9 @@ const Rulers = React.memo(function Rulers({
     const minorTickColor = isDark ? "#293444" : "#CBD5E1";
     const textColor = isDark ? "#E6EDF5" : "#1E293B";
     const zeroColor = "#DC143C";
-    const workspaceBandFill = isDark ? "rgba(220, 20, 60, 0.11)" : "rgba(220, 20, 60, 0.08)";
-    const workspaceBandEdge = "rgba(220, 20, 60, 0.65)";
+    // Faixa técnica azul-ciano discreta para a extensão da Área de Trabalho nas réguas (nunca rosa/carmesim)
+    const workspaceBandFill = isDark ? "rgba(56, 189, 248, 0.08)" : "rgba(2, 132, 199, 0.08)";
+    const workspaceBandEdge = isDark ? "#0EA5E9" : "#0284C7";
 
     /* =====================================================================
      * 1. RÉGUA HORIZONTAL SUPERIOR (Altura = 26px, Clipping x: 30..vw, y: 0..26)
@@ -12841,7 +13490,7 @@ const Rulers = React.memo(function Rulers({
         ctx.fillStyle = workspaceBandFill;
         ctx.fillRect(x0, 0, x1 - x0, H_RULER_H);
         ctx.fillStyle = workspaceBandEdge;
-        ctx.fillRect(x0, H_RULER_H - 2, x1 - x0, 2);
+        ctx.fillRect(x0, H_RULER_H - 1.5, x1 - x0, 1.5);
       }
     }
 
@@ -12859,7 +13508,9 @@ const Rulers = React.memo(function Rulers({
     const startIdxX = Math.floor(minWorldX / minorStep) - 1;
     const endIdxX = Math.ceil(maxWorldX / minorStep) + 1;
 
-    ctx.font = '600 10px "JetBrains Mono", "Inter", ui-monospace, monospace';
+    ctx.font = compactPortrait
+      ? '600 9px "JetBrains Mono", "Inter", ui-monospace, monospace'
+      : '600 10px "JetBrains Mono", "Inter", ui-monospace, monospace';
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
 
@@ -12871,7 +13522,7 @@ const Rulers = React.memo(function Rulers({
       const isMajor = Math.abs(worldX / labelStep - Math.round(worldX / labelStep)) < 1e-4;
       const isMid = !isMajor && Math.abs(worldX / midStep - Math.round(worldX / midStep)) < 1e-4;
 
-      const tickLen = isMajor ? 12 : isMid ? 7 : 4;
+      const tickLen = isMajor ? (compactPortrait ? 9 : 12) : isMid ? (compactPortrait ? 5.5 : 7) : 3.5;
       ctx.strokeStyle = isMajor ? majorTickColor : isMid ? midTickColor : minorTickColor;
       ctx.lineWidth = isMajor ? 1.2 : 1;
       ctx.beginPath();
@@ -12882,8 +13533,8 @@ const Rulers = React.memo(function Rulers({
       if (isMajor) {
         const val = Math.round(worldX);
         ctx.fillStyle = val === 0 ? zeroColor : textColor;
-        // +5px à direita do traço principal com textAlign: 'left' — impede colisão com o traço
-        ctx.fillText(String(val), screenX + 5, 4);
+        // +4px/+5px à direita do traço principal com textAlign: 'left' — impede colisão com o traço
+        ctx.fillText(String(val), screenX + (compactPortrait ? 4 : 5), compactPortrait ? 2.5 : 4);
       }
     }
 
@@ -12930,7 +13581,7 @@ const Rulers = React.memo(function Rulers({
         ctx.fillStyle = workspaceBandFill;
         ctx.fillRect(0, y0, V_RULER_W, y1 - y0);
         ctx.fillStyle = workspaceBandEdge;
-        ctx.fillRect(V_RULER_W - 2, y0, 2, y1 - y0);
+        ctx.fillRect(V_RULER_W - 1.5, y0, 1.5, y1 - y0);
       }
     }
 
@@ -12948,7 +13599,9 @@ const Rulers = React.memo(function Rulers({
     const startIdxY = Math.floor(minWorldY / minorStep) - 1;
     const endIdxY = Math.ceil(maxWorldY / minorStep) + 1;
 
-    ctx.font = '600 10px "JetBrains Mono", "Inter", ui-monospace, monospace';
+    ctx.font = compactPortrait
+      ? '600 9px "JetBrains Mono", "Inter", ui-monospace, monospace'
+      : '600 10px "JetBrains Mono", "Inter", ui-monospace, monospace';
 
     for (let i = startIdxY; i <= endIdxY; i++) {
       const worldY = i * minorStep;
@@ -12958,7 +13611,7 @@ const Rulers = React.memo(function Rulers({
       const isMajor = Math.abs(worldY / labelStep - Math.round(worldY / labelStep)) < 1e-4;
       const isMid = !isMajor && Math.abs(worldY / midStep - Math.round(worldY / midStep)) < 1e-4;
 
-      const tickLen = isMajor ? 12 : isMid ? 7 : 4;
+      const tickLen = isMajor ? (compactPortrait ? 9 : 12) : isMid ? (compactPortrait ? 5.5 : 7) : 3.5;
       ctx.strokeStyle = isMajor ? majorTickColor : isMid ? midTickColor : minorTickColor;
       ctx.lineWidth = isMajor ? 1.2 : 1;
       ctx.beginPath();
@@ -12970,7 +13623,7 @@ const Rulers = React.memo(function Rulers({
         const val = Math.round(worldY);
         ctx.save();
         // Posiciona o texto rotacionado a -90° paralelamente à régua a +5px do traço principal
-        ctx.translate(10, screenY - 5);
+        ctx.translate(compactPortrait ? 7 : 10, screenY - (compactPortrait ? 4 : 5));
         ctx.rotate(-Math.PI / 2);
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
@@ -13003,18 +13656,18 @@ const Rulers = React.memo(function Rulers({
 
     ctx.restore();
     ctx.restore();
-  }, [view.tx, view.ty, view.k, isDark, majorStep, vw, vh, cursor?.x, cursor?.y, frame?.visible, frame?.w, frame?.h]);
+  }, [view.tx, view.ty, view.k, isDark, majorStep, vw, vh, cursor?.x, cursor?.y, frame?.visible, frame?.w, frame?.h, compactPortrait]);
 
   return (
     <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden z-10">
-      {/* Canvas de Alta Precisão para as Réguas Horizontal (26px) e Vertical (30px) */}
+      {/* Canvas de Alta Precisão para as Réguas Horizontal (20px em retrato / 26px em paisagem) e Vertical (20px em retrato / 30px em paisagem) */}
       <canvas
         ref={canvasRef}
         style={{ width: `${vw}px`, height: `${vh}px` }}
         className="pointer-events-none absolute inset-0"
       />
 
-      {/* Bloco de Canto Interativo [ MM ] (30px × 26px): toca para enquadrar a Área de Trabalho */}
+      {/* Bloco de Canto Interativo [ MM ]: toca para enquadrar a Área de Trabalho */}
       <button
         type="button"
         onClick={(e) => {
@@ -13023,7 +13676,8 @@ const Rulers = React.memo(function Rulers({
         }}
         title="Toque para centralizar e enquadrar a Área de Trabalho na tela"
         className={cn(
-          "pointer-events-auto absolute left-0 top-0 z-20 flex w-[30px] h-[26px] items-center justify-center border-b border-r font-mono text-[8.5px] font-bold uppercase transition-colors cursor-pointer active:scale-95",
+          "pointer-events-auto absolute left-0 top-0 z-20 flex items-center justify-center border-b border-r font-mono font-bold uppercase transition-colors cursor-pointer active:scale-95",
+          compactPortrait ? "w-[20px] h-[20px] text-[7.5px]" : "w-[30px] h-[26px] text-[8.5px]",
           isDark
             ? "border-[#293444] bg-[#0D121B]/95 text-[#94A3B8] hover:text-[#38BDF8] hover:bg-[#151C27]"
             : "border-[#CBD5E1] bg-[#F1F5F9]/95 text-[#64748B] hover:text-[#0284C7] hover:bg-[#FFFFFF]",

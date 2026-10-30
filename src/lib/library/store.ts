@@ -84,11 +84,12 @@ function subscribe(l: () => void) {
 let libraryGlobalHydrated = false;
 
 function snapshot(): State {
-  return typeof window === "undefined" ? EMPTY : load();
+  return !libraryGlobalHydrated || typeof window === "undefined" ? EMPTY : load();
 }
+const getServerSnapshot = (): State => EMPTY;
 
 export function useLibraryState(): State {
-  const [mounted, setMounted] = useState(() => libraryGlobalHydrated);
+  const [mounted, setMounted] = useState(false);
   useEffect(() => {
     if (!libraryGlobalHydrated) {
       libraryGlobalHydrated = true;
@@ -97,7 +98,7 @@ export function useLibraryState(): State {
     }
     setMounted(true);
   }, []);
-  const s = useSyncExternalStore(subscribe, snapshot, () => EMPTY);
+  const s = useSyncExternalStore(subscribe, snapshot, getServerSnapshot);
   return mounted ? s : EMPTY;
 }
 

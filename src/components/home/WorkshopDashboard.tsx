@@ -16,6 +16,7 @@ import {
   PenTool,
 } from "lucide-react";
 import { CaldraLogo } from "@/components/caldra/Logo";
+import { HomeCinematicHero } from "@/components/home/HomeCinematicHero";
 import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
 import {
   createProject,
@@ -432,90 +433,14 @@ export function WorkshopDashboard() {
         />
 
         {/* =========================================================================
-            1. BANNER PRINCIPAL (HERO COMPACTO: 180–230 PX)
-            - Proporção calibrada para mobile sem empurrar a tela
-            - Título conciso, descrição essencial, CTA com ação real
-            - Composição técnica que preserva legibilidade total
+            1. BANNER PRINCIPAL — TEASER CINEMATOGRÁFICO INTERATIVO DO FLUXO CALDRA
+            - Sequência narrativa contínua de 6 cenas reais de engenharia (4.0s por cena)
+            - Pílulas de etapa clicáveis, pausa automática por contexto e navegação em 1 toque
             ========================================================================= */}
-        <section
-          aria-label="Destaque principal"
-          className="caldra-hero group relative w-full h-[195px] xs:h-[205px] sm:h-[215px] min-h-[185px] max-h-[225px] overflow-hidden rounded-2xl p-3.5 sm:p-4 shadow-xl transition-all"
-        >
-          {/* Glow âmbar sutil concentrado atrás da peça técnica */}
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-36 w-44 rounded-full bg-[radial-gradient(circle,rgba(245,158,11,0.22)_0%,rgba(245,158,11,0.03)_60%,transparent_75%)] blur-xl"
-          />
-
-          <div className="relative z-10 flex h-full w-full flex-row items-center justify-between">
-            {/* Lado esquerdo (~52% de largura) */}
-            <div className="flex h-full w-[53%] xs:w-[51%] flex-col justify-between py-0.5 pr-1.5 shrink-0">
-              {/* Badge CALDEIRARIA, SERRALHERIA & TRAÇAGEM */}
-              <div>
-                <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-mono text-[8.5px] xs:text-[9px] font-bold tracking-wider text-amber-500 uppercase">
-                  <span className="text-[9px] leading-none">✦</span>
-                  <span>CALDEIRARIA, SERRALHERIA & CAD</span>
-                </span>
-              </div>
-
-              {/* Título de alto impacto */}
-              <h1 className="font-display text-[15px] xs:text-[17px] sm:text-[19px] font-black tracking-tight text-foreground leading-[1.12] uppercase">
-                PROJETE PEÇAS E ESTRUTURAS
-              </h1>
-
-              {/* Descrição curta e objetiva */}
-              <p className="text-[9.5px] xs:text-[10px] sm:text-[11px] text-muted-foreground leading-snug line-clamp-2">
-                Gere desenhos técnicos multi-vistas, listas de corte 6m, materiais Costa Ferro e orçamentos.
-              </p>
-
-              {/* Chamada principal: Ação real para iniciar trabalho */}
-              <div className="pt-0.5">
-                <Link
-                  to="/desenho-2d"
-                  onPointerDown={(e) => {
-                    if (e.button === 0) {
-                      triggerHaptic("selection");
-                      AudioManager.play("ui_pop");
-                      startTransition(() => {
-                        void navigate({ to: "/desenho-2d" });
-                      });
-                    }
-                  }}
-                  onClick={(e) => {
-                    if (e.detail === 0) {
-                      triggerHaptic("selection");
-                      AudioManager.play("ui_pop");
-                    }
-                  }}
-                  style={{
-                    touchAction: "manipulation",
-                    userSelect: "none",
-                    WebkitUserSelect: "none",
-                    WebkitTapHighlightColor: "transparent",
-                    willChange: "transform, opacity",
-                  }}
-                  className="inline-flex h-7.5 sm:h-8.5 items-center justify-center gap-1.5 rounded-full bg-[#F59E0B] hover:bg-[#FBBF24] active:scale-95 px-3.5 font-mono text-[9.5px] xs:text-[10.5px] font-bold tracking-wide text-black shadow-md transition-all cursor-pointer"
-                >
-                  <span>Abrir CHAMFER CAD</span>
-                  <ArrowRight className="size-3 stroke-[2.5]" />
-                </Link>
-              </div>
-
-              {/* Indicadores de ritmo visual */}
-              <div className="flex items-center gap-1 pt-0.5">
-                <span className="h-0.75 w-4 rounded-full bg-amber-500" />
-                <span className="size-1 rounded-full bg-border" />
-                <span className="size-1 rounded-full bg-border" />
-                <span className="size-1 rounded-full bg-border" />
-              </div>
-            </div>
-
-            {/* Lado direito (~48% de largura): Peça metálica com cotas */}
-            <div className="relative flex h-full w-[47%] xs:w-[49%] items-center justify-center overflow-hidden">
-              <HeroMachinedConeGraphic className="h-full w-full object-contain" />
-            </div>
-          </div>
-        </section>
+        <HomeCinematicHero
+          onNewProject={() => setNewProjectOpen(true)}
+          onOpenTools={() => setToolsOpen(true)}
+        />
 
         {/* =========================================================================
             2. ATALHOS PRINCIPAIS — GRADE DE DUAS COLUNAS (ALTURA 92–118 PX)
@@ -736,14 +661,7 @@ export function WorkshopDashboard() {
                     setNewProjectOpen(true);
                   }
                 }}
-                style={{
-                  touchAction: "manipulation",
-                  userSelect: "none",
-                  WebkitUserSelect: "none",
-                  WebkitTapHighlightColor: "transparent",
-                  willChange: "transform, opacity",
-                }}
-                className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-dashed border-amber-500/50 p-2 transition-all hover:border-amber-500 active:scale-[0.98] cursor-pointer text-left"
+                className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl border border-dashed border-amber-500/50 p-2 transition-all hover:border-amber-500 active:scale-[0.98] cursor-pointer text-left select-none touch-manipulation"
               >
                 <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/40 bg-slate-100/60 dark:bg-black/40 flex flex-col items-center justify-center gap-1.5 p-2">
                   <div className="caldra-bubble-base caldra-bubble-red size-7.5">
@@ -782,14 +700,7 @@ export function WorkshopDashboard() {
                   AudioManager.play("ui_nav");
                 }
               }}
-              style={{
-                touchAction: "manipulation",
-                userSelect: "none",
-                WebkitUserSelect: "none",
-                WebkitTapHighlightColor: "transparent",
-                willChange: "transform, opacity",
-              }}
-              className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left"
+              className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left select-none touch-manipulation"
             >
               <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
                 <ChamferBlockGraphic />
@@ -825,14 +736,7 @@ export function WorkshopDashboard() {
                   AudioManager.play("ui_nav");
                 }
               }}
-              style={{
-                touchAction: "manipulation",
-                userSelect: "none",
-                WebkitUserSelect: "none",
-                WebkitTapHighlightColor: "transparent",
-                willChange: "transform, opacity",
-              }}
-              className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left"
+              className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left select-none touch-manipulation"
             >
               <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
                 <TracingDraftGraphic />
@@ -868,14 +772,7 @@ export function WorkshopDashboard() {
                   AudioManager.play("ui_nav");
                 }
               }}
-              style={{
-                touchAction: "manipulation",
-                userSelect: "none",
-                WebkitUserSelect: "none",
-                WebkitTapHighlightColor: "transparent",
-                willChange: "transform, opacity",
-              }}
-              className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left"
+              className="caldra-card group relative flex w-[152px] xs:w-[160px] sm:w-[168px] shrink-0 snap-start flex-col justify-between overflow-hidden rounded-xl p-2 transition-all hover:border-amber-500/50 active:scale-[0.98] cursor-pointer text-left select-none touch-manipulation"
             >
               <div className="relative h-[80px] w-full overflow-hidden rounded-lg border border-border/60 bg-slate-100/80 dark:bg-black/50">
                 <ScientificCalculatorGraphic />
