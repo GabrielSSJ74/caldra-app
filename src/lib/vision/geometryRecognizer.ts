@@ -231,91 +231,15 @@ function sagitta(pts: PxPoint[]) {
   return m;
 }
 
-/** Converte um contorno em uma ou mais primitivas geométricas. */
-export function recognizeContour(c: Contour, opt: RecognizeOptions): Prim[] {
-  const tolPx = Math.max(0.8, TOLERANCE_FACTOR[opt.tolerance] * opt.diagonalPx);
-  const src = c.pts;
+import { constructShapeFromContour } from "./shapeConstructorEngine";
 
-  // 1) círculo completo tem prioridade absoluta (furos, flanges, tubos)
-  if (opt.preferCircles !== false && src.length >= 20) {
-    const fit = fitCircle(src);
-    if (fit) {
-      const { span } = angularSpan(src, fit.cx, fit.cy);
-      const roundness = fit.rms / Math.max(fit.r, 1);
-      if (span > 5.9 && roundness < 0.06 && fit.rms < tolPx * 2)
-        return [
-          {
-            kind: "circle",
-            cx: fit.cx,
-            cy: fit.cy,
-            r: fit.r,
-            hole: c.hole,
-            quality: Math.max(0, 1 - roundness / 0.06),
-          },
-        ];
-    }
-  }
-
-  // 2) simplificação com rastreio dos índices originais
-  const idx = simplifyIndices(src, tolPx);
-  if (idx.length < 3) {
-    const a = src[0]!;
-    const b = src[src.length - 1]!;
-    return [{ kind: "line", x1: a.x, y1: a.y, x2: b.x, y2: b.y, hole: c.hole, quality: 0.5 }];
-  }
-
-  const prims: Prim[] = [];
-  let allLines = true;
-  let i = 0;
-  while (i < idx.length - 1) {
-    // tenta o maior arco possível a partir de i (mínimo de 3 segmentos)
-    let best: { j: number; fit: NonNullable<ReturnType<typeof fitCircle>> } | null = null;
-    for (let j = Math.min(i + 3, idx.length - 1); j < idx.length; j++) {
-      const run = src.slice(idx[i]!, idx[j]! + 1);
-      if (run.length < 8) continue;
-      const fit = fitCircle(run);
-      if (!fit || fit.rms > tolPx * 0.9 || fit.r < tolPx * 3 || fit.r > opt.diagonalPx * 20) break;
-      if (sagitta(run) < tolPx * 1.5) break; // praticamente reto → não é arco
-      best = { j, fit };
-    }
-
-    if (best) {
-      const run = src.slice(idx[i]!, idx[best.j]! + 1);
-      const { span, a0, a1 } = angularSpan(run, best.fit.cx, best.fit.cy);
-      if (span > 0.15) {
-        prims.push({
-          kind: "arc",
-          cx: best.fit.cx,
-          cy: best.fit.cy,
-          r: best.fit.r,
-          a0,
-          a1,
-          hole: c.hole,
-          quality: Math.max(0, 1 - best.fit.rms / (tolPx * 0.9)),
-        });
-        allLines = false;
-        i = best.j;
-        continue;
-      }
-    }
-
-    const a = src[idx[i]!]!;
-    const b = src[idx[i + 1]!]!;
-    prims.push({ kind: "line", x1: a.x, y1: a.y, x2: b.x, y2: b.y, hole: c.hole, quality: 0.95 });
-    i++;
-  }
-
-  // 3) contorno totalmente poligonal vira UMA polilinha fechada editável
-  if (c.closed && allLines && prims.length > 2) {
-    return [
-      {
-        kind: "polyline",
-        pts: idx.map((k) => src[k]!),
-        closed: true,
-        hole: c.hole,
-        quality: 0.9,
-      },
-    ];
-  }
-  return prims;
+/** Converte um contorno em uma ou mais primitivas geométricas nativas (CIRCLE, ARC, LINE). */
+export function recognizeContour(c: Contour, _opt?: RecognizeOptions): Prim[] {
+  if (!c.pts || c.pts.length < 2) return [];
+  const fitted = constructShapeFromContour(c);
+  if (fitted.length > 0) return fitted;
+  const a = c.pts[0]!;
+  const b = c.pts[c.pts.length - 1]!;
+  return [{ kind: "line", x1: a.x, y1: a.y, x2: b.x, y2: b.y, hole: c.hole, quality: 0.5 }];
 }
+

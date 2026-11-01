@@ -11,13 +11,19 @@ import {
   adaptiveBinarize,
   pruneChains,
   snapChainEnds,
-  thinZhangSuen,
   traceSkeleton,
   type Chain,
 } from "./skeletonizer";
-import { recognizeContour, type Prim, type Tolerance } from "./geometryRecognizer";
+import { type Prim, type Tolerance } from "./geometryRecognizer";
 import type { PxPoint } from "./visionEngine";
 import type { VisionAnalysis } from "./vectorizer";
+import {
+  WORK_MAX_DIM,
+  closeMicroNoiseHoles,
+  constructShapeFromContour,
+  normalizeToWorkingGrid,
+  zhangSuenThinning,
+} from "./shapeConstructorEngine";
 
 export type CenterlineOptions = PreprocessOptions & {
   brightness: number;
@@ -42,7 +48,7 @@ export const DEFAULT_CENTERLINE: CenterlineOptions = {
   tolerance: "media",
   blur: 1,
   invert: false,
-  maxSize: 1100,
+  maxSize: WORK_MAX_DIM,
 };
 
 export type CenterlineStats = {
@@ -54,32 +60,6 @@ export type CenterlineStats = {
 };
 
 export type CenterlineAnalysis = VisionAnalysis & { centerline: CenterlineStats };
-
-/** Suavização por média móvel — tira o degrau de pixel do esqueleto. */
-function smooth(pts: PxPoint[], closed: boolean, radius = 2): PxPoint[] {
-  if (pts.length < 5) return pts;
-  const n = pts.length;
-  const out: PxPoint[] = [];
-  for (let i = 0; i < n; i++) {
-    let sx = 0;
-    let sy = 0;
-    let k = 0;
-    for (let d = -radius; d <= radius; d++) {
-      let j = i + d;
-      if (closed) j = (j + n) % n;
-      else if (j < 0 || j >= n) continue;
-      sx += pts[j]!.x;
-      sy += pts[j]!.y;
-      k++;
-    }
-    out.push({ x: sx / k, y: sy / k });
-  }
-  if (!closed) {
-    out[0] = pts[0]!;
-    out[n - 1] = pts[n - 1]!;
-  }
-  return out;
-}
 
 export function analyzeCenterline(
   img: HTMLImageElement,
@@ -95,20 +75,27 @@ export function analyzeCenterlineRaster(
   opt: CenterlineOptions,
   onProgress?: (stage: string, pct: number) => void,
 ): CenterlineAnalysis {
-  const width = input.width;
-  const height = input.height;
+  const origWidth = input.width;
+  const origHeight = input.height;
   onProgress?.("Binarizando", 12);
-  const pixels = opt.blur > 0 ? gaussianBlur(input, opt.blur) : input;
-  const bin = adaptiveBinarize(pixels, {
+
+  // MOTOR 1: Normalização da Grade de Trabalho (WORK_MAX_DIM = 900px)
+  const normGrid = normalizeToWorkingGrid(input, WORK_MAX_DIM);
+  const workInput = normGrid.image ?? input;
+  const scaleToWorld = normGrid.scaleToWorld;
+
+  const pixels = opt.blur > 0 ? gaussianBlur(workInput, opt.blur) : workInput;
+  const rawBin = adaptiveBinarize(pixels, {
     brightness: opt.brightness,
     contrast: opt.contrast,
     bias: opt.bias,
     invert: opt.invert,
   });
+  const bin = closeMicroNoiseHoles(rawBin, 4);
   onProgress?.("Esqueletizando", 45);
 
-  const skel = thinZhangSuen(bin);
-  const diagonalPx = Math.hypot(width, height);
+  const skel = zhangSuenThinning(bin, 3);
+  const diagonalPx = Math.hypot(workInput.width, workInput.height);
   const raw = traceSkeleton(skel);
   const pruned = pruneChains(raw, (opt.minBranchPct / 100) * diagonalPx);
   const chains: Chain[] = snapChainEnds(pruned, (opt.gapPct / 100) * diagonalPx);
@@ -117,13 +104,38 @@ export function analyzeCenterlineRaster(
   const prims: Prim[] = [];
 
   for (const c of chains) {
-    const pts = smooth(c.pts, c.closed);
-    prims.push(
-      ...recognizeContour(
-        { pts, hole: false, closed: c.closed, area: 0 },
-        { tolerance: opt.tolerance, diagonalPx, preferCircles: c.closed },
-      ),
-    );
+    if (c.pts.length < 2) continue;
+    const fitted = constructShapeFromContour({
+      pts: c.pts,
+      hole: false,
+      closed: c.closed,
+      area: 0,
+    });
+    for (const p of fitted) {
+      if (Math.abs(scaleToWorld - 1) <= 1e-6) {
+        prims.push(p);
+      } else if (p.kind === "line") {
+        prims.push({
+          ...p,
+          x1: p.x1 * scaleToWorld,
+          y1: p.y1 * scaleToWorld,
+          x2: p.x2 * scaleToWorld,
+          y2: p.y2 * scaleToWorld,
+        });
+      } else if (p.kind === "circle" || p.kind === "arc") {
+        prims.push({
+          ...p,
+          cx: p.cx * scaleToWorld,
+          cy: p.cy * scaleToWorld,
+          r: p.r * scaleToWorld,
+        });
+      } else if (p.kind === "polyline") {
+        prims.push({
+          ...p,
+          pts: p.pts.map((pt: PxPoint) => ({ x: pt.x * scaleToWorld, y: pt.y * scaleToWorld })),
+        });
+      }
+    }
   }
 
   let minX = Infinity;
@@ -149,8 +161,8 @@ export function analyzeCenterlineRaster(
   if (!Number.isFinite(minX)) {
     minX = 0;
     minY = 0;
-    maxX = width;
-    maxY = height;
+    maxX = origWidth;
+    maxY = origHeight;
   }
 
   return {
@@ -170,8 +182,8 @@ export function analyzeCenterlineRaster(
       circles: prims.filter((p) => p.kind === "circle").length,
       polylines: prims.filter((p) => p.kind === "polyline").length,
     },
-    imagePx: { w: width, h: height },
+    imagePx: { w: origWidth, h: origHeight },
     contentPx: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
-    tolerancePx: Math.max(0.8, diagonalPx * 0.006),
+    tolerancePx: Math.max(0.8, Math.hypot(origWidth, origHeight) * 0.006),
   };
 }

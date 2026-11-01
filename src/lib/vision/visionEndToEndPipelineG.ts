@@ -225,7 +225,7 @@ export function runVisionPipelineS1ToS12(
     mmPerPx: calibrated ? cal.mmPerPx : undefined,
     outputMode,
     regularize: options.regularize !== false,
-    emitUnifiedLwPolyline: outputMode === "laser",
+    emitUnifiedLwPolyline: false,
   });
 
   stageRecords.push({

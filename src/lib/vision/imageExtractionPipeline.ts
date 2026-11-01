@@ -25,6 +25,14 @@ import {
 } from "./imagePreprocessor";
 import { thinZhangSuen, traceSkeleton } from "./skeletonizer";
 import {
+  WORK_MAX_DIM,
+  closeMicroNoiseHoles,
+  collapseParallelRibbons,
+  measureInkRibbonMetrics,
+  normalizeToWorkingGrid,
+  zhangSuenThinning,
+} from "./shapeConstructorEngine";
+import {
   CALIBRATED_THRESHOLDS,
   classifyNestedLoopPair,
   computeAdaptiveTau,
@@ -606,12 +614,16 @@ export function classifyImageKind(
     };
   }
 
-  // 2. SILHUETA vs TRAÇO pelo histograma de espessuras (EDT) e preenchimento:
-  // Blobs sólidos (G2 disco cheio, G3 arruela sólida larga, G6 chapa com furos, G7 rasgo cheio)
-  // possuem espessura máxima alta (maxThicknessPx >= 28 px) e alta razão de tinta ou parede larga.
+  // 2. SILHUETA vs TRAÇO pelo histograma de espessuras (EDT), preenchimento e razão 2*Area/Perímetro (Motor 1):
+  // Se w_ribbon = 2 * Area / Perimetro < 8% da diagonal da peça e inkRatio < 0.22, é formado por TRAÇOS/LINHAS
+  // (mesmo que haja traços espessos de 12..35 px ou junções T/X onde maxThicknessPx seja maior!).
+  const ribbonMetrics = measureInkRibbonMetrics(bin);
   const isSolidSilhouette =
+    !ribbonMetrics.isStrokeDominated &&
     maxThicknessPx >= 28 &&
-    (typicalStrokeWidthPx >= 18 || maxThicknessPx / Math.max(1, typicalStrokeWidthPx) >= 2.4 || inkRatio > 0.18);
+    (typicalStrokeWidthPx >= 18 ||
+      maxThicknessPx / Math.max(1, typicalStrokeWidthPx) >= 2.4 ||
+      inkRatio > 0.18);
 
   if (isSolidSilhouette) {
     reasons.push(
@@ -1063,17 +1075,26 @@ export function runExtractionPipelineS2ToS5(
   input: ImageData | Binary,
   options: ExtractionPipelineOptions = {},
 ): StageS2ToS5Result {
-  const isBinaryInput = !("data" in input && input.data instanceof Uint8ClampedArray);
-  const image: ImageData | null = isBinaryInput ? null : (input as ImageData);
+  // MOTOR 1 — Normalização invariante à escala para grade de trabalho WORK_MAX_DIM = 900px
+  const normGrid = normalizeToWorkingGrid(input, WORK_MAX_DIM);
+  const workingInput = normGrid.workingInput;
+  const scaleToWorld = normGrid.scaleToWorld;
 
-  const rawBin: Binary = isBinaryInput
-    ? (input as Binary)
-    : binarize(input as ImageData, options.invert ?? false);
+  const isBinaryInput = !("data" in workingInput && workingInput.data instanceof Uint8ClampedArray);
+  const image: ImageData | null = isBinaryInput ? null : (workingInput as ImageData);
+
+  const rawBinUnclosed: Binary = isBinaryInput
+    ? (workingInput as Binary)
+    : binarize(workingInput as ImageData, options.invert ?? false);
+
+  // Fechamento morfológico de micro-buracos de ruído <= 4 px dentro dos traços
+  const rawBin = closeMicroNoiseHoles(rawBinUnclosed, 4);
 
   const w = rawBin.width;
   const h = rawBin.height;
-  const minPixels = options.minPixels ?? 24;
-  const minPoints = options.minPoints ?? 12;
+  const scaleFactorSq = normGrid.scaleFactor * normGrid.scaleFactor;
+  const minPixels = Math.max(8, Math.round((options.minPixels ?? 24) * scaleFactorSq));
+  const minPoints = Math.max(8, Math.round((options.minPoints ?? 12) * normGrid.scaleFactor));
   const preset = options.preset ?? "equilibrado";
 
   // --- ESTÁGIO S2: Exclusão de Interface de Tela ---
@@ -1094,6 +1115,8 @@ export function runExtractionPipelineS2ToS5(
   );
   const w0 = classification.typicalStrokeWidthPx;
   const effectiveKind = classification.effectiveKind;
+  const ribbonMetrics = measureInkRibbonMetrics(cleanedMask);
+  const partDiagonalPx = ribbonMetrics.partDiagonalPx;
   const t2 = performance.now();
 
   // --- ESTÁGIO S4: Extração Sub-pixel + Hierarquia Real + Grafo de Junções ---
@@ -1210,12 +1233,22 @@ export function runExtractionPipelineS2ToS5(
         });
 
         const manualOverride = options.twinOverrides?.[node.id];
+        const qRel = meanBandWidthPx / Math.max(1, midRadiusPx);
+        // MOTOR 1 (Caminho B): Se d_média <= 6% da diagonal global da peça, q_rel <= 0.21 e compatível com os outros traços (q <= 2.2),
+        // trata obrigatoriamente como as duas paredes do mesmo traço (1 única linha central)!
+        const isWithinGlobalStrokeBand =
+          meanBandWidthPx <= 0.06 * partDiagonalPx &&
+          qRel <= 0.21 &&
+          (!hasOtherStrokes || meanBandWidthPx <= refW0 * 2.2);
+
         const effectiveDecision: TwinLoopDecision =
           manualOverride === "stroke"
             ? "stroke_centerline"
             : manualOverride === "ring"
               ? "concentric_ring"
-              : twinCheck.decision;
+              : isWithinGlobalStrokeBand
+                ? "stroke_centerline"
+                : twinCheck.decision;
 
         if (effectiveDecision === "stroke_centerline") {
           consumedNodeIndices.add(node.index);
@@ -1437,10 +1470,10 @@ export function runExtractionPipelineS2ToS5(
     });
   }
 
-  // Extrai nós de junção T/X do esqueleto quando em modo TRAÇO / LINHA FINA
+  // Extrai nós de junção T/X do esqueleto Zhang-Suen 1-pixel quando em modo TRAÇO / LINHA FINA
   const skeletonNodes: SkeletonGraphNode[] = [];
   if (effectiveKind === "traco" || effectiveKind === "linha") {
-    const skel = thinZhangSuen(cleanedMask);
+    const skel = zhangSuenThinning(cleanedMask);
     traceSkeleton(skel); // valida conectividade
     for (let y = 1; y < h - 1; y++) {
       for (let x = 1; x < w - 1; x++) {
@@ -1455,8 +1488,8 @@ export function runExtractionPipelineS2ToS5(
         if (deg === 1 || deg >= 3) {
           skeletonNodes.push({
             id: `node_${x}_${y}`,
-            x,
-            y,
+            x: x * scaleToWorld,
+            y: y * scaleToWorld,
             degree: deg,
             kind: deg === 1 ? "endpoint" : deg === 3 ? "junction_T" : "junction_X",
           });
@@ -1466,22 +1499,86 @@ export function runExtractionPipelineS2ToS5(
   }
   const t3 = performance.now();
 
-  // --- ESTÁGIO S5: Rede de Segurança Pós-Extração (Deduplicação) ---
+  // --- ESTÁGIO S5: Rede de Segurança Pós-Extração + Colapso de Fitas Paralelas (Motor 1) ---
   const dedup = deduplicateContoursSafetyNet(extractedContours, {
     imageKind: effectiveKind,
     typicalStrokeWidthPx: w0,
     preset,
   });
   fusionLog.push(...dedup.fusionLog);
+
+  let effectiveRibbonW0 = w0;
+  if (hasOtherStrokes && cachedTwinStats.size > 1) {
+    const allTwinWidths = Array.from(cachedTwinStats.values())
+      .map((s) => s.meanBandWidthPx)
+      .sort((a, b) => a - b);
+    effectiveRibbonW0 = Math.min(w0, allTwinWidths[0]!);
+  }
+
+  const ribbonCollapsed = collapseParallelRibbons(dedup.contours, {
+    globalDiagonalPx: partDiagonalPx,
+    typicalStrokeWidthPx: effectiveRibbonW0,
+    isSilhouetteMode: effectiveKind === "silhueta",
+    hasManualTwinOverrides: Boolean(
+      options.twinOverrides && Object.keys(options.twinOverrides).length > 0,
+    ),
+    hasOtherStrokes,
+  });
+  fusionLog.push(...ribbonCollapsed.fusionLog);
+
+  // Converte coordenadas de volta da grade de trabalho (<= 900px) para o espaço de pixels da imagem original
+  const scaleContourToWorld = (c: ExtractedContourC): ExtractedContourC => {
+    if (scaleToWorld === 1) return c;
+    return {
+      ...c,
+      pts: c.pts.map((p) => ({ x: p.x * scaleToWorld, y: p.y * scaleToWorld })),
+      area: c.area * scaleToWorld * scaleToWorld,
+      localWidthPx: c.localWidthPx * scaleToWorld,
+      bbox: c.bbox
+        ? {
+            x: c.bbox.x * scaleToWorld,
+            y: c.bbox.y * scaleToWorld,
+            w: c.bbox.w * scaleToWorld,
+            h: c.bbox.h * scaleToWorld,
+          }
+        : undefined,
+      provenance: {
+        ...c.provenance,
+        bbox: {
+          x: c.provenance.bbox.x * scaleToWorld,
+          y: c.provenance.bbox.y * scaleToWorld,
+          w: c.provenance.bbox.w * scaleToWorld,
+          h: c.provenance.bbox.h * scaleToWorld,
+        },
+        meanStrokeWidthPx: c.provenance.meanStrokeWidthPx * scaleToWorld,
+      },
+    };
+  };
+
+  const finalContours = ribbonCollapsed.contours.map(scaleContourToWorld);
+  const finalAmbiguous = ambiguousTwins.map((amb) => ({
+    ...amb,
+    outerContour: scaleContourToWorld(amb.outerContour),
+    innerContour: scaleContourToWorld(amb.innerContour),
+    centerlineOption: scaleContourToWorld(amb.centerlineOption),
+    bandWidthPx: amb.bandWidthPx * scaleToWorld,
+    typicalStrokeWidthPx: amb.typicalStrokeWidthPx * scaleToWorld,
+  }));
+
+  const scaledClassification: ImageKindClassificationResult = {
+    ...classification,
+    typicalStrokeWidthPx: classification.typicalStrokeWidthPx * scaleToWorld,
+    maxThicknessPx: classification.maxThicknessPx * scaleToWorld,
+  };
   const t4 = performance.now();
 
   return {
-    classification,
-    contours: dedup.contours,
+    classification: scaledClassification,
+    contours: finalContours,
     skeletonNodes,
     excludedUiElements,
     fusionLog,
-    ambiguousTwins,
+    ambiguousTwins: finalAmbiguous,
     cleanedMask,
     stageTimingsMs: {
       s2UiExclusion: Number((t1 - t0).toFixed(2)),

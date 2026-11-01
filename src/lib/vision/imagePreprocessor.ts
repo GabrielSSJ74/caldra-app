@@ -198,7 +198,7 @@ export function rasterize(img: HTMLImageElement, opt: PreprocessOptions = {}) {
   const cw = Math.max(1, Math.round(rw * crop.w));
   const ch = Math.max(1, Math.round(rh * crop.h));
 
-  const max = opt.maxSize ?? 1400;
+  const max = opt.maxSize ?? 900;
   const up = Math.max(1, Math.min(4, opt.upscale ?? 1));
   const scale = Math.min(up, (max * up) / Math.max(cw, ch));
   const W = Math.max(1, Math.round(cw * scale));

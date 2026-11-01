@@ -224,4 +224,55 @@ describe("CHAMFER VISION 2.0 — FASE FINAL G: Pipeline Ponta-a-Ponta S1–S12 e
     expect(cert.cypcutVerifiedByOperator).toBe(false);
     expect(cert.cypcutValidationLabel).toBe("Validação no CypCut: não verificada");
   });
+
+  it("G-Final 6: Imagem grande (1800x1400 px) com traços grossos (20-24 px), furo circular, furo oval e contorno curvo grande -> 0 linhas duplas, 0 octógonos facetados e primitivas CIRCLE/ARC/LINE exatas no CypCut", () => {
+    const W = 1800;
+    const H = 1400;
+    const img = createBlankImage(W, H);
+    const { data } = img;
+
+    // Desenha em alta resolução (1800x1400):
+    // 1) Contorno externo grande (R = 540 px, espessura = 24 px) centrado em (900, 700)
+    // 2) Furo circular interno (R = 120 px, espessura = 20 px) centrado em (650, 700)
+    // 3) Furo oval interno (semi-eixos a = 150 px, b = 95 px, espessura = 20 px) centrado em (1150, 700)
+    for (let y = 0; y < H; y++) {
+      for (let x = 0; x < W; x++) {
+        const dOuter = Math.abs(Math.hypot(x - 900, y - 700) - 540);
+        const dCircHole = Math.abs(Math.hypot(x - 650, y - 700) - 120);
+        const ux = x - 1150;
+        const uy = y - 700;
+        const ellNorm = Math.hypot(ux / 150, uy / 95);
+        const dOvalHole = Math.abs(ellNorm - 1) * Math.sqrt(150 * 95);
+
+        if (dOuter <= 12 || dCircHole <= 10 || dOvalHole <= 10) {
+          const i = (y * W + x) * 4;
+          data[i] = 15;
+          data[i + 1] = 15;
+          data[i + 2] = 15;
+          data[i + 3] = 255;
+        }
+      }
+    }
+
+    const res = runVisionPipelineS1ToS12(img, {
+      tolerance: "media",
+      imageKind: "auto",
+      outputMode: "laser",
+      calibration: { mmPerPx: 1, method: "medida", label: "1 px = 1 mm" },
+    });
+
+    // 1. Nenhum contorno duplo (as 3 faixas de traço grosso viram exatamente 3 contornos de linha central única!)
+    expect(res.analysis.cachedContours).toHaveLength(3);
+    expect(res.roundTripAudit.unconfirmedConcentricPairs).toBe(0);
+    expect(res.roundTripAudit.polygonalCircularHoles).toBe(0);
+    expect(res.roundTripAudit.openCutProfiles).toBe(0);
+    expect(res.roundTripAudit.passed).toBe(true);
+
+    // 2. O contorno circular externo (R=540) e o furo circular interno (R=120) saem como CIRCLE nativo
+    // e o furo oval (a=150, b=95) sai como arcos tangentes (LWPOLYLINE com bulge no DXF), NUNCA polígono de retas!
+    expect(res.roundTripAudit.circlesCount).toBe(2);
+    expect(res.roundTripAudit.closedStraightPolylinesCount).toBe(0);
+    expect(res.roundTripAudit.closedBulgePolylinesCount).toBe(1);
+  });
 });
+

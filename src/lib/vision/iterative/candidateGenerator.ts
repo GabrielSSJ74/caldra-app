@@ -15,6 +15,8 @@ import {
   type Binary,
 } from "../imagePreprocessor";
 import { extractContours } from "../visionEngine";
+import { runExtractionPipelineS2ToS5 } from "../imageExtractionPipeline";
+import { toleranceToPreset } from "../visionThresholdConfig";
 import {
   recognizeContour,
   TOLERANCE_FACTOR,
@@ -106,10 +108,18 @@ export class CandidateGenerator {
       });
     }
 
-    // Processa e avalia cada configuração
+    // Processa e avalia cada configuração com extração invariante à escala e eixo medial único
     for (const cfg of configs) {
       const minPixels = Math.max(10, Math.round((width * height) / 45000));
-      const contours = extractContours(cfg.bin, { minPixels });
+      const preset = toleranceToPreset(cfg.tolerance);
+      const s2ToS5 = runExtractionPipelineS2ToS5(cfg.bin, {
+        image: pixels,
+        requestedMode: "auto",
+        preset,
+        minPixels,
+      });
+      const contours =
+        s2ToS5.contours.length > 0 ? s2ToS5.contours : extractContours(cfg.bin, { minPixels });
       const maxDevPx = Math.max(0.8, TOLERANCE_FACTOR[cfg.tolerance] * diagonalPx);
 
       const prims: Prim[] = [];
@@ -123,6 +133,9 @@ export class CandidateGenerator {
               diagonalPx,
               preferCircles: cfg.preferCircles,
               regularize: cfg.regularize,
+              preset,
+              typicalStrokeWidthPx: s2ToS5.classification.typicalStrokeWidthPx,
+              emitUnifiedLwPolyline: false,
             }),
           );
         }

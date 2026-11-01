@@ -33,7 +33,11 @@ const len = (e: Entity) => {
     return t;
   }
   if (e.type === "circle") return 2 * Math.PI * e.r;
-  if (e.type === "arc") return e.r * Math.abs(e.a1 - e.a0);
+  if (e.type === "arc") {
+    let sweep = (e.a1 - e.a0) % (Math.PI * 2);
+    if (sweep <= 0) sweep += Math.PI * 2;
+    return e.r * sweep;
+  }
   return 1;
 };
 
@@ -45,13 +49,24 @@ function signature(e: Entity, q: number) {
     return `line:${[a, b].sort().join("|")}`;
   }
   if (e.type === "circle") return `circle:${r(e.cx)},${r(e.cy)},${r(e.r)}`;
-  if (e.type === "arc") return `arc:${r(e.cx)},${r(e.cy)},${r(e.r)},${r(e.a0)},${r(e.a1)}`;
+  if (e.type === "arc") {
+    let sweep = (e.a1 - e.a0) % (Math.PI * 2);
+    if (sweep <= 0) sweep += Math.PI * 2;
+    const am = e.a0 + sweep / 2;
+    const p0x = e.cx + e.r * Math.cos(e.a0);
+    const p0y = e.cy + e.r * Math.sin(e.a0);
+    const pmx = e.cx + e.r * Math.cos(am);
+    const pmy = e.cy + e.r * Math.sin(am);
+    const p1x = e.cx + e.r * Math.cos(e.a1);
+    const p1y = e.cy + e.r * Math.sin(e.a1);
+    return `arc:${r(e.cx)},${r(e.cy)},${r(e.r)},${r(p0x)},${r(p0y)},${r(pmx)},${r(pmy)},${r(p1x)},${r(p1y)}`;
+  }
   if (e.type === "polyline")
-    return `poly:${e.closed}:${e.pts.map((p) => `${r(p.x)},${r(p.y)}`).join(";")}`;
+    return `poly:${e.closed}:${e.pts.map((p, idx) => `${r(p.x)},${r(p.y)},${Math.round((e.bulges?.[idx] ?? 0) * 100)}`).join(";")}`;
   return `text:${e.id}`;
 }
 
-/** Remove vértices colineares consecutivos de uma polilinha. */
+/** Remove vértices colineares consecutivos de uma polilinha puramente retilínea. */
 function mergeCollinearPts(pts: Vec2[], tol: number) {
   if (pts.length < 3) return { pts, merged: 0 };
   const out: Vec2[] = [pts[0]!];
@@ -110,8 +125,9 @@ export function normalizeGeometry(
   // 3) colineares + fechamento de contorno
   list = list.map((e) => {
     if (e.type !== "polyline") return e;
+    const hasBulges = e.bulges?.some((b) => Math.abs(b) > 1e-7) ?? false;
     let pts = e.pts;
-    if (opt.mergeCollinear !== false) {
+    if (opt.mergeCollinear !== false && !hasBulges) {
       const m = mergeCollinearPts(pts, gap / 2);
       pts = m.pts;
       report.mergedCollinear += m.merged;

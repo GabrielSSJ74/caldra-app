@@ -144,7 +144,7 @@ export function weldConnectedCutChains(entities: Entity[], weldTolMm = 0.05): En
       candidateIndiceSet.add(i);
     } else if (e.type === "arc") {
       let sweep = e.a1 - e.a0;
-      while (sweep <= -Math.PI * 2) sweep += Math.PI * 2;
+      while (sweep <= 0) sweep += Math.PI * 2;
       while (sweep > Math.PI * 2) sweep -= Math.PI * 2;
       if (Math.abs(sweep) < 1e-6) sweep = Math.PI * 2;
       const p0 = { x: e.cx + e.r * Math.cos(e.a0), y: e.cy + e.r * Math.sin(e.a0) };
@@ -275,7 +275,7 @@ function geometryOf(e: Entity, layer: string, flatten: boolean, cypcut = true): 
     case "circle":
       return [{ type: "CIRCLE", layer, center: m({ x: e.cx, y: e.cy }), radius: e.r }];
     case "arc": {
-      const deg = (r: number) => ((-r * 180) / Math.PI + 360) % 360;
+      const deg = (r: number) => ((((-r * 180) / Math.PI) % 360) + 360) % 360;
       return [
         {
           type: "ARC",

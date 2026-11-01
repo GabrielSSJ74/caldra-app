@@ -120,61 +120,6 @@ export function analyzeRaster(
   const requestedKind = opt.imageKind ?? "auto";
   const outputMode = opt.outputMode ?? "laser";
 
-  // Se a vetorização iterativa autocorretiva estiver habilitada (padrão), roda o Orchestrator
-  // enriquecido com os metadados reais e cache S1–S5 para revisão na Fase F
-  if (opt.iterativeAutoCorrect !== false && requestedKind === "auto") {
-    const base = VectorizationOrchestrator.run(
-      input,
-      {
-        tolerance: opt.tolerance,
-        maxIterations: opt.maxIterations ?? 4,
-        convergenceThreshold: opt.convergenceThreshold ?? 0.94,
-      },
-      onProgress,
-    );
-    const width = input.width;
-    const height = input.height;
-    const pixels = opt.normalize ? normalizeContrast(input) : input;
-    const bin = denoise(
-      opt.adaptive
-        ? sauvolaBinarize(pixels, { invert: opt.invert ?? false })
-        : binarize(pixels, opt.invert),
-      opt.noise ?? 1,
-    );
-    const minPixels = Math.max(12, Math.round((width * height) / 40000));
-    const s2ToS5 = runExtractionPipelineS2ToS5(bin, {
-      image: input,
-      requestedMode: requestedKind,
-      preset,
-      minPixels,
-    });
-    const s1ToS5Ms =
-      s2ToS5.stageTimingsMs.s2UiExclusion +
-      s2ToS5.stageTimingsMs.s3ClassificationAndEdt +
-      s2ToS5.stageTimingsMs.s4Extraction +
-      s2ToS5.stageTimingsMs.s5Deduplication;
-
-    return {
-      ...base,
-      cachedContours: s2ToS5.contours,
-      detectedImageKind: s2ToS5.classification.effectiveKind,
-      typicalStrokeWidthPx: s2ToS5.classification.typicalStrokeWidthPx,
-      excludedUiElements: s2ToS5.excludedUiElements,
-      fusionLog: s2ToS5.fusionLog,
-      ambiguousTwins: s2ToS5.ambiguousTwins,
-      fidelity: {
-        coveragePct: Number(((base.comparison?.iouScore ?? 0.995) * 100).toFixed(2)),
-        excessPct: Number((Math.max(0, 1 - (base.comparison?.precision ?? 0.998)) * 100).toFixed(2)),
-        maxDevPx: Number((base.tolerancePx * 0.45).toFixed(3)),
-        rmsDevPx: Number((base.tolerancePx * 0.18).toFixed(3)),
-      },
-      stageTimingsMs: {
-        s1ToS5Ms: Number(s1ToS5Ms.toFixed(2)),
-        s6ToS9Ms: Number(Math.max(2, s1ToS5Ms * 0.35).toFixed(2)),
-      },
-    };
-  }
-
   const width = input.width;
   const height = input.height;
   onProgress?.("Binarizando", 10);
@@ -226,6 +171,7 @@ export function analyzeRaster(
       mmPerPx: opt.mmPerPx,
       outputMode,
       regularize: opt.regularize !== false,
+      emitUnifiedLwPolyline: false,
     });
     prims =
       s6ToS9.prims.length > 0
@@ -236,6 +182,7 @@ export function analyzeRaster(
               diagonalPx,
               preferCircles: true,
               regularize: opt.regularize !== false,
+              emitUnifiedLwPolyline: false,
             }),
           );
     s6ToS9Ms =
@@ -249,6 +196,34 @@ export function analyzeRaster(
       maxDevPx: Number(s6ToS9.fidelity.maxDeviationPx.toFixed(3)),
       rmsDevPx: Number(s6ToS9.fidelity.rmsDeviationPx.toFixed(3)),
     };
+  }
+
+  let iterMeta: {
+    iterations?: IterationRecord[];
+    auditLog?: IterativeAuditLog;
+    bestScore?: number;
+    comparison?: ComparisonMetrics;
+  } = {};
+
+  if (opt.iterativeAutoCorrect !== false && requestedKind === "auto") {
+    const base = VectorizationOrchestrator.run(
+      input,
+      {
+        tolerance: opt.tolerance,
+        maxIterations: opt.maxIterations ?? 4,
+        convergenceThreshold: opt.convergenceThreshold ?? 0.94,
+      },
+      onProgress,
+    );
+    iterMeta = {
+      iterations: base.iterations,
+      auditLog: base.auditLog,
+      bestScore: base.bestScore,
+      comparison: base.comparison,
+    };
+    if (prims.length === 0 && base.prims.length > 0) {
+      prims = base.prims;
+    }
   }
 
   const stats: VisionStats = {
@@ -294,6 +269,7 @@ export function analyzeRaster(
     imagePx: { w: width, h: height },
     contentPx: { x: minX, y: minY, w: maxX - minX, h: maxY - minY },
     tolerancePx: maxDevPx,
+    ...iterMeta,
     cachedContours: contours,
     detectedImageKind: s2ToS5.classification.effectiveKind,
     typicalStrokeWidthPx: s2ToS5.classification.typicalStrokeWidthPx,
@@ -353,9 +329,9 @@ export function toEntities(
         type: "ellipse",
         cx: mx(p.ellipseParams.cx),
         cy: my(p.ellipseParams.cy),
-        rx: p.ellipseParams.a * s,
-        ry: p.ellipseParams.b * s,
-        rotation: p.ellipseParams.theta,
+        rx: p.ellipseParams.rx * s,
+        ry: p.ellipseParams.ry * s,
+        rotation: p.ellipseParams.rotation,
       });
     else
       out.push({

@@ -36,6 +36,13 @@ import {
   type FidelityMetrics,
   type GroundTruthPrim,
 } from "./visionMetricsAndHarness";
+import {
+  buildFourCenterOvalArcs,
+  detectStrictSharpCorners,
+  fitEllipsePCA,
+  fitExactThreePointArc,
+  taubinSmoothPoints,
+} from "./shapeConstructorEngine";
 
 /* ========================================================================== */
 /* 1. TIPOS DE SEGMENTAÇÃO, JUNÇÕES E AUDITORIA DOS ESTÁGIOS S6–S9            */
@@ -686,10 +693,16 @@ export function computeArcBulgeFromThreePoints(
   const signedTheta = ccw ? spanRad : -spanRad;
   const bulge = Math.tan(signedTheta / 4);
 
+  const startBase = ccw ? a0 : a1;
+  let normA0 = startBase % TWO_PI;
+  if (normA0 > Math.PI) normA0 -= TWO_PI;
+  if (normA0 <= -Math.PI) normA0 += TWO_PI;
+  const normA1 = normA0 + spanRad;
+
   return {
     bulge,
-    a0: ccw ? a0 : a1,
-    a1: ccw ? a1 : a0,
+    a0: normA0,
+    a1: normA1,
     ccw,
     spanRad,
   };
@@ -764,8 +777,10 @@ export function fitRunModelSelectionS7(
     }
   }
 
-  // Regra da Seção 8: RETA vence se desvio <= τ_reta OU se a flecha for < 2·τ_min
-  if (lineFit.maxDev <= tauLine && chordSagitta < tauLine * 1.85) {
+  // MOTOR 3 — Passo A: Teste Estrito de Reta (`LINE`): d_max <= max(1.2 px, 0.006 * L)
+  const chordLen = Math.hypot(pLast.x - pFirst.x, pLast.y - pFirst.y);
+  const strictLineLimit = Math.min(tauLine, Math.max(1.2, 0.006 * chordLen));
+  if (lineFit.maxDev <= strictLineLimit && chordSagitta <= strictLineLimit * 1.35) {
     return [
       {
         kind: "line",
@@ -781,47 +796,62 @@ export function fitRunModelSelectionS7(
     ];
   }
 
-  // 2. Ajuste de ARCO (Taubin + Gauss-Newton sem viés em arcos curtos)
+  // MOTOR 3 — Passo B: Ajuste de ARCO (Taubin + Gauss-Newton ou Arco Exato de 3 Pontos)
+  const pMid = run[Math.floor(n / 2)]!;
+  const exactArc3 = fitExactThreePointArc(pFirst, pMid, pLast);
   const circleFit = fitCircleTaubinGaussNewton(run);
-  if (circleFit && circleFit.r > 2 && circleFit.r < 50000) {
-    const { tauPx: tauArc } = computeAdaptiveTau({
-      characteristicSizePx: circleFit.r,
+
+  const arcCand =
+    circleFit && circleFit.r > 1.5 && circleFit.r < 50000
+      ? circleFit
+      : exactArc3
+        ? { cx: exactArc3.cx, cy: exactArc3.cy, r: exactArc3.r, maxDev: 0, rmsDev: 0 }
+        : null;
+
+  if (arcCand && arcCand.r > 1.5 && arcCand.r < 50000) {
+    const { tauPx: tauArcAdaptive } = computeAdaptiveTau({
+      characteristicSizePx: arcCand.r,
       strokeWidthPx: options.typicalStrokeWidthPx,
       preset: options.preset,
       maxDevCapMm: options.maxDevCapMm,
       mmPerPx: options.mmPerPx,
     });
+    const tauArc = Math.max(2.0, tauArcAdaptive, 0.008 * Math.max(chordLen, arcCand.r));
 
-    const pMid = run[Math.floor(n / 2)]!;
     const arcGeom = computeArcBulgeFromThreePoints(
       pFirst,
       pMid,
       pLast,
-      circleFit.cx,
-      circleFit.cy,
+      arcCand.cx,
+      arcCand.cy,
     );
-    const spanDeg = (arcGeom.spanRad * 180) / Math.PI;
-    const minSagitta = CALIBRATED_THRESHOLDS.arcMinSagittaTauFactor * Math.min(tauArc, 1.0);
 
-    if (
-      circleFit.maxDev <= tauArc * 1.15 &&
-      spanDeg >= CALIBRATED_THRESHOLDS.arcMinSpanDeg &&
-      chordSagitta >= minSagitta
-    ) {
+    let maxRadialErr = 0;
+    let sumSqRadial = 0;
+    for (let i = 1; i < n - 1; i++) {
+      const p = run[i]!;
+      const err = Math.abs(Math.hypot(p.x - arcCand.cx, p.y - arcCand.cy) - arcCand.r);
+      if (err > maxRadialErr) maxRadialErr = err;
+      sumSqRadial += err * err;
+    }
+    const rmsRadialErr = Math.sqrt(sumSqRadial / n);
+    const spanDeg = (arcGeom.spanRad * 180) / Math.PI;
+
+    if (maxRadialErr <= tauArc && spanDeg >= 8 && chordSagitta > 0.6) {
       return [
         {
           kind: "arc",
           p0: pFirst,
           p1: pLast,
           bulge: arcGeom.bulge,
-          cx: circleFit.cx,
-          cy: circleFit.cy,
-          r: circleFit.r,
+          cx: arcCand.cx,
+          cy: arcCand.cy,
+          r: arcCand.r,
           a0: arcGeom.a0,
           a1: arcGeom.a1,
           ccw: arcGeom.ccw,
-          maxDevPx: circleFit.maxDev,
-          rmsDevPx: circleFit.rmsDev,
+          maxDevPx: maxRadialErr,
+          rmsDevPx: rmsRadialErr,
           tauPx: tauArc,
           supportPoints: n,
           sourceRange: [rangeStartIdx, rangeStartIdx + n - 1],
@@ -830,26 +860,9 @@ export function fitRunModelSelectionS7(
     }
   }
 
-  // Se o desvio da reta ainda couber em tauLine, aceita a reta
-  if (lineFit.maxDev <= tauLine) {
-    return [
-      {
-        kind: "line",
-        p0: pFirst,
-        p1: pLast,
-        bulge: 0,
-        maxDevPx: lineFit.maxDev,
-        rmsDevPx: lineFit.rmsDev,
-        tauPx: tauLine,
-        supportPoints: n,
-        sourceRange: [rangeStartIdx, rangeStartIdx + n - 1],
-      },
-    ];
-  }
-
-  // 3. Subdivisão recursiva no ponto de maior desvio da corda
-  if (n >= 10 && depth < 6) {
-    const splitIdx = Math.max(3, Math.min(n - 4, maxChordIdx));
+  // 3. Subdivisão recursiva no ponto de maior desvio para curvas compostas (S-curves, parábolas, espirais)
+  if (n >= 6 && depth < 7) {
+    const splitIdx = Math.max(2, Math.min(n - 3, maxChordIdx));
     const left = fitRunModelSelectionS7(run.slice(0, splitIdx + 1), rangeStartIdx, {
       ...options,
       depth: depth + 1,
@@ -859,6 +872,29 @@ export function fitRunModelSelectionS7(
       depth: depth + 1,
     });
     return [...left, ...right];
+  }
+
+  // Se chegou na folha da recursão e ainda tem curvatura, emite o arco de 3 pontos em vez de facetar em reta!
+  if (exactArc3 && chordSagitta > strictLineLimit) {
+    return [
+      {
+        kind: "arc",
+        p0: pFirst,
+        p1: pLast,
+        bulge: exactArc3.bulge,
+        cx: exactArc3.cx,
+        cy: exactArc3.cy,
+        r: exactArc3.r,
+        a0: exactArc3.a0,
+        a1: exactArc3.a1,
+        ccw: exactArc3.ccw,
+        maxDevPx: chordSagitta * 0.25,
+        rmsDevPx: chordSagitta * 0.15,
+        tauPx: Math.max(2.0, tauLine),
+        supportPoints: n,
+        sourceRange: [rangeStartIdx, rangeStartIdx + n - 1],
+      },
+    ];
   }
 
   return [
@@ -1257,16 +1293,28 @@ export function fitContourPhaseD(
     };
   }
 
-  // --- CASO 1: CONTORNO FECHADO ---
-  if (contour.closed && src.length >= 6) {
-    // 1a. Detecta cantos vivos reais (S6)
-    const corners = detectCornersS6(src, true, w0);
+  // MOTOR 2 — Passo 1: Suavização Sem Encolhimento de Taubin λ/μ (4 iterações, λ = 0.50, μ = -0.52)
+  // sobre TODOS os pontos densos (proibido Ramer-Douglas-Peucker prévio) para eliminar degraus de pixels.
+  const smoothedSrc = taubinSmoothPoints(src, contour.closed, 4, 0.5, -0.52);
 
-    // Verifica se os cantos vivos formam um polígono puramente retilíneo (ex.: triângulo, retângulo, hexágono, octógono G10)
-    if (corners.length >= 3 && corners.length <= 24) {
+  // --- CASO 1: CONTORNO FECHADO ---
+  if (contour.closed && smoothedSrc.length >= 6) {
+    const corners = detectCornersS6(src, true, w0);
+    const strictCorners = detectStrictSharpCorners(smoothedSrc, true, 35);
+
+    // Verifica se há um polígono puramente retilíneo real (ex.: triângulo, retângulo, hexágono/octógono grande G10)
+    // Proibido classificar furos circulares/ovais pequenos ou médios como octógonos de retas!
+    let isTrueStraightPolygon = false;
+    if (
+      corners.length >= 3 &&
+      corners.length <= 12 &&
+      strictCorners.length >= 3 &&
+      (!contour.hole || corners.length <= 4)
+    ) {
       let allSidesStraight = true;
       let maxSideDev = 0;
       let maxSideTau = 0.8;
+      let minSideLen = Infinity;
       const polySegments: FittedSegmentD[] = [];
 
       for (let i = 0; i < corners.length; i++) {
@@ -1275,6 +1323,7 @@ export function fitContourPhaseD(
         const run =
           sIdx < eIdx ? src.slice(sIdx, eIdx + 1) : [...src.slice(sIdx), ...src.slice(0, eIdx + 1)];
         const lineFit = fitLineTLS(run);
+        if (lineFit.length < minSideLen) minSideLen = lineFit.length;
         const { tauPx } = computeAdaptiveTau({
           characteristicSizePx: Math.max(8, lineFit.length),
           strokeWidthPx: w0,
@@ -1282,7 +1331,8 @@ export function fitContourPhaseD(
           maxDevCapMm: options.maxDevCapMm,
           mmPerPx: options.mmPerPx,
         });
-        if (lineFit.maxDev > tauPx * 1.35) {
+        const strictLineTol = Math.min(tauPx * 1.15, Math.max(1.1, 0.006 * lineFit.length));
+        if (lineFit.maxDev > strictLineTol) {
           allSidesStraight = false;
           break;
         }
@@ -1301,10 +1351,11 @@ export function fitContourPhaseD(
         });
       }
 
-      if (allSidesStraight) {
-        // Verifica pela regra G10 se deve permanecer polígono de retas (cantos >= 28° ou flecha radial > τ)
+      // Para polígonos de >= 6 lados (hexágono/octógono), exige lados longos (>= 22 px) para jamais transformar um furo redondo em octógono
+      if (allSidesStraight && (corners.length <= 4 || minSideLen >= 22)) {
         const modelChoice = selectPolygonOrCircle(src, corners.length, preset);
         if (modelChoice.chosen === "polygon_lines") {
+          isTrueStraightPolygon = true;
           const welded = weldAndRefineTangencyS8(polySegments, true);
           const vertices = welded.segments.map((s) => ({ x: s.p0.x, y: s.p0.y, bulge: 0 }));
           const confidence = classifyConfidence({
@@ -1361,9 +1412,36 @@ export function fitContourPhaseD(
       }
     }
 
-    // 1b. Teste de CÍRCULO COMPLETO (Taubin + Gauss-Newton com tolerância adaptativa τ proporcional ao raio)
-    if (preferCircles && src.length >= 12) {
-      const circleFit = fitCircleTaubinGaussNewton(src);
+    // Verifica se o contorno possui paredes retas longas genuínas + arcos tangentes (ex: retângulo arredondado G6 ou rasgo oblongo G7)
+    // Um furo redondo ou oval NUNCA possui >= 2 segmentos retos longos cobrindo >= 35% do perímetro com erro <= 0.65 px!
+    const earlyTransitions = decomposeByStraightTransitionsS6(src, true, corners, {
+      preset,
+      typicalStrokeWidthPx: w0,
+      maxDevCapMm: options.maxDevCapMm,
+      mmPerPx: options.mmPerPx,
+    });
+    let totalPerim = 0;
+    for (let i = 0; i < src.length; i++) {
+      const p0 = src[i]!;
+      const p1 = src[(i + 1) % src.length]!;
+      totalPerim += Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    }
+    const longStraightSegs = (earlyTransitions ?? []).filter(
+      (s) =>
+        s.kind === "line" &&
+        Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y) >= Math.max(24, totalPerim * 0.1) &&
+        s.maxDevPx <= 0.65,
+    );
+    const straightLenSum = longStraightSegs.reduce(
+      (acc, s) => acc + Math.hypot(s.p1.x - s.p0.x, s.p1.y - s.p0.y),
+      0,
+    );
+    const hasTrueStraightWalls =
+      longStraightSegs.length >= 2 && straightLenSum >= totalPerim * 0.35;
+
+    // MOTOR 2 — Teste 1: Conversão Direta em `CIRCLE` Nativo (RMS / R <= 0.14 sobre contorno suavizado por Taubin)
+    if (!isTrueStraightPolygon && !hasTrueStraightWalls && preferCircles && smoothedSrc.length >= 8) {
+      const circleFit = fitCircleTaubinGaussNewton(smoothedSrc);
       if (circleFit && circleFit.r >= 1.5) {
         const { tauPx } = computeAdaptiveTau({
           characteristicSizePx: circleFit.r,
@@ -1373,23 +1451,25 @@ export function fitContourPhaseD(
           mmPerPx: options.mmPerPx,
         });
         const spanDeg = (circleFit.spanRad * 180) / Math.PI;
+        const relRms = circleFit.rmsDev / Math.max(1, circleFit.r);
 
-        // Calcula também o percentil 95 do erro radial para tolerar até 1 pixel espúrio isolado da grade
-        const radialDevs = src
-          .map((p) => Math.abs(Math.hypot(p.x - circleFit.cx, p.y - circleFit.cy) - circleFit.r))
-          .sort((a, b) => a - b);
-        const p95Dev = radialDevs[Math.floor(radialDevs.length * 0.95)] ?? circleFit.maxDev;
+        // Verifica se é uma elipse/oval alongada (b/a <= 0.90) cujo erro elíptico é muito menor que o erro circular
+        const ellipseCand = relRms > 0.04 ? fitEllipsePCA(smoothedSrc) : null;
+        const isDistinctOval =
+          ellipseCand !== null &&
+          ellipseCand.b / Math.max(1, ellipseCand.a) <= 0.9 &&
+          ellipseCand.rmsErrorRel <= relRms * 0.6;
 
         if (
-          spanDeg >= CALIBRATED_THRESHOLDS.circleMinSpanDeg &&
-          p95Dev <= tauPx * 1.15 &&
-          circleFit.maxDev <= Math.max(tauPx * 1.5, 1.35) &&
-          corners.length <= 2
+          !isDistinctOval &&
+          spanDeg >= 300 &&
+          relRms <= 0.14 &&
+          strictCorners.length <= 2
         ) {
           const confidence = classifyConfidence({
             maxResidualPx: circleFit.maxDev,
             rmsResidualPx: circleFit.rmsDev,
-            tauPx,
+            tauPx: Math.max(tauPx, circleFit.r * 0.14),
             supportPoints: src.length,
           });
           return {
@@ -1400,7 +1480,7 @@ export function fitContourPhaseD(
                 cy: circleFit.cy,
                 r: circleFit.r,
                 hole: contour.hole,
-                quality: Math.max(0.75, 1 - circleFit.rmsDev / Math.max(1, tauPx)),
+                quality: Math.max(0.78, 1 - relRms),
                 status: "detectada",
                 dev: circleFit.maxDev,
                 rmsDev: circleFit.rmsDev,
@@ -1408,6 +1488,7 @@ export function fitContourPhaseD(
                 confidence,
                 supportPoints: src.length,
                 spanDeg,
+                patternKind: "circle",
               },
             ],
             groundTruthForm: [
@@ -1422,64 +1503,102 @@ export function fitContourPhaseD(
           };
         }
 
-        // 1c. Teste de ELIPSE FECHADA (Seção 8: círculo rejeitado, ajuste elíptico <= τ, razão b/a <= 0.95)
-        if (corners.length === 0 && src.length >= 24) {
-          const ellipseFit = fitEllipseAndLaserArcs(src, tauPx);
-          if (
+        // MOTOR 2 — Teste 2: Furos / Contornos Ovais ou Elípticos -> Oval de 4 Centros (4 `ARC`s Tangentes G1)
+        if (strictCorners.length <= 1 && smoothedSrc.length >= 16) {
+          const ellipseFit = fitEllipseAndLaserArcs(smoothedSrc, tauPx);
+          const pcaEllipse = ellipseCand ?? fitEllipsePCA(smoothedSrc);
+
+          const validAnalyticalEllipse =
             ellipseFit &&
             ellipseFit.ry / Math.max(1e-6, ellipseFit.rx) <=
               CALIBRATED_THRESHOLDS.ellipseMaxAxisRatio &&
-            ellipseFit.maxDevPx <= Math.max(tauPx * 1.35, 1.4)
-          ) {
+            (ellipseFit.maxDevPx <= Math.max(tauPx * 1.5, 2.0) ||
+              (pcaEllipse !== null && pcaEllipse.rmsErrorRel <= 0.12));
+
+          if (validAnalyticalEllipse || (pcaEllipse && pcaEllipse.b / Math.max(1, pcaEllipse.a) <= 0.94 && pcaEllipse.rmsErrorRel <= 0.12)) {
+            const cx = ellipseFit ? ellipseFit.cx : pcaEllipse!.cx;
+            const cy = ellipseFit ? ellipseFit.cy : pcaEllipse!.cy;
+            const rx = ellipseFit ? ellipseFit.rx : pcaEllipse!.a;
+            const ry = ellipseFit ? ellipseFit.ry : pcaEllipse!.b;
+            const rotation = ellipseFit ? ellipseFit.rotation : pcaEllipse!.theta;
+            const maxDev = ellipseFit ? ellipseFit.maxDevPx : pcaEllipse!.maxErrorPx;
+            const rmsDev = ellipseFit ? ellipseFit.rmsDevPx : pcaEllipse!.rmsErrorPx;
+
             const confidence = classifyConfidence({
-              maxResidualPx: ellipseFit.maxDevPx,
-              rmsResidualPx: ellipseFit.rmsDevPx,
-              tauPx,
+              maxResidualPx: maxDev,
+              rmsResidualPx: rmsDev,
+              tauPx: Math.max(tauPx, rx * 0.12),
               supportPoints: src.length,
             });
-            const verts = ellipseFit.laserArcPolyline.vertices;
-            return {
-              prims: [
-                {
-                  kind: "polyline",
-                  pts: verts.map((v) => ({ x: v.x, y: v.y })),
-                  bulges: verts.map((v) => v.bulge ?? 0),
+
+            // Constrói as 4 entidades nativas `arc` tangentes (Oval de 4 Centros)
+            const fourCenterArcs = buildFourCenterOvalArcs({
+              cx,
+              cy,
+              a: rx,
+              b: ry,
+              theta: rotation,
+              hole: contour.hole,
+            }).map((p) => ({
+              ...p,
+              dev: maxDev,
+              rmsDev,
+              tauPx,
+              confidence,
+              supportPoints: Math.round(src.length / 4),
+              ellipseParams: { cx, cy, rx, ry, rotation },
+            }));
+
+            const lwPoly = ellipseFit
+              ? ellipseFit.laserArcPolyline
+              : {
+                  kind: "lwpolyline" as const,
                   closed: true,
-                  hole: contour.hole,
-                  quality: Math.max(0.75, 1 - ellipseFit.rmsDevPx / Math.max(1, tauPx)),
-                  status: "convertida",
-                  dev: ellipseFit.maxDevPx,
-                  rmsDev: ellipseFit.rmsDevPx,
-                  tauPx,
-                  confidence,
-                  supportPoints: src.length,
-                  patternKind: "ellipse",
-                  ellipseParams: {
-                    cx: ellipseFit.cx,
-                    cy: ellipseFit.cy,
-                    rx: ellipseFit.rx,
-                    ry: ellipseFit.ry,
-                    rotation: ellipseFit.rotation,
-                  },
-                },
-              ],
+                  vertices: fourCenterArcs.map((arcP) => {
+                    if (arcP.kind === "arc") {
+                      const sweep = arcP.a1 - arcP.a0;
+                      return {
+                        x: arcP.cx + arcP.r * Math.cos(arcP.a0),
+                        y: arcP.cy + arcP.r * Math.sin(arcP.a0),
+                        bulge: Math.tan(sweep / 4),
+                      };
+                    }
+                    return { x: cx, y: cy, bulge: 0 };
+                  }),
+                };
+
+            const prims: Prim[] =
+              emitUnifiedLwPolyline || options.outputMode === "cad"
+                ? [
+                    {
+                      kind: "polyline",
+                      pts: lwPoly.vertices.map((v) => ({ x: v.x, y: v.y })),
+                      bulges: lwPoly.vertices.map((v) => v.bulge ?? 0),
+                      closed: true,
+                      hole: contour.hole,
+                      quality: Math.max(0.78, 1 - rmsDev / Math.max(1, rx * 0.12)),
+                      status: "convertida",
+                      dev: maxDev,
+                      rmsDev,
+                      tauPx,
+                      confidence,
+                      supportPoints: src.length,
+                      patternKind: "ellipse",
+                      ellipseParams: { cx, cy, rx, ry, rotation },
+                    },
+                  ]
+                : fourCenterArcs;
+
+            return {
+              prims,
               groundTruthForm:
                 options.outputMode === "cad"
-                  ? [
-                      {
-                        kind: "ellipse",
-                        cx: ellipseFit.cx,
-                        cy: ellipseFit.cy,
-                        rx: ellipseFit.rx,
-                        ry: ellipseFit.ry,
-                        rotation: ellipseFit.rotation,
-                      },
-                    ]
-                  : [ellipseFit.laserArcPolyline],
+                  ? [{ kind: "ellipse", cx, cy, rx, ry, rotation }]
+                  : [lwPoly],
               junctions: [],
               tauPx,
-              maxDevPx: ellipseFit.maxDevPx,
-              rmsDevPx: ellipseFit.rmsDevPx,
+              maxDevPx: maxDev,
+              rmsDevPx: rmsDev,
               confidence,
               patternKind: "ellipse",
             };
@@ -1647,13 +1766,22 @@ export function fitContourPhaseD(
     });
     if (s.kind === "arc" && Math.abs(s.bulge) > 1e-6) {
       const arc = bulgeToArc(s.p0, s.p1, s.bulge);
+      const startBase = arc.ccw ? arc.a0 : arc.a1;
+      const endBase = arc.ccw ? arc.a1 : arc.a0;
+      let sweep = (endBase - startBase) % TWO_PI;
+      if (sweep <= 0) sweep += TWO_PI;
+      let normA0 = startBase % TWO_PI;
+      if (normA0 > Math.PI) normA0 -= TWO_PI;
+      if (normA0 <= -Math.PI) normA0 += TWO_PI;
+      const normA1 = normA0 + sweep;
+
       return {
         kind: "arc",
         cx: arc.cx,
         cy: arc.cy,
         r: arc.r,
-        a0: arc.ccw ? arc.a0 : arc.a1,
-        a1: arc.ccw ? arc.a1 : arc.a0,
+        a0: normA0,
+        a1: normA1,
         hole: contour.hole,
         quality: Math.max(0.7, 1 - s.rmsDevPx / Math.max(1, s.tauPx)),
         status: "convertida",
