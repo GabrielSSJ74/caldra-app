@@ -22,6 +22,7 @@ import {
 } from "@/lib/cad/sketch/sketch3dBridge";
 import type { Entity } from "@/lib/lab2d/core";
 import type { EdgeMode } from "@/lib/viz3d/cameraPresets";
+import { registerThemeBridge } from "@/lib/settings/themeTransitionEngine";
 import { cn } from "@/lib/utils";
 
 export interface ChamferUnified3DViewportProps {
@@ -142,12 +143,23 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
     };
   }, []);
 
-  // Atualiza tema visual (Dark / Light)
+  // Atualiza tema visual (Dark / Light) e registra ponte síncrona para View Transitions
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
     renderer.setTheme(isDark ? "dark" : "light");
   }, [isDark]);
+
+  useEffect(() => {
+    return registerThemeBridge("chamfer-3d-unified", {
+      applyTheme: (theme) => {
+        rendererRef.current?.setTheme(theme === "light" ? "light" : "dark");
+      },
+      renderNow: () => {
+        rendererRef.current?.renderImmediate();
+      },
+    });
+  }, []);
 
   // Atualiza modo de estilo 3D (SÓLIDO+AR, SOMB, ARAME)
   useEffect(() => {

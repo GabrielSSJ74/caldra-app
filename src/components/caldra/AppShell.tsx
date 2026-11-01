@@ -99,10 +99,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 setMasterOpen(true);
               }}
               aria-label={isMestre ? "Modo Mestre ativo" : "Ativar Modo Mestre"}
+              title={isMestre ? "Modo Mestre ativo" : "Ativar Modo Mestre"}
               className={cn(
-                "grid size-9 place-items-center rounded-full transition-all duration-180 [transition-timing-function:var(--ease-natural)] touch-manipulation select-none cursor-pointer",
-                "metal backdrop-blur-xl hover:scale-105 active:scale-95",
-                isMestre ? "text-accent glow-ring" : "text-muted-foreground hover:text-foreground",
+                "caldra-bubble-base size-9 transition-all duration-180 [transition-timing-function:var(--ease-natural)] touch-manipulation select-none cursor-pointer hover:scale-105 active:scale-95",
+                isMestre
+                  ? "caldra-bubble-center glow-ring"
+                  : "caldra-bubble-neutral text-muted-foreground hover:text-[var(--accent-color)] hover:border-[var(--accent-color)]",
               )}
             >
               <Sparkles className="size-4" />
@@ -113,6 +115,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 setProfileOpen(true);
               }}
               aria-label="Abrir perfil"
+              title="Abrir perfil"
               className="rounded-full transition-transform duration-180 [transition-timing-function:var(--ease-natural)] hover:scale-105 active:scale-95 touch-manipulation cursor-pointer"
             >
               <Avatar photo={profile.photo} size={36} className="backdrop-blur-xl shadow-sm" />

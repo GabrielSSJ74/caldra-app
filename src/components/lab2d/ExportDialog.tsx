@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/lab2d/chamferNotify";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cncCounts, cncCutLength, layerMapping } from "@/lib/dxf/cncExport";
 import {

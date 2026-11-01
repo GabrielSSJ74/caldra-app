@@ -46,7 +46,7 @@ import {
   type StructureTemplateId,
 } from "@/lib/projects/parametricWorkstationModel";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/lib/lab2d/chamferNotify";
 
 export type WorkshopStudioTab =
   | 1

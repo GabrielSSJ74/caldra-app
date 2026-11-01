@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AuroraBackground } from "@/components/chameleon/Aurora";
-import { toast } from "sonner";
+import { toast } from "@/lib/lab2d/chamferNotify";
 import {
   Check,
   Circle as CircleIcon,

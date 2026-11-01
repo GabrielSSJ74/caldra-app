@@ -23,7 +23,7 @@ import {
   Scissors,
   Sparkles,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/lab2d/chamferNotify";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { uid, type Entity, type Vec2 } from "@/lib/lab2d/core";

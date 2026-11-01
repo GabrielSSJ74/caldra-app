@@ -5,7 +5,7 @@
 
 import { DEFAULT_LAYERS, uid, type Entity, type Layer } from "./core";
 import type { GroupDef } from "./groups";
-import type { Dimension } from "./dimensions";
+import { DEFAULT_DIM_STYLE, type Dimension, type DimRef } from "./dimensions";
 import { techColor } from "./technical";
 import { sanitizeRevEngPlanData, type RevEngPlanData } from "./revEngTypes";
 
@@ -55,6 +55,31 @@ export function emptyPlan(index = 0): Plan {
   };
 }
 
+function sanitizeDimRef(raw: unknown): DimRef | null {
+  if (!raw || typeof raw !== "object") return null;
+  const obj = raw as Record<string, unknown>;
+  if (obj.kind === "entity" || typeof obj.id === "string") {
+    if (typeof obj.id !== "string" || !obj.id) return null;
+    return {
+      kind: "entity",
+      id: obj.id,
+      ...(typeof obj.anchor === "string"
+        ? { anchor: obj.anchor as "center" | "start" | "end" | "mid" }
+        : {}),
+    };
+  }
+  const ptSource =
+    obj.p && typeof obj.p === "object"
+      ? (obj.p as { x?: unknown; y?: unknown })
+      : (obj as { x?: unknown; y?: unknown });
+  const x = Number(ptSource?.x);
+  const y = Number(ptSource?.y);
+  if (Number.isFinite(x) && Number.isFinite(y)) {
+    return { kind: "point", p: { x, y } };
+  }
+  return null;
+}
+
 export function sanitizeProject(p: Project): Project {
   const seenPlanIds = new Set<string>();
   const plans = (p.plans && p.plans.length > 0 ? p.plans : [emptyPlan(0)]).map((pl, idx) => {
@@ -74,11 +99,31 @@ export function sanitizeProject(p: Project): Project {
       return ent.id === entId ? ent : { ...ent, id: entId };
     });
 
+    const sanitizedDims = Array.isArray(pl.dims)
+      ? pl.dims
+          .map((d): Dimension | null => {
+            if (!d || typeof d !== "object" || !Array.isArray(d.refs)) return null;
+            const refs = d.refs.map(sanitizeDimRef).filter((r): r is DimRef => r !== null);
+            if (refs.length === 0) return null;
+            return {
+              ...d,
+              id: d.id || uid(),
+              kind: d.kind || "linear",
+              refs,
+              offset: typeof d.offset === "number" && Number.isFinite(d.offset) ? d.offset : 20,
+              style: { ...DEFAULT_DIM_STYLE, ...(d.style ?? {}) },
+              role: "DIMENSION",
+            };
+          })
+          .filter((d): d is Dimension => d !== null)
+      : undefined;
+
     return {
       ...pl,
       id: planId,
       name: pl.name || planLabel(idx),
       entities,
+      dims: sanitizedDims,
       revEng: pl.revEng ? sanitizeRevEngPlanData(pl.revEng) : undefined,
     };
   });

@@ -92,8 +92,9 @@ import { CaldraFlatPatternDialog } from "@/components/lab2d/CaldraFlatPatternDia
 import { CaldraDraftingDialog } from "@/components/lab2d/CaldraDraftingDialog";
 import { CaldraWeldmentDialog } from "@/components/lab2d/CaldraWeldmentDialog";
 import { useSettings } from "@/lib/settings/SettingsProvider";
+import { registerThemeBridge } from "@/lib/settings/themeTransitionEngine";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/lib/lab2d/chamferNotify";
 import { AudioManager } from "@/lib/audio/AudioManager";
 import { AudioQuickControl } from "@/components/audio/AudioQuickControl";
 
@@ -489,6 +490,17 @@ export function CadBRepViewer({
   useEffect(() => {
     rendererRef.current?.setTheme(isDarkTheme ? "dark" : "light");
   }, [isDarkTheme]);
+
+  useEffect(() => {
+    return registerThemeBridge("chamfer-3d-brep-viewer", {
+      applyTheme: (theme) => {
+        rendererRef.current?.setTheme(theme === "light" ? "light" : "dark");
+      },
+      renderNow: () => {
+        rendererRef.current?.renderImmediate();
+      },
+    });
+  }, []);
 
   useEffect(() => {
     rendererRef.current?.setEdgeMode(edgeMode);

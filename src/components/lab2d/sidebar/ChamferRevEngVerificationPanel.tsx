@@ -13,7 +13,7 @@ import {
   Sparkles,
   Wrench,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/lib/lab2d/chamferNotify";
 import { cn } from "@/lib/utils";
 import type { Entity } from "@/lib/lab2d/core";
 import {

@@ -14,13 +14,16 @@
  *  4. Preservar total compatibilidade retroativa com `useIntentTheme()` e `displayColor()`.
  */
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useLayoutEffect, useMemo } from "react";
 import {
   useSettings,
   type AccentOption,
   type AuroraStyleOption,
   type ThemeOption,
 } from "@/lib/settings/SettingsProvider";
+
+const useIsomorphicLayoutEffect =
+  typeof window !== "undefined" ? useLayoutEffect : useEffect;
 
 export type IntentThemeMode = "dark" | "light" | "amoled" | "mestre";
 export type ChamferResolvedThemeMode = "dark" | "light" | "amoled";
@@ -789,12 +792,44 @@ export function buildChamferThemeColors(
  * e espelhamento para Portals.
  */
 export function buildChamferCssVariables(colors: ChamferThemeColors): Record<string, string> {
+  const toastBg =
+    colors.mode === "amoled"
+      ? "rgba(10, 15, 21, 0.94)"
+      : colors.isDark
+        ? "rgba(32, 45, 59, 0.94)"
+        : "rgba(255, 255, 255, 0.94)";
+  const toastBorder =
+    colors.mode === "amoled"
+      ? "#1E2A38"
+      : colors.isDark
+        ? "#344456"
+        : "rgba(15, 23, 42, 0.10)";
+  const toastTextPrimary =
+    colors.mode === "amoled"
+      ? "#E6EDF3"
+      : colors.isDark
+        ? "#DCE5ED"
+        : "#0F172A";
+  const toastTextSecondary =
+    colors.mode === "amoled"
+      ? "#9AABBA"
+      : colors.isDark
+        ? "#9AABBA"
+        : "#475569";
+  const toastShadow =
+    colors.mode === "amoled"
+      ? "0 6px 22px rgba(0, 0, 0, 0.65)"
+      : colors.isDark
+        ? "0 6px 20px rgba(6, 10, 17, 0.42)"
+        : "0 4px 16px rgba(15, 23, 42, 0.08)";
+
   return {
     "--chamfer-bg-root": colors.bgRoot,
     "--chamfer-bar-bg-solid": colors.barBgSolid,
     "--chamfer-bar-bg": colors.barBg,
     "--chamfer-surface-elevated-solid": colors.surfaceElevatedSolid,
     "--chamfer-surface-elevated": colors.surfaceElevated,
+    "--chamfer-surface-2": toastBg,
     "--chamfer-popover-bg-solid": colors.popoverBgSolid,
     "--chamfer-popover-bg": colors.popoverBg,
     "--chamfer-floating-bg": colors.floatingBg,
@@ -806,6 +841,7 @@ export function buildChamferCssVariables(colors: ChamferThemeColors): Record<str
     "--chamfer-text-secondary": colors.textSecondary,
     "--chamfer-text-muted": colors.textMuted,
     "--chamfer-accent": colors.accent,
+    "--chamfer-accent-primary": colors.accent,
     "--chamfer-accent-rgb": colors.accentRgb,
     "--chamfer-accent-contrast": colors.accentContrast,
     "--chamfer-accent-soft": colors.accentSoft,
@@ -836,6 +872,15 @@ export function buildChamferCssVariables(colors: ChamferThemeColors): Record<str
     "--chamfer-ruler-bg": colors.rulerBg,
     "--chamfer-ruler-border": colors.rulerBorder,
     "--chamfer-ruler-text": colors.rulerText,
+    "--chamfer-toast-bg": toastBg,
+    "--chamfer-toast-border": toastBorder,
+    "--chamfer-toast-text": toastTextPrimary,
+    "--chamfer-toast-text-secondary": toastTextSecondary,
+    "--chamfer-toast-shadow": toastShadow,
+    "--chamfer-toast-success": "#50C49B",
+    "--chamfer-toast-warning": "#E4B36B",
+    "--chamfer-toast-error": "#E66F78",
+    "--chamfer-toast-info": colors.accent,
   };
 }
 
@@ -896,9 +941,9 @@ export function useChamferAppearance() {
     [cssVariablesMap],
   );
 
-  // Espelha as variáveis escopadas `--chamfer-*` no document.documentElement enquanto o CHAMFER
-  // está ativo para que Portals (createPortal em document.body) recebam os mesmos tokens em tempo real.
-  useEffect(() => {
+  // Espelha as variáveis escopadas `--chamfer-*` no document.documentElement de forma síncrona (layout)
+  // para que o View Transitions API e Portals capturem o novo tema no mesmo quadro de flushSync.
+  useIsomorphicLayoutEffect(() => {
     if (typeof document === "undefined") return;
     const root = document.documentElement;
     for (const [key, val] of Object.entries(cssVariablesMap)) {

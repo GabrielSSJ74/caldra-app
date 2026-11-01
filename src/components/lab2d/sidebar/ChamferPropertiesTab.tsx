@@ -39,7 +39,7 @@ import { techColor, isUserLayer } from "@/lib/lab2d/technical";
 import { ChamferCompactNumericEditor } from "@/components/lab2d/mobileEdit/ChamferCompactNumericEditor";
 import type { NumericPropertyDef } from "@/components/lab2d/mobileEdit/types";
 import { copyToGlobalClipboard } from "@/lib/lab2d/globalClipboard";
-import { toast } from "sonner";
+import { toast } from "@/lib/lab2d/chamferNotify";
 
 const deg = (r: number) => (r * 180) / Math.PI;
 const rad = (d: number) => (d * Math.PI) / 180;

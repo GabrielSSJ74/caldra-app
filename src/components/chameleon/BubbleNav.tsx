@@ -98,7 +98,7 @@ export function BubbleNav() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const router = useRouter();
   const navigate = useNavigate();
-  const { accent, theme } = useSettings();
+  const { accent, theme, cardOpacity, bubbleOpacity } = useSettings();
 
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -123,15 +123,18 @@ export function BubbleNav() {
   const lastNavTimeRef = useRef<number>(0);
   const lastNavIndexRef = useRef<number>(-1);
 
-  // Resolve dinamicamente a Cor de Destaque ativa (--accent-color e --accent-rgb)
-  const navAccentStyle = useMemo<CSSProperties>(() => {
+  // Resolve dinamicamente tokens visuais: Cor de Destaque, Opacidade dos Cartões e Opacidade das Bolhas
+  const { navContainerStyle, activePillStyle, activeIconColor } = useMemo(() => {
     const prefersDark =
       mounted &&
       typeof window !== "undefined" &&
       (window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false);
-    const isDark =
-      theme === "dark" ||
+    const isAmoled =
       theme === "amoled" ||
+      (mounted && typeof document !== "undefined" && document.documentElement.classList.contains("amoled"));
+    const isDark =
+      isAmoled ||
+      theme === "dark" ||
       (theme === "system" && prefersDark) ||
       (mounted && typeof document !== "undefined" && document.documentElement.classList.contains("dark"));
 
@@ -149,11 +152,29 @@ export function BubbleNav() {
       ? hexToRgbString(accentColor, accentRgb)
       : accentRgb;
 
+    const clampedCardAlpha = Math.min(1, Math.max(0.2, cardOpacity / 100));
+    const clampedBubbleAlpha = Math.min(1, Math.max(0.2, bubbleOpacity / 100));
+    const borderBubbleAlpha = Math.min(1, Number((clampedBubbleAlpha * 1.25 + 0.14).toFixed(2)));
+
+    const navBgRgb = isAmoled ? "5, 8, 12" : isDark ? "14, 20, 28" : "255, 255, 255";
+
     return {
-      "--accent-color": accentColor,
-      "--accent-rgb": rgbChannels,
-    } as CSSProperties;
-  }, [accent, theme, mounted]);
+      navContainerStyle: {
+        "--accent-color": accentColor,
+        "--accent-rgb": rgbChannels,
+        "--card-opacity": clampedCardAlpha.toFixed(2),
+        "--bubble-opacity": clampedBubbleAlpha.toFixed(2),
+        backgroundColor: `rgba(${navBgRgb}, ${clampedCardAlpha.toFixed(2)})`,
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+      } as CSSProperties,
+      activePillStyle: {
+        backgroundColor: `rgba(${rgbChannels}, ${clampedBubbleAlpha.toFixed(2)})`,
+        borderColor: `rgba(${rgbChannels}, ${borderBubbleAlpha})`,
+      } as CSSProperties,
+      activeIconColor: accentColor,
+    };
+  }, [accent, theme, cardOpacity, bubbleOpacity, mounted]);
 
   // Escuta evento personalizado para novo projeto caso disparado
   useEffect(() => {
@@ -186,7 +207,7 @@ export function BubbleNav() {
       AudioManager.play("ui_nav");
 
       // Navegação sem engasgos com transição concorrente React
-      React.startTransition(() => {
+      startTransition(() => {
         void navigate({ to: dest.to });
       });
     },
@@ -209,7 +230,7 @@ export function BubbleNav() {
       setNewProjectOpen(false);
       triggerHaptic("success");
       AudioManager.play("ui_pop");
-      React.startTransition(() => {
+      startTransition(() => {
         void navigate({ to: "/projetos/$projectId", params: { projectId: created.id } });
       });
     } catch (e) {
@@ -221,11 +242,11 @@ export function BubbleNav() {
     <>
       <nav
         aria-label="Navegação principal da oficina digital"
-        className="caldra-floating-nav"
-        style={navAccentStyle}
+        className="caldra-floating-nav h-14 px-3 rounded-full"
+        style={navContainerStyle}
       >
-        <div className="relative flex h-full w-full items-center">
-          {/* Cápsula Deslizante de Precisão (Sliding Pill) vinculada à Cor de Destaque — GPU acelerada 190ms */}
+        <div className="relative flex h-full w-full items-center justify-between">
+          {/* Cápsula Deslizante de Precisão (Sliding Pill) vinculada à Cor de Destaque + Opacidade das Bolhas */}
           <div
             aria-hidden="true"
             className="pointer-events-none absolute top-0 left-0 z-0 flex h-full w-1/5 items-center justify-center"
@@ -235,10 +256,10 @@ export function BubbleNav() {
               willChange: "transform",
             }}
           >
-            <div className="caldra-nav-sliding-pill" />
+            <div className="caldra-nav-sliding-pill w-12 h-10 rounded-full" style={activePillStyle} />
           </div>
 
-          {/* 5 Botões de Destino com disparo imediato em onPointerDown e feedback <2ms */}
+          {/* 5 Botões Minimalistas Apenas Ícones (acessibilidade preservada com aria-label e title) */}
           {DESTINATIONS.map((dest, destIdx) => {
             const isCurrent = destIdx === resolvedActiveIndex;
             const Icon = dest.icon;
@@ -248,6 +269,7 @@ export function BubbleNav() {
                 key={dest.id}
                 type="button"
                 aria-label={dest.label}
+                title={dest.label}
                 aria-current={isCurrent ? "page" : undefined}
                 data-active={isCurrent ? "true" : "false"}
                 onPointerDown={(e) => {
@@ -268,14 +290,17 @@ export function BubbleNav() {
                   WebkitUserSelect: "none",
                   WebkitTapHighlightColor: "transparent",
                   willChange: "transform, opacity",
+                  color: isCurrent ? activeIconColor : undefined,
                 }}
-                className="caldra-nav-item-btn focus-visible:ring-1 focus-visible:ring-[#F59E0B]/50 focus-visible:ring-inset"
+                className="caldra-nav-item-btn focus-visible:ring-1 focus-visible:ring-[var(--accent-color)]/50 focus-visible:ring-inset"
               >
-                <Icon
-                  className="caldra-nav-item-icon"
-                  strokeWidth={isCurrent ? 2.2 : 1.85}
-                />
-                <span className="caldra-nav-item-label">{dest.label}</span>
+                <span className="flex w-12 h-10 items-center justify-center rounded-full">
+                  <Icon
+                    className="caldra-nav-item-icon size-[22px]"
+                    style={isCurrent ? { color: activeIconColor } : undefined}
+                    strokeWidth={isCurrent ? 2.25 : 1.9}
+                  />
+                </span>
               </button>
             );
           })}

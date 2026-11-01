@@ -1221,6 +1221,7 @@ export class ThreeBRepRenderer {
   public setTheme(theme: "light" | "dark"): void {
     this.currentTheme = theme;
     this.updateGridAndBackground();
+    this.renderImmediate();
     this.requestRender();
   }
 
@@ -1655,6 +1656,11 @@ export class ThreeBRepRenderer {
         this.startRenderLoop();
       }
     }
+  }
+
+  public renderImmediate(): void {
+    if (this.isDestroyed || this.isPaused) return;
+    this.renderer.render(this.scene, this.activeCamera);
   }
 
   public requestRender(): void {

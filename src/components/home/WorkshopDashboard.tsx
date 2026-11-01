@@ -461,7 +461,8 @@ export function WorkshopDashboard() {
                   setToolsOpen(true);
                 }}
                 aria-label="Buscar ferramentas"
-                className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-amber-500/50 hover:text-amber-500 active:scale-95 transition-all cursor-pointer"
+                title="Buscar ferramentas"
+                className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-[var(--accent-color)] hover:text-[var(--accent-color)] active:scale-95 transition-all cursor-pointer"
               >
                 <Search className="size-4" strokeWidth={1.8} />
               </button>
@@ -473,7 +474,8 @@ export function WorkshopDashboard() {
                   AudioManager.play("ui_nav");
                 }}
                 aria-label="Perfil e Conta"
-                className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-amber-500/50 hover:text-amber-500 active:scale-95 transition-all cursor-pointer"
+                title="Perfil e Conta"
+                className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-[var(--accent-color)] hover:text-[var(--accent-color)] active:scale-95 transition-all cursor-pointer"
               >
                 <User className="size-4" strokeWidth={1.8} />
               </Link>

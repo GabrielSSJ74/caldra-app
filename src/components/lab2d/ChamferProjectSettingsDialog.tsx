@@ -32,7 +32,7 @@ import {
   type ThemeOption,
 } from "@/lib/settings/SettingsProvider";
 import { useChamferAppearance } from "./useIntentTheme";
-import { toast } from "sonner";
+import { toast } from "@/lib/lab2d/chamferNotify";
 import { cn } from "@/lib/utils";
 
 interface ChamferProjectSettingsDialogProps {
@@ -197,7 +197,7 @@ export function ChamferProjectSettingsDialog({
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => setTheme(t.id)}
+                      onClick={(e) => setTheme(t.id, e)}
                       style={
                         active
                           ? {

@@ -785,9 +785,9 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
               </div>
               <button
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
                   triggerHaptic("tap");
-                  resetAppearance();
+                  resetAppearance(e);
                   toast.success("Aparência restaurada para o padrão do CALDRA.");
                 }}
                 className="inline-flex h-9 items-center gap-1 rounded-lg border border-border/70 px-2.5 font-mono text-[10px] text-muted-foreground hover:text-foreground active:scale-95 cursor-pointer"
@@ -810,9 +810,9 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                     <button
                       key={t.id}
                       type="button"
-                      onClick={() => {
+                      onClick={(e) => {
                         triggerHaptic("tap");
-                        setTheme(t.id);
+                        setTheme(t.id, e);
                       }}
                       className={cn(
                         "relative flex h-11 items-center justify-between rounded-xl border px-3 font-mono text-xs transition-all cursor-pointer",
@@ -911,7 +911,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                 </span>
                 <div className="caldra-card rounded-xl p-3 flex items-center justify-between transition-all">
                   <div className="flex items-center gap-2.5">
-                    <div className="caldra-bubble-base caldra-bubble-amber size-9 shrink-0">
+                    <div className="caldra-bubble-base caldra-bubble-center size-9 shrink-0">
                       <Compass className="size-4.5" />
                     </div>
                     <div>
@@ -930,7 +930,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                     <div className="caldra-bubble-base caldra-bubble-sky size-6.5 text-[9px] font-bold">
                       2D
                     </div>
-                    <div className="caldra-bubble-base caldra-bubble-center size-6.5 text-[9px] font-bold border border-amber-500/50 text-amber-500">
+                    <div className="caldra-bubble-base caldra-bubble-center size-6.5 text-[9px] font-bold">
                       ✦
                     </div>
                   </div>

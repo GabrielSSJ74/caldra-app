@@ -35,7 +35,7 @@ import {
   type GlobalClipboardItem,
 } from "@/lib/lab2d/globalClipboard";
 import { triggerHaptic } from "@/lib/ui/haptics";
-import { toast } from "sonner";
+import { toast } from "@/lib/lab2d/chamferNotify";
 
 export interface ChamferClipboardModalProps {
   open: boolean;

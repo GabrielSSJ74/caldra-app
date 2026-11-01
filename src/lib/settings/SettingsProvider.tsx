@@ -21,8 +21,19 @@ import {
   type AccentColor,
   type AuroraStyle,
 } from "./appearancePreferences";
+import {
+  requestThemeTransition,
+  resolveEffectiveThemeId,
+  resolveTokens,
+  setMetaThemeColor,
+  syncVisualThemeState,
+  type ThemeOriginInput,
+} from "./themeTransitionEngine";
 
-export type { ThemeMode, AccentColor, AuroraStyle };
+export type { ThemeMode, AccentColor, AuroraStyle, ThemeOriginInput };
+export type ThemeOption = ThemeMode;
+export type AccentOption = AccentColor;
+export type AuroraStyleOption = AuroraStyle;
 export type AppLanguage = "pt" | "en" | "es";
 export type Unit = "mm" | "cm" | "m" | "in";
 /** APRENDIZ mostra fórmulas e dicas; MESTRE segue direto. Só apresentação. */
@@ -73,7 +84,7 @@ const DEFAULTS: Settings = {
 };
 
 type SettingsValue = Settings & {
-  setTheme: (t: ThemeMode) => void;
+  setTheme: (t: ThemeMode, origin?: ThemeOriginInput) => void;
   setAccent: (a: AccentColor) => void;
   setLanguage: (language: AppLanguage) => void;
   setUnit: (u: Unit) => void;
@@ -85,9 +96,11 @@ type SettingsValue = Settings & {
   setCalcPlaces: (n: number) => void;
   setCardOpacity: (pct: number) => void;
   setBubbleOpacity: (pct: number) => void;
-  resetAppearance: () => void;
+  resetAppearance: (origin?: ThemeOriginInput) => void;
   /** Região resolvida (nunca undefined). */
   regionConfig: Region;
+  /** Alias para compatibilidade com componentes CAD 3D que leem `const { settings } = useSettings()` */
+  settings: Settings;
 };
 
 const SettingsContext = createContext<SettingsValue | null>(null);
@@ -151,16 +164,27 @@ export function readStoredSettings(
 
 function applyToDom(s: Settings) {
   const root = document.documentElement;
-  const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
-  const dark = s.theme === "dark" || s.theme === "amoled" || (s.theme === "system" && prefersDark);
+  const resolvedTheme = resolveEffectiveThemeId(s.theme);
+  const dark = resolvedTheme !== "light";
+
+  root.dataset.theme = resolvedTheme;
+  root.style.colorScheme = dark ? "dark" : "light";
   root.classList.toggle("dark", dark);
-  root.classList.toggle("amoled", s.theme === "amoled");
+  root.classList.toggle("amoled", resolvedTheme === "amoled");
   root.classList.toggle("accent-default", s.accent === "default");
   root.classList.toggle("accent-blue", s.accent === "blue");
   const isCrimson = s.accent === "crimson" || s.accent === "magenta";
   root.classList.toggle("accent-crimson", isCrimson);
   root.classList.toggle("accent-magenta", isCrimson);
   root.lang = s.language === "pt" ? "pt-BR" : s.language;
+
+  setMetaThemeColor(resolvedTheme);
+  syncVisualThemeState(resolvedTheme);
+
+  const semanticTokens = resolveTokens(resolvedTheme);
+  for (const [k, v] of Object.entries(semanticTokens)) {
+    root.style.setProperty(k, v);
+  }
 
   let storedRawHex: string | null = null;
   try {
@@ -193,10 +217,9 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [storagePro, setStoragePro] = useState(false);
   const isPro = isMestre || storagePro;
   const [settings, setSettings] = useState<Settings>(DEFAULTS);
+  const settingsRef = useRef<Settings>(settings);
+  settingsRef.current = settings;
   const hydrated = useRef(false);
-  const [veil, setVeil] = useState(0);
-  const skin = `${settings.theme}:${settings.accent}`;
-  const prevSkin = useRef<string | null>(null);
 
   const warnProFluidViolation = useCallback(() => {
     toast.info("O estilo de fundo Fluido é exclusivo do CALDRA PRO.", {
@@ -221,7 +244,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     setStoragePro(proFromStorage);
     const effectivePro = isMestre || proFromStorage;
     const stored = readStoredSettings(effectivePro);
-    prevSkin.current = `${stored.theme}:${stored.accent}`;
     applyToDom(stored);
     setSettings(stored);
     if (stored.isProViolation) {
@@ -265,15 +287,11 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [settings]);
 
-  /* Aplica tema e opacidade no DOM imediatamente após hidratação. Troca voluntária acende o véu. */
+  /* Aplica tema e opacidade no DOM imediatamente após hidratação. */
   useEffect(() => {
     if (!hydrated.current) return;
     applyToDom(settings);
-    if (prevSkin.current !== null && prevSkin.current !== skin) {
-      setVeil((v) => v + 1);
-    }
-    prevSkin.current = skin;
-  }, [settings, skin]);
+  }, [settings]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("mestre", isMestre);
@@ -282,20 +300,40 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<SettingsValue>(
     () => ({
       ...settings,
-      setTheme: (theme) => {
-        setSettings((s) => {
-          const next = { ...s, theme };
-          if (typeof window !== "undefined") {
-            persistAppearancePreferences(window.localStorage, next);
+      settings,
+      setTheme: (theme, origin) => {
+        const cur = settingsRef.current;
+        const nextPreview = { ...cur, theme };
+        if (typeof window !== "undefined") {
+          persistAppearancePreferences(window.localStorage, nextPreview);
+          try {
+            window.localStorage.setItem(KEY, JSON.stringify(nextPreview));
+          } catch {
+            /* ignore */
           }
-          return next;
-        });
+        }
+        const nextThemeId = resolveEffectiveThemeId(theme);
+        requestThemeTransition(
+          nextThemeId,
+          () => {
+            setSettings((s) => {
+              const next = { ...s, theme };
+              if (typeof window !== "undefined") {
+                persistAppearancePreferences(window.localStorage, next);
+                applyToDom(next);
+              }
+              return next;
+            });
+          },
+          origin,
+        );
       },
       setAccent: (accent) => {
         setSettings((s) => {
           const next = { ...s, accent };
           if (typeof window !== "undefined") {
             persistAppearancePreferences(window.localStorage, next);
+            applyToDom(next);
           }
           return next;
         });
@@ -312,6 +350,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
             const next = { ...s, auroraStyle: "padrao" as AuroraStyle };
             if (typeof window !== "undefined") {
               persistAppearancePreferences(window.localStorage, next);
+              applyToDom(next);
             }
             return next;
           });
@@ -321,6 +360,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           const next = { ...s, auroraStyle };
           if (typeof window !== "undefined") {
             persistAppearancePreferences(window.localStorage, next);
+            applyToDom(next);
           }
           return next;
         });
@@ -329,27 +369,58 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setCalcPlaces: (calcPlaces) => setSettings((s) => ({ ...s, calcPlaces })),
       setCardOpacity: (cardOpacity) => {
         const val = Math.min(100, Math.max(20, cardOpacity));
-        setSettings((s) => ({ ...s, cardOpacity: val }));
-      },
-      setBubbleOpacity: (bubbleOpacity) => {
-        const val = Math.min(100, Math.max(20, bubbleOpacity));
-        setSettings((s) => ({ ...s, bubbleOpacity: val }));
-      },
-      resetAppearance: () => {
         setSettings((s) => {
-          const next = {
-            ...s,
-            theme: "light" as ThemeMode,
-            accent: "blue" as AccentColor,
-            auroraStyle: (isPro ? "fluido" : "padrao") as AuroraStyle,
-            cardOpacity: DEFAULT_CARD_OPACITY,
-            bubbleOpacity: DEFAULT_BUBBLE_OPACITY,
-          };
+          const next = { ...s, cardOpacity: val };
           if (typeof window !== "undefined") {
-            persistAppearancePreferences(window.localStorage, next);
+            applyToDom(next);
           }
           return next;
         });
+      },
+      setBubbleOpacity: (bubbleOpacity) => {
+        const val = Math.min(100, Math.max(20, bubbleOpacity));
+        setSettings((s) => {
+          const next = { ...s, bubbleOpacity: val };
+          if (typeof window !== "undefined") {
+            applyToDom(next);
+          }
+          return next;
+        });
+      },
+      resetAppearance: (origin) => {
+        const cur = settingsRef.current;
+        const nextPreview = {
+          ...cur,
+          theme: "light" as ThemeMode,
+          accent: "blue" as AccentColor,
+          auroraStyle: (isPro ? "fluido" : "padrao") as AuroraStyle,
+          cardOpacity: DEFAULT_CARD_OPACITY,
+          bubbleOpacity: DEFAULT_BUBBLE_OPACITY,
+        };
+        if (typeof window !== "undefined") {
+          persistAppearancePreferences(window.localStorage, nextPreview);
+        }
+        requestThemeTransition(
+          "light",
+          () => {
+            setSettings((s) => {
+              const next = {
+                ...s,
+                theme: "light" as ThemeMode,
+                accent: "blue" as AccentColor,
+                auroraStyle: (isPro ? "fluido" : "padrao") as AuroraStyle,
+                cardOpacity: DEFAULT_CARD_OPACITY,
+                bubbleOpacity: DEFAULT_BUBBLE_OPACITY,
+              };
+              if (typeof window !== "undefined") {
+                persistAppearancePreferences(window.localStorage, next);
+                applyToDom(next);
+              }
+              return next;
+            });
+          },
+          origin,
+        );
       },
       regionConfig: regionOf(settings.region),
     }),
@@ -359,9 +430,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   return (
     <SettingsContext.Provider value={value}>
       {children}
-      {veil > 0 && (
-        <div key={veil} aria-hidden className="theme-fade-veil" onAnimationEnd={() => setVeil(0)} />
-      )}
     </SettingsContext.Provider>
   );
 }

@@ -1,7 +1,8 @@
 import React, { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useNavigate } from "@tanstack/react-router";
-import { toast } from "sonner";
+import { toast, notify } from "@/lib/lab2d/chamferNotify";
+import { ChamferCompactToastHost } from "@/components/lab2d/ChamferCompactToastHost";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import {
   ArrowLeft,
@@ -66,6 +67,10 @@ import {
 } from "lucide-react";
 import { getChamferSettings, type ChamferSettings } from "@/lib/lab2d/projectSettings";
 import { useSettings } from "@/lib/settings/SettingsProvider";
+import {
+  registerThemeBridge,
+  type ThemeOriginInput,
+} from "@/lib/settings/themeTransitionEngine";
 import {
   useChamferAppearance,
   buildChamferThemeColors,
@@ -181,7 +186,7 @@ import {
   type WorkspaceFrame,
 } from "@/lib/lab2d/workspace";
 import { buildIndex } from "@/lib/lab2d/spatialIndex";
-import { drawScene, lerpHexColor } from "@/lib/lab2d/canvasScene";
+import { drawScene } from "@/lib/lab2d/canvasScene";
 import {
   DEFAULT_CHAMFER_WIREFRAME_3D_STYLE,
   type ChamferWireframe3DStyleConfig,
@@ -732,85 +737,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     themeVersion,
   } = useChamferAppearance();
 
-  // Interpolação suave de 2000ms (lerp por performance.now()) da cor de fundo do Canvas 2D
-  const [themeLerpT, setThemeLerpT] = useState<number>(() => (isDark ? 1 : 0));
-  const themeLerpTRef = useRef<number>(isDark ? 1 : 0);
-  const themeAnimRafRef = useRef<number | null>(null);
-  const prevIsDarkRef = useRef<boolean>(isDark);
+  const canvasBgColor = themeColors.workAreaFill;
+  const canvasOuterBgColor = themeColors.canvasBg;
 
-  useEffect(() => {
-    if (prevIsDarkRef.current === isDark) return;
-    prevIsDarkRef.current = isDark;
-
-    if (themeAnimRafRef.current !== null) {
-      cancelAnimationFrame(themeAnimRafRef.current);
-      themeAnimRafRef.current = null;
-    }
-
-    const startVal = themeLerpTRef.current;
-    const targetVal = isDark ? 1 : 0;
-    const startTime = performance.now();
-    const durationMs = 2000;
-
-    const easeInOutCubic = (x: number): number =>
-      x < 0.5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
-
-    const step = (now: number) => {
-      const elapsed = Math.max(0, now - startTime);
-      const rawT = Math.min(1, elapsed / durationMs);
-      const easedT = easeInOutCubic(rawT);
-      const nextVal = startVal + (targetVal - startVal) * easedT;
-      themeLerpTRef.current = nextVal;
-      setThemeLerpT(nextVal);
-
-      if (rawT < 1) {
-        themeAnimRafRef.current = requestAnimationFrame(step);
-      } else {
-        themeLerpTRef.current = targetVal;
-        setThemeLerpT(targetVal);
-        themeAnimRafRef.current = null;
-      }
-    };
-
-    themeAnimRafRef.current = requestAnimationFrame(step);
-    return () => {
-      if (themeAnimRafRef.current !== null) {
-        cancelAnimationFrame(themeAnimRafRef.current);
-        themeAnimRafRef.current = null;
-      }
-    };
-  }, [isDark]);
-
-  const lightPaletteRef = useMemo(
-    () => buildChamferThemeColors("light", bgStyle, accentKey, cardOpacity, bubbleOpacity),
-    [bgStyle, accentKey, cardOpacity, bubbleOpacity],
+  const toggleTheme = useCallback(
+    (origin?: ThemeOriginInput) => {
+      triggerHaptic("tap");
+      const nextTheme = isDark ? "light" : "dark";
+      setAppTheme(nextTheme, origin);
+    },
+    [isDark, setAppTheme],
   );
-  const darkPaletteRef = useMemo(
-    () =>
-      buildChamferThemeColors(
-        isAmoled ? "amoled" : "dark",
-        bgStyle,
-        accentKey,
-        cardOpacity,
-        bubbleOpacity,
-      ),
-    [isAmoled, bgStyle, accentKey, cardOpacity, bubbleOpacity],
-  );
-
-  const canvasBgColor = useMemo(
-    () => lerpHexColor(lightPaletteRef.workAreaFill, darkPaletteRef.workAreaFill, themeLerpT),
-    [lightPaletteRef.workAreaFill, darkPaletteRef.workAreaFill, themeLerpT],
-  );
-  const canvasOuterBgColor = useMemo(
-    () => lerpHexColor(lightPaletteRef.canvasBg, darkPaletteRef.canvasBg, themeLerpT),
-    [lightPaletteRef.canvasBg, darkPaletteRef.canvasBg, themeLerpT],
-  );
-
-  const toggleTheme = useCallback(() => {
-    triggerHaptic("tap");
-    const nextTheme = isDark ? "light" : "dark";
-    setAppTheme(nextTheme);
-  }, [isDark, setAppTheme]);
 
   const navigate = useNavigate();
   useDeclareImmersive(true);
@@ -2443,51 +2380,110 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const selectionSet = useMemo(() => new Set(selection), [selection]);
 
-  useEffect(() => {
-    if (cadPhase < 2) return;
-    const el = canvasRef.current;
-    if (!el || !canvasSize.w || !canvasSize.h) return;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const pw = Math.round(canvasSize.w * dpr);
-    const ph = Math.round(canvasSize.h * dpr);
-    if (el.width !== pw) el.width = pw;
-    if (el.height !== ph) el.height = ph;
-    const ctx = el.getContext("2d");
-    if (!ctx) return;
+  const render2DSceneForMode = useCallback(
+    (targetMode: "light" | "dark" | "amoled") => {
+      if (cadPhase < 2) return;
+      const el = canvasRef.current;
+      if (!el || !canvasSize.w || !canvasSize.h) return;
+      const dpr = Math.min(2, window.devicePixelRatio || 1);
+      const pw = Math.round(canvasSize.w * dpr);
+      const ph = Math.round(canvasSize.h * dpr);
+      if (el.width !== pw) el.width = pw;
+      if (el.height !== ph) el.height = ph;
+      const ctx = el.getContext("2d");
+      if (!ctx) return;
 
-    if (solidOpen || isInPlaceSolid3DActive) {
-      // Em modo 3D Sólido In-Place ou Traçagem, limpa o canvas 2D para exibir o sólido B-Rep sem duplicação
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, canvasSize.w, canvasSize.h);
-      return;
-    }
+      if (solidOpen || isInPlaceSolid3DActive) {
+        // Em modo 3D Sólido In-Place ou Traçagem, limpa o canvas 2D para exibir o sólido B-Rep sem duplicação
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, canvasSize.w, canvasSize.h);
+        return;
+      }
 
-    // pinta no MESMO quadro em que o SVG recebe a transformação: sem atraso
-    // de um frame entre a geometria (canvas) e os overlays (SVG) no pinch.
-    const hasIsoSolidFaces = entities.some((e) => e.params?.isIsoSolidFace);
-    const isIsoView = drawingProjection === "isometric" || hasIsoSolidFaces;
+      const modeIsDark = targetMode !== "light";
+      const palette = buildChamferThemeColors(
+        targetMode,
+        bgStyle,
+        accentKey,
+        cardOpacity,
+        bubbleOpacity,
+      );
+      const hasIsoSolidFaces = entities.some((e) => e.params?.isIsoSolidFace);
+      const isIsoView = drawingProjection === "isometric" || hasIsoSolidFaces;
 
-    drawScene(ctx, {
-      index: drawIndex,
+      drawScene(ctx, {
+        index: drawIndex,
+        view,
+        width: canvasSize.w,
+        height: canvasSize.h,
+        dpr,
+        selection: selectionSet,
+        lod: gesturing,
+        isLight: !modeIsDark,
+        canvasBgColor: palette.workAreaFill,
+        themeLerpT: modeIsDark ? 1 : 0,
+        isDraggingUnlocked,
+        isIsometric: isIsoView,
+        isoPlane,
+        sheetThickness: thickness,
+        orbitProjection: orbitProjection2D,
+        wireframe3DStyle,
+        showGrid,
+        gridStep: Math.max(15, grid * 2.5),
+      });
+    },
+    [
+      cadPhase,
+      canvasSize.w,
+      canvasSize.h,
+      solidOpen,
+      isInPlaceSolid3DActive,
+      bgStyle,
+      accentKey,
+      cardOpacity,
+      bubbleOpacity,
+      entities,
+      drawingProjection,
+      drawIndex,
       view,
-      width: canvasSize.w,
-      height: canvasSize.h,
-      dpr,
-      selection: selectionSet,
-      lod: gesturing,
-      isLight: !isDark,
-      canvasBgColor,
-      themeLerpT,
+      selectionSet,
+      gesturing,
       isDraggingUnlocked,
-      isIsometric: isIsoView,
       isoPlane,
-      sheetThickness: thickness,
-      orbitProjection: orbitProjection2D,
+      thickness,
+      orbitProjection2D,
       wireframe3DStyle,
       showGrid,
-      gridStep: Math.max(15, grid * 2.5),
+      grid,
+    ],
+  );
+
+  useLayoutEffect(() => {
+    const activeThemeMode: "light" | "dark" | "amoled" = !isDark
+      ? "light"
+      : isAmoled
+        ? "amoled"
+        : "dark";
+    render2DSceneForMode(activeThemeMode);
+  }, [render2DSceneForMode, isDark, isAmoled, canvasBgColor, themeVersion]);
+
+  const activeBridgeModeRef = useRef<"light" | "dark" | "amoled">(
+    !isDark ? "light" : isAmoled ? "amoled" : "dark",
+  );
+  activeBridgeModeRef.current = !isDark ? "light" : isAmoled ? "amoled" : "dark";
+  const render2DSceneForModeRef = useRef(render2DSceneForMode);
+  render2DSceneForModeRef.current = render2DSceneForMode;
+
+  useEffect(() => {
+    return registerThemeBridge("chamfer-2d-canvas", {
+      applyTheme: (nextTheme) => {
+        activeBridgeModeRef.current = nextTheme;
+      },
+      renderNow: () => {
+        render2DSceneForModeRef.current(activeBridgeModeRef.current);
+      },
     });
-  }, [cadPhase, drawIndex, view, selectionSet, gesturing, canvasSize, solidOpen, isInPlaceSolid3DActive, isDark, canvasBgColor, themeLerpT, themeVersion, drawingProjection, entities, isDraggingUnlocked, isoPlane, thickness, orbitProjection2D, wireframe3DStyle, showGrid, grid]);
+  }, []);
 
   /* ------------------------------------------------------- FLUXO CALDRA */
   /*
@@ -3840,7 +3836,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setIsArrayPickingCenter(false);
     isDraggingArrayCenterRef.current = false;
     triggerHaptic("tap");
-    toast.info("Padrão cancelado. Nenhuma alteração gravada.");
+    notify({
+      tipo: "informacao",
+      titulo: "Padrão cancelado",
+      mensagem: "Nenhuma alteração foi gravada.",
+    });
   }, []);
 
   const handleConvertToBend = useCallback(() => {
@@ -8233,12 +8233,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         {/* REGIÃO C — CANVAS CAD PRINCIPAL (100% PONTA A PONTA EM MODO RETRATO) */}
         <div
           ref={canvasViewportRef}
+          data-chamfer-workspace="true"
           style={{
             backgroundColor: frame.visible ? canvasOuterBgColor : canvasBgColor,
             borderColor: "var(--chamfer-border-strong)",
           }}
           className={cn(
-            "chamfer-theme-fade-2s relative min-h-0 min-w-0 flex-1 overflow-hidden",
+            "relative min-h-0 min-w-0 flex-1 overflow-hidden",
             isLandscape ? "rounded-xl border shadow-inner" : "rounded-none border-0",
           )}
         >
@@ -10480,6 +10481,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               fitFrame();
               toast.info(`Área de Trabalho (${Math.round(frame.w)} × ${Math.round(frame.h)} mm) enquadrada na tela`);
             }}
+          />
+
+          {/* HOST ÚNICO DE NOTIFICAÇÕES COMPACTAS DO CHAMFER CAD (ANCORADO NO TOPO CENTRAL DO CANVAS, ~8PX ABAIXO DA RÉGUA HORIZONTAL) */}
+          <ChamferCompactToastHost
+            themeMode={themeColors.mode}
+            accentColor={themeColors.accent}
+            isLandscape={isLandscape}
+            hasTopCommandBanner={
+              isLandscape && (divideEditorOpen || tool === "fillet" || tool === "chamfer")
+            }
           />
 
           {/* MICRO-PÍLULA TRANSLÚCIDA FLUTUANTE NO CANTO INFERIOR ESQUERDO DO CANVAS EM MODO RETRATO (24PX: P01 • X/Y • Z% • G:MM • SNAP:ON) */}
@@ -13633,7 +13644,7 @@ const IconBtn = React.memo(function IconBtn({
   buttonRef,
 }: {
   label: string;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
   icon: typeof Minus;
   flat?: boolean;
   active?: boolean;
@@ -13647,7 +13658,7 @@ const IconBtn = React.memo(function IconBtn({
       type="button"
       onClick={(e) => {
         e.stopPropagation();
-        onClick();
+        onClick(e);
       }}
       title={title ?? label}
       aria-label={label}
@@ -13664,7 +13675,7 @@ const IconBtn = React.memo(function IconBtn({
             : "var(--chamfer-border)",
         color: active ? "var(--chamfer-accent-contrast)" : "var(--chamfer-text-primary)",
       }}
-      className="chamfer-theme-fade-2s grid size-8 shrink-0 place-items-center rounded-lg border cursor-pointer active:scale-95 hover:brightness-110 transition-all"
+      className="grid size-8 shrink-0 place-items-center rounded-lg border cursor-pointer active:scale-95 hover:brightness-110 transition-all"
     >
       <Icon className="size-[15px]" />
     </button>

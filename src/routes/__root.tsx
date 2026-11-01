@@ -100,6 +100,9 @@ if(a==="#B22222"||a==="#b22222"||a==="magenta")a="crimson";
 var r=document.documentElement;
 var prefersDark=!window.matchMedia||window.matchMedia("(prefers-color-scheme: dark)").matches;
 var dark=t==="dark"||t==="amoled"||(t==="system"&&prefersDark);
+var resolved=t==="amoled"?"amoled":dark?"dark":"light";
+r.dataset.theme=resolved;
+r.style.colorScheme=dark?"dark":"light";
 r.classList.toggle("dark",dark);r.classList.toggle("amoled",t==="amoled");
 r.classList.toggle("accent-default",a==="default");r.classList.toggle("accent-blue",a==="blue");
 var isCrimson=a==="crimson";
@@ -112,6 +115,8 @@ r.style.setProperty("--bubble-opacity",(bo/100).toFixed(2));
 r.style.setProperty("--ui-opacity",uiOp);
 r.setAttribute("data-bg-style",s.auroraStyle||"padrao");
 r.lang=s.language==="en"?"en":s.language==="es"?"es":"pt-BR";
+var m=document.querySelector('meta[name="theme-color"]');
+if(m)m.setAttribute("content",resolved==="light"?"#EAEEF3":resolved==="amoled"?"#000000":"#0B0D11");
 }catch(e){}})();`;
 
 /** Splash de abertura: pinta o fundo escuro técnico (#030712) antes do JS e entrega sem flash para a animação CAD 3D. */

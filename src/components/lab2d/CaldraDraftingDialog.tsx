@@ -26,7 +26,7 @@ import type { CadFeatureNode } from "@/lib/cad/features/CadFeatureModel";
 import type { MassProperties } from "@/lib/cad/core/CadKernel";
 import type { SheetSize, ProjectionAngle } from "@/lib/cad/drafting/types";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/lib/lab2d/chamferNotify";
 
 interface CaldraDraftingDialogProps {
   open: boolean;

@@ -136,7 +136,7 @@ import {
   getTechnicalLayerColor,
 } from "./useIntentTheme";
 import { CaldraLogo } from "@/components/caldra/Logo";
-import { toast } from "sonner";
+import { toast } from "@/lib/lab2d/chamferNotify";
 
 interface ChamferSemanticPaletteProps {
   open: boolean;

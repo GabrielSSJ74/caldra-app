@@ -4,7 +4,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/lab2d/chamferNotify";
 import {
   ArrowLeftRight,
   Box,

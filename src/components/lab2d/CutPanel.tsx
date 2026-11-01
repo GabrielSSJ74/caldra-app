@@ -4,7 +4,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "@/lib/lab2d/chamferNotify";
 import { ArrowDown, ArrowUp, Boxes, Layers, Scissors, Trash2, Wand2 } from "lucide-react";
 
 import type { Entity } from "@/lib/lab2d/core";
