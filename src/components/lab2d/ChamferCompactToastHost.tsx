@@ -165,10 +165,16 @@ export const ChamferCompactToastHost: React.FC<ChamferCompactToastHostProps> = (
   });
 
   useEffect(() => {
+    let mounted = true;
     const unsubscribe = subscribeNotifications((state) => {
-      setActive(state.active);
+      queueMicrotask(() => {
+        if (mounted) {
+          setActive(state.active);
+        }
+      });
     });
     return () => {
+      mounted = false;
       unsubscribe();
       clearAllNotifications();
     };

@@ -1987,28 +1987,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setLiveMeasure(null);
       return;
     }
+    const last = past.current.pop();
+    if (!last) return;
     setEntities((prev) => {
-      const last = past.current.pop();
-      if (!last) return prev;
       future.current = [prev, ...future.current];
-      setHistoryState({ canUndo: past.current.length > 0, canRedo: future.current.length > 0 });
-      triggerHaptic("medium");
-      toast.success("Ação desfeita");
       return last;
     });
+    setHistoryState({ canUndo: past.current.length > 0, canRedo: future.current.length + 1 > 0 });
+    triggerHaptic("medium");
+    toast.success("Ação desfeita");
   }, [pending.length, liveMeasure]);
 
   const redo = useCallback(() => {
+    const [next, ...rest] = future.current;
+    if (!next) return;
+    future.current = rest;
     setEntities((prev) => {
-      const [next, ...rest] = future.current;
-      if (!next) return prev;
-      future.current = rest;
       past.current = [...past.current, prev];
-      setHistoryState({ canUndo: past.current.length > 0, canRedo: rest.length > 0 });
-      triggerHaptic("medium");
-      toast.success("Ação refeita");
       return next;
     });
+    setHistoryState({ canUndo: true, canRedo: rest.length > 0 });
+    triggerHaptic("medium");
+    toast.success("Ação refeita");
   }, []);
 
   /* -------------------------------------------------- handoff da Traçagem */
@@ -3157,18 +3157,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       description: "Alterna a projeção do canvas para desenho isométrico 2D com eixos a 30°, 90° e 150°.",
       icon: BoxIcon,
       action: () => {
-        setDrawingProjection((prev) => {
-          const next = prev === "isometric" ? "orthographic" : "isometric";
-          if (next === "isometric") {
-            toast.info(`Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label} · F5 para alternar)`);
-          } else {
-            toast.info("Modo Ortogonal 2D ativado");
-          }
-          return next;
-        });
+        const next = drawingProjection === "isometric" ? "orthographic" : "isometric";
+        setDrawingProjection(next);
+        if (next === "isometric") {
+          toast.info(`Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label} · F5 para alternar)`);
+        } else {
+          toast.info("Modo Ortogonal 2D ativado");
+        }
       },
     },
-  ], [isoPlane]);
+  ], [isoPlane, drawingProjection]);
 
   const handlePasteClipboardItem = useCallback(
     (item: GlobalClipboardItem, targetPos?: Vec2 | null) => {
@@ -4504,32 +4502,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
 
       if (revEngCanvasMode === "pick_cal_2pt" || revEngCanvasMode === "pick_cal_multiref") {
-        setRevEngPickPoints((prev) => {
-          const next = prev.length >= 2 ? [p] : [...prev, p];
-          triggerHaptic("selection");
-          if (next.length === 1) {
-            toast.info("1º ponto de referência marcado — toque no 2º ponto da cota conhecida.");
-          } else {
-            toast.success(
-              `✓ 2º ponto marcado (distância: ${dist(next[0]!, next[1]!).toFixed(2)} unid.) — informe o comprimento real em mm na aba ENG. REV.`,
-            );
-          }
-          return next;
-        });
+        const next = revEngPickPoints.length >= 2 ? [p] : [...revEngPickPoints, p];
+        setRevEngPickPoints(next);
+        triggerHaptic("selection");
+        if (next.length === 1) {
+          toast.info("1º ponto de referência marcado — toque no 2º ponto da cota conhecida.");
+        } else {
+          toast.success(
+            `✓ 2º ponto marcado (distância: ${dist(next[0]!, next[1]!).toFixed(2)} unid.) — informe o comprimento real em mm na aba ENG. REV.`,
+          );
+        }
         return;
       }
 
       if (revEngCanvasMode === "pick_homography_4pt") {
-        setRevEngPickPoints((prev) => {
-          const next = prev.length >= 4 ? [p] : [...prev, p];
-          triggerHaptic("selection");
-          if (next.length < 4) {
-            toast.info(`Canto C${next.length}/4 marcado — toque no canto C${next.length + 1}.`);
-          } else {
-            toast.success("✓ 4 cantos C1–C4 marcados! Clique em Retificar Perspectiva na aba ENG. REV.");
-          }
-          return next;
-        });
+        const next = revEngPickPoints.length >= 4 ? [p] : [...revEngPickPoints, p];
+        setRevEngPickPoints(next);
+        triggerHaptic("selection");
+        if (next.length < 4) {
+          toast.info(`Canto C${next.length}/4 marcado — toque no canto C${next.length + 1}.`);
+        } else {
+          toast.success("✓ 4 cantos C1–C4 marcados! Clique em Retificar Perspectiva na aba ENG. REV.");
+        }
         return;
       }
     }
@@ -6327,13 +6321,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       if (ev.key === "F5" || (ev.ctrlKey && ev.key.toLowerCase() === "e")) {
         ev.preventDefault();
         setDrawingProjection("isometric");
-        setIsoPlane((prev) => {
-          const next = prev === "top" ? "left" : prev === "left" ? "right" : "top";
-          triggerHaptic("selection");
-          AudioManager.play("ui_select");
-          toast.info(`Plano Isométrico: ${ISO_PLANES[next].label} (${ISO_PLANES[next].name})`);
-          return next;
-        });
+        const next = isoPlane === "top" ? "left" : isoPlane === "left" ? "right" : "top";
+        setIsoPlane(next);
+        triggerHaptic("selection");
+        AudioManager.play("ui_select");
+        toast.info(`Plano Isométrico: ${ISO_PLANES[next].label} (${ISO_PLANES[next].name})`);
         return;
       }
       if (ev.key === "ArrowUp" || ev.key === "ArrowDown" || ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
@@ -8187,15 +8179,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             }}
             drawingProjection={drawingProjection}
             onToggleDrawingProjection={() => {
-              setDrawingProjection((p) => {
-                const next = p === "isometric" ? "orthographic" : "isometric";
-                if (next === "isometric") {
-                  toast.info(`Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label})`);
-                } else {
-                  toast.info("Modo Ortogonal 2D ativado");
-                }
-                return next;
-              });
+              const next = drawingProjection === "isometric" ? "orthographic" : "isometric";
+              setDrawingProjection(next);
+              if (next === "isometric") {
+                toast.info(`Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label})`);
+              } else {
+                toast.info("Modo Ortogonal 2D ativado");
+              }
             }}
             isoPlane={isoPlane}
             onSelectIsoPlane={(p) => {
@@ -13068,11 +13058,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           }}
           isoOrtho={isoOrtho}
           onToggleIsoOrtho={() => {
-            setIsoOrtho((v) => {
-              const next = !v;
-              toast.info(next ? "Orto Isométrico: Ativado" : "Orto Isométrico: Desativado");
-              return next;
-            });
+            const next = !isoOrtho;
+            setIsoOrtho(next);
+            toast.info(next ? "Orto Isométrico: Ativado" : "Orto Isométrico: Desativado");
           }}
           onOpenPieceBuilder={() => setIsoPieceBuilderOpen(true)}
           isDark={isDark}

@@ -1410,8 +1410,8 @@ export function renderClassifiedWireframeSceneToCanvas(
  *  - Anéis orbitais concêntricos discretos centrados no pivô da peça no plano Z = 0
  */
 export function renderBaseOrbitalGridToCanvas(
-  ctx: CanvasRenderingContext2D,
-  opts: {
+  _ctx: CanvasRenderingContext2D,
+  _opts: {
     pivot: Vec2;
     gridStep: number;
     invScale: number;
@@ -1419,72 +1419,7 @@ export function renderBaseOrbitalGridToCanvas(
     pieceRadiusHint?: number;
   },
 ): void {
-  const { pivot, invScale: inv, isLight } = opts;
-  const pal = isLight ? CHAMFER_WIREFRAME_3D_PALETTE.light : CHAMFER_WIREFRAME_3D_PALETTE.dark;
-  const step = Math.max(15, opts.gridStep || 25);
-  const halfCount = 16;
-  const span = halfCount * step;
-
-  ctx.save();
-  ctx.setLineDash([]);
-
-  // 1. Subdivisões ortogonais finas no plano Z = 0 (0.75px, rgba(83, 100, 123, 0.15))
-  ctx.strokeStyle = pal.orbitalGridLine;
-  ctx.lineWidth = 0.75 * inv;
-  ctx.beginPath();
-  for (let i = -halfCount; i <= halfCount; i++) {
-    if (i % 2 === 0) continue;
-    const c = i * step;
-    ctx.moveTo(pivot.x - span, pivot.y + c);
-    ctx.lineTo(pivot.x + span, pivot.y + c);
-    ctx.moveTo(pivot.x + c, pivot.y - span);
-    ctx.lineTo(pivot.x + c, pivot.y + span);
-  }
-  ctx.stroke();
-
-  // 2. Linhas principais ortogonais no plano Z = 0
-  ctx.strokeStyle = pal.orbitalGridMajor;
-  ctx.lineWidth = 0.85 * inv;
-  ctx.beginPath();
-  for (let i = -halfCount; i <= halfCount; i += 2) {
-    const c = i * step;
-    ctx.moveTo(pivot.x - span, pivot.y + c);
-    ctx.lineTo(pivot.x + span, pivot.y + c);
-    ctx.moveTo(pivot.x + c, pivot.y - span);
-    ctx.lineTo(pivot.x + c, pivot.y + span);
-  }
-  ctx.stroke();
-
-  // 3. Diagonais radiais discretas a 45° / 135° passando pelo pivô no plano Z = 0
-  const baseR = Math.max(60, opts.pieceRadiusHint && opts.pieceRadiusHint > 10 ? opts.pieceRadiusHint : 120);
-  const maxRingR = baseR * 1.85;
-  const diagSpan = maxRingR * Math.SQRT1_2;
-  ctx.strokeStyle = pal.orbitalGridLine;
-  ctx.lineWidth = 0.7 * inv;
-  ctx.beginPath();
-  ctx.moveTo(pivot.x - diagSpan, pivot.y - diagSpan);
-  ctx.lineTo(pivot.x + diagSpan, pivot.y + diagSpan);
-  ctx.moveTo(pivot.x - diagSpan, pivot.y + diagSpan);
-  ctx.lineTo(pivot.x + diagSpan, pivot.y - diagSpan);
-  ctx.stroke();
-
-  // 4. Anéis orbitais concêntricos discretos no plano Z = 0 (Padrão Imagem 2)
-  const ringRadii = [baseR * 0.55, baseR * 0.95, baseR * 1.35, baseR * 1.78];
-  for (let idx = 0; idx < ringRadii.length; idx++) {
-    const rRing = ringRadii[idx]!;
-    ctx.beginPath();
-    if (idx % 2 === 1) {
-      ctx.setLineDash([4.5 * inv, 3.5 * inv]);
-    } else {
-      ctx.setLineDash([]);
-    }
-    ctx.strokeStyle = pal.orbitalGridRing;
-    ctx.lineWidth = 0.75 * inv;
-    ctx.arc(pivot.x, pivot.y, rRing, 0, Math.PI * 2);
-    ctx.stroke();
-  }
-
-  ctx.setLineDash([]);
-  ctx.restore();
+  // Grid 3D de chão desativado conforme especificação (peça 3D orbita sobre fundo limpo)
+  return;
 }
 

@@ -15,7 +15,6 @@ import { ISO_TECH_SHADING, type IsoPlane } from "./isometricEngine";
 import type { WorkplaneOrbitProjection2D } from "./orbit3dController";
 import {
   buildClassifiedWireframeScene3D,
-  renderBaseOrbitalGridToCanvas,
   renderClassifiedWireframeSceneToCanvas,
   resolveBaseToTopExtrusionVector,
   type ChamferWireframe3DStyleConfig,
@@ -384,35 +383,6 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
 
   // Renderiza em lote ordenado (Painter's Algorithm + 5 Categorias + Recorte Even-Odd dos Furos)
   if (planarFor3D.length > 0) {
-    if (opts.showGrid && !lod) {
-      let minX = Infinity;
-      let maxX = -Infinity;
-      let minY = Infinity;
-      let maxY = -Infinity;
-      for (const ent of planarFor3D) {
-        const b = index.boxOfId(ent.id);
-        if (!b) continue;
-        if (b.minX < minX) minX = b.minX;
-        if (b.maxX > maxX) maxX = b.maxX;
-        if (b.minY < minY) minY = b.minY;
-        if (b.maxY > maxY) maxY = b.maxY;
-      }
-      const hasBounds = Number.isFinite(minX) && Number.isFinite(maxX) && Number.isFinite(minY) && Number.isFinite(maxY);
-      const gridPivot: Vec2 = hasBounds
-        ? { x: 0.5 * (minX + maxX), y: 0.5 * (minY + maxY) }
-        : { x: 0, y: 0 };
-      const pieceRadiusHint = hasBounds
-        ? Math.max(40, 0.5 * Math.hypot(maxX - minX, maxY - minY))
-        : 120;
-      renderBaseOrbitalGridToCanvas(ctx, {
-        pivot: gridPivot,
-        gridStep: opts.gridStep ?? 25,
-        invScale: inv,
-        isLight: opts.isLight,
-        pieceRadiusHint,
-      });
-    }
-
     const classifiedScene = buildClassifiedWireframeScene3D(planarFor3D, {
       isOrbitTilted,
       orbitProjection: orbitProj,

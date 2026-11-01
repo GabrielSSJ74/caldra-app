@@ -170,7 +170,7 @@ export class ThreeBRepRenderer {
     this.onCameraRotateCallback = options.onCameraRotate;
     this.onOrbitAnglesChangeCallback = options.onOrbitAnglesChange;
     this.transparentBackground = options.transparentBackground ?? false;
-    this.showFloorGrid = options.showFloorGrid ?? true;
+    this.showFloorGrid = false;
     this.disableOrbitControls = options.disableOrbitControls ?? false;
     this.onDemandRender = options.onDemandRender ?? false;
 
@@ -1241,54 +1241,6 @@ export class ThreeBRepRenderer {
       }
       this.gridHelper = null;
     }
-
-    if (!this.showFloorGrid) {
-      return;
-    }
-
-    let maxDim = 400;
-    let centerX = this.controls.target.x || 0;
-    let centerY = this.controls.target.y || 0;
-    let floorZ = -0.15;
-
-    if (this.currentShape?.bounds) {
-      const b = this.currentShape.bounds;
-      const dx = b.max.x - b.min.x;
-      const dy = b.max.y - b.min.y;
-      const dz = b.max.z - b.min.z;
-      maxDim = Math.max(dx, dy, dz, 200);
-      centerX = Math.round(((b.min.x + b.max.x) / 2) / 50) * 50;
-      centerY = Math.round(((b.min.y + b.max.y) / 2) / 50) * 50;
-      floorZ = Math.min(0, b.min.z) - 0.15;
-    } else if (this.lastCameraMatch) {
-      centerX = Math.round(this.lastCameraMatch.startPose.target.x / 50) * 50;
-      centerY = Math.round(this.lastCameraMatch.startPose.target.y / 50) * 50;
-      maxDim = Math.max(400, this.lastCameraMatch.startPose.visibleWidthMm);
-    }
-
-    const gridSize = Math.max(800, Math.ceil((maxDim * 3.5) / 100) * 100);
-    const divisions = Math.min(120, Math.max(20, Math.round(gridSize / 20)));
-
-    const mainColor = isDark ? 0xffffff : 0x0f172a;
-    const subColor = isDark ? 0xffffff : 0x334155;
-
-    const grid = new THREE.GridHelper(gridSize, divisions, mainColor, subColor);
-    // Rotaciona 90° em X para que o GridHelper fique exatamente no plano de trabalho XY (Z = floorZ)
-    grid.rotation.x = Math.PI / 2;
-    grid.position.set(centerX, centerY, floorZ);
-
-    if (Array.isArray(grid.material)) {
-      grid.material[0].transparent = true;
-      grid.material[0].opacity = isDark ? 0.18 : 0.16;
-      grid.material[1].transparent = true;
-      grid.material[1].opacity = isDark ? 0.08 : 0.07;
-    } else {
-      grid.material.transparent = true;
-      grid.material.opacity = isDark ? 0.12 : 0.10;
-    }
-
-    this.gridHelper = grid;
-    this.scene.add(grid);
   }
 
   public fitView(
