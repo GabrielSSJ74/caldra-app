@@ -27,7 +27,7 @@ import {
   SlidersHorizontal,
 } from "lucide-react";
 import type { CornerSelector, HoleDistributionMode } from "@/lib/intent";
-import type { Entity } from "@/lib/lab2d/core";
+import { outlinePoints, type Entity } from "@/lib/lab2d/core";
 import {
   useIntentTheme,
   displayColor,
@@ -547,9 +547,11 @@ export function buildDrawing(input: BuildDrawingInput): CadDrawingMm {
   }
   if (!detectedSlot && polylines.length > 0) {
     for (const poly of polylines) {
-      if (!poly.closed || poly.pts.length < 6) continue;
-      const xs = poly.pts.map((p) => p.x);
-      const ys = poly.pts.map((p) => p.y);
+      const hasBulge = Boolean(poly.bulges && poly.bulges.some((b) => Math.abs(b) > 0.1));
+      if (!poly.closed || (poly.pts.length < 6 && !(poly.pts.length >= 4 && hasBulge))) continue;
+      const samplePts = hasBulge ? outlinePoints(poly) : poly.pts;
+      const xs = samplePts.map((p) => p.x);
+      const ys = samplePts.map((p) => p.y);
       const spanX = Math.max(...xs) - Math.min(...xs);
       const spanY = Math.max(...ys) - Math.min(...ys);
       const len = Math.max(spanX, spanY);

@@ -81,14 +81,197 @@ export function layerMapping(opts: CncExportOptions) {
   }));
 }
 
-function geometryOf(e: Entity, layer: string, flatten: boolean): DxfEntity[] {
+/** Converte uma elipse interna em uma LWPOLYLINE fechada de 8 arcos tangentes com bulge (modo Laser/CypCut). */
+function ellipseToTangentArcLwPolyline(
+  e: Extract<Entity, { type: "ellipse" }>,
+  layer: string,
+  segments = 8,
+): DxfEntity {
+  const rot = e.rotation ?? 0;
+  const cosR = Math.cos(rot);
+  const sinR = Math.sin(rot);
+  const toWorld = (u: number, v: number): Vec2 => ({
+    x: e.cx + u * cosR - v * sinR,
+    y: e.cy + u * sinR + v * cosR,
+  });
+  const pts: { x: number; y: number; bulge?: number }[] = [];
+  for (let i = 0; i < segments; i++) {
+    const t0 = (i / segments) * Math.PI * 2;
+    const t1 = ((i + 1) / segments) * Math.PI * 2;
+    const tm = (t0 + t1) / 2;
+    const p0 = m(toWorld(e.rx * Math.cos(t0), e.ry * Math.sin(t0)));
+    const p1 = m(toWorld(e.rx * Math.cos(t1), e.ry * Math.sin(t1)));
+    const pm = m(toWorld(e.rx * Math.cos(tm), e.ry * Math.sin(tm)));
+    const chord = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    let bulge = 0;
+    if (chord > 1e-6) {
+      const mx = (p0.x + p1.x) / 2;
+      const my = (p0.y + p1.y) / 2;
+      const sag = Math.hypot(pm.x - mx, pm.y - my);
+      const cross = (p1.x - p0.x) * (pm.y - p0.y) - (p1.y - p0.y) * (pm.x - p0.x);
+      const sign = cross >= 0 ? -1 : 1;
+      bulge = sign * ((2 * sag) / chord);
+    }
+    pts.push(Math.abs(bulge) > 1e-7 ? { x: p0.x, y: p0.y, bulge } : p0);
+  }
+  return { type: "LWPOLYLINE", layer, closed: true, points: pts };
+}
+
+/** Solda cadeias conexas de LINE e ARC de corte na mesma camada em uma única LWPOLYLINE com bulge. */
+export function weldConnectedCutChains(entities: Entity[], weldTolMm = 0.05): Entity[] {
+  type SegItem = {
+    entIdx: number;
+    layer: string;
+    p0: Vec2;
+    p1: Vec2;
+    bulgeForward: number;
+  };
+  const candidates: SegItem[] = [];
+  const candidateIndiceSet = new Set<number>();
+
+  for (let i = 0; i < entities.length; i++) {
+    const e = entities[i]!;
+    const role = roleOf(e);
+    if (role !== "CUT" && role !== "RECORTE") continue;
+    if (e.type === "line") {
+      candidates.push({
+        entIdx: i,
+        layer: e.layer,
+        p0: { x: e.x1, y: e.y1 },
+        p1: { x: e.x2, y: e.y2 },
+        bulgeForward: 0,
+      });
+      candidateIndiceSet.add(i);
+    } else if (e.type === "arc") {
+      let sweep = e.a1 - e.a0;
+      while (sweep <= -Math.PI * 2) sweep += Math.PI * 2;
+      while (sweep > Math.PI * 2) sweep -= Math.PI * 2;
+      if (Math.abs(sweep) < 1e-6) sweep = Math.PI * 2;
+      const p0 = { x: e.cx + e.r * Math.cos(e.a0), y: e.cy + e.r * Math.sin(e.a0) };
+      const p1 = { x: e.cx + e.r * Math.cos(e.a1), y: e.cy + e.r * Math.sin(e.a1) };
+      candidates.push({
+        entIdx: i,
+        layer: e.layer,
+        p0,
+        p1,
+        bulgeForward: Math.tan(sweep / 4),
+      });
+      candidateIndiceSet.add(i);
+    }
+  }
+
+  if (candidates.length < 2) return entities;
+
+  const used = new Array<boolean>(candidates.length).fill(false);
+  const weldedByFirstIdx = new Map<number, Entity>();
+  const absorbedIndices = new Set<number>();
+
+  for (let i = 0; i < candidates.length; i++) {
+    if (used[i]) continue;
+    const startSeg = candidates[i]!;
+    const chain: { p0: Vec2; p1: Vec2; bulge: number; entIdx: number }[] = [
+      { p0: startSeg.p0, p1: startSeg.p1, bulge: startSeg.bulgeForward, entIdx: startSeg.entIdx },
+    ];
+    used[i] = true;
+
+    let progress = true;
+    while (progress) {
+      progress = false;
+      const tail = chain[chain.length - 1]!.p1;
+      const head = chain[0]!.p0;
+      for (let j = 0; j < candidates.length; j++) {
+        if (used[j]) continue;
+        const cand = candidates[j]!;
+        if (cand.layer !== startSeg.layer) continue;
+        const dTail0 = Math.hypot(cand.p0.x - tail.x, cand.p0.y - tail.y);
+        const dTail1 = Math.hypot(cand.p1.x - tail.x, cand.p1.y - tail.y);
+        if (dTail0 <= weldTolMm) {
+          chain.push({ p0: tail, p1: cand.p1, bulge: cand.bulgeForward, entIdx: cand.entIdx });
+          used[j] = true;
+          progress = true;
+          break;
+        }
+        if (dTail1 <= weldTolMm) {
+          chain.push({ p0: tail, p1: cand.p0, bulge: -cand.bulgeForward, entIdx: cand.entIdx });
+          used[j] = true;
+          progress = true;
+          break;
+        }
+        const dHead1 = Math.hypot(cand.p1.x - head.x, cand.p1.y - head.y);
+        const dHead0 = Math.hypot(cand.p0.x - head.x, cand.p0.y - head.y);
+        if (dHead1 <= weldTolMm) {
+          chain.unshift({ p0: cand.p0, p1: head, bulge: cand.bulgeForward, entIdx: cand.entIdx });
+          used[j] = true;
+          progress = true;
+          break;
+        }
+        if (dHead0 <= weldTolMm) {
+          chain.unshift({ p0: cand.p1, p1: head, bulge: -cand.bulgeForward, entIdx: cand.entIdx });
+          used[j] = true;
+          progress = true;
+          break;
+        }
+      }
+    }
+
+    if (chain.length >= 2) {
+      const firstPt = chain[0]!.p0;
+      const lastPt = chain[chain.length - 1]!.p1;
+      const isClosed = Math.hypot(lastPt.x - firstPt.x, lastPt.y - firstPt.y) <= Math.max(weldTolMm * 2, 0.1);
+      const pts: Vec2[] = chain.map((s) => s.p0);
+      const bulges: number[] = chain.map((s) => s.bulge);
+      if (!isClosed) {
+        pts.push(lastPt);
+        bulges.push(0);
+      }
+      const hasBulge = bulges.some((b) => Math.abs(b) > 1e-7);
+      const firstEnt = entities[startSeg.entIdx]!;
+      weldedByFirstIdx.set(startSeg.entIdx, {
+        id: firstEnt.id,
+        layer: startSeg.layer,
+        type: "polyline",
+        closed: isClosed,
+        pts,
+        bulges: hasBulge ? bulges : undefined,
+      });
+      for (const s of chain) absorbedIndices.add(s.entIdx);
+    }
+  }
+
+  if (weldedByFirstIdx.size === 0) return entities;
+
+  const out: Entity[] = [];
+  for (let i = 0; i < entities.length; i++) {
+    if (weldedByFirstIdx.has(i)) {
+      out.push(weldedByFirstIdx.get(i)!);
+    } else if (!absorbedIndices.has(i) || !candidateIndiceSet.has(i)) {
+      out.push(entities[i]!);
+    }
+  }
+  return out;
+}
+
+function geometryOf(e: Entity, layer: string, flatten: boolean, cypcut = true): DxfEntity[] {
   switch (e.type) {
     case "line":
       return [
         { type: "LINE", layer, start: m({ x: e.x1, y: e.y1 }), end: m({ x: e.x2, y: e.y2 }) },
       ];
     case "polyline":
-      return [{ type: "LWPOLYLINE", layer, closed: e.closed, points: e.pts.map(m) }];
+      return [
+        {
+          type: "LWPOLYLINE",
+          layer,
+          closed: e.closed,
+          points: e.pts.map((pt, idx) => {
+            const mp = m(pt);
+            const b = e.bulges?.[idx];
+            return b !== undefined && Math.abs(b) > 1e-7
+              ? { x: mp.x, y: mp.y, bulge: -b }
+              : mp;
+          }),
+        },
+      ];
     case "circle":
       return [{ type: "CIRCLE", layer, center: m({ x: e.cx, y: e.cy }), radius: e.r }];
     case "arc": {
@@ -101,6 +284,31 @@ function geometryOf(e: Entity, layer: string, flatten: boolean): DxfEntity[] {
           radius: e.r,
           startAngle: deg(e.a1),
           endAngle: deg(e.a0),
+        },
+      ];
+    }
+    case "ellipse": {
+      if (cypcut || flatten) {
+        return [ellipseToTangentArcLwPolyline(e, layer, 8)];
+      }
+      const rot = e.rotation ?? 0;
+      const majorIsX = e.rx >= e.ry;
+      const majorLen = Math.max(e.rx, e.ry);
+      const minorLen = Math.min(e.rx, e.ry);
+      const majorAng = majorIsX ? rot : rot + Math.PI / 2;
+      const majorVec = m({
+        x: majorLen * Math.cos(majorAng),
+        y: majorLen * Math.sin(majorAng),
+      });
+      return [
+        {
+          type: "ELLIPSE",
+          layer,
+          center: m({ x: e.cx, y: e.cy }),
+          majorEnd: majorVec,
+          axisRatio: majorLen > 1e-6 ? minorLen / majorLen : 1,
+          startParam: 0,
+          endParam: Math.PI * 2,
         },
       ];
     }
@@ -262,7 +470,9 @@ export function buildCncDxf(entities: Entity[], opts: CncExportOptions): DxfDocu
     return list.map((e) => ({ ...e, xdata }) as DxfEntity);
   };
 
-  for (const e of entities) {
+  const preparedEntities = weldConnectedCutChains(entities, 0.05);
+
+  for (const e of preparedEntities) {
     if (e.type === "text") continue; // textos técnicos não vão para o arquivo de corte
     const role = roleOf(e);
     if (!role || !(ENTITY_ROLES as ManufacturingRole[]).includes(role)) continue;
@@ -290,7 +500,7 @@ export function buildCncDxf(entities: Entity[], opts: CncExportOptions): DxfDocu
           ),
         );
     }
-    out.push(...tag(geometryOf(e, layer, opts.flattenCurves), role));
+    out.push(...tag(geometryOf(e, layer, opts.flattenCurves, cypcut), role));
     if (opts.leads && isCut) {
       const lout = leadPolyline(e, "out");
       const target = exportLayerOf("LEAD_OUT", opts);
@@ -435,19 +645,41 @@ export function verifyCncDxf(
       back.entities.filter((e) => e.layer === l.name).length,
     );
   }
+  const segLen = (
+    p0: { x: number; y: number; bulge?: number },
+    p1: { x: number; y: number },
+  ): number => {
+    const chord = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+    const b = p0.bulge ?? 0;
+    if (Math.abs(b) <= 1e-7 || chord <= 1e-9) return chord;
+    const theta = 4 * Math.atan(Math.abs(b));
+    const r = chord / (2 * Math.sin(theta / 2));
+    return r * theta;
+  };
   const lenOf = (list: DxfEntity[]) =>
     list.reduce((acc, e) => {
       if (e.type === "LINE") return acc + Math.hypot(e.end.x - e.start.x, e.end.y - e.start.y);
       if (e.type === "CIRCLE") return acc + 2 * Math.PI * e.radius;
-      if (e.type === "LWPOLYLINE")
-        return (
-          acc +
-          e.points.reduce(
-            (s, p, i) =>
-              i ? s + Math.hypot(p.x - e.points[i - 1]!.x, p.y - e.points[i - 1]!.y) : s,
-            0,
-          )
-        );
+      if (e.type === "ARC") {
+        const sweepDeg = ((e.endAngle - e.startAngle) % 360 + 360) % 360 || 360;
+        return acc + e.radius * ((sweepDeg * Math.PI) / 180);
+      }
+      if (e.type === "ELLIPSE") {
+        const a = Math.hypot(e.majorEnd.x, e.majorEnd.y);
+        const b = a * e.axisRatio;
+        const h = (a - b) ** 2 / ((a + b) ** 2 || 1);
+        return acc + Math.PI * (a + b) * (1 + (3 * h) / (10 + Math.sqrt(4 - 3 * h)));
+      }
+      if (e.type === "LWPOLYLINE") {
+        const n = e.points.length;
+        if (n < 2) return acc;
+        const count = e.closed ? n : n - 1;
+        let polyLen = 0;
+        for (let i = 0; i < count; i++) {
+          polyLen += segLen(e.points[i]!, e.points[(i + 1) % n]!);
+        }
+        return acc + polyLen;
+      }
       return acc;
     }, 0);
   push("Perímetro (mm)", lenOf(doc.entities).toFixed(1), lenOf(back.entities).toFixed(1));
@@ -459,6 +691,165 @@ export function verifyCncDxf(
   push("Geometria não classificada", 0, unclassifiedOf(entities).length);
 
   return { ok: rows.every((r) => r.ok), rows };
+}
+
+/**
+ * Seção 12 — Auditoria de Releitura Automática do DXF (Round-Trip Audit).
+ * Relê o texto DXF gerado e verifica os 6 critérios obrigatórios de integridade para CypCut.
+ */
+export type DxfRoundTripAudit = {
+  passed: boolean;
+  polygonalCircularHoles: number;
+  unconfirmedConcentricPairs: number;
+  openCutProfiles: number;
+  duplicateEntities: number;
+  microSegmentsUnder005mm: number;
+  circlesCount: number;
+  closedBulgePolylinesCount: number;
+  closedStraightPolylinesCount: number;
+  ellipsesCount: number;
+  issues: string[];
+};
+
+export function auditDxfRoundTrip(
+  dxfText: string,
+  opts: { w0Mm?: number; allowRegularPolygons?: boolean } = {},
+): DxfRoundTripAudit {
+  const doc = importDxf(dxfText);
+  const w0Mm = opts.w0Mm ?? 1.5;
+  const issues: string[] = [];
+
+  let polygonalCircularHoles = 0;
+  let unconfirmedConcentricPairs = 0;
+  let openCutProfiles = 0;
+  let duplicateEntities = 0;
+  let microSegmentsUnder005mm = 0;
+  let circlesCount = 0;
+  let closedBulgePolylinesCount = 0;
+  let closedStraightPolylinesCount = 0;
+  let ellipsesCount = 0;
+
+  const seenKeys = new Set<string>();
+  const loopRings: { cx: number; cy: number; rMean: number; kind: string }[] = [];
+
+  for (const e of doc.entities) {
+    const key = JSON.stringify(e, (_k, v) =>
+      typeof v === "number" ? Math.round(v * 1000) / 1000 : v,
+    );
+    if (seenKeys.has(key)) {
+      duplicateEntities++;
+      issues.push(`Entidade duplicada detectada (${e.type} na layer ${e.layer}).`);
+    }
+    seenKeys.add(key);
+
+    if (e.type === "CIRCLE") {
+      circlesCount++;
+      loopRings.push({ cx: e.center.x, cy: e.center.y, rMean: e.radius, kind: "CIRCLE" });
+    } else if (e.type === "ELLIPSE") {
+      ellipsesCount++;
+    } else if (e.type === "LINE") {
+      const len = Math.hypot(e.end.x - e.start.x, e.end.y - e.start.y);
+      if (len < 0.05) {
+        microSegmentsUnder005mm++;
+        issues.push(`Microsegmento LINE de ${len.toFixed(4)} mm (< 0.05 mm).`);
+      }
+      if (e.layer === "CUT" || e.layer === "RECORTE") {
+        openCutProfiles++;
+        issues.push(`Entidade LINE avulsa em layer de corte fechado (${e.layer}).`);
+      }
+    } else if (e.type === "LWPOLYLINE") {
+      const n = e.points.length;
+      const hasBulge = e.points.some((p) => p.bulge !== undefined && Math.abs(p.bulge) > 1e-7);
+      if (e.closed) {
+        if (hasBulge) closedBulgePolylinesCount++;
+        else closedStraightPolylinesCount++;
+      } else if (e.layer === "CUT" || e.layer === "RECORTE") {
+        const dClose =
+          n >= 2
+            ? Math.hypot(
+                e.points[n - 1]!.x - e.points[0]!.x,
+                e.points[n - 1]!.y - e.points[0]!.y,
+              )
+            : Infinity;
+        if (dClose >= 0.001) {
+          openCutProfiles++;
+          issues.push(`LWPOLYLINE aberta em layer de corte (${e.layer}), gap=${dClose.toFixed(4)} mm.`);
+        }
+      }
+
+      // Verifica microsegmentos < 0.05 mm
+      const segCount = e.closed ? n : Math.max(0, n - 1);
+      for (let i = 0; i < segCount; i++) {
+        const p0 = e.points[i]!;
+        const p1 = e.points[(i + 1) % n]!;
+        const chord = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+        if (chord < 0.05) {
+          microSegmentsUnder005mm++;
+          issues.push(`Microsegmento em LWPOLYLINE de ${chord.toFixed(4)} mm (< 0.05 mm).`);
+        }
+      }
+
+      // Verifica se uma LWPOLYLINE sem bulge de >= 9 lados está fingindo ser um círculo (furo facetado)
+      if (e.closed && !hasBulge && n >= 9) {
+        const cx = e.points.reduce((s, p) => s + p.x, 0) / n;
+        const cy = e.points.reduce((s, p) => s + p.y, 0) / n;
+        const radii = e.points.map((p) => Math.hypot(p.x - cx, p.y - cy));
+        const rMean = radii.reduce((s, r) => s + r, 0) / n;
+        const rVar =
+          Math.sqrt(radii.reduce((s, r) => s + (r - rMean) ** 2, 0) / n) / Math.max(1e-6, rMean);
+        if (rVar < 0.04) {
+          polygonalCircularHoles++;
+          issues.push(
+            `Círculo/furo exportado como polígono facetado de ${n} lados sem bulge (R≈${rMean.toFixed(2)} mm).`,
+          );
+        }
+        loopRings.push({ cx, cy, rMean, kind: "LWPOLYLINE" });
+      } else if (e.closed && n >= 2) {
+        const cx = e.points.reduce((s, p) => s + p.x, 0) / n;
+        const cy = e.points.reduce((s, p) => s + p.y, 0) / n;
+        const rMean =
+          e.points.reduce((s, p) => s + Math.hypot(p.x - cx, p.y - cy), 0) / n;
+        loopRings.push({ cx, cy, rMean, kind: "LWPOLYLINE" });
+      }
+    }
+  }
+
+  // Verifica pares de contornos concêntricos com |ΔR| <= 1.6 * w0Mm (laços gêmeos de borda interna/externa)
+  for (let i = 0; i < loopRings.length; i++) {
+    for (let j = i + 1; j < loopRings.length; j++) {
+      const a = loopRings[i]!;
+      const b = loopRings[j]!;
+      const centerDist = Math.hypot(a.cx - b.cx, a.cy - b.cy);
+      const deltaR = Math.abs(a.rMean - b.rMean);
+      if (centerDist <= 1.5 * w0Mm && deltaR <= 1.6 * w0Mm) {
+        unconfirmedConcentricPairs++;
+        issues.push(
+          `Par concêntrico suspeito (laço duplo): Δcentro=${centerDist.toFixed(2)} mm, ΔR=${deltaR.toFixed(2)} mm.`,
+        );
+      }
+    }
+  }
+
+  const passed =
+    polygonalCircularHoles === 0 &&
+    unconfirmedConcentricPairs === 0 &&
+    openCutProfiles === 0 &&
+    duplicateEntities === 0 &&
+    microSegmentsUnder005mm === 0;
+
+  return {
+    passed,
+    polygonalCircularHoles,
+    unconfirmedConcentricPairs,
+    openCutProfiles,
+    duplicateEntities,
+    microSegmentsUnder005mm,
+    circlesCount,
+    closedBulgePolylinesCount,
+    closedStraightPolylinesCount,
+    ellipsesCount,
+    issues,
+  };
 }
 
 /* ----------------------------------------------------- preflight CNC READY */

@@ -70,7 +70,7 @@ export class CandidateGenerator {
         method: "Otsu Global + Reconhecimento Técnico",
         bin: denoise(binarize(normalized, false), 1),
         hq: true,
-        preferCircles: false,
+        preferCircles: true,
         regularize: true,
         tolerance: userTol,
       },
@@ -78,10 +78,10 @@ export class CandidateGenerator {
         id: "cand_denoised_smooth",
         method: "Filtro Anti-Ruído Avançado + Curvatura",
         bin: denoise(referenceBinary, 2),
-        hq: false,
+        hq: true,
         preferCircles: true,
         regularize: true,
-        tolerance: "alta" as Tolerance,
+        tolerance: userTol,
       },
     ];
 

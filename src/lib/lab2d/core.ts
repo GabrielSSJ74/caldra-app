@@ -71,7 +71,7 @@ type Base = {
 
 export type Entity =
   | (Base & { type: "line"; x1: number; y1: number; x2: number; y2: number })
-  | (Base & { type: "polyline"; pts: Vec2[]; closed: boolean })
+  | (Base & { type: "polyline"; pts: Vec2[]; closed: boolean; bulges?: number[] })
   | (Base & { type: "circle"; cx: number; cy: number; r: number })
   | (Base & { type: "arc"; cx: number; cy: number; r: number; a0: number; a1: number })
   | (Base & {
@@ -171,9 +171,48 @@ export function entityPoints(e: Entity): Vec2[] {
   }
 }
 
+/** Amostra um segmento de polilinha com bulge (arco circular tangente) para bounding box / hit-test. */
+export function sampleBulgeSegment(p0: Vec2, p1: Vec2, bulge: number, steps = 8): Vec2[] {
+  if (!bulge || Math.abs(bulge) < 1e-6) return [p0, p1];
+  const dx = p1.x - p0.x;
+  const dy = p1.y - p0.y;
+  const chord = Math.hypot(dx, dy);
+  if (chord < 1e-9) return [p0];
+  const theta = 4 * Math.atan(bulge);
+  const r = Math.abs(chord / (2 * Math.sin(theta / 2)));
+  const mx = (p0.x + p1.x) / 2;
+  const my = (p0.y + p1.y) / 2;
+  const nx = -dy / chord;
+  const ny = dx / chord;
+  const d = (chord / 2) / Math.tan(theta / 2);
+  const cx = mx + nx * d;
+  const cy = my + ny * d;
+  const a0 = Math.atan2(p0.y - cy, p0.x - cx);
+  const out: Vec2[] = [];
+  for (let i = 0; i <= steps; i++) {
+    const a = a0 + (i / steps) * theta;
+    out.push({ x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) });
+  }
+  return out;
+}
+
 /** Pontos usados para enquadramento e hit-test (curvas entram amostradas). */
 export function outlinePoints(e: Entity): Vec2[] {
   if (e.type === "path") return samplePath(e.start, e.segs, e.closed, 24);
+  if (e.type === "polyline" && e.bulges && e.bulges.some((b) => Math.abs(b) > 1e-6)) {
+    const pts: Vec2[] = [];
+    const n = e.pts.length;
+    const segCount = e.closed ? n : Math.max(0, n - 1);
+    for (let i = 0; i < segCount; i++) {
+      const p0 = e.pts[i]!;
+      const p1 = e.pts[(i + 1) % n]!;
+      const b = e.bulges[i] ?? 0;
+      const sampled = sampleBulgeSegment(p0, p1, b, 10);
+      if (i > 0) sampled.shift();
+      pts.push(...sampled);
+    }
+    return pts.length > 0 ? pts : e.pts;
+  }
   if (e.type === "ellipse") {
     const rot = e.rotation ?? 0;
     const cosR = Math.cos(rot);
@@ -205,6 +244,13 @@ export function segmentsOf(e: Entity): [Vec2, Vec2][] {
       ],
     ];
   if (e.type === "polyline") {
+    if (e.bulges && e.bulges.some((b) => Math.abs(b) > 1e-6)) {
+      const pts = outlinePoints(e);
+      const out: [Vec2, Vec2][] = [];
+      for (let i = 0; i < pts.length - 1; i++) out.push([pts[i]!, pts[i + 1]!]);
+      if (e.closed && pts.length > 2) out.push([pts[pts.length - 1]!, pts[0]!]);
+      return out;
+    }
     const out: [Vec2, Vec2][] = [];
     for (let i = 0; i < e.pts.length - 1; i++) out.push([e.pts[i]!, e.pts[i + 1]!]);
     if (e.closed && e.pts.length > 2) out.push([e.pts[e.pts.length - 1]!, e.pts[0]!]);
@@ -426,6 +472,9 @@ export const mirror = (e: Entity, o: Vec2, axis: "x" | "y") => {
     const rot = e.rotation ?? 0;
     return { ...e, cx: cp.x, cy: cp.y, rotation: axis === "x" ? Math.PI - rot : -rot };
   }
+  if (e.type === "polyline" && e.bulges) {
+    return { ...mapEntity(e, ref), bulges: e.bulges.map((b) => -b) };
+  }
   return mapEntity(e, ref);
 };
 
@@ -504,22 +553,23 @@ export const rectPolyline = (a: Vec2, b: Vec2, layer: LayerId, radius = 0): Enti
       ],
     };
   const r = Math.min(radius, (x1 - x0) / 2, (y1 - y0) / 2);
-  const arc = (cx: number, cy: number, s: number) =>
-    Array.from({ length: 7 }, (_, i) => {
-      const t = s + (i / 6) * (Math.PI / 2);
-      return { x: cx + r * Math.cos(t), y: cy + r * Math.sin(t) };
-    });
+  const k = Math.tan(Math.PI / 8); // bulge exato para arco de 90°
   return {
     id: uid(),
     layer,
     type: "polyline",
     closed: true,
     pts: [
-      ...arc(x0 + r, y0 + r, Math.PI),
-      ...arc(x1 - r, y0 + r, -Math.PI / 2),
-      ...arc(x1 - r, y1 - r, 0),
-      ...arc(x0 + r, y1 - r, Math.PI / 2),
+      { x: x0, y: y0 + r },
+      { x: x0 + r, y: y0 },
+      { x: x1 - r, y: y0 },
+      { x: x1, y: y0 + r },
+      { x: x1, y: y1 - r },
+      { x: x1 - r, y: y1 },
+      { x: x0 + r, y: y1 },
+      { x: x0, y: y1 - r },
     ],
+    bulges: [k, 0, k, 0, k, 0, k, 0],
   };
 };
 
@@ -929,14 +979,32 @@ export function fromDxf(doc: DxfDocument, layer: LayerId): Entity[] {
       });
     if (e.type === "CIRCLE")
       out.push({ id: uid(), layer, type: "circle", cx: e.center.x, cy: -e.center.y, r: e.radius });
-    if (e.type === "LWPOLYLINE")
+    if (e.type === "LWPOLYLINE") {
+      const hasBulge = e.points.some((p) => p.bulge !== undefined && Math.abs(p.bulge) > 1e-7);
       out.push({
         id: uid(),
         layer,
         type: "polyline",
         closed: !!e.closed,
         pts: e.points.map((p) => ({ x: p.x, y: -p.y })),
+        bulges: hasBulge ? e.points.map((p) => -(p.bulge ?? 0)) : undefined,
       });
+    }
+    if (e.type === "ELLIPSE") {
+      const rx = Math.hypot(e.majorEnd.x, e.majorEnd.y);
+      const ry = rx * e.axisRatio;
+      const rotation = Math.atan2(-e.majorEnd.y, e.majorEnd.x);
+      out.push({
+        id: uid(),
+        layer,
+        type: "ellipse",
+        cx: e.center.x,
+        cy: -e.center.y,
+        rx,
+        ry,
+        rotation,
+      });
+    }
     if (e.type === "ARC") {
       const rad = (d: number) => (-d * Math.PI) / 180;
       out.push({

@@ -52,31 +52,13 @@ export function createSlotPolyline(
     y: center.y + halfLen * dirY,
   };
 
-  const steps = 64;
-  const pts: Vec2[] = [];
-
-  // Semicírculo 1 (em torno de c2, de -90° a +90° relativo à normal)
-  for (let i = 0; i <= steps; i++) {
-    const t = -Math.PI / 2 + (i / steps) * Math.PI;
-    const px = r * Math.cos(t);
-    const py = r * Math.sin(t);
-    // rotaciona pelo ângulo do slot
-    pts.push({
-      x: c2.x + (px * cosA - py * sinA),
-      y: c2.y + (px * sinA + py * cosA),
-    });
-  }
-
-  // Semicírculo 2 (em torno de c1, de +90° a +270° relativo à normal)
-  for (let i = 0; i <= steps; i++) {
-    const t = Math.PI / 2 + (i / steps) * Math.PI;
-    const px = r * Math.cos(t);
-    const py = r * Math.sin(t);
-    pts.push({
-      x: c1.x + (px * cosA - py * sinA),
-      y: c1.y + (px * sinA + py * cosA),
-    });
-  }
+  // 4 vértices tangentes exatos: 2 retas paralelas (bulge=0) + 2 semicírculos de 180° (bulge=1)
+  const pts: Vec2[] = [
+    { x: c1.x - r * normX, y: c1.y - r * normY },
+    { x: c2.x - r * normX, y: c2.y - r * normY },
+    { x: c2.x + r * normX, y: c2.y + r * normY },
+    { x: c1.x + r * normX, y: c1.y + r * normY },
+  ];
 
   return {
     id: uid(),
@@ -84,6 +66,7 @@ export function createSlotPolyline(
     type: "polyline",
     closed: true,
     pts,
+    bulges: [0, 1, 0, 1],
   };
 }
 
@@ -117,11 +100,7 @@ export function createCenterRectangle(
   }
 
   const r = Math.min(filletRadius, dx, dy);
-  const arc = (cx: number, cy: number, startAng: number) =>
-    Array.from({ length: 7 }, (_, i) => {
-      const t = startAng + (i / 6) * (Math.PI / 2);
-      return { x: cx + r * Math.cos(t), y: cy + r * Math.sin(t) };
-    });
+  const k = Math.tan(Math.PI / 8);
 
   return {
     id: uid(),
@@ -129,11 +108,16 @@ export function createCenterRectangle(
     type: "polyline",
     closed: true,
     pts: [
-      ...arc(p1.x + r, p1.y + r, Math.PI),
-      ...arc(p2.x - r, p1.y + r, -Math.PI / 2),
-      ...arc(p2.x - r, p2.y - r, 0),
-      ...arc(p1.x + r, p2.y - r, Math.PI / 2),
+      { x: p1.x, y: p1.y + r },
+      { x: p1.x + r, y: p1.y },
+      { x: p2.x - r, y: p1.y },
+      { x: p2.x, y: p1.y + r },
+      { x: p2.x, y: p2.y - r },
+      { x: p2.x - r, y: p2.y },
+      { x: p1.x + r, y: p2.y },
+      { x: p1.x, y: p2.y - r },
     ],
+    bulges: [k, 0, k, 0, k, 0, k, 0],
   };
 }
 

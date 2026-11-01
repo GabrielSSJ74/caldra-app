@@ -6,12 +6,45 @@
  */
 
 import type { Contour, PxPoint } from "./visionEngine";
+import type { ConfidenceLevel } from "./visionThresholdConfig";
+import { fitCircleTaubinGaussNewton } from "./visionMetricsAndHarness";
 
 /** Confiança da primitiva: detectada direto, ajustada ou aproximada. */
 export type PrimStatus = "detectada" | "convertida" | "aproximada";
 
-/** Metadados de qualidade — `dev` é o desvio máximo medido, em PIXELS. */
-export type PrimMeta = { status?: PrimStatus; dev?: number };
+/** Metadados de qualidade, proveniência e confiança (Seções 8, 9 e 10). */
+export type PrimMeta = {
+  status?: PrimStatus;
+  /** Desvio máximo medido em relação aos pontos sub-pixel originais (px). */
+  dev?: number;
+  /** Desvio RMS medido (px). */
+  rmsDev?: number;
+  /** Tolerância adaptativa τ usada no ajuste (px). */
+  tauPx?: number;
+  /** Nível de confiança da reconstrução (ALTA / MEDIA / BAIXA). */
+  confidence?: ConfidenceLevel;
+  /** Número de pontos de suporte no contorno original. */
+  supportPoints?: number;
+  /** Cobertura angular em graus (para círculos e arcos). */
+  spanDeg?: number;
+  /** Padrão geométrico reconhecido. */
+  patternKind?:
+    | "circle"
+    | "ellipse"
+    | "regular_polygon"
+    | "rounded_rect"
+    | "oblong_slot"
+    | "mixed_closed"
+    | "open_chain";
+  /** Parâmetros analíticos de elipse quando o contorno fechado é uma elipse (modo CAD vs Laser). */
+  ellipseParams?: {
+    cx: number;
+    cy: number;
+    rx: number;
+    ry: number;
+    rotation: number;
+  };
+};
 
 export type Prim = (
   | { kind: "circle"; cx: number; cy: number; r: number; hole: boolean; quality: number }
@@ -26,7 +59,15 @@ export type Prim = (
       quality: number;
     }
   | { kind: "line"; x1: number; y1: number; x2: number; y2: number; hole: boolean; quality: number }
-  | { kind: "polyline"; pts: PxPoint[]; closed: boolean; hole: boolean; quality: number }
+  | {
+      kind: "polyline";
+      pts: PxPoint[];
+      /** Bulge opcional por vértice: tan(Δθ/4) para o segmento i -> i+1 (grupo 42 da LWPOLYLINE). */
+      bulges?: number[];
+      closed: boolean;
+      hole: boolean;
+      quality: number;
+    }
 ) &
   PrimMeta;
 
@@ -106,46 +147,11 @@ export function simplifyIndices(pts: PxPoint[], tol: number): number[] {
   return out;
 }
 
-/** Ajuste de círculo por mínimos quadrados (Kåsa). */
+/** Ajuste de círculo sem viés para arcos parciais (Taubin + refino ortogonal de Gauss–Newton). */
 export function fitCircle(pts: PxPoint[]) {
-  const n = pts.length;
-  if (n < 5) return null;
-  let sx = 0,
-    sy = 0,
-    sxx = 0,
-    syy = 0,
-    sxy = 0,
-    sxxx = 0,
-    syyy = 0,
-    sxyy = 0,
-    sxxy = 0;
-  for (const p of pts) {
-    const { x, y } = p;
-    sx += x;
-    sy += y;
-    sxx += x * x;
-    syy += y * y;
-    sxy += x * y;
-    sxxx += x * x * x;
-    syyy += y * y * y;
-    sxyy += x * y * y;
-    sxxy += x * x * y;
-  }
-  const C = n * sxx - sx * sx;
-  const D = n * sxy - sx * sy;
-  const E = n * sxxx + n * sxyy - (sxx + syy) * sx;
-  const G = n * syy - sy * sy;
-  const H = n * sxxy + n * syyy - (sxx + syy) * sy;
-  const den = 2 * (C * G - D * D);
-  if (Math.abs(den) < 1e-9) return null;
-  const cx = (E * G - D * H) / den;
-  const cy = (C * H - D * E) / den;
-  let r = 0;
-  for (const p of pts) r += Math.hypot(p.x - cx, p.y - cy);
-  r /= n;
-  let err = 0;
-  for (const p of pts) err += Math.abs(Math.hypot(p.x - cx, p.y - cy) - r);
-  return { cx, cy, r, rms: err / n };
+  const fit = fitCircleTaubinGaussNewton(pts);
+  if (!fit) return null;
+  return { cx: fit.cx, cy: fit.cy, r: fit.r, rms: fit.rmsDev, maxDev: fit.maxDev };
 }
 
 /** Cobertura angular dos pontos em torno de um centro (rad). */

@@ -8,6 +8,7 @@
  */
 
 import type { Prim } from "../geometryRecognizer";
+import { bulgeToArc } from "../visionMetricsAndHarness";
 
 export class VectorRasterizer {
   /**
@@ -113,13 +114,23 @@ export class VectorRasterizer {
 
         case "polyline":
           if (prim.pts.length >= 2) {
-            for (let i = 0; i < prim.pts.length - 1; i++) {
-              drawLine(prim.pts[i].x, prim.pts[i].y, prim.pts[i + 1].x, prim.pts[i + 1].y);
-            }
-            if (prim.closed) {
-              const last = prim.pts[prim.pts.length - 1];
-              const first = prim.pts[0];
-              drawLine(last.x, last.y, first.x, first.y);
+            const segCount = prim.closed ? prim.pts.length : prim.pts.length - 1;
+            for (let i = 0; i < segCount; i++) {
+              const p0 = prim.pts[i];
+              const p1 = prim.pts[(i + 1) % prim.pts.length];
+              const bulge = prim.bulges?.[i] ?? 0;
+              if (Math.abs(bulge) > 1e-6) {
+                const arc = bulgeToArc(p0, p1, bulge);
+                drawArc(
+                  arc.cx,
+                  arc.cy,
+                  arc.r,
+                  arc.ccw ? arc.a0 : arc.a1,
+                  arc.ccw ? arc.a1 : arc.a0,
+                );
+              } else {
+                drawLine(p0.x, p0.y, p1.x, p1.y);
+              }
             }
           }
           break;

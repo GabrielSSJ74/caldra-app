@@ -494,15 +494,21 @@ export function detectHostTopology(
   // Ordena priorizando pares estritamente concêntricos (||C_ext - C_int|| < 1e-3 mm)
   concentricPairs.sort((a, b) => Number(b.exactConcentric) - Number(a.exactConcentric));
 
-  // Filtra os pares concêntricos cuja coroa circular contém fisicamente o furo:
-  // R_int + r_f <= d(C, P_f) <= R_ext - r_f
-  const matchingFlanges = concentricPairs.filter((pair) => {
+  // Filtra os pares concêntricos cuja coroa circular contém fisicamente o furo,
+  // ou cujo contorno externo engloba o furo (para diagnosticar invasão do furo central)
+  let matchingFlanges = concentricPairs.filter((pair) => {
     const dToCenter = dist(pair.center, sourceCenter);
     return (
       dToCenter >= pair.rInner + holeRadius - EPSILON &&
       dToCenter <= pair.rOuter - holeRadius + EPSILON
     );
   });
+  if (matchingFlanges.length === 0 && concentricPairs.length > 0) {
+    matchingFlanges = concentricPairs.filter((pair) => {
+      const dToCenter = dist(pair.center, sourceCenter);
+      return dToCenter > EPSILON && dToCenter <= pair.rOuter - holeRadius + EPSILON;
+    });
+  }
 
   // Coleta também todos os centros de círculos que englobam o furo para avaliação de ambiguidade
   const enclosingCircles = otherCircles
@@ -597,8 +603,8 @@ export function detectHostTopology(
 
     const mainCircle = enclosingCircles[0]!;
     const dToCenter = dist({ x: mainCircle.cx, y: mainCircle.cy }, sourceCenter);
-    const confidence: HostConfidence = candidateCenters.length === 1 ? "high" : "medium";
-    const confidenceLabel: HostConfidenceLabel = confidence === "high" ? "ALTA" : "MÉDIA";
+    const confidence: HostConfidence = "medium";
+    const confidenceLabel: HostConfidenceLabel = "MÉDIA";
 
     // Identifica furos internos existentes dentro do disco (exceto o próprio círculo externo)
     const internalCutouts = otherCircles
@@ -1522,7 +1528,7 @@ export function validateArray(
         }
 
         if (centerDist < holeDia - EPSILON) {
-          const msg = `Colisão entre furos: distância centro a centro (${centerDist.toFixed(1)} mm) menor que Ø ${holeDia.toFixed(1)} mm.`;
+          const msg = `Colisão entre furos (furos se sobrepõem): distância centro a centro (${centerDist.toFixed(1)} mm) menor que Ø ${holeDia.toFixed(1)} mm.`;
           markSlotIssue(sA.index, "error", "Colisão entre furos", msg);
           markSlotIssue(sB.index, "error", "Colisão entre furos", msg);
         } else if (centerDist < holeDia + MIN_LIGAMENT_MM) {

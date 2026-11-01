@@ -7,6 +7,8 @@
  */
 
 import type { Binary } from "./imagePreprocessor";
+import { runExtractionPipelineS2ToS5 } from "./imageExtractionPipeline";
+import type { ImageKindMode, VisionPreset } from "./visionThresholdConfig";
 
 export type PxPoint = { x: number; y: number };
 
@@ -124,10 +126,16 @@ export type ExtractOptions = {
   minPixels?: number;
   /** Descarta contornos com menos que este número de pontos. */
   minPoints?: number;
+  /** Tipo de imagem ("auto" | "silhueta" | "traco" | "linha"). Padrão: "auto". */
+  imageKind?: ImageKindMode;
+  /** Predefinição de tolerância τ. Padrão: "equilibrado". */
+  preset?: VisionPreset;
+  /** Se verdadeiro, executa o extrator inteiro legado (apenas para diagnóstico de regressão). */
+  legacyMode?: boolean;
 };
 
-/** Extrai contornos externos e furos da máscara binária. */
-export function extractContours(bin: Binary, opt: ExtractOptions = {}): Contour[] {
+/** Extrator inteiro legado (Moore-Neighbor com corte fixo 0.55) — mantido apenas para auditoria comparativa. */
+export function extractContoursLegacy(bin: Binary, opt: ExtractOptions = {}): Contour[] {
   const { data, width: w, height: h } = bin;
   const minPixels = opt.minPixels ?? 24;
   const minPoints = opt.minPoints ?? 12;
@@ -147,12 +155,36 @@ export function extractContours(bin: Binary, opt: ExtractOptions = {}): Contour[
     const pts = traceBorder(bg.labels, w, h, c.id, c.seed);
     if (pts.length < minPoints) continue;
     const area = polygonArea(pts);
-    // Um traço fino gera contorno externo E interno quase idênticos: o interno
-    // é a outra margem da MESMA linha, não um furo. Descartamos esse caso.
     const parent = out.filter((o) => !o.hole && o.area > area).sort((a, b) => a.area - b.area)[0];
     if (parent && area / parent.area > 0.55) continue;
     out.push({ pts, hole: true, closed: true, area });
   }
 
   return out.sort((a, b) => b.area - a.area);
+}
+
+/**
+ * Extrai contornos externos, furos e linhas centrais da máscara binária (Fase C — Seções 6 e 7):
+ * - Fronteira em sub-pixel por Marching Squares sobre campo suavizado
+ * - Árvore de contenção espacial real (pointInPolygon)
+ * - Colapso automático de laços gêmeos de traço único (q <= 1.6 ou q_rel <= 0.15) na linha central
+ * - Rede de segurança pós-extração contra duplicatas coincidentes
+ */
+export function extractContours(bin: Binary, opt: ExtractOptions = {}): Contour[] {
+  if (opt.legacyMode) {
+    return extractContoursLegacy(bin, opt);
+  }
+  const s2s5 = runExtractionPipelineS2ToS5(bin, {
+    minPixels: opt.minPixels,
+    minPoints: opt.minPoints,
+    imageKind: opt.imageKind ?? "auto",
+    preset: opt.preset ?? "equilibrado",
+    excludeScreenUi: false,
+  });
+  return s2s5.contours.map((c) => ({
+    pts: c.pts,
+    hole: c.hole,
+    closed: c.closed,
+    area: c.area,
+  }));
 }
