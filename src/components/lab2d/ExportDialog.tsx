@@ -13,6 +13,14 @@ import { downloadSvg, renderSvg } from "@/lib/lab2d/render";
 import { DXF_PROFILES, ROLE_LABEL, USER_ROLES } from "@/lib/lab2d/roles";
 import { previewDxfSvg } from "@/lib/dxf/previewRenderer";
 import { downloadSheetPdf, downloadSheetPng, renderSheet } from "@/lib/export/renderSheet";
+import { downloadDxf } from "@/lib/dxf/dxfService";
+import { buildDxfSondaDocument } from "@/lib/dxf/dxfSondaGenerator";
+import {
+  CYPCUT_CHECKLIST_ITEMS,
+  INITIAL_CYPCUT_VALIDATION_STATE,
+  getCypCutValidationStatusLabel,
+  type CypCutValidationState,
+} from "@/lib/vision/visionReviewAndChecklist";
 import { cn } from "@/lib/utils";
 import type { CncRole } from "@/lib/dxf/cncExport";
 
@@ -61,6 +69,14 @@ export function ExportDialog({
   const [profile, setProfile] = useState(DXF_PROFILE_LASER);
   const [roles, setRoles] = useState<Partial<Record<CncRole, boolean>>>({});
   const [leads, setLeads] = useState(true);
+  const [showCypcutChecklist, setShowCypcutChecklist] = useState(false);
+  const [cypcutValidation, setCypcutValidation] = useState<CypCutValidationState>(
+    INITIAL_CYPCUT_VALIDATION_STATE,
+  );
+  const cypcutStatus = useMemo(
+    () => getCypCutValidationStatusLabel(cypcutValidation),
+    [cypcutValidation],
+  );
 
   const entities = scopes[scope];
 
@@ -330,12 +346,24 @@ export function ExportDialog({
               {DXF_PROFILES.find((p) => p.id === profile)?.description}
             </p>
 
-            {/* preflight */}
+            {/* preflight + auditoria S12 (Seção 12) */}
             {dxf && (
-              <div className="rounded-xl border border-border px-3 py-2">
-                <p className="font-mono text-[10px] tracking-widest uppercase">
-                  DXF CNC READY {dxf.preflight.every((r) => r.ok) ? "✓" : "—"}
-                </p>
+              <div className="space-y-2 rounded-xl border border-border px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-mono text-[10px] tracking-widest uppercase">
+                    DXF CNC READY {dxf.preflight.every((r) => r.ok) && dxf.roundTripAudit.passed ? "✓" : "—"}
+                  </p>
+                  <span
+                    className={cn(
+                      "rounded-full border px-2 py-0.5 font-mono text-[9px]",
+                      dxf.roundTripAudit.passed
+                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+                        : "border-warn/40 bg-warn/10 text-warn",
+                    )}
+                  >
+                    Releitura S12: {dxf.roundTripAudit.passed ? "7/7 portas OK" : "Atenção"}
+                  </span>
+                </div>
                 <div className="mt-1 grid grid-cols-1 gap-0.5 font-mono text-[10px] sm:grid-cols-2">
                   {dxf.preflight.map((row, idx) => (
                     <p key={`${row.label}-${idx}`} className={row.ok ? "text-muted-foreground" : "text-warn"}>
@@ -343,8 +371,104 @@ export function ExportDialog({
                     </p>
                   ))}
                 </div>
+                <div className="border-t border-border/60 pt-1.5 font-mono text-[9px] text-muted-foreground">
+                  <span>CIRCLE: {dxf.roundTripAudit.circlesCount}</span> ·{" "}
+                  <span>LWPOLYLINE c/ bulge: {dxf.roundTripAudit.closedBulgePolylinesCount}</span> ·{" "}
+                  <span>LWPOLYLINE reta: {dxf.roundTripAudit.closedStraightPolylinesCount}</span> ·{" "}
+                  <span>Furos facetados: {dxf.roundTripAudit.polygonalCircularHoles}</span> ·{" "}
+                  <span>Microseg &lt;0.05mm: {dxf.roundTripAudit.microSegmentsUnder005mm}</span>
+                </div>
               </div>
             )}
+
+            {/* Roteiro de Validação no CypCut (Seção 14) + DXF-Sonda */}
+            <div className="rounded-xl border border-border px-3 py-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span
+                  className={cn(
+                    "font-mono text-[10px] font-semibold",
+                    cypcutStatus.verified ? "text-emerald-400" : "text-amber-400",
+                  )}
+                >
+                  {cypcutStatus.badgeText}
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      downloadDxf(buildDxfSondaDocument(), "dxf-sonda-cypcut");
+                      toast.success("dxf-sonda-cypcut.dxf baixado com as 5 sondas de diagnóstico.");
+                    }}
+                    className="rounded-lg border border-border px-2 py-1 font-mono text-[9px] hover:bg-secondary"
+                  >
+                    Baixar DXF-Sonda
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCypcutChecklist((v) => !v)}
+                    className="rounded-lg border border-border px-2 py-1 font-mono text-[9px] hover:bg-secondary"
+                  >
+                    {showCypcutChecklist ? "Ocultar roteiro" : `Roteiro (${cypcutStatus.completedCount}/6)`}
+                  </button>
+                </div>
+              </div>
+
+              {showCypcutChecklist && (
+                <div className="mt-2 space-y-1.5 border-t border-border/60 pt-2 text-[10px]">
+                  {CYPCUT_CHECKLIST_ITEMS.map((item) => {
+                    const checked = cypcutValidation.checked[item.id];
+                    return (
+                      <label
+                        key={item.id}
+                        className="flex cursor-pointer items-start gap-2 rounded-lg border border-border/60 px-2 py-1 hover:bg-secondary/40"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={(e) =>
+                            setCypcutValidation((prev) => ({
+                              ...prev,
+                              checked: { ...prev.checked, [item.id]: e.target.checked },
+                            }))
+                          }
+                          className="mt-0.5 accent-emerald-500"
+                        />
+                        <span>
+                          <strong className="font-mono">{item.number}. {item.label}</strong>
+                          <span className="block text-[9px] text-muted-foreground">{item.detail}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <input
+                      type="text"
+                      placeholder="Cota 1 no CypCut (mm)"
+                      value={cypcutValidation.measuredDistance1Mm}
+                      onChange={(e) =>
+                        setCypcutValidation((prev) => ({
+                          ...prev,
+                          measuredDistance1Mm: e.target.value,
+                        }))
+                      }
+                      className="rounded-lg border border-border bg-background px-2 py-1 font-mono text-[10px]"
+                    />
+                    <input
+                      type="text"
+                      placeholder="Cota 2 no CypCut (mm)"
+                      value={cypcutValidation.measuredDistance2Mm}
+                      onChange={(e) =>
+                        setCypcutValidation((prev) => ({
+                          ...prev,
+                          measuredDistance2Mm: e.target.value,
+                        }))
+                      }
+                      className="rounded-lg border border-border bg-background px-2 py-1 font-mono text-[10px]"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
 
             {dxf && dxf.errors.length > 0 && (
               <p className="rounded-xl border border-danger/40 bg-danger/5 px-3 py-2 text-[11px] text-danger">

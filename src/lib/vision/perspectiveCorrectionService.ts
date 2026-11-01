@@ -99,6 +99,122 @@ export function warpToRect(
   return dst.toDataURL("image/png");
 }
 
+/**
+ * Retifica diretamente um buffer `ImageData` por homografia inversa com interpolação bilinear sub-pixel.
+ * Funciona tanto em Web Worker / ambiente Node quanto no navegador sem depender de DOM canvas.
+ */
+export function warpImageDataToRectBilinear(
+  src: ImageData,
+  quad: Quad,
+  out: { w: number; h: number },
+): ImageData | null {
+  const dstW = Math.max(1, Math.round(out.w));
+  const dstH = Math.max(1, Math.round(out.h));
+  const H = computeHomography(quad, dstW, dstH);
+  if (!H) return null;
+  const inv = invert3x3(H);
+  if (!inv) return null;
+
+  const outData = new Uint8ClampedArray(dstW * dstH * 4);
+  const sw = src.width;
+  const sh = src.height;
+  const sdata = src.data;
+
+  for (let y = 0; y < dstH; y++) {
+    for (let x = 0; x < dstW; x++) {
+      const den = inv[6]! * x + inv[7]! * y + inv[8]!;
+      const di = (y * dstW + x) * 4;
+      if (Math.abs(den) < 1e-9) {
+        outData[di] = 255;
+        outData[di + 1] = 255;
+        outData[di + 2] = 255;
+        outData[di + 3] = 255;
+        continue;
+      }
+      const sx = (inv[0]! * x + inv[1]! * y + inv[2]!) / den;
+      const sy = (inv[3]! * x + inv[4]! * y + inv[5]!) / den;
+
+      if (sx < 0 || sy < 0 || sx >= sw - 1 || sy >= sh - 1) {
+        const ix = Math.round(sx);
+        const iy = Math.round(sy);
+        if (ix >= 0 && iy >= 0 && ix < sw && iy < sh) {
+          const si = (iy * sw + ix) * 4;
+          outData[di] = sdata[si]!;
+          outData[di + 1] = sdata[si + 1]!;
+          outData[di + 2] = sdata[si + 2]!;
+          outData[di + 3] = sdata[si + 3]!;
+        } else {
+          outData[di] = 255;
+          outData[di + 1] = 255;
+          outData[di + 2] = 255;
+          outData[di + 3] = 255;
+        }
+        continue;
+      }
+
+      const x0 = Math.floor(sx);
+      const y0 = Math.floor(sy);
+      const fx = sx - x0;
+      const fy = sy - y0;
+      const w00 = (1 - fx) * (1 - fy);
+      const w10 = fx * (1 - fy);
+      const w01 = (1 - fx) * fy;
+      const w11 = fx * fy;
+
+      const i00 = (y0 * sw + x0) * 4;
+      const i10 = i00 + 4;
+      const i01 = ((y0 + 1) * sw + x0) * 4;
+      const i11 = i01 + 4;
+
+      for (let c = 0; c < 4; c++) {
+        outData[di + c] = Math.round(
+          sdata[i00 + c]! * w00 +
+            sdata[i10 + c]! * w10 +
+            sdata[i01 + c]! * w01 +
+            sdata[i11 + c]! * w11,
+        );
+      }
+    }
+  }
+
+  return { data: outData, width: dstW, height: dstH } as ImageData;
+}
+
+export interface PerspectiveAssessment {
+  rectified: boolean;
+  perspectiveLimitationRecorded: boolean;
+  warning?: string;
+}
+
+/**
+ * Avalia o estado de perspectiva da imagem (Seção 11 / G13):
+ * - Quando há referência planar de 4 pontos (`quad` e `out`), retifica por homografia.
+ * - Quando há inclinação de perspectiva sem referência planar, registra a limitação de forma explícita.
+ */
+export function assessPerspectiveStatus(opts: {
+  hasPlanarReference: boolean;
+  tiltedCaptureDetected?: boolean;
+}): PerspectiveAssessment {
+  if (opts.hasPlanarReference) {
+    return {
+      rectified: true,
+      perspectiveLimitationRecorded: false,
+    };
+  }
+  if (opts.tiltedCaptureDetected) {
+    return {
+      rectified: false,
+      perspectiveLimitationRecorded: true,
+      warning:
+        "Fotografia com inclinação de perspectiva sem referência planar de 4 pontos: as proporções podem apresentar distorção projetiva.",
+    };
+  }
+  return {
+    rectified: false,
+    perspectiveLimitationRecorded: false,
+  };
+}
+
 function invert3x3(m: number[]): number[] | null {
   const [a, b, c, d, e, f, g, h, i] = m as [
     number,

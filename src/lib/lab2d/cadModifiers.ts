@@ -306,14 +306,46 @@ export function joinEntities(
  */
 export function explodeEntity(e: Entity): Entity[] | null {
   if (e.type === "polyline" && e.pts.length >= 2) {
-    const lines: Entity[] = [];
+    const out: Entity[] = [];
     const n = e.pts.length;
     const limit = e.closed ? n : n - 1;
 
     for (let i = 0; i < limit; i++) {
       const p1 = e.pts[i]!;
       const p2 = e.pts[(i + 1) % n]!;
-      lines.push({
+      const bulge = e.bulges?.[i] ?? 0;
+      if (Math.abs(bulge) > 1e-6) {
+        const chordDx = p2.x - p1.x;
+        const chordDy = p2.y - p1.y;
+        const chord = Math.hypot(chordDx, chordDy);
+        if (chord > 1e-6) {
+          const theta = 4 * Math.atan(Math.abs(bulge));
+          const r = chord / (2 * Math.sin(theta / 2));
+          const cotHalf = (1 - bulge * bulge) / (2 * bulge);
+          const mx = (p1.x + p2.x) / 2;
+          const my = (p1.y + p2.y) / 2;
+          const nx = -chordDy / chord;
+          const ny = chordDx / chord;
+          const cx = mx + nx * (chord / 2) * cotHalf;
+          const cy = my + ny * (chord / 2) * cotHalf;
+          const ang1 = Math.atan2(p1.y - cy, p1.x - cx);
+          const ang2 = Math.atan2(p2.y - cy, p2.x - cx);
+          out.push({
+            id: uid(),
+            layer: e.layer,
+            type: "arc",
+            cx,
+            cy,
+            r,
+            a0: bulge > 0 ? ang1 : ang2,
+            a1: bulge > 0 ? ang2 : ang1,
+            group: e.group,
+            cnc: e.cnc,
+          });
+          continue;
+        }
+      }
+      out.push({
         id: uid(),
         layer: e.layer,
         type: "line",
@@ -325,7 +357,7 @@ export function explodeEntity(e: Entity): Entity[] | null {
         cnc: e.cnc,
       });
     }
-    return lines;
+    return out;
   }
   return null;
 }
@@ -498,6 +530,7 @@ export function mirrorAcrossAxis(
       return {
         ...e,
         pts: e.pts.map(reflect),
+        bulges: e.bulges ? e.bulges.map((b) => -b) : undefined,
       };
     case "circle": {
       const refC = reflect({ x: e.cx, y: e.cy });
