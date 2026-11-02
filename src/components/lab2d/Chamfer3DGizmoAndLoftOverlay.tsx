@@ -322,7 +322,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     !isLoftToolActive &&
     selectedEntities.length > 0 &&
     gizmoOriginScreen !== null &&
-    (is3DViewActive || Math.abs(currentElevationZ) > 0.01 || draggingAxis !== null);
+    (is3DViewActive || draggingAxis !== null);
 
   const xTip = showGizmo ? computeAxisScreenTip("x", 64) : { x: 0, y: 0 };
   const yTip = showGizmo ? computeAxisScreenTip("y", 64) : { x: 0, y: 0 };

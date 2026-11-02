@@ -1610,16 +1610,30 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   );
 
   const transitionTo2D = useCallback(() => {
+    if (orbitAnimRafRef.current) {
+      cancelAnimationFrame(orbitAnimRafRef.current);
+      orbitAnimRafRef.current = null;
+    }
     setActiveMode("2d");
+    setDrawingProjection("orthographic");
     setSolidOpen(false);
     setMorphDirection(null);
     setMorphState("2D_IDLE");
     setIsOrbitToolActive(false);
     orbitDragRef.current = null;
-    if (!isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
-      animateOrbitTo(0, 90, "top");
-    }
-  }, [animateOrbitTo]);
+    orbitAzimuthRef.current = 0;
+    orbitElevationRef.current = 90;
+    setOrbitAzimuthDeg(0);
+    setOrbitElevationDeg(90);
+    setOrbitPreset("top");
+    setOrbitCommand3D({
+      azimuthDeg: 0,
+      elevationDeg: 90,
+      pivot: smartOrbitPivotRef.current,
+      animate: false,
+      nonce: performance.now(),
+    });
+  }, [setDrawingProjection]);
 
   const handleSelectOrbitPreset = useCallback(
     (presetId: OrbitPresetId) => {
@@ -1630,15 +1644,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         return;
       }
       if (presetId === "top") {
-        setIsOrbitToolActive(false);
-      } else {
-        setIsOrbitToolActive(true);
+        transitionTo2D();
+        toast.info("Perspectiva: Superior (2D)");
+        return;
       }
+      setIsOrbitToolActive(true);
       const def = getOrbitPresetDefinition(presetId);
       animateOrbitTo(def.azimuthDeg, def.elevationDeg, presetId);
       toast.info(`Perspectiva: ${def.label}`);
     },
-    [animateOrbitTo],
+    [animateOrbitTo, transitionTo2D],
   );
 
   const handleDragOrbitDelta = useCallback((dx: number, dy: number) => {

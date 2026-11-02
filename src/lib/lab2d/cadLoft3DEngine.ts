@@ -165,24 +165,27 @@ export function resolveUnitZWorkplaneOffset(
   isoPlane: IsoPlane = "top",
   orbitProjection?: WorkplaneOrbitProjection2D | null,
 ): Vec2 {
-  if (orbitProjection?.isTilted || isIsometric) {
-    const v = resolveBaseToTopExtrusionVector({
-      isOrbitTilted: Boolean(orbitProjection?.isTilted),
-      orbitProjection: orbitProjection ?? undefined,
-      isIsometric,
-      isoPlane,
-      sheetThickness: 1.0,
-    }).deltaExtrusion;
-    if (Math.hypot(v.x, v.y) > 1e-5) {
-      return v;
-    }
+  // REGRA 1: Em 2D SKETCH / ORTO 2D / SUP 2D (!isIsometric && !orbitProjection?.isTilted),
+  // o deslocamento derivado de Z na tela é estritamente ZERO (elevationZ = 0 na projeção).
+  if (!orbitProjection?.isTilted && !isIsometric) {
+    return { x: 0, y: 0 };
   }
-  // Fallback isométrico padrão: +Z sobe verticalmente no eixo -Y do canvas
+  const v = resolveBaseToTopExtrusionVector({
+    isOrbitTilted: Boolean(orbitProjection?.isTilted),
+    orbitProjection: orbitProjection ?? undefined,
+    isIsometric,
+    isoPlane,
+    sheetThickness: 1.0,
+  }).deltaExtrusion;
+  if (Math.hypot(v.x, v.y) > 1e-5) {
+    return v;
+  }
   return { x: 0, y: -0.82 };
 }
 
 /**
  * Projeta um ponto 3D `(x, y, z)` para coordenadas de mundo 2D do canvas antes da matriz `orbitProjection`.
+ * Em `2D SKETCH` / `ORTO 2D` / `SUP 2D`, projeta estritamente `(x, y)` ignorando `z`.
  */
 export function projectPoint3DToWorkplane2D(
   pt: Vec3,
@@ -190,7 +193,10 @@ export function projectPoint3DToWorkplane2D(
   isoPlane: IsoPlane = "top",
   orbitProjection?: WorkplaneOrbitProjection2D | null,
 ): Vec2 {
-  if (!isIsometric && !orbitProjection?.isTilted && Math.abs(pt.z) < 1e-4) {
+  if (!isIsometric && !orbitProjection?.isTilted) {
+    return { x: pt.x, y: pt.y };
+  }
+  if (Math.abs(pt.z) < 1e-4) {
     return { x: pt.x, y: pt.y };
   }
   const uz = resolveUnitZWorkplaneOffset(isIsometric, isoPlane, orbitProjection);
@@ -210,6 +216,9 @@ export function projectPoint3DToCanvasViewMm(
   isoPlane: IsoPlane = "top",
   orbitProjection?: WorkplaneOrbitProjection2D | null,
 ): Vec2 {
+  if (!isIsometric && !orbitProjection?.isTilted) {
+    return { x: pt.x, y: pt.y };
+  }
   const wp = projectPoint3DToWorkplane2D(pt, isIsometric, isoPlane, orbitProjection);
   if (orbitProjection?.isTilted) {
     const { a, b, c, d, e, f } = orbitProjection;
@@ -230,6 +239,9 @@ export function getScreenPixelsPerMmZ(
   isoPlane: IsoPlane = "top",
   orbitProjection?: WorkplaneOrbitProjection2D | null,
 ): number {
+  if (!isIsometric && !orbitProjection?.isTilted) {
+    return Math.max(0.5, 0.82 * Math.max(0.05, viewK));
+  }
   const p0 = projectPoint3DToCanvasViewMm({ x: 0, y: 0, z: 0 }, isIsometric, isoPlane, orbitProjection);
   const p1 = projectPoint3DToCanvasViewMm({ x: 0, y: 0, z: 1 }, isIsometric, isoPlane, orbitProjection);
   const dyMm = p0.y - p1.y; // positivo quando +Z sobe na tela
@@ -1032,7 +1044,88 @@ export function renderLoft3DMeshToCanvas2D(
 ): void {
   const { isPreview, isSelected, isIsometric, isoPlane = "top", orbitProjection, viewK, isLight } = opts;
   const invK = 1 / Math.max(0.05, viewK);
+  const is3DView = Boolean(isIsometric || orbitProjection?.isTilted);
 
+  // REGRA 2: No modo 2D SKETCH / ORTO 2D / SUP 2D (!is3DView), NUNCA desenha malha 3D sombreada!
+  // Representa o Loft 3D exclusivamente pelos seus contornos vetoriais 2D limpos em vista superior
+  // (seções transversais concêntricas em (x, y) + arestas principais tracejadas/finas conectando vértices).
+  if (!is3DView) {
+    ctx.save();
+    ctx.lineJoin = "round";
+    ctx.lineCap = "round";
+
+    // 1. Linhas de aresta principais tracejadas/finas conectando os vértices correspondentes entre as seções
+    ctx.setLineDash([4.5 * invK, 3.5 * invK]);
+    ctx.strokeStyle = isPreview
+      ? "rgba(56, 189, 248, 0.70)"
+      : isSelected
+        ? "rgba(56, 189, 248, 0.80)"
+        : isLight
+          ? "rgba(51, 65, 85, 0.55)"
+          : "rgba(148, 163, 184, 0.52)";
+    ctx.lineWidth = (isPreview || isSelected ? 1.35 : 1.1) * invK;
+
+    for (const guide of mesh.longitudinalGuides) {
+      if (guide.length < 2) continue;
+      ctx.beginPath();
+      for (let i = 0; i < guide.length; i++) {
+        const pt = guide[i]!;
+        if (i === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.stroke();
+    }
+
+    // 2. Contornos vetoriais 2D nítidos das seções transversais em vista superior (sem deslocamento Z e sem preenchimento opaco)
+    ctx.setLineDash([]);
+    for (let sIdx = 0; sIdx < mesh.sections.length; sIdx++) {
+      const sec = mesh.sections[sIdx]!;
+      const pts = sec.points3D;
+      if (pts.length < 3) continue;
+      ctx.beginPath();
+      for (let i = 0; i <= pts.length; i++) {
+        const pt = pts[i % pts.length]!;
+        if (i === 0) ctx.moveTo(pt.x, pt.y);
+        else ctx.lineTo(pt.x, pt.y);
+      }
+      ctx.strokeStyle = isPreview
+        ? "#38BDF8"
+        : isSelected
+          ? "#38BDF8"
+          : isLight
+            ? "#0F141A"
+            : "#ECEFF4";
+      ctx.lineWidth = (isPreview || isSelected ? 2.1 : 1.8) * invK;
+      ctx.stroke();
+    }
+
+    // 3. Se for Casca Oca (shell), desenha as paredes internas tracejadas em vista superior
+    if (mesh.innerRings && mesh.innerRings.length >= 2) {
+      const innerTop = mesh.innerRings[mesh.innerRings.length - 1]!;
+      const innerBot = mesh.innerRings[0]!;
+      ctx.setLineDash([5 * invK, 3.5 * invK]);
+      ctx.strokeStyle = isPreview
+        ? "rgba(56, 189, 248, 0.85)"
+        : isLight
+          ? "rgba(8, 145, 178, 0.78)"
+          : "rgba(56, 189, 248, 0.72)";
+      ctx.lineWidth = 1.25 * invK;
+      for (const ring of [innerBot, innerTop]) {
+        ctx.beginPath();
+        for (let i = 0; i <= ring.length; i++) {
+          const pt = ring[i % ring.length]!;
+          if (i === 0) ctx.moveTo(pt.x, pt.y);
+          else ctx.lineTo(pt.x, pt.y);
+        }
+        ctx.stroke();
+      }
+    }
+
+    ctx.restore();
+    return;
+  }
+
+  // MODO CAD 3D / ÓRBITA 3D: Renderiza a malha 3D completa com sombreamento metálico Phong e altura elevationZ
   // Vetor direção da câmera para ordenação de profundidade (Painter's Algorithm)
   const azRad = orbitProjection?.isTilted
     ? Math.atan2(-orbitProjection.c, orbitProjection.a)
