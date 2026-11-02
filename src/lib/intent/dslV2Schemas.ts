@@ -87,7 +87,15 @@ export type DslV2ToolName =
   | "declare_assumptions"
   | "ask_clarification"
   | "explain"
-  | "report_unsupported";
+  | "report_unsupported"
+  // 6.9 Modelagem Direta 3D & Edição Topológica
+  | "extrude_3d"
+  | "fillet_edges_3d"
+  | "chamfer_edges_3d"
+  | "shell_body_3d"
+  | "offset_face_3d"
+  | "miter_cut_face_3d"
+  | "transform_copy_body_3d";
 
 export type DslV2HolePattern =
   | "single"
@@ -1460,3 +1468,112 @@ export const CHAMFER_DSL_V2_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
     },
   },
 ];
+
+/**
+ * Declarações de Modelagem Direta 3D (Extrude, Fillet/Chamfer 3D, Shell/Metalon, Offset Face, Corte 45° e Transform/Copy 3D).
+ */
+export const CHAMFER_DIRECT_3D_FUNCTION_DECLARATIONS: FunctionDeclaration[] = [
+  {
+    name: "extrude_3d",
+    description:
+      "Extruda uma região plana fechada 2D em um corpo sólido 3D com altura em mm e modo booleano (union, new_body, subtract, intersect).",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        target: { type: Type.STRING, description: "ID da entidade ou perfil 2D" },
+        height_mm: { type: Type.NUMBER, description: "Altura de extrusão 3D em mm" },
+        boolean_mode: {
+          type: Type.STRING,
+          description: "union, new_body, subtract ou intersect",
+        },
+      },
+      required: ["height_mm"],
+    },
+  },
+  {
+    name: "fillet_edges_3d",
+    description: "Arredonda as arestas verticais de um corpo 3D com raio R em mm.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        target: { type: Type.STRING },
+        radius_mm: { type: Type.NUMBER, description: "Raio de arredondamento 3D em mm" },
+      },
+      required: ["radius_mm"],
+    },
+  },
+  {
+    name: "chamfer_edges_3d",
+    description: "Chanfra as arestas verticais de um corpo 3D com distância D × 45° em mm.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        target: { type: Type.STRING },
+        distance_mm: { type: Type.NUMBER, description: "Distância de chanfro 3D em mm" },
+      },
+      required: ["distance_mm"],
+    },
+  },
+  {
+    name: "shell_body_3d",
+    description:
+      "Transforma um sólido maciço 3D em tubo estrutural oco (Metalon) ou caixa oca com espessura de parede uniforme em mm.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        target: { type: Type.STRING },
+        thickness_mm: { type: Type.NUMBER, description: "Espessura de parede em mm (ex.: 6 mm)" },
+        open_caps: {
+          type: Type.STRING,
+          description: "'both' para tubo Metalon passante (topo+base) ou 'top' para caixa aberta",
+        },
+      },
+      required: ["thickness_mm"],
+    },
+  },
+  {
+    name: "offset_face_3d",
+    description:
+      "Empurra ou puxa faces de um sólido 3D (topo, base ou laterais) para esticar vigas, colunas ou sapatas.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        target: { type: Type.STRING },
+        face: { type: Type.STRING, description: "'top', 'bottom' ou 'sides'" },
+        offset_mm: { type: Type.NUMBER, description: "Deslocamento em mm (+ ou -)" },
+      },
+      required: ["offset_mm"],
+    },
+  },
+  {
+    name: "miter_cut_face_3d",
+    description:
+      "Inclina a face de extremidade de um tubo ou perfil 3D em ângulo (ex.: 45° ou -45°) para corte em meia-esquadria e mão-francesa.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        target: { type: Type.STRING },
+        end: { type: Type.STRING, description: "'top' ou 'bottom'" },
+        angle_deg: { type: Type.NUMBER, description: "Ângulo em graus (ex.: 45 ou -45)" },
+      },
+      required: ["angle_deg"],
+    },
+  },
+  {
+    name: "transform_copy_body_3d",
+    description:
+      "Move, rotaciona ou duplica (Copy: ON/OFF) um corpo sólido 3D em X, Y, Z ao redor de um pivô.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        target: { type: Type.STRING },
+        dx_mm: { type: Type.NUMBER },
+        dy_mm: { type: Type.NUMBER },
+        dz_mm: { type: Type.NUMBER },
+        rotate_z_deg: { type: Type.NUMBER },
+        copy: { type: Type.BOOLEAN, description: "Se true, cria cópia preservando o original" },
+      },
+    },
+  },
+];
+

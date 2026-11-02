@@ -351,6 +351,14 @@ const ChamferUnified3DViewport = lazy(() =>
   import("./ChamferUnified3DViewport").then((m) => ({ default: m.ChamferUnified3DViewport })),
 );
 import {
+  buildDirectTopology3DScene,
+  formatSubElementTelemetry3D,
+  hitTestSubElement3DInScreenSpace,
+  type DirectModeling3DTool,
+  type SubElementSelectionState3D,
+  type DirectFace3D,
+} from "@/lib/lab2d/cadDirectModeling3D";
+import {
   applyOrbitDragDelta,
   computeSmartOrbitPivot,
   computeWorkplaneOrbitProjection2D,
@@ -1082,6 +1090,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   orbitElevationRef.current = orbitElevationDeg;
   const orbitAnimRafRef = useRef<number | null>(null);
   const orbitDragRef = useRef<{ x: number; y: number } | null>(null);
+  const orbitStartClientRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const last3DTapRef = useRef<{ x: number; y: number; time: number; faceId?: string } | null>(null);
+  const [subSelection3D, setSubSelection3D] = useState<SubElementSelectionState3D>({
+    faceIds: [],
+    edgeIds: [],
+    bodyIds: [],
+    activePivot3D: null,
+    activeHingeEdgeId: null,
+  });
+  const [activeDirect3DTool, setActiveDirect3DTool] =
+    useState<DirectModeling3DTool>("select_3d");
 
   const [outputMode, setOutputMode] = useState<OutputMode>("completo");
   const [pending, setPending] = useState<Vec2[]>([]);
@@ -1603,12 +1622,37 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setActiveMode(targetMode);
       setSolidOpen(false);
       setIsOrbitToolActive(true);
+      if (targetMode === "3d") {
+        setRenderStyle3D((prev) => (prev === "wireframe" ? "shaded-edges" : prev));
+      }
       if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
         animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
       }
     },
     [animateOrbitTo],
   );
+
+  useEffect(() => {
+    const handleSelectDirect3DTool = (ev: Event) => {
+      const custom = ev as CustomEvent<{
+        tool?: DirectModeling3DTool;
+        tool3D?: DirectModeling3DTool;
+      }>;
+      const nextTool = custom.detail?.tool ?? custom.detail?.tool3D;
+      if (!nextTool) return;
+      setActiveDirect3DTool(nextTool);
+      setActiveMode("3d");
+      setSolidOpen(false);
+      setIsOrbitToolActive(true);
+      setRenderStyle3D((prev) => (prev === "wireframe" ? "shaded-edges" : prev));
+      if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
+        animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+      }
+    };
+    window.addEventListener("chamfer-select-direct-3d-tool", handleSelectDirect3DTool);
+    return () =>
+      window.removeEventListener("chamfer-select-direct-3d-tool", handleSelectDirect3DTool);
+  }, [animateOrbitTo]);
 
   const transitionTo2D = useCallback(() => {
     if (orbitAnimRafRef.current) {
@@ -4529,6 +4573,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setLoupeVisible(false);
       setTouchOffsetActive(false);
       setTouchWorldPos(null);
+      orbitStartClientRef.current = {
+        x: ev.clientX,
+        y: ev.clientY,
+        time: performance.now(),
+      };
       orbitDragRef.current = { x: ev.clientX, y: ev.clientY };
       return;
     }
@@ -6058,7 +6107,113 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     panRef.current = null;
     if (orbitDragRef.current) {
+      const startPt = orbitStartClientRef.current;
       orbitDragRef.current = null;
+      orbitStartClientRef.current = null;
+
+      // Se foi um toque/clique curto sem arrasto (< 7px) em vista 3D, executa Raycasting 3D de Sub-Elementos (Faces / Arestas / Corpos)
+      if (
+        ev &&
+        startPt &&
+        Math.hypot(ev.clientX - startPt.x, ev.clientY - startPt.y) < 7 &&
+        (activeMode === "3d" || orbitProjection2D.isTilted) &&
+        svgRef.current
+      ) {
+        const rect = svgRef.current.getBoundingClientRect();
+        const localPt = { x: ev.clientX - rect.left, y: ev.clientY - rect.top };
+        const topoScene = buildDirectTopology3DScene(drawable, thickness);
+        const hit = hitTestSubElement3DInScreenSpace(
+          localPt,
+          topoScene,
+          orbitProjection2D,
+          view,
+          18,
+        );
+        const now = performance.now();
+        const isDoubleTap =
+          last3DTapRef.current !== null &&
+          now - last3DTapRef.current.time < 360 &&
+          Math.hypot(localPt.x - last3DTapRef.current.x, localPt.y - last3DTapRef.current.y) < 24;
+
+        if (hit.kind !== "none" && hit.body) {
+          const hitBody = hit.body;
+          if (isDoubleTap) {
+            setSubSelection3D({
+              faceIds: [],
+              edgeIds: [],
+              bodyIds: [hitBody.bodyId],
+              activePivot3D: hitBody.pivot3D,
+              activeHingeEdgeId: null,
+            });
+            setSelection([hitBody.entityId]);
+            if (activeDirect3DTool === "select_3d") {
+              setActiveDirect3DTool("transform_3d");
+            }
+            triggerHaptic("action");
+            last3DTapRef.current = null;
+          } else if (hit.kind === "edge" && hit.edge) {
+            const edgeId = hit.edge.edgeId;
+            setSubSelection3D((prev) => {
+              const sameBody = prev.edgeIds.some((eid) => eid.startsWith(hitBody.bodyId));
+              const exists = prev.edgeIds.includes(edgeId);
+              let nextEdges: string[];
+              if (ev.shiftKey || sameBody) {
+                nextEdges = exists
+                  ? prev.edgeIds.filter((id) => id !== edgeId)
+                  : [...prev.edgeIds, edgeId];
+                if (nextEdges.length === 0) nextEdges = [edgeId];
+              } else {
+                nextEdges = [edgeId];
+              }
+              return {
+                faceIds: [],
+                edgeIds: nextEdges,
+                bodyIds: [],
+                activePivot3D: hit.edge!.midpoint,
+                activeHingeEdgeId: edgeId,
+              };
+            });
+            setSelection([hitBody.entityId]);
+            triggerHaptic("selection");
+            last3DTapRef.current = { x: localPt.x, y: localPt.y, time: now };
+          } else if (hit.kind === "face" && hit.face) {
+            const faceId = hit.face.faceId;
+            setSubSelection3D((prev) => {
+              const sameBody = prev.faceIds.some((fid) => fid.startsWith(hitBody.bodyId));
+              const exists = prev.faceIds.includes(faceId);
+              let nextFaces: string[];
+              if (ev.shiftKey || (activeDirect3DTool === "shell_3d" && sameBody)) {
+                nextFaces = exists
+                  ? prev.faceIds.filter((id) => id !== faceId)
+                  : [...prev.faceIds, faceId];
+                if (nextFaces.length === 0) nextFaces = [faceId];
+              } else {
+                nextFaces = [faceId];
+              }
+              return {
+                faceIds: nextFaces,
+                edgeIds: [],
+                bodyIds: [],
+                activePivot3D: hit.face!.centroid,
+                activeHingeEdgeId: prev.activeHingeEdgeId,
+              };
+            });
+            setSelection([hitBody.entityId]);
+            triggerHaptic("selection");
+            last3DTapRef.current = { x: localPt.x, y: localPt.y, time: now, faceId };
+          }
+        } else {
+          setSubSelection3D({
+            faceIds: [],
+            edgeIds: [],
+            bodyIds: [],
+            activePivot3D: null,
+            activeHingeEdgeId: null,
+          });
+          setSelection([]);
+          last3DTapRef.current = null;
+        }
+      }
       return;
     }
 
@@ -7131,7 +7286,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     </aside>
   ) : null;
 
+  const topologyScene3D = useMemo(
+    () => buildDirectTopology3DScene(drawable, thickness),
+    [drawable, thickness],
+  );
+
   const selectionText = useMemo(() => {
+    if (
+      (activeMode === "3d" || orbitProjection2D.isTilted) &&
+      (subSelection3D.edgeIds.length > 0 ||
+        subSelection3D.faceIds.length > 0 ||
+        subSelection3D.bodyIds.length > 0)
+    ) {
+      const telemetry3D = formatSubElementTelemetry3D(topologyScene3D, subSelection3D);
+      if (telemetry3D) return telemetry3D;
+    }
     if (selected.length === 0) return "Nenhuma seleção";
     if (selected.length === 1) {
       const ent = selected[0];
@@ -7168,7 +7337,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
     }
     return `${selected.length} entidades selecionadas`;
-  }, [selected]);
+  }, [
+    activeMode,
+    orbitProjection2D.isTilted,
+    subSelection3D,
+    topologyScene3D,
+    selected,
+  ]);
 
   const operationFeedback = useMemo(() => {
     if (activeArrayType === "polar") {
@@ -8272,6 +8447,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             onExplodeSelection={handleExplodeSelection}
             onDivideSelection={() => handleOpenDivide()}
             onCenterSelection={handleOpenCenterDialog}
+            onDeleteSelection={() => {
+              if (selection.length === 0) return;
+              commit((list) => list.filter((e) => !selection.includes(e.id)));
+              setSelection([]);
+              toast.success("Seleção removida.");
+            }}
             onArrayLinear={handleArrayLinear}
             onArrayPolar={handleArrayPolar}
             onOpenQuickCommand={() => setQuickCommandOpen(true)}
@@ -8772,6 +8953,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 initialTreeJson={cad3dTreeJson}
                 onTreeChange={setCad3dTreeJson}
                 activeLoftPreviewMesh={activeLoftPreviewMesh}
+                subSelection3D={subSelection3D}
               />
             </Suspense>
           )}
@@ -10988,6 +11170,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             entities={entities}
             selectedIds={selectionSet}
             view={view}
+            width={canvasSize.w}
+            height={canvasSize.h}
+            activeMode={activeMode}
+            isDark={isDark}
             isIsometric={drawingProjection === "isometric"}
             isoPlane={isoPlane}
             orbitProjection={orbitProjection2D}
@@ -11071,6 +11257,42 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               ) {
                 animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
               }
+            }}
+            topologyScene={topologyScene3D}
+            subSelection3D={subSelection3D}
+            onChangeSubSelection3D={setSubSelection3D}
+            activeDirect3DTool={activeDirect3DTool}
+            onChangeDirect3DTool={setActiveDirect3DTool}
+            onCommitEntities={(updater, toastMessageOrIds) => {
+              commit(updater);
+              if (Array.isArray(toastMessageOrIds)) {
+                setSelection(toastMessageOrIds);
+              } else if (typeof toastMessageOrIds === "string" && toastMessageOrIds) {
+                toast.success(toastMessageOrIds);
+              }
+            }}
+            onSwitchTo2DSketchOnFace={(face: DirectFace3D) => {
+              setTemporaryOrigin({
+                id: `face_workplane_${face.faceId}`,
+                p: {
+                  x: Number(face.centroid.x.toFixed(2)),
+                  y: Number(face.centroid.y.toFixed(2)),
+                },
+                label: `FACE Z=${face.centroid.z.toFixed(1)}mm`,
+                kind: "origin",
+                timestamp: Date.now(),
+              });
+              transitionTo2D();
+              setTool("rect");
+              toast.success(
+                `Plano 2D alinhado à ${face.label} (Z = ${face.centroid.z.toFixed(1)} mm) — desenhe furos, rasgos ou recortes sobre a face.`,
+              );
+            }}
+            onDeleteSelectedEntities={(idsToDelete) => {
+              const targetIds = idsToDelete && idsToDelete.length > 0 ? idsToDelete : selection;
+              commit((list) => list.filter((e) => !targetIds.includes(e.id)));
+              setSelection([]);
+              toast.success("Corpo 3D removido.");
             }}
           />
 

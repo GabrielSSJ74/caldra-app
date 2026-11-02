@@ -1,857 +1,2186 @@
 /**
- * CALDRA CHAMFER CAD — GIZMO 3D INTERATIVO (EIXOS +X, +Y, +Z / ORTHO < +Z)
- * E PAINEL CONTEXTUAL FLUTUANTE DA FERRAMENTA "LOFT 3D" (ESTILO AUTOCAD / SHAPR3D)
+ * CALDRA CHAMFER — MOTOR INTERATIVO DE MODELAGEM DIRETA 3D, GIZMO 3D, TECLADO NUMÉRICO FLUTUANTE E LOFT
  *
- * Opera em paridade total nos layouts Paisagem (Horizontal) e Vertical (Retrato — estilo Lightroom),
- * tanto em `ISO 2D` / `ÓRBITA 3D` quanto em `CAD 3D`.
+ * Ergonomia de CAD Profissional (Canvas 90% Livre):
+ * 1. Pílula de Comando Ativo no Topo Central (top: 36px, max-width: 420px, height: 40px, rounded-full)
+ * 2. Dock Contextual Inferior Único e Enxuto (bottom: 14px, max-width: calc(100% - 48px), height: 42px, rounded-full)
+ * 3. Teclado Numérico Flutuante Compacto (width: 196px, oculto por padrão, Viewport Clamping estrito)
+ * 4. Adaptação 100% ao Tema Ativo (Claro #FFFFFF / Escuro #0B1220 / AMOLED #05080F)
  */
 
-import React, { useCallback, useRef, useState } from "react";
-import type { Entity, Vec2 } from "@/lib/lab2d/core";
-import type { IsoPlane } from "@/lib/lab2d/isometricEngine";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Box,
+  Check,
+  Compass,
+  Copy,
+  CornerDownRight,
+  FlipHorizontal,
+  Layers,
+  Move,
+  Palette,
+  PenTool,
+  RotateCw,
+  Sparkles,
+  X,
+} from "lucide-react";
+import { bbox, type Entity, type Vec2 } from "@/lib/lab2d/core";
 import type { WorkplaneOrbitProjection2D } from "@/lib/lab2d/orbit3dController";
 import {
-  classifyProfileKindLabel,
-  computeEntityTrueCentroid2D,
-  computeSelectionCentroid3D,
   getEntityElevationZ,
-  getScreenPixelsPerMmZ,
-  isLoft3DEntity,
-  projectPoint3DToCanvasViewMm,
   type LoftBodyMode,
   type LoftSurfaceMode,
 } from "@/lib/lab2d/cadLoft3DEngine";
 import {
-  ArrowUpFromLine,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  Layers,
-  Sparkles,
-  X,
-} from "lucide-react";
+  INDUSTRIAL_3D_MATERIALS,
+  applyDirectExtrudeToEntities,
+  applyDirectFilletOrChamfer3DToEntities,
+  applyDirectMirror3DToEntities,
+  applyDirectMiterCut3DToEntities,
+  applyDirectOffsetFace3DToEntities,
+  applyDirectShell3DToEntities,
+  applyDirectTransform3DToEntities,
+  buildDirectTopology3DScene,
+  projectPoint3DToCanvasViewMm,
+  type ActiveParametricNumpadSession,
+  type BooleanMode3D,
+  type DirectBody3D,
+  type DirectEdge3D,
+  type DirectFace3D,
+  type DirectModeling3DTool,
+  type DirectTopology3DScene,
+  type ParametricNumpadKind,
+  type SubElementSelectionState3D,
+  type Vec3Mm,
+} from "@/lib/lab2d/cadDirectModeling3D";
+import { cn } from "@/lib/utils";
+import { triggerHaptic } from "@/lib/ui/haptics";
 
 export interface Chamfer3DGizmoAndLoftOverlayProps {
   entities: Entity[];
-  selectedIds?: Set<string>;
+  selected?: Entity[];
   selection?: string[];
+  selectedIds?: Set<string>;
   view: { tx: number; ty: number; k: number };
-  isIsometric: boolean;
-  isoPlane: IsoPlane;
-  orbitProjection: WorkplaneOrbitProjection2D;
+  width?: number;
+  height?: number;
+  isIsometric?: boolean;
+  isoPlane?: string;
+  isTilted3D?: boolean;
   is3DViewActive?: boolean;
   isPortrait?: boolean;
-  /** Atualização em tempo real durante arraste do Gizmo (sem gravar histórico a cada frame) */
-  onLiveElevateSelection: (newElevationZ: number, deltaZ: number) => void;
-  /** Commit final no histórico Undo/Redo ao soltar o arraste do Gizmo */
-  onCommitElevateSelection: (newElevationZ: number) => void;
-  /** Translação ortogonal X ou Y pelo Gizmo 3D */
-  onLiveTranslateSelectionXY: (dx: number, dy: number) => void;
-  onCommitTranslateSelectionXY: (dx: number, dy: number) => void;
-  /** Abre o teclado numérico CAD para digitar a elevação Z exata em mm */
-  onOpenElevationKeypad: (currentZ: number) => void;
-  /** Estado da ferramenta LOFT 3D */
-  isLoftToolActive: boolean;
+  orbitProjection: WorkplaneOrbitProjection2D;
+  sheetThickness?: number;
+  sheetThicknessMm?: number;
+  tool?: string;
+  isLoftToolActive?: boolean;
+
+  // Estado do Loft 3D
   loftSectionIds: string[];
   loftSurfaceMode: LoftSurfaceMode;
   loftBodyMode: LoftBodyMode;
-  sheetThicknessMm: number;
-  onChangeLoftSurfaceMode: (mode: LoftSurfaceMode) => void;
-  onChangeLoftBodyMode: (mode: LoftBodyMode) => void;
-  onUpdateSectionElevationZ: (entityId: string, newElevationZ: number) => void;
-  onAutoSpaceLoftSectionsZ: (stepMm?: number) => void;
-  onRemoveLoftSection: (entityId: string) => void;
+  onSetLoftSurfaceMode?: (m: LoftSurfaceMode) => void;
+  onChangeLoftSurfaceMode?: (m: LoftSurfaceMode) => void;
+  onSetLoftBodyMode?: (m: LoftBodyMode) => void;
+  onChangeLoftBodyMode?: (m: LoftBodyMode) => void;
+  onToggleLoftSection?: (entityId: string) => void;
+  onClearLoftSections?: () => void;
+  onCancelLoft3D?: () => void;
   onConfirmLoft3D: () => void;
-  onCancelLoft3D: () => void;
+  onUpdateSectionElevationZ?: (entityId: string, newElevationZ: number) => void;
+  onAutoSpaceLoftSectionsZ?: (stepMm?: number) => void;
+  onRemoveLoftSection?: (id: string) => void;
   onActivateLoftToolFromSelection?: () => void;
+
+  // Callbacks de transformação 3D da seleção
+  onTranslateSelection3D?: (dx: number, dy: number, dz: number) => void;
+  onSetSelectionElevationZ?: (nextZ: number) => void;
+  onLiveElevateSelection?: (newElevationZ: number) => void;
+  onCommitElevateSelection?: (newElevationZ: number) => void;
+  onLiveTranslateSelectionXY?: (dx: number, dy: number) => void;
+  onCommitTranslateSelectionXY?: (dx: number, dy: number) => void;
+  onOpenElevationKeypad?: (currentZ: number) => void;
+
+  // Integração de Modelagem Direta 3D
+  activeMode?: "2d" | "3d" | "flanges";
+  topologyScene?: DirectTopology3DScene;
+  subSelection3D?: SubElementSelectionState3D;
+  onChangeSubSelection3D?: (next: SubElementSelectionState3D) => void;
+  activeDirect3DTool?: DirectModeling3DTool;
+  onChangeDirect3DTool?: (tool: DirectModeling3DTool) => void;
+  onCommitEntities?: (
+    updater: Entity[] | ((prev: Entity[]) => Entity[]),
+    toastMessageOrIds?: string | string[],
+  ) => void;
+  onSwitchTo2DSketchOnFace?: (face: DirectFace3D) => void;
+  onDeleteSelectedEntities?: (idsToDelete?: string[]) => void;
+
+  isDark?: boolean;
 }
 
-type ActiveGizmoAxis = "x" | "y" | "z" | null;
+type GizmoAxis = "x" | "y" | "z" | "extrude" | "miter";
+
+const DEFAULT_SUB_SELECTION: SubElementSelectionState3D = {
+  faceIds: [],
+  edgeIds: [],
+  bodyIds: [],
+  activePivot3D: null,
+  activeHingeEdgeId: null,
+};
 
 export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlayProps> = ({
-  entities = [],
+  entities,
+  selected: selectedProp,
+  selection: selectionProp,
   selectedIds,
-  selection,
   view,
-  isIsometric,
-  isoPlane,
+  width = 800,
+  height = 600,
+  isTilted3D: isTilted3DProp,
+  is3DViewActive,
   orbitProjection,
-  is3DViewActive = false,
-  isPortrait = false,
-  onLiveElevateSelection,
-  onCommitElevateSelection,
-  onLiveTranslateSelectionXY,
-  onCommitTranslateSelectionXY,
-  onOpenElevationKeypad,
+  sheetThickness: sheetThicknessProp,
+  sheetThicknessMm,
+  tool: toolProp,
   isLoftToolActive,
-  loftSectionIds = [],
+  loftSectionIds,
   loftSurfaceMode,
   loftBodyMode,
-  sheetThicknessMm,
+  onSetLoftSurfaceMode: onSetLoftSurfaceModeProp,
   onChangeLoftSurfaceMode,
+  onSetLoftBodyMode: onSetLoftBodyModeProp,
   onChangeLoftBodyMode,
-  onUpdateSectionElevationZ,
-  onAutoSpaceLoftSectionsZ,
-  onRemoveLoftSection,
-  onConfirmLoft3D,
+  onClearLoftSections: onClearLoftSectionsProp,
   onCancelLoft3D,
-  onActivateLoftToolFromSelection,
+  onConfirmLoft3D,
+  onTranslateSelection3D: onTranslateSelection3DProp,
+  onSetSelectionElevationZ: onSetSelectionElevationZProp,
+  onCommitElevateSelection,
+  onCommitTranslateSelectionXY,
+  activeMode: activeModeProp,
+  topologyScene: externalScene,
+  subSelection3D: externalSubSel,
+  onChangeSubSelection3D,
+  activeDirect3DTool: externalDirectTool,
+  onChangeDirect3DTool,
+  onCommitEntities,
+  onSwitchTo2DSketchOnFace,
+  isDark = true,
 }) => {
-  const [hoveredAxis, setHoveredAxis] = useState<ActiveGizmoAxis>(null);
-  const [draggingAxis, setDraggingAxis] = useState<ActiveGizmoAxis>(null);
-  const [liveDragZ, setLiveDragZ] = useState<number | null>(null);
-  const [dragStartZ, setDragStartZ] = useState<number>(0);
-  const [dragCursorScreen, setDragCursorScreen] = useState<Vec2 | null>(null);
-  const [loftMenuExpanded, setLoftMenuExpanded] = useState<boolean>(true);
+  const rootOverlayRef = useRef<HTMLDivElement>(null);
+  const numpadRef = useRef<HTMLDivElement>(null);
 
-  const dragRef = useRef<{
-    axis: "x" | "y" | "z";
+  const selection = useMemo(
+    () => selectionProp ?? (selectedIds ? Array.from(selectedIds) : []),
+    [selectionProp, selectedIds],
+  );
+  const selected = useMemo(
+    () => selectedProp ?? entities.filter((e) => selection.includes(e.id)),
+    [selectedProp, entities, selection],
+  );
+  const isTilted3D = Boolean(isTilted3DProp ?? is3DViewActive ?? orbitProjection?.isTilted);
+  const activeMode = activeModeProp ?? (isTilted3D ? "3d" : "2d");
+  const sheetThickness = sheetThicknessProp ?? sheetThicknessMm ?? 20;
+  const tool = toolProp ?? (isLoftToolActive ? "loft_3d" : "select");
+
+  const onSetLoftSurfaceMode = useCallback(
+    (m: LoftSurfaceMode) => {
+      onSetLoftSurfaceModeProp?.(m);
+      onChangeLoftSurfaceMode?.(m);
+    },
+    [onSetLoftSurfaceModeProp, onChangeLoftSurfaceMode],
+  );
+  const onSetLoftBodyMode = useCallback(
+    (m: LoftBodyMode) => {
+      onSetLoftBodyModeProp?.(m);
+      onChangeLoftBodyMode?.(m);
+    },
+    [onSetLoftBodyModeProp, onChangeLoftBodyMode],
+  );
+  const onClearLoftSections = useCallback(() => {
+    onClearLoftSectionsProp?.();
+    onCancelLoft3D?.();
+  }, [onClearLoftSectionsProp, onCancelLoft3D]);
+
+  const onTranslateSelection3D = useCallback(
+    (dx: number, dy: number, dz: number) => {
+      if (onTranslateSelection3DProp) {
+        onTranslateSelection3DProp(dx, dy, dz);
+        return;
+      }
+      if (Math.abs(dx) > 1e-4 || Math.abs(dy) > 1e-4) {
+        onCommitTranslateSelectionXY?.(dx, dy);
+      }
+      if (Math.abs(dz) > 1e-4 && selected[0]) {
+        const curZ = getEntityElevationZ(selected[0]);
+        onCommitElevateSelection?.(curZ + dz);
+      }
+    },
+    [onTranslateSelection3DProp, onCommitTranslateSelectionXY, onCommitElevateSelection, selected],
+  );
+
+  const onSetSelectionElevationZ = useCallback(
+    (nextZ: number) => {
+      if (onSetSelectionElevationZProp) {
+        onSetSelectionElevationZProp(nextZ);
+        return;
+      }
+      onCommitElevateSelection?.(nextZ);
+    },
+    [onSetSelectionElevationZProp, onCommitElevateSelection],
+  );
+
+  const [internalSubSel, setInternalSubSel] =
+    useState<SubElementSelectionState3D>(DEFAULT_SUB_SELECTION);
+  const [internalDirectTool, setInternalDirectTool] =
+    useState<DirectModeling3DTool>("select_3d");
+
+  const subSel = externalSubSel ?? internalSubSel;
+  const setSubSel = useCallback(
+    (
+      updater:
+        | SubElementSelectionState3D
+        | ((prev: SubElementSelectionState3D) => SubElementSelectionState3D),
+    ) => {
+      const next = typeof updater === "function" ? updater(subSel) : updater;
+      if (onChangeSubSelection3D) {
+        onChangeSubSelection3D(next);
+      } else {
+        setInternalSubSel(next);
+      }
+    },
+    [subSel, onChangeSubSelection3D],
+  );
+
+  const directTool = externalDirectTool ?? internalDirectTool;
+  const setDirectTool = useCallback(
+    (next: DirectModeling3DTool) => {
+      if (onChangeDirect3DTool) {
+        onChangeDirect3DTool(next);
+      } else {
+        setInternalDirectTool(next);
+      }
+    },
+    [onChangeDirect3DTool],
+  );
+
+  // Estado de modos internos das ferramentas 3D
+  const [booleanMode, setBooleanMode] = useState<BooleanMode3D>("new_body");
+  const [filletOrChamferMode, setFilletOrChamferMode] = useState<"fillet" | "chamfer">("fillet");
+  const [shellOpenCapsMode, setShellOpenCapsMode] = useState<"both_ends" | "top_only">("both_ends");
+  const [offsetFaceTarget, setOffsetFaceTarget] = useState<"top" | "bottom" | "sides">("top");
+  const [miterEndTarget, setMiterEndTarget] = useState<"top" | "bottom">("top");
+  const [miterAxis, setMiterAxis] = useState<"x" | "y">("x");
+  const [copyOnTransform, setCopyOnTransform] = useState<boolean>(false);
+  const [transformAxisTarget, setTransformAxisTarget] = useState<"x" | "y" | "z">("x");
+  const [isPickingPivotSnap, setIsPickingPivotSnap] = useState<boolean>(false);
+
+  // Sessão do Teclado Numérico Flutuante In-Canvas (OCULTO POR PADRÃO)
+  const [numpadSession, setNumpadSession] = useState<ActiveParametricNumpadSession | null>(null);
+  const [numpadBuffer, setNumpadBuffer] = useState<string>("");
+
+  // Fecha o teclado numérico ao trocar de ferramenta
+  useEffect(() => {
+    setNumpadSession(null);
+  }, [directTool, activeMode]);
+
+  // Fecha o teclado numérico ao tocar fora dele no canvas
+  useEffect(() => {
+    if (!numpadSession) return;
+    const handlePointerDownOutside = (ev: PointerEvent) => {
+      if (numpadRef.current && !numpadRef.current.contains(ev.target as Node)) {
+        setNumpadSession(null);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDownOutside, { passive: true });
+    return () => document.removeEventListener("pointerdown", handlePointerDownOutside);
+  }, [numpadSession]);
+
+  // Arraste interativo dos eixos do Gizmo
+  const [activeAxis, setActiveAxis] = useState<GizmoAxis | null>(null);
+  const [dragDeltaMm, setDragDeltaMm] = useState<number>(0);
+
+  const dragSessionRef = useRef<{
+    axis: GizmoAxis;
     startClientX: number;
     startClientY: number;
-    initialZ: number;
-    currentZ: number;
-    accumDx: number;
-    accumDy: number;
+    screenDirX: number;
+    screenDirY: number;
+    pixelsPerMm: number;
+    lastAppliedSteps: number;
+    initialValue: number;
+    targetIds: string[];
   } | null>(null);
 
-  const safeSelectedIds =
-    selectedIds instanceof Set
-      ? selectedIds
-      : Array.isArray(selection)
-        ? new Set(selection)
-        : new Set<string>();
-  const selectedEntities = (Array.isArray(entities) ? entities : []).filter(
-    (e) => Boolean(e && e.id) && safeSelectedIds.has(e.id) && e.type !== "text",
+  const scene = useMemo(
+    () => externalScene ?? buildDirectTopology3DScene(entities, sheetThickness),
+    [externalScene, entities, sheetThickness],
   );
 
-  // Calcula a posição 2D na tela de qualquer ponto 3D (x, y, z)
-  const project3DToScreen = useCallback(
-    (pt: { x: number; y: number; z: number }): Vec2 => {
-      const mmPt = projectPoint3DToCanvasViewMm(pt, isIsometric, isoPlane, orbitProjection);
+  // Determina os corpos/entidades alvo (a partir de subSelection3D ou selection 2D/3D)
+  const activeTargetEntityIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const bId of subSel.bodyIds) {
+      const b = scene.bodiesById.get(bId);
+      if (b) ids.add(b.entityId);
+    }
+    for (const fId of subSel.faceIds) {
+      const f = scene.facesById.get(fId);
+      if (f) ids.add(f.entityId);
+    }
+    for (const eId of subSel.edgeIds) {
+      const e = scene.edgesById.get(eId);
+      if (e) ids.add(e.entityId);
+    }
+    if (ids.size === 0) {
+      for (const sId of selection) ids.add(sId);
+    }
+    if (ids.size === 0 && scene.bodies.length === 1 && activeMode === "3d") {
+      ids.add(scene.bodies[0]!.entityId);
+    }
+    return Array.from(ids);
+  }, [subSel, scene, selection, activeMode]);
+
+  const primaryBody: DirectBody3D | null = useMemo(() => {
+    for (const id of activeTargetEntityIds) {
+      const b = scene.bodies.find((x) => x.entityId === id);
+      if (b) return b;
+    }
+    return scene.bodies[0] ?? null;
+  }, [activeTargetEntityIds, scene.bodies]);
+
+  const primaryFace: DirectFace3D | null = useMemo(() => {
+    if (subSel.faceIds.length > 0) {
+      return scene.facesById.get(subSel.faceIds[0]!) ?? null;
+    }
+    return primaryBody?.faces[0] ?? null;
+  }, [subSel.faceIds, scene.facesById, primaryBody]);
+
+  const primaryEdge: DirectEdge3D | null = useMemo(() => {
+    if (subSel.edgeIds.length > 0) {
+      return scene.edgesById.get(subSel.edgeIds[0]!) ?? null;
+    }
+    return primaryBody?.edges[0] ?? null;
+  }, [subSel.edgeIds, scene.edgesById, primaryBody]);
+
+  const toScreen = useCallback(
+    (pt3D: Vec3Mm): Vec2 => {
+      const pMm = projectPoint3DToCanvasViewMm(pt3D, orbitProjection);
       return {
-        x: view.tx + view.k * mmPt.x,
-        y: view.ty + view.k * mmPt.y,
+        x: pMm.x * view.k + view.tx,
+        y: pMm.y * view.k + view.ty,
       };
     },
-    [isIsometric, isoPlane, orbitProjection, view.k, view.tx, view.ty],
+    [orbitProjection, view.k, view.tx, view.ty],
   );
 
-  // Centro 3D da seleção atual
-  const selectionCentroid3D =
-    selectedEntities.length > 0 ? computeSelectionCentroid3D(selectedEntities) : null;
-
-  const currentElevationZ =
-    liveDragZ !== null
-      ? liveDragZ
-      : selectionCentroid3D
-        ? selectionCentroid3D.z
-        : 0;
-
-  const gizmoOriginScreen = selectionCentroid3D
-    ? project3DToScreen({
-        x: selectionCentroid3D.x,
-        y: selectionCentroid3D.y,
-        z: currentElevationZ,
-      })
-    : null;
-
-  const gizmoBaseZ0Screen = selectionCentroid3D
-    ? project3DToScreen({
-        x: selectionCentroid3D.x,
-        y: selectionCentroid3D.y,
-        z: dragRef.current ? dragStartZ : 0,
-      })
-    : null;
-
-  // Calcula vetores unitários de tela para os 3 eixos (+X, +Y, +Z) a partir do centroide
-  const computeAxisScreenTip = useCallback(
-    (axis: "x" | "y" | "z", lengthPx = 68): Vec2 => {
-      if (!selectionCentroid3D || !gizmoOriginScreen) return { x: 0, y: 0 };
-      const basePt = {
-        x: selectionCentroid3D.x,
-        y: selectionCentroid3D.y,
-        z: currentElevationZ,
-      };
-      const deltaPt =
-        axis === "x"
-          ? { x: basePt.x + 10, y: basePt.y, z: basePt.z }
-          : axis === "y"
-            ? { x: basePt.x, y: basePt.y + 10, z: basePt.z }
-            : { x: basePt.x, y: basePt.y, z: basePt.z + 10 };
-
-      const p0 = project3DToScreen(basePt);
-      const p1 = project3DToScreen(deltaPt);
-      let dx = p1.x - p0.x;
-      let dy = p1.y - p0.y;
-      const len = Math.hypot(dx, dy);
-
-      if (axis === "z" && len < 1e-2) {
-        // Mesmo que a vista esteja 2D plana, a seta +Z aponta verticalmente para cima (-Y)
-        dx = 0;
-        dy = -1;
-      } else if (len > 1e-3) {
-        dx /= len;
-        dy /= len;
-      } else {
-        dx = axis === "x" ? 1 : 0;
-        dy = axis === "y" ? 1 : -1;
+  // Calcula o centro 3D do Gizmo (respeitando pivô móvel ou sub-elemento selecionado)
+  const selectionCenter3D = useMemo<Vec3Mm | null>(() => {
+    if (subSel.activePivot3D) return subSel.activePivot3D;
+    if (subSel.faceIds.length > 0 && primaryFace) return primaryFace.centroid;
+    if (subSel.edgeIds.length > 0 && primaryEdge) return primaryEdge.midpoint;
+    if (primaryBody) {
+      if (
+        directTool === "extrude_3d" ||
+        directTool === "offset_face_3d" ||
+        directTool === "rotate_axis_3d"
+      ) {
+        const topF = primaryBody.faces.find((f) => f.role === "top" || f.role === "miter");
+        if (topF) return topF.centroid;
       }
+      return primaryBody.pivot3D;
+    }
+    if (selected.length === 0) return null;
+    const b = bbox(selected);
+    if (!b) return null;
+    const avgZ =
+      selected.reduce((acc, e) => acc + getEntityElevationZ(e), 0) / selected.length;
+    return {
+      x: (b.minX + b.maxX) * 0.5,
+      y: (b.minY + b.maxY) * 0.5,
+      z: avgZ,
+    };
+  }, [subSel, primaryFace, primaryEdge, primaryBody, directTool, selected]);
 
+  // Projeção dos eixos X, Y, Z na tela
+  const gizmoScreen = useMemo(() => {
+    if (!selectionCenter3D || (!isTilted3D && activeMode !== "3d")) return null;
+
+    const originScreen = toScreen(selectionCenter3D);
+    const axisLenPx = 64;
+    const stepMm = Math.max(10, 60 / Math.max(0.1, view.k));
+
+    const projectAxisTip = (dx: number, dy: number, dz: number) => {
+      const tipScreen = toScreen({
+        x: selectionCenter3D.x + dx * stepMm,
+        y: selectionCenter3D.y + dy * stepMm,
+        z: selectionCenter3D.z + dz * stepMm,
+      });
+      const vx = tipScreen.x - originScreen.x;
+      const vy = tipScreen.y - originScreen.y;
+      const rawPxLen = Math.hypot(vx, vy) || 1;
+      const ux = vx / rawPxLen;
+      const uy = vy / rawPxLen;
+      const pixelsPerMm = Math.max(0.15, rawPxLen / stepMm);
       return {
-        x: gizmoOriginScreen.x + dx * lengthPx,
-        y: gizmoOriginScreen.y + dy * lengthPx,
+        endX: originScreen.x + ux * axisLenPx,
+        endY: originScreen.y + uy * axisLenPx,
+        ux,
+        uy,
+        pixelsPerMm,
       };
+    };
+
+    return {
+      origin: originScreen,
+      center3D: selectionCenter3D,
+      x: projectAxisTip(1, 0, 0),
+      y: projectAxisTip(0, 1, 0),
+      z: projectAxisTip(0, 0, 1),
+    };
+  }, [selectionCenter3D, isTilted3D, activeMode, toScreen, view.k]);
+
+  // ============================================================================
+  // TECLADO NUMÉRICO FLUTUANTE COMPACTO (196px + VIEWPORT CLAMPING OBRIGATÓRIO)
+  // ============================================================================
+
+  const openFloatingNumpad = useCallback(
+    (
+      kind: ParametricNumpadKind,
+      title: string,
+      unit: "mm" | "°" | "×",
+      initialValue: number,
+      rawPos: { x: number; y: number },
+      subTarget?: ActiveParametricNumpadSession["subTarget"],
+      copyModeOverride?: boolean,
+      isClientCoord = false,
+    ) => {
+      if (activeTargetEntityIds.length === 0) return;
+      triggerHaptic("selection");
+
+      const overlayRect = rootOverlayRef.current?.getBoundingClientRect();
+      const canvasW =
+        overlayRect && overlayRect.width > 50 ? overlayRect.width : Math.max(320, width);
+      const canvasH =
+        overlayRect && overlayRect.height > 50 ? overlayRect.height : Math.max(320, height);
+
+      const localX =
+        isClientCoord && overlayRect ? rawPos.x - overlayRect.left : rawPos.x;
+      const localY =
+        isClientCoord && overlayRect ? rawPos.y - overlayRect.top : rawPos.y;
+
+      // Trava de Limites da Tela (Seção 5.3): left = Math.max(16, Math.min(clickX, canvasWidth - 212))
+      const safeX = Math.max(16, Math.min(localX, Math.max(16, canvasW - 212)));
+      const safeY = Math.max(40, Math.min(localY, Math.max(40, canvasH - 250)));
+
+      setNumpadSession({
+        kind,
+        title,
+        unit,
+        initialValue: Number(initialValue.toFixed(2)),
+        screenPos: { x: safeX, y: safeY },
+        targetEntityIds: activeTargetEntityIds,
+        subTarget,
+        copyMode: copyModeOverride ?? copyOnTransform,
+      });
+      setNumpadBuffer(String(Number(initialValue.toFixed(2))));
     },
-    [currentElevationZ, gizmoOriginScreen, project3DToScreen, selectionCentroid3D],
+    [activeTargetEntityIds, width, height, copyOnTransform],
   );
 
-  // Início do arraste nos eixos do Gizmo 3D
+  const commitFloatingNumpad = useCallback(() => {
+    if (!numpadSession || !onCommitEntities) {
+      setNumpadSession(null);
+      return;
+    }
+    const parsed = parseFloat(numpadBuffer.replace(",", "."));
+    if (!Number.isFinite(parsed)) {
+      setNumpadSession(null);
+      return;
+    }
+
+    const { kind, targetEntityIds, subTarget, copyMode } = numpadSession;
+    triggerHaptic("action");
+
+    if (kind === "EXTRUSION") {
+      onCommitEntities((prev) =>
+        applyDirectExtrudeToEntities(prev, targetEntityIds, parsed, booleanMode),
+      );
+    } else if (kind === "RADIUS") {
+      onCommitEntities((prev) =>
+        applyDirectFilletOrChamfer3DToEntities(prev, targetEntityIds, "fillet", parsed),
+      );
+    } else if (kind === "CHAMFER") {
+      onCommitEntities((prev) =>
+        applyDirectFilletOrChamfer3DToEntities(prev, targetEntityIds, "chamfer", parsed),
+      );
+    } else if (kind === "THICKNESS") {
+      const caps: ("top" | "bottom")[] =
+        shellOpenCapsMode === "both_ends" ? ["top", "bottom"] : ["top"];
+      onCommitEntities((prev) =>
+        applyDirectShell3DToEntities(prev, targetEntityIds, parsed, caps),
+      );
+    } else if (kind === "OFFSET") {
+      const faceT =
+        subTarget === "top" || subTarget === "bottom" || subTarget === "sides"
+          ? subTarget
+          : offsetFaceTarget;
+      onCommitEntities((prev) =>
+        applyDirectOffsetFace3DToEntities(prev, targetEntityIds, faceT, parsed),
+      );
+    } else if (kind === "ANGLE") {
+      if (subTarget === "rx" || subTarget === "ry" || subTarget === "rz") {
+        onCommitEntities((prev) => {
+          const res = applyDirectTransform3DToEntities(
+            prev,
+            targetEntityIds,
+            {
+              rxDeg: subTarget === "rx" ? parsed : 0,
+              ryDeg: subTarget === "ry" ? parsed : 0,
+              rzDeg: subTarget === "rz" ? parsed : 0,
+            },
+            Boolean(copyMode),
+          );
+          return res.updatedEntities;
+        });
+      } else {
+        const endT = subTarget === "bottom" ? "bottom" : miterEndTarget;
+        onCommitEntities((prev) =>
+          applyDirectMiterCut3DToEntities(prev, targetEntityIds, endT, parsed, miterAxis),
+        );
+      }
+    } else if (kind === "DISTANCE") {
+      const axis = subTarget === "y" ? "y" : subTarget === "z" ? "z" : "x";
+      onCommitEntities((prev) => {
+        const res = applyDirectTransform3DToEntities(
+          prev,
+          targetEntityIds,
+          {
+            dx: axis === "x" ? parsed : 0,
+            dy: axis === "y" ? parsed : 0,
+            dz: axis === "z" ? parsed : 0,
+          },
+          Boolean(copyMode),
+        );
+        return res.updatedEntities;
+      });
+    }
+
+    setNumpadSession(null);
+  }, [
+    numpadSession,
+    numpadBuffer,
+    onCommitEntities,
+    booleanMode,
+    shellOpenCapsMode,
+    offsetFaceTarget,
+    miterEndTarget,
+    miterAxis,
+  ]);
+
+  const handleNumpadKey = useCallback((key: string) => {
+    triggerHaptic("tap");
+    if (key === "C") {
+      setNumpadBuffer("0");
+      return;
+    }
+    if (key === "BACK") {
+      setNumpadBuffer((prev) => (prev.length > 1 ? prev.slice(0, -1) : "0"));
+      return;
+    }
+    if (key === "+/-") {
+      setNumpadBuffer((prev) => (prev.startsWith("-") ? prev.slice(1) : `-${prev}`));
+      return;
+    }
+    if (key === ".") {
+      setNumpadBuffer((prev) => (prev.includes(".") ? prev : `${prev}.`));
+      return;
+    }
+    setNumpadBuffer((prev) => (prev === "0" ? key : `${prev}${key}`));
+  }, []);
+
+  // Suporte a teclado físico quando o Floating Parametric Numpad está aberto
+  useEffect(() => {
+    if (!numpadSession) return;
+    const onKeyDown = (ev: KeyboardEvent) => {
+      if (ev.key >= "0" && ev.key <= "9") {
+        ev.preventDefault();
+        handleNumpadKey(ev.key);
+      } else if (ev.key === "." || ev.key === ",") {
+        ev.preventDefault();
+        handleNumpadKey(".");
+      } else if (ev.key === "-") {
+        ev.preventDefault();
+        handleNumpadKey("+/-");
+      } else if (ev.key === "Backspace") {
+        ev.preventDefault();
+        handleNumpadKey("BACK");
+      } else if (ev.key === "Enter") {
+        ev.preventDefault();
+        commitFloatingNumpad();
+      } else if (ev.key === "Escape") {
+        ev.preventDefault();
+        setNumpadSession(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [numpadSession, handleNumpadKey, commitFloatingNumpad]);
+
+  // ============================================================================
+  // AÇÕES RÁPIDAS DE SUB-ELEMENTOS E MODELAGEM DIRETA 3D
+  // ============================================================================
+
+  const handleSelectAllVerticalEdges = useCallback(() => {
+    if (!primaryBody) return;
+    const vertIds = primaryBody.edges
+      .filter((e) => e.role === "vertical")
+      .map((e) => e.edgeId);
+    triggerHaptic("selection");
+    setSubSel((prev) => ({
+      ...prev,
+      edgeIds: vertIds,
+      faceIds: [],
+      bodyIds: [],
+    }));
+  }, [primaryBody, setSubSel]);
+
+  const handleSelectTopAndBottomFacesForTube = useCallback(() => {
+    if (!primaryBody) return;
+    const endFaceIds = primaryBody.faces
+      .filter((f) => f.role === "top" || f.role === "bottom" || f.role === "miter")
+      .map((f) => f.faceId);
+    triggerHaptic("selection");
+    setShellOpenCapsMode("both_ends");
+    setSubSel((prev) => ({
+      ...prev,
+      faceIds: endFaceIds,
+      edgeIds: [],
+      bodyIds: [],
+    }));
+  }, [primaryBody, setSubSel]);
+
+  // Escuta filtros rápidos de sub-seleção 3D disparados pelo menu lateral 'SEL'
+  useEffect(() => {
+    const onSubSelPreset = (ev: Event) => {
+      if (!primaryBody) return;
+      const preset = (ev as CustomEvent<{ preset?: string }>).detail?.preset;
+      if (!preset) return;
+      if (preset === "body") {
+        setSubSel({
+          bodyIds: [primaryBody.bodyId],
+          faceIds: [],
+          edgeIds: [],
+          activePivot3D: primaryBody.pivot3D,
+          activeHingeEdgeId: null,
+        });
+      } else if (preset === "top_face") {
+        const topF =
+          primaryBody.faces.find((f) => f.role === "top" || f.role === "miter") ??
+          primaryBody.faces[0];
+        if (topF) {
+          setSubSel({
+            faceIds: [topF.faceId],
+            edgeIds: [],
+            bodyIds: [],
+            activePivot3D: topF.centroid,
+            activeHingeEdgeId: null,
+          });
+        }
+      } else if (preset === "both_faces") {
+        handleSelectTopAndBottomFacesForTube();
+      } else if (preset === "vertical_edges") {
+        handleSelectAllVerticalEdges();
+      } else if (preset === "all_faces") {
+        setSubSel({
+          faceIds: primaryBody.faces.map((f) => f.faceId),
+          edgeIds: [],
+          bodyIds: [],
+          activePivot3D: primaryBody.pivot3D,
+          activeHingeEdgeId: null,
+        });
+      } else if (preset === "all_edges") {
+        setSubSel({
+          edgeIds: primaryBody.edges.map((e) => e.edgeId),
+          faceIds: [],
+          bodyIds: [],
+          activePivot3D: primaryBody.pivot3D,
+          activeHingeEdgeId: null,
+        });
+      }
+    };
+    window.addEventListener("chamfer-3d-subselection-preset", onSubSelPreset);
+    return () => window.removeEventListener("chamfer-3d-subselection-preset", onSubSelPreset);
+  }, [
+    primaryBody,
+    setSubSel,
+    handleSelectTopAndBottomFacesForTube,
+    handleSelectAllVerticalEdges,
+  ]);
+
+  // ============================================================================
+  // ARRASTE INTERATIVO DAS SETAS 3D NO CANVAS (EXTRUDE / OFFSET / TRANSFORM)
+  // ============================================================================
+
   const handleAxisPointerDown = (
-    axis: "x" | "y" | "z",
-    ev: React.PointerEvent<SVGElement | HTMLButtonElement>,
+    axis: GizmoAxis,
+    ux: number,
+    uy: number,
+    pixelsPerMm: number,
+    ev: React.PointerEvent,
   ) => {
     ev.stopPropagation();
     ev.preventDefault();
-    if (!selectionCentroid3D) return;
+    (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
+    triggerHaptic("selection");
+    setActiveAxis(axis);
+    setDragDeltaMm(0);
 
-    const initZ = Number(selectionCentroid3D.z.toFixed(2));
-    setDraggingAxis(axis);
-    setDragStartZ(initZ);
-    setLiveDragZ(initZ);
-    setDragCursorScreen({ x: ev.clientX, y: ev.clientY });
+    const initVal =
+      axis === "extrude"
+        ? (primaryBody?.extrudeHeightMm ?? sheetThickness)
+        : 0;
 
-    dragRef.current = {
+    dragSessionRef.current = {
       axis,
       startClientX: ev.clientX,
       startClientY: ev.clientY,
-      initialZ: initZ,
-      currentZ: initZ,
-      accumDx: 0,
-      accumDy: 0,
+      screenDirX: ux,
+      screenDirY: uy,
+      pixelsPerMm,
+      lastAppliedSteps: 0,
+      initialValue: initVal,
+      targetIds: activeTargetEntityIds,
     };
-
-    const onMove = (moveEv: PointerEvent) => {
-      const st = dragRef.current;
-      if (!st) return;
-      setDragCursorScreen({ x: moveEv.clientX, y: moveEv.clientY });
-
-      if (st.axis === "z") {
-        // Movimento vertical para cima (-Y na tela) aumenta +Z em milímetros
-        const dyScreen = st.startClientY - moveEv.clientY;
-        const pxPerMmZ = getScreenPixelsPerMmZ(
-          view.k,
-          isIsometric,
-          isoPlane,
-          orbitProjection,
-        );
-        const rawDeltaZ = dyScreen / Math.max(0.35, pxPerMmZ);
-        // Snap suave a cada 1.0 mm (ou 0.5 mm se zoom alto)
-        const snapStep = view.k > 2.2 ? 0.5 : 1.0;
-        const snappedZ = Math.round((st.initialZ + rawDeltaZ) / snapStep) * snapStep;
-        const deltaFromPrev = snappedZ - st.currentZ;
-        st.currentZ = snappedZ;
-        setLiveDragZ(snappedZ);
-        if (Math.abs(deltaFromPrev) > 1e-4) {
-          onLiveElevateSelection(snappedZ, deltaFromPrev);
-        }
-      } else {
-        const dxScreen = moveEv.clientX - st.startClientX;
-        const dyScreen = moveEv.clientY - st.startClientY;
-        const safeK = Math.max(0.05, view.k);
-        const targetDx = st.axis === "x" ? Math.round(dxScreen / safeK) : 0;
-        const targetDy = st.axis === "y" ? Math.round(dyScreen / safeK) : 0;
-        const stepDx = targetDx - st.accumDx;
-        const stepDy = targetDy - st.accumDy;
-        if (Math.abs(stepDx) > 0.01 || Math.abs(stepDy) > 0.01) {
-          st.accumDx = targetDx;
-          st.accumDy = targetDy;
-          onLiveTranslateSelectionXY(stepDx, stepDy);
-        }
-      }
-    };
-
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-      const st = dragRef.current;
-      dragRef.current = null;
-      setDraggingAxis(null);
-      setLiveDragZ(null);
-      setDragCursorScreen(null);
-
-      if (!st) return;
-      if (st.axis === "z") {
-        onCommitElevateSelection(st.currentZ);
-      } else if (Math.abs(st.accumDx) > 0.01 || Math.abs(st.accumDy) > 0.01) {
-        onCommitTranslateSelectionXY(st.accumDx, st.accumDy);
-      }
-    };
-
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
   };
 
-  // Seções selecionadas para o LOFT 3D
-  const pickedLoftSections = loftSectionIds
-    .map((id, idx) => {
-      const ent = entities.find((e) => e.id === id);
-      if (!ent) return null;
-      const c2 = computeEntityTrueCentroid2D(ent);
-      const z = getEntityElevationZ(ent);
-      const screenPos = project3DToScreen({ x: c2.x, y: c2.y, z });
-      return {
-        order: idx + 1,
-        entity: ent,
-        kindLabel: classifyProfileKindLabel(ent),
-        elevationZ: z,
-        screenPos,
-      };
-    })
-    .filter((item): item is NonNullable<typeof item> => item !== null);
+  const handleAxisPointerMove = (ev: React.PointerEvent) => {
+    const session = dragSessionRef.current;
+    if (!session) return;
+    ev.stopPropagation();
 
-  // Verifica se todas as seções selecionadas no Loft estão na mesma altura Z (para sugerir Auto-Espaçar)
-  const allLoftSectionsSameZ =
-    pickedLoftSections.length >= 2 &&
-    pickedLoftSections.every(
-      (s) => Math.abs(s.elevationZ - pickedLoftSections[0]!.elevationZ) < 0.05,
+    const dxPx = ev.clientX - session.startClientX;
+    const dyPx = ev.clientY - session.startClientY;
+    const projectedPx = dxPx * session.screenDirX + dyPx * session.screenDirY;
+    const rawMm = projectedPx / session.pixelsPerMm;
+    const stepSizeMm = 1;
+    const currentSteps = Math.round(rawMm / stepSizeMm);
+    const stepDelta = currentSteps - session.lastAppliedSteps;
+
+    if (stepDelta !== 0) {
+      const mmIncrement = stepDelta * stepSizeMm;
+      session.lastAppliedSteps = currentSteps;
+      setDragDeltaMm(currentSteps * stepSizeMm);
+
+      if (session.axis === "extrude" && onCommitEntities) {
+        const nextH = Math.max(1, session.initialValue + currentSteps * stepSizeMm);
+        onCommitEntities((prev) =>
+          applyDirectExtrudeToEntities(prev, session.targetIds, nextH, booleanMode),
+        );
+      } else if (session.axis === "x") {
+        onTranslateSelection3D(mmIncrement, 0, 0);
+      } else if (session.axis === "y") {
+        onTranslateSelection3D(0, mmIncrement, 0);
+      } else if (session.axis === "z") {
+        onTranslateSelection3D(0, 0, mmIncrement);
+      }
+    }
+  };
+
+  const handleAxisPointerUp = (ev: React.PointerEvent) => {
+    if (!dragSessionRef.current) return;
+    ev.stopPropagation();
+    triggerHaptic("tap");
+    dragSessionRef.current = null;
+    setActiveAxis(null);
+  };
+
+  const is3DEnvironment = activeMode === "3d" || isTilted3D;
+
+  // Metadados enxutos da Pílula de Comando Ativo no Topo Central (Seção 3)
+  const activePillMeta = useMemo(() => {
+    const hVal = primaryBody?.extrudeHeightMm ?? sheetThickness;
+    const rVal = primaryBody?.edgeFilletRadiusMm || 10;
+    const dVal = primaryBody?.edgeChamferDistMm || 10;
+    const wVal = primaryBody?.shellThicknessMm || 6;
+    const angVal =
+      miterEndTarget === "top"
+        ? (primaryBody?.miterCutTopDeg || 45)
+        : (primaryBody?.miterCutBottomDeg || 45);
+
+    switch (directTool) {
+      case "extrude_3d":
+        return {
+          icon: Box,
+          label: "Extrude 3D",
+          valueText: `${hVal.toFixed(1)} mm`,
+        };
+      case "fillet_3d":
+      case "chamfer_3d":
+        return {
+          icon: Sparkles,
+          label: filletOrChamferMode === "fillet" ? "Fillet 3D" : "Chamfer 3D",
+          valueText:
+            filletOrChamferMode === "fillet"
+              ? `R ${rVal.toFixed(1)} mm`
+              : `D ${dVal.toFixed(1)} mm`,
+        };
+      case "shell_3d":
+        return {
+          icon: Layers,
+          label: "Shell / Casca 3D",
+          valueText: `${wVal.toFixed(2).replace(/\.00$/, "")} mm`,
+        };
+      case "offset_face_3d":
+        return {
+          icon: CornerDownRight,
+          label: "Offset Face 3D",
+          valueText: "+25.0 mm",
+        };
+      case "rotate_axis_3d":
+        return {
+          icon: Compass,
+          label: "Corte 45° (Esquadria)",
+          valueText: `${angVal.toFixed(0)}°`,
+        };
+      case "transform_3d":
+        return {
+          icon: Move,
+          label: "Mover / Girar 3D",
+          valueText: `Copy: ${copyOnTransform ? "ON" : "OFF"}`,
+        };
+      case "mirror_3d":
+        return {
+          icon: FlipHorizontal,
+          label: "Espelhar 3D",
+          valueText: "Eixo X/Y/Z",
+        };
+      case "color_material_3d":
+        return {
+          icon: Palette,
+          label: "Material 3D",
+          valueText: primaryBody?.materialName?.split(" ")[0] ?? "Aço",
+        };
+      case "sketch_on_face_3d":
+        return {
+          icon: PenTool,
+          label: "Sketch na Face",
+          valueText: `Z=${(primaryFace?.centroid.z ?? hVal).toFixed(0)}mm`,
+        };
+      case "revolve_3d":
+        return {
+          icon: RotateCw,
+          label: "Revolve 3D",
+          valueText: "360°",
+        };
+      default:
+        return null;
+    }
+  }, [
+    directTool,
+    primaryBody,
+    sheetThickness,
+    filletOrChamferMode,
+    miterEndTarget,
+    copyOnTransform,
+    primaryFace,
+  ]);
+
+  // Estilos adaptados 100% ao Tema Ativo (Claro #FFFFFF / Escuro #0B1220 / AMOLED #05080F)
+  const themeSurfaceStyle: React.CSSProperties = {
+    backgroundColor: "var(--chamfer-popover-bg, " + (isDark ? "#0B1220" : "#FFFFFF") + ")",
+    borderColor: "var(--chamfer-border, " + (isDark ? "#1E293B" : "#CBD5E1") + ")",
+    color: "var(--chamfer-text-primary, " + (isDark ? "#F8FAFC" : "#0F172A") + ")",
+  };
+
+  const pillBtnClass = (isActive: boolean) =>
+    cn(
+      "shrink-0 rounded-full border px-3 py-1 font-mono text-[10.5px] font-bold transition-colors cursor-pointer whitespace-nowrap",
+      isActive
+        ? "border-cyan-500 bg-cyan-500/20 text-cyan-600 dark:text-cyan-300 shadow-2xs"
+        : isDark
+          ? "border-slate-700/80 bg-slate-900/80 text-slate-300 hover:border-slate-600 hover:text-white"
+          : "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-950",
     );
 
-  const showGizmo =
-    !isLoftToolActive &&
-    selectedEntities.length > 0 &&
-    gizmoOriginScreen !== null &&
-    (is3DViewActive || draggingAxis !== null);
-
-  const xTip = showGizmo ? computeAxisScreenTip("x", 64) : { x: 0, y: 0 };
-  const yTip = showGizmo ? computeAxisScreenTip("y", 64) : { x: 0, y: 0 };
-  const zTip = showGizmo ? computeAxisScreenTip("z", 78) : { x: 0, y: 0 };
-
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 overflow-hidden select-none">
-      {/* CAMADA SVG: GIZMO 3D DE TRANSLAÇÃO (+X, +Y, +Z) E MARCADORES DE SEÇÃO LOFT [1], [2], [3] */}
-      <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible">
-        <defs>
-          <filter id="chamfer-gizmo-glow" x="-30%" y="-30%" width="160%" height="160%">
-            <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor="#000000" floodOpacity="0.65" />
-          </filter>
-        </defs>
-
-        {/* 1. LINHA DE RASTREAMENTO ORTOGONAL VERTICAL (+Z) DURANTE ARRASTE OU ELEVAÇÃO */}
-        {showGizmo && gizmoOriginScreen && gizmoBaseZ0Screen && (
-          <g filter="url(#chamfer-gizmo-glow)">
-            {(draggingAxis === "z" || Math.abs(currentElevationZ) > 0.05) && (
-              <>
-                <line
-                  x1={gizmoBaseZ0Screen.x}
-                  y1={gizmoBaseZ0Screen.y}
-                  x2={gizmoOriginScreen.x}
-                  y2={gizmoOriginScreen.y}
-                  stroke={draggingAxis === "z" ? "#F59E0B" : "#38BDF8"}
-                  strokeWidth={draggingAxis === "z" ? 2.4 : 1.6}
-                  strokeDasharray="5 4"
-                />
-                <circle
-                  cx={gizmoBaseZ0Screen.x}
-                  cy={gizmoBaseZ0Screen.y}
-                  r={4}
-                  fill="#0F172A"
-                  stroke={draggingAxis === "z" ? "#F59E0B" : "#38BDF8"}
-                  strokeWidth={2}
-                />
-              </>
-            )}
-
-            {/* EIXO +X (Vermelho #EF4444) */}
-            <g
-              className="pointer-events-auto cursor-ew-resize"
-              onPointerEnter={() => setHoveredAxis("x")}
-              onPointerLeave={() => setHoveredAxis(null)}
-              onPointerDown={(ev) => handleAxisPointerDown("x", ev)}
-            >
-              <line
-                x1={gizmoOriginScreen.x}
-                y1={gizmoOriginScreen.y}
-                x2={xTip.x}
-                y2={xTip.y}
-                stroke="transparent"
-                strokeWidth={18}
-              />
-              <line
-                x1={gizmoOriginScreen.x}
-                y1={gizmoOriginScreen.y}
-                x2={xTip.x}
-                y2={xTip.y}
-                stroke={hoveredAxis === "x" || draggingAxis === "x" ? "#F59E0B" : "#EF4444"}
-                strokeWidth={hoveredAxis === "x" || draggingAxis === "x" ? 3.6 : 2.6}
-                strokeLinecap="round"
-              />
-              <circle
-                cx={xTip.x}
-                cy={xTip.y}
-                r={5.5}
-                fill={hoveredAxis === "x" || draggingAxis === "x" ? "#F59E0B" : "#EF4444"}
-              />
-              <text
-                x={xTip.x + 10}
-                y={xTip.y + 4}
-                fill="#FCA5A5"
-                fontSize="10"
-                fontWeight="800"
-                fontFamily="ui-monospace, monospace"
-              >
-                +X
-              </text>
-            </g>
-
-            {/* EIXO +Y (Verde #10B981) */}
-            <g
-              className="pointer-events-auto cursor-ns-resize"
-              onPointerEnter={() => setHoveredAxis("y")}
-              onPointerLeave={() => setHoveredAxis(null)}
-              onPointerDown={(ev) => handleAxisPointerDown("y", ev)}
-            >
-              <line
-                x1={gizmoOriginScreen.x}
-                y1={gizmoOriginScreen.y}
-                x2={yTip.x}
-                y2={yTip.y}
-                stroke="transparent"
-                strokeWidth={18}
-              />
-              <line
-                x1={gizmoOriginScreen.x}
-                y1={gizmoOriginScreen.y}
-                x2={yTip.x}
-                y2={yTip.y}
-                stroke={hoveredAxis === "y" || draggingAxis === "y" ? "#F59E0B" : "#10B981"}
-                strokeWidth={hoveredAxis === "y" || draggingAxis === "y" ? 3.6 : 2.6}
-                strokeLinecap="round"
-              />
-              <circle
-                cx={yTip.x}
-                cy={yTip.y}
-                r={5.5}
-                fill={hoveredAxis === "y" || draggingAxis === "y" ? "#F59E0B" : "#10B981"}
-              />
-              <text
-                x={yTip.x + 10}
-                y={yTip.y + 4}
-                fill="#6EE7B7"
-                fontSize="10"
-                fontWeight="800"
-                fontFamily="ui-monospace, monospace"
-              >
-                +Y
-              </text>
-            </g>
-
-            {/* EIXO +Z VERTICAL (Azul Brilhante #3B82F6 -> Âmbar #F59E0B ao interagir) */}
-            <g
-              className="pointer-events-auto cursor-ns-resize"
-              onPointerEnter={() => setHoveredAxis("z")}
-              onPointerLeave={() => setHoveredAxis(null)}
-              onPointerDown={(ev) => handleAxisPointerDown("z", ev)}
-            >
-              {/* Área de toque generosa de 26px para arraste fácil com o dedo ou mouse */}
-              <line
-                x1={gizmoOriginScreen.x}
-                y1={gizmoOriginScreen.y}
-                x2={zTip.x}
-                y2={zTip.y}
-                stroke="transparent"
-                strokeWidth={26}
-              />
-              <line
-                x1={gizmoOriginScreen.x}
-                y1={gizmoOriginScreen.y}
-                x2={zTip.x}
-                y2={zTip.y}
-                stroke={hoveredAxis === "z" || draggingAxis === "z" ? "#F59E0B" : "#3B82F6"}
-                strokeWidth={hoveredAxis === "z" || draggingAxis === "z" ? 4.2 : 3.4}
-                strokeLinecap="round"
-              />
-              {/* Ponta de seta cônica +Z */}
-              <polygon
-                points={`${zTip.x},${zTip.y - 9} ${zTip.x - 6.5},${zTip.y + 5} ${zTip.x + 6.5},${zTip.y + 5}`}
-                fill={hoveredAxis === "z" || draggingAxis === "z" ? "#F59E0B" : "#3B82F6"}
-              />
-              <text
-                x={zTip.x}
-                y={zTip.y - 14}
-                textAnchor="middle"
-                fill={hoveredAxis === "z" || draggingAxis === "z" ? "#FDE68A" : "#60A5FA"}
-                fontSize="11"
-                fontWeight="900"
-                fontFamily="ui-monospace, monospace"
-              >
-                +Z
-              </text>
-            </g>
-
-            {/* Pivô Central 3D `(Cx, Cy, Cz)` */}
-            <circle
-              cx={gizmoOriginScreen.x}
-              cy={gizmoOriginScreen.y}
-              r={6}
-              fill="#0F172A"
-              stroke="#38BDF8"
-              strokeWidth={2.4}
-            />
-          </g>
-        )}
-
-        {/* 2. CONECTORES E BADGES NUMERADOS [1], [2], [3] DA FERRAMENTA LOFT 3D */}
-        {isLoftToolActive && pickedLoftSections.length > 0 && (
-          <g filter="url(#chamfer-gizmo-glow)">
-            {pickedLoftSections.length >= 2 &&
-              pickedLoftSections.slice(0, -1).map((sec, idx) => {
-                const nextSec = pickedLoftSections[idx + 1]!;
-                return (
-                  <line
-                    key={`loft_axis_${sec.entity.id}_${nextSec.entity.id}`}
-                    x1={sec.screenPos.x}
-                    y1={sec.screenPos.y}
-                    x2={nextSec.screenPos.x}
-                    y2={nextSec.screenPos.y}
-                    stroke="#38BDF8"
-                    strokeWidth={2}
-                    strokeDasharray="6 4"
-                  />
-                );
-              })}
-            {pickedLoftSections.map((sec) => (
-              <g
-                key={`loft_badge_${sec.entity.id}`}
-                transform={`translate(${sec.screenPos.x}, ${sec.screenPos.y})`}
-              >
-                <circle
-                  r={13}
-                  fill="#0284C7"
-                  stroke="#E0F2FE"
-                  strokeWidth={2.2}
-                />
-                <text
-                  x={0}
-                  y={4}
-                  textAnchor="middle"
-                  fill="#FFFFFF"
-                  fontSize="11"
-                  fontWeight="900"
-                  fontFamily="ui-monospace, monospace"
-                >
-                  {sec.order}
-                </text>
-              </g>
-            ))}
-          </g>
-        )}
-      </svg>
-
-      {/* BADGE FLUTUANTE DE ARRASTE ORTOGONAL: `Ortho: {elevationZ} mm < +Z` */}
-      {draggingAxis === "z" && dragCursorScreen && (
+    <div
+      ref={rootOverlayRef}
+      className="pointer-events-none absolute inset-0 z-25 overflow-hidden select-none"
+    >
+      {/* =====================================================================
+          1. PÍLULA DE COMANDO ATIVO NO TOPO CENTRAL (COMPACTA E DISCRETA — SEÇÃO 3)
+          ===================================================================== */}
+      {is3DEnvironment && directTool !== "select_3d" && tool !== "loft_3d" && activePillMeta && (
         <div
+          data-testid="chamfer-3d-contextual-guide-banner"
           style={{
-            left: Math.min(window.innerWidth - 210, dragCursorScreen.x + 18),
-            top: Math.max(16, dragCursorScreen.y - 22),
+            ...themeSurfaceStyle,
+            top: "36px",
           }}
-          className="pointer-events-none fixed z-50 flex items-center gap-1.5 rounded border border-amber-400/80 bg-slate-950/95 px-2.5 py-1 font-mono text-[11px] font-bold text-amber-300 shadow-lg"
+          className="pointer-events-auto absolute left-1/2 z-30 flex h-[40px] max-w-[420px] -translate-x-1/2 items-center gap-2 rounded-full border px-3 py-1.5 shadow-md backdrop-blur-md transition-all"
         >
-          <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />
-          <span>Ortho: {currentElevationZ.toFixed(2)} mm &lt; +Z</span>
+          <activePillMeta.icon className="size-3.5 shrink-0 text-cyan-500" />
+          <span className="truncate font-mono text-[11px] font-bold tracking-tight">
+            {activePillMeta.label}
+          </span>
+
+          <span
+            className={cn(
+              "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10.5px] font-bold",
+              isDark
+                ? "border-cyan-500/40 bg-cyan-950/60 text-cyan-300"
+                : "border-cyan-600/35 bg-cyan-50 text-cyan-700",
+            )}
+          >
+            {activePillMeta.valueText}
+          </span>
+
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic("action");
+              setDirectTool("select_3d");
+              setNumpadSession(null);
+            }}
+            className="flex h-6 shrink-0 items-center gap-1 rounded-full bg-emerald-600 hover:bg-emerald-500 px-2.5 font-mono text-[10px] font-bold text-white shadow-2xs transition-colors cursor-pointer"
+          >
+            <Check className="size-3" />
+            <span>Concluir</span>
+          </button>
+
+          <button
+            type="button"
+            aria-label="Fechar ferramenta 3D"
+            onClick={() => {
+              triggerHaptic("tap");
+              setDirectTool("select_3d");
+              setNumpadSession(null);
+            }}
+            className={cn(
+              "flex size-6 shrink-0 items-center justify-center rounded-full transition-colors cursor-pointer",
+              isDark
+                ? "text-slate-400 hover:bg-slate-800 hover:text-white"
+                : "text-slate-500 hover:bg-slate-200 hover:text-slate-900",
+            )}
+          >
+            <X className="size-3.5" />
+          </button>
         </div>
       )}
 
-      {/* PÍLULA INTERATIVA JUNTO AO GIZMO 3D: `[ ↕ Elevação Z: {Z} mm ]` + ATALHO `[ ⬢ Loft 3D ]` */}
-      {showGizmo && gizmoOriginScreen && draggingAxis === null && (
+      {/* =====================================================================
+          2. CAMADA SVG DE DESTAQUE CIANO TÉCNICO (#00B4D8) E GIZMO 3D INTERATIVO
+          ===================================================================== */}
+      {is3DEnvironment && (
+        <svg
+          data-testid="chamfer-3d-gizmo-svg"
+          className="pointer-events-none absolute inset-0 z-20 h-full w-full overflow-visible select-none"
+        >
+          <defs>
+            <marker
+              id="gizmo-arrow-x"
+              viewBox="0 0 10 10"
+              refX="7"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#EF4444" />
+            </marker>
+            <marker
+              id="gizmo-arrow-y"
+              viewBox="0 0 10 10"
+              refX="7"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#22C55E" />
+            </marker>
+            <marker
+              id="gizmo-arrow-z"
+              viewBox="0 0 10 10"
+              refX="7"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#00B4D8" />
+            </marker>
+          </defs>
+
+          {/* Destaque Ciano Técnico (#00B4D8) para Faces 3D Selecionadas */}
+          {subSel.faceIds.map((fId) => {
+            const face = scene.facesById.get(fId);
+            if (!face || face.polygon3D.length < 3) return null;
+            const ptsStr = face.polygon3D
+              .map((p) => {
+                const s = toScreen(p);
+                return `${s.x.toFixed(1)},${s.y.toFixed(1)}`;
+              })
+              .join(" ");
+            return (
+              <polygon
+                key={fId}
+                points={ptsStr}
+                fill="rgba(0, 180, 216, 0.25)"
+                stroke="#00B4D8"
+                strokeWidth={2.2}
+              />
+            );
+          })}
+
+          {/* Destaque Ciano Técnico (#38BDF8) para Arestas 3D Selecionadas */}
+          {subSel.edgeIds.map((eId) => {
+            const edge = scene.edgesById.get(eId);
+            if (!edge || edge.polyline3D.length < 2) return null;
+            const ptsStr = edge.polyline3D
+              .map((p) => {
+                const s = toScreen(p);
+                return `${s.x.toFixed(1)},${s.y.toFixed(1)}`;
+              })
+              .join(" ");
+            return (
+              <polyline
+                key={eId}
+                points={ptsStr}
+                fill="none"
+                stroke="#00B4D8"
+                strokeWidth={3.5}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            );
+          })}
+
+          {/* Pontos Magnéticos de Snap do Pivô 3D */}
+          {isPickingPivotSnap &&
+            primaryBody?.snapCandidates.map((cand) => {
+              const sp = toScreen(cand.point3D);
+              return (
+                <g
+                  key={cand.id}
+                  className="pointer-events-auto cursor-pointer"
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    triggerHaptic("action");
+                    setSubSel((prev) => ({ ...prev, activePivot3D: cand.point3D }));
+                    setIsPickingPivotSnap(false);
+                  }}
+                >
+                  <circle
+                    cx={sp.x}
+                    cy={sp.y}
+                    r={7}
+                    fill="rgba(0, 180, 216, 0.25)"
+                    stroke="#00B4D8"
+                    strokeWidth={2}
+                  />
+                  <circle cx={sp.x} cy={sp.y} r={2.5} fill="#FFFFFF" />
+                </g>
+              );
+            })}
+
+          {/* Gizmo Tríade X/Y/Z + Arco de Inclinação + Seta de Extrusão */}
+          {gizmoScreen && (
+            <g>
+              {(directTool === "rotate_axis_3d" || directTool === "transform_3d") && (
+                <circle
+                  cx={gizmoScreen.origin.x}
+                  cy={gizmoScreen.origin.y}
+                  r={44}
+                  fill="none"
+                  stroke="#00B4D8"
+                  strokeWidth={1.6}
+                  strokeDasharray="4 3"
+                  opacity={0.85}
+                />
+              )}
+
+              {/* Eixo X (Vermelho) */}
+              <g
+                data-testid="chamfer-gizmo-axis-x"
+                className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                onPointerDown={(ev) =>
+                  handleAxisPointerDown(
+                    "x",
+                    gizmoScreen.x.ux,
+                    gizmoScreen.x.uy,
+                    gizmoScreen.x.pixelsPerMm,
+                    ev,
+                  )
+                }
+                onPointerMove={handleAxisPointerMove}
+                onPointerUp={handleAxisPointerUp}
+                onPointerCancel={handleAxisPointerUp}
+              >
+                <line
+                  x1={gizmoScreen.origin.x}
+                  y1={gizmoScreen.origin.y}
+                  x2={gizmoScreen.x.endX}
+                  y2={gizmoScreen.x.endY}
+                  stroke="transparent"
+                  strokeWidth={18}
+                />
+                <line
+                  x1={gizmoScreen.origin.x}
+                  y1={gizmoScreen.origin.y}
+                  x2={gizmoScreen.x.endX}
+                  y2={gizmoScreen.x.endY}
+                  stroke="#EF4444"
+                  strokeWidth={activeAxis === "x" ? 3.5 : 2.25}
+                  markerEnd="url(#gizmo-arrow-x)"
+                />
+                <text
+                  x={gizmoScreen.x.endX + gizmoScreen.x.ux * 10}
+                  y={gizmoScreen.x.endY + gizmoScreen.x.uy * 10}
+                  fill="#EF4444"
+                  fontSize="10"
+                  fontWeight="bold"
+                  fontFamily="monospace"
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                >
+                  +X
+                </text>
+              </g>
+
+              {/* Eixo Y (Verde) */}
+              <g
+                data-testid="chamfer-gizmo-axis-y"
+                className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                onPointerDown={(ev) =>
+                  handleAxisPointerDown(
+                    "y",
+                    gizmoScreen.y.ux,
+                    gizmoScreen.y.uy,
+                    gizmoScreen.y.pixelsPerMm,
+                    ev,
+                  )
+                }
+                onPointerMove={handleAxisPointerMove}
+                onPointerUp={handleAxisPointerUp}
+                onPointerCancel={handleAxisPointerUp}
+              >
+                <line
+                  x1={gizmoScreen.origin.x}
+                  y1={gizmoScreen.origin.y}
+                  x2={gizmoScreen.y.endX}
+                  y2={gizmoScreen.y.endY}
+                  stroke="transparent"
+                  strokeWidth={18}
+                />
+                <line
+                  x1={gizmoScreen.origin.x}
+                  y1={gizmoScreen.origin.y}
+                  x2={gizmoScreen.y.endX}
+                  y2={gizmoScreen.y.endY}
+                  stroke="#22C55E"
+                  strokeWidth={activeAxis === "y" ? 3.5 : 2.25}
+                  markerEnd="url(#gizmo-arrow-y)"
+                />
+                <text
+                  x={gizmoScreen.y.endX + gizmoScreen.y.ux * 10}
+                  y={gizmoScreen.y.endY + gizmoScreen.y.uy * 10}
+                  fill="#22C55E"
+                  fontSize="10"
+                  fontWeight="bold"
+                  fontFamily="monospace"
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                >
+                  +Y
+                </text>
+              </g>
+
+              {/* Eixo Z / Seta de Extrusão / Push-Pull (Ciano Técnico #00B4D8) */}
+              <g
+                data-testid="chamfer-gizmo-axis-z"
+                className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                onPointerDown={(ev) =>
+                  handleAxisPointerDown(
+                    directTool === "extrude_3d" ? "extrude" : "z",
+                    gizmoScreen.z.ux,
+                    gizmoScreen.z.uy,
+                    gizmoScreen.z.pixelsPerMm,
+                    ev,
+                  )
+                }
+                onPointerMove={handleAxisPointerMove}
+                onPointerUp={handleAxisPointerUp}
+                onPointerCancel={handleAxisPointerUp}
+              >
+                <line
+                  x1={gizmoScreen.origin.x}
+                  y1={gizmoScreen.origin.y}
+                  x2={gizmoScreen.z.endX}
+                  y2={gizmoScreen.z.endY}
+                  stroke="transparent"
+                  strokeWidth={20}
+                />
+                <line
+                  x1={gizmoScreen.origin.x}
+                  y1={gizmoScreen.origin.y}
+                  x2={gizmoScreen.z.endX}
+                  y2={gizmoScreen.z.endY}
+                  stroke="#00B4D8"
+                  strokeWidth={
+                    activeAxis === "z" || activeAxis === "extrude" ? 4 : 2.75
+                  }
+                  markerEnd="url(#gizmo-arrow-z)"
+                />
+                <text
+                  x={gizmoScreen.z.endX + gizmoScreen.z.ux * 12}
+                  y={gizmoScreen.z.endY + gizmoScreen.z.uy * 12}
+                  fill="#00B4D8"
+                  fontSize="10"
+                  fontWeight="bold"
+                  fontFamily="monospace"
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                >
+                  {directTool === "extrude_3d" ? "EXT" : "+Z"}
+                </text>
+              </g>
+
+              {/* Pivô Central Móvel com Snap a Vértices/Arestas/Faces */}
+              <circle
+                cx={gizmoScreen.origin.x}
+                cy={gizmoScreen.origin.y}
+                r={6}
+                fill={isPickingPivotSnap ? "#F59E0B" : "#00B4D8"}
+                stroke={isDark ? "#0F172A" : "#FFFFFF"}
+                strokeWidth={2}
+                className="pointer-events-auto cursor-pointer"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  triggerHaptic("selection");
+                  setIsPickingPivotSnap((p) => !p);
+                }}
+              />
+
+              {/* Feedback de Delta durante arraste */}
+              {activeAxis && (
+                <g
+                  transform={`translate(${gizmoScreen.origin.x}, ${gizmoScreen.origin.y - 24})`}
+                >
+                  <rect
+                    x={-52}
+                    y={-11}
+                    width={104}
+                    height={20}
+                    rx={6}
+                    fill={isDark ? "#0B1220" : "#FFFFFF"}
+                    stroke="#00B4D8"
+                    strokeWidth={1.2}
+                  />
+                  <text
+                    x={0}
+                    y={1}
+                    fill={isDark ? "#F8FAFC" : "#0F172A"}
+                    fontSize="10"
+                    fontWeight="bold"
+                    fontFamily="monospace"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
+                    {activeAxis === "extrude"
+                      ? `H: ${((primaryBody?.extrudeHeightMm ?? sheetThickness) + dragDeltaMm).toFixed(1)} mm`
+                      : `Δ${activeAxis.toUpperCase()}: ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm} mm`}
+                  </text>
+                </g>
+              )}
+            </g>
+          )}
+        </svg>
+      )}
+
+      {/* =====================================================================
+          3. BADGE IN-CANVAS CLICÁVEL AO LADO DO ELEMENTO (ACIONA O NUMPAD COMPACTO)
+          ===================================================================== */}
+      {is3DEnvironment && gizmoScreen && primaryBody && !numpadSession && (
         <div
           style={{
-            left: Math.max(12, Math.min(window.innerWidth - 240, gizmoOriginScreen.x + 16)),
-            top: Math.max(54, gizmoOriginScreen.y + 10),
+            left: `${Math.max(16, Math.min(width - 165, gizmoScreen.z.endX + 12))}px`,
+            top: `${Math.max(46, Math.min(height - 96, gizmoScreen.z.endY - 12))}px`,
           }}
-          className="pointer-events-auto absolute z-30 flex items-center gap-1.5 rounded-md border border-sky-500/45 bg-slate-950/92 px-2 py-1 text-[11px] text-slate-100 shadow-xl backdrop-blur-md"
+          className="pointer-events-auto absolute z-30 flex items-center gap-1 select-none"
         >
           <button
             type="button"
-            onClick={() => onOpenElevationKeypad(currentElevationZ)}
-            title="Digitar altura exata de Elevação +Z (mm) no teclado numérico CAD"
-            className="flex items-center gap-1 rounded bg-sky-500/20 px-2 py-0.5 font-mono font-bold text-sky-300 transition hover:bg-sky-500/35 active:scale-95"
+            data-testid="chamfer-3d-live-dimension-badge"
+            style={themeSurfaceStyle}
+            onClick={(ev) => {
+              ev.stopPropagation();
+              const pos = { x: ev.clientX + 8, y: ev.clientY - 20 };
+              if (directTool === "fillet_3d" || directTool === "chamfer_3d") {
+                openFloatingNumpad(
+                  filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
+                  filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
+                  "mm",
+                  filletOrChamferMode === "fillet"
+                    ? primaryBody.edgeFilletRadiusMm || 10
+                    : primaryBody.edgeChamferDistMm || 10,
+                  pos,
+                  undefined,
+                  undefined,
+                  true,
+                );
+              } else if (directTool === "shell_3d") {
+                openFloatingNumpad(
+                  "THICKNESS",
+                  "THICKNESS",
+                  "mm",
+                  primaryBody.shellThicknessMm || 6,
+                  pos,
+                  undefined,
+                  undefined,
+                  true,
+                );
+              } else if (directTool === "offset_face_3d") {
+                openFloatingNumpad(
+                  "OFFSET",
+                  "OFFSET",
+                  "mm",
+                  25,
+                  pos,
+                  offsetFaceTarget,
+                  undefined,
+                  true,
+                );
+              } else if (directTool === "rotate_axis_3d") {
+                openFloatingNumpad(
+                  "ANGLE",
+                  "ANGLE",
+                  "°",
+                  primaryBody.miterCutTopDeg || 45,
+                  pos,
+                  miterEndTarget,
+                  undefined,
+                  true,
+                );
+              } else if (directTool === "transform_3d") {
+                openFloatingNumpad(
+                  "DISTANCE",
+                  "DISTANCE",
+                  "mm",
+                  100,
+                  pos,
+                  transformAxisTarget,
+                  copyOnTransform,
+                  true,
+                );
+              } else {
+                openFloatingNumpad(
+                  "EXTRUSION",
+                  "EXTRUSION",
+                  "mm",
+                  primaryBody.extrudeHeightMm,
+                  pos,
+                  undefined,
+                  undefined,
+                  true,
+                );
+              }
+            }}
+            className="flex items-center gap-1 rounded-full border border-cyan-500/60 px-2.5 py-0.5 font-mono text-[10.5px] font-bold shadow-md transition-all hover:scale-105 cursor-pointer"
+            title="Toque para digitar medida exata"
           >
-            <ArrowUpFromLine className="h-3.5 w-3.5 text-sky-400" />
-            <span>↕ Elevação Z: {currentElevationZ.toFixed(1)} mm</span>
+            <span className="text-cyan-600 dark:text-cyan-300">
+              {directTool === "fillet_3d" || directTool === "chamfer_3d"
+                ? filletOrChamferMode === "fillet"
+                  ? `R ${(primaryBody.edgeFilletRadiusMm || 10).toFixed(1)} mm`
+                  : `D ${(primaryBody.edgeChamferDistMm || 10).toFixed(1)} mm`
+                : directTool === "shell_3d"
+                  ? `${(primaryBody.shellThicknessMm || 6).toFixed(1)} mm`
+                  : directTool === "offset_face_3d"
+                    ? `+25.0 mm`
+                    : directTool === "rotate_axis_3d"
+                      ? `∠ ${(primaryBody.miterCutTopDeg || 45).toFixed(0)}°`
+                      : directTool === "transform_3d"
+                        ? `Δ${transformAxisTarget.toUpperCase()} mm`
+                        : `${primaryBody.extrudeHeightMm.toFixed(1)} mm`}
+            </span>
           </button>
 
-          {onActivateLoftToolFromSelection &&
-            selectedEntities.some((e) => !isLoft3DEntity(e)) && (
-              <button
-                type="button"
-                onClick={onActivateLoftToolFromSelection}
-                title="Iniciar transição multisseção LOFT 3D a partir deste perfil"
-                className="flex items-center gap-1 rounded border border-cyan-400/40 bg-cyan-500/20 px-2 py-0.5 font-semibold text-cyan-200 transition hover:bg-cyan-500/35 active:scale-95"
-              >
-                <Layers className="h-3.5 w-3.5 text-cyan-300" />
-                <span>Loft 3D</span>
-              </button>
-            )}
+          {directTool === "transform_3d" && (
+            <button
+              type="button"
+              data-testid="chamfer-3d-gizmo-copy-badge"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                triggerHaptic("selection");
+                setCopyOnTransform((c) => !c);
+              }}
+              style={!copyOnTransform ? themeSurfaceStyle : undefined}
+              className={cn(
+                "flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-bold shadow-md transition-all cursor-pointer",
+                copyOnTransform && "border-emerald-400 bg-emerald-600 text-white",
+              )}
+            >
+              <Copy className="size-2.5" />
+              <span>Copy: {copyOnTransform ? "ON" : "OFF"}</span>
+            </button>
+          )}
         </div>
       )}
 
-      {/* BANNER SUPERIOR E MENU CONTEXTUAL FLUTUANTE DA FERRAMENTA `LOFT 3D` (ESTILO AUTOCAD / SHAPR3D) */}
-      {isLoftToolActive && (
-        <>
-          {/* Banner de Comando no Topo do Viewport */}
+      {/* =====================================================================
+          4. TECLADO NUMÉRICO FLUTUANTE COMPACTO (196px — SEÇÃO 5)
+          ===================================================================== */}
+      {numpadSession && (
+        <div
+          ref={numpadRef}
+          data-testid="chamfer-floating-parametric-numpad"
+          style={{
+            ...themeSurfaceStyle,
+            left: `${numpadSession.screenPos.x}px`,
+            top: `${numpadSession.screenPos.y}px`,
+            width: "196px",
+            padding: "10px",
+            borderRadius: "14px",
+          }}
+          onPointerDown={(ev) => ev.stopPropagation()}
+          className="pointer-events-auto absolute z-50 border shadow-2xl backdrop-blur-xl select-none"
+        >
+          {/* Cabeçalho compacto com título do parâmetro e botão ✕ */}
           <div
-            className={`pointer-events-auto absolute left-1/2 z-30 -translate-x-1/2 ${
-              isPortrait ? "top-12 w-[94%] max-w-md" : "top-3 max-w-2xl"
-            }`}
+            style={{
+              borderColor: isDark ? "rgba(51, 65, 85, 0.6)" : "rgba(203, 213, 225, 0.8)",
+            }}
+            className="mb-1.5 flex items-center justify-between border-b pb-1"
           >
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-400/55 bg-slate-950/95 px-3 py-2 text-xs text-slate-100 shadow-2xl backdrop-blur-md">
-              <div className="flex items-center gap-2">
-                <span className="flex h-6 w-6 items-center justify-center rounded bg-sky-500/25 font-mono text-[11px] font-black text-sky-300 border border-sky-400/40">
-                  3D
-                </span>
-                <div>
-                  <div className="font-bold tracking-wide text-sky-300">
-                    LOFT 3D | Selecione as seções transversais na ordem da transição (mín. 2 perfis)
-                  </div>
-                  <div className="text-[11px] text-slate-300">
-                    {pickedLoftSections.length === 0 &&
-                      "Toque no Perfil [1] (ex: Base Z=0), depois no Perfil [2] (ex: Meio Z=60) e Perfil [3] (Topo Z=120)."}
-                    {pickedLoftSections.length === 1 &&
-                      "1 seção selecionada [1]. Toque na 2ª seção transversal para gerar a Prévia Sólida Translúcida 3D."}
-                    {pickedLoftSections.length >= 2 &&
-                      `${pickedLoftSections.length} seções conectadas (${pickedLoftSections
-                        .map((s) => `[${s.order}] ${s.kindLabel}`)
-                        .join(" ➔ ")}). Toque em mais perfis ou confirme.`}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  disabled={pickedLoftSections.length < 2}
-                  onClick={onConfirmLoft3D}
-                  className="flex items-center gap-1 rounded bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                  <span>Criar Sólido Loft</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={onCancelLoft3D}
-                  className="flex items-center gap-1 rounded border border-slate-700 bg-slate-800/90 px-2 py-1 text-[11px] font-semibold text-slate-300 transition hover:bg-slate-700"
-                >
-                  <X className="h-3.5 w-3.5" />
-                  <span>Cancelar</span>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Menu Contextual Flutuante `▼ Opções de Loft 3D` (Estilo AutoCAD com seta azul `▼`) */}
-          <div
-            className={`pointer-events-auto absolute z-30 ${
-              isPortrait
-                ? "bottom-20 left-3 right-3 max-w-md mx-auto"
-                : "bottom-14 left-4 w-80"
-            }`}
-          >
-            <div className="overflow-hidden rounded-lg border border-sky-500/45 bg-slate-950/95 text-xs text-slate-100 shadow-2xl backdrop-blur-md">
-              {/* Cabeçalho com seta azul estilo AutoCAD */}
-              <button
-                type="button"
-                onClick={() => setLoftMenuExpanded((v) => !v)}
-                className="flex w-full items-center justify-between border-b border-slate-800/90 bg-slate-900/90 px-3 py-2 text-left"
-              >
-                <div className="flex items-center gap-2">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-sky-500 text-white shadow">
-                    {loftMenuExpanded ? (
-                      <ChevronDown className="h-3.5 w-3.5" />
-                    ) : (
-                      <ChevronUp className="h-3.5 w-3.5" />
-                    )}
-                  </span>
-                  <span className="font-bold tracking-wide text-sky-300">
-                    OPÇÕES DE TRANSIÇÃO LOFT 3D
-                  </span>
-                </div>
-                <span className="rounded bg-sky-500/20 px-1.5 py-0.5 font-mono text-[10px] font-bold text-sky-300">
-                  {pickedLoftSections.length} perfis
-                </span>
-              </button>
-
-              {loftMenuExpanded && (
-                <div className="space-y-2.5 p-3">
-                  {/* Opção canônica AutoCAD: Somente Seções Transversais */}
-                  <div className="flex items-center gap-2 rounded border border-sky-500/30 bg-sky-950/35 px-2.5 py-1.5 text-[11px] font-medium text-sky-200">
-                    <span className="text-sky-400">●</span>
-                    <span>Somente Seções Transversais (Cross sections only)</span>
-                  </div>
-
-                  {/* Modo da Superfície: Smooth Fit vs Ruled */}
-                  <div>
-                    <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      Modo da Superfície
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => onChangeLoftSurfaceMode("smooth")}
-                        className={`rounded border px-2 py-1.5 text-[11px] font-semibold transition ${
-                          loftSurfaceMode === "smooth"
-                            ? "border-sky-400 bg-sky-500/25 text-sky-200 shadow-sm"
-                            : "border-slate-800 bg-slate-900/70 text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        Suave / Orgânico (Smooth Fit)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onChangeLoftSurfaceMode("ruled")}
-                        className={`rounded border px-2 py-1.5 text-[11px] font-semibold transition ${
-                          loftSurfaceMode === "ruled"
-                            ? "border-sky-400 bg-sky-500/25 text-sky-200 shadow-sm"
-                            : "border-slate-800 bg-slate-900/70 text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        Reto / Vincado (Ruled)
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Modo de Corpo: Sólido Maciço vs Casca / Tubo Oco */}
-                  <div>
-                    <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      Modo de Corpo 3D
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      <button
-                        type="button"
-                        onClick={() => onChangeLoftBodyMode("solid")}
-                        className={`rounded border px-2 py-1.5 text-[11px] font-semibold transition ${
-                          loftBodyMode === "solid"
-                            ? "border-sky-400 bg-sky-500/25 text-sky-200 shadow-sm"
-                            : "border-slate-800 bg-slate-900/70 text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        Sólido 3D Maciço
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onChangeLoftBodyMode("shell")}
-                        className={`rounded border px-2 py-1.5 text-[11px] font-semibold transition ${
-                          loftBodyMode === "shell"
-                            ? "border-sky-400 bg-sky-500/25 text-sky-200 shadow-sm"
-                            : "border-slate-800 bg-slate-900/70 text-slate-400 hover:text-slate-200"
-                        }`}
-                      >
-                        Casca / Tubo Oco ({sheetThicknessMm}mm)
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Lista interativa de Seções Transversais e suas Alturas Z (mm) */}
-                  <div>
-                    <div className="mb-1 flex items-center justify-between">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                        Seções na Ordem da Transição
-                      </span>
-                      {allLoftSectionsSameZ && (
-                        <button
-                          type="button"
-                          onClick={() => onAutoSpaceLoftSectionsZ(60)}
-                          className="flex items-center gap-1 rounded bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-300 border border-amber-400/40 hover:bg-amber-500/30"
-                        >
-                          <Sparkles className="h-3 w-3" />
-                          <span>Auto-Espaçar +Z (60mm)</span>
-                        </button>
-                      )}
-                    </div>
-
-                    {pickedLoftSections.length === 0 ? (
-                      <div className="rounded border border-dashed border-slate-800 bg-slate-900/50 p-2 text-center text-[11px] text-slate-400">
-                        Clique nos perfis fechados no canvas (Retângulo, Hexágono, Círculo...)
-                      </div>
-                    ) : (
-                      <div className="max-h-36 space-y-1 overflow-y-auto pr-0.5">
-                        {pickedLoftSections.map((sec) => (
-                          <div
-                            key={sec.entity.id}
-                            className="flex items-center justify-between gap-1.5 rounded border border-slate-800 bg-slate-900/80 px-2 py-1 text-[11px]"
-                          >
-                            <div className="flex items-center gap-1.5 truncate">
-                              <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-sky-600 font-mono text-[10px] font-bold text-white">
-                                {sec.order}
-                              </span>
-                              <span className="truncate font-medium text-slate-200">
-                                {sec.kindLabel}
-                              </span>
-                            </div>
-
-                            <div className="flex shrink-0 items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  onUpdateSectionElevationZ(sec.entity.id, sec.elevationZ - 20)
-                                }
-                                className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-300 hover:bg-slate-700"
-                              >
-                                -20
-                              </button>
-                              <span className="min-w-[54px] text-center font-mono text-[10px] font-bold text-sky-300">
-                                Z={sec.elevationZ.toFixed(0)}mm
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  onUpdateSectionElevationZ(sec.entity.id, sec.elevationZ + 20)
-                                }
-                                className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[10px] font-bold text-slate-300 hover:bg-slate-700"
-                              >
-                                +20
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onRemoveLoftSection(sec.entity.id)}
-                                className="ml-0.5 text-slate-500 hover:text-rose-400"
-                                title="Remover seção"
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Botões Finais de Confirmação e Cancelamento */}
-                  <div className="flex items-center gap-2 pt-1">
-                    <button
-                      type="button"
-                      disabled={pickedLoftSections.length < 2}
-                      onClick={onConfirmLoft3D}
-                      className="flex flex-1 items-center justify-center gap-1.5 rounded bg-emerald-600 py-1.5 text-xs font-bold text-white shadow transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <Check className="h-4 w-4" />
-                      <span>✓ Criar Sólido Loft</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={onCancelLoft3D}
-                      className="flex items-center justify-center gap-1 rounded border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-slate-700"
-                    >
-                      <X className="h-4 w-4" />
-                      <span>✕ Cancelar</span>
-                    </button>
-                  </div>
-                </div>
+            <span className="font-mono text-[9.5px] font-bold tracking-wider text-cyan-600 dark:text-cyan-400 uppercase">
+              {numpadSession.title}
+            </span>
+            <button
+              type="button"
+              aria-label="Fechar teclado numérico"
+              onClick={() => setNumpadSession(null)}
+              className={cn(
+                "flex size-5 items-center justify-center rounded-md transition-colors cursor-pointer",
+                isDark
+                  ? "text-slate-400 hover:bg-slate-800 hover:text-white"
+                  : "text-slate-500 hover:bg-slate-200 hover:text-slate-900",
               )}
-            </div>
+            >
+              <X className="size-3" />
+            </button>
           </div>
-        </>
+
+          {/* Visor numérico compacto no topo */}
+          <div
+            className={cn(
+              "mb-1.5 flex h-8 items-center justify-between rounded-lg border px-2.5 font-mono",
+              isDark
+                ? "border-cyan-500/40 bg-slate-900/95 text-white"
+                : "border-cyan-600/40 bg-slate-50 text-slate-900",
+            )}
+          >
+            <span
+              data-testid="chamfer-floating-numpad-display"
+              className="truncate text-[13px] font-bold"
+            >
+              {numpadBuffer}
+            </span>
+            <span className="ml-1 text-[10.5px] font-bold text-cyan-600 dark:text-cyan-400">
+              {numpadSession.unit}
+            </span>
+          </div>
+
+          {/* Grid compacto 3×4 + linha de ação (botões de 30px de altura e fonte 13px) */}
+          <div className="grid grid-cols-3 gap-1 font-mono text-[13px] font-bold">
+            {["7", "8", "9", "4", "5", "6", "1", "2", "3", "+/-", "0", "."].map((k) => (
+              <button
+                key={k}
+                type="button"
+                data-testid={`chamfer-numpad-key-${k}`}
+                onClick={() => handleNumpadKey(k)}
+                className={cn(
+                  "flex h-[30px] items-center justify-center rounded-lg border text-[13px] transition-colors cursor-pointer",
+                  isDark
+                    ? "border-slate-800 bg-slate-900/90 text-slate-100 hover:bg-slate-800"
+                    : "border-slate-200 bg-slate-100 text-slate-900 hover:bg-slate-200",
+                )}
+              >
+                {k}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              data-testid="chamfer-numpad-key-BACK"
+              onClick={() => handleNumpadKey("BACK")}
+              className={cn(
+                "flex h-[30px] items-center justify-center rounded-lg border text-[12px] transition-colors cursor-pointer",
+                isDark
+                  ? "border-slate-700 bg-slate-800/90 text-slate-300 hover:bg-slate-700"
+                  : "border-slate-300 bg-slate-200/80 text-slate-700 hover:bg-slate-300",
+              )}
+              title="Apagar dígito"
+            >
+              ⌫
+            </button>
+            <button
+              type="button"
+              data-testid="chamfer-numpad-key-C"
+              onClick={() => handleNumpadKey("C")}
+              className={cn(
+                "flex h-[30px] items-center justify-center rounded-lg border text-[12px] transition-colors cursor-pointer",
+                isDark
+                  ? "border-slate-700 bg-slate-800/90 text-slate-300 hover:bg-slate-700"
+                  : "border-slate-300 bg-slate-200/80 text-slate-700 hover:bg-slate-300",
+              )}
+              title="Zerar valor"
+            >
+              C
+            </button>
+            <button
+              type="button"
+              data-testid="chamfer-numpad-confirm"
+              onClick={commitFloatingNumpad}
+              className="flex h-[30px] items-center justify-center rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-xs transition-colors cursor-pointer"
+              title="Confirmar medida (Enter)"
+            >
+              <Check className="size-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+          5. DOCK CONTEXTUAL INFERIOR ÚNICO E ENXUTO (SEM CORTES LATERAIS — SEÇÃO 4)
+          ===================================================================== */}
+      {is3DEnvironment &&
+        directTool !== "select_3d" &&
+        tool !== "loft_3d" &&
+        primaryBody && (
+          <div
+            data-testid="chamfer-3d-subelement-Contextual-bar"
+            style={{
+              ...themeSurfaceStyle,
+              bottom: "14px",
+              maxWidth: "calc(100% - 48px)",
+              height: "42px",
+            }}
+            className="pointer-events-auto absolute left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none rounded-full border px-3 shadow-lg backdrop-blur-md"
+          >
+            {directTool === "extrude_3d" && (
+              <>
+                {(
+                  [
+                    { id: "new_body", label: "Novo Corpo" },
+                    { id: "union", label: "União" },
+                    { id: "subtract", label: "Subtrair" },
+                  ] as const
+                ).map((bm) => (
+                  <button
+                    key={bm.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setBooleanMode(bm.id);
+                      onCommitEntities?.((prev) =>
+                        applyDirectExtrudeToEntities(
+                          prev,
+                          activeTargetEntityIds,
+                          primaryBody.extrudeHeightMm,
+                          bm.id,
+                        ),
+                      );
+                    }}
+                    className={pillBtnClass(booleanMode === bm.id)}
+                  >
+                    {bm.label}
+                  </button>
+                ))}
+                <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-400/30" />
+                {[20, 50, 100, 490].map((hVal) => (
+                  <button
+                    key={hVal}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("action");
+                      onCommitEntities?.((prev) =>
+                        applyDirectExtrudeToEntities(
+                          prev,
+                          activeTargetEntityIds,
+                          hVal,
+                          booleanMode,
+                        ),
+                      );
+                    }}
+                    className={pillBtnClass(
+                      Math.abs(primaryBody.extrudeHeightMm - hVal) < 0.5,
+                    )}
+                  >
+                    {hVal}mm
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={(ev) => {
+                    openFloatingNumpad(
+                      "EXTRUSION",
+                      "EXTRUSION",
+                      "mm",
+                      primaryBody.extrudeHeightMm,
+                      { x: ev.clientX - 98, y: ev.clientY - 245 },
+                      undefined,
+                      undefined,
+                      true,
+                    );
+                  }}
+                  className={pillBtnClass(false)}
+                >
+                  Digitar ⌨️
+                </button>
+              </>
+            )}
+
+            {(directTool === "fillet_3d" || directTool === "chamfer_3d") && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilletOrChamferMode("fillet");
+                    setDirectTool("fillet_3d");
+                  }}
+                  className={pillBtnClass(filletOrChamferMode === "fillet")}
+                >
+                  Fillet (R)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilletOrChamferMode("chamfer");
+                    setDirectTool("chamfer_3d");
+                  }}
+                  className={pillBtnClass(filletOrChamferMode === "chamfer")}
+                >
+                  Chamfer (45°)
+                </button>
+                <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-400/30" />
+                {[0, 5, 10, 15, 20].map((val) => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("action");
+                      onCommitEntities?.((prev) =>
+                        applyDirectFilletOrChamfer3DToEntities(
+                          prev,
+                          activeTargetEntityIds,
+                          filletOrChamferMode,
+                          val,
+                        ),
+                      );
+                    }}
+                    className={pillBtnClass(
+                      (filletOrChamferMode === "fillet"
+                        ? primaryBody.edgeFilletRadiusMm
+                        : primaryBody.edgeChamferDistMm) === val,
+                    )}
+                  >
+                    {val === 0
+                      ? "Reto"
+                      : `${filletOrChamferMode === "fillet" ? "R" : "D"}${val}mm`}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={(ev) => {
+                    openFloatingNumpad(
+                      filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
+                      filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
+                      "mm",
+                      filletOrChamferMode === "fillet"
+                        ? primaryBody.edgeFilletRadiusMm || 10
+                        : primaryBody.edgeChamferDistMm || 10,
+                      { x: ev.clientX - 98, y: ev.clientY - 245 },
+                      undefined,
+                      undefined,
+                      true,
+                    );
+                  }}
+                  className={pillBtnClass(false)}
+                >
+                  Digitar ⌨️
+                </button>
+              </>
+            )}
+
+            {directTool === "shell_3d" && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShellOpenCapsMode("both_ends");
+                    onCommitEntities?.((prev) =>
+                      applyDirectShell3DToEntities(
+                        prev,
+                        activeTargetEntityIds,
+                        primaryBody.shellThicknessMm || 6,
+                        ["top", "bottom"],
+                      ),
+                    );
+                  }}
+                  className={pillBtnClass(shellOpenCapsMode === "both_ends")}
+                >
+                  Tubo Vazado (2 Faces)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShellOpenCapsMode("top_only");
+                    onCommitEntities?.((prev) =>
+                      applyDirectShell3DToEntities(
+                        prev,
+                        activeTargetEntityIds,
+                        primaryBody.shellThicknessMm || 6,
+                        ["top"],
+                      ),
+                    );
+                  }}
+                  className={pillBtnClass(shellOpenCapsMode === "top_only")}
+                >
+                  Caixa Oca (1 Face)
+                </button>
+                <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-400/30" />
+                {[2, 3, 4.75, 6, 8].map((wVal) => (
+                  <button
+                    key={wVal}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("action");
+                      const caps: ("top" | "bottom")[] =
+                        shellOpenCapsMode === "both_ends" ? ["top", "bottom"] : ["top"];
+                      onCommitEntities?.((prev) =>
+                        applyDirectShell3DToEntities(prev, activeTargetEntityIds, wVal, caps),
+                      );
+                    }}
+                    className={pillBtnClass(
+                      Math.abs(primaryBody.shellThicknessMm - wVal) < 0.2,
+                    )}
+                  >
+                    {wVal}mm
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={(ev) => {
+                    openFloatingNumpad(
+                      "THICKNESS",
+                      "THICKNESS",
+                      "mm",
+                      primaryBody.shellThicknessMm || 6,
+                      { x: ev.clientX - 98, y: ev.clientY - 245 },
+                      undefined,
+                      undefined,
+                      true,
+                    );
+                  }}
+                  className={pillBtnClass(false)}
+                >
+                  Digitar ⌨️
+                </button>
+              </>
+            )}
+
+            {directTool === "offset_face_3d" && (
+              <>
+                {(
+                  [
+                    { id: "top" as const, label: "Topo (+Z)" },
+                    { id: "bottom" as const, label: "Base (-Z)" },
+                    { id: "sides" as const, label: "4 Laterais" },
+                  ] as const
+                ).map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setOffsetFaceTarget(t.id)}
+                    className={pillBtnClass(offsetFaceTarget === t.id)}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+                <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-400/30" />
+                {[-25, 25, 50, 100, 599].map((dVal) => (
+                  <button
+                    key={dVal}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("action");
+                      onCommitEntities?.((prev) =>
+                        applyDirectOffsetFace3DToEntities(
+                          prev,
+                          activeTargetEntityIds,
+                          offsetFaceTarget,
+                          dVal,
+                        ),
+                      );
+                    }}
+                    className={pillBtnClass(false)}
+                  >
+                    {dVal > 0 ? `+${dVal}mm` : `${dVal}mm`}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={(ev) => {
+                    openFloatingNumpad(
+                      "OFFSET",
+                      "OFFSET",
+                      "mm",
+                      25,
+                      { x: ev.clientX - 98, y: ev.clientY - 245 },
+                      offsetFaceTarget,
+                      undefined,
+                      true,
+                    );
+                  }}
+                  className={pillBtnClass(false)}
+                >
+                  Digitar ⌨️
+                </button>
+              </>
+            )}
+
+            {directTool === "rotate_axis_3d" && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setMiterEndTarget("top")}
+                  className={pillBtnClass(miterEndTarget === "top")}
+                >
+                  Topo (+Z)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMiterEndTarget("bottom")}
+                  className={pillBtnClass(miterEndTarget === "bottom")}
+                >
+                  Base (-Z)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMiterAxis((a) => (a === "x" ? "y" : "x"))}
+                  className={pillBtnClass(true)}
+                >
+                  Eixo {miterAxis.toUpperCase()}
+                </button>
+                <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-400/30" />
+                {[-45, -30, 0, 30, 45].map((ang) => (
+                  <button
+                    key={ang}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("action");
+                      onCommitEntities?.((prev) =>
+                        applyDirectMiterCut3DToEntities(
+                          prev,
+                          activeTargetEntityIds,
+                          miterEndTarget,
+                          ang,
+                          miterAxis,
+                        ),
+                      );
+                    }}
+                    className={pillBtnClass(
+                      (miterEndTarget === "top"
+                        ? primaryBody.miterCutTopDeg
+                        : primaryBody.miterCutBottomDeg) === ang,
+                    )}
+                  >
+                    {ang > 0 ? `+${ang}°` : `${ang}°`}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={(ev) => {
+                    openFloatingNumpad(
+                      "ANGLE",
+                      "ANGLE",
+                      "°",
+                      45,
+                      { x: ev.clientX - 98, y: ev.clientY - 245 },
+                      miterEndTarget,
+                      undefined,
+                      true,
+                    );
+                  }}
+                  className={pillBtnClass(false)}
+                >
+                  Digitar ⌨️
+                </button>
+              </>
+            )}
+
+            {directTool === "transform_3d" && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setCopyOnTransform((c) => !c);
+                  }}
+                  className={cn(
+                    "shrink-0 rounded-full border px-3 py-1 font-mono text-[10.5px] font-bold transition-colors cursor-pointer whitespace-nowrap",
+                    copyOnTransform
+                      ? "border-emerald-400 bg-emerald-600 text-white"
+                      : pillBtnClass(false),
+                  )}
+                >
+                  Copy: {copyOnTransform ? "ON" : "OFF"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setIsPickingPivotSnap((p) => !p);
+                  }}
+                  className={pillBtnClass(isPickingPivotSnap)}
+                >
+                  {isPickingPivotSnap ? "Toque num Vértice..." : "Pivô Snap"}
+                </button>
+                {(["x", "y", "z"] as const).map((ax) => (
+                  <button
+                    key={ax}
+                    type="button"
+                    onClick={() => setTransformAxisTarget(ax)}
+                    className={pillBtnClass(transformAxisTarget === ax)}
+                  >
+                    Eixo {ax.toUpperCase()}
+                  </button>
+                ))}
+                <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-400/30" />
+                {[100, 350, 700].map((distVal) => (
+                  <button
+                    key={distVal}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("action");
+                      onCommitEntities?.((prev) => {
+                        const res = applyDirectTransform3DToEntities(
+                          prev,
+                          activeTargetEntityIds,
+                          {
+                            dx: transformAxisTarget === "x" ? distVal : 0,
+                            dy: transformAxisTarget === "y" ? distVal : 0,
+                            dz: transformAxisTarget === "z" ? distVal : 0,
+                          },
+                          copyOnTransform,
+                        );
+                        return res.updatedEntities;
+                      });
+                    }}
+                    className={pillBtnClass(false)}
+                  >
+                    +{distVal}mm
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    onCommitEntities?.((prev) => {
+                      const res = applyDirectTransform3DToEntities(
+                        prev,
+                        activeTargetEntityIds,
+                        { ryDeg: 45 },
+                        copyOnTransform,
+                      );
+                      return res.updatedEntities;
+                    });
+                  }}
+                  className={pillBtnClass(false)}
+                >
+                  Girar 45°
+                </button>
+                <button
+                  type="button"
+                  onClick={(ev) => {
+                    openFloatingNumpad(
+                      "DISTANCE",
+                      "DISTANCE",
+                      "mm",
+                      700,
+                      { x: ev.clientX - 98, y: ev.clientY - 245 },
+                      transformAxisTarget,
+                      copyOnTransform,
+                      true,
+                    );
+                  }}
+                  className={pillBtnClass(false)}
+                >
+                  Digitar ⌨️
+                </button>
+              </>
+            )}
+
+            {directTool === "mirror_3d" && (
+              <>
+                {(["x", "y", "z"] as const).map((pl) => (
+                  <button
+                    key={pl}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("action");
+                      onCommitEntities?.((prev) => {
+                        const res = applyDirectMirror3DToEntities(
+                          prev,
+                          activeTargetEntityIds,
+                          pl,
+                          true,
+                        );
+                        return res.updatedEntities;
+                      });
+                    }}
+                    className={pillBtnClass(false)}
+                  >
+                    Espelhar Eixo {pl.toUpperCase()}
+                  </button>
+                ))}
+              </>
+            )}
+
+            {directTool === "color_material_3d" && (
+              <>
+                {INDUSTRIAL_3D_MATERIALS.map((mat) => (
+                  <button
+                    key={mat.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      onCommitEntities?.((prev) =>
+                        prev.map((e) =>
+                          activeTargetEntityIds.includes(e.id)
+                            ? {
+                                ...e,
+                                params: {
+                                  ...(e.params ?? {}),
+                                  bodyColorHex: mat.colorHex,
+                                  bodyMaterial: mat.name,
+                                },
+                              }
+                            : e,
+                        ),
+                      );
+                    }}
+                    className={pillBtnClass(primaryBody.colorHex === mat.colorHex)}
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <span
+                        className="size-2.5 rounded-full border border-slate-400/40"
+                        style={{ backgroundColor: mat.colorHex }}
+                      />
+                      <span>{mat.name}</span>
+                    </span>
+                  </button>
+                ))}
+              </>
+            )}
+
+            {directTool === "sketch_on_face_3d" && (
+              <>
+                <span className="shrink-0 px-2 font-mono text-[10.5px] font-bold">
+                  {primaryFace?.label ?? "Face Superior (+Z)"}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    const targetFace = primaryFace ?? primaryBody.faces[0];
+                    if (targetFace && onSwitchTo2DSketchOnFace) {
+                      onSwitchTo2DSketchOnFace(targetFace);
+                    } else {
+                      onSetSelectionElevationZ(
+                        Math.round(primaryFace?.centroid.z ?? primaryBody.extrudeHeightMm),
+                      );
+                    }
+                  }}
+                  className="shrink-0 rounded-full bg-cyan-600 hover:bg-cyan-500 px-3 py-1 font-mono text-[10.5px] font-bold text-white cursor-pointer whitespace-nowrap"
+                >
+                  Alinhar Plano 2D na Face
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
+      {/* =====================================================================
+          6. BARRA FLUTUANTE COMPACTA DE TRANSIÇÃO MULTISSEÇÃO (LOFT 3D)
+          ===================================================================== */}
+      {tool === "loft_3d" && (
+        <div
+          data-testid="chamfer-loft-3d-panel"
+          style={{
+            ...themeSurfaceStyle,
+            bottom: "14px",
+            maxWidth: "calc(100% - 48px)",
+            height: "42px",
+          }}
+          className="pointer-events-auto absolute left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none rounded-full border px-3 shadow-lg backdrop-blur-md"
+        >
+          <span className="shrink-0 px-2 font-mono text-[10.5px] font-bold text-cyan-600 dark:text-cyan-400">
+            Loft 3D ({loftSectionIds.length} perfis)
+          </span>
+          <button
+            type="button"
+            onClick={() => onSetLoftSurfaceMode("ruled")}
+            className={pillBtnClass(loftSurfaceMode === "ruled")}
+          >
+            Reto
+          </button>
+          <button
+            type="button"
+            onClick={() => onSetLoftSurfaceMode("smooth")}
+            className={pillBtnClass(loftSurfaceMode === "smooth")}
+          >
+            Suave
+          </button>
+          <button
+            type="button"
+            onClick={() => onSetLoftBodyMode("solid")}
+            className={pillBtnClass(loftBodyMode === "solid")}
+          >
+            Sólido
+          </button>
+          <button
+            type="button"
+            onClick={() => onSetLoftBodyMode("shell")}
+            className={pillBtnClass(loftBodyMode === "shell")}
+          >
+            Chapa ({sheetThickness}mm)
+          </button>
+          {loftSectionIds.length > 0 && (
+            <button
+              type="button"
+              onClick={onClearLoftSections}
+              className={pillBtnClass(false)}
+            >
+              Limpar
+            </button>
+          )}
+          <button
+            type="button"
+            disabled={loftSectionIds.length < 2}
+            onClick={onConfirmLoft3D}
+            className={cn(
+              "shrink-0 rounded-full px-3 py-1 font-mono text-[10.5px] font-bold transition-all whitespace-nowrap",
+              loftSectionIds.length >= 2
+                ? "bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
+                : "bg-slate-500/20 text-slate-400 cursor-not-allowed",
+            )}
+          >
+            ✓ Gerar Loft 3D
+          </button>
+        </div>
       )}
     </div>
   );

@@ -36,6 +36,12 @@ import {
 } from "@/lib/lab2d/cadModifiers";
 import { DIM_LABEL, makeDimension, type Dimension, type DimKind } from "@/lib/lab2d/dimensions";
 import { CAD_PRESETS_CATALOG } from "@/lib/lab2d/cadPresetsCatalog";
+import {
+  applyDirectTransform3DToEntities,
+  getEntityDirect3DParams,
+  setEntityDirect3DParams,
+  type DirectBooleanMode3D,
+} from "@/lib/lab2d/cadDirectModeling3D";
 import { ChamferGeometricExecutionEngine } from "./geometricExecutionEngine";
 import { ChamferValidationEngine, type HoleCandidate } from "./validationEngine";
 import {
@@ -2397,6 +2403,274 @@ export function executeSingleDslV2Tool(
       case "report_unsupported": {
         const a = args as unknown as ReportUnsupportedArgs;
         state.unsupportedReports.push(a);
+        return { ok: true, tool: name, created, changed, removed, warnings, errors };
+      }
+
+      // ----------------------------------------------------------------------
+      // 6.9 MODELAGEM DIRETA 3D & EDIÇÃO TOPOLÓGICA
+      // ----------------------------------------------------------------------
+      case "extrude_3d": {
+        const a = args as {
+          target?: string;
+          height_mm?: number;
+          boolean_mode?: DirectBooleanMode3D;
+        };
+        const heightMm = Math.max(0.5, Number(a.height_mm ?? state.thickness ?? 100));
+        const booleanMode: DirectBooleanMode3D = a.boolean_mode ?? "new_body";
+        const targetIds = a.target
+          ? resolveTargetEntityIds(a.target, state.partModel, state.entities)
+          : state.entities
+              .filter(
+                (e) =>
+                  !e.isConstruction &&
+                  (e.type === "circle" ||
+                    e.type === "ellipse" ||
+                    (e.type === "polyline" && e.closed)),
+              )
+              .map((e) => e.id);
+        const targetSet = new Set(targetIds);
+        state.entities = state.entities.map((e) => {
+          if (targetSet.has(e.id)) {
+            changed.push(e.id);
+            return setEntityDirect3DParams(e, {
+              extrudeHeightMm: heightMm,
+              booleanMode3D: booleanMode,
+            });
+          }
+          return e;
+        });
+        refreshSandboxPartModel(state);
+        return {
+          ok: true,
+          tool: name,
+          created,
+          changed,
+          removed,
+          warnings,
+          errors,
+          data: { heightMm, booleanMode },
+        };
+      }
+
+      case "fillet_edges_3d": {
+        const a = args as { target?: string; radius_mm?: number };
+        const radiusMm = Math.max(0, Number(a.radius_mm ?? 10));
+        const targetIds = a.target
+          ? resolveTargetEntityIds(a.target, state.partModel, state.entities)
+          : state.entities
+              .filter(
+                (e) =>
+                  !e.isConstruction &&
+                  (e.type === "circle" ||
+                    e.type === "ellipse" ||
+                    (e.type === "polyline" && e.closed)),
+              )
+              .map((e) => e.id);
+        const targetSet = new Set(targetIds);
+        state.entities = state.entities.map((e) => {
+          if (targetSet.has(e.id)) {
+            changed.push(e.id);
+            return setEntityDirect3DParams(e, {
+              edgeFilletRadiusMm: radiusMm,
+              edgeChamferDistMm: 0,
+            });
+          }
+          return e;
+        });
+        refreshSandboxPartModel(state);
+        return { ok: true, tool: name, created, changed, removed, warnings, errors, data: { radiusMm } };
+      }
+
+      case "chamfer_edges_3d": {
+        const a = args as { target?: string; distance_mm?: number };
+        const distanceMm = Math.max(0, Number(a.distance_mm ?? 10));
+        const targetIds = a.target
+          ? resolveTargetEntityIds(a.target, state.partModel, state.entities)
+          : state.entities
+              .filter(
+                (e) =>
+                  !e.isConstruction &&
+                  (e.type === "circle" ||
+                    e.type === "ellipse" ||
+                    (e.type === "polyline" && e.closed)),
+              )
+              .map((e) => e.id);
+        const targetSet = new Set(targetIds);
+        state.entities = state.entities.map((e) => {
+          if (targetSet.has(e.id)) {
+            changed.push(e.id);
+            return setEntityDirect3DParams(e, {
+              edgeChamferDistMm: distanceMm,
+              edgeFilletRadiusMm: 0,
+            });
+          }
+          return e;
+        });
+        refreshSandboxPartModel(state);
+        return { ok: true, tool: name, created, changed, removed, warnings, errors, data: { distanceMm } };
+      }
+
+      case "shell_body_3d": {
+        const a = args as {
+          target?: string;
+          thickness_mm?: number;
+          open_caps?: "both" | "top" | "bottom";
+        };
+        const wallMm = Math.max(0.5, Number(a.thickness_mm ?? 6));
+        const openCaps: ("top" | "bottom")[] =
+          a.open_caps === "top"
+            ? ["top"]
+            : a.open_caps === "bottom"
+              ? ["bottom"]
+              : ["top", "bottom"];
+        const targetIds = a.target
+          ? resolveTargetEntityIds(a.target, state.partModel, state.entities)
+          : state.entities
+              .filter(
+                (e) =>
+                  !e.isConstruction &&
+                  (e.type === "circle" ||
+                    e.type === "ellipse" ||
+                    (e.type === "polyline" && e.closed)),
+              )
+              .map((e) => e.id);
+        const targetSet = new Set(targetIds);
+        state.entities = state.entities.map((e) => {
+          if (targetSet.has(e.id)) {
+            changed.push(e.id);
+            return setEntityDirect3DParams(e, {
+              shellThicknessMm: wallMm,
+              shellOpenCaps: openCaps,
+            });
+          }
+          return e;
+        });
+        refreshSandboxPartModel(state);
+        return {
+          ok: true,
+          tool: name,
+          created,
+          changed,
+          removed,
+          warnings,
+          errors,
+          data: { wallMm, openCaps },
+        };
+      }
+
+      case "offset_face_3d": {
+        const a = args as {
+          target?: string;
+          face?: "top" | "bottom" | "sides";
+          offset_mm?: number;
+        };
+        const offsetMm = Number(a.offset_mm ?? 25);
+        const faceKind = a.face ?? "top";
+        const targetIds = a.target
+          ? resolveTargetEntityIds(a.target, state.partModel, state.entities)
+          : state.entities
+              .filter(
+                (e) =>
+                  !e.isConstruction &&
+                  (e.type === "circle" ||
+                    e.type === "ellipse" ||
+                    (e.type === "polyline" && e.closed)),
+              )
+              .map((e) => e.id);
+        const targetSet = new Set(targetIds);
+        state.entities = state.entities.map((e) => {
+          if (targetSet.has(e.id)) {
+            changed.push(e.id);
+            const cur = getEntityDirect3DParams(e, state.thickness);
+            if (faceKind === "bottom") {
+              return setEntityDirect3DParams(e, { offsetFaceBottomMm: cur.offsetFaceBottomMm + offsetMm });
+            }
+            if (faceKind === "sides") {
+              return setEntityDirect3DParams(e, { offsetFaceSidesMm: cur.offsetFaceSidesMm + offsetMm });
+            }
+            return setEntityDirect3DParams(e, { offsetFaceTopMm: cur.offsetFaceTopMm + offsetMm });
+          }
+          return e;
+        });
+        refreshSandboxPartModel(state);
+        return { ok: true, tool: name, created, changed, removed, warnings, errors, data: { faceKind, offsetMm } };
+      }
+
+      case "miter_cut_face_3d": {
+        const a = args as {
+          target?: string;
+          end?: "top" | "bottom";
+          angle_deg?: number;
+        };
+        const angleDeg = Math.max(-75, Math.min(75, Number(a.angle_deg ?? 45)));
+        const endKind = a.end ?? "top";
+        const targetIds = a.target
+          ? resolveTargetEntityIds(a.target, state.partModel, state.entities)
+          : state.entities
+              .filter(
+                (e) =>
+                  !e.isConstruction &&
+                  (e.type === "circle" ||
+                    e.type === "ellipse" ||
+                    (e.type === "polyline" && e.closed)),
+              )
+              .map((e) => e.id);
+        const targetSet = new Set(targetIds);
+        state.entities = state.entities.map((e) => {
+          if (targetSet.has(e.id)) {
+            changed.push(e.id);
+            return setEntityDirect3DParams(
+              e,
+              endKind === "bottom"
+                ? { miterCutBottomDeg: angleDeg }
+                : { miterCutTopDeg: angleDeg },
+            );
+          }
+          return e;
+        });
+        refreshSandboxPartModel(state);
+        return { ok: true, tool: name, created, changed, removed, warnings, errors, data: { endKind, angleDeg } };
+      }
+
+      case "transform_copy_body_3d": {
+        const a = args as {
+          target?: string;
+          dx_mm?: number;
+          dy_mm?: number;
+          dz_mm?: number;
+          rotate_z_deg?: number;
+          copy?: boolean;
+        };
+        const targetIds = a.target
+          ? resolveTargetEntityIds(a.target, state.partModel, state.entities)
+          : state.entities
+              .filter(
+                (e) =>
+                  !e.isConstruction &&
+                  (e.type === "circle" ||
+                    e.type === "ellipse" ||
+                    (e.type === "polyline" && e.closed)),
+              )
+              .map((e) => e.id);
+        const prevCount = state.entities.length;
+        const res = applyDirectTransform3DToEntities(
+          state.entities,
+          targetIds,
+          {
+            dx: Number(a.dx_mm ?? 0),
+            dy: Number(a.dy_mm ?? 0),
+            dz: Number(a.dz_mm ?? 0),
+            rzDeg: Number(a.rotate_z_deg ?? 0),
+          },
+          Boolean(a.copy),
+        );
+        state.entities = res.updatedEntities;
+        if (a.copy && state.entities.length > prevCount) {
+          created.push(...res.activeIds);
+        } else {
+          changed.push(...targetIds);
+        }
+        refreshSandboxPartModel(state);
         return { ok: true, tool: name, created, changed, removed, warnings, errors };
       }
 

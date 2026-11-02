@@ -350,6 +350,116 @@ export function compilePromptToAgentDslV2Plan(
     };
   }
 
+  // 5c. Operações de Modelagem Direta 3D (Extrude, Shell/Metalon, Fillet/Chamfer 3D, Offset Face, Corte 45° Meia-Esquadria)
+  const hasDirect3DCmd =
+    /\b(extrud[aei]\w*|extrus[aã]o\s+3d|metalon|tubo\s+oco|shell\s+3d|casca\s+3d|meia[-\s]?esquadria|m[aã]o[-\s]?francesa|offset\s+face|esticar\s+face)\b/i.test(
+      q,
+    );
+  if (hasDirect3DCmd) {
+    const dimPairMatch = normalized.match(
+      /(\d+(?:[.,]\d+)?)\s*(?:mm|cm|pol)?\s*(?:por|x|×)\s*(\d+(?:[.,]\d+)?)/i,
+    );
+    const summary3D: string[] = [];
+
+    if (dimPairMatch && !existingPlate) {
+      const w3d = parseFloat(dimPairMatch[1]!.replace(",", ".")) * unitMultiplier;
+      const h3d = parseFloat(dimPairMatch[2]!.replace(",", ".")) * unitMultiplier;
+      toolCalls.push({
+        id: "call_3d_base",
+        name: "create_rectangle",
+        args: { id: "profile_3d_1", width: w3d, height: h3d, center: [0, 0] },
+      });
+      summary3D.push(`perfil base ${w3d} × ${h3d} mm`);
+    }
+
+    const extrudeMatch = normalized.match(
+      /\b(?:extrud\w*|extrus[aã]o(?:\s+3d)?|altura(?:\s+3d)?|comprimento)\s*(?:de|para|=)?\s*(\d+(?:[.,]\d+)?)\s*(?:mm)?/i,
+    );
+    if (extrudeMatch?.[1]) {
+      const hMm = parseFloat(extrudeMatch[1].replace(",", "."));
+      const boolMode = /\bsubtra/i.test(q)
+        ? "subtract"
+        : /\binterse/i.test(q)
+          ? "intersect"
+          : /\buni[aã]o|union\b/i.test(q)
+            ? "union"
+            : "new_body";
+      toolCalls.push({
+        id: "call_extrude_3d",
+        name: "extrude_3d",
+        args: { height_mm: hMm, boolean_mode: boolMode },
+      });
+      summary3D.push(`extrusão 3D = ${hMm} mm (${boolMode})`);
+    }
+
+    const fillet3DMatch = normalized.match(
+      /\b(?:fillet\s*3d|arredond\w*\s+arestas?|quinas?\s+r|raio\s+nas?\s+quinas?)\s*(?:de|para|r|=)?\s*(\d+(?:[.,]\d+)?)/i,
+    );
+    if (fillet3DMatch?.[1]) {
+      const r3d = parseFloat(fillet3DMatch[1].replace(",", "."));
+      toolCalls.push({
+        id: "call_fillet_3d",
+        name: "fillet_edges_3d",
+        args: { radius_mm: r3d },
+      });
+      summary3D.push(`Fillet 3D R${r3d} mm`);
+    }
+
+    const shellMatch = normalized.match(
+      /\b(?:shell|casca(?:\s+oca)?|parede|espessura(?:\s+de\s+parede)?)\s*(?:de|com|espessura|=)?\s*(\d+(?:[.,]\d+)?)\s*(?:mm)?/i,
+    );
+    if (shellMatch?.[1] || /\b(metalon|tubo\s+oco|casca\s+oca)\b/i.test(q)) {
+      const wallMm = shellMatch?.[1] ? parseFloat(shellMatch[1].replace(",", ".")) : 6;
+      const openCaps = /\bcaixa\s+aberta\b/i.test(q) ? "top" : "both";
+      toolCalls.push({
+        id: "call_shell_3d",
+        name: "shell_body_3d",
+        args: { thickness_mm: wallMm, open_caps: openCaps },
+      });
+      summary3D.push(`Shell Metalon parede ${wallMm} mm`);
+    }
+
+    const miterMatch = normalized.match(
+      /\b(?:meia[-\s]?esquadria|m[aã]o[-\s]?francesa|corte\s+em?\s+grau|inclinar\s+face)\s*(?:de|a|=)?\s*(-?\d+(?:[.,]\d+)?)\s*(?:°|graus?)?/i,
+    );
+    if (miterMatch?.[1] || /\b(meia[-\s]?esquadria|m[aã]o[-\s]?francesa)\b/i.test(q)) {
+      const angDeg = miterMatch?.[1] ? parseFloat(miterMatch[1].replace(",", ".")) : 45;
+      const endSide = /\bbase|inferior\b/i.test(q) ? "bottom" : "top";
+      toolCalls.push({
+        id: "call_miter_3d",
+        name: "miter_cut_face_3d",
+        args: { end: endSide, angle_deg: angDeg },
+      });
+      summary3D.push(`corte meia-esquadria ${angDeg}° (${endSide})`);
+    }
+
+    const offsetFaceMatch = normalized.match(
+      /\b(?:offset\s+face|esticar\s+face)\s*(?:de|para|=)?\s*([+-]?\d+(?:[.,]\d+)?)\s*(?:mm)?/i,
+    );
+    if (offsetFaceMatch?.[1]) {
+      const offMm = parseFloat(offsetFaceMatch[1].replace(",", "."));
+      const faceTarget = /\blateral|laterais\b/i.test(q)
+        ? "sides"
+        : /\bbase|inferior\b/i.test(q)
+          ? "bottom"
+          : "top";
+      toolCalls.push({
+        id: "call_offset_face_3d",
+        name: "offset_face_3d",
+        args: { face: faceTarget, offset_mm: offMm },
+      });
+      summary3D.push(`Offset Face (${faceTarget}) ${offMm >= 0 ? "+" : ""}${offMm} mm`);
+    }
+
+    if (toolCalls.length > 0) {
+      return {
+        understandingText: `Entendi (Modelagem Direta 3D): ${summary3D.join(" · ")}.`,
+        assumptions,
+        toolCalls,
+      };
+    }
+  }
+
   // 6. Detecção de Modificação Incremental sobre o PartModel (§9: "aumenta o raio dos cantos pra 30 e passa pra 6 furos", "muda os furos pra Ø14", "dobra a largura")
   const isIncrementalEdit =
     Boolean(existingPlate) &&

@@ -1,359 +1,234 @@
 /**
- * CHAMFER CAD — VIEWPORT 3D UNIFICADO IN-PLACE (MOTOR CAD 3D ACOPLADO AO CANVAS 2D SKETCH)
+ * CALDRA CHAMFER — VIEWPORT 3D SÓLIDO UNIFICADO (IN-PLACE NO MESMO CANVAS 2D/3D)
  *
- * Acopla diretamente o motor real de modelagem sólida B-Rep (`ThreeBRepRenderer` +
- * `CadFeatureTree` + `analyze2DSketchFor3D` / `sync2DSketchToFeatureTree`) dentro do
- * container principal do `2D SKETCH`, sem criar segunda tela nem barras duplicadas:
+ * Renderiza o sólido B-Rep 3D (SÓLIDO / SOMB) com todas as operações de Modelagem Direta 3D:
+ * - Extrude (altura individual por peça + elevação Z + booleanas)
+ * - Fillet / Chamfer 3D em arestas (ex.: R10 mm nas 4 quinas de uma coluna)
+ * - Shell / Casca oca (ex.: Tubo estrutural Metalon com parede de 6 mm)
+ * - Offset Face (esticar comprimento ou expandir faces laterais)
+ * - Rotate Around Axis / Corte em Meia-Esquadria 45°
+ * - Destaque em Ciano Técnico (#00B4D8 / #38BDF8) nas Faces, Arestas e Corpos selecionados.
  *
- * - Fundo 100% transparente (`transparentBackground: true`) e sem `GridHelper` finito
- *   (`showFloorGrid: false`), preservando o Grid Infinito de Tela Cheia do `2D SKETCH`.
- * - Sincronização óptica 1:1 com Pan (`tx, ty`), Zoom (`k`), Ângulos Orbitais (`θ, φ`)
- *   e Pivô Inteligente (`smartOrbitPivot`) do `2D SKETCH`.
- * - Zero-Idle Overhead (`onDemandRender: true` + `setPaused`): 0% de uso de CPU/GPU
- *   quando a câmera e a geometria estão em repouso ou quando em modo plano 2D / Arame.
+ * Sincronizado 1:1 com o estado de câmera 2D/3D (`view: { tx, ty, k }`,
+ * `azimuthDeg`, `elevationDeg` e `pivot2D`).
  */
 
-import React, { useEffect, useRef } from "react";
-import { ThreeBRepRenderer } from "@/lib/cad/renderer/ThreeBRepRenderer";
-import { CadFeatureTree } from "@/lib/cad/features/CadFeatureTree";
-import {
-  analyze2DSketchFor3D,
-  sync2DSketchToFeatureTree,
-} from "@/lib/cad/sketch/sketch3dBridge";
-import type { Entity } from "@/lib/lab2d/core";
+import React, { useEffect, useMemo, useRef } from "react";
+import type { Entity, Vec2 } from "@/lib/lab2d/core";
 import type { EdgeMode } from "@/lib/viz3d/cameraPresets";
-import { registerThemeBridge } from "@/lib/settings/themeTransitionEngine";
-import { cn } from "@/lib/utils";
+import { ThreeBRepRenderer } from "@/lib/cad/renderer/ThreeBRepRenderer";
 import {
-  buildStructuralProfilesTessellatedShape,
-  getEntityStructuralProfile,
-  mergeCadTessellatedShapes,
-} from "@/lib/lab2d/structuralProfile";
-import {
-  buildAllLoftAndElevatedEntitiesTessellation,
-  getEntityElevationZ,
-  getEntityLoft3DSpec,
-  isLoft3DEntity,
-  type Loft3DMesh,
-} from "@/lib/lab2d/cadLoft3DEngine";
+  buildDirectTopology3DScene,
+  type DirectTopology3DScene,
+  type SubElementSelectionState3D,
+} from "@/lib/lab2d/cadDirectModeling3D";
 
 export interface ChamferUnified3DViewportProps {
-  /** Define se a camada de renderização sólida 3D está visível no canvas unificado */
-  active: boolean;
-  /** Entidades 2D canônicas do esboço atual */
+  active?: boolean;
   entities: Entity[];
-  /** Espessura da chapa (mm) controlada por CHAPA na barra inferior / painel direito */
-  thickness: number;
-  /** Estilo de visualização 3D (shaded-edges = SÓLIDO+AR, shaded = SÓLIDO, wireframe = ARAME) */
-  edgeMode: EdgeMode;
-  /** Estado atual de Pan/Zoom do canvas 2D */
-  view2D: { tx: number; ty: number; k: number };
-  /** Dimensões em pixels do viewport do canvas */
-  viewportSize: { w: number; h: number };
-  /** Ângulo horizontal orbital θ (graus) */
+  thickness?: number;
+  sheetThicknessMm?: number;
+  edgeMode?: EdgeMode;
+  renderStyle3D?: EdgeMode;
+  view2D?: { tx: number; ty: number; k: number };
+  view?: { tx: number; ty: number; k: number };
+  viewportSize?: { w: number; h: number };
+  width?: number;
+  height?: number;
   azimuthDeg: number;
-  /** Ângulo vertical orbital φ (graus) */
   elevationDeg: number;
-  /** Centro inteligente da órbita em coordenadas 2D (x, y, z) */
-  pivot2D: { x: number; y: number; z: number };
-  /** Tema visual atual */
+  pivot2D: Vec2;
   isDark: boolean;
-  /** Serialização opcional da árvore paramétrica 3D */
+  isAmoled?: boolean;
   initialTreeJson?: string;
-  onTreeChange?: (json: string) => void;
-  /** Malha de prévia translúcida em tempo real durante a ferramenta LOFT 3D */
-  activeLoftPreviewMesh?: Loft3DMesh | null;
+  onTreeChange?: (json: string | undefined) => void;
+  activeLoftPreviewMesh?: unknown;
+  topologyScene?: DirectTopology3DScene;
+  subSelection3D?: SubElementSelectionState3D;
 }
 
-export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DViewport({
-  active,
+export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> = ({
+  active = true,
   entities,
   thickness,
+  sheetThicknessMm,
   edgeMode,
+  renderStyle3D: renderStyle3DProp,
   view2D,
+  view: viewProp,
   viewportSize,
+  width: widthProp,
+  height: heightProp,
   azimuthDeg,
   elevationDeg,
   pivot2D,
   isDark,
-  initialTreeJson,
-  onTreeChange,
-  activeLoftPreviewMesh,
-}: ChamferUnified3DViewportProps) {
+  topologyScene,
+  subSelection3D,
+}) => {
+  const effectiveThickness = sheetThicknessMm ?? thickness ?? 20;
+  const view = viewProp ?? view2D ?? { tx: 0, ty: 0, k: 1 };
+  const width = widthProp ?? viewportSize?.w ?? 800;
+  const height = heightProp ?? viewportSize?.h ?? 600;
+  const renderStyle3D = renderStyle3DProp ?? edgeMode ?? "shaded-edges";
+
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<ThreeBRepRenderer | null>(null);
-  const treeRef = useRef<CadFeatureTree | null>(null);
-  const initialTreeDeserializedRef = useRef<boolean>(false);
-  const lastFingerprintRef = useRef<string>("");
-  const lastStructuralFpRef = useRef<string>("");
-  const lastStructuralShapeRef = useRef<ReturnType<typeof buildStructuralProfilesTessellatedShape>>(null);
-  const rebuildSeqRef = useRef<number>(0);
 
-  const latestCameraRef = useRef({
-    active,
-    view2D,
-    viewportSize,
-    azimuthDeg,
-    elevationDeg,
-    pivot2D,
-  });
-  latestCameraRef.current = {
-    active,
-    view2D,
-    viewportSize,
-    azimuthDeg,
-    elevationDeg,
-    pivot2D,
-  };
+  const computedScene = useMemo(
+    () => topologyScene ?? buildDirectTopology3DScene(entities, effectiveThickness),
+    [topologyScene, entities, effectiveThickness],
+  );
 
-  // Lazy-init: inicializa o motor WebGL ThreeBRepRenderer e a árvore B-Rep somente quando o modo 3D é ativado pela primeira vez
+  // 1. Inicializa o ThreeBRepRenderer uma única vez com controles internos desativados
+  //    (toda navegação Pan/Zoom/Órbita vem diretamente do canvas unificado de Lab2DEditor)
   useEffect(() => {
-    if (!active) {
-      if (rendererRef.current) {
-        rendererRef.current.setPaused(true);
-      }
+    const container = containerRef.current;
+    if (!container) return;
+
+    const renderer = new ThreeBRepRenderer({
+      container,
+      edgeMode: renderStyle3D,
+      transparentBackground: true,
+      showFloorGrid: false,
+      disableOrbitControls: true,
+      onDemandRender: true,
+    });
+    renderer.setCameraProjection(true);
+    renderer.setTheme(isDark ? "dark" : "light");
+    rendererRef.current = renderer;
+
+    return () => {
+      renderer.dispose();
+      rendererRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 2. Sincroniza o Tema (Dark / Light) e Pausa quando oculto
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    renderer.setPaused(!active);
+    renderer.setTheme(isDark ? "dark" : "light");
+  }, [isDark, active]);
+
+  // 3. Reconstrói e carrega a malha B-Rep 3D sempre que a topologia 3D mudar
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+
+    if (computedScene.bodies.length > 0) {
+      renderer.setShape(computedScene.tessellatedShape, false);
+    } else {
+      renderer.setShape(null, false);
+    }
+  }, [computedScene]);
+
+  // 4. Sincroniza o destaque Ciano Técnico (#00B4D8) das Faces e Arestas selecionadas no ThreeBRepRenderer
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+    if (!subSelection3D) {
+      renderer.clearSelection();
       return;
     }
 
-    if (!treeRef.current) {
-      treeRef.current = new CadFeatureTree();
-    }
+    renderer.clearSelection();
+    let count = 0;
 
-    const el = containerRef.current;
-    if (!el) return;
-
-    if (!rendererRef.current) {
-      const renderer = new ThreeBRepRenderer({
-        container: el,
-        edgeMode,
-        transparentBackground: true,
-        showFloorGrid: false,
-        disableOrbitControls: true,
-        onDemandRender: true,
-      });
-      renderer.setTheme(isDark ? "dark" : "light");
-      rendererRef.current = renderer;
-      // Força reavaliação do fingerprint na primeira ativação
-      lastFingerprintRef.current = "";
-    }
-
-    const renderer = rendererRef.current;
-    renderer.setPaused(false);
-    renderer.syncWith2DViewport({
-      view2D,
-      viewportWidth: viewportSize.w,
-      viewportHeight: viewportSize.h,
-      azimuthDeg,
-      elevationDeg,
-      pivot2D,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
-
-  // Descarte seguro do contexto WebGL ao desmontar o componente
-  useEffect(() => {
-    return () => {
-      if (rendererRef.current) {
-        rendererRef.current.dispose();
-        rendererRef.current = null;
-      }
-    };
-  }, []);
-
-  // Atualiza tema visual (Dark / Light) e registra ponte síncrona para View Transitions
-  useEffect(() => {
-    const renderer = rendererRef.current;
-    if (!renderer) return;
-    renderer.setTheme(isDark ? "dark" : "light");
-  }, [isDark]);
-
-  useEffect(() => {
-    return registerThemeBridge("chamfer-3d-unified", {
-      applyTheme: (theme) => {
-        rendererRef.current?.setTheme(theme === "light" ? "light" : "dark");
-      },
-      renderNow: () => {
-        rendererRef.current?.renderImmediate();
-      },
-    });
-  }, []);
-
-  // Atualiza modo de estilo 3D (SÓLIDO+AR, SOMB, ARAME)
-  useEffect(() => {
-    const renderer = rendererRef.current;
-    if (!renderer) return;
-    renderer.setEdgeMode(edgeMode);
-  }, [edgeMode]);
-
-  // Reavalia a geometria B-Rep 3D SOMENTE quando active === true e entities ou thickness mudam
-  useEffect(() => {
-    if (!active) return;
-    if (!treeRef.current) {
-      treeRef.current = new CadFeatureTree();
-    }
-    const renderer = rendererRef.current;
-    const tree = treeRef.current;
-    if (!renderer || !tree) return;
-
-    if (!initialTreeDeserializedRef.current && initialTreeJson) {
-      initialTreeDeserializedRef.current = true;
-      try {
-        tree.deserializeTree(initialTreeJson);
-      } catch {
-        // Ignora falha de desserialização opcional
-      }
-    }
-
-    const safeThickness = Number.isFinite(thickness) && thickness > 0 ? thickness : 5;
-    const structuralEntities: Entity[] = [];
-    const sheetEntities: Entity[] = [];
-    const structuralFpParts: string[] = [];
-    const loftFpParts: string[] = [];
-
-    for (const ent of entities) {
-      const sp = getEntityStructuralProfile(ent);
-      if (sp) {
-        structuralEntities.push(ent);
-        const posAnchor =
-          ent.type === "line"
-            ? `${ent.x1.toFixed(2)},${ent.y1.toFixed(2)},${ent.x2.toFixed(2)},${ent.y2.toFixed(2)}`
-            : ent.type === "polyline" && ent.pts.length > 0
-              ? `${ent.pts[0]!.x.toFixed(2)},${ent.pts[0]!.y.toFixed(2)}`
-              : "0,0";
-        structuralFpParts.push(
-          `${ent.id}:${sp.kind}:${sp.widthB}:${sp.heightH}:${sp.wallThicknessE}:${sp.lengthL}:${sp.axisAngleRad.toFixed(4)}@${posAnchor}`,
+    for (const fId of subSelection3D.faceIds) {
+      if (count >= 2) break;
+      const f = computedScene.facesById.get(fId);
+      if (f) {
+        renderer.selectEntity(
+          {
+            id: f.faceId,
+            type: "face",
+            index: f.meshFaceIndex,
+            point: { x: f.centroid.x, y: -f.centroid.y, z: f.centroid.z },
+            normal: { x: f.normal.x, y: -f.normal.y, z: f.normal.z },
+          },
+          count > 0,
         );
-      } else if (isLoft3DEntity(ent)) {
-        const spec = getEntityLoft3DSpec(ent);
-        if (spec) {
-          loftFpParts.push(
-            `LOFT:${ent.id}:${spec.surfaceMode}:${spec.bodyMode}:${spec.wallThicknessMm}:${spec.sectionEntities
-              .map((s) => `${s.id}@Z${getEntityElevationZ(s).toFixed(2)}`)
-              .join(",")}`,
-          );
-        }
-      } else {
-        const elevZ = getEntityElevationZ(ent);
-        if (Math.abs(elevZ) > 0.01) {
-          loftFpParts.push(`ELEV:${ent.id}:${elevZ.toFixed(2)}`);
-        } else {
-          sheetEntities.push(ent);
-        }
+        count++;
       }
     }
 
-    if (activeLoftPreviewMesh) {
-      loftFpParts.push(
-        `PREVIEW:${activeLoftPreviewMesh.surfaceMode}:${activeLoftPreviewMesh.bodyMode}:${activeLoftPreviewMesh.sections
-          .map((s) => `${s.entityId}@Z${s.elevationZ.toFixed(2)}`)
-          .join(",")}`,
-      );
-    }
-
-    const structuralFp = structuralFpParts.join(";");
-    const loftFp = loftFpParts.join(";");
-    const analysis = analyze2DSketchFor3D(sheetEntities, safeThickness);
-    const combinedFingerprint = `${analysis.fingerprint}||SP:[${structuralFp}]||LOFT:[${loftFp}]`;
-
-    if (combinedFingerprint !== lastFingerprintRef.current) {
-      lastFingerprintRef.current = combinedFingerprint;
-      const seq = ++rebuildSeqRef.current;
-
-      if (structuralFp !== lastStructuralFpRef.current) {
-        lastStructuralFpRef.current = structuralFp;
-        lastStructuralShapeRef.current = buildStructuralProfilesTessellatedShape(structuralEntities);
-      }
-      const loftAndElevShape = buildAllLoftAndElevatedEntitiesTessellation(
-        entities,
-        activeLoftPreviewMesh ?? null,
-      );
-      const custom3DShape = mergeCadTessellatedShapes(
-        lastStructuralShapeRef.current,
-        loftAndElevShape,
-      );
-
-      const extrudedIdSet = new Set(analysis.sourceEntityIds);
-      const visibleWireframes =
-        analysis.status === "VALID_SOLID"
-          ? analysis.wireframes.filter((wf) => wf.isConstruction || !extrudedIdSet.has(wf.id))
-          : analysis.wireframes;
-      renderer.setSketchWireframes(visibleWireframes, visibleWireframes.length > 0);
-
-      const syncRes = sync2DSketchToFeatureTree(tree, analysis);
-      if ((analysis.status === "VALID_SOLID" && syncRes.hasSolidFeatures) || syncRes.hasSolidFeatures) {
-        void tree.rebuild().then((res) => {
-          if (seq !== rebuildSeqRef.current) return;
-          if (!rendererRef.current) return;
-          const mergedShape = mergeCadTessellatedShapes(res.tessellation ?? null, custom3DShape);
-          rendererRef.current.setShape(mergedShape, false);
-          if (onTreeChange) {
-            try {
-              onTreeChange(tree.serializeTree());
-            } catch {
-              // Ignora falha opcional de serialização
-            }
-          }
-          const cam = latestCameraRef.current;
-          if (cam.active) {
-            rendererRef.current.syncWith2DViewport({
-              view2D: cam.view2D,
-              viewportWidth: cam.viewportSize.w,
-              viewportHeight: cam.viewportSize.h,
-              azimuthDeg: cam.azimuthDeg,
-              elevationDeg: cam.elevationDeg,
-              pivot2D: cam.pivot2D,
-            });
-          }
-        });
-      } else {
-        renderer.setShape(custom3DShape, false);
-        const cam = latestCameraRef.current;
-        if (cam.active && custom3DShape) {
-          renderer.syncWith2DViewport({
-            view2D: cam.view2D,
-            viewportWidth: cam.viewportSize.w,
-            viewportHeight: cam.viewportSize.h,
-            azimuthDeg: cam.azimuthDeg,
-            elevationDeg: cam.elevationDeg,
-            pivot2D: cam.pivot2D,
-          });
-        }
+    for (const eId of subSelection3D.edgeIds) {
+      if (count >= 2) break;
+      const e = computedScene.edgesById.get(eId);
+      if (e) {
+        renderer.selectEntity(
+          {
+            id: e.edgeId,
+            type: "edge",
+            index: e.meshEdgeIndex,
+            point: { x: e.midpoint.x, y: -e.midpoint.y, z: e.midpoint.z },
+          },
+          count > 0,
+        );
+        count++;
       }
     }
-  }, [entities, thickness, active, initialTreeJson, onTreeChange, activeLoftPreviewMesh]);
 
-  // Sincroniza câmera em tempo real durante Órbita 3D, Pan e Zoom (somente quando ativo)
+    renderer.requestRender();
+  }, [computedScene, subSelection3D]);
+
+  // 5. Sincroniza o estilo visual 3D (SÓLIDO = shaded-edges, SOMB = shaded, ARAME = wireframe)
   useEffect(() => {
-    if (!active) return;
     const renderer = rendererRef.current;
     if (!renderer) return;
+    renderer.setEdgeMode(renderStyle3D);
+  }, [renderStyle3D]);
+
+  // 6. Sincroniza 1:1 a projeção ortográfica 3D com `view (tx, ty, k)` e `azimuthDeg / elevationDeg`
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer || !active || width <= 0 || height <= 0) return;
+
+    const avgMidZ =
+      computedScene.bodies.length > 0
+        ? computedScene.bodies.reduce(
+            (acc, b) => acc + (b.bbox3D.minZ + b.bbox3D.maxZ) * 0.5,
+            0,
+          ) / computedScene.bodies.length
+        : Math.max(0.5, effectiveThickness) * 0.5;
+
+    const pivotX = Number.isFinite(pivot2D.x) ? pivot2D.x : 0;
+    const pivotY = Number.isFinite(pivot2D.y) ? pivot2D.y : 0;
+
     renderer.syncWith2DViewport({
-      view2D,
-      viewportWidth: viewportSize.w,
-      viewportHeight: viewportSize.h,
+      view2D: view,
+      viewportWidth: width,
+      viewportHeight: height,
       azimuthDeg,
       elevationDeg,
-      pivot2D,
+      pivot2D: { x: pivotX, y: pivotY, z: avgMidZ },
     });
+    renderer.renderImmediate();
   }, [
     active,
-    view2D,
-    viewportSize.w,
-    viewportSize.h,
+    view.tx,
+    view.ty,
+    view.k,
+    width,
+    height,
     azimuthDeg,
     elevationDeg,
-    pivot2D,
+    pivot2D.x,
+    pivot2D.y,
+    effectiveThickness,
+    computedScene,
+    renderStyle3D,
   ]);
 
   return (
     <div
       ref={containerRef}
-      data-testid="chamfer-unified-3d-viewport"
-      aria-hidden={!active}
-      className={cn(
-        "pointer-events-none absolute inset-0 size-full transition-opacity duration-150",
-        active ? "opacity-100" : "opacity-0 invisible",
-      )}
+      data-testid="chamfer-unified-3d-solid-viewport"
+      style={{ display: active ? "block" : "none" }}
+      className="pointer-events-none absolute inset-0 z-[5] overflow-hidden select-none"
     />
   );
-});
+};
