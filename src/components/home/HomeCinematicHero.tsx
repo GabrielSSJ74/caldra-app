@@ -1796,14 +1796,12 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
         {/* Título e Subtítulo completos (sem cortar com ...) */}
         <div className="px-0.5 pb-2">
           <h2
-            key={`pillar-title-${currentPillar.id}`}
             data-testid="home-cinematic-title"
             className="font-display text-[15px] sm:text-[16px] font-bold tracking-tight text-slate-900 dark:text-slate-100 leading-tight"
           >
             {currentPillar.title}
           </h2>
           <p
-            key={`pillar-subtitle-${currentPillar.id}`}
             data-testid="home-cinematic-subtitle"
             className="mt-0.5 text-[11.5px] sm:text-[12px] font-normal leading-snug text-slate-600 dark:text-slate-300"
           >

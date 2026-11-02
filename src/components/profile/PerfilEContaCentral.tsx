@@ -912,7 +912,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                 <div className="caldra-card rounded-xl p-3 flex items-center justify-between transition-all">
                   <div className="flex items-center gap-2.5">
                     <div className="caldra-bubble-base caldra-bubble-center size-9 shrink-0">
-                      <Compass className="size-4.5" />
+                      <Compass className="relative z-10 size-4.5 shrink-0" style={{ transform: "translateZ(0)" }} />
                     </div>
                     <div>
                       <span className="font-display text-xs font-bold text-foreground block leading-tight">
@@ -925,13 +925,13 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
                     <div className="caldra-bubble-base caldra-bubble-red size-6.5 text-[9px] font-bold">
-                      C
+                      <span className="relative z-10 leading-none select-none" style={{ transform: "translateZ(0)" }}>C</span>
                     </div>
                     <div className="caldra-bubble-base caldra-bubble-sky size-6.5 text-[9px] font-bold">
-                      2D
+                      <span className="relative z-10 leading-none select-none" style={{ transform: "translateZ(0)" }}>2D</span>
                     </div>
                     <div className="caldra-bubble-base caldra-bubble-center size-6.5 text-[9px] font-bold">
-                      ✦
+                      <span className="relative z-10 leading-none select-none" style={{ transform: "translateZ(0)" }}>✦</span>
                     </div>
                   </div>
                 </div>

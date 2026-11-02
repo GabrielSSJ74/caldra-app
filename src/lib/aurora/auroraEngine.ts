@@ -113,11 +113,17 @@ void main() {
   col = mix(col, warmCol, warm * warmWeight * a);
   col = mix(col, coreCol, core * coreWeight * a);
 
-  // Vinheta suave adaptada
-  float vigDark = 1.0 - 0.25 * smoothstep(0.55, 1.25, rad);
+  // Vinheta suave adaptada com decaimento senoidal contínuo
+  float vigDark = 1.0 - 0.14 * (0.5 - 0.5 * cos(clamp((rad - 0.45) / 0.85, 0.0, 1.0) * 3.14159265));
   vec3 darkResult = col * vigDark;
-  vec3 lightResult = mix(col, u_baseB, 0.16 * smoothstep(0.55, 1.25, rad));
+  vec3 lightResult = mix(col, u_baseB, 0.12 * smoothstep(0.45, 1.25, rad));
   col = mix(lightResult, darkResult, u_isDark);
+
+  // Dithering triangular sub-pixel (12-bit Liquid Silk look — zero color banding)
+  float n1 = hash(gl_FragCoord.xy + fract(t * 0.13));
+  float n2 = hash(gl_FragCoord.xy * 1.73 + fract(t * 0.29));
+  float triDither = (n1 + n2 - 1.0) * (0.85 / 255.0);
+  col = clamp(col + vec3(triDither), 0.0, 1.0);
 
   gl_FragColor = vec4(col, 1.0);
 }
@@ -138,39 +144,39 @@ const HEX = (h: string): [number, number, number] => [
 ];
 
 const PALETTE_DARK: Record<string, [number, number, number]> = {
-  u_baseA: HEX("#18181b"),
-  u_baseB: HEX("#111114"),
-  u_warm: HEX("#f59e0b"),
-  u_warmDeep: HEX("#b45309"),
-  u_magenta: HEX("#b22222"),
-  u_wine: HEX("#7a103c"),
-  u_fuchsia: HEX("#86198f"),
-  u_indigo: HEX("#312e81"),
-  u_violet: HEX("#4c1d95"),
+  u_baseA: HEX("#0D1420"),
+  u_baseB: HEX("#111927"),
+  u_warm: HEX("#1E3A5F"),
+  u_warmDeep: HEX("#163E52"),
+  u_magenta: HEX("#1E2648"),
+  u_wine: HEX("#163E52"),
+  u_fuchsia: HEX("#1E3A5F"),
+  u_indigo: HEX("#1E2648"),
+  u_violet: HEX("#163E52"),
 };
 
 const PALETTE_LIGHT: Record<string, [number, number, number]> = {
-  u_baseA: HEX("#ffffff"),
-  u_baseB: HEX("#f1f5f9"),
-  u_warm: HEX("#f59e0b"),
-  u_warmDeep: HEX("#fb923c"),
-  u_magenta: HEX("#f43f5e"),
-  u_wine: HEX("#e11d48"),
-  u_fuchsia: HEX("#d946ef"),
-  u_indigo: HEX("#4f46e5"),
-  u_violet: HEX("#7c3aed"),
+  u_baseA: HEX("#F2F6FC"),
+  u_baseB: HEX("#EEF4FB"),
+  u_warm: HEX("#DCE8F9"),
+  u_warmDeep: HEX("#E8E6FA"),
+  u_magenta: HEX("#FFFFFF"),
+  u_wine: HEX("#DCE8F9"),
+  u_fuchsia: HEX("#E8E6FA"),
+  u_indigo: HEX("#DCE8F9"),
+  u_violet: HEX("#FFFFFF"),
 };
 
 const PALETTE_AMOLED: Record<string, [number, number, number]> = {
-  u_baseA: HEX("#000000"),
-  u_baseB: HEX("#000000"),
-  u_warm: HEX("#925405"),
-  u_warmDeep: HEX("#662b03"),
-  u_magenta: HEX("#6b0e36"),
-  u_wine: HEX("#4f0a26"),
-  u_fuchsia: HEX("#531059"),
-  u_indigo: HEX("#1e1c50"),
-  u_violet: HEX("#2e125b"),
+  u_baseA: HEX("#04070D"),
+  u_baseB: HEX("#080D18"),
+  u_warm: HEX("#162B47"),
+  u_warmDeep: HEX("#102E3D"),
+  u_magenta: HEX("#161C36"),
+  u_wine: HEX("#102E3D"),
+  u_fuchsia: HEX("#162B47"),
+  u_indigo: HEX("#161C36"),
+  u_violet: HEX("#102E3D"),
 };
 
 class AuroraEngine {

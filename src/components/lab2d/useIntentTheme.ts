@@ -600,15 +600,15 @@ export function buildChamferThemeColors(
     // 6.3 Tema AMOLED (Preto Puro)
     canvasBg =
       bgStyle === "suave"
-        ? "#030406"
+        ? "#060911"
         : bgStyle === "fluido"
-          ? "#000000"
+          ? "#070B13"
           : "#000000";
     rawWorkAreaFill =
       bgStyle === "suave"
-        ? "#080B10"
+        ? "#0A0F1A"
         : bgStyle === "fluido"
-          ? "#040609"
+          ? "#0D1420"
           : "#05070A";
     workAreaStroke = "#1F2630";
     barBgSolid = "#080A0E";
@@ -632,18 +632,18 @@ export function buildChamferThemeColors(
     statusError = "#EF4444";
     statusInfo = "#3B82F6";
   } else if (isDark) {
-    // 6.1 Paleta Graphite Titanium (Tema Escuro — Padrão)
+    // 6.1 Paleta Graphite Titanium / Liquid Silk & Fluid Aurora (Tema Escuro)
     canvasBg =
       bgStyle === "suave"
-        ? "#0F1218"
+        ? "#0A0F1A"
         : bgStyle === "fluido"
-          ? "#080A0D"
+          ? "#0D1420"
           : "#0B0D11";
     rawWorkAreaFill =
       bgStyle === "suave"
-        ? "#12161D"
+        ? "#0F1624"
         : bgStyle === "fluido"
-          ? "#0C0F14"
+          ? "#111927"
           : "#0E1116";
     workAreaStroke = "#2B3442";
     barBgSolid = "#11141A";
@@ -667,18 +667,18 @@ export function buildChamferThemeColors(
     statusError = "#EF4444";
     statusInfo = "#3B82F6";
   } else {
-    // 6.2 Tema Claro (Papel Técnico Mate)
+    // 6.2 Tema Claro (Alabastro Luminoso #F6F8FC em Fluid Aurora / Pérola #F2F6FC em Fluid)
     canvasBg =
       bgStyle === "suave"
-        ? "#EEF2F6"
+        ? "#EEF3FA"
         : bgStyle === "fluido"
-          ? "#E5EAF0"
+          ? "#E9F0FA"
           : "#EAEEF3";
     rawWorkAreaFill =
       bgStyle === "suave"
-        ? "#F7F9FB"
+        ? "#F6F8FC"
         : bgStyle === "fluido"
-          ? "#EFF2F6"
+          ? "#F2F6FC"
           : "#F3F5F8";
     workAreaStroke = "#B8C2CC";
     barBgSolid = "#F8FAFC";
@@ -713,11 +713,52 @@ export function buildChamferThemeColors(
   const workAreaBadgeBorder = borderStrong;
   const workAreaBadgeText = textPrimary;
 
+  // Curva Senoidal de 10 Paradas (Ease-Out Scrim) para eliminar totalmente color banding e anéis:
+  // 0% (1.00), 15% (0.92), 30% (0.78), 45% (0.58), 60% (0.38), 75% (0.20), 88% (0.07), 95% (0.02), 100% (0.00)
+  const buildSinusoidalRadial = (pos: string, rgb: string, baseAlpha: number, shape = "circle") => {
+    const s = [
+      [0, 1.0],
+      [15, 0.92],
+      [30, 0.78],
+      [45, 0.58],
+      [60, 0.38],
+      [75, 0.2],
+      [88, 0.07],
+      [95, 0.02],
+      [100, 0.0],
+    ]
+      .map(([pct, factor]) => `rgba(${rgb}, ${(baseAlpha * factor!).toFixed(4)}) ${pct}%`)
+      .join(", ");
+    return `radial-gradient(${shape} at ${pos}, ${s})`;
+  };
+
   const canvasOverlayGradient =
     bgStyle === "fluido"
-      ? `radial-gradient(circle at 50% 42%, rgba(${accentRgb}, ${isDark ? "0.045" : "0.035"}) 0%, transparent 72%)`
+      ? isDark
+        ? [
+            buildSinusoidalRadial("22% 24%", "30, 58, 95", 0.42),
+            buildSinusoidalRadial("78% 36%", "30, 38, 72", 0.38),
+            buildSinusoidalRadial("46% 80%", "22, 62, 82", 0.36),
+          ].join(", ")
+        : [
+            buildSinusoidalRadial("22% 24%", "220, 232, 249", 0.68),
+            buildSinusoidalRadial("78% 36%", "232, 230, 250", 0.62),
+            buildSinusoidalRadial("48% 78%", "255, 255, 255", 0.75),
+          ].join(", ")
       : bgStyle === "suave"
-        ? `radial-gradient(circle at 50% 50%, ${isDark ? "rgba(255,255,255,0.02)" : "rgba(255,255,255,0.38)"} 0%, transparent 75%)`
+        ? isDark
+          ? [
+              buildSinusoidalRadial("18% 18%", "245, 158, 11", 0.16, "ellipse 75% 55%"),
+              buildSinusoidalRadial("52% 16%", "225, 29, 72", 0.13, "ellipse 70% 52%"),
+              buildSinusoidalRadial("82% 48%", "14, 165, 233", 0.16, "ellipse 75% 58%"),
+              buildSinusoidalRadial("44% 84%", "99, 102, 241", 0.12, "ellipse 80% 56%"),
+            ].join(", ")
+          : [
+              buildSinusoidalRadial("18% 18%", "251, 191, 36", 0.18, "ellipse 75% 55%"),
+              buildSinusoidalRadial("52% 16%", "244, 114, 182", 0.14, "ellipse 70% 52%"),
+              buildSinusoidalRadial("82% 48%", "56, 189, 248", 0.18, "ellipse 75% 58%"),
+              buildSinusoidalRadial("44% 84%", "167, 139, 250", 0.14, "ellipse 80% 56%"),
+            ].join(", ")
         : "none";
 
   // Superfícies com opacidade real controlada por cardOpacity e bubbleOpacity

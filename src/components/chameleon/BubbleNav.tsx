@@ -18,6 +18,7 @@ import {
   CALDRA_ACCENT_COLOR_KEY,
   hexToRgbChannels,
   resolveAccentColorTokens,
+  resolveBubbleTintTokens,
 } from "@/lib/settings/appearancePreferences";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
@@ -119,11 +120,11 @@ export function BubbleNav() {
   const fallbackActiveIndex = activeIndex >= 0 ? activeIndex : 2; // Default Início (centro)
   const resolvedActiveIndex = optimisticIndex ?? fallbackActiveIndex;
 
-  // Trava anti-spam e deduplicação de cliques/toques repetidos
+  // Trava anti-spam e deduplicação de cliques/toques repetidos (mesma aba dentro de 80ms)
   const lastNavTimeRef = useRef<number>(0);
   const lastNavIndexRef = useRef<number>(-1);
 
-  // Resolve dinamicamente tokens visuais: Cor de Destaque, Opacidade dos Cartões e Opacidade das Bolhas
+  // Resolve dinamicamente tokens visuais: Cor de Destaque, Opacidade dos Cartões e Opacidade Translúcida das Bolhas (0.10 a 0.38)
   const { navContainerStyle, activePillStyle, activeIconColor } = useMemo(() => {
     const prefersDark =
       mounted &&
@@ -153,8 +154,7 @@ export function BubbleNav() {
       : accentRgb;
 
     const clampedCardAlpha = Math.min(1, Math.max(0.2, cardOpacity / 100));
-    const clampedBubbleAlpha = Math.min(1, Math.max(0.2, bubbleOpacity / 100));
-    const borderBubbleAlpha = Math.min(1, Number((clampedBubbleAlpha * 1.25 + 0.14).toFixed(2)));
+    const bubbleTokens = resolveBubbleTintTokens(bubbleOpacity);
 
     const navBgRgb = isAmoled ? "5, 8, 12" : isDark ? "14, 20, 28" : "255, 255, 255";
 
@@ -163,14 +163,14 @@ export function BubbleNav() {
         "--accent-color": accentColor,
         "--accent-rgb": rgbChannels,
         "--card-opacity": clampedCardAlpha.toFixed(2),
-        "--bubble-opacity": clampedBubbleAlpha.toFixed(2),
-        backgroundColor: `rgba(${navBgRgb}, ${clampedCardAlpha.toFixed(2)})`,
-        backdropFilter: "blur(16px)",
-        WebkitBackdropFilter: "blur(16px)",
+        "--bubble-opacity": bubbleTokens.rawRatio.toFixed(2),
+        "--bubble-tint-alpha": bubbleTokens.fillAlpha.toFixed(3),
+        "--bubble-border-alpha": bubbleTokens.borderAlpha.toFixed(3),
+        backgroundColor: `rgba(${navBgRgb}, ${Math.max(0.88, clampedCardAlpha).toFixed(2)})`,
       } as CSSProperties,
       activePillStyle: {
-        backgroundColor: `rgba(${rgbChannels}, ${clampedBubbleAlpha.toFixed(2)})`,
-        borderColor: `rgba(${rgbChannels}, ${borderBubbleAlpha})`,
+        backgroundColor: `rgba(${rgbChannels}, ${bubbleTokens.fillAlpha.toFixed(3)})`,
+        borderColor: `rgba(${rgbChannels}, ${bubbleTokens.borderAlpha.toFixed(3)})`,
       } as CSSProperties,
       activeIconColor: accentColor,
     };
@@ -190,26 +190,26 @@ export function BubbleNav() {
       const dest = DESTINATIONS[index];
       if (!dest) return;
 
-      // Previne disparos repetidos na mesma aba
-      if (dest.matches(pathname)) {
+      const now = performance.now();
+      if (now - lastNavTimeRef.current < 80 && lastNavIndexRef.current === index) return;
+      lastNavTimeRef.current = now;
+      lastNavIndexRef.current = index;
+
+      // Se já estiver na mesma rota exata, apenas limpa estado otimista
+      if (pathname === dest.to) {
         setOptimisticIndex(null);
         return;
       }
 
-      const now = performance.now();
-      if (now - lastNavTimeRef.current < 50 && lastNavIndexRef.current === index) return;
-      lastNavTimeRef.current = now;
-      lastNavIndexRef.current = index;
-
-      // Resposta visual e tátil imediata no MESMO sub-frame de entrada (<2ms, 500Hz)
+      // Resposta visual e tátil imediata em 0ms (sem startViewTransition nem startTransition)
       setOptimisticIndex(index);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("caldra:tab-switch", { detail: dest.to }));
+      }
       triggerHaptic("selection");
       AudioManager.play("ui_nav");
 
-      // Navegação sem engasgos com transição concorrente React
-      startTransition(() => {
-        void navigate({ to: dest.to });
-      });
+      void navigate({ to: dest.to });
     },
     [navigate, pathname],
   );
@@ -246,7 +246,7 @@ export function BubbleNav() {
         style={navContainerStyle}
       >
         <div className="relative flex h-full w-full items-center justify-between">
-          {/* Cápsula Deslizante de Precisão (Sliding Pill) vinculada à Cor de Destaque + Opacidade das Bolhas */}
+          {/* Cápsula Deslizante de Precisão (Sliding Pill) vinculada à Cor de Destaque + Opacidade Translúcida das Bolhas */}
           <div
             aria-hidden="true"
             className="pointer-events-none absolute top-0 left-0 z-0 flex h-full w-1/5 items-center justify-center"
@@ -259,7 +259,7 @@ export function BubbleNav() {
             <div className="caldra-nav-sliding-pill w-12 h-10 rounded-full" style={activePillStyle} />
           </div>
 
-          {/* 5 Botões Minimalistas Apenas Ícones (acessibilidade preservada com aria-label e title) */}
+          {/* 5 Botões Minimalistas Apenas Ícones (Área de toque generosa 52x44px e 0ms delay) */}
           {DESTINATIONS.map((dest, destIdx) => {
             const isCurrent = destIdx === resolvedActiveIndex;
             const Icon = dest.icon;
@@ -274,31 +274,33 @@ export function BubbleNav() {
                 data-active={isCurrent ? "true" : "false"}
                 onPointerDown={(e) => {
                   if (e.pointerType === "mouse" && e.button !== 0) return;
-                  e.preventDefault();
                   navigateToDestination(destIdx);
                 }}
                 onPointerEnter={() => handlePointerEnter(destIdx)}
-                onClick={(e) => {
-                  // Fallback para acessibilidade de teclado
-                  if (e.detail === 0) {
-                    navigateToDestination(destIdx);
-                  }
+                onClick={() => {
+                  navigateToDestination(destIdx);
                 }}
                 style={{
                   touchAction: "manipulation",
                   userSelect: "none",
                   WebkitUserSelect: "none",
                   WebkitTapHighlightColor: "transparent",
-                  willChange: "transform, opacity",
+                  transform: "translateZ(0)",
                   color: isCurrent ? activeIconColor : undefined,
                 }}
-                className="caldra-nav-item-btn focus-visible:ring-1 focus-visible:ring-[var(--accent-color)]/50 focus-visible:ring-inset"
+                className="caldra-nav-item-btn min-w-[52px] h-[44px] flex items-center justify-center cursor-pointer select-none focus-visible:ring-1 focus-visible:ring-[var(--accent-color)]/50 focus-visible:ring-inset"
               >
-                <span className="flex w-12 h-10 items-center justify-center rounded-full">
+                <span
+                  className="relative z-10 flex w-12 h-10 items-center justify-center rounded-full pointer-events-none"
+                  style={{ transform: "translateZ(0)" }}
+                >
                   <Icon
-                    className="caldra-nav-item-icon size-[22px]"
-                    style={isCurrent ? { color: activeIconColor } : undefined}
-                    strokeWidth={isCurrent ? 2.25 : 1.9}
+                    className="caldra-nav-item-icon size-[22px] shrink-0"
+                    style={{
+                      transform: "translateZ(0)",
+                      color: isCurrent ? activeIconColor : undefined,
+                    }}
+                    strokeWidth={2}
                   />
                 </span>
               </button>

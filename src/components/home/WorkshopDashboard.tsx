@@ -30,6 +30,7 @@ import { AudioManager } from "@/lib/audio/AudioManager";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { NavigationAreaHeader } from "@/components/ui/NavigationAreaHeader";
 import { NavigationAreaContainer } from "@/components/layout/NavigationAreaContainer";
+import { useSettings } from "@/lib/settings/SettingsProvider";
 import { cn } from "@/lib/utils";
 
 /* =========================================================================
@@ -369,6 +370,7 @@ function ScrollProgressTrack({ scrollContainerRef }: { scrollContainerRef: React
 export function WorkshopDashboard() {
   const navigate = useNavigate();
   const projects = useProjects();
+  const { auroraStyle, setAuroraStyle } = useSettings();
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
 
@@ -424,7 +426,7 @@ export function WorkshopDashboard() {
         {/* =========================================================================
             1. CABEÇALHO COMPACTO EM LINHA ÚNICA (FIM DO DESPERDÍCIO VERTICAL + ACESSO PRO)
             - Na esquerda: "● SUA OFICINA DIGITAL" + badge "CALDRA" acima de "Início"
-            - Na direita (mesma linha de "Início"): chip [ ✦ PRO ] + botões circulares 🔍 e 👤
+            - Na direita (mesma linha de "Início"): chip [ ✦ PRO ] + botões circulares ✦, 🔍 e 👤
             ========================================================================= */}
         <NavigationAreaHeader
           className="!flex-row !items-end !justify-between !gap-2 !pb-2.5"
@@ -455,6 +457,26 @@ export function WorkshopDashboard() {
 
               <button
                 type="button"
+                aria-label={auroraStyle !== "padrao" ? "Desativar Fluid AURORA" : "Ativar Fluid AURORA"}
+                aria-pressed={auroraStyle !== "padrao"}
+                title={auroraStyle !== "padrao" ? "Fluid AURORA Ativo (toque para alternar)" : "Ativar Fluid AURORA"}
+                onClick={() => {
+                  triggerHaptic("selection");
+                  AudioManager.play("ui_pop");
+                  setAuroraStyle(auroraStyle !== "padrao" ? "padrao" : "suave");
+                }}
+                className={cn(
+                  "caldra-bubble-base flex size-8.5 items-center justify-center active:scale-95 transition-all duration-200 cursor-pointer touch-manipulation",
+                  auroraStyle !== "padrao"
+                    ? "caldra-bubble-center glow-ring"
+                    : "caldra-bubble-neutral hover:border-[var(--accent-color)] hover:text-[var(--accent-color)]",
+                )}
+              >
+                <Sparkles className="size-4 shrink-0" strokeWidth={1.9} style={{ transform: "translateZ(0)" }} />
+              </button>
+
+              <button
+                type="button"
                 onClick={() => {
                   triggerHaptic("tap");
                   AudioManager.play("ui_nav");
@@ -462,9 +484,9 @@ export function WorkshopDashboard() {
                 }}
                 aria-label="Buscar ferramentas"
                 title="Buscar ferramentas"
-                className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-[var(--accent-color)] hover:text-[var(--accent-color)] active:scale-95 transition-all cursor-pointer"
+                className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-[var(--accent-color)] hover:text-[var(--accent-color)] active:scale-95 transition-all cursor-pointer touch-manipulation"
               >
-                <Search className="size-4" strokeWidth={1.8} />
+                <Search className="size-4 shrink-0" strokeWidth={1.8} style={{ transform: "translateZ(0)" }} />
               </button>
 
               <Link
@@ -475,9 +497,9 @@ export function WorkshopDashboard() {
                 }}
                 aria-label="Perfil e Conta"
                 title="Perfil e Conta"
-                className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-[var(--accent-color)] hover:text-[var(--accent-color)] active:scale-95 transition-all cursor-pointer"
+                className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-[var(--accent-color)] hover:text-[var(--accent-color)] active:scale-95 transition-all cursor-pointer touch-manipulation"
               >
-                <User className="size-4" strokeWidth={1.8} />
+                <User className="size-4 shrink-0" strokeWidth={1.8} style={{ transform: "translateZ(0)" }} />
               </Link>
             </div>
           }

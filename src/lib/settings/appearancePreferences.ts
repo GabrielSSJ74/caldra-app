@@ -162,6 +162,28 @@ export function resolveAccentColorTokens(
 }
 
 /**
+ * Mapeia o slider `Opacidade das Bolhas e Badges` (20% a 100%) para uma escala
+ * translúcida segura de preenchimento (0.10 a 0.38) e borda (0.22 a 0.62),
+ * impedindo que bolhas e badges fiquem 100% sólidas na mesma cor do ícone/texto.
+ */
+export function resolveBubbleTintTokens(bubbleOpacityPct: number): {
+  rawRatio: number;
+  fillAlpha: number;
+  borderAlpha: number;
+} {
+  const clampedPct =
+    typeof bubbleOpacityPct === "number" && Number.isFinite(bubbleOpacityPct)
+      ? Math.min(100, Math.max(20, bubbleOpacityPct))
+      : 35;
+  const rawRatio = Number((clampedPct / 100).toFixed(2));
+  const normalized = (clampedPct - 20) / 80; // 0.0 em 20% -> 1.0 em 100%
+  const fillAlpha = Number((0.10 + normalized * 0.28).toFixed(3)); // 0.10 -> 0.38
+  const borderAlpha = Number(Math.min(0.62, fillAlpha * 1.35 + 0.12).toFixed(3)); // 0.255 -> 0.62
+  return { rawRatio, fillAlpha, borderAlpha };
+}
+
+
+/**
  * Verifica se o usuário tem privilégio PRO com base no armazenamento.
  */
 export function checkIsProFromStorage(storage?: StorageLike | null): boolean {

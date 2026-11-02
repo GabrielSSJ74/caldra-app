@@ -15,6 +15,7 @@ import {
   persistAppearancePreferences,
   checkIsProFromStorage,
   resolveAccentColorTokens,
+  resolveBubbleTintTokens,
   CALDRA_ACCENT_COLOR_KEY,
   CALDRA_SETTINGS_KEY,
   type ThemeMode,
@@ -201,13 +202,13 @@ function applyToDom(s: Settings) {
       100,
       Math.max(20, typeof s.cardOpacity === "number" ? s.cardOpacity : DEFAULT_CARD_OPACITY),
     ) / 100;
-  const bubbleOp =
-    Math.min(
-      100,
-      Math.max(20, typeof s.bubbleOpacity === "number" ? s.bubbleOpacity : DEFAULT_BUBBLE_OPACITY),
-    ) / 100;
+  const bubbleTokens = resolveBubbleTintTokens(
+    typeof s.bubbleOpacity === "number" ? s.bubbleOpacity : DEFAULT_BUBBLE_OPACITY,
+  );
   root.style.setProperty("--card-opacity", cardOp.toFixed(2));
-  root.style.setProperty("--bubble-opacity", bubbleOp.toFixed(2));
+  root.style.setProperty("--bubble-opacity", bubbleTokens.rawRatio.toFixed(2));
+  root.style.setProperty("--bubble-tint-alpha", bubbleTokens.fillAlpha.toFixed(3));
+  root.style.setProperty("--bubble-border-alpha", bubbleTokens.borderAlpha.toFixed(3));
   root.style.setProperty("--ui-opacity", cardOp.toFixed(2));
   root.setAttribute("data-bg-style", s.auroraStyle);
 }

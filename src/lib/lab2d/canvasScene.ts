@@ -84,7 +84,108 @@ export type SceneOptions = {
   showGrid?: boolean;
   /** Passo principal da grade (mm) */
   gridStep?: number;
+  /** Estilo de fundo ativo no CHAMFER CAD ("padrao" | "suave" | "fluido") */
+  bgStyle?: "padrao" | "suave" | "fluido";
 };
+
+/**
+ * Curva Senoidal de 10 Paradas (Ease-Out Scrim) para gradientes radiais em Canvas 2D High-DPI.
+ * Garante acabamento de seda líquida contínua (12-bit look) sem anéis de interpolação linear.
+ */
+const SINUSOIDAL_10_STOPS: readonly [number, number][] = [
+  [0.0, 1.0],
+  [0.15, 0.92],
+  [0.3, 0.78],
+  [0.45, 0.58],
+  [0.6, 0.38],
+  [0.75, 0.2],
+  [0.88, 0.07],
+  [0.95, 0.02],
+  [1.0, 0.0],
+];
+
+function drawSinusoidalRadialField(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  radius: number,
+  rgb: string,
+  baseAlpha: number,
+  scaleX = 1.0,
+  scaleY = 1.0,
+  rotationRad = 0,
+) {
+  if (radius <= 1 || baseAlpha <= 0) return;
+  ctx.save();
+  ctx.translate(cx, cy);
+  if (rotationRad !== 0) ctx.rotate(rotationRad);
+  if (scaleX !== 1 || scaleY !== 1) ctx.scale(scaleX, scaleY);
+
+  const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
+  for (const [stop, factor] of SINUSOIDAL_10_STOPS) {
+    const alpha = Math.max(0, Math.min(1, baseAlpha * factor));
+    grad.addColorStop(stop, `rgba(${rgb}, ${alpha.toFixed(5)})`);
+  }
+
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(0, 0, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * Renderiza o acabamento de Seda Líquida ("Fluid" / "fluido") ou Ultra-Silk Multi-Layer ("Fluid Aurora" / "suave")
+ * diretamente no contexto Canvas 2D High-DPI com coordenadas em ponto flutuante escaladas por devicePixelRatio.
+ */
+function renderCanvasSilkBackground(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  isLight: boolean,
+  bgStyle?: "padrao" | "suave" | "fluido",
+) {
+  if (bgStyle !== "fluido" && bgStyle !== "suave") return;
+  const maxDim = Math.max(width, height, 320);
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
+  if (bgStyle === "fluido") {
+    // Estilo "Fluid" (Liquid Silk Mesh): 3 campos amplos com decaimento senoidal de 10 paradas
+    const rField = maxDim * 0.95;
+    if (!isLight) {
+      // Tema Escuro: Azul-Titânio (#1E3A5F), Índigo Profundo (#1E2648), Ciano-Ardósia Sutil (#163E52)
+      drawSinusoidalRadialField(ctx, width * 0.18, height * 0.22, rField, "30, 58, 95", 0.34, 1.15, 0.95, -0.18);
+      drawSinusoidalRadialField(ctx, width * 0.82, height * 0.36, rField, "30, 38, 72", 0.32, 1.1, 0.92, 0.22);
+      drawSinusoidalRadialField(ctx, width * 0.46, height * 0.84, rField, "22, 62, 82", 0.30, 1.18, 0.9, -0.12);
+    } else {
+      // Tema Claro: Azul-Gelo (#DCE8F9), Lavanda Técnico Suave (#E8E6FA), Branco-Seda (#FFFFFF)
+      drawSinusoidalRadialField(ctx, width * 0.18, height * 0.22, rField, "220, 232, 249", 0.55, 1.15, 0.95, -0.18);
+      drawSinusoidalRadialField(ctx, width * 0.82, height * 0.36, rField, "232, 230, 250", 0.50, 1.1, 0.92, 0.22);
+      drawSinusoidalRadialField(ctx, width * 0.46, height * 0.84, rField, "255, 255, 255", 0.62, 1.18, 0.9, -0.12);
+    }
+  } else if (bgStyle === "suave") {
+    // Estilo "Fluid Aurora" (Ultra-Silk Multi-Layer): 4 véus elípticos inclinados sobrepostos
+    const rVeil = maxDim * 0.78;
+    if (!isLight) {
+      // Tema Escuro: Âmbar-Dourado (0.16), Coral/Carmesim (0.13), Ciano-Boreal (0.16), Violeta/Esmeralda (0.12)
+      drawSinusoidalRadialField(ctx, width * 0.18, height * 0.18, rVeil, "245, 158, 11", 0.16, 1.32, 0.82, -0.24);
+      drawSinusoidalRadialField(ctx, width * 0.52, height * 0.16, rVeil, "225, 29, 72", 0.13, 1.28, 0.8, 0.21);
+      drawSinusoidalRadialField(ctx, width * 0.84, height * 0.48, rVeil, "14, 165, 233", 0.16, 1.35, 0.84, -0.31);
+      drawSinusoidalRadialField(ctx, width * 0.44, height * 0.86, rVeil, "99, 102, 241", 0.12, 1.38, 0.82, 0.26);
+    } else {
+      // Tema Claro: Pêssego-Âmbar (0.18), Rosa-Quartzo (0.14), Azul-Celeste (0.18), Lilás Suave (0.14)
+      drawSinusoidalRadialField(ctx, width * 0.18, height * 0.18, rVeil, "251, 191, 36", 0.18, 1.32, 0.82, -0.24);
+      drawSinusoidalRadialField(ctx, width * 0.52, height * 0.16, rVeil, "244, 114, 182", 0.14, 1.28, 0.8, 0.21);
+      drawSinusoidalRadialField(ctx, width * 0.84, height * 0.48, rVeil, "56, 189, 248", 0.18, 1.35, 0.84, -0.31);
+      drawSinusoidalRadialField(ctx, width * 0.44, height * 0.86, rVeil, "167, 139, 250", 0.14, 1.38, 0.82, 0.26);
+    }
+  }
+
+  ctx.restore();
+}
 
 /** Ordena por camada técnica ou por profundidade Z (Painter's Algorithm para oclusão 2.5D/3D). */
 function paintOrder(list: Entity[]) {
@@ -229,7 +330,15 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
   const safeDpr = Number.isFinite(dpr) && dpr > 0 ? dpr : 1;
 
   ctx.setTransform(safeDpr, 0, 0, safeDpr, 0, 0);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   ctx.clearRect(0, 0, safeW, safeH);
+
+  // Renderiza os gradientes de fundo de 10 paradas senoidais quando Fluid ou Fluid Aurora estão ativos
+  if (opts.bgStyle === "fluido" || opts.bgStyle === "suave") {
+    renderCanvasSilkBackground(ctx, safeW, safeH, !!opts.isLight, opts.bgStyle);
+  }
+
   ctx.setTransform(safeDpr * safeK, 0, 0, safeDpr * safeK, safeDpr * safeTx, safeDpr * safeTy);
   const orbitProj = opts.orbitProjection;
   const isOrbitTilted = !!orbitProj?.isTilted;

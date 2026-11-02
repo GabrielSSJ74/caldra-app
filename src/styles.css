@@ -322,6 +322,8 @@
   /* ——— Opacidade Dinâmica da Interface ——— */
   --card-opacity: 0.90;
   --bubble-opacity: 0.35;
+  --bubble-tint-alpha: 0.153;
+  --bubble-border-alpha: 0.326;
   --ui-opacity: 0.90;
 
   /* modo claro */
@@ -965,11 +967,26 @@
   --aurora-blur: 130px;
 
   /* FLUID AURORA — DEEP SPACE LIGHT FIELD */
-  --space-opacity-mult: 0.76;
+  --space-opacity-mult: 1;
 }
 
 .aurora-root {
   display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 1;
+  transition: opacity 650ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.aurora-root[data-aurora-visible="true"] {
+  opacity: 1;
+}
+
+.aurora-root[data-aurora-visible="false"] {
+  opacity: 0;
 }
 
 .dark {
@@ -986,7 +1003,7 @@
   --aurora-blur: 120px;
 
   /* FLUID AURORA — DEEP SPACE LIGHT FIELD */
-  --space-opacity-mult: 0.88;
+  --space-opacity-mult: 1;
 }
 
 /* AMOLED: preto puro é a identidade — o espaço mantém contraste abissal */
@@ -994,14 +1011,14 @@
   --aurora-base-a: #000000;
   --aurora-base-b: #000000;
   --aurora-blob-opacity: 0.1;
-  --space-opacity-mult: 0.60;
+  --space-opacity-mult: 0.85;
 }
 
 /* Modo Oficina / alto contraste: luminosidade suave reduzida */
 .oficina .aurora-root,
 .high-contrast .aurora-root {
   --aurora-blob-opacity: 0.16;
-  --space-opacity-mult: 0.55;
+  --space-opacity-mult: 0.65;
 }
 
 /* =========================================================================
@@ -1138,7 +1155,7 @@
   );
 }
 
-/* Massas orgânicas persistentes no DOM — Fusão óptica limpa (screen no escuro/AMOLED) */
+/* Massas orgânicas persistentes no DOM — Transparência rgba() nativa sem mix-blend-mode para evitar conflito com backdrop-filter */
 .organic-mass,
 .deep-space-field {
   position: absolute;
@@ -1149,7 +1166,7 @@
   backface-visibility: hidden;
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
-  mix-blend-mode: screen;
+  mix-blend-mode: normal;
   transition: top 2.6s cubic-bezier(0.16, 1, 0.3, 1),
               left 2.6s cubic-bezier(0.16, 1, 0.3, 1),
               width 2.6s cubic-bezier(0.16, 1, 0.3, 1),
@@ -1228,7 +1245,7 @@
     rgba(12, 20, 50, 0.056) 74%,     /* 14% do núcleo — Profundidade */
     rgba(12, 20, 50, 0) 100%         /* 0% — Cauda de difusão atmosférica */
   );
-  filter: blur(110px);
+  filter: blur(52px);
   animation:
     organic-morph-delta 41s cubic-bezier(0.37, 0, 0.63, 1) -31s infinite,
     chroma-delta 54s linear -31s infinite;
@@ -1288,7 +1305,7 @@
     rgba(244, 63, 94, 0.063) 74%,    /* 14% do núcleo — Rosa */
     rgba(244, 63, 94, 0) 100%        /* 0% — Cauda de difusão atmosférica */
   );
-  filter: blur(80px);
+  filter: blur(45px);
   animation:
     organic-morph-beta 23s cubic-bezier(0.37, 0, 0.63, 1) -11s infinite,
     chroma-beta 42s linear -11s infinite;
@@ -1366,7 +1383,7 @@
     rgba(250, 204, 21, 0.064) 74%,   /* 14% do núcleo — Amarelo */
     rgba(250, 204, 21, 0) 100%       /* 0% — Cauda de difusão atmosférica */
   );
-  filter: blur(95px);
+  filter: blur(50px);
   animation:
     organic-morph-alpha 34s cubic-bezier(0.37, 0, 0.63, 1) -23s infinite,
     chroma-alpha 46s linear -23s infinite;
@@ -1444,7 +1461,7 @@
     rgba(244, 63, 94, 0.064) 74%,    /* 14% do núcleo — Rosa */
     rgba(244, 63, 94, 0) 100%        /* 0% — Cauda de difusão atmosférica */
   );
-  filter: blur(85px);
+  filter: blur(46px);
   animation:
     organic-morph-gama 29s cubic-bezier(0.37, 0, 0.63, 1) -17s infinite,
     chroma-gama 40s linear -17s infinite;
@@ -1522,7 +1539,7 @@
     rgba(29, 78, 216, 0.07) 74%,     /* 14% do núcleo — Azul Real */
     rgba(29, 78, 216, 0) 100%        /* 0% — Cauda de difusão atmosférica */
   );
-  filter: blur(65px);
+  filter: blur(42px);
   animation:
     organic-morph-epsilon 18s cubic-bezier(0.37, 0, 0.63, 1) -5s infinite,
     chroma-epsilon 28s linear -5s infinite;
@@ -1570,8 +1587,6 @@
     rgba(4, 6, 10, 0.42) 78%,
     rgba(3, 4, 8, 0.74) 100%
   );
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
   z-index: 2;
 }
 
@@ -1722,106 +1737,106 @@
 
 @keyframes chroma-alpha {
   0% {
-    filter: hue-rotate(0deg) blur(95px);
+    filter: hue-rotate(0deg) blur(50px);
   }
   18% {
-    filter: hue-rotate(36deg) blur(95px);
+    filter: hue-rotate(36deg) blur(50px);
   }
   38% {
-    filter: hue-rotate(96deg) blur(95px);
+    filter: hue-rotate(96deg) blur(50px);
   }
   56% {
-    filter: hue-rotate(152deg) blur(95px);
+    filter: hue-rotate(152deg) blur(50px);
   }
   74% {
-    filter: hue-rotate(224deg) blur(95px);
+    filter: hue-rotate(224deg) blur(50px);
   }
   88% {
-    filter: hue-rotate(300deg) blur(95px);
+    filter: hue-rotate(300deg) blur(50px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(95px);
+    filter: hue-rotate(360deg) blur(50px);
   }
 }
 
 @keyframes chroma-beta {
   0% {
-    filter: hue-rotate(0deg) blur(80px);
+    filter: hue-rotate(0deg) blur(45px);
   }
   20% {
-    filter: hue-rotate(42deg) blur(80px);
+    filter: hue-rotate(42deg) blur(45px);
   }
   42% {
-    filter: hue-rotate(90deg) blur(80px);
+    filter: hue-rotate(90deg) blur(45px);
   }
   62% {
-    filter: hue-rotate(164deg) blur(80px);
+    filter: hue-rotate(164deg) blur(45px);
   }
   82% {
-    filter: hue-rotate(264deg) blur(80px);
+    filter: hue-rotate(264deg) blur(45px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(80px);
+    filter: hue-rotate(360deg) blur(45px);
   }
 }
 
 @keyframes chroma-gama {
   0% {
-    filter: hue-rotate(0deg) blur(85px);
+    filter: hue-rotate(0deg) blur(46px);
   }
   22% {
-    filter: hue-rotate(48deg) blur(85px);
+    filter: hue-rotate(48deg) blur(46px);
   }
   44% {
-    filter: hue-rotate(114deg) blur(85px);
+    filter: hue-rotate(114deg) blur(46px);
   }
   66% {
-    filter: hue-rotate(204deg) blur(85px);
+    filter: hue-rotate(204deg) blur(46px);
   }
   86% {
-    filter: hue-rotate(292deg) blur(85px);
+    filter: hue-rotate(292deg) blur(46px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(85px);
+    filter: hue-rotate(360deg) blur(46px);
   }
 }
 
 @keyframes chroma-delta {
   0% {
-    filter: hue-rotate(0deg) blur(110px);
+    filter: hue-rotate(0deg) blur(52px);
   }
   30% {
-    filter: hue-rotate(52deg) blur(110px);
+    filter: hue-rotate(52deg) blur(52px);
   }
   60% {
-    filter: hue-rotate(178deg) blur(110px);
+    filter: hue-rotate(178deg) blur(52px);
   }
   84% {
-    filter: hue-rotate(290deg) blur(110px);
+    filter: hue-rotate(290deg) blur(52px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(110px);
+    filter: hue-rotate(360deg) blur(52px);
   }
 }
 
 @keyframes chroma-epsilon {
   0% {
-    filter: hue-rotate(0deg) blur(65px);
+    filter: hue-rotate(0deg) blur(42px);
   }
   22% {
-    filter: hue-rotate(58deg) blur(65px);
+    filter: hue-rotate(58deg) blur(42px);
   }
   44% {
-    filter: hue-rotate(144deg) blur(65px);
+    filter: hue-rotate(144deg) blur(42px);
   }
   66% {
-    filter: hue-rotate(234deg) blur(65px);
+    filter: hue-rotate(234deg) blur(42px);
   }
   85% {
-    filter: hue-rotate(312deg) blur(65px);
+    filter: hue-rotate(312deg) blur(42px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(65px);
+    filter: hue-rotate(360deg) blur(42px);
   }
 }
 
@@ -2230,8 +2245,7 @@
 .aurora-root[data-animated="off"] .field-core-secondary,
 .aurora-root[data-animated="off"] .ai-processing-crest,
 .aurora-root[data-animated="off"] .ai-processing-waves {
-  animation: none !important;
-  will-change: auto;
+  animation-play-state: paused !important;
 }
 
 /* Rota sem Aurora (editor CHAMFER): oculto sem destruir o contexto WebGL. */
@@ -2239,7 +2253,7 @@
   visibility: hidden;
 }
 
-/* AURORA 2.0 — FLUIDO usa o shader; SUAVE usa o motor CSS Fluid Aurora (Deep Space Light Field). */
+/* AURORA 2.0 — FLUIDO usa o shader + Liquid Silk Mesh; SUAVE usa o motor CSS Fluid Aurora (Ultra-Silk Multi-Layer). */
 .aurora-root[data-style="fluido"] .aurora-css {
   display: none;
 }
@@ -2252,6 +2266,435 @@
 }
 .aurora-root .aurora-gl {
   transition: opacity 320ms ease;
+}
+
+/* =========================================================================
+   UPGRADE ULTRA-HD DOS ESTILOS "FLUID" E "FLUID AURORA"
+   Acabamento de Seda Líquida (12-bit look), Interpolação Anti-Banding de
+   10 Paradas (Curva Senoidal Ease-Out Scrim), Inset -35% (Zero Box Clipping)
+   e Camada de Difusão Sub-Pixel (Silk Micro-Dither).
+   ========================================================================= */
+
+.silk-light-generator-bleed {
+  position: absolute;
+  inset: -35%;
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+/* 2. ARQUITETURA VISUAL DE SEDA PARA O ESTILO "FLUID" (Liquid Silk Mesh) */
+.liquid-silk-fluid-stage {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  isolation: isolate;
+  background: linear-gradient(160deg, #0D1420 0%, #111927 52%, #0D1420 100%);
+  transform: translate3d(0, 0, 0);
+}
+
+:root:not(.dark) .liquid-silk-fluid-stage {
+  background: linear-gradient(160deg, #F2F6FC 0%, #E9F0FA 52%, #F2F6FC 100%);
+}
+
+.amoled .liquid-silk-fluid-stage {
+  background: linear-gradient(160deg, #05080F 0%, #09101C 52%, #05080F 100%);
+}
+
+.liquid-silk-field {
+  position: absolute;
+  width: 140vmax;
+  height: 140vmax;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(50px);
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+}
+
+:root:not(.dark) .liquid-silk-field {
+  filter: blur(50px);
+}
+
+/* Campo 1 — Azul-Titânio (#1E3A5F no Escuro / Gelo Azulado #DCE8F9 no Claro) com 10 paradas senoidais */
+.liquid-silk-field-1 {
+  top: -12%;
+  left: -14%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(30, 58, 95, 0.7200) 0%,
+    rgba(30, 58, 95, 0.6624) 15%,
+    rgba(30, 58, 95, 0.5616) 30%,
+    rgba(30, 58, 95, 0.4176) 45%,
+    rgba(30, 58, 95, 0.2736) 60%,
+    rgba(30, 58, 95, 0.1440) 75%,
+    rgba(30, 58, 95, 0.0504) 88%,
+    rgba(30, 58, 95, 0.0144) 95%,
+    rgba(30, 58, 95, 0.0000) 100%
+  );
+  animation: liquid-silk-drift-1 34s cubic-bezier(0.37, 0, 0.63, 1) infinite alternate;
+}
+
+:root:not(.dark) .liquid-silk-field-1 {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(220, 232, 249, 0.8500) 0%,
+    rgba(220, 232, 249, 0.7820) 15%,
+    rgba(220, 232, 249, 0.6630) 30%,
+    rgba(220, 232, 249, 0.4930) 45%,
+    rgba(220, 232, 249, 0.3230) 60%,
+    rgba(220, 232, 249, 0.1700) 75%,
+    rgba(220, 232, 249, 0.0595) 88%,
+    rgba(220, 232, 249, 0.0170) 95%,
+    rgba(220, 232, 249, 0.0000) 100%
+  );
+}
+
+/* Campo 2 — Índigo Profundo (#1E2648 no Escuro / Lavanda Sutil #E8E6FA no Claro) com 10 paradas senoidais */
+.liquid-silk-field-2 {
+  top: 6%;
+  right: -16%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(30, 38, 72, 0.6800) 0%,
+    rgba(30, 38, 72, 0.6256) 15%,
+    rgba(30, 38, 72, 0.5304) 30%,
+    rgba(30, 38, 72, 0.3944) 45%,
+    rgba(30, 38, 72, 0.2584) 60%,
+    rgba(30, 38, 72, 0.1360) 75%,
+    rgba(30, 38, 72, 0.0476) 88%,
+    rgba(30, 38, 72, 0.0136) 95%,
+    rgba(30, 38, 72, 0.0000) 100%
+  );
+  animation: liquid-silk-drift-2 41s cubic-bezier(0.37, 0, 0.63, 1) -11s infinite alternate;
+}
+
+:root:not(.dark) .liquid-silk-field-2 {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(232, 230, 250, 0.8200) 0%,
+    rgba(232, 230, 250, 0.7544) 15%,
+    rgba(232, 230, 250, 0.6396) 30%,
+    rgba(232, 230, 250, 0.4756) 45%,
+    rgba(232, 230, 250, 0.3116) 60%,
+    rgba(232, 230, 250, 0.1640) 75%,
+    rgba(232, 230, 250, 0.0574) 88%,
+    rgba(232, 230, 250, 0.0164) 95%,
+    rgba(232, 230, 250, 0.0000) 100%
+  );
+}
+
+/* Campo 3 — Ciano-Ardósia Sutil (#163E52 no Escuro / Branco Quente #FFFFFF no Claro) com 10 paradas senoidais */
+.liquid-silk-field-3 {
+  bottom: -18%;
+  left: 8%;
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(22, 62, 82, 0.6400) 0%,
+    rgba(22, 62, 82, 0.5888) 15%,
+    rgba(22, 62, 82, 0.4992) 30%,
+    rgba(22, 62, 82, 0.3712) 45%,
+    rgba(22, 62, 82, 0.2432) 60%,
+    rgba(22, 62, 82, 0.1280) 75%,
+    rgba(22, 62, 82, 0.0448) 88%,
+    rgba(22, 62, 82, 0.0128) 95%,
+    rgba(22, 62, 82, 0.0000) 100%
+  );
+  animation: liquid-silk-drift-3 38s cubic-bezier(0.37, 0, 0.63, 1) -19s infinite alternate;
+}
+
+:root:not(.dark) .liquid-silk-field-3 {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(255, 255, 255, 0.9000) 0%,
+    rgba(255, 255, 255, 0.8280) 15%,
+    rgba(255, 255, 255, 0.7020) 30%,
+    rgba(255, 255, 255, 0.5220) 45%,
+    rgba(255, 255, 255, 0.3420) 60%,
+    rgba(255, 255, 255, 0.1800) 75%,
+    rgba(255, 255, 255, 0.0630) 88%,
+    rgba(255, 255, 255, 0.0180) 95%,
+    rgba(255, 255, 255, 0.0000) 100%
+  );
+}
+
+@keyframes liquid-silk-drift-1 {
+  0% {
+    transform: translate3d(-3%, -2%, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(5%, 4%, 0) scale(1.06, 0.96);
+  }
+  100% {
+    transform: translate3d(2%, -3%, 0) scale(0.97, 1.05);
+  }
+}
+
+@keyframes liquid-silk-drift-2 {
+  0% {
+    transform: translate3d(3%, -2%, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(-6%, 5%, 0) scale(0.95, 1.06);
+  }
+  100% {
+    transform: translate3d(-2%, -4%, 0) scale(1.05, 0.97);
+  }
+}
+
+@keyframes liquid-silk-drift-3 {
+  0% {
+    transform: translate3d(-2%, 3%, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(6%, -4%, 0) scale(1.05, 0.96);
+  }
+  100% {
+    transform: translate3d(-4%, -2%, 0) scale(0.96, 1.04);
+  }
+}
+
+/* 3. ARQUITETURA VISUAL "FLUID AURORA" — ULTRA-SILK MULTI-LAYER (4 VÉUS ELÍPTICOS INCLINADOS SOBREPOSTOS) */
+.fluid-aurora-veils-bleed {
+  position: absolute;
+  inset: -35%;
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.fluid-aurora-veil {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(48px);
+  mix-blend-mode: normal;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+:root:not(.dark) .fluid-aurora-veil {
+  filter: blur(48px);
+  mix-blend-mode: normal;
+}
+
+/* Véu 1 — Âmbar Solar Suave (#F59E0B no Escuro / Dourado Solar #FBBF24 no Claro) com 10 paradas senoidais */
+.fluid-aurora-veil-amber {
+  top: 6%;
+  left: 4%;
+  width: 155vmax;
+  height: 92vmax;
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    rgba(245, 158, 11, 0.3400) 0%,
+    rgba(245, 158, 11, 0.3128) 15%,
+    rgba(245, 158, 11, 0.2652) 30%,
+    rgba(245, 158, 11, 0.1972) 45%,
+    rgba(245, 158, 11, 0.1292) 60%,
+    rgba(245, 158, 11, 0.0680) 75%,
+    rgba(245, 158, 11, 0.0238) 88%,
+    rgba(245, 158, 11, 0.0068) 95%,
+    rgba(245, 158, 11, 0.0000) 100%
+  );
+  animation: aurora-veil-flow-amber 28s cubic-bezier(0.37, 0, 0.63, 1) infinite alternate;
+}
+
+:root:not(.dark) .fluid-aurora-veil-amber {
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    rgba(251, 191, 36, 0.4200) 0%,
+    rgba(251, 191, 36, 0.3864) 15%,
+    rgba(251, 191, 36, 0.3276) 30%,
+    rgba(251, 191, 36, 0.2436) 45%,
+    rgba(251, 191, 36, 0.1596) 60%,
+    rgba(251, 191, 36, 0.0840) 75%,
+    rgba(251, 191, 36, 0.0294) 88%,
+    rgba(251, 191, 36, 0.0084) 95%,
+    rgba(251, 191, 36, 0.0000) 100%
+  );
+}
+
+/* Véu 2 — Coral/Carmesim Difuso (#E11D48 no Escuro / Rosa Quartzo #F472B6 no Claro) com 10 paradas senoidais */
+.fluid-aurora-veil-coral {
+  top: 10%;
+  left: 24%;
+  width: 150vmax;
+  height: 88vmax;
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    rgba(225, 29, 72, 0.2900) 0%,
+    rgba(225, 29, 72, 0.2668) 15%,
+    rgba(225, 29, 72, 0.2262) 30%,
+    rgba(225, 29, 72, 0.1682) 45%,
+    rgba(225, 29, 72, 0.1102) 60%,
+    rgba(225, 29, 72, 0.0580) 75%,
+    rgba(225, 29, 72, 0.0203) 88%,
+    rgba(225, 29, 72, 0.0058) 95%,
+    rgba(225, 29, 72, 0.0000) 100%
+  );
+  animation: aurora-veil-flow-coral 34s cubic-bezier(0.37, 0, 0.63, 1) -9s infinite alternate;
+}
+
+:root:not(.dark) .fluid-aurora-veil-coral {
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    rgba(244, 114, 182, 0.3600) 0%,
+    rgba(244, 114, 182, 0.3312) 15%,
+    rgba(244, 114, 182, 0.2808) 30%,
+    rgba(244, 114, 182, 0.2088) 45%,
+    rgba(244, 114, 182, 0.1368) 60%,
+    rgba(244, 114, 182, 0.0720) 75%,
+    rgba(244, 114, 182, 0.0252) 88%,
+    rgba(244, 114, 182, 0.0072) 95%,
+    rgba(244, 114, 182, 0.0000) 100%
+  );
+}
+
+/* Véu 3 — Ciano Boreal (#0EA5E9 no Escuro / Ciano Celeste #38BDF8 no Claro) com 10 paradas senoidais */
+.fluid-aurora-veil-cyan {
+  top: 22%;
+  right: 4%;
+  width: 162vmax;
+  height: 94vmax;
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    rgba(14, 165, 233, 0.3500) 0%,
+    rgba(14, 165, 233, 0.3220) 15%,
+    rgba(14, 165, 233, 0.2730) 30%,
+    rgba(14, 165, 233, 0.2030) 45%,
+    rgba(14, 165, 233, 0.1330) 60%,
+    rgba(14, 165, 233, 0.0700) 75%,
+    rgba(14, 165, 233, 0.0245) 88%,
+    rgba(14, 165, 233, 0.0070) 95%,
+    rgba(14, 165, 233, 0.0000) 100%
+  );
+  animation: aurora-veil-flow-cyan 31s cubic-bezier(0.37, 0, 0.63, 1) -15s infinite alternate;
+}
+
+:root:not(.dark) .fluid-aurora-veil-cyan {
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    rgba(56, 189, 248, 0.4400) 0%,
+    rgba(56, 189, 248, 0.4048) 15%,
+    rgba(56, 189, 248, 0.3432) 30%,
+    rgba(56, 189, 248, 0.2552) 45%,
+    rgba(56, 189, 248, 0.1672) 60%,
+    rgba(56, 189, 248, 0.0880) 75%,
+    rgba(56, 189, 248, 0.0308) 88%,
+    rgba(56, 189, 248, 0.0088) 95%,
+    rgba(56, 189, 248, 0.0000) 100%
+  );
+}
+
+/* Véu 4 — Violeta/Índigo Atmosférico (#6366F1 no Escuro / Lavanda #A78BFA no Claro) com 10 paradas senoidais */
+.fluid-aurora-veil-violet {
+  bottom: 6%;
+  left: 14%;
+  width: 165vmax;
+  height: 96vmax;
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    rgba(99, 102, 241, 0.3000) 0%,
+    rgba(99, 102, 241, 0.2760) 15%,
+    rgba(99, 102, 241, 0.2340) 30%,
+    rgba(99, 102, 241, 0.1740) 45%,
+    rgba(99, 102, 241, 0.1140) 60%,
+    rgba(99, 102, 241, 0.0600) 75%,
+    rgba(99, 102, 241, 0.0210) 88%,
+    rgba(99, 102, 241, 0.0060) 95%,
+    rgba(99, 102, 241, 0.0000) 100%
+  );
+  animation: aurora-veil-flow-violet 39s cubic-bezier(0.37, 0, 0.63, 1) -21s infinite alternate;
+}
+
+:root:not(.dark) .fluid-aurora-veil-violet {
+  background: radial-gradient(
+    ellipse 50% 50% at 50% 50%,
+    rgba(167, 139, 250, 0.3800) 0%,
+    rgba(167, 139, 250, 0.3496) 15%,
+    rgba(167, 139, 250, 0.2964) 30%,
+    rgba(167, 139, 250, 0.2204) 45%,
+    rgba(167, 139, 250, 0.1444) 60%,
+    rgba(167, 139, 250, 0.0760) 75%,
+    rgba(167, 139, 250, 0.0266) 88%,
+    rgba(167, 139, 250, 0.0076) 95%,
+    rgba(167, 139, 250, 0.0000) 100%
+  );
+}
+
+@keyframes aurora-veil-flow-amber {
+  0% {
+    transform: translate3d(-3%, -2%, 0) rotate(-14deg) scale(1, 0.96);
+  }
+  50% {
+    transform: translate3d(5%, 4%, 0) rotate(-8deg) scale(1.06, 1.03);
+  }
+  100% {
+    transform: translate3d(2%, -3%, 0) rotate(-18deg) scale(0.98, 1.05);
+  }
+}
+
+@keyframes aurora-veil-flow-coral {
+  0% {
+    transform: translate3d(2%, -3%, 0) rotate(11deg) scale(1, 1.02);
+  }
+  50% {
+    transform: translate3d(-5%, 4%, 0) rotate(16deg) scale(1.05, 0.95);
+  }
+  100% {
+    transform: translate3d(4%, 2%, 0) rotate(7deg) scale(0.97, 1.04);
+  }
+}
+
+@keyframes aurora-veil-flow-cyan {
+  0% {
+    transform: translate3d(3%, 2%, 0) rotate(-16deg) scale(1.02, 0.97);
+  }
+  50% {
+    transform: translate3d(-6%, -3%, 0) rotate(-10deg) scale(0.96, 1.05);
+  }
+  100% {
+    transform: translate3d(-2%, 5%, 0) rotate(-20deg) scale(1.05, 0.98);
+  }
+}
+
+@keyframes aurora-veil-flow-violet {
+  0% {
+    transform: translate3d(-4%, 2%, 0) rotate(9deg) scale(0.98, 1.03);
+  }
+  50% {
+    transform: translate3d(5%, -4%, 0) rotate(15deg) scale(1.06, 0.96);
+  }
+  100% {
+    transform: translate3d(2%, 3%, 0) rotate(5deg) scale(1.01, 1.04);
+  }
+}
+
+/* 4. SEM RUÍDO OU DITHERING ARTIFICIAL — LUZ PURA E GRADIENTES LISOS */
+.silk-micro-dither {
+  display: none !important;
+  background-image: none !important;
+}
+
+.aurora-canvas {
+  image-rendering: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liquid-silk-field,
+  .fluid-aurora-veil {
+    animation-play-state: paused !important;
+  }
+}
+
+.aurora-root[data-animated="off"] .liquid-silk-field,
+.aurora-root[data-animated="off"] .fluid-aurora-veil {
+  animation-play-state: paused !important;
 }
 
 /* ═══════════ DESIGN SYSTEM CALDRA — Parte 2 ═══════════
@@ -2476,11 +2919,9 @@
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
-/* Cartões principais (#FFFFFF no Claro / #111820 no Escuro) — reativos a --card-opacity */
+/* Cartões principais (#FFFFFF no Claro / #111820 no Escuro) — reativos a --card-opacity (Zero backdrop-filter para evitar GPU Layer Drop) */
 .caldra-card {
   background-color: rgba(255, 255, 255, var(--card-opacity, 0.90));
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   border: 1px solid #D7E1EC;
   box-shadow: 0 2px 10px -2px rgba(23, 35, 52, 0.05), 0 1px 3px rgba(23, 35, 52, 0.03);
   color: #172334;
@@ -2507,8 +2948,6 @@
     rgba(250, 251, 253, var(--card-opacity, 0.90)) 65%,
     rgba(241, 245, 251, var(--card-opacity, 0.90)) 100%
   );
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   border: 1px solid #D7E1EC;
   box-shadow: 0 6px 20px -6px rgba(23, 35, 52, 0.07), 0 1px 3px rgba(23, 35, 52, 0.04);
   color: #172334;
@@ -2543,8 +2982,6 @@
     rgba(250, 251, 253, var(--card-opacity, 0.90)) 60%,
     rgba(255, 249, 235, var(--card-opacity, 0.90)) 100%
   );
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   border: 1px solid #D7E1EC;
   box-shadow: 0 3px 12px -3px rgba(23, 35, 52, 0.05);
 }
@@ -2575,15 +3012,13 @@
   bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
-  z-index: 50;
+  z-index: 40;
   width: calc(100% - 32px);
   max-width: 340px;
   height: 56px;
   padding: 0 12px;
   border-radius: 9999px;
-  background-color: rgba(255, 255, 255, var(--card-opacity, 0.90));
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background-color: rgba(255, 255, 255, var(--card-opacity, 0.92));
   border: 1px solid rgba(215, 225, 236, 0.85);
   box-shadow:
     0 10px 26px -4px rgba(23, 35, 52, 0.11),
@@ -2600,7 +3035,7 @@
 }
 
 .dark .caldra-floating-nav {
-  background-color: rgba(14, 20, 28, var(--card-opacity, 0.90));
+  background-color: rgba(14, 20, 28, var(--card-opacity, 0.92));
   border: 1px solid rgba(43, 55, 69, 0.9);
   box-shadow:
     0 12px 30px -4px rgba(0, 0, 0, 0.55),
@@ -2608,7 +3043,7 @@
 }
 
 .amoled .caldra-floating-nav {
-  background-color: rgba(5, 8, 12, var(--card-opacity, 0.90));
+  background-color: rgba(5, 8, 12, var(--card-opacity, 0.92));
   border: 1px solid rgba(43, 55, 69, 0.9);
   box-shadow:
     0 12px 30px -4px rgba(0, 0, 0, 0.72),
@@ -2618,8 +3053,6 @@
 /* Barras de ferramentas CAD reativas à opacidade */
 .caldra-cad-toolbar {
   background-color: rgba(255, 255, 255, var(--ui-opacity, 0.94));
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
 }
 .dark .caldra-cad-toolbar {
   background-color: rgba(15, 23, 42, var(--ui-opacity, 0.92));
@@ -2628,18 +3061,16 @@
   background-color: rgba(0, 0, 0, var(--ui-opacity, 0.92));
 }
 
-/* Cápsula do Item Ativo da Barra Inferior — Sincronizada com Cor de Destaque + Opacidade das Bolhas */
+/* Cápsula do Item Ativo da Barra Inferior — Translúcida Calibrada (0.10 a 0.38) */
 .caldra-nav-sliding-pill {
   width: 48px;
   height: 40px;
   border-radius: 9999px;
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-opacity, 0.35));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), min(1, calc(var(--bubble-opacity, 0.35) * 1.25 + 0.14)));
+  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
   box-shadow: none;
   pointer-events: none;
   flex-shrink: 0;
-  will-change: transform, opacity, background-color, border-color;
-  transform: translate3d(0, 0, 0);
   transition:
     background-color 80ms ease,
     border-color 80ms ease;
@@ -2647,8 +3078,8 @@
 
 .dark .caldra-nav-sliding-pill,
 .amoled .caldra-nav-sliding-pill {
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-opacity, 0.35));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), min(1, calc(var(--bubble-opacity, 0.35) * 1.25 + 0.14)));
+  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
   box-shadow: none;
 }
 
@@ -2659,7 +3090,8 @@
   display: flex;
   flex: 1 1 20%;
   width: 20%;
-  height: 100%;
+  min-width: 52px;
+  height: 44px;
   align-items: center;
   justify-content: center;
   padding: 0;
@@ -2671,8 +3103,6 @@
   user-select: none;
   -webkit-user-select: none;
   -webkit-tap-highlight-color: transparent;
-  will-change: transform, opacity;
-  transform: translate3d(0, 0, 0);
   color: #64748B;
   opacity: 1;
   transition:
@@ -2681,7 +3111,7 @@
 }
 
 .caldra-nav-item-btn:active {
-  transform: scale(0.94) translate3d(0, 0, 0);
+  transform: scale(0.94);
 }
 
 .dark .caldra-nav-item-btn,
@@ -2690,10 +3120,13 @@
 }
 
 .caldra-nav-item-icon {
+  position: relative;
+  z-index: 2;
   width: 22px;
   height: 22px;
   color: #64748B;
   flex-shrink: 0;
+  opacity: 1;
   transition:
     transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
     color 0.12s ease;
@@ -2727,11 +3160,9 @@
   transform: scale(1.06);
 }
 
-/* Keep-Alive Tab Layering com interpolação acelerada por GPU */
+/* Keep-Alive Tab Layering sem transform global (preserva rasterização em tiles da viewport) */
 .caldra-tab-layer {
   width: 100%;
-  transform: translate3d(0, 0, 0);
-  will-change: transform, opacity;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
@@ -2740,19 +3171,23 @@
   display: block;
   opacity: 1;
   pointer-events: auto;
-  transform: scale(1) translate3d(0, 0, 0);
-  transition: transform 100ms cubic-bezier(0.16, 1, 0.3, 1), opacity 100ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .caldra-tab-layer[data-active="false"] {
   display: none !important;
   opacity: 0;
   pointer-events: none;
-  transform: scale(0.98) translate3d(0, 0, 0);
 }
 
-/* Bolhas de ícones e anéis funcionais controlados — reativos a --bubble-opacity */
+/* Impede que qualquer backdrop-blur dentro das abas principais crie Backdrop Root e apague elementos no mobile */
+#caldra-main-tabs-keepalive [class*="backdrop-blur"] {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Bolhas de ícones e anéis funcionais controlados — reativos a --bubble-tint-alpha (0.10 a 0.38) */
 .caldra-bubble-base {
+  position: relative;
   border-radius: 9999px;
   display: flex;
   align-items: center;
@@ -2760,111 +3195,116 @@
   transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), background-color 0.1s ease, border-color 0.1s ease, color 0.12s ease;
 }
 
+.caldra-bubble-base > * {
+  position: relative;
+  z-index: 2;
+  opacity: 1;
+  flex-shrink: 0;
+}
+
 /* Bolha Âmbar Principal (Novo Projeto / Ação Principal) */
 .caldra-bubble-amber-primary {
-  background-color: rgba(245, 158, 11, var(--bubble-opacity, 0.35));
-  border: 1px solid rgba(217, 119, 6, min(1, calc(var(--bubble-opacity, 0.35) * 1.2 + 0.12)));
+  background-color: rgba(245, 158, 11, var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(217, 119, 6, var(--bubble-border-alpha, 0.326));
   color: #B96D00;
 }
 .dark .caldra-bubble-amber-primary {
-  background-color: rgba(245, 158, 11, var(--bubble-opacity, 0.35));
-  border: 1px solid rgba(245, 158, 11, min(1, calc(var(--bubble-opacity, 0.35) * 1.2 + 0.12)));
+  background-color: rgba(245, 158, 11, var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(245, 158, 11, var(--bubble-border-alpha, 0.326));
   color: #FBBF24;
 }
 
 /* Bolha Âmbar Secundária (Ferramentas) */
 .caldra-bubble-amber {
-  background-color: rgba(245, 158, 11, calc(var(--bubble-opacity, 0.35) * 0.65));
-  border: 1px solid rgba(217, 119, 6, min(1, calc(var(--bubble-opacity, 0.35) * 0.9 + 0.1)));
+  background-color: rgba(245, 158, 11, var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(217, 119, 6, var(--bubble-border-alpha, 0.326));
   color: #B96D00;
 }
 .dark .caldra-bubble-amber {
-  background-color: rgba(245, 158, 11, calc(var(--bubble-opacity, 0.35) * 0.65));
-  border: 1px solid rgba(245, 158, 11, min(1, calc(var(--bubble-opacity, 0.35) * 0.9 + 0.1)));
+  background-color: rgba(245, 158, 11, var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(245, 158, 11, var(--bubble-border-alpha, 0.326));
   color: #FBBF24;
 }
 
 /* Bolha Azul/Ciano Técnico (Projetos & Engenharia) */
 .caldra-bubble-sky {
-  background-color: rgba(2, 132, 199, calc(var(--bubble-opacity, 0.35) * 0.65));
-  border: 1px solid rgba(2, 132, 199, min(1, calc(var(--bubble-opacity, 0.35) * 0.9 + 0.1)));
+  background-color: rgba(2, 132, 199, var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(2, 132, 199, var(--bubble-border-alpha, 0.326));
   color: #0284C7;
 }
 .dark .caldra-bubble-sky {
-  background-color: rgba(56, 189, 248, calc(var(--bubble-opacity, 0.35) * 0.65));
-  border: 1px solid rgba(56, 189, 248, min(1, calc(var(--bubble-opacity, 0.35) * 0.9 + 0.1)));
+  background-color: rgba(56, 189, 248, var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(56, 189, 248, var(--bubble-border-alpha, 0.326));
   color: #38BDF8;
 }
 
 /* Bolha Verde de Confirmação (Orçamentos) */
 .caldra-bubble-emerald {
-  background-color: rgba(5, 150, 105, calc(var(--bubble-opacity, 0.35) * 0.65));
-  border: 1px solid rgba(5, 150, 105, min(1, calc(var(--bubble-opacity, 0.35) * 0.9 + 0.1)));
+  background-color: rgba(5, 150, 105, var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(5, 150, 105, var(--bubble-border-alpha, 0.326));
   color: #059669;
 }
 .dark .caldra-bubble-emerald {
-  background-color: rgba(52, 211, 153, calc(var(--bubble-opacity, 0.35) * 0.65));
-  border: 1px solid rgba(52, 211, 153, min(1, calc(var(--bubble-opacity, 0.35) * 0.9 + 0.1)));
+  background-color: rgba(52, 211, 153, var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(52, 211, 153, var(--bubble-border-alpha, 0.326));
   color: #34D399;
 }
 
 /* Bolha Vermelha de Alerta/Erro Crítico (#E11D48 Claro / #FB7185 Escuro) */
 .caldra-bubble-red {
-  background-color: rgba(225, 29, 72, calc(var(--bubble-opacity, 0.35) * 0.65));
-  border: 1px solid rgba(225, 29, 72, min(1, calc(var(--bubble-opacity, 0.35) * 0.9 + 0.1)));
+  background-color: rgba(225, 29, 72, var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(225, 29, 72, var(--bubble-border-alpha, 0.326));
   color: #E11D48;
 }
 .dark .caldra-bubble-red {
-  background-color: rgba(251, 113, 133, calc(var(--bubble-opacity, 0.35) * 0.65));
-  border: 1px solid rgba(251, 113, 133, min(1, calc(var(--bubble-opacity, 0.35) * 0.9 + 0.1)));
+  background-color: rgba(251, 113, 133, var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(251, 113, 133, var(--bubble-border-alpha, 0.326));
   color: #FB7185;
 }
 
 /* Bolha Ciano/Azul Complementar (Especialização / Técnico) */
 .caldra-bubble-indigo {
-  background-color: rgba(6, 182, 212, calc(var(--bubble-opacity, 0.35) * 0.65));
-  border: 1px solid rgba(2, 132, 199, min(1, calc(var(--bubble-opacity, 0.35) * 0.9 + 0.1)));
+  background-color: rgba(6, 182, 212, var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(2, 132, 199, var(--bubble-border-alpha, 0.326));
   color: #0284C7;
 }
 .dark .caldra-bubble-indigo {
-  background-color: rgba(34, 211, 238, calc(var(--bubble-opacity, 0.35) * 0.65));
-  border: 1px solid rgba(56, 189, 248, min(1, calc(var(--bubble-opacity, 0.35) * 0.9 + 0.1)));
+  background-color: rgba(34, 211, 238, var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(56, 189, 248, var(--bubble-border-alpha, 0.326));
   color: #22D3EE;
 }
 
-/* Bolha de Ação no Topo (Botões de pesquisa, modo mestre e perfil no cabeçalho) — reativa a --bubble-opacity e --accent-color */
+/* Bolha de Ação no Topo (Botões de pesquisa, Fluid AURORA e perfil no cabeçalho) — reativa a --bubble-tint-alpha e --accent-color */
 .caldra-bubble-neutral {
-  background-color: rgba(255, 255, 255, var(--bubble-opacity, 0.35));
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), min(1, calc(var(--bubble-opacity, 0.35) * 0.75 + 0.12)));
+  background-color: rgba(var(--accent-rgb, 0, 102, 255), calc(var(--bubble-tint-alpha, 0.153) * 0.55));
+  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
   color: #172334;
 }
 .dark .caldra-bubble-neutral {
-  background-color: rgba(17, 24, 32, var(--bubble-opacity, 0.35));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), min(1, calc(var(--bubble-opacity, 0.35) * 0.85 + 0.14)));
+  background-color: rgba(var(--accent-rgb, 0, 102, 255), calc(var(--bubble-tint-alpha, 0.153) * 0.65));
+  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
   color: #F1F5F9;
 }
 .amoled .caldra-bubble-neutral {
-  background-color: rgba(13, 19, 26, var(--bubble-opacity, 0.35));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), min(1, calc(var(--bubble-opacity, 0.35) * 0.85 + 0.14)));
+  background-color: rgba(var(--accent-rgb, 0, 102, 255), calc(var(--bubble-tint-alpha, 0.153) * 0.65));
+  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
   color: #F1F5F9;
 }
 
 /* Bolha Central / Destaque Ativo */
 .caldra-bubble-center {
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-opacity, 0.35));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), min(1, calc(var(--bubble-opacity, 0.35) * 1.2 + 0.14)));
+  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
   color: var(--accent-color, var(--accent));
 }
 .dark .caldra-bubble-center {
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-opacity, 0.35));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), min(1, calc(var(--bubble-opacity, 0.35) * 1.2 + 0.14)));
+  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
   color: var(--accent-color, var(--accent));
 }
 .amoled .caldra-bubble-center {
-  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-opacity, 0.35));
-  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), min(1, calc(var(--bubble-opacity, 0.35) * 1.2 + 0.14)));
+  background-color: rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--accent-rgb, 0, 102, 255), var(--bubble-border-alpha, 0.326));
   color: var(--accent-color, var(--accent));
 }
 

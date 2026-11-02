@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
+import { useSettings } from "@/lib/settings/SettingsProvider";
 import { useProfile } from "@/lib/profile/ProfileProvider";
 import { MasterModeDialog } from "./MasterModeDialog";
 import { BubbleNav } from "./BubbleNav";
@@ -33,9 +34,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [profileOpen, setProfileOpen] = useState(false);
   const navigate = useNavigate();
   const { isMestre, closeGate } = useFeatureAccess();
+  const { auroraStyle, setAuroraStyle } = useSettings();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const intro = useIntro();
   const profile = useProfile();
+
+  const isAuroraActive = auroraStyle !== "padrao";
+
+  const handleToggleFluidAurora = () => {
+    triggerHaptic("selection");
+    AudioManager.play("ui_pop");
+    setAuroraStyle(isAuroraActive ? "padrao" : "suave");
+  };
 
   // Executa na abertura do aplicativo por exatamente 5,000 segundos
   const [startupGenesis, setStartupGenesis] = useState(false);
@@ -96,35 +106,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     >
       <div className="relative flex min-h-screen flex-col overflow-x-hidden text-foreground bg-background">
         <AuroraBackground active={auroraVisible(pathname)} className="fixed inset-0 z-0" />
-        {/* iluminação ambiente adaptativa para todas as áreas não-imersivas */}
-        {!immersive && (
-          <div aria-hidden className="pointer-events-none fixed inset-0 z-0">
-            <div className="absolute -top-40 -left-32 size-[26rem] rounded-full bg-accent/8 blur-[120px]" />
-            <div className="absolute -right-32 bottom-0 size-[26rem] rounded-full bg-accent2/8 blur-[120px]" />
-            {isMestre && (
-              <div className="absolute top-1/3 left-1/2 size-[22rem] -translate-x-1/2 rounded-full bg-accent/6 blur-[140px]" />
-            )}
-          </div>
-        )}
 
         {!immersive && !standalone && pathname !== "/" && (
           <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
             <AudioQuickControl />
             <button
-              onClick={() => {
-                triggerHaptic("tap");
-                setMasterOpen(true);
-              }}
-              aria-label={isMestre ? "Modo Mestre ativo" : "Ativar Modo Mestre"}
-              title={isMestre ? "Modo Mestre ativo" : "Ativar Modo Mestre"}
+              type="button"
+              aria-pressed={isAuroraActive}
+              onClick={handleToggleFluidAurora}
+              aria-label={isAuroraActive ? "Desativar Fluid AURORA" : "Ativar Fluid AURORA"}
+              title={isAuroraActive ? "Fluid AURORA ativo (Toque para desativar)" : "Ativar Fluid AURORA"}
               className={cn(
-                "caldra-bubble-base size-9 transition-all duration-180 [transition-timing-function:var(--ease-natural)] touch-manipulation select-none cursor-pointer hover:scale-105 active:scale-95",
-                isMestre
+                "caldra-bubble-base size-9 transition-all duration-200 [transition-timing-function:var(--ease-natural)] touch-manipulation select-none cursor-pointer hover:scale-105 active:scale-95",
+                isAuroraActive
                   ? "caldra-bubble-center glow-ring"
                   : "caldra-bubble-neutral text-muted-foreground hover:text-[var(--accent-color)] hover:border-[var(--accent-color)]",
               )}
             >
-              <Sparkles className="size-4" />
+              <Sparkles className="size-4 shrink-0" />
             </button>
             <Link
               to="/perfil"
@@ -136,7 +135,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               title="Perfil e Conta"
               className="rounded-full transition-transform duration-180 [transition-timing-function:var(--ease-natural)] hover:scale-105 active:scale-95 touch-manipulation cursor-pointer"
             >
-              <Avatar photo={profile.photo} size={36} className="backdrop-blur-xl shadow-sm" />
+              <Avatar photo={profile.photo} size={36} className="shadow-sm" />
             </Link>
           </div>
         )}
@@ -144,7 +143,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main
           className={cn(
             "relative z-10 min-w-0 flex-1",
-            !immersive && "fade-up",
             immersive || standalone
               ? "p-0"
               : isMainTab ||

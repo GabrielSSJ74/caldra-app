@@ -53,8 +53,8 @@ const ACCENT_OPTIONS: { id: AccentOption; label: string; swatch: string }[] = [
 
 const BG_STYLE_OPTIONS: { id: AuroraStyleOption; label: string; desc: string }[] = [
   { id: "padrao", label: "Padrão", desc: "Sólido Técnico" },
-  { id: "suave", label: "Suave", desc: "Radial Mate" },
-  { id: "fluido", label: "Fluido", desc: "Luz de Destaque" },
+  { id: "suave", label: "Fluid Aurora", desc: "Ultra-Silk Boreal" },
+  { id: "fluido", label: "Fluid", desc: "Seda Líquida 12-bit" },
 ];
 
 const THEME_OPTIONS: { id: ThemeOption; label: string }[] = [

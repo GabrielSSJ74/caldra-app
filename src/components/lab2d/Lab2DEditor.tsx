@@ -2433,6 +2433,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         wireframe3DStyle,
         showGrid,
         gridStep: Math.max(15, grid * 2.5),
+        bgStyle,
       });
     },
     [
@@ -8236,11 +8237,32 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             isLandscape ? "rounded-xl border shadow-inner" : "rounded-none border-0",
           )}
         >
+          {bgStyle === "fluido" && (
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+              <div className="silk-light-generator-bleed">
+                <div className="liquid-silk-field liquid-silk-field-1" />
+                <div className="liquid-silk-field liquid-silk-field-2" />
+                <div className="liquid-silk-field liquid-silk-field-3" />
+              </div>
+              <div className="silk-micro-dither" />
+            </div>
+          )}
+          {bgStyle === "suave" && (
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+              <div className="fluid-aurora-veils-bleed">
+                <div className="fluid-aurora-veil fluid-aurora-veil-amber" />
+                <div className="fluid-aurora-veil fluid-aurora-veil-coral" />
+                <div className="fluid-aurora-veil fluid-aurora-veil-cyan" />
+                <div className="fluid-aurora-veil fluid-aurora-veil-violet" />
+              </div>
+              <div className="silk-micro-dither" />
+            </div>
+          )}
           {themeColors.canvasOverlayGradient !== "none" && (
             <div
               aria-hidden="true"
               style={{ background: themeColors.canvasOverlayGradient }}
-              className="pointer-events-none absolute inset-0 z-[1]"
+              className="pointer-events-none absolute inset-[-35%] z-0"
             />
           )}
           {solidOpen && (
@@ -8281,7 +8303,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           )}
           <div
             className={cn(
-              "relative size-full",
+              "relative z-[2] size-full",
               solidOpen && morphState !== "PREPARING_3D" && "pointer-events-none",
             )}
           >
@@ -8543,6 +8565,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           width={frame.w}
                           height={frame.h}
                           fill={canvasBgColor}
+                          fillOpacity={bgStyle === "padrao" ? 1 : isDark ? 0.48 : 0.54}
                         />
                       </g>
                     )}

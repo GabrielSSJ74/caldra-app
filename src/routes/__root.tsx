@@ -110,8 +110,12 @@ r.classList.toggle("accent-crimson",isCrimson);r.classList.toggle("accent-magent
 var co=typeof s.cardOpacity==="number"?Math.min(100,Math.max(20,s.cardOpacity)):90;
 var bo=typeof s.bubbleOpacity==="number"?Math.min(100,Math.max(20,s.bubbleOpacity)):35;
 var uiOp=(co/100).toFixed(2);
+var bFill=(0.10+((bo-20)/80)*0.28).toFixed(3);
+var bBorder=Math.min(0.62,Number(bFill)*1.35+0.12).toFixed(3);
 r.style.setProperty("--card-opacity",uiOp);
 r.style.setProperty("--bubble-opacity",(bo/100).toFixed(2));
+r.style.setProperty("--bubble-tint-alpha",bFill);
+r.style.setProperty("--bubble-border-alpha",bBorder);
 r.style.setProperty("--ui-opacity",uiOp);
 r.setAttribute("data-bg-style",s.auroraStyle||"padrao");
 r.lang=s.language==="en"?"en":s.language==="es"?"es":"pt-BR";
