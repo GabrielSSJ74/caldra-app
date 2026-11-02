@@ -66,6 +66,10 @@ type Base = {
   elevationZ?: number;
   /** Altura de extrusão individual no eixo +Z (mm) */
   extrudeHeight?: number;
+  /** Espessura da parede interna para corpos ocos/tubos metalon (Shell / Casca em mm) */
+  shellWallThickness?: number;
+  /** Espessura padrão de chapa metálica associada à peça (mm) */
+  sheetThickness?: number;
   /** Parâmetros paramétricos associados */
   params?: Record<string, unknown>;
   /** Perfil estrutural tubular/barra associado (Catálogo BOM Costa Ferro) */

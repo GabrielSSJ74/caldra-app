@@ -114,7 +114,9 @@ export interface DirectBody3D {
   elevationZ: number;
   edgeFilletRadiusMm: number;
   edgeChamferDistMm: number;
+  shellWallThicknessMm: number;
   shellThicknessMm: number;
+  sheetThicknessMm: number;
   shellOpenCaps: ("top" | "bottom")[];
   offsetFaceTopMm: number;
   offsetFaceBottomMm: number;
@@ -175,8 +177,21 @@ export type ParametricNumpadKind =
   | "WIDTH"
   | "HEIGHT";
 
+export type NumpadTargetParameter =
+  | "extrudeHeight"
+  | "shellWallThickness"
+  | "filletRadius"
+  | "chamferDistance"
+  | "offsetFaceDistance"
+  | "miterAngle"
+  | "moveX"
+  | "moveY"
+  | "moveZ";
+
 export interface ActiveParametricNumpadSession {
   kind: ParametricNumpadKind;
+  targetParameter?: NumpadTargetParameter;
+  targetEntityId?: string;
   title: string;
   unit: "mm" | "°" | "×";
   initialValue: number;
@@ -304,13 +319,15 @@ export const INDUSTRIAL_3D_MATERIALS = [
 
 export function getEntityDirect3DParams(entity: Entity, defaultThicknessMm = 20) {
   const p = entity.params ?? {};
-  const rawExtrude = Number(p.extrudeHeightMm);
+
+  // 1. EXTRUDE HEIGHT (Altura / Comprimento de Extrusão 3D em mm) — INDEPENDENTE de espessura de casca/chapa
+  const rawExtrude = p.extrudeHeightMm ?? p.extrudeHeight ?? entity.extrudeHeight;
   const extrudeHeightMm =
-    Number.isFinite(rawExtrude) && rawExtrude > 0.05
-      ? rawExtrude
+    typeof rawExtrude === "number" && Number.isFinite(rawExtrude) && rawExtrude > 0.05
+      ? Number(rawExtrude)
       : Math.max(2, defaultThicknessMm);
 
-  const rawElev = Number(p.elevationZ);
+  const rawElev = Number(p.elevationZ ?? entity.elevationZ);
   const elevationZ = Number.isFinite(rawElev) ? rawElev : 0;
 
   const booleanMode3D: BooleanMode3D =
@@ -325,7 +342,18 @@ export function getEntityDirect3DParams(entity: Entity, defaultThicknessMm = 20)
 
   const edgeFilletRadiusMm = Math.max(0, Number(p.edgeFilletRadiusMm) || 0);
   const edgeChamferDistMm = Math.max(0, Number(p.edgeChamferDistMm) || 0);
-  const shellThicknessMm = Math.max(0, Number(p.shellThicknessMm) || 0);
+
+  // 2. SHELL WALL THICKNESS (Espessura da Parede da Casca / Tubo Metalon em mm) — INDEPENDENTE de extrudeHeight
+  const rawShellWall = p.shellWallThickness ?? p.shellThicknessMm ?? entity.shellWallThickness;
+  const shellWallThicknessMm = Math.max(0, Number(rawShellWall) || 0);
+  const shellThicknessMm = shellWallThicknessMm;
+
+  // 3. SHEET THICKNESS (Seletor CHAPA da Barra Inferior, ex.: CHAPA 3.0MM)
+  const rawSheet = p.sheetThickness ?? entity.sheetThickness;
+  const sheetThicknessMm =
+    typeof rawSheet === "number" && Number.isFinite(rawSheet) && rawSheet > 0
+      ? rawSheet
+      : defaultThicknessMm;
 
   const shellOpenCaps: ("top" | "bottom")[] = Array.isArray(p.shellOpenCaps)
     ? (p.shellOpenCaps.filter((x) => x === "top" || x === "bottom") as ("top" | "bottom")[])
@@ -358,7 +386,9 @@ export function getEntityDirect3DParams(entity: Entity, defaultThicknessMm = 20)
     booleanMode3D,
     edgeFilletRadiusMm,
     edgeChamferDistMm,
+    shellWallThicknessMm,
     shellThicknessMm,
+    sheetThicknessMm,
     shellOpenCaps,
     offsetFaceTopMm,
     offsetFaceBottomMm,
@@ -380,10 +410,23 @@ export function setEntityDirect3DParams(
 ): Entity {
   const cur = getEntityDirect3DParams(entity);
   const next = { ...cur, ...patch };
+
+  const effectiveShell =
+    patch.shellWallThicknessMm !== undefined
+      ? patch.shellWallThicknessMm
+      : patch.shellThicknessMm !== undefined
+        ? patch.shellThicknessMm
+        : (cur.shellWallThicknessMm || cur.shellThicknessMm || 0);
+
+  next.shellWallThicknessMm = effectiveShell;
+  next.shellThicknessMm = effectiveShell;
+
   return {
     ...entity,
     elevationZ: next.elevationZ,
     extrudeHeight: next.extrudeHeightMm,
+    shellWallThickness: effectiveShell,
+    sheetThickness: next.sheetThicknessMm,
     params: {
       ...(entity.params ?? {}),
       extrudeHeightMm: next.extrudeHeightMm,
@@ -392,7 +435,9 @@ export function setEntityDirect3DParams(
       booleanMode3D: next.booleanMode3D,
       edgeFilletRadiusMm: next.edgeFilletRadiusMm,
       edgeChamferDistMm: next.edgeChamferDistMm,
-      shellThicknessMm: next.shellThicknessMm,
+      shellWallThickness: effectiveShell,
+      shellThicknessMm: effectiveShell,
+      sheetThickness: next.sheetThicknessMm,
       shellOpenCaps: next.shellOpenCaps,
       offsetFaceTopMm: next.offsetFaceTopMm,
       offsetFaceBottomMm: next.offsetFaceBottomMm,
@@ -1742,7 +1787,9 @@ export function buildDirectTopology3DScene(
       elevationZ: z0,
       edgeFilletRadiusMm: p3d.edgeFilletRadiusMm,
       edgeChamferDistMm: p3d.edgeChamferDistMm,
+      shellWallThicknessMm: p3d.shellWallThicknessMm,
       shellThicknessMm: p3d.shellThicknessMm,
+      sheetThicknessMm: defaultThicknessMm,
       shellOpenCaps: p3d.shellOpenCaps,
       offsetFaceTopMm: p3d.offsetFaceTopMm,
       offsetFaceBottomMm: p3d.offsetFaceBottomMm,
@@ -2080,8 +2127,10 @@ export function applyDirectExtrudeToEntities(
     if (!idSet.has(e.id)) return e;
     return {
       ...e,
+      extrudeHeight: clamped,
       params: {
         ...(e.params ?? {}),
+        extrudeHeight: clamped,
         extrudeHeightMm: clamped,
         ...(booleanMode3D ? { booleanMode3D } : {}),
       },
@@ -2122,8 +2171,10 @@ export function applyDirectShell3DToEntities(
     if (!idSet.has(e.id)) return e;
     return {
       ...e,
+      shellWallThickness: clamped,
       params: {
         ...(e.params ?? {}),
+        shellWallThickness: clamped,
         shellThicknessMm: clamped,
         shellOpenCaps: openCaps,
       },

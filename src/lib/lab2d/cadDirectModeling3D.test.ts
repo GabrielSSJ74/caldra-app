@@ -182,4 +182,77 @@ describe("CHAMFER CAD — Motor de Modelagem Direta 3D, Edição Topológica e S
     expect(p3d.shellThicknessMm).toBe(6);
     expect(p3d.miterCutTopDeg).toBe(45);
   });
+
+  it("6. Separação completa e estrita entre Extrude (extrudeHeight=500mm), Espessura da Parede (shellWallThickness=4.75mm) e CHAPA (sheetThickness=3.0mm)", () => {
+    let tube = rectPolyline({ x: 0, y: 0 }, { x: 80, y: 40 }, "corte", 0);
+    tube = { ...tube, id: "tubo_metalon_500" };
+
+    // Define extrusão de 500 mm
+    tube = setEntityDirect3DParams(tube, {
+      extrudeHeightMm: 500,
+      booleanMode3D: "new_body",
+    });
+
+    const paramsAfterExtrude = getEntityDirect3DParams(tube, 3.0);
+    expect(paramsAfterExtrude.extrudeHeightMm).toBe(500);
+    // shellWallThickness não foi definido ainda, então padrão é 0
+    expect(paramsAfterExtrude.shellWallThicknessMm).toBe(0);
+
+    // Aplica Shell (espessura da parede do tubo = 4.75 mm)
+    tube = setEntityDirect3DParams(tube, {
+      shellWallThicknessMm: 4.75,
+      shellThicknessMm: 4.75,
+      shellOpenCaps: ["top", "bottom"],
+    });
+
+    const scene = buildDirectTopology3DScene([tube], 3.0);
+    expect(scene.bodies.length).toBe(1);
+    const body = scene.bodies[0]!;
+
+    // O tubo deve ter 500 mm de comprimento/altura no eixo Z E parede de 4.75 mm
+    expect(body.extrudeHeightMm).toBe(500);
+    expect(body.shellWallThicknessMm).toBe(4.75);
+    expect(body.shellThicknessMm).toBe(4.75);
+
+    // Alterar a espessura da parede NÃO altera a altura de extrusão
+    tube = setEntityDirect3DParams(tube, {
+      shellWallThicknessMm: 2.0,
+      shellThicknessMm: 2.0,
+    });
+    const paramsAfterWallChange = getEntityDirect3DParams(tube, 3.0);
+    expect(paramsAfterWallChange.extrudeHeightMm).toBe(500);
+    expect(paramsAfterWallChange.shellWallThicknessMm).toBe(2.0);
+
+    // Alterar extrusão para 1000 mm NÃO altera a parede do tubo
+    tube = setEntityDirect3DParams(tube, {
+      extrudeHeightMm: 1000,
+    });
+    const paramsAfterHeightChange = getEntityDirect3DParams(tube, 3.0);
+    expect(paramsAfterHeightChange.extrudeHeightMm).toBe(1000);
+    expect(paramsAfterHeightChange.shellWallThicknessMm).toBe(2.0);
+  });
+
+  it("7. Translação nos eixos +X e +Y do Gizmo move a entidade mantendo propriedades 3D intactas", () => {
+    let part = rectPolyline({ x: 10, y: 20 }, { x: 110, y: 70 }, "corte", 0);
+    part = setEntityDirect3DParams({ ...part, id: "part_gizmo_trans" }, {
+      extrudeHeightMm: 250,
+      shellWallThicknessMm: 3.2,
+    });
+
+    // Deslocamento +X de 50 mm
+    const transX = applyDirectTransform3DToEntities([part], ["part_gizmo_trans"], { dx: 50, dy: 0, dz: 0 }, false);
+    const updatedX = transX.updatedEntities.find((e) => e.id === "part_gizmo_trans")!;
+    expect(updatedX).toBeDefined();
+    // Verifica que parâmetros 3D continuam intactos após o deslocamento
+    const paramsX = getEntityDirect3DParams(updatedX, 3.0);
+    expect(paramsX.extrudeHeightMm).toBe(250);
+    expect(paramsX.shellWallThicknessMm).toBe(3.2);
+
+    // Deslocamento +Y de 75 mm
+    const transY = applyDirectTransform3DToEntities([updatedX], ["part_gizmo_trans"], { dx: 0, dy: 75, dz: 0 }, false);
+    const updatedY = transY.updatedEntities.find((e) => e.id === "part_gizmo_trans")!;
+    const paramsY = getEntityDirect3DParams(updatedY, 3.0);
+    expect(paramsY.extrudeHeightMm).toBe(250);
+    expect(paramsY.shellWallThicknessMm).toBe(3.2);
+  });
 });

@@ -11153,11 +11153,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             }
             thicknessMm={thickness}
             onChangeThicknessMm={(zMm) => {
-              setThickness(zMm);
               commit((list) =>
                 list.map((e) =>
                   selection.includes(e.id)
-                    ? { ...e, params: { ...e.params, extrudeHeightMm: zMm } }
+                    ? {
+                        ...e,
+                        extrudeHeight: zMm,
+                        params: { ...e.params, extrudeHeight: zMm, extrudeHeightMm: zMm },
+                      }
                     : e,
                 ),
               );
@@ -11193,21 +11196,26 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 ),
               );
             }}
-            onLiveTranslateSelectionXY={(dx, dy) => {
+            onLiveTranslateSelectionXY={(dx, dy, targetIds) => {
               if (Math.abs(dx) < 1e-4 && Math.abs(dy) < 1e-4) return;
+              const ids = targetIds && targetIds.length > 0 ? new Set(targetIds) : selectionSet;
               setEntities((prev) =>
                 prev.map((ent) =>
-                  selectionSet.has(ent.id) ? translate(ent, dx, dy) : ent,
+                  ids.has(ent.id) ? translate(ent, dx, dy) : ent,
                 ),
               );
             }}
-            onCommitTranslateSelectionXY={(dx, dy) => {
+            onCommitTranslateSelectionXY={(dx, dy, targetIds) => {
               if (Math.abs(dx) < 1e-3 && Math.abs(dy) < 1e-3) return;
+              const ids = targetIds && targetIds.length > 0 ? new Set(targetIds) : selectionSet;
               commit((list) =>
                 list.map((ent) =>
-                  selectionSet.has(ent.id) ? translate(ent, dx, dy) : ent,
+                  ids.has(ent.id) ? translate(ent, dx, dy) : ent,
                 ),
               );
+              if (targetIds && targetIds.length > 0) {
+                setSelection(targetIds);
+              }
             }}
             onOpenElevationKeypad={(currentZ) => {
               setElevationKeypadState({ open: true, initialZ: currentZ });
