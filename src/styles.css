@@ -1138,7 +1138,7 @@
   );
 }
 
-/* Massas orgânicas persistentes no DOM */
+/* Massas orgânicas persistentes no DOM — Fusão óptica limpa (screen no escuro/AMOLED) */
 .organic-mass,
 .deep-space-field {
   position: absolute;
@@ -1149,13 +1149,19 @@
   backface-visibility: hidden;
   transform: translate3d(0, 0, 0);
   -webkit-transform: translate3d(0, 0, 0);
+  mix-blend-mode: screen;
   transition: top 2.6s cubic-bezier(0.16, 1, 0.3, 1),
               left 2.6s cubic-bezier(0.16, 1, 0.3, 1),
               width 2.6s cubic-bezier(0.16, 1, 0.3, 1),
               height 2.6s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-/* Corpo da massa: deforma organicamente e interpola as 6 cores */
+:root:not(.dark) .organic-mass,
+:root:not(.dark) .deep-space-field {
+  mix-blend-mode: normal;
+}
+
+/* Corpo da massa: deforma organicamente em 4 estágios (0% -> 33% -> 66% -> 100%) */
 .mass-body,
 .field-body {
   position: absolute;
@@ -1200,42 +1206,45 @@
 }
 
 /* =========================================================================
-   1. ENTIDADE DELTA — O Oceano Abissal (Fundo Perene Azul & Verde Esmeralda)
-   Tamanho: 76vmax, período: 44s. Ancoragem de profundidade atmosférica estável.
+   1. ENTIDADE DELTA — PLANO 3: Massa de Ancoragem Profunda (Base / Continue Trabalhando e Dock)
+   Difusão horizontal larga e suave (92vmax × 58vmax), blur(110px), ciclo primo 41s (delay -31s).
+   Curva Gaussiana de 5 Paradas (0% -> 22% [75%] -> 48% [42%] -> 74% [14%] -> 100% [0%]).
    ========================================================================= */
 .mass-delta,
 .field-entity-delta {
   top: 0;
   left: 0;
-  width: 76vmax;
-  height: 62vmax;
+  width: 92vmax;
+  height: 58vmax;
 }
 
 .body-delta,
 .field-body-delta {
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(29, 78, 216, 0.40) 0%,     /* Azul Real */
-    rgba(14, 165, 233, 0.30) 28%,    /* Azul */
-    rgba(16, 185, 129, 0.18) 55%,    /* Verde */
-    rgba(12, 20, 50, 0.08) 78%,      /* Profundidade */
-    transparent 86%
+    rgba(29, 78, 216, 0.40) 0%,      /* 100% do núcleo — Azul Real */
+    rgba(14, 165, 233, 0.30) 22%,    /* 75% do núcleo — Azul */
+    rgba(16, 185, 129, 0.168) 48%,   /* 42% do núcleo — Verde */
+    rgba(12, 20, 50, 0.056) 74%,     /* 14% do núcleo — Profundidade */
+    rgba(12, 20, 50, 0) 100%         /* 0% — Cauda de difusão atmosférica */
   );
-  filter: blur(28px);
+  filter: blur(110px);
   animation:
-    organic-morph-delta 44s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite,
-    chroma-delta 54s linear infinite;
+    organic-morph-delta 41s cubic-bezier(0.37, 0, 0.63, 1) -31s infinite,
+    chroma-delta 54s linear -31s infinite;
 }
 
 .inner-delta,
 .field-inner-delta {
   background: radial-gradient(
     ellipse at 52% 48%,
-    rgba(29, 78, 216, 0.24) 0%,     /* Azul Real */
-    rgba(14, 165, 233, 0.12) 48%,    /* Azul */
-    transparent 70%
+    rgba(29, 78, 216, 0.24) 0%,      /* 100% — Azul Real */
+    rgba(29, 78, 216, 0.18) 22%,     /* 75% — Azul Real */
+    rgba(14, 165, 233, 0.101) 48%,   /* 42% — Azul */
+    rgba(14, 165, 233, 0.034) 74%,   /* 14% — Azul */
+    rgba(14, 165, 233, 0) 100%       /* 0% */
   );
-  animation: organic-inner-delta 18s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
+  animation: organic-inner-delta 18s cubic-bezier(0.37, 0, 0.63, 1) -13s infinite;
 }
 
 .core-delta,
@@ -1247,50 +1256,55 @@
   background: radial-gradient(
     ellipse at 50% 50%,
     rgba(96, 165, 250, 0.32) 0%,
-    rgba(30, 64, 175, 0.14) 40%,
-    transparent 70%
+    rgba(96, 165, 250, 0.24) 22%,
+    rgba(30, 64, 175, 0.134) 48%,
+    rgba(30, 64, 175, 0.045) 74%,
+    rgba(30, 64, 175, 0) 100%
   );
-  filter: blur(16px);
-  animation: organic-core-delta 12s cubic-bezier(0.40, 0.05, 0.60, 0.95) infinite;
+  filter: blur(28px);
+  animation: organic-core-delta 23s cubic-bezier(0.37, 0, 0.63, 1) -9s infinite;
 }
 
 /* =========================================================================
-   2. ENTIDADE BETA — A Nebulosa Violeta & Magenta (Roxo, Magenta, Carmesim, Rosa)
-   Tamanho: 60vmax. Sobe, funde dinamicamente e explora todo o campo.
+   2. ENTIDADE BETA — PLANO 2: Massa de Ritmo e Transição (Zona Central / Especialização)
+   Tamanho médio (62vmax × 52vmax), blur(80px), ciclo primo 23s (delay -11s).
+   Curva Gaussiana de 5 Paradas (0% -> 22% [75%] -> 48% [42%] -> 74% [14%] -> 100% [0%]).
    ========================================================================= */
 .mass-beta,
 .field-entity-beta {
   top: 0;
   left: 0;
-  width: 60vmax;
-  height: 50vmax;
+  width: 62vmax;
+  height: 52vmax;
 }
 
 .body-beta,
 .field-body-beta {
   background: radial-gradient(
     ellipse at 48% 52%,
-    rgba(124, 58, 237, 0.45) 0%,    /* Roxo */
-    rgba(217, 70, 239, 0.34) 28%,   /* Magenta */
-    rgba(153, 27, 27, 0.22) 54%,    /* Vermelho Carmesim */
-    rgba(244, 63, 94, 0.12) 72%,    /* Rosa */
-    transparent 86%
+    rgba(124, 58, 237, 0.45) 0%,     /* 100% do núcleo — Roxo */
+    rgba(217, 70, 239, 0.338) 22%,   /* 75% do núcleo — Magenta */
+    rgba(153, 27, 27, 0.189) 48%,    /* 42% do núcleo — Vermelho Carmesim */
+    rgba(244, 63, 94, 0.063) 74%,    /* 14% do núcleo — Rosa */
+    rgba(244, 63, 94, 0) 100%        /* 0% — Cauda de difusão atmosférica */
   );
-  filter: blur(22px);
+  filter: blur(80px);
   animation:
-    organic-morph-beta 32s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite,
-    chroma-beta 42s linear infinite;
+    organic-morph-beta 23s cubic-bezier(0.37, 0, 0.63, 1) -11s infinite,
+    chroma-beta 42s linear -11s infinite;
 }
 
 .inner-beta,
 .field-inner-beta {
   background: radial-gradient(
     ellipse at 44% 56%,
-    rgba(232, 121, 249, 0.28) 0%,   /* Magenta Claro */
-    rgba(147, 51, 234, 0.14) 44%,   /* Roxo */
-    transparent 68%
+    rgba(232, 121, 249, 0.28) 0%,    /* 100% — Magenta Claro */
+    rgba(232, 121, 249, 0.21) 22%,   /* 75% — Magenta Claro */
+    rgba(147, 51, 234, 0.118) 48%,   /* 42% — Roxo */
+    rgba(147, 51, 234, 0.039) 74%,   /* 14% — Roxo */
+    rgba(147, 51, 234, 0) 100%       /* 0% */
   );
-  animation: organic-inner-beta 10.5s cubic-bezier(0.45, 0.04, 0.55, 0.96) infinite;
+  animation: organic-inner-beta 23s cubic-bezier(0.37, 0, 0.63, 1) -7s infinite;
 }
 
 .core-beta-1,
@@ -1301,12 +1315,14 @@
   height: 44%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(244, 114, 182, 0.40) 0%,   /* Rosa */
-    rgba(168, 85, 247, 0.20) 38%,   /* Roxo */
-    transparent 70%
+    rgba(244, 114, 182, 0.40) 0%,    /* Rosa */
+    rgba(244, 114, 182, 0.30) 22%,
+    rgba(168, 85, 247, 0.168) 48%,   /* Roxo */
+    rgba(168, 85, 247, 0.056) 74%,
+    rgba(168, 85, 247, 0) 100%
   );
-  filter: blur(14px);
-  animation: organic-core-beta-1 7.6s cubic-bezier(0.40, 0.06, 0.60, 0.94) infinite;
+  filter: blur(24px);
+  animation: organic-core-beta-1 18s cubic-bezier(0.37, 0, 0.63, 1) -5s infinite;
 }
 
 .core-beta-2,
@@ -1317,51 +1333,56 @@
   height: 36%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(217, 70, 239, 0.38) 0%,    /* Magenta */
-    rgba(153, 27, 27, 0.18) 36%,    /* Vermelho Carmesim */
-    transparent 70%
+    rgba(217, 70, 239, 0.38) 0%,     /* Magenta */
+    rgba(217, 70, 239, 0.285) 22%,
+    rgba(153, 27, 27, 0.16) 48%,     /* Vermelho Carmesim */
+    rgba(153, 27, 27, 0.053) 74%,
+    rgba(153, 27, 27, 0) 100%
   );
-  filter: blur(12px);
-  animation: organic-core-beta-2 32s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
+  filter: blur(22px);
+  animation: organic-core-beta-2 29s cubic-bezier(0.37, 0, 0.63, 1) -14s infinite;
 }
 
 /* =========================================================================
-   3. ENTIDADE ALFA — O Coração Azul Real & Ciano (Azul Real, Azul, Verde, Amarelo)
-   Tamanho: 56vmax. Grandes travessias transversais e diagonais completas.
+   3. ENTIDADE ALFA — PLANO 1: Massa Protagonista (Foco Superior / Boas-vindas)
+   Halo amplo e envolvente (78vmax × 64vmax), blur(95px), ciclo primo 34s (delay -23s).
+   Curva Gaussiana de 5 Paradas (0% -> 22% [75%] -> 48% [42%] -> 74% [14%] -> 100% [0%]).
    ========================================================================= */
 .mass-alpha,
 .field-entity-alpha {
   top: 0;
   left: 0;
-  width: 56vmax;
-  height: 46vmax;
+  width: 78vmax;
+  height: 64vmax;
 }
 
 .body-alpha,
 .field-body-alpha {
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(0, 102, 255, 0.46) 0%,     /* Azul Real */
-    rgba(14, 165, 233, 0.35) 30%,   /* Azul */
-    rgba(16, 185, 129, 0.20) 58%,   /* Verde */
-    rgba(250, 204, 21, 0.10) 74%,   /* Amarelo */
-    transparent 86%
+    rgba(0, 102, 255, 0.46) 0%,      /* 100% do núcleo — Azul Real */
+    rgba(14, 165, 233, 0.345) 22%,   /* 75% do núcleo — Azul */
+    rgba(16, 185, 129, 0.193) 48%,   /* 42% do núcleo — Verde */
+    rgba(250, 204, 21, 0.064) 74%,   /* 14% do núcleo — Amarelo */
+    rgba(250, 204, 21, 0) 100%       /* 0% — Cauda de difusão atmosférica */
   );
-  filter: blur(20px);
+  filter: blur(95px);
   animation:
-    organic-morph-alpha 32s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite,
-    chroma-alpha 46s linear infinite;
+    organic-morph-alpha 34s cubic-bezier(0.37, 0, 0.63, 1) -23s infinite,
+    chroma-alpha 46s linear -23s infinite;
 }
 
 .inner-alpha,
 .field-inner-alpha {
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(56, 189, 248, 0.36) 0%,    /* Azul */
-    rgba(0, 102, 255, 0.18) 36%,    /* Azul Real */
-    transparent 70%
+    rgba(56, 189, 248, 0.36) 0%,     /* 100% — Azul */
+    rgba(56, 189, 248, 0.27) 22%,    /* 75% — Azul */
+    rgba(0, 102, 255, 0.151) 48%,    /* 42% — Azul Real */
+    rgba(0, 102, 255, 0.05) 74%,     /* 14% — Azul Real */
+    rgba(0, 102, 255, 0) 100%        /* 0% */
   );
-  animation: organic-inner-alpha 10.2s cubic-bezier(0.40, 0.02, 0.60, 0.98) infinite;
+  animation: organic-inner-alpha 34s cubic-bezier(0.37, 0, 0.63, 1) -19s infinite;
 }
 
 .core-alpha-1,
@@ -1372,12 +1393,14 @@
   height: 48%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(165, 243, 252, 0.45) 0%,   /* Ciano */
-    rgba(14, 165, 233, 0.25) 38%,   /* Azul */
-    transparent 72%
+    rgba(165, 243, 252, 0.45) 0%,    /* Ciano */
+    rgba(165, 243, 252, 0.338) 22%,
+    rgba(14, 165, 233, 0.189) 48%,   /* Azul */
+    rgba(14, 165, 233, 0.063) 74%,
+    rgba(14, 165, 233, 0) 100%
   );
-  filter: blur(14px);
-  animation: organic-core-alpha-1 6.8s cubic-bezier(0.42, 0.05, 0.58, 0.95) infinite;
+  filter: blur(24px);
+  animation: organic-core-alpha-1 23s cubic-bezier(0.37, 0, 0.63, 1) -8s infinite;
 }
 
 .core-alpha-2,
@@ -1388,51 +1411,56 @@
   height: 38%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(52, 211, 153, 0.38) 0%,    /* Verde Esmeralda */
-    rgba(250, 204, 21, 0.18) 36%,   /* Amarelo */
-    transparent 70%
+    rgba(52, 211, 153, 0.38) 0%,     /* Verde Esmeralda */
+    rgba(52, 211, 153, 0.285) 22%,
+    rgba(250, 204, 21, 0.16) 48%,    /* Amarelo */
+    rgba(250, 204, 21, 0.053) 74%,
+    rgba(250, 204, 21, 0) 100%
   );
-  filter: blur(12px);
-  animation: organic-core-alpha-2 32s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
+  filter: blur(22px);
+  animation: organic-core-alpha-2 34s cubic-bezier(0.37, 0, 0.63, 1) -16s infinite;
 }
 
 /* =========================================================================
-   4. ENTIDADE GAMA — O Manto Carmesim, Rosa & Âmbar (Vermelho Carmesim, Âmbar, Rosa)
-   Tamanho: 50vmax. Viagens completas borda a borda e diagonais livres.
+   4. ENTIDADE GAMA — PLANO 2: Massa de Ritmo e Transição (Zona Central / Especialização)
+   Tamanho médio (58vmax × 48vmax), blur(85px), ciclo primo 29s (delay -17s).
+   Curva Gaussiana de 5 Paradas (0% -> 22% [75%] -> 48% [42%] -> 74% [14%] -> 100% [0%]).
    ========================================================================= */
 .mass-gama,
 .field-entity-gama {
   top: 0;
   left: 0;
-  width: 50vmax;
-  height: 42vmax;
+  width: 58vmax;
+  height: 48vmax;
 }
 
 .body-gama,
 .field-body-gama {
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(153, 27, 27, 0.46) 0%,     /* Vermelho Carmesim */
-    rgba(239, 68, 68, 0.32) 28%,    /* Vermelho */
-    rgba(245, 158, 11, 0.24) 52%,   /* Âmbar */
-    rgba(244, 63, 94, 0.16) 72%,    /* Rosa */
-    transparent 86%
+    rgba(153, 27, 27, 0.46) 0%,      /* 100% do núcleo — Vermelho Carmesim */
+    rgba(239, 68, 68, 0.345) 22%,    /* 75% do núcleo — Vermelho */
+    rgba(245, 158, 11, 0.193) 48%,   /* 42% do núcleo — Âmbar */
+    rgba(244, 63, 94, 0.064) 74%,    /* 14% do núcleo — Rosa */
+    rgba(244, 63, 94, 0) 100%        /* 0% — Cauda de difusão atmosférica */
   );
-  filter: blur(22px);
+  filter: blur(85px);
   animation:
-    organic-morph-gama 36s cubic-bezier(0.42, 0.03, 0.58, 0.97) infinite,
-    chroma-gama 40s linear infinite;
+    organic-morph-gama 29s cubic-bezier(0.37, 0, 0.63, 1) -17s infinite,
+    chroma-gama 40s linear -17s infinite;
 }
 
 .inner-gama,
 .field-inner-gama {
   background: radial-gradient(
     ellipse at 48% 52%,
-    rgba(251, 113, 133, 0.26) 0%,   /* Rosa */
-    rgba(153, 27, 27, 0.14) 46%,    /* Vermelho Carmesim */
-    transparent 68%
+    rgba(251, 113, 133, 0.26) 0%,    /* 100% — Rosa */
+    rgba(251, 113, 133, 0.195) 22%,  /* 75% — Rosa */
+    rgba(153, 27, 27, 0.109) 48%,    /* 42% — Vermelho Carmesim */
+    rgba(153, 27, 27, 0.036) 74%,    /* 14% — Vermelho Carmesim */
+    rgba(153, 27, 27, 0) 100%        /* 0% */
   );
-  animation: organic-inner-gama 12s cubic-bezier(0.42, 0.05, 0.58, 0.95) infinite;
+  animation: organic-inner-gama 29s cubic-bezier(0.37, 0, 0.63, 1) -12s infinite;
 }
 
 .core-gama-1,
@@ -1443,12 +1471,14 @@
   height: 46%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(253, 164, 175, 0.36) 0%,   /* Rosa claro */
-    rgba(239, 68, 68, 0.18) 38%,    /* Vermelho */
-    transparent 70%
+    rgba(253, 164, 175, 0.36) 0%,    /* Rosa claro */
+    rgba(253, 164, 175, 0.27) 22%,
+    rgba(239, 68, 68, 0.151) 48%,    /* Vermelho */
+    rgba(239, 68, 68, 0.05) 74%,
+    rgba(239, 68, 68, 0) 100%
   );
-  filter: blur(14px);
-  animation: organic-core-gama-1 9.2s cubic-bezier(0.44, 0.05, 0.56, 0.95) infinite;
+  filter: blur(24px);
+  animation: organic-core-gama-1 18s cubic-bezier(0.37, 0, 0.63, 1) -6s infinite;
 }
 
 .core-gama-2,
@@ -1459,51 +1489,56 @@
   height: 38%;
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(245, 158, 11, 0.34) 0%,    /* Âmbar */
-    rgba(250, 204, 21, 0.18) 36%,   /* Amarelo */
-    transparent 70%
+    rgba(245, 158, 11, 0.34) 0%,     /* Âmbar */
+    rgba(245, 158, 11, 0.255) 22%,
+    rgba(250, 204, 21, 0.143) 48%,   /* Amarelo */
+    rgba(250, 204, 21, 0.048) 74%,
+    rgba(250, 204, 21, 0) 100%
   );
-  filter: blur(12px);
-  animation: organic-core-gama-2 36s cubic-bezier(0.42, 0.03, 0.58, 0.97) infinite;
+  filter: blur(22px);
+  animation: organic-core-gama-2 29s cubic-bezier(0.37, 0, 0.63, 1) -15s infinite;
 }
 
 /* =========================================================================
-   5. ENTIDADE ÉPSILON — A Centelha Dourada & Celeste (Âmbar, Amarelo, Magenta, Azul Real)
-   Tamanho: 34vmax. Voo livre transversal ágil e luminoso.
+   5. ENTIDADE ÉPSILON — PLANO 1 (Auxiliar Superior): Centelha Dourada & Celeste
+   Tamanho (44vmax × 36vmax), blur(65px), ciclo primo 18s (delay -5s).
+   Curva Gaussiana de 5 Paradas (0% -> 22% [75%] -> 48% [42%] -> 74% [14%] -> 100% [0%]).
    ========================================================================= */
 .mass-epsilon,
 .field-entity-epsilon {
   top: 0;
   left: 0;
-  width: 34vmax;
-  height: 28vmax;
+  width: 44vmax;
+  height: 36vmax;
 }
 
 .body-epsilon,
 .field-body-epsilon {
   background: radial-gradient(
     ellipse at 48% 52%,
-    rgba(245, 158, 11, 0.50) 0%,    /* Âmbar */
-    rgba(250, 204, 21, 0.36) 26%,   /* Amarelo */
-    rgba(217, 70, 239, 0.24) 50%,   /* Magenta */
-    rgba(29, 78, 216, 0.16) 72%,    /* Azul Real */
-    transparent 85%
+    rgba(245, 158, 11, 0.50) 0%,     /* 100% do núcleo — Âmbar */
+    rgba(250, 204, 21, 0.375) 22%,   /* 75% do núcleo — Amarelo */
+    rgba(217, 70, 239, 0.21) 48%,    /* 42% do núcleo — Magenta */
+    rgba(29, 78, 216, 0.07) 74%,     /* 14% do núcleo — Azul Real */
+    rgba(29, 78, 216, 0) 100%        /* 0% — Cauda de difusão atmosférica */
   );
-  filter: blur(16px);
+  filter: blur(65px);
   animation:
-    organic-morph-epsilon 22s cubic-bezier(0.44, 0.04, 0.56, 0.96) infinite,
-    chroma-epsilon 28s linear infinite;
+    organic-morph-epsilon 18s cubic-bezier(0.37, 0, 0.63, 1) -5s infinite,
+    chroma-epsilon 28s linear -5s infinite;
 }
 
 .inner-epsilon,
 .field-inner-epsilon {
   background: radial-gradient(
     ellipse at 50% 50%,
-    rgba(254, 240, 138, 0.34) 0%,   /* Amarelo claro */
-    rgba(245, 158, 11, 0.16) 38%,   /* Âmbar */
-    transparent 65%
+    rgba(254, 240, 138, 0.34) 0%,    /* 100% — Amarelo claro */
+    rgba(254, 240, 138, 0.255) 22%,  /* 75% — Amarelo claro */
+    rgba(245, 158, 11, 0.143) 48%,   /* 42% — Âmbar */
+    rgba(245, 158, 11, 0.048) 74%,   /* 14% — Âmbar */
+    rgba(245, 158, 11, 0) 100%       /* 0% */
   );
-  animation: organic-inner-epsilon 6.2s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
+  animation: organic-inner-epsilon 18s cubic-bezier(0.37, 0, 0.63, 1) -4s infinite;
 }
 
 .core-epsilon,
@@ -1515,24 +1550,28 @@
   background: radial-gradient(
     ellipse at 50% 50%,
     rgba(254, 240, 138, 0.44) 0%,
-    rgba(56, 189, 248, 0.24) 36%,   /* Azul */
-    transparent 70%
+    rgba(254, 240, 138, 0.33) 22%,
+    rgba(56, 189, 248, 0.185) 48%,   /* Azul */
+    rgba(56, 189, 248, 0.062) 74%,
+    rgba(56, 189, 248, 0) 100%
   );
-  filter: blur(10px);
-  animation: organic-core-epsilon 4.8s cubic-bezier(0.42, 0.04, 0.58, 0.96) infinite;
+  filter: blur(20px);
+  animation: organic-core-epsilon 18s cubic-bezier(0.37, 0, 0.63, 1) -9s infinite;
 }
 
 /* =========================================================================
-   VINHETA CINEMATOGRÁFICA DE ALTO CONTRASTE E LEGIBILIDADE
+   VINHETA CINEMATOGRÁFICA + CAMADA DE POLIMENTO ÓPTICO ANTI-BANDING (blur 24px)
    ========================================================================= */
 .organic-field-vignette,
 .deep-space-vignette {
   background: radial-gradient(
     ellipse 115% 95% at 50% 50%,
     transparent 46%,
-    rgba(4, 6, 10, 0.45) 78%,
-    rgba(3, 4, 8, 0.78) 100%
+    rgba(4, 6, 10, 0.42) 78%,
+    rgba(3, 4, 8, 0.74) 100%
   );
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
   z-index: 2;
 }
 
@@ -1678,448 +1717,291 @@
 }
 
 /* =========================================================================
-   KEYFRAMES DE INTERPOLAÇÃO CROMÁTICA CONTÍNUA (10 CORES VIVAS E ORGÂNICAS)
-   100% Acelerado no Fragment Shader GPU via hue-rotate contínuo (zero flicker).
-   Paleta: VERDE, AZUL, AZUL REAL, ROXO, MAGENTA, ROSA, VERMELHO,
-           VERMELHO CARMESIM, AMARELO, ÂMBAR.
+   KEYFRAMES DE INTERPOLAÇÃO CROMÁTICA CONTÍNUA COM BLUR PROGRESSIVO (65px a 110px)
    ========================================================================= */
 
 @keyframes chroma-alpha {
   0% {
-    /* AZUL REAL & AZUL */
-    filter: hue-rotate(0deg) blur(20px);
+    filter: hue-rotate(0deg) blur(95px);
   }
   18% {
-    /* AZUL → AZUL REAL → ROXO */
-    filter: hue-rotate(36deg) blur(20px);
+    filter: hue-rotate(36deg) blur(95px);
   }
   38% {
-    /* ROXO → MAGENTA → ROSA */
-    filter: hue-rotate(96deg) blur(20px);
+    filter: hue-rotate(96deg) blur(95px);
   }
   56% {
-    /* VERMELHO → VERMELHO CARMESIM */
-    filter: hue-rotate(152deg) blur(20px);
+    filter: hue-rotate(152deg) blur(95px);
   }
   74% {
-    /* AMARELO → ÂMBAR */
-    filter: hue-rotate(224deg) blur(20px);
+    filter: hue-rotate(224deg) blur(95px);
   }
   88% {
-    /* ÂMBAR → VERDE */
-    filter: hue-rotate(300deg) blur(20px);
+    filter: hue-rotate(300deg) blur(95px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(20px);
+    filter: hue-rotate(360deg) blur(95px);
   }
 }
 
 @keyframes chroma-beta {
   0% {
-    /* ROXO & MAGENTA */
-    filter: hue-rotate(0deg) blur(22px);
+    filter: hue-rotate(0deg) blur(80px);
   }
   20% {
-    /* ROXO → MAGENTA → ROSA */
-    filter: hue-rotate(42deg) blur(22px);
+    filter: hue-rotate(42deg) blur(80px);
   }
   42% {
-    /* VERMELHO → VERMELHO CARMESIM → MAGENTA */
-    filter: hue-rotate(90deg) blur(22px);
+    filter: hue-rotate(90deg) blur(80px);
   }
   62% {
-    /* AMARELO → ÂMBAR → VERMELHO */
-    filter: hue-rotate(164deg) blur(22px);
+    filter: hue-rotate(164deg) blur(80px);
   }
   82% {
-    /* VERDE → AMARELO → ÂMBAR */
-    filter: hue-rotate(264deg) blur(22px);
+    filter: hue-rotate(264deg) blur(80px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(22px);
+    filter: hue-rotate(360deg) blur(80px);
   }
 }
 
 @keyframes chroma-gama {
   0% {
-    /* VERMELHO CARMESIM & ÂMBAR */
-    filter: hue-rotate(0deg) blur(22px);
+    filter: hue-rotate(0deg) blur(85px);
   }
   22% {
-    /* VERMELHO → VERMELHO CARMESIM → MAGENTA */
-    filter: hue-rotate(48deg) blur(22px);
+    filter: hue-rotate(48deg) blur(85px);
   }
   44% {
-    /* VERDE → AMARELO → ÂMBAR */
-    filter: hue-rotate(114deg) blur(22px);
+    filter: hue-rotate(114deg) blur(85px);
   }
   66% {
-    /* AZUL → AZUL REAL → ROXO */
-    filter: hue-rotate(204deg) blur(22px);
+    filter: hue-rotate(204deg) blur(85px);
   }
   86% {
-    /* ROXO → MAGENTA → ROSA */
-    filter: hue-rotate(292deg) blur(22px);
+    filter: hue-rotate(292deg) blur(85px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(22px);
+    filter: hue-rotate(360deg) blur(85px);
   }
 }
 
 @keyframes chroma-delta {
   0% {
-    /* AZUL REAL & AZUL profundo */
-    filter: hue-rotate(0deg) blur(26px);
+    filter: hue-rotate(0deg) blur(110px);
   }
   30% {
-    /* AZUL REAL → ROXO */
-    filter: hue-rotate(52deg) blur(26px);
+    filter: hue-rotate(52deg) blur(110px);
   }
   60% {
-    /* VERDE esmeralda & ÂMBAR abissal */
-    filter: hue-rotate(178deg) blur(26px);
+    filter: hue-rotate(178deg) blur(110px);
   }
   84% {
-    /* AZUL & AZUL REAL oceânico */
-    filter: hue-rotate(290deg) blur(26px);
+    filter: hue-rotate(290deg) blur(110px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(26px);
+    filter: hue-rotate(360deg) blur(110px);
   }
 }
 
 @keyframes chroma-epsilon {
   0% {
-    /* ÂMBAR & AMARELO radiante */
-    filter: hue-rotate(0deg) blur(16px);
+    filter: hue-rotate(0deg) blur(65px);
   }
   22% {
-    /* VERDE → AMARELO → ÂMBAR */
-    filter: hue-rotate(58deg) blur(16px);
+    filter: hue-rotate(58deg) blur(65px);
   }
   44% {
-    /* AZUL → AZUL REAL → ROXO */
-    filter: hue-rotate(144deg) blur(16px);
+    filter: hue-rotate(144deg) blur(65px);
   }
   66% {
-    /* ROXO → MAGENTA → ROSA */
-    filter: hue-rotate(234deg) blur(16px);
+    filter: hue-rotate(234deg) blur(65px);
   }
   85% {
-    /* VERMELHO → VERMELHO CARMESIM */
-    filter: hue-rotate(312deg) blur(16px);
+    filter: hue-rotate(312deg) blur(65px);
   }
   100% {
-    filter: hue-rotate(360deg) blur(16px);
+    filter: hue-rotate(360deg) blur(65px);
   }
 }
 
 /* =========================================================================
-   KEYFRAMES MACRO DE TRAJETÓRIAS — VIAJAM POR TODA A TELA (COORDENADAS SEGURAS)
-   Zero perda de tiles, zero tela preta, zero resets bruscos.
+   KEYFRAMES AUTÔNOMOS EM 4 ESTÁGIOS (0% -> 33% -> 66% -> 100%)
+   Trajetória fluida translate3d + respiração escalar (0.92 a 1.12) + rotate sutil
    ========================================================================= */
 
-/* ALFA (32s): noroeste -> centro (FUSÃO COM BETA) -> nordeste -> borda superior */
 @keyframes organic-voyage-alpha {
   0% {
-    transform: translate3d(0, 0, 0);
-    opacity: 0.82;
-  }
-  16% {
-    transform: translate3d(7vw, 5vh, 0);
-    opacity: 0.85;
-  }
-  26% {
-    /* Aproximação de Beta no centro */
-    transform: translate3d(14vw, 13vh, 0);
-    opacity: 0.88;
-  }
-  36% {
-    /* Contato e Fusão com Beta no Centro da tela */
-    transform: translate3d(19vw, 20vh, 0);
-    opacity: 0.94;
-  }
-  48% {
-    /* Supermassa unificada */
-    transform: translate3d(20vw, 21vh, 0);
-    opacity: 0.94;
-  }
-  58% {
-    /* Início da separação para o nordeste */
-    transform: translate3d(25vw, 10vh, 0);
+    transform: translate3d(0, 0, 0) scale(1);
     opacity: 0.86;
   }
-  72% {
-    /* Viagem livre pela orla superior/nordeste */
-    transform: translate3d(22vw, -4vh, 0);
-    opacity: 0.78;
+  33% {
+    transform: translate3d(14vw, 9vh, 0) scale(1.10);
+    opacity: 0.92;
   }
-  86% {
-    /* Curva descendente de retorno */
-    transform: translate3d(9vw, -2vh, 0);
-    opacity: 0.80;
+  66% {
+    transform: translate3d(-10vw, 5vh, 0) scale(0.94);
+    opacity: 0.82;
   }
   100% {
-    transform: translate3d(0, 0, 0);
-    opacity: 0.82;
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.86;
   }
 }
 
-/* DEFORMAÇÃO E MORFOLOGIA DE FUSÃO DE ALFA (32s) */
+/* 4 Estágios (0% -> 33% -> 66% -> 100%) — Alfa (34s) */
 @keyframes organic-morph-alpha {
   0% {
-    transform: scale(1, 1);
+    transform: translate3d(0, 0, 0) scale(0.96) rotate(0deg);
   }
-  16% {
-    transform: scale(1.05, 0.96);
+  33% {
+    transform: translate3d(4vw, 3vh, 0) scale(1.12) rotate(4deg);
   }
-  26% {
-    /* Tensão fluida de aproximação: estica na direção de Beta */
-    transform: scale(1.24, 0.82);
-  }
-  36%, 46% {
-    /* Expansão compartilhada na supermassa */
-    transform: scale(1.36, 1.28);
-  }
-  54% {
-    /* Estiramento elástico na separação */
-    transform: scale(0.84, 1.28);
-  }
-  68% {
-    /* Recoil pós-separação */
-    transform: scale(1.12, 0.92);
-  }
-  84% {
-    transform: scale(0.96, 1.05);
+  66% {
+    transform: translate3d(-4vw, -2vh, 0) scale(0.92) rotate(-3deg);
   }
   100% {
-    transform: scale(1, 1);
+    transform: translate3d(0, 0, 0) scale(0.96) rotate(0deg);
   }
 }
 
-/* BETA (32s): sudeste -> centro (FUSÃO COM ALFA) -> sudoeste -> encontro com Gama */
 @keyframes organic-voyage-beta {
   0% {
-    transform: translate3d(0, 0, 0);
-    opacity: 0.78;
-  }
-  16% {
-    transform: translate3d(-5vw, -6vh, 0);
+    transform: translate3d(0, 0, 0) scale(1);
     opacity: 0.82;
   }
-  26% {
-    /* Aproximação de Alfa */
-    transform: translate3d(-12vw, -13vh, 0);
-    opacity: 0.86;
+  33% {
+    transform: translate3d(-12vw, -8vh, 0) scale(1.08);
+    opacity: 0.90;
   }
-  36% {
-    /* Contato no centro */
-    transform: translate3d(-17vw, -18vh, 0);
-    opacity: 0.94;
-  }
-  48% {
-    /* Supermassa unificada */
-    transform: translate3d(-18vw, -19vh, 0);
-    opacity: 0.94;
-  }
-  58% {
-    /* Separação para a direção oposta (sudoeste) */
-    transform: translate3d(-24vw, -8vh, 0);
-    opacity: 0.86;
-  }
-  72% {
-    /* Encontro tangencial com a Entidade Gama no sul */
-    transform: translate3d(-20vw, 4vh, 0);
-    opacity: 0.88;
-  }
-  86% {
-    /* Retorno suave em arco pelo sul */
-    transform: translate3d(-8vw, 2vh, 0);
-    opacity: 0.80;
+  66% {
+    transform: translate3d(10vw, 6vh, 0) scale(0.93);
+    opacity: 0.78;
   }
   100% {
-    transform: translate3d(0, 0, 0);
-    opacity: 0.78;
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.82;
   }
 }
 
-/* DEFORMAÇÃO E MORFOLOGIA DE FUSÃO DE BETA (32s) */
+/* 4 Estágios (0% -> 33% -> 66% -> 100%) — Beta (23s) */
 @keyframes organic-morph-beta {
   0% {
-    transform: scale(1, 1);
+    transform: translate3d(0, 0, 0) scale(1.00) rotate(0deg);
   }
-  16% {
-    transform: scale(0.96, 1.05);
+  33% {
+    transform: translate3d(-3.5vw, 3vh, 0) scale(1.11) rotate(-5deg);
   }
-  26% {
-    /* Tensão fluida vertical de atração */
-    transform: scale(0.82, 1.24);
-  }
-  36%, 46% {
-    /* Expansão compartilhada na supermassa */
-    transform: scale(1.34, 1.30);
-  }
-  54% {
-    /* Estiramento no eixo de fuga */
-    transform: scale(1.26, 0.84);
-  }
-  72% {
-    /* Deformação ao cruzar com Gama */
-    transform: scale(1.15, 0.88);
-  }
-  86% {
-    transform: scale(0.96, 1.05);
+  66% {
+    transform: translate3d(3.5vw, -2.5vh, 0) scale(0.92) rotate(4deg);
   }
   100% {
-    transform: scale(1, 1);
+    transform: translate3d(0, 0, 0) scale(1.00) rotate(0deg);
   }
 }
 
-/* GAMA (36s): travessia sul oeste -> leste -> tangência com Beta -> centro */
 @keyframes organic-voyage-gama {
   0% {
-    transform: translate3d(0, 0, 0);
-    opacity: 0.76;
-  }
-  20% {
-    transform: translate3d(12vw, -2vh, 0);
+    transform: translate3d(0, 0, 0) scale(1);
     opacity: 0.80;
   }
-  38% {
-    /* Interação com Beta no sul */
-    transform: translate3d(24vw, 3vh, 0);
+  33% {
+    transform: translate3d(14vw, -6vh, 0) scale(1.09);
     opacity: 0.88;
   }
-  56% {
-    /* Subida diagonal pelo centro-leste */
-    transform: translate3d(18vw, -16vh, 0);
-    opacity: 0.80;
-  }
-  76% {
-    /* Travessia pelo centro-norte */
-    transform: translate3d(6vw, -12vh, 0);
-    opacity: 0.74;
-  }
-  88% {
-    transform: translate3d(-2vw, -4vh, 0);
+  66% {
+    transform: translate3d(-10vw, 7vh, 0) scale(0.94);
     opacity: 0.76;
   }
   100% {
-    transform: translate3d(0, 0, 0);
-    opacity: 0.76;
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.80;
   }
 }
 
+/* 4 Estágios (0% -> 33% -> 66% -> 100%) — Gama (29s) */
 @keyframes organic-morph-gama {
   0% {
-    transform: scale(1, 1);
+    transform: translate3d(0, 0, 0) scale(0.95) rotate(0deg);
   }
-  20% {
-    transform: scale(1.08, 0.94);
+  33% {
+    transform: translate3d(3.5vw, -3vh, 0) scale(1.10) rotate(5deg);
   }
-  38% {
-    /* Deformação de confluência ao tocar a passagem de Beta */
-    transform: scale(1.24, 0.82);
-  }
-  56% {
-    transform: scale(0.92, 1.10);
-  }
-  76% {
-    transform: scale(1.08, 0.94);
+  66% {
+    transform: translate3d(-3vw, 2.5vh, 0) scale(0.92) rotate(-4deg);
   }
   100% {
-    transform: scale(1, 1);
+    transform: translate3d(0, 0, 0) scale(0.95) rotate(0deg);
   }
 }
 
-/* DELTA (44s): O Oceano Abissal — ampla, serena e atmosférica */
 @keyframes organic-voyage-delta {
   0% {
-    transform: translate3d(0, 0, 0);
-    opacity: 0.82;
-  }
-  24% {
-    transform: translate3d(5vw, 4vh, 0);
-    opacity: 0.85;
-  }
-  50% {
-    transform: translate3d(8vw, 6vh, 0);
-    opacity: 0.88;
-  }
-  74% {
-    transform: translate3d(3vw, 9vh, 0);
-    opacity: 0.82;
-  }
-  100% {
-    transform: translate3d(0, 0, 0);
-    opacity: 0.82;
-  }
-}
-
-@keyframes organic-morph-delta {
-  0% {
-    transform: scale(1, 1);
-  }
-  28% {
-    transform: scale(1.05, 0.96);
-  }
-  54% {
-    transform: scale(0.96, 1.05);
-  }
-  78% {
-    transform: scale(1.04, 0.97);
-  }
-  100% {
-    transform: scale(1, 1);
-  }
-}
-
-/* ÉPSILON (22s): Centelha Celeste ágil em voo livre */
-@keyframes organic-voyage-epsilon {
-  0% {
-    transform: translate3d(0, 0, 0);
-    opacity: 0.78;
-  }
-  22% {
-    /* Mergulha na orla de Alfa */
-    transform: translate3d(-14vw, 10vh, 0);
-    opacity: 0.86;
-  }
-  44% {
-    /* Corta o centro da tela */
-    transform: translate3d(-24vw, 26vh, 0);
-    opacity: 0.80;
-  }
-  68% {
-    /* Sobe para o oeste */
-    transform: translate3d(-34vw, 12vh, 0);
+    transform: translate3d(0, 0, 0) scale(1);
     opacity: 0.84;
   }
-  86% {
-    transform: translate3d(-15vw, -4vh, 0);
-    opacity: 0.82;
+  33% {
+    transform: translate3d(8vw, 3vh, 0) scale(1.08);
+    opacity: 0.90;
+  }
+  66% {
+    transform: translate3d(-7vw, -3vh, 0) scale(0.94);
+    opacity: 0.80;
   }
   100% {
-    transform: translate3d(0, 0, 0);
-    opacity: 0.78;
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.84;
   }
 }
 
-@keyframes organic-morph-epsilon {
+/* 4 Estágios (0% -> 33% -> 66% -> 100%) — Delta (41s) */
+@keyframes organic-morph-delta {
   0% {
-    transform: scale(1, 1);
+    transform: translate3d(0, 0, 0) scale(0.98) rotate(0deg);
   }
-  25% {
-    transform: scale(1.15, 0.86);
+  33% {
+    transform: translate3d(4vw, 2vh, 0) scale(1.12) rotate(3deg);
   }
-  50% {
-    transform: scale(0.88, 1.18);
-  }
-  75% {
-    transform: scale(1.10, 0.92);
+  66% {
+    transform: translate3d(-4vw, -2vh, 0) scale(0.93) rotate(-3deg);
   }
   100% {
-    transform: scale(1, 1);
+    transform: translate3d(0, 0, 0) scale(0.98) rotate(0deg);
+  }
+}
+
+@keyframes organic-voyage-epsilon {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.80;
+  }
+  33% {
+    transform: translate3d(-14vw, 8vh, 0) scale(1.10);
+    opacity: 0.88;
+  }
+  66% {
+    transform: translate3d(12vw, -5vh, 0) scale(0.92);
+    opacity: 0.78;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.80;
+  }
+}
+
+/* 4 Estágios (0% -> 33% -> 66% -> 100%) — Épsilon (18s) */
+@keyframes organic-morph-epsilon {
+  0% {
+    transform: translate3d(0, 0, 0) scale(0.94) rotate(0deg);
+  }
+  33% {
+    transform: translate3d(-3vw, 2.5vh, 0) scale(1.12) rotate(-6deg);
+  }
+  66% {
+    transform: translate3d(3vw, -2vh, 0) scale(0.92) rotate(5deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(0.94) rotate(0deg);
   }
 }
 
