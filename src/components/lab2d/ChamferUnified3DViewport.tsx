@@ -24,6 +24,11 @@ import type { Entity } from "@/lib/lab2d/core";
 import type { EdgeMode } from "@/lib/viz3d/cameraPresets";
 import { registerThemeBridge } from "@/lib/settings/themeTransitionEngine";
 import { cn } from "@/lib/utils";
+import {
+  buildStructuralProfilesTessellatedShape,
+  getEntityStructuralProfile,
+  mergeCadTessellatedShapes,
+} from "@/lib/lab2d/structuralProfile";
 
 export interface ChamferUnified3DViewportProps {
   /** Define se a camada de renderização sólida 3D está visível no canvas unificado */
@@ -70,11 +75,9 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
   const treeRef = useRef<CadFeatureTree | null>(null);
   const initialTreeDeserializedRef = useRef<boolean>(false);
   const lastFingerprintRef = useRef<string>("");
+  const lastStructuralFpRef = useRef<string>("");
+  const lastStructuralShapeRef = useRef<ReturnType<typeof buildStructuralProfilesTessellatedShape>>(null);
   const rebuildSeqRef = useRef<number>(0);
-
-  if (!treeRef.current) {
-    treeRef.current = new CadFeatureTree();
-  }
 
   const latestCameraRef = useRef({
     active,
@@ -93,13 +96,17 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
     pivot2D,
   };
 
-  // Lazy-init: inicializa o motor WebGL ThreeBRepRenderer somente quando o modo 3D é ativado pela primeira vez
+  // Lazy-init: inicializa o motor WebGL ThreeBRepRenderer e a árvore B-Rep somente quando o modo 3D é ativado pela primeira vez
   useEffect(() => {
     if (!active) {
       if (rendererRef.current) {
         rendererRef.current.setPaused(true);
       }
       return;
+    }
+
+    if (!treeRef.current) {
+      treeRef.current = new CadFeatureTree();
     }
 
     const el = containerRef.current;
@@ -171,6 +178,9 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
   // Reavalia a geometria B-Rep 3D SOMENTE quando active === true e entities ou thickness mudam
   useEffect(() => {
     if (!active) return;
+    if (!treeRef.current) {
+      treeRef.current = new CadFeatureTree();
+    }
     const renderer = rendererRef.current;
     const tree = treeRef.current;
     if (!renderer || !tree) return;
@@ -185,11 +195,41 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
     }
 
     const safeThickness = Number.isFinite(thickness) && thickness > 0 ? thickness : 5;
-    const analysis = analyze2DSketchFor3D(entities, safeThickness);
+    const structuralEntities: Entity[] = [];
+    const sheetEntities: Entity[] = [];
+    const structuralFpParts: string[] = [];
 
-    if (analysis.fingerprint !== lastFingerprintRef.current) {
-      lastFingerprintRef.current = analysis.fingerprint;
+    for (const ent of entities) {
+      const sp = getEntityStructuralProfile(ent);
+      if (sp) {
+        structuralEntities.push(ent);
+        const posAnchor =
+          ent.type === "line"
+            ? `${ent.x1.toFixed(2)},${ent.y1.toFixed(2)},${ent.x2.toFixed(2)},${ent.y2.toFixed(2)}`
+            : ent.type === "polyline" && ent.pts.length > 0
+              ? `${ent.pts[0]!.x.toFixed(2)},${ent.pts[0]!.y.toFixed(2)}`
+              : "0,0";
+        structuralFpParts.push(
+          `${ent.id}:${sp.kind}:${sp.widthB}:${sp.heightH}:${sp.wallThicknessE}:${sp.lengthL}:${sp.axisAngleRad.toFixed(4)}@${posAnchor}`,
+        );
+      } else {
+        sheetEntities.push(ent);
+      }
+    }
+
+    const structuralFp = structuralFpParts.join(";");
+    const analysis = analyze2DSketchFor3D(sheetEntities, safeThickness);
+    const combinedFingerprint = `${analysis.fingerprint}||SP:[${structuralFp}]`;
+
+    if (combinedFingerprint !== lastFingerprintRef.current) {
+      lastFingerprintRef.current = combinedFingerprint;
       const seq = ++rebuildSeqRef.current;
+
+      if (structuralFp !== lastStructuralFpRef.current) {
+        lastStructuralFpRef.current = structuralFp;
+        lastStructuralShapeRef.current = buildStructuralProfilesTessellatedShape(structuralEntities);
+      }
+      const structuralShape = lastStructuralShapeRef.current;
 
       const extrudedIdSet = new Set(analysis.sourceEntityIds);
       const visibleWireframes =
@@ -203,7 +243,8 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
         void tree.rebuild().then((res) => {
           if (seq !== rebuildSeqRef.current) return;
           if (!rendererRef.current) return;
-          rendererRef.current.setShape(res.tessellation ?? null, false);
+          const mergedShape = mergeCadTessellatedShapes(res.tessellation ?? null, structuralShape);
+          rendererRef.current.setShape(mergedShape, false);
           if (onTreeChange) {
             try {
               onTreeChange(tree.serializeTree());
@@ -224,7 +265,18 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
           }
         });
       } else {
-        renderer.setShape(null, false);
+        renderer.setShape(structuralShape, false);
+        const cam = latestCameraRef.current;
+        if (cam.active && structuralShape) {
+          renderer.syncWith2DViewport({
+            view2D: cam.view2D,
+            viewportWidth: cam.viewportSize.w,
+            viewportHeight: cam.viewportSize.h,
+            azimuthDeg: cam.azimuthDeg,
+            elevationDeg: cam.elevationDeg,
+            pivot2D: cam.pivot2D,
+          });
+        }
       }
     }
   }, [entities, thickness, active, initialTreeJson, onTreeChange]);

@@ -23,6 +23,12 @@ import {
   getAllCostaFerroMaterials,
   type CostaFerroMaterialItem,
 } from "@/lib/library/costaFerroCatalog";
+import {
+  analyzeEntityBarGeometry,
+  getEntityStructuralProfile,
+  STRUCTURAL_PROFILE_KIND_META,
+  type EntityStructuralProfile,
+} from "@/lib/lab2d/structuralProfile";
 
 export type OperationMode = "ESTRUTURA_MONTAGEM" | "PECA_INDIVIDUAL";
 
@@ -458,6 +464,85 @@ export function deriveProjectDossier(
     });
   };
 
+  const resolveStructuralProfileMaterial = (
+    sp: EntityStructuralProfile,
+  ): CostaFerroMaterialItem => {
+    if (sp.catalogMaterialId) {
+      const found = findCostaFerroMaterial(sp.catalogMaterialId);
+      if (found) return found;
+    }
+    const bStr = Number.isInteger(sp.widthB) ? `${sp.widthB}` : sp.widthB.toFixed(1);
+    const hStr = Number.isInteger(sp.heightH) ? `${sp.heightH}` : sp.heightH.toFixed(1);
+    const eStr = sp.wallThicknessE.toFixed(2).replace(".", ",");
+    const meta = STRUCTURAL_PROFILE_KIND_META[sp.kind];
+    const barLen = 6000;
+    const kgM = sp.linearWeightKgM || 2.0;
+    const barWeight = +(kgM * 6).toFixed(2);
+    const pricePerKg = 9.8;
+    const dimsLabel =
+      sp.kind === "metalon_quadrado"
+        ? `${bStr}×${bStr}×${eStr} mm`
+        : sp.kind === "tubo_redondo"
+          ? `Ø ${bStr}×${eStr} mm`
+          : sp.kind === "barra_chata"
+            ? `${bStr}×${eStr} mm`
+            : `${hStr}×${bStr}×${eStr} mm`;
+
+    return {
+      id: `cf-cad-${sp.kind}-${bStr}x${hStr}x${sp.wallThicknessE.toFixed(2)}`,
+      layer: "A_MATERIAIS",
+      category:
+        sp.kind === "metalon_quadrado"
+          ? "TUBO_QUADRADO_METALON"
+          : sp.kind === "metalon_retangular"
+            ? "TUBO_RETANGULAR_METALON"
+            : sp.kind === "tubo_redondo"
+              ? "TUBO_REDONDO_INDUSTRIAL"
+              : sp.kind === "perfil_u"
+                ? "PERFIL_ESTRUTURAL"
+                : "CANTONEIRA_BARRA",
+      subcategory: meta.label,
+      name: `${meta.label} ${dimsLabel}`,
+      norm: "ABNT NBR 6591 / CAD",
+      dimensionsMm: dimsLabel,
+      widthMm: sp.widthB,
+      heightMm: sp.heightH,
+      wallThicknessMm: sp.wallThicknessE,
+      commercialLengthMm: barLen,
+      linearWeightKgM: kgM,
+      unitWeightKg: barWeight,
+      finish: "Preto",
+      origin: "CHAMFER CAD • Catálogo BOM",
+      pricePerKgBRL: pricePerKg,
+      unitPriceBRL: +(barWeight * pricePerKg).toFixed(2),
+    };
+  };
+
+  // Contabiliza automaticamente todas as entidades do CHAMFER CAD configuradas como Perfil Estrutural / Metalão
+  const structuralCanvasEntities = canvasEntities.filter(
+    (e) => !e.isConstruction && getEntityStructuralProfile(e) !== null,
+  );
+  if (structuralCanvasEntities.length > 0) {
+    let spIdx = 1;
+    for (const ent of structuralCanvasEntities) {
+      const sp = getEntityStructuralProfile(ent)!;
+      const geom = analyzeEntityBarGeometry(ent);
+      const lengthL = geom?.lengthL ?? sp.lengthL;
+      const matItem = resolveStructuralProfileMaterial(sp);
+      const meta = STRUCTURAL_PROFILE_KIND_META[sp.kind];
+      addProfilePiece(
+        `${meta.label} #${spIdx++} (${Math.round(sp.widthB)}×${Math.round(sp.heightH)}mm)`,
+        "Perfil Estrutural CHAMFER CAD",
+        matItem,
+        1,
+        lengthL,
+        jointAngle,
+        jointAngle,
+        `${geom?.orientationLabel ?? "Barra CAD"} • L = ${lengthL.toFixed(1)} mm`,
+      );
+    }
+  }
+
   const addSheetPiece = (
     name: string,
     mat: CostaFerroMaterialItem,
@@ -784,15 +869,35 @@ export function deriveProjectDossier(
         cadEntities.push({ id: uid(), layer: "dobra", type: "line", x1: sx - 120, y1: sy + 75, x2: sx + 120, y2: sy + 75 });
       }
     } else if (model.structureTemplate === "canvas-estrutura" && canvasEntities.length > 0) {
-      // Deriva barras diretamente das linhas e polilinhas desenhadas no CHAMFER CAD!
+      // Deriva barras diretamente das linhas e polilinhas desenhadas no CHAMFER CAD
+      // (entidades já configuradas com structuralProfile foram contabilizadas acima com sua seção real!)
       let idx = 1;
+      let sheetIdx = 1;
+      const hasExplicitStructuralProfiles = structuralCanvasEntities.length > 0;
       for (const ent of canvasEntities) {
+        if (getEntityStructuralProfile(ent)) continue;
         if (ent.type === "line") {
           const len = Math.hypot(ent.x2 - ent.x1, ent.y2 - ent.y1);
           if (len >= 15) {
             addProfilePiece(`Barra Traçada no CAD #${idx++}`, "Geometria CHAMFER", frameMat, 1, len, jointAngle, jointAngle, `Camada: ${ent.layer}`);
           }
         } else if (ent.type === "polyline" && ent.pts.length >= 2) {
+          if (hasExplicitStructuralProfiles && ent.closed && ent.pts.length >= 3) {
+            const b = boxOf(ent);
+            const sw = Math.max(10, b.maxX - b.minX);
+            const sh = Math.max(10, b.maxY - b.minY);
+            addSheetPiece(
+              `Chapa Plana CAD #${sheetIdx++} (${Math.round(sw)}×${Math.round(sh)}mm)`,
+              partSheet,
+              sw,
+              sh,
+              1,
+              0,
+              0,
+              "Corte CNC Chapa Plana",
+            );
+            continue;
+          }
           for (let i = 0; i < ent.pts.length - 1; i++) {
             const len = Math.hypot(ent.pts[i + 1]!.x - ent.pts[i]!.x, ent.pts[i + 1]!.y - ent.pts[i]!.y);
             if (len >= 15) {
@@ -969,46 +1074,49 @@ export function deriveProjectDossier(
         { id: uid(), layer: "dobra", type: "line", x1: flatLength - flange, y1: 0, x2: flatLength - flange, y2: H },
       );
     } else if (model.partTemplate === "canvas-custom" && canvasEntities.length > 0) {
-      // Analisa entidades reais do Canvas do CHAMFER
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      let perimMm = 0;
-      let holes = 0;
-      let bends = 0;
-      for (const e of canvasEntities) {
-        const b = boxOf(e);
-        minX = Math.min(minX, b.minX);
-        maxX = Math.max(maxX, b.maxX);
-        minY = Math.min(minY, b.minY);
-        maxY = Math.max(maxY, b.maxY);
-        if (e.layer === "dobra") bends++;
-        if (e.type === "circle") {
-          holes++;
-          perimMm += 2 * Math.PI * e.r;
-        } else if (e.type === "line") {
-          perimMm += Math.hypot(e.x2 - e.x1, e.y2 - e.y1);
-        } else if (e.type === "polyline") {
-          for (let i = 0; i < e.pts.length - 1; i++) {
-            perimMm += Math.hypot(e.pts[i + 1]!.x - e.pts[i]!.x, e.pts[i + 1]!.y - e.pts[i]!.y);
-          }
-          if (e.closed && e.pts.length > 2) {
-            perimMm += Math.hypot(e.pts[0]!.x - e.pts[e.pts.length - 1]!.x, e.pts[0]!.y - e.pts[e.pts.length - 1]!.y);
+      // Analisa entidades reais de Chapa Plana do Canvas do CHAMFER (separadas dos Perfis Estruturais / Metalões)
+      const flatSheetEntities = canvasEntities.filter((e) => !getEntityStructuralProfile(e));
+      if (flatSheetEntities.length > 0) {
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        let perimMm = 0;
+        let holes = 0;
+        let bends = 0;
+        for (const e of flatSheetEntities) {
+          const b = boxOf(e);
+          minX = Math.min(minX, b.minX);
+          maxX = Math.max(maxX, b.maxX);
+          minY = Math.min(minY, b.minY);
+          maxY = Math.max(maxY, b.maxY);
+          if (e.layer === "dobra") bends++;
+          if (e.type === "circle") {
+            holes++;
+            perimMm += 2 * Math.PI * e.r;
+          } else if (e.type === "line") {
+            perimMm += Math.hypot(e.x2 - e.x1, e.y2 - e.y1);
+          } else if (e.type === "polyline") {
+            for (let i = 0; i < e.pts.length - 1; i++) {
+              perimMm += Math.hypot(e.pts[i + 1]!.x - e.pts[i]!.x, e.pts[i + 1]!.y - e.pts[i]!.y);
+            }
+            if (e.closed && e.pts.length > 2) {
+              perimMm += Math.hypot(e.pts[0]!.x - e.pts[e.pts.length - 1]!.x, e.pts[0]!.y - e.pts[e.pts.length - 1]!.y);
+            }
           }
         }
+        const bw = Number.isFinite(maxX - minX) ? Math.max(50, maxX - minX) : W;
+        const bh = Number.isFinite(maxY - minY) ? Math.max(50, maxY - minY) : H;
+        addSheetPiece(
+          `Peça em Chapa Plana CHAMFER (${Math.round(bw)}×${Math.round(bh)}mm)`,
+          partSheet,
+          bw,
+          bh,
+          1,
+          Math.max(0, holes - 1),
+          bends,
+          "Corte CNC Direto do Desenho CHAMFER",
+          bw * bh,
+          Math.max(200, perimMm),
+        );
       }
-      const bw = Number.isFinite(maxX - minX) ? Math.max(50, maxX - minX) : W;
-      const bh = Number.isFinite(maxY - minY) ? Math.max(50, maxY - minY) : H;
-      addSheetPiece(
-        `Peça Customizada CHAMFER (${Math.round(bw)}×${Math.round(bh)}mm)`,
-        partSheet,
-        bw,
-        bh,
-        1,
-        Math.max(0, holes - 1),
-        bends,
-        "Corte CNC Direto do Desenho CHAMFER",
-        bw * bh,
-        Math.max(200, perimMm),
-      );
       cadEntities.push(...canvasEntities);
     }
   }

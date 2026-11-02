@@ -380,7 +380,7 @@ export class ThreeBRepRenderer {
     this.currentShape = shape;
     this.clearGeometry();
 
-    if (!shape) {
+    if (!shape || !shape.mesh) {
       this.updateGridAndBackground();
       return;
     }

@@ -40,6 +40,12 @@ import { ChamferCompactNumericEditor } from "@/components/lab2d/mobileEdit/Chamf
 import type { NumericPropertyDef } from "@/components/lab2d/mobileEdit/types";
 import { copyToGlobalClipboard } from "@/lib/lab2d/globalClipboard";
 import { toast } from "@/lib/lab2d/chamferNotify";
+import { ChamferStructuralProfileCard } from "@/components/lab2d/sidebar/ChamferStructuralProfileCard";
+import {
+  formatStructuralProfileClosureLabel,
+  getEntityStructuralProfile,
+  syncStructuralProfileOnGeometryChange,
+} from "@/lib/lab2d/structuralProfile";
 
 const deg = (r: number) => (r * 180) / Math.PI;
 const rad = (d: number) => (d * Math.PI) / 180;
@@ -231,26 +237,30 @@ export function ChamferPropertiesTab({
 
       if (key === "length") {
         const nextLen = Math.max(0.1, val);
-        onUpdateEntity({
-          ...selectedEntity,
-          x2: selectedEntity.x1 + nextLen * Math.cos(curAng),
-          y2: selectedEntity.y1 + nextLen * Math.sin(curAng),
-        });
+        onUpdateEntity(
+          syncStructuralProfileOnGeometryChange({
+            ...selectedEntity,
+            x2: selectedEntity.x1 + nextLen * Math.cos(curAng),
+            y2: selectedEntity.y1 + nextLen * Math.sin(curAng),
+          }),
+        );
       } else if (key === "angle") {
         const nextAng = rad(val);
-        onUpdateEntity({
-          ...selectedEntity,
-          x2: selectedEntity.x1 + curLen * Math.cos(nextAng),
-          y2: selectedEntity.y1 + curLen * Math.sin(nextAng),
-        });
+        onUpdateEntity(
+          syncStructuralProfileOnGeometryChange({
+            ...selectedEntity,
+            x2: selectedEntity.x1 + curLen * Math.cos(nextAng),
+            y2: selectedEntity.y1 + curLen * Math.sin(nextAng),
+          }),
+        );
       } else if (key === "x1") {
-        onUpdateEntity({ ...selectedEntity, x1: val });
+        onUpdateEntity(syncStructuralProfileOnGeometryChange({ ...selectedEntity, x1: val }));
       } else if (key === "y1") {
-        onUpdateEntity({ ...selectedEntity, y1: val });
+        onUpdateEntity(syncStructuralProfileOnGeometryChange({ ...selectedEntity, y1: val }));
       } else if (key === "x2") {
-        onUpdateEntity({ ...selectedEntity, x2: val });
+        onUpdateEntity(syncStructuralProfileOnGeometryChange({ ...selectedEntity, x2: val }));
       } else if (key === "y2") {
-        onUpdateEntity({ ...selectedEntity, y2: val });
+        onUpdateEntity(syncStructuralProfileOnGeometryChange({ ...selectedEntity, y2: val }));
       }
     } else if (selectedEntity.type === "polyline" && selectedEntity.pts.length > 0) {
       const xs = selectedEntity.pts.map((p) => p.x);
@@ -262,22 +272,26 @@ export function ChamferPropertiesTab({
 
       if (key === "width" && curW > 0.001) {
         const scaleX = Math.max(0.1, val) / curW;
-        onUpdateEntity({
-          ...selectedEntity,
-          pts: selectedEntity.pts.map((p) => ({
-            x: minX + (p.x - minX) * scaleX,
-            y: p.y,
-          })),
-        });
+        onUpdateEntity(
+          syncStructuralProfileOnGeometryChange({
+            ...selectedEntity,
+            pts: selectedEntity.pts.map((p) => ({
+              x: minX + (p.x - minX) * scaleX,
+              y: p.y,
+            })),
+          }),
+        );
       } else if (key === "height" && curH > 0.001) {
         const scaleY = Math.max(0.1, val) / curH;
-        onUpdateEntity({
-          ...selectedEntity,
-          pts: selectedEntity.pts.map((p) => ({
-            x: p.x,
-            y: minY + (p.y - minY) * scaleY,
-          })),
-        });
+        onUpdateEntity(
+          syncStructuralProfileOnGeometryChange({
+            ...selectedEntity,
+            pts: selectedEntity.pts.map((p) => ({
+              x: p.x,
+              y: minY + (p.y - minY) * scaleY,
+            })),
+          }),
+        );
       }
     } else if (selectedEntity.type === "text") {
       if (key === "size") onUpdateEntity({ ...selectedEntity, size: Math.max(1, val) });
@@ -854,6 +868,13 @@ export function ChamferPropertiesTab({
               polyLen += Math.hypot(selectedEntity.pts[0].x - selectedEntity.pts[selectedEntity.pts.length - 1].x, selectedEntity.pts[0].y - selectedEntity.pts[selectedEntity.pts.length - 1].y);
             }
 
+            const activeStructProfile = getEntityStructuralProfile(selectedEntity);
+            const closureLabel = activeStructProfile
+              ? formatStructuralProfileClosureLabel(activeStructProfile)
+              : selectedEntity.closed
+                ? "Fechada (Chapa/Loop)"
+                : "Aberta";
+
             return (
               <div className="flex flex-col gap-2">
                 <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 flex flex-col gap-1">
@@ -888,8 +909,14 @@ export function ChamferPropertiesTab({
                   )}
                   {renderInfoRow("Perímetro de contorno", `${polyLen.toFixed(2)} mm`)}
                   {renderInfoRow("Número de vértices", `${selectedEntity.pts.length}`)}
-                  {renderInfoRow("Fechamento", selectedEntity.closed ? "Fechada (Chapa/Loop)" : "Aberta")}
+                  {renderInfoRow("Fechamento", closureLabel)}
                 </div>
+
+                {/* NOVO CARTÃO: PERFIL ESTRUTURAL (CATÁLOGO BOM) ABAIXO DE DIMENSÕES DO CONTORNO E ACIMA DE CAMADA */}
+                <ChamferStructuralProfileCard
+                  entity={selectedEntity}
+                  onUpdateEntity={onUpdateEntity}
+                />
               </div>
             );
           })()}
@@ -979,6 +1006,11 @@ export function ChamferPropertiesTab({
             {renderInfoRow("Largura total (X)", `${overallBounds.width.toFixed(2)} mm`, "↔")}
             {renderInfoRow("Altura total (Y)", `${overallBounds.height.toFixed(2)} mm`, "↕")}
           </div>
+
+          <ChamferStructuralProfileCard
+            entities={selectedEntities}
+            onUpdateEntity={onUpdateEntity}
+          />
 
           {/* Ações em lote */}
           <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 flex flex-col gap-2">

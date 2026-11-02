@@ -1546,6 +1546,7 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
   const [sceneProgress, setSceneProgress] = useState(0);
   const [isInViewport, setIsInViewport] = useState(true);
   const [isDocVisible, setIsDocVisible] = useState(true);
+  const [isTabLayerVisible, setIsTabLayerVisible] = useState(true);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
   const containerRef = useRef<HTMLElement | null>(null);
@@ -1576,6 +1577,34 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
 
   useEffect(() => {
     const el = containerRef.current;
+    if (!el || typeof document === "undefined") return;
+
+    const checkTabLayerVisibility = () => {
+      const tabLayer = el.closest("#tab-layer-inicio") as HTMLElement | null;
+      const keepAliveRoot = el.closest("#caldra-main-tabs-keepalive") as HTMLElement | null;
+      const tabVisible = !tabLayer || tabLayer.getAttribute("data-visible") !== "false";
+      const rootVisible = !keepAliveRoot || keepAliveRoot.getAttribute("data-visible") !== "false";
+      setIsTabLayerVisible(tabVisible && rootVisible);
+    };
+
+    checkTabLayerVisibility();
+
+    if (typeof MutationObserver !== "undefined") {
+      const tabLayer = el.closest("#tab-layer-inicio");
+      const keepAliveRoot = el.closest("#caldra-main-tabs-keepalive");
+      const mutObs = new MutationObserver(checkTabLayerVisibility);
+      if (tabLayer) {
+        mutObs.observe(tabLayer, { attributes: true, attributeFilter: ["data-visible", "style", "data-active"] });
+      }
+      if (keepAliveRoot) {
+        mutObs.observe(keepAliveRoot, { attributes: true, attributeFilter: ["data-visible", "style", "aria-hidden"] });
+      }
+      return () => mutObs.disconnect();
+    }
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
     if (!el || typeof IntersectionObserver === "undefined") return;
     const observer = new IntersectionObserver(
       (entries) => {
@@ -1590,7 +1619,7 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
     return () => observer.disconnect();
   }, []);
 
-  const isRunning = isInViewport && isDocVisible;
+  const isRunning = isInViewport && isDocVisible && isTabLayerVisible;
 
   // Loop contínuo sincronizando progresso de 5.5s por pilar e avanço automático
   useEffect(() => {

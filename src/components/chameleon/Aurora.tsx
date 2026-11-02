@@ -182,6 +182,7 @@ export function AuroraBackground({
     <div
       aria-hidden
       className={cn("aurora-root pointer-events-none absolute inset-0 overflow-hidden", className)}
+      style={active ? undefined : { display: "none", contentVisibility: "hidden" }}
       data-animated={animated ? "on" : "off"}
       data-active={active ? "on" : "off"}
       data-style={wantsShader ? "fluido" : "suave"}

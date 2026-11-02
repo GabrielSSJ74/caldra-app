@@ -19,6 +19,10 @@ import {
   resolveBaseToTopExtrusionVector,
   type ChamferWireframe3DStyleConfig,
 } from "./chamferWireframe3D";
+import {
+  computeStructuralProfile2DInnerWallLines,
+  getEntityStructuralProfile,
+} from "./structuralProfile";
 
 export type SceneView = { tx: number; ty: number; k: number };
 
@@ -378,6 +382,27 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     ctx.beginPath();
     traceEntity(ctx, e, lod);
     ctx.stroke();
+
+    // Se a entidade for um Perfil Estrutural / Metalão Oco no modo 2D SKETCH,
+    // desenha as duas linhas tracejadas paralelas internas com offset = espessura da parede (e)
+    if (!lod) {
+      const structOverlay = computeStructuralProfile2DInnerWallLines(e);
+      if (structOverlay && structOverlay.lines.length > 0) {
+        ctx.save();
+        ctx.setLineDash([5 * inv, 3.5 * inv]);
+        ctx.lineWidth = Math.max(1.1, 1.15 * style.weight) * inv;
+        ctx.strokeStyle = opts.isLight ? "rgba(8, 145, 178, 0.78)" : "rgba(56, 189, 248, 0.72)";
+        ctx.beginPath();
+        for (const seg of structOverlay.lines) {
+          ctx.moveTo(seg.x1, seg.y1);
+          ctx.lineTo(seg.x2, seg.y2);
+        }
+        ctx.stroke();
+        ctx.restore();
+        // Força reconfiguração de estilo na próxima entidade caso necessário
+        currentLayer = "";
+      }
+    }
   }
   ctx.restore();
 
@@ -427,12 +452,60 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       if (!selection.has(e.id) || e.type === "text") continue;
       ctx.save();
       if (is3DWireframeActive && !e.params?.isIsoSolidFace) {
-        ctx.translate(selTopOffset.x, selTopOffset.y);
+        const sp = getEntityStructuralProfile(e);
+        const entTopOffset = sp
+          ? resolveBaseToTopExtrusionVector({
+              isOrbitTilted,
+              orbitProjection: orbitProj,
+              isIsometric: opts.isIsometric,
+              isoPlane: opts.isoPlane,
+              sheetThickness: sp.heightH || sp.widthB || isoSheetThickness,
+            }).topOffset
+          : selTopOffset;
+        ctx.translate(entTopOffset.x, entTopOffset.y);
       }
       ctx.beginPath();
       traceEntity(ctx, e, lod);
       ctx.stroke();
       ctx.restore();
+
+      // Etiqueta técnica discreta no centro da peça (apenas quando selecionada no modo 2D SKETCH): ⬜ {B}×{B}×{e}
+      if (!is3DWireframeActive && !lod) {
+        const structOverlay = computeStructuralProfile2DInnerWallLines(e);
+        if (structOverlay) {
+          ctx.save();
+          const fontSize = Math.max(9.5 * inv, 11 * inv);
+          ctx.font = `700 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace`;
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          const textMetrics = ctx.measureText(structOverlay.badgeText);
+          const padX = 5 * inv;
+          const padY = 2.5 * inv;
+          const boxW = textMetrics.width + padX * 2;
+          const boxH = fontSize + padY * 2;
+          const cx = structOverlay.center.x;
+          const cy = structOverlay.center.y;
+
+          ctx.fillStyle = opts.isLight
+            ? "rgba(15, 23, 42, 0.88)"
+            : "rgba(9, 13, 22, 0.90)";
+          ctx.strokeStyle = "rgba(34, 211, 238, 0.65)";
+          ctx.lineWidth = 1.1 * inv;
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          if (typeof ctx.roundRect === "function") {
+            ctx.roundRect(cx - boxW / 2, cy - boxH / 2, boxW, boxH, 4 * inv);
+          } else {
+            ctx.rect(cx - boxW / 2, cy - boxH / 2, boxW, boxH);
+          }
+          ctx.fill();
+          ctx.stroke();
+
+          ctx.fillStyle = "#67E8F9";
+          ctx.fillText(structOverlay.badgeText, cx, cy);
+          ctx.restore();
+        }
+      }
     }
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;

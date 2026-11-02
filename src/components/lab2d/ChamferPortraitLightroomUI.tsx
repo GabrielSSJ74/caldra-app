@@ -100,6 +100,7 @@ import {
   type ChamferTechnicalColorOption,
   type VerticalParityDiagnosticReport,
 } from "@/lib/lab2d/chamferCommandRegistry";
+import { getWireframe3DCacheStats } from "@/lib/lab2d/chamferWireframe3D";
 import type { Tool } from "./Lab2DEditor";
 import type { DimKind } from "@/lib/lab2d/dimensions";
 import type { CursorOffsetMode, LoupeHudMode } from "@/lib/lab2d/cadInteractionHub";
@@ -400,13 +401,87 @@ export function ChamferPortraitTopBar({
     };
   }, [moreMenuOpen, projectMenuOpen, viewMenuOpen]);
 
-  // Diagnóstico de Paridade & Depurador de Toque (DIAG_ENABLED — acionado por long-press no chip • 3,0mm ▾ ou pelo menu)
+  // Diagnóstico de Paridade & Desempenho (DIAG_ENABLED — acionado por long-press no chip • 3,0mm ▾ ou pelo menu)
   const [diagModalOpen, setDiagModalOpen] = useState(false);
+  const [diagTab, setDiagTab] = useState<"paridade" | "desempenho">("paridade");
   const [diagReport, setDiagReport] = useState<VerticalParityDiagnosticReport | null>(null);
   const [touchDebuggerOn, setTouchDebuggerOn] = useState(false);
   const [lastTouchDebugInfo, setLastTouchDebugInfo] = useState<string>("Aguardando toque...");
   const [copiedReport, setCopiedReport] = useState(false);
   const longPressTimerRef = useRef<number | null>(null);
+
+  const [perfTelemetry, setPerfTelemetry] = useState<{
+    fps: number;
+    frameP50Ms: number;
+    frameP95Ms: number;
+    frameMaxMs: number;
+    dpr: number;
+    canvasVramMb: number;
+    jsHeapUsedMb: number | null;
+    jsHeapTotalMb: number | null;
+    cacheHits: number;
+    cacheMisses: number;
+    cacheHitRate: number;
+  }>({
+    fps: 60,
+    frameP50Ms: 16.6,
+    frameP95Ms: 16.7,
+    frameMaxMs: 16.7,
+    dpr: typeof window !== "undefined" ? window.devicePixelRatio || 1 : 1,
+    canvasVramMb: 0,
+    jsHeapUsedMb: null,
+    jsHeapTotalMb: null,
+    cacheHits: 0,
+    cacheMisses: 0,
+    cacheHitRate: 100,
+  });
+
+  useEffect(() => {
+    if (!diagModalOpen || diagTab !== "desempenho" || typeof window === "undefined") return;
+    let rafId = 0;
+    let lastTime = performance.now();
+    const deltas: number[] = [];
+
+    const sampleFrame = (now: number) => {
+      const dt = now - lastTime;
+      lastTime = now;
+      if (dt > 0 && dt < 500) {
+        deltas.push(dt);
+        if (deltas.length > 60) deltas.shift();
+      }
+      if (deltas.length % 12 === 0 && deltas.length > 0) {
+        const sorted = [...deltas].sort((a, b) => a - b);
+        const p50 = sorted[Math.floor(sorted.length * 0.5)] ?? 16.6;
+        const p95 = sorted[Math.floor(sorted.length * 0.95)] ?? p50;
+        const maxDt = sorted[sorted.length - 1] ?? p95;
+        const avgDt = deltas.reduce((s, x) => s + x, 0) / deltas.length;
+        const dpr = window.devicePixelRatio || 1;
+        const w = window.innerWidth || 390;
+        const h = window.innerHeight || 844;
+        // 3 camadas de Canvas High-DPI (Principal + Flow + 3D WebGL) em RGBA8 (4 bytes/pixel)
+        const vramMb = (w * dpr * (h * dpr) * 4 * 3) / (1024 * 1024);
+        const mem = (performance as unknown as { memory?: { usedJSHeapSize: number; totalJSHeapSize: number } }).memory;
+        const cStats = getWireframe3DCacheStats();
+        setPerfTelemetry({
+          fps: Math.min(120, Math.round(1000 / Math.max(1, avgDt))),
+          frameP50Ms: Number(p50.toFixed(1)),
+          frameP95Ms: Number(p95.toFixed(1)),
+          frameMaxMs: Number(maxDt.toFixed(1)),
+          dpr: Number(dpr.toFixed(2)),
+          canvasVramMb: Number(vramMb.toFixed(2)),
+          jsHeapUsedMb: mem ? Number((mem.usedJSHeapSize / (1024 * 1024)).toFixed(1)) : null,
+          jsHeapTotalMb: mem ? Number((mem.totalJSHeapSize / (1024 * 1024)).toFixed(1)) : null,
+          cacheHits: cStats.hits,
+          cacheMisses: cStats.misses,
+          cacheHitRate: cStats.hitRatePercent,
+        });
+      }
+      rafId = window.requestAnimationFrame(sampleFrame);
+    };
+
+    rafId = window.requestAnimationFrame(sampleFrame);
+    return () => window.cancelAnimationFrame(rafId);
+  }, [diagModalOpen, diagTab]);
 
   useEffect(() => {
     if (!touchDebuggerOn) return;
@@ -1664,10 +1739,12 @@ export function ChamferPortraitTopBar({
               <div className="flex items-center justify-between border-b pb-2.5 mb-2.5 border-white/[0.08]">
                 <div>
                   <span className="text-[9px] font-bold uppercase tracking-wider text-[#38BDF8]">
-                    DIAG_ENABLED • MATRIZ DE PARIDADE 1:1
+                    DIAG_ENABLED • TELEMETRIA E PARIDADE 1:1
                   </span>
                   <h3 className="text-xs font-bold">
-                    {diagReport.passedCount}/{diagReport.totalChecked} Comandos Aprovados (0 Órfãos)
+                    {diagTab === "paridade"
+                      ? `${diagReport.passedCount}/${diagReport.totalChecked} Comandos Aprovados (0 Órfãos)`
+                      : `Monitor de Desempenho CAD 2D/3D (${perfTelemetry.fps} FPS)`}
                   </h3>
                 </div>
                 <button
@@ -1679,57 +1756,150 @@ export function ChamferPortraitTopBar({
                 </button>
               </div>
 
-              <div className="mb-2.5 flex items-center justify-between gap-2 rounded-xl border border-white/[0.08] bg-black/20 px-2.5 py-2">
-                <div className="min-w-0">
-                  <span className="block text-[9.5px] font-bold">Depurador de Toque em Tempo Real</span>
-                  <span className="block truncate text-[9px] text-[#94A3B8]">
-                    {lastTouchDebugInfo}
-                  </span>
-                </div>
+              {/* Abas do Painel de Diagnóstico: [ Paridade 1:1 | Desempenho ] */}
+              <div className="mb-2.5 grid grid-cols-2 gap-1 rounded-xl border border-white/[0.08] bg-black/20 p-1">
                 <button
                   type="button"
-                  onClick={() => setTouchDebuggerOn((v) => !v)}
+                  data-testid="diag-tab-paridade"
+                  onClick={() => setDiagTab("paridade")}
                   className={cn(
-                    "shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-bold cursor-pointer",
-                    touchDebuggerOn
-                      ? "bg-[#10B981] text-white"
-                      : "bg-white/10 text-[#94A3B8]",
+                    "rounded-lg py-1.5 text-[10px] font-bold transition-colors cursor-pointer",
+                    diagTab === "paridade"
+                      ? "bg-[#E11D48] text-white"
+                      : "text-[#94A3B8] hover:text-white",
                   )}
                 >
-                  {touchDebuggerOn ? "ON" : "OFF"}
+                  Paridade 1:1
                 </button>
-              </div>
-
-              <pre
-                className={cn(
-                  "min-h-0 flex-1 overflow-y-auto rounded-xl border p-2.5 text-[9.5px] leading-relaxed whitespace-pre-wrap",
-                  isDark
-                    ? "border-white/[0.08] bg-[#0B0E14] text-[#E2E8F0]"
-                    : "border-[#CBD5E1] bg-[#F8FAFC] text-[#1E293B]",
-                )}
-              >
-                {diagReport.summaryText}
-              </pre>
-
-              <div className="mt-2.5 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  data-testid="copy-parity-report-btn"
-                  onClick={() => {
-                    try {
-                      navigator.clipboard?.writeText(diagReport.summaryText);
-                      setCopiedReport(true);
-                      setTimeout(() => setCopiedReport(false), 2000);
-                    } catch {
-                      setCopiedReport(true);
-                    }
-                  }}
-                  className="flex items-center gap-1.5 rounded-xl bg-[#E11D48] px-3 py-2 text-[10.5px] font-bold text-white cursor-pointer"
+                  data-testid="diag-tab-desempenho"
+                  onClick={() => setDiagTab("desempenho")}
+                  className={cn(
+                    "rounded-lg py-1.5 text-[10px] font-bold transition-colors cursor-pointer",
+                    diagTab === "desempenho"
+                      ? "bg-[#E11D48] text-white"
+                      : "text-[#94A3B8] hover:text-white",
+                  )}
                 >
-                  <CopyCheck className="size-3.5" />
-                  <span>{copiedReport ? "Relatório Copiado!" : "📋 Copiar Relatório"}</span>
+                  ⚡ Desempenho
                 </button>
               </div>
+
+              {diagTab === "paridade" ? (
+                <>
+                  <div className="mb-2.5 flex items-center justify-between gap-2 rounded-xl border border-white/[0.08] bg-black/20 px-2.5 py-2">
+                    <div className="min-w-0">
+                      <span className="block text-[9.5px] font-bold">Depurador de Toque em Tempo Real</span>
+                      <span className="block truncate text-[9px] text-[#94A3B8]">
+                        {lastTouchDebugInfo}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setTouchDebuggerOn((v) => !v)}
+                      className={cn(
+                        "shrink-0 rounded-lg px-2.5 py-1 text-[10px] font-bold cursor-pointer",
+                        touchDebuggerOn
+                          ? "bg-[#10B981] text-white"
+                          : "bg-white/10 text-[#94A3B8]",
+                      )}
+                    >
+                      {touchDebuggerOn ? "ON" : "OFF"}
+                    </button>
+                  </div>
+
+                  <pre
+                    className={cn(
+                      "min-h-0 flex-1 overflow-y-auto rounded-xl border p-2.5 text-[9.5px] leading-relaxed whitespace-pre-wrap",
+                      isDark
+                        ? "border-white/[0.08] bg-[#0B0E14] text-[#E2E8F0]"
+                        : "border-[#CBD5E1] bg-[#F8FAFC] text-[#1E293B]",
+                    )}
+                  >
+                    {diagReport.summaryText}
+                  </pre>
+
+                  <div className="mt-2.5 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      data-testid="copy-parity-report-btn"
+                      onClick={() => {
+                        try {
+                          navigator.clipboard?.writeText(diagReport.summaryText);
+                          setCopiedReport(true);
+                          setTimeout(() => setCopiedReport(false), 2000);
+                        } catch {
+                          setCopiedReport(true);
+                        }
+                      }}
+                      className="flex items-center gap-1.5 rounded-xl bg-[#E11D48] px-3 py-2 text-[10.5px] font-bold text-white cursor-pointer"
+                    >
+                      <CopyCheck className="size-3.5" />
+                      <span>{copiedReport ? "Relatório Copiado!" : "📋 Copiar Relatório"}</span>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div
+                  data-testid="diag-desempenho-panel"
+                  className="flex flex-col gap-2 overflow-y-auto text-[10px]"
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-white/[0.08] bg-black/20 p-2.5">
+                      <span className="block text-[8.5px] uppercase text-[#94A3B8]">Taxa de Quadros</span>
+                      <span className="mt-0.5 block text-sm font-bold text-[#10B981]">
+                        {perfTelemetry.fps} FPS
+                      </span>
+                      <span className="block text-[9px] text-[#94A3B8]">
+                        P50: {perfTelemetry.frameP50Ms}ms • P95: {perfTelemetry.frameP95Ms}ms
+                      </span>
+                    </div>
+                    <div className="rounded-xl border border-white/[0.08] bg-black/20 p-2.5">
+                      <span className="block text-[8.5px] uppercase text-[#94A3B8]">Canvas High-DPI</span>
+                      <span className="mt-0.5 block text-sm font-bold text-[#38BDF8]">
+                        DPR {perfTelemetry.dpr}x
+                      </span>
+                      <span className="block text-[9px] text-[#94A3B8]">
+                        VRAM Buffers: {perfTelemetry.canvasVramMb} MB
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-white/[0.08] bg-black/20 p-2.5">
+                      <span className="block text-[8.5px] uppercase text-[#94A3B8]">Cache Topológico 3D</span>
+                      <span className="mt-0.5 block text-sm font-bold text-[#F59E0B]">
+                        {perfTelemetry.cacheHitRate}% Hit
+                      </span>
+                      <span className="block text-[9px] text-[#94A3B8]">
+                        Hits: {perfTelemetry.cacheHits} • Miss: {perfTelemetry.cacheMisses}
+                      </span>
+                    </div>
+                    <div className="rounded-xl border border-white/[0.08] bg-black/20 p-2.5">
+                      <span className="block text-[8.5px] uppercase text-[#94A3B8]">Memória JS Heap</span>
+                      <span className="mt-0.5 block text-sm font-bold text-[#E2E8F0]">
+                        {perfTelemetry.jsHeapUsedMb !== null
+                          ? `${perfTelemetry.jsHeapUsedMb} MB`
+                          : "N/D (Safari/FF)"}
+                      </span>
+                      <span className="block text-[9px] text-[#94A3B8]">
+                        {perfTelemetry.jsHeapTotalMb !== null
+                          ? `Alocado: ${perfTelemetry.jsHeapTotalMb} MB`
+                          : `Pico Frame: ${perfTelemetry.frameMaxMs}ms`}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-white/[0.08] bg-black/20 p-2.5 text-[9.5px] leading-relaxed text-[#94A3B8]">
+                    <div className="font-bold text-[#F8FAFC] mb-1">Otimizações Ativas no Ecossistema:</div>
+                    <div>• KeepAlive Lazy Split (Abas & Motor 3D sob demanda)</div>
+                    <div>• Suspensão Automática de rAF Offscreen (Home Hero & Aurora GPU)</div>
+                    <div>• Cache O(1) de Loops Fechados e Furos na Órbita 3D 60fps</div>
+                    <div>• WeakMap de Geometria de Barras e Perfis BOM Ocos</div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>,
         )}

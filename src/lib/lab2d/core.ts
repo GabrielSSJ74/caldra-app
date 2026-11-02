@@ -1,6 +1,7 @@
 export type { Vec2 } from "@/lib/geometry/types";
 import type { CncMeta } from "@/lib/lab2d/cncTypes";
 import type { DxfDocument, DxfEntity } from "@/lib/dxf/dxfService";
+import type { EntityStructuralProfile } from "@/lib/lab2d/structuralProfile";
 
 import {
   flattenPath,
@@ -63,6 +64,8 @@ type Base = {
   isConstruction?: boolean;
   /** Parâmetros paramétricos associados */
   params?: Record<string, unknown>;
+  /** Perfil estrutural tubular/barra associado (Catálogo BOM Costa Ferro) */
+  structuralProfile?: EntityStructuralProfile;
   /** IDs de entidades dependentes */
   dependencies?: string[];
   /** Feature correspondente no grafo CAD */

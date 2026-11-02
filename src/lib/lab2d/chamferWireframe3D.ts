@@ -25,6 +25,10 @@ import type { Entity } from "./core";
 import { samplePath } from "./bezier";
 import { getIsoExtrusionVector, type IsoPlane } from "./isometricEngine";
 import type { WorkplaneOrbitProjection2D } from "./orbit3dController";
+import {
+  analyzeEntityBarGeometry,
+  getEntityStructuralProfile,
+} from "./structuralProfile";
 
 export type WireframeEdgeCategory =
   | "top_primary"
@@ -346,16 +350,61 @@ export function pointInPolygon2D(p: Vec2, ring: Vec2[]): boolean {
  *  - Furos/recortes passantes internos (`holeEntityIds`) contidos dentro de um contorno externo
  *  - Mapa de contornos externos para seus furos filhos (`outerToHolesMap`)
  */
-export function classifyOuterAndHoleEntities(entities: Entity[]): {
+export interface ClassifiedOuterAndHoleResult {
   outerEntityIds: Set<string>;
   holeEntityIds: Set<string>;
   outerToHolesMap: Map<string, Entity[]>;
   sampledLoops: Map<string, Vec2[]>;
+  entityById: Map<string, Entity>;
+}
+
+let cachedClassifiedEntitiesRef: Entity[] | null = null;
+let cachedClassifiedSnapshot: Entity[] = [];
+let cachedClassifiedResult: ClassifiedOuterAndHoleResult | null = null;
+let wireframeCacheHits = 0;
+let wireframeCacheMisses = 0;
+
+export function getWireframe3DCacheStats(): {
+  hits: number;
+  misses: number;
+  hitRatePercent: number;
 } {
+  const total = wireframeCacheHits + wireframeCacheMisses;
+  return {
+    hits: wireframeCacheHits,
+    misses: wireframeCacheMisses,
+    hitRatePercent: total > 0 ? Math.round((wireframeCacheHits / total) * 1000) / 10 : 100,
+  };
+}
+
+/**
+ * Classifica um conjunto de entidades 2D em:
+ *  - Contornos externos ou ressaltos/canais em múltiplos níveis Z (`outerEntityIds`)
+ *  - Furos/recortes passantes internos (`holeEntityIds`) contidos dentro de um contorno externo
+ *  - Mapa de contornos externos para seus furos filhos (`outerToHolesMap`)
+ *
+ * Otimizado com memoização por referência de array e verificação rasa O(N) das entidades,
+ * eliminando a re-amostragem de polígonos de 48 pontos e o teste O(M²) pointInPolygon2D
+ * durante os 60fps da Órbita 3D (onde apenas ângulos θ, φ mudam).
+ */
+export function classifyOuterAndHoleEntities(entities: Entity[]): ClassifiedOuterAndHoleResult {
+  if (
+    cachedClassifiedResult &&
+    (cachedClassifiedEntitiesRef === entities ||
+      (cachedClassifiedSnapshot.length === entities.length &&
+        entities.every((e, idx) => cachedClassifiedSnapshot[idx] === e)))
+  ) {
+    wireframeCacheHits++;
+    return cachedClassifiedResult;
+  }
+
+  wireframeCacheMisses++;
   const closedCandidates: { entity: Entity; loop: Vec2[]; absArea: number }[] = [];
   const sampledLoops = new Map<string, Vec2[]>();
+  const entityById = new Map<string, Entity>();
 
   for (const e of entities) {
+    entityById.set(e.id, e);
     if (
       e.isConstruction ||
       e.layer === "centro" ||
@@ -433,7 +482,17 @@ export function classifyOuterAndHoleEntities(entities: Entity[]): {
     }
   }
 
-  return { outerEntityIds, holeEntityIds, outerToHolesMap, sampledLoops };
+  const result: ClassifiedOuterAndHoleResult = {
+    outerEntityIds,
+    holeEntityIds,
+    outerToHolesMap,
+    sampledLoops,
+    entityById,
+  };
+  cachedClassifiedEntitiesRef = entities;
+  cachedClassifiedSnapshot = entities.slice();
+  cachedClassifiedResult = result;
+  return result;
 }
 
 /**
@@ -646,7 +705,7 @@ export function buildClassifiedWireframeScene3D(
     sheetThickness: opts.sheetThickness,
   });
 
-  const { holeEntityIds, outerToHolesMap, sampledLoops } =
+  const { holeEntityIds, outerToHolesMap, sampledLoops, entityById } =
     classifyOuterAndHoleEntities(entities);
 
   const opticalFaces: ClassifiedOpticalFace3D[] = [];
@@ -680,17 +739,21 @@ export function buildClassifiedWireframeScene3D(
 
   // 1. Véus translúcidos das faces superiores e bases dos contornos externos (com recorte evenodd dos furos)
   for (const [outerId, childHoles] of outerToHolesMap.entries()) {
-    const outerEnt = entities.find((x) => x.id === outerId);
+    const outerEnt = entityById.get(outerId);
     const rawOuterLoop = sampledLoops.get(outerId);
     if (!outerEnt || !rawOuterLoop) continue;
 
-    const { z0, z1, isRecessOrGroove } = resolveEntityZRatios(outerEnt, opts.sheetThickness);
+    const outerSp = getEntityStructuralProfile(outerEnt);
+    const outerEffectiveThickness = outerSp
+      ? outerSp.heightH || outerSp.widthB || opts.sheetThickness
+      : opts.sheetThickness;
+    const { z0, z1, isRecessOrGroove } = resolveEntityZRatios(outerEnt, outerEffectiveThickness);
     const entVectors = resolveBaseToTopExtrusionVector({
       isOrbitTilted: opts.isOrbitTilted,
       orbitProjection: opts.orbitProjection,
       isIsometric: opts.isIsometric,
       isoPlane: opts.isoPlane,
-      sheetThickness: opts.sheetThickness,
+      sheetThickness: outerEffectiveThickness,
       zBaseRatio: z0,
       zTopRatio: z1,
     });
@@ -792,13 +855,17 @@ export function buildClassifiedWireframeScene3D(
     }
 
     const isHole = holeEntityIds.has(e.id) || e.layer === "furo";
-    const { z0, z1 } = resolveEntityZRatios(e, opts.sheetThickness);
+    const entSp = getEntityStructuralProfile(e);
+    const effectiveThickness = entSp
+      ? entSp.heightH || entSp.widthB || opts.sheetThickness
+      : opts.sheetThickness;
+    const { z0, z1 } = resolveEntityZRatios(e, effectiveThickness);
     const entVec = resolveBaseToTopExtrusionVector({
       isOrbitTilted: opts.isOrbitTilted,
       orbitProjection: opts.orbitProjection,
       isIsometric: opts.isIsometric,
       isoPlane: opts.isoPlane,
-      sheetThickness: opts.sheetThickness,
+      sheetThickness: effectiveThickness,
       zBaseRatio: z0,
       zTopRatio: z1,
     });
@@ -1175,6 +1242,112 @@ export function buildClassifiedWireframeScene3D(
         }
         if (rawPts.length <= 48) {
           pushVertexDot(tPt);
+        }
+      }
+
+      // 3.5 Se a polilinha/linha for um Perfil Estrutural Tubular Oco (Metalão Quadrado / Retangular / Tubo),
+      //     desenha as duas bocas ocas nas extremidades (s = -L/2 e s = +L/2) com espessura real `e`
+      //     e as 4 arestas longitudinais internas da cavidade vazada!
+      if (
+        entSp &&
+        (entSp.kind === "metalon_quadrado" ||
+          entSp.kind === "metalon_retangular" ||
+          entSp.kind === "tubo_redondo")
+      ) {
+        const barGeom = analyzeEntityBarGeometry(e);
+        if (barGeom) {
+          const B = Math.max(2, barGeom.drawnWidthB || entSp.widthB);
+          const H = Math.max(2, effectiveThickness);
+          const wallE = Math.max(0.8, Math.min(entSp.wallThicknessE || 2.0, Math.min(B, H) * 0.42));
+          const halfL = barGeom.lengthL / 2;
+          const halfInB = Math.max(0.5, B / 2 - wallE);
+          const zLowRatio = Math.min(0.45, wallE / H);
+          const zHighRatio = Math.max(0.55, (H - wallE) / H);
+
+          const offsetAtZRatio = (ratio: number): Vec2 => ({
+            x: entVec.baseOffset.x + (entVec.topOffset.x - entVec.baseOffset.x) * ratio,
+            y: entVec.baseOffset.y + (entVec.topOffset.y - entVec.baseOffset.y) * ratio,
+          });
+
+          const offLow = offsetAtZRatio(zLowRatio);
+          const offHigh = offsetAtZRatio(zHighRatio);
+
+          const projectTubePt = (s: number, v: number, zOff: Vec2): Vec2 => ({
+            x: barGeom.center.x + barGeom.axisU.x * s + barGeom.axisV.x * v + zOff.x,
+            y: barGeom.center.y + barGeom.axisU.y * s + barGeom.axisV.y * v + zOff.y,
+          });
+
+          // Quatro cantos da cavidade interna na Boca Inicial (s = -halfL)
+          const s0 = projectTubePt(-halfL, -halfInB, offLow);
+          const s1 = projectTubePt(-halfL, +halfInB, offLow);
+          const s2 = projectTubePt(-halfL, +halfInB, offHigh);
+          const s3 = projectTubePt(-halfL, -halfInB, offHigh);
+
+          // Quatro cantos da cavidade interna na Boca Final (s = +halfL)
+          const f0 = projectTubePt(+halfL, -halfInB, offLow);
+          const f1 = projectTubePt(+halfL, +halfInB, offLow);
+          const f2 = projectTubePt(+halfL, +halfInB, offHigh);
+          const f3 = projectTubePt(+halfL, -halfInB, offHigh);
+
+          // Véu escuro da cavidade oca nas duas bocas do tubo para leitura imediata do furo passante
+          if (style.showOpticalVeil) {
+            opticalFaces.push(
+              {
+                id: `veil_tube_mouth_start_${e.id}`,
+                role: "hole_wall",
+                paintDepth: 86,
+                outerLoop: [s0, s1, s2, s3],
+                holeLoops: [],
+              },
+              {
+                id: `veil_tube_mouth_end_${e.id}`,
+                role: "hole_wall",
+                paintDepth: 86,
+                outerLoop: [f0, f1, f2, f3],
+                holeLoops: [],
+              },
+            );
+          }
+
+          // Contorno interno visível das duas bocas ocas (mostrando a espessura da parede `e`)
+          const mouthPairs: Array<[Vec2, Vec2, string, number]> = [
+            [s0, s1, "s_bot", 88],
+            [s1, s2, "s_rgt", 89],
+            [s2, s3, "s_top", 92],
+            [s3, s0, "s_lft", 89],
+            [f0, f1, "f_bot", 88],
+            [f1, f2, "f_rgt", 89],
+            [f2, f3, "f_top", 92],
+            [f3, f0, "f_lft", 89],
+          ];
+          for (const [pA, pB, tag, depth] of mouthPairs) {
+            edges.push({
+              id: `tube_mouth_${e.id}_${tag}`,
+              category: tag.endsWith("top") ? "top_primary" : "lateral_wall",
+              kind: "segment",
+              paintDepth: depth,
+              pts: [pA, pB],
+            });
+          }
+
+          // 4 arestas longitudinais internas tracejadas ao longo do interior do tubo
+          if (style.showHiddenEdges) {
+            const innerLongPairs: Array<[Vec2, Vec2, string]> = [
+              [s0, f0, "in_bl"],
+              [s1, f1, "in_br"],
+              [s2, f2, "in_tr"],
+              [s3, f3, "in_tl"],
+            ];
+            for (const [pA, pB, tag] of innerLongPairs) {
+              edges.push({
+                id: `tube_inner_long_${e.id}_${tag}`,
+                category: "hidden_back",
+                kind: "segment",
+                paintDepth: 48,
+                pts: [pA, pB],
+              });
+            }
+          }
         }
       }
     }

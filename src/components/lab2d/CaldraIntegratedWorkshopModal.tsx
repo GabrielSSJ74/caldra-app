@@ -47,6 +47,7 @@ import {
 } from "@/lib/projects/parametricWorkstationModel";
 import { cn } from "@/lib/utils";
 import { toast } from "@/lib/lab2d/chamferNotify";
+import { getEntityStructuralProfile } from "@/lib/lab2d/structuralProfile";
 
 export type WorkshopStudioTab =
   | 1
@@ -152,10 +153,32 @@ export function CaldraIntegratedWorkshopModal({
   const [priceTick, setPriceTick] = useState(0);
   const [drawingViewMode, setDrawingViewMode] = useState<"dark-cad" | "white-sheet">("dark-cad");
 
+  const hasStructuralProfilesOnCanvas = useMemo(
+    () => canvasEntities.some((e) => !e.isConstruction && getEntityStructuralProfile(e) !== null),
+    [canvasEntities],
+  );
+
   const [model, setModel] = useState<ParametricProjectModel>(() => ({
     ...DEFAULT_PROJECT_MODEL,
+    structureTemplate: canvasEntities.some((e) => !e.isConstruction && getEntityStructuralProfile(e) !== null)
+      ? "canvas-estrutura"
+      : DEFAULT_PROJECT_MODEL.structureTemplate,
     projectName: projectName || DEFAULT_PROJECT_MODEL.projectName,
   }));
+
+  React.useEffect(() => {
+    if (hasStructuralProfilesOnCanvas) {
+      setModel((prev) =>
+        prev.structureTemplate === "canvas-estrutura" && prev.mode === "ESTRUTURA_MONTAGEM"
+          ? prev
+          : {
+              ...prev,
+              mode: "ESTRUTURA_MONTAGEM",
+              structureTemplate: "canvas-estrutura",
+            },
+      );
+    }
+  }, [hasStructuralProfilesOnCanvas]);
 
   const materials = useMemo(() => {
     void priceTick;

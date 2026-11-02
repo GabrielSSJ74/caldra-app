@@ -1,9 +1,18 @@
-import React, { useState, useEffect, memo } from "react";
+import React, { useState, useEffect, memo, lazy, Suspense } from "react";
 import { WorkshopDashboard } from "@/components/home/WorkshopDashboard";
-import { ProjetarPage } from "@/routes/projetar";
-import { ProduzirPage } from "@/routes/produzir";
-import { AprendaPage } from "@/routes/aprenda";
-import { PerfilRouteComponent } from "@/routes/perfil";
+
+const ProjetarPage = lazy(() =>
+  import("@/routes/projetar").then((m) => ({ default: m.ProjetarPage })),
+);
+const ProduzirPage = lazy(() =>
+  import("@/routes/produzir").then((m) => ({ default: m.ProduzirPage })),
+);
+const AprendaPage = lazy(() =>
+  import("@/routes/aprenda").then((m) => ({ default: m.AprendaPage })),
+);
+const PerfilRouteComponent = lazy(() =>
+  import("@/routes/perfil").then((m) => ({ default: m.PerfilRouteComponent })),
+);
 
 export const MAIN_TAB_PATHS = ["/", "/projetar", "/produzir", "/aprenda", "/perfil"] as const;
 export type MainTabPath = (typeof MAIN_TAB_PATHS)[number];
@@ -40,10 +49,13 @@ export const MainTabsKeepAlive = memo(function MainTabsKeepAlive({
     }
   }, [activePath]);
 
+  const isHomeActive = isVisible && activePath === "/";
+
   return (
     <div
       id="caldra-main-tabs-keepalive"
       aria-hidden={!isVisible}
+      data-visible={isVisible ? "true" : "false"}
       style={{
         display: isVisible ? "block" : "none",
         width: "100%",
@@ -55,6 +67,7 @@ export const MainTabsKeepAlive = memo(function MainTabsKeepAlive({
         <div
           id="tab-layer-inicio"
           data-active={activePath === "/"}
+          data-visible={isHomeActive ? "true" : "false"}
           className="caldra-tab-layer"
           style={{
             display: activePath === "/" ? "block" : "none",
@@ -74,7 +87,9 @@ export const MainTabsKeepAlive = memo(function MainTabsKeepAlive({
             display: activePath === "/projetar" ? "block" : "none",
           }}
         >
-          <ProjetarPage />
+          <Suspense fallback={null}>
+            <ProjetarPage />
+          </Suspense>
         </div>
       )}
 
@@ -88,7 +103,9 @@ export const MainTabsKeepAlive = memo(function MainTabsKeepAlive({
             display: activePath === "/produzir" ? "block" : "none",
           }}
         >
-          <ProduzirPage />
+          <Suspense fallback={null}>
+            <ProduzirPage />
+          </Suspense>
         </div>
       )}
 
@@ -102,7 +119,9 @@ export const MainTabsKeepAlive = memo(function MainTabsKeepAlive({
             display: activePath === "/aprenda" ? "block" : "none",
           }}
         >
-          <AprendaPage />
+          <Suspense fallback={null}>
+            <AprendaPage />
+          </Suspense>
         </div>
       )}
 
@@ -116,7 +135,9 @@ export const MainTabsKeepAlive = memo(function MainTabsKeepAlive({
             display: activePath === "/perfil" ? "block" : "none",
           }}
         >
-          <PerfilRouteComponent />
+          <Suspense fallback={null}>
+            <PerfilRouteComponent />
+          </Suspense>
         </div>
       )}
     </div>

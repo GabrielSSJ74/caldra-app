@@ -345,8 +345,11 @@ import { ChamferDirectDimensionEditor } from "./ChamferDirectDimensionEditor";
 import { ChamferPrecisionLoupeOverlay } from "./ChamferPrecisionLoupeOverlay";
 import { ChamferOrbit3DPopover } from "./ChamferOrbit3DPopover";
 import { ChamferAxesGizmo3D } from "./ChamferAxesGizmo3D";
-import { ChamferUnified3DViewport } from "./ChamferUnified3DViewport";
 import type { EdgeMode } from "@/lib/viz3d/cameraPresets";
+
+const ChamferUnified3DViewport = lazy(() =>
+  import("./ChamferUnified3DViewport").then((m) => ({ default: m.ChamferUnified3DViewport })),
+);
 import {
   applyOrbitDragDelta,
   computeSmartOrbitPivot,
@@ -8564,21 +8567,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 </svg>
               )}
           <canvas ref={canvasRef} className="pointer-events-none absolute inset-0 size-full" />
-          {/* MOTOR 3D SÓLIDO IN-PLACE ACOPLADO AO CANVAS UNIFICADO DO 2D SKETCH */}
-          <ChamferUnified3DViewport
-            active={isInPlaceSolid3DActive}
-            entities={drawable}
-            thickness={thickness}
-            edgeMode={renderStyle3D}
-            view2D={view}
-            viewportSize={canvasSize}
-            azimuthDeg={orbitAzimuthDeg}
-            elevationDeg={orbitElevationDeg}
-            pivot2D={smartOrbitPivot}
-            isDark={isDark}
-            initialTreeJson={cad3dTreeJson}
-            onTreeChange={setCad3dTreeJson}
-          />
+          {/* MOTOR 3D SÓLIDO IN-PLACE ACOPLADO AO CANVAS UNIFICADO DO 2D SKETCH (LAZY-LOADED SOB DEMANDA) */}
+          {(isInPlaceSolid3DActive || cad3dTreeJson !== undefined) && (
+            <Suspense fallback={null}>
+              <ChamferUnified3DViewport
+                active={isInPlaceSolid3DActive}
+                entities={drawable}
+                thickness={thickness}
+                edgeMode={renderStyle3D}
+                view2D={view}
+                viewportSize={canvasSize}
+                azimuthDeg={orbitAzimuthDeg}
+                elevationDeg={orbitElevationDeg}
+                pivot2D={smartOrbitPivot}
+                isDark={isDark}
+                initialTreeJson={cad3dTreeJson}
+                onTreeChange={setCad3dTreeJson}
+              />
+            </Suspense>
+          )}
           {/* FLUXO CALDRA / PRÉVIA CNC — camada de UI, nunca exportada */}
           {!solidOpen && <canvas ref={flowRef} className="pointer-events-none absolute inset-0 size-full" />}
 

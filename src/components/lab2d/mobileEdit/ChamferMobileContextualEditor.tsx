@@ -36,6 +36,8 @@ import { triggerHaptic } from "@/lib/ui/haptics";
 import type { Entity, Layer } from "@/lib/lab2d/core";
 import { ChamferCompactNumericEditor } from "./ChamferCompactNumericEditor";
 import type { NumericPropertyDef } from "./types";
+import { ChamferStructuralProfileCard } from "@/components/lab2d/sidebar/ChamferStructuralProfileCard";
+import { syncStructuralProfileOnGeometryChange } from "@/lib/lab2d/structuralProfile";
 
 export interface Model3DParams {
   type: string;
@@ -248,22 +250,26 @@ export function ChamferMobileContextualEditor({
 
       if (key === "width" && curW > 0.001) {
         const scaleX = Math.max(0.1, val) / curW;
-        onUpdateEntity({
-          ...entity,
-          pts: entity.pts.map((p) => ({
-            x: minX + (p.x - minX) * scaleX,
-            y: p.y,
-          })),
-        });
+        onUpdateEntity(
+          syncStructuralProfileOnGeometryChange({
+            ...entity,
+            pts: entity.pts.map((p) => ({
+              x: minX + (p.x - minX) * scaleX,
+              y: p.y,
+            })),
+          }),
+        );
       } else if (key === "height" && curH > 0.001) {
         const scaleY = Math.max(0.1, val) / curH;
-        onUpdateEntity({
-          ...entity,
-          pts: entity.pts.map((p) => ({
-            x: p.x,
-            y: minY + (p.y - minY) * scaleY,
-          })),
-        });
+        onUpdateEntity(
+          syncStructuralProfileOnGeometryChange({
+            ...entity,
+            pts: entity.pts.map((p) => ({
+              x: p.x,
+              y: minY + (p.y - minY) * scaleY,
+            })),
+          }),
+        );
       } else if (key === "posX") {
         const diffX = val - minX;
         onUpdateEntity({
@@ -981,6 +987,15 @@ export function ChamferMobileContextualEditor({
               <ChevronRight className="size-3.5 text-slate-500" />
             </div>
           </button>
+
+          {/* Cartão PERFIL ESTRUTURAL (CATÁLOGO BOM) no Inspetor Vertical */}
+          {onUpdateEntity && (
+            <ChamferStructuralProfileCard
+              entity={entity}
+              onUpdateEntity={onUpdateEntity}
+              compact
+            />
+          )}
         </div>
       );
     }
