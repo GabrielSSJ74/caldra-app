@@ -982,6 +982,15 @@ export function ChamferCadToolbar({
                       badge="3D"
                       desc="Revolução de perfil em torno de um eixo"
                     />
+                    <FlyoutItem
+                      label="Loft 3D (Transição Multisseção)"
+                      keyLabel="LOFT"
+                      icon={Layers}
+                      active={tool === "loft_3d"}
+                      onClick={() => handleSelectTool("loft_3d", "criar")}
+                      badge="3D"
+                      desc="Transição sólida suave entre 2+ perfis em diferentes elevações Z"
+                    />
                   </div>
                 )}
 
@@ -1236,6 +1245,15 @@ export function ChamferCadToolbar({
                         desc="Preenche perfil fechado respeitando furos internos"
                       />
                     )}
+                    <FlyoutItem
+                      label="Loft 3D (Transição entre Seções)"
+                      keyLabel="LOFT"
+                      icon={Boxes}
+                      active={tool === "loft_3d"}
+                      onClick={() => handleSelectTool("loft_3d", "modificar")}
+                      badge="3D"
+                      desc="Seleciona 2+ perfis sequencialmente ([1]→[2]→[3]) com prévia 3D translúcida"
+                    />
 
                     <div className="my-1 h-px bg-slate-800" />
 
@@ -1861,6 +1879,15 @@ export function ChamferCadToolbar({
                         setOpenCat("none");
                       }}
                       desc="Recolher peça em 3D"
+                    />
+                    <FlyoutItem
+                      label="Loft 3D (Transição Redonda/Quadrada)"
+                      keyLabel="LOFT"
+                      icon={Boxes}
+                      active={tool === "loft_3d"}
+                      onClick={() => handleSelectTool("loft_3d", "chapa")}
+                      badge="3D"
+                      desc="Cria transição cônica ou multisseção 3D entre perfis em diferentes Z"
                     />
                   </div>
                 )}

@@ -522,9 +522,7 @@ export function ChamferPortraitTopBar({
           : "ARAME"
       : isOrbitToolActive || isOrbitTilted
         ? "ÓRBITA 3D"
-        : drawingProjection === "isometric"
-          ? "ISO 2D"
-          : "ORTO 2D";
+        : "ORTO 2D";
 
   const compactViewLabel =
     activeMode === "3d"
@@ -535,9 +533,7 @@ export function ChamferPortraitTopBar({
           : "ARAME"
       : isOrbitToolActive || isOrbitTilted
         ? "ÓRB"
-        : drawingProjection === "isometric"
-          ? "ISO"
-          : "ORTO";
+        : "ORTO";
 
   const displayedViewLabel = shortViewLabel ? compactViewLabel : fullViewLabel;
 
@@ -766,8 +762,8 @@ export function ChamferPortraitTopBar({
               data-testid="chamfer-portrait-view-chip"
               data-cmd-id="view.ortho_2d"
               aria-expanded={viewMenuOpen}
-              aria-label={`Vista ativa: ${fullViewLabel}. Toque para configurar vista, plano isométrico F5 ou órbita 3D.`}
-              title={`Vista: ${fullViewLabel} (toque para alternar ou escolher Plano ISO F5)`}
+              aria-label={`Vista ativa: ${fullViewLabel}. Toque para configurar vista ou órbita 3D.`}
+              title={`Vista: ${fullViewLabel} (toque para alternar vista ou órbita 3D)`}
               onClick={(e) => {
                 e.stopPropagation();
                 triggerHaptic("tap");
@@ -780,7 +776,7 @@ export function ChamferPortraitTopBar({
             >
               <span
                 style={
-                  viewMenuOpen || isOrbitToolActive || isOrbitTilted || drawingProjection === "isometric"
+                  viewMenuOpen || isOrbitToolActive || isOrbitTilted
                     ? {
                         backgroundColor: "var(--chamfer-accent-soft)",
                         borderColor: "var(--chamfer-accent)",
@@ -1179,7 +1175,7 @@ export function ChamferPortraitTopBar({
         )}
 
       {/* ====================================================================
-       * PORTAL 2: POPOVER DE VISTA (ORTO 2D | ISO 2D + F5 | ÓRBITA 3D + SÓLIDO/SOMB/ARAME)
+       * PORTAL 2: POPOVER DE VISTA (ORTO 2D | ÓRBITA 3D + SÓLIDO/SOMB/ARAME)
        * Renderizado no document.body com position: fixed e zIndex: 9999
        * ==================================================================== */}
       {viewMenuOpen &&
@@ -1188,7 +1184,7 @@ export function ChamferPortraitTopBar({
             ref={viewMenuRef}
             data-testid="portrait-view-menu-portal"
             role="dialog"
-            aria-label="Seletor de Vista, Projeção Isométrica e Estilo 3D"
+            aria-label="Seletor de Vista e Estilo 3D"
             onClick={(e) => e.stopPropagation()}
             style={{
               position: "fixed",
@@ -1207,7 +1203,7 @@ export function ChamferPortraitTopBar({
             >
               Vista & Projeção do Canvas
             </span>
-            <div className="grid grid-cols-3 gap-1 mb-2">
+            <div className="grid grid-cols-2 gap-1 mb-2">
               <button
                 type="button"
                 data-cmd-id="view.ortho_2d"
@@ -1220,7 +1216,6 @@ export function ChamferPortraitTopBar({
                 }}
                 style={
                   activeMode === "2d" &&
-                  drawingProjection === "orthographic" &&
                   !isOrbitToolActive &&
                   !isOrbitTilted
                     ? {
@@ -1235,30 +1230,6 @@ export function ChamferPortraitTopBar({
                 className="min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer"
               >
                 ORTO 2D
-              </button>
-              <button
-                type="button"
-                data-cmd-id="view.iso_2d"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  onToggleOrbitTool(false);
-                  onSetDrawingProjection("isometric");
-                  onSelect2D();
-                }}
-                style={
-                  activeMode === "2d" && drawingProjection === "isometric" && !isOrbitToolActive
-                    ? {
-                        backgroundColor: "var(--chamfer-accent)",
-                        color: "var(--chamfer-accent-contrast)",
-                      }
-                    : {
-                        backgroundColor: "var(--chamfer-surface-elevated)",
-                        color: "var(--chamfer-text-secondary)",
-                      }
-                }
-                className="min-h-[34px] rounded-lg px-2 py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer"
-              >
-                ISO 2D
               </button>
               <button
                 type="button"
@@ -1284,56 +1255,6 @@ export function ChamferPortraitTopBar({
                 ÓRBITA 3D
               </button>
             </div>
-
-            {/* SELETOR DE PLANO ISOMÉTRICO (F5): SUPERIOR | ESQUERDO | DIREITO */}
-            {onSelectIsoPlane && (
-              <div
-                style={{ borderColor: "var(--chamfer-border-subtle)" }}
-                className="mb-2 pt-1.5 border-t"
-              >
-                <span
-                  style={{ color: "var(--chamfer-text-secondary)" }}
-                  className="block font-mono text-[9px] font-bold uppercase tracking-wider mb-1"
-                >
-                  Plano Isométrico Ativo (F5)
-                </span>
-                <div className="grid grid-cols-3 gap-1">
-                  {(
-                    [
-                      { id: "top" as const, label: "Superior" },
-                      { id: "left" as const, label: "Esquerdo" },
-                      { id: "right" as const, label: "Direito" },
-                    ]
-                  ).map((pl) => (
-                    <button
-                      key={pl.id}
-                      type="button"
-                      data-cmd-id="view.iso_plane_f5"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        onSetDrawingProjection("isometric");
-                        onSelectIsoPlane(pl.id);
-                        setViewMenuOpen(false);
-                      }}
-                      style={
-                        drawingProjection === "isometric" && isoPlane === pl.id
-                          ? {
-                              backgroundColor: "var(--chamfer-accent)",
-                              color: "var(--chamfer-accent-contrast)",
-                            }
-                          : {
-                              backgroundColor: "var(--chamfer-surface-elevated)",
-                              color: "var(--chamfer-text-secondary)",
-                            }
-                      }
-                      className="min-h-[32px] rounded-lg py-1 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer"
-                    >
-                      {pl.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
 
             {/* ESTILO DE RENDERIZAÇÃO 3D: SÓLIDO | SOMBREADO | ARAME */}
             <div
@@ -2742,6 +2663,7 @@ const TOOL_LABELS_PT: Record<string, string> = {
   divide: "Dividir",
   dim: "Cotar",
   measure: "Medir",
+  loft_3d: "Loft 3D",
 };
 
 export function ChamferPortraitBottomBars({
@@ -4273,6 +4195,15 @@ export function ChamferPortraitBottomBars({
                 onClick={() => onModeChange("3d")}
                 isDark={isDark}
               />
+              <CarouselToolItem
+                cmdId="det.loft_3d"
+                icon={Layers}
+                label="Loft 3D"
+                active={tool === "loft_3d"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("loft_3d")}
+                isDark={isDark}
+              />
 
               <CarouselDivider isDark={isDark} />
 
@@ -4547,6 +4478,15 @@ export function ChamferPortraitBottomBars({
                 disabled={!hasSelection}
                 heightPx={itemHeightPx}
                 onClick={onCreateHatch}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="mod.loft_3d"
+                icon={Boxes}
+                label="Loft 3D"
+                active={tool === "loft_3d"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("loft_3d")}
                 isDark={isDark}
               />
               <CarouselToolItem
@@ -4841,6 +4781,15 @@ export function ChamferPortraitBottomBars({
                 label="Dobrar 3D"
                 heightPx={itemHeightPx}
                 onClick={onFold}
+                isDark={isDark}
+              />
+              <CarouselToolItem
+                cmdId="chp.loft_3d"
+                icon={Boxes}
+                label="Loft 3D"
+                active={tool === "loft_3d"}
+                heightPx={itemHeightPx}
+                onClick={() => onPickTool("loft_3d")}
                 isDark={isDark}
               />
 

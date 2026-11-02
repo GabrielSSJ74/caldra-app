@@ -1241,8 +1241,8 @@ export function mergeCadTessellatedShapes(
   a: CadTessellatedShape | null,
   b: CadTessellatedShape | null,
 ): CadTessellatedShape | null {
-  if (!a) return b;
-  if (!b) return a;
+  if (!a || !a.mesh || !a.mesh.positions) return b && b.mesh && b.mesh.positions ? b : null;
+  if (!b || !b.mesh || !b.mesh.positions) return a;
 
   const vertOffset = a.mesh.positions.length / 3;
   const triOffset = a.mesh.indices.length / 3;

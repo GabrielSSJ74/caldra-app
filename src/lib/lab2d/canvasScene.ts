@@ -23,6 +23,16 @@ import {
   computeStructuralProfile2DInnerWallLines,
   getEntityStructuralProfile,
 } from "./structuralProfile";
+import {
+  buildLoft3DMesh,
+  computeEntityTrueCentroid2D,
+  getEntityElevationZ,
+  getEntityLoft3DSpec,
+  isLoft3DEntity,
+  renderLoft3DMeshToCanvas2D,
+  resolveUnitZWorkplaneOffset,
+  type Loft3DMesh,
+} from "./cadLoft3DEngine";
 
 export type SceneView = { tx: number; ty: number; k: number };
 
@@ -86,6 +96,8 @@ export type SceneOptions = {
   gridStep?: number;
   /** Estilo de fundo ativo no CHAMFER CAD ("padrao" | "suave" | "fluido") */
   bgStyle?: "padrao" | "suave" | "fluido";
+  /** Malha de prévia translúcida em tempo real durante a ferramenta LOFT 3D */
+  activeLoftPreviewMesh?: Loft3DMesh | null;
 };
 
 /**
@@ -394,6 +406,10 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
 
   // Coleta entidades planas elegíveis para o motor de Hierarquia de Arestas e Profundidade Óptica 3D
   const planarFor3D: Entity[] = [];
+  const loftSolidEntities: Entity[] = [];
+  const unitZOffset = is3DWireframeActive
+    ? resolveUnitZWorkplaneOffset(Boolean(opts.isIsometric), opts.isoPlane ?? "top", orbitProj)
+    : { x: 0, y: 0 };
 
   // Camada 4 — Peças e Entidades do CAD (100% de Nitidez e Contraste Máximo)
   ctx.save();
@@ -405,6 +421,12 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
   for (const e of list) {
     if (e.type === "text") continue;
     if (lod && screenSize(index.boxOfId(e.id), view.k) < 1.2) continue;
+
+    // 0. SÓLIDOS DE TRANSIÇÃO MULTISSEÇÃO (LOFT 3D)
+    if (isLoft3DEntity(e)) {
+      loftSolidEntities.push(e);
+      continue;
+    }
 
     // 1. RENDERIZAÇÃO VOLUMÉTRICA ISOMÉTRICA EXPLÍCITA (ISOMETRIC SOLID FACES / HLR)
     if (e.params?.isIsoSolidFace) {
@@ -557,6 +579,73 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       isLight: opts.isLight,
       styleConfig: opts.wireframe3DStyle,
     });
+
+    // Linhas-guia tracejadas verticais de altitude (+Z) para perfis flutuantes com elevationZ != 0
+    if (!lod) {
+      for (const e of planarFor3D) {
+        const elevZ = getEntityElevationZ(e);
+        if (Math.abs(elevZ) > 0.05) {
+          const c = computeEntityTrueCentroid2D(e);
+          const topX = c.x + unitZOffset.x * elevZ;
+          const topY = c.y + unitZOffset.y * elevZ;
+          ctx.save();
+          ctx.setLineDash([4 * inv, 3.5 * inv]);
+          ctx.strokeStyle = selection.has(e.id)
+            ? "rgba(245, 158, 11, 0.75)"
+            : "rgba(56, 189, 248, 0.45)";
+          ctx.lineWidth = 1.2 * inv;
+          ctx.beginPath();
+          ctx.moveTo(c.x, c.y);
+          ctx.lineTo(topX, topY);
+          ctx.stroke();
+          // Ponto de projeção no plano base Z=0 e centro elevado Z=elevZ
+          ctx.setLineDash([]);
+          ctx.fillStyle = selection.has(e.id) ? "#F59E0B" : "#38BDF8";
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, 2.2 * inv, 0, Math.PI * 2);
+          ctx.arc(topX, topY, 2.6 * inv, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+    }
+  }
+
+  // Renderiza Sólidos Loft 3D (Iluminação Metálica Phong / Blinn-Phong + Isocurvas)
+  if (loftSolidEntities.length > 0) {
+    for (const loftEnt of loftSolidEntities) {
+      const spec = getEntityLoft3DSpec(loftEnt);
+      if (!spec) continue;
+      const mesh = buildLoft3DMesh(spec.sectionEntities, {
+        surfaceMode: spec.surfaceMode,
+        bodyMode: spec.bodyMode,
+        wallThicknessMm: spec.wallThicknessMm,
+      });
+      if (mesh) {
+        renderLoft3DMeshToCanvas2D(ctx, mesh, {
+          isPreview: false,
+          isSelected: selection.has(loftEnt.id),
+          isIsometric: Boolean(opts.isIsometric),
+          isoPlane: opts.isoPlane ?? "top",
+          orbitProjection: orbitProj ?? null,
+          viewK: safeK,
+          isLight: opts.isLight,
+        });
+      }
+    }
+  }
+
+  // Renderiza a Prévia Translúcida em Tempo Real da Ferramenta LOFT 3D (Azul-Celeste alpha=0.42 + Isocurvas Brancas)
+  if (opts.activeLoftPreviewMesh) {
+    renderLoft3DMeshToCanvas2D(ctx, opts.activeLoftPreviewMesh, {
+      isPreview: true,
+      isSelected: true,
+      isIsometric: Boolean(opts.isIsometric),
+      isoPlane: opts.isoPlane ?? "top",
+      orbitProjection: orbitProj ?? null,
+      viewK: safeK,
+      isLight: opts.isLight,
+    });
   }
 
   // halo de seleção — destaque temporário, nunca substitui a cor técnica
@@ -584,10 +673,11 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
       : { x: 0, y: 0 };
 
     for (const e of list) {
-      if (!selection.has(e.id) || e.type === "text") continue;
+      if (!selection.has(e.id) || e.type === "text" || isLoft3DEntity(e)) continue;
       ctx.save();
       if (is3DWireframeActive && !e.params?.isIsoSolidFace) {
         const sp = getEntityStructuralProfile(e);
+        const elevZ = getEntityElevationZ(e);
         const entTopOffset = sp
           ? resolveBaseToTopExtrusionVector({
               isOrbitTilted,
@@ -596,7 +686,9 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
               isoPlane: opts.isoPlane,
               sheetThickness: sp.heightH || sp.widthB || isoSheetThickness,
             }).topOffset
-          : selTopOffset;
+          : Math.abs(elevZ) > 0.01
+            ? { x: unitZOffset.x * elevZ, y: unitZOffset.y * elevZ }
+            : selTopOffset;
         ctx.translate(entTopOffset.x, entTopOffset.y);
       }
       ctx.beginPath();

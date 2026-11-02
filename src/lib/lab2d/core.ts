@@ -62,6 +62,10 @@ type Base = {
   cnc?: CncMeta;
   /** Estado de construção (geometria auxiliar/projeção) */
   isConstruction?: boolean;
+  /** Elevação vertical no eixo +Z (mm) para criação de perfis em planos paralelos e Loft 3D */
+  elevationZ?: number;
+  /** Altura de extrusão individual no eixo +Z (mm) */
+  extrudeHeight?: number;
   /** Parâmetros paramétricos associados */
   params?: Record<string, unknown>;
   /** Perfil estrutural tubular/barra associado (Catálogo BOM Costa Ferro) */
@@ -336,6 +340,20 @@ export function findSnap(
           { p: { x: e.cx, y: e.cy - e.ry }, kind: "quadrant" },
         );
       }
+      if (e.type === "polyline" && e.pts.length >= 3) {
+        let pts = e.pts;
+        if (
+          pts.length > 2 &&
+          Math.hypot(pts[0]!.x - pts[pts.length - 1]!.x, pts[0]!.y - pts[pts.length - 1]!.y) < 1e-3
+        ) {
+          pts = pts.slice(0, -1);
+        }
+        if (pts.length >= 3) {
+          const sx = pts.reduce((acc, p) => acc + p.x, 0);
+          const sy = pts.reduce((acc, p) => acc + p.y, 0);
+          cands.push({ p: { x: sx / pts.length, y: sy / pts.length }, kind: "center" });
+        }
+      }
       for (const p of entityPoints(e)) {
         if (e.type !== "circle" && e.type !== "ellipse") cands.push({ p, kind: "end" });
       }
@@ -389,40 +407,65 @@ export function findSnap(
 /* ------------------------------------------------------- transformações */
 
 export function mapEntity(e: Entity, f: (p: Vec2) => Vec2, scale = 1): Entity {
+  const mapLoftParams = (ent: Entity): Entity => {
+    const loft = ent.params?.loft3d as
+      | { sectionEntities?: Entity[]; [k: string]: unknown }
+      | undefined;
+    if (loft && Array.isArray(loft.sectionEntities)) {
+      return {
+        ...ent,
+        params: {
+          ...(ent.params ?? {}),
+          loft3d: {
+            ...loft,
+            sectionEntities: loft.sectionEntities.map((sec) => mapEntity(sec, f, scale)),
+          },
+        },
+      };
+    }
+    return ent;
+  };
+
   switch (e.type) {
     case "line": {
       const a = f({ x: e.x1, y: e.y1 });
       const b = f({ x: e.x2, y: e.y2 });
-      return { ...e, x1: a.x, y1: a.y, x2: b.x, y2: b.y };
+      return mapLoftParams({ ...e, x1: a.x, y1: a.y, x2: b.x, y2: b.y });
     }
     case "polyline":
-      return { ...e, pts: e.pts.map(f) };
+      return mapLoftParams({ ...e, pts: e.pts.map(f) });
     case "circle": {
       const c = f({ x: e.cx, y: e.cy });
-      return { ...e, cx: c.x, cy: c.y, r: e.r * Math.abs(scale) };
+      return mapLoftParams({ ...e, cx: c.x, cy: c.y, r: e.r * Math.abs(scale) });
     }
     case "arc": {
       const c = f({ x: e.cx, y: e.cy });
-      return { ...e, cx: c.x, cy: c.y, r: e.r * Math.abs(scale) };
+      return mapLoftParams({ ...e, cx: c.x, cy: c.y, r: e.r * Math.abs(scale) });
     }
     case "ellipse": {
       const c = f({ x: e.cx, y: e.cy });
-      return { ...e, cx: c.x, cy: c.y, rx: e.rx * Math.abs(scale), ry: e.ry * Math.abs(scale) };
+      return mapLoftParams({
+        ...e,
+        cx: c.x,
+        cy: c.y,
+        rx: e.rx * Math.abs(scale),
+        ry: e.ry * Math.abs(scale),
+      });
     }
     case "point": {
       const c = f({ x: e.x, y: e.y });
-      return { ...e, x: c.x, y: c.y };
+      return mapLoftParams({ ...e, x: c.x, y: c.y });
     }
     case "hatch": {
-      return { ...e, boundaryPts: e.boundaryPts.map(f) };
+      return mapLoftParams({ ...e, boundaryPts: e.boundaryPts.map(f) });
     }
     case "path": {
       const m = mapPath(e.start, e.segs, f);
-      return { ...e, start: m.start, segs: m.segs };
+      return mapLoftParams({ ...e, start: m.start, segs: m.segs });
     }
     case "text": {
       const c = f({ x: e.x, y: e.y });
-      return { ...e, x: c.x, y: c.y };
+      return mapLoftParams({ ...e, x: c.x, y: c.y });
     }
   }
 }

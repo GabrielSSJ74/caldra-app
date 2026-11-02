@@ -447,6 +447,15 @@ export function ChamferRightSidebar({
               commit((list) => [...list, ent]);
             }}
             onDivideEntity={onDivideEntity}
+            onDecomposeLoftEntity={(loftEnt) => {
+              const spec = loftEnt.params?.loft3d;
+              if (!spec || !Array.isArray(spec.sectionEntities)) return;
+              commit((list) => [
+                ...list.filter((x) => x.id !== loftEnt.id),
+                ...spec.sectionEntities,
+              ]);
+              setSelection(spec.sectionEntities.map((s: Entity) => s.id));
+            }}
             projectName={projectName}
             onProjectNameChange={onProjectNameChange}
             material={material}

@@ -490,9 +490,22 @@ export function extractEntitySmartReferences(
         p: center,
         kind: "center",
         entityId: e.id,
-        label: n === 4 ? "Centro da Chapa" : "Centroide Geométrico",
+        label: n === 4 ? "⌖ Centro Geométrico (Retângulo)" : "⌖ Centro Geométrico",
         priority: 1,
       });
+    } else if (n >= 3) {
+      const pFirst = pts[0]!;
+      const pLast = pts[n - 1]!;
+      if (Math.hypot(pFirst.x - pLast.x, pFirst.y - pLast.y) < 1.5) {
+        const center = getGeometricCenter(e);
+        refs.push({
+          p: center,
+          kind: "center",
+          entityId: e.id,
+          label: "⌖ Centro Geométrico",
+          priority: 1,
+        });
+      }
     }
     return refs;
   }

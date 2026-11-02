@@ -255,9 +255,28 @@ export function resolveEntityZRatios(
   const safeH = sheetThickness > 0 ? sheetThickness : 5;
   const params = e.params ?? {};
 
-  if (typeof params.zBaseMm === "number" || typeof params.extrudeHeightMm === "number") {
-    const zBaseMm = typeof params.zBaseMm === "number" ? params.zBaseMm : 0;
-    const hMm = typeof params.extrudeHeightMm === "number" ? params.extrudeHeightMm : safeH;
+  const rawZ0 =
+    typeof e.elevationZ === "number"
+      ? e.elevationZ
+      : typeof params.elevationZ === "number"
+        ? (params.elevationZ as number)
+        : typeof params.zBaseMm === "number"
+          ? (params.zBaseMm as number)
+          : undefined;
+  const rawH =
+    typeof e.extrudeHeight === "number"
+      ? e.extrudeHeight
+      : typeof params.extrudeHeight === "number"
+        ? (params.extrudeHeight as number)
+        : typeof params.extrudeHeightMm === "number"
+          ? (params.extrudeHeightMm as number)
+          : undefined;
+
+  if (typeof rawZ0 === "number" || typeof rawH === "number") {
+    const zBaseMm = typeof rawZ0 === "number" && Number.isFinite(rawZ0) ? rawZ0 : 0;
+    const defaultH = Math.abs(zBaseMm) > 0.01 ? 0.15 : safeH;
+    const hMm =
+      typeof rawH === "number" && Number.isFinite(rawH) ? Math.max(0.1, rawH) : defaultH;
     return {
       z0: zBaseMm / safeH,
       z1: (zBaseMm + hMm) / safeH,
@@ -407,6 +426,8 @@ export function classifyOuterAndHoleEntities(entities: Entity[]): ClassifiedOute
     entityById.set(e.id, e);
     if (
       e.isConstruction ||
+      e.params?.isLoft3DSolid ||
+      e.params?.loft3d ||
       e.layer === "centro" ||
       e.layer === "referencia" ||
       e.layer === "dobra" ||
@@ -433,8 +454,18 @@ export function classifyOuterAndHoleEntities(entities: Entity[]): ClassifiedOute
   for (let i = 0; i < closedCandidates.length; i++) {
     const item = closedCandidates[i]!;
     const ent = item.entity;
+    const elevZ =
+      typeof ent.elevationZ === "number"
+        ? ent.elevationZ
+        : typeof ent.params?.elevationZ === "number"
+          ? (ent.params.elevationZ as number)
+          : typeof ent.params?.zBaseMm === "number"
+            ? (ent.params.zBaseMm as number)
+            : 0;
     const hasCustomZFeature =
-      typeof ent.params?.zBaseMm === "number" ||
+      Math.abs(elevZ) > 0.01 ||
+      typeof ent.extrudeHeight === "number" ||
+      typeof ent.params?.extrudeHeight === "number" ||
       typeof ent.params?.extrudeHeightMm === "number" ||
       typeof ent.params?.stepRatio === "number" ||
       ent.layer === "marcacao" ||

@@ -29,6 +29,13 @@ import {
   getEntityStructuralProfile,
   mergeCadTessellatedShapes,
 } from "@/lib/lab2d/structuralProfile";
+import {
+  buildAllLoftAndElevatedEntitiesTessellation,
+  getEntityElevationZ,
+  getEntityLoft3DSpec,
+  isLoft3DEntity,
+  type Loft3DMesh,
+} from "@/lib/lab2d/cadLoft3DEngine";
 
 export interface ChamferUnified3DViewportProps {
   /** Define se a camada de renderização sólida 3D está visível no canvas unificado */
@@ -54,6 +61,8 @@ export interface ChamferUnified3DViewportProps {
   /** Serialização opcional da árvore paramétrica 3D */
   initialTreeJson?: string;
   onTreeChange?: (json: string) => void;
+  /** Malha de prévia translúcida em tempo real durante a ferramenta LOFT 3D */
+  activeLoftPreviewMesh?: Loft3DMesh | null;
 }
 
 export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DViewport({
@@ -69,6 +78,7 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
   isDark,
   initialTreeJson,
   onTreeChange,
+  activeLoftPreviewMesh,
 }: ChamferUnified3DViewportProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<ThreeBRepRenderer | null>(null);
@@ -198,6 +208,7 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
     const structuralEntities: Entity[] = [];
     const sheetEntities: Entity[] = [];
     const structuralFpParts: string[] = [];
+    const loftFpParts: string[] = [];
 
     for (const ent of entities) {
       const sp = getEntityStructuralProfile(ent);
@@ -212,14 +223,37 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
         structuralFpParts.push(
           `${ent.id}:${sp.kind}:${sp.widthB}:${sp.heightH}:${sp.wallThicknessE}:${sp.lengthL}:${sp.axisAngleRad.toFixed(4)}@${posAnchor}`,
         );
+      } else if (isLoft3DEntity(ent)) {
+        const spec = getEntityLoft3DSpec(ent);
+        if (spec) {
+          loftFpParts.push(
+            `LOFT:${ent.id}:${spec.surfaceMode}:${spec.bodyMode}:${spec.wallThicknessMm}:${spec.sectionEntities
+              .map((s) => `${s.id}@Z${getEntityElevationZ(s).toFixed(2)}`)
+              .join(",")}`,
+          );
+        }
       } else {
-        sheetEntities.push(ent);
+        const elevZ = getEntityElevationZ(ent);
+        if (Math.abs(elevZ) > 0.01) {
+          loftFpParts.push(`ELEV:${ent.id}:${elevZ.toFixed(2)}`);
+        } else {
+          sheetEntities.push(ent);
+        }
       }
     }
 
+    if (activeLoftPreviewMesh) {
+      loftFpParts.push(
+        `PREVIEW:${activeLoftPreviewMesh.surfaceMode}:${activeLoftPreviewMesh.bodyMode}:${activeLoftPreviewMesh.sections
+          .map((s) => `${s.entityId}@Z${s.elevationZ.toFixed(2)}`)
+          .join(",")}`,
+      );
+    }
+
     const structuralFp = structuralFpParts.join(";");
+    const loftFp = loftFpParts.join(";");
     const analysis = analyze2DSketchFor3D(sheetEntities, safeThickness);
-    const combinedFingerprint = `${analysis.fingerprint}||SP:[${structuralFp}]`;
+    const combinedFingerprint = `${analysis.fingerprint}||SP:[${structuralFp}]||LOFT:[${loftFp}]`;
 
     if (combinedFingerprint !== lastFingerprintRef.current) {
       lastFingerprintRef.current = combinedFingerprint;
@@ -229,7 +263,14 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
         lastStructuralFpRef.current = structuralFp;
         lastStructuralShapeRef.current = buildStructuralProfilesTessellatedShape(structuralEntities);
       }
-      const structuralShape = lastStructuralShapeRef.current;
+      const loftAndElevShape = buildAllLoftAndElevatedEntitiesTessellation(
+        entities,
+        activeLoftPreviewMesh ?? null,
+      );
+      const custom3DShape = mergeCadTessellatedShapes(
+        lastStructuralShapeRef.current,
+        loftAndElevShape,
+      );
 
       const extrudedIdSet = new Set(analysis.sourceEntityIds);
       const visibleWireframes =
@@ -243,7 +284,7 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
         void tree.rebuild().then((res) => {
           if (seq !== rebuildSeqRef.current) return;
           if (!rendererRef.current) return;
-          const mergedShape = mergeCadTessellatedShapes(res.tessellation ?? null, structuralShape);
+          const mergedShape = mergeCadTessellatedShapes(res.tessellation ?? null, custom3DShape);
           rendererRef.current.setShape(mergedShape, false);
           if (onTreeChange) {
             try {
@@ -265,9 +306,9 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
           }
         });
       } else {
-        renderer.setShape(structuralShape, false);
+        renderer.setShape(custom3DShape, false);
         const cam = latestCameraRef.current;
-        if (cam.active && structuralShape) {
+        if (cam.active && custom3DShape) {
           renderer.syncWith2DViewport({
             view2D: cam.view2D,
             viewportWidth: cam.viewportSize.w,
@@ -279,7 +320,7 @@ export const ChamferUnified3DViewport = React.memo(function ChamferUnified3DView
         }
       }
     }
-  }, [entities, thickness, active, initialTreeJson, onTreeChange]);
+  }, [entities, thickness, active, initialTreeJson, onTreeChange, activeLoftPreviewMesh]);
 
   // Sincroniza câmera em tempo real durante Órbita 3D, Pan e Zoom (somente quando ativo)
   useEffect(() => {

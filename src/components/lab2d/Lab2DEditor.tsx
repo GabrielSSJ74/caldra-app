@@ -484,6 +484,19 @@ import {
   ChamferTouchDynamicHud,
   type LockedDimensionsState,
 } from "./ChamferTouchDynamicHud";
+import { Chamfer3DGizmoAndLoftOverlay } from "./Chamfer3DGizmoAndLoftOverlay";
+import {
+  buildLoft3DMesh,
+  createLoft3DEntity,
+  getEntityElevationZ,
+  getEntityLoft3DSpec,
+  isClosedLoftableProfile,
+  isLoft3DEntity,
+  resolveUnitZWorkplaneOffset,
+  setEntityElevationZ,
+  type LoftBodyMode,
+  type LoftSurfaceMode,
+} from "@/lib/lab2d/cadLoft3DEngine";
 
 export type Tool =
   | "select"
@@ -511,7 +524,8 @@ export type Tool =
   | "chamfer"
   | "divide"
   | "center"
-  | "slot";
+  | "slot"
+  | "loft_3d";
 
 const TOOLS: { id: Tool; icon: typeof Minus; label: string; key: string }[] = [
   { id: "select", icon: MousePointer2, label: "Selecionar", key: "V" },
@@ -1010,8 +1024,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [showFolds3D, setShowFolds3D] = useState(true);
   const [showDims3D, setShowDims3D] = useState(true);
 
-  /* MODO DE DESENHO ISOMÉTRICO 2D (ETAPA ISOMÉTRICO DO CHAMFER) */
-  const [drawingProjection, setDrawingProjection] = useState<DrawingProjectionMode>("orthographic");
+  /* MODO DE DESENHO ORTOGONAL 2D (FALLBACK AUTOMÁTICO DE SEGURANÇA CONTRA ISO 2D) */
+  const [drawingProjectionState, setDrawingProjectionState] =
+    useState<DrawingProjectionMode>("orthographic");
+  const drawingProjection: DrawingProjectionMode =
+    drawingProjectionState === "isometric" ? "orthographic" : drawingProjectionState;
+  const setDrawingProjection = useCallback(
+    (_next: DrawingProjectionMode | "iso2d" | "ISO_2D" | "ortho" | ((prev: DrawingProjectionMode) => DrawingProjectionMode)) => {
+      setDrawingProjectionState("orthographic");
+    },
+    [],
+  );
   const [isoPlane, setIsoPlane] = useState<IsoPlane>("top");
   const [isoOrtho, setIsoOrtho] = useState<boolean>(true);
   const [isoPieceBuilderOpen, setIsoPieceBuilderOpen] = useState<boolean>(false);
@@ -1174,6 +1197,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const [textOpen, setTextOpen] = useState(false);
   const [textSpec, setTextSpec] = useState<TextSpec | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
+
+  /* MOTOR LOFT 3D MULTISSEÇÃO E ELEVAÇÃO +Z (GIZMO 3D) */
+  const [loftSectionIds, setLoftSectionIds] = useState<string[]>([]);
+  const [loftSurfaceMode, setLoftSurfaceMode] = useState<LoftSurfaceMode>("smooth");
+  const [loftBodyMode, setLoftBodyMode] = useState<LoftBodyMode>("solid");
+  const [elevationKeypadState, setElevationKeypadState] = useState<{
+    open: boolean;
+    initialZ: number;
+  }>({ open: false, initialZ: 0 });
 
   /* BARRA SUPERIOR — NAVEGAÇÃO POR SWIPE HORIZONTAL (TOUCH + MOUSE DRAG) */
   const topBarRef = useRef<HTMLElement>(null);
@@ -2242,6 +2274,65 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         }
       }
 
+      if (
+        drawingProjection === "isometric" ||
+        orbitProjection2D.isTilted
+      ) {
+        const uz = resolveUnitZWorkplaneOffset({
+          isIsometric: drawingProjection === "isometric",
+          isoPlane,
+          isOrbitTilted: orbitProjection2D.isTilted,
+          orbitProjection: orbitProjection2D,
+        });
+
+        const measureEntityDistanceAtPoint = (ent: Entity, pt: Vec2): number => {
+          if (ent.type === "circle") {
+            return Math.abs(dist(pt, { x: ent.cx, y: ent.cy }) - ent.r);
+          }
+          if (ent.type === "arc") {
+            const cd = dist(pt, { x: ent.cx, y: ent.cy });
+            const twoPi = Math.PI * 2;
+            const norm = (a: number) => ((a % twoPi) + twoPi) % twoPi;
+            const a0 = norm(ent.a0);
+            let a1 = norm(ent.a1);
+            if (a1 <= a0) a1 += twoPi;
+            let cur = norm(Math.atan2(pt.y - ent.cy, pt.x - ent.cx));
+            if (cur < a0) cur += twoPi;
+            if (cur <= a1) return Math.abs(cd - ent.r);
+            const p0 = { x: ent.cx + ent.r * Math.cos(ent.a0), y: ent.cy + ent.r * Math.sin(ent.a0) };
+            const p1 = { x: ent.cx + ent.r * Math.cos(ent.a1), y: ent.cy + ent.r * Math.sin(ent.a1) };
+            return Math.min(dist(pt, p0), dist(pt, p1));
+          }
+          let best = Infinity;
+          for (const s of segmentsOf(ent)) {
+            best = Math.min(best, dist(pt, closestOnSegment(pt, s)));
+          }
+          return best;
+        };
+
+        for (const e of visible) {
+          if (layerOf(e.layer)?.locked) continue;
+          const elevZ = getEntityElevationZ(e);
+          const loftSpec = getEntityLoft3DSpec(e);
+          if (Math.abs(elevZ) <= 0.01 && !loftSpec) continue;
+
+          const pAtZ = { x: p.x - uz.x * elevZ, y: p.y - uz.y * elevZ };
+          let d = measureEntityDistanceAtPoint(e, pAtZ);
+
+          if (loftSpec && Array.isArray(loftSpec.sectionEntities)) {
+            for (const sec of loftSpec.sectionEntities) {
+              const secZ = getEntityElevationZ(sec);
+              const pSec = { x: p.x - uz.x * secZ, y: p.y - uz.y * secZ };
+              d = Math.min(d, measureEntityDistanceAtPoint(sec, pSec));
+            }
+          }
+
+          if (d <= tol * 1.35 && !candidates.some((c) => c.e.id === e.id)) {
+            candidates.push({ e, d });
+          }
+        }
+      }
+
       if (candidates.length === 0) return null;
       // Ordena por menor distância matemática à aresta
       candidates.sort((a, b) => a.d - b.d);
@@ -2255,7 +2346,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
       return candidates[0].e;
     },
-    [near, view.k, layerOf, selection],
+    [near, view.k, layerOf, selection, drawingProjection, orbitProjection2D, isoPlane, visible],
   );
 
   const snapPoint = useCallback(
@@ -2383,6 +2474,51 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const selectionSet = useMemo(() => new Set(selection), [selection]);
 
+  const activeLoftPreviewMesh = useMemo(() => {
+    if (tool !== "loft_3d" || loftSectionIds.length < 2) return null;
+    const sectionEntities = loftSectionIds
+      .map((id) => entities.find((e) => e.id === id))
+      .filter((e): e is Entity => Boolean(e));
+    if (sectionEntities.length < 2) return null;
+    return buildLoft3DMesh(sectionEntities, {
+      surfaceMode: loftSurfaceMode,
+      bodyMode: loftBodyMode,
+      wallThicknessMm: thickness,
+    });
+  }, [tool, loftSectionIds, entities, loftSurfaceMode, loftBodyMode, thickness]);
+
+  const handleConfirmLoft3D = useCallback(() => {
+    const sectionEntities = loftSectionIds
+      .map((id) => entities.find((e) => e.id === id))
+      .filter((e): e is Entity => Boolean(e));
+    if (sectionEntities.length < 2) {
+      toast.error("Selecione pelo menos 2 seções transversais fechadas para criar o Loft 3D.");
+      return;
+    }
+    const loftEntity = createLoft3DEntity({
+      sectionEntities,
+      surfaceMode: loftSurfaceMode,
+      bodyMode: loftBodyMode,
+      wallThicknessMm: thickness,
+      layer: activeLayer,
+    });
+    if (!loftEntity) {
+      toast.error("Não foi possível gerar a malha 3D do Loft para os perfis selecionados.");
+      return;
+    }
+    triggerHaptic("action");
+    const consumedSet = new Set(loftSectionIds);
+    commit((list) => [...list.filter((e) => !consumedSet.has(e.id)), loftEntity]);
+    setSelection([loftEntity.id]);
+    setLoftSectionIds([]);
+    setTool("select");
+    toast.success(
+      `✓ Sólido Loft 3D criado com ${sectionEntities.length} seções (${
+        loftSurfaceMode === "smooth" ? "Suave / Smooth Fit" : "Reto / Ruled"
+      }).`,
+    );
+  }, [loftSectionIds, entities, loftSurfaceMode, loftBodyMode, thickness, activeLayer, commit]);
+
   const render2DSceneForMode = useCallback(
     (targetMode: "light" | "dark" | "amoled") => {
       if (cadPhase < 2) return;
@@ -2434,6 +2570,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         showGrid,
         gridStep: Math.max(15, grid * 2.5),
         bgStyle,
+        activeLoftPreviewMesh,
       });
     },
     [
@@ -2459,6 +2596,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       wireframe3DStyle,
       showGrid,
       grid,
+      activeLoftPreviewMesh,
     ],
   );
 
@@ -5014,6 +5152,35 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
+    if (tool === "loft_3d") {
+      const hit = hitTest(raw);
+      if (!hit) {
+        toast.info("Toque em um perfil fechado (Retângulo, Polígono ou Círculo) para adicionar à transição Loft 3D.");
+        return;
+      }
+      if (!isClosedLoftableProfile(hit)) {
+        toast.warning("Para o Loft 3D, selecione um perfil fechado (Retângulo, Polígono, Círculo ou Polilinha fechada).");
+        return;
+      }
+      triggerHaptic("selection");
+      setLoftSectionIds((prev) => {
+        if (prev.includes(hit.id)) {
+          return prev.filter((id) => id !== hit.id);
+        }
+        const next = [...prev, hit.id];
+        if (
+          next.length === 2 &&
+          drawingProjection !== "isometric" &&
+          !orbitProjection2D.isTilted
+        ) {
+          // Inclina suavemente para perspectiva isométrica 3D para revelar a prévia translúcida
+          animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+        }
+        return next;
+      });
+      return;
+    }
+
     if (tool === "offset") {
       const hit = hitTest(raw);
       if (hit) {
@@ -6324,12 +6491,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       if (ev.key === "F5" || (ev.ctrlKey && ev.key.toLowerCase() === "e")) {
         ev.preventDefault();
-        setDrawingProjection("isometric");
-        const next = isoPlane === "top" ? "left" : isoPlane === "left" ? "right" : "top";
-        setIsoPlane(next);
-        triggerHaptic("selection");
-        AudioManager.play("ui_select");
-        toast.info(`Plano Isométrico: ${ISO_PLANES[next].label} (${ISO_PLANES[next].name})`);
+        setDrawingProjection("orthographic");
+        transitionTo2D();
         return;
       }
       if (ev.key === "ArrowUp" || ev.key === "ArrowDown" || ev.key === "ArrowLeft" || ev.key === "ArrowRight") {
@@ -7139,14 +7302,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           activeMode={activeMode}
           onSelect2D={() => transitionTo2D()}
           onSelect3D={() => transitionTo3D("3d")}
-          drawingProjection={drawingProjection}
-          onSetDrawingProjection={(mode) => {
-            setDrawingProjection(mode);
-            if (mode === "orthographic") {
-              transitionTo2D();
-            } else {
-              toast.info(`Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label})`);
-            }
+          drawingProjection="orthographic"
+          onSetDrawingProjection={() => {
+            setDrawingProjection("orthographic");
+            transitionTo2D();
           }}
           isoPlane={isoPlane}
           onSelectIsoPlane={(p) => {
@@ -7361,7 +7520,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </button>
             </div>
 
-            {/* SELETOR DE PROJEÇÃO: [ ORTO 2D | ISO 2D ] (SEMPRE PRESENTE NO WORKSPACE UNIFICADO EM PAISAGEM E RETRATO) */}
+            {/* PÍLULA INDIVIDUAL DE PROJEÇÃO: [ ORTO 2D ] (SEM BOTÃO ISO 2D) */}
             {!solidOpen && (
               <div
                 style={{
@@ -7379,7 +7538,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     transitionTo2D();
                   }}
                   style={
-                    drawingProjection === "orthographic" && !orbitProjection2D.isTilted && activeMode === "2d"
+                    !orbitProjection2D.isTilted && activeMode === "2d"
                       ? {
                           backgroundColor: "var(--chamfer-accent-soft)",
                           color: "var(--chamfer-text-primary)",
@@ -7390,30 +7549,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   title="Modo Ortogonal 2D (Eixos X/Y convencionais a 0°)"
                 >
                   ORTO 2D
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    AudioManager.play("ui_select");
-                    setDrawingProjection("isometric");
-                    toast.info(
-                      `Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label} · F5 para alternar)`,
-                    );
-                  }}
-                  style={
-                    drawingProjection === "isometric"
-                      ? {
-                          backgroundColor: "var(--chamfer-accent)",
-                          color: "var(--chamfer-accent-contrast)",
-                        }
-                      : { color: "var(--chamfer-text-secondary)" }
-                  }
-                  className="rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors flex items-center gap-1"
-                  title="Modo Isométrico 2D (Eixos 30°/90°/150° e 3 Planos Técnicos)"
-                >
-                  <BoxIcon className="w-3 h-3" />
-                  <span>ISO 2D</span>
                 </button>
               </div>
             )}
@@ -8181,15 +8316,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 orbitDragRef.current = null;
               }
             }}
-            drawingProjection={drawingProjection}
+            drawingProjection="orthographic"
             onToggleDrawingProjection={() => {
-              const next = drawingProjection === "isometric" ? "orthographic" : "isometric";
-              setDrawingProjection(next);
-              if (next === "isometric") {
-                toast.info(`Modo Isométrico 2D ativado (Plano ${ISO_PLANES[isoPlane].label})`);
-              } else {
-                toast.info("Modo Ortogonal 2D ativado");
-              }
+              setDrawingProjection("orthographic");
+              transitionTo2D();
+              toast.info("Modo Ortogonal 2D ativado");
             }}
             isoPlane={isoPlane}
             onSelectIsoPlane={(p) => {
@@ -8606,6 +8737,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 isDark={isDark}
                 initialTreeJson={cad3dTreeJson}
                 onTreeChange={setCad3dTreeJson}
+                activeLoftPreviewMesh={activeLoftPreviewMesh}
               />
             </Suspense>
           )}
@@ -10815,6 +10947,136 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               );
             }}
           />
+          )}
+
+          {/* GIZMO 3D DE TRANSLAÇÃO (X, Y, +Z ORTHO) E MOTOR INTERATIVO LOFT 3D MULTISSEÇÃO */}
+          <Chamfer3DGizmoAndLoftOverlay
+            entities={entities}
+            selectedIds={selectionSet}
+            view={view}
+            isIsometric={drawingProjection === "isometric"}
+            isoPlane={isoPlane}
+            orbitProjection={orbitProjection2D}
+            is3DViewActive={orbitProjection2D.isTilted || activeMode === "3d"}
+            isPortrait={!isLandscape}
+            onLiveElevateSelection={(newElevationZ) => {
+              setEntities((prev) =>
+                prev.map((ent) =>
+                  selectionSet.has(ent.id) ? setEntityElevationZ(ent, newElevationZ) : ent,
+                ),
+              );
+            }}
+            onCommitElevateSelection={(newElevationZ) => {
+              commit((list) =>
+                list.map((ent) =>
+                  selectionSet.has(ent.id) ? setEntityElevationZ(ent, newElevationZ) : ent,
+                ),
+              );
+            }}
+            onLiveTranslateSelectionXY={(dx, dy) => {
+              if (Math.abs(dx) < 1e-4 && Math.abs(dy) < 1e-4) return;
+              setEntities((prev) =>
+                prev.map((ent) =>
+                  selectionSet.has(ent.id) ? translate(ent, dx, dy) : ent,
+                ),
+              );
+            }}
+            onCommitTranslateSelectionXY={(dx, dy) => {
+              if (Math.abs(dx) < 1e-3 && Math.abs(dy) < 1e-3) return;
+              commit((list) =>
+                list.map((ent) =>
+                  selectionSet.has(ent.id) ? translate(ent, dx, dy) : ent,
+                ),
+              );
+            }}
+            onOpenElevationKeypad={(currentZ) => {
+              setElevationKeypadState({ open: true, initialZ: currentZ });
+            }}
+            isLoftToolActive={tool === "loft_3d"}
+            loftSectionIds={loftSectionIds}
+            loftSurfaceMode={loftSurfaceMode}
+            loftBodyMode={loftBodyMode}
+            sheetThicknessMm={thickness}
+            onChangeLoftSurfaceMode={setLoftSurfaceMode}
+            onChangeLoftBodyMode={setLoftBodyMode}
+            onUpdateSectionElevationZ={(entityId, newElevationZ) => {
+              commit((list) =>
+                list.map((ent) =>
+                  ent.id === entityId ? setEntityElevationZ(ent, newElevationZ) : ent,
+                ),
+              );
+            }}
+            onAutoSpaceLoftSectionsZ={(stepMm = 60) => {
+              commit((list) =>
+                list.map((ent) => {
+                  const idx = loftSectionIds.indexOf(ent.id);
+                  if (idx < 0) return ent;
+                  return setEntityElevationZ(ent, idx * stepMm);
+                }),
+              );
+            }}
+            onRemoveLoftSection={(id) =>
+              setLoftSectionIds((prev) => prev.filter((item) => item !== id))
+            }
+            onConfirmLoft3D={handleConfirmLoft3D}
+            onCancelLoft3D={() => {
+              setLoftSectionIds([]);
+              setTool("select");
+            }}
+            onActivateLoftToolFromSelection={() => {
+              triggerHaptic("selection");
+              const closedSel = selected
+                .filter((e) => isClosedLoftableProfile(e))
+                .sort((a, b) => getEntityElevationZ(a) - getEntityElevationZ(b))
+                .map((e) => e.id);
+              setLoftSectionIds(closedSel);
+              setTool("loft_3d");
+              if (
+                drawingProjection !== "isometric" &&
+                !orbitProjection2D.isTilted
+              ) {
+                animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
+              }
+            }}
+          />
+
+          {/* TECLADO NUMÉRICO DIRETO DE ELEVAÇÃO +Z (GIZMO 3D) */}
+          {elevationKeypadState.open && (
+            <div className="pointer-events-auto absolute left-1/2 top-1/2 z-50 -translate-x-1/2 -translate-y-1/2">
+              <ChamferCompactNumericEditor
+                property={{
+                  key: "elevationZ",
+                  label: "Elevação Vertical (+Z)",
+                  symbol: "↕Z",
+                  value: elevationKeypadState.initialZ,
+                  unit: "mm",
+                  defaultStep: 10,
+                  stepOptions: [1, 5, 10, 20, 60],
+                  allowNegative: true,
+                }}
+                onChange={(newZ) => {
+                  const selSet = new Set(selection);
+                  setEntities((prev) =>
+                    prev.map((ent) =>
+                      selSet.has(ent.id) ? setEntityElevationZ(ent, newZ) : ent,
+                    ),
+                  );
+                }}
+                onConfirm={(finalZ) => {
+                  const selSet = new Set(selection);
+                  commit((list) =>
+                    list.map((ent) =>
+                      selSet.has(ent.id) ? setEntityElevationZ(ent, finalZ) : ent,
+                    ),
+                  );
+                  setElevationKeypadState({ open: false, initialZ: finalZ });
+                  toast.success(`Elevação Z definida para ${finalZ.toFixed(2)} mm.`);
+                }}
+                onCancel={() =>
+                  setElevationKeypadState((prev) => ({ ...prev, open: false }))
+                }
+              />
+            </div>
           )}
 
           {/* INDICADOR INTERATIVO DE EIXOS 3D (GIZMO X Y Z) — VISÍVEL SOMENTE QUANDO ÓRBITA 3D ESTIVER ATIVA */}

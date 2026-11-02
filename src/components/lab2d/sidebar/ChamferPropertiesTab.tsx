@@ -46,6 +46,16 @@ import {
   getEntityStructuralProfile,
   syncStructuralProfileOnGeometryChange,
 } from "@/lib/lab2d/structuralProfile";
+import {
+  classifyProfileKindLabel,
+  createLoft3DEntity,
+  getEntityElevationZ,
+  getEntityExtrudeHeight,
+  getEntityLoft3DSpec,
+  isLoft3DEntity,
+  setEntityElevationZ,
+  setEntityExtrudeHeight,
+} from "@/lib/lab2d/cadLoft3DEngine";
 
 const deg = (r: number) => (r * 180) / Math.PI;
 const rad = (d: number) => (d * Math.PI) / 180;
@@ -61,6 +71,7 @@ interface ChamferPropertiesTabProps {
   onDeleteEntity: (id: string) => void;
   onDuplicateEntity: (e: Entity) => void;
   onDivideEntity?: (e: Entity) => void;
+  onDecomposeLoftEntity?: (e: Entity) => void;
   projectName: string;
   onProjectNameChange: (name: string) => void;
   material: string;
@@ -83,6 +94,7 @@ export function ChamferPropertiesTab({
   onDeleteEntity,
   onDuplicateEntity,
   onDivideEntity,
+  onDecomposeLoftEntity,
   projectName,
   onProjectNameChange,
   material,
@@ -204,6 +216,15 @@ export function ChamferPropertiesTab({
 
     // 4. Entidade selecionada
     if (!selectedEntity) return;
+
+    if (key === "elevationZ") {
+      onUpdateEntity(setEntityElevationZ(selectedEntity, val));
+      return;
+    }
+    if (key === "extrudeHeight") {
+      onUpdateEntity(setEntityExtrudeHeight(selectedEntity, Math.max(0, val)));
+      return;
+    }
 
     if (selectedEntity.type === "circle") {
       if (key === "diameter") {
@@ -957,6 +978,254 @@ export function ChamferPropertiesTab({
               </div>
             </div>
           )}
+
+          {/* ================================================================= */}
+          {/* MODELAGEM SÓLIDA 3D (ELEVAÇÃO +Z, EXTRUSÃO & LOFT 3D MULTISSEÇÃO) */}
+          {/* ================================================================= */}
+          <div className="rounded-xl border border-sky-500/30 bg-slate-900/75 p-2.5 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-sky-400">
+                Modelagem Sólida 3D (Loft / +Z)
+              </span>
+              <span className="rounded bg-sky-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-sky-300 border border-sky-500/30">
+                Z = {getEntityElevationZ(selectedEntity).toFixed(1)} mm
+              </span>
+            </div>
+
+            <div className="flex flex-col gap-1">
+              {renderNumericField({
+                key: "elevationZ",
+                label: "Elevação Z (+Z)",
+                symbol: "↕Z",
+                value: getEntityElevationZ(selectedEntity),
+                unit: "mm",
+                defaultStep: 10,
+                stepOptions: [1, 5, 10, 20, 60],
+                allowNegative: true,
+              })}
+              {renderNumericField({
+                key: "extrudeHeight",
+                label: "Altura Extrusão 3D",
+                symbol: "H3D",
+                value: getEntityExtrudeHeight(selectedEntity, thickness),
+                unit: "mm",
+                defaultStep: 5,
+                stepOptions: [1, 2, 5, 10, 25],
+                min: 0,
+              })}
+            </div>
+
+            {/* Atalhos rápidos de cota de elevação Z */}
+            <div className="grid grid-cols-4 gap-1">
+              {[0, 40, 60, 120].map((zPreset) => {
+                const activeZ = Math.abs(getEntityElevationZ(selectedEntity) - zPreset) < 0.05;
+                return (
+                  <button
+                    key={zPreset}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      onUpdateEntity(setEntityElevationZ(selectedEntity, zPreset));
+                    }}
+                    className={`rounded-md border py-1 font-mono text-[9px] font-bold transition-colors ${
+                      activeZ
+                        ? "border-sky-400 bg-sky-500/25 text-white"
+                        : "border-slate-700/80 bg-slate-950/80 text-slate-300 hover:border-sky-500/50"
+                    }`}
+                  >
+                    Z {zPreset}mm
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Painel Paramétrico de Sólido LOFT 3D */}
+            {isLoft3DEntity(selectedEntity) && (() => {
+              const spec = getEntityLoft3DSpec(selectedEntity);
+              if (!spec) return null;
+              return (
+                <div className="mt-1 flex flex-col gap-2 border-t border-slate-800 pt-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-amber-400">
+                      Transição Loft 3D ({spec.sectionEntities.length} Seções)
+                    </span>
+                  </div>
+
+                  {/* Modo da Superfície: Suave vs Reto */}
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        const rebuilt = createLoft3DEntity({
+                          sectionEntities: spec.sectionEntities,
+                          surfaceMode: "smooth",
+                          bodyMode: spec.bodyMode,
+                          wallThicknessMm: spec.wallThicknessMm,
+                          layer: selectedEntity.layer,
+                          existingId: selectedEntity.id,
+                        });
+                        if (rebuilt) onUpdateEntity(rebuilt);
+                      }}
+                      className={`rounded-lg border py-1 font-mono text-[9px] font-bold ${
+                        spec.surfaceMode === "smooth"
+                          ? "border-sky-400 bg-sky-500/25 text-white"
+                          : "border-slate-700 bg-slate-950 text-slate-400"
+                      }`}
+                    >
+                      Suave (Smooth)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        const rebuilt = createLoft3DEntity({
+                          sectionEntities: spec.sectionEntities,
+                          surfaceMode: "ruled",
+                          bodyMode: spec.bodyMode,
+                          wallThicknessMm: spec.wallThicknessMm,
+                          layer: selectedEntity.layer,
+                          existingId: selectedEntity.id,
+                        });
+                        if (rebuilt) onUpdateEntity(rebuilt);
+                      }}
+                      className={`rounded-lg border py-1 font-mono text-[9px] font-bold ${
+                        spec.surfaceMode === "ruled"
+                          ? "border-sky-400 bg-sky-500/25 text-white"
+                          : "border-slate-700 bg-slate-950 text-slate-400"
+                      }`}
+                    >
+                      Reto (Ruled)
+                    </button>
+                  </div>
+
+                  {/* Modo de Corpo: Maciço vs Casca */}
+                  <div className="grid grid-cols-2 gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        const rebuilt = createLoft3DEntity({
+                          sectionEntities: spec.sectionEntities,
+                          surfaceMode: spec.surfaceMode,
+                          bodyMode: "solid",
+                          wallThicknessMm: spec.wallThicknessMm,
+                          layer: selectedEntity.layer,
+                          existingId: selectedEntity.id,
+                        });
+                        if (rebuilt) onUpdateEntity(rebuilt);
+                      }}
+                      className={`rounded-lg border py-1 font-mono text-[9px] font-bold ${
+                        spec.bodyMode === "solid"
+                          ? "border-emerald-400 bg-emerald-500/20 text-white"
+                          : "border-slate-700 bg-slate-950 text-slate-400"
+                      }`}
+                    >
+                      Sólido Maciço
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        const rebuilt = createLoft3DEntity({
+                          sectionEntities: spec.sectionEntities,
+                          surfaceMode: spec.surfaceMode,
+                          bodyMode: "shell",
+                          wallThicknessMm: thickness,
+                          layer: selectedEntity.layer,
+                          existingId: selectedEntity.id,
+                        });
+                        if (rebuilt) onUpdateEntity(rebuilt);
+                      }}
+                      className={`rounded-lg border py-1 font-mono text-[9px] font-bold ${
+                        spec.bodyMode === "shell"
+                          ? "border-emerald-400 bg-emerald-500/20 text-white"
+                          : "border-slate-700 bg-slate-950 text-slate-400"
+                      }`}
+                    >
+                      Casca ({thickness}mm)
+                    </button>
+                  </div>
+
+                  {/* Lista de Seções Transversais com edição rápida de Z */}
+                  <div className="flex flex-col gap-1">
+                    {spec.sectionEntities.map((sec, idx) => {
+                      const zVal = getEntityElevationZ(sec);
+                      return (
+                        <div
+                          key={sec.id || idx}
+                          className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/90 px-2 py-1"
+                        >
+                          <span className="font-mono text-[9px] text-slate-300">
+                            <b>[{idx + 1}]</b> {classifyProfileKindLabel(sec)}
+                          </span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextSections = spec.sectionEntities.map((s, i) =>
+                                  i === idx ? setEntityElevationZ(s, zVal - 15) : s,
+                                );
+                                const rebuilt = createLoft3DEntity({
+                                  sectionEntities: nextSections,
+                                  surfaceMode: spec.surfaceMode,
+                                  bodyMode: spec.bodyMode,
+                                  wallThicknessMm: spec.wallThicknessMm,
+                                  layer: selectedEntity.layer,
+                                  existingId: selectedEntity.id,
+                                });
+                                if (rebuilt) onUpdateEntity(rebuilt);
+                              }}
+                              className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[9px] text-slate-300 hover:bg-slate-800"
+                            >
+                              -15
+                            </button>
+                            <span className="min-w-[52px] text-center font-mono text-[9px] font-bold text-sky-400">
+                              {zVal.toFixed(0)} mm
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextSections = spec.sectionEntities.map((s, i) =>
+                                  i === idx ? setEntityElevationZ(s, zVal + 15) : s,
+                                );
+                                const rebuilt = createLoft3DEntity({
+                                  sectionEntities: nextSections,
+                                  surfaceMode: spec.surfaceMode,
+                                  bodyMode: spec.bodyMode,
+                                  wallThicknessMm: spec.wallThicknessMm,
+                                  layer: selectedEntity.layer,
+                                  existingId: selectedEntity.id,
+                                });
+                                if (rebuilt) onUpdateEntity(rebuilt);
+                              }}
+                              className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[9px] text-slate-300 hover:bg-slate-800"
+                            >
+                              +15
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {onDecomposeLoftEntity && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic("action");
+                        onDecomposeLoftEntity(selectedEntity);
+                        toast.success("Sólido Loft 3D decomposto em seus perfis 2D originais.");
+                      }}
+                      className="mt-1 flex items-center justify-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 py-1.5 font-mono text-[10px] font-bold text-amber-300 hover:bg-amber-500/25"
+                    >
+                      Decompor em Perfis 2D
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
 
           {/* Seletor de Camada da Entidade */}
           <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 flex items-center justify-between">
