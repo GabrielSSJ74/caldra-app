@@ -104,6 +104,22 @@ const SINUSOIDAL_10_STOPS: readonly [number, number][] = [
   [1.0, 0.0],
 ];
 
+/**
+ * Curva Gaussiana de 5 Paradas (5-Stop Exponential Falloff) para o FLUID AURORA:
+ *  - 0%   (0.00): 100% da opacidade de núcleo calibrada
+ *  - 22%  (0.22): 75% da opacidade inicial (núcleo macio)
+ *  - 48%  (0.48): 42% da opacidade inicial (transição média)
+ *  - 74%  (0.74): 14% da opacidade inicial (cauda longa de difusão atmosférica)
+ *  - 100% (1.00): 0% de opacidade (transparent)
+ */
+const GAUSSIAN_5_STOPS: readonly [number, number][] = [
+  [0.0, 1.0],
+  [0.22, 0.75],
+  [0.48, 0.42],
+  [0.74, 0.14],
+  [1.0, 0.0],
+];
+
 function drawSinusoidalRadialField(
   ctx: CanvasRenderingContext2D,
   cx: number,
@@ -114,6 +130,7 @@ function drawSinusoidalRadialField(
   scaleX = 1.0,
   scaleY = 1.0,
   rotationRad = 0,
+  useGaussian5Stop = false,
 ) {
   if (radius <= 1 || baseAlpha <= 0) return;
   ctx.save();
@@ -122,7 +139,8 @@ function drawSinusoidalRadialField(
   if (scaleX !== 1 || scaleY !== 1) ctx.scale(scaleX, scaleY);
 
   const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
-  for (const [stop, factor] of SINUSOIDAL_10_STOPS) {
+  const stops = useGaussian5Stop ? GAUSSIAN_5_STOPS : SINUSOIDAL_10_STOPS;
+  for (const [stop, factor] of stops) {
     const alpha = Math.max(0, Math.min(1, baseAlpha * factor));
     grad.addColorStop(stop, `rgba(${rgb}, ${alpha.toFixed(5)})`);
   }
@@ -135,7 +153,7 @@ function drawSinusoidalRadialField(
 }
 
 /**
- * Renderiza o acabamento de Seda Líquida ("Fluid" / "fluido") ou Ultra-Silk Multi-Layer ("Fluid Aurora" / "suave")
+ * Renderiza o acabamento de Seda Líquida ("Fluid" / "fluido") ou Refinamento Óptico em 3 Planos ("Fluid Aurora" / "suave")
  * diretamente no contexto Canvas 2D High-DPI com coordenadas em ponto flutuante escaladas por devicePixelRatio.
  */
 function renderCanvasSilkBackground(
@@ -157,30 +175,38 @@ function renderCanvasSilkBackground(
     const rField = maxDim * 0.95;
     if (!isLight) {
       // Tema Escuro: Azul-Titânio (#1E3A5F), Índigo Profundo (#1E2648), Ciano-Ardósia Sutil (#163E52)
-      drawSinusoidalRadialField(ctx, width * 0.18, height * 0.22, rField, "30, 58, 95", 0.34, 1.15, 0.95, -0.18);
-      drawSinusoidalRadialField(ctx, width * 0.82, height * 0.36, rField, "30, 38, 72", 0.32, 1.1, 0.92, 0.22);
-      drawSinusoidalRadialField(ctx, width * 0.46, height * 0.84, rField, "22, 62, 82", 0.30, 1.18, 0.9, -0.12);
+      drawSinusoidalRadialField(ctx, width * 0.18, height * 0.22, rField, "30, 58, 95", 0.34, 1.15, 0.95, -0.18, false);
+      drawSinusoidalRadialField(ctx, width * 0.82, height * 0.36, rField, "30, 38, 72", 0.32, 1.1, 0.92, 0.22, false);
+      drawSinusoidalRadialField(ctx, width * 0.46, height * 0.84, rField, "22, 62, 82", 0.30, 1.18, 0.9, -0.12, false);
     } else {
       // Tema Claro: Azul-Gelo (#DCE8F9), Lavanda Técnico Suave (#E8E6FA), Branco-Seda (#FFFFFF)
-      drawSinusoidalRadialField(ctx, width * 0.18, height * 0.22, rField, "220, 232, 249", 0.55, 1.15, 0.95, -0.18);
-      drawSinusoidalRadialField(ctx, width * 0.82, height * 0.36, rField, "232, 230, 250", 0.50, 1.1, 0.92, 0.22);
-      drawSinusoidalRadialField(ctx, width * 0.46, height * 0.84, rField, "255, 255, 255", 0.62, 1.18, 0.9, -0.12);
+      drawSinusoidalRadialField(ctx, width * 0.18, height * 0.22, rField, "220, 232, 249", 0.55, 1.15, 0.95, -0.18, false);
+      drawSinusoidalRadialField(ctx, width * 0.82, height * 0.36, rField, "232, 230, 250", 0.50, 1.1, 0.92, 0.22, false);
+      drawSinusoidalRadialField(ctx, width * 0.46, height * 0.84, rField, "255, 255, 255", 0.62, 1.18, 0.9, -0.12, false);
     }
   } else if (bgStyle === "suave") {
-    // Estilo "Fluid Aurora" (Ultra-Silk Multi-Layer): 4 véus elípticos inclinados sobrepostos
-    const rVeil = maxDim * 0.78;
+    // Estilo "Fluid Aurora": Curva Gaussiana de 5 Paradas + Fusão Óptica `screen` + Hierarquia em 3 Planos
+    ctx.globalCompositeOperation = !isLight ? "screen" : "source-over";
+    const rPlane1 = maxDim * 0.82;
+    const rPlane2 = maxDim * 0.68;
+    const rPlane3 = maxDim * 0.88;
+
     if (!isLight) {
-      // Tema Escuro: Âmbar-Dourado (0.16), Coral/Carmesim (0.13), Ciano-Boreal (0.16), Violeta/Esmeralda (0.12)
-      drawSinusoidalRadialField(ctx, width * 0.18, height * 0.18, rVeil, "245, 158, 11", 0.16, 1.32, 0.82, -0.24);
-      drawSinusoidalRadialField(ctx, width * 0.52, height * 0.16, rVeil, "225, 29, 72", 0.13, 1.28, 0.8, 0.21);
-      drawSinusoidalRadialField(ctx, width * 0.84, height * 0.48, rVeil, "14, 165, 233", 0.16, 1.35, 0.84, -0.31);
-      drawSinusoidalRadialField(ctx, width * 0.44, height * 0.86, rVeil, "99, 102, 241", 0.12, 1.38, 0.82, 0.26);
+      // Plano 3 (Base): Ancoragem Profunda
+      drawSinusoidalRadialField(ctx, width * 0.44, height * 0.86, rPlane3, "99, 102, 241", 0.14, 1.38, 0.78, 0.2, true);
+      // Plano 2 (Centro/Diagonal): Ritmo e Transição
+      drawSinusoidalRadialField(ctx, width * 0.84, height * 0.48, rPlane2, "14, 165, 233", 0.16, 1.32, 0.84, -0.28, true);
+      // Plano 1 (Topo): Protagonista Âmbar-Dourado e Complementar Coral/Carmesim
+      drawSinusoidalRadialField(ctx, width * 0.22, height * 0.18, rPlane1, "245, 158, 11", 0.17, 1.35, 0.82, -0.22, true);
+      drawSinusoidalRadialField(ctx, width * 0.64, height * 0.2, rPlane1 * 0.88, "225, 29, 72", 0.13, 1.28, 0.8, 0.18, true);
     } else {
-      // Tema Claro: Pêssego-Âmbar (0.18), Rosa-Quartzo (0.14), Azul-Celeste (0.18), Lilás Suave (0.14)
-      drawSinusoidalRadialField(ctx, width * 0.18, height * 0.18, rVeil, "251, 191, 36", 0.18, 1.32, 0.82, -0.24);
-      drawSinusoidalRadialField(ctx, width * 0.52, height * 0.16, rVeil, "244, 114, 182", 0.14, 1.28, 0.8, 0.21);
-      drawSinusoidalRadialField(ctx, width * 0.84, height * 0.48, rVeil, "56, 189, 248", 0.18, 1.35, 0.84, -0.31);
-      drawSinusoidalRadialField(ctx, width * 0.44, height * 0.86, rVeil, "167, 139, 250", 0.14, 1.38, 0.82, 0.26);
+      // Plano 3 (Base): Ancoragem Profunda
+      drawSinusoidalRadialField(ctx, width * 0.44, height * 0.86, rPlane3, "167, 139, 250", 0.15, 1.38, 0.78, 0.2, true);
+      // Plano 2 (Centro/Diagonal): Ritmo e Transição
+      drawSinusoidalRadialField(ctx, width * 0.84, height * 0.48, rPlane2, "56, 189, 248", 0.18, 1.32, 0.84, -0.28, true);
+      // Plano 1 (Topo): Protagonista Pêssego-Âmbar e Complementar Rosa-Quartzo
+      drawSinusoidalRadialField(ctx, width * 0.22, height * 0.18, rPlane1, "251, 191, 36", 0.19, 1.35, 0.82, -0.22, true);
+      drawSinusoidalRadialField(ctx, width * 0.64, height * 0.2, rPlane1 * 0.88, "244, 114, 182", 0.14, 1.28, 0.8, 0.18, true);
     }
   }
 
