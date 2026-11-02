@@ -1478,8 +1478,10 @@ export class ThreeBRepRenderer {
 
   private updatePointerCoords(e: PointerEvent): void {
     const rect = this.renderer.domElement.getBoundingClientRect();
-    this.pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-    this.pointer.y = -((e.clientY - rect.height) / rect.height) * 2 + 1;
+    const w = rect.width > 0 ? rect.width : 1;
+    const h = rect.height > 0 ? rect.height : 1;
+    this.pointer.x = ((e.clientX - rect.left) / w) * 2 - 1;
+    this.pointer.y = -((e.clientY - rect.top) / h) * 2 + 1;
   }
 
   private onPointerMove = (e: PointerEvent): void => {
@@ -1503,7 +1505,7 @@ export class ThreeBRepRenderer {
       e.clientY - this.pointerDownPos.y,
     );
 
-    if (elapsed < 350 && dist < 5) {
+    if (elapsed < 500 && dist < 12) {
       this.updatePointerCoords(e);
       this.raycaster.setFromCamera(this.pointer, this.activeCamera);
       const hit = this.performHitTest();

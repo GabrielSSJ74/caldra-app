@@ -59,18 +59,11 @@ export const STORAGE_KEYS = {
 } as const;
 
 /**
- * Lê o modo de deslocamento do cursor salvo no localStorage.
- * Padrão: 'offset' (55px acima do dedo no touch).
+ * Lê o modo de deslocamento do cursor.
+ * Padrão 1:1 direto ('direct') para que o toque coincida com o ponto exato do dedo.
  */
 export function loadCursorOffsetMode(): CursorOffsetMode {
-  if (typeof window === "undefined") return "offset";
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEYS.CURSOR_OFFSET_MODE);
-    if (raw === "direct" || raw === "offset") return raw;
-  } catch {
-    /* ignore */
-  }
-  return "offset";
+  return "direct";
 }
 
 export function saveCursorOffsetMode(mode: CursorOffsetMode): void {
@@ -122,13 +115,13 @@ export function cycleLoupeHudMode(current: LoupeHudMode): LoupeHudMode {
 /**
  * Cálculo Geométrico Único (Seção 2.2):
  * Matriz única de transformação do mundo CAD compartilhada por todas as ferramentas,
- * miras e lupa sem recálculos duplicados de coordenadas.
+ * miras e lupa sem recálculos duplicados de coordenadas (1:1 direto com o toque).
  */
 export function computeUnifiedCursorFrame(
   clientX: number,
   clientY: number,
   matrix: WorldTransformMatrix,
-  useTouchOffset: boolean,
+  _useTouchOffset = false,
 ): ComputedCursorFrame {
   const safeZoom = Number.isFinite(matrix.zoom) && matrix.zoom > 0 ? matrix.zoom : 1;
   const localX = clientX - matrix.left;
@@ -139,30 +132,12 @@ export function computeUnifiedCursorFrame(
     y: (localY - matrix.panY) / safeZoom,
   };
 
-  if (!useTouchOffset) {
-    return {
-      directWorld,
-      cursorWorld: directWorld,
-      cursorScreen: { x: clientX, y: clientY },
-      appliedOffsetY: 0,
-      invertedTopEdge: false,
-    };
-  }
-
-  const invertedTopEdge = localY < TOUCH_TOP_EDGE_THRESHOLD_PX;
-  const appliedOffsetY = invertedTopEdge ? TOUCH_CURSOR_OFFSET_PX : -TOUCH_CURSOR_OFFSET_PX;
-
-  const cursorWorld: Vec2 = {
-    x: directWorld.x,
-    y: (localY + appliedOffsetY - matrix.panY) / safeZoom,
-  };
-
   return {
     directWorld,
-    cursorWorld,
-    cursorScreen: { x: clientX, y: clientY + appliedOffsetY },
-    appliedOffsetY,
-    invertedTopEdge,
+    cursorWorld: directWorld,
+    cursorScreen: { x: clientX, y: clientY },
+    appliedOffsetY: 0,
+    invertedTopEdge: false,
   };
 }
 

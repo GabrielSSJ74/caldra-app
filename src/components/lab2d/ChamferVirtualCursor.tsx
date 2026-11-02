@@ -18,7 +18,7 @@ import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Check, Crosshair, Minimize2 
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { cn } from "@/lib/utils";
 
-export const TOUCH_CURSOR_OFFSET_PX = 55;
+export const TOUCH_CURSOR_OFFSET_PX = 0;
 export const TOUCH_TOP_INVERSION_THRESHOLD_PX = 120;
 export const TOUCH_TOP_EDGE_THRESHOLD_PX = TOUCH_TOP_INVERSION_THRESHOLD_PX;
 
@@ -28,64 +28,32 @@ export type NudgeStepMm = 0.1 | 1 | 5 | 10;
 export const NUDGE_STEP_OPTIONS: NudgeStepMm[] = [0.1, 1, 5, 10];
 
 /**
- * Determina se a ferramenta ativa deve aplicar o deslocamento anti-oclusão (55px) quando operada via toque (`touch`).
- * No uso com mouse físico (`pointerType === 'mouse'`) ou modo direto (`cursorOffsetMode === 'direct'`),
- * retorna sempre `false` (comportamento 1:1 tradicional).
- * No modo Ponteiro (`select`) com peça selecionada (`hasSelection`), ativa a Fusão Gestual com offset
- * para permitir mirar e arrastar vértices diretamente sem o dedo cobrir o nó.
+ * Determina se a ferramenta ativa deve aplicar deslocamento vertical no toque.
+ * Calibrado em 1:1 direto (retorna sempre `false`) para que o toque/clique
+ * aconteça exatamente no ponto onde o dedo ou cursor toca na tela, sem offset vertical.
  */
 export function shouldUseTouchOffset(
-  pointerType: string | undefined,
-  tool: string,
-  isDraggingNode = false,
-  isDraggingEntity = false,
-  cursorOffsetMode: "offset" | "direct" = "offset",
-  hasSelection = false,
+  _pointerType: string | undefined,
+  _tool: string,
+  _isDraggingNode = false,
+  _isDraggingEntity = false,
+  _cursorOffsetMode: "offset" | "direct" = "direct",
+  _hasSelection = false,
 ): boolean {
-  if (cursorOffsetMode === "direct") return false;
-  if (pointerType !== "touch") return false;
-  if (tool === "pan") return false;
-  if (isDraggingNode || isDraggingEntity) return true;
-  if (tool === "select") return true;
-
-  return (
-    tool === "line" ||
-    tool === "polyline" ||
-    tool === "rect" ||
-    tool === "rrect" ||
-    tool === "circle" ||
-    tool === "ellipse" ||
-    tool === "arc" ||
-    tool === "polygon" ||
-    tool === "slot" ||
-    tool === "point" ||
-    tool === "text" ||
-    tool === "dim" ||
-    tool.startsWith("dim_") ||
-    tool === "measure" ||
-    tool === "fillet" ||
-    tool === "chamfer" ||
-    tool === "smart_trim" ||
-    tool === "trim" ||
-    tool === "extend" ||
-    tool === "offset" ||
-    tool === "divide" ||
-    tool === "center" ||
-    tool === "move" ||
-    tool === "node" ||
-    tool === "leader"
-  );
+  return false;
 }
 
 export interface TouchCursorCalculationInput {
   clientX: number;
   clientY: number;
   pointerType?: string;
-  canvasRect: { left: number; top: number };
+  canvasRect: { left: number; top: number; width?: number; height?: number };
+  canvasWidth?: number;
+  canvasHeight?: number;
   panX: number;
   panY: number;
   zoom: number;
-  offsetEnabled: boolean;
+  offsetEnabled?: boolean;
 }
 
 export interface TouchCursorCalculationResult {
@@ -100,21 +68,19 @@ export interface TouchCursorCalculationResult {
 }
 
 /**
- * Calcula matematicamente a coordenada do cursor geométrico com compensação de zoom e auto-inversão de borda:
- *  - Mouse (`pointerType === 'mouse'` ou `offsetEnabled === false`): 1:1 direto (`offsetY = 0`)
- *  - Touch (`pointerType === 'touch'` e `offsetEnabled === true`):
- *      Projetado 55px acima do ponto de contato (`offsetY = -55`).
- *      Se `touchClientY < 120` (ou muito próximo à borda superior do canvas), inverte para `+55px` abaixo do dedo.
+ * Calcula matematicamente a coordenada exata 1:1 do toque/clique no mundo CAD (`mm`),
+ * descontando `rect.left` e `rect.top`, aplicando a razão de escala CSS (`scaleX`, `scaleY`)
+ * e convertendo pelo Pan (`panX`, `panY`) e Zoom (`zoom`), sem nenhum offset vertical.
  */
 export function computeTouchCursorScreenAndWorld({
   clientX,
   clientY,
-  pointerType,
   canvasRect,
+  canvasWidth,
+  canvasHeight,
   panX,
   panY,
   zoom,
-  offsetEnabled,
 }: TouchCursorCalculationInput): TouchCursorCalculationResult {
   const safeZoom = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
   const safePanX = Number.isFinite(panX) ? panX : 0;
@@ -122,28 +88,28 @@ export function computeTouchCursorScreenAndWorld({
   const left = Number.isFinite(canvasRect.left) ? canvasRect.left : 0;
   const top = Number.isFinite(canvasRect.top) ? canvasRect.top : 0;
 
-  const isTouch = pointerType === "touch" && offsetEnabled;
-  const isNearTopEdge = clientY < TOUCH_TOP_INVERSION_THRESHOLD_PX || clientY - top < 72;
-  const offsetY = isTouch ? (isNearTopEdge ? TOUCH_CURSOR_OFFSET_PX : -TOUCH_CURSOR_OFFSET_PX) : 0;
+  const rectW = Number.isFinite(canvasRect.width) && (canvasRect.width ?? 0) > 0 ? canvasRect.width! : 0;
+  const rectH = Number.isFinite(canvasRect.height) && (canvasRect.height ?? 0) > 0 ? canvasRect.height! : 0;
+  const scaleX =
+    typeof canvasWidth === "number" && canvasWidth > 0 && rectW > 0 ? canvasWidth / rectW : 1;
+  const scaleY =
+    typeof canvasHeight === "number" && canvasHeight > 0 && rectH > 0 ? canvasHeight / rectH : 1;
 
-  const cursorScreenX = clientX;
-  const cursorScreenY = clientY + offsetY;
+  const canvasX = (clientX - left) * scaleX;
+  const canvasY = (clientY - top) * scaleY;
 
-  const touchWorldX = (clientX - left - safePanX) / safeZoom;
-  const touchWorldY = (clientY - top - safePanY) / safeZoom;
-
-  const cursorWorldX = (cursorScreenX - left - safePanX) / safeZoom;
-  const cursorWorldY = (cursorScreenY - top - safePanY) / safeZoom;
+  const worldX = (canvasX - safePanX) / safeZoom;
+  const worldY = (canvasY - safePanY) / safeZoom;
 
   return {
-    cursorScreenX,
-    cursorScreenY,
-    cursorWorldX,
-    cursorWorldY,
-    touchWorldX,
-    touchWorldY,
-    offsetY,
-    isInverted: isTouch && isNearTopEdge,
+    cursorScreenX: clientX,
+    cursorScreenY: clientY,
+    cursorWorldX: worldX,
+    cursorWorldY: worldY,
+    touchWorldX: worldX,
+    touchWorldY: worldY,
+    offsetY: 0,
+    isInverted: false,
   };
 }
 

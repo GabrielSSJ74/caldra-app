@@ -160,18 +160,38 @@ export function getEntityLoft3DSpec(e: Entity | null | undefined): Loft3DSpec | 
  * de elevação no eixo `+Z` vertical.
  * Quando multiplicado pela matriz `orbitProjection`, aponta estritamente para cima (`-Y` da tela).
  */
+export interface UnitZWorkplaneOffsetOptions {
+  isIsometric?: boolean;
+  isoPlane?: IsoPlane;
+  isOrbitTilted?: boolean;
+  orbitProjection?: WorkplaneOrbitProjection2D | null;
+}
+
 export function resolveUnitZWorkplaneOffset(
-  isIsometric: boolean,
-  isoPlane: IsoPlane = "top",
-  orbitProjection?: WorkplaneOrbitProjection2D | null,
+  isIsometricOrOptions: boolean | UnitZWorkplaneOffsetOptions,
+  isoPlaneArg: IsoPlane = "top",
+  orbitProjectionArg?: WorkplaneOrbitProjection2D | null,
 ): Vec2 {
-  // REGRA 1: Em 2D SKETCH / ORTO 2D / SUP 2D (!isIsometric && !orbitProjection?.isTilted),
+  const isObj =
+    typeof isIsometricOrOptions === "object" && isIsometricOrOptions !== null;
+  const isIsometric = isObj
+    ? Boolean(isIsometricOrOptions.isIsometric)
+    : Boolean(isIsometricOrOptions);
+  const isoPlane = isObj ? (isIsometricOrOptions.isoPlane ?? "top") : isoPlaneArg;
+  const orbitProjection = isObj
+    ? (isIsometricOrOptions.orbitProjection ?? null)
+    : (orbitProjectionArg ?? null);
+  const isTilted = isObj
+    ? Boolean(isIsometricOrOptions.isOrbitTilted ?? orbitProjection?.isTilted)
+    : Boolean(orbitProjection?.isTilted);
+
+  // REGRA 1: Em 2D SKETCH / ORTO 2D / SUP 2D (!isIsometric && !isTilted),
   // o deslocamento derivado de Z na tela é estritamente ZERO (elevationZ = 0 na projeção).
-  if (!orbitProjection?.isTilted && !isIsometric) {
+  if (!isTilted && !isIsometric) {
     return { x: 0, y: 0 };
   }
   const v = resolveBaseToTopExtrusionVector({
-    isOrbitTilted: Boolean(orbitProjection?.isTilted),
+    isOrbitTilted: isTilted,
     orbitProjection: orbitProjection ?? undefined,
     isIsometric,
     isoPlane,

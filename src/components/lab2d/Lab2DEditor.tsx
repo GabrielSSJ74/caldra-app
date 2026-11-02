@@ -489,6 +489,7 @@ import {
   buildLoft3DMesh,
   createLoft3DEntity,
   getEntityElevationZ,
+  getEntityExtrudeHeight,
   getEntityLoft3DSpec,
   isClosedLoftableProfile,
   isLoft3DEntity,
@@ -1694,40 +1695,47 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   /* --------------------------------------------------------- coordenadas */
   const toWorld = useCallback(
-    (ev: { clientX: number; clientY: number; pointerType?: string }, forceDirect = false): Vec2 => {
-      const el = canvasViewportRef.current ?? svgRef.current;
-      const r = el?.getBoundingClientRect();
-      if (!r) return { x: 0, y: 0 };
+    (
+      ev: {
+        clientX?: number;
+        clientY?: number;
+        pointerType?: string;
+        touches?: ArrayLike<{ clientX: number; clientY: number }>;
+        changedTouches?: ArrayLike<{ clientX: number; clientY: number }>;
+      },
+      _forceDirect = false,
+    ): Vec2 => {
+      const el = svgRef.current ?? canvasViewportRef.current ?? canvasRef.current;
+      const rect = el?.getBoundingClientRect();
+      if (!rect) return { x: 0, y: 0 };
+
+      const touchPt =
+        ev.touches && ev.touches.length > 0
+          ? ev.touches[0]
+          : ev.changedTouches && ev.changedTouches.length > 0
+            ? ev.changedTouches[0]
+            : null;
+      const rawClientX = touchPt ? touchPt.clientX : (ev.clientX ?? 0);
+      const rawClientY = touchPt ? touchPt.clientY : (ev.clientY ?? 0);
+
+      const scaleX =
+        canvasSize.w > 0 && rect.width > 0 ? canvasSize.w / rect.width : 1;
+      const scaleY =
+        canvasSize.h > 0 && rect.height > 0 ? canvasSize.h / rect.height : 1;
+
+      const canvasX = (rawClientX - rect.left) * scaleX;
+      const canvasY = (rawClientY - rect.top) * scaleY;
+
       const v = viewRef.current;
       const safeK = v && Number.isFinite(v.k) && v.k > 0 ? v.k : 1;
       const safeTx = v && Number.isFinite(v.tx) ? v.tx : 0;
       const safeTy = v && Number.isFinite(v.ty) ? v.ty : 0;
-      const pType = ev.pointerType ?? lastPointerTypeRef.current;
-      const useOffset =
-        !forceDirect &&
-        !isOrbitToolActive &&
-        shouldUseTouchOffset(
-          pType,
-          tool,
-          dragNode !== null || isDraggingArrayCenterRef.current || isArrayPickingCenter,
-          isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
-          cursorOffsetMode,
-          selection.length > 0,
-        );
-      const calc = computeTouchCursorScreenAndWorld({
-        clientX: ev.clientX,
-        clientY: ev.clientY,
-        pointerType: pType,
-        canvasRect: r,
-        panX: safeTx,
-        panY: safeTy,
-        zoom: safeK,
-        offsetEnabled: useOffset,
-      });
-      const projectedPt = {
-        x: calc.cursorWorldX,
-        y: calc.cursorWorldY,
+
+      const projectedPt: Vec2 = {
+        x: (canvasX - safeTx) / safeK,
+        y: (canvasY - safeTy) / safeK,
       };
+
       if (!solidOpen && orbitProjection2DRef.current.isTilted) {
         return unprojectOrbit2DToWorkplanePoint(
           projectedPt,
@@ -1738,7 +1746,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       return projectedPt;
     },
-    [tool, dragNode, isArrayPickingCenter, cursorOffsetMode, selection.length, isOrbitToolActive, solidOpen],
+    [canvasSize.w, canvasSize.h, solidOpen],
   );
 
   /** Enquadra uma caixa do desenho na viewport com escala proporcional, centralização exata e limites seguros. */
@@ -2293,12 +2301,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         drawingProjection === "isometric" ||
         orbitProjection2D.isTilted
       ) {
-        const uz = resolveUnitZWorkplaneOffset({
-          isIsometric: drawingProjection === "isometric",
+        const uz = resolveUnitZWorkplaneOffset(
+          drawingProjection === "isometric",
           isoPlane,
-          isOrbitTilted: orbitProjection2D.isTilted,
-          orbitProjection: orbitProjection2D,
-        });
+          orbitProjection2D,
+        );
 
         const measureEntityDistanceAtPoint = (ent: Entity, pt: Vec2): number => {
           if (ent.type === "circle") {
@@ -2328,11 +2335,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         for (const e of visible) {
           if (layerOf(e.layer)?.locked) continue;
           const elevZ = getEntityElevationZ(e);
+          const extH = getEntityExtrudeHeight(e, thickness);
           const loftSpec = getEntityLoft3DSpec(e);
-          if (Math.abs(elevZ) <= 0.01 && !loftSpec) continue;
+          if (Math.abs(elevZ) <= 0.01 && extH <= 0.01 && !loftSpec) continue;
 
-          const pAtZ = { x: p.x - uz.x * elevZ, y: p.y - uz.y * elevZ };
-          let d = measureEntityDistanceAtPoint(e, pAtZ);
+          const pAtBaseZ = { x: p.x - uz.x * elevZ, y: p.y - uz.y * elevZ };
+          let d = measureEntityDistanceAtPoint(e, pAtBaseZ);
+
+          if (extH > 0.01) {
+            const topZ = elevZ + extH;
+            const pAtTopZ = { x: p.x - uz.x * topZ, y: p.y - uz.y * topZ };
+            d = Math.min(d, measureEntityDistanceAtPoint(e, pAtTopZ));
+          }
 
           if (loftSpec && Array.isArray(loftSpec.sectionEntities)) {
             for (const sec of loftSpec.sectionEntities) {
@@ -2342,8 +2356,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             }
           }
 
-          if (d <= tol * 1.35 && !candidates.some((c) => c.e.id === e.id)) {
-            candidates.push({ e, d });
+          if (d <= tol * 1.35) {
+            const existing = candidates.find((c) => c.e.id === e.id);
+            if (existing) {
+              existing.d = Math.min(existing.d, d);
+            } else {
+              candidates.push({ e, d });
+            }
           }
         }
       }
@@ -2361,7 +2380,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
       return candidates[0].e;
     },
-    [near, view.k, layerOf, selection, drawingProjection, orbitProjection2D, isoPlane, visible],
+    [near, view.k, layerOf, selection, drawingProjection, orbitProjection2D, isoPlane, visible, thickness],
   );
 
   const snapPoint = useCallback(
