@@ -17,6 +17,7 @@ import {
   CornerDownRight,
   FlipHorizontal,
   Layers,
+  Maximize2,
   Move,
   Palette,
   PenTool,
@@ -38,14 +39,17 @@ import {
 } from "@/lib/lab2d/cadLoft3DEngine";
 import {
   INDUSTRIAL_3D_MATERIALS,
+  applyDirectAlignFlush3DToEntities,
   applyDirectExtrudeToEntities,
   applyDirectFilletOrChamfer3DToEntities,
   applyDirectMirror3DToEntities,
   applyDirectMiterCut3DToEntities,
   applyDirectOffsetFace3DToEntities,
+  applyDirectScale3DToEntities,
   applyDirectShell3DToEntities,
   applyDirectTransform3DToEntities,
   buildDirectTopology3DScene,
+  formatSubElementTelemetry3D,
   projectPoint3DToCanvasViewMm,
   type ActiveParametricNumpadSession,
   type BooleanMode3D,
@@ -114,6 +118,7 @@ export interface Chamfer3DGizmoAndLoftOverlayProps {
   onChangeSubSelection3D?: (next: SubElementSelectionState3D) => void;
   activeDirect3DTool?: DirectModeling3DTool;
   onChangeDirect3DTool?: (tool: DirectModeling3DTool) => void;
+  onSelectEntities?: (ids: string[]) => void;
   onCommitEntities?: (
     updater: Entity[] | ((prev: Entity[]) => Entity[]),
     toastMessageOrIds?: string | string[],
@@ -185,6 +190,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   onChangeSubSelection3D,
   activeDirect3DTool: externalDirectTool,
   onChangeDirect3DTool,
+  onSelectEntities,
   onCommitEntities,
   onSwitchTo2DSketchOnFace,
   isDark = true,
@@ -289,6 +295,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   // Estado de modos internos das ferramentas 3D
   const [booleanMode, setBooleanMode] = useState<BooleanMode3D>("new_body");
   const [filletOrChamferMode, setFilletOrChamferMode] = useState<"fillet" | "chamfer">("fillet");
+  const [edgeActionMode, setEdgeActionMode] = useState<"fillet" | "chamfer" | "transform_edge">(
+    "fillet",
+  );
   const [shellOpenCapsMode, setShellOpenCapsMode] = useState<"both_ends" | "top_only">("both_ends");
   const [offsetFaceTarget, setOffsetFaceTarget] = useState<"top" | "bottom" | "sides">("top");
   const [miterEndTarget, setMiterEndTarget] = useState<"top" | "bottom">("top");
@@ -296,6 +305,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   const [copyOnTransform, setCopyOnTransform] = useState<boolean>(false);
   const [transformAxisTarget, setTransformAxisTarget] = useState<"x" | "y" | "z">("x");
   const [isPickingPivotSnap, setIsPickingPivotSnap] = useState<boolean>(false);
+  const [snappedPivotLabel, setSnappedPivotLabel] = useState<string | null>(null);
 
   // Sessão do Teclado Numérico Flutuante In-Canvas (OCULTO POR PADRÃO)
   const [numpadSession, setNumpadSession] = useState<ActiveParametricNumpadSession | null>(null);
@@ -326,6 +336,35 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   const [activeAxis, setActiveAxis] = useState<GizmoAxis | null>(null);
   const [dragDeltaMm, setDragDeltaMm] = useState<number>(0);
 
+  // Registro do último deslocamento / extrusão concluído para manter a linha tracejada e pílula de distância clicável
+  const [lastCompletedDrag, setLastCompletedDrag] = useState<{
+    axis: GizmoAxis;
+    deltaMm: number;
+    startPoint3D: Vec3Mm;
+    endPoint3D: Vec3Mm;
+    startEntities: Entity[];
+    targetIds: string[];
+    activeResultIds: string[];
+    copyMode: boolean;
+    copyIdMap: Map<string, string>;
+    initialValue: number;
+    faceRole?: DirectFace3D["role"];
+    faceNormal?: Vec3Mm;
+  } | null>(null);
+
+  const lastFaceTapRef = useRef<{ faceId: string; bodyId: string; time: number } | null>(null);
+
+  // Limpa a medição persistente quando o usuário limpa a seleção
+  useEffect(() => {
+    if (
+      subSel.faceIds.length === 0 &&
+      subSel.edgeIds.length === 0 &&
+      subSel.bodyIds.length === 0
+    ) {
+      setLastCompletedDrag(null);
+    }
+  }, [subSel.faceIds.length, subSel.edgeIds.length, subSel.bodyIds.length]);
+
   const dragSessionRef = useRef<{
     axis: GizmoAxis;
     startClientX: number;
@@ -341,12 +380,52 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     startCenter3D?: Vec3Mm;
     angleStartRad?: number;
     pivotScreen?: Vec2;
+    startEntities: Entity[];
+    startBody: DirectBody3D | null;
+    startFace: DirectFace3D | null;
+    startEdge: DirectEdge3D | null;
+    copyIdMap: Map<string, string>;
+    activeResultIds: string[];
   } | null>(null);
 
   const scene = useMemo(
     () => externalScene ?? buildDirectTopology3DScene(entities, sheetThickness),
     [externalScene, entities, sheetThickness],
   );
+
+  // Tipo de elemento reconhecido automaticamente pelo clique 3D (Face, Aresta, Dobradiça ou Corpo)
+  const selectionKind3D = useMemo<"none" | "face" | "edge" | "body" | "hinge">(() => {
+    if (subSel.activeHingeEdgeId !== null || directTool === "rotate_axis_3d") {
+      return "hinge";
+    }
+    if (
+      subSel.faceIds.length > 0 &&
+      directTool !== "transform_3d" &&
+      directTool !== "mirror_3d" &&
+      directTool !== "scale_3d" &&
+      directTool !== "align_3d"
+    ) {
+      return "face";
+    }
+    if (
+      subSel.edgeIds.length > 0 &&
+      subSel.faceIds.length === 0 &&
+      directTool !== "transform_3d" &&
+      directTool !== "mirror_3d"
+    ) {
+      return "edge";
+    }
+    if (
+      subSel.bodyIds.length > 0 ||
+      directTool === "transform_3d" ||
+      directTool === "mirror_3d" ||
+      directTool === "scale_3d" ||
+      directTool === "align_3d"
+    ) {
+      return "body";
+    }
+    return "none";
+  }, [subSel, directTool]);
 
   // Determina os corpos/entidades alvo (a partir de subSelection3D ou selection 2D/3D)
   const activeTargetEntityIds = useMemo(() => {
@@ -393,6 +472,20 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     }
     return primaryBody?.edges[0] ?? null;
   }, [subSel.edgeIds, scene.edgesById, primaryBody]);
+
+  const activeHingeEdge: DirectEdge3D | null = useMemo(() => {
+    if (subSel.activeHingeEdgeId) {
+      return scene.edgesById.get(subSel.activeHingeEdgeId) ?? null;
+    }
+    if (directTool === "rotate_axis_3d" && primaryBody) {
+      return (
+        primaryBody.edges.find((e) => e.role === (miterEndTarget === "bottom" ? "bottom" : "top")) ??
+        primaryBody.edges[0] ??
+        null
+      );
+    }
+    return null;
+  }, [subSel.activeHingeEdgeId, scene.edgesById, directTool, primaryBody, miterEndTarget]);
 
   const toScreen = useCallback(
     (pt3D: Vec3Mm): Vec2 => {
@@ -488,9 +581,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     };
   }, [selectionCenter3D, isTilted3D, activeMode, toScreen, view.k]);
 
-  // Projeção da Seta Normal Bidirecional da Face Selecionada
+  // Projeção da Seta Normal Bidirecional da Face Selecionada (EXCLUSIVA QUANDO FACE É CLICADA)
   const faceNormalGizmo = useMemo(() => {
     if (!primaryFace || (!isTilted3D && activeMode !== "3d")) return null;
+    if (selectionKind3D !== "face") return null;
     const originScreen = toScreen(primaryFace.centroid);
     const stepMm = Math.max(10, 60 / Math.max(0.1, view.k));
     const normal = primaryFace.normal;
@@ -505,44 +599,83 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     const rawPxLen = Math.hypot(vx, vy) || 1;
     const ux = vx / rawPxLen;
     const uy = vy / rawPxLen;
-    const arrowLenPx = 54;
+    const arrowLenPx = 58;
+    const isFreshProfile =
+      (primaryBody?.extrudeHeightMm ?? sheetThickness) <= sheetThickness + 0.5 ||
+      directTool === "extrude_3d";
     return {
       origin: originScreen,
       centroid3D: primaryFace.centroid,
       normal3D: normal,
       posTip: { x: originScreen.x + ux * arrowLenPx, y: originScreen.y + uy * arrowLenPx },
-      negTip: { x: originScreen.x - ux * arrowLenPx, y: originScreen.y - uy * arrowLenPx },
+      negTip: { x: originScreen.x - ux * (arrowLenPx * 0.65), y: originScreen.y - uy * (arrowLenPx * 0.65) },
       ux,
       uy,
       pixelsPerMm: Math.max(0.15, rawPxLen / stepMm),
       face: primaryFace,
+      isFreshProfile,
     };
-  }, [primaryFace, isTilted3D, activeMode, toScreen, view.k]);
+  }, [primaryFace, isTilted3D, activeMode, selectionKind3D, toScreen, view.k, primaryBody, sheetThickness, directTool]);
 
-  // Projeção da Seta Diagonal da Aresta Selecionada (Fillet / Chamfer)
+  // Projeção da Seta Diagonal da Aresta Selecionada (EXCLUSIVA QUANDO ARESTA É CLICADA)
   const edgeDiagonalGizmo = useMemo(() => {
     if (!primaryEdge || (!isTilted3D && activeMode !== "3d")) return null;
+    if (selectionKind3D !== "edge") return null;
     const originScreen = toScreen(primaryEdge.midpoint);
+    const bodyCenter = primaryBody ? toScreen(primaryBody.pivot3D) : null;
     const poly = primaryEdge.polyline3D;
     const p0 = poly[0] ? toScreen(poly[0]) : originScreen;
     const p1 = poly[poly.length - 1] ? toScreen(poly[poly.length - 1]) : originScreen;
     const ex = p1.x - p0.x;
     const ey = p1.y - p0.y;
     const elen = Math.hypot(ex, ey) || 1;
-    const ux = -ey / elen;
-    const uy = ex / elen;
-    const arrowLenPx = 42;
+    let ux = -ey / elen;
+    let uy = ex / elen;
+    // Aponta diagonalmente para dentro do corpo (puxar para dentro = Fillet; puxar para fora = Chamfer)
+    if (bodyCenter) {
+      const toCenterX = bodyCenter.x - originScreen.x;
+      const toCenterY = bodyCenter.y - originScreen.y;
+      if (ux * toCenterX + uy * toCenterY < 0) {
+        ux = -ux;
+        uy = -uy;
+      }
+    }
+    const arrowLenPx = 46;
     return {
       origin: originScreen,
       midpoint3D: primaryEdge.midpoint,
       tip: { x: originScreen.x + ux * arrowLenPx, y: originScreen.y + uy * arrowLenPx },
-      oppTip: { x: originScreen.x - ux * arrowLenPx, y: originScreen.y - uy * arrowLenPx },
+      oppTip: { x: originScreen.x - ux * (arrowLenPx * 0.7), y: originScreen.y - uy * (arrowLenPx * 0.7) },
       ux,
       uy,
       pixelsPerMm: Math.max(0.15, 30 / 10),
       edge: primaryEdge,
     };
-  }, [primaryEdge, isTilted3D, activeMode, toScreen]);
+  }, [primaryEdge, primaryBody, isTilted3D, activeMode, selectionKind3D, toScreen]);
+
+  // Projeção do Arco de Dobradiça / Corte em Meia-Esquadria (Rotate Around Axis: Face + Aresta)
+  const hingeMiterGizmo = useMemo(() => {
+    if (!activeHingeEdge || (!isTilted3D && activeMode !== "3d")) return null;
+    if (selectionKind3D !== "hinge") return null;
+    const originScreen = toScreen(activeHingeEdge.midpoint);
+    return {
+      origin: originScreen,
+      edge: activeHingeEdge,
+      angleDeg:
+        miterEndTarget === "bottom"
+          ? (primaryBody?.miterCutBottomDeg ?? 0)
+          : (primaryBody?.miterCutTopDeg ?? 0),
+    };
+  }, [
+    activeHingeEdge,
+    isTilted3D,
+    activeMode,
+    selectionKind3D,
+    toScreen,
+    miterEndTarget,
+    primaryBody,
+  ]);
+
 
   // ============================================================================
   // TECLADO NUMÉRICO FLUTUANTE COMPACTO (196px + VIEWPORT CLAMPING OBRIGATÓRIO)
@@ -661,14 +794,70 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         resolvedIds,
       );
     } else if (param === "offsetFaceDistance") {
-      const faceT =
-        subTarget === "top" || subTarget === "bottom" || subTarget === "sides"
-          ? subTarget
-          : offsetFaceTarget;
-      onCommitEntities(
-        (prev) => applyDirectOffsetFace3DToEntities(prev, resolvedIds, faceT, parsed),
-        resolvedIds,
-      );
+      if (
+        lastCompletedDrag &&
+        (lastCompletedDrag.axis === "face_normal" || lastCompletedDrag.axis === "extrude")
+      ) {
+        const refRole = lastCompletedDrag.faceRole ?? "top";
+        onCommitEntities(() => {
+          if (refRole === "bottom") {
+            return applyDirectOffsetFace3DToEntities(
+              lastCompletedDrag.startEntities,
+              lastCompletedDrag.targetIds,
+              "bottom",
+              parsed,
+            );
+          }
+          if (refRole === "top" || refRole === "miter") {
+            const nextH = Math.max(1, lastCompletedDrag.initialValue + parsed);
+            return applyDirectExtrudeToEntities(
+              lastCompletedDrag.startEntities,
+              lastCompletedDrag.targetIds,
+              nextH,
+              booleanMode,
+            );
+          }
+          if (lastCompletedDrag.faceNormal) {
+            return applyDirectOffsetFace3DToEntities(
+              lastCompletedDrag.startEntities,
+              lastCompletedDrag.targetIds,
+              "side_normal",
+              parsed,
+              lastCompletedDrag.faceNormal,
+            );
+          }
+          return applyDirectOffsetFace3DToEntities(
+            lastCompletedDrag.startEntities,
+            lastCompletedDrag.targetIds,
+            "sides",
+            parsed,
+          );
+        }, lastCompletedDrag.targetIds);
+        setLastCompletedDrag((prev) =>
+          prev
+            ? {
+                ...prev,
+                deltaMm: parsed,
+                endPoint3D: prev.faceNormal
+                  ? {
+                      x: prev.startPoint3D.x + prev.faceNormal.x * parsed,
+                      y: prev.startPoint3D.y + prev.faceNormal.y * parsed,
+                      z: prev.startPoint3D.z + prev.faceNormal.z * parsed,
+                    }
+                  : prev.endPoint3D,
+              }
+            : null,
+        );
+      } else {
+        const faceT =
+          subTarget === "top" || subTarget === "bottom" || subTarget === "sides"
+            ? subTarget
+            : offsetFaceTarget;
+        onCommitEntities(
+          (prev) => applyDirectOffsetFace3DToEntities(prev, resolvedIds, faceT, parsed),
+          resolvedIds,
+        );
+      }
     } else if (param === "miterAngle") {
       if (subTarget === "rx" || subTarget === "ry" || subTarget === "rz") {
         onCommitEntities((prev) => {
@@ -691,36 +880,78 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           resolvedIds,
         );
       }
-    } else if (param === "moveX") {
-      onCommitEntities((prev) => {
+    } else if (param === "moveX" || param === "moveY" || param === "moveZ") {
+      const axisKey = param === "moveX" ? "x" : param === "moveY" ? "y" : "z";
+      // Se veio de um arraste (ou Copy+Drag) recém-concluído, posiciona na distância EXATA a partir da peça de origem!
+      if (lastCompletedDrag && lastCompletedDrag.axis === axisKey) {
+        const deltaObj =
+          axisKey === "x"
+            ? { dx: parsed }
+            : axisKey === "y"
+              ? { dy: parsed }
+              : { dz: parsed };
         const res = applyDirectTransform3DToEntities(
-          prev,
-          resolvedIds,
-          { dx: parsed },
-          Boolean(copyMode),
+          lastCompletedDrag.startEntities,
+          lastCompletedDrag.targetIds,
+          deltaObj,
+          lastCompletedDrag.copyMode,
+          lastCompletedDrag.copyIdMap,
         );
-        return res.updatedEntities;
-      }, resolvedIds);
-    } else if (param === "moveY") {
-      onCommitEntities((prev) => {
-        const res = applyDirectTransform3DToEntities(
-          prev,
-          resolvedIds,
-          { dy: parsed },
-          Boolean(copyMode),
+        onCommitEntities(() => res.updatedEntities, res.activeIds);
+        setSubSel((prev) => ({
+          ...prev,
+          bodyIds: res.activeIds.map((id) => `body_${id}`),
+        }));
+        setLastCompletedDrag((prev) =>
+          prev
+            ? {
+                ...prev,
+                deltaMm: parsed,
+                activeResultIds: res.activeIds,
+                endPoint3D: {
+                  x: prev.startPoint3D.x + (axisKey === "x" ? parsed : 0),
+                  y: prev.startPoint3D.y + (axisKey === "y" ? parsed : 0),
+                  z: prev.startPoint3D.z + (axisKey === "z" ? parsed : 0),
+                },
+              }
+            : null,
         );
-        return res.updatedEntities;
-      }, resolvedIds);
-    } else if (param === "moveZ") {
-      onCommitEntities((prev) => {
-        const res = applyDirectTransform3DToEntities(
-          prev,
-          resolvedIds,
-          { dz: parsed },
-          Boolean(copyMode),
-        );
-        return res.updatedEntities;
-      }, resolvedIds);
+      } else {
+        let finalActiveIds = resolvedIds;
+        onCommitEntities((prev) => {
+          const deltaObj =
+            axisKey === "x"
+              ? { dx: parsed }
+              : axisKey === "y"
+                ? { dy: parsed }
+                : { dz: parsed };
+          const res = applyDirectTransform3DToEntities(
+            prev,
+            resolvedIds,
+            deltaObj,
+            Boolean(copyMode),
+          );
+          finalActiveIds = res.activeIds;
+          return res.updatedEntities;
+        }, finalActiveIds);
+        if (copyMode) {
+          setSubSel((prev) => ({
+            ...prev,
+            bodyIds: finalActiveIds.map((id) => `body_${id}`),
+          }));
+        }
+      }
+    } else if (param === "scaleFactor" || kind === "SCALE") {
+      onCommitEntities(
+        (prev) =>
+          applyDirectScale3DToEntities(
+            prev,
+            resolvedIds,
+            parsed,
+            subSel.activePivot3D ?? primaryBody?.pivot3D ?? null,
+          ),
+        resolvedIds,
+      );
     }
 
     setNumpadSession(null);
@@ -734,6 +965,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     offsetFaceTarget,
     miterEndTarget,
     miterAxis,
+    subSel.activePivot3D,
+    lastCompletedDrag,
+    setSubSel,
   ]);
 
   const handleNumpadKey = useCallback((key: string) => {
@@ -902,15 +1136,23 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       axis === "extrude" || axis === "face_normal"
         ? (primaryBody?.extrudeHeightMm ?? 500)
         : axis === "edge_diagonal"
-          ? (filletOrChamferMode === "fillet"
-              ? (primaryBody?.edgeFilletRadiusMm || 10)
-              : (primaryBody?.edgeChamferDistMm || 10))
+          ? edgeActionMode === "fillet"
+            ? (primaryBody?.edgeFilletRadiusMm || 10)
+            : edgeActionMode === "chamfer"
+              ? (primaryBody?.edgeChamferDistMm || 10)
+              : 0
           : axis === "z"
             ? (primaryBody?.elevationZ ?? 0)
             : 0;
 
-    const pivotSc = gizmoScreen?.origin ?? { x: ev.clientX, y: ev.clientY };
-    const angleStartRad = Math.atan2(ev.clientY - pivotSc.y, ev.clientX - pivotSc.x);
+    const rect = rootOverlayRef.current?.getBoundingClientRect();
+    const localStartX = rect ? ev.clientX - rect.left : ev.clientX;
+    const localStartY = rect ? ev.clientY - rect.top : ev.clientY;
+    const pivotSc =
+      axis === "miter" && hingeMiterGizmo
+        ? hingeMiterGizmo.origin
+        : (gizmoScreen?.origin ?? { x: localStartX, y: localStartY });
+    const angleStartRad = Math.atan2(localStartY - pivotSc.y, localStartX - pivotSc.x);
 
     dragSessionRef.current = {
       axis,
@@ -927,6 +1169,12 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       startCenter3D: selectionCenter3D ?? undefined,
       angleStartRad,
       pivotScreen: pivotSc,
+      startEntities: entities,
+      startBody: primaryBody,
+      startFace: primaryFace,
+      startEdge: primaryEdge,
+      copyIdMap: new Map<string, string>(),
+      activeResultIds: targetIds,
     };
     setActiveAxis(axis);
     setDragDeltaMm(0);
@@ -948,20 +1196,26 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         session.hasMoved = true;
       }
 
+      const rect = rootOverlayRef.current?.getBoundingClientRect();
+      const localX = rect ? ev.clientX - rect.left : ev.clientX;
+      const localY = rect ? ev.clientY - rect.top : ev.clientY;
+
       if (session.axis === "pivot") {
-        if (primaryBody && primaryBody.snapCandidates.length > 0) {
-          let closestCand = primaryBody.snapCandidates[0];
+        const bodyForPivot = session.startBody ?? primaryBody;
+        if (bodyForPivot && bodyForPivot.snapCandidates.length > 0) {
+          let closestCand = bodyForPivot.snapCandidates[0];
           let closestDistPx = Infinity;
-          for (const cand of primaryBody.snapCandidates) {
+          for (const cand of bodyForPivot.snapCandidates) {
             const sp = toScreen(cand.point3D);
-            const d = Math.hypot(ev.clientX - sp.x, ev.clientY - sp.y);
+            const d = Math.hypot(localX - sp.x, localY - sp.y);
             if (d < closestDistPx) {
               closestDistPx = d;
               closestCand = cand;
             }
           }
-          if (closestDistPx < 40 && closestCand) {
+          if (closestDistPx < 48 && closestCand) {
             setSubSel((prev) => ({ ...prev, activePivot3D: closestCand.point3D }));
+            setSnappedPivotLabel(closestCand.label);
           }
         }
         return;
@@ -973,11 +1227,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         session.axis === "rot_z" ||
         session.axis === "miter"
       ) {
-        const pivotSc = session.pivotScreen ?? { x: session.startClientX, y: session.startClientY };
-        const curAngleRad = Math.atan2(ev.clientY - pivotSc.y, ev.clientX - pivotSc.x);
+        const pivotSc = session.pivotScreen ?? { x: localX, y: localY };
+        const curAngleRad = Math.atan2(localY - pivotSc.y, localX - pivotSc.x);
         const startRad = session.angleStartRad ?? 0;
         let deltaDeg = Math.round(((curAngleRad - startRad) * 180) / Math.PI);
-        // Soft snap suave em múltiplos de 15°
+        // Soft snap suave em múltiplos de 15° (15° / 45° / 90° / 180°)
         const snapStep = 15;
         const rem = deltaDeg % snapStep;
         if (Math.abs(rem) <= 3) {
@@ -986,31 +1240,37 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           deltaDeg += (deltaDeg >= 0 ? 1 : -1) * (15 - Math.abs(rem));
         }
 
-        const stepDeg = deltaDeg - session.lastAppliedDeltaMm;
-        if (stepDeg !== 0) {
+        if (deltaDeg !== session.lastAppliedDeltaMm) {
           session.lastAppliedDeltaMm = deltaDeg;
           session.totalDeltaMm = deltaDeg;
           setDragDeltaMm(deltaDeg);
 
           if (session.axis === "miter" && onCommitEntities) {
             onCommitEntities(
-              (prev) => applyDirectMiterCut3DToEntities(prev, session.targetIds, miterEndTarget, deltaDeg, miterAxis),
+              () =>
+                applyDirectMiterCut3DToEntities(
+                  session.startEntities,
+                  session.targetIds,
+                  miterEndTarget,
+                  deltaDeg,
+                  miterAxis,
+                ),
               session.targetIds,
             );
           } else if (onCommitEntities) {
-            onCommitEntities((prev) => {
-              const res = applyDirectTransform3DToEntities(
-                prev,
-                session.targetIds,
-                {
-                  rxDeg: session.axis === "rot_x" ? stepDeg : 0,
-                  ryDeg: session.axis === "rot_y" ? stepDeg : 0,
-                  rzDeg: session.axis === "rot_z" ? stepDeg : 0,
-                },
-                copyOnTransform,
-              );
-              return res.updatedEntities;
-            }, session.targetIds);
+            const res = applyDirectTransform3DToEntities(
+              session.startEntities,
+              session.targetIds,
+              {
+                rxDeg: session.axis === "rot_x" ? deltaDeg : 0,
+                ryDeg: session.axis === "rot_y" ? deltaDeg : 0,
+                rzDeg: session.axis === "rot_z" ? deltaDeg : 0,
+              },
+              copyOnTransform,
+              session.copyIdMap,
+            );
+            session.activeResultIds = res.activeIds;
+            onCommitEntities(() => res.updatedEntities, res.activeIds);
           }
         }
         return;
@@ -1021,9 +1281,19 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         const rawDeltaY = Math.round(-dyPx / session.pixelsPerMm);
         let effDelta: Vec3Mm = { x: rawDeltaX, y: rawDeltaY, z: 0 };
 
-        if (primaryBody) {
-          const otherBodies = scene.bodies.filter((b) => b.bodyId !== primaryBody.bodyId);
-          const snapRes = resolveContactAndAlignmentSnaps3D(primaryBody, otherBodies, effDelta, session.pixelsPerMm, 7.5);
+        const refBody = session.startBody ?? primaryBody;
+        if (refBody) {
+          const otherBodies = scene.bodies.filter(
+            (b) => b.bodyId !== refBody.bodyId && !session.copyIdMap.has(b.entityId),
+          );
+          const snapRes = resolveContactAndAlignmentSnaps3D(
+            refBody,
+            otherBodies,
+            effDelta,
+            session.pixelsPerMm,
+            6.0,
+            session.startCenter3D ?? subSel.activePivot3D,
+          );
           if (snapRes.hasContactSnap || snapRes.hasAlignmentSnap) {
             effDelta = snapRes.snappedDelta;
             setActiveContactSnap(snapRes);
@@ -1032,19 +1302,36 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           }
         }
 
-        const stepX = effDelta.x - session.lastAppliedDeltaMm;
-        if (stepX !== 0 || effDelta.y !== session.totalDeltaMm) {
+        if (effDelta.x !== session.lastAppliedDeltaMm || effDelta.y !== session.totalDeltaMm) {
           session.lastAppliedDeltaMm = effDelta.x;
           session.totalDeltaMm = effDelta.y;
           setDragDeltaMm(Math.round(Math.hypot(effDelta.x, effDelta.y)));
 
-          if (onLiveTranslateSelectionXY) {
+          if (onCommitEntities) {
+            const res = applyDirectTransform3DToEntities(
+              session.startEntities,
+              session.targetIds,
+              { dx: effDelta.x, dy: effDelta.y },
+              copyOnTransform,
+              session.copyIdMap,
+            );
+            session.activeResultIds = res.activeIds;
+            onCommitEntities(() => res.updatedEntities, res.activeIds);
+            if (copyOnTransform) {
+              setSubSel((prev) => ({
+                ...prev,
+                bodyIds: res.activeIds.map((id) => `body_${id}`),
+                activePivot3D: session.startCenter3D
+                  ? {
+                      x: session.startCenter3D.x + effDelta.x,
+                      y: session.startCenter3D.y + effDelta.y,
+                      z: session.startCenter3D.z,
+                    }
+                  : null,
+              }));
+            }
+          } else if (onLiveTranslateSelectionXY) {
             onLiveTranslateSelectionXY(effDelta.x, effDelta.y, session.targetIds);
-          } else if (onCommitEntities) {
-            onCommitEntities((prev) => {
-              const res = applyDirectTransform3DToEntities(prev, session.targetIds, { dx: effDelta.x, dy: effDelta.y }, copyOnTransform);
-              return res.updatedEntities;
-            }, session.targetIds);
           }
         }
         return;
@@ -1055,23 +1342,58 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       let currentDeltaMm = Math.round(rawMm);
 
       if (session.axis === "face_normal") {
-        if (primaryFace) {
-          const snapRes = resolveFaceStretchContactSnap(primaryFace, currentDeltaMm, scene.bodies, session.pixelsPerMm, 7.5);
+        const refFace = session.startFace ?? primaryFace;
+        if (refFace) {
+          const snapRes = resolveFaceStretchContactSnap(
+            refFace,
+            currentDeltaMm,
+            scene.bodies,
+            session.pixelsPerMm,
+            6.0,
+          );
           if (snapRes.hasSnap) {
             currentDeltaMm = snapRes.snappedOffsetMm;
+            setActiveContactSnap({
+              snappedDelta: {
+                x: refFace.normal.x * currentDeltaMm,
+                y: refFace.normal.y * currentDeltaMm,
+                z: refFace.normal.z * currentDeltaMm,
+              },
+              hasContactSnap: true,
+              hasAlignmentSnap: false,
+              contactHighlight: snapRes.contactHighlight,
+              alignmentGuides: [],
+            });
+          } else {
+            setActiveContactSnap(null);
           }
         }
       } else if (session.axis === "x" || session.axis === "y" || session.axis === "z") {
-        if (primaryBody) {
-          const otherBodies = scene.bodies.filter((b) => b.bodyId !== primaryBody.bodyId);
+        const refBody = session.startBody ?? primaryBody;
+        if (refBody) {
+          const otherBodies = scene.bodies.filter(
+            (b) => b.bodyId !== refBody.bodyId && !session.copyIdMap.has(b.entityId),
+          );
           const rawVec: Vec3Mm = {
             x: session.axis === "x" ? currentDeltaMm : 0,
             y: session.axis === "y" ? currentDeltaMm : 0,
             z: session.axis === "z" ? currentDeltaMm : 0,
           };
-          const snapRes = resolveContactAndAlignmentSnaps3D(primaryBody, otherBodies, rawVec, session.pixelsPerMm, 7.5);
+          const snapRes = resolveContactAndAlignmentSnaps3D(
+            refBody,
+            otherBodies,
+            rawVec,
+            session.pixelsPerMm,
+            6.0,
+            session.startCenter3D ?? subSel.activePivot3D,
+          );
           if (snapRes.hasContactSnap || snapRes.hasAlignmentSnap) {
-            currentDeltaMm = session.axis === "x" ? snapRes.snappedDelta.x : session.axis === "y" ? snapRes.snappedDelta.y : snapRes.snappedDelta.z;
+            currentDeltaMm =
+              session.axis === "x"
+                ? snapRes.snappedDelta.x
+                : session.axis === "y"
+                  ? snapRes.snappedDelta.y
+                  : snapRes.snappedDelta.z;
             setActiveContactSnap(snapRes);
           } else {
             setActiveContactSnap(null);
@@ -1079,9 +1401,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         }
       }
 
-      const stepDelta = currentDeltaMm - session.lastAppliedDeltaMm;
-
-      if (stepDelta !== 0) {
+      if (currentDeltaMm !== session.lastAppliedDeltaMm) {
         session.lastAppliedDeltaMm = currentDeltaMm;
         session.totalDeltaMm = currentDeltaMm;
         setDragDeltaMm(currentDeltaMm);
@@ -1089,54 +1409,149 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         if (session.axis === "extrude" && onCommitEntities) {
           const nextH = Math.max(1, session.initialValue + currentDeltaMm);
           onCommitEntities(
-            (prev) => applyDirectExtrudeToEntities(prev, session.targetIds, nextH, booleanMode),
+            () =>
+              applyDirectExtrudeToEntities(
+                session.startEntities,
+                session.targetIds,
+                nextH,
+                booleanMode,
+              ),
             session.targetIds,
           );
         } else if (session.axis === "face_normal" && onCommitEntities) {
-          if (primaryFace && (primaryFace.role === "top" || primaryFace.role === "bottom")) {
+          const refFace = session.startFace ?? primaryFace;
+          if (refFace && refFace.role === "bottom") {
+            onCommitEntities(
+              () =>
+                applyDirectOffsetFace3DToEntities(
+                  session.startEntities,
+                  session.targetIds,
+                  "bottom",
+                  currentDeltaMm,
+                ),
+              session.targetIds,
+            );
+          } else if (refFace && (refFace.role === "top" || refFace.role === "miter")) {
             const nextH = Math.max(1, session.initialValue + currentDeltaMm);
             onCommitEntities(
-              (prev) => applyDirectExtrudeToEntities(prev, session.targetIds, nextH, booleanMode),
+              () =>
+                applyDirectExtrudeToEntities(
+                  session.startEntities,
+                  session.targetIds,
+                  nextH,
+                  booleanMode,
+                ),
+              session.targetIds,
+            );
+          } else if (refFace) {
+            onCommitEntities(
+              () =>
+                applyDirectOffsetFace3DToEntities(
+                  session.startEntities,
+                  session.targetIds,
+                  "side_normal",
+                  currentDeltaMm,
+                  refFace.normal,
+                ),
               session.targetIds,
             );
           } else {
             onCommitEntities(
-              (prev) => applyDirectOffsetFace3DToEntities(prev, session.targetIds, "sides", currentDeltaMm),
+              () =>
+                applyDirectOffsetFace3DToEntities(
+                  session.startEntities,
+                  session.targetIds,
+                  "sides",
+                  currentDeltaMm,
+                ),
               session.targetIds,
             );
           }
         } else if (session.axis === "edge_diagonal" && onCommitEntities) {
-          const nextR = Math.max(0, session.initialValue + currentDeltaMm);
-          onCommitEntities(
-            (prev) => applyDirectFilletOrChamfer3DToEntities(prev, session.targetIds, filletOrChamferMode, nextR),
-            session.targetIds,
-          );
-        } else if (session.axis === "x") {
-          if (onLiveTranslateSelectionXY) {
-            onLiveTranslateSelectionXY(stepDelta, 0, session.targetIds);
-          } else if (onCommitEntities) {
-            onCommitEntities((prev) => {
-              const res = applyDirectTransform3DToEntities(prev, session.targetIds, { dx: stepDelta }, copyOnTransform);
-              return res.updatedEntities;
-            }, session.targetIds);
+          if (edgeActionMode === "transform_edge") {
+            const refEdge = session.startEdge ?? primaryEdge;
+            const edgePerpNormal: Vec3Mm = refEdge
+              ? { x: -refEdge.dir.y, y: refEdge.dir.x, z: 0 }
+              : { x: 1, y: 0, z: 0 };
+            onCommitEntities(
+              () =>
+                applyDirectOffsetFace3DToEntities(
+                  session.startEntities,
+                  session.targetIds,
+                  "side_normal",
+                  currentDeltaMm,
+                  edgePerpNormal,
+                ),
+              session.targetIds,
+            );
+          } else {
+            // Arrastar para dentro (> 0): Fillet; arrastar para fora (< 0 a partir de 0) ou modo chamfer: Chamfer
+            const autoMode =
+              session.initialValue <= 0.5 && currentDeltaMm < 0
+                ? "chamfer"
+                : filletOrChamferMode;
+            const nextR = Math.max(
+              0,
+              session.initialValue <= 0.5 && currentDeltaMm < 0
+                ? Math.abs(currentDeltaMm)
+                : session.initialValue + currentDeltaMm,
+            );
+            onCommitEntities(
+              () =>
+                applyDirectFilletOrChamfer3DToEntities(
+                  session.startEntities,
+                  session.targetIds,
+                  autoMode,
+                  nextR,
+                ),
+              session.targetIds,
+            );
           }
-        } else if (session.axis === "y") {
-          if (onLiveTranslateSelectionXY) {
-            onLiveTranslateSelectionXY(0, stepDelta, session.targetIds);
-          } else if (onCommitEntities) {
-            onCommitEntities((prev) => {
-              const res = applyDirectTransform3DToEntities(prev, session.targetIds, { dy: stepDelta }, copyOnTransform);
-              return res.updatedEntities;
-            }, session.targetIds);
-          }
-        } else if (session.axis === "z") {
-          if (onLiveElevateSelection && selected[0]) {
+        } else if (session.axis === "x" || session.axis === "y" || session.axis === "z") {
+          const deltaObj =
+            session.axis === "x"
+              ? { dx: currentDeltaMm }
+              : session.axis === "y"
+                ? { dy: currentDeltaMm }
+                : { dz: currentDeltaMm };
+          if (onCommitEntities) {
+            const res = applyDirectTransform3DToEntities(
+              session.startEntities,
+              session.targetIds,
+              deltaObj,
+              copyOnTransform,
+              session.copyIdMap,
+            );
+            session.activeResultIds = res.activeIds;
+            onCommitEntities(() => res.updatedEntities, res.activeIds);
+            // Quando Copy: ON está ativo, atualiza a seleção 3D para a nova cópia que está deslizando
+            if (copyOnTransform) {
+              setSubSel((prev) => ({
+                ...prev,
+                bodyIds: res.activeIds.map((id) => `body_${id}`),
+                activePivot3D: session.startCenter3D
+                  ? {
+                      x:
+                        session.startCenter3D.x +
+                        (session.axis === "x" ? currentDeltaMm : 0),
+                      y:
+                        session.startCenter3D.y +
+                        (session.axis === "y" ? currentDeltaMm : 0),
+                      z:
+                        session.startCenter3D.z +
+                        (session.axis === "z" ? currentDeltaMm : 0),
+                    }
+                  : null,
+              }));
+            }
+          } else if (session.axis === "z" && onLiveElevateSelection && selected[0]) {
             onLiveElevateSelection(session.initialValue + currentDeltaMm);
-          } else if (onCommitEntities) {
-            onCommitEntities((prev) => {
-              const res = applyDirectTransform3DToEntities(prev, session.targetIds, { dz: stepDelta }, copyOnTransform);
-              return res.updatedEntities;
-            }, session.targetIds);
+          } else if (onLiveTranslateSelectionXY) {
+            onLiveTranslateSelectionXY(
+              session.axis === "x" ? currentDeltaMm : 0,
+              session.axis === "y" ? currentDeltaMm : 0,
+              session.targetIds,
+            );
           }
         }
       }
@@ -1149,7 +1564,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       ev.stopPropagation();
       ev.preventDefault();
 
-      const distPx = Math.hypot(ev.clientX - session.startClientX, ev.clientY - session.startClientY);
+      const distPx = Math.hypot(
+        ev.clientX - session.startClientX,
+        ev.clientY - session.startClientY,
+      );
       const isQuickTap = !session.hasMoved && distPx < 5;
 
       if (isQuickTap) {
@@ -1159,70 +1577,128 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         } else if (session.axis === "y") {
           openFloatingNumpad("DISTANCE", "DESLOCAMENTO +Y", "mm", 0, "moveY", session.targetIds[0]);
         } else if (session.axis === "extrude" || session.axis === "face_normal") {
-          openFloatingNumpad("EXTRUSION", "EXTRUDE / OFFSET", "mm", primaryBody?.extrudeHeightMm ?? 500, "extrudeHeight", session.targetIds[0]);
+          const refFace = session.startFace ?? primaryFace;
+          if (refFace && refFace.role !== "top" && refFace.role !== "miter") {
+            openFloatingNumpad(
+              "OFFSET",
+              "OFFSET FACE",
+              "mm",
+              25,
+              "offsetFaceDistance",
+              session.targetIds[0],
+              refFace.role === "bottom" ? "bottom" : "sides",
+            );
+          } else {
+            openFloatingNumpad(
+              "EXTRUSION",
+              "EXTRUDE / OFFSET",
+              "mm",
+              primaryBody?.extrudeHeightMm ?? 500,
+              "extrudeHeight",
+              session.targetIds[0],
+            );
+          }
         } else if (session.axis === "edge_diagonal") {
+          if (edgeActionMode === "transform_edge") {
+            openFloatingNumpad(
+              "OFFSET",
+              "MOVER ARESTA",
+              "mm",
+              25,
+              "offsetFaceDistance",
+              session.targetIds[0],
+              "sides",
+            );
+          } else {
+            openFloatingNumpad(
+              filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
+              filletOrChamferMode === "fillet" ? "RAIO FILLET" : "CHANFRO 45°",
+              "mm",
+              filletOrChamferMode === "fillet"
+                ? (primaryBody?.edgeFilletRadiusMm || 10)
+                : (primaryBody?.edgeChamferDistMm || 10),
+              filletOrChamferMode === "fillet" ? "filletRadius" : "chamferDistance",
+              session.targetIds[0],
+            );
+          }
+        } else if (session.axis === "z") {
           openFloatingNumpad(
-            filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
-            filletOrChamferMode === "fillet" ? "RAIO FILLET" : "CHANFRO 45°",
+            "DISTANCE",
+            "DESLOCAMENTO +Z",
             "mm",
-            filletOrChamferMode === "fillet" ? (primaryBody?.edgeFilletRadiusMm || 10) : (primaryBody?.edgeChamferDistMm || 10),
-            filletOrChamferMode === "fillet" ? "filletRadius" : "chamferDistance",
+            0,
+            "moveZ",
             session.targetIds[0],
           );
-        } else if (session.axis === "z") {
-          openFloatingNumpad("DISTANCE", "ELEVAÇÃO +Z", "mm", primaryBody?.elevationZ ?? 0, "moveZ", session.targetIds[0]);
-        } else if (session.axis === "rot_x" || session.axis === "rot_y" || session.axis === "rot_z" || session.axis === "miter") {
-          openFloatingNumpad("ANGLE", "ROTAÇÃO ANGULAR", "°", 45, "miterAngle", session.targetIds[0]);
+        } else if (
+          session.axis === "rot_x" ||
+          session.axis === "rot_y" ||
+          session.axis === "rot_z" ||
+          session.axis === "miter"
+        ) {
+          const subRot =
+            session.axis === "rot_x"
+              ? "rx"
+              : session.axis === "rot_y"
+                ? "ry"
+                : session.axis === "rot_z"
+                  ? "rz"
+                  : miterEndTarget;
+          openFloatingNumpad(
+            "ANGLE",
+            session.axis === "miter" ? "CORTE ESQUADRIA" : `ROTAÇÃO ${subRot.toUpperCase()}`,
+            "°",
+            45,
+            "miterAngle",
+            session.targetIds[0],
+            subRot,
+          );
         }
       } else {
         triggerHaptic("action");
-        if (session.totalDeltaMm !== 0) {
-          if (session.axis === "x") {
-            if (onCommitTranslateSelectionXY) {
-              onCommitTranslateSelectionXY(session.totalDeltaMm, 0, session.targetIds);
-            } else if (onCommitEntities) {
-              onCommitEntities((prev) => {
-                const res = applyDirectTransform3DToEntities(prev, session.targetIds, { dx: session.totalDeltaMm }, copyOnTransform);
-                return res.updatedEntities;
-              }, session.targetIds);
-            }
-          } else if (session.axis === "y") {
-            if (onCommitTranslateSelectionXY) {
-              onCommitTranslateSelectionXY(0, session.totalDeltaMm, session.targetIds);
-            } else if (onCommitEntities) {
-              onCommitEntities((prev) => {
-                const res = applyDirectTransform3DToEntities(prev, session.targetIds, { dy: session.totalDeltaMm }, copyOnTransform);
-                return res.updatedEntities;
-              }, session.targetIds);
-            }
-          } else if (session.axis === "z") {
-            if (onCommitElevateSelection) {
-              onCommitElevateSelection(session.initialValue + session.totalDeltaMm);
-            } else if (onCommitEntities) {
-              onCommitEntities((prev) => {
-                const res = applyDirectTransform3DToEntities(prev, session.targetIds, { dz: session.totalDeltaMm }, copyOnTransform);
-                return res.updatedEntities;
-              }, session.targetIds);
-            }
-          } else if (session.axis === "extrude" && onCommitEntities) {
-            const finalH = Math.max(1, session.initialValue + session.totalDeltaMm);
-            onCommitEntities(
-              (prev) => applyDirectExtrudeToEntities(prev, session.targetIds, finalH, booleanMode),
-              session.targetIds,
-            );
-          } else if (session.axis === "face_normal" && onCommitEntities) {
-            const finalH = Math.max(1, session.initialValue + session.totalDeltaMm);
-            onCommitEntities(
-              (prev) => applyDirectExtrudeToEntities(prev, session.targetIds, finalH, booleanMode),
-              session.targetIds,
-            );
-          } else if (session.axis === "edge_diagonal" && onCommitEntities) {
-            const finalR = Math.max(0, session.initialValue + session.totalDeltaMm);
-            onCommitEntities(
-              (prev) => applyDirectFilletOrChamfer3DToEntities(prev, session.targetIds, filletOrChamferMode, finalR),
-              session.targetIds,
-            );
-          }
+        // Persiste a cota e linha tracejada após soltar a seta para permitir toque na pílula e digitação exata (ex.: 700.00 mm)
+        if (
+          (session.axis === "x" ||
+            session.axis === "y" ||
+            session.axis === "z" ||
+            session.axis === "face_normal" ||
+            session.axis === "extrude") &&
+          Math.abs(session.lastAppliedDeltaMm) > 0 &&
+          session.startCenter3D
+        ) {
+          const dVal = session.lastAppliedDeltaMm;
+          const refFace = session.startFace ?? primaryFace;
+          const startPt =
+            (session.axis === "face_normal" || session.axis === "extrude") && refFace
+              ? refFace.centroid
+              : session.startCenter3D;
+          const endPt: Vec3Mm =
+            (session.axis === "face_normal" || session.axis === "extrude") && refFace
+              ? {
+                  x: startPt.x + refFace.normal.x * dVal,
+                  y: startPt.y + refFace.normal.y * dVal,
+                  z: startPt.z + refFace.normal.z * dVal,
+                }
+              : {
+                  x: startPt.x + (session.axis === "x" ? dVal : 0),
+                  y: startPt.y + (session.axis === "y" ? dVal : 0),
+                  z: startPt.z + (session.axis === "z" ? dVal : 0),
+                };
+
+          setLastCompletedDrag({
+            axis: session.axis,
+            deltaMm: dVal,
+            startPoint3D: startPt,
+            endPoint3D: endPt,
+            startEntities: session.startEntities,
+            targetIds: session.targetIds,
+            activeResultIds: session.activeResultIds,
+            copyMode: copyOnTransform,
+            copyIdMap: new Map(session.copyIdMap),
+            initialValue: session.initialValue,
+            faceRole: refFace?.role,
+            faceNormal: refFace?.normal,
+          });
         }
       }
 
@@ -1250,8 +1726,20 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     booleanMode,
     openFloatingNumpad,
     primaryBody,
+    primaryFace,
+    primaryEdge,
     selected,
+    scene.bodies,
+    toScreen,
+    setSubSel,
+    subSel.activePivot3D,
+    miterEndTarget,
+    miterAxis,
+    copyOnTransform,
+    edgeActionMode,
+    filletOrChamferMode,
   ]);
+
 
   const is3DEnvironment = activeMode === "3d" || isTilted3D;
 
@@ -1313,6 +1801,13 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           label: "Espelhar 3D",
           valueText: "Eixo X/Y/Z",
         };
+      case "scale_3d":
+      case "align_3d":
+        return {
+          icon: Maximize2,
+          label: "Escalar / Alinhar 3D",
+          valueText: "1.00×",
+        };
       case "color_material_3d":
         return {
           icon: Palette,
@@ -1367,32 +1862,524 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       className="pointer-events-none absolute inset-0 z-25 overflow-hidden select-none"
     >
       {/* =====================================================================
-          1. PÍLULA DE COMANDO ATIVO NO TOPO CENTRAL (COMPACTA E DISCRETA — SEÇÃO 3)
+          1. PÍLULA COMPACTA DE COMANDO ATIVO NO TOPO CENTRAL (ÚNICO HUD NO CANVAS 3D)
           ===================================================================== */}
       {is3DEnvironment && directTool !== "select_3d" && tool !== "loft_3d" && activePillMeta && (
         <div
           data-testid="chamfer-3d-contextual-guide-banner"
           style={{
             ...themeSurfaceStyle,
-            top: "36px",
+            top: activeMode === "3d" ? "12px" : "36px",
+            maxWidth: "calc(100% - 28px)",
           }}
-          className="pointer-events-auto absolute left-1/2 z-30 flex h-[40px] max-w-[420px] -translate-x-1/2 items-center gap-2 rounded-full border px-3 py-1.5 shadow-md backdrop-blur-md transition-all"
+          onPointerDown={(ev) => ev.stopPropagation()}
+          onClick={(ev) => ev.stopPropagation()}
+          className="pointer-events-auto absolute left-1/2 z-30 flex h-[40px] -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none rounded-full border px-3 py-1 shadow-lg backdrop-blur-md transition-all"
         >
           <activePillMeta.icon className="size-3.5 shrink-0 text-cyan-500" />
-          <span className="truncate font-mono text-[11px] font-bold tracking-tight">
+          <span className="shrink-0 font-mono text-[11px] font-bold tracking-tight">
             {activePillMeta.label}
           </span>
 
-          <span
+          {/* Cota / Valor Atual (clicável para abrir o teclado numérico) */}
+          <button
+            type="button"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              if (!primaryBody) return;
+              if (directTool === "extrude_3d") {
+                openFloatingNumpad(
+                  "EXTRUSION",
+                  "EXTRUDE",
+                  "mm",
+                  primaryBody.extrudeHeightMm,
+                  "extrudeHeight",
+                  primaryBody.entityId,
+                );
+              } else if (directTool === "fillet_3d" || directTool === "chamfer_3d") {
+                openFloatingNumpad(
+                  filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
+                  filletOrChamferMode === "fillet" ? "RAIO FILLET" : "CHANFRO 45°",
+                  "mm",
+                  filletOrChamferMode === "fillet"
+                    ? primaryBody.edgeFilletRadiusMm || 10
+                    : primaryBody.edgeChamferDistMm || 10,
+                  filletOrChamferMode === "fillet" ? "filletRadius" : "chamferDistance",
+                  primaryBody.entityId,
+                );
+              } else if (directTool === "shell_3d") {
+                openFloatingNumpad(
+                  "THICKNESS",
+                  "PAREDE CASCA",
+                  "mm",
+                  primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75,
+                  "shellWallThickness",
+                  primaryBody.entityId,
+                );
+              } else if (directTool === "offset_face_3d") {
+                openFloatingNumpad(
+                  "OFFSET",
+                  "OFFSET FACE",
+                  "mm",
+                  25,
+                  "offsetFaceDistance",
+                  primaryBody.entityId,
+                  offsetFaceTarget,
+                );
+              } else if (directTool === "rotate_axis_3d") {
+                openFloatingNumpad(
+                  "ANGLE",
+                  "ÂNGULO CORTE",
+                  "°",
+                  45,
+                  "miterAngle",
+                  primaryBody.entityId,
+                  miterEndTarget,
+                );
+              } else if (directTool === "transform_3d") {
+                openFloatingNumpad(
+                  "DISTANCE",
+                  `TRANSLADAR +${transformAxisTarget.toUpperCase()}`,
+                  "mm",
+                  100,
+                  transformAxisTarget === "x"
+                    ? "moveX"
+                    : transformAxisTarget === "y"
+                      ? "moveY"
+                      : "moveZ",
+                  primaryBody.entityId,
+                  undefined,
+                  copyOnTransform,
+                );
+              } else if (directTool === "scale_3d" || directTool === "align_3d") {
+                openFloatingNumpad(
+                  "SCALE",
+                  "FATOR ESCALA 3D",
+                  "×",
+                  1.5,
+                  "scaleFactor",
+                  primaryBody.entityId,
+                );
+              }
+            }}
+            title="Toque para digitar o valor exato"
             className={cn(
-              "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10.5px] font-bold",
+              "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[10.5px] font-bold transition-colors cursor-pointer",
               isDark
-                ? "border-cyan-500/40 bg-cyan-950/60 text-cyan-300"
-                : "border-cyan-600/35 bg-cyan-50 text-cyan-700",
+                ? "border-cyan-500/40 bg-cyan-950/60 text-cyan-300 hover:border-cyan-400"
+                : "border-cyan-600/35 bg-cyan-50 text-cyan-700 hover:border-cyan-600",
             )}
           >
-            {activePillMeta.valueText}
-          </span>
+            {activePillMeta.valueText} ⌨️
+          </button>
+
+          {/* OPÇÕES RÁPIDAS INLINE DA FERRAMENTA 3D ATIVA */}
+          {primaryBody && directTool === "extrude_3d" && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              {(
+                [
+                  { id: "new_body", label: "Novo Corpo" },
+                  { id: "union", label: "União" },
+                  { id: "subtract", label: "Subtrair" },
+                  { id: "intersect", label: "Interseção" },
+                ] as const
+              ).map((bm) => (
+                <button
+                  key={bm.id}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setBooleanMode(bm.id);
+                    onCommitEntities?.(
+                      (prev) =>
+                        applyDirectExtrudeToEntities(
+                          prev,
+                          activeTargetEntityIds,
+                          primaryBody.extrudeHeightMm,
+                          bm.id,
+                        ),
+                      activeTargetEntityIds,
+                    );
+                  }}
+                  className={pillBtnClass(booleanMode === bm.id)}
+                >
+                  {bm.label}
+                </button>
+              ))}
+            </>
+          )}
+
+          {primaryBody && (directTool === "fillet_3d" || directTool === "chamfer_3d") && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              <button
+                type="button"
+                onClick={() => {
+                  setFilletOrChamferMode("fillet");
+                  setDirectTool("fillet_3d");
+                }}
+                className={pillBtnClass(filletOrChamferMode === "fillet")}
+              >
+                Fillet (R)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setFilletOrChamferMode("chamfer");
+                  setDirectTool("chamfer_3d");
+                }}
+                className={pillBtnClass(filletOrChamferMode === "chamfer")}
+              >
+                Chamfer (45°)
+              </button>
+              {[0, 5, 10, 20].map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    onCommitEntities?.(
+                      (prev) =>
+                        applyDirectFilletOrChamfer3DToEntities(
+                          prev,
+                          activeTargetEntityIds,
+                          filletOrChamferMode,
+                          val,
+                        ),
+                      activeTargetEntityIds,
+                    );
+                  }}
+                  className={pillBtnClass(
+                    (filletOrChamferMode === "fillet"
+                      ? primaryBody.edgeFilletRadiusMm
+                      : primaryBody.edgeChamferDistMm) === val,
+                  )}
+                >
+                  {val === 0 ? "Reto" : `${filletOrChamferMode === "fillet" ? "R" : "D"}${val}`}
+                </button>
+              ))}
+            </>
+          )}
+
+          {primaryBody && directTool === "shell_3d" && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              <button
+                type="button"
+                onClick={() => {
+                  setShellOpenCapsMode("both_ends");
+                  onCommitEntities?.(
+                    (prev) =>
+                      applyDirectShell3DToEntities(
+                        prev,
+                        activeTargetEntityIds,
+                        primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75,
+                        ["top", "bottom"],
+                      ),
+                    activeTargetEntityIds,
+                  );
+                }}
+                className={pillBtnClass(shellOpenCapsMode === "both_ends")}
+              >
+                Tubo (2 Faces)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShellOpenCapsMode("top_only");
+                  onCommitEntities?.(
+                    (prev) =>
+                      applyDirectShell3DToEntities(
+                        prev,
+                        activeTargetEntityIds,
+                        primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75,
+                        ["top"],
+                      ),
+                    activeTargetEntityIds,
+                  );
+                }}
+                className={pillBtnClass(shellOpenCapsMode === "top_only")}
+              >
+                Caixa (1 Face)
+              </button>
+              {[2, 3, 4.75, 6].map((wVal) => (
+                <button
+                  key={wVal}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    const caps: ("top" | "bottom")[] =
+                      shellOpenCapsMode === "both_ends" ? ["top", "bottom"] : ["top"];
+                    onCommitEntities?.(
+                      (prev) => applyDirectShell3DToEntities(prev, activeTargetEntityIds, wVal, caps),
+                      activeTargetEntityIds,
+                    );
+                  }}
+                  className={pillBtnClass(
+                    Math.abs(
+                      (primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 0) - wVal,
+                    ) < 0.2,
+                  )}
+                >
+                  {wVal}mm
+                </button>
+              ))}
+            </>
+          )}
+
+          {primaryBody && directTool === "offset_face_3d" && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              {(
+                [
+                  { id: "top" as const, label: "Topo (+Z)" },
+                  { id: "bottom" as const, label: "Base (-Z)" },
+                  { id: "sides" as const, label: "Laterais" },
+                ] as const
+              ).map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setOffsetFaceTarget(t.id)}
+                  className={pillBtnClass(offsetFaceTarget === t.id)}
+                >
+                  {t.label}
+                </button>
+              ))}
+              {[-25, 25, 50, 100].map((dVal) => (
+                <button
+                  key={dVal}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    onCommitEntities?.(
+                      (prev) =>
+                        applyDirectOffsetFace3DToEntities(
+                          prev,
+                          activeTargetEntityIds,
+                          offsetFaceTarget,
+                          dVal,
+                        ),
+                      activeTargetEntityIds,
+                    );
+                  }}
+                  className={pillBtnClass(false)}
+                >
+                  {dVal > 0 ? `+${dVal}` : `${dVal}`}mm
+                </button>
+              ))}
+            </>
+          )}
+
+          {primaryBody && directTool === "rotate_axis_3d" && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              <button
+                type="button"
+                onClick={() => setMiterEndTarget("top")}
+                className={pillBtnClass(miterEndTarget === "top")}
+              >
+                Topo
+              </button>
+              <button
+                type="button"
+                onClick={() => setMiterEndTarget("bottom")}
+                className={pillBtnClass(miterEndTarget === "bottom")}
+              >
+                Base
+              </button>
+              <button
+                type="button"
+                onClick={() => setMiterAxis((a) => (a === "x" ? "y" : "x"))}
+                className={pillBtnClass(true)}
+              >
+                Eixo {miterAxis.toUpperCase()}
+              </button>
+              {[-45, 0, 45].map((ang) => (
+                <button
+                  key={ang}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    onCommitEntities?.(
+                      (prev) =>
+                        applyDirectMiterCut3DToEntities(
+                          prev,
+                          activeTargetEntityIds,
+                          miterEndTarget,
+                          ang,
+                          miterAxis,
+                        ),
+                      activeTargetEntityIds,
+                    );
+                  }}
+                  className={pillBtnClass(
+                    (miterEndTarget === "top"
+                      ? primaryBody.miterCutTopDeg
+                      : primaryBody.miterCutBottomDeg) === ang,
+                  )}
+                >
+                  {ang > 0 ? `+${ang}°` : `${ang}°`}
+                </button>
+              ))}
+            </>
+          )}
+
+          {primaryBody && directTool === "transform_3d" && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setCopyOnTransform((c) => !c);
+                }}
+                className={cn(
+                  "shrink-0 rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-bold transition-colors cursor-pointer whitespace-nowrap",
+                  copyOnTransform
+                    ? "border-emerald-400 bg-emerald-600 text-white"
+                    : pillBtnClass(false),
+                )}
+              >
+                Copy: {copyOnTransform ? "ON" : "OFF"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setIsPickingPivotSnap((p) => !p);
+                }}
+                className={pillBtnClass(isPickingPivotSnap)}
+              >
+                {isPickingPivotSnap ? "Toque Vértice..." : "Pivô Snap"}
+              </button>
+            </>
+          )}
+
+          {primaryBody && directTool === "mirror_3d" && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  setCopyOnTransform((c) => !c);
+                }}
+                className={cn(
+                  "shrink-0 rounded-full border px-2.5 py-0.5 font-mono text-[10px] font-bold transition-colors cursor-pointer whitespace-nowrap",
+                  copyOnTransform
+                    ? "border-emerald-400 bg-emerald-600 text-white"
+                    : pillBtnClass(false),
+                )}
+              >
+                Copy: {copyOnTransform ? "ON" : "OFF"}
+              </button>
+              {(["x", "y", "z"] as const).map((pl) => (
+                <button
+                  key={pl}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    let nextSel = activeTargetEntityIds;
+                    onCommitEntities?.((prev) => {
+                      const res = applyDirectMirror3DToEntities(
+                        prev,
+                        activeTargetEntityIds,
+                        pl,
+                        copyOnTransform,
+                        subSel.activePivot3D ?? primaryFace?.centroid ?? null,
+                      );
+                      if (res.activeIds.length > 0) {
+                        nextSel = res.activeIds;
+                      }
+                      return res.updatedEntities;
+                    }, nextSel);
+                  }}
+                  className={pillBtnClass(false)}
+                >
+                  ⇄ {pl.toUpperCase()}
+                </button>
+              ))}
+              {primaryFace && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    const nx = Math.abs(primaryFace.normal.x);
+                    const ny = Math.abs(primaryFace.normal.y);
+                    const nz = Math.abs(primaryFace.normal.z);
+                    const facePlane: "x" | "y" | "z" =
+                      nx >= ny && nx >= nz ? "x" : ny >= nx && ny >= nz ? "y" : "z";
+                    let nextSel = activeTargetEntityIds;
+                    onCommitEntities?.((prev) => {
+                      const res = applyDirectMirror3DToEntities(
+                        prev,
+                        activeTargetEntityIds,
+                        facePlane,
+                        copyOnTransform,
+                        primaryFace.centroid,
+                      );
+                      if (res.activeIds.length > 0) {
+                        nextSel = res.activeIds;
+                      }
+                      return res.updatedEntities;
+                    }, nextSel);
+                  }}
+                  className="shrink-0 rounded-full border border-cyan-400/80 bg-cyan-600/85 hover:bg-cyan-500 px-2.5 py-0.5 font-mono text-[10px] font-bold text-white cursor-pointer whitespace-nowrap"
+                >
+                  ⇄ Face ({primaryFace.label})
+                </button>
+              )}
+            </>
+          )}
+
+          {primaryBody && (directTool === "scale_3d" || directTool === "align_3d") && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              {[0.5, 1.25, 1.5, 2.0].map((factor) => (
+                <button
+                  key={factor}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    onCommitEntities?.(
+                      (prev) =>
+                        applyDirectScale3DToEntities(
+                          prev,
+                          activeTargetEntityIds,
+                          factor,
+                          subSel.activePivot3D ?? primaryBody.pivot3D,
+                        ),
+                      activeTargetEntityIds,
+                    );
+                  }}
+                  className={pillBtnClass(false)}
+                >
+                  {factor}×
+                </button>
+              ))}
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              {(["x", "y", "z"] as const).map((ax) => (
+                <button
+                  key={ax}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("action");
+                    onCommitEntities?.(
+                      (prev) =>
+                        applyDirectAlignFlush3DToEntities(prev, activeTargetEntityIds, ax),
+                      activeTargetEntityIds,
+                    );
+                  }}
+                  className={pillBtnClass(false)}
+                  title={`Alinhar e encostar face-a-face no eixo ${ax.toUpperCase()}`}
+                >
+                  Encostar {ax.toUpperCase()}
+                </button>
+              ))}
+            </>
+          )}
 
           <button
             type="button"
@@ -1522,6 +2509,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             body.faces.map((face) => {
               if (face.polygon3D.length < 3) return null;
               const isSelected = subSel.faceIds.includes(face.faceId);
+              const isBodySelected =
+                subSel.faceIds.length === 0 &&
+                subSel.edgeIds.length === 0 &&
+                subSel.bodyIds.includes(face.bodyId);
               const ptsStr = face.polygon3D
                 .map((p) => {
                   const s = toScreen(p);
@@ -1533,9 +2524,19 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 <polygon
                   key={face.faceId}
                   points={ptsStr}
-                  fill={isSelected ? "rgba(0, 180, 216, 0.28)" : "rgba(0, 180, 216, 0.001)"}
-                  stroke={isSelected ? "#00B4D8" : "rgba(0, 180, 216, 0.12)"}
-                  strokeWidth={isSelected ? 2.5 : 0.8}
+                  fill={
+                    isSelected
+                      ? "rgba(0, 180, 216, 0.34)"
+                      : isBodySelected
+                        ? "rgba(0, 180, 216, 0.18)"
+                        : "rgba(0, 180, 216, 0.001)"
+                  }
+                  stroke={
+                    isSelected || isBodySelected
+                      ? "#00B4D8"
+                      : "rgba(0, 180, 216, 0.14)"
+                  }
+                  strokeWidth={isSelected ? 2.6 : isBodySelected ? 2.0 : 0.8}
                   className="pointer-events-auto cursor-pointer transition-colors"
                   style={{ pointerEvents: "fill" }}
                   onPointerDown={(ev) => {
@@ -1545,17 +2546,79 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   onClick={(ev) => {
                     ev.stopPropagation();
                     triggerHaptic("selection");
+                    setLastCompletedDrag(null);
+                    const now = performance.now();
+                    const prevTap = lastFaceTapRef.current;
+                    const isDoubleTapOnBody =
+                      prevTap !== null &&
+                      prevTap.bodyId === face.bodyId &&
+                      now - prevTap.time < 350;
+                    lastFaceTapRef.current = {
+                      faceId: face.faceId,
+                      bodyId: face.bodyId,
+                      time: now,
+                    };
+
+                    // C. Duplo-toque na peça OU 1 toque com Modo Corpo/Transformar ativo -> Reconhece o CORPO SÓLIDO INTEIRO (suporta múltiplos corpos!)
+                    if (isDoubleTapOnBody || directTool === "transform_3d") {
+                      const currentBodies = subSel.bodyIds;
+                      const nextBodyIds =
+                        ev.shiftKey ||
+                        (directTool === "transform_3d" &&
+                          !isDoubleTapOnBody &&
+                          currentBodies.length > 0)
+                          ? currentBodies.includes(face.bodyId)
+                            ? currentBodies.length > 1
+                              ? currentBodies.filter((id) => id !== face.bodyId)
+                              : currentBodies
+                            : [...currentBodies, face.bodyId]
+                          : [face.bodyId];
+
+                      setSubSel({
+                        faceIds: [],
+                        edgeIds: [],
+                        bodyIds: nextBodyIds,
+                        activePivot3D: body.center3D,
+                        activeHingeEdgeId: null,
+                      });
+                      onSelectEntities?.(nextBodyIds);
+                      setDirectTool("transform_3d");
+                      return;
+                    }
+
+                    // A. 1 Toque em uma FACE ou BORDA DE TOPO/BASE -> Reconhece FACE, destaca em Ciano (#00B4D8) e exibe APENAS a seta perpendicular
+                    const nextFaceIds = ev.shiftKey
+                      ? isSelected
+                        ? subSel.faceIds.filter((id) => id !== face.faceId)
+                        : [...subSel.faceIds, face.faceId]
+                      : [face.faceId];
+
                     setSubSel({
-                      faceIds: [face.faceId],
+                      faceIds: nextFaceIds,
                       edgeIds: [],
-                      bodyIds: [face.bodyId],
+                      bodyIds: [],
                       activePivot3D: face.centroid,
                       activeHingeEdgeId: null,
                     });
-                    if (face.role === "top" || face.role === "bottom") {
-                      setDirectTool("extrude_3d");
-                    } else {
-                      setDirectTool("offset_face_3d");
+                    onSelectEntities?.([face.bodyId]);
+
+                    // Se for perfil 2D recém-criado (altura <= espessura da chapa), aciona Extrude; se já for corpo 3D, aciona Offset Face
+                    if (
+                      directTool !== "shell_3d" &&
+                      directTool !== "rotate_axis_3d"
+                    ) {
+                      if (body.extrudeHeightMm <= sheetThickness + 0.5) {
+                        setDirectTool("extrude_3d");
+                      } else {
+                        setOffsetFaceTarget(
+                          face.role === "top"
+                            ? "top"
+                            : face.role === "bottom"
+                              ? "bottom"
+                              : "sides",
+                        );
+                        setDirectTool("offset_face_3d");
+                      }
                     }
                   }}
                 />
@@ -1594,22 +2657,55 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     onClick={(ev) => {
                       ev.stopPropagation();
                       triggerHaptic("selection");
-                      if (subSel.faceIds.length > 0) {
+                      setLastCompletedDrag(null);
+
+                      // Se uma Face da mesma peça estiver selecionada e o usuário tocar numa Aresta dessa face -> vira dobradiça (Rotate Around Axis / Esquadria 45°)
+                      const hasFaceOnSameBody =
+                        subSel.faceIds.length > 0 &&
+                        subSel.faceIds.some((fid) =>
+                          fid.startsWith(`${edge.bodyId}:`),
+                        );
+                      if (
+                        hasFaceOnSameBody &&
+                        subSel.edgeIds.length === 0 &&
+                        !ev.shiftKey
+                      ) {
                         setSubSel((prev) => ({
                           ...prev,
                           edgeIds: [edge.edgeId],
+                          bodyIds: [],
                           activeHingeEdgeId: edge.edgeId,
                           activePivot3D: edge.midpoint,
                         }));
                         setDirectTool("rotate_axis_3d");
-                      } else {
-                        setSubSel({
-                          faceIds: [],
-                          edgeIds: [edge.edgeId],
-                          bodyIds: [edge.bodyId],
-                          activePivot3D: edge.midpoint,
-                          activeHingeEdgeId: null,
-                        });
+                        return;
+                      }
+
+                      // B. Clique em ARESTA / QUINA -> permite selecionar múltiplas arestas consecutivas da mesma peça (ex.: 4 cantos verticais de uma coluna)
+                      const sameBodyEdges = subSel.edgeIds.filter((id) =>
+                        id.startsWith(`${edge.bodyId}:`),
+                      );
+                      const nextEdgeIds =
+                        sameBodyEdges.length > 0
+                          ? isSelected
+                            ? sameBodyEdges.length > 1
+                              ? sameBodyEdges.filter((id) => id !== edge.edgeId)
+                              : []
+                            : [...sameBodyEdges, edge.edgeId]
+                          : [edge.edgeId];
+
+                      setSubSel({
+                        faceIds: [],
+                        edgeIds: nextEdgeIds,
+                        bodyIds: [],
+                        activePivot3D: edge.midpoint,
+                        activeHingeEdgeId: null,
+                      });
+                      onSelectEntities?.([edge.bodyId]);
+                      if (
+                        directTool !== "fillet_3d" &&
+                        directTool !== "chamfer_3d"
+                      ) {
                         setDirectTool("fillet_3d");
                       }
                     }}
@@ -1618,8 +2714,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     <polyline
                       points={ptsStr}
                       fill="none"
-                      stroke={isHinge ? "#F59E0B" : "#00E5FF"}
-                      strokeWidth={3.5}
+                      stroke={isHinge ? "#F59E0B" : "#00B4D8"}
+                      strokeWidth={3.8}
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       style={{ pointerEvents: "none" }}
@@ -1728,6 +2824,39 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               }
               onClick={(ev) => ev.stopPropagation()}
             >
+              {/* Linha tracejada de cota da distância percorrida pela face (ao vivo e após soltar) */}
+              {((activeAxis === "face_normal" &&
+                dragSessionRef.current?.startCenter3D) ||
+                lastCompletedDrag?.axis === "face_normal") &&
+                (() => {
+                  const startPt =
+                    activeAxis === "face_normal" &&
+                    dragSessionRef.current?.startCenter3D
+                      ? toScreen(dragSessionRef.current.startCenter3D)
+                      : toScreen(lastCompletedDrag!.startPoint3D);
+                  const endPt = faceNormalGizmo.origin;
+                  return (
+                    <g>
+                      <line
+                        x1={startPt.x}
+                        y1={startPt.y}
+                        x2={endPt.x}
+                        y2={endPt.y}
+                        stroke="#00E5FF"
+                        strokeWidth={2.2}
+                        strokeDasharray="5 4"
+                      />
+                      <circle
+                        cx={startPt.x}
+                        cy={startPt.y}
+                        r={4}
+                        fill="#0B1220"
+                        stroke="#00E5FF"
+                        strokeWidth={2}
+                      />
+                    </g>
+                  );
+                })()}
               <line
                 x1={faceNormalGizmo.negTip.x}
                 y1={faceNormalGizmo.negTip.y}
@@ -1743,7 +2872,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 x2={faceNormalGizmo.posTip.x}
                 y2={faceNormalGizmo.posTip.y}
                 stroke="#00B4D8"
-                strokeWidth={3}
+                strokeWidth={3.2}
                 markerStart="url(#gizmo-arrow-cyan-start)"
                 markerEnd="url(#gizmo-arrow-cyan)"
                 style={{ pointerEvents: "stroke" }}
@@ -1751,56 +2880,86 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               <circle
                 cx={faceNormalGizmo.origin.x}
                 cy={faceNormalGizmo.origin.y}
-                r={5}
+                r={5.5}
                 fill="#00B4D8"
                 stroke="#FFFFFF"
-                strokeWidth={1.5}
+                strokeWidth={1.6}
               />
               <g
-                transform={`translate(${faceNormalGizmo.posTip.x + faceNormalGizmo.ux * 14}, ${faceNormalGizmo.posTip.y + faceNormalGizmo.uy * 14})`}
+                transform={`translate(${faceNormalGizmo.posTip.x + faceNormalGizmo.ux * 18}, ${faceNormalGizmo.posTip.y + faceNormalGizmo.uy * 18})`}
                 className="cursor-pointer"
+                onPointerDown={(ev) => {
+                  ev.stopPropagation();
+                  ev.preventDefault();
+                }}
                 onClick={(ev) => {
                   ev.stopPropagation();
-                  openFloatingNumpad(
-                    "EXTRUSION",
-                    "EXTRUDE / OFFSET",
-                    "mm",
-                    primaryBody?.extrudeHeightMm ?? 500,
-                    "extrudeHeight",
-                    faceNormalGizmo.face.entityId,
-                  );
+                  const isSideFace = faceNormalGizmo.face.role === "side";
+                  if (directTool === "shell_3d") {
+                    openFloatingNumpad(
+                      "THICKNESS",
+                      "PAREDE CASCA",
+                      "mm",
+                      primaryBody?.shellWallThicknessMm || 3,
+                      "shellWallThickness",
+                      faceNormalGizmo.face.entityId,
+                    );
+                  } else if (isSideFace || directTool === "offset_face_3d") {
+                    openFloatingNumpad(
+                      "OFFSET",
+                      "DESLOCAR FACE",
+                      "mm",
+                      lastCompletedDrag?.axis === "face_normal"
+                        ? lastCompletedDrag.deltaMm
+                        : primaryBody?.extrudeHeightMm ?? 25,
+                      isSideFace ? "offsetFaceDistance" : "extrudeHeight",
+                      faceNormalGizmo.face.entityId,
+                      isSideFace ? "sides" : faceNormalGizmo.face.role === "bottom" ? "bottom" : "top",
+                    );
+                  } else {
+                    openFloatingNumpad(
+                      "EXTRUSION",
+                      "ALTURA EXTRUDE",
+                      "mm",
+                      primaryBody?.extrudeHeightMm ?? 500,
+                      "extrudeHeight",
+                      faceNormalGizmo.face.entityId,
+                    );
+                  }
                 }}
               >
                 <rect
-                  x={-34}
-                  y={-9}
-                  width={68}
-                  height={18}
+                  x={-44}
+                  y={-10}
+                  width={88}
+                  height={20}
                   rx={5}
                   fill={isDark ? "#0B1220" : "#FFFFFF"}
                   stroke="#00B4D8"
-                  strokeWidth={1.2}
+                  strokeWidth={1.4}
                 />
                 <text
                   x={0}
                   y={1}
                   fill="#00B4D8"
-                  fontSize="9.5"
+                  fontSize="10"
                   fontWeight="bold"
                   fontFamily="monospace"
                   textAnchor="middle"
                   dominantBaseline="central"
                 >
-                  {dragDeltaMm !== 0
+                  {activeAxis === "face_normal" && dragDeltaMm !== 0
                     ? `${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm} mm`
-                    : "0.00 mm"}
+                    : lastCompletedDrag?.axis === "face_normal"
+                      ? `${lastCompletedDrag.deltaMm >= 0 ? `+${lastCompletedDrag.deltaMm}` : lastCompletedDrag.deltaMm} mm ✎`
+                      : "0.00 mm"}
                 </text>
               </g>
             </g>
           )}
 
           {/* ================================================================= */}
-          {/* E. SETA DIAGONAL NA ARESTA SELECIONADA (FILLET / CHAMFER)         */}
+          {/* E. SETA DIAGONAL NA ARESTA SELECIONADA (FILLET / CHAMFER / MOVER) */}
           {/* ================================================================= */}
           {edgeDiagonalGizmo && (
             <g
@@ -1848,24 +3007,40 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               <g
                 transform={`translate(${edgeDiagonalGizmo.tip.x + edgeDiagonalGizmo.ux * 12}, ${edgeDiagonalGizmo.tip.y + edgeDiagonalGizmo.uy * 12})`}
                 className="cursor-pointer"
+                onPointerDown={(ev) => {
+                  ev.stopPropagation();
+                  ev.preventDefault();
+                }}
                 onClick={(ev) => {
                   ev.stopPropagation();
-                  openFloatingNumpad(
-                    filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
-                    filletOrChamferMode === "fillet" ? "RAIO FILLET" : "CHANFRO 45°",
-                    "mm",
-                    filletOrChamferMode === "fillet"
-                      ? primaryBody?.edgeFilletRadiusMm || 10
-                      : primaryBody?.edgeChamferDistMm || 10,
-                    filletOrChamferMode === "fillet" ? "filletRadius" : "chamferDistance",
-                    edgeDiagonalGizmo.edge.entityId,
-                  );
+                  if (edgeActionMode === "transform_edge") {
+                    openFloatingNumpad(
+                      "OFFSET",
+                      "MOVER ARESTA",
+                      "mm",
+                      25,
+                      "offsetFaceDistance",
+                      edgeDiagonalGizmo.edge.entityId,
+                      "sides",
+                    );
+                  } else {
+                    openFloatingNumpad(
+                      filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
+                      filletOrChamferMode === "fillet" ? "RAIO FILLET" : "CHANFRO 45°",
+                      "mm",
+                      filletOrChamferMode === "fillet"
+                        ? primaryBody?.edgeFilletRadiusMm || 10
+                        : primaryBody?.edgeChamferDistMm || 10,
+                      filletOrChamferMode === "fillet" ? "filletRadius" : "chamferDistance",
+                      edgeDiagonalGizmo.edge.entityId,
+                    );
+                  }
                 }}
               >
                 <rect
-                  x={-34}
+                  x={-38}
                   y={-9}
-                  width={68}
+                  width={76}
                   height={18}
                   rx={5}
                   fill={isDark ? "#0B1220" : "#FFFFFF"}
@@ -1882,9 +3057,138 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   textAnchor="middle"
                   dominantBaseline="central"
                 >
-                  {filletOrChamferMode === "fillet"
-                    ? `R ${(primaryBody?.edgeFilletRadiusMm || 10).toFixed(1)}`
-                    : `D ${(primaryBody?.edgeChamferDistMm || 10).toFixed(1)}`}
+                  {edgeActionMode === "transform_edge"
+                    ? `Δ ${dragDeltaMm} mm`
+                    : filletOrChamferMode === "fillet"
+                      ? `R ${(primaryBody?.edgeFilletRadiusMm || 10).toFixed(1)} mm`
+                      : `D ${(primaryBody?.edgeChamferDistMm || 10).toFixed(1)} mm`}
+                </text>
+              </g>
+
+              {/* Botão rápido de alternância ao lado da seta da aresta: Raio | Chanfro | Mover */}
+              <g
+                transform={`translate(${edgeDiagonalGizmo.tip.x + edgeDiagonalGizmo.ux * 12}, ${edgeDiagonalGizmo.tip.y + edgeDiagonalGizmo.uy * 12 + 21})`}
+                className="cursor-pointer"
+                onPointerDown={(ev) => {
+                  ev.stopPropagation();
+                  ev.preventDefault();
+                }}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  triggerHaptic("selection");
+                  if (edgeActionMode === "fillet") {
+                    setEdgeActionMode("chamfer");
+                    setFilletOrChamferMode("chamfer");
+                    setDirectTool("chamfer_3d");
+                  } else if (edgeActionMode === "chamfer") {
+                    setEdgeActionMode("transform_edge");
+                  } else {
+                    setEdgeActionMode("fillet");
+                    setFilletOrChamferMode("fillet");
+                    setDirectTool("fillet_3d");
+                  }
+                }}
+              >
+                <rect
+                  x={-42}
+                  y={-8}
+                  width={84}
+                  height={16}
+                  rx={5}
+                  fill={isDark ? "#0F172A" : "#F8FAFC"}
+                  stroke="#38BDF8"
+                  strokeWidth={1}
+                />
+                <text
+                  x={0}
+                  y={0.5}
+                  fill="#38BDF8"
+                  fontSize="8.5"
+                  fontWeight="bold"
+                  fontFamily="monospace"
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                >
+                  {edgeActionMode === "fillet"
+                    ? "⟳ Raio (Fillet)"
+                    : edgeActionMode === "chamfer"
+                      ? "⟳ Chanfro 45°"
+                      : "⟳ Mover Aresta"}
+                </text>
+              </g>
+            </g>
+          )}
+
+          {/* ================================================================= */}
+          {/* E2. ARCO DE INCLINAÇÃO / DOBRADIÇA (FACE + ARESTA = ROTATE AXIS)  */}
+          {/* ================================================================= */}
+          {hingeMiterGizmo && (
+            <g
+              data-testid="chamfer-gizmo-hinge-miter-arc"
+              className="pointer-events-auto cursor-grab active:cursor-grabbing"
+              style={{ touchAction: "none" }}
+              onPointerDown={(ev) => handleAxisPointerDown("miter", 0, 0, 1, ev)}
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <circle
+                cx={hingeMiterGizmo.origin.x}
+                cy={hingeMiterGizmo.origin.y}
+                r={36}
+                fill="none"
+                stroke="#F59E0B"
+                strokeWidth={1.3}
+                strokeDasharray="3 3"
+                opacity={0.75}
+              />
+              <path
+                d={`M ${hingeMiterGizmo.origin.x - 28} ${hingeMiterGizmo.origin.y - 22} A 36 36 0 0 1 ${hingeMiterGizmo.origin.x + 28} ${hingeMiterGizmo.origin.y - 22}`}
+                fill="none"
+                stroke="#F59E0B"
+                strokeWidth={3.2}
+                strokeLinecap="round"
+                markerEnd="url(#gizmo-arrow-amber)"
+              />
+              <g
+                transform={`translate(${hingeMiterGizmo.origin.x}, ${hingeMiterGizmo.origin.y - 44})`}
+                className="cursor-pointer"
+                onPointerDown={(ev) => {
+                  ev.stopPropagation();
+                  ev.preventDefault();
+                }}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  openFloatingNumpad(
+                    "ANGLE",
+                    "CORTE ESQUADRIA",
+                    "°",
+                    hingeMiterGizmo.angleDeg || 45,
+                    "miterAngle",
+                    hingeMiterGizmo.edge.entityId,
+                    miterEndTarget,
+                  );
+                }}
+              >
+                <rect
+                  x={-36}
+                  y={-9}
+                  width={72}
+                  height={18}
+                  rx={5}
+                  fill={isDark ? "#0B1220" : "#FFFFFF"}
+                  stroke="#F59E0B"
+                  strokeWidth={1.3}
+                />
+                <text
+                  x={0}
+                  y={1}
+                  fill="#F59E0B"
+                  fontSize="9.5"
+                  fontWeight="bold"
+                  fontFamily="monospace"
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                >
+                  {`∠ ${(activeAxis === "miter" ? dragDeltaMm : hingeMiterGizmo.angleDeg).toFixed(0)}°`}
                 </text>
               </g>
             </g>
@@ -1893,7 +3197,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           {/* ================================================================= */}
           {/* F. PONTOS MAGNÉTICOS DE SNAP DO PIVÔ 3D                           */}
           {/* ================================================================= */}
-          {isPickingPivotSnap &&
+          {(isPickingPivotSnap || activeAxis === "pivot") &&
             primaryBody?.snapCandidates.map((cand) => {
               const sp = toScreen(cand.point3D);
               return (
@@ -1904,6 +3208,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     ev.stopPropagation();
                     triggerHaptic("action");
                     setSubSel((prev) => ({ ...prev, activePivot3D: cand.point3D }));
+                    setSnappedPivotLabel(cand.label);
                     setIsPickingPivotSnap(false);
                   }}
                 >
@@ -1921,361 +3226,629 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             })}
 
           {/* ================================================================= */}
-          {/* G. GIZMO UNIVERSAL TRÍADE X/Y/Z + PLANAR + TRANSFERIDOR CIRCULAR  */}
+          {/* G. GIZMO DO CORPO (TRÍADE X/Y/Z + ROTAÇÃO + PIVÔ + BOTÃO COPY)    */}
+          {/* Exibido quando um CORPO está selecionado (ou modo Transformar)    */}
           {/* ================================================================= */}
-          {gizmoScreen && (
-            <g>
-              {/* Linhas pontilhadas de projeção ortogonal */}
-              <line
-                x1={gizmoScreen.origin.x - gizmoScreen.x.ux * 30}
-                y1={gizmoScreen.origin.y - gizmoScreen.x.uy * 30}
-                x2={gizmoScreen.origin.x + gizmoScreen.x.ux * 90}
-                y2={gizmoScreen.origin.y + gizmoScreen.x.uy * 90}
-                stroke="#EF4444"
-                strokeWidth={1}
-                strokeDasharray="3 3"
-                opacity={0.35}
-              />
-              <line
-                x1={gizmoScreen.origin.x - gizmoScreen.y.ux * 30}
-                y1={gizmoScreen.origin.y - gizmoScreen.y.uy * 30}
-                x2={gizmoScreen.origin.x + gizmoScreen.y.ux * 90}
-                y2={gizmoScreen.origin.y + gizmoScreen.y.uy * 90}
-                stroke="#22C55E"
-                strokeWidth={1}
-                strokeDasharray="3 3"
-                opacity={0.35}
-              />
-              <line
-                x1={gizmoScreen.origin.x - gizmoScreen.z.ux * 30}
-                y1={gizmoScreen.origin.y - gizmoScreen.z.uy * 30}
-                x2={gizmoScreen.origin.x + gizmoScreen.z.ux * 90}
-                y2={gizmoScreen.origin.y + gizmoScreen.z.uy * 90}
-                stroke="#00B4D8"
-                strokeWidth={1}
-                strokeDasharray="3 3"
-                opacity={0.35}
-              />
+          {gizmoScreen &&
+            (selectionKind3D === "body" || selectionKind3D === "none") && (
+              <g data-testid="chamfer-gizmo-body-manipulator">
+                {/* Linha Tracejada de Deslocamento + Pílula Clicável de Distância em Tempo Real (Seção 2.3 & 2.4) */}
+                {(() => {
+                  const isLiveLinear =
+                    (activeAxis === "x" ||
+                      activeAxis === "y" ||
+                      activeAxis === "z" ||
+                      activeAxis === "planar") &&
+                    dragSessionRef.current?.startCenter3D != null;
+                  const isCompletedLinear =
+                    !activeAxis &&
+                    lastCompletedDrag !== null &&
+                    (lastCompletedDrag.axis === "x" ||
+                      lastCompletedDrag.axis === "y" ||
+                      lastCompletedDrag.axis === "z" ||
+                      lastCompletedDrag.axis === "planar");
 
-              {/* Alça Planar (Move simultâneo em XY sem alterar Z) */}
-              <polygon
-                points={`${gizmoScreen.planarQuad.p0.x},${gizmoScreen.planarQuad.p0.y} ${gizmoScreen.planarQuad.p1.x},${gizmoScreen.planarQuad.p1.y} ${gizmoScreen.planarQuad.p2.x},${gizmoScreen.planarQuad.p2.y} ${gizmoScreen.planarQuad.p3.x},${gizmoScreen.planarQuad.p3.y}`}
-                fill="rgba(245, 158, 11, 0.28)"
-                stroke="#F59E0B"
-                strokeWidth={1.5}
-                className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                style={{ touchAction: "none" }}
-                onPointerDown={(ev) =>
-                  handleAxisPointerDown("planar", 1, 0, gizmoScreen.x.pixelsPerMm, ev)
-                }
-                onClick={(ev) => ev.stopPropagation()}
-              />
+                  if (!isLiveLinear && !isCompletedLinear) return null;
 
-              {/* Disco Transferidor Circular com Marcadores a Cada 15° */}
-              <circle
-                cx={gizmoScreen.origin.x}
-                cy={gizmoScreen.origin.y}
-                r={48}
-                fill="none"
-                stroke="#00B4D8"
-                strokeWidth={1.4}
-                strokeDasharray="3 3"
-                opacity={0.7}
-              />
-              {[0, 15, 30, 45, 60, 75, 90, 135, 180].map((deg) => {
-                const rad = (deg * Math.PI) / 180;
-                const tx1 = gizmoScreen.origin.x + Math.cos(rad) * 44;
-                const ty1 = gizmoScreen.origin.y + Math.sin(rad) * 44;
-                const tx2 = gizmoScreen.origin.x + Math.cos(rad) * 48;
-                const ty2 = gizmoScreen.origin.y + Math.sin(rad) * 48;
-                return (
-                  <line
-                    key={deg}
-                    x1={tx1}
-                    y1={ty1}
-                    x2={tx2}
-                    y2={ty2}
-                    stroke="#00B4D8"
-                    strokeWidth={deg % 45 === 0 ? 2 : 1}
-                    opacity={0.8}
-                  />
-                );
-              })}
+                  const startSc = isLiveLinear
+                    ? toScreen(dragSessionRef.current!.startCenter3D!)
+                    : toScreen(lastCompletedDrag!.startPoint3D);
+                  const endSc = isLiveLinear
+                    ? gizmoScreen.origin
+                    : toScreen(lastCompletedDrag!.endPoint3D);
+                  const midX = (startSc.x + endSc.x) * 0.5;
+                  const midY = (startSc.y + endSc.y) * 0.5;
+                  const linearAxis = isLiveLinear
+                    ? activeAxis!
+                    : lastCompletedDrag!.axis;
+                  const currentDistMm = isLiveLinear
+                    ? dragDeltaMm
+                    : lastCompletedDrag!.deltaMm;
+                  const isCopyDrag = isLiveLinear
+                    ? copyOnTransform
+                    : lastCompletedDrag!.copyMode;
+                  const targetEntityId =
+                    (isCompletedLinear
+                      ? lastCompletedDrag?.activeResultIds[0]
+                      : primaryBody?.entityId) ??
+                    primaryBody?.entityId ??
+                    "";
 
-              {/* Arco de Rotação Z no Plano XY */}
-              <path
-                d={`M ${gizmoScreen.origin.x + gizmoScreen.x.ux * 42} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 42} A 42 42 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.y.ux * 42} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 42}`}
-                fill="none"
-                stroke="#F59E0B"
-                strokeWidth={3}
-                strokeLinecap="round"
-                markerEnd="url(#gizmo-arrow-amber)"
-                className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                style={{ touchAction: "none" }}
-                onPointerDown={(ev) =>
-                  handleAxisPointerDown("rot_z", 0, 0, 1, ev)
-                }
-                onClick={(ev) => ev.stopPropagation()}
-              />
+                  return (
+                    <g data-testid="chamfer-3d-displacement-dimension">
+                      {/* Marcador da Origem (0 mm) */}
+                      <circle
+                        cx={startSc.x}
+                        cy={startSc.y}
+                        r={5}
+                        fill="#0B1220"
+                        stroke={isCopyDrag ? "#10B981" : "#38BDF8"}
+                        strokeWidth={2}
+                      />
+                      {/* Linha Tracejada de Cota (- - - - -) conectando a peça original à posição/cópia deslocada */}
+                      <line
+                        x1={startSc.x}
+                        y1={startSc.y}
+                        x2={endSc.x}
+                        y2={endSc.y}
+                        stroke={isCopyDrag ? "#10B981" : "#38BDF8"}
+                        strokeWidth={2.4}
+                        strokeDasharray="6 4"
+                      />
+                      {/* Marcador da Posição Deslocada */}
+                      <circle
+                        cx={endSc.x}
+                        cy={endSc.y}
+                        r={4.5}
+                        fill={isCopyDrag ? "#10B981" : "#38BDF8"}
+                        stroke="#0B1220"
+                        strokeWidth={1.5}
+                      />
+                      {/* Pílula Clicável de Medição em Tempo Real no Meio da Linha Tracejada (Toque para abrir Teclado Numérico) */}
+                      <g
+                        data-testid="chamfer-3d-displacement-pill"
+                        transform={`translate(${midX}, ${midY - 22})`}
+                        className="pointer-events-auto cursor-pointer"
+                        onPointerDown={(ev) => {
+                          ev.stopPropagation();
+                          ev.preventDefault();
+                        }}
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          const paramKey =
+                            linearAxis === "y"
+                              ? "moveY"
+                              : linearAxis === "z"
+                                ? "moveZ"
+                                : "moveX";
+                          const axisName =
+                            linearAxis === "y"
+                              ? "Y"
+                              : linearAxis === "z"
+                                ? "Z"
+                                : "X";
+                          openFloatingNumpad(
+                            "DISTANCE",
+                            isCopyDrag
+                              ? `CÓPIA DIST +${axisName}`
+                              : `DESLOCAR +${axisName}`,
+                            "mm",
+                            currentDistMm || 100,
+                            paramKey,
+                            targetEntityId,
+                            undefined,
+                            isCopyDrag,
+                          );
+                        }}
+                      >
+                        <rect
+                          x={-58}
+                          y={-12}
+                          width={116}
+                          height={24}
+                          rx={6}
+                          fill="#060A12"
+                          stroke={isCopyDrag ? "#10B981" : "#00B4D8"}
+                          strokeWidth={1.6}
+                        />
+                        <text
+                          x={0}
+                          y={1}
+                          fill={isCopyDrag ? "#34D399" : "#38BDF8"}
+                          fontSize="10.5"
+                          fontWeight="bold"
+                          fontFamily="monospace"
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                        >
+                          {`${isCopyDrag ? "⧉ " : ""}${currentDistMm >= 0 ? currentDistMm : currentDistMm} mm ✎`}
+                        </text>
+                      </g>
+                    </g>
+                  );
+                })()}
 
-              {/* Eixo X (Vermelho) */}
-              <g
-                data-testid="chamfer-gizmo-axis-x"
-                className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                style={{ touchAction: "none" }}
-                onPointerDown={(ev) =>
-                  handleAxisPointerDown(
-                    "x",
-                    gizmoScreen.x.ux,
-                    gizmoScreen.x.uy,
-                    gizmoScreen.x.pixelsPerMm,
-                    ev,
-                  )
-                }
-                onClick={(ev) => ev.stopPropagation()}
-              >
+                {/* Linhas pontilhadas de projeção ortogonal */}
                 <line
-                  x1={gizmoScreen.origin.x}
-                  y1={gizmoScreen.origin.y}
-                  x2={gizmoScreen.x.endX}
-                  y2={gizmoScreen.x.endY}
-                  stroke="rgba(0,0,0,0.001)"
-                  strokeWidth={28}
-                  style={{ pointerEvents: "stroke" }}
-                />
-                <line
-                  x1={gizmoScreen.origin.x}
-                  y1={gizmoScreen.origin.y}
-                  x2={gizmoScreen.x.endX}
-                  y2={gizmoScreen.x.endY}
+                  x1={gizmoScreen.origin.x - gizmoScreen.x.ux * 30}
+                  y1={gizmoScreen.origin.y - gizmoScreen.x.uy * 30}
+                  x2={gizmoScreen.origin.x + gizmoScreen.x.ux * 90}
+                  y2={gizmoScreen.origin.y + gizmoScreen.x.uy * 90}
                   stroke="#EF4444"
-                  strokeWidth={activeAxis === "x" ? 3.75 : 2.5}
-                  markerEnd="url(#gizmo-arrow-x)"
-                  style={{ pointerEvents: "stroke" }}
-                />
-                <circle
-                  cx={gizmoScreen.x.endX + gizmoScreen.x.ux * 10}
-                  cy={gizmoScreen.x.endY + gizmoScreen.x.uy * 10}
-                  r={14}
-                  fill="rgba(239, 68, 68, 0.15)"
-                  stroke="rgba(239, 68, 68, 0.45)"
                   strokeWidth={1}
-                  style={{ pointerEvents: "all" }}
-                  className="cursor-pointer"
-                />
-                <text
-                  x={gizmoScreen.x.endX + gizmoScreen.x.ux * 10}
-                  y={gizmoScreen.x.endY + gizmoScreen.x.uy * 10}
-                  fill="#EF4444"
-                  fontSize="10"
-                  fontWeight="bold"
-                  fontFamily="monospace"
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  style={{ pointerEvents: "none" }}
-                >
-                  +X
-                </text>
-              </g>
-
-              {/* Eixo Y (Verde) */}
-              <g
-                data-testid="chamfer-gizmo-axis-y"
-                className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                style={{ touchAction: "none" }}
-                onPointerDown={(ev) =>
-                  handleAxisPointerDown(
-                    "y",
-                    gizmoScreen.y.ux,
-                    gizmoScreen.y.uy,
-                    gizmoScreen.y.pixelsPerMm,
-                    ev,
-                  )
-                }
-                onClick={(ev) => ev.stopPropagation()}
-              >
-                <line
-                  x1={gizmoScreen.origin.x}
-                  y1={gizmoScreen.origin.y}
-                  x2={gizmoScreen.y.endX}
-                  y2={gizmoScreen.y.endY}
-                  stroke="rgba(0,0,0,0.001)"
-                  strokeWidth={28}
-                  style={{ pointerEvents: "stroke" }}
+                  strokeDasharray="3 3"
+                  opacity={0.35}
                 />
                 <line
-                  x1={gizmoScreen.origin.x}
-                  y1={gizmoScreen.origin.y}
-                  x2={gizmoScreen.y.endX}
-                  y2={gizmoScreen.y.endY}
+                  x1={gizmoScreen.origin.x - gizmoScreen.y.ux * 30}
+                  y1={gizmoScreen.origin.y - gizmoScreen.y.uy * 30}
+                  x2={gizmoScreen.origin.x + gizmoScreen.y.ux * 90}
+                  y2={gizmoScreen.origin.y + gizmoScreen.y.uy * 90}
                   stroke="#22C55E"
-                  strokeWidth={activeAxis === "y" ? 3.75 : 2.5}
-                  markerEnd="url(#gizmo-arrow-y)"
-                  style={{ pointerEvents: "stroke" }}
-                />
-                <circle
-                  cx={gizmoScreen.y.endX + gizmoScreen.y.ux * 10}
-                  cy={gizmoScreen.y.endY + gizmoScreen.y.uy * 10}
-                  r={14}
-                  fill="rgba(34, 197, 94, 0.15)"
-                  stroke="rgba(34, 197, 94, 0.45)"
                   strokeWidth={1}
-                  style={{ pointerEvents: "all" }}
-                  className="cursor-pointer"
-                />
-                <text
-                  x={gizmoScreen.y.endX + gizmoScreen.y.ux * 10}
-                  y={gizmoScreen.y.endY + gizmoScreen.y.uy * 10}
-                  fill="#22C55E"
-                  fontSize="10"
-                  fontWeight="bold"
-                  fontFamily="monospace"
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  style={{ pointerEvents: "none" }}
-                >
-                  +Y
-                </text>
-              </g>
-
-              {/* Eixo Z / Seta de Extrusão / Push-Pull (Ciano Técnico #00B4D8) */}
-              <g
-                data-testid="chamfer-gizmo-axis-z"
-                className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                style={{ touchAction: "none" }}
-                onPointerDown={(ev) =>
-                  handleAxisPointerDown(
-                    directTool === "extrude_3d" ? "extrude" : "z",
-                    gizmoScreen.z.ux,
-                    gizmoScreen.z.uy,
-                    gizmoScreen.z.pixelsPerMm,
-                    ev,
-                  )
-                }
-                onClick={(ev) => ev.stopPropagation()}
-              >
-                <line
-                  x1={gizmoScreen.origin.x}
-                  y1={gizmoScreen.origin.y}
-                  x2={gizmoScreen.z.endX}
-                  y2={gizmoScreen.z.endY}
-                  stroke="rgba(0,0,0,0.001)"
-                  strokeWidth={28}
-                  style={{ pointerEvents: "stroke" }}
+                  strokeDasharray="3 3"
+                  opacity={0.35}
                 />
                 <line
-                  x1={gizmoScreen.origin.x}
-                  y1={gizmoScreen.origin.y}
-                  x2={gizmoScreen.z.endX}
-                  y2={gizmoScreen.z.endY}
+                  x1={gizmoScreen.origin.x - gizmoScreen.z.ux * 30}
+                  y1={gizmoScreen.origin.y - gizmoScreen.z.uy * 30}
+                  x2={gizmoScreen.origin.x + gizmoScreen.z.ux * 90}
+                  y2={gizmoScreen.origin.y + gizmoScreen.z.uy * 90}
                   stroke="#00B4D8"
-                  strokeWidth={
-                    activeAxis === "z" || activeAxis === "extrude" ? 4 : 2.75
-                  }
-                  markerEnd="url(#gizmo-arrow-z)"
-                  style={{ pointerEvents: "stroke" }}
-                />
-                <circle
-                  cx={gizmoScreen.z.endX + gizmoScreen.z.ux * 12}
-                  cy={gizmoScreen.z.endY + gizmoScreen.z.uy * 12}
-                  r={14}
-                  fill="rgba(0, 180, 216, 0.15)"
-                  stroke="rgba(0, 180, 216, 0.45)"
                   strokeWidth={1}
-                  style={{ pointerEvents: "all" }}
-                  className="cursor-pointer"
+                  strokeDasharray="3 3"
+                  opacity={0.35}
                 />
-                <text
-                  x={gizmoScreen.z.endX + gizmoScreen.z.ux * 12}
-                  y={gizmoScreen.z.endY + gizmoScreen.z.uy * 12}
-                  fill="#00B4D8"
-                  fontSize="10"
-                  fontWeight="bold"
-                  fontFamily="monospace"
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  style={{ pointerEvents: "none" }}
-                >
-                  {directTool === "extrude_3d" ? "EXT" : "+Z"}
-                </text>
-              </g>
 
-              {/* Pivô Central Móvel com Retículo e 4 Setas (Draggable Central Pivot) */}
-              <g
-                className="pointer-events-auto cursor-move"
-                style={{ touchAction: "none" }}
-                onPointerDown={(ev) =>
-                  handleAxisPointerDown("pivot", 0, 0, 1, ev)
-                }
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  triggerHaptic("selection");
-                  setIsPickingPivotSnap((p) => !p);
-                }}
-              >
-                <line
-                  x1={gizmoScreen.origin.x - 12}
-                  y1={gizmoScreen.origin.y}
-                  x2={gizmoScreen.origin.x + 12}
-                  y2={gizmoScreen.origin.y}
-                  stroke={isPickingPivotSnap ? "#F59E0B" : "#00B4D8"}
-                  strokeWidth={1.8}
+                {/* Alça Planar (Move simultâneo em XY sem alterar Z) */}
+                <polygon
+                  points={`${gizmoScreen.planarQuad.p0.x},${gizmoScreen.planarQuad.p0.y} ${gizmoScreen.planarQuad.p1.x},${gizmoScreen.planarQuad.p1.y} ${gizmoScreen.planarQuad.p2.x},${gizmoScreen.planarQuad.p2.y} ${gizmoScreen.planarQuad.p3.x},${gizmoScreen.planarQuad.p3.y}`}
+                  fill="rgba(245, 158, 11, 0.28)"
+                  stroke="#F59E0B"
+                  strokeWidth={1.5}
+                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(ev) =>
+                    handleAxisPointerDown("planar", 1, 0, gizmoScreen.x.pixelsPerMm, ev)
+                  }
+                  onClick={(ev) => ev.stopPropagation()}
                 />
-                <line
-                  x1={gizmoScreen.origin.x}
-                  y1={gizmoScreen.origin.y - 12}
-                  x2={gizmoScreen.origin.x}
-                  y2={gizmoScreen.origin.y + 12}
-                  stroke={isPickingPivotSnap ? "#F59E0B" : "#00B4D8"}
-                  strokeWidth={1.8}
-                />
+
+                {/* Disco Transferidor Circular com Marcadores a Cada 15° / 45° / 90° / 180° */}
                 <circle
                   cx={gizmoScreen.origin.x}
                   cy={gizmoScreen.origin.y}
-                  r={6.5}
-                  fill={isPickingPivotSnap ? "#F59E0B" : "#00B4D8"}
-                  stroke={isDark ? "#0F172A" : "#FFFFFF"}
-                  strokeWidth={2}
+                  r={48}
+                  fill="none"
+                  stroke="#00B4D8"
+                  strokeWidth={
+                    activeAxis === "rot_x" || activeAxis === "rot_y" || activeAxis === "rot_z"
+                      ? 2.2
+                      : 1.4
+                  }
+                  strokeDasharray="3 3"
+                  opacity={
+                    activeAxis === "rot_x" || activeAxis === "rot_y" || activeAxis === "rot_z"
+                      ? 0.95
+                      : 0.7
+                  }
                 />
-              </g>
+                {[0, 15, 30, 45, 60, 75, 90, 135, 180, 225, 270, 315].map((deg) => {
+                  const rad = (deg * Math.PI) / 180;
+                  const tx1 = gizmoScreen.origin.x + Math.cos(rad) * (deg % 45 === 0 ? 41 : 44);
+                  const ty1 = gizmoScreen.origin.y + Math.sin(rad) * (deg % 45 === 0 ? 41 : 44);
+                  const tx2 = gizmoScreen.origin.x + Math.cos(rad) * 48;
+                  const ty2 = gizmoScreen.origin.y + Math.sin(rad) * 48;
+                  return (
+                    <line
+                      key={deg}
+                      x1={tx1}
+                      y1={ty1}
+                      x2={tx2}
+                      y2={ty2}
+                      stroke="#00B4D8"
+                      strokeWidth={deg % 45 === 0 ? 2 : 1}
+                      opacity={0.85}
+                    />
+                  );
+                })}
 
-              {/* Feedback de Delta durante arraste */}
-              {activeAxis && (
+                {/* 3 Arcos Curvos de Rotação (Rotacionar nos 3 Eixos: Z, X, Y) */}
+                {/* Arco de Rotação Z no Plano XY */}
+                <path
+                  data-testid="chamfer-gizmo-rot-z"
+                  d={`M ${gizmoScreen.origin.x + gizmoScreen.x.ux * 42} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 42} A 42 42 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.y.ux * 42} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 42}`}
+                  fill="none"
+                  stroke="#F59E0B"
+                  strokeWidth={activeAxis === "rot_z" ? 4.2 : 3}
+                  strokeLinecap="round"
+                  markerEnd="url(#gizmo-arrow-amber)"
+                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(ev) => handleAxisPointerDown("rot_z", 0, 0, 1, ev)}
+                  onClick={(ev) => ev.stopPropagation()}
+                />
+                {/* Arco de Rotação X no Plano YZ */}
+                <path
+                  data-testid="chamfer-gizmo-rot-x"
+                  d={`M ${gizmoScreen.origin.x + gizmoScreen.y.ux * 38} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 38} A 38 38 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.z.ux * 38} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 38}`}
+                  fill="none"
+                  stroke="#EF4444"
+                  strokeWidth={activeAxis === "rot_x" ? 4.2 : 2.6}
+                  strokeLinecap="round"
+                  markerEnd="url(#gizmo-arrow-x)"
+                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(ev) => handleAxisPointerDown("rot_x", 0, 0, 1, ev)}
+                  onClick={(ev) => ev.stopPropagation()}
+                />
+                {/* Arco de Rotação Y no Plano XZ */}
+                <path
+                  data-testid="chamfer-gizmo-rot-y"
+                  d={`M ${gizmoScreen.origin.x + gizmoScreen.z.ux * 38} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 38} A 38 38 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.x.ux * 38} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 38}`}
+                  fill="none"
+                  stroke="#22C55E"
+                  strokeWidth={activeAxis === "rot_y" ? 4.2 : 2.6}
+                  strokeLinecap="round"
+                  markerEnd="url(#gizmo-arrow-y)"
+                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(ev) => handleAxisPointerDown("rot_y", 0, 0, 1, ev)}
+                  onClick={(ev) => ev.stopPropagation()}
+                />
+
+                {/* Eixo X (Vermelho) */}
                 <g
-                  transform={`translate(${gizmoScreen.origin.x}, ${gizmoScreen.origin.y - 24})`}
+                  data-testid="chamfer-gizmo-axis-x"
+                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(ev) =>
+                    handleAxisPointerDown(
+                      "x",
+                      gizmoScreen.x.ux,
+                      gizmoScreen.x.uy,
+                      gizmoScreen.x.pixelsPerMm,
+                      ev,
+                    )
+                  }
+                  onClick={(ev) => ev.stopPropagation()}
                 >
-                  <rect
-                    x={-56}
-                    y={-11}
-                    width={112}
-                    height={20}
-                    rx={6}
-                    fill={isDark ? "#0B1220" : "#FFFFFF"}
-                    stroke="#00B4D8"
-                    strokeWidth={1.2}
+                  <line
+                    x1={gizmoScreen.origin.x}
+                    y1={gizmoScreen.origin.y}
+                    x2={gizmoScreen.x.endX}
+                    y2={gizmoScreen.x.endY}
+                    stroke="rgba(0,0,0,0.001)"
+                    strokeWidth={28}
+                    style={{ pointerEvents: "stroke" }}
+                  />
+                  <line
+                    x1={gizmoScreen.origin.x}
+                    y1={gizmoScreen.origin.y}
+                    x2={gizmoScreen.x.endX}
+                    y2={gizmoScreen.x.endY}
+                    stroke="#EF4444"
+                    strokeWidth={activeAxis === "x" ? 3.75 : 2.5}
+                    markerEnd="url(#gizmo-arrow-x)"
+                    style={{ pointerEvents: "stroke" }}
+                  />
+                  <circle
+                    cx={gizmoScreen.x.endX + gizmoScreen.x.ux * 10}
+                    cy={gizmoScreen.x.endY + gizmoScreen.x.uy * 10}
+                    r={14}
+                    fill="rgba(239, 68, 68, 0.15)"
+                    stroke="rgba(239, 68, 68, 0.45)"
+                    strokeWidth={1}
+                    style={{ pointerEvents: "all" }}
+                    className="cursor-pointer"
                   />
                   <text
-                    x={0}
-                    y={1}
-                    fill={isDark ? "#F8FAFC" : "#0F172A"}
+                    x={gizmoScreen.x.endX + gizmoScreen.x.ux * 10}
+                    y={gizmoScreen.x.endY + gizmoScreen.x.uy * 10}
+                    fill="#EF4444"
                     fontSize="10"
                     fontWeight="bold"
                     fontFamily="monospace"
                     textAnchor="middle"
                     dominantBaseline="central"
+                    style={{ pointerEvents: "none" }}
                   >
-                    {activeAxis === "extrude" || activeAxis === "face_normal"
-                      ? `H: ${((primaryBody?.extrudeHeightMm ?? sheetThickness) + dragDeltaMm).toFixed(1)} mm`
-                      : activeAxis === "rot_x" || activeAxis === "rot_y" || activeAxis === "rot_z" || activeAxis === "miter"
-                        ? `∠ ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm}°`
-                        : activeAxis === "planar"
-                          ? `ΔXY: ${dragDeltaMm} mm`
-                          : `Δ${activeAxis.toUpperCase()}: ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm} mm`}
+                    +X
                   </text>
                 </g>
-              )}
-            </g>
-          )}
+
+                {/* Eixo Y (Verde) */}
+                <g
+                  data-testid="chamfer-gizmo-axis-y"
+                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(ev) =>
+                    handleAxisPointerDown(
+                      "y",
+                      gizmoScreen.y.ux,
+                      gizmoScreen.y.uy,
+                      gizmoScreen.y.pixelsPerMm,
+                      ev,
+                    )
+                  }
+                  onClick={(ev) => ev.stopPropagation()}
+                >
+                  <line
+                    x1={gizmoScreen.origin.x}
+                    y1={gizmoScreen.origin.y}
+                    x2={gizmoScreen.y.endX}
+                    y2={gizmoScreen.y.endY}
+                    stroke="rgba(0,0,0,0.001)"
+                    strokeWidth={28}
+                    style={{ pointerEvents: "stroke" }}
+                  />
+                  <line
+                    x1={gizmoScreen.origin.x}
+                    y1={gizmoScreen.origin.y}
+                    x2={gizmoScreen.y.endX}
+                    y2={gizmoScreen.y.endY}
+                    stroke="#22C55E"
+                    strokeWidth={activeAxis === "y" ? 3.75 : 2.5}
+                    markerEnd="url(#gizmo-arrow-y)"
+                    style={{ pointerEvents: "stroke" }}
+                  />
+                  <circle
+                    cx={gizmoScreen.y.endX + gizmoScreen.y.ux * 10}
+                    cy={gizmoScreen.y.endY + gizmoScreen.y.uy * 10}
+                    r={14}
+                    fill="rgba(34, 197, 94, 0.15)"
+                    stroke="rgba(34, 197, 94, 0.45)"
+                    strokeWidth={1}
+                    style={{ pointerEvents: "all" }}
+                    className="cursor-pointer"
+                  />
+                  <text
+                    x={gizmoScreen.y.endX + gizmoScreen.y.ux * 10}
+                    y={gizmoScreen.y.endY + gizmoScreen.y.uy * 10}
+                    fill="#22C55E"
+                    fontSize="10"
+                    fontWeight="bold"
+                    fontFamily="monospace"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    style={{ pointerEvents: "none" }}
+                  >
+                    +Y
+                  </text>
+                </g>
+
+                {/* Eixo Z / Seta de Elevação / Extrusão (Ciano Técnico #00B4D8) */}
+                <g
+                  data-testid="chamfer-gizmo-axis-z"
+                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(ev) =>
+                    handleAxisPointerDown(
+                      directTool === "extrude_3d" && selectionKind3D !== "body"
+                        ? "extrude"
+                        : "z",
+                      gizmoScreen.z.ux,
+                      gizmoScreen.z.uy,
+                      gizmoScreen.z.pixelsPerMm,
+                      ev,
+                    )
+                  }
+                  onClick={(ev) => ev.stopPropagation()}
+                >
+                  <line
+                    x1={gizmoScreen.origin.x}
+                    y1={gizmoScreen.origin.y}
+                    x2={gizmoScreen.z.endX}
+                    y2={gizmoScreen.z.endY}
+                    stroke="rgba(0,0,0,0.001)"
+                    strokeWidth={28}
+                    style={{ pointerEvents: "stroke" }}
+                  />
+                  <line
+                    x1={gizmoScreen.origin.x}
+                    y1={gizmoScreen.origin.y}
+                    x2={gizmoScreen.z.endX}
+                    y2={gizmoScreen.z.endY}
+                    stroke="#00B4D8"
+                    strokeWidth={
+                      activeAxis === "z" || activeAxis === "extrude" ? 4 : 2.75
+                    }
+                    markerEnd="url(#gizmo-arrow-z)"
+                    style={{ pointerEvents: "stroke" }}
+                  />
+                  <circle
+                    cx={gizmoScreen.z.endX + gizmoScreen.z.ux * 12}
+                    cy={gizmoScreen.z.endY + gizmoScreen.z.uy * 12}
+                    r={14}
+                    fill="rgba(0, 180, 216, 0.15)"
+                    stroke="rgba(0, 180, 216, 0.45)"
+                    strokeWidth={1}
+                    style={{ pointerEvents: "all" }}
+                    className="cursor-pointer"
+                  />
+                  <text
+                    x={gizmoScreen.z.endX + gizmoScreen.z.ux * 12}
+                    y={gizmoScreen.z.endY + gizmoScreen.z.uy * 12}
+                    fill="#00B4D8"
+                    fontSize="10"
+                    fontWeight="bold"
+                    fontFamily="monospace"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    style={{ pointerEvents: "none" }}
+                  >
+                    {directTool === "extrude_3d" && selectionKind3D !== "body"
+                      ? "EXT"
+                      : "+Z"}
+                  </text>
+                </g>
+
+                {/* Botão Circular Flutuante de Multiplicação ("Copy") Acoplado ao Manipulador (Seção 2.1) */}
+                <g
+                  data-testid="chamfer-gizmo-inline-copy-btn"
+                  transform={`translate(${gizmoScreen.origin.x - 52}, ${gizmoScreen.origin.y + 42})`}
+                  className="pointer-events-auto cursor-pointer"
+                  onPointerDown={(ev) => {
+                    ev.stopPropagation();
+                    ev.preventDefault();
+                  }}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    triggerHaptic("selection");
+                    setCopyOnTransform((c) => !c);
+                  }}
+                >
+                  <circle
+                    cx={0}
+                    cy={0}
+                    r={15}
+                    fill={copyOnTransform ? "#059669" : "#0B1220"}
+                    stroke={copyOnTransform ? "#34D399" : "#00B4D8"}
+                    strokeWidth={2}
+                  />
+                  <rect
+                    x={-5.5}
+                    y={-5.5}
+                    width={7.5}
+                    height={7.5}
+                    rx={1.5}
+                    fill="none"
+                    stroke={copyOnTransform ? "#FFFFFF" : "#38BDF8"}
+                    strokeWidth={1.5}
+                  />
+                  <rect
+                    x={-1.5}
+                    y={-1.5}
+                    width={7.5}
+                    height={7.5}
+                    rx={1.5}
+                    fill={copyOnTransform ? "#059669" : "#0B1220"}
+                    stroke={copyOnTransform ? "#FFFFFF" : "#38BDF8"}
+                    strokeWidth={1.5}
+                  />
+                  <rect
+                    x={-26}
+                    y={18}
+                    width={52}
+                    height={14}
+                    rx={4}
+                    fill="#060A12"
+                    stroke={copyOnTransform ? "#10B981" : "rgba(0, 180, 216, 0.5)"}
+                    strokeWidth={1}
+                  />
+                  <text
+                    x={0}
+                    y={25.5}
+                    fill={copyOnTransform ? "#34D399" : "#94A3B8"}
+                    fontSize="8"
+                    fontWeight="bold"
+                    fontFamily="monospace"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
+                    {copyOnTransform ? "COPY: ON" : "COPY"}
+                  </text>
+                </g>
+
+                {/* Pivô Central Móvel com Esfera/Alvo e 4 Setinhas Direcionais (Seção 3.2) */}
+                <g
+                  data-testid="chamfer-gizmo-pivot-handle"
+                  className="pointer-events-auto cursor-move"
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(ev) =>
+                    handleAxisPointerDown("pivot", 0, 0, 1, ev)
+                  }
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    triggerHaptic("selection");
+                    setIsPickingPivotSnap((p) => !p);
+                  }}
+                >
+                  <line
+                    x1={gizmoScreen.origin.x - 13}
+                    y1={gizmoScreen.origin.y}
+                    x2={gizmoScreen.origin.x + 13}
+                    y2={gizmoScreen.origin.y}
+                    stroke={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
+                    strokeWidth={1.8}
+                  />
+                  <line
+                    x1={gizmoScreen.origin.x}
+                    y1={gizmoScreen.origin.y - 13}
+                    x2={gizmoScreen.origin.x}
+                    y2={gizmoScreen.origin.y + 13}
+                    stroke={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
+                    strokeWidth={1.8}
+                  />
+                  {/* 4 pequenas setinhas direcionais no pivô central */}
+                  <polygon
+                    points={`${gizmoScreen.origin.x},${gizmoScreen.origin.y - 15} ${gizmoScreen.origin.x - 2.5},${gizmoScreen.origin.y - 11} ${gizmoScreen.origin.x + 2.5},${gizmoScreen.origin.y - 11}`}
+                    fill={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
+                  />
+                  <polygon
+                    points={`${gizmoScreen.origin.x},${gizmoScreen.origin.y + 15} ${gizmoScreen.origin.x - 2.5},${gizmoScreen.origin.y + 11} ${gizmoScreen.origin.x + 2.5},${gizmoScreen.origin.y + 11}`}
+                    fill={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
+                  />
+                  <polygon
+                    points={`${gizmoScreen.origin.x - 15},${gizmoScreen.origin.y} ${gizmoScreen.origin.x - 11},${gizmoScreen.origin.y - 2.5} ${gizmoScreen.origin.x - 11},${gizmoScreen.origin.y + 2.5}`}
+                    fill={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
+                  />
+                  <polygon
+                    points={`${gizmoScreen.origin.x + 15},${gizmoScreen.origin.y} ${gizmoScreen.origin.x + 11},${gizmoScreen.origin.y - 2.5} ${gizmoScreen.origin.x + 11},${gizmoScreen.origin.y + 2.5}`}
+                    fill={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
+                  />
+                  <circle
+                    cx={gizmoScreen.origin.x}
+                    cy={gizmoScreen.origin.y}
+                    r={6.5}
+                    fill={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
+                    stroke={isDark ? "#0F172A" : "#FFFFFF"}
+                    strokeWidth={2}
+                  />
+                </g>
+
+                {/* Feedback de Delta / Snap do Pivô durante arraste */}
+                {activeAxis && (
+                  <g
+                    transform={`translate(${gizmoScreen.origin.x}, ${gizmoScreen.origin.y - 24})`}
+                  >
+                    <rect
+                      x={-72}
+                      y={-11}
+                      width={144}
+                      height={20}
+                      rx={6}
+                      fill={isDark ? "#0B1220" : "#FFFFFF"}
+                      stroke={copyOnTransform ? "#10B981" : "#00B4D8"}
+                      strokeWidth={1.3}
+                    />
+                    <text
+                      x={0}
+                      y={1}
+                      fill={isDark ? "#F8FAFC" : "#0F172A"}
+                      fontSize="10"
+                      fontWeight="bold"
+                      fontFamily="monospace"
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                    >
+                      {activeAxis === "pivot"
+                        ? snappedPivotLabel ?? "Pivô Móvel (Snap)"
+                        : activeAxis === "extrude" || activeAxis === "face_normal"
+                          ? `H: ${((primaryBody?.extrudeHeightMm ?? sheetThickness) + dragDeltaMm).toFixed(1)} mm`
+                          : activeAxis === "rot_x" ||
+                              activeAxis === "rot_y" ||
+                              activeAxis === "rot_z" ||
+                              activeAxis === "miter"
+                            ? `∠ ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm}°`
+                            : activeAxis === "planar"
+                              ? `${copyOnTransform ? "COPY " : ""}ΔXY: ${dragDeltaMm} mm`
+                              : `${copyOnTransform ? "COPY " : ""}Δ${activeAxis.toUpperCase()}: ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm} mm`}
+                    </text>
+                  </g>
+                )}
+              </g>
+            )}
         </svg>
       )}
 
@@ -2338,7 +3911,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   "OFFSET",
                   "OFFSET FACE",
                   "mm",
-                  25,
+                  lastCompletedDrag?.axis === "face_normal"
+                    ? lastCompletedDrag.deltaMm
+                    : 25,
                   "offsetFaceDistance",
                   primaryBody.entityId,
                   offsetFaceTarget,
@@ -2353,16 +3928,31 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   primaryBody.entityId,
                   miterEndTarget,
                 );
-              } else if (directTool === "transform_3d") {
+              } else if (
+                directTool === "transform_3d" ||
+                selectionKind3D === "body"
+              ) {
+                const defaultAxis =
+                  lastCompletedDrag?.axis === "y"
+                    ? "y"
+                    : lastCompletedDrag?.axis === "z"
+                      ? "z"
+                      : transformAxisTarget;
                 openFloatingNumpad(
                   "DISTANCE",
-                  `TRANSLADAR +${transformAxisTarget.toUpperCase()}`,
+                  copyOnTransform || lastCompletedDrag?.copyMode
+                    ? `CÓPIA DIST +${defaultAxis.toUpperCase()}`
+                    : `TRANSLADAR +${defaultAxis.toUpperCase()}`,
                   "mm",
-                  100,
-                  transformAxisTarget === "x" ? "moveX" : transformAxisTarget === "y" ? "moveY" : "moveZ",
-                  primaryBody.entityId,
+                  lastCompletedDrag?.deltaMm || 100,
+                  defaultAxis === "x"
+                    ? "moveX"
+                    : defaultAxis === "y"
+                      ? "moveY"
+                      : "moveZ",
+                  (lastCompletedDrag?.activeResultIds[0] ?? primaryBody.entityId),
                   undefined,
-                  copyOnTransform,
+                  copyOnTransform || Boolean(lastCompletedDrag?.copyMode),
                 );
               } else {
                 openFloatingNumpad(
@@ -2386,16 +3976,20 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 : directTool === "shell_3d"
                   ? `${(primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75).toFixed(1)} mm`
                   : directTool === "offset_face_3d"
-                    ? `+25.0 mm`
+                    ? lastCompletedDrag?.axis === "face_normal"
+                      ? `${lastCompletedDrag.deltaMm >= 0 ? "+" : ""}${lastCompletedDrag.deltaMm} mm`
+                      : `+25.0 mm`
                     : directTool === "rotate_axis_3d"
                       ? `∠ ${(primaryBody.miterCutTopDeg || 45).toFixed(0)}°`
-                      : directTool === "transform_3d"
-                        ? `Δ${transformAxisTarget.toUpperCase()} mm`
+                      : directTool === "transform_3d" || selectionKind3D === "body"
+                        ? lastCompletedDrag
+                          ? `Δ${lastCompletedDrag.axis.toUpperCase()} ${lastCompletedDrag.deltaMm} mm`
+                          : `Δ${transformAxisTarget.toUpperCase()} mm`
                         : `${primaryBody.extrudeHeightMm.toFixed(1)} mm`}
             </span>
           </button>
 
-          {/* Quick toggle Fillet vs Chamfer */}
+          {/* Quick toggle Fillet vs Chamfer vs Mover Aresta */}
           {(directTool === "fillet_3d" || directTool === "chamfer_3d") && (
             <button
               type="button"
@@ -2406,13 +4000,28 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               onClick={(ev) => {
                 ev.stopPropagation();
                 triggerHaptic("selection");
-                setFilletOrChamferMode((m) => (m === "fillet" ? "chamfer" : "fillet"));
-                setDirectTool(filletOrChamferMode === "fillet" ? "chamfer_3d" : "fillet_3d");
+                if (edgeActionMode === "fillet") {
+                  setEdgeActionMode("chamfer");
+                  setFilletOrChamferMode("chamfer");
+                  setDirectTool("chamfer_3d");
+                } else if (edgeActionMode === "chamfer") {
+                  setEdgeActionMode("transform_edge");
+                } else {
+                  setEdgeActionMode("fillet");
+                  setFilletOrChamferMode("fillet");
+                  setDirectTool("fillet_3d");
+                }
               }}
               style={themeSurfaceStyle}
               className="flex items-center gap-1 rounded-full border border-cyan-500/50 px-2 py-0.5 font-mono text-[10px] font-bold shadow-md cursor-pointer hover:bg-cyan-500/20"
             >
-              <span>{filletOrChamferMode === "fillet" ? "Fillet (Raio)" : "Chanfro 45°"}</span>
+              <span>
+                {edgeActionMode === "fillet"
+                  ? "Raio (Fillet)"
+                  : edgeActionMode === "chamfer"
+                    ? "Chanfro 45°"
+                    : "Mover Aresta"}
+              </span>
             </button>
           )}
 
@@ -2486,7 +4095,13 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       triggerHaptic("action");
                       setMirrorPlanePopupOpen(false);
                       onCommitEntities?.((prev) => {
-                        const res = applyDirectMirror3DToEntities(prev, activeTargetEntityIds, pl, copyOnTransform);
+                        const res = applyDirectMirror3DToEntities(
+                          prev,
+                          activeTargetEntityIds,
+                          pl,
+                          copyOnTransform,
+                          subSel.activePivot3D,
+                        );
                         return res.updatedEntities;
                       }, activeTargetEntityIds);
                     }}
@@ -2523,6 +4138,80 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           </button>
         </div>
       )}
+
+      {/* =====================================================================
+          3B. BARRA INFERIOR COMPACTA DE TELEMETRIA DA SELEÇÃO 3D (FACE / ARESTA / CORPO)
+          ===================================================================== */}
+      {is3DEnvironment &&
+        tool !== "loft_3d" &&
+        (subSel.faceIds.length > 0 ||
+          subSel.edgeIds.length > 0 ||
+          subSel.bodyIds.length > 0) && (
+          <div
+            data-testid="chamfer-3d-selection-telemetry-bar"
+            style={{
+              ...themeSurfaceStyle,
+              bottom: "14px",
+              maxWidth: "calc(100% - 32px)",
+            }}
+            onPointerDown={(ev) => {
+              ev.stopPropagation();
+              ev.preventDefault();
+            }}
+            className="pointer-events-auto absolute left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-cyan-500/50 px-3.5 py-1 font-mono text-[10.5px] font-bold shadow-lg backdrop-blur-md select-none"
+          >
+            <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[9.5px] font-extrabold text-cyan-400 border border-cyan-500/40">
+              {selectionKind3D === "face"
+                ? "FACE"
+                : selectionKind3D === "edge"
+                  ? "ARESTA"
+                  : selectionKind3D === "hinge"
+                    ? "DOBRADIÇA"
+                    : "CORPO"}
+            </span>
+            <span className="text-slate-100 truncate">
+              {formatSubElementTelemetry3D(scene, subSel)}
+            </span>
+            {primaryBody && selectionKind3D !== "body" && (
+              <button
+                type="button"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  triggerHaptic("selection");
+                  setSubSel({
+                    faceIds: [],
+                    edgeIds: [],
+                    bodyIds: [primaryBody.bodyId],
+                    activePivot3D: primaryBody.center3D,
+                    activeHingeEdgeId: null,
+                  });
+                  setDirectTool("transform_3d");
+                }}
+                className="rounded-full bg-slate-800 hover:bg-cyan-600/30 border border-cyan-500/40 px-2 py-0.5 text-[9.5px] text-cyan-300 cursor-pointer"
+              >
+                Selecionar Corpo Inteiro
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                setLastCompletedDrag(null);
+                setSubSel({
+                  faceIds: [],
+                  edgeIds: [],
+                  bodyIds: [],
+                  activePivot3D: null,
+                  activeHingeEdgeId: null,
+                });
+              }}
+              className="rounded-full px-1.5 py-0.5 text-[10px] text-slate-400 hover:text-white cursor-pointer"
+              title="Limpar seleção 3D"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
       {/* =====================================================================
           4. TECLADO NUMÉRICO FLUTUANTE COMPACTO (196px — CENTRALIZADO E PROTEGIDO)
@@ -2687,704 +4376,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           </div>
         </div>
       )}
-
-      {/* =====================================================================
-          5. DOCK CONTEXTUAL INFERIOR ÚNICO E ENXUTO (SEM CORTES LATERAIS — SEÇÃO 4)
-          ===================================================================== */}
-      {is3DEnvironment &&
-        directTool !== "select_3d" &&
-        tool !== "loft_3d" &&
-        primaryBody && (
-          <div
-            data-testid="chamfer-3d-subelement-Contextual-bar"
-            style={{
-              ...themeSurfaceStyle,
-              bottom: "14px",
-              maxWidth: "calc(100% - 48px)",
-              height: "42px",
-            }}
-            onPointerDown={(ev) => ev.stopPropagation()}
-            onClick={(ev) => ev.stopPropagation()}
-            className="pointer-events-auto absolute left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none rounded-full border px-3 shadow-lg backdrop-blur-md"
-          >
-            {directTool === "extrude_3d" && (
-              <>
-                {(
-                  [
-                    { id: "new_body", label: "Novo Corpo" },
-                    { id: "union", label: "União" },
-                    { id: "subtract", label: "Subtrair" },
-                  ] as const
-                ).map((bm) => (
-                  <button
-                    key={bm.id}
-                    type="button"
-                    onPointerDown={(ev) => {
-                      ev.stopPropagation();
-                      ev.preventDefault();
-                    }}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      triggerHaptic("selection");
-                      setBooleanMode(bm.id);
-                      onCommitEntities?.((prev) =>
-                        applyDirectExtrudeToEntities(
-                          prev,
-                          activeTargetEntityIds,
-                          primaryBody.extrudeHeightMm,
-                          bm.id,
-                        ),
-                        activeTargetEntityIds,
-                      );
-                    }}
-                    className={pillBtnClass(booleanMode === bm.id)}
-                  >
-                    {bm.label}
-                  </button>
-                ))}
-                <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-400/30" />
-                {[20, 50, 100, 490].map((hVal) => (
-                  <button
-                    key={hVal}
-                    type="button"
-                    onPointerDown={(ev) => {
-                      ev.stopPropagation();
-                      ev.preventDefault();
-                    }}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      triggerHaptic("action");
-                      onCommitEntities?.((prev) =>
-                        applyDirectExtrudeToEntities(
-                          prev,
-                          activeTargetEntityIds,
-                          hVal,
-                          booleanMode,
-                        ),
-                        activeTargetEntityIds,
-                      );
-                    }}
-                    className={pillBtnClass(
-                      Math.abs(primaryBody.extrudeHeightMm - hVal) < 0.5,
-                    )}
-                  >
-                    {hVal}mm
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    openFloatingNumpad(
-                      "EXTRUSION",
-                      "EXTRUDE",
-                      "mm",
-                      primaryBody.extrudeHeightMm,
-                      "extrudeHeight",
-                      primaryBody.entityId,
-                    );
-                  }}
-                  className={pillBtnClass(false)}
-                >
-                  Digitar ⌨️
-                </button>
-              </>
-            )}
-
-            {(directTool === "fillet_3d" || directTool === "chamfer_3d") && (
-              <>
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    setFilletOrChamferMode("fillet");
-                    setDirectTool("fillet_3d");
-                  }}
-                  className={pillBtnClass(filletOrChamferMode === "fillet")}
-                >
-                  Fillet (R)
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    setFilletOrChamferMode("chamfer");
-                    setDirectTool("chamfer_3d");
-                  }}
-                  className={pillBtnClass(filletOrChamferMode === "chamfer")}
-                >
-                  Chamfer (45°)
-                </button>
-                <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-400/30" />
-                {[0, 5, 10, 15, 20].map((val) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onPointerDown={(ev) => {
-                      ev.stopPropagation();
-                      ev.preventDefault();
-                    }}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      triggerHaptic("action");
-                      onCommitEntities?.((prev) =>
-                        applyDirectFilletOrChamfer3DToEntities(
-                          prev,
-                          activeTargetEntityIds,
-                          filletOrChamferMode,
-                          val,
-                        ),
-                        activeTargetEntityIds,
-                      );
-                    }}
-                    className={pillBtnClass(
-                      (filletOrChamferMode === "fillet"
-                        ? primaryBody.edgeFilletRadiusMm
-                        : primaryBody.edgeChamferDistMm) === val,
-                    )}
-                  >
-                    {val === 0
-                      ? "Reto"
-                      : `${filletOrChamferMode === "fillet" ? "R" : "D"}${val}mm`}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    openFloatingNumpad(
-                      filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
-                      filletOrChamferMode === "fillet" ? "RAIO FILLET" : "CHANFRO 45°",
-                      "mm",
-                      filletOrChamferMode === "fillet"
-                        ? primaryBody.edgeFilletRadiusMm || 10
-                        : primaryBody.edgeChamferDistMm || 10,
-                      filletOrChamferMode === "fillet" ? "filletRadius" : "chamferDistance",
-                      primaryBody.entityId,
-                    );
-                  }}
-                  className={pillBtnClass(false)}
-                >
-                  Digitar ⌨️
-                </button>
-              </>
-            )}
-
-            {directTool === "shell_3d" && (
-              <>
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    setShellOpenCapsMode("both_ends");
-                    onCommitEntities?.((prev) =>
-                      applyDirectShell3DToEntities(
-                        prev,
-                        activeTargetEntityIds,
-                        primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75,
-                        ["top", "bottom"],
-                      ),
-                      activeTargetEntityIds,
-                    );
-                  }}
-                  className={pillBtnClass(shellOpenCapsMode === "both_ends")}
-                >
-                  Tubo Vazado (2 Faces)
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    setShellOpenCapsMode("top_only");
-                    onCommitEntities?.((prev) =>
-                      applyDirectShell3DToEntities(
-                        prev,
-                        activeTargetEntityIds,
-                        primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75,
-                        ["top"],
-                      ),
-                      activeTargetEntityIds,
-                    );
-                  }}
-                  className={pillBtnClass(shellOpenCapsMode === "top_only")}
-                >
-                  Caixa Oca (1 Face)
-                </button>
-                <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-400/30" />
-                {[2, 3, 4.75, 6, 8].map((wVal) => (
-                  <button
-                    key={wVal}
-                    type="button"
-                    onPointerDown={(ev) => {
-                      ev.stopPropagation();
-                      ev.preventDefault();
-                    }}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      triggerHaptic("action");
-                      const caps: ("top" | "bottom")[] =
-                        shellOpenCapsMode === "both_ends" ? ["top", "bottom"] : ["top"];
-                      onCommitEntities?.((prev) =>
-                        applyDirectShell3DToEntities(prev, activeTargetEntityIds, wVal, caps),
-                        activeTargetEntityIds,
-                      );
-                    }}
-                    className={pillBtnClass(
-                      Math.abs((primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 0) - wVal) < 0.2,
-                    )}
-                  >
-                    {wVal}mm
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    openFloatingNumpad(
-                      "THICKNESS",
-                      "PAREDE CASCA",
-                      "mm",
-                      primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75,
-                      "shellWallThickness",
-                      primaryBody.entityId,
-                    );
-                  }}
-                  className={pillBtnClass(false)}
-                >
-                  Digitar ⌨️
-                </button>
-              </>
-            )}
-
-            {directTool === "offset_face_3d" && (
-              <>
-                {(
-                  [
-                    { id: "top" as const, label: "Topo (+Z)" },
-                    { id: "bottom" as const, label: "Base (-Z)" },
-                    { id: "sides" as const, label: "4 Laterais" },
-                  ] as const
-                ).map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onPointerDown={(ev) => {
-                      ev.stopPropagation();
-                      ev.preventDefault();
-                    }}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      setOffsetFaceTarget(t.id);
-                    }}
-                    className={pillBtnClass(offsetFaceTarget === t.id)}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-                <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-400/30" />
-                {[-25, 25, 50, 100, 599].map((dVal) => (
-                  <button
-                    key={dVal}
-                    type="button"
-                    onPointerDown={(ev) => {
-                      ev.stopPropagation();
-                      ev.preventDefault();
-                    }}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      triggerHaptic("action");
-                      onCommitEntities?.((prev) =>
-                        applyDirectOffsetFace3DToEntities(
-                          prev,
-                          activeTargetEntityIds,
-                          offsetFaceTarget,
-                          dVal,
-                        ),
-                        activeTargetEntityIds,
-                      );
-                    }}
-                    className={pillBtnClass(false)}
-                  >
-                    {dVal > 0 ? `+${dVal}mm` : `${dVal}mm`}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    openFloatingNumpad(
-                      "OFFSET",
-                      "OFFSET FACE",
-                      "mm",
-                      25,
-                      "offsetFaceDistance",
-                      primaryBody.entityId,
-                      offsetFaceTarget,
-                    );
-                  }}
-                  className={pillBtnClass(false)}
-                >
-                  Digitar ⌨️
-                </button>
-              </>
-            )}
-
-            {directTool === "rotate_axis_3d" && (
-              <>
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    setMiterEndTarget("top");
-                  }}
-                  className={pillBtnClass(miterEndTarget === "top")}
-                >
-                  Topo (+Z)
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    setMiterEndTarget("bottom");
-                  }}
-                  className={pillBtnClass(miterEndTarget === "bottom")}
-                >
-                  Base (-Z)
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    setMiterAxis((a) => (a === "x" ? "y" : "x"));
-                  }}
-                  className={pillBtnClass(true)}
-                >
-                  Eixo {miterAxis.toUpperCase()}
-                </button>
-                <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-400/30" />
-                {[-45, -30, 0, 30, 45].map((ang) => (
-                  <button
-                    key={ang}
-                    type="button"
-                    onPointerDown={(ev) => {
-                      ev.stopPropagation();
-                      ev.preventDefault();
-                    }}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      triggerHaptic("action");
-                      onCommitEntities?.((prev) =>
-                        applyDirectMiterCut3DToEntities(
-                          prev,
-                          activeTargetEntityIds,
-                          miterEndTarget,
-                          ang,
-                          miterAxis,
-                        ),
-                        activeTargetEntityIds,
-                      );
-                    }}
-                    className={pillBtnClass(
-                      (miterEndTarget === "top"
-                        ? primaryBody.miterCutTopDeg
-                        : primaryBody.miterCutBottomDeg) === ang,
-                    )}
-                  >
-                    {ang > 0 ? `+${ang}°` : `${ang}°`}
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    openFloatingNumpad(
-                      "ANGLE",
-                      "ÂNGULO CORTE",
-                      "°",
-                      45,
-                      "miterAngle",
-                      primaryBody.entityId,
-                      miterEndTarget,
-                    );
-                  }}
-                  className={pillBtnClass(false)}
-                >
-                  Digitar ⌨️
-                </button>
-              </>
-            )}
-
-            {directTool === "transform_3d" && (
-              <>
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    triggerHaptic("selection");
-                    setCopyOnTransform((c) => !c);
-                  }}
-                  className={cn(
-                    "shrink-0 rounded-full border px-3 py-1 font-mono text-[10.5px] font-bold transition-colors cursor-pointer whitespace-nowrap",
-                    copyOnTransform
-                      ? "border-emerald-400 bg-emerald-600 text-white"
-                      : pillBtnClass(false),
-                  )}
-                >
-                  Copy: {copyOnTransform ? "ON" : "OFF"}
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    triggerHaptic("selection");
-                    setIsPickingPivotSnap((p) => !p);
-                  }}
-                  className={pillBtnClass(isPickingPivotSnap)}
-                >
-                  {isPickingPivotSnap ? "Toque num Vértice..." : "Pivô Snap"}
-                </button>
-                {(["x", "y", "z"] as const).map((ax) => (
-                  <button
-                    key={ax}
-                    type="button"
-                    onPointerDown={(ev) => {
-                      ev.stopPropagation();
-                      ev.preventDefault();
-                    }}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      setTransformAxisTarget(ax);
-                    }}
-                    className={pillBtnClass(transformAxisTarget === ax)}
-                  >
-                    Eixo {ax.toUpperCase()}
-                  </button>
-                ))}
-                <span className="mx-0.5 h-4 w-px shrink-0 bg-slate-400/30" />
-                {[100, 350, 700].map((distVal) => (
-                  <button
-                    key={distVal}
-                    type="button"
-                    onPointerDown={(ev) => {
-                      ev.stopPropagation();
-                      ev.preventDefault();
-                    }}
-                    onClick={(ev) => {
-                      ev.stopPropagation();
-                      triggerHaptic("action");
-                      onCommitEntities?.((prev) => {
-                        const res = applyDirectTransform3DToEntities(
-                          prev,
-                          activeTargetEntityIds,
-                          {
-                            dx: transformAxisTarget === "x" ? distVal : 0,
-                            dy: transformAxisTarget === "y" ? distVal : 0,
-                            dz: transformAxisTarget === "z" ? distVal : 0,
-                          },
-                          copyOnTransform,
-                        );
-                        return res.updatedEntities;
-                      }, activeTargetEntityIds);
-                    }}
-                    className={pillBtnClass(false)}
-                  >
-                    +{distVal}mm
-                  </button>
-                ))}
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    triggerHaptic("action");
-                    onCommitEntities?.((prev) => {
-                      const res = applyDirectTransform3DToEntities(
-                        prev,
-                        activeTargetEntityIds,
-                        { ryDeg: 45 },
-                        copyOnTransform,
-                      );
-                      return res.updatedEntities;
-                    }, activeTargetEntityIds);
-                  }}
-                  className={pillBtnClass(false)}
-                >
-                  Girar 45°
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    openFloatingNumpad(
-                      "DISTANCE",
-                      `TRANSLADAR +${transformAxisTarget.toUpperCase()}`,
-                      "mm",
-                      700,
-                      transformAxisTarget === "x" ? "moveX" : transformAxisTarget === "y" ? "moveY" : "moveZ",
-                      primaryBody.entityId,
-                      undefined,
-                      copyOnTransform,
-                    );
-                  }}
-                  className={pillBtnClass(false)}
-                >
-                  Digitar ⌨️
-                </button>
-              </>
-            )}
-
-            {directTool === "mirror_3d" && (
-              <>
-                {(["x", "y", "z"] as const).map((pl) => (
-                  <button
-                    key={pl}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("action");
-                      onCommitEntities?.((prev) => {
-                        const res = applyDirectMirror3DToEntities(
-                          prev,
-                          activeTargetEntityIds,
-                          pl,
-                          true,
-                        );
-                        return res.updatedEntities;
-                      });
-                    }}
-                    className={pillBtnClass(false)}
-                  >
-                    Espelhar Eixo {pl.toUpperCase()}
-                  </button>
-                ))}
-              </>
-            )}
-
-            {directTool === "color_material_3d" && (
-              <>
-                {INDUSTRIAL_3D_MATERIALS.map((mat) => (
-                  <button
-                    key={mat.id}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      onCommitEntities?.((prev) =>
-                        prev.map((e) =>
-                          activeTargetEntityIds.includes(e.id)
-                            ? {
-                                ...e,
-                                params: {
-                                  ...(e.params ?? {}),
-                                  bodyColorHex: mat.colorHex,
-                                  bodyMaterial: mat.name,
-                                },
-                              }
-                            : e,
-                        ),
-                      );
-                    }}
-                    className={pillBtnClass(primaryBody.colorHex === mat.colorHex)}
-                  >
-                    <span className="inline-flex items-center gap-1.5">
-                      <span
-                        className="size-2.5 rounded-full border border-slate-400/40"
-                        style={{ backgroundColor: mat.colorHex }}
-                      />
-                      <span>{mat.name}</span>
-                    </span>
-                  </button>
-                ))}
-              </>
-            )}
-
-            {directTool === "sketch_on_face_3d" && (
-              <>
-                <span className="shrink-0 px-2 font-mono text-[10.5px] font-bold">
-                  {primaryFace?.label ?? "Face Superior (+Z)"}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("action");
-                    const targetFace = primaryFace ?? primaryBody.faces[0];
-                    if (targetFace && onSwitchTo2DSketchOnFace) {
-                      onSwitchTo2DSketchOnFace(targetFace);
-                    } else {
-                      onSetSelectionElevationZ(
-                        Math.round(primaryFace?.centroid.z ?? primaryBody.extrudeHeightMm),
-                      );
-                    }
-                  }}
-                  className="shrink-0 rounded-full bg-cyan-600 hover:bg-cyan-500 px-3 py-1 font-mono text-[10.5px] font-bold text-white cursor-pointer whitespace-nowrap"
-                >
-                  Alinhar Plano 2D na Face
-                </button>
-              </>
-            )}
-          </div>
-        )}
 
       {/* =====================================================================
           6. BARRA FLUTUANTE COMPACTA DE TRANSIÇÃO MULTISSEÇÃO (LOFT 3D)

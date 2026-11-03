@@ -1623,13 +1623,26 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setSolidOpen(false);
       setIsOrbitToolActive(true);
       if (targetMode === "3d") {
+        // Desativa ferramentas de desenho/modificação 2D ao entrar no CAD 3D
+        setTool("select");
+        setPending([]);
+        setDraft(null);
+        setPortraitDrawerOpen(false);
+        setDivideEditorOpen(false);
+        setMobileEditorOpenManual(false);
+        setActiveArrayType(null);
         setRenderStyle3D((prev) => (prev === "wireframe" ? "shaded-edges" : prev));
+        setSelection((prevSel) => {
+          if (prevSel.length > 0) return prevSel;
+          const firstDrawable = entities.find((e) => e.type !== "point" && e.type !== "text");
+          return firstDrawable ? [firstDrawable.id] : prevSel;
+        });
       }
       if (isFlatTop2DView(orbitAzimuthRef.current, orbitElevationRef.current)) {
         animateOrbitTo(45, ISO_CANONICAL_ELEVATION_DEG, "iso_se");
       }
     },
-    [animateOrbitTo],
+    [animateOrbitTo, entities],
   );
 
   useEffect(() => {
@@ -1640,6 +1653,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }>;
       const nextTool = custom.detail?.tool ?? custom.detail?.tool3D;
       if (!nextTool) return;
+      setTool("select");
+      setPending([]);
+      setDraft(null);
       setActiveDirect3DTool(nextTool);
       setActiveMode("3d");
       setSolidOpen(false);
@@ -1660,6 +1676,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       orbitAnimRafRef.current = null;
     }
     setActiveMode("2d");
+    setActiveDirect3DTool("select_3d");
+    setSubSelection3D({
+      faceIds: [],
+      edgeIds: [],
+      bodyIds: [],
+      activePivot3D: null,
+      activeHingeEdgeId: null,
+    });
     setDrawingProjection("orthographic");
     setSolidOpen(false);
     setMorphDirection(null);
@@ -5431,7 +5455,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
-    // ferramentas de arrasto
+    // ferramentas de arrasto 2D (bloqueadas enquanto estiver no modo CAD 3D)
+    if (activeMode === "3d") return;
     setPending([p]);
     setDraft(
       buildDraft(tool, p, p, activeLayer, filletR, drawingProjection, isoPlane, {
@@ -6137,42 +6162,81 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
         if (hit.kind !== "none" && hit.body) {
           const hitBody = hit.body;
-          if (isDoubleTap) {
-            setSubSelection3D({
-              faceIds: [],
-              edgeIds: [],
-              bodyIds: [hitBody.bodyId],
-              activePivot3D: hitBody.pivot3D,
-              activeHingeEdgeId: null,
+          if (isDoubleTap || activeDirect3DTool === "transform_3d") {
+            let nextBodyIds: string[] = [hitBody.bodyId];
+            setSubSelection3D((prev) => {
+              const currentBodies = prev.bodyIds;
+              if (
+                ev.shiftKey ||
+                (activeDirect3DTool === "transform_3d" &&
+                  !isDoubleTap &&
+                  currentBodies.length > 0)
+              ) {
+                nextBodyIds = currentBodies.includes(hitBody.bodyId)
+                  ? currentBodies.length > 1
+                    ? currentBodies.filter((id) => id !== hitBody.bodyId)
+                    : currentBodies
+                  : [...currentBodies, hitBody.bodyId];
+              } else {
+                nextBodyIds = [hitBody.bodyId];
+              }
+              return {
+                faceIds: [],
+                edgeIds: [],
+                bodyIds: nextBodyIds,
+                activePivot3D: hitBody.pivot3D,
+                activeHingeEdgeId: null,
+              };
             });
-            setSelection([hitBody.entityId]);
-            if (activeDirect3DTool === "select_3d") {
-              setActiveDirect3DTool("transform_3d");
-            }
+            setSelection(nextBodyIds);
+            setActiveDirect3DTool("transform_3d");
             triggerHaptic("action");
             last3DTapRef.current = null;
           } else if (hit.kind === "edge" && hit.edge) {
             const edgeId = hit.edge.edgeId;
-            setSubSelection3D((prev) => {
-              const sameBody = prev.edgeIds.some((eid) => eid.startsWith(hitBody.bodyId));
-              const exists = prev.edgeIds.includes(edgeId);
-              let nextEdges: string[];
-              if (ev.shiftKey || sameBody) {
-                nextEdges = exists
-                  ? prev.edgeIds.filter((id) => id !== edgeId)
-                  : [...prev.edgeIds, edgeId];
-                if (nextEdges.length === 0) nextEdges = [edgeId];
-              } else {
-                nextEdges = [edgeId];
-              }
-              return {
-                faceIds: [],
-                edgeIds: nextEdges,
+            const hasFaceOnSameBody =
+              subSelection3D.faceIds.length > 0 &&
+              subSelection3D.faceIds.some((fid) => fid.startsWith(hitBody.bodyId));
+
+            if (hasFaceOnSameBody && subSelection3D.edgeIds.length === 0 && !ev.shiftKey) {
+              setSubSelection3D((prev) => ({
+                ...prev,
+                edgeIds: [edgeId],
                 bodyIds: [],
                 activePivot3D: hit.edge!.midpoint,
                 activeHingeEdgeId: edgeId,
-              };
-            });
+              }));
+              setActiveDirect3DTool("rotate_axis_3d");
+            } else {
+              setSubSelection3D((prev) => {
+                const sameBodyEdges = prev.edgeIds.filter((eid) =>
+                  eid.startsWith(hitBody.bodyId),
+                );
+                const exists = sameBodyEdges.includes(edgeId);
+                let nextEdges: string[];
+                if (ev.shiftKey || sameBodyEdges.length > 0) {
+                  nextEdges = exists
+                    ? sameBodyEdges.filter((id) => id !== edgeId)
+                    : [...sameBodyEdges, edgeId];
+                  if (nextEdges.length === 0) nextEdges = [edgeId];
+                } else {
+                  nextEdges = [edgeId];
+                }
+                return {
+                  faceIds: [],
+                  edgeIds: nextEdges,
+                  bodyIds: [],
+                  activePivot3D: hit.edge!.midpoint,
+                  activeHingeEdgeId: null,
+                };
+              });
+              if (
+                activeDirect3DTool !== "fillet_3d" &&
+                activeDirect3DTool !== "chamfer_3d"
+              ) {
+                setActiveDirect3DTool("fillet_3d");
+              }
+            }
             setSelection([hitBody.entityId]);
             triggerHaptic("selection");
             last3DTapRef.current = { x: localPt.x, y: localPt.y, time: now };
@@ -6195,10 +6259,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 edgeIds: [],
                 bodyIds: [],
                 activePivot3D: hit.face!.centroid,
-                activeHingeEdgeId: prev.activeHingeEdgeId,
+                activeHingeEdgeId: null,
               };
             });
             setSelection([hitBody.entityId]);
+            if (
+              activeDirect3DTool !== "shell_3d" &&
+              activeDirect3DTool !== "rotate_axis_3d"
+            ) {
+              setActiveDirect3DTool(
+                hitBody.extrudeHeightMm <= sheetThickness + 0.5
+                  ? "extrude_3d"
+                  : "offset_face_3d",
+              );
+            }
             triggerHaptic("selection");
             last3DTapRef.current = { x: localPt.x, y: localPt.y, time: now, faceId };
           }
@@ -8414,10 +8488,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         </header>
       )}
 
-      {/* CORPO DO WORKSPACE CAD: EM MODO RETRATO ZERO BARRAS LATERAIS E CANVAS 100% PONTA A PONTA */}
-      <div className={cn("flex min-h-0 min-w-0 flex-1", isLandscape ? "gap-1.5 p-1 pt-0" : "gap-0 p-0")}>
-        {/* REGIÃO B — TOOLBAR VERTICAL ESQUERDA (EXCLUSIVA DO MODO PAISAGEM) */}
-        {!focus && isLandscape && (
+      {/* CORPO DO WORKSPACE CAD: EM MODO CAD 3D A BARRA ESQUERDA FICA VISÍVEL E O CANVAS OCUPA 100% DA DIREITA E BASE */}
+      <div className={cn("flex min-h-0 min-w-0 flex-1", isLandscape || activeMode === "3d" ? "gap-1.5 p-1 pt-0" : "gap-0 p-0")}>
+        {/* REGIÃO B — TOOLBAR VERTICAL ESQUERDA (VISÍVEL NO MODO PAISAGEM OU SEMPRE QUE CAD 3D ESTIVER ATIVO) */}
+        {!focus && (isLandscape || activeMode === "3d") && (
           <ChamferCadToolbar
             tool={tool}
             onPickTool={pickTool}
@@ -8566,6 +8640,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               setActiveSidebarTab("eng_rev");
               setRightSidebarOpen(true);
             }}
+            activeDirect3DTool={activeDirect3DTool}
+            onSelectDirect3DTool={setActiveDirect3DTool}
+            selectionKind3D={
+              subSelection3D.faceIds.length > 0
+                ? "face"
+                : subSelection3D.edgeIds.length > 0
+                  ? "edge"
+                  : subSelection3D.bodyIds.length > 0
+                    ? "body"
+                    : "none"
+            }
+            onClearSelection3D={() => {
+              setSelection([]);
+              setSubSelection3D({
+                faceIds: [],
+                edgeIds: [],
+                bodyIds: [],
+                activePivot3D: null,
+                activeHingeEdgeId: null,
+              });
+            }}
+            onReturnToSketch2D={transitionTo2D}
             isDark={isDark}
           />
         )}
@@ -10833,23 +10929,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </g>
           </svg>
 
-          <Rulers
-            view={view}
-            isDark={isDark}
-            themeColors={themeColors}
-            majorStep={gridConfig.majorStep}
-            unit={unit}
-            width={canvasSize.w}
-            height={canvasSize.h}
-            cursor={cursor}
-            frame={frame}
-            compactPortrait={!isLandscape}
-            onCenterWorkspace={() => {
-              triggerHaptic("selection");
-              fitFrame();
-              toast.info(`Área de Trabalho (${Math.round(frame.w)} × ${Math.round(frame.h)} mm) enquadrada na tela`);
-            }}
-          />
+          {activeMode !== "3d" && (
+            <Rulers
+              view={view}
+              isDark={isDark}
+              themeColors={themeColors}
+              majorStep={gridConfig.majorStep}
+              unit={unit}
+              width={canvasSize.w}
+              height={canvasSize.h}
+              cursor={cursor}
+              frame={frame}
+              compactPortrait={!isLandscape}
+              onCenterWorkspace={() => {
+                triggerHaptic("selection");
+                fitFrame();
+                toast.info(`Área de Trabalho (${Math.round(frame.w)} × ${Math.round(frame.h)} mm) enquadrada na tela`);
+              }}
+            />
+          )}
 
           {/* HOST ÚNICO DE NOTIFICAÇÕES COMPACTAS DO CHAMFER CAD (ANCORADO NO TOPO CENTRAL DO CANVAS, ~8PX ABAIXO DA RÉGUA HORIZONTAL) */}
           <ChamferCompactToastHost
@@ -10861,8 +10959,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             }
           />
 
-          {/* MICRO-PÍLULA TRANSLÚCIDA FLUTUANTE NO CANTO INFERIOR ESQUERDO DO CANVAS EM MODO RETRATO (24PX: P01 • X/Y • Z% • G:MM • SNAP:ON) */}
-          {!isLandscape && !focus && !solidOpen && (
+          {/* MICRO-PÍLULA TRANSLÚCIDA FLUTUANTE NO CANTO INFERIOR ESQUERDO DO CANVAS EM MODO RETRATO (OCULTA NO MODO CAD 3D) */}
+          {!isLandscape && !focus && !solidOpen && activeMode !== "3d" && (
             <ChamferPortraitCanvasMicroPill
               isDark={isDark}
               planName={project?.plans.find((p) => p.id === planId)?.name ?? "P01"}
@@ -11271,6 +11369,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             onChangeSubSelection3D={setSubSelection3D}
             activeDirect3DTool={activeDirect3DTool}
             onChangeDirect3DTool={setActiveDirect3DTool}
+            onSelectEntities={setSelection}
             onCommitEntities={(updater, toastMessageOrIds) => {
               commit(updater);
               if (Array.isArray(toastMessageOrIds)) {
@@ -11343,9 +11442,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           )}
 
-          {/* INDICADOR INTERATIVO DE EIXOS 3D (GIZMO X Y Z) — VISÍVEL SOMENTE QUANDO ÓRBITA 3D ESTIVER ATIVA */}
-          {isOrbitToolActive && (
-            <div className="pointer-events-none absolute bottom-12 left-4 z-35 flex flex-col items-start gap-1.5">
+          {/* INDICADOR INTERATIVO DE EIXOS 3D (GIZMO X Y Z) — VISÍVEL SOMENTE QUANDO ÓRBITA 3D OU CAD 3D ESTIVER ATIVO */}
+          {(isOrbitToolActive || activeMode === "3d") && (
+            <div
+              className={cn(
+                "pointer-events-none absolute left-4 z-35 flex flex-col items-start gap-1.5",
+                activeMode === "3d" ? "bottom-4" : "bottom-12",
+              )}
+            >
               <ChamferAxesGizmo3D
                 azimuthDeg={orbitAzimuthDeg}
                 elevationDeg={orbitElevationDeg}
@@ -11359,8 +11463,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           )}
 
-          {/* BARRA FLUTUANTE DE COMANDO / FEEDBACK CAD TÉCNICO (OCULTA ENQUANTO O HUD DE ARRAY ESTIVER ABERTO) */}
-          {activeArrayType === null && (
+          {/* BARRA FLUTUANTE DE COMANDO / FEEDBACK CAD TÉCNICO 2D (OCULTA NO MODO CAD 3D) */}
+          {activeArrayType === null && activeMode !== "3d" && (
             <div
               style={{
                 backgroundColor: "var(--chamfer-bubble-bg)",
@@ -11409,8 +11513,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           )}
 
-          {/* NOVO SISTEMA DE EDIÇÃO CONTEXTUAL MOBILE DO CHAMFER (REGRAS 1 A 18) */}
-          {mobileEditorOpen && activeArrayType === null && (
+          {/* NOVO SISTEMA DE EDIÇÃO CONTEXTUAL MOBILE DO CHAMFER (OCULTO NO MODO CAD 3D) */}
+          {mobileEditorOpen && activeArrayType === null && activeMode !== "3d" && (
             <div
               className={cn(
                 "absolute z-40 transition-all",
@@ -11462,8 +11566,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </div>
         </div>
 
-        {/* REGIÃO D — JANELA LATERAL DIREITA DO CHAMFER 2D (EXCLUSIVA DO MODO PAISAGEM; EM RETRATO ABRE EM BOTTOM SHEET) */}
-        {!solidOpen && !focus && isLandscape && (
+        {/* REGIÃO D — JANELA LATERAL DIREITA DO CHAMFER 2D (OCULTA COMPLETAMENTE NO MODO CAD 3D) */}
+        {!solidOpen && !focus && isLandscape && activeMode !== "3d" && (
           activeArrayType !== null ? (
             <ChamferArrayHUD
               arrayType={activeArrayType}
@@ -11577,8 +11681,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           )
         )}
 
-        {/* GAVETA COMPACTA EM MODO RETRATO (45% DVH PADRÃO / 70% DVH EXPANDIDA + AUTO-COLAPSO AO TOCAR NO CANVAS) */}
-        {!solidOpen && !focus && !isLandscape && (
+        {/* GAVETA COMPACTA EM MODO RETRATO (OCULTA COMPLETAMENTE NO MODO CAD 3D) */}
+        {!solidOpen && !focus && !isLandscape && activeMode !== "3d" && (
           <ChamferPortraitCompactDrawer
             open={portraitDrawerOpen}
             onClose={() => setPortraitDrawerOpen(false)}
@@ -11668,8 +11772,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         )}
       </div>
 
-      {/* REGIÃO E — EM MODO RETRATO: NO MÁXIMO 2 BARRAS INFERIORES ESTILO LIGHTROOM MOBILE (60PX/54PX + 54PX/50PX) */}
-      {!focus && !isLandscape && (
+      {/* REGIÃO E — EM MODO RETRATO: BARRAS INFERIORES 2D (OCULTAS COMPLETAMENTE NO MODO CAD 3D) */}
+      {!focus && !isLandscape && activeMode !== "3d" && (
         <ChamferPortraitBottomBars
           isDark={isDark}
           stripHeightPx={verticalLayout.chromeHeights.stripPx}
@@ -11876,8 +11980,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
-      {/* REGIÃO E — STATUS BAR AGRUPADA (32px) — MODO PAISAGEM */}
-      {!focus && isLandscape && (
+      {/* REGIÃO E — STATUS BAR AGRUPADA (32px) — MODO PAISAGEM (OCULTA COMPLETAMENTE NO MODO CAD 3D) */}
+      {!focus && isLandscape && activeMode !== "3d" && (
         <footer
           aria-label="Barra de status do CHAMFER"
           style={{
@@ -13167,8 +13271,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
-      {/* BARRA CONTEXTUAL FLUTUANTE DE SELEÇÃO E AGRUPAMENTO (MOBILE/DESKTOP) */}
-      {selection.length > 0 && !solidOpen && tool === "select" && activeArrayType === null && (
+      {/* BARRA CONTEXTUAL FLUTUANTE DE SELEÇÃO E AGRUPAMENTO 2D (OCULTA NO MODO CAD 3D) */}
+      {selection.length > 0 && !solidOpen && activeMode !== "3d" && tool === "select" && activeArrayType === null && (
         <div
           style={{
             backgroundColor: "var(--chamfer-bubble-bg)",

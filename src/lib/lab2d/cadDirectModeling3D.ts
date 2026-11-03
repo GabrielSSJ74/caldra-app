@@ -184,6 +184,7 @@ export type NumpadTargetParameter =
   | "chamferDistance"
   | "offsetFaceDistance"
   | "miterAngle"
+  | "scaleFactor"
   | "moveX"
   | "moveY"
   | "moveZ";
@@ -2185,8 +2186,9 @@ export function applyDirectShell3DToEntities(
 export function applyDirectOffsetFace3DToEntities(
   entities: Entity[],
   targetIds: string[],
-  faceTarget: "top" | "bottom" | "sides",
+  faceTarget: "top" | "bottom" | "sides" | "side_normal",
   deltaMm: number,
+  faceNormal?: Vec3Mm,
 ): Entity[] {
   const rounded = Number(deltaMm.toFixed(2));
   const idSet = new Set(targetIds);
@@ -2194,28 +2196,59 @@ export function applyDirectOffsetFace3DToEntities(
     if (!idSet.has(e.id)) return e;
     const cur = getEntityDirect3DParams(e);
     if (faceTarget === "top") {
-      const nextHeight = Math.max(1, cur.extrudeHeightMm + rounded);
+      const nextHeight = Math.max(1, Number((cur.extrudeHeightMm + rounded).toFixed(2)));
       return {
         ...e,
+        extrudeHeight: nextHeight,
         params: {
           ...(e.params ?? {}),
-          extrudeHeightMm: Number(nextHeight.toFixed(2)),
+          extrudeHeight: nextHeight,
+          extrudeHeightMm: nextHeight,
           offsetFaceTopMm: 0,
         },
       };
     }
     if (faceTarget === "bottom") {
-      const nextElev = cur.elevationZ - rounded;
-      const nextHeight = Math.max(1, cur.extrudeHeightMm + rounded);
+      const nextElev = Number((cur.elevationZ - rounded).toFixed(2));
+      const nextHeight = Math.max(1, Number((cur.extrudeHeightMm + rounded).toFixed(2)));
       return {
         ...e,
+        elevationZ: nextElev,
+        extrudeHeight: nextHeight,
         params: {
           ...(e.params ?? {}),
-          elevationZ: Number(nextElev.toFixed(2)),
-          extrudeHeightMm: Number(nextHeight.toFixed(2)),
+          elevationZ: nextElev,
+          extrudeHeight: nextHeight,
+          extrudeHeightMm: nextHeight,
           offsetFaceBottomMm: 0,
         },
       };
+    }
+    if (faceTarget === "side_normal" && faceNormal && e.type === "polyline" && e.pts.length >= 3) {
+      const b = boxOf(e);
+      const cx = (b.minX + b.maxX) * 0.5;
+      const cy = (b.minY + b.maxY) * 0.5;
+      const nx = faceNormal.x;
+      const ny = faceNormal.y;
+      const nLen = Math.hypot(nx, ny);
+      if (nLen > 0.25) {
+        const ux = nx / nLen;
+        const uy = ny / nLen;
+        const nextPts = e.pts.map((pt) => {
+          const proj = (pt.x - cx) * ux + (pt.y - cy) * uy;
+          if (proj > 0) {
+            return {
+              x: Number((pt.x + ux * rounded).toFixed(2)),
+              y: Number((pt.y + uy * rounded).toFixed(2)),
+            };
+          }
+          return pt;
+        });
+        return {
+          ...e,
+          pts: nextPts,
+        };
+      }
     }
     return {
       ...e,
@@ -2264,6 +2297,7 @@ export function applyDirectTransform3DToEntities(
   targetIds: string[],
   delta: { dx?: number; dy?: number; dz?: number; rxDeg?: number; ryDeg?: number; rzDeg?: number },
   copyMode = false,
+  preassignedCopyIds?: Map<string, string>,
 ): { updatedEntities: Entity[]; activeIds: string[] } {
   const idSet = new Set(targetIds);
   const dx = Number(delta.dx ?? 0);
@@ -2300,9 +2334,20 @@ export function applyDirectTransform3DToEntities(
       ryDeg: Number((cur.rotation3D.ryDeg + ryDeg).toFixed(1)),
       rzDeg: Number((cur.rotation3D.rzDeg + rzDeg).toFixed(1)),
     };
+    let nextId = ent.id;
+    if (assignNewId) {
+      const existingCopyId = preassignedCopyIds?.get(ent.id);
+      if (existingCopyId) {
+        nextId = existingCopyId;
+      } else {
+        nextId = uid();
+        preassignedCopyIds?.set(ent.id, nextId);
+      }
+    }
     return {
       ...moved,
-      id: assignNewId ? uid() : ent.id,
+      id: nextId,
+      elevationZ: nextZ,
       params: {
         ...(moved.params ?? {}),
         elevationZ: nextZ,
@@ -2331,25 +2376,375 @@ export function applyDirectTransform3DToEntities(
   };
 }
 
+function mirrorEntity2D(ent: Entity, axis: "x" | "y", pivotCoord: number): Entity {
+  const reflectX = (x: number) => Number((2 * pivotCoord - x).toFixed(2));
+  const reflectY = (y: number) => Number((2 * pivotCoord - y).toFixed(2));
+
+  switch (ent.type) {
+    case "line":
+      return axis === "x"
+        ? { ...ent, x1: reflectX(ent.x1), x2: reflectX(ent.x2) }
+        : { ...ent, y1: reflectY(ent.y1), y2: reflectY(ent.y2) };
+    case "circle":
+      return axis === "x"
+        ? { ...ent, cx: reflectX(ent.cx) }
+        : { ...ent, cy: reflectY(ent.cy) };
+    case "ellipse":
+      return axis === "x"
+        ? { ...ent, cx: reflectX(ent.cx), rotation: -(ent.rotation ?? 0) }
+        : { ...ent, cy: reflectY(ent.cy), rotation: -(ent.rotation ?? 0) };
+    case "arc":
+      return axis === "x"
+        ? {
+            ...ent,
+            cx: reflectX(ent.cx),
+            a0: Math.PI - ent.a1,
+            a1: Math.PI - ent.a0,
+          }
+        : {
+            ...ent,
+            cy: reflectY(ent.cy),
+            a0: -ent.a1,
+            a1: -ent.a0,
+          };
+    case "polyline":
+      return {
+        ...ent,
+        pts: ent.pts.map((p) =>
+          axis === "x" ? { x: reflectX(p.x), y: p.y } : { x: p.x, y: reflectY(p.y) },
+        ),
+      };
+    case "point":
+      return axis === "x"
+        ? { ...ent, x: reflectX(ent.x) }
+        : { ...ent, y: reflectY(ent.y) };
+    case "text":
+      return axis === "x"
+        ? { ...ent, x: reflectX(ent.x) }
+        : { ...ent, y: reflectY(ent.y) };
+    case "hatch":
+      return {
+        ...ent,
+        boundaryPts: ent.boundaryPts.map((p) =>
+          axis === "x" ? { x: reflectX(p.x), y: p.y } : { x: p.x, y: reflectY(p.y) },
+        ),
+      };
+    default:
+      return ent;
+  }
+}
+
 export function applyDirectMirror3DToEntities(
   entities: Entity[],
   targetIds: string[],
   plane: "x" | "y" | "z",
   copyMode = true,
+  customPivot3D?: Vec3Mm | null,
 ): { updatedEntities: Entity[]; activeIds: string[] } {
-  const targets = entities.filter((e) => targetIds.includes(e.id));
+  const idSet = new Set(targetIds);
+  const targets = entities.filter((e) => idSet.has(e.id));
   if (targets.length === 0) return { updatedEntities: entities, activeIds: targetIds };
 
   const b = bbox(targets);
   if (!b) return { updatedEntities: entities, activeIds: targetIds };
-  const spanX = Math.max(50, b.maxX - b.minX);
-  const spanY = Math.max(50, b.maxY - b.minY);
 
-  if (plane === "x") {
-    return applyDirectTransform3DToEntities(entities, targetIds, { dx: spanX + 40 }, copyMode);
+  // Inclui furos internos da peça selecionada
+  const allTargetIds = new Set(targetIds);
+  for (const outerEnt of targets) {
+    const outerLoop = extractBaseClosedLoop2D(outerEnt);
+    if (!outerLoop) continue;
+    const outerZ = Number(outerEnt.params?.elevationZ ?? 0);
+    for (const other of entities) {
+      if (allTargetIds.has(other.id)) continue;
+      const otherZ = Number(other.params?.elevationZ ?? 0);
+      if (Math.abs(otherZ - outerZ) > 1.0) continue;
+      const otherLoop = extractBaseClosedLoop2D(other);
+      if (otherLoop && otherLoop.points[0] && pointInPolygon2D(otherLoop.points[0], outerLoop.points)) {
+        allTargetIds.add(other.id);
+      }
+    }
   }
-  if (plane === "y") {
-    return applyDirectTransform3DToEntities(entities, targetIds, { dy: spanY + 40 }, copyMode);
+
+  const centerX = (b.minX + b.maxX) * 0.5;
+  const centerY = (b.minY + b.maxY) * 0.5;
+
+  // Se Copy: ON e o pivô está no próprio centro geométrico, espelha usando a borda externa (+20mm) como plano de simetria
+  const hasCustomOffsetPivotX = customPivot3D && Math.abs(customPivot3D.x - centerX) > 2;
+  const hasCustomOffsetPivotY = customPivot3D && Math.abs(customPivot3D.y - centerY) > 2;
+
+  const mirrorPivotX = hasCustomOffsetPivotX
+    ? customPivot3D.x
+    : copyMode
+      ? b.maxX + 20
+      : centerX;
+  const mirrorPivotY = hasCustomOffsetPivotY
+    ? customPivot3D.y
+    : copyMode
+      ? b.maxY + 20
+      : centerY;
+
+  const mirrorSingle = (ent: Entity, assignNewId: boolean): Entity => {
+    const cur = getEntityDirect3DParams(ent);
+    let mirrored: Entity = { ...ent };
+
+    if (plane === "x") {
+      mirrored = mirrorEntity2D(mirrored, "x", mirrorPivotX);
+      mirrored = {
+        ...mirrored,
+        params: {
+          ...(mirrored.params ?? {}),
+          miterCutTopDeg: cur.miterCutTopAxis === "x" ? -cur.miterCutTopDeg : cur.miterCutTopDeg,
+          miterCutBottomDeg: cur.miterCutBottomAxis === "x" ? -cur.miterCutBottomDeg : cur.miterCutBottomDeg,
+          rotation3D: {
+            ...cur.rotation3D,
+            ryDeg: -cur.rotation3D.ryDeg,
+            rzDeg: -cur.rotation3D.rzDeg,
+          },
+        },
+      };
+    } else if (plane === "y") {
+      mirrored = mirrorEntity2D(mirrored, "y", mirrorPivotY);
+      mirrored = {
+        ...mirrored,
+        params: {
+          ...(mirrored.params ?? {}),
+          miterCutTopDeg: cur.miterCutTopAxis === "y" ? -cur.miterCutTopDeg : cur.miterCutTopDeg,
+          miterCutBottomDeg: cur.miterCutBottomAxis === "y" ? -cur.miterCutBottomDeg : cur.miterCutBottomDeg,
+          rotation3D: {
+            ...cur.rotation3D,
+            rxDeg: -cur.rotation3D.rxDeg,
+            rzDeg: -cur.rotation3D.rzDeg,
+          },
+        },
+      };
+    } else {
+      // Espelhamento no eixo Z
+      const nextElev = copyMode
+        ? Number((cur.elevationZ + cur.extrudeHeightMm + 20).toFixed(2))
+        : cur.elevationZ;
+      mirrored = {
+        ...mirrored,
+        elevationZ: nextElev,
+        params: {
+          ...(mirrored.params ?? {}),
+          elevationZ: nextElev,
+          miterCutTopDeg: -cur.miterCutBottomDeg,
+          miterCutBottomDeg: -cur.miterCutTopDeg,
+          rotation3D: {
+            ...cur.rotation3D,
+            rxDeg: -cur.rotation3D.rxDeg,
+            ryDeg: -cur.rotation3D.ryDeg,
+          },
+        },
+      };
+    }
+
+    return {
+      ...mirrored,
+      id: assignNewId ? uid() : ent.id,
+    };
+  };
+
+  if (copyMode) {
+    const copies: Entity[] = [];
+    for (const e of entities) {
+      if (allTargetIds.has(e.id)) {
+        copies.push(mirrorSingle(e, true));
+      }
+    }
+    return {
+      updatedEntities: [...entities, ...copies],
+      activeIds: copies.map((c) => c.id),
+    };
   }
-  return applyDirectTransform3DToEntities(entities, targetIds, { dz: 100 }, copyMode);
+
+  const updated = entities.map((e) => (allTargetIds.has(e.id) ? mirrorSingle(e, false) : e));
+  return {
+    updatedEntities: updated,
+    activeIds: Array.from(allTargetIds),
+  };
 }
+
+/**
+ * Redimensiona proporcionalmente (Scale 3D) o corpo selecionado (X, Y e altura Z) em torno do seu centroide ou pivô.
+ */
+export function applyDirectScale3DToEntities(
+  entities: Entity[],
+  targetIds: string[],
+  scaleFactor: number,
+  customPivot3D?: Vec3Mm | null,
+): Entity[] {
+  const safeFactor = Math.max(0.1, Math.min(20, Number.isFinite(scaleFactor) ? scaleFactor : 1));
+  if (Math.abs(safeFactor - 1) < 1e-4) return entities;
+
+  const idSet = new Set(targetIds);
+  const targets = entities.filter((e) => idSet.has(e.id));
+  if (targets.length === 0) return entities;
+
+  const b = bbox(targets);
+  if (!b) return entities;
+
+  // Inclui furos internos da peça selecionada
+  const allTargetIds = new Set(targetIds);
+  for (const outerEnt of targets) {
+    const outerLoop = extractBaseClosedLoop2D(outerEnt);
+    if (!outerLoop) continue;
+    const outerZ = Number(outerEnt.params?.elevationZ ?? 0);
+    for (const other of entities) {
+      if (allTargetIds.has(other.id)) continue;
+      const otherZ = Number(other.params?.elevationZ ?? 0);
+      if (Math.abs(otherZ - outerZ) > 1.0) continue;
+      const otherLoop = extractBaseClosedLoop2D(other);
+      if (
+        otherLoop &&
+        otherLoop.points[0] &&
+        pointInPolygon2D(otherLoop.points[0], outerLoop.points)
+      ) {
+        allTargetIds.add(other.id);
+      }
+    }
+  }
+
+  const pivotX = customPivot3D?.x ?? (b.minX + b.maxX) * 0.5;
+  const pivotY = customPivot3D?.y ?? (b.minY + b.maxY) * 0.5;
+
+  const scalePt = (x: number, y: number): Vec2 => ({
+    x: Number((pivotX + (x - pivotX) * safeFactor).toFixed(3)),
+    y: Number((pivotY + (y - pivotY) * safeFactor).toFixed(3)),
+  });
+
+  return entities.map((ent) => {
+    if (!allTargetIds.has(ent.id)) return ent;
+    const cur = getEntityDirect3DParams(ent);
+    const nextHeight = Math.max(1, Number((cur.extrudeHeightMm * safeFactor).toFixed(2)));
+    const nextFillet =
+      cur.edgeFilletRadiusMm > 0
+        ? Number((cur.edgeFilletRadiusMm * safeFactor).toFixed(2))
+        : 0;
+    const nextChamfer =
+      cur.edgeChamferDistMm > 0
+        ? Number((cur.edgeChamferDistMm * safeFactor).toFixed(2))
+        : 0;
+
+    let scaled: Entity = { ...ent };
+    if (ent.type === "rect") {
+      const p0 = scalePt(ent.x, ent.y);
+      scaled = {
+        ...ent,
+        x: p0.x,
+        y: p0.y,
+        w: Math.max(1, Number((ent.w * safeFactor).toFixed(3))),
+        h: Math.max(1, Number((ent.h * safeFactor).toFixed(3))),
+      };
+    } else if (ent.type === "circle") {
+      const c = scalePt(ent.cx, ent.cy);
+      scaled = {
+        ...ent,
+        cx: c.x,
+        cy: c.y,
+        r: Math.max(0.5, Number((ent.r * safeFactor).toFixed(3))),
+      };
+    } else if (ent.type === "ellipse") {
+      const c = scalePt(ent.cx, ent.cy);
+      scaled = {
+        ...ent,
+        cx: c.x,
+        cy: c.y,
+        rx: Math.max(0.5, Number((ent.rx * safeFactor).toFixed(3))),
+        ry: Math.max(0.5, Number((ent.ry * safeFactor).toFixed(3))),
+      };
+    } else if (ent.type === "arc") {
+      const c = scalePt(ent.cx, ent.cy);
+      scaled = {
+        ...ent,
+        cx: c.x,
+        cy: c.y,
+        r: Math.max(0.5, Number((ent.r * safeFactor).toFixed(3))),
+      };
+    } else if (ent.type === "line") {
+      const p1 = scalePt(ent.x1, ent.y1);
+      const p2 = scalePt(ent.x2, ent.y2);
+      scaled = { ...ent, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y };
+    } else if (ent.type === "polyline") {
+      scaled = {
+        ...ent,
+        pts: ent.pts.map((pt) => scalePt(pt.x, pt.y)),
+      };
+    }
+
+    return {
+      ...scaled,
+      params: {
+        ...(scaled.params ?? {}),
+        extrudeHeightMm: nextHeight,
+        edgeFilletRadiusMm: nextFillet,
+        edgeChamferDistMm: nextChamfer,
+      },
+    };
+  });
+}
+
+/**
+ * Alinha face-a-face (Encosto Flush) o corpo selecionado contra o corpo vizinho mais próximo no eixo escolhido.
+ */
+export function applyDirectAlignFlush3DToEntities(
+  entities: Entity[],
+  targetIds: string[],
+  axis: "x" | "y" | "z",
+): Entity[] {
+  const idSet = new Set(targetIds);
+  const moving = entities.filter((e) => idSet.has(e.id));
+  const others = entities.filter((e) => !idSet.has(e.id));
+  if (moving.length === 0 || others.length === 0) return entities;
+
+  const bMoving = bbox(moving);
+  if (!bMoving) return entities;
+
+  // Encontra o corpo estático mais próximo
+  let bestOther: Entity | null = null;
+  let bestDist = Infinity;
+  const movCx = (bMoving.minX + bMoving.maxX) * 0.5;
+  const movCy = (bMoving.minY + bMoving.maxY) * 0.5;
+
+  for (const cand of others) {
+    const loop = extractBaseClosedLoop2D(cand);
+    if (!loop) continue;
+    const bCand = boxOf(cand);
+    const cx = (bCand.minX + bCand.maxX) * 0.5;
+    const cy = (bCand.minY + bCand.maxY) * 0.5;
+    const d = Math.hypot(cx - movCx, cy - movCy);
+    if (d < bestDist) {
+      bestDist = d;
+      bestOther = cand;
+    }
+  }
+
+  if (!bestOther) return entities;
+  const bOther = boxOf(bestOther);
+
+  if (axis === "x") {
+    const gapRight = bOther.minX - bMoving.maxX;
+    const gapLeft = bOther.maxX - bMoving.minX;
+    const dx = Math.abs(gapRight) <= Math.abs(gapLeft) ? gapRight : gapLeft;
+    return applyDirectTransform3DToEntities(entities, targetIds, { dx }, false).updatedEntities;
+  }
+  if (axis === "y") {
+    const gapBottom = bOther.minY - bMoving.maxY;
+    const gapTop = bOther.maxY - bMoving.minY;
+    const dy = Math.abs(gapBottom) <= Math.abs(gapTop) ? gapBottom : gapTop;
+    return applyDirectTransform3DToEntities(entities, targetIds, { dy }, false).updatedEntities;
+  }
+
+  const movParams = getEntityDirect3DParams(moving[0]!);
+  const otherParams = getEntityDirect3DParams(bestOther);
+  const movMinZ = movParams.elevationZ;
+  const movMaxZ = movParams.elevationZ + movParams.extrudeHeightMm;
+  const othMinZ = otherParams.elevationZ;
+  const othMaxZ = otherParams.elevationZ + otherParams.extrudeHeightMm;
+  const gapUp = othMaxZ - movMinZ;
+  const gapDown = othMinZ - movMaxZ;
+  const dz = Math.abs(gapUp) <= Math.abs(gapDown) ? gapUp : gapDown;
+  return applyDirectTransform3DToEntities(entities, targetIds, { dz }, false).updatedEntities;
+}
+
+

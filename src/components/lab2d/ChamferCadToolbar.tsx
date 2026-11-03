@@ -76,6 +76,7 @@ import type { Tool } from "./Lab2DEditor";
 import type { DimKind } from "@/lib/lab2d/dimensions";
 import type { CursorOffsetMode, LoupeHudMode } from "@/lib/lab2d/cadInteractionHub";
 import type { RevEngCategoryId, RevEngWizardStep } from "@/lib/lab2d/revEngTypes";
+import type { DirectModeling3DTool } from "@/lib/lab2d/cadDirectModeling3D";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
@@ -212,6 +213,13 @@ interface ChamferCadToolbarProps {
   onSetRefZero?: () => void;
   onOpenRevEngCategory?: (category: RevEngCategoryId, wizardStep?: RevEngWizardStep) => void;
 
+  // Modelagem Direta 3D Exclusiva (Modo CAD 3D)
+  activeDirect3DTool?: DirectModeling3DTool;
+  selectionKind3D?: "none" | "face" | "edge" | "body";
+  onSelectDirect3DTool?: (tool: DirectModeling3DTool) => void;
+  onClearSelection3D?: () => void;
+  onReturnToSketch2D?: () => void;
+
   className?: string;
   isDark?: boolean;
 }
@@ -296,6 +304,11 @@ export function ChamferCadToolbar({
   onCreateHatch,
   onSetRefZero,
   onOpenRevEngCategory,
+  activeDirect3DTool = "select_3d",
+  selectionKind3D = "none",
+  onSelectDirect3DTool,
+  onClearSelection3D,
+  onReturnToSketch2D,
   className,
   isDark = true,
 }: ChamferCadToolbarProps) {
@@ -508,6 +521,276 @@ export function ChamferCadToolbar({
   ];
 
   const activeCategoryData = categories.find((c) => c.id === openCat);
+
+  // Fecha qualquer flyout 2D quando alternar para o modo CAD 3D
+  useEffect(() => {
+    if (activeMode === "3d") {
+      setOpenCat("none");
+    }
+  }, [activeMode]);
+
+  const selectDirect3D = (nextTool: DirectModeling3DTool) => {
+    triggerHaptic("selection");
+    AudioManager.play("ui_select");
+    onSelectDirect3DTool?.(nextTool);
+    window.dispatchEvent(
+      new CustomEvent("chamfer-select-direct-3d-tool", {
+        detail: { tool: nextTool },
+      }),
+    );
+  };
+
+  // BARRA VERTICAL EXCLUSIVA DE FERRAMENTAS 3D (MODO CAD 3D)
+  if (activeMode === "3d") {
+    const direct3DTools: {
+      id: DirectModeling3DTool;
+      short: string;
+      label: string;
+      desc: string;
+      icon: typeof Box;
+      matchTools?: DirectModeling3DTool[];
+      compatibleWith: ("face" | "edge" | "body" | "none")[];
+    }[] = [
+      {
+        id: "select_3d",
+        short: "SEL 3D",
+        label: "Selecionar 3D",
+        desc: "Selecionar Corpo, Face ou Aresta (toque novamente para limpar seleção)",
+        icon: MousePointer2,
+        compatibleWith: ["none", "face", "edge", "body"],
+      },
+      {
+        id: "extrude_3d",
+        short: "EXTR",
+        label: "Extrudar",
+        desc: "Puxar/empurrar faces ou perfis (União, Novo Corpo, Subtrair, Interseção)",
+        icon: Box,
+        compatibleWith: ["face", "body", "none"],
+      },
+      {
+        id: "transform_3d",
+        short: "MOVER",
+        label: "Mover / Girar",
+        desc: "Gizmo completo +X/+Y/+Z, arcos de rotação, Pivô Central e Copy: ON/OFF",
+        icon: Move,
+        compatibleWith: ["body", "edge", "none"],
+      },
+      {
+        id: "fillet_3d",
+        short: "FILLET",
+        label: "Fillet / Chamfer",
+        desc: "Arredondar (Raio R) ou chanfrar (45°) arestas e quinas 3D",
+        icon: Sparkles,
+        matchTools: ["fillet_3d", "chamfer_3d"],
+        compatibleWith: ["edge", "none"],
+      },
+      {
+        id: "shell_3d",
+        short: "SHELL",
+        label: "Shell / Casca",
+        desc: "Tubo Metalon vazado (2 faces) ou caixa oca (1 face) com parede independente",
+        icon: Layers,
+        compatibleWith: ["face", "body", "none"],
+      },
+      {
+        id: "offset_face_3d",
+        short: "FACE",
+        label: "Offset Face",
+        desc: "Puxar ou recuar qualquer face plana ou parede para alongar tubos e bases",
+        icon: CornerDownRight,
+        compatibleWith: ["face", "none"],
+      },
+      {
+        id: "rotate_axis_3d",
+        short: "45°",
+        label: "Corte 45° / Girar Face",
+        desc: "Inclinar face de extremidade em torno de uma aresta para cortes em meia-esquadria",
+        icon: Compass,
+        compatibleWith: ["face", "edge", "none"],
+      },
+      {
+        id: "mirror_3d",
+        short: "ESPEL",
+        label: "Espelhar 3D",
+        desc: "Inverter ou duplicar simetricamente corpos 3D nos eixos X, Y, Z ou face",
+        icon: FlipHorizontal,
+        compatibleWith: ["body", "face", "none"],
+      },
+      {
+        id: "scale_3d",
+        short: "ESCAL",
+        label: "Escalar / Alinhar",
+        desc: "Redimensionar corpo 3D ou alinhar face-a-face entre dois corpos 3D",
+        icon: Maximize2,
+        matchTools: ["scale_3d", "align_3d"],
+        compatibleWith: ["body", "none"],
+      },
+    ];
+
+    return (
+      <aside
+        ref={toolbarRef}
+        data-testid="chamfer-cad-3d-exclusive-toolbar"
+        aria-label="Barra exclusiva de ferramentas CAD 3D"
+        style={{
+          backgroundColor: "var(--chamfer-bar-bg)",
+          borderColor: "var(--chamfer-border)",
+          color: "var(--chamfer-text-secondary)",
+        }}
+        className={cn(
+          "relative flex h-full max-h-full w-12 sm:w-13 shrink-0 flex-col items-center rounded-2xl border p-1 shadow-xl backdrop-blur-md select-none z-40 transition-colors",
+          className,
+        )}
+      >
+        {/* 10 FERRAMENTAS DE EDIÇÃO E MODIFICAÇÃO 3D — ROLÁVEL SUAVEMENTE */}
+        <div
+          ref={scrollContainerRef}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          className="flex-1 w-full overflow-y-auto overscroll-contain touch-pan-y scrollbar-none py-0.5 flex flex-col items-center gap-1"
+          style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
+        >
+          {direct3DTools.map((item) => {
+            const Icon = item.icon;
+            const isActive = item.matchTools
+              ? item.matchTools.includes(activeDirect3DTool)
+              : activeDirect3DTool === item.id;
+            const isCompatible =
+              selectionKind3D === "none" || item.compatibleWith.includes(selectionKind3D);
+            const isRecommended =
+              selectionKind3D !== "none" &&
+              item.id !== "select_3d" &&
+              item.compatibleWith.includes(selectionKind3D);
+
+            return (
+              <div key={item.id} className="relative w-full shrink-0 flex items-center justify-center">
+                <button
+                  type="button"
+                  data-testid={`chamfer-3d-tool-${item.id}`}
+                  onClick={(e) => {
+                    if (isDragging.current) {
+                      e.stopPropagation();
+                      return;
+                    }
+                    if (item.id === "select_3d" && activeDirect3DTool === "select_3d" && hasSelection) {
+                      onClearSelection3D?.();
+                    }
+                    selectDirect3D(item.id);
+                  }}
+                  title={`${item.label} — ${item.desc}`}
+                  aria-label={item.label}
+                  style={
+                    isActive
+                      ? {
+                          backgroundColor: "#00B4D8",
+                          color: "#05080F",
+                          borderColor: "#00E5FF",
+                        }
+                      : isRecommended
+                        ? {
+                            backgroundColor: "rgba(0, 180, 216, 0.14)",
+                            color: "#38BDF8",
+                            borderColor: "rgba(0, 180, 216, 0.45)",
+                          }
+                        : {
+                            borderColor: "transparent",
+                            color: "var(--chamfer-text-secondary)",
+                          }
+                  }
+                  className={cn(
+                    "group relative flex min-h-[38px] size-10 w-full flex-col items-center justify-center rounded-xl border transition-all touch-manipulation cursor-pointer",
+                    isActive && "shadow-md scale-[1.02]",
+                    !isCompatible && !isActive && "opacity-35",
+                  )}
+                >
+                  {isRecommended && !isActive && (
+                    <span
+                      className="absolute top-1 right-1 size-1.5 rounded-full bg-[#00B4D8]"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <Icon className="size-3.5 transition-transform group-hover:scale-110" />
+                  <span className="text-[7px] font-mono font-bold tracking-tight mt-0.5 leading-none uppercase">
+                    {item.short}
+                  </span>
+                </button>
+              </div>
+            );
+          })}
+
+          {/* 10. EXCLUIR 3D (DELETE) */}
+          <div className="relative w-full shrink-0 flex items-center justify-center">
+            <button
+              type="button"
+              data-testid="chamfer-3d-tool-delete"
+              disabled={!hasSelection}
+              onClick={(e) => {
+                if (isDragging.current) {
+                  e.stopPropagation();
+                  return;
+                }
+                triggerHaptic("action");
+                AudioManager.play("ui_select");
+                onDeleteSelection?.();
+              }}
+              title="Excluir 3D (Delete) — Apagar corpo ou sub-elemento selecionado"
+              aria-label="Excluir 3D"
+              style={{
+                borderColor: "transparent",
+                color: hasSelection ? "#F87171" : "var(--chamfer-text-muted)",
+              }}
+              className={cn(
+                "group relative flex min-h-[38px] size-10 w-full flex-col items-center justify-center rounded-xl border transition-all touch-manipulation",
+                hasSelection
+                  ? "hover:bg-rose-500/15 hover:border-rose-500/40 cursor-pointer"
+                  : "opacity-40 cursor-not-allowed",
+              )}
+            >
+              <Trash2 className="size-3.5 transition-transform group-hover:scale-110" />
+              <span className="text-[7px] font-mono font-bold tracking-tight mt-0.5 leading-none uppercase">
+                EXCLUIR
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* BOTÃO ESPECÍFICO "SKETCH 2D" NO FINAL DA BARRA ESQUERDA (RETORNO TOTAL AO 2D NORMAL) */}
+        <div
+          style={{ borderColor: "var(--chamfer-border)" }}
+          className="w-full pt-1.5 mt-0.5 border-t flex flex-col items-center shrink-0"
+        >
+          <button
+            type="button"
+            data-testid="chamfer-3d-return-sketch-2d-btn"
+            onClick={() => {
+              triggerHaptic("selection");
+              AudioManager.play("ui_select");
+              if (onReturnToSketch2D) {
+                onReturnToSketch2D();
+              } else {
+                onModeChange("2d");
+              }
+            }}
+            title="Sketch 2D — Voltar para a prancheta e ferramentas normais do CAD 2D"
+            aria-label="Sketch 2D"
+            style={{
+              backgroundColor: "var(--chamfer-accent-soft)",
+              borderColor: "var(--chamfer-accent-border)",
+              color: "var(--chamfer-accent)",
+            }}
+            className="group relative flex min-h-[42px] w-full flex-col items-center justify-center rounded-xl border px-0.5 py-1 transition-all hover:brightness-110 active:scale-95 cursor-pointer shadow-xs"
+          >
+            <PenLine className="size-3.5 transition-transform group-hover:scale-110" />
+            <span className="text-[6.5px] font-mono font-extrabold tracking-tighter mt-0.5 leading-tight uppercase text-center">
+              Sketch 2D
+            </span>
+          </button>
+        </div>
+      </aside>
+    );
+  }
 
   return (
     <aside

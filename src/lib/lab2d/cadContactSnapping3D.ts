@@ -60,7 +60,8 @@ export function resolveContactAndAlignmentSnaps3D(
   otherBodies: DirectBody3D[],
   rawDelta: Vec3Mm,
   pixelsPerMm: number,
-  snapThresholdPx = 7.5,
+  snapThresholdPx = 6,
+  customPivot3D?: Vec3Mm | null,
 ): ContactSnapResult3D {
   const result: ContactSnapResult3D = {
     snappedDelta: { ...rawDelta },
@@ -72,8 +73,8 @@ export function resolveContactAndAlignmentSnaps3D(
   if (otherBodies.length === 0) return result;
 
   const scale = Math.max(0.05, pixelsPerMm);
-  // Limiar de captura curto (entre 2.5 mm e 5.0 mm em escala normal de visualização)
-  const thresholdMm = Math.max(2.0, Math.min(8.0, snapThresholdPx / scale));
+  // Limiar de captura curto (< 6px na tela, entre 2.0 mm e 6.5 mm no espaço 3D)
+  const thresholdMm = Math.max(2.0, Math.min(6.5, snapThresholdPx / scale));
 
   // Posição prevista da Bounding Box do corpo movido
   const predBbox = {
@@ -89,6 +90,13 @@ export function resolveContactAndAlignmentSnaps3D(
     y: (predBbox.minY + predBbox.maxY) * 0.5,
     z: (predBbox.minZ + predBbox.maxZ) * 0.5,
   };
+  const predCustomPivot = customPivot3D
+    ? {
+        x: customPivot3D.x + rawDelta.x,
+        y: customPivot3D.y + rawDelta.y,
+        z: customPivot3D.z + rawDelta.z,
+      }
+    : null;
 
   let bestContactSnapX: { delta: number; distMm: number; highlight?: ContactSnapResult3D["contactHighlight"] } | null = null;
   let bestContactSnapY: { delta: number; distMm: number; highlight?: ContactSnapResult3D["contactHighlight"] } | null = null;
@@ -103,6 +111,53 @@ export function resolveContactAndAlignmentSnaps3D(
       y: (ob.minY + ob.maxY) * 0.5,
       z: (ob.minZ + ob.maxZ) * 0.5,
     };
+
+    // -------------------------------------------------------------------------
+    // 0. SNAP DIRETO DO PIVÔ NA QUINA / BORDA CONTRA QUINA OU FACE DE OUTRA PEÇA (Seção 3.2)
+    // -------------------------------------------------------------------------
+    if (predCustomPivot) {
+      for (const cand of other.snapCandidates) {
+        const dxCand = cand.point3D.x - predCustomPivot.x;
+        const dyCand = cand.point3D.y - predCustomPivot.y;
+        const dzCand = cand.point3D.z - predCustomPivot.z;
+        if (Math.abs(dxCand) <= thresholdMm && (!bestContactSnapX || Math.abs(dxCand) < bestContactSnapX.distMm)) {
+          bestContactSnapX = {
+            delta: rawDelta.x + dxCand,
+            distMm: Math.abs(dxCand),
+            highlight: {
+              pointStart: cand.point3D,
+              pointEnd: { x: cand.point3D.x, y: predCustomPivot.y, z: predCustomPivot.z },
+              label: `Encosto Quina X=0.00mm (${other.name})`,
+              targetBodyName: other.name,
+            },
+          };
+        }
+        if (Math.abs(dyCand) <= thresholdMm && (!bestContactSnapY || Math.abs(dyCand) < bestContactSnapY.distMm)) {
+          bestContactSnapY = {
+            delta: rawDelta.y + dyCand,
+            distMm: Math.abs(dyCand),
+            highlight: {
+              pointStart: cand.point3D,
+              pointEnd: { x: predCustomPivot.x, y: cand.point3D.y, z: predCustomPivot.z },
+              label: `Encosto Quina Y=0.00mm (${other.name})`,
+              targetBodyName: other.name,
+            },
+          };
+        }
+        if (Math.abs(dzCand) <= thresholdMm && (!bestContactSnapZ || Math.abs(dzCand) < bestContactSnapZ.distMm)) {
+          bestContactSnapZ = {
+            delta: rawDelta.z + dzCand,
+            distMm: Math.abs(dzCand),
+            highlight: {
+              pointStart: cand.point3D,
+              pointEnd: { x: predCustomPivot.x, y: predCustomPivot.y, z: cand.point3D.z },
+              label: `Encosto Quina Z=0.00mm (${other.name})`,
+              targetBodyName: other.name,
+            },
+          };
+        }
+      }
+    }
 
     // -------------------------------------------------------------------------
     // 1. SNAP DE ENCOSTO EM X (Face Direita com Face Esquerda, ou Face Esquerda com Face Direita)
@@ -263,6 +318,79 @@ export function resolveContactAndAlignmentSnaps3D(
         label: `Alinhado Nível Z`,
       });
     }
+
+    // Alinhamento de Faces/Quinas Coplanares (Flush Alignment em X, Y, Z)
+    if (!bestContactSnapX && !result.alignmentGuides.some((g) => g.axis === "x")) {
+      const diffMinX = Math.abs(predBbox.minX - ob.minX);
+      const diffMaxX = Math.abs(predBbox.maxX - ob.maxX);
+      if (diffMinX <= thresholdMm) {
+        result.snappedDelta.x = rawDelta.x + (ob.minX - predBbox.minX);
+        result.hasAlignmentSnap = true;
+        result.alignmentGuides.push({
+          axis: "x",
+          startPt: { x: ob.minX, y: predCenter.y, z: predCenter.z },
+          endPt: { x: ob.minX, y: oCenter.y, z: oCenter.z },
+          label: `Face/Quina X Alinhada`,
+        });
+      } else if (diffMaxX <= thresholdMm) {
+        result.snappedDelta.x = rawDelta.x + (ob.maxX - predBbox.maxX);
+        result.hasAlignmentSnap = true;
+        result.alignmentGuides.push({
+          axis: "x",
+          startPt: { x: ob.maxX, y: predCenter.y, z: predCenter.z },
+          endPt: { x: ob.maxX, y: oCenter.y, z: oCenter.z },
+          label: `Face/Quina X Alinhada`,
+        });
+      }
+    }
+
+    if (!bestContactSnapY && !result.alignmentGuides.some((g) => g.axis === "y")) {
+      const diffMinY = Math.abs(predBbox.minY - ob.minY);
+      const diffMaxY = Math.abs(predBbox.maxY - ob.maxY);
+      if (diffMinY <= thresholdMm) {
+        result.snappedDelta.y = rawDelta.y + (ob.minY - predBbox.minY);
+        result.hasAlignmentSnap = true;
+        result.alignmentGuides.push({
+          axis: "y",
+          startPt: { x: predCenter.x, y: ob.minY, z: predCenter.z },
+          endPt: { x: oCenter.x, y: ob.minY, z: oCenter.z },
+          label: `Face/Quina Y Alinhada`,
+        });
+      } else if (diffMaxY <= thresholdMm) {
+        result.snappedDelta.y = rawDelta.y + (ob.maxY - predBbox.maxY);
+        result.hasAlignmentSnap = true;
+        result.alignmentGuides.push({
+          axis: "y",
+          startPt: { x: predCenter.x, y: ob.maxY, z: predCenter.z },
+          endPt: { x: oCenter.x, y: ob.maxY, z: oCenter.z },
+          label: `Face/Quina Y Alinhada`,
+        });
+      }
+    }
+
+    if (!bestContactSnapZ && !result.alignmentGuides.some((g) => g.axis === "z")) {
+      const diffMinZ = Math.abs(predBbox.minZ - ob.minZ);
+      const diffMaxZ = Math.abs(predBbox.maxZ - ob.maxZ);
+      if (diffMaxZ <= thresholdMm) {
+        result.snappedDelta.z = rawDelta.z + (ob.maxZ - predBbox.maxZ);
+        result.hasAlignmentSnap = true;
+        result.alignmentGuides.push({
+          axis: "z",
+          startPt: { x: predCenter.x, y: predCenter.y, z: ob.maxZ },
+          endPt: { x: oCenter.x, y: oCenter.y, z: ob.maxZ },
+          label: `Topo Z=${ob.maxZ.toFixed(0)}mm Alinhado`,
+        });
+      } else if (diffMinZ <= thresholdMm) {
+        result.snappedDelta.z = rawDelta.z + (ob.minZ - predBbox.minZ);
+        result.hasAlignmentSnap = true;
+        result.alignmentGuides.push({
+          axis: "z",
+          startPt: { x: predCenter.x, y: predCenter.y, z: ob.minZ },
+          endPt: { x: oCenter.x, y: oCenter.y, z: ob.minZ },
+          label: `Base Z=${ob.minZ.toFixed(0)}mm Alinhada`,
+        });
+      }
+    }
   }
 
   // Aplica os snaps de encosto físico que superam o alinhamento
@@ -301,7 +429,12 @@ export function resolveFaceStretchContactSnap(
   otherBodies: DirectBody3D[],
   pixelsPerMm: number,
   snapThresholdPx = 7.5,
-): { snappedOffsetMm: number; hasSnap: boolean; snapTargetName?: string } {
+): {
+  snappedOffsetMm: number;
+  hasSnap: boolean;
+  snapTargetName?: string;
+  contactHighlight?: ContactSnapResult3D["contactHighlight"];
+} {
   const scale = Math.max(0.05, pixelsPerMm);
   const thresholdMm = Math.max(2.5, Math.min(8.0, snapThresholdPx / scale));
 
@@ -327,10 +460,18 @@ export function resolveFaceStretchContactSnap(
         const targetDistMm = dX * normal.x + dY * normal.y + dZ * normal.z;
 
         if (targetDistMm > 0 && Math.abs(currentOffsetMm - targetDistMm) <= thresholdMm) {
+          const p0 = otherFace.polygon3D[0] ?? otherFace.centroid;
+          const p1 = otherFace.polygon3D[Math.min(2, otherFace.polygon3D.length - 1)] ?? otherFace.centroid;
           return {
             snappedOffsetMm: Number(targetDistMm.toFixed(2)),
             hasSnap: true,
             snapTargetName: other.name,
+            contactHighlight: {
+              pointStart: p0,
+              pointEnd: p1,
+              label: `Encosto Face 0.00mm (${other.name})`,
+              targetBodyName: other.name,
+            },
           };
         }
       }
@@ -339,3 +480,4 @@ export function resolveFaceStretchContactSnap(
 
   return { snappedOffsetMm: currentOffsetMm, hasSnap: false };
 }
+

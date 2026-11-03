@@ -319,6 +319,10 @@ export function computeSmartOrbitPivot(
  */
 export interface WorkplaneOrbitProjection2D {
   isTilted: boolean;
+  /** Ângulo de azimute θ atual em graus */
+  azimuthDeg?: number;
+  /** Ângulo de elevação φ atual em graus */
+  elevationDeg?: number;
   /** Coeficientes da matriz 2D SVG/Canvas: [a, b, c, d, e, f] */
   a: number;
   b: number;
@@ -328,10 +332,14 @@ export interface WorkplaneOrbitProjection2D {
   f: number;
   /** String pronta para atributo transform SVG: `matrix(a b c d e f)` */
   svgMatrix: string;
-  /** Vetor de espessura da chapa em coordenadas locais do plano (para drawScene X-Ray) */
+  /** Vetor de extrusão local (extX, extY) correspondente à espessura Z */
   localExtrusion: Vec2;
   /** Fator de encurtamento vertical efetivo (nunca zero para garantir inversibilidade) */
   effectiveSinElevation: number;
+  /** Cosseno da elevação para projeção vertical do eixo Z */
+  cosElevation?: number;
+  /** Projeta qualquer ponto 3D (x, y, z) em milímetros para o plano projetado 2D do canvas */
+  project3DTo2D?: (x: number, y: number, z?: number) => Vec2;
 }
 
 const MIN_EFFECTIVE_SIN_ELEVATION = 0.14; // ~8° mínimo visual para evitar colapso degenerado do plano 2D
@@ -345,6 +353,8 @@ export function computeWorkplaneOrbitProjection2D(
   if (isFlatTop2DView(azimuthDeg, elevationDeg)) {
     return {
       isTilted: false,
+      azimuthDeg,
+      elevationDeg,
       a: 1,
       b: 0,
       c: 0,
@@ -354,6 +364,8 @@ export function computeWorkplaneOrbitProjection2D(
       svgMatrix: "",
       localExtrusion: { x: 0, y: 0 },
       effectiveSinElevation: 1,
+      cosElevation: 0,
+      project3DTo2D: (x: number, y: number) => ({ x, y }),
     };
   }
 
@@ -387,6 +399,8 @@ export function computeWorkplaneOrbitProjection2D(
 
   return {
     isTilted: true,
+    azimuthDeg,
+    elevationDeg,
     a,
     b,
     c,
@@ -396,6 +410,11 @@ export function computeWorkplaneOrbitProjection2D(
     svgMatrix: `matrix(${a.toFixed(6)} ${b.toFixed(6)} ${c.toFixed(6)} ${d.toFixed(6)} ${e.toFixed(3)} ${f.toFixed(3)})`,
     localExtrusion: { x: extX, y: extY },
     effectiveSinElevation: sy,
+    cosElevation: cosB,
+    project3DTo2D: (x: number, y: number, z = 0) => ({
+      x: a * x + c * y + e,
+      y: b * x + d * y + f - (Number.isFinite(z) ? z : 0) * cosB,
+    }),
   };
 }
 

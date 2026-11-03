@@ -125,7 +125,7 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     }
   }, [computedScene]);
 
-  // 4. Sincroniza o destaque Ciano Técnico (#00B4D8) das Faces e Arestas selecionadas no ThreeBRepRenderer
+  // 4. Sincroniza o destaque Ciano Técnico (#00B4D8) das Faces, Arestas e Corpos selecionados no ThreeBRepRenderer
   useEffect(() => {
     const renderer = rendererRef.current;
     if (!renderer) return;
@@ -172,6 +172,27 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
       }
     }
 
+    if (count === 0 && subSelection3D.bodyIds.length > 0) {
+      for (const bId of subSelection3D.bodyIds) {
+        if (count >= 2) break;
+        const b = computedScene.bodiesById.get(bId);
+        const topF = b?.faces.find((f) => f.role === "top" || f.role === "miter") ?? b?.faces[0];
+        if (topF) {
+          renderer.selectEntity(
+            {
+              id: topF.faceId,
+              type: "face",
+              index: topF.meshFaceIndex,
+              point: { x: topF.centroid.x, y: -topF.centroid.y, z: topF.centroid.z },
+              normal: { x: topF.normal.x, y: -topF.normal.y, z: topF.normal.z },
+            },
+            count > 0,
+          );
+          count++;
+        }
+      }
+    }
+
     renderer.requestRender();
   }, [computedScene, subSelection3D]);
 
@@ -187,14 +208,6 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     const renderer = rendererRef.current;
     if (!renderer || !active || width <= 0 || height <= 0) return;
 
-    const avgMidZ =
-      computedScene.bodies.length > 0
-        ? computedScene.bodies.reduce(
-            (acc, b) => acc + (b.bbox3D.minZ + b.bbox3D.maxZ) * 0.5,
-            0,
-          ) / computedScene.bodies.length
-        : Math.max(0.5, effectiveThickness) * 0.5;
-
     const pivotX = Number.isFinite(pivot2D.x) ? pivot2D.x : 0;
     const pivotY = Number.isFinite(pivot2D.y) ? pivot2D.y : 0;
 
@@ -204,7 +217,7 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
       viewportHeight: height,
       azimuthDeg,
       elevationDeg,
-      pivot2D: { x: pivotX, y: pivotY, z: avgMidZ },
+      pivot2D: { x: pivotX, y: pivotY, z: 0 },
     });
     renderer.renderImmediate();
   }, [
