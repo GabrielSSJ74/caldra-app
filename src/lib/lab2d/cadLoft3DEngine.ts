@@ -58,6 +58,11 @@ export interface LoftQuadFace {
   p11: Vec3;
   p01: Vec3;
   normal: Vec3;
+  n00?: Vec3;
+  n10?: Vec3;
+  n11?: Vec3;
+  n01?: Vec3;
+  isSmoothLateral?: boolean;
   centroid: Vec3;
   isInnerWall?: boolean;
   isCap?: boolean;
@@ -852,11 +857,13 @@ export function buildLoft3DMesh(
     rings.push(ring);
   }
 
-  // Gera as faces quadriláteras da parede externa
+  // Gera as faces quadriláteras da parede externa com Smooth Vertex Normals (Δθ < 25°)
+  const cosSmoothThreshold = Math.cos((25 * Math.PI) / 180); // ~0.906307787
   const quads: LoftQuadFace[] = [];
   for (let vIdx = 0; vIdx < vRings; vIdx++) {
     const r0 = rings[vIdx]!;
     const r1 = rings[vIdx + 1]!;
+    const ringQuads: LoftQuadFace[] = [];
     for (let i = 0; i < nSamples; i++) {
       const nextI = (i + 1) % nSamples;
       const p00 = r0[i]!;
@@ -864,7 +871,42 @@ export function buildLoft3DMesh(
       const p11 = r1[nextI]!;
       const p01 = r1[i]!;
       const { normal, centroid } = computeQuadNormalAndCentroid(p00, p10, p11, p01);
-      quads.push({ p00, p10, p11, p01, normal, centroid });
+      ringQuads.push({ p00, p10, p11, p01, normal, centroid });
+    }
+    for (let i = 0; i < nSamples; i++) {
+      const prevQ = ringQuads[(i - 1 + nSamples) % nSamples]!;
+      const currQ = ringQuads[i]!;
+      const nextQ = ringQuads[(i + 1) % nSamples]!;
+      const dotLeft =
+        prevQ.normal.x * currQ.normal.x +
+        prevQ.normal.y * currQ.normal.y +
+        prevQ.normal.z * currQ.normal.z;
+      const dotRight =
+        currQ.normal.x * nextQ.normal.x +
+        currQ.normal.y * nextQ.normal.y +
+        currQ.normal.z * nextQ.normal.z;
+      const nLeft =
+        dotLeft >= cosSmoothThreshold
+          ? computeNormalizedVec3(
+              prevQ.normal.x + currQ.normal.x,
+              prevQ.normal.y + currQ.normal.y,
+              prevQ.normal.z + currQ.normal.z,
+            )
+          : currQ.normal;
+      const nRight =
+        dotRight >= cosSmoothThreshold
+          ? computeNormalizedVec3(
+              currQ.normal.x + nextQ.normal.x,
+              currQ.normal.y + nextQ.normal.y,
+              currQ.normal.z + nextQ.normal.z,
+            )
+          : currQ.normal;
+      currQ.n00 = nLeft;
+      currQ.n01 = nLeft;
+      currQ.n10 = nRight;
+      currQ.n11 = nRight;
+      currQ.isSmoothLateral = dotLeft >= cosSmoothThreshold || dotRight >= cosSmoothThreshold;
+      quads.push(currQ);
     }
   }
 
@@ -930,10 +972,11 @@ export function buildLoft3DMesh(
       });
     });
 
-    // Faces da parede interna
+    // Faces da parede interna com Smooth Vertex Normals (Δθ < 25°)
     for (let vIdx = 0; vIdx < vRings; vIdx++) {
       const r0 = innerRings[vIdx]!;
       const r1 = innerRings[vIdx + 1]!;
+      const innerRingQuads: LoftQuadFace[] = [];
       for (let i = 0; i < nSamples; i++) {
         const nextI = (i + 1) % nSamples;
         const p00 = r0[nextI]!;
@@ -941,7 +984,42 @@ export function buildLoft3DMesh(
         const p11 = r1[i]!;
         const p01 = r1[nextI]!;
         const { normal, centroid } = computeQuadNormalAndCentroid(p00, p10, p11, p01);
-        quads.push({ p00, p10, p11, p01, normal, centroid, isInnerWall: true });
+        innerRingQuads.push({ p00, p10, p11, p01, normal, centroid, isInnerWall: true });
+      }
+      for (let i = 0; i < nSamples; i++) {
+        const prevQ = innerRingQuads[(i - 1 + nSamples) % nSamples]!;
+        const currQ = innerRingQuads[i]!;
+        const nextQ = innerRingQuads[(i + 1) % nSamples]!;
+        const dotL =
+          prevQ.normal.x * currQ.normal.x +
+          prevQ.normal.y * currQ.normal.y +
+          prevQ.normal.z * currQ.normal.z;
+        const dotR =
+          currQ.normal.x * nextQ.normal.x +
+          currQ.normal.y * nextQ.normal.y +
+          currQ.normal.z * nextQ.normal.z;
+        const nL =
+          dotL >= cosSmoothThreshold
+            ? computeNormalizedVec3(
+                prevQ.normal.x + currQ.normal.x,
+                prevQ.normal.y + currQ.normal.y,
+                prevQ.normal.z + currQ.normal.z,
+              )
+            : currQ.normal;
+        const nR =
+          dotR >= cosSmoothThreshold
+            ? computeNormalizedVec3(
+                currQ.normal.x + nextQ.normal.x,
+                currQ.normal.y + nextQ.normal.y,
+                currQ.normal.z + nextQ.normal.z,
+              )
+            : currQ.normal;
+        currQ.n00 = nR;
+        currQ.n01 = nR;
+        currQ.n10 = nL;
+        currQ.n11 = nL;
+        currQ.isSmoothLateral = dotL >= cosSmoothThreshold || dotR >= cosSmoothThreshold;
+        quads.push(currQ);
       }
     }
 
@@ -1182,7 +1260,33 @@ export function renderLoft3DMeshToCanvas2D(
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
 
-  // 1. Pintura das faces quadriláteras sombreadas
+  // Função auxiliar de sombreamento Studio CAD acetinado para uma dada normal unitária
+  const evaluateStudioColorForNormal = (norm: Vec3, isInner: boolean): string => {
+    const rawNdotL = Math.max(0, norm.x * keyLight.x + norm.y * keyLight.y + norm.z * keyLight.z);
+    const softNdotL = Math.pow(rawNdotL, 0.85);
+    const ndotFill = Math.max(0, norm.x * fillLight.x + norm.y * fillLight.y + norm.z * fillLight.z);
+    const ndotH = Math.max(0, norm.x * halfVec.x + norm.y * halfVec.y + norm.z * halfVec.z);
+    const satinSpec = Math.pow(ndotH, 18) * 0.22;
+
+    const hemiFactor = Math.max(0, Math.min(1, norm.z * 0.5 + 0.5));
+    const ambient = (isLight ? 0.44 : 0.34) + hemiFactor * 0.14;
+    const diffuse = softNdotL * 0.48 + ndotFill * 0.16;
+    const lit = Math.min(1.12, ambient + diffuse);
+
+    let r = Math.round((isInner ? 86 : 118) * lit + satinSpec * 235);
+    let g = Math.round((isInner ? 100 : 136) * lit + satinSpec * 242);
+    let b = Math.round((isInner ? 118 : 158) * lit + satinSpec * 250);
+
+    if (isSelected) {
+      r = Math.round(r * 0.82 + 14);
+      g = Math.round(g * 0.92 + 38);
+      b = Math.min(255, Math.round(b * 1.05 + 55));
+    }
+
+    return `rgb(${Math.min(255, r)}, ${Math.min(255, g)}, ${Math.min(255, b)})`;
+  };
+
+  // 1. Pintura das faces quadriláteras sombreadas (com Gradiente Linear Contínuo nas faixas curvas Δθ < 25°)
   for (const { q } of sortedQuads) {
     const s00 = projectPoint3DToWorkplane2D(q.p00, isIsometric, isoPlane, orbitProjection);
     const s10 = projectPoint3DToWorkplane2D(q.p10, isIsometric, isoPlane, orbitProjection);
@@ -1191,9 +1295,8 @@ export function renderLoft3DMeshToCanvas2D(
 
     const n = q.normal;
     const ndotl = Math.max(0, n.x * keyLight.x + n.y * keyLight.y + n.z * keyLight.z);
-    const ndotFill = Math.max(0, n.x * fillLight.x + n.y * fillLight.y + n.z * fillLight.z);
     const ndoth = Math.max(0, n.x * halfVec.x + n.y * halfVec.y + n.z * halfVec.z);
-    const spec = Math.pow(ndoth, 28);
+    const spec = Math.pow(ndoth, 18) * 0.22;
 
     ctx.beginPath();
     ctx.moveTo(s00.x, s00.y);
@@ -1204,34 +1307,42 @@ export function renderLoft3DMeshToCanvas2D(
 
     if (isPreview) {
       // Prévia Translúcida Azul-Celeste Metálica (exatamente como no vídeo do AutoCAD/Shapr3D)
-      const baseR = Math.round(38 + ndotl * 65 + spec * 110);
-      const baseG = Math.round(158 + ndotl * 65 + spec * 75);
-      const baseB = Math.round(235 + ndotl * 20 + spec * 20);
+      const baseR = Math.round(38 + ndotl * 65 + spec * 180);
+      const baseG = Math.round(158 + ndotl * 65 + spec * 140);
+      const baseB = Math.round(235 + ndotl * 20 + spec * 60);
       const alpha = q.isCap ? 0.24 : 0.42;
       ctx.fillStyle = `rgba(${Math.min(255, baseR)}, ${Math.min(255, baseG)}, ${Math.min(255, baseB)}, ${alpha})`;
       ctx.fill();
     } else {
-      // Sólido 3D Metálico Phong / Blinn-Phong (Titânio / Aço Usinado)
-      const ambient = isLight ? 0.46 : 0.34;
-      const diffuse = ndotl * 0.52 + ndotFill * 0.18;
-      const lit = Math.min(1.15, ambient + diffuse);
+      // Se for uma tira curva suave (Δθ < 25°), interpola continuamente a luz da borda esquerda (n00) até a borda direita (n10)
+      if (q.isSmoothLateral && q.n00 && q.n10) {
+        const midLeftX = 0.5 * (s00.x + s01.x);
+        const midLeftY = 0.5 * (s00.y + s01.y);
+        const midRightX = 0.5 * (s10.x + s11.x);
+        const midRightY = 0.5 * (s10.y + s11.y);
+        const spanPx = Math.hypot(midRightX - midLeftX, midRightY - midLeftY);
+        const colorL = evaluateStudioColorForNormal(q.n00, Boolean(q.isInnerWall));
+        const colorR = evaluateStudioColorForNormal(q.n10, Boolean(q.isInnerWall));
 
-      let r = Math.round((q.isInnerWall ? 92 : 126) * lit + spec * 95);
-      let g = Math.round((q.isInnerWall ? 106 : 144) * lit + spec * 102);
-      let b = Math.round((q.isInnerWall ? 124 : 168) * lit + spec * 110);
-
-      if (isSelected) {
-        r = Math.round(r * 0.82 + 14);
-        g = Math.round(g * 0.92 + 38);
-        b = Math.min(255, Math.round(b * 1.05 + 55));
+        if (spanPx > 1e-3 && colorL !== colorR) {
+          const grad = ctx.createLinearGradient(midLeftX, midLeftY, midRightX, midRightY);
+          grad.addColorStop(0, colorL);
+          grad.addColorStop(1, colorR);
+          ctx.fillStyle = grad;
+          ctx.strokeStyle = grad;
+        } else {
+          ctx.fillStyle = colorL;
+          ctx.strokeStyle = colorL;
+        }
+      } else {
+        const fillStr = evaluateStudioColorForNormal(n, Boolean(q.isInnerWall));
+        ctx.fillStyle = fillStr;
+        ctx.strokeStyle = fillStr;
       }
 
-      const fillStr = `rgb(${Math.min(255, r)}, ${Math.min(255, g)}, ${Math.min(255, b)})`;
-      ctx.fillStyle = fillStr;
       ctx.fill();
-      // Costura ultrafina da mesma cor para evitar frestas de subpixel entre faces adjacentes
-      ctx.strokeStyle = fillStr;
-      ctx.lineWidth = 0.65 * invK;
+      // Costura ultrafina da mesma cor (0.6px, lineJoin = 'round') para vedar frestas de subpixel sem linhas pretas internas
+      ctx.lineWidth = 0.6 * invK;
       ctx.stroke();
     }
   }
@@ -1338,7 +1449,12 @@ export function convertLoft3DMeshToTessellatedShape(
     if (p.z > maxZ) maxZ = p.z;
   };
 
-  const addPolylineEdge = (edgeId: string, pts: Vec3[], isSeam = false) => {
+  const addPolylineEdge = (
+    edgeId: string,
+    pts: Vec3[],
+    isSeam = false,
+    isTangentEdge = false,
+  ) => {
     if (pts.length < 2) return;
     const flat: number[] = [];
     for (const p of pts) {
@@ -1353,6 +1469,7 @@ export function convertLoft3DMeshToTessellatedShape(
       points: new Float32Array(flat),
       pointCount: pts.length,
       isSeam,
+      isTangentEdge,
     });
     totalEdgePoints += pts.length;
   };
@@ -1362,9 +1479,17 @@ export function convertLoft3DMeshToTessellatedShape(
     const startTri = indices.length / 3;
     const base = vCursor;
     const pts = [q.p00, q.p10, q.p11, q.p01];
-    for (const p of pts) {
+    const vNorms = [
+      q.n00 ?? q.normal,
+      q.n10 ?? q.normal,
+      q.n11 ?? q.normal,
+      q.n01 ?? q.normal,
+    ];
+    for (let k = 0; k < 4; k++) {
+      const p = pts[k]!;
+      const vn = vNorms[k]!;
       positions.push(p.x, p.y, p.z);
-      normals.push(q.normal.x, q.normal.y, q.normal.z);
+      normals.push(vn.x, vn.y, vn.z);
       updateBounds(p);
     }
     indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
@@ -1380,19 +1505,20 @@ export function convertLoft3DMeshToTessellatedShape(
     });
   });
 
-  // Arestas das seções transversais
+  // Arestas das seções transversais (contornos reais superior e inferior)
   mesh.sections.forEach((sec, sIdx) => {
     if (sec.points3D.length > 0) {
       const closedRing = [...sec.points3D, sec.points3D[0]!];
-      addPolylineEdge(`${idPrefix}_sec_${sIdx}`, closedRing, false);
+      addPolylineEdge(`${idPrefix}_sec_${sIdx}`, closedRing, false, false);
     }
   });
 
-  // Arestas de fluxo longitudinal (crease / isolines)
+  // Arestas de fluxo longitudinal (exibidas apenas em SOMB como linhas de tangência quando smooth)
   mesh.longitudinalGuides.forEach((guide, gIdx) => {
     addPolylineEdge(
       `${idPrefix}_guide_${gIdx}`,
       guide,
+      mesh.surfaceMode === "smooth",
       mesh.surfaceMode === "smooth",
     );
   });

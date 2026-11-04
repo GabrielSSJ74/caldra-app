@@ -310,6 +310,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   // Sessão do Teclado Numérico Flutuante In-Canvas (OCULTO POR PADRÃO)
   const [numpadSession, setNumpadSession] = useState<ActiveParametricNumpadSession | null>(null);
   const [numpadBuffer, setNumpadBuffer] = useState<string>("");
+  const numpadFreshOpenRef = useRef<boolean>(false);
 
   // Fecha o teclado numérico ao trocar de ferramenta
   useEffect(() => {
@@ -702,20 +703,37 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       triggerHaptic("selection");
 
       const primaryId = targetEntityId || resolvedTargetIds[0];
+      const safeInitial =
+        targetParameter === "filletRadius" || targetParameter === "chamferDistance"
+          ? Math.max(
+              0,
+              Math.min(
+                initialValue,
+                Math.max(
+                  5,
+                  Math.min(
+                    150,
+                    Math.min(primaryBody?.widthMm || 200, primaryBody?.heightMm || 200) * 0.45,
+                  ),
+                ),
+              ),
+            )
+          : initialValue;
 
+      numpadFreshOpenRef.current = true;
       setNumpadSession({
         kind,
         targetParameter,
         targetEntityId: primaryId,
         title,
         unit,
-        initialValue: Number(initialValue.toFixed(2)),
+        initialValue: Number(safeInitial.toFixed(2)),
         screenPos: { x: 0, y: 0 },
         targetEntityIds: resolvedTargetIds,
         subTarget,
         copyMode: copyModeOverride ?? copyOnTransform,
       });
-      setNumpadBuffer(String(Number(initialValue.toFixed(2))));
+      setNumpadBuffer(String(Number(safeInitial.toFixed(2))));
     },
     [activeTargetEntityIds, primaryBody, copyOnTransform],
   );
@@ -972,11 +990,18 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
   const handleNumpadKey = useCallback((key: string) => {
     triggerHaptic("tap");
+    const isFresh = numpadFreshOpenRef.current;
+    numpadFreshOpenRef.current = false;
+
     if (key === "C") {
       setNumpadBuffer("0");
       return;
     }
     if (key === "BACK") {
+      if (isFresh) {
+        setNumpadBuffer("0");
+        return;
+      }
       setNumpadBuffer((prev) => (prev.length > 1 ? prev.slice(0, -1) : "0"));
       return;
     }
@@ -985,7 +1010,15 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       return;
     }
     if (key === ".") {
+      if (isFresh) {
+        setNumpadBuffer("0.");
+        return;
+      }
       setNumpadBuffer((prev) => (prev.includes(".") ? prev : `${prev}.`));
+      return;
+    }
+    if (isFresh) {
+      setNumpadBuffer(key);
       return;
     }
     setNumpadBuffer((prev) => (prev === "0" ? key : `${prev}${key}`));
@@ -1490,11 +1523,21 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               session.initialValue <= 0.5 && currentDeltaMm < 0
                 ? "chamfer"
                 : filletOrChamferMode;
-            const nextR = Math.max(
-              0,
-              session.initialValue <= 0.5 && currentDeltaMm < 0
-                ? Math.abs(currentDeltaMm)
-                : session.initialValue + currentDeltaMm,
+            const maxCornerR = Math.max(
+              5,
+              Math.min(
+                150,
+                Math.min(primaryBody?.widthMm || 200, primaryBody?.heightMm || 200) * 0.45,
+              ),
+            );
+            const nextR = Math.min(
+              maxCornerR,
+              Math.max(
+                0,
+                session.initialValue <= 0.5 && currentDeltaMm < 0
+                  ? Math.abs(currentDeltaMm)
+                  : session.initialValue + currentDeltaMm,
+              ),
             );
             onCommitEntities(
               () =>
@@ -3004,117 +3047,141 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 stroke="#FFFFFF"
                 strokeWidth={1.5}
               />
+              {/* Pílula Única Limpa na Aresta Selecionada: "R {valor} mm • Raio (Fillet)" */}
               <g
-                transform={`translate(${edgeDiagonalGizmo.tip.x + edgeDiagonalGizmo.ux * 12}, ${edgeDiagonalGizmo.tip.y + edgeDiagonalGizmo.uy * 12})`}
-                className="cursor-pointer"
-                onPointerDown={(ev) => {
-                  ev.stopPropagation();
-                  ev.preventDefault();
-                }}
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  if (edgeActionMode === "transform_edge") {
-                    openFloatingNumpad(
-                      "OFFSET",
-                      "MOVER ARESTA",
-                      "mm",
-                      25,
-                      "offsetFaceDistance",
-                      edgeDiagonalGizmo.edge.entityId,
-                      "sides",
-                    );
-                  } else {
-                    openFloatingNumpad(
-                      filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
-                      filletOrChamferMode === "fillet" ? "RAIO FILLET" : "CHANFRO 45°",
-                      "mm",
-                      filletOrChamferMode === "fillet"
-                        ? primaryBody?.edgeFilletRadiusMm || 10
-                        : primaryBody?.edgeChamferDistMm || 10,
-                      filletOrChamferMode === "fillet" ? "filletRadius" : "chamferDistance",
-                      edgeDiagonalGizmo.edge.entityId,
-                    );
-                  }
-                }}
+                transform={`translate(${edgeDiagonalGizmo.tip.x + edgeDiagonalGizmo.ux * 16}, ${edgeDiagonalGizmo.tip.y + edgeDiagonalGizmo.uy * 16})`}
+                className="pointer-events-auto"
               >
                 <rect
-                  x={-38}
-                  y={-9}
-                  width={76}
-                  height={18}
-                  rx={5}
+                  x={-84}
+                  y={-11}
+                  width={168}
+                  height={22}
+                  rx={11}
                   fill={isDark ? "#0B1220" : "#FFFFFF"}
                   stroke="#00E5FF"
-                  strokeWidth={1.2}
+                  strokeWidth={1.35}
                 />
+                {/* Zona esquerda clicável: Abre teclado numérico para digitar Raio / Chanfro / Offset */}
+                <g
+                  className="cursor-pointer"
+                  onPointerDown={(ev) => {
+                    ev.stopPropagation();
+                    ev.preventDefault();
+                  }}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    if (edgeActionMode === "transform_edge") {
+                      openFloatingNumpad(
+                        "OFFSET",
+                        "MOVER ARESTA",
+                        "mm",
+                        25,
+                        "offsetFaceDistance",
+                        edgeDiagonalGizmo.edge.entityId,
+                        "sides",
+                      );
+                    } else {
+                      openFloatingNumpad(
+                        filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
+                        filletOrChamferMode === "fillet" ? "RAIO FILLET" : "CHANFRO 45°",
+                        "mm",
+                        filletOrChamferMode === "fillet"
+                          ? primaryBody?.edgeFilletRadiusMm || 10
+                          : primaryBody?.edgeChamferDistMm || 10,
+                        filletOrChamferMode === "fillet" ? "filletRadius" : "chamferDistance",
+                        edgeDiagonalGizmo.edge.entityId,
+                      );
+                    }
+                  }}
+                >
+                  <rect
+                    x={-84}
+                    y={-11}
+                    width={78}
+                    height={22}
+                    rx={11}
+                    fill="transparent"
+                  />
+                  <text
+                    x={-44}
+                    y={0.5}
+                    fill="#00E5FF"
+                    fontSize="9.5"
+                    fontWeight="bold"
+                    fontFamily="monospace"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
+                    {edgeActionMode === "transform_edge"
+                      ? `Δ ${dragDeltaMm} mm`
+                      : filletOrChamferMode === "fillet"
+                        ? `R ${(primaryBody?.edgeFilletRadiusMm || 10).toFixed(1)} mm`
+                        : `D ${(primaryBody?.edgeChamferDistMm || 10).toFixed(1)} mm`}
+                  </text>
+                </g>
+                {/* Separador central • */}
                 <text
-                  x={0}
-                  y={1}
-                  fill="#00E5FF"
+                  x={-4}
+                  y={0.5}
+                  fill="#64748B"
                   fontSize="9.5"
                   fontWeight="bold"
                   fontFamily="monospace"
                   textAnchor="middle"
                   dominantBaseline="central"
+                  style={{ pointerEvents: "none" }}
                 >
-                  {edgeActionMode === "transform_edge"
-                    ? `Δ ${dragDeltaMm} mm`
-                    : filletOrChamferMode === "fillet"
-                      ? `R ${(primaryBody?.edgeFilletRadiusMm || 10).toFixed(1)} mm`
-                      : `D ${(primaryBody?.edgeChamferDistMm || 10).toFixed(1)} mm`}
+                  •
                 </text>
-              </g>
-
-              {/* Botão rápido de alternância ao lado da seta da aresta: Raio | Chanfro | Mover */}
-              <g
-                transform={`translate(${edgeDiagonalGizmo.tip.x + edgeDiagonalGizmo.ux * 12}, ${edgeDiagonalGizmo.tip.y + edgeDiagonalGizmo.uy * 12 + 21})`}
-                className="cursor-pointer"
-                onPointerDown={(ev) => {
-                  ev.stopPropagation();
-                  ev.preventDefault();
-                }}
-                onClick={(ev) => {
-                  ev.stopPropagation();
-                  triggerHaptic("selection");
-                  if (edgeActionMode === "fillet") {
-                    setEdgeActionMode("chamfer");
-                    setFilletOrChamferMode("chamfer");
-                    setDirectTool("chamfer_3d");
-                  } else if (edgeActionMode === "chamfer") {
-                    setEdgeActionMode("transform_edge");
-                  } else {
-                    setEdgeActionMode("fillet");
-                    setFilletOrChamferMode("fillet");
-                    setDirectTool("fillet_3d");
-                  }
-                }}
-              >
-                <rect
-                  x={-42}
-                  y={-8}
-                  width={84}
-                  height={16}
-                  rx={5}
-                  fill={isDark ? "#0F172A" : "#F8FAFC"}
-                  stroke="#38BDF8"
-                  strokeWidth={1}
-                />
-                <text
-                  x={0}
-                  y={0.5}
-                  fill="#38BDF8"
-                  fontSize="8.5"
-                  fontWeight="bold"
-                  fontFamily="monospace"
-                  textAnchor="middle"
-                  dominantBaseline="central"
+                {/* Zona direita clicável: Alterna Raio (Fillet) ↔ Chanfro 45° ↔ Mover Aresta */}
+                <g
+                  className="cursor-pointer"
+                  onPointerDown={(ev) => {
+                    ev.stopPropagation();
+                    ev.preventDefault();
+                  }}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    triggerHaptic("selection");
+                    if (edgeActionMode === "fillet") {
+                      setEdgeActionMode("chamfer");
+                      setFilletOrChamferMode("chamfer");
+                      setDirectTool("chamfer_3d");
+                    } else if (edgeActionMode === "chamfer") {
+                      setEdgeActionMode("transform_edge");
+                    } else {
+                      setEdgeActionMode("fillet");
+                      setFilletOrChamferMode("fillet");
+                      setDirectTool("fillet_3d");
+                    }
+                  }}
                 >
-                  {edgeActionMode === "fillet"
-                    ? "⟳ Raio (Fillet)"
-                    : edgeActionMode === "chamfer"
-                      ? "⟳ Chanfro 45°"
-                      : "⟳ Mover Aresta"}
-                </text>
+                  <rect
+                    x={0}
+                    y={-11}
+                    width={84}
+                    height={22}
+                    rx={11}
+                    fill="transparent"
+                  />
+                  <text
+                    x={42}
+                    y={0.5}
+                    fill="#38BDF8"
+                    fontSize="9"
+                    fontWeight="bold"
+                    fontFamily="monospace"
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                  >
+                    {edgeActionMode === "fillet"
+                      ? "Raio (Fillet)"
+                      : edgeActionMode === "chamfer"
+                        ? "Chanfro 45°"
+                        : "Mover Aresta"}
+                  </text>
+                </g>
               </g>
             </g>
           )}
@@ -3868,7 +3935,12 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       {/* =====================================================================
           3. BADGE IN-CANVAS CLICÁVEL AO LADO DO ELEMENTO (ACIONA O NUMPAD COMPACTO)
           ===================================================================== */}
-      {is3DEnvironment && gizmoScreen && primaryBody && !numpadSession && (
+      {is3DEnvironment &&
+        gizmoScreen &&
+        primaryBody &&
+        !numpadSession &&
+        selectionKind3D !== "edge" &&
+        selectionKind3D !== "face" && (
         <div
           style={{
             left: `${Math.max(16, Math.min(width - 165, gizmoScreen.z.endX + 12))}px`,

@@ -1255,9 +1255,44 @@ export function buildClassifiedWireframeScene3D(
         }
       }
 
-      // 3.2 Arestas verticais/laterais (Z = 0 -> Z = +h) nos vértices (deduplicadas)
-      const vertStep = rawPts.length > 48 ? Math.max(1, Math.floor(rawPts.length / 16)) : 1;
-      for (let i = 0; i < n; i += vertStep) {
+      // 3.2 Arestas verticais/laterais (Z = 0 -> Z = +h) apenas em Quinas Vivas (Δθ >= 25°)
+      // ou Linhas de Transição de Tangência (início/fim de dobra), nunca no interior de curvas suaves
+      const cosSharpCorner = Math.cos((25 * Math.PI) / 180);
+      const cosFlatWall = Math.cos((2.0 * Math.PI) / 180);
+      const segDirs: Vec2[] = [];
+      for (let i = 0; i < n; i++) {
+        const pA = rawPts[i]!;
+        const pB = rawPts[(i + 1) % n]!;
+        const dx = pB.x - pA.x;
+        const dy = pB.y - pA.y;
+        const len = Math.hypot(dx, dy) || 1;
+        segDirs.push({ x: dx / len, y: dy / len });
+      }
+      const isCurvedStrip = (idx: number): boolean => {
+        if (!isClosed && (idx <= 0 || idx >= n - 1)) return false;
+        const dPrev = segDirs[(idx - 1 + n) % n]!;
+        const dCurr = segDirs[idx]!;
+        const dNext = segDirs[(idx + 1) % n]!;
+        const dotL = dPrev.x * dCurr.x + dPrev.y * dCurr.y;
+        const dotR = dCurr.x * dNext.x + dCurr.y * dNext.y;
+        return (
+          (dotL < cosFlatWall && dotL >= cosSharpCorner) ||
+          (dotR < cosFlatWall && dotR >= cosSharpCorner)
+        );
+      };
+
+      for (let i = 0; i < n; i++) {
+        if (isClosed && n >= 3) {
+          const dPrev = segDirs[(i - 1 + n) % n]!;
+          const dCurr = segDirs[i]!;
+          const dotCorner = dPrev.x * dCurr.x + dPrev.y * dCurr.y;
+          const isSharp = dotCorner < cosSharpCorner;
+          const isTangentTransition =
+            !isSharp && isCurvedStrip((i - 1 + n) % n) !== isCurvedStrip(i);
+          if (!isSharp && !isTangentTransition) {
+            continue;
+          }
+        }
         const bPt = basePts[i]!;
         const tPt = topPts[i]!;
         const latKey = canonicalSegmentKey(bPt, tPt);

@@ -341,8 +341,21 @@ export function getEntityDirect3DParams(entity: Entity, defaultThicknessMm = 20)
         ? "subtract"
         : "new_body";
 
-  const edgeFilletRadiusMm = Math.max(0, Number(p.edgeFilletRadiusMm) || 0);
-  const edgeChamferDistMm = Math.max(0, Number(p.edgeChamferDistMm) || 0);
+  const rawBox = boxOf(entity);
+  const rawSpanW = Math.max(1, rawBox.maxX - rawBox.minX);
+  const rawSpanH = Math.max(1, rawBox.maxY - rawBox.minY);
+  const maxGeometricCornerMm = Math.max(5, Math.min(250, Math.min(rawSpanW, rawSpanH) * 0.46));
+
+  const rawFilletVal = Math.max(0, Number(p.edgeFilletRadiusMm) || 0);
+  const rawChamferVal = Math.max(0, Number(p.edgeChamferDistMm) || 0);
+  const edgeFilletRadiusMm =
+    rawFilletVal > maxGeometricCornerMm * 2.5
+      ? Math.min(15, maxGeometricCornerMm)
+      : Math.min(rawFilletVal, maxGeometricCornerMm);
+  const edgeChamferDistMm =
+    rawChamferVal > maxGeometricCornerMm * 2.5
+      ? Math.min(15, maxGeometricCornerMm)
+      : Math.min(rawChamferVal, maxGeometricCornerMm);
 
   // 2. SHELL WALL THICKNESS (Espessura da Parede da Casca / Tubo Metalon em mm) — INDEPENDENTE de extrudeHeight
   const rawShellWall = p.shellWallThickness ?? p.shellThicknessMm ?? entity.shellWallThickness;
@@ -411,6 +424,14 @@ export function setEntityDirect3DParams(
 ): Entity {
   const cur = getEntityDirect3DParams(entity);
   const next = { ...cur, ...patch };
+
+  const rawBox = boxOf(entity);
+  const rawSpanW = Math.max(1, rawBox.maxX - rawBox.minX);
+  const rawSpanH = Math.max(1, rawBox.maxY - rawBox.minY);
+  const maxGeometricCornerMm = Math.max(5, Math.min(250, Math.min(rawSpanW, rawSpanH) * 0.46));
+
+  next.edgeFilletRadiusMm = Math.max(0, Math.min(next.edgeFilletRadiusMm, maxGeometricCornerMm));
+  next.edgeChamferDistMm = Math.max(0, Math.min(next.edgeChamferDistMm, maxGeometricCornerMm));
 
   const effectiveShell =
     patch.shellWallThicknessMm !== undefined
@@ -490,6 +511,71 @@ function pointInPolygon2D(pt: Vec2, polygon: Vec2[]): boolean {
 }
 
 /**
+ * Amostra um segmento com bulge (arco tangente DXF/CAD) usando estritamente
+ * 28 subdivisões uniformes para cada arco de 90° (π/2 rad).
+ */
+function sampleBulgeArcSegmentUniform2D(p1: Vec2, p2: Vec2, bulge: number): Vec2[] {
+  if (!Number.isFinite(bulge) || Math.abs(bulge) < 1e-5) {
+    return [p1];
+  }
+  const chordDx = p2.x - p1.x;
+  const chordDy = p2.y - p1.y;
+  const chordLen = Math.hypot(chordDx, chordDy);
+  if (chordLen < 1e-4) return [p1];
+
+  const theta = 4 * Math.atan(bulge);
+  const sinHalf = Math.sin(theta * 0.5);
+  if (Math.abs(sinHalf) < 1e-5) return [p1];
+
+  const radius = chordLen / (2 * Math.abs(sinHalf));
+  const midX = (p1.x + p2.x) * 0.5;
+  const midY = (p1.y + p2.y) * 0.5;
+  const nx = -chordDy / chordLen;
+  const ny = chordDx / chordLen;
+  const cotHalf = (1 - bulge * bulge) / (2 * bulge);
+  const cx = midX + nx * (chordLen * 0.5) * cotHalf;
+  const cy = midY + ny * (chordLen * 0.5) * cotHalf;
+
+  const startAngle = Math.atan2(p1.y - cy, p1.x - cx);
+  const steps = Math.max(8, Math.round((Math.abs(theta) / (Math.PI * 0.5)) * 28));
+  const arcPts: Vec2[] = [];
+  for (let s = 0; s < steps; s++) {
+    const ang = startAngle + (theta * s) / steps;
+    arcPts.push({
+      x: cx + Math.cos(ang) * radius,
+      y: cy + Math.sin(ang) * radius,
+    });
+  }
+  return arcPts;
+}
+
+/**
+ * Extrai os vértices de quina viva (dihedral angle >= 25°) de um contorno fechado CCW.
+ */
+function extractSharpCornersFromLoop2D(ccwPts: Vec2[], minAngleDeg = 25): Vec2[] {
+  const n = ccwPts.length;
+  if (n < 3) return ccwPts;
+  const cosThreshold = Math.cos((minAngleDeg * Math.PI) / 180);
+  const sharp: Vec2[] = [];
+  for (let i = 0; i < n; i++) {
+    const prev = ccwPts[(i - 1 + n) % n]!;
+    const curr = ccwPts[i]!;
+    const next = ccwPts[(i + 1) % n]!;
+    const dx1 = curr.x - prev.x;
+    const dy1 = curr.y - prev.y;
+    const l1 = Math.hypot(dx1, dy1) || 1;
+    const dx2 = next.x - curr.x;
+    const dy2 = next.y - curr.y;
+    const l2 = Math.hypot(dx2, dy2) || 1;
+    const dot = (dx1 * dx2 + dy1 * dy2) / (l1 * l2);
+    if (dot <= cosThreshold) {
+      sharp.push(curr);
+    }
+  }
+  return sharp;
+}
+
+/**
  * Extrai os vértices base de um perfil fechado 2D (antes de fillet/offset 3D).
  */
 export function extractBaseClosedLoop2D(
@@ -501,7 +587,8 @@ export function extractBaseClosedLoop2D(
 
   if (entity.type === "circle") {
     if (entity.r <= 0.1) return null;
-    const segs = 48;
+    // 28 subdivisões por quadrante de 90° = 112 segmentos uniformes no cilindro completo
+    const segs = 112;
     const pts: Vec2[] = [];
     for (let i = 0; i < segs; i++) {
       const a = (i / segs) * Math.PI * 2;
@@ -524,7 +611,7 @@ export function extractBaseClosedLoop2D(
 
   if (entity.type === "ellipse") {
     if (entity.rx <= 0.1 || entity.ry <= 0.1) return null;
-    const segs = 48;
+    const segs = 112;
     const rot = entity.rotation ?? 0;
     const cosR = Math.cos(rot);
     const sinR = Math.sin(rot);
@@ -541,7 +628,7 @@ export function extractBaseClosedLoop2D(
     return {
       points: ensureCCW(pts),
       isSmoothCircle: true,
-      corners: pts.filter((_, idx) => idx % 12 === 0),
+      corners: pts.filter((_, idx) => idx % 28 === 0),
     };
   }
 
@@ -552,11 +639,35 @@ export function extractBaseClosedLoop2D(
     const isClosed = entity.closed || Math.hypot(first.x - last.x, first.y - last.y) < 1.5;
     if (!isClosed) return null;
 
-    // Remove ponto final duplicado se existir
+    const hasBulges =
+      Array.isArray(entity.bulges) && entity.bulges.some((b) => Math.abs(b) > 1e-4);
+
+    const rawExpanded: Vec2[] = [];
+    if (hasBulges && entity.bulges) {
+      const nPts = entity.pts.length;
+      const closesAtLast =
+        Math.hypot(first.x - last.x, first.y - last.y) < 0.05 && nPts > 3;
+      const loopCount = closesAtLast ? nPts - 1 : nPts;
+      for (let i = 0; i < loopCount; i++) {
+        const pA = entity.pts[i]!;
+        const pB = entity.pts[(i + 1) % loopCount]!;
+        const bVal = entity.bulges[i] ?? 0;
+        const sampled = sampleBulgeArcSegmentUniform2D(pA, pB, bVal);
+        for (const sp of sampled) {
+          rawExpanded.push(sp);
+        }
+      }
+    } else {
+      for (const p of entity.pts) {
+        rawExpanded.push({ x: p.x, y: p.y });
+      }
+    }
+
+    // Remove pontos adjacentes duplicados
     const clean: Vec2[] = [];
-    for (const p of entity.pts) {
+    for (const p of rawExpanded) {
       const prev = clean[clean.length - 1];
-      if (!prev || Math.hypot(p.x - prev.x, p.y - prev.y) > 0.05) {
+      if (!prev || Math.hypot(p.x - prev.x, p.y - prev.y) > 0.02) {
         clean.push({ x: p.x, y: p.y });
       }
     }
@@ -565,25 +676,27 @@ export function extractBaseClosedLoop2D(
       Math.hypot(
         clean[0]!.x - clean[clean.length - 1]!.x,
         clean[0]!.y - clean[clean.length - 1]!.y,
-      ) < 0.05
+      ) < 0.02
     ) {
       clean.pop();
     }
     if (clean.length < 3) return null;
     const ccw = ensureCCW(clean);
+    const sharpCorners = extractSharpCornersFromLoop2D(ccw, 25);
     return {
       points: ccw,
-      isSmoothCircle: clean.length > 24,
-      corners: ccw.length <= 16 ? ccw : ccw.filter((_, idx) => idx % Math.ceil(ccw.length / 8) === 0),
+      isSmoothCircle: sharpCorners.length === 0 && ccw.length > 24,
+      corners: sharpCorners.length >= 2 ? sharpCorners : ccw.slice(0, 8),
     };
   }
 
   if (entity.type === "hatch" && entity.boundaryPts.length >= 3) {
     const ccw = ensureCCW(entity.boundaryPts);
+    const sharpCorners = extractSharpCornersFromLoop2D(ccw, 25);
     return {
       points: ccw,
-      isSmoothCircle: ccw.length > 24,
-      corners: ccw.slice(0, 8),
+      isSmoothCircle: sharpCorners.length === 0 && ccw.length > 24,
+      corners: sharpCorners.length >= 2 ? sharpCorners : ccw.slice(0, 8),
     };
   }
 
@@ -650,14 +763,14 @@ export function offsetPolygon2D(pts: Vec2[], offsetMm: number): Vec2[] {
 
 /**
  * Aplica Fillet 3D (arredondamento de quinas R) ou Chamfer 3D (chanfro D × 45°)
- * nos vértices de um polígono fechado.
+ * nos vértices de um polígono fechado com 28 subdivisões uniformes por arco de 90°.
  */
 export function applyCornerFilletOrChamferToPolygon2D(
   pts: Vec2[],
   filletRadiusMm: number,
   chamferDistMm: number,
 ): Vec2[] {
-  if ((filletRadiusMm <= 0.05 && chamferDistMm <= 0.05) || pts.length < 3 || pts.length > 24) {
+  if ((filletRadiusMm <= 0.05 && chamferDistMm <= 0.05) || pts.length < 3 || pts.length > 32) {
     return pts;
   }
 
@@ -719,12 +832,13 @@ export function applyCornerFilletOrChamferToPolygon2D(
       const arcCy = curr.y + bisY * centerDist;
 
       const a0 = Math.atan2(pStart.y - arcCy, pStart.x - arcCx);
-      let a1 = Math.atan2(pEnd.y - arcCy, pEnd.x - arcCx);
+      const a1 = Math.atan2(pEnd.y - arcCy, pEnd.x - arcCx);
       let delta = a1 - a0;
       while (delta > Math.PI) delta -= Math.PI * 2;
       while (delta < -Math.PI) delta += Math.PI * 2;
 
-      const arcSegs = 6;
+      // Estritamente 28 segmentos uniformes por arco de 90° (π/2 rad) para eliminar facetas/zebra
+      const arcSegs = Math.max(12, Math.round((Math.abs(delta) / (Math.PI * 0.5)) * 28));
       for (let s = 0; s <= arcSegs; s++) {
         const ang = a0 + (delta * s) / arcSegs;
         out.push({
@@ -1044,7 +1158,12 @@ export function buildDirectTopology3DScene(
   const normals: number[] = [];
   const indices: number[] = [];
   const faceGroups: { faceIndex: number; start: number; count: number }[] = [];
-  const edgePolylines: { edgeIndex: number; vertices: number[] }[] = [];
+  const edgePolylines: {
+    edgeIndex: number;
+    vertices: number[];
+    isSeam?: boolean;
+    isTangentEdge?: boolean;
+  }[] = [];
 
   const bodies: DirectBody3D[] = [];
   const facesById = new Map<string, DirectFace3D>();
@@ -1055,6 +1174,9 @@ export function buildDirectTopology3DScene(
 
   let globalMeshFaceIdx = 0;
   let globalMeshEdgeIdx = 0;
+
+  // Limiar de suavização Phong/Gouraud: Δθ < 25° (cos(25°) ≈ 0.9063078)
+  const COS_SMOOTH_DIHEDRAL_25_DEG = Math.cos((25 * Math.PI) / 180);
 
   groups.forEach((grp, bodyIdx) => {
     const { outer, holes } = grp;
@@ -1274,10 +1396,63 @@ export function buildDirectTopology3DScene(
     }
 
     // -------------------------------------------------------------------------
-    // FACES LATERAIS EXTERNAS: Se perfil prismático (<= 12 lados), 1 face por lado;
-    // Se perfil curvo/arredondado (> 12 segmentos), agrupa em 4 faces cardeais (N, S, L, O)
+    // CÁLCULO DE NORMAIS DE VÉRTICE SUAVES (PHONG / GOURAUD SMOOTHING Δθ < 25°)
+    // E DETECÇÃO DE TRANSIÇÕES TANGENTES (INÍCIO E FIM DE DOBRAS/FILLETS)
     // -------------------------------------------------------------------------
     const nOuter = contour2D.length;
+    const outerFlatNormals: Vec3Mm[] = [];
+    const outerSegLengths: number[] = [];
+
+    for (let i = 0; i < nOuter; i++) {
+      const next = (i + 1) % nOuter;
+      const p2d0 = contour2D[i]!;
+      const p2d1 = contour2D[next]!;
+      const dx = p2d1.x - p2d0.x;
+      const dy = p2d1.y - p2d0.y;
+      const segLen = Math.hypot(dx, dy) || 1;
+      outerSegLengths.push(segLen);
+      // Contorno externo está garantidamente em sentido anti-horário (CCW): normal externa = (dy, -dx)
+      outerFlatNormals.push(
+        rotateNormal3D({ x: dy / segLen, y: -dx / segLen, z: 0 }, p3d.rotation3D),
+      );
+    }
+
+    const outerIsSmoothVertex: boolean[] = new Array(nOuter).fill(false);
+    const outerVertexSmoothNormals: Vec3Mm[] = new Array(nOuter);
+
+    for (let i = 0; i < nOuter; i++) {
+      const prevSeg = (i - 1 + nOuter) % nOuter;
+      const nPrev = outerFlatNormals[prevSeg]!;
+      const nCurr = outerFlatNormals[i]!;
+      const cosTheta = nPrev.x * nCurr.x + nPrev.y * nCurr.y + nPrev.z * nCurr.z;
+
+      if (cosTheta >= COS_SMOOTH_DIHEDRAL_25_DEG) {
+        outerIsSmoothVertex[i] = true;
+        const sx = nPrev.x + nCurr.x;
+        const sy = nPrev.y + nCurr.y;
+        const sz = nPrev.z + nCurr.z;
+        const sl = Math.hypot(sx, sy, sz) || 1;
+        outerVertexSmoothNormals[i] = { x: sx / sl, y: sy / sl, z: sz / sl };
+      } else {
+        outerIsSmoothVertex[i] = false;
+        outerVertexSmoothNormals[i] = nCurr;
+      }
+    }
+
+    // Identifica quais segmentos pertencem a paredes retas vs. tiras curvas de dobras/raios
+    const sortedLens = [...outerSegLengths].sort((a, b) => a - b);
+    const minSegLen = sortedLens[0] ?? 1;
+    const maxSegLen = sortedLens[sortedLens.length - 1] ?? 1;
+    const hasMixedStraightAndCurve =
+      !outer.isSmoothCircle && nOuter > 12 && maxSegLen > minSegLen * 2.4;
+    const straightLenThreshold = Math.max(2.5, minSegLen * 2.2);
+    const outerIsStraightSeg: boolean[] = outerSegLengths.map((len) =>
+      hasMixedStraightAndCurve ? len >= straightLenThreshold : !outer.isSmoothCircle && nOuter <= 12,
+    );
+
+    // -------------------------------------------------------------------------
+    // FACES LATERAIS EXTERNAS COM INTERPOLAÇÃO CONTÍNUA DE LUZ ENTRE TIRAS
+    // -------------------------------------------------------------------------
     if (nOuter <= 12) {
       for (let i = 0; i < nOuter; i++) {
         const next = (i + 1) % nOuter;
@@ -1286,12 +1461,9 @@ export function buildDirectTopology3DScene(
         const t1 = outerTop3D[next]!;
         const t0 = outerTop3D[i]!;
 
-        const p2d0 = contour2D[i]!;
-        const p2d1 = contour2D[next]!;
-        const dx = p2d1.x - p2d0.x;
-        const dy = p2d1.y - p2d0.y;
-        const segLen = Math.hypot(dx, dy) || 1;
-        const sideNormal = rotateNormal3D({ x: dy / segLen, y: -dx / segLen, z: 0 }, p3d.rotation3D);
+        const sideNormal = outerFlatNormals[i]!;
+        const nLeft = outerIsSmoothVertex[i] ? outerVertexSmoothNormals[i]! : sideNormal;
+        const nRight = outerIsSmoothVertex[next] ? outerVertexSmoothNormals[next]! : sideNormal;
 
         const startIdx = indices.length;
         const baseV = positions.length / 3;
@@ -1301,9 +1473,12 @@ export function buildDirectTopology3DScene(
           t1.x, t1.y, t1.z,
           t0.x, t0.y, t0.z,
         );
-        for (let k = 0; k < 4; k++) {
-          normals.push(sideNormal.x, sideNormal.y, sideNormal.z);
-        }
+        normals.push(
+          nLeft.x, nLeft.y, nLeft.z,
+          nRight.x, nRight.y, nRight.z,
+          nRight.x, nRight.y, nRight.z,
+          nLeft.x, nLeft.y, nLeft.z,
+        );
         indices.push(baseV, baseV + 1, baseV + 2, baseV, baseV + 2, baseV + 3);
         const countIdx = indices.length - startIdx;
         const meshFaceIndex = globalMeshFaceIdx++;
@@ -1332,7 +1507,7 @@ export function buildDirectTopology3DScene(
         facesByMeshIndex.set(meshFaceIndex, sideFace);
       }
     } else {
-      // Agrupa segmentos suaves em 4 quadrantes laterais (Direita +X, Topo +Y, Esquerda -X, Base -Y)
+      // Agrupa segmentos em 4 quadrantes laterais (Direita +X, Topo +Y, Esquerda -X, Base -Y)
       const buckets: { indicesRange: number[]; poly: Vec3Mm[]; area: number; dir: Vec3Mm; label: string }[] = [
         { indicesRange: [], poly: [], area: 0, dir: { x: 1, y: 0, z: 0 }, label: "Face Lateral (+X)" },
         { indicesRange: [], poly: [], area: 0, dir: { x: 0, y: 1, z: 0 }, label: "Face Lateral (+Y)" },
@@ -1371,12 +1546,10 @@ export function buildDirectTopology3DScene(
           const t1 = outerTop3D[next]!;
           const t0 = outerTop3D[i]!;
 
-          const p2d0 = contour2D[i]!;
-          const p2d1 = contour2D[next]!;
-          const dx = p2d1.x - p2d0.x;
-          const dy = p2d1.y - p2d0.y;
-          const segLen = Math.hypot(dx, dy) || 1;
-          const sideNormal = rotateNormal3D({ x: dy / segLen, y: -dx / segLen, z: 0 }, p3d.rotation3D);
+          const sideNormal = outerFlatNormals[i]!;
+          // Normais compartilhadas idênticas entre a borda direita da tira i e a borda esquerda da tira i+1
+          const nLeft = outerIsSmoothVertex[i] ? outerVertexSmoothNormals[i]! : sideNormal;
+          const nRight = outerIsSmoothVertex[next] ? outerVertexSmoothNormals[next]! : sideNormal;
 
           const baseV = positions.length / 3;
           positions.push(
@@ -1385,9 +1558,12 @@ export function buildDirectTopology3DScene(
             t1.x, t1.y, t1.z,
             t0.x, t0.y, t0.z,
           );
-          for (let k = 0; k < 4; k++) {
-            normals.push(sideNormal.x, sideNormal.y, sideNormal.z);
-          }
+          normals.push(
+            nLeft.x, nLeft.y, nLeft.z,
+            nRight.x, nRight.y, nRight.z,
+            nRight.x, nRight.y, nRight.z,
+            nLeft.x, nLeft.y, nLeft.z,
+          );
           indices.push(baseV, baseV + 1, baseV + 2, baseV, baseV + 2, baseV + 3);
 
           const segArea = triangleArea3D(b0, b1, t1) + triangleArea3D(b0, t1, t0);
@@ -1423,7 +1599,7 @@ export function buildDirectTopology3DScene(
     }
 
     // -------------------------------------------------------------------------
-    // PAREDES INTERNAS DOS FUROS E SHELL (TUBO METALON / CAIXA OCA)
+    // PAREDES INTERNAS DOS FUROS E SHELL (TUBO METALON / CAIXA OCA) COM NORMAIS SUAVES
     // -------------------------------------------------------------------------
     holeLoops2D.forEach((hLoop, hIdx) => {
       const hBot3D = holesBottom3D[hIdx]!;
@@ -1432,6 +1608,40 @@ export function buildDirectTopology3DScene(
       const startIdx = indices.length;
       let innerArea = 0;
 
+      const holeFlatNormals: Vec3Mm[] = [];
+      for (let i = 0; i < nh; i++) {
+        const next = (i + 1) % nh;
+        const p2d0 = hLoop[i]!;
+        const p2d1 = hLoop[next]!;
+        const dx = p2d1.x - p2d0.x;
+        const dy = p2d1.y - p2d0.y;
+        const segLen = Math.hypot(dx, dy) || 1;
+        // Normal apontando para dentro da cavidade/furo
+        holeFlatNormals.push(
+          rotateNormal3D({ x: -dy / segLen, y: dx / segLen, z: 0 }, p3d.rotation3D),
+        );
+      }
+
+      const holeSmoothNormals: Vec3Mm[] = new Array(nh);
+      const holeIsSmoothVertex: boolean[] = new Array(nh).fill(false);
+      for (let i = 0; i < nh; i++) {
+        const prevSeg = (i - 1 + nh) % nh;
+        const nPrev = holeFlatNormals[prevSeg]!;
+        const nCurr = holeFlatNormals[i]!;
+        const cosTheta = nPrev.x * nCurr.x + nPrev.y * nCurr.y + nPrev.z * nCurr.z;
+        if (cosTheta >= COS_SMOOTH_DIHEDRAL_25_DEG) {
+          holeIsSmoothVertex[i] = true;
+          const sx = nPrev.x + nCurr.x;
+          const sy = nPrev.y + nCurr.y;
+          const sz = nPrev.z + nCurr.z;
+          const sl = Math.hypot(sx, sy, sz) || 1;
+          holeSmoothNormals[i] = { x: sx / sl, y: sy / sl, z: sz / sl };
+        } else {
+          holeIsSmoothVertex[i] = false;
+          holeSmoothNormals[i] = nCurr;
+        }
+      }
+
       for (let i = 0; i < nh; i++) {
         const next = (i + 1) % nh;
         const b0 = hBot3D[i]!;
@@ -1439,13 +1649,9 @@ export function buildDirectTopology3DScene(
         const t1 = hTop3D[next]!;
         const t0 = hTop3D[i]!;
 
-        const p2d0 = hLoop[i]!;
-        const p2d1 = hLoop[next]!;
-        const dx = p2d1.x - p2d0.x;
-        const dy = p2d1.y - p2d0.y;
-        const segLen = Math.hypot(dx, dy) || 1;
-        // Normal apontando para dentro da cavidade/furo
-        const inNormal = rotateNormal3D({ x: -dy / segLen, y: dx / segLen, z: 0 }, p3d.rotation3D);
+        const inNormal = holeFlatNormals[i]!;
+        const nLeft = holeIsSmoothVertex[i] ? holeSmoothNormals[i]! : inNormal;
+        const nRight = holeIsSmoothVertex[next] ? holeSmoothNormals[next]! : inNormal;
 
         const baseV = positions.length / 3;
         positions.push(
@@ -1454,9 +1660,12 @@ export function buildDirectTopology3DScene(
           t1.x, t1.y, t1.z,
           b1.x, b1.y, b1.z,
         );
-        for (let k = 0; k < 4; k++) {
-          normals.push(inNormal.x, inNormal.y, inNormal.z);
-        }
+        normals.push(
+          nLeft.x, nLeft.y, nLeft.z,
+          nLeft.x, nLeft.y, nLeft.z,
+          nRight.x, nRight.y, nRight.z,
+          nRight.x, nRight.y, nRight.z,
+        );
         indices.push(baseV, baseV + 1, baseV + 2, baseV, baseV + 2, baseV + 3);
         innerArea += triangleArea3D(b0, t0, t1) + triangleArea3D(b0, t1, b1);
       }
@@ -1484,11 +1693,43 @@ export function buildDirectTopology3DScene(
     });
 
     // -------------------------------------------------------------------------
-    // ARESTAS TOPOLÓGICAS 3D (QUINAS VERTICAIS, ARESTAS DE TOPO E ARESTAS DE BASE)
+    // ARESTAS TOPOLÓGICAS 3D (QUINAS VIVAS >= 25°, LINHAS DE TANGÊNCIA E PERÍMETROS)
     // -------------------------------------------------------------------------
-    const cornerPts2D = outer.corners.length >= 3 ? outer.corners : contour2D.slice(0, 8);
-    // 1. Arestas verticais (ex.: as 4 quinas verticais de uma coluna)
-    cornerPts2D.forEach((cPt, cIdx) => {
+    // 1. Classifica os vértices do contorno externo em:
+    //    - Quinas vivas reais (!outerIsSmoothVertex[i], Δθ >= 25°) -> visíveis em SÓLIDO e SOMB
+    //    - Linhas de transição de tangência (onde a parede reta encontra o início/fim do Fillet/curva) -> visíveis em SOMB (0.75px suave), ocultas em SÓLIDO
+    //    - Tiras internas da curva (ambos os lados curvos com Δθ < 25°) -> NUNCA desenha linha vertical (zero efeito zebra)
+    const verticalFeatureVertices: { pt2D: Vec2; isTangentEdge: boolean; idx: number }[] = [];
+    for (let i = 0; i < nOuter; i++) {
+      const prevSeg = (i - 1 + nOuter) % nOuter;
+      const isSharpCorner = !outerIsSmoothVertex[i];
+      const isTangentTransition =
+        outerIsSmoothVertex[i] &&
+        hasMixedStraightAndCurve &&
+        outerIsStraightSeg[prevSeg] !== outerIsStraightSeg[i];
+
+      if (isSharpCorner || isTangentTransition) {
+        verticalFeatureVertices.push({
+          pt2D: contour2D[i]!,
+          isTangentEdge: !isSharpCorner,
+          idx: i,
+        });
+      }
+    }
+
+    // Se for um cilindro puro (sem quinas vivas e sem transição reta-curva), expõe apenas 4 geratrizes cardeais como arestas de tangência
+    if (verticalFeatureVertices.length === 0 && outer.corners.length > 0) {
+      outer.corners.slice(0, 4).forEach((cPt, idx) => {
+        verticalFeatureVertices.push({
+          pt2D: cPt,
+          isTangentEdge: true,
+          idx,
+        });
+      });
+    }
+
+    verticalFeatureVertices.forEach((vFeat, cIdx) => {
+      const cPt = vFeat.pt2D;
       const { zBottom, zTop } = evaluateMiterZ(
         cPt.x,
         cPt.y,
@@ -1507,6 +1748,8 @@ export function buildDirectTopology3DScene(
       edgePolylines.push({
         edgeIndex: meshEdgeIndex,
         vertices: [pBot.x, pBot.y, pBot.z, pTop.x, pTop.y, pTop.z],
+        isSeam: false,
+        isTangentEdge: vFeat.isTangentEdge,
       });
 
       const edgeObj: DirectEdge3D = {
@@ -1516,7 +1759,9 @@ export function buildDirectTopology3DScene(
         entityId: entId,
         role: "vertical",
         edgeIndex: cIdx,
-        label: `Aresta Vertical #${cIdx + 1}`,
+        label: vFeat.isTangentEdge
+          ? `Transição de Tangência #${cIdx + 1}`
+          : `Aresta Vertical #${cIdx + 1}`,
         startPt: pBot,
         endPt: pTop,
         midpoint: {
@@ -1537,12 +1782,13 @@ export function buildDirectTopology3DScene(
       edgesByMeshIndex.set(meshEdgeIndex, edgeObj);
     });
 
-    // 2. Arestas do Topo e da Base
-    if (cornerPts2D.length <= 12 && !outer.isSmoothCircle) {
-      const nc = cornerPts2D.length;
+    // 2. Arestas do Topo e da Base (Perímetros Reais da Peça)
+    const sharpOnlyCount = verticalFeatureVertices.filter((v) => !v.isTangentEdge).length;
+    if (nOuter <= 12 && sharpOnlyCount === nOuter && !outer.isSmoothCircle) {
+      const nc = contour2D.length;
       for (let i = 0; i < nc; i++) {
-        const a2d = cornerPts2D[i]!;
-        const b2dPt = cornerPts2D[(i + 1) % nc]!;
+        const a2d = contour2D[i]!;
+        const b2dPt = contour2D[(i + 1) % nc]!;
 
         const za = evaluateMiterZ(
           a2d.x,
@@ -1575,6 +1821,8 @@ export function buildDirectTopology3DScene(
         edgePolylines.push({
           edgeIndex: topMeshIdx,
           vertices: [topA.x, topA.y, topA.z, topB.x, topB.y, topB.z],
+          isSeam: false,
+          isTangentEdge: false,
         });
         const topEdge: DirectEdge3D = {
           edgeId: `${bodyId}_edge_top_${i}`,
@@ -1611,6 +1859,8 @@ export function buildDirectTopology3DScene(
         edgePolylines.push({
           edgeIndex: botMeshIdx,
           vertices: [botA.x, botA.y, botA.z, botB.x, botB.y, botB.z],
+          isSeam: false,
+          isTangentEdge: false,
         });
         const botEdge: DirectEdge3D = {
           edgeId: `${bodyId}_edge_bot_${i}`,
@@ -1640,12 +1890,17 @@ export function buildDirectTopology3DScene(
         edgesByMeshIndex.set(botMeshIdx, botEdge);
       }
     } else {
-      // Contorno circular ou com cantos arredondados: adiciona polilinha fechada do topo e da base
+      // Contorno circular ou com cantos arredondados: adiciona polilinha fechada contínua do topo e da base
       const topVerts: number[] = [];
       for (const p of outerTop3D) topVerts.push(p.x, p.y, p.z);
       if (outerTop3D[0]) topVerts.push(outerTop3D[0].x, outerTop3D[0].y, outerTop3D[0].z);
       const topMeshIdx = globalMeshEdgeIdx++;
-      edgePolylines.push({ edgeIndex: topMeshIdx, vertices: topVerts });
+      edgePolylines.push({
+        edgeIndex: topMeshIdx,
+        vertices: topVerts,
+        isSeam: false,
+        isTangentEdge: false,
+      });
 
       const perimLen = computePolygonPerimeter3D(outerTop3D);
       const topLoopEdge: DirectEdge3D = {
@@ -1671,7 +1926,12 @@ export function buildDirectTopology3DScene(
       for (const p of outerBottom3D) botVerts.push(p.x, p.y, p.z);
       if (outerBottom3D[0]) botVerts.push(outerBottom3D[0].x, outerBottom3D[0].y, outerBottom3D[0].z);
       const botMeshIdx = globalMeshEdgeIdx++;
-      edgePolylines.push({ edgeIndex: botMeshIdx, vertices: botVerts });
+      edgePolylines.push({
+        edgeIndex: botMeshIdx,
+        vertices: botVerts,
+        isSeam: false,
+        isTangentEdge: false,
+      });
 
       const botLoopEdge: DirectEdge3D = {
         edgeId: `${bodyId}_edge_bot_loop`,
@@ -1698,13 +1958,23 @@ export function buildDirectTopology3DScene(
       const vTop: number[] = [];
       for (const p of hTop) vTop.push(p.x, p.y, p.z);
       if (hTop[0]) vTop.push(hTop[0].x, hTop[0].y, hTop[0].z);
-      edgePolylines.push({ edgeIndex: globalMeshEdgeIdx++, vertices: vTop });
+      edgePolylines.push({
+        edgeIndex: globalMeshEdgeIdx++,
+        vertices: vTop,
+        isSeam: false,
+        isTangentEdge: false,
+      });
     });
     holesBottom3D.forEach((hBot) => {
       const vBot: number[] = [];
       for (const p of hBot) vBot.push(p.x, p.y, p.z);
       if (hBot[0]) vBot.push(hBot[0].x, hBot[0].y, hBot[0].z);
-      edgePolylines.push({ edgeIndex: globalMeshEdgeIdx++, vertices: vBot });
+      edgePolylines.push({
+        edgeIndex: globalMeshEdgeIdx++,
+        vertices: vBot,
+        isSeam: false,
+        isTangentEdge: false,
+      });
     });
 
     // Calcula Bounding Box 3D do corpo
@@ -1878,7 +2148,8 @@ export function buildDirectTopology3DScene(
       edgeHash: ep.edgeIndex + 1,
       points: pts,
       pointCount,
-      isSeam: false,
+      isSeam: Boolean(ep.isSeam),
+      isTangentEdge: Boolean(ep.isTangentEdge),
     };
   });
 

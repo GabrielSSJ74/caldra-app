@@ -77,8 +77,20 @@ export class ThreeBRepRenderer {
   private multiSelection: CadSelectedEntity[] = [];
   private hoveredEntity: CadSelectedEntity | null = null;
 
-  // Materiais Técnicos Industriais
-  private baseSolidMaterial: THREE.MeshStandardMaterial;
+  // Materiais Técnicos Industriais (Shapr3D Studio Satin & SolidWorks Technical Matcap)
+  private baseSolidMaterial: THREE.ShaderMaterial;
+  private studioUniforms: {
+    uShadingMode: { value: number };
+    uKeyLightDir: { value: THREE.Vector3 };
+    uFillLightDir: { value: THREE.Vector3 };
+    uViewDir: { value: THREE.Vector3 };
+    uUpDir: { value: THREE.Vector3 };
+    uOpacity: { value: number };
+    uWireframeColor: { value: THREE.Color };
+  };
+  private keyLight: THREE.DirectionalLight | null = null;
+  private fillLight: THREE.DirectionalLight | null = null;
+  private hemiLight: THREE.HemisphereLight | null = null;
   private primaryFaceMaterial: THREE.MeshStandardMaterial;
   private secondaryFaceMaterial: THREE.MeshStandardMaterial;
   private hoveredFaceMaterial: THREE.MeshStandardMaterial;
@@ -210,8 +222,8 @@ export class ThreeBRepRenderer {
     this.renderer.setSize(width, height);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMapping = THREE.NoToneMapping;
+    this.renderer.toneMappingExposure = 1.0;
     this.container.appendChild(this.renderer.domElement);
 
     // 4. OrbitControls
@@ -240,7 +252,7 @@ export class ThreeBRepRenderer {
     this.rootGroup.add(this.measurementGroup);
     this.scene.add(this.rootGroup);
 
-    // 6. Configuração de Iluminação Técnica Industrial
+    // 6. Configuração de Iluminação de Estúdio 3 Fontes Acoplada à Câmera
     this.setupLighting();
 
     // 7. Gizmo CAD (FASE 06)
@@ -249,16 +261,93 @@ export class ThreeBRepRenderer {
     this.onGizmoCommitCallback = options.onGizmoCommit;
     this.setupGizmo();
 
-    // 8. Inicialização de Materiais (Smooth Shading ativo nas paredes curvas)
-    this.baseSolidMaterial = new THREE.MeshStandardMaterial({
-      color: 0x94a3b8,
-      roughness: 0.38,
-      metalness: 0.72,
-      flatShading: false,
+    // 8. Shader CAD Industrial de Alta Fidelidade (Zero Zebra, Phong Per-Fragment + Blinn-Phong Satin / Matcap Técnico)
+    this.studioUniforms = {
+      uShadingMode: { value: this.edgeMode === "shaded" ? 1 : this.edgeMode === "wireframe" ? 2 : 0 },
+      uKeyLightDir: { value: new THREE.Vector3(-0.45, -0.52, 0.72).normalize() },
+      uFillLightDir: { value: new THREE.Vector3(0.55, -0.35, 0.25).normalize() },
+      uViewDir: { value: new THREE.Vector3(0, -0.6, 0.8).normalize() },
+      uUpDir: { value: new THREE.Vector3(0, 0, 1) },
+      uOpacity: { value: 1.0 },
+      uWireframeColor: { value: new THREE.Color(0x122138) },
+    };
+
+    this.baseSolidMaterial = new THREE.ShaderMaterial({
+      uniforms: this.studioUniforms,
+      vertexShader: /* glsl */ `
+        varying vec3 vWorldNormal;
+        void main() {
+          vWorldNormal = normalize(mat3(modelMatrix) * normal);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform int uShadingMode;
+        uniform vec3 uKeyLightDir;
+        uniform vec3 uFillLightDir;
+        uniform vec3 uViewDir;
+        uniform vec3 uUpDir;
+        uniform float uOpacity;
+        uniform vec3 uWireframeColor;
+        varying vec3 vWorldNormal;
+
+        void main() {
+          if (uShadingMode == 2) {
+            gl_FragColor = vec4(uWireframeColor, uOpacity);
+            return;
+          }
+
+          vec3 N = normalize(vWorldNormal);
+          if (!gl_FrontFacing) {
+            N = -N;
+          }
+
+          // 1. Luz Hemisférica (Sky #64748B / Ground #334155)
+          float hemiFactor = clamp(0.5 + 0.5 * dot(N, uUpDir), 0.0, 1.0);
+          vec3 skyColor = vec3(0.392, 0.455, 0.545);    // #64748B (Azul-Aço Claro no topo)
+          vec3 groundColor = vec3(0.200, 0.255, 0.333); // #334155 (Grafite Neutro na base)
+          vec3 hemiAmbient = mix(groundColor, skyColor, hemiFactor);
+
+          // 2. Key Light Principal (35° frontal-esquerda da câmera com difusão cosseno suave ^0.85)
+          float rawNdotL = max(0.0, dot(N, uKeyLightDir));
+          float keyDiffuse = pow(rawNdotL, 0.85);
+          float fillDiffuse = max(0.0, dot(N, uFillLightDir));
+
+          if (uShadingMode == 0) {
+            // MODO "SÓLIDO" (Acabamento Metálico Acetinado de Estúdio CAD — Estilo Shapr3D)
+            // Especular Acetinado Largo (Blinn-Phong: shininess = 18.0, intensidade controlada 0.22)
+            vec3 H = normalize(uKeyLightDir + uViewDir);
+            float ndotH = max(0.0, dot(N, H));
+            float satinSpec = 0.22 * pow(ndotH, 18.0);
+
+            vec3 satinBase = vec3(0.565, 0.627, 0.710); // Aço acetinado #90A0B5
+            vec3 color = hemiAmbient * 0.56
+                       + satinBase * (keyDiffuse * 0.60 + fillDiffuse * 0.16)
+                       + vec3(0.94, 0.97, 1.0) * satinSpec;
+
+            gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+          } else {
+            // MODO "SOMB" (Sombreamento Técnico Fosco de Alto Contraste — Matcap Técnico CAD)
+            // Tons de titânio técnico (#94A3B8 a #475569), sem reflexo especular brilhante
+            vec3 matteDark = vec3(0.278, 0.333, 0.412);  // #475569
+            vec3 matteLight = vec3(0.635, 0.698, 0.776); // #94A3B8 realçado para leitura técnica de espessura
+            float viewRim = max(0.0, dot(N, uViewDir));
+            float techTone = clamp(
+              keyDiffuse * 0.64 + fillDiffuse * 0.18 + viewRim * 0.10 + hemiFactor * 0.14,
+              0.0,
+              1.0
+            );
+            vec3 color = mix(matteDark, matteLight, techTone);
+            gl_FragColor = vec4(clamp(color, 0.0, 1.0), 1.0);
+          }
+        }
+      `,
       polygonOffset: true,
       polygonOffsetFactor: 1,
       polygonOffsetUnits: 1,
       side: THREE.DoubleSide,
+      transparent: false,
+      depthWrite: true,
     });
 
     this.primaryFaceMaterial = new THREE.MeshStandardMaterial({
@@ -352,24 +441,70 @@ export class ThreeBRepRenderer {
   }
 
   private setupLighting(): void {
-    const ambient = new THREE.AmbientLight(0xffffff, 0.85);
-    this.scene.add(ambient);
+    // 1. Luz Hemisférica (Sky #64748B / Ground #334155) alinhada ao eixo +Z superior
+    this.hemiLight = new THREE.HemisphereLight(0x64748b, 0x334155, 1.15);
+    this.hemiLight.position.set(0, 0, 250);
+    this.scene.add(this.hemiLight);
 
-    const key = new THREE.DirectionalLight(0xffffff, 1.25);
-    key.position.set(120, 180, 140);
-    this.scene.add(key);
+    // 2. Key Light Principal (35° à frente-esquerda da câmera)
+    this.keyLight = new THREE.DirectionalLight(0xffffff, 1.25);
+    this.keyLight.position.set(-110, -160, 190);
+    this.scene.add(this.keyLight);
 
-    const fill = new THREE.DirectionalLight(0xdbeafe, 0.75);
-    fill.position.set(-140, 100, -100);
-    this.scene.add(fill);
+    // 3. Fill Light Suave Complementar
+    this.fillLight = new THREE.DirectionalLight(0xdbeafe, 0.55);
+    this.fillLight.position.set(130, -90, 90);
+    this.scene.add(this.fillLight);
+  }
 
-    const rim = new THREE.DirectionalLight(0xffedd5, 0.65);
-    rim.position.set(0, -150, -120);
-    this.scene.add(rim);
+  /**
+   * Atualiza os vetores de iluminação acoplados à câmera ativa para leitura tridimensional
+   * perfeita em qualquer ângulo de órbita (Key Light a 35° frontal-esquerda da câmera).
+   */
+  private updateCameraCoupledLighting(): void {
+    const viewDir = this.activeCamera.position
+      .clone()
+      .sub(this.controls.target)
+      .normalize();
+    if (viewDir.lengthSq() < 1e-6) {
+      viewDir.set(0, -0.6, 0.8).normalize();
+    }
 
-    const top = new THREE.DirectionalLight(0xffffff, 0.5);
-    top.position.set(0, 200, 0);
-    this.scene.add(top);
+    const camUp = this.activeCamera.up.clone().normalize();
+    let camRight = new THREE.Vector3().crossVectors(camUp, viewDir).normalize();
+    if (camRight.lengthSq() < 1e-6) {
+      camRight = new THREE.Vector3(1, 0, 0);
+    }
+    const orthoUp = new THREE.Vector3().crossVectors(viewDir, camRight).normalize();
+
+    // Key Light posicionada a 35° à frente-esquerda-superior da câmera
+    const angle35Rad = (35 * Math.PI) / 180;
+    const cos35 = Math.cos(angle35Rad);
+    const sin35 = Math.sin(angle35Rad);
+    const keyDir = new THREE.Vector3()
+      .addScaledVector(viewDir, cos35)
+      .addScaledVector(camRight, -sin35 * 0.78)
+      .addScaledVector(orthoUp, sin35 * 0.62)
+      .normalize();
+
+    // Fill Light suave posicionada à direita-inferior da câmera
+    const fillDir = new THREE.Vector3()
+      .addScaledVector(viewDir, 0.55)
+      .addScaledVector(camRight, 0.72)
+      .addScaledVector(orthoUp, -0.32)
+      .normalize();
+
+    this.studioUniforms.uViewDir.value.copy(viewDir);
+    this.studioUniforms.uKeyLightDir.value.copy(keyDir);
+    this.studioUniforms.uFillLightDir.value.copy(fillDir);
+    this.studioUniforms.uUpDir.value.set(0, 0, 1);
+
+    if (this.keyLight) {
+      this.keyLight.position.copy(keyDir).multiplyScalar(300);
+    }
+    if (this.fillLight) {
+      this.fillLight.position.copy(fillDir).multiplyScalar(250);
+    }
   }
 
   // ==========================================
@@ -419,28 +554,9 @@ export class ThreeBRepRenderer {
       const zSpan = Math.max(0.1, maxZ - minZ);
       const zTol = zSpan * 0.08;
 
-      const topEdgeMat = new THREE.LineBasicMaterial({
-        color: 0xf8fafc,
-        linewidth: 1.8,
-        transparent: true,
-        opacity: 0.98,
-      });
-      const lateralEdgeMat = new THREE.LineBasicMaterial({
-        color: 0x91a3b8,
-        linewidth: 1.15,
-        transparent: true,
-        opacity: 0.68,
-      });
-      const bottomEdgeMat = new THREE.LineBasicMaterial({
-        color: 0x65758a,
-        linewidth: 1.0,
-        transparent: true,
-        opacity: 0.52,
-      });
-
       for (const edge of edges.edges) {
         if (edge.pointCount < 2) continue;
-        // Elimina linhas de costura radiais/verticais (seam edges em 0°/360° e arestas internas suaves < 35°)
+        // Elimina linhas de costura internas (seam edges)
         if (edge.isSeam) continue;
 
         let eMinZ = Infinity;
@@ -453,11 +569,14 @@ export class ThreeBRepRenderer {
 
         const isTopEdge = eMinZ >= maxZ - zTol;
         const isBottomEdge = eMaxZ <= minZ + zTol;
-        const mat = isTopEdge
-          ? topEdgeMat
-          : isBottomEdge
-            ? bottomEdgeMat
-            : lateralEdgeMat;
+        const isTangentEdge = Boolean(edge.isTangentEdge);
+
+        const mat = new THREE.LineBasicMaterial({
+          color: 0xf8fafc,
+          linewidth: isTangentEdge ? 0.75 : 1.4,
+          transparent: true,
+          opacity: isTangentEdge ? 0.42 : 0.92,
+        });
 
         const lineGeo = new THREE.BufferGeometry();
         lineGeo.setAttribute(
@@ -469,7 +588,12 @@ export class ThreeBRepRenderer {
         line.userData = {
           edgeIndex: edge.edgeIndex,
           edgeId: edge.edgeId,
-          edgeHierarchy: isTopEdge ? "top_primary" : isBottomEdge ? "bottom_visible" : "lateral_wall",
+          isTangentEdge,
+          edgeHierarchy: isTopEdge
+            ? "top_primary"
+            : isBottomEdge
+              ? "bottom_visible"
+              : "lateral_wall",
         };
         this.edgesGroup.add(line);
       }
@@ -570,6 +694,9 @@ export class ThreeBRepRenderer {
       const obj = this.edgesGroup.children[0] as THREE.Line;
       this.edgesGroup.remove(obj);
       obj.geometry.dispose();
+      if (obj.material instanceof THREE.Material) {
+        obj.material.dispose();
+      }
     }
 
     while (this.verticesGroup.children.length > 0) {
@@ -617,7 +744,7 @@ export class ThreeBRepRenderer {
   }
 
   // ==========================================
-  // MODOS DE APARÊNCIA CALDRA (SOMB, SOMB+AR, ARAME)
+  // MODOS DE APARÊNCIA CALDRA (SÓLIDO, SOMB, ARAME)
   // ==========================================
 
   public setEdgeMode(mode: EdgeMode): void {
@@ -627,47 +754,101 @@ export class ThreeBRepRenderer {
   }
 
   private updateVisibilityByEdgeMode(): void {
-    const solidMesh = this.meshGroup.getObjectByName("solid_mesh") as THREE.Mesh | undefined;
+    const isDark = this.currentTheme === "dark";
+
     switch (this.edgeMode) {
-      case "shaded":
+      case "shaded-edges": {
+        // MODO "SÓLIDO" (Acabamento Metálico Acetinado de Estúdio CAD — Estilo Shapr3D)
+        // Arestas Limpas: desenha contorno APENAS nas bordas reais da peça (perímetro superior,
+        // perímetro inferior e quinas vivas >= 25°), ocultando linhas de transição de tangência nas dobras.
         this.meshGroup.visible = true;
-        if (solidMesh) {
-          this.baseSolidMaterial.color.setHex(0x94a3b8);
-          this.baseSolidMaterial.transparent = false;
-          this.baseSolidMaterial.opacity = 1.0;
-          this.baseSolidMaterial.depthWrite = true;
+        this.studioUniforms.uShadingMode.value = 0;
+        this.studioUniforms.uOpacity.value = 1.0;
+        this.baseSolidMaterial.transparent = false;
+        this.baseSolidMaterial.depthWrite = true;
+
+        this.edgesGroup.visible = true;
+        for (const child of this.edgesGroup.children) {
+          const line = child as THREE.Line;
+          const isTangent = Boolean(line.userData?.isTangentEdge);
+          line.visible = !isTangent;
+          if (!isTangent && line.material instanceof THREE.LineBasicMaterial) {
+            line.material.color.setHex(isDark ? 0xe2e8f0 : 0x1e293b);
+            line.material.opacity = isDark ? 0.78 : 0.72;
+            line.material.linewidth = 1.25;
+          }
         }
-        this.edgesGroup.visible = false;
         this.verticesGroup.visible = this.selectionType === "vertex";
         break;
+      }
 
-      case "shaded-edges":
+      case "shaded": {
+        // MODO "SOMB" (Sombreamento Técnico de Engenharia com Arestas de Feature e Linhas de Tangência)
+        // Superfície metálica fosca clara (Matcap Técnico CAD) + Arestas de Feature Nítidas (1.4px)
+        // + 2 linhas de transição de tangência da dobra (0.75px suave), sem linhas dentro da curva.
         this.meshGroup.visible = true;
-        if (solidMesh) {
-          this.baseSolidMaterial.color.setHex(0x94a3b8);
-          this.baseSolidMaterial.transparent = false;
-          this.baseSolidMaterial.opacity = 1.0;
-          this.baseSolidMaterial.depthWrite = true;
-        }
+        this.studioUniforms.uShadingMode.value = 1;
+        this.studioUniforms.uOpacity.value = 1.0;
+        this.baseSolidMaterial.transparent = false;
+        this.baseSolidMaterial.depthWrite = true;
+
         this.edgesGroup.visible = true;
+        for (const child of this.edgesGroup.children) {
+          const line = child as THREE.Line;
+          const isTangent = Boolean(line.userData?.isTangentEdge);
+          line.visible = true;
+          if (line.material instanceof THREE.LineBasicMaterial) {
+            if (isTangent) {
+              // Apenas as 2 linhas de transição de tangência da dobra (0.75px suave)
+              line.material.color.setHex(isDark ? 0xcbd5e1 : 0x334155);
+              line.material.opacity = 0.42;
+              line.material.linewidth = 0.75;
+            } else {
+              // Arestas de Feature Nítidas (>= 25°): 1.4px em #0F172A (claro) / #F8FAFC (escuro)
+              line.material.color.setHex(isDark ? 0xf8fafc : 0x0f172a);
+              line.material.opacity = 0.94;
+              line.material.linewidth = 1.4;
+            }
+          }
+        }
         this.verticesGroup.visible = this.selectionType === "vertex";
         break;
+      }
 
-      case "wireframe":
-        // Em modo ARAME (Technical Wireframe CAD com Profundidade Óptica), exibe o véu translúcido
-        // azul-noturno ultra-sutil (rgba(18, 33, 56, 0.24)) com arestas hierárquicas e micro-pontos brancos
+      case "wireframe": {
+        // MODO "ARAME" (Technical Wireframe CAD com Profundidade Óptica)
         this.meshGroup.visible = true;
-        if (solidMesh) {
-          this.baseSolidMaterial.color.setHex(0x122138);
-          this.baseSolidMaterial.transparent = true;
-          this.baseSolidMaterial.opacity = 0.24;
-          this.baseSolidMaterial.depthWrite = false;
-        }
+        this.studioUniforms.uShadingMode.value = 2;
+        this.studioUniforms.uOpacity.value = 0.24;
+        this.baseSolidMaterial.transparent = true;
+        this.baseSolidMaterial.depthWrite = false;
+
         this.edgesGroup.visible = true;
+        for (const child of this.edgesGroup.children) {
+          const line = child as THREE.Line;
+          line.visible = true;
+          const hierarchy = line.userData?.edgeHierarchy as string | undefined;
+          if (line.material instanceof THREE.LineBasicMaterial) {
+            if (hierarchy === "top_primary") {
+              line.material.color.setHex(0xf8fafc);
+              line.material.opacity = 0.98;
+              line.material.linewidth = 1.8;
+            } else if (hierarchy === "bottom_visible") {
+              line.material.color.setHex(0x65758a);
+              line.material.opacity = 0.52;
+              line.material.linewidth = 1.0;
+            } else {
+              line.material.color.setHex(0x91a3b8);
+              line.material.opacity = 0.68;
+              line.material.linewidth = 1.15;
+            }
+          }
+        }
         this.verticesGroup.visible = true;
         this.vertexMaterial.color.setHex(0xffffff);
         this.vertexMaterial.size = 3.6;
         break;
+      }
     }
   }
 
@@ -1221,6 +1402,7 @@ export class ThreeBRepRenderer {
   public setTheme(theme: "light" | "dark"): void {
     this.currentTheme = theme;
     this.updateGridAndBackground();
+    this.updateVisibilityByEdgeMode();
     this.renderImmediate();
     this.requestRender();
   }
@@ -1334,6 +1516,7 @@ export class ThreeBRepRenderer {
     this.applyCameraPose(match.startPose);
     this.setExtrusionMorphScale(0.01);
     this.updateGridAndBackground();
+    this.updateCameraCoupledLighting();
     this.renderer.render(this.scene, this.activeCamera);
   }
 
@@ -1614,6 +1797,7 @@ export class ThreeBRepRenderer {
 
   public renderImmediate(): void {
     if (this.isDestroyed || this.isPaused) return;
+    this.updateCameraCoupledLighting();
     this.renderer.render(this.scene, this.activeCamera);
   }
 
@@ -1626,6 +1810,7 @@ export class ThreeBRepRenderer {
       this.renderQueued = false;
       this.animFrameId = 0;
       if (this.isDestroyed || this.isPaused) return;
+      this.updateCameraCoupledLighting();
       this.renderer.render(this.scene, this.activeCamera);
     });
   }
@@ -1754,6 +1939,7 @@ export class ThreeBRepRenderer {
         }
       }
 
+      this.updateCameraCoupledLighting();
       this.renderer.render(this.scene, this.activeCamera);
     };
 
