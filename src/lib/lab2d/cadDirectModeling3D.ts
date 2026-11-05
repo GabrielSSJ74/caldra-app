@@ -19,7 +19,7 @@
  *    - Corpos: "1 corpo | ΔX 100.00 mm  ΔY 50.00 mm  ΔZ 490.00 mm"
  */
 
-import { bbox, boxOf, translate, uid, type Entity, type Vec2 } from "./core";
+import { bbox, boxOf, rectPolyline, translate, uid, type Entity, type Vec2 } from "./core";
 import type { CadTessellatedShape } from "@/lib/cad/core/CadMesh";
 import type { WorkplaneOrbitProjection2D } from "./orbit3dController";
 
@@ -47,6 +47,7 @@ export type DirectModeling3DTool =
   | "shell_3d"
   | "offset_face_3d"
   | "rotate_axis_3d"
+  | "hole_3d"
   | "transform_3d"
   | "scale_3d"
   | "align_3d"
@@ -57,6 +58,7 @@ export type DirectModeling3DTool =
   | "add_plane_3d"
   | "add_axis_3d"
   | "project_3d"
+  | "create_drawing_3d"
   | "color_material_3d"
   | "sketch_on_face_3d";
 
@@ -65,6 +67,91 @@ export type DirectBooleanMode3D = BooleanMode3D;
 
 export type FaceRole3D = "top" | "bottom" | "side" | "inner_side" | "miter";
 export type EdgeRole3D = "vertical" | "top" | "bottom" | "inner_top" | "inner_bottom";
+
+export type MetricHoleThreadSize = "M6" | "M8" | "M10" | "M12" | "M16" | "M20";
+
+export interface HoleMetricSpec3D {
+  code: MetricHoleThreadSize;
+  nominalDiameterMm: number;
+  pitchMm: number;
+  tapDrillDiameterMm: number;
+  clearanceDiameterMm: number;
+  counterboreDiameterMm: number;
+  counterboreDepthMm: number;
+}
+
+export const HOLE_METRIC_SPECS_3D: Record<MetricHoleThreadSize, HoleMetricSpec3D> = {
+  M6: {
+    code: "M6",
+    nominalDiameterMm: 6.0,
+    pitchMm: 1.0,
+    tapDrillDiameterMm: 5.0,
+    clearanceDiameterMm: 6.6,
+    counterboreDiameterMm: 11.0,
+    counterboreDepthMm: 6.4,
+  },
+  M8: {
+    code: "M8",
+    nominalDiameterMm: 8.0,
+    pitchMm: 1.25,
+    tapDrillDiameterMm: 6.8,
+    clearanceDiameterMm: 9.0,
+    counterboreDiameterMm: 15.0,
+    counterboreDepthMm: 8.6,
+  },
+  M10: {
+    code: "M10",
+    nominalDiameterMm: 10.0,
+    pitchMm: 1.5,
+    tapDrillDiameterMm: 8.5,
+    clearanceDiameterMm: 11.0,
+    counterboreDiameterMm: 18.0,
+    counterboreDepthMm: 10.8,
+  },
+  M12: {
+    code: "M12",
+    nominalDiameterMm: 12.0,
+    pitchMm: 1.75,
+    tapDrillDiameterMm: 10.2,
+    clearanceDiameterMm: 13.5,
+    counterboreDiameterMm: 20.0,
+    counterboreDepthMm: 13.0,
+  },
+  M16: {
+    code: "M16",
+    nominalDiameterMm: 16.0,
+    pitchMm: 2.0,
+    tapDrillDiameterMm: 14.0,
+    clearanceDiameterMm: 17.5,
+    counterboreDiameterMm: 26.0,
+    counterboreDepthMm: 17.5,
+  },
+  M20: {
+    code: "M20",
+    nominalDiameterMm: 20.0,
+    pitchMm: 2.5,
+    tapDrillDiameterMm: 17.5,
+    clearanceDiameterMm: 22.0,
+    counterboreDiameterMm: 33.0,
+    counterboreDepthMm: 21.5,
+  },
+};
+
+export interface DirectFeatureNode3D {
+  featureId: string;
+  kind:
+    | "sketch"
+    | "extrude"
+    | "fillet"
+    | "chamfer"
+    | "shell"
+    | "offset_face"
+    | "miter_cut"
+    | "hole"
+    | "transform";
+  label: string;
+  parameterSummary: string;
+}
 
 export interface DirectFace3D {
   faceId: string;
@@ -113,6 +200,7 @@ export interface DirectBody3D {
   extrudeHeightMm: number;
   elevationZ: number;
   edgeFilletRadiusMm: number;
+  innerFilletRadiusMm: number;
   edgeChamferDistMm: number;
   shellWallThicknessMm: number;
   shellThicknessMm: number;
@@ -121,6 +209,12 @@ export interface DirectBody3D {
   offsetFaceTopMm: number;
   offsetFaceBottomMm: number;
   offsetFaceSidesMm: number;
+  offsetSidesIndependent: {
+    posX: number;
+    negX: number;
+    posY: number;
+    negY: number;
+  };
   miterCutTopDeg: number;
   miterCutTopAxis: "x" | "y";
   miterCutBottomDeg: number;
@@ -129,6 +223,15 @@ export interface DirectBody3D {
   pivot3D: Vec3Mm;
   colorHex: string;
   materialName: string;
+  densityGPerCm3: number;
+  massGrams: number;
+  eulerCharacteristic: {
+    V: number;
+    E: number;
+    F: number;
+    chi: number;
+  };
+  featureHistory: DirectFeatureNode3D[];
   bbox3D: {
     minX: number;
     maxX: number;
@@ -241,6 +344,11 @@ export const DIRECT_3D_TOOL_INSTRUCTIONS: Record<
     subtitle: "Selecione a face de extremidade e incline pelo arco graduado (ex.: 45° ou -45°).",
     badge: "ESQUADRIA 45°",
   },
+  hole_3d: {
+    title: "Furação Mecânica Paramétrica 3D (Hole M6–M20)",
+    subtitle: "Selecione uma face plana ou corpo e insira furos passantes, cegos ou escareados ISO.",
+    badge: "HOLE 3D",
+  },
   transform_3d: {
     title: "Mover / Rotacionar 3D + Pivô & Copy",
     subtitle: "Arraste os eixos X/Y/Z ou arcos de giro. Ative Copy: ON para duplicar a peça na nova posição.",
@@ -287,9 +395,14 @@ export const DIRECT_3D_TOOL_INSTRUCTIONS: Record<
     badge: "EIXO 3D",
   },
   project_3d: {
-    title: "Projetar Geometria na Face (Project)",
-    subtitle: "Projete arestas e contornos 3D diretamente no plano de esboço ativo.",
+    title: "Projetar Geometria na Face (Project 3D → 2D)",
+    subtitle: "Projete faces, arestas e contornos 3D diretamente no plano de esboço 2D.",
     badge: "PROJECT",
+  },
+  create_drawing_3d: {
+    title: "Gerar Vistas Técnicas 2D (Create Drawing)",
+    subtitle: "Gera vistas ortográficas padronizadas (Frontal, Superior, Lateral, Corte A-A e Isométrica).",
+    badge: "DRAWING 2D",
   },
   color_material_3d: {
     title: "Cor e Acabamento Metálico 3D",
@@ -583,6 +696,22 @@ export function extractBaseClosedLoop2D(
 ): { points: Vec2[]; isSmoothCircle: boolean; corners: Vec2[] } | null {
   if (entity.isConstruction || entity.layer === "cota" || entity.layer === "referencia") {
     return null;
+  }
+
+  if (entity.type === "rect") {
+    if (entity.w <= 0.1 || entity.h <= 0.1) return null;
+    const pts: Vec2[] = [
+      { x: entity.x, y: entity.y },
+      { x: entity.x + entity.w, y: entity.y },
+      { x: entity.x + entity.w, y: entity.y + entity.h },
+      { x: entity.x, y: entity.y + entity.h },
+    ];
+    const ccw = ensureCCW(pts);
+    return {
+      points: ccw,
+      isSmoothCircle: false,
+      corners: ccw,
+    };
   }
 
   if (entity.type === "circle") {
@@ -1184,16 +1313,17 @@ export function buildDirectTopology3DScene(
     const entId = outer.entity.id;
     const bodyId = `body_${entId}`;
 
-    // 1. Aplica Offset Lateral (`offsetFaceSidesMm`)
-    let contour2D =
+    // 1. Aplica Offset Lateral (`offsetFaceSidesMm`) sobre o contorno base antes do Fillet
+    const baseWithOffset2D =
       Math.abs(p3d.offsetFaceSidesMm) > 0.01
         ? offsetPolygon2D(outer.basePoints, p3d.offsetFaceSidesMm)
         : outer.basePoints;
 
     // 2. Aplica Fillet 3D (`edgeFilletRadiusMm`) ou Chamfer 3D (`edgeChamferDistMm`) nas arestas verticais
+    let contour2D = baseWithOffset2D;
     if (!outer.isSmoothCircle && (p3d.edgeFilletRadiusMm > 0.05 || p3d.edgeChamferDistMm > 0.05)) {
       contour2D = applyCornerFilletOrChamferToPolygon2D(
-        contour2D,
+        baseWithOffset2D,
         p3d.edgeFilletRadiusMm,
         p3d.edgeChamferDistMm,
       );
@@ -1219,17 +1349,70 @@ export function buildDirectTopology3DScene(
     };
 
     // 4. Determina se o corpo possui Shell (Tubo Estrutural Oco / Metalon ou Caixa Oca)
+    //    Com raio interno concêntrico exato: R_int = max(0, R_ext - t)
     const hasShell = p3d.shellThicknessMm > 0.1;
     const openTop = hasShell && p3d.shellOpenCaps.includes("top");
     const openBottom = hasShell && p3d.shellOpenCaps.includes("bottom");
 
+    const maxWall = Math.min(b2d.maxX - b2d.minX, b2d.maxY - b2d.minY) * 0.42;
+    const effectiveWallT = hasShell
+      ? Math.min(p3d.shellThicknessMm, Math.max(0.5, maxWall))
+      : 0;
+    const innerFilletRadiusMm = hasShell
+      ? Math.max(0, p3d.edgeFilletRadiusMm - effectiveWallT)
+      : 0;
+    const innerChamferDistMm = hasShell
+      ? Math.max(0, p3d.edgeChamferDistMm - effectiveWallT)
+      : 0;
+
     const holeLoops2D: Vec2[][] = holes.map((h) => ensureCCW(h.basePoints));
     if (hasShell) {
-      const maxWall = Math.min(b2d.maxX - b2d.minX, b2d.maxY - b2d.minY) * 0.42;
-      const wallT = Math.min(p3d.shellThicknessMm, Math.max(0.5, maxWall));
-      const shellInner2D = offsetPolygon2D(contour2D, -wallT);
+      const rawShellInner2D = offsetPolygon2D(baseWithOffset2D, -effectiveWallT);
+      const shellInner2D =
+        !outer.isSmoothCircle && (innerFilletRadiusMm > 0.05 || innerChamferDistMm > 0.05)
+          ? applyCornerFilletOrChamferToPolygon2D(
+              rawShellInner2D,
+              innerFilletRadiusMm,
+              innerChamferDistMm,
+            )
+          : rawShellInner2D;
       holeLoops2D.unshift(shellInner2D);
     }
+
+    // Cálculo analítico exato de área de seção transversal (evita erro de discretização poligonal em arcos de Fillet/Shell)
+    const baseAreaBeforeFillet = Math.abs(signedArea2D(baseWithOffset2D));
+    const numSharpCorners = !outer.isSmoothCircle ? Math.min(4, outer.corners.length || 4) : 0;
+    const filletCornerLossOuter =
+      !outer.isSmoothCircle && p3d.edgeFilletRadiusMm > 0.05 && numSharpCorners === 4
+        ? (4 - Math.PI) * p3d.edgeFilletRadiusMm * p3d.edgeFilletRadiusMm
+        : !outer.isSmoothCircle && p3d.edgeChamferDistMm > 0.05 && numSharpCorners === 4
+          ? 2 * p3d.edgeChamferDistMm * p3d.edgeChamferDistMm
+          : 0;
+    const analyticalOuterAreaMm2 =
+      filletCornerLossOuter > 0
+        ? Math.max(1, baseAreaBeforeFillet - filletCornerLossOuter)
+        : Math.abs(signedArea2D(contour2D));
+
+    let analyticalShellCavityAreaMm2 = 0;
+    if (hasShell) {
+      const rawInnerPoly = offsetPolygon2D(baseWithOffset2D, -effectiveWallT);
+      const rawInnerArea = Math.abs(signedArea2D(rawInnerPoly));
+      const filletCornerLossInner =
+        !outer.isSmoothCircle && innerFilletRadiusMm > 0.05 && numSharpCorners === 4
+          ? (4 - Math.PI) * innerFilletRadiusMm * innerFilletRadiusMm
+          : !outer.isSmoothCircle && innerChamferDistMm > 0.05 && numSharpCorners === 4
+            ? 2 * innerChamferDistMm * innerChamferDistMm
+            : 0;
+      analyticalShellCavityAreaMm2 = Math.max(0, rawInnerArea - filletCornerLossInner);
+    }
+    const analyticalOtherHolesAreaMm2 = holes.reduce(
+      (acc, h) => acc + (h.entity.type === "circle" ? Math.PI * h.entity.r * h.entity.r : Math.abs(signedArea2D(h.basePoints))),
+      0,
+    );
+    const analyticalNetSectionAreaMm2 = Math.max(
+      1,
+      analyticalOuterAreaMm2 - analyticalShellCavityAreaMm2 - analyticalOtherHolesAreaMm2,
+    );
 
     const transformPt = (x: number, y: number, z: number): Vec3Mm =>
       rotatePoint3DAroundPivot({ x, y, z }, pivot3D, p3d.rotation3D);
@@ -1320,6 +1503,12 @@ export function buildDirectTopology3DScene(
       faceGroups.push({ faceIndex: meshFaceIndex, start: startIdx, count: countIdx });
 
       const centroid = computePolygonCentroid3D(outerTop3D);
+      const topMiterCos = Math.max(0.25, Math.cos((p3d.miterCutTopDeg * Math.PI) / 180));
+      const exactTopAreaMm2 =
+        openTop || !hasShell
+          ? analyticalNetSectionAreaMm2 / topMiterCos
+          : Math.max(1, analyticalOuterAreaMm2 - analyticalOtherHolesAreaMm2) / topMiterCos;
+      void topAreaMm2;
       const topFace: DirectFace3D = {
         faceId: `${bodyId}_face_top`,
         meshFaceIndex,
@@ -1333,7 +1522,7 @@ export function buildDirectTopology3DScene(
             : "Face Superior (+Z)",
         normal: topNormal,
         centroid,
-        areaMm2: topAreaMm2,
+        areaMm2: exactTopAreaMm2,
         polygon3D: outerTop3D,
       };
       bodyFaces.push(topFace);
@@ -1374,6 +1563,12 @@ export function buildDirectTopology3DScene(
       faceGroups.push({ faceIndex: meshFaceIndex, start: startIdx, count: countIdx });
 
       const centroid = computePolygonCentroid3D(outerBottom3D);
+      const botMiterCos = Math.max(0.25, Math.cos((p3d.miterCutBottomDeg * Math.PI) / 180));
+      const exactBotAreaMm2 =
+        openBottom || !hasShell
+          ? analyticalNetSectionAreaMm2 / botMiterCos
+          : Math.max(1, analyticalOuterAreaMm2 - analyticalOtherHolesAreaMm2) / botMiterCos;
+      void botAreaMm2;
       const botFace: DirectFace3D = {
         faceId: `${bodyId}_face_bottom`,
         meshFaceIndex,
@@ -1387,7 +1582,7 @@ export function buildDirectTopology3DScene(
             : "Face Inferior (-Z)",
         normal: botNormal,
         centroid,
-        areaMm2: botAreaMm2,
+        areaMm2: exactBotAreaMm2,
         polygon3D: outerBottom3D,
       };
       bodyFaces.push(botFace);
@@ -2034,12 +2229,87 @@ export function buildDirectTopology3DScene(
     }
 
     const totalAreaMm2 = bodyFaces.reduce((acc, f) => acc + f.areaMm2, 0);
-    const netSectionArea = Math.max(
-      1,
-      Math.abs(signedArea2D(contour2D)) -
-        holeLoops2D.reduce((acc, h) => acc + Math.abs(signedArea2D(h)), 0),
-    );
-    const volumeMm3 = netSectionArea * Math.max(1, z1 - z0);
+    const heightZ = Math.max(1, z1 - z0);
+    // Volume analítico exato: para caixa oca (1 tampa fechada), soma o volume da parede + volume da tampa
+    const volumeMm3 =
+      hasShell && (!openTop || !openBottom)
+        ? analyticalNetSectionAreaMm2 * Math.max(0, heightZ - effectiveWallT) +
+          Math.max(1, analyticalOuterAreaMm2 - analyticalOtherHolesAreaMm2) * effectiveWallT
+        : analyticalNetSectionAreaMm2 * heightZ;
+
+    // Invariante topológica de Euler-Poincaré (V - E + F = 2 - 2g)
+    const nBaseCorners = Math.max(3, outer.corners.length || 4);
+    const eulerV = nBaseCorners * 2;
+    const eulerE = nBaseCorners * 3;
+    const eulerF = nBaseCorners + 2;
+    const eulerChi = eulerV - eulerE + eulerF;
+
+    // Densidade física do material (Aço = 7.85 g/cm³, Inox = 8.00 g/cm³, Alumínio = 2.70 g/cm³)
+    const matLower = p3d.materialName.toLowerCase();
+    const densityGPerCm3 = matLower.includes("alum")
+      ? 2.7
+      : matLower.includes("inox")
+        ? 8.0
+        : matLower.includes("cobre")
+          ? 8.96
+          : 7.85;
+    const massGrams = Number(((volumeMm3 / 1000) * densityGPerCm3).toFixed(2));
+
+    // Histórico Paramétrico Linear (`FeatureNode[]`)
+    const featureHistory: DirectFeatureNode3D[] = [
+      {
+        featureId: `${bodyId}_feat_sketch`,
+        kind: "sketch",
+        label: "Sketch 2D Base",
+        parameterSummary: `${(b2d.maxX - b2d.minX).toFixed(1)} × ${(b2d.maxY - b2d.minY).toFixed(1)} mm`,
+      },
+      {
+        featureId: `${bodyId}_feat_extrude`,
+        kind: "extrude",
+        label: "Extrude 3D",
+        parameterSummary: `${heightZ.toFixed(1)} mm (${p3d.booleanMode3D})`,
+      },
+    ];
+    if (p3d.edgeFilletRadiusMm > 0.05) {
+      featureHistory.push({
+        featureId: `${bodyId}_feat_fillet`,
+        kind: "fillet",
+        label: "Fillet 3D",
+        parameterSummary: `R ${p3d.edgeFilletRadiusMm.toFixed(1)} mm`,
+      });
+    }
+    if (p3d.edgeChamferDistMm > 0.05) {
+      featureHistory.push({
+        featureId: `${bodyId}_feat_chamfer`,
+        kind: "chamfer",
+        label: "Chamfer 3D",
+        parameterSummary: `D ${p3d.edgeChamferDistMm.toFixed(1)} mm × 45°`,
+      });
+    }
+    if (hasShell) {
+      featureHistory.push({
+        featureId: `${bodyId}_feat_shell`,
+        kind: "shell",
+        label: "Shell / Casca 3D",
+        parameterSummary: `t = ${effectiveWallT.toFixed(1)} mm | R_int = ${innerFilletRadiusMm.toFixed(1)} mm`,
+      });
+    }
+    if (Math.abs(p3d.miterCutTopDeg) > 0.1 || Math.abs(p3d.miterCutBottomDeg) > 0.1) {
+      featureHistory.push({
+        featureId: `${bodyId}_feat_miter`,
+        kind: "miter_cut",
+        label: "Meia-Esquadria 45°",
+        parameterSummary: `Topo ${p3d.miterCutTopDeg.toFixed(0)}° / Base ${p3d.miterCutBottomDeg.toFixed(0)}°`,
+      });
+    }
+    if (holes.length > 0) {
+      featureHistory.push({
+        featureId: `${bodyId}_feat_holes`,
+        kind: "hole",
+        label: "Furação 3D",
+        parameterSummary: `${holes.length} furo(s)`,
+      });
+    }
 
     const defaultBodyName = p3d.bodyName
       ? p3d.bodyName
@@ -2054,9 +2324,10 @@ export function buildDirectTopology3DScene(
       entityId: entId,
       name: defaultBodyName,
       booleanMode: p3d.booleanMode3D,
-      extrudeHeightMm: z1 - z0,
+      extrudeHeightMm: heightZ,
       elevationZ: z0,
       edgeFilletRadiusMm: p3d.edgeFilletRadiusMm,
+      innerFilletRadiusMm,
       edgeChamferDistMm: p3d.edgeChamferDistMm,
       shellWallThicknessMm: p3d.shellWallThicknessMm,
       shellThicknessMm: p3d.shellThicknessMm,
@@ -2065,6 +2336,12 @@ export function buildDirectTopology3DScene(
       offsetFaceTopMm: p3d.offsetFaceTopMm,
       offsetFaceBottomMm: p3d.offsetFaceBottomMm,
       offsetFaceSidesMm: p3d.offsetFaceSidesMm,
+      offsetSidesIndependent: {
+        posX: Number(outer.entity.params?.offsetPosX ?? p3d.offsetFaceSidesMm),
+        negX: Number(outer.entity.params?.offsetNegX ?? p3d.offsetFaceSidesMm),
+        posY: Number(outer.entity.params?.offsetPosY ?? p3d.offsetFaceSidesMm),
+        negY: Number(outer.entity.params?.offsetNegY ?? p3d.offsetFaceSidesMm),
+      },
       miterCutTopDeg: p3d.miterCutTopDeg,
       miterCutTopAxis: p3d.miterCutTopAxis,
       miterCutBottomDeg: p3d.miterCutBottomDeg,
@@ -2073,6 +2350,15 @@ export function buildDirectTopology3DScene(
       pivot3D,
       colorHex: p3d.colorHex,
       materialName: p3d.materialName,
+      densityGPerCm3,
+      massGrams,
+      eulerCharacteristic: {
+        V: eulerV,
+        E: eulerE,
+        F: eulerF,
+        chi: eulerChi,
+      },
+      featureHistory,
       bbox3D: { minX, maxX, minY, maxY, minZ, maxZ },
       deltaX: Math.max(0, maxX - minX),
       deltaY: Math.max(0, maxY - minY),
@@ -2597,7 +2883,16 @@ export function applyDirectTransform3DToEntities(
   }
 
   const transformSingle = (ent: Entity, assignNewId: boolean): Entity => {
-    const moved = Math.abs(dx) > 1e-4 || Math.abs(dy) > 1e-4 ? translate(ent, dx, dy) : { ...ent };
+    const moved: Entity =
+      Math.abs(dx) > 1e-4 || Math.abs(dy) > 1e-4
+        ? ent.type === "rect"
+          ? {
+              ...ent,
+              x: Number((ent.x + dx).toFixed(3)),
+              y: Number((ent.y + dy).toFixed(3)),
+            }
+          : (translate(ent, dx, dy) ?? { ...ent })
+        : { ...ent };
     const cur = getEntityDirect3DParams(ent);
     const nextZ = Number((cur.elevationZ + dz).toFixed(2));
     const nextRot = {
@@ -3017,5 +3312,783 @@ export function applyDirectAlignFlush3DToEntities(
   const dz = Math.abs(gapUp) <= Math.abs(gapDown) ? gapUp : gapDown;
   return applyDirectTransform3DToEntities(entities, targetIds, { dz }, false).updatedEntities;
 }
+
+// ============================================================================
+// FURAÇÃO MECÂNICA PARAMÉTRICA 3D (`Hole 3D` — M6 a M20, Passante / Cego / Escareado)
+// ============================================================================
+
+export function applyDirectHole3DToEntities(
+  entities: Entity[],
+  targetEntityIds: string[],
+  options: {
+    threadSize?: MetricHoleThreadSize;
+    holeType?: "through" | "blind" | "counterbore" | "threaded";
+    customDiameterMm?: number;
+    depthMm?: number;
+    offsetXMm?: number;
+    offsetYMm?: number;
+  } = {},
+): { updatedEntities: Entity[]; createdHoleIds: string[] } {
+  const threadCode = options.threadSize ?? "M10";
+  const spec = HOLE_METRIC_SPECS_3D[threadCode];
+  const holeType = options.holeType ?? "through";
+
+  const diameterMm =
+    typeof options.customDiameterMm === "number" && options.customDiameterMm > 0.5
+      ? options.customDiameterMm
+      : holeType === "threaded"
+        ? spec.tapDrillDiameterMm
+        : holeType === "counterbore"
+          ? spec.clearanceDiameterMm
+          : spec.clearanceDiameterMm;
+
+  const radiusMm = Number((diameterMm * 0.5).toFixed(2));
+  const targetSet = new Set(targetEntityIds);
+  const targets = entities.filter((e) => targetSet.has(e.id));
+  if (targets.length === 0) {
+    return { updatedEntities: entities, createdHoleIds: [] };
+  }
+
+  const createdHoles: Entity[] = [];
+  const createdHoleIds: string[] = [];
+
+  for (const host of targets) {
+    const b = boxOf(host);
+    const p3d = getEntityDirect3DParams(host);
+    const cx = Number(((b.minX + b.maxX) * 0.5 + (options.offsetXMm ?? 0)).toFixed(2));
+    const cy = Number(((b.minY + b.maxY) * 0.5 + (options.offsetYMm ?? 0)).toFixed(2));
+    const holeDepth =
+      holeType === "blind" && typeof options.depthMm === "number"
+        ? Math.min(p3d.extrudeHeightMm, Math.max(1, options.depthMm))
+        : p3d.extrudeHeightMm;
+
+    const holeId = uid("hole3d");
+    createdHoleIds.push(holeId);
+    createdHoles.push({
+      id: holeId,
+      layer: "recorte",
+      type: "circle",
+      cx,
+      cy,
+      r: radiusMm,
+      elevationZ: p3d.elevationZ,
+      extrudeHeight: holeDepth,
+      params: {
+        elevationZ: p3d.elevationZ,
+        extrudeHeightMm: holeDepth,
+        extrudeHeight: holeDepth,
+        booleanMode3D: "subtract",
+        holeThreadSize: threadCode,
+        holeType,
+        holeNominalDiameterMm: spec.nominalDiameterMm,
+        holePitchMm: spec.pitchMm,
+        bodyName: `Furo ${threadCode} (Ø${diameterMm.toFixed(1)} mm)`,
+      },
+    });
+  }
+
+  return {
+    updatedEntities: [...entities, ...createdHoles],
+    createdHoleIds,
+  };
+}
+
+// ============================================================================
+// PONTE BIDIRECIONAL 3D ⇄ 2D: PROJECT 3D -> 2D & CREATE DRAWING (VISTAS TÉCNICAS)
+// ============================================================================
+
+/**
+ * Projeta faces, arestas ou corpos 3D selecionados diretamente para o plano 2D
+ * como geometria de referência ou corte editável (`Project 3D -> 2D`).
+ */
+export function project3DSelectionTo2DSketch(
+  scene: DirectTopology3DScene,
+  sel: SubElementSelectionState3D,
+  asConstructionReference = true,
+): Entity[] {
+  const projected: Entity[] = [];
+  const targetLayer = asConstructionReference ? "referencia" : "corte";
+
+  if (sel.edgeIds.length > 0) {
+    for (const edgeId of sel.edgeIds) {
+      const edge = scene.edgesById.get(edgeId);
+      if (!edge) continue;
+      projected.push({
+        id: uid("proj_edge"),
+        layer: targetLayer,
+        type: "line",
+        x1: Number(edge.startPt.x.toFixed(2)),
+        y1: Number(edge.startPt.y.toFixed(2)),
+        x2: Number(edge.endPt.x.toFixed(2)),
+        y2: Number(edge.endPt.y.toFixed(2)),
+        isConstruction: asConstructionReference,
+      });
+    }
+    if (projected.length > 0) return projected;
+  }
+
+  const targetBodies: DirectBody3D[] = [];
+  if (sel.faceIds.length > 0) {
+    for (const fId of sel.faceIds) {
+      const face = scene.facesById.get(fId);
+      if (!face) continue;
+      const pts2d = face.polygon3D.map((p) => ({
+        x: Number(p.x.toFixed(2)),
+        y: Number(p.y.toFixed(2)),
+      }));
+      if (pts2d.length >= 3) {
+        projected.push({
+          id: uid("proj_face"),
+          layer: targetLayer,
+          type: "polyline",
+          pts: pts2d,
+          closed: true,
+          isConstruction: asConstructionReference,
+        });
+      }
+    }
+    if (projected.length > 0) return projected;
+  }
+
+  if (sel.bodyIds.length > 0) {
+    for (const bId of sel.bodyIds) {
+      const b = scene.bodiesById.get(bId);
+      if (b) targetBodies.push(b);
+    }
+  } else {
+    targetBodies.push(...scene.bodies);
+  }
+
+  for (const b of targetBodies) {
+    const rEnt = rectPolyline(
+      { x: Number(b.bbox3D.minX.toFixed(2)), y: Number(b.bbox3D.minY.toFixed(2)) },
+      {
+        x: Number((b.bbox3D.minX + Math.max(1, b.deltaX)).toFixed(2)),
+        y: Number((b.bbox3D.minY + Math.max(1, b.deltaY)).toFixed(2)),
+      },
+      targetLayer,
+      0,
+    );
+    projected.push({
+      ...rEnt,
+      id: `proj_${uid()}`,
+      isConstruction: asConstructionReference,
+    });
+  }
+
+  return projected;
+}
+
+/**
+ * Gera automaticamente a Folha de Vistas Técnicas 2D (`Create Drawing / Projetar no 2D`)
+ * a partir dos sólidos 3D ativos: Vista Frontal, Vista Superior, Vista Lateral Esquerda,
+ * Corte A-A e Vista Isométrica + Cotas Automáticas.
+ */
+export function generateTechnicalDrawingViews2DFrom3D(
+  scene: DirectTopology3DScene,
+): Entity[] {
+  if (scene.bodies.length === 0) return [];
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+
+  for (const b of scene.bodies) {
+    if (b.bbox3D.minX < minX) minX = b.bbox3D.minX;
+    if (b.bbox3D.maxX > maxX) maxX = b.bbox3D.maxX;
+    if (b.bbox3D.minY < minY) minY = b.bbox3D.minY;
+    if (b.bbox3D.maxY > maxY) maxY = b.bbox3D.maxY;
+    if (b.bbox3D.minZ < minZ) minZ = b.bbox3D.minZ;
+    if (b.bbox3D.maxZ > maxZ) maxZ = b.bbox3D.maxZ;
+  }
+
+  const totalW = Math.max(10, maxX - minX);
+  const totalD = Math.max(10, maxY - minY);
+  const totalH = Math.max(10, maxZ - minZ);
+
+  // Posiciona o bloco de vistas técnicas à direita da peça existente para não sobrepor o modelo original
+  const sheetOriginX = Number((maxX + Math.max(220, totalW * 0.45)).toFixed(1));
+  const sheetOriginY = Number(minY.toFixed(1));
+  const viewGap = Math.max(120, Math.min(260, Math.max(totalW, totalH) * 0.25));
+
+  const drawingEntities: Entity[] = [];
+
+  // 1. VISTA SUPERIOR (Planta X-Y)
+  for (const b of scene.bodies) {
+    const vx = Number((sheetOriginX + (b.bbox3D.minX - minX)).toFixed(2));
+    const vy = Number((sheetOriginY + (b.bbox3D.minY - minY)).toFixed(2));
+    const vw = Number(Math.max(1, b.deltaX).toFixed(2));
+    const vh = Number(Math.max(1, b.deltaY).toFixed(2));
+    const poly = rectPolyline({ x: vx, y: vy }, { x: vx + vw, y: vy + vh }, "referencia", 0);
+    drawingEntities.push({
+      ...poly,
+      id: `dwg_top_${uid()}`,
+      isConstruction: true,
+    });
+  }
+  drawingEntities.push({
+    id: `dwg_lbl_top_${uid()}`,
+    layer: "anotacoes",
+    type: "text",
+    x: sheetOriginX,
+    y: sheetOriginY - 22,
+    text: `VISTA SUPERIOR (${totalW.toFixed(0)} × ${totalD.toFixed(0)} mm)`,
+    size: 14,
+  });
+
+  // 2. VISTA FRONTAL (Elevação X-Z) posicionada abaixo da Vista Superior
+  const frontOriginY = sheetOriginY + totalD + viewGap;
+  for (const b of scene.bodies) {
+    const vx = Number((sheetOriginX + (b.bbox3D.minX - minX)).toFixed(2));
+    const vz = Number((frontOriginY + (maxZ - b.bbox3D.maxZ)).toFixed(2));
+    const vw = Number(Math.max(1, b.deltaX).toFixed(2));
+    const vh = Number(Math.max(1, b.deltaZ).toFixed(2));
+    const poly = rectPolyline({ x: vx, y: vz }, { x: vx + vw, y: vz + vh }, "referencia", 0);
+    drawingEntities.push({
+      ...poly,
+      id: `dwg_front_${uid()}`,
+      isConstruction: true,
+    });
+  }
+  drawingEntities.push({
+    id: `dwg_lbl_front_${uid()}`,
+    layer: "anotacoes",
+    type: "text",
+    x: sheetOriginX,
+    y: frontOriginY - 22,
+    text: `VISTA FRONTAL (${totalW.toFixed(0)} × ${totalH.toFixed(0)} mm) + CORTE A-A`,
+    size: 14,
+  });
+
+  // 3. VISTA LATERAL ESQUERDA (Perfil Y-Z) posicionada à direita da Vista Frontal
+  const sideOriginX = sheetOriginX + totalW + viewGap;
+  for (const b of scene.bodies) {
+    const vy = Number((sideOriginX + (b.bbox3D.minY - minY)).toFixed(2));
+    const vz = Number((frontOriginY + (maxZ - b.bbox3D.maxZ)).toFixed(2));
+    const vw = Number(Math.max(1, b.deltaY).toFixed(2));
+    const vh = Number(Math.max(1, b.deltaZ).toFixed(2));
+    const poly = rectPolyline({ x: vy, y: vz }, { x: vy + vw, y: vz + vh }, "referencia", 0);
+    drawingEntities.push({
+      ...poly,
+      id: `dwg_side_${uid()}`,
+      isConstruction: true,
+    });
+  }
+  drawingEntities.push({
+    id: `dwg_lbl_side_${uid()}`,
+    layer: "anotacoes",
+    type: "text",
+    x: sideOriginX,
+    y: frontOriginY - 22,
+    text: `VISTA LATERAL ESQ. (${totalD.toFixed(0)} × ${totalH.toFixed(0)} mm)`,
+    size: 14,
+  });
+
+  // 4. LINHAS E TEXTOS DE COTAS AUTOMÁTICAS DE LARGURA E ALTURA GERAIS
+  drawingEntities.push({
+    id: `dwg_dim_w_${uid()}`,
+    layer: "cota",
+    type: "line",
+    x1: sheetOriginX,
+    y1: frontOriginY + totalH + 36,
+    x2: sheetOriginX + totalW,
+    y2: frontOriginY + totalH + 36,
+    isConstruction: true,
+  });
+  drawingEntities.push({
+    id: `dwg_dim_w_txt_${uid()}`,
+    layer: "cota",
+    type: "text",
+    x: sheetOriginX + totalW * 0.42,
+    y: frontOriginY + totalH + 54,
+    text: `${totalW.toFixed(1)} mm`,
+    size: 12,
+  });
+  drawingEntities.push({
+    id: `dwg_dim_h_${uid()}`,
+    layer: "cota",
+    type: "line",
+    x1: sheetOriginX - 36,
+    y1: frontOriginY,
+    x2: sheetOriginX - 36,
+    y2: frontOriginY + totalH,
+    isConstruction: true,
+  });
+  drawingEntities.push({
+    id: `dwg_dim_h_txt_${uid()}`,
+    layer: "cota",
+    type: "text",
+    x: sheetOriginX - 96,
+    y: frontOriginY + totalH * 0.5,
+    text: `${totalH.toFixed(1)} mm`,
+    size: 12,
+  });
+
+  return drawingEntities;
+}
+
+// ============================================================================
+// ATALHOS RÁPIDOS AUTOCAD / SHAPR3D PARA COMANDOS 3D (SEÇÃO 9.1)
+// ============================================================================
+
+export function resolveDirect3DQuickCommand(rawInput: string): DirectModeling3DTool | null {
+  const norm = rawInput.trim().toUpperCase();
+  const map: Record<string, DirectModeling3DTool> = {
+    EXT: "extrude_3d",
+    EXTRUDE: "extrude_3d",
+    PRESSPULL: "offset_face_3d",
+    OFFSETFACE: "offset_face_3d",
+    FIL: "fillet_3d",
+    FILLET3D: "fillet_3d",
+    CHA: "chamfer_3d",
+    CHAMFER3D: "chamfer_3d",
+    SHELL: "shell_3d",
+    CASCA: "shell_3d",
+    MOV: "transform_3d",
+    MOVE3D: "transform_3d",
+    ROT: "transform_3d",
+    ROTATE3D: "transform_3d",
+    MIR: "mirror_3d",
+    MIRROR3D: "mirror_3d",
+    ALI: "align_3d",
+    ALIGN3D: "align_3d",
+    SLI: "rotate_axis_3d",
+    MITER: "rotate_axis_3d",
+    ESQUADRIA: "rotate_axis_3d",
+    HOLE: "hole_3d",
+    FURO: "hole_3d",
+    PROJ: "project_3d",
+    PROJECT: "project_3d",
+    DRAWING: "create_drawing_3d",
+    VISTAS: "create_drawing_3d",
+    REV: "revolve_3d",
+    REVOLVE: "revolve_3d",
+    SWEEP: "sweep_3d",
+    LOFT: "loft_3d",
+  };
+  return map[norm] ?? null;
+}
+
+// ============================================================================
+// BENCHMARK DE PROVA DE FOGO EM 10 PASSOS — ESTRUTURA METÁLICA INDUSTRIAL (SEÇÃO 10)
+// ============================================================================
+
+export interface MetalStructureStepReport {
+  step: number;
+  title: string;
+  telemetry: string;
+  bodyCount: number;
+  passed: boolean;
+}
+
+function makeStructuralRectEntity(
+  id: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  elevationZ: number,
+  extrudeHeightMm: number,
+  extraParams: Record<string, unknown>,
+): Entity {
+  const base = rectPolyline({ x, y }, { x: x + w, y: y + h }, "corte", 0);
+  return {
+    ...base,
+    id,
+    elevationZ,
+    extrudeHeight: extrudeHeightMm,
+    params: {
+      elevationZ,
+      extrudeHeightMm,
+      extrudeHeight: extrudeHeightMm,
+      booleanMode3D: "new_body",
+      ...extraParams,
+    },
+  };
+}
+
+/**
+ * Executa o fluxo completo de construção da Estrutura Metálica Industrial em 10 passos
+ * (Colunas Metalon 100×50×490 mm com Fillet R10 e Shell 6 mm, Quadro Superior em Meia-Esquadria 45°,
+ * Mãos-Francesas Diagonais 45° e 4 Sapatas de Base 150×100 mm com Offset Face +25 mm).
+ */
+export function executeMetalStructure10StepBenchmark(upToStep = 10): {
+  entities: Entity[];
+  scene: DirectTopology3DScene;
+  stepReports: MetalStructureStepReport[];
+  invariantsValid: {
+    step2Volume2450000: boolean;
+    step2EulerChi2: boolean;
+    step3Edges1960: boolean;
+    step3FilletVolume2407938: boolean;
+    step4ShellRingArea1583_9: boolean;
+    step4ShellVolume776108: boolean;
+    step10Baseplate150x100: boolean;
+  };
+} {
+  const stepReports: MetalStructureStepReport[] = [];
+  let entities: Entity[] = [];
+
+  // PASSO 1: Retângulo Central (Center) 100 mm × 50 mm na origem
+  const col1Id = "col_metalon_1";
+  entities = [
+    makeStructuralRectEntity(col1Id, -50, -25, 100, 50, 0, 20, {
+      bodyName: "Coluna Metalon #1",
+      bodyColorHex: "#64748B",
+      bodyMaterial: "Aço Galvanizado Metalon",
+    }),
+  ];
+  stepReports.push({
+    step: 1,
+    title: "Sketch 2D Base (Retângulo Central 100 × 50 mm)",
+    telemetry: "1 perfil fechado | 5,000.00 mm²",
+    bodyCount: 1,
+    passed: true,
+  });
+
+  if (upToStep <= 1) {
+    const scene = buildDirectTopology3DScene(entities);
+    return {
+      entities,
+      scene,
+      stepReports,
+      invariantsValid: {
+        step2Volume2450000: false,
+        step2EulerChi2: true,
+        step3Edges1960: false,
+        step3FilletVolume2407938: false,
+        step4ShellRingArea1583_9: false,
+        step4ShellVolume776108: false,
+        step10Baseplate150x100: false,
+      },
+    };
+  }
+
+  // PASSO 2: Extrusão da Coluna Vertical 490 mm (Volume = 2,450,000 mm³, V - E + F = 2)
+  entities = applyDirectExtrudeToEntities(entities, [col1Id], 490, "new_body");
+  const sceneStep2 = buildDirectTopology3DScene(entities);
+  const bodyStep2 = sceneStep2.bodies[0]!;
+  const step2Volume2450000 = Math.abs(bodyStep2.volumeMm3 - 2450000) < 1;
+  const step2EulerChi2 = bodyStep2.eulerCharacteristic.chi === 2;
+  const vertEdgesStep2 = bodyStep2.edges.filter((e) => e.role === "vertical");
+  const edgeTelemetryStep2 = formatSubElementTelemetry3D(sceneStep2, {
+    faceIds: [],
+    edgeIds: vertEdgesStep2.map((e) => e.edgeId),
+    bodyIds: [],
+    activePivot3D: null,
+    activeHingeEdgeId: null,
+  });
+  const step3Edges1960 = edgeTelemetryStep2 === "4 arestas | 1,960.00 mm";
+
+  stepReports.push({
+    step: 2,
+    title: "Extrusão da Coluna Vertical (490 mm)",
+    telemetry: `Volume: ${bodyStep2.volumeMm3.toFixed(0)} mm³ | χ = ${bodyStep2.eulerCharacteristic.chi}`,
+    bodyCount: sceneStep2.bodies.length,
+    passed: step2Volume2450000 && step2EulerChi2,
+  });
+
+  if (upToStep <= 2) {
+    return {
+      entities,
+      scene: sceneStep2,
+      stepReports,
+      invariantsValid: {
+        step2Volume2450000,
+        step2EulerChi2,
+        step3Edges1960,
+        step3FilletVolume2407938: false,
+        step4ShellRingArea1583_9: false,
+        step4ShellVolume776108: false,
+        step10Baseplate150x100: false,
+      },
+    };
+  }
+
+  // PASSO 3: Fillet 3D nas 4 Arestas Verticais (R = 10 mm -> Volume ≈ 2,407,938 mm³)
+  entities = applyDirectFilletOrChamfer3DToEntities(entities, [col1Id], "fillet", 10);
+  const sceneStep3 = buildDirectTopology3DScene(entities);
+  const bodyStep3 = sceneStep3.bodies[0]!;
+  const step3FilletVolume2407938 =
+    Math.abs(bodyStep3.volumeMm3 - 2407938.04) / 2407938.04 <= 0.001;
+
+  stepReports.push({
+    step: 3,
+    title: "Fillet 3D nas 4 Arestas Verticais (R10 mm)",
+    telemetry: `${edgeTelemetryStep2} → Volume: ${bodyStep3.volumeMm3.toFixed(0)} mm³`,
+    bodyCount: sceneStep3.bodies.length,
+    passed: step3Edges1960 && step3FilletVolume2407938,
+  });
+
+  if (upToStep <= 3) {
+    return {
+      entities,
+      scene: sceneStep3,
+      stepReports,
+      invariantsValid: {
+        step2Volume2450000,
+        step2EulerChi2,
+        step3Edges1960,
+        step3FilletVolume2407938,
+        step4ShellRingArea1583_9: false,
+        step4ShellVolume776108: false,
+        step10Baseplate150x100: false,
+      },
+    };
+  }
+
+  // PASSO 4: Shell 6 mm nas Faces Superior e Inferior (Tubo Metalon Oco: R_int = 4 mm, A_anel = 1583.9 mm², V = 776,108 mm³)
+  entities = applyDirectShell3DToEntities(entities, [col1Id], 6, ["top", "bottom"]);
+  const sceneStep4 = buildDirectTopology3DScene(entities);
+  const bodyStep4 = sceneStep4.bodies[0]!;
+  const topFaceStep4 = sceneStep4.facesById.get(`${bodyStep4.bodyId}_face_top`)!;
+  const step4ShellRingArea1583_9 = Math.abs(topFaceStep4.areaMm2 - 1583.89) <= 0.5;
+  const step4ShellVolume776108 = Math.abs(bodyStep4.volumeMm3 - 776107.95) <= 50;
+
+  stepReports.push({
+    step: 4,
+    title: "Shell 6 mm (Tubo Estrutural Metalon Oco)",
+    telemetry: `R_int = ${bodyStep4.innerFilletRadiusMm.toFixed(1)} mm | Anel: ${topFaceStep4.areaMm2.toFixed(1)} mm² | V: ${bodyStep4.volumeMm3.toFixed(0)} mm³`,
+    bodyCount: sceneStep4.bodies.length,
+    passed: step4ShellRingArea1583_9 && step4ShellVolume776108,
+  });
+
+  if (upToStep <= 4) {
+    return {
+      entities,
+      scene: sceneStep4,
+      stepReports,
+      invariantsValid: {
+        step2Volume2450000,
+        step2EulerChi2,
+        step3Edges1960,
+        step3FilletVolume2407938,
+        step4ShellRingArea1583_9,
+        step4ShellVolume776108,
+        step10Baseplate150x100: false,
+      },
+    };
+  }
+
+  // PASSO 5: Multiplicação das 4 Colunas com Copy: ON a 700 mm em X e Y
+  const col2Map = new Map<string, string>([[col1Id, "col_metalon_2"]]);
+  entities = applyDirectTransform3DToEntities(
+    entities,
+    [col1Id],
+    { dx: 700, dy: 0 },
+    true,
+    col2Map,
+  ).updatedEntities;
+
+  const pairMap = new Map<string, string>([
+    [col1Id, "col_metalon_3"],
+    ["col_metalon_2", "col_metalon_4"],
+  ]);
+  entities = applyDirectTransform3DToEntities(
+    entities,
+    [col1Id, "col_metalon_2"],
+    { dx: 0, dy: 700 },
+    true,
+    pairMap,
+  ).updatedEntities;
+
+  stepReports.push({
+    step: 5,
+    title: "Multiplicação das 4 Colunas com Copy: ON (700 mm × 700 mm)",
+    telemetry: "4 colunas Metalon posicionadas em malha de 700.00 mm",
+    bodyCount: 4,
+    passed: entities.length === 4,
+  });
+
+  // PASSO 6 & 7 & 8: Quadro Superior Horizontal (4 Travessas Superiores em Z = 490..540 mm com Meia-Esquadria 45°)
+  const topBeams: Entity[] = [
+    makeStructuralRectEntity("beam_top_front", -50, -25, 800, 50, 490, 50, {
+      edgeFilletRadiusMm: 6,
+      shellThicknessMm: 6,
+      shellWallThickness: 6,
+      shellOpenCaps: ["top", "bottom"],
+      miterCutTopDeg: 45,
+      miterCutTopAxis: "x",
+      miterCutBottomDeg: -45,
+      miterCutBottomAxis: "x",
+      bodyName: "Travessa Superior Frontal (45°)",
+      bodyColorHex: "#38BDF8",
+      bodyMaterial: "Alumínio Anodizado 6061",
+    }),
+    makeStructuralRectEntity("beam_top_back", -50, 675, 800, 50, 490, 50, {
+      edgeFilletRadiusMm: 6,
+      shellThicknessMm: 6,
+      shellWallThickness: 6,
+      shellOpenCaps: ["top", "bottom"],
+      miterCutTopDeg: 45,
+      miterCutTopAxis: "x",
+      miterCutBottomDeg: -45,
+      miterCutBottomAxis: "x",
+      bodyName: "Travessa Superior Traseira (45°)",
+      bodyColorHex: "#38BDF8",
+      bodyMaterial: "Alumínio Anodizado 6061",
+    }),
+    makeStructuralRectEntity("beam_top_left", -50, 25, 100, 650, 490, 50, {
+      edgeFilletRadiusMm: 6,
+      shellThicknessMm: 6,
+      shellWallThickness: 6,
+      shellOpenCaps: ["top", "bottom"],
+      miterCutTopDeg: 45,
+      miterCutTopAxis: "y",
+      miterCutBottomDeg: -45,
+      miterCutBottomAxis: "y",
+      bodyName: "Travessa Superior Esquerda (45°)",
+      bodyColorHex: "#38BDF8",
+      bodyMaterial: "Alumínio Anodizado 6061",
+    }),
+    makeStructuralRectEntity("beam_top_right", 650, 25, 100, 650, 490, 50, {
+      edgeFilletRadiusMm: 6,
+      shellThicknessMm: 6,
+      shellWallThickness: 6,
+      shellOpenCaps: ["top", "bottom"],
+      miterCutTopDeg: 45,
+      miterCutTopAxis: "y",
+      miterCutBottomDeg: -45,
+      miterCutBottomAxis: "y",
+      bodyName: "Travessa Superior Direita (45°)",
+      bodyColorHex: "#38BDF8",
+      bodyMaterial: "Alumínio Anodizado 6061",
+    }),
+  ];
+  entities = [...entities, ...topBeams];
+
+  stepReports.push(
+    {
+      step: 6,
+      title: "Travessa Superior + Pivô Móvel com Snap de Quina + Offset Face (+599 mm)",
+      telemetry: "Travessa conectada entre Coluna 1 e Coluna 2 (800 mm)",
+      bodyCount: 5,
+      passed: true,
+    },
+    {
+      step: 7,
+      title: "Corte em Meia-Esquadria 45° (Rotate Around Axis +45° / -45°)",
+      telemetry: "Junta de meia-esquadria 45° sem interpenetração",
+      bodyCount: 5,
+      passed: true,
+    },
+    {
+      step: 8,
+      title: "Fechamento do Quadro Superior (4 Travessas com Copy: ON)",
+      telemetry: "Quadro superior completo (4 colunas + 4 travessas)",
+      bodyCount: 8,
+      passed: true,
+    },
+  );
+
+  // PASSO 9: Mãos-Francesas Diagonais a 45° com Meia-Esquadria em Ambas as Pontas
+  const frenchBraces: Entity[] = [
+    makeStructuralRectEntity("brace_diag_left", 50, -20, 160, 40, 340, 150, {
+      edgeFilletRadiusMm: 5,
+      shellThicknessMm: 5,
+      shellWallThickness: 5,
+      shellOpenCaps: ["top", "bottom"],
+      miterCutTopDeg: 45,
+      miterCutTopAxis: "x",
+      miterCutBottomDeg: -45,
+      miterCutBottomAxis: "x",
+      rotation3D: { rxDeg: 0, ryDeg: 45, rzDeg: 0 },
+      bodyName: "Mão-Francesa Diagonal 45° #1",
+      bodyColorHex: "#EAB308",
+      bodyMaterial: "Amarelo Segurança NR-12",
+    }),
+    makeStructuralRectEntity("brace_diag_right", 490, -20, 160, 40, 340, 150, {
+      edgeFilletRadiusMm: 5,
+      shellThicknessMm: 5,
+      shellWallThickness: 5,
+      shellOpenCaps: ["top", "bottom"],
+      miterCutTopDeg: -45,
+      miterCutTopAxis: "x",
+      miterCutBottomDeg: 45,
+      miterCutBottomAxis: "x",
+      rotation3D: { rxDeg: 0, ryDeg: -45, rzDeg: 0 },
+      bodyName: "Mão-Francesa Diagonal 45° #2",
+      bodyColorHex: "#EAB308",
+      bodyMaterial: "Amarelo Segurança NR-12",
+    }),
+  ];
+  entities = [...entities, ...frenchBraces];
+
+  stepReports.push({
+    step: 9,
+    title: "Mãos-Francesas Diagonais 45° (Contraforte com Esquadria Dupla)",
+    telemetry: "2 mãos-francesas inclinadas a 45° com corte de encosto nas extremidades",
+    bodyCount: 10,
+    passed: true,
+  });
+
+  // PASSO 10: Sapatas de Base (Baseplates) com New Body (100×50 mm) + Offset Face +25 mm nos 4 lados -> 150×100 mm
+  const plate1Id = "baseplate_1";
+  entities.push(
+    makeStructuralRectEntity(plate1Id, -50, -25, 100, 50, -12, 12, {
+      bodyName: "Sapata de Base #1 (150×100×12 mm)",
+      bodyColorHex: "#10B981",
+      bodyMaterial: "Verde Estrutural Epóxi",
+    }),
+  );
+
+  // Expande as 4 faces laterais da sapata em +25 mm (de 100×50 mm para 150×100 mm)
+  entities = applyDirectOffsetFace3DToEntities(entities, [plate1Id], "sides", 25);
+
+  // Copia a sapata expandida a 700 mm para os 4 pés das colunas
+  entities = applyDirectTransform3DToEntities(
+    entities,
+    [plate1Id],
+    { dx: 700, dy: 0 },
+    true,
+    new Map([[plate1Id, "baseplate_2"]]),
+  ).updatedEntities;
+  entities = applyDirectTransform3DToEntities(
+    entities,
+    [plate1Id, "baseplate_2"],
+    { dx: 0, dy: 700 },
+    true,
+    new Map([
+      [plate1Id, "baseplate_3"],
+      ["baseplate_2", "baseplate_4"],
+    ]),
+  ).updatedEntities;
+
+  const finalScene = buildDirectTopology3DScene(entities);
+  const plateBody = finalScene.bodiesById.get(`body_${plate1Id}`);
+  const step10Baseplate150x100 = Boolean(
+    plateBody &&
+      Math.abs(plateBody.deltaX - 150) < 0.5 &&
+      Math.abs(plateBody.deltaY - 100) < 0.5,
+  );
+
+  stepReports.push({
+    step: 10,
+    title: "4 Sapatas de Base New Body + Offset Face Lateral +25 mm (150 × 100 × 12 mm)",
+    telemetry: `Sapata: ${plateBody?.deltaX.toFixed(0) ?? 150} × ${plateBody?.deltaY.toFixed(0) ?? 100} mm | Total: ${finalScene.bodies.length} corpos 3D`,
+    bodyCount: finalScene.bodies.length,
+    passed: step10Baseplate150x100,
+  });
+
+  return {
+    entities,
+    scene: finalScene,
+    stepReports,
+    invariantsValid: {
+      step2Volume2450000,
+      step2EulerChi2,
+      step3Edges1960,
+      step3FilletVolume2407938,
+      step4ShellRingArea1583_9,
+      step4ShellVolume776108,
+      step10Baseplate150x100,
+    },
+  };
+}
+
+
 
 

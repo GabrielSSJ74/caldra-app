@@ -2,12 +2,18 @@ import { describe, expect, it } from "vitest";
 import { rectPolyline, type Entity } from "./core";
 import { computeWorkplaneOrbitProjection2D } from "./orbit3dController";
 import {
+  HOLE_METRIC_SPECS_3D,
+  applyDirectHole3DToEntities,
   applyDirectTransform3DToEntities,
   buildDirectTopology3DScene,
+  executeMetalStructure10StepBenchmark,
   formatSubElementTelemetry3D,
+  generateTechnicalDrawingViews2DFrom3D,
   getEntityDirect3DParams,
   hitTestSubElement3DInScreenSpace,
+  project3DSelectionTo2DSketch,
   projectPoint3DToCanvasViewMm,
+  resolveDirect3DQuickCommand,
   setEntityDirect3DParams,
 } from "./cadDirectModeling3D";
 import {
@@ -68,6 +74,7 @@ describe("CHAMFER CAD — Motor de Modelagem Direta 3D, Edição Topológica e S
     const sceneStep2 = buildDirectTopology3DScene([col], 10);
     const body2 = sceneStep2.bodies[0]!;
     expect(body2.edgeFilletRadiusMm).toBe(10);
+    expect(body2.innerFilletRadiusMm).toBe(4);
     expect(body2.shellThicknessMm).toBe(6);
     expect(body2.shellOpenCaps).toEqual(["top", "bottom"]);
     expect(body2.faces.length).toBeGreaterThanOrEqual(6);
@@ -195,7 +202,6 @@ describe("CHAMFER CAD — Motor de Modelagem Direta 3D, Edição Topológica e S
 
     const paramsAfterExtrude = getEntityDirect3DParams(tube, 3.0);
     expect(paramsAfterExtrude.extrudeHeightMm).toBe(500);
-    // shellWallThickness não foi definido ainda, então padrão é 0
     expect(paramsAfterExtrude.shellWallThicknessMm).toBe(0);
 
     // Aplica Shell (espessura da parede do tubo = 4.75 mm)
@@ -209,12 +215,10 @@ describe("CHAMFER CAD — Motor de Modelagem Direta 3D, Edição Topológica e S
     expect(scene.bodies.length).toBe(1);
     const body = scene.bodies[0]!;
 
-    // O tubo deve ter 500 mm de comprimento/altura no eixo Z E parede de 4.75 mm
     expect(body.extrudeHeightMm).toBe(500);
     expect(body.shellWallThicknessMm).toBe(4.75);
     expect(body.shellThicknessMm).toBe(4.75);
 
-    // Alterar a espessura da parede NÃO altera a altura de extrusão
     tube = setEntityDirect3DParams(tube, {
       shellWallThicknessMm: 2.0,
       shellThicknessMm: 2.0,
@@ -223,7 +227,6 @@ describe("CHAMFER CAD — Motor de Modelagem Direta 3D, Edição Topológica e S
     expect(paramsAfterWallChange.extrudeHeightMm).toBe(500);
     expect(paramsAfterWallChange.shellWallThicknessMm).toBe(2.0);
 
-    // Alterar extrusão para 1000 mm NÃO altera a parede do tubo
     tube = setEntityDirect3DParams(tube, {
       extrudeHeightMm: 1000,
     });
@@ -239,20 +242,109 @@ describe("CHAMFER CAD — Motor de Modelagem Direta 3D, Edição Topológica e S
       shellWallThicknessMm: 3.2,
     });
 
-    // Deslocamento +X de 50 mm
     const transX = applyDirectTransform3DToEntities([part], ["part_gizmo_trans"], { dx: 50, dy: 0, dz: 0 }, false);
     const updatedX = transX.updatedEntities.find((e) => e.id === "part_gizmo_trans")!;
     expect(updatedX).toBeDefined();
-    // Verifica que parâmetros 3D continuam intactos após o deslocamento
     const paramsX = getEntityDirect3DParams(updatedX, 3.0);
     expect(paramsX.extrudeHeightMm).toBe(250);
     expect(paramsX.shellWallThicknessMm).toBe(3.2);
 
-    // Deslocamento +Y de 75 mm
     const transY = applyDirectTransform3DToEntities([updatedX], ["part_gizmo_trans"], { dx: 0, dy: 75, dz: 0 }, false);
     const updatedY = transY.updatedEntities.find((e) => e.id === "part_gizmo_trans")!;
     const paramsY = getEntityDirect3DParams(updatedY, 3.0);
     expect(paramsY.extrudeHeightMm).toBe(250);
     expect(paramsY.shellWallThicknessMm).toBe(3.2);
   });
+
+  it("8. Executa e valida os 10 Passos da Prova de Fogo da Estrutura Metálica Industrial e Invariantes Volumétricas B-Rep", () => {
+    const benchmark = executeMetalStructure10StepBenchmark(10);
+    expect(benchmark.stepReports.length).toBe(10);
+    expect(benchmark.stepReports.every((r) => r.passed)).toBe(true);
+
+    // Invariantes matemáticas da Seção 10 & 11:
+    // Passo 2: Volume = 2,450,000 mm³ e V - E + F = 2
+    expect(benchmark.invariantsValid.step2Volume2450000).toBe(true);
+    expect(benchmark.invariantsValid.step2EulerChi2).toBe(true);
+
+    // Passo 3: 4 arestas | 1,960.00 mm e Volume c/ Fillet R10 ≈ 2,407,938 mm³
+    expect(benchmark.invariantsValid.step3Edges1960).toBe(true);
+    expect(benchmark.invariantsValid.step3FilletVolume2407938).toBe(true);
+
+    // Passo 4: Anel do Tubo Metalon 6mm = 1,583.9 mm² e Volume Metálico ≈ 776,108 mm³
+    expect(benchmark.invariantsValid.step4ShellRingArea1583_9).toBe(true);
+    expect(benchmark.invariantsValid.step4ShellVolume776108).toBe(true);
+
+    // Passo 10: Sapata expandida +25 mm nas 4 faces laterais (100×50 -> 150×100 mm)
+    expect(benchmark.invariantsValid.step10Baseplate150x100).toBe(true);
+
+    // Total de corpos: 4 colunas + 4 travessas + 2 mãos-francesas + 4 sapatas = 14 corpos sólidos
+    expect(benchmark.scene.bodies.length).toBe(14);
+  });
+
+  it("9. Valida tabela métrica ISO de Furação 3D (Hole M6 a M20) e subtração de volume em tempo real", () => {
+    expect(HOLE_METRIC_SPECS_3D.M6.tapDrillDiameterMm).toBe(5.0);
+    expect(HOLE_METRIC_SPECS_3D.M6.clearanceDiameterMm).toBe(6.6);
+    expect(HOLE_METRIC_SPECS_3D.M8.tapDrillDiameterMm).toBe(6.8);
+    expect(HOLE_METRIC_SPECS_3D.M8.clearanceDiameterMm).toBe(9.0);
+    expect(HOLE_METRIC_SPECS_3D.M10.tapDrillDiameterMm).toBe(8.5);
+    expect(HOLE_METRIC_SPECS_3D.M10.clearanceDiameterMm).toBe(11.0);
+    expect(HOLE_METRIC_SPECS_3D.M12.tapDrillDiameterMm).toBe(10.2);
+    expect(HOLE_METRIC_SPECS_3D.M12.clearanceDiameterMm).toBe(13.5);
+    expect(HOLE_METRIC_SPECS_3D.M16.tapDrillDiameterMm).toBe(14.0);
+    expect(HOLE_METRIC_SPECS_3D.M16.clearanceDiameterMm).toBe(17.5);
+    expect(HOLE_METRIC_SPECS_3D.M20.tapDrillDiameterMm).toBe(17.5);
+    expect(HOLE_METRIC_SPECS_3D.M20.clearanceDiameterMm).toBe(22.0);
+
+    const flange = setEntityDirect3DParams(
+      { ...rectPolyline({ x: 0, y: 0 }, { x: 100, y: 100 }, "corte", 0), id: "flange_m12" },
+      { extrudeHeightMm: 15 },
+    );
+    const { updatedEntities, createdHoleIds } = applyDirectHole3DToEntities(
+      [flange],
+      ["flange_m12"],
+      { threadSize: "M12", holeType: "through" },
+    );
+    expect(createdHoleIds.length).toBe(1);
+    const scene = buildDirectTopology3DScene(updatedEntities, 15);
+    expect(scene.bodies.length).toBe(1);
+    const body = scene.bodies[0]!;
+    // Volume sem furo = 150,000 mm³; com furo passante Ø13.5 mm (A ≈ 143.14 mm²) -> V ≈ 147,853 mm³
+    expect(body.volumeMm3).toBeCloseTo(150000 - Math.PI * 6.75 * 6.75 * 15, 0);
+  });
+
+  it("10. Valida Project 3D -> 2D, Create Drawing (Vistas Ortográficas 2D) e Atalhos AutoCAD 3D", () => {
+    const benchmark = executeMetalStructure10StepBenchmark(4);
+    const colBody = benchmark.scene.bodies[0]!;
+
+    const projected = project3DSelectionTo2DSketch(
+      benchmark.scene,
+      {
+        faceIds: [],
+        edgeIds: [],
+        bodyIds: [colBody.bodyId],
+        activePivot3D: null,
+        activeHingeEdgeId: null,
+      },
+      true,
+    );
+    expect(projected.length).toBeGreaterThanOrEqual(1);
+    expect(projected[0]!.isConstruction).toBe(true);
+
+    const views2D = generateTechnicalDrawingViews2DFrom3D(benchmark.scene);
+    // Deve conter retângulos das 3 vistas (Superior, Frontal, Lateral) + textos + cotas
+    expect(views2D.length).toBeGreaterThanOrEqual(8);
+    expect(views2D.some((e) => e.layer === "cota")).toBe(true);
+
+    expect(resolveDirect3DQuickCommand("EXT")).toBe("extrude_3d");
+    expect(resolveDirect3DQuickCommand("PRESSPULL")).toBe("offset_face_3d");
+    expect(resolveDirect3DQuickCommand("FIL")).toBe("fillet_3d");
+    expect(resolveDirect3DQuickCommand("CHA")).toBe("chamfer_3d");
+    expect(resolveDirect3DQuickCommand("SHELL")).toBe("shell_3d");
+    expect(resolveDirect3DQuickCommand("MOV")).toBe("transform_3d");
+    expect(resolveDirect3DQuickCommand("SLI")).toBe("rotate_axis_3d");
+    expect(resolveDirect3DQuickCommand("HOLE")).toBe("hole_3d");
+    expect(resolveDirect3DQuickCommand("PROJ")).toBe("project_3d");
+    expect(resolveDirect3DQuickCommand("DRAWING")).toBe("create_drawing_3d");
+  });
 });
+

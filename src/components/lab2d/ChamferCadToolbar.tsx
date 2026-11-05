@@ -609,6 +609,14 @@ export function ChamferCadToolbar({
         compatibleWith: ["face", "edge", "none"],
       },
       {
+        id: "hole_3d",
+        short: "FURO",
+        label: "Furo 3D (M6–M20)",
+        desc: "Inserir furação mecânica paramétrica ISO (Passante, Cego, Escareado ou Roscado M6–M20)",
+        icon: CircleDot,
+        compatibleWith: ["face", "body", "none"],
+      },
+      {
         id: "mirror_3d",
         short: "ESPEL",
         label: "Espelhar 3D",
@@ -625,7 +633,25 @@ export function ChamferCadToolbar({
         matchTools: ["scale_3d", "align_3d"],
         compatibleWith: ["body", "none"],
       },
+      {
+        id: "project_3d",
+        short: "PROJ",
+        label: "Project 3D → 2D",
+        desc: "Projetar faces, arestas ou corpos 3D no esboço 2D como linhas de referência",
+        icon: Layers,
+        compatibleWith: ["face", "edge", "body", "none"],
+      },
+      {
+        id: "create_drawing_3d",
+        short: "VISTAS",
+        label: "Create Drawing (Vistas 2D)",
+        desc: "Gerar folha de vistas ortográficas 2D (Frontal, Superior, Lateral, Corte A-A) com cotas",
+        icon: FileText,
+        compatibleWith: ["body", "face", "none"],
+      },
     ];
+
+    const hasActive3DSelection = Boolean(hasSelection || selectionKind3D !== "none");
 
     return (
       <aside
@@ -642,7 +668,31 @@ export function ChamferCadToolbar({
           className,
         )}
       >
-        {/* 10 FERRAMENTAS DE EDIÇÃO E MODIFICAÇÃO 3D — ROLÁVEL SUAVEMENTE */}
+        {/* BOTÃO RÁPIDO DESELECT ALL NO TOPO QUANDO HÁ SELEÇÃO 3D ATIVA */}
+        {hasActive3DSelection && (
+          <div className="w-full pb-1 mb-0.5 border-b border-slate-800/80 flex flex-col items-center shrink-0">
+            <button
+              type="button"
+              data-testid="chamfer-3d-deselect-all-btn"
+              onClick={() => {
+                triggerHaptic("selection");
+                AudioManager.play("ui_select");
+                onClearSelection3D?.();
+                selectDirect3D("select_3d");
+              }}
+              title="Deselect All — Limpar toda a seleção 3D ativa"
+              aria-label="Deselect All"
+              className="group relative flex min-h-[32px] w-full flex-col items-center justify-center rounded-xl border border-amber-500/40 bg-amber-500/15 text-amber-300 transition-all hover:bg-amber-500/25 active:scale-95 cursor-pointer"
+            >
+              <X className="size-3" />
+              <span className="text-[6.5px] font-mono font-extrabold tracking-tighter leading-none uppercase">
+                LIMPAR
+              </span>
+            </button>
+          </div>
+        )}
+
+        {/* FERRAMENTAS DE EDIÇÃO E MODIFICAÇÃO 3D — ROLÁVEL SUAVEMENTE */}
         <div
           ref={scrollContainerRef}
           onPointerDown={handlePointerDown}

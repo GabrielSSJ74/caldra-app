@@ -12,9 +12,11 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Box,
   Check,
+  CircleDot,
   Compass,
   Copy,
   CornerDownRight,
+  FileText,
   FlipHorizontal,
   Layers,
   Maximize2,
@@ -38,10 +40,12 @@ import {
   type LoftSurfaceMode,
 } from "@/lib/lab2d/cadLoft3DEngine";
 import {
+  HOLE_METRIC_SPECS_3D,
   INDUSTRIAL_3D_MATERIALS,
   applyDirectAlignFlush3DToEntities,
   applyDirectExtrudeToEntities,
   applyDirectFilletOrChamfer3DToEntities,
+  applyDirectHole3DToEntities,
   applyDirectMirror3DToEntities,
   applyDirectMiterCut3DToEntities,
   applyDirectOffsetFace3DToEntities,
@@ -49,7 +53,10 @@ import {
   applyDirectShell3DToEntities,
   applyDirectTransform3DToEntities,
   buildDirectTopology3DScene,
+  executeMetalStructure10StepBenchmark,
   formatSubElementTelemetry3D,
+  generateTechnicalDrawingViews2DFrom3D,
+  project3DSelectionTo2DSketch,
   projectPoint3DToCanvasViewMm,
   type ActiveParametricNumpadSession,
   type BooleanMode3D,
@@ -58,6 +65,7 @@ import {
   type DirectFace3D,
   type DirectModeling3DTool,
   type DirectTopology3DScene,
+  type MetricHoleThreadSize,
   type NumpadTargetParameter,
   type ParametricNumpadKind,
   type SubElementSelectionState3D,
@@ -1869,6 +1877,24 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           label: "Revolve 3D",
           valueText: "360°",
         };
+      case "hole_3d":
+        return {
+          icon: CircleDot,
+          label: "Furação ISO 3D",
+          valueText: "M6–M20",
+        };
+      case "project_3d":
+        return {
+          icon: Layers,
+          label: "Project 3D → 2D",
+          valueText: "Esboço 2D",
+        };
+      case "create_drawing_3d":
+        return {
+          icon: FileText,
+          label: "Vistas Técnicas 2D",
+          valueText: "4 Vistas + Cotas",
+        };
       default:
         return null;
     }
@@ -1904,6 +1930,76 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       ref={rootOverlayRef}
       className="pointer-events-none absolute inset-0 z-25 overflow-hidden select-none"
     >
+      {/* =====================================================================
+          0. PÍLULA SUPERIOR DISCRETA NO MODO SELEÇÃO 3D (DEMO ESTRUTURA 10 PASSOS & VISTAS 2D)
+          ===================================================================== */}
+      {is3DEnvironment && directTool === "select_3d" && tool !== "loft_3d" && (
+        <div
+          data-testid="chamfer-3d-select-quick-bar"
+          style={{
+            ...themeSurfaceStyle,
+            top: activeMode === "3d" ? "10px" : "34px",
+            maxWidth: "calc(100% - 28px)",
+          }}
+          onPointerDown={(ev) => ev.stopPropagation()}
+          onClick={(ev) => ev.stopPropagation()}
+          className="pointer-events-auto absolute left-1/2 z-30 flex h-[34px] -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none rounded-full border px-2.5 py-0.5 shadow-md backdrop-blur-md"
+        >
+          <span className="shrink-0 font-mono text-[10px] font-bold text-cyan-400">
+            CAD 3D · {scene.bodies.length} {scene.bodies.length === 1 ? "corpo" : "corpos"}
+          </span>
+          <span className="mx-0.5 h-3 w-px shrink-0 bg-slate-500/30" />
+          <button
+            type="button"
+            data-testid="chamfer-3d-demo-structure-btn"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              triggerHaptic("action");
+              const benchmark = executeMetalStructure10StepBenchmark(10);
+              onCommitEntities?.(
+                () => benchmark.entities,
+                benchmark.entities.map((e) => e.id),
+              );
+              const firstBody = benchmark.scene.bodies[0];
+              if (firstBody) {
+                setSubSel({
+                  faceIds: [],
+                  edgeIds: [],
+                  bodyIds: [firstBody.bodyId],
+                  activePivot3D: firstBody.pivot3D,
+                  activeHingeEdgeId: null,
+                });
+              }
+            }}
+            title="Construir Estrutura Metálica Industrial Completa (10 Passos: Colunas Metalon 100×50×490, Fillet R10, Shell 6mm, Quadro 45°, Mãos-Francesas e 4 Sapatas)"
+            className="shrink-0 rounded-full border border-cyan-500/50 bg-cyan-500/15 hover:bg-cyan-500/25 px-2.5 py-0.5 font-mono text-[9.5px] font-bold text-cyan-300 cursor-pointer whitespace-nowrap"
+          >
+            ▶ Demo Estrutura 3D (10 Passos)
+          </button>
+          {scene.bodies.length > 0 && (
+            <button
+              type="button"
+              data-testid="chamfer-3d-quick-drawing-btn"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                triggerHaptic("action");
+                const views = generateTechnicalDrawingViews2DFrom3D(scene);
+                if (views.length > 0) {
+                  onCommitEntities?.(
+                    (prev) => [...prev, ...views],
+                    views.map((v) => v.id),
+                  );
+                }
+              }}
+              title="Create Drawing / Projetar Vistas Técnicas Padronizadas no 2D"
+              className="shrink-0 rounded-full border border-emerald-500/40 bg-emerald-500/15 hover:bg-emerald-500/25 px-2 py-0.5 font-mono text-[9.5px] font-bold text-emerald-300 cursor-pointer whitespace-nowrap"
+            >
+              Vistas 2D
+            </button>
+          )}
+        </div>
+      )}
+
       {/* =====================================================================
           1. PÍLULA COMPACTA DE COMANDO ATIVO NO TOPO CENTRAL (ÚNICO HUD NO CANVAS 3D)
           ===================================================================== */}
@@ -2421,6 +2517,99 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   Encostar {ax.toUpperCase()}
                 </button>
               ))}
+            </>
+          )}
+
+          {primaryBody && directTool === "hole_3d" && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              {(["M6", "M8", "M10", "M12", "M16", "M20"] as MetricHoleThreadSize[]).map((tCode) => {
+                const spec = HOLE_METRIC_SPECS_3D[tCode];
+                return (
+                  <button
+                    key={tCode}
+                    type="button"
+                    data-testid={`chamfer-3d-hole-size-${tCode}`}
+                    onClick={() => {
+                      triggerHaptic("action");
+                      onCommitEntities?.((prev) => {
+                        const res = applyDirectHole3DToEntities(prev, activeTargetEntityIds, {
+                          threadSize: tCode,
+                          holeType: "through",
+                        });
+                        return res.updatedEntities;
+                      }, activeTargetEntityIds);
+                    }}
+                    title={`Inserir Furo Passante ${tCode} (Broca Rosca Ø${spec.tapDrillDiameterMm}mm / Passante Ø${spec.clearanceDiameterMm}mm)`}
+                    className={pillBtnClass(false)}
+                  >
+                    {tCode} (Ø{spec.clearanceDiameterMm})
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {directTool === "project_3d" && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              <button
+                type="button"
+                data-testid="chamfer-3d-project-ref-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  const projected = project3DSelectionTo2DSketch(scene, subSel, true);
+                  if (projected.length > 0) {
+                    onCommitEntities?.(
+                      (prev) => [...prev, ...projected],
+                      projected.map((p) => p.id),
+                    );
+                  }
+                }}
+                className={pillBtnClass(true)}
+              >
+                Projetar Referência 2D
+              </button>
+              <button
+                type="button"
+                data-testid="chamfer-3d-project-cut-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  const projected = project3DSelectionTo2DSketch(scene, subSel, false);
+                  if (projected.length > 0) {
+                    onCommitEntities?.(
+                      (prev) => [...prev, ...projected],
+                      projected.map((p) => p.id),
+                    );
+                  }
+                }}
+                className={pillBtnClass(false)}
+              >
+                Projetar Linha de Corte 2D
+              </button>
+            </>
+          )}
+
+          {directTool === "create_drawing_3d" && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              <button
+                type="button"
+                data-testid="chamfer-3d-generate-views-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  const views = generateTechnicalDrawingViews2DFrom3D(scene);
+                  if (views.length > 0) {
+                    onCommitEntities?.(
+                      (prev) => [...prev, ...views],
+                      views.map((v) => v.id),
+                    );
+                  }
+                }}
+                className={pillBtnClass(true)}
+              >
+                Gerar Vistas Ortográficas + Cotas 2D
+              </button>
             </>
           )}
 
@@ -4244,6 +4433,15 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             <span className="text-slate-100 truncate">
               {formatSubElementTelemetry3D(scene, subSel)}
             </span>
+            {primaryBody && selectionKind3D === "body" && (
+              <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-slate-800/90 border border-slate-700 px-2 py-0.5 text-[9.5px] text-emerald-300">
+                {(primaryBody.volumeMm3 / 1000).toFixed(1)} cm³ ·{" "}
+                {primaryBody.massGrams >= 1000
+                  ? `${(primaryBody.massGrams / 1000).toFixed(2)} kg`
+                  : `${primaryBody.massGrams.toFixed(0)} g`}{" "}
+                · χ={primaryBody.eulerCharacteristic.chi}
+              </span>
+            )}
             {primaryBody && selectionKind3D !== "body" && (
               <button
                 type="button"
@@ -4254,7 +4452,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     faceIds: [],
                     edgeIds: [],
                     bodyIds: [primaryBody.bodyId],
-                    activePivot3D: primaryBody.center3D,
+                    activePivot3D: primaryBody.pivot3D,
                     activeHingeEdgeId: null,
                   });
                   setDirectTool("transform_3d");
