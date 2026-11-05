@@ -41,7 +41,6 @@ import {
 } from "@/lib/lab2d/cadLoft3DEngine";
 import {
   HOLE_METRIC_SPECS_3D,
-  INDUSTRIAL_3D_MATERIALS,
   applyDirectAlignFlush3DToEntities,
   applyDirectExtrudeToEntities,
   applyDirectFilletOrChamfer3DToEntities,
@@ -65,9 +64,11 @@ import {
   type DirectFace3D,
   type DirectModeling3DTool,
   type DirectTopology3DScene,
+  type DirectVertex3D,
   type MetricHoleThreadSize,
   type NumpadTargetParameter,
   type ParametricNumpadKind,
+  type SelectionScope3D,
   type SubElementSelectionState3D,
   type Vec3Mm,
 } from "@/lib/lab2d/cadDirectModeling3D";
@@ -144,6 +145,7 @@ type GizmoAxis =
   | "extrude"
   | "face_normal"
   | "edge_diagonal"
+  | "vertex_bevel"
   | "rot_x"
   | "rot_y"
   | "rot_z"
@@ -155,6 +157,8 @@ const DEFAULT_SUB_SELECTION: SubElementSelectionState3D = {
   faceIds: [],
   edgeIds: [],
   bodyIds: [],
+  vertexIds: [],
+  selectionScope: "auto",
   activePivot3D: null,
   activeHingeEdgeId: null,
 };
@@ -307,7 +311,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     "fillet",
   );
   const [shellOpenCapsMode, setShellOpenCapsMode] = useState<"both_ends" | "top_only">("both_ends");
-  const [offsetFaceTarget, setOffsetFaceTarget] = useState<"top" | "bottom" | "sides">("top");
+  const [offsetFaceTarget, setOffsetFaceTarget] = useState<
+    "top" | "bottom" | "sides" | "pos_x" | "neg_x" | "pos_y" | "neg_y" | "side_normal"
+  >("top");
   const [miterEndTarget, setMiterEndTarget] = useState<"top" | "bottom">("top");
   const [miterAxis, setMiterAxis] = useState<"x" | "y">("x");
   const [copyOnTransform, setCopyOnTransform] = useState<boolean>(false);
@@ -363,19 +369,24 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
   const lastFaceTapRef = useRef<{ faceId: string; bodyId: string; time: number } | null>(null);
 
+  const vertexIds = useMemo(() => subSel.vertexIds ?? [], [subSel.vertexIds]);
+  const selectionScope: SelectionScope3D = subSel.selectionScope ?? "auto";
+
   // Limpa a medição persistente quando o usuário limpa a seleção
   useEffect(() => {
     if (
       subSel.faceIds.length === 0 &&
       subSel.edgeIds.length === 0 &&
-      subSel.bodyIds.length === 0
+      subSel.bodyIds.length === 0 &&
+      vertexIds.length === 0
     ) {
       setLastCompletedDrag(null);
     }
-  }, [subSel.faceIds.length, subSel.edgeIds.length, subSel.bodyIds.length]);
+  }, [subSel.faceIds.length, subSel.edgeIds.length, subSel.bodyIds.length, vertexIds.length]);
 
   const dragSessionRef = useRef<{
     axis: GizmoAxis;
+    pointerId?: number;
     startClientX: number;
     startClientY: number;
     screenDirX: number;
@@ -393,6 +404,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     startBody: DirectBody3D | null;
     startFace: DirectFace3D | null;
     startEdge: DirectEdge3D | null;
+    startVertex: DirectVertex3D | null;
+    targetEdgeIndices?: number[];
+    targetBevelKeys?: string[];
     copyIdMap: Map<string, string>;
     activeResultIds: string[];
   } | null>(null);
@@ -402,10 +416,31 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     [externalScene, entities, sheetThickness],
   );
 
-  // Tipo de elemento reconhecido automaticamente pelo clique 3D (Face, Aresta, Dobradiça ou Corpo)
-  const selectionKind3D = useMemo<"none" | "face" | "edge" | "body" | "hinge">(() => {
+  // Tipo de elemento reconhecido automaticamente pelo clique 3D (Vértice, Face, Aresta, Dobradiça ou Corpo)
+  const selectionKind3D = useMemo<
+    "none" | "vertex" | "face" | "edge" | "body" | "hinge"
+  >(() => {
+    const hasAnySubSelection =
+      subSel.faceIds.length > 0 ||
+      subSel.edgeIds.length > 0 ||
+      subSel.bodyIds.length > 0 ||
+      vertexIds.length > 0 ||
+      selection.length > 0;
+
+    if (!hasAnySubSelection) {
+      return "none";
+    }
     if (subSel.activeHingeEdgeId !== null || directTool === "rotate_axis_3d") {
       return "hinge";
+    }
+    if (
+      vertexIds.length > 0 &&
+      subSel.faceIds.length === 0 &&
+      subSel.edgeIds.length === 0 &&
+      directTool !== "transform_3d" &&
+      directTool !== "mirror_3d"
+    ) {
+      return "vertex";
     }
     if (
       subSel.faceIds.length > 0 &&
@@ -426,6 +461,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     }
     if (
       subSel.bodyIds.length > 0 ||
+      selection.length > 0 ||
       directTool === "transform_3d" ||
       directTool === "mirror_3d" ||
       directTool === "scale_3d" ||
@@ -434,9 +470,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       return "body";
     }
     return "none";
-  }, [subSel, directTool]);
+  }, [subSel, vertexIds, selection.length, directTool]);
 
-  // Determina os corpos/entidades alvo (a partir de subSelection3D ou selection 2D/3D)
+  // Determina os corpos/entidades alvo (EXCLUSIVAMENTE a partir da seleção ativa — sem auto-selecionar quando o usuário clicou no ar!)
   const activeTargetEntityIds = useMemo(() => {
     const ids = new Set<string>();
     for (const bId of subSel.bodyIds) {
@@ -451,36 +487,94 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       const e = scene.edgesById.get(eId);
       if (e) ids.add(e.entityId);
     }
-    if (ids.size === 0) {
-      for (const sId of selection) ids.add(sId);
+    for (const vId of vertexIds) {
+      for (const b of scene.bodies) {
+        if (b.vertices?.some((v) => v.vertexId === vId)) {
+          ids.add(b.entityId);
+        }
+      }
     }
-    if (ids.size === 0 && scene.bodies.length === 1 && activeMode === "3d") {
-      ids.add(scene.bodies[0]!.entityId);
+    if (ids.size === 0) {
+      for (const sId of selection) {
+        const b = scene.bodiesById.get(sId) ?? scene.bodies.find((x) => x.entityId === sId);
+        ids.add(b ? b.entityId : sId);
+      }
     }
     return Array.from(ids);
-  }, [subSel, scene, selection, activeMode]);
+  }, [subSel.bodyIds, subSel.faceIds, subSel.edgeIds, vertexIds, scene, selection]);
 
   const primaryBody: DirectBody3D | null = useMemo(() => {
+    if (activeTargetEntityIds.length === 0) return null;
     for (const id of activeTargetEntityIds) {
       const b = scene.bodies.find((x) => x.entityId === id);
       if (b) return b;
     }
-    return scene.bodies[0] ?? null;
+    return null;
   }, [activeTargetEntityIds, scene.bodies]);
 
   const primaryFace: DirectFace3D | null = useMemo(() => {
     if (subSel.faceIds.length > 0) {
       return scene.facesById.get(subSel.faceIds[0]!) ?? null;
     }
-    return primaryBody?.faces[0] ?? null;
-  }, [subSel.faceIds, scene.facesById, primaryBody]);
+    return null;
+  }, [subSel.faceIds, scene.facesById]);
 
   const primaryEdge: DirectEdge3D | null = useMemo(() => {
     if (subSel.edgeIds.length > 0) {
       return scene.edgesById.get(subSel.edgeIds[0]!) ?? null;
     }
-    return primaryBody?.edges[0] ?? null;
-  }, [subSel.edgeIds, scene.edgesById, primaryBody]);
+    return null;
+  }, [subSel.edgeIds, scene.edgesById]);
+
+  const primaryVertex: DirectVertex3D | null = useMemo(() => {
+    if (vertexIds.length === 0) return null;
+    for (const b of scene.bodies) {
+      const found = b.vertices?.find((v) => v.vertexId === vertexIds[0]);
+      if (found) return found;
+    }
+    return null;
+  }, [vertexIds, scene.bodies]);
+
+  // Índices de arestas verticais e chaves de bisel 3D selecionadas (Garante escopo estrito por sub-elemento!)
+  const { selectedVerticalEdgeIndices, selectedBevelKeys } = useMemo(() => {
+    if (selectionKind3D === "body" || selectionScope === "body") {
+      return {
+        selectedVerticalEdgeIndices: undefined,
+        selectedBevelKeys: undefined,
+      };
+    }
+    const vertIndices: number[] = [];
+    const bevelKeys: string[] = [];
+
+    for (const vId of vertexIds) {
+      for (const b of scene.bodies) {
+        const v = b.vertices?.find((vx) => vx.vertexId === vId);
+        if (v) {
+          bevelKeys.push(`${v.role}_${v.cornerIndex}`);
+        }
+      }
+    }
+
+    for (const eId of subSel.edgeIds) {
+      const e = scene.edgesById.get(eId);
+      if (!e) continue;
+      const matchV = e.edgeId.match(/:edge_v_(\d+)$/);
+      const matchTop = e.edgeId.match(/:edge_top_(\d+)$/);
+      const matchBot = e.edgeId.match(/:edge_bot_(\d+)$/);
+      if (matchV) {
+        vertIndices.push(Number(matchV[1]));
+      } else if (matchTop) {
+        bevelKeys.push(`edge_top_${matchTop[1]}`);
+      } else if (matchBot) {
+        bevelKeys.push(`edge_bot_${matchBot[1]}`);
+      }
+    }
+
+    return {
+      selectedVerticalEdgeIndices: vertIndices.length > 0 ? vertIndices : undefined,
+      selectedBevelKeys: bevelKeys.length > 0 ? bevelKeys : undefined,
+    };
+  }, [selectionKind3D, selectionScope, vertexIds, subSel.edgeIds, scene]);
 
   const activeHingeEdge: DirectEdge3D | null = useMemo(() => {
     if (subSel.activeHingeEdgeId) {
@@ -507,9 +601,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     [orbitProjection, view.k, view.tx, view.ty],
   );
 
-  // Calcula o centro 3D do Gizmo (respeitando pivô móvel ou sub-elemento selecionado)
+  // Calcula o centro 3D do Gizmo (respeitando pivô móvel ou sub-elemento selecionado; retorna null quando nada está selecionado!)
   const selectionCenter3D = useMemo<Vec3Mm | null>(() => {
+    if (selectionKind3D === "none") return null;
     if (subSel.activePivot3D) return subSel.activePivot3D;
+    if (vertexIds.length > 0 && primaryVertex) return primaryVertex.point3D;
     if (subSel.faceIds.length > 0 && primaryFace) return primaryFace.centroid;
     if (subSel.edgeIds.length > 0 && primaryEdge) return primaryEdge.midpoint;
     if (primaryBody) {
@@ -533,7 +629,19 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       y: (b.minY + b.maxY) * 0.5,
       z: avgZ,
     };
-  }, [subSel, primaryFace, primaryEdge, primaryBody, directTool, selected]);
+  }, [
+    selectionKind3D,
+    subSel.activePivot3D,
+    subSel.faceIds.length,
+    subSel.edgeIds.length,
+    vertexIds.length,
+    primaryVertex,
+    primaryFace,
+    primaryEdge,
+    primaryBody,
+    directTool,
+    selected,
+  ]);
 
   // Projeção dos eixos X, Y, Z na tela
   const gizmoScreen = useMemo(() => {
@@ -640,7 +748,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     const elen = Math.hypot(ex, ey) || 1;
     let ux = -ey / elen;
     let uy = ex / elen;
-    // Aponta diagonalmente para dentro do corpo (puxar para dentro = Fillet; puxar para fora = Chamfer)
+    // Aponta diagonalmente para dentro do corpo
     if (bodyCenter) {
       const toCenterX = bodyCenter.x - originScreen.x;
       const toCenterY = bodyCenter.y - originScreen.y;
@@ -650,6 +758,22 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       }
     }
     const arrowLenPx = 46;
+    const matchV = primaryEdge.edgeId.match(/:edge_v_(\d+)$/);
+    const matchTop = primaryEdge.edgeId.match(/:edge_top_(\d+)$/);
+    const matchBot = primaryEdge.edgeId.match(/:edge_bot_(\d+)$/);
+    const vIdx = matchV ? Number(matchV[1]) : -1;
+    const bevelKey = matchTop ? `edge_top_${matchTop[1]}` : matchBot ? `edge_bot_${matchBot[1]}` : null;
+    const currentFilletVal =
+      vIdx >= 0 && primaryBody?.cornerFilletsMm?.[vIdx] !== undefined
+        ? primaryBody.cornerFilletsMm[vIdx]!
+        : (primaryBody?.edgeFilletRadiusMm || 10);
+    const currentChamferVal =
+      bevelKey && primaryBody?.vertexBevelsMm?.[bevelKey] !== undefined
+        ? primaryBody.vertexBevelsMm[bevelKey]!
+        : vIdx >= 0 && primaryBody?.cornerChamfersMm?.[vIdx] !== undefined
+          ? primaryBody.cornerChamfersMm[vIdx]!
+          : (primaryBody?.edgeChamferDistMm || 10);
+
     return {
       origin: originScreen,
       midpoint3D: primaryEdge.midpoint,
@@ -659,8 +783,40 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       uy,
       pixelsPerMm: Math.max(0.15, 30 / 10),
       edge: primaryEdge,
+      currentFilletVal,
+      currentChamferVal,
     };
   }, [primaryEdge, primaryBody, isTilted3D, activeMode, selectionKind3D, toScreen]);
+
+  // Projeção da Seta de Bisel de Vértice 3D (EXCLUSIVA QUANDO UM VÉRTICE / QUINA 3D É CLICADO)
+  const vertexBevelGizmo = useMemo(() => {
+    if (!primaryVertex || (!isTilted3D && activeMode !== "3d")) return null;
+    if (selectionKind3D !== "vertex") return null;
+    const originScreen = toScreen(primaryVertex.point3D);
+    const bodyCenter = primaryBody ? toScreen(primaryBody.pivot3D) : null;
+    let ux = 0.707;
+    let uy = 0.707;
+    if (bodyCenter) {
+      const dx = bodyCenter.x - originScreen.x;
+      const dy = bodyCenter.y - originScreen.y;
+      const len = Math.hypot(dx, dy) || 1;
+      ux = dx / len;
+      uy = dy / len;
+    }
+    const arrowLenPx = 44;
+    const bevelKey = `${primaryVertex.role}_${primaryVertex.cornerIndex}`;
+    const currentBevelMm = primaryBody?.vertexBevelsMm?.[bevelKey] ?? 10;
+    return {
+      origin: originScreen,
+      vertex: primaryVertex,
+      bevelKey,
+      currentBevelMm,
+      tip: { x: originScreen.x + ux * arrowLenPx, y: originScreen.y + uy * arrowLenPx },
+      ux,
+      uy,
+      pixelsPerMm: Math.max(0.15, 30 / 10),
+    };
+  }, [primaryVertex, primaryBody, isTilted3D, activeMode, selectionKind3D, toScreen]);
 
   // Projeção do Arco de Dobradiça / Corte em Meia-Esquadria (Rotate Around Axis: Face + Aresta)
   const hingeMiterGizmo = useMemo(() => {
@@ -685,7 +841,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     primaryBody,
   ]);
 
-
   // ============================================================================
   // TECLADO NUMÉRICO FLUTUANTE COMPACTO (196px + VIEWPORT CLAMPING OBRIGATÓRIO)
   // ============================================================================
@@ -706,7 +861,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           ? activeTargetEntityIds
           : primaryBody
             ? [primaryBody.entityId]
-            : [];
+            : scene.bodies[0]
+              ? [scene.bodies[0].entityId]
+              : [];
       if (resolvedTargetIds.length === 0) return;
       triggerHaptic("selection");
 
@@ -743,7 +900,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       });
       setNumpadBuffer(String(Number(safeInitial.toFixed(2))));
     },
-    [activeTargetEntityIds, primaryBody, copyOnTransform],
+    [activeTargetEntityIds, primaryBody, scene.bodies, copyOnTransform],
   );
 
   const commitFloatingNumpad = useCallback(() => {
@@ -795,7 +952,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 ? "offsetFaceDistance"
                 : kind === "ANGLE"
                   ? "miterAngle"
-                  : "moveX");
+                  : kind === "HOLE_DIAMETER"
+                    ? "holeDiameter"
+                    : "moveX");
 
     if (param === "extrudeHeight") {
       onCommitEntities(
@@ -811,14 +970,38 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       );
     } else if (param === "filletRadius") {
       onCommitEntities(
-        (prev) => applyDirectFilletOrChamfer3DToEntities(prev, resolvedIds, "fillet", parsed),
+        (prev) =>
+          applyDirectFilletOrChamfer3DToEntities(
+            prev,
+            resolvedIds,
+            "fillet",
+            parsed,
+            selectedVerticalEdgeIndices,
+            selectedBevelKeys,
+          ),
         resolvedIds,
       );
     } else if (param === "chamferDistance") {
       onCommitEntities(
-        (prev) => applyDirectFilletOrChamfer3DToEntities(prev, resolvedIds, "chamfer", parsed),
+        (prev) =>
+          applyDirectFilletOrChamfer3DToEntities(
+            prev,
+            resolvedIds,
+            "chamfer",
+            parsed,
+            selectedVerticalEdgeIndices,
+            selectedBevelKeys,
+          ),
         resolvedIds,
       );
+    } else if (param === "holeDiameter") {
+      onCommitEntities((prev) => {
+        const res = applyDirectHole3DToEntities(prev, resolvedIds, {
+          customDiameterMm: Math.max(1, parsed),
+          holeType: "through",
+        });
+        return res.updatedEntities;
+      }, resolvedIds);
     } else if (param === "offsetFaceDistance") {
       if (
         lastCompletedDrag &&
@@ -874,13 +1057,51 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               }
             : null,
         );
+      } else if (selectionKind3D === "face" && primaryFace) {
+        if (primaryFace.role === "bottom") {
+          onCommitEntities(
+            (prev) => applyDirectOffsetFace3DToEntities(prev, resolvedIds, "bottom", parsed),
+            resolvedIds,
+          );
+        } else if (primaryFace.role === "top" || primaryFace.role === "miter") {
+          onCommitEntities(
+            (prev) => applyDirectOffsetFace3DToEntities(prev, resolvedIds, "top", parsed),
+            resolvedIds,
+          );
+        } else {
+          onCommitEntities(
+            (prev) =>
+              applyDirectOffsetFace3DToEntities(
+                prev,
+                resolvedIds,
+                "side_normal",
+                parsed,
+                primaryFace.normal,
+              ),
+            resolvedIds,
+          );
+        }
       } else {
         const faceT =
-          subTarget === "top" || subTarget === "bottom" || subTarget === "sides"
+          subTarget === "top" ||
+          subTarget === "bottom" ||
+          subTarget === "sides" ||
+          subTarget === "pos_x" ||
+          subTarget === "neg_x" ||
+          subTarget === "pos_y" ||
+          subTarget === "neg_y" ||
+          subTarget === "side_normal"
             ? subTarget
             : offsetFaceTarget;
         onCommitEntities(
-          (prev) => applyDirectOffsetFace3DToEntities(prev, resolvedIds, faceT, parsed),
+          (prev) =>
+            applyDirectOffsetFace3DToEntities(
+              prev,
+              resolvedIds,
+              faceT,
+              parsed,
+              primaryFace?.normal ?? null,
+            ),
           resolvedIds,
         );
       }
@@ -949,8 +1170,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             axisKey === "x"
               ? { dx: parsed }
               : axisKey === "y"
-                ? { dy: parsed }
-                : { dz: parsed };
+                 ? { dy: parsed }
+                 : { dz: parsed };
           const res = applyDirectTransform3DToEntities(
             prev,
             resolvedIds,
@@ -986,6 +1207,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     numpadBuffer,
     onCommitEntities,
     primaryBody,
+    primaryFace,
+    selectionKind3D,
+    selectedVerticalEdgeIndices,
+    selectedBevelKeys,
     booleanMode,
     shellOpenCapsMode,
     offsetFaceTarget,
@@ -1065,8 +1290,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   // ============================================================================
 
   const handleSelectAllVerticalEdges = useCallback(() => {
-    if (!primaryBody) return;
-    const vertIds = primaryBody.edges
+    const targetB = primaryBody ?? scene.bodies[0] ?? null;
+    if (!targetB) return;
+    const vertIds = targetB.edges
       .filter((e) => e.role === "vertical")
       .map((e) => e.edgeId);
     triggerHaptic("selection");
@@ -1075,12 +1301,14 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       edgeIds: vertIds,
       faceIds: [],
       bodyIds: [],
+      vertexIds: [],
     }));
-  }, [primaryBody, setSubSel]);
+  }, [primaryBody, scene.bodies, setSubSel]);
 
   const handleSelectTopAndBottomFacesForTube = useCallback(() => {
-    if (!primaryBody) return;
-    const endFaceIds = primaryBody.faces
+    const targetB = primaryBody ?? scene.bodies[0] ?? null;
+    if (!targetB) return;
+    const endFaceIds = targetB.faces
       .filter((f) => f.role === "top" || f.role === "bottom" || f.role === "miter")
       .map((f) => f.faceId);
     triggerHaptic("selection");
@@ -1090,32 +1318,38 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       faceIds: endFaceIds,
       edgeIds: [],
       bodyIds: [],
+      vertexIds: [],
     }));
-  }, [primaryBody, setSubSel]);
+  }, [primaryBody, scene.bodies, setSubSel]);
 
   // Escuta filtros rápidos de sub-seleção 3D disparados pelo menu lateral 'SEL'
   useEffect(() => {
     const onSubSelPreset = (ev: Event) => {
-      if (!primaryBody) return;
+      const targetB = primaryBody ?? scene.bodies[0] ?? null;
+      if (!targetB) return;
       const preset = (ev as CustomEvent<{ preset?: string }>).detail?.preset;
       if (!preset) return;
       if (preset === "body") {
         setSubSel({
-          bodyIds: [primaryBody.bodyId],
+          bodyIds: [targetB.bodyId],
           faceIds: [],
           edgeIds: [],
-          activePivot3D: primaryBody.pivot3D,
+          vertexIds: [],
+          selectionScope: "body",
+          activePivot3D: targetB.pivot3D,
           activeHingeEdgeId: null,
         });
       } else if (preset === "top_face") {
         const topF =
-          primaryBody.faces.find((f) => f.role === "top" || f.role === "miter") ??
-          primaryBody.faces[0];
+          targetB.faces.find((f) => f.role === "top" || f.role === "miter") ??
+          targetB.faces[0];
         if (topF) {
           setSubSel({
             faceIds: [topF.faceId],
             edgeIds: [],
             bodyIds: [],
+            vertexIds: [],
+            selectionScope: "face",
             activePivot3D: topF.centroid,
             activeHingeEdgeId: null,
           });
@@ -1126,18 +1360,22 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         handleSelectAllVerticalEdges();
       } else if (preset === "all_faces") {
         setSubSel({
-          faceIds: primaryBody.faces.map((f) => f.faceId),
+          faceIds: targetB.faces.map((f) => f.faceId),
           edgeIds: [],
           bodyIds: [],
-          activePivot3D: primaryBody.pivot3D,
+          vertexIds: [],
+          selectionScope: "face",
+          activePivot3D: targetB.pivot3D,
           activeHingeEdgeId: null,
         });
       } else if (preset === "all_edges") {
         setSubSel({
-          edgeIds: primaryBody.edges.map((e) => e.edgeId),
+          edgeIds: targetB.edges.map((e) => e.edgeId),
           faceIds: [],
           bodyIds: [],
-          activePivot3D: primaryBody.pivot3D,
+          vertexIds: [],
+          selectionScope: "edge",
+          activePivot3D: targetB.pivot3D,
           activeHingeEdgeId: null,
         });
       }
@@ -1146,6 +1384,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     return () => window.removeEventListener("chamfer-3d-subselection-preset", onSubSelPreset);
   }, [
     primaryBody,
+    scene.bodies,
     setSubSel,
     handleSelectTopAndBottomFacesForTube,
     handleSelectAllVerticalEdges,
@@ -1153,7 +1392,62 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
   // ============================================================================
   // ARRASTE INTERATIVO DAS SETAS 3D NO CANVAS (EXTRUDE / OFFSET / TRANSFORM)
+  // CORREÇÃO 1: setPointerCapture + Listener de Janela Estável sem re-bind no meio do arrasto!
   // ============================================================================
+
+  const latestDragContextRef = useRef({
+    onLiveTranslateSelectionXY,
+    onCommitTranslateSelectionXY,
+    onLiveElevateSelection,
+    onCommitElevateSelection,
+    onCommitEntities,
+    booleanMode,
+    openFloatingNumpad,
+    primaryBody,
+    primaryFace,
+    primaryEdge,
+    primaryVertex,
+    selected,
+    scene,
+    toScreen,
+    setSubSel,
+    subSel,
+    miterEndTarget,
+    miterAxis,
+    copyOnTransform,
+    edgeActionMode,
+    filletOrChamferMode,
+    selectedVerticalEdgeIndices,
+    selectedBevelKeys,
+    selectionKind3D,
+  });
+
+  latestDragContextRef.current = {
+    onLiveTranslateSelectionXY,
+    onCommitTranslateSelectionXY,
+    onLiveElevateSelection,
+    onCommitElevateSelection,
+    onCommitEntities,
+    booleanMode,
+    openFloatingNumpad,
+    primaryBody,
+    primaryFace,
+    primaryEdge,
+    primaryVertex,
+    selected,
+    scene,
+    toScreen,
+    setSubSel,
+    subSel,
+    miterEndTarget,
+    miterAxis,
+    copyOnTransform,
+    edgeActionMode,
+    filletOrChamferMode,
+    selectedVerticalEdgeIndices,
+    selectedBevelKeys,
+    selectionKind3D,
+  };
 
   const handleAxisPointerDown = (
     axis: GizmoAxis,
@@ -1164,6 +1458,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   ) => {
     ev.stopPropagation();
     ev.preventDefault();
+    try {
+      (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId);
+    } catch {
+      // fallback: window pointermove listener handles tracking
+    }
     triggerHaptic("selection");
 
     const targetIds =
@@ -1176,15 +1475,17 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     const initVal =
       axis === "extrude" || axis === "face_normal"
         ? (primaryBody?.extrudeHeightMm ?? 500)
-        : axis === "edge_diagonal"
-          ? edgeActionMode === "fillet"
-            ? (primaryBody?.edgeFilletRadiusMm || 10)
-            : edgeActionMode === "chamfer"
-              ? (primaryBody?.edgeChamferDistMm || 10)
-              : 0
-          : axis === "z"
-            ? (primaryBody?.elevationZ ?? 0)
-            : 0;
+        : axis === "vertex_bevel"
+          ? (vertexBevelGizmo?.currentBevelMm ?? 10)
+          : axis === "edge_diagonal"
+            ? edgeActionMode === "fillet"
+              ? (edgeDiagonalGizmo?.currentFilletVal ?? primaryBody?.edgeFilletRadiusMm ?? 10)
+              : edgeActionMode === "chamfer"
+                ? (edgeDiagonalGizmo?.currentChamferVal ?? primaryBody?.edgeChamferDistMm ?? 10)
+                : 0
+            : axis === "z"
+              ? (primaryBody?.elevationZ ?? 0)
+              : 0;
 
     const rect = rootOverlayRef.current?.getBoundingClientRect();
     const localStartX = rect ? ev.clientX - rect.left : ev.clientX;
@@ -1197,6 +1498,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
     dragSessionRef.current = {
       axis,
+      pointerId: ev.pointerId,
       startClientX: ev.clientX,
       startClientY: ev.clientY,
       screenDirX: ux,
@@ -1214,6 +1516,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       startBody: primaryBody,
       startFace: primaryFace,
       startEdge: primaryEdge,
+      startVertex: primaryVertex,
+      targetEdgeIndices: selectedVerticalEdgeIndices,
+      targetBevelKeys: selectedBevelKeys,
       copyIdMap: new Map<string, string>(),
       activeResultIds: targetIds,
     };
@@ -1228,9 +1533,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     const handlePointerMove = (ev: PointerEvent) => {
       const session = dragSessionRef.current;
       if (!session) return;
+      if (session.pointerId !== undefined && ev.pointerId !== session.pointerId) return;
       ev.stopPropagation();
-      ev.preventDefault();
+      if (ev.cancelable) ev.preventDefault();
 
+      const ctx = latestDragContextRef.current;
       const dxPx = ev.clientX - session.startClientX;
       const dyPx = ev.clientY - session.startClientY;
       if (Math.hypot(dxPx, dyPx) > 3) {
@@ -1242,12 +1549,12 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       const localY = rect ? ev.clientY - rect.top : ev.clientY;
 
       if (session.axis === "pivot") {
-        const bodyForPivot = session.startBody ?? primaryBody;
+        const bodyForPivot = session.startBody ?? ctx.primaryBody;
         if (bodyForPivot && bodyForPivot.snapCandidates.length > 0) {
           let closestCand = bodyForPivot.snapCandidates[0];
           let closestDistPx = Infinity;
           for (const cand of bodyForPivot.snapCandidates) {
-            const sp = toScreen(cand.point3D);
+            const sp = ctx.toScreen(cand.point3D);
             const d = Math.hypot(localX - sp.x, localY - sp.y);
             if (d < closestDistPx) {
               closestDistPx = d;
@@ -1255,7 +1562,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             }
           }
           if (closestDistPx < 48 && closestCand) {
-            setSubSel((prev) => ({ ...prev, activePivot3D: closestCand.point3D }));
+            ctx.setSubSel((prev) => ({ ...prev, activePivot3D: closestCand.point3D }));
             setSnappedPivotLabel(closestCand.label);
           }
         }
@@ -1272,7 +1579,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         const curAngleRad = Math.atan2(localY - pivotSc.y, localX - pivotSc.x);
         const startRad = session.angleStartRad ?? 0;
         let deltaDeg = Math.round(((curAngleRad - startRad) * 180) / Math.PI);
-        // Soft snap suave em múltiplos de 15° (15° / 45° / 90° / 180°)
         const snapStep = 15;
         const rem = deltaDeg % snapStep;
         if (Math.abs(rem) <= 3) {
@@ -1286,19 +1592,19 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           session.totalDeltaMm = deltaDeg;
           setDragDeltaMm(deltaDeg);
 
-          if (session.axis === "miter" && onCommitEntities) {
-            onCommitEntities(
+          if (session.axis === "miter" && ctx.onCommitEntities) {
+            ctx.onCommitEntities(
               () =>
                 applyDirectMiterCut3DToEntities(
                   session.startEntities,
                   session.targetIds,
-                  miterEndTarget,
+                  ctx.miterEndTarget,
                   deltaDeg,
-                  miterAxis,
+                  ctx.miterAxis,
                 ),
               session.targetIds,
             );
-          } else if (onCommitEntities) {
+          } else if (ctx.onCommitEntities) {
             const res = applyDirectTransform3DToEntities(
               session.startEntities,
               session.targetIds,
@@ -1307,11 +1613,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 ryDeg: session.axis === "rot_y" ? deltaDeg : 0,
                 rzDeg: session.axis === "rot_z" ? deltaDeg : 0,
               },
-              copyOnTransform,
+              ctx.copyOnTransform,
               session.copyIdMap,
             );
             session.activeResultIds = res.activeIds;
-            onCommitEntities(() => res.updatedEntities, res.activeIds);
+            ctx.onCommitEntities(() => res.updatedEntities, res.activeIds);
           }
         }
         return;
@@ -1322,9 +1628,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         const rawDeltaY = Math.round(-dyPx / session.pixelsPerMm);
         let effDelta: Vec3Mm = { x: rawDeltaX, y: rawDeltaY, z: 0 };
 
-        const refBody = session.startBody ?? primaryBody;
+        const refBody = session.startBody ?? ctx.primaryBody;
         if (refBody) {
-          const otherBodies = scene.bodies.filter(
+          const otherBodies = ctx.scene.bodies.filter(
             (b) => b.bodyId !== refBody.bodyId && !session.copyIdMap.has(b.entityId),
           );
           const snapRes = resolveContactAndAlignmentSnaps3D(
@@ -1333,7 +1639,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             effDelta,
             session.pixelsPerMm,
             6.0,
-            session.startCenter3D ?? subSel.activePivot3D,
+            session.startCenter3D ?? ctx.subSel.activePivot3D,
           );
           if (snapRes.hasContactSnap || snapRes.hasAlignmentSnap) {
             effDelta = snapRes.snappedDelta;
@@ -1348,18 +1654,18 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           session.totalDeltaMm = effDelta.y;
           setDragDeltaMm(Math.round(Math.hypot(effDelta.x, effDelta.y)));
 
-          if (onCommitEntities) {
+          if (ctx.onCommitEntities) {
             const res = applyDirectTransform3DToEntities(
               session.startEntities,
               session.targetIds,
               { dx: effDelta.x, dy: effDelta.y },
-              copyOnTransform,
+              ctx.copyOnTransform,
               session.copyIdMap,
             );
             session.activeResultIds = res.activeIds;
-            onCommitEntities(() => res.updatedEntities, res.activeIds);
-            if (copyOnTransform) {
-              setSubSel((prev) => ({
+            ctx.onCommitEntities(() => res.updatedEntities, res.activeIds);
+            if (ctx.copyOnTransform) {
+              ctx.setSubSel((prev) => ({
                 ...prev,
                 bodyIds: res.activeIds.map((id) => `body_${id}`),
                 activePivot3D: session.startCenter3D
@@ -1371,8 +1677,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   : null,
               }));
             }
-          } else if (onLiveTranslateSelectionXY) {
-            onLiveTranslateSelectionXY(effDelta.x, effDelta.y, session.targetIds);
+          } else if (ctx.onLiveTranslateSelectionXY) {
+            ctx.onLiveTranslateSelectionXY(effDelta.x, effDelta.y, session.targetIds);
           }
         }
         return;
@@ -1383,12 +1689,12 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       let currentDeltaMm = Math.round(rawMm);
 
       if (session.axis === "face_normal") {
-        const refFace = session.startFace ?? primaryFace;
+        const refFace = session.startFace ?? ctx.primaryFace;
         if (refFace) {
           const snapRes = resolveFaceStretchContactSnap(
             refFace,
             currentDeltaMm,
-            scene.bodies,
+            ctx.scene.bodies,
             session.pixelsPerMm,
             6.0,
           );
@@ -1410,9 +1716,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           }
         }
       } else if (session.axis === "x" || session.axis === "y" || session.axis === "z") {
-        const refBody = session.startBody ?? primaryBody;
+        const refBody = session.startBody ?? ctx.primaryBody;
         if (refBody) {
-          const otherBodies = scene.bodies.filter(
+          const otherBodies = ctx.scene.bodies.filter(
             (b) => b.bodyId !== refBody.bodyId && !session.copyIdMap.has(b.entityId),
           );
           const rawVec: Vec3Mm = {
@@ -1426,7 +1732,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             rawVec,
             session.pixelsPerMm,
             6.0,
-            session.startCenter3D ?? subSel.activePivot3D,
+            session.startCenter3D ?? ctx.subSel.activePivot3D,
           );
           if (snapRes.hasContactSnap || snapRes.hasAlignmentSnap) {
             currentDeltaMm =
@@ -1447,22 +1753,22 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         session.totalDeltaMm = currentDeltaMm;
         setDragDeltaMm(currentDeltaMm);
 
-        if (session.axis === "extrude" && onCommitEntities) {
+        if (session.axis === "extrude" && ctx.onCommitEntities) {
           const nextH = Math.max(1, session.initialValue + currentDeltaMm);
-          onCommitEntities(
+          ctx.onCommitEntities(
             () =>
               applyDirectExtrudeToEntities(
                 session.startEntities,
                 session.targetIds,
                 nextH,
-                booleanMode,
+                ctx.booleanMode,
               ),
             session.targetIds,
           );
-        } else if (session.axis === "face_normal" && onCommitEntities) {
-          const refFace = session.startFace ?? primaryFace;
+        } else if (session.axis === "face_normal" && ctx.onCommitEntities) {
+          const refFace = session.startFace ?? ctx.primaryFace;
           if (refFace && refFace.role === "bottom") {
-            onCommitEntities(
+            ctx.onCommitEntities(
               () =>
                 applyDirectOffsetFace3DToEntities(
                   session.startEntities,
@@ -1474,18 +1780,18 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             );
           } else if (refFace && (refFace.role === "top" || refFace.role === "miter")) {
             const nextH = Math.max(1, session.initialValue + currentDeltaMm);
-            onCommitEntities(
+            ctx.onCommitEntities(
               () =>
                 applyDirectExtrudeToEntities(
                   session.startEntities,
                   session.targetIds,
                   nextH,
-                  booleanMode,
+                  ctx.booleanMode,
                 ),
               session.targetIds,
             );
           } else if (refFace) {
-            onCommitEntities(
+            ctx.onCommitEntities(
               () =>
                 applyDirectOffsetFace3DToEntities(
                   session.startEntities,
@@ -1497,7 +1803,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               session.targetIds,
             );
           } else {
-            onCommitEntities(
+            ctx.onCommitEntities(
               () =>
                 applyDirectOffsetFace3DToEntities(
                   session.startEntities,
@@ -1508,13 +1814,39 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               session.targetIds,
             );
           }
-        } else if (session.axis === "edge_diagonal" && onCommitEntities) {
-          if (edgeActionMode === "transform_edge") {
-            const refEdge = session.startEdge ?? primaryEdge;
+        } else if (session.axis === "vertex_bevel" && ctx.onCommitEntities) {
+          const refBody = session.startBody ?? ctx.primaryBody;
+          const maxBevel = Math.max(
+            5,
+            Math.min(
+              150,
+              Math.min(
+                refBody?.widthMm || 200,
+                refBody?.heightMm || 200,
+                refBody?.extrudeHeightMm || 200,
+              ) * 0.45,
+            ),
+          );
+          const nextB = Math.min(maxBevel, Math.max(0, session.initialValue + currentDeltaMm));
+          ctx.onCommitEntities(
+            () =>
+              applyDirectFilletOrChamfer3DToEntities(
+                session.startEntities,
+                session.targetIds,
+                "chamfer",
+                nextB,
+                undefined,
+                session.targetBevelKeys,
+              ),
+            session.targetIds,
+          );
+        } else if (session.axis === "edge_diagonal" && ctx.onCommitEntities) {
+          if (ctx.edgeActionMode === "transform_edge") {
+            const refEdge = session.startEdge ?? ctx.primaryEdge;
             const edgePerpNormal: Vec3Mm = refEdge
               ? { x: -refEdge.dir.y, y: refEdge.dir.x, z: 0 }
               : { x: 1, y: 0, z: 0 };
-            onCommitEntities(
+            ctx.onCommitEntities(
               () =>
                 applyDirectOffsetFace3DToEntities(
                   session.startEntities,
@@ -1526,16 +1858,16 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               session.targetIds,
             );
           } else {
-            // Arrastar para dentro (> 0): Fillet; arrastar para fora (< 0 a partir de 0) ou modo chamfer: Chamfer
             const autoMode =
               session.initialValue <= 0.5 && currentDeltaMm < 0
                 ? "chamfer"
-                : filletOrChamferMode;
+                : ctx.filletOrChamferMode;
+            const refBody = session.startBody ?? ctx.primaryBody;
             const maxCornerR = Math.max(
               5,
               Math.min(
                 150,
-                Math.min(primaryBody?.widthMm || 200, primaryBody?.heightMm || 200) * 0.45,
+                Math.min(refBody?.widthMm || 200, refBody?.heightMm || 200) * 0.45,
               ),
             );
             const nextR = Math.min(
@@ -1547,13 +1879,15 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   : session.initialValue + currentDeltaMm,
               ),
             );
-            onCommitEntities(
+            ctx.onCommitEntities(
               () =>
                 applyDirectFilletOrChamfer3DToEntities(
                   session.startEntities,
                   session.targetIds,
                   autoMode,
                   nextR,
+                  session.targetEdgeIndices,
+                  session.targetBevelKeys,
                 ),
               session.targetIds,
             );
@@ -1565,19 +1899,18 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               : session.axis === "y"
                 ? { dy: currentDeltaMm }
                 : { dz: currentDeltaMm };
-          if (onCommitEntities) {
+          if (ctx.onCommitEntities) {
             const res = applyDirectTransform3DToEntities(
               session.startEntities,
               session.targetIds,
               deltaObj,
-              copyOnTransform,
+              ctx.copyOnTransform,
               session.copyIdMap,
             );
             session.activeResultIds = res.activeIds;
-            onCommitEntities(() => res.updatedEntities, res.activeIds);
-            // Quando Copy: ON está ativo, atualiza a seleção 3D para a nova cópia que está deslizando
-            if (copyOnTransform) {
-              setSubSel((prev) => ({
+            ctx.onCommitEntities(() => res.updatedEntities, res.activeIds);
+            if (ctx.copyOnTransform) {
+              ctx.setSubSel((prev) => ({
                 ...prev,
                 bodyIds: res.activeIds.map((id) => `body_${id}`),
                 activePivot3D: session.startCenter3D
@@ -1595,10 +1928,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   : null,
               }));
             }
-          } else if (session.axis === "z" && onLiveElevateSelection && selected[0]) {
-            onLiveElevateSelection(session.initialValue + currentDeltaMm);
-          } else if (onLiveTranslateSelectionXY) {
-            onLiveTranslateSelectionXY(
+          } else if (session.axis === "z" && ctx.onLiveElevateSelection && ctx.selected[0]) {
+            ctx.onLiveElevateSelection(session.initialValue + currentDeltaMm);
+          } else if (ctx.onLiveTranslateSelectionXY) {
+            ctx.onLiveTranslateSelectionXY(
               session.axis === "x" ? currentDeltaMm : 0,
               session.axis === "y" ? currentDeltaMm : 0,
               session.targetIds,
@@ -1610,11 +1943,13 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
     const handlePointerUp = (ev: PointerEvent) => {
       const session = dragSessionRef.current;
-      setActiveContactSnap(null);
       if (!session) return;
+      if (session.pointerId !== undefined && ev.pointerId !== session.pointerId) return;
+      setActiveContactSnap(null);
       ev.stopPropagation();
-      ev.preventDefault();
+      if (ev.cancelable) ev.preventDefault();
 
+      const ctx = latestDragContextRef.current;
       const distPx = Math.hypot(
         ev.clientX - session.startClientX,
         ev.clientY - session.startClientY,
@@ -1624,56 +1959,63 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       if (isQuickTap) {
         triggerHaptic("selection");
         if (session.axis === "x") {
-          openFloatingNumpad("DISTANCE", "DESLOCAMENTO +X", "mm", 0, "moveX", session.targetIds[0]);
+          ctx.openFloatingNumpad("DISTANCE", "DESLOCAMENTO +X", "mm", 0, "moveX", session.targetIds[0]);
         } else if (session.axis === "y") {
-          openFloatingNumpad("DISTANCE", "DESLOCAMENTO +Y", "mm", 0, "moveY", session.targetIds[0]);
+          ctx.openFloatingNumpad("DISTANCE", "DESLOCAMENTO +Y", "mm", 0, "moveY", session.targetIds[0]);
         } else if (session.axis === "extrude" || session.axis === "face_normal") {
-          const refFace = session.startFace ?? primaryFace;
+          const refFace = session.startFace ?? ctx.primaryFace;
           if (refFace && refFace.role !== "top" && refFace.role !== "miter") {
-            openFloatingNumpad(
+            ctx.openFloatingNumpad(
               "OFFSET",
               "OFFSET FACE",
               "mm",
               25,
               "offsetFaceDistance",
               session.targetIds[0],
-              refFace.role === "bottom" ? "bottom" : "sides",
+              refFace.role === "bottom" ? "bottom" : "side_normal",
             );
           } else {
-            openFloatingNumpad(
+            ctx.openFloatingNumpad(
               "EXTRUSION",
               "EXTRUDE / OFFSET",
               "mm",
-              primaryBody?.extrudeHeightMm ?? 500,
+              ctx.primaryBody?.extrudeHeightMm ?? 500,
               "extrudeHeight",
               session.targetIds[0],
             );
           }
+        } else if (session.axis === "vertex_bevel") {
+          ctx.openFloatingNumpad(
+            "CHAMFER",
+            "BISEL DO VÉRTICE (45°)",
+            "mm",
+            session.initialValue || 10,
+            "chamferDistance",
+            session.targetIds[0],
+          );
         } else if (session.axis === "edge_diagonal") {
-          if (edgeActionMode === "transform_edge") {
-            openFloatingNumpad(
+          if (ctx.edgeActionMode === "transform_edge") {
+            ctx.openFloatingNumpad(
               "OFFSET",
               "MOVER ARESTA",
               "mm",
               25,
               "offsetFaceDistance",
               session.targetIds[0],
-              "sides",
+              "side_normal",
             );
           } else {
-            openFloatingNumpad(
-              filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
-              filletOrChamferMode === "fillet" ? "RAIO FILLET" : "CHANFRO 45°",
+            ctx.openFloatingNumpad(
+              ctx.filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
+              ctx.filletOrChamferMode === "fillet" ? "RAIO DA ARESTA" : "CHANFRO DA ARESTA (45°)",
               "mm",
-              filletOrChamferMode === "fillet"
-                ? (primaryBody?.edgeFilletRadiusMm || 10)
-                : (primaryBody?.edgeChamferDistMm || 10),
-              filletOrChamferMode === "fillet" ? "filletRadius" : "chamferDistance",
+              session.initialValue || 10,
+              ctx.filletOrChamferMode === "fillet" ? "filletRadius" : "chamferDistance",
               session.targetIds[0],
             );
           }
         } else if (session.axis === "z") {
-          openFloatingNumpad(
+          ctx.openFloatingNumpad(
             "DISTANCE",
             "DESLOCAMENTO +Z",
             "mm",
@@ -1694,8 +2036,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 ? "ry"
                 : session.axis === "rot_z"
                   ? "rz"
-                  : miterEndTarget;
-          openFloatingNumpad(
+                  : ctx.miterEndTarget;
+          ctx.openFloatingNumpad(
             "ANGLE",
             session.axis === "miter" ? "CORTE ESQUADRIA" : `ROTAÇÃO ${subRot.toUpperCase()}`,
             "°",
@@ -1707,7 +2049,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         }
       } else {
         triggerHaptic("action");
-        // Persiste a cota e linha tracejada após soltar a seta para permitir toque na pílula e digitação exata (ex.: 700.00 mm)
         if (
           (session.axis === "x" ||
             session.axis === "y" ||
@@ -1718,7 +2059,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           session.startCenter3D
         ) {
           const dVal = session.lastAppliedDeltaMm;
-          const refFace = session.startFace ?? primaryFace;
+          const refFace = session.startFace ?? ctx.primaryFace;
           const startPt =
             (session.axis === "face_normal" || session.axis === "extrude") && refFace
               ? refFace.centroid
@@ -1744,7 +2085,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             startEntities: session.startEntities,
             targetIds: session.targetIds,
             activeResultIds: session.activeResultIds,
-            copyMode: copyOnTransform,
+            copyMode: ctx.copyOnTransform,
             copyIdMap: new Map(session.copyIdMap),
             initialValue: session.initialValue,
             faceRole: refFace?.role,
@@ -1767,38 +2108,20 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       window.removeEventListener("pointerup", handlePointerUp);
       window.removeEventListener("pointercancel", handlePointerUp);
     };
-  }, [
-    activeAxis,
-    onLiveTranslateSelectionXY,
-    onCommitTranslateSelectionXY,
-    onLiveElevateSelection,
-    onCommitElevateSelection,
-    onCommitEntities,
-    booleanMode,
-    openFloatingNumpad,
-    primaryBody,
-    primaryFace,
-    primaryEdge,
-    selected,
-    scene.bodies,
-    toScreen,
-    setSubSel,
-    subSel.activePivot3D,
-    miterEndTarget,
-    miterAxis,
-    copyOnTransform,
-    edgeActionMode,
-    filletOrChamferMode,
-  ]);
-
+  }, [activeAxis]);
 
   const is3DEnvironment = activeMode === "3d" || isTilted3D;
 
   // Metadados enxutos da Pílula de Comando Ativo no Topo Central (Seção 3)
   const activePillMeta = useMemo(() => {
     const hVal = primaryBody?.extrudeHeightMm ?? sheetThickness;
-    const rVal = primaryBody?.edgeFilletRadiusMm || 10;
-    const dVal = primaryBody?.edgeChamferDistMm || 10;
+    const rVal =
+      edgeDiagonalGizmo?.currentFilletVal ?? primaryBody?.edgeFilletRadiusMm ?? 10;
+    const dVal =
+      vertexBevelGizmo?.currentBevelMm ??
+      edgeDiagonalGizmo?.currentChamferVal ??
+      primaryBody?.edgeChamferDistMm ??
+      10;
     const wVal = primaryBody?.shellThicknessMm || 6;
     const angVal =
       miterEndTarget === "top"
@@ -1906,6 +2229,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     miterEndTarget,
     copyOnTransform,
     primaryFace,
+    edgeDiagonalGizmo,
+    vertexBevelGizmo,
   ]);
 
   // Estilos adaptados 100% ao Tema Ativo (Claro #FFFFFF / Escuro #0B1220 / AMOLED #05080F)
@@ -1928,10 +2253,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   return (
     <div
       ref={rootOverlayRef}
+      style={{ userSelect: "none", WebkitUserSelect: "none" }}
       className="pointer-events-none absolute inset-0 z-25 overflow-hidden select-none"
     >
       {/* =====================================================================
-          0. PÍLULA SUPERIOR DISCRETA NO MODO SELEÇÃO 3D (DEMO ESTRUTURA 10 PASSOS & VISTAS 2D)
+          0. PÍLULA SUPERIOR DISCRETA NO MODO SELEÇÃO 3D (ESCOPO: VÉRTICE | ARESTA | FACE | PEÇA INTEIRA)
           ===================================================================== */}
       {is3DEnvironment && directTool === "select_3d" && tool !== "loft_3d" && (
         <div
@@ -1943,11 +2269,60 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           }}
           onPointerDown={(ev) => ev.stopPropagation()}
           onClick={(ev) => ev.stopPropagation()}
-          className="pointer-events-auto absolute left-1/2 z-30 flex h-[34px] -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none rounded-full border px-2.5 py-0.5 shadow-md backdrop-blur-md"
+          className="pointer-events-auto absolute left-1/2 z-30 flex h-[34px] -translate-x-1/2 items-center gap-1 overflow-x-auto scrollbar-none rounded-full border px-2.5 py-0.5 shadow-md backdrop-blur-md"
         >
-          <span className="shrink-0 font-mono text-[10px] font-bold text-cyan-400">
-            CAD 3D · {scene.bodies.length} {scene.bodies.length === 1 ? "corpo" : "corpos"}
+          <span className="shrink-0 font-mono text-[9.5px] font-bold text-cyan-400">
+            SEL 3D:
           </span>
+          {(
+            [
+              { id: "vertex" as const, label: "Vértice" },
+              { id: "edge" as const, label: "Aresta" },
+              { id: "face" as const, label: "Face" },
+              { id: "body" as const, label: "Peça Inteira" },
+            ] as const
+          ).map((sc) => {
+            const isActiveScope =
+              selectionScope === sc.id ||
+              (selectionScope === "auto" && selectionKind3D === sc.id);
+            return (
+              <button
+                key={sc.id}
+                type="button"
+                data-testid={`chamfer-3d-scope-${sc.id}`}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  triggerHaptic("selection");
+                  const targetB = primaryBody ?? scene.bodies[0] ?? null;
+                  if (sc.id === "body" && targetB) {
+                    setSubSel({
+                      faceIds: [],
+                      edgeIds: [],
+                      vertexIds: [],
+                      bodyIds: [targetB.bodyId],
+                      selectionScope: "body",
+                      activePivot3D: targetB.pivot3D,
+                      activeHingeEdgeId: null,
+                    });
+                    onSelectEntities?.([targetB.entityId]);
+                  } else {
+                    setSubSel((prev) => ({
+                      ...prev,
+                      selectionScope: prev.selectionScope === sc.id ? "auto" : sc.id,
+                    }));
+                  }
+                }}
+                className={cn(
+                  "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9.5px] font-bold transition-colors cursor-pointer whitespace-nowrap",
+                  isActiveScope
+                    ? "border-cyan-400 bg-cyan-500/25 text-cyan-300"
+                    : "border-slate-700/70 bg-slate-900/70 text-slate-300 hover:border-slate-500 hover:text-white",
+                )}
+              >
+                {sc.label}
+              </button>
+            );
+          })}
           <span className="mx-0.5 h-3 w-px shrink-0 bg-slate-500/30" />
           <button
             type="button"
@@ -1965,7 +2340,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 setSubSel({
                   faceIds: [],
                   edgeIds: [],
+                  vertexIds: [],
                   bodyIds: [firstBody.bodyId],
+                  selectionScope: "body",
                   activePivot3D: firstBody.pivot3D,
                   activeHingeEdgeId: null,
                 });
@@ -1974,7 +2351,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             title="Construir Estrutura Metálica Industrial Completa (10 Passos: Colunas Metalon 100×50×490, Fillet R10, Shell 6mm, Quadro 45°, Mãos-Francesas e 4 Sapatas)"
             className="shrink-0 rounded-full border border-cyan-500/50 bg-cyan-500/15 hover:bg-cyan-500/25 px-2.5 py-0.5 font-mono text-[9.5px] font-bold text-cyan-300 cursor-pointer whitespace-nowrap"
           >
-            ▶ Demo Estrutura 3D (10 Passos)
+            ▶ Demo 10 Passos
           </button>
           {scene.bodies.length > 0 && (
             <button
@@ -2020,40 +2397,48 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             {activePillMeta.label}
           </span>
 
-          {/* Cota / Valor Atual (clicável para abrir o teclado numérico) */}
+          {/* Cota / Valor Atual (clicável para abrir o teclado numérico universal) */}
           <button
             type="button"
             onClick={(ev) => {
               ev.stopPropagation();
-              if (!primaryBody) return;
+              const targetBody = primaryBody ?? scene.bodies[0] ?? null;
+              if (!targetBody) return;
               if (directTool === "extrude_3d") {
                 openFloatingNumpad(
                   "EXTRUSION",
                   "EXTRUDE",
                   "mm",
-                  primaryBody.extrudeHeightMm,
+                  targetBody.extrudeHeightMm,
                   "extrudeHeight",
-                  primaryBody.entityId,
+                  targetBody.entityId,
                 );
               } else if (directTool === "fillet_3d" || directTool === "chamfer_3d") {
+                const isVertexOrHoriz = selectionKind3D === "vertex" || Boolean(selectedBevelKeys?.length);
                 openFloatingNumpad(
-                  filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
-                  filletOrChamferMode === "fillet" ? "RAIO FILLET" : "CHANFRO 45°",
+                  filletOrChamferMode === "fillet" && !isVertexOrHoriz ? "RADIUS" : "CHAMFER",
+                  isVertexOrHoriz
+                    ? "BISEL LOCALIZADO (mm)"
+                    : filletOrChamferMode === "fillet"
+                      ? "RAIO FILLET (mm)"
+                      : "CHANFRO 45° (mm)",
                   "mm",
-                  filletOrChamferMode === "fillet"
-                    ? primaryBody.edgeFilletRadiusMm || 10
-                    : primaryBody.edgeChamferDistMm || 10,
-                  filletOrChamferMode === "fillet" ? "filletRadius" : "chamferDistance",
-                  primaryBody.entityId,
+                  isVertexOrHoriz
+                    ? (vertexBevelGizmo?.currentBevelMm ?? edgeDiagonalGizmo?.currentChamferVal ?? 10)
+                    : filletOrChamferMode === "fillet"
+                      ? (edgeDiagonalGizmo?.currentFilletVal ?? targetBody.edgeFilletRadiusMm ?? 10)
+                      : (edgeDiagonalGizmo?.currentChamferVal ?? targetBody.edgeChamferDistMm ?? 10),
+                  filletOrChamferMode === "fillet" && !isVertexOrHoriz ? "filletRadius" : "chamferDistance",
+                  targetBody.entityId,
                 );
               } else if (directTool === "shell_3d") {
                 openFloatingNumpad(
                   "THICKNESS",
                   "PAREDE CASCA",
                   "mm",
-                  primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75,
+                  targetBody.shellWallThicknessMm || targetBody.shellThicknessMm || 4.75,
                   "shellWallThickness",
-                  primaryBody.entityId,
+                  targetBody.entityId,
                 );
               } else if (directTool === "offset_face_3d") {
                 openFloatingNumpad(
@@ -2062,7 +2447,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   "mm",
                   25,
                   "offsetFaceDistance",
-                  primaryBody.entityId,
+                  targetBody.entityId,
                   offsetFaceTarget,
                 );
               } else if (directTool === "rotate_axis_3d") {
@@ -2072,7 +2457,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   "°",
                   45,
                   "miterAngle",
-                  primaryBody.entityId,
+                  targetBody.entityId,
                   miterEndTarget,
                 );
               } else if (directTool === "transform_3d") {
@@ -2086,7 +2471,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     : transformAxisTarget === "y"
                       ? "moveY"
                       : "moveZ",
-                  primaryBody.entityId,
+                  targetBody.entityId,
                   undefined,
                   copyOnTransform,
                 );
@@ -2097,7 +2482,16 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   "×",
                   1.5,
                   "scaleFactor",
-                  primaryBody.entityId,
+                  targetBody.entityId,
+                );
+              } else if (directTool === "hole_3d") {
+                openFloatingNumpad(
+                  "HOLE_DIAMETER",
+                  "DIÂMETRO FURO Ø (mm)",
+                  "mm",
+                  12,
+                  "holeDiameter",
+                  targetBody.entityId,
                 );
               }
             }}
@@ -2152,6 +2546,34 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           {primaryBody && (directTool === "fillet_3d" || directTool === "chamfer_3d") && (
             <>
               <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              <span className="shrink-0 rounded-full bg-cyan-500/15 border border-cyan-500/35 px-2 py-0.5 font-mono text-[9.5px] font-bold text-cyan-300">
+                {selectionKind3D === "vertex"
+                  ? "Escopo: 1 Vértice"
+                  : selectionKind3D === "edge"
+                    ? `Escopo: ${subSel.edgeIds.length} Aresta(s)`
+                    : "Escopo: Peça Inteira"}
+              </span>
+              {selectionKind3D !== "body" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setSubSel({
+                      faceIds: [],
+                      edgeIds: [],
+                      vertexIds: [],
+                      bodyIds: [primaryBody.bodyId],
+                      selectionScope: "body",
+                      activePivot3D: primaryBody.pivot3D,
+                      activeHingeEdgeId: null,
+                    });
+                  }}
+                  className={pillBtnClass(false)}
+                  title="Aplicar em todas as quinas da Peça Inteira"
+                >
+                  Peça Inteira
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => {
@@ -2185,14 +2607,18 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                           activeTargetEntityIds,
                           filletOrChamferMode,
                           val,
+                          selectedVerticalEdgeIndices,
+                          selectedBevelKeys,
                         ),
                       activeTargetEntityIds,
                     );
                   }}
                   className={pillBtnClass(
                     (filletOrChamferMode === "fillet"
-                      ? primaryBody.edgeFilletRadiusMm
-                      : primaryBody.edgeChamferDistMm) === val,
+                      ? (edgeDiagonalGizmo?.currentFilletVal ?? primaryBody.edgeFilletRadiusMm)
+                      : (vertexBevelGizmo?.currentBevelMm ??
+                          edgeDiagonalGizmo?.currentChamferVal ??
+                          primaryBody.edgeChamferDistMm)) === val,
                   )}
                 >
                   {val === 0 ? "Reto" : `${filletOrChamferMode === "fillet" ? "R" : "D"}${val}`}
@@ -2274,7 +2700,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 [
                   { id: "top" as const, label: "Topo (+Z)" },
                   { id: "bottom" as const, label: "Base (-Z)" },
-                  { id: "sides" as const, label: "Laterais" },
+                  { id: "pos_x" as const, label: "Face +X" },
+                  { id: "neg_x" as const, label: "Face -X" },
+                  { id: "pos_y" as const, label: "Face +Y" },
+                  { id: "neg_y" as const, label: "Face -Y" },
+                  { id: "sides" as const, label: "4 Laterais" },
                 ] as const
               ).map((t) => (
                 <button
@@ -2297,8 +2727,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         applyDirectOffsetFace3DToEntities(
                           prev,
                           activeTargetEntityIds,
-                          offsetFaceTarget,
+                          selectionKind3D === "face" && primaryFace?.role === "side"
+                            ? "side_normal"
+                            : offsetFaceTarget,
                           dVal,
+                          primaryFace?.normal ?? null,
                         ),
                       activeTargetEntityIds,
                     );
@@ -2520,11 +2953,17 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             </>
           )}
 
-          {primaryBody && directTool === "hole_3d" && (
+          {(primaryBody ?? scene.bodies[0]) && directTool === "hole_3d" && (
             <>
               <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
               {(["M6", "M8", "M10", "M12", "M16", "M20"] as MetricHoleThreadSize[]).map((tCode) => {
                 const spec = HOLE_METRIC_SPECS_3D[tCode];
+                const targetIds =
+                  activeTargetEntityIds.length > 0
+                    ? activeTargetEntityIds
+                    : scene.bodies[0]
+                      ? [scene.bodies[0].entityId]
+                      : [];
                 return (
                   <button
                     key={tCode}
@@ -2533,12 +2972,12 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     onClick={() => {
                       triggerHaptic("action");
                       onCommitEntities?.((prev) => {
-                        const res = applyDirectHole3DToEntities(prev, activeTargetEntityIds, {
+                        const res = applyDirectHole3DToEntities(prev, targetIds, {
                           threadSize: tCode,
                           holeType: "through",
                         });
                         return res.updatedEntities;
-                      }, activeTargetEntityIds);
+                      }, targetIds);
                     }}
                     title={`Inserir Furo Passante ${tCode} (Broca Rosca Ø${spec.tapDrillDiameterMm}mm / Passante Ø${spec.clearanceDiameterMm}mm)`}
                     className={pillBtnClass(false)}
@@ -2652,6 +3091,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       {is3DEnvironment && (
         <svg
           data-testid="chamfer-3d-gizmo-svg"
+          style={{ touchAction: "none", userSelect: "none" }}
           className="pointer-events-none absolute inset-0 z-20 h-full w-full overflow-visible select-none"
         >
           <defs>
@@ -2744,6 +3184,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               const isBodySelected =
                 subSel.faceIds.length === 0 &&
                 subSel.edgeIds.length === 0 &&
+                vertexIds.length === 0 &&
                 subSel.bodyIds.includes(face.bodyId);
               const ptsStr = face.polygon3D
                 .map((p) => {
@@ -2770,7 +3211,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   }
                   strokeWidth={isSelected ? 2.6 : isBodySelected ? 2.0 : 0.8}
                   className="pointer-events-auto cursor-pointer transition-colors"
-                  style={{ pointerEvents: "fill" }}
+                  style={{ pointerEvents: "fill", touchAction: "none" }}
                   onPointerDown={(ev) => {
                     ev.stopPropagation();
                     ev.preventDefault();
@@ -2791,8 +3232,12 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       time: now,
                     };
 
-                    // C. Duplo-toque na peça OU 1 toque com Modo Corpo/Transformar ativo -> Reconhece o CORPO SÓLIDO INTEIRO (suporta múltiplos corpos!)
-                    if (isDoubleTapOnBody || directTool === "transform_3d") {
+                    // C. Duplo-toque na peça OU Escopo "Peça Inteira" OU Modo Corpo/Transformar ativo -> Reconhece o CORPO SÓLIDO INTEIRO
+                    if (
+                      isDoubleTapOnBody ||
+                      selectionScope === "body" ||
+                      directTool === "transform_3d"
+                    ) {
                       const currentBodies = subSel.bodyIds;
                       const nextBodyIds =
                         ev.shiftKey ||
@@ -2809,16 +3254,20 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       setSubSel({
                         faceIds: [],
                         edgeIds: [],
+                        vertexIds: [],
                         bodyIds: nextBodyIds,
+                        selectionScope: selectionScope === "body" ? "body" : "auto",
                         activePivot3D: body.center3D,
                         activeHingeEdgeId: null,
                       });
-                      onSelectEntities?.(nextBodyIds);
-                      setDirectTool("transform_3d");
+                      onSelectEntities?.([body.entityId]);
+                      if (selectionScope !== "body") {
+                        setDirectTool("transform_3d");
+                      }
                       return;
                     }
 
-                    // A. 1 Toque em uma FACE ou BORDA DE TOPO/BASE -> Reconhece FACE, destaca em Ciano (#00B4D8) e exibe APENAS a seta perpendicular
+                    // A. 1 Toque em uma FACE -> Reconhece APENAS esta FACE, destaca em Ciano (#00B4D8) e exibe APENAS a seta perpendicular
                     const nextFaceIds = ev.shiftKey
                       ? isSelected
                         ? subSel.faceIds.filter((id) => id !== face.faceId)
@@ -2828,16 +3277,18 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     setSubSel({
                       faceIds: nextFaceIds,
                       edgeIds: [],
+                      vertexIds: [],
                       bodyIds: [],
+                      selectionScope,
                       activePivot3D: face.centroid,
                       activeHingeEdgeId: null,
                     });
-                    onSelectEntities?.([face.bodyId]);
+                    onSelectEntities?.([face.entityId]);
 
-                    // Se for perfil 2D recém-criado (altura <= espessura da chapa), aciona Extrude; se já for corpo 3D, aciona Offset Face
                     if (
                       directTool !== "shell_3d" &&
-                      directTool !== "rotate_axis_3d"
+                      directTool !== "rotate_axis_3d" &&
+                      directTool !== "hole_3d"
                     ) {
                       if (body.extrudeHeightMm <= sheetThickness + 0.5) {
                         setDirectTool("extrude_3d");
@@ -2847,7 +3298,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                             ? "top"
                             : face.role === "bottom"
                               ? "bottom"
-                              : "sides",
+                              : "side_normal",
                         );
                         setDirectTool("offset_face_3d");
                       }
@@ -2881,7 +3332,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     stroke="rgba(0,0,0,0.001)"
                     strokeWidth={16}
                     className="pointer-events-auto cursor-pointer"
-                    style={{ pointerEvents: "stroke" }}
+                    style={{ pointerEvents: "stroke", touchAction: "none" }}
                     onPointerDown={(ev) => {
                       ev.stopPropagation();
                       ev.preventDefault();
@@ -2890,6 +3341,20 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       ev.stopPropagation();
                       triggerHaptic("selection");
                       setLastCompletedDrag(null);
+
+                      if (selectionScope === "body") {
+                        setSubSel({
+                          faceIds: [],
+                          edgeIds: [],
+                          vertexIds: [],
+                          bodyIds: [body.bodyId],
+                          selectionScope: "body",
+                          activePivot3D: body.pivot3D,
+                          activeHingeEdgeId: null,
+                        });
+                        onSelectEntities?.([body.entityId]);
+                        return;
+                      }
 
                       // Se uma Face da mesma peça estiver selecionada e o usuário tocar numa Aresta dessa face -> vira dobradiça (Rotate Around Axis / Esquadria 45°)
                       const hasFaceOnSameBody =
@@ -2905,6 +3370,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         setSubSel((prev) => ({
                           ...prev,
                           edgeIds: [edge.edgeId],
+                          vertexIds: [],
                           bodyIds: [],
                           activeHingeEdgeId: edge.edgeId,
                           activePivot3D: edge.midpoint,
@@ -2913,27 +3379,28 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         return;
                       }
 
-                      // B. Clique em ARESTA / QUINA -> permite selecionar múltiplas arestas consecutivas da mesma peça (ex.: 4 cantos verticais de uma coluna)
+                      // CORREÇÃO 2: Toque simples em 1 ARESTA seleciona APENAS essa aresta (Shift+Clique permite multi-seleção)
                       const sameBodyEdges = subSel.edgeIds.filter((id) =>
                         id.startsWith(`${edge.bodyId}:`),
                       );
-                      const nextEdgeIds =
-                        sameBodyEdges.length > 0
-                          ? isSelected
-                            ? sameBodyEdges.length > 1
-                              ? sameBodyEdges.filter((id) => id !== edge.edgeId)
-                              : []
-                            : [...sameBodyEdges, edge.edgeId]
-                          : [edge.edgeId];
+                      const nextEdgeIds = ev.shiftKey
+                        ? isSelected
+                          ? sameBodyEdges.length > 1
+                            ? sameBodyEdges.filter((id) => id !== edge.edgeId)
+                            : []
+                          : [...sameBodyEdges, edge.edgeId]
+                        : [edge.edgeId];
 
                       setSubSel({
                         faceIds: [],
                         edgeIds: nextEdgeIds,
+                        vertexIds: [],
                         bodyIds: [],
+                        selectionScope,
                         activePivot3D: edge.midpoint,
                         activeHingeEdgeId: null,
                       });
-                      onSelectEntities?.([edge.bodyId]);
+                      onSelectEntities?.([edge.entityId]);
                       if (
                         directTool !== "fillet_3d" &&
                         directTool !== "chamfer_3d"
@@ -2950,6 +3417,68 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       strokeWidth={3.8}
                       strokeLinecap="round"
                       strokeLinejoin="round"
+                      style={{ pointerEvents: "none" }}
+                    />
+                  )}
+                </g>
+              );
+            }),
+          )}
+
+          {/* ================================================================= */}
+          {/* B2. HIT-TARGETS INTERATIVOS PARA TODOS OS VÉRTICES 3D DA CENA    */}
+          {/* ================================================================= */}
+          {scene.bodies.map((body) =>
+            (body.vertices ?? []).map((vtx) => {
+              const isSelected = vertexIds.includes(vtx.vertexId);
+              const sp = toScreen(vtx.point3D);
+              return (
+                <g key={vtx.vertexId}>
+                  <circle
+                    data-testid={`chamfer-3d-vertex-hit-${vtx.role}-${vtx.cornerIndex}`}
+                    cx={sp.x}
+                    cy={sp.y}
+                    r={11}
+                    fill="rgba(0,0,0,0.001)"
+                    className="pointer-events-auto cursor-pointer"
+                    style={{ pointerEvents: "all", touchAction: "none" }}
+                    onPointerDown={(ev) => {
+                      ev.stopPropagation();
+                      ev.preventDefault();
+                    }}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      triggerHaptic("selection");
+                      setLastCompletedDrag(null);
+                      const nextVertexIds = ev.shiftKey
+                        ? isSelected
+                          ? vertexIds.filter((id) => id !== vtx.vertexId)
+                          : [...vertexIds, vtx.vertexId]
+                        : [vtx.vertexId];
+
+                      setSubSel({
+                        faceIds: [],
+                        edgeIds: [],
+                        bodyIds: [],
+                        vertexIds: nextVertexIds,
+                        selectionScope,
+                        activePivot3D: vtx.point3D,
+                        activeHingeEdgeId: null,
+                      });
+                      onSelectEntities?.([vtx.entityId]);
+                      setFilletOrChamferMode("chamfer");
+                      setEdgeActionMode("chamfer");
+                      setDirectTool("chamfer_3d");
+                    }}
+                  />
+                  {isSelected && (
+                    <circle
+                      cx={sp.x}
+                      cy={sp.y}
+                      r={5.5}
+                      fill="#00E5FF"
+                      stroke="#0B1220"
+                      strokeWidth={2}
                       style={{ pointerEvents: "none" }}
                     />
                   )}
@@ -3056,7 +3585,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               }
               onClick={(ev) => ev.stopPropagation()}
             >
-              {/* Linha tracejada de cota da distância percorrida pela face (ao vivo e após soltar) */}
               {((activeAxis === "face_normal" &&
                 dragSessionRef.current?.startCenter3D) ||
                 lastCompletedDrag?.axis === "face_normal") &&
@@ -3143,10 +3671,14 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       "mm",
                       lastCompletedDrag?.axis === "face_normal"
                         ? lastCompletedDrag.deltaMm
-                        : primaryBody?.extrudeHeightMm ?? 25,
-                      isSideFace ? "offsetFaceDistance" : "extrudeHeight",
+                        : 25,
+                      "offsetFaceDistance",
                       faceNormalGizmo.face.entityId,
-                      isSideFace ? "sides" : faceNormalGizmo.face.role === "bottom" ? "bottom" : "top",
+                      isSideFace
+                        ? "side_normal"
+                        : faceNormalGizmo.face.role === "bottom"
+                          ? "bottom"
+                          : "top",
                     );
                   } else {
                     openFloatingNumpad(
@@ -3236,7 +3768,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 stroke="#FFFFFF"
                 strokeWidth={1.5}
               />
-              {/* Pílula Única Limpa na Aresta Selecionada: "R {valor} mm • Raio (Fillet)" */}
               <g
                 transform={`translate(${edgeDiagonalGizmo.tip.x + edgeDiagonalGizmo.ux * 16}, ${edgeDiagonalGizmo.tip.y + edgeDiagonalGizmo.uy * 16})`}
                 className="pointer-events-auto"
@@ -3251,7 +3782,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   stroke="#00E5FF"
                   strokeWidth={1.35}
                 />
-                {/* Zona esquerda clicável: Abre teclado numérico para digitar Raio / Chanfro / Offset */}
                 <g
                   className="cursor-pointer"
                   onPointerDown={(ev) => {
@@ -3268,16 +3798,16 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         25,
                         "offsetFaceDistance",
                         edgeDiagonalGizmo.edge.entityId,
-                        "sides",
+                        "side_normal",
                       );
                     } else {
                       openFloatingNumpad(
                         filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
-                        filletOrChamferMode === "fillet" ? "RAIO FILLET" : "CHANFRO 45°",
+                        filletOrChamferMode === "fillet" ? "RAIO DA ARESTA" : "CHANFRO DA ARESTA 45°",
                         "mm",
                         filletOrChamferMode === "fillet"
-                          ? primaryBody?.edgeFilletRadiusMm || 10
-                          : primaryBody?.edgeChamferDistMm || 10,
+                          ? edgeDiagonalGizmo.currentFilletVal
+                          : edgeDiagonalGizmo.currentChamferVal,
                         filletOrChamferMode === "fillet" ? "filletRadius" : "chamferDistance",
                         edgeDiagonalGizmo.edge.entityId,
                       );
@@ -3305,11 +3835,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     {edgeActionMode === "transform_edge"
                       ? `Δ ${dragDeltaMm} mm`
                       : filletOrChamferMode === "fillet"
-                        ? `R ${(primaryBody?.edgeFilletRadiusMm || 10).toFixed(1)} mm`
-                        : `D ${(primaryBody?.edgeChamferDistMm || 10).toFixed(1)} mm`}
+                        ? `R ${edgeDiagonalGizmo.currentFilletVal.toFixed(1)} mm`
+                        : `D ${edgeDiagonalGizmo.currentChamferVal.toFixed(1)} mm`}
                   </text>
                 </g>
-                {/* Separador central • */}
                 <text
                   x={-4}
                   y={0.5}
@@ -3323,7 +3852,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 >
                   •
                 </text>
-                {/* Zona direita clicável: Alterna Raio (Fillet) ↔ Chanfro 45° ↔ Mover Aresta */}
                 <g
                   className="cursor-pointer"
                   onPointerDown={(ev) => {
@@ -3371,6 +3899,97 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         : "Mover Aresta"}
                   </text>
                 </g>
+              </g>
+            </g>
+          )}
+
+          {/* ================================================================= */}
+          {/* E1. SETA DE BISEL LOCALIZADO NO VÉRTICE 3D SELECIONADO            */}
+          {/* ================================================================= */}
+          {vertexBevelGizmo && (
+            <g
+              data-testid="chamfer-gizmo-vertex-bevel"
+              className="pointer-events-auto cursor-grab active:cursor-grabbing"
+              style={{ touchAction: "none" }}
+              onPointerDown={(ev) =>
+                handleAxisPointerDown(
+                  "vertex_bevel",
+                  vertexBevelGizmo.ux,
+                  vertexBevelGizmo.uy,
+                  vertexBevelGizmo.pixelsPerMm,
+                  ev,
+                )
+              }
+              onClick={(ev) => ev.stopPropagation()}
+            >
+              <line
+                x1={vertexBevelGizmo.origin.x}
+                y1={vertexBevelGizmo.origin.y}
+                x2={vertexBevelGizmo.tip.x}
+                y2={vertexBevelGizmo.tip.y}
+                stroke="rgba(0,0,0,0.001)"
+                strokeWidth={26}
+                style={{ pointerEvents: "stroke" }}
+              />
+              <line
+                x1={vertexBevelGizmo.origin.x}
+                y1={vertexBevelGizmo.origin.y}
+                x2={vertexBevelGizmo.tip.x}
+                y2={vertexBevelGizmo.tip.y}
+                stroke="#F59E0B"
+                strokeWidth={3.2}
+                markerEnd="url(#gizmo-arrow-amber)"
+                style={{ pointerEvents: "stroke" }}
+              />
+              <circle
+                cx={vertexBevelGizmo.origin.x}
+                cy={vertexBevelGizmo.origin.y}
+                r={5}
+                fill="#F59E0B"
+                stroke="#FFFFFF"
+                strokeWidth={1.6}
+              />
+              <g
+                transform={`translate(${vertexBevelGizmo.tip.x + vertexBevelGizmo.ux * 18}, ${vertexBevelGizmo.tip.y + vertexBevelGizmo.uy * 18})`}
+                className="pointer-events-auto cursor-pointer"
+                onPointerDown={(ev) => {
+                  ev.stopPropagation();
+                  ev.preventDefault();
+                }}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  openFloatingNumpad(
+                    "CHAMFER",
+                    "BISEL DO VÉRTICE (45°)",
+                    "mm",
+                    vertexBevelGizmo.currentBevelMm,
+                    "chamferDistance",
+                    vertexBevelGizmo.vertex.entityId,
+                  );
+                }}
+              >
+                <rect
+                  x={-72}
+                  y={-11}
+                  width={144}
+                  height={22}
+                  rx={11}
+                  fill={isDark ? "#0B1220" : "#FFFFFF"}
+                  stroke="#F59E0B"
+                  strokeWidth={1.4}
+                />
+                <text
+                  x={0}
+                  y={0.5}
+                  fill="#F59E0B"
+                  fontSize="9.5"
+                  fontWeight="bold"
+                  fontFamily="monospace"
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                >
+                  {`Bisel 45° • D ${vertexBevelGizmo.currentBevelMm.toFixed(1)} mm ✎`}
+                </text>
               </g>
             </g>
           )}
@@ -3483,12 +4102,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
           {/* ================================================================= */}
           {/* G. GIZMO DO CORPO (TRÍADE X/Y/Z + ROTAÇÃO + PIVÔ + BOTÃO COPY)    */}
-          {/* Exibido quando um CORPO está selecionado (ou modo Transformar)    */}
+          {/* Exibido EXCLUSIVAMENTE quando um CORPO está selecionado           */}
           {/* ================================================================= */}
-          {gizmoScreen &&
-            (selectionKind3D === "body" || selectionKind3D === "none") && (
+          {gizmoScreen && selectionKind3D === "body" && (
               <g data-testid="chamfer-gizmo-body-manipulator">
-                {/* Linha Tracejada de Deslocamento + Pílula Clicável de Distância em Tempo Real (Seção 2.3 & 2.4) */}
+                {/* Linha Tracejada de Deslocamento + Pílula Clicável de Distância em Tempo Real */}
                 {(() => {
                   const isLiveLinear =
                     (activeAxis === "x" ||
@@ -3532,7 +4150,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
                   return (
                     <g data-testid="chamfer-3d-displacement-dimension">
-                      {/* Marcador da Origem (0 mm) */}
                       <circle
                         cx={startSc.x}
                         cy={startSc.y}
@@ -3541,7 +4158,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         stroke={isCopyDrag ? "#10B981" : "#38BDF8"}
                         strokeWidth={2}
                       />
-                      {/* Linha Tracejada de Cota (- - - - -) conectando a peça original à posição/cópia deslocada */}
                       <line
                         x1={startSc.x}
                         y1={startSc.y}
@@ -3551,7 +4167,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         strokeWidth={2.4}
                         strokeDasharray="6 4"
                       />
-                      {/* Marcador da Posição Deslocada */}
                       <circle
                         cx={endSc.x}
                         cy={endSc.y}
@@ -3560,7 +4175,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         stroke="#0B1220"
                         strokeWidth={1.5}
                       />
-                      {/* Pílula Clicável de Medição em Tempo Real no Meio da Linha Tracejada (Toque para abrir Teclado Numérico) */}
                       <g
                         data-testid="chamfer-3d-displacement-pill"
                         transform={`translate(${midX}, ${midY - 22})`}
@@ -3710,7 +4324,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 })}
 
                 {/* 3 Arcos Curvos de Rotação (Rotacionar nos 3 Eixos: Z, X, Y) */}
-                {/* Arco de Rotação Z no Plano XY */}
                 <path
                   data-testid="chamfer-gizmo-rot-z"
                   d={`M ${gizmoScreen.origin.x + gizmoScreen.x.ux * 42} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 42} A 42 42 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.y.ux * 42} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 42}`}
@@ -3724,7 +4337,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   onPointerDown={(ev) => handleAxisPointerDown("rot_z", 0, 0, 1, ev)}
                   onClick={(ev) => ev.stopPropagation()}
                 />
-                {/* Arco de Rotação X no Plano YZ */}
                 <path
                   data-testid="chamfer-gizmo-rot-x"
                   d={`M ${gizmoScreen.origin.x + gizmoScreen.y.ux * 38} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 38} A 38 38 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.z.ux * 38} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 38}`}
@@ -3738,7 +4350,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   onPointerDown={(ev) => handleAxisPointerDown("rot_x", 0, 0, 1, ev)}
                   onClick={(ev) => ev.stopPropagation()}
                 />
-                {/* Arco de Rotação Y no Plano XZ */}
                 <path
                   data-testid="chamfer-gizmo-rot-y"
                   d={`M ${gizmoScreen.origin.x + gizmoScreen.z.ux * 38} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 38} A 38 38 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.x.ux * 38} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 38}`}
@@ -4036,7 +4647,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     stroke={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
                     strokeWidth={1.8}
                   />
-                  {/* 4 pequenas setinhas direcionais no pivô central */}
                   <polygon
                     points={`${gizmoScreen.origin.x},${gizmoScreen.origin.y - 15} ${gizmoScreen.origin.x - 2.5},${gizmoScreen.origin.y - 11} ${gizmoScreen.origin.x + 2.5},${gizmoScreen.origin.y - 11}`}
                     fill={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
@@ -4123,13 +4733,13 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
       {/* =====================================================================
           3. BADGE IN-CANVAS CLICÁVEL AO LADO DO ELEMENTO (ACIONA O NUMPAD COMPACTO)
+          CORREÇÃO 5: Sem botões duplicados (Novo/União/Subtrair ou Copy: ON duplicado)!
           ===================================================================== */}
       {is3DEnvironment &&
         gizmoScreen &&
         primaryBody &&
         !numpadSession &&
-        selectionKind3D !== "edge" &&
-        selectionKind3D !== "face" && (
+        selectionKind3D === "body" && (
         <div
           style={{
             left: `${Math.max(16, Math.min(width - 165, gizmoScreen.z.endX + 12))}px`,
@@ -4188,6 +4798,15 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   "miterAngle",
                   primaryBody.entityId,
                   miterEndTarget,
+                );
+              } else if (directTool === "hole_3d") {
+                openFloatingNumpad(
+                  "HOLE_DIAMETER",
+                  "DIÂMETRO FURO Ø (mm)",
+                  "mm",
+                  12,
+                  "holeDiameter",
+                  primaryBody.entityId,
                 );
               } else if (
                 directTool === "transform_3d" ||
@@ -4250,71 +4869,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             </span>
           </button>
 
-          {/* Quick toggle Fillet vs Chamfer vs Mover Aresta */}
-          {(directTool === "fillet_3d" || directTool === "chamfer_3d") && (
-            <button
-              type="button"
-              onPointerDown={(ev) => {
-                ev.stopPropagation();
-                ev.preventDefault();
-              }}
-              onClick={(ev) => {
-                ev.stopPropagation();
-                triggerHaptic("selection");
-                if (edgeActionMode === "fillet") {
-                  setEdgeActionMode("chamfer");
-                  setFilletOrChamferMode("chamfer");
-                  setDirectTool("chamfer_3d");
-                } else if (edgeActionMode === "chamfer") {
-                  setEdgeActionMode("transform_edge");
-                } else {
-                  setEdgeActionMode("fillet");
-                  setFilletOrChamferMode("fillet");
-                  setDirectTool("fillet_3d");
-                }
-              }}
-              style={themeSurfaceStyle}
-              className="flex items-center gap-1 rounded-full border border-cyan-500/50 px-2 py-0.5 font-mono text-[10px] font-bold shadow-md cursor-pointer hover:bg-cyan-500/20"
-            >
-              <span>
-                {edgeActionMode === "fillet"
-                  ? "Raio (Fillet)"
-                  : edgeActionMode === "chamfer"
-                    ? "Chanfro 45°"
-                    : "Mover Aresta"}
-              </span>
-            </button>
-          )}
-
-          {/* Quick Boolean Pills for Extrude / Face Normal */}
-          {(directTool === "extrude_3d" || directTool === "offset_face_3d") && (
-            <div className="flex items-center gap-0.5 rounded-full border border-slate-700/60 bg-slate-900/80 p-0.5 shadow-md">
-              {(["new_body", "union", "subtract", "intersect"] as const).map((bMode) => (
-                <button
-                  key={bMode}
-                  type="button"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    triggerHaptic("selection");
-                    setBooleanMode(bMode);
-                  }}
-                  className={cn(
-                    "rounded-full px-1.5 py-0.5 font-mono text-[9px] font-bold transition-colors cursor-pointer",
-                    booleanMode === bMode
-                      ? "bg-cyan-600 text-white"
-                      : "text-slate-400 hover:text-white",
-                  )}
-                >
-                  {bMode === "new_body" ? "Novo" : bMode === "union" ? "União" : bMode === "subtract" ? "Subtrair" : "Intersec"}
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* Mirror ⇄ Tool Button & Popup */}
           <div className="relative">
             <button
@@ -4374,39 +4928,17 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               </div>
             )}
           </div>
-
-          {/* Copy: ON/OFF Button */}
-          <button
-            type="button"
-            data-testid="chamfer-3d-gizmo-copy-badge"
-            onPointerDown={(ev) => {
-              ev.stopPropagation();
-              ev.preventDefault();
-            }}
-            onClick={(ev) => {
-              ev.stopPropagation();
-              triggerHaptic("selection");
-              setCopyOnTransform((c) => !c);
-            }}
-            style={!copyOnTransform ? themeSurfaceStyle : undefined}
-            className={cn(
-              "flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] font-bold shadow-md transition-all cursor-pointer",
-              copyOnTransform && "border-emerald-400 bg-emerald-600 text-white",
-            )}
-          >
-            <Copy className="size-2.5" />
-            <span>Copy: {copyOnTransform ? "ON" : "OFF"}</span>
-          </button>
         </div>
       )}
 
       {/* =====================================================================
-          3B. BARRA INFERIOR COMPACTA DE TELEMETRIA DA SELEÇÃO 3D (FACE / ARESTA / CORPO)
+          3B. BARRA INFERIOR COMPACTA DE TELEMETRIA DA SELEÇÃO 3D (VÉRTICE / FACE / ARESTA / CORPO)
           ===================================================================== */}
       {is3DEnvironment &&
         tool !== "loft_3d" &&
         (subSel.faceIds.length > 0 ||
           subSel.edgeIds.length > 0 ||
+          vertexIds.length > 0 ||
           subSel.bodyIds.length > 0) && (
           <div
             data-testid="chamfer-3d-selection-telemetry-bar"
@@ -4422,13 +4954,15 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             className="pointer-events-auto absolute left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-cyan-500/50 px-3.5 py-1 font-mono text-[10.5px] font-bold shadow-lg backdrop-blur-md select-none"
           >
             <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[9.5px] font-extrabold text-cyan-400 border border-cyan-500/40">
-              {selectionKind3D === "face"
-                ? "FACE"
-                : selectionKind3D === "edge"
-                  ? "ARESTA"
-                  : selectionKind3D === "hinge"
-                    ? "DOBRADIÇA"
-                    : "CORPO"}
+              {selectionKind3D === "vertex"
+                ? "VÉRTICE"
+                : selectionKind3D === "face"
+                  ? "FACE"
+                  : selectionKind3D === "edge"
+                    ? "ARESTA"
+                    : selectionKind3D === "hinge"
+                      ? "DOBRADIÇA"
+                      : "PEÇA INTEIRA"}
             </span>
             <span className="text-slate-100 truncate">
               {formatSubElementTelemetry3D(scene, subSel)}
@@ -4451,15 +4985,18 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   setSubSel({
                     faceIds: [],
                     edgeIds: [],
+                    vertexIds: [],
                     bodyIds: [primaryBody.bodyId],
+                    selectionScope: "body",
                     activePivot3D: primaryBody.pivot3D,
                     activeHingeEdgeId: null,
                   });
+                  onSelectEntities?.([primaryBody.entityId]);
                   setDirectTool("transform_3d");
                 }}
                 className="rounded-full bg-slate-800 hover:bg-cyan-600/30 border border-cyan-500/40 px-2 py-0.5 text-[9.5px] text-cyan-300 cursor-pointer"
               >
-                Selecionar Corpo Inteiro
+                Peça Inteira
               </button>
             )}
             <button
@@ -4470,10 +5007,14 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 setSubSel({
                   faceIds: [],
                   edgeIds: [],
+                  vertexIds: [],
                   bodyIds: [],
+                  selectionScope: "auto",
                   activePivot3D: null,
                   activeHingeEdgeId: null,
                 });
+                onSelectEntities?.([]);
+                setDirectTool("select_3d");
               }}
               className="rounded-full px-1.5 py-0.5 text-[10px] text-slate-400 hover:text-white cursor-pointer"
               title="Limpar seleção 3D"

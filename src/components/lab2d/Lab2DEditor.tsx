@@ -6153,6 +6153,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           orbitProjection2D,
           view,
           18,
+          subSelection3D.selectionScope ?? "auto",
         );
         const now = performance.now();
         const isDoubleTap =
@@ -6162,7 +6163,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
         if (hit.kind !== "none" && hit.body) {
           const hitBody = hit.body;
-          if (isDoubleTap || activeDirect3DTool === "transform_3d") {
+          if (
+            isDoubleTap ||
+            activeDirect3DTool === "transform_3d" ||
+            hit.kind === "body" ||
+            subSelection3D.selectionScope === "body"
+          ) {
             let nextBodyIds: string[] = [hitBody.bodyId];
             setSubSelection3D((prev) => {
               const currentBodies = prev.bodyIds;
@@ -6184,14 +6190,53 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 faceIds: [],
                 edgeIds: [],
                 bodyIds: nextBodyIds,
+                vertexIds: [],
+                selectionScope: prev.selectionScope ?? "body",
                 activePivot3D: hitBody.pivot3D,
                 activeHingeEdgeId: null,
               };
             });
             setSelection(nextBodyIds);
-            setActiveDirect3DTool("transform_3d");
+            if (
+              activeDirect3DTool !== "fillet_3d" &&
+              activeDirect3DTool !== "chamfer_3d" &&
+              activeDirect3DTool !== "shell_3d" &&
+              activeDirect3DTool !== "hole_3d"
+            ) {
+              setActiveDirect3DTool("transform_3d");
+            }
             triggerHaptic("action");
             last3DTapRef.current = null;
+          } else if (hit.kind === "vertex" && hit.vertex) {
+            const vertexId = hit.vertex.vertexId;
+            setSubSelection3D((prev) => {
+              const sameBodyVertices = (prev.vertexIds ?? []).filter((vid) =>
+                vid.startsWith(hitBody.bodyId),
+              );
+              const exists = sameBodyVertices.includes(vertexId);
+              let nextVertices: string[];
+              if (ev.shiftKey) {
+                nextVertices = exists
+                  ? sameBodyVertices.filter((id) => id !== vertexId)
+                  : [...sameBodyVertices, vertexId];
+                if (nextVertices.length === 0) nextVertices = [vertexId];
+              } else {
+                nextVertices = [vertexId];
+              }
+              return {
+                faceIds: [],
+                edgeIds: [],
+                bodyIds: [],
+                vertexIds: nextVertices,
+                selectionScope: prev.selectionScope ?? "vertex",
+                activePivot3D: hit.vertex!.position,
+                activeHingeEdgeId: null,
+              };
+            });
+            setSelection([hitBody.entityId]);
+            setActiveDirect3DTool("chamfer_3d");
+            triggerHaptic("selection");
+            last3DTapRef.current = { x: localPt.x, y: localPt.y, time: now };
           } else if (hit.kind === "edge" && hit.edge) {
             const edgeId = hit.edge.edgeId;
             const hasFaceOnSameBody =
@@ -6203,6 +6248,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 ...prev,
                 edgeIds: [edgeId],
                 bodyIds: [],
+                vertexIds: [],
                 activePivot3D: hit.edge!.midpoint,
                 activeHingeEdgeId: edgeId,
               }));
@@ -6214,7 +6260,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 );
                 const exists = sameBodyEdges.includes(edgeId);
                 let nextEdges: string[];
-                if (ev.shiftKey || sameBodyEdges.length > 0) {
+                if (ev.shiftKey) {
                   nextEdges = exists
                     ? sameBodyEdges.filter((id) => id !== edgeId)
                     : [...sameBodyEdges, edgeId];
@@ -6226,6 +6272,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   faceIds: [],
                   edgeIds: nextEdges,
                   bodyIds: [],
+                  vertexIds: [],
+                  selectionScope: prev.selectionScope ?? "auto",
                   activePivot3D: hit.edge!.midpoint,
                   activeHingeEdgeId: null,
                 };
@@ -6258,6 +6306,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 faceIds: nextFaces,
                 edgeIds: [],
                 bodyIds: [],
+                vertexIds: [],
+                selectionScope: prev.selectionScope ?? "auto",
                 activePivot3D: hit.face!.centroid,
                 activeHingeEdgeId: null,
               };
@@ -6281,10 +6331,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             faceIds: [],
             edgeIds: [],
             bodyIds: [],
+            vertexIds: [],
+            selectionScope: "auto",
             activePivot3D: null,
             activeHingeEdgeId: null,
           });
           setSelection([]);
+          setActiveDirect3DTool("select_3d");
           last3DTapRef.current = null;
         }
       }
@@ -8645,7 +8698,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             selectionKind3D={
               subSelection3D.faceIds.length > 0
                 ? "face"
-                : subSelection3D.edgeIds.length > 0
+                : subSelection3D.edgeIds.length > 0 ||
+                    (subSelection3D.vertexIds?.length ?? 0) > 0
                   ? "edge"
                   : subSelection3D.bodyIds.length > 0
                     ? "body"
@@ -8657,9 +8711,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 faceIds: [],
                 edgeIds: [],
                 bodyIds: [],
+                vertexIds: [],
+                selectionScope: "auto",
                 activePivot3D: null,
                 activeHingeEdgeId: null,
               });
+              setActiveDirect3DTool("select_3d");
             }}
             onReturnToSketch2D={transitionTo2D}
             isDark={isDark}

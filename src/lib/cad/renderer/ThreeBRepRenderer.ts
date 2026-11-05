@@ -193,8 +193,8 @@ export class ThreeBRepRenderer {
     const width = this.container.clientWidth || 800;
     const height = this.container.clientHeight || 600;
 
-    // 2. Câmeras (FOV 38° alinhado com correspondência óptica 2D <-> 3D)
-    this.camera = new THREE.PerspectiveCamera(38, width / height, 0.1, 15000);
+    // 2. Câmeras (FOV 38° alinhado com correspondência óptica 2D <-> 3D; Near Clipping 0.01 e Ortho -50000..50000 para zoom extremo sem cortar a peça)
+    this.camera = new THREE.PerspectiveCamera(38, width / height, 0.01, 100000);
     this.camera.position.set(0, -160, 220);
     this.camera.up.set(0, 1, 0);
 
@@ -205,8 +205,8 @@ export class ThreeBRepRenderer {
       d * aspect,
       d,
       -d,
-      0.1,
-      15000,
+      -50000,
+      50000,
     );
     this.orthoCamera.position.copy(this.camera.position);
     this.orthoCamera.up.copy(this.camera.up);
@@ -230,6 +230,8 @@ export class ThreeBRepRenderer {
     this.controls = new OrbitControls(this.activeCamera, this.renderer.domElement);
     this.controls.enableDamping = !this.disableOrbitControls;
     this.controls.dampingFactor = 0.08;
+    this.controls.minDistance = 0.5;
+    this.controls.maxDistance = 50000;
     this.controls.target.set(0, 0, 0);
     if (this.disableOrbitControls) {
       this.controls.enabled = false;
@@ -545,6 +547,7 @@ export class ThreeBRepRenderer {
       solidMesh.name = "solid_mesh";
       solidMesh.castShadow = true;
       solidMesh.receiveShadow = true;
+      solidMesh.frustumCulled = false;
       this.meshGroup.add(solidMesh);
     }
 
@@ -585,6 +588,7 @@ export class ThreeBRepRenderer {
         );
         const line = new THREE.Line(lineGeo, mat);
         line.name = `edge_${edge.edgeIndex}`;
+        line.frustumCulled = false;
         line.userData = {
           edgeIndex: edge.edgeIndex,
           edgeId: edge.edgeId,
@@ -620,6 +624,7 @@ export class ThreeBRepRenderer {
       );
       const vPoints = new THREE.Points(vGeo, this.vertexMaterial);
       vPoints.name = "cad_vertices";
+      vPoints.frustumCulled = false;
       this.verticesGroup.add(vPoints);
     }
 
@@ -665,6 +670,7 @@ export class ThreeBRepRenderer {
       });
       const line = new THREE.Line(geo, mat);
       line.name = `sketch_wf_${wf.id}`;
+      line.frustumCulled = false;
       this.sketchWireframeGroup.add(line);
     }
 
@@ -927,6 +933,7 @@ export class ThreeBRepRenderer {
           faceGeo.setIndex(new THREE.BufferAttribute(subIndices, 1));
 
           const overlay = new THREE.Mesh(faceGeo, faceMat);
+          overlay.frustumCulled = false;
           this.selectionOverlayGroup.add(overlay);
         }
       } else if (entity.type === "edge") {
@@ -935,6 +942,7 @@ export class ThreeBRepRenderer {
           const edgeGeo = new THREE.BufferGeometry();
           edgeGeo.setAttribute("position", new THREE.BufferAttribute(edge.points, 3));
           const line = new THREE.Line(edgeGeo, edgeMat);
+          line.frustumCulled = false;
           this.selectionOverlayGroup.add(line);
         }
       } else if (entity.type === "vertex") {
@@ -944,6 +952,7 @@ export class ThreeBRepRenderer {
             sphereGeo,
             new THREE.MeshBasicMaterial({ color: isPrimary ? 0x0284c7 : 0xf59e0b }),
           );
+          sphere.frustumCulled = false;
           sphere.position.set(entity.point.x, entity.point.y, entity.point.z);
           this.selectionOverlayGroup.add(sphere);
         }
@@ -1358,20 +1367,25 @@ export class ThreeBRepRenderer {
       .addScaledVector(rightVec, panMmRight)
       .addScaledVector(upVec, panMmUp);
 
-    const visibleHeightMm = Math.max(5, H / safeK);
-    const visibleWidthMm = Math.max(5, W / safeK);
+    const visibleHeightMm = Math.max(0.25, H / safeK);
+    const visibleWidthMm = Math.max(0.25, W / safeK);
     const fovRad = (this.camera.fov * Math.PI) / 360;
-    const distance = Math.max(15, (visibleHeightMm * 0.5) / Math.tan(fovRad));
+    const distance = Math.max(0.5, (visibleHeightMm * 0.5) / Math.tan(fovRad));
 
     const camPos = target3D.clone().addScaledVector(outDirVec, distance);
 
     this.hasInitialCameraPose = true;
     this.cameraAnimation = null;
 
+    this.camera.near = 0.01;
+    this.camera.far = 100000;
     this.camera.position.copy(camPos);
     this.camera.up.copy(upVec);
     this.camera.lookAt(target3D);
+    this.camera.updateProjectionMatrix();
 
+    this.orthoCamera.near = -50000;
+    this.orthoCamera.far = 50000;
     this.orthoCamera.position.copy(camPos);
     this.orthoCamera.up.copy(upVec);
     this.orthoCamera.left = -visibleWidthMm * 0.5;

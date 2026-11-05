@@ -3,7 +3,9 @@ import { rectPolyline, type Entity } from "./core";
 import { computeWorkplaneOrbitProjection2D } from "./orbit3dController";
 import {
   HOLE_METRIC_SPECS_3D,
+  applyDirectFilletOrChamfer3DToEntities,
   applyDirectHole3DToEntities,
+  applyDirectOffsetFace3DToEntities,
   applyDirectTransform3DToEntities,
   buildDirectTopology3DScene,
   executeMetalStructure10StepBenchmark,
@@ -346,5 +348,110 @@ describe("CHAMFER CAD — Motor de Modelagem Direta 3D, Edição Topológica e S
     expect(resolveDirect3DQuickCommand("PROJ")).toBe("project_3d");
     expect(resolveDirect3DQuickCommand("DRAWING")).toBe("create_drawing_3d");
   });
+
+  it("11. Escopo por Sub-Elemento vs Peça Inteira: Fillet/Chanfro em 1 única aresta vertical mantém as outras 3 quinas vivas", () => {
+    let block = rectPolyline({ x: 0, y: 0 }, { x: 100, y: 60 }, "corte", 0);
+    block = setEntityDirect3DParams({ ...block, id: "block_single_edge" }, {
+      extrudeHeightMm: 80,
+    });
+
+    // Aplica Fillet R15 mm SOMENTE na quina vertical 0 (targetEdgeIndices = [0])
+    const singleEdgeUpdated = applyDirectFilletOrChamfer3DToEntities(
+      [block],
+      ["block_single_edge"],
+      "fillet",
+      15,
+      [0],
+    );
+    const paramsSingle = getEntityDirect3DParams(singleEdgeUpdated[0]!, 10);
+    expect(paramsSingle.cornerFilletsMm[0]).toBe(15);
+    expect(paramsSingle.cornerFilletsMm[1] ?? 0).toBe(0);
+    expect(paramsSingle.edgeFilletRadiusMm).toBe(0);
+
+    const sceneSingle = buildDirectTopology3DScene(singleEdgeUpdated, 10);
+    const bodySingle = sceneSingle.bodies[0]!;
+    expect(bodySingle.cornerFilletsMm[0]).toBe(15);
+    expect(bodySingle.cornerFilletsMm[1] ?? 0).toBe(0);
+    // Volume com apenas 1 quina R15 deve ser maior que o volume com todas as 4 quinas R15
+    const allEdgesUpdated = applyDirectFilletOrChamfer3DToEntities(
+      [block],
+      ["block_single_edge"],
+      "fillet",
+      15,
+    );
+    const sceneAll = buildDirectTopology3DScene(allEdgesUpdated, 10);
+    const bodyAll = sceneAll.bodies[0]!;
+    expect(bodySingle.volumeMm3).toBeGreaterThan(bodyAll.volumeMm3);
+  });
+
+  it("12. Chanfro em Bisel Localizado 3D (Vértice ou Borda do Topo) cria face chanfrada 45° na quina sem cortar a coluna inteira", () => {
+    let block = rectPolyline({ x: 0, y: 0 }, { x: 100, y: 60 }, "corte", 0);
+    block = setEntityDirect3DParams({ ...block, id: "block_vertex_bevel" }, {
+      extrudeHeightMm: 120,
+    });
+
+    // Aplica bisel localizado de 12 mm apenas no vértice superior 0 ("top_0")
+    const beveledEntities = applyDirectFilletOrChamfer3DToEntities(
+      [block],
+      ["block_vertex_bevel"],
+      "chamfer",
+      12,
+      undefined,
+      ["top_0"],
+    );
+    const params = getEntityDirect3DParams(beveledEntities[0]!, 10);
+    expect(params.vertexBevelsMm.top_0).toBe(12);
+    expect(params.edgeChamferDistMm).toBe(0);
+
+    const scene = buildDirectTopology3DScene(beveledEntities, 10);
+    const body = scene.bodies[0]!;
+    const bevelFace = body.faces.find((f) => f.faceId.endsWith("_face_bevel_top_0"));
+    expect(bevelFace).toBeDefined();
+    expect(bevelFace!.polygon3D.length).toBe(3);
+  });
+
+  it("13. Offset Face Individual move apenas a face lateral selecionada (+X) mantendo a face oposta (-X) ancorada", () => {
+    let block = rectPolyline({ x: 0, y: 0 }, { x: 100, y: 50 }, "corte", 0);
+    block = setEntityDirect3DParams({ ...block, id: "block_offset_pos_x" }, {
+      extrudeHeightMm: 40,
+    });
+
+    const updated = applyDirectOffsetFace3DToEntities(
+      [block],
+      ["block_offset_pos_x"],
+      "pos_x",
+      25,
+    );
+    const scene = buildDirectTopology3DScene(updated, 10);
+    const body = scene.bodies[0]!;
+    expect(body.deltaX).toBeCloseTo(125, 1);
+    expect(body.deltaY).toBeCloseTo(50, 1);
+    // Com a face -X ancorada em x=0 e a face +X deslocada para x=125, o centroide X deve estar em 62.5 mm
+    expect(body.pivot3D.x).toBeCloseTo(62.5, 1);
+  });
+
+  it("14. Furação Real 2D/3D (Estilo Flange): furos circulares perfuram a malha triangular das tampas superior/inferior (vazado real)", () => {
+    const flange = setEntityDirect3DParams(
+      { ...rectPolyline({ x: 0, y: 0 }, { x: 120, y: 120 }, "corte", 0), id: "flange_holes" },
+      { extrudeHeightMm: 16 },
+    );
+    const centerHole: Entity = {
+      id: "center_bore",
+      layer: "corte", // Mesmo em layer 'corte', contorno menor interno deve ser reconhecido como furo passante!
+      type: "circle",
+      cx: 60,
+      cy: 60,
+      r: 25,
+    };
+
+    const scene = buildDirectTopology3DScene([flange, centerHole], 16);
+    expect(scene.tessellatedShape).toBeDefined();
+    expect(scene.tessellatedShape.mesh.positions.length).toBeGreaterThan(100);
+    // Verifica que a cavidade cilíndrica interna foi gerada como face inner_side e reduziu a área da tampa
+    expect(scene.bodies[0]!.faces.some((f) => f.role === "inner_side")).toBe(true);
+    const topFace = scene.bodies[0]!.faces.find((f) => f.role === "top")!;
+    expect(topFace.areaMm2).toBeCloseTo(120 * 120 - Math.PI * 25 * 25, 0);
+  });
 });
+
 

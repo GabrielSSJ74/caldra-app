@@ -19,6 +19,7 @@
  *    - Corpos: "1 corpo | ΔX 100.00 mm  ΔY 50.00 mm  ΔZ 490.00 mm"
  */
 
+import * as THREE from "three";
 import { bbox, boxOf, rectPolyline, translate, uid, type Entity, type Vec2 } from "./core";
 import type { CadTessellatedShape } from "@/lib/cad/core/CadMesh";
 import type { WorkplaneOrbitProjection2D } from "./orbit3dController";
@@ -183,6 +184,17 @@ export interface DirectEdge3D {
   polyline3D: Vec3Mm[];
 }
 
+export interface DirectVertex3D {
+  vertexId: string;
+  bodyId: string;
+  entityId: string;
+  cornerIndex: number;
+  end: "top" | "bottom";
+  label: string;
+  point3D: Vec3Mm;
+  bevelDistMm?: number;
+}
+
 export interface DirectSnapPivotCandidate3D {
   id: string;
   bodyId: string;
@@ -202,6 +214,9 @@ export interface DirectBody3D {
   edgeFilletRadiusMm: number;
   innerFilletRadiusMm: number;
   edgeChamferDistMm: number;
+  cornerFilletsMm: Record<number, number>;
+  cornerChamfersMm: Record<number, number>;
+  vertexBevelsMm: Record<string, number>;
   shellWallThicknessMm: number;
   shellThicknessMm: number;
   sheetThicknessMm: number;
@@ -247,6 +262,7 @@ export interface DirectBody3D {
   volumeMm3: number;
   faces: DirectFace3D[];
   edges: DirectEdge3D[];
+  vertices: DirectVertex3D[];
   snapCandidates: DirectSnapPivotCandidate3D[];
 }
 
@@ -254,16 +270,21 @@ export interface DirectTopology3DScene {
   bodies: DirectBody3D[];
   facesById: Map<string, DirectFace3D>;
   edgesById: Map<string, DirectEdge3D>;
+  verticesById: Map<string, DirectVertex3D>;
   bodiesById: Map<string, DirectBody3D>;
   facesByMeshIndex: Map<number, DirectFace3D>;
   edgesByMeshIndex: Map<number, DirectEdge3D>;
   tessellatedShape: CadTessellatedShape;
 }
 
+export type SelectionScope3D = "auto" | "vertex" | "edge" | "face" | "body";
+
 export interface SubElementSelectionState3D {
   faceIds: string[];
   edgeIds: string[];
   bodyIds: string[];
+  vertexIds?: string[];
+  selectionScope?: SelectionScope3D;
   activePivot3D: Vec3Mm | null;
   activeHingeEdgeId: string | null;
 }
@@ -272,11 +293,13 @@ export type ParametricNumpadKind =
   | "EXTRUSION"
   | "RADIUS"
   | "CHAMFER"
+  | "BEVEL"
   | "THICKNESS"
   | "OFFSET"
   | "ANGLE"
   | "DISTANCE"
   | "SCALE"
+  | "HOLE"
   | "WIDTH"
   | "HEIGHT";
 
@@ -285,12 +308,17 @@ export type NumpadTargetParameter =
   | "shellWallThickness"
   | "filletRadius"
   | "chamferDistance"
+  | "vertexBevel"
   | "offsetFaceDistance"
   | "miterAngle"
   | "scaleFactor"
+  | "holeDiameter"
   | "moveX"
   | "moveY"
-  | "moveZ";
+  | "moveZ"
+  | "rotX"
+  | "rotY"
+  | "rotZ";
 
 export interface ActiveParametricNumpadSession {
   kind: ParametricNumpadKind;
@@ -301,7 +329,24 @@ export interface ActiveParametricNumpadSession {
   initialValue: number;
   screenPos: { x: number; y: number };
   targetEntityIds: string[];
-  subTarget?: "top" | "bottom" | "sides" | "x" | "y" | "z" | "rx" | "ry" | "rz";
+  subTarget?:
+    | "top"
+    | "bottom"
+    | "sides"
+    | "pos_x"
+    | "neg_x"
+    | "pos_y"
+    | "neg_y"
+    | "side_normal"
+    | "x"
+    | "y"
+    | "z"
+    | "rx"
+    | "ry"
+    | "rz";
+  targetEdgeIndices?: number[];
+  targetBevelKeys?: string[];
+  faceNormal?: Vec3Mm;
   copyMode?: boolean;
 }
 
@@ -502,6 +547,44 @@ export function getEntityDirect3DParams(entity: Entity, defaultThicknessMm = 20)
     rzDeg: Number(rotObj.rzDeg) || 0,
   };
 
+  const rawCornerFillets =
+    p.cornerFilletsMm && typeof p.cornerFilletsMm === "object"
+      ? (p.cornerFilletsMm as Record<number, number>)
+      : {};
+  const cornerFilletsMm: Record<number, number> = {};
+  for (const [k, v] of Object.entries(rawCornerFillets)) {
+    const idx = Number(k);
+    const val = Math.max(0, Math.min(maxGeometricCornerMm, Number(v) || 0));
+    if (Number.isInteger(idx) && idx >= 0 && val > 0.01) {
+      cornerFilletsMm[idx] = val;
+    }
+  }
+
+  const rawCornerChamfers =
+    p.cornerChamfersMm && typeof p.cornerChamfersMm === "object"
+      ? (p.cornerChamfersMm as Record<number, number>)
+      : {};
+  const cornerChamfersMm: Record<number, number> = {};
+  for (const [k, v] of Object.entries(rawCornerChamfers)) {
+    const idx = Number(k);
+    const val = Math.max(0, Math.min(maxGeometricCornerMm, Number(v) || 0));
+    if (Number.isInteger(idx) && idx >= 0 && val > 0.01) {
+      cornerChamfersMm[idx] = val;
+    }
+  }
+
+  const rawVertexBevels =
+    p.vertexBevelsMm && typeof p.vertexBevelsMm === "object"
+      ? (p.vertexBevelsMm as Record<string, number>)
+      : {};
+  const vertexBevelsMm: Record<string, number> = {};
+  for (const [k, v] of Object.entries(rawVertexBevels)) {
+    const val = Math.max(0, Math.min(maxGeometricCornerMm, Number(v) || 0));
+    if (val > 0.01) {
+      vertexBevelsMm[k] = val;
+    }
+  }
+
   const colorHex = typeof p.bodyColorHex === "string" ? p.bodyColorHex : "#94A3B8";
   const materialName =
     typeof p.bodyMaterial === "string" ? p.bodyMaterial : "Aço Estrutural ASTM A36";
@@ -513,6 +596,9 @@ export function getEntityDirect3DParams(entity: Entity, defaultThicknessMm = 20)
     booleanMode3D,
     edgeFilletRadiusMm,
     edgeChamferDistMm,
+    cornerFilletsMm,
+    cornerChamfersMm,
+    vertexBevelsMm,
     shellWallThicknessMm,
     shellThicknessMm,
     sheetThicknessMm,
@@ -570,6 +656,9 @@ export function setEntityDirect3DParams(
       booleanMode3D: next.booleanMode3D,
       edgeFilletRadiusMm: next.edgeFilletRadiusMm,
       edgeChamferDistMm: next.edgeChamferDistMm,
+      cornerFilletsMm: next.cornerFilletsMm,
+      cornerChamfersMm: next.cornerChamfersMm,
+      vertexBevelsMm: next.vertexBevelsMm,
       shellWallThickness: effectiveShell,
       shellThicknessMm: effectiveShell,
       sheetThickness: next.sheetThicknessMm,
@@ -898,8 +987,24 @@ export function applyCornerFilletOrChamferToPolygon2D(
   pts: Vec2[],
   filletRadiusMm: number,
   chamferDistMm: number,
+  cornerFilletsMm?: Record<number, number>,
+  cornerChamfersMm?: Record<number, number>,
 ): Vec2[] {
-  if ((filletRadiusMm <= 0.05 && chamferDistMm <= 0.05) || pts.length < 3 || pts.length > 32) {
+  const hasPerCornerFillet =
+    cornerFilletsMm !== undefined &&
+    Object.values(cornerFilletsMm).some((v) => Number(v) > 0.05);
+  const hasPerCornerChamfer =
+    cornerChamfersMm !== undefined &&
+    Object.values(cornerChamfersMm).some((v) => Number(v) > 0.05);
+
+  if (
+    (filletRadiusMm <= 0.05 &&
+      chamferDistMm <= 0.05 &&
+      !hasPerCornerFillet &&
+      !hasPerCornerChamfer) ||
+    pts.length < 3 ||
+    pts.length > 32
+  ) {
     return pts;
   }
 
@@ -911,6 +1016,24 @@ export function applyCornerFilletOrChamferToPolygon2D(
     const prev = ccw[(i - 1 + n) % n]!;
     const curr = ccw[i]!;
     const next = ccw[(i + 1) % n]!;
+
+    const localFillet =
+      cornerFilletsMm && cornerFilletsMm[i] !== undefined
+        ? Number(cornerFilletsMm[i])
+        : hasPerCornerFillet || hasPerCornerChamfer
+          ? 0
+          : filletRadiusMm;
+    const localChamfer =
+      cornerChamfersMm && cornerChamfersMm[i] !== undefined
+        ? Number(cornerChamfersMm[i])
+        : hasPerCornerFillet || hasPerCornerChamfer
+          ? 0
+          : chamferDistMm;
+
+    if (localFillet <= 0.05 && localChamfer <= 0.05) {
+      out.push(curr);
+      continue;
+    }
 
     const dx1 = prev.x - curr.x;
     const dy1 = prev.y - curr.y;
@@ -937,14 +1060,14 @@ export function applyCornerFilletOrChamferToPolygon2D(
       continue;
     }
 
-    if (chamferDistMm > 0.05) {
-      const d = Math.min(chamferDistMm, len1 * 0.45, len2 * 0.45);
+    if (localChamfer > 0.05) {
+      const d = Math.min(localChamfer, len1 * 0.45, len2 * 0.45);
       out.push({ x: curr.x + u1x * d, y: curr.y + u1y * d });
       out.push({ x: curr.x + u2x * d, y: curr.y + u2y * d });
-    } else if (filletRadiusMm > 0.05) {
+    } else if (localFillet > 0.05) {
       const tanHalf = Math.tan(halfAngle);
       const maxT = Math.min(len1 * 0.46, len2 * 0.46);
-      const rEff = Math.min(filletRadiusMm, maxT * tanHalf);
+      const rEff = Math.min(localFillet, maxT * tanHalf);
       const tDist = rEff / Math.max(1e-4, tanHalf);
 
       const pStart = { x: curr.x + u1x * tDist, y: curr.y + u1y * tDist };
@@ -1112,11 +1235,12 @@ function appendCapWithHolesToMesh(
   indices: number[],
 ): number {
   let areaMm2 = 0;
+  const n = outerPts3D.length;
+  if (n < 3) return 0;
 
   if (holesPts3D.length === 1 && holesPts3D[0]!.length === outerPts3D.length) {
     // Malha de anel perfeita (ex.: parede de tubo Metalon / Shell ou flange com 1 furo concêntrico)
     const innerPts3D = holesPts3D[0]!;
-    const n = outerPts3D.length;
     for (let i = 0; i < n; i++) {
       const next = (i + 1) % n;
       const o0 = outerPts3D[i]!;
@@ -1135,7 +1259,6 @@ function appendCapWithHolesToMesh(
         indices.push(baseIdx, baseIdx + 2, baseIdx + 1, baseIdx, baseIdx + 3, baseIdx + 2);
       }
 
-      // Área dos 2 triângulos
       const area1 = triangleArea3D(o0, o1, i1);
       const area2 = triangleArea3D(o0, i1, i0);
       areaMm2 += area1 + area2;
@@ -1143,50 +1266,71 @@ function appendCapWithHolesToMesh(
     return areaMm2;
   }
 
-  // Triangulação fan a partir do centroide (descontando área dos furos)
-  const n = outerPts3D.length;
-  if (n < 3) return 0;
+  // Triangulação B-Rep Real com Furos (THREE.ShapeUtils.triangulateShape)
+  // Garante que qualquer furo circular, oblongo ou poligonal (do 2D Sketch ou Hole 3D)
+  // recorte fisicamente a malha da tampa superior e inferior (furo 100% vazado estilo flange).
+  const validHoles3D = holesPts3D.filter((h) => h.length >= 3);
+  if (validHoles3D.length > 0 || n >= 3) {
+    const rawOuterVec2 = outerPts3D.map((p) => new THREE.Vector2(p.x, p.y));
+    const isOuterCW = THREE.ShapeUtils.isClockWise(rawOuterVec2);
+    const contour2D = isOuterCW ? [...rawOuterVec2].reverse() : rawOuterVec2;
+    const orderedOuter3D = isOuterCW ? [...outerPts3D].reverse() : outerPts3D;
 
-  let cx = 0;
-  let cy = 0;
-  let cz = 0;
-  for (const p of outerPts3D) {
-    cx += p.x;
-    cy += p.y;
-    cz += p.z;
-  }
-  cx /= n;
-  cy /= n;
-  cz /= n;
-  const center: Vec3Mm = { x: cx, y: cy, z: cz };
-
-  const centerIdx = positions.length / 3;
-  positions.push(center.x, center.y, center.z);
-  normals.push(normal.x, normal.y, normal.z);
-
-  const ringStart = positions.length / 3;
-  for (const p of outerPts3D) {
-    positions.push(p.x, p.y, p.z);
-    normals.push(normal.x, normal.y, normal.z);
-  }
-
-  for (let i = 0; i < n; i++) {
-    const next = (i + 1) % n;
-    const p0 = outerPts3D[i]!;
-    const p1 = outerPts3D[next]!;
-    areaMm2 += triangleArea3D(center, p0, p1);
-    if (isTopCap) {
-      indices.push(centerIdx, ringStart + i, ringStart + next);
-    } else {
-      indices.push(centerIdx, ringStart + next, ringStart + i);
+    const holes2D: THREE.Vector2[][] = [];
+    const orderedHoles3D: Vec3Mm[][] = [];
+    for (const h3d of validHoles3D) {
+      const hVec2 = h3d.map((p) => new THREE.Vector2(p.x, p.y));
+      const isHoleCW = THREE.ShapeUtils.isClockWise(hVec2);
+      if (!isHoleCW) {
+        holes2D.push([...hVec2].reverse());
+        orderedHoles3D.push([...h3d].reverse());
+      } else {
+        holes2D.push(hVec2);
+        orderedHoles3D.push(h3d);
+      }
     }
-  }
 
-  // Subtrai área geométrica dos furos internos para telemetria exata
-  for (const hole of holesPts3D) {
-    if (hole.length >= 3) {
-      const h2d = hole.map((p) => ({ x: p.x, y: p.y }));
-      areaMm2 = Math.max(0, areaMm2 - Math.abs(signedArea2D(h2d)));
+    const triangles = THREE.ShapeUtils.triangulateShape(contour2D, holes2D);
+    if (triangles.length > 0) {
+      const allPts3D: Vec3Mm[] = [...orderedOuter3D];
+      for (const h3d of orderedHoles3D) {
+        for (const p of h3d) {
+          allPts3D.push(p);
+        }
+      }
+
+      const startVertexIdx = positions.length / 3;
+      for (const p of allPts3D) {
+        positions.push(p.x, p.y, p.z);
+        normals.push(normal.x, normal.y, normal.z);
+      }
+
+      for (const tri of triangles) {
+        const i0 = tri[0]!;
+        const i1 = tri[1]!;
+        const i2 = tri[2]!;
+        const p0 = allPts3D[i0]!;
+        const p1 = allPts3D[i1]!;
+        const p2 = allPts3D[i2]!;
+        areaMm2 += triangleArea3D(p0, p1, p2);
+
+        const cross2D = (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
+        const isTriCCW = cross2D >= 0;
+        if (isTopCap) {
+          if (isTriCCW) {
+            indices.push(startVertexIdx + i0, startVertexIdx + i1, startVertexIdx + i2);
+          } else {
+            indices.push(startVertexIdx + i0, startVertexIdx + i2, startVertexIdx + i1);
+          }
+        } else {
+          if (isTriCCW) {
+            indices.push(startVertexIdx + i0, startVertexIdx + i2, startVertexIdx + i1);
+          } else {
+            indices.push(startVertexIdx + i0, startVertexIdx + i1, startVertexIdx + i2);
+          }
+        }
+      }
+      return areaMm2;
     }
   }
 
@@ -1260,15 +1404,26 @@ export function buildDirectTopology3DScene(
     let parentGroup: SolidProfileGroup | null = null;
     for (const grp of groups) {
       const sameZ = Math.abs(grp.outer.params3D.elevationZ - cand.params3D.elevationZ) < 1.0;
+      const isExplicitHole =
+        cand.entity.layer === "furo" ||
+        cand.entity.layer === "recorte" ||
+        cand.entity.params?.booleanMode3D === "subtract";
       const isForceNewBody =
-        cand.entity.params?.booleanMode3D === "new_body" ||
-        cand.entity.params?.booleanMode3D === "union";
+        !isExplicitHole &&
+        (cand.entity.params?.isIndependentBody3D === true ||
+          cand.entity.params?.booleanMode3D === "union" ||
+          (cand.entity.params?.booleanMode3D === "new_body" &&
+            Math.abs(cand.params3D.extrudeHeightMm - grp.outer.params3D.extrudeHeightMm) > 0.5 &&
+            cand.entity.type !== "circle" &&
+            cand.entity.type !== "ellipse"));
       if (!sameZ || isForceNewBody) continue;
 
       const samplePt = cand.basePoints[0]!;
+      const midPt = cand.basePoints[Math.floor(cand.basePoints.length / 2)] ?? samplePt;
       if (
         cand.areaAbs < grp.outer.areaAbs * 0.92 &&
-        pointInPolygon2D(samplePt, grp.outer.basePoints)
+        pointInPolygon2D(samplePt, grp.outer.basePoints) &&
+        pointInPolygon2D(midPt, grp.outer.basePoints)
       ) {
         parentGroup = grp;
         break;
@@ -1297,6 +1452,7 @@ export function buildDirectTopology3DScene(
   const bodies: DirectBody3D[] = [];
   const facesById = new Map<string, DirectFace3D>();
   const edgesById = new Map<string, DirectEdge3D>();
+  const verticesById = new Map<string, DirectVertex3D>();
   const bodiesById = new Map<string, DirectBody3D>();
   const facesByMeshIndex = new Map<number, DirectFace3D>();
   const edgesByMeshIndex = new Map<number, DirectEdge3D>();
@@ -1319,13 +1475,21 @@ export function buildDirectTopology3DScene(
         ? offsetPolygon2D(outer.basePoints, p3d.offsetFaceSidesMm)
         : outer.basePoints;
 
-    // 2. Aplica Fillet 3D (`edgeFilletRadiusMm`) ou Chamfer 3D (`edgeChamferDistMm`) nas arestas verticais
+    // 2. Aplica Fillet 3D (`edgeFilletRadiusMm` / `cornerFilletsMm`) ou Chamfer 3D (`edgeChamferDistMm` / `cornerChamfersMm`) nas arestas verticais
+    const hasPerCornerMod =
+      Object.keys(p3d.cornerFilletsMm).length > 0 ||
+      Object.keys(p3d.cornerChamfersMm).length > 0;
     let contour2D = baseWithOffset2D;
-    if (!outer.isSmoothCircle && (p3d.edgeFilletRadiusMm > 0.05 || p3d.edgeChamferDistMm > 0.05)) {
+    if (
+      !outer.isSmoothCircle &&
+      (p3d.edgeFilletRadiusMm > 0.05 || p3d.edgeChamferDistMm > 0.05 || hasPerCornerMod)
+    ) {
       contour2D = applyCornerFilletOrChamferToPolygon2D(
         baseWithOffset2D,
         p3d.edgeFilletRadiusMm,
         p3d.edgeChamferDistMm,
+        p3d.cornerFilletsMm,
+        p3d.cornerChamfersMm,
       );
     }
 
@@ -2148,29 +2312,368 @@ export function buildDirectTopology3DScene(
       edgesByMeshIndex.set(botMeshIdx, botLoopEdge);
     }
 
-    // Arestas visuais da cavidade interna (Shell / Furos)
-    holesTop3D.forEach((hTop) => {
+    // Arestas visuais e selecionáveis da cavidade interna (Shell / Furos 2D e 3D)
+    holesTop3D.forEach((hTop, hIdx) => {
       const vTop: number[] = [];
       for (const p of hTop) vTop.push(p.x, p.y, p.z);
       if (hTop[0]) vTop.push(hTop[0].x, hTop[0].y, hTop[0].z);
+      const hTopMeshIdx = globalMeshEdgeIdx++;
       edgePolylines.push({
-        edgeIndex: globalMeshEdgeIdx++,
+        edgeIndex: hTopMeshIdx,
         vertices: vTop,
         isSeam: false,
         isTangentEdge: false,
       });
+      if (hTop.length >= 3) {
+        const hLen = computePolygonPerimeter3D(hTop);
+        const hEdgeObj: DirectEdge3D = {
+          edgeId: `${bodyId}_edge_inner_top_${hIdx}`,
+          meshEdgeIndex: hTopMeshIdx,
+          bodyId,
+          entityId: entId,
+          role: "inner_top",
+          edgeIndex: hIdx,
+          label: hasShell && hIdx === 0 ? "Borda Interna Superior (Shell)" : `Borda Superior do Furo #${hIdx + 1}`,
+          startPt: hTop[0]!,
+          endPt: hTop[Math.floor(hTop.length / 2)]!,
+          midpoint: hTop[0]!,
+          dir: { x: 1, y: 0, z: 0 },
+          lengthMm: hLen,
+          polyline3D: hTop,
+        };
+        bodyEdges.push(hEdgeObj);
+        edgesById.set(hEdgeObj.edgeId, hEdgeObj);
+        edgesByMeshIndex.set(hTopMeshIdx, hEdgeObj);
+      }
     });
-    holesBottom3D.forEach((hBot) => {
+    holesBottom3D.forEach((hBot, hIdx) => {
       const vBot: number[] = [];
       for (const p of hBot) vBot.push(p.x, p.y, p.z);
       if (hBot[0]) vBot.push(hBot[0].x, hBot[0].y, hBot[0].z);
+      const hBotMeshIdx = globalMeshEdgeIdx++;
       edgePolylines.push({
-        edgeIndex: globalMeshEdgeIdx++,
+        edgeIndex: hBotMeshIdx,
         vertices: vBot,
         isSeam: false,
         isTangentEdge: false,
       });
+      if (hBot.length >= 3) {
+        const hLen = computePolygonPerimeter3D(hBot);
+        const hBotEdgeObj: DirectEdge3D = {
+          edgeId: `${bodyId}_edge_inner_bot_${hIdx}`,
+          meshEdgeIndex: hBotMeshIdx,
+          bodyId,
+          entityId: entId,
+          role: "inner_bottom",
+          edgeIndex: hIdx,
+          label: hasShell && hIdx === 0 ? "Borda Interna Inferior (Shell)" : `Borda Inferior do Furo #${hIdx + 1}`,
+          startPt: hBot[0]!,
+          endPt: hBot[Math.floor(hBot.length / 2)]!,
+          midpoint: hBot[0]!,
+          dir: { x: 1, y: 0, z: 0 },
+          lengthMm: hLen,
+          polyline3D: hBot,
+        };
+        bodyEdges.push(hBotEdgeObj);
+        edgesById.set(hBotEdgeObj.edgeId, hBotEdgeObj);
+        edgesByMeshIndex.set(hBotMeshIdx, hBotEdgeObj);
+      }
     });
+
+    // Vértices 3D Endereçáveis + Chanfros em Bisel Localizado (Vértice ou Borda Superior/Inferior)
+    const bodyVertices: DirectVertex3D[] = [];
+    const baseCorners2D = ensureCCW(baseWithOffset2D);
+    const nBase = baseCorners2D.length;
+
+    verticalFeatureVertices.forEach((vFeat, cIdx) => {
+      const cPt = vFeat.pt2D;
+      const { zBottom, zTop } = evaluateMiterZ(
+        cPt.x,
+        cPt.y,
+        z0,
+        z1,
+        b2d,
+        p3d.miterCutTopDeg,
+        p3d.miterCutTopAxis,
+        p3d.miterCutBottomDeg,
+        p3d.miterCutBottomAxis,
+      );
+      const pTop = transformPt(cPt.x, cPt.y, zTop);
+      const pBot = transformPt(cPt.x, cPt.y, zBottom);
+
+      const topBevelD = Number(p3d.vertexBevelsMm[`top_${cIdx}`] ?? 0);
+      const botBevelD = Number(p3d.vertexBevelsMm[`bot_${cIdx}`] ?? 0);
+
+      const topVertObj: DirectVertex3D = {
+        vertexId: `${bodyId}_vert_top_${cIdx}`,
+        bodyId,
+        entityId: entId,
+        cornerIndex: cIdx,
+        end: "top",
+        label: `Vértice Superior #${cIdx + 1}`,
+        point3D: pTop,
+        bevelDistMm: topBevelD,
+      };
+      const botVertObj: DirectVertex3D = {
+        vertexId: `${bodyId}_vert_bot_${cIdx}`,
+        bodyId,
+        entityId: entId,
+        cornerIndex: cIdx,
+        end: "bottom",
+        label: `Vértice Inferior #${cIdx + 1}`,
+        point3D: pBot,
+        bevelDistMm: botBevelD,
+      };
+      bodyVertices.push(topVertObj, botVertObj);
+      verticesById.set(topVertObj.vertexId, topVertObj);
+      verticesById.set(botVertObj.vertexId, botVertObj);
+
+      // Gera face triangular de Bisel Localizado 45° no vértice quando ativo
+      if (topBevelD > 0.05 && nBase >= 3) {
+        const curr2D = baseCorners2D[cIdx % nBase]!;
+        const prev2D = baseCorners2D[(cIdx - 1 + nBase) % nBase]!;
+        const next2D = baseCorners2D[(cIdx + 1) % nBase]!;
+        const l1 = Math.hypot(prev2D.x - curr2D.x, prev2D.y - curr2D.y) || 1;
+        const l2 = Math.hypot(next2D.x - curr2D.x, next2D.y - curr2D.y) || 1;
+        const dEff = Math.min(topBevelD, l1 * 0.45, l2 * 0.45, (z1 - z0) * 0.45);
+
+        const bPrev = transformPt(
+          curr2D.x + ((prev2D.x - curr2D.x) / l1) * dEff,
+          curr2D.y + ((prev2D.y - curr2D.y) / l1) * dEff,
+          zTop + 0.05,
+        );
+        const bNext = transformPt(
+          curr2D.x + ((next2D.x - curr2D.x) / l2) * dEff,
+          curr2D.y + ((next2D.y - curr2D.y) / l2) * dEff,
+          zTop + 0.05,
+        );
+        const bVert = transformPt(curr2D.x, curr2D.y, zTop - dEff);
+
+        const bevelNormal = rotateNormal3D({ x: 0, y: 0, z: 1 }, p3d.rotation3D);
+        const startIdx = indices.length;
+        const baseV = positions.length / 3;
+        positions.push(bPrev.x, bPrev.y, bPrev.z, bVert.x, bVert.y, bVert.z, bNext.x, bNext.y, bNext.z);
+        for (let k = 0; k < 3; k++) normals.push(bevelNormal.x, bevelNormal.y, bevelNormal.z);
+        indices.push(baseV, baseV + 1, baseV + 2);
+        const meshFaceIndex = globalMeshFaceIdx++;
+        faceGroups.push({ faceIndex: meshFaceIndex, start: startIdx, count: 3 });
+
+        const bevelArea = triangleArea3D(bPrev, bVert, bNext);
+        const bevelFace: DirectFace3D = {
+          faceId: `${bodyId}_face_bevel_top_${cIdx}`,
+          meshFaceIndex,
+          bodyId,
+          entityId: entId,
+          role: "miter",
+          sideIndex: 200 + cIdx,
+          label: `Bisel de Vértice Superior #${cIdx + 1} (${dEff.toFixed(1)} mm × 45°)`,
+          normal: bevelNormal,
+          centroid: computePolygonCentroid3D([bPrev, bVert, bNext]),
+          areaMm2: bevelArea,
+          polygon3D: [bPrev, bVert, bNext],
+        };
+        bodyFaces.push(bevelFace);
+        facesById.set(bevelFace.faceId, bevelFace);
+        facesByMeshIndex.set(meshFaceIndex, bevelFace);
+
+        edgePolylines.push({
+          edgeIndex: globalMeshEdgeIdx++,
+          vertices: [
+            bPrev.x, bPrev.y, bPrev.z,
+            bVert.x, bVert.y, bVert.z,
+            bNext.x, bNext.y, bNext.z,
+            bPrev.x, bPrev.y, bPrev.z,
+          ],
+          isSeam: false,
+          isTangentEdge: false,
+        });
+      }
+
+      if (botBevelD > 0.05 && nBase >= 3) {
+        const curr2D = baseCorners2D[cIdx % nBase]!;
+        const prev2D = baseCorners2D[(cIdx - 1 + nBase) % nBase]!;
+        const next2D = baseCorners2D[(cIdx + 1) % nBase]!;
+        const l1 = Math.hypot(prev2D.x - curr2D.x, prev2D.y - curr2D.y) || 1;
+        const l2 = Math.hypot(next2D.x - curr2D.x, next2D.y - curr2D.y) || 1;
+        const dEff = Math.min(botBevelD, l1 * 0.45, l2 * 0.45, (z1 - z0) * 0.45);
+
+        const bPrev = transformPt(
+          curr2D.x + ((prev2D.x - curr2D.x) / l1) * dEff,
+          curr2D.y + ((prev2D.y - curr2D.y) / l1) * dEff,
+          zBottom - 0.05,
+        );
+        const bNext = transformPt(
+          curr2D.x + ((next2D.x - curr2D.x) / l2) * dEff,
+          curr2D.y + ((next2D.y - curr2D.y) / l2) * dEff,
+          zBottom - 0.05,
+        );
+        const bVert = transformPt(curr2D.x, curr2D.y, zBottom + dEff);
+
+        const bevelNormal = rotateNormal3D({ x: 0, y: 0, z: -1 }, p3d.rotation3D);
+        const startIdx = indices.length;
+        const baseV = positions.length / 3;
+        positions.push(bPrev.x, bPrev.y, bPrev.z, bNext.x, bNext.y, bNext.z, bVert.x, bVert.y, bVert.z);
+        for (let k = 0; k < 3; k++) normals.push(bevelNormal.x, bevelNormal.y, bevelNormal.z);
+        indices.push(baseV, baseV + 1, baseV + 2);
+        const meshFaceIndex = globalMeshFaceIdx++;
+        faceGroups.push({ faceIndex: meshFaceIndex, start: startIdx, count: 3 });
+
+        const bevelArea = triangleArea3D(bPrev, bNext, bVert);
+        const bevelFace: DirectFace3D = {
+          faceId: `${bodyId}_face_bevel_bot_${cIdx}`,
+          meshFaceIndex,
+          bodyId,
+          entityId: entId,
+          role: "miter",
+          sideIndex: 250 + cIdx,
+          label: `Bisel de Vértice Inferior #${cIdx + 1} (${dEff.toFixed(1)} mm × 45°)`,
+          normal: bevelNormal,
+          centroid: computePolygonCentroid3D([bPrev, bNext, bVert]),
+          areaMm2: bevelArea,
+          polygon3D: [bPrev, bNext, bVert],
+        };
+        bodyFaces.push(bevelFace);
+        facesById.set(bevelFace.faceId, bevelFace);
+        facesByMeshIndex.set(meshFaceIndex, bevelFace);
+
+        edgePolylines.push({
+          edgeIndex: globalMeshEdgeIdx++,
+          vertices: [
+            bPrev.x, bPrev.y, bPrev.z,
+            bNext.x, bNext.y, bNext.z,
+            bVert.x, bVert.y, bVert.z,
+            bPrev.x, bPrev.y, bPrev.z,
+          ],
+          isSeam: false,
+          isTangentEdge: false,
+        });
+      }
+    });
+
+    // Gera chanfros em bisel localizado nas arestas horizontais de topo/base (`edge_top_i`, `edge_bot_i`)
+    for (let i = 0; i < nBase; i++) {
+      const edgeTopBevelD = Number(p3d.vertexBevelsMm[`edge_top_${i}`] ?? 0);
+      const edgeBotBevelD = Number(p3d.vertexBevelsMm[`edge_bot_${i}`] ?? 0);
+      if (edgeTopBevelD <= 0.05 && edgeBotBevelD <= 0.05) continue;
+
+      const a2d = baseCorners2D[i]!;
+      const b2dPt = baseCorners2D[(i + 1) % nBase]!;
+      const dx = b2dPt.x - a2d.x;
+      const dy = b2dPt.y - a2d.y;
+      const segLen = Math.hypot(dx, dy) || 1;
+      const nx = dy / segLen;
+      const ny = -dx / segLen;
+
+      if (edgeTopBevelD > 0.05) {
+        const dEff = Math.min(edgeTopBevelD, (z1 - z0) * 0.45, segLen * 0.45);
+        const w0 = transformPt(a2d.x, a2d.y, z1 - dEff);
+        const w1 = transformPt(b2dPt.x, b2dPt.y, z1 - dEff);
+        const c1 = transformPt(b2dPt.x - nx * dEff, b2dPt.y - ny * dEff, z1 + 0.05);
+        const c0 = transformPt(a2d.x - nx * dEff, a2d.y - ny * dEff, z1 + 0.05);
+        const bNorm = rotateNormal3D(
+          { x: nx * Math.SQRT1_2, y: ny * Math.SQRT1_2, z: Math.SQRT1_2 },
+          p3d.rotation3D,
+        );
+        const startIdx = indices.length;
+        const baseV = positions.length / 3;
+        positions.push(
+          w0.x, w0.y, w0.z,
+          w1.x, w1.y, w1.z,
+          c1.x, c1.y, c1.z,
+          c0.x, c0.y, c0.z,
+        );
+        for (let k = 0; k < 4; k++) normals.push(bNorm.x, bNorm.y, bNorm.z);
+        indices.push(baseV, baseV + 1, baseV + 2, baseV, baseV + 2, baseV + 3);
+        const meshFaceIndex = globalMeshFaceIdx++;
+        faceGroups.push({ faceIndex: meshFaceIndex, start: startIdx, count: 6 });
+
+        const bevelArea = triangleArea3D(w0, w1, c1) + triangleArea3D(w0, c1, c0);
+        const bevelFace: DirectFace3D = {
+          faceId: `${bodyId}_face_edge_bevel_top_${i}`,
+          meshFaceIndex,
+          bodyId,
+          entityId: entId,
+          role: "miter",
+          sideIndex: 300 + i,
+          label: `Chanfro Borda Superior #${i + 1} (${dEff.toFixed(1)} mm × 45°)`,
+          normal: bNorm,
+          centroid: computePolygonCentroid3D([w0, w1, c1, c0]),
+          areaMm2: bevelArea,
+          polygon3D: [w0, w1, c1, c0],
+        };
+        bodyFaces.push(bevelFace);
+        facesById.set(bevelFace.faceId, bevelFace);
+        facesByMeshIndex.set(meshFaceIndex, bevelFace);
+
+        edgePolylines.push({
+          edgeIndex: globalMeshEdgeIdx++,
+          vertices: [
+            w0.x, w0.y, w0.z,
+            w1.x, w1.y, w1.z,
+            c1.x, c1.y, c1.z,
+            c0.x, c0.y, c0.z,
+            w0.x, w0.y, w0.z,
+          ],
+          isSeam: false,
+          isTangentEdge: false,
+        });
+      }
+
+      if (edgeBotBevelD > 0.05) {
+        const dEff = Math.min(edgeBotBevelD, (z1 - z0) * 0.45, segLen * 0.45);
+        const w0 = transformPt(a2d.x, a2d.y, z0 + dEff);
+        const w1 = transformPt(b2dPt.x, b2dPt.y, z0 + dEff);
+        const c1 = transformPt(b2dPt.x - nx * dEff, b2dPt.y - ny * dEff, z0 - 0.05);
+        const c0 = transformPt(a2d.x - nx * dEff, a2d.y - ny * dEff, z0 - 0.05);
+        const bNorm = rotateNormal3D(
+          { x: nx * Math.SQRT1_2, y: ny * Math.SQRT1_2, z: -Math.SQRT1_2 },
+          p3d.rotation3D,
+        );
+        const startIdx = indices.length;
+        const baseV = positions.length / 3;
+        positions.push(
+          c0.x, c0.y, c0.z,
+          c1.x, c1.y, c1.z,
+          w1.x, w1.y, w1.z,
+          w0.x, w0.y, w0.z,
+        );
+        for (let k = 0; k < 4; k++) normals.push(bNorm.x, bNorm.y, bNorm.z);
+        indices.push(baseV, baseV + 1, baseV + 2, baseV, baseV + 2, baseV + 3);
+        const meshFaceIndex = globalMeshFaceIdx++;
+        faceGroups.push({ faceIndex: meshFaceIndex, start: startIdx, count: 6 });
+
+        const bevelArea = triangleArea3D(c0, c1, w1) + triangleArea3D(c0, w1, w0);
+        const bevelFace: DirectFace3D = {
+          faceId: `${bodyId}_face_edge_bevel_bot_${i}`,
+          meshFaceIndex,
+          bodyId,
+          entityId: entId,
+          role: "miter",
+          sideIndex: 350 + i,
+          label: `Chanfro Borda Inferior #${i + 1} (${dEff.toFixed(1)} mm × 45°)`,
+          normal: bNorm,
+          centroid: computePolygonCentroid3D([c0, c1, w1, w0]),
+          areaMm2: bevelArea,
+          polygon3D: [c0, c1, w1, w0],
+        };
+        bodyFaces.push(bevelFace);
+        facesById.set(bevelFace.faceId, bevelFace);
+        facesByMeshIndex.set(meshFaceIndex, bevelFace);
+
+        edgePolylines.push({
+          edgeIndex: globalMeshEdgeIdx++,
+          vertices: [
+            c0.x, c0.y, c0.z,
+            c1.x, c1.y, c1.z,
+            w1.x, w1.y, w1.z,
+            w0.x, w0.y, w0.z,
+            c0.x, c0.y, c0.z,
+          ],
+          isSeam: false,
+          isTangentEdge: false,
+        });
+      }
+    }
 
     // Calcula Bounding Box 3D do corpo
     let minX = Infinity;
@@ -2329,6 +2832,9 @@ export function buildDirectTopology3DScene(
       edgeFilletRadiusMm: p3d.edgeFilletRadiusMm,
       innerFilletRadiusMm,
       edgeChamferDistMm: p3d.edgeChamferDistMm,
+      cornerFilletsMm: p3d.cornerFilletsMm,
+      cornerChamfersMm: p3d.cornerChamfersMm,
+      vertexBevelsMm: p3d.vertexBevelsMm,
       shellWallThicknessMm: p3d.shellWallThicknessMm,
       shellThicknessMm: p3d.shellThicknessMm,
       sheetThicknessMm: defaultThicknessMm,
@@ -2367,6 +2873,7 @@ export function buildDirectTopology3DScene(
       volumeMm3,
       faces: bodyFaces,
       edges: bodyEdges,
+      vertices: bodyVertices,
       snapCandidates,
     };
 
@@ -2477,6 +2984,7 @@ export function buildDirectTopology3DScene(
     bodies,
     facesById,
     edgesById,
+    verticesById,
     bodiesById,
     facesByMeshIndex,
     edgesByMeshIndex,
@@ -2515,6 +3023,17 @@ export function formatSubElementTelemetry3D(
   scene: DirectTopology3DScene,
   sel: SubElementSelectionState3D,
 ): string | null {
+  if (sel.vertexIds && sel.vertexIds.length > 0) {
+    const verts = sel.vertexIds
+      .map((id) => scene.verticesById.get(id))
+      .filter((v): v is DirectVertex3D => Boolean(v));
+    if (verts.length > 0) {
+      const v0 = verts[0]!;
+      const countLabel = verts.length === 1 ? "1 vértice" : `${verts.length} vértices`;
+      return `${countLabel} | (${v0.point3D.x.toFixed(1)}, ${v0.point3D.y.toFixed(1)}, ${v0.point3D.z.toFixed(1)}) mm`;
+    }
+  }
+
   if (sel.edgeIds.length > 0) {
     const edges = sel.edgeIds
       .map((id) => scene.edgesById.get(id))
@@ -2585,8 +3104,10 @@ export function hitTestSubElement3DInScreenSpace(
   orbitProjection: WorkplaneOrbitProjection2D,
   view: { tx: number; ty: number; k: number },
   edgeTolerancePx = 14,
+  selectionScope: SelectionScope3D = "auto",
 ): {
-  kind: "edge" | "face" | "none";
+  kind: "vertex" | "edge" | "face" | "none";
+  vertex?: DirectVertex3D;
   edge?: DirectEdge3D;
   face?: DirectFace3D;
   body?: DirectBody3D;
@@ -2599,28 +3120,59 @@ export function hitTestSubElement3DInScreenSpace(
     };
   };
 
-  // 1. Prioridade para Arestas (quinas e bordas com tolerância de toque)
-  let bestEdge: { edge: DirectEdge3D; distPx: number; depthZ: number } | null = null;
-  for (const body of scene.bodies) {
-    for (const edge of body.edges) {
-      const poly = edge.polyline3D;
-      for (let i = 0; i < poly.length - 1; i++) {
-        const s0 = toScreen(poly[i]!);
-        const s1 = toScreen(poly[i + 1]!);
-        const dPx = distToSegment2D(screenPt, s0, s1);
-        if (dPx <= edgeTolerancePx) {
-          const depthZ = (poly[i]!.z + poly[i + 1]!.z) * 0.5;
-          if (!bestEdge || dPx < bestEdge.distPx - 2 || (Math.abs(dPx - bestEdge.distPx) <= 2 && depthZ > bestEdge.depthZ)) {
-            bestEdge = { edge, distPx: dPx, depthZ };
+  // 0. Hit-test de Vértices 3D (quando selectionScope === "vertex")
+  if (selectionScope === "vertex") {
+    let bestVertex: { vertex: DirectVertex3D; distPx: number; depthZ: number } | null = null;
+    const vertTol = Math.max(16, edgeTolerancePx + 4);
+    for (const body of scene.bodies) {
+      for (const v of body.vertices) {
+        const sp = toScreen(v.point3D);
+        const dPx = Math.hypot(screenPt.x - sp.x, screenPt.y - sp.y);
+        if (dPx <= vertTol) {
+          if (
+            !bestVertex ||
+            dPx < bestVertex.distPx - 2 ||
+            (Math.abs(dPx - bestVertex.distPx) <= 2 && v.point3D.z > bestVertex.depthZ)
+          ) {
+            bestVertex = { vertex: v, distPx: dPx, depthZ: v.point3D.z };
           }
         }
       }
     }
+    if (bestVertex) {
+      const body = scene.bodiesById.get(bestVertex.vertex.bodyId);
+      return { kind: "vertex", vertex: bestVertex.vertex, body };
+    }
   }
 
-  if (bestEdge) {
-    const body = scene.bodiesById.get(bestEdge.edge.bodyId);
-    return { kind: "edge", edge: bestEdge.edge, body };
+  // 1. Prioridade para Arestas (quinas e bordas com tolerância de toque)
+  if (selectionScope !== "face" && selectionScope !== "body") {
+    let bestEdge: { edge: DirectEdge3D; distPx: number; depthZ: number } | null = null;
+    for (const body of scene.bodies) {
+      for (const edge of body.edges) {
+        const poly = edge.polyline3D;
+        for (let i = 0; i < poly.length - 1; i++) {
+          const s0 = toScreen(poly[i]!);
+          const s1 = toScreen(poly[i + 1]!);
+          const dPx = distToSegment2D(screenPt, s0, s1);
+          if (dPx <= edgeTolerancePx) {
+            const depthZ = (poly[i]!.z + poly[i + 1]!.z) * 0.5;
+            if (
+              !bestEdge ||
+              dPx < bestEdge.distPx - 2 ||
+              (Math.abs(dPx - bestEdge.distPx) <= 2 && depthZ > bestEdge.depthZ)
+            ) {
+              bestEdge = { edge, distPx: dPx, depthZ };
+            }
+          }
+        }
+      }
+    }
+
+    if (bestEdge) {
+      const body = scene.bodiesById.get(bestEdge.edge.bodyId);
+      return { kind: "edge", edge: bestEdge.edge, body };
+    }
   }
 
   // 2. Hit-test nas Faces 3D (ordenadas pela face voltada para a câmera / maior Z projetado)
@@ -2696,22 +3248,106 @@ export function applyDirectExtrudeToEntities(
   });
 }
 
+export function applyDirectVertexOrEdgeBevel3DToEntities(
+  entities: Entity[],
+  targetIds: string[],
+  bevelKeys: string[],
+  bevelDistMm: number,
+): Entity[] {
+  const clamped = Math.max(0, Number(bevelDistMm.toFixed(2)));
+  const idSet = new Set(targetIds);
+  return entities.map((e) => {
+    if (!idSet.has(e.id)) return e;
+    const cur = getEntityDirect3DParams(e);
+    const nextBevels: Record<string, number> = { ...cur.vertexBevelsMm };
+    for (const k of bevelKeys) {
+      if (clamped <= 0.01) {
+        delete nextBevels[k];
+      } else {
+        nextBevels[k] = clamped;
+      }
+    }
+    return {
+      ...e,
+      params: {
+        ...(e.params ?? {}),
+        vertexBevelsMm: nextBevels,
+      },
+    };
+  });
+}
+
 export function applyDirectFilletOrChamfer3DToEntities(
   entities: Entity[],
   targetIds: string[],
   mode: "fillet" | "chamfer",
   valueMm: number,
+  targetEdgeIndices?: number[],
+  targetBevelKeys?: string[],
 ): Entity[] {
   const clamped = Math.max(0, Number(valueMm.toFixed(2)));
   const idSet = new Set(targetIds);
+
+  // Se o usuário selecionou um Vértice 3D ou Aresta Horizontal de Topo/Base em modo Chanfro -> Bisel Localizado 45°
+  if (mode === "chamfer" && targetBevelKeys && targetBevelKeys.length > 0) {
+    return applyDirectVertexOrEdgeBevel3DToEntities(entities, targetIds, targetBevelKeys, clamped);
+  }
+
   return entities.map((e) => {
     if (!idSet.has(e.id)) return e;
+    const cur = getEntityDirect3DParams(e);
+
+    // Se o usuário selecionou arestas verticais específicas (não a peça inteira), aplica APENAS nessas quinas!
+    const loop = extractBaseClosedLoop2D(e);
+    const totalCorners = loop?.corners.length || 4;
+    if (
+      targetEdgeIndices &&
+      targetEdgeIndices.length > 0 &&
+      targetEdgeIndices.length < totalCorners
+    ) {
+      const nextCornerFillets: Record<number, number> = { ...cur.cornerFilletsMm };
+      const nextCornerChamfers: Record<number, number> = { ...cur.cornerChamfersMm };
+      // Se havia fillet/chamfer global anterior, preserva nos outros cantos
+      if (
+        Object.keys(nextCornerFillets).length === 0 &&
+        Object.keys(nextCornerChamfers).length === 0 &&
+        (cur.edgeFilletRadiusMm > 0.05 || cur.edgeChamferDistMm > 0.05)
+      ) {
+        for (let c = 0; c < totalCorners; c++) {
+          if (cur.edgeFilletRadiusMm > 0.05) nextCornerFillets[c] = cur.edgeFilletRadiusMm;
+          if (cur.edgeChamferDistMm > 0.05) nextCornerChamfers[c] = cur.edgeChamferDistMm;
+        }
+      }
+      for (const idx of targetEdgeIndices) {
+        if (mode === "fillet") {
+          nextCornerFillets[idx] = clamped;
+          delete nextCornerChamfers[idx];
+        } else {
+          nextCornerChamfers[idx] = clamped;
+          delete nextCornerFillets[idx];
+        }
+      }
+      return {
+        ...e,
+        params: {
+          ...(e.params ?? {}),
+          edgeFilletRadiusMm: 0,
+          edgeChamferDistMm: 0,
+          cornerFilletsMm: nextCornerFillets,
+          cornerChamfersMm: nextCornerChamfers,
+        },
+      };
+    }
+
+    // Escopo Peça Inteira (BODY) ou todas as quinas selecionadas: aplica globalmente
     return {
       ...e,
       params: {
         ...(e.params ?? {}),
         edgeFilletRadiusMm: mode === "fillet" ? clamped : 0,
         edgeChamferDistMm: mode === "chamfer" ? clamped : 0,
+        cornerFilletsMm: {},
+        cornerChamfersMm: {},
       },
     };
   });
@@ -2743,12 +3379,33 @@ export function applyDirectShell3DToEntities(
 export function applyDirectOffsetFace3DToEntities(
   entities: Entity[],
   targetIds: string[],
-  faceTarget: "top" | "bottom" | "sides" | "side_normal",
+  faceTarget:
+    | "top"
+    | "bottom"
+    | "sides"
+    | "side_normal"
+    | "pos_x"
+    | "neg_x"
+    | "pos_y"
+    | "neg_y",
   deltaMm: number,
   faceNormal?: Vec3Mm,
 ): Entity[] {
   const rounded = Number(deltaMm.toFixed(2));
   const idSet = new Set(targetIds);
+
+  const effectiveNormal: Vec3Mm | undefined =
+    faceNormal ??
+    (faceTarget === "pos_x"
+      ? { x: 1, y: 0, z: 0 }
+      : faceTarget === "neg_x"
+        ? { x: -1, y: 0, z: 0 }
+        : faceTarget === "pos_y"
+          ? { x: 0, y: 1, z: 0 }
+          : faceTarget === "neg_y"
+            ? { x: 0, y: -1, z: 0 }
+            : undefined);
+
   return entities.map((e) => {
     if (!idSet.has(e.id)) return e;
     const cur = getEntityDirect3DParams(e);
@@ -2781,30 +3438,61 @@ export function applyDirectOffsetFace3DToEntities(
         },
       };
     }
-    if (faceTarget === "side_normal" && faceNormal && e.type === "polyline" && e.pts.length >= 3) {
-      const b = boxOf(e);
-      const cx = (b.minX + b.maxX) * 0.5;
-      const cy = (b.minY + b.maxY) * 0.5;
-      const nx = faceNormal.x;
-      const ny = faceNormal.y;
+    if (
+      (faceTarget === "side_normal" ||
+        faceTarget === "pos_x" ||
+        faceTarget === "neg_x" ||
+        faceTarget === "pos_y" ||
+        faceTarget === "neg_y") &&
+      effectiveNormal
+    ) {
+      const nx = effectiveNormal.x;
+      const ny = effectiveNormal.y;
       const nLen = Math.hypot(nx, ny);
       if (nLen > 0.25) {
         const ux = nx / nLen;
         const uy = ny / nLen;
-        const nextPts = e.pts.map((pt) => {
-          const proj = (pt.x - cx) * ux + (pt.y - cy) * uy;
-          if (proj > 0) {
-            return {
-              x: Number((pt.x + ux * rounded).toFixed(2)),
-              y: Number((pt.y + uy * rounded).toFixed(2)),
-            };
+        if (e.type === "rect") {
+          let nextX = e.x;
+          let nextY = e.y;
+          let nextW = e.w;
+          let nextH = e.h;
+          if (Math.abs(ux) >= Math.abs(uy)) {
+            if (ux > 0) {
+              nextW = Math.max(1, Number((e.w + rounded).toFixed(2)));
+            } else {
+              nextX = Number((e.x - rounded).toFixed(2));
+              nextW = Math.max(1, Number((e.w + rounded).toFixed(2)));
+            }
+          } else {
+            if (uy > 0) {
+              nextH = Math.max(1, Number((e.h + rounded).toFixed(2)));
+            } else {
+              nextY = Number((e.y - rounded).toFixed(2));
+              nextH = Math.max(1, Number((e.h + rounded).toFixed(2)));
+            }
           }
-          return pt;
-        });
-        return {
-          ...e,
-          pts: nextPts,
-        };
+          return { ...e, x: nextX, y: nextY, w: nextW, h: nextH };
+        }
+        if (e.type === "polyline" && e.pts.length >= 3) {
+          const b = boxOf(e);
+          const cx = (b.minX + b.maxX) * 0.5;
+          const cy = (b.minY + b.maxY) * 0.5;
+          const nextPts = e.pts.map((pt) => {
+            const proj = (pt.x - cx) * ux + (pt.y - cy) * uy;
+            if (proj > 0) {
+              return {
+                x: Number((pt.x + ux * rounded).toFixed(2)),
+                y: Number((pt.y + uy * rounded).toFixed(2)),
+              };
+            }
+            return pt;
+          });
+          return {
+            ...e,
+            pts: nextPts,
+          };
+        }
       }
     }
     return {
