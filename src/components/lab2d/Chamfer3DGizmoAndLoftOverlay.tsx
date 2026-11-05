@@ -46,9 +46,26 @@ import {
 import {
   getEntityElevationZ,
   setEntityElevationZ,
+  unfoldLoft3DShellToFlatPattern2D,
   type LoftBodyMode,
   type LoftSurfaceMode,
 } from "@/lib/lab2d/cadLoft3DEngine";
+import {
+  applyAdvancedHole3DToEntities,
+  applyDirectArray3DToEntities,
+  applyDirectBoolean3DBetweenBodies,
+  applyDirectRevolve3DToEntities,
+  applyDirectSweep3DToEntities,
+  applyExplodedView3DToEntities,
+  computeExactBendAllowance,
+  computeTruncatedConeDevelopment,
+  evaluateSectionPlane3DCrossSection,
+  executeDemoChapaCaldeiraria3D,
+  generateStructuralCutListFrom3DScene,
+  runAssemblyInterferenceAndClearanceCheck,
+  type AdvancedHoleType3D,
+  type SectionPlane3DState,
+} from "@/lib/lab2d/chamfer3DMasterSuite";
 import {
   HOLE_METRIC_SPECS_3D,
   applyDirectAlignFlush3DToEntities,
@@ -340,6 +357,22 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   const [transformAxisTarget, setTransformAxisTarget] = useState<"x" | "y" | "z">("x");
   const [isPickingPivotSnap, setIsPickingPivotSnap] = useState<boolean>(false);
   const [snappedPivotLabel, setSnappedPivotLabel] = useState<string | null>(null);
+
+  // Estados P1–P7 (CHAMFER 3D 2.0 Master Suite)
+  const [revolveAngleDeg, setRevolveAngleDeg] = useState<number>(360);
+  const [revolveAxis, setRevolveAxis] = useState<"x" | "y" | "z">("y");
+  const [sweepPathPreset, setSweepPathPreset] = useState<"arc90" | "straight" | "scurve">("arc90");
+  const [sweepHollow, setSweepHollow] = useState<boolean>(true);
+  const [holeType3D, setHoleType3D] = useState<AdvancedHoleType3D>("through");
+  const [sectionPlaneState, setSectionPlaneState] = useState<SectionPlane3DState>({
+    enabled: false,
+    axis: "x",
+    offsetMm: 0,
+    flipDirection: false,
+    showHatch: true,
+  });
+  const [cutListModalOpen, setCutListModalOpen] = useState<boolean>(false);
+  const [csvCopiedFeedback, setCsvCopiedFeedback] = useState<boolean>(false);
 
   // Sessão do Teclado Numérico Flutuante In-Canvas (OCULTO POR PADRÃO)
   const [numpadSession, setNumpadSession] = useState<ActiveParametricNumpadSession | null>(null);
@@ -2513,8 +2546,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       case "color_material_3d":
         return {
           icon: Palette,
-          label: "Material 3D",
-          valueText: primaryBody?.materialName?.split(" ")[0] ?? "Aço",
+          label: "Inspecionar / Seção / BOM",
+          valueText: sectionPlaneState.enabled
+            ? `Seção ${sectionPlaneState.axis.toUpperCase()}=${sectionPlaneState.offsetMm}mm`
+            : `${scene.bodies.length} Peça(s)`,
         };
       case "sketch_on_face_3d":
         return {
@@ -2526,13 +2561,19 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         return {
           icon: RotateCw,
           label: "Revolve 3D",
-          valueText: "360°",
+          valueText: `${revolveAngleDeg}° (${revolveAxis.toUpperCase()})`,
+        };
+      case "sweep_3d":
+        return {
+          icon: Compass,
+          label: "Sweep 3D",
+          valueText: sweepPathPreset === "arc90" ? "Arco 90° R120" : sweepPathPreset === "straight" ? "Reto 250mm" : "Curva S",
         };
       case "hole_3d":
         return {
           icon: CircleDot,
           label: "Furação ISO 3D",
-          valueText: "M6–M20",
+          valueText: holeType3D.toUpperCase(),
         };
       case "project_3d":
         return {
@@ -2559,6 +2600,14 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     primaryFace,
     edgeDiagonalGizmo,
     vertexBevelGizmo,
+    revolveAngleDeg,
+    revolveAxis,
+    sweepPathPreset,
+    holeType3D,
+    sectionPlaneState.enabled,
+    sectionPlaneState.axis,
+    sectionPlaneState.offsetMm,
+    scene.bodies.length,
   ]);
 
   // Estilos adaptados 100% ao Tema Ativo (Claro #FFFFFF / Escuro #0B1220 / AMOLED #05080F)
@@ -2698,6 +2747,67 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             className="shrink-0 rounded-full border border-cyan-500/50 bg-cyan-500/15 hover:bg-cyan-500/25 px-2.5 py-0.5 font-mono text-[9.5px] font-bold text-cyan-300 cursor-pointer whitespace-nowrap"
           >
             ▶ Demo 10 Passos
+          </button>
+          <button
+            type="button"
+            data-testid="chamfer-3d-demo-sheetmetal-btn"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              triggerHaptic("action");
+              const chapaDemo = executeDemoChapaCaldeiraria3D(2, 2, 0.33);
+              onCommitEntities?.(
+                () => chapaDemo.entities3D,
+                chapaDemo.entities3D.map((e) => e.id),
+              );
+              const firstEntity = chapaDemo.entities3D[0];
+              if (firstEntity) {
+                setSubSel({
+                  faceIds: [],
+                  edgeIds: [],
+                  vertexIds: [],
+                  bodyIds: [`body_${firstEntity.id}`],
+                  selectionScope: "body",
+                  activePivot3D: { x: 0, y: 0, z: 40 },
+                  activeHingeEdgeId: null,
+                });
+              }
+            }}
+            title="▶ Demo Chapa: Suporte Dobrado 90° em Chapa #14 (t=2mm, R=2mm, K=0.33, BA=4.178mm) com Furação e Planificação"
+            className="shrink-0 rounded-full border border-amber-500/50 bg-amber-500/15 hover:bg-amber-500/25 px-2.5 py-0.5 font-mono text-[9.5px] font-bold text-amber-300 cursor-pointer whitespace-nowrap"
+          >
+            ▶ Demo Chapa
+          </button>
+          <button
+            type="button"
+            data-testid="chamfer-3d-quick-section-btn"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              triggerHaptic("selection");
+              setSectionPlaneState((s) => ({ ...s, enabled: !s.enabled }));
+              setDirectTool("color_material_3d");
+            }}
+            title="Ativar / Desativar Plano de Corte em Seção (Section Plane X/Y/Z) com Hachura ao Vivo"
+            className={cn(
+              "shrink-0 rounded-full border px-2 py-0.5 font-mono text-[9.5px] font-bold cursor-pointer whitespace-nowrap",
+              sectionPlaneState.enabled
+                ? "border-rose-400 bg-rose-500/25 text-rose-200"
+                : "border-rose-500/40 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300",
+            )}
+          >
+            ✂ Seção
+          </button>
+          <button
+            type="button"
+            data-testid="chamfer-3d-quick-cutlist-btn"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              triggerHaptic("selection");
+              setCutListModalOpen((o) => !o);
+            }}
+            title="Abrir Lista de Corte Estrutural, BOM 3D, Interferência e Caldeiraria (BA / Tronco de Cone)"
+            className="shrink-0 rounded-full border border-violet-500/40 bg-violet-500/15 hover:bg-violet-500/25 px-2 py-0.5 font-mono text-[9.5px] font-bold text-violet-300 cursor-pointer whitespace-nowrap"
+          >
+            📋 BOM / Corte
           </button>
           {scene.bodies.length > 0 && (
             <button
@@ -3482,6 +3592,27 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           {(primaryBody ?? scene.bodies[0]) && directTool === "hole_3d" && (
             <>
               <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              {(
+                [
+                  { id: "through", label: "Passante" },
+                  { id: "blind", label: "Cego" },
+                  { id: "counterbore", label: "Rebaixado" },
+                  { id: "countersink", label: "Escareado" },
+                  { id: "spotface", label: "Alojam." },
+                  { id: "threaded", label: "Roscado" },
+                ] as { id: AdvancedHoleType3D; label: string }[]
+              ).map((ht) => (
+                <button
+                  key={ht.id}
+                  type="button"
+                  data-testid={`chamfer-3d-hole-type-${ht.id}`}
+                  onClick={() => setHoleType3D(ht.id)}
+                  className={pillBtnClass(holeType3D === ht.id)}
+                >
+                  {ht.label}
+                </button>
+              ))}
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
               {(["M6", "M8", "M10", "M12", "M16", "M20"] as MetricHoleThreadSize[]).map((tCode) => {
                 const spec = HOLE_METRIC_SPECS_3D[tCode];
                 const targetIds =
@@ -3498,20 +3629,252 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     onClick={() => {
                       triggerHaptic("action");
                       onCommitEntities?.((prev) => {
-                        const res = applyDirectHole3DToEntities(prev, targetIds, {
+                        const res = applyAdvancedHole3DToEntities(prev, targetIds, {
+                          holeType: holeType3D,
                           threadSize: tCode,
-                          holeType: "through",
+                          depthMm: holeType3D === "blind" ? 18 : undefined,
+                          targetFace: primaryFace ?? null,
                         });
                         return res.updatedEntities;
                       }, targetIds);
                     }}
-                    title={`Inserir Furo Passante ${tCode} (Broca Rosca Ø${spec.tapDrillDiameterMm}mm / Passante Ø${spec.clearanceDiameterMm}mm)`}
+                    title={`Inserir Furo ${holeType3D.toUpperCase()} ${tCode} (Broca Rosca Ø${spec.tapDrillDiameterMm}mm / Passante Ø${spec.clearanceDiameterMm}mm)`}
                     className={pillBtnClass(false)}
                   >
                     {tCode} (Ø{spec.clearanceDiameterMm})
                   </button>
                 );
               })}
+              <button
+                type="button"
+                data-testid="chamfer-3d-hole-polar-array-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  const targetIds =
+                    activeTargetEntityIds.length > 0
+                      ? activeTargetEntityIds
+                      : scene.bodies[0]
+                        ? [scene.bodies[0].entityId]
+                        : [];
+                  onCommitEntities?.((prev) => {
+                    const res = applyDirectArray3DToEntities(prev, targetIds, {
+                      mode: "polar",
+                      polarCount: 6,
+                      polarTotalAngleDeg: 360,
+                      polarCenter3D: primaryBody?.pivot3D ?? { x: 0, y: 0, z: 0 },
+                    });
+                    return res.updatedEntities;
+                  }, targetIds);
+                }}
+                className={pillBtnClass(false)}
+                title="Repetir em Padrão Polar 3D (6× em 360°)"
+              >
+                Array Polar 6×
+              </button>
+            </>
+          )}
+
+          {directTool === "revolve_3d" && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              {(["x", "y", "z"] as const).map((ax) => (
+                <button
+                  key={ax}
+                  type="button"
+                  data-testid={`chamfer-3d-revolve-axis-${ax}`}
+                  onClick={() => setRevolveAxis(ax)}
+                  className={pillBtnClass(revolveAxis === ax)}
+                >
+                  Eixo {ax.toUpperCase()}
+                </button>
+              ))}
+              {[90, 180, 270, 360].map((ang) => (
+                <button
+                  key={ang}
+                  type="button"
+                  data-testid={`chamfer-3d-revolve-angle-${ang}`}
+                  onClick={() => setRevolveAngleDeg(ang)}
+                  className={pillBtnClass(revolveAngleDeg === ang)}
+                >
+                  {ang}°
+                </button>
+              ))}
+              <button
+                type="button"
+                data-testid="chamfer-3d-revolve-apply-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  const targetIds =
+                    activeTargetEntityIds.length > 0
+                      ? activeTargetEntityIds
+                      : scene.bodies[0]
+                        ? [scene.bodies[0].entityId]
+                        : [];
+                  onCommitEntities?.((prev) => {
+                    const res = applyDirectRevolve3DToEntities(prev, targetIds, {
+                      axis: revolveAxis,
+                      angleDeg: revolveAngleDeg,
+                      direction: "ccw",
+                      operation: "new_body",
+                    });
+                    return res.updatedEntities;
+                  }, targetIds);
+                }}
+                className="shrink-0 rounded-full bg-cyan-600 hover:bg-cyan-500 px-2.5 py-0.5 font-mono text-[10px] font-bold text-white cursor-pointer"
+              >
+                ✓ Revolucionar
+              </button>
+            </>
+          )}
+
+          {directTool === "sweep_3d" && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              {(
+                [
+                  { id: "arc90" as const, label: "Arco 90° (R120)" },
+                  { id: "straight" as const, label: "Reto (250mm)" },
+                  { id: "scurve" as const, label: "Curva S" },
+                ] as const
+              ).map((sp) => (
+                <button
+                  key={sp.id}
+                  type="button"
+                  data-testid={`chamfer-3d-sweep-path-${sp.id}`}
+                  onClick={() => setSweepPathPreset(sp.id)}
+                  className={pillBtnClass(sweepPathPreset === sp.id)}
+                >
+                  {sp.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => setSweepHollow((h) => !h)}
+                className={pillBtnClass(sweepHollow)}
+              >
+                {sweepHollow ? "Tubo Oco (3mm)" : "Maciço"}
+              </button>
+              <button
+                type="button"
+                data-testid="chamfer-3d-sweep-apply-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  const targetIds =
+                    activeTargetEntityIds.length > 0
+                      ? activeTargetEntityIds
+                      : scene.bodies[0]
+                        ? [scene.bodies[0].entityId]
+                        : [];
+                  const pathPts: Vec3Mm[] =
+                    sweepPathPreset === "straight"
+                      ? [
+                          { x: 0, y: 0, z: 0 },
+                          { x: 0, y: 0, z: 125 },
+                          { x: 0, y: 0, z: 250 },
+                        ]
+                      : sweepPathPreset === "scurve"
+                        ? [
+                            { x: 0, y: 0, z: 0 },
+                            { x: 30, y: 0, z: 80 },
+                            { x: 80, y: 0, z: 150 },
+                            { x: 110, y: 0, z: 230 },
+                          ]
+                        : Array.from({ length: 7 }, (_, idx) => {
+                            const t = (idx / 6) * (Math.PI / 2);
+                            const R = 120;
+                            return {
+                              x: R * (1 - Math.cos(t)),
+                              y: 0,
+                              z: R * Math.sin(t),
+                            };
+                          });
+                  onCommitEntities?.((prev) => {
+                    const res = applyDirectSweep3DToEntities(prev, targetIds, {
+                      pathPoints3D: pathPts,
+                      profileRadiusMm: 25,
+                      wallThicknessMm: sweepHollow ? 3 : 0,
+                      orientation: "follow_path",
+                    });
+                    return res.updatedEntities;
+                  }, targetIds);
+                }}
+                className="shrink-0 rounded-full bg-cyan-600 hover:bg-cyan-500 px-2.5 py-0.5 font-mono text-[10px] font-bold text-white cursor-pointer"
+              >
+                ✓ Varrer (Sweep)
+              </button>
+            </>
+          )}
+
+          {directTool === "color_material_3d" && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+              <button
+                type="button"
+                data-testid="chamfer-3d-section-toggle-btn"
+                onClick={() =>
+                  setSectionPlaneState((s) => ({ ...s, enabled: !s.enabled }))
+                }
+                className={pillBtnClass(sectionPlaneState.enabled)}
+              >
+                ✂ Seção: {sectionPlaneState.enabled ? "ON" : "OFF"}
+              </button>
+              {(["x", "y", "z"] as const).map((ax) => (
+                <button
+                  key={ax}
+                  type="button"
+                  data-testid={`chamfer-3d-section-axis-${ax}`}
+                  onClick={() =>
+                    setSectionPlaneState((s) => ({
+                      ...s,
+                      enabled: true,
+                      axis: ax,
+                    }))
+                  }
+                  className={pillBtnClass(
+                    sectionPlaneState.enabled && sectionPlaneState.axis === ax,
+                  )}
+                >
+                  Plano {ax.toUpperCase()}
+                </button>
+              ))}
+              {[-80, 0, 80].map((off) => (
+                <button
+                  key={off}
+                  type="button"
+                  onClick={() =>
+                    setSectionPlaneState((s) => ({
+                      ...s,
+                      enabled: true,
+                      offsetMm: off,
+                    }))
+                  }
+                  className={pillBtnClass(
+                    sectionPlaneState.enabled && sectionPlaneState.offsetMm === off,
+                  )}
+                >
+                  {off >= 0 ? `+${off}` : off}mm
+                </button>
+              ))}
+              <button
+                type="button"
+                data-testid="chamfer-3d-exploded-view-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  onCommitEntities?.((prev) => applyExplodedView3DToEntities(prev, 0.35));
+                }}
+                className={pillBtnClass(false)}
+                title="Aplicar Vista Explodida Radial (Exploded View) na Montagem 3D"
+              >
+                💥 Explodir
+              </button>
+              <button
+                type="button"
+                data-testid="chamfer-3d-open-cutlist-btn"
+                onClick={() => setCutListModalOpen(true)}
+                className="shrink-0 rounded-full bg-violet-600 hover:bg-violet-500 px-2.5 py-0.5 font-mono text-[10px] font-bold text-white cursor-pointer"
+              >
+                📋 Lista Corte / BOM
+              </button>
             </>
           )}
 
@@ -5439,6 +5802,52 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 )}
               </g>
             )}
+
+          {/* ================================================================= */}
+          {/* H. PLANO DE CORTE EM SEÇÃO 3D AO VIVO (SECTION PLANE + HACHURA)   */}
+          {/* ================================================================= */}
+          {sectionPlaneState.enabled &&
+            (() => {
+              const secRes = evaluateSectionPlane3DCrossSection(scene, sectionPlaneState);
+              return (
+                <g data-testid="chamfer-3d-section-plane-overlay">
+                  {secRes.cutPolygons3D.map((poly, pIdx) => {
+                    const pts = poly
+                      .map((p) => {
+                        const s = toScreen(p);
+                        return `${s.x.toFixed(1)},${s.y.toFixed(1)}`;
+                      })
+                      .join(" ");
+                    return (
+                      <polygon
+                        key={`sec_poly_${pIdx}`}
+                        points={pts}
+                        fill="rgba(244, 63, 94, 0.14)"
+                        stroke="#F43F5E"
+                        strokeWidth={2}
+                        strokeDasharray="6 3"
+                      />
+                    );
+                  })}
+                  {secRes.hatchSegments3D.map(([a, b], hIdx) => {
+                    const sa = toScreen(a);
+                    const sb = toScreen(b);
+                    return (
+                      <line
+                        key={`sec_hatch_${hIdx}`}
+                        x1={sa.x}
+                        y1={sa.y}
+                        x2={sb.x}
+                        y2={sb.y}
+                        stroke="#FB7185"
+                        strokeWidth={1.1}
+                        opacity={0.75}
+                      />
+                    );
+                  })}
+                </g>
+              );
+            })()}
         </svg>
       )}
 
@@ -5688,11 +6097,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       ? "DOBRADIÇA"
                       : "PEÇA INTEIRA"}
             </span>
-            <span className="text-slate-100 truncate">
+            <span className={cn("truncate font-semibold", isDark ? "text-slate-100" : "text-slate-800")}>
               {formatSubElementTelemetry3D(scene, subSel)}
             </span>
             {primaryBody && selectionKind3D === "body" && (
-              <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-slate-800/90 border border-slate-700 px-2 py-0.5 text-[9.5px] text-emerald-300">
+              <span className="hidden sm:inline-flex items-center gap-1 rounded-full bg-slate-800/95 border border-slate-700 px-2 py-0.5 text-[9.5px] font-bold text-emerald-300">
                 {(primaryBody.volumeMm3 / 1000).toFixed(1)} cm³ ·{" "}
                 {primaryBody.massGrams >= 1000
                   ? `${(primaryBody.massGrams / 1000).toFixed(2)} kg`
@@ -5723,6 +6132,34 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 Peça Inteira
               </button>
             )}
+            {entities.some((e) => e.type === "loft3d") && (
+              <button
+                type="button"
+                data-testid="chamfer-3d-telemetry-unfold-loft-btn"
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  triggerHaptic("action");
+                  const loftEnt = entities.find((e) => e.type === "loft3d");
+                  if (!loftEnt) return;
+                  const unfolded = unfoldLoft3DShellToFlatPattern2D(loftEnt, {
+                    seamIndex: 0,
+                    thicknessMm: sheetThickness || 2,
+                    kFactor: 0.33,
+                    origin2D: { x: 260, y: 0 },
+                  });
+                  if (unfolded && unfolded.flatEntities.length > 0) {
+                    onCommitEntities?.(
+                      (prev) => [...prev, ...unfolded.flatEntities],
+                      unfolded.flatEntities.map((fe) => fe.id),
+                    );
+                  }
+                }}
+                title="Planificar Casca 3D (Unfold por Triangulação em Verdadeira Grandeza)"
+                className="rounded-full bg-amber-600 hover:bg-amber-500 border border-amber-400/60 px-2 py-0.5 text-[9.5px] font-bold text-white cursor-pointer whitespace-nowrap"
+              >
+                📐 Unfold 2D
+              </button>
+            )}
             <button
               type="button"
               onClick={(ev) => {
@@ -5740,7 +6177,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 onSelectEntities?.([]);
                 setDirectTool("select_3d");
               }}
-              className="rounded-full px-1.5 py-0.5 text-[10px] text-slate-400 hover:text-white cursor-pointer"
+              className={cn(
+                "rounded-full px-1.5 py-0.5 text-[10px] cursor-pointer",
+                isDark ? "text-slate-400 hover:text-white" : "text-slate-500 hover:text-slate-900",
+              )}
               title="Limpar seleção 3D"
             >
               ✕
@@ -6066,7 +6506,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             onClick={(ev) => ev.stopPropagation()}
             className="pointer-events-auto absolute left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none rounded-full border border-sky-500/50 px-3 shadow-lg backdrop-blur-md"
           >
-            <span className="shrink-0 px-1.5 font-mono text-[10.5px] font-bold text-sky-400">
+            <span className="shrink-0 px-1.5 font-mono text-[10.5px] font-bold text-sky-500">
               Loft 3D ({loftSectionIds.length} perfis)
             </span>
             <button
@@ -6097,6 +6537,33 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             >
               Casca ({sheetThickness}mm)
             </button>
+            {entities.some((e) => e.type === "loft3d") && (
+              <button
+                type="button"
+                data-testid="chamfer-loft-3d-unfold-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  const loftEnt = entities.find((e) => e.type === "loft3d");
+                  if (!loftEnt) return;
+                  const unfolded = unfoldLoft3DShellToFlatPattern2D(loftEnt, {
+                    seamIndex: 0,
+                    thicknessMm: sheetThickness || 2,
+                    kFactor: 0.33,
+                    origin2D: { x: 260, y: 0 },
+                  });
+                  if (unfolded && unfolded.flatEntities.length > 0) {
+                    onCommitEntities?.(
+                      (prev) => [...prev, ...unfolded.flatEntities],
+                      unfolded.flatEntities.map((fe) => fe.id),
+                    );
+                  }
+                }}
+                title="Planificar Casca 3D do Loft (Unfold por Triangulação em Verdadeira Grandeza para Laser DXF)"
+                className="shrink-0 rounded-full border border-amber-400/60 bg-amber-600 hover:bg-amber-500 px-2.5 py-0.5 font-mono text-[10px] font-bold text-white cursor-pointer whitespace-nowrap"
+              >
+                📐 Planificar Casca (Unfold 2D)
+              </button>
+            )}
             {loftSectionIds.length >= 2 && onAutoSpaceLoftSectionsZ && (
               <button
                 type="button"
@@ -6135,6 +6602,221 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             </button>
           </div>
         </>
+      )}
+
+      {/* =====================================================================
+          7. MODAL DE LISTA DE CORTE ESTRUTURAL, BOM 3D, INTERFERÊNCIA & CALDEIRARIA
+          ===================================================================== */}
+      {is3DEnvironment && cutListModalOpen && (
+        <div
+          data-testid="chamfer-3d-cutlist-bom-modal"
+          style={{
+            backgroundColor: isDark ? "rgba(15, 23, 42, 0.96)" : "rgba(255, 255, 255, 0.98)",
+            borderColor: isDark ? "rgba(139, 92, 246, 0.55)" : "rgba(124, 58, 237, 0.45)",
+            top: "52px",
+            left: "50%",
+            transform: "translateX(-50%)",
+            width: "min(620px, calc(100% - 24px))",
+            maxHeight: "calc(100% - 110px)",
+          }}
+          onPointerDown={(ev) => ev.stopPropagation()}
+          onClick={(ev) => ev.stopPropagation()}
+          className="pointer-events-auto absolute z-50 flex flex-col overflow-hidden rounded-2xl border p-3 shadow-2xl backdrop-blur-xl font-mono text-[10.5px]"
+        >
+          {(() => {
+            const cutList = generateStructuralCutListFrom3DScene(scene);
+            const interferenceReport = runAssemblyInterferenceAndClearanceCheck(scene);
+            const baRef = computeExactBendAllowance(90, 2, 2, 0.33);
+            const coneRef = computeTruncatedConeDevelopment(400, 200, 300, 2);
+
+            return (
+              <>
+                <div
+                  className={cn(
+                    "flex items-center justify-between border-b pb-2",
+                    isDark ? "border-slate-700/70" : "border-slate-200",
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full bg-violet-600 px-2.5 py-0.5 text-[10px] font-extrabold text-white">
+                      BOM & LISTA DE CORTE 3D
+                    </span>
+                    <span className={cn("font-bold", isDark ? "text-slate-200" : "text-slate-800")}>
+                      {cutList.totalPieces} Peça(s) · {cutList.totalMassKg.toFixed(2)} kg ·{" "}
+                      {cutList.bars6mNeeded} Barra(s) 6m
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      data-testid="chamfer-3d-copy-csv-btn"
+                      onClick={() => {
+                        navigator.clipboard?.writeText(cutList.csvContent);
+                        setCsvCopiedFeedback(true);
+                        setTimeout(() => setCsvCopiedFeedback(false), 1800);
+                      }}
+                      className="rounded-lg bg-emerald-600 hover:bg-emerald-500 px-2.5 py-0.5 text-[9.5px] font-bold text-white cursor-pointer"
+                    >
+                      {csvCopiedFeedback ? "✓ CSV Copiado!" : "⬇ Copiar CSV"}
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="chamfer-3d-close-cutlist-btn"
+                      onClick={() => setCutListModalOpen(false)}
+                      className={cn(
+                        "rounded-lg px-2 py-0.5 font-bold cursor-pointer",
+                        isDark
+                          ? "text-slate-400 hover:bg-slate-800 hover:text-white"
+                          : "text-slate-600 hover:bg-slate-200 hover:text-slate-900",
+                      )}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-2 flex-1 overflow-y-auto space-y-2 pr-1">
+                  {/* Tabela de Corte Estrutural */}
+                  <div
+                    className={cn(
+                      "overflow-x-auto rounded-xl border",
+                      isDark ? "border-slate-700/70" : "border-slate-300",
+                    )}
+                  >
+                    <table className="w-full text-left text-[9.5px]">
+                      <thead className="bg-slate-900 text-slate-200 uppercase">
+                        <tr>
+                          <th className="px-2 py-1">#</th>
+                          <th className="px-2 py-1">Perfil</th>
+                          <th className="px-2 py-1">Qtd</th>
+                          <th className="px-2 py-1">L. Maior</th>
+                          <th className="px-2 py-1">L. Menor</th>
+                          <th className="px-2 py-1">Esquadria</th>
+                          <th className="px-2 py-1">Massa</th>
+                        </tr>
+                      </thead>
+                      <tbody
+                        className={cn(
+                          "divide-y",
+                          isDark ? "divide-slate-800/80" : "divide-slate-200",
+                        )}
+                      >
+                        {cutList.rows.map((row) => (
+                          <tr
+                            key={row.itemNumber}
+                            className={isDark ? "hover:bg-slate-800/40" : "hover:bg-slate-100"}
+                          >
+                            <td
+                              className={cn(
+                                "px-2 py-1 font-bold",
+                                isDark ? "text-cyan-400" : "text-cyan-700",
+                              )}
+                            >
+                              {row.itemNumber}
+                            </td>
+                            <td
+                              className={cn(
+                                "px-2 py-1 font-semibold",
+                                isDark ? "text-slate-100" : "text-slate-900",
+                              )}
+                            >
+                              {row.profileDesignation}
+                            </td>
+                            <td
+                              className={cn(
+                                "px-2 py-1 font-bold",
+                                isDark ? "text-emerald-400" : "text-emerald-700",
+                              )}
+                            >
+                              ×{row.quantity}
+                            </td>
+                            <td
+                              className={cn(
+                                "px-2 py-1 font-semibold",
+                                isDark ? "text-slate-200" : "text-slate-800",
+                              )}
+                            >
+                              {row.longPointLengthMm} mm
+                            </td>
+                            <td
+                              className={cn(
+                                "px-2 py-1",
+                                isDark ? "text-slate-300" : "text-slate-700",
+                              )}
+                            >
+                              {row.shortPointLengthMm} mm
+                            </td>
+                            <td
+                              className={cn(
+                                "px-2 py-1 font-bold",
+                                isDark ? "text-amber-400" : "text-amber-700",
+                              )}
+                            >
+                              {row.miterTopDeg}° / {row.miterBottomDeg}°
+                            </td>
+                            <td
+                              className={cn(
+                                "px-2 py-1 font-semibold",
+                                isDark ? "text-slate-200" : "text-slate-800",
+                              )}
+                            >
+                              {row.totalMassKg} kg
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Diagnóstico de Interferência & Caldeiraria */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="rounded-xl border border-slate-700/70 bg-slate-900 p-2">
+                      <div className="text-[9.5px] font-bold text-cyan-400 uppercase">
+                        Inspeção de Montagem (Interference Check)
+                      </div>
+                      <div className="mt-1 text-[9.5px] text-slate-200">
+                        Status:{" "}
+                        <span
+                          className={
+                            interferenceReport.hasInterference
+                              ? "text-amber-300 font-bold"
+                              : "text-emerald-300 font-bold"
+                          }
+                        >
+                          {interferenceReport.hasInterference
+                            ? `${interferenceReport.collisionCount} Interferência(s) detectada(s)`
+                            : "0 Colisões (Folga OK)"}
+                        </span>
+                      </div>
+                      <div className="text-[9px] text-slate-300">
+                        Folga mínima entre corpos: {interferenceReport.minClearanceMm} mm
+                      </div>
+                    </div>
+
+                    <div className="rounded-xl border border-slate-700/70 bg-slate-900 p-2">
+                      <div className="text-[9.5px] font-bold text-amber-300 uppercase">
+                        Chapa & Caldeiraria (Fórmulas Exatas)
+                      </div>
+                      <div className="mt-1 text-[9px] text-slate-200">
+                        • Dobra 90° (t=2, R=2, K=0.33):{" "}
+                        <span className="text-emerald-300 font-bold">
+                          BA = {baRef.bendAllowanceMm.toFixed(3)} mm
+                        </span>
+                      </div>
+                      <div className="text-[9px] text-slate-200">
+                        • Cone Ø400➔Ø200 H300:{" "}
+                        <span className="text-sky-300 font-bold">
+                          G={coneRef.slantHeightGMm}mm · R1={coneRef.outerRadiusR1Mm}mm · α=
+                          {coneRef.sectorAngleDeg}°
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            );
+          })()}
+        </div>
       )}
     </div>
   );

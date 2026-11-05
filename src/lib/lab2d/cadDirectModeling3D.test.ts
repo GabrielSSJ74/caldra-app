@@ -551,6 +551,267 @@ describe("CHAMFER CAD — Motor de Modelagem Direta 3D, Edição Topológica e S
     expect(shellLoftMesh).not.toBeNull();
     expect(shellLoftMesh!.innerRings?.length).toBe(LOFT_V_RINGS + 1);
   });
+
+  it("16. Fase 0 Auditoria do Loft 3D (Base Quadrada ➔ Topo Circular): Continuidade C0 de normais na costura i=0, V - E + F = 2, Volume > 0 e Unfold 2D da Casca", async () => {
+    const {
+      buildLoft3DMesh,
+      createLoft3DEntity,
+      setEntityElevationZ,
+      unfoldLoft3DShellToFlatPattern2D,
+    } = await import("./cadLoft3DEngine");
+
+    const sqBase = setEntityElevationZ(
+      { ...rectPolyline({ x: 0, y: 0 }, { x: 100, y: 100 }, "corte", 0), id: "sq_base_z0" },
+      0,
+    );
+    const circTop = setEntityElevationZ(
+      {
+        id: "circ_top_z100",
+        layer: "corte",
+        type: "circle",
+        cx: 50,
+        cy: 50,
+        r: 40,
+      },
+      100,
+    );
+
+    const mesh = buildLoft3DMesh([sqBase, circTop], {
+      surfaceMode: "smooth",
+      bodyMode: "solid",
+      vRings: 36,
+    })!;
+    expect(mesh).not.toBeNull();
+
+    // 1. Sólido fechado (Watertight): V - E + F = 2 e Volume analítico > 0
+    expect(mesh.eulerCharacteristic.isWatertight).toBe(true);
+    expect(mesh.eulerCharacteristic.chi).toBe(2);
+    expect(mesh.volumeMm3).toBeGreaterThan(500_000);
+
+    // 2. Continuidade simétrica de normais na costura i=0 (entre i=119 e i=0 no meio da transição r=18)
+    const sideQuadsRow18 = mesh.quads.filter((q) => !q.isCap && q.vRow === 18);
+    expect(sideQuadsRow18.length).toBe(120);
+    const quadFirst = sideQuadsRow18.find((q) => q.uCol === 0)!;
+    const quadLast = sideQuadsRow18.find((q) => q.uCol === 119)!;
+    // A normal direita do último quad (vn1/vn2) deve ser exatamente igual à normal esquerda do primeiro quad (vn0/vn3) na costura i=0
+    expect(quadLast.vn1!.x).toBeCloseTo(quadFirst.vn0!.x, 5);
+    expect(quadLast.vn1!.y).toBeCloseTo(quadFirst.vn0!.y, 5);
+    expect(quadLast.vn1!.z).toBeCloseTo(quadFirst.vn0!.z, 5);
+
+    // 3. Unfold 2D da Casca do Loft (Planificação por Triangulação em Verdadeira Grandeza)
+    const loftEnt = createLoft3DEntity([sqBase, circTop], "ruled", "shell", 2.0)!;
+    const unfolded = unfoldLoft3DShellToFlatPattern2D(loftEnt, {
+      seamIndex: 0,
+      thicknessMm: 2.0,
+      kFactor: 0.33,
+    });
+    expect(unfolded).not.toBeNull();
+    expect(unfolded!.panelCount).toBe(120);
+    expect(unfolded!.developedWidthMm).toBeGreaterThan(250);
+    expect(unfolded!.totalTrueAreaMm2).toBeGreaterThan(25_000);
+    expect(unfolded!.flatEntities.some((e) => e.layer === "corte")).toBe(true);
+    expect(unfolded!.flatEntities.some((e) => e.layer === "dobra")).toBe(true);
+  });
+
+  it("17. Pacote P1: Revolve 3D (90° e 360° + bloqueio de auto-interseção), Sweep 3D em Arco (validação de raio de curvatura) e Booleana 3D", async () => {
+    const {
+      applyDirectBoolean3DBetweenBodies,
+      applyDirectRevolve3DToEntities,
+      applyDirectSweep3DToEntities,
+    } = await import("./chamfer3DMasterSuite");
+
+    // Perfil afastado do eixo Y (x entre 20 e 50) -> Revolve 360° válido
+    const revProfile = {
+      ...rectPolyline({ x: 20, y: 0 }, { x: 50, y: 40 }, "corte", 0),
+      id: "rev_prof_ok",
+    };
+    const rev360 = applyDirectRevolve3DToEntities([revProfile], ["rev_prof_ok"], {
+      axis: "y",
+      angleDeg: 360,
+    });
+    expect(rev360.validationError).toBeUndefined();
+    // Volume Pappus-Guldinus: A = 30*40 = 1200 mm², R_centroid = 35 mm -> V = 2*pi*35*1200 ≈ 263,893.78 mm³
+    expect(rev360.revolvedVolumeMm3).toBeCloseTo(2 * Math.PI * 35 * 1200, 0);
+
+    // Revolve 90° deve ter exatamente 1/4 do volume de 360°
+    const rev90 = applyDirectRevolve3DToEntities([revProfile], ["rev_prof_ok"], {
+      axis: "y",
+      angleDeg: 90,
+    });
+    expect(rev90.revolvedVolumeMm3).toBeCloseTo((2 * Math.PI * 35 * 1200) / 4, 0);
+
+    // Perfil cruzando o eixo Y (x de -20 a +30) -> Deve bloquear auto-interseção
+    const crossingProfile = {
+      ...rectPolyline({ x: -20, y: 0 }, { x: 30, y: 40 }, "corte", 0),
+      id: "rev_prof_cross",
+    };
+    const revCross = applyDirectRevolve3DToEntities([crossingProfile], ["rev_prof_cross"], {
+      axis: "y",
+      angleDeg: 360,
+    });
+    expect(revCross.validationError).toBeDefined();
+
+    // Sweep 3D ao longo de arco 90° com R=120mm e perfil R=25mm -> Válido
+    const arcPts = Array.from({ length: 7 }, (_, idx) => {
+      const t = (idx / 6) * (Math.PI / 2);
+      return { x: 120 * (1 - Math.cos(t)), y: 0, z: 120 * Math.sin(t) };
+    });
+    const sweepOk = applyDirectSweep3DToEntities([revProfile], ["rev_prof_ok"], {
+      pathPoints3D: arcPts,
+      profileRadiusMm: 25,
+      wallThicknessMm: 3,
+    });
+    expect(sweepOk.validationError).toBeUndefined();
+    expect(sweepOk.pathLengthMm).toBeCloseTo((Math.PI / 2) * 120, -1);
+
+    // Sweep com raio de curvatura menor que o raio do perfil (R_arc=15 < r_prof=25) -> Bloqueado
+    const tightArcPts = Array.from({ length: 7 }, (_, idx) => {
+      const t = (idx / 6) * (Math.PI / 2);
+      return { x: 15 * (1 - Math.cos(t)), y: 0, z: 15 * Math.sin(t) };
+    });
+    const sweepTight = applyDirectSweep3DToEntities([revProfile], ["rev_prof_ok"], {
+      pathPoints3D: tightArcPts,
+      profileRadiusMm: 25,
+    });
+    expect(sweepTight.validationError).toBeDefined();
+
+    // Booleana 3D entre dois corpos que se cruzam
+    const bodyA = setEntityDirect3DParams(
+      { ...rectPolyline({ x: 0, y: 0 }, { x: 100, y: 100 }, "corte", 0), id: "bool_a" },
+      { extrudeHeightMm: 100 },
+    );
+    const bodyB = setEntityDirect3DParams(
+      { ...rectPolyline({ x: 50, y: 50 }, { x: 150, y: 150 }, "corte", 0), id: "bool_b" },
+      { extrudeHeightMm: 100 },
+    );
+    const boolSub = applyDirectBoolean3DBetweenBodies([bodyA, bodyB], "bool_a", "bool_b", "subtract");
+    expect(boolSub.intersectionVolumeMm3).toBeCloseTo(50 * 50 * 100, 0);
+    expect(boolSub.resultingVolumeMm3).toBeCloseTo(1_000_000 - 250_000, 0);
+  });
+
+  it("18. Pacote P1: Furo Avançado (Escareado/Rebaixado/Cego em Face Inclinada), Section Plane X/Y/Z com Hachura e Array 3D", async () => {
+    const {
+      applyAdvancedHole3DToEntities,
+      applyDirectArray3DToEntities,
+      evaluateSectionPlane3DCrossSection,
+    } = await import("./chamfer3DMasterSuite");
+
+    let part = setEntityDirect3DParams(
+      { ...rectPolyline({ x: 0, y: 0 }, { x: 100, y: 100 }, "corte", 0), id: "part_adv_hole" },
+      { extrudeHeightMm: 80, miterCutTopDeg: 45 },
+    );
+    const scene0 = buildDirectTopology3DScene([part], 10);
+    const inclinedTopFace = scene0.bodies[0]!.faces.find((f) => f.role === "top" || f.role === "miter")!;
+
+    const holeRes = applyAdvancedHole3DToEntities([part], ["part_adv_hole"], {
+      holeType: "countersink",
+      threadSize: "M10",
+      targetFace: inclinedTopFace,
+    });
+    expect(holeRes.createdHoleIds.length).toBe(1);
+    expect(holeRes.holeSummary).toContain("COUNTERSINK M10");
+
+    // Section Plane X=50 mm deve cortar o bloco 100×100×80 gerando seção transversal e linhas de hachura
+    const secRes = evaluateSectionPlane3DCrossSection(scene0, {
+      enabled: true,
+      axis: "x",
+      offsetMm: 50,
+      flipDirection: false,
+      showHatch: true,
+    });
+    expect(secRes.intersectedBodyIds).toContain(scene0.bodies[0]!.bodyId);
+    expect(secRes.cutPolygons3D.length).toBe(1);
+    expect(secRes.sectionAreaMm2).toBeGreaterThanOrEqual(100 * 80);
+    expect(secRes.hatchSegments3D.length).toBeGreaterThan(3);
+
+    // Array Polar 3D (6 cópias em 360°)
+    const arrRes = applyDirectArray3DToEntities([part], ["part_adv_hole"], {
+      mode: "polar",
+      polarCount: 6,
+      polarTotalAngleDeg: 360,
+      polarCenter3D: { x: 200, y: 200, z: 0 },
+    });
+    expect(arrRes.createdIds.length).toBe(5);
+    expect(arrRes.updatedEntities.length).toBe(6);
+  });
+
+  it("19. Pacote P2 (Estruturas Metálicas): Fórmula Exata de Meia-Esquadria 45° e Geração de Lista de Corte (Cut List + CSV)", async () => {
+    const {
+      computeExactMiterCutLength,
+      generateStructuralCutListFrom3DScene,
+    } = await import("./chamfer3DMasterSuite");
+
+    // Metalon 100×50 com comprimento base 500 mm e corte 45° no topo e -45° na base
+    const miter = computeExactMiterCutLength(500, 100, 45, -45);
+    // tan(45°) = 1 -> delta = (100/2)*1 + (100/2)*1 = 100 mm -> L_maior = 600 mm, L_menor = 400 mm
+    expect(miter.longPointLengthMm).toBeCloseTo(600, 1);
+    expect(miter.shortPointLengthMm).toBeCloseTo(400, 1);
+
+    // Testa na cena completa do benchmark de 10 passos (14 corpos)
+    const benchmark = executeMetalStructure10StepBenchmark(10);
+    const cutList = generateStructuralCutListFrom3DScene(benchmark.scene);
+    expect(cutList.totalPieces).toBe(14);
+    expect(cutList.rows.length).toBeGreaterThanOrEqual(3);
+    expect(cutList.totalMassKg).toBeGreaterThan(20);
+    expect(cutList.csvContent).toContain("Item;Perfil;Qtd;Comp_Maior_mm");
+  });
+
+  it("20. Pacote P3 (Chapa Metálica e Caldeiraria): Fórmulas de Referência Exatas (Tolerância <= 0.1%) e Demo Chapa 3D", async () => {
+    const {
+      computeExactBendAllowance,
+      computePipeSaddleDevelopment,
+      computeTruncatedConeDevelopment,
+      executeDemoChapaCaldeiraria3D,
+    } = await import("./chamfer3DMasterSuite");
+
+    // 1. Dobra 90° em Chapa 2.0 mm, Raio Interno R = 2.0 mm, Fator K = 0.33 -> BA ≈ 4.178 mm
+    const ba = computeExactBendAllowance(90, 2.0, 2.0, 0.33);
+    expect(ba.bendAllowanceMm).toBeCloseTo(4.178, 2);
+
+    // 2. Tronco de Cone Concêntrico: D1 = 400 mm, D2 = 200 mm, H = 300 mm
+    // G ≈ 316.23 mm, R1 ≈ 632.46 mm, R2 ≈ 316.23 mm, α ≈ 113.84°
+    const cone = computeTruncatedConeDevelopment(400, 200, 300, 2.0);
+    expect(cone.slantHeightGMm).toBeCloseTo(316.23, 1);
+    expect(cone.outerRadiusR1Mm).toBeCloseTo(632.46, 1);
+    expect(cone.innerRadiusR2Mm).toBeCloseTo(316.23, 1);
+    expect(cone.sectorAngleDeg).toBeCloseTo(113.84, 1);
+    expect(cone.flatPatternEntities.length).toBeGreaterThanOrEqual(4);
+
+    // 3. Boca de Lobo (Pipe Saddle): Tubo ramal Ø101.6 mm em tubo coletor Ø152.4 mm a 90°
+    const saddle = computePipeSaddleDevelopment(152.4, 101.6, 200, 90, 36);
+    expect(saddle.circumferenceMm).toBeCloseTo(Math.PI * 101.6, 1);
+    expect(saddle.maxSaddleDepthMm).toBeGreaterThan(15);
+    expect(saddle.flatEntities.some((e) => e.layer === "corte")).toBe(true);
+
+    // 4. Demo Chapa 3D completa (3D + Planificação 2D com layers CORTE, DOBRA, FUROS, ANOTAÇÕES)
+    const demoChapa = executeDemoChapaCaldeiraria3D(2.0, 2.0, 0.33);
+    expect(demoChapa.bendAllowanceMm).toBeCloseTo(4.178, 2);
+    expect(demoChapa.entities3D.length).toBeGreaterThanOrEqual(4);
+    expect(demoChapa.flatPatternEntities2D.some((e) => e.layer === "corte")).toBe(true);
+    expect(demoChapa.flatPatternEntities2D.some((e) => e.layer === "dobra")).toBe(true);
+  });
+
+  it("21. Pacotes P4–P7: Inspeção de Interferência / Folga Mínima, Vista Explodida e Matriz Unificada de Capacidades", async () => {
+    const {
+      CHAMFER_3D_CAPABILITY_MATRIX,
+      PROGRESSIVE_CAD_3D_CATEGORIES,
+      applyExplodedView3DToEntities,
+      runAssemblyInterferenceAndClearanceCheck,
+    } = await import("./chamfer3DMasterSuite");
+
+    expect(PROGRESSIVE_CAD_3D_CATEGORIES.length).toBe(8);
+    expect(CHAMFER_3D_CAPABILITY_MATRIX.length).toBeGreaterThanOrEqual(20);
+    expect(CHAMFER_3D_CAPABILITY_MATRIX.every((c) => c.automatedTestPassed)).toBe(true);
+
+    const benchmark = executeMetalStructure10StepBenchmark(10);
+    const check = runAssemblyInterferenceAndClearanceCheck(benchmark.scene);
+    expect(check.pairs.length).toBeGreaterThan(10);
+    expect(Number.isFinite(check.minClearanceMm)).toBe(true);
+
+    const exploded = applyExplodedView3DToEntities(benchmark.entities, 0.5);
+    expect(exploded.length).toBe(benchmark.entities.length);
+  });
 });
+
 
 

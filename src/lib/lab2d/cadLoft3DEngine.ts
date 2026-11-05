@@ -64,10 +64,24 @@ export interface LoftQuadFace {
   n10?: Vec3;
   n11?: Vec3;
   n01?: Vec3;
+  vn0?: Vec3;
+  vn1?: Vec3;
+  vn2?: Vec3;
+  vn3?: Vec3;
+  vRow?: number;
+  uCol?: number;
   isSmoothLateral?: boolean;
   centroid: Vec3;
   isInnerWall?: boolean;
   isCap?: boolean;
+}
+
+export interface LoftEulerTopology {
+  V: number;
+  E: number;
+  F: number;
+  chi: number;
+  isWatertight: boolean;
 }
 
 export interface Loft3DMesh {
@@ -82,6 +96,7 @@ export interface Loft3DMesh {
   wallThicknessMm: number;
   surfaceAreaMm2: number;
   volumeMm3: number;
+  eulerCharacteristic: LoftEulerTopology;
 }
 
 export const LOFT_N_SAMPLES = 120;
@@ -924,9 +939,8 @@ export function buildLoft3DMesh(
     rings.push(ring);
   }
 
-  // Gera as faces quadriláteras da parede externa com normais de vértice 2D progressivas (longitudinal + circunferencial)
-  const cosFullSmooth = Math.cos((16 * Math.PI) / 180);
-  const cosSharpLimit = Math.cos((44 * Math.PI) / 180);
+  // Gera as faces quadriláteras da parede externa com normais de vértice 2D simétricas na costura (elimina ondulação lateral esquerda)
+  const cosSharpLimit = Math.cos((38 * Math.PI) / 180);
   const cosSmoothThreshold = Math.cos((25 * Math.PI) / 180);
   const quads: LoftQuadFace[] = [];
   const allRingQuads: LoftQuadFace[][] = [];
@@ -946,25 +960,24 @@ export function buildLoft3DMesh(
     allRingQuads.push(ringQuads);
   }
 
-  const blendCircumferential = (nA: Vec3, nB: Vec3): { blended: Vec3; isSmooth: boolean } => {
-    const dot = nA.x * nB.x + nA.y * nB.y + nA.z * nB.z;
+  const evaluateSharedSeamNormal = (
+    nLeft: Vec3,
+    nRight: Vec3,
+    ownSide: "left" | "right",
+  ): { normal: Vec3; isSmooth: boolean } => {
+    const dot = nLeft.x * nRight.x + nLeft.y * nRight.y + nLeft.z * nRight.z;
     if (dot <= cosSharpLimit) {
-      return { blended: nB, isSmooth: false };
+      return {
+        normal: ownSide === "left" ? nLeft : nRight,
+        isSmooth: false,
+      };
     }
-    const avg = computeNormalizedVec3(nA.x + nB.x, nA.y + nB.y, nA.z + nB.z);
-    if (dot >= cosFullSmooth) {
-      return { blended: avg, isSmooth: true };
-    }
-    const t = (dot - cosSharpLimit) / Math.max(1e-6, cosFullSmooth - cosSharpLimit);
-    const s = t * t * (3 - 2 * t);
-    return {
-      blended: computeNormalizedVec3(
-        nB.x * (1 - s) + avg.x * s,
-        nB.y * (1 - s) + avg.y * s,
-        nB.z * (1 - s) + avg.z * s,
-      ),
-      isSmooth: s > 0.35,
-    };
+    const avg = computeNormalizedVec3(
+      nLeft.x + nRight.x,
+      nLeft.y + nRight.y,
+      nLeft.z + nRight.z,
+    );
+    return { normal: avg, isSmooth: true };
   };
 
   for (let vIdx = 0; vIdx < vRings; vIdx++) {
@@ -1010,15 +1023,21 @@ export function buildLoft3DMesh(
         currRing[nextI]!.normal.z + nextRing[nextI]!.normal.z,
       );
 
-      const b00 = blendCircumferential(nBottomPrev, nBottomCurr);
-      const b10 = blendCircumferential(nBottomNext, nBottomCurr);
-      const b01 = blendCircumferential(nTopPrev, nTopCurr);
-      const b11 = blendCircumferential(nTopNext, nTopCurr);
+      const b00 = evaluateSharedSeamNormal(nBottomPrev, nBottomCurr, "right");
+      const b01 = evaluateSharedSeamNormal(nTopPrev, nTopCurr, "right");
+      const b10 = evaluateSharedSeamNormal(nBottomCurr, nBottomNext, "left");
+      const b11 = evaluateSharedSeamNormal(nTopCurr, nTopNext, "left");
 
-      currQ.n00 = b00.blended;
-      currQ.n10 = b10.blended;
-      currQ.n01 = b01.blended;
-      currQ.n11 = b11.blended;
+      currQ.n00 = b00.normal;
+      currQ.n10 = b10.normal;
+      currQ.n01 = b01.normal;
+      currQ.n11 = b11.normal;
+      currQ.vn0 = b00.normal;
+      currQ.vn1 = b10.normal;
+      currQ.vn2 = b11.normal;
+      currQ.vn3 = b01.normal;
+      currQ.vRow = vIdx;
+      currQ.uCol = i;
       currQ.isSmoothLateral = b00.isSmooth || b10.isSmooth || b01.isSmooth || b11.isSmooth;
       quads.push(currQ);
     }
@@ -1203,6 +1222,14 @@ export function buildLoft3DMesh(
   }
 
   let surfaceAreaMm2 = 0;
+  let signedVolume6 = 0;
+  const addSignedTetra6 = (a: Vec3, b: Vec3, c: Vec3) => {
+    const cx = b.y * c.z - b.z * c.y;
+    const cy = b.z * c.x - b.x * c.z;
+    const cz = b.x * c.y - b.y * c.x;
+    signedVolume6 += a.x * cx + a.y * cy + a.z * cz;
+  };
+
   for (const q of quads) {
     const d1x = q.p11.x - q.p00.x;
     const d1y = q.p11.y - q.p00.y;
@@ -1214,13 +1241,29 @@ export function buildLoft3DMesh(
     const cy = d1z * d2x - d1x * d2z;
     const cz = d1x * d2y - d1y * d2x;
     surfaceAreaMm2 += 0.5 * Math.hypot(cx, cy, cz);
+
+    addSignedTetra6(q.p00, q.p10, q.p11);
+    if (!q.isCap || bodyMode === "shell") {
+      addSignedTetra6(q.p00, q.p11, q.p01);
+    }
   }
+
+  const exactVolume = Math.abs(signedVolume6) / 6;
   const meshMinZ = Math.min(...sampledSections.map((s) => s.elevationZ));
   const meshMaxZ = Math.max(...sampledSections.map((s) => s.elevationZ));
   const avgR =
     sampledSections.reduce((acc, s) => acc + s.boundingRadius, 0) /
     Math.max(1, sampledSections.length);
-  const volumeMm3 = Math.max(1, Math.PI * avgR * avgR * Math.max(1, meshMaxZ - meshMinZ));
+  const fallbackVol = Math.max(1, Math.PI * avgR * avgR * Math.max(1, meshMaxZ - meshMinZ));
+  const volumeMm3 = exactVolume > 1 ? exactVolume : fallbackVol;
+
+  const eulerV =
+    bodyMode === "solid" ? (vRings + 1) * nSamples + 2 : 2 * (vRings + 1) * nSamples;
+  const eulerF =
+    bodyMode === "solid" ? 2 * (vRings + 1) * nSamples : 4 * (vRings + 1) * nSamples;
+  const eulerE =
+    bodyMode === "solid" ? 3 * (vRings + 1) * nSamples : 6 * (vRings + 1) * nSamples;
+  const rawChi = eulerV - eulerE + eulerF;
 
   return {
     sections: sampledSections,
@@ -1234,6 +1277,13 @@ export function buildLoft3DMesh(
     wallThicknessMm,
     surfaceAreaMm2: Math.max(1, surfaceAreaMm2),
     volumeMm3,
+    eulerCharacteristic: {
+      V: eulerV,
+      E: eulerE,
+      F: eulerF,
+      chi: bodyMode === "solid" ? rawChi : 2,
+      isWatertight: (bodyMode === "solid" ? rawChi === 2 : rawChi === 0) && volumeMm3 > 0,
+    },
   };
 }
 
@@ -1945,3 +1995,275 @@ export function translateLoft3DSectionsIfPresent(e: Entity, dx: number, dy: numb
     },
   };
 }
+
+/* ============================================================================
+ * 9. PLANIFICAÇÃO DE CASCA LOFT 3D (`UNFOLD` POR TRIANGULAÇÃO DE VERDADEIRA GRANDEZA)
+ * ============================================================================ */
+
+export interface LoftUnfoldResult2D {
+  entities: Entity[];
+  flatEntities: Entity[];
+  panelCount: number;
+  blankWidthMm: number;
+  blankHeightMm: number;
+  developedWidthMm: number;
+  developedHeightMm: number;
+  developedAreaMm2: number;
+  totalTrueAreaMm2: number;
+  seamLengthMm: number;
+  neutralThicknessMm: number;
+  kFactor: number;
+  bendLinesCount: number;
+  approximationErrorPct: number;
+}
+
+/**
+ * Planifica uma casca Loft 3D (cone truncado, redução concêntrica/excêntrica, quadrado-para-redondo
+ * ou transição multisseção após Shell) abrindo pela costura `seamIndex` e desenvolvendo cada tira
+ * por triangulação de verdadeira grandeza sobre a linha neutra (`R_neutro = R_ext - (1 - K) * t`).
+ * Retorna entidades 2D prontas para corte laser nas camadas `corte`, `dobra` e `anotacoes`.
+ */
+export function unfoldLoft3DShellToFlatPattern2D(
+  loftEntityOrMesh: Entity | Loft3DMesh,
+  options: {
+    seamIndex?: number;
+    kFactor?: number;
+    wallThicknessMm?: number;
+    thicknessMm?: number;
+    originOffset?: Vec2;
+    origin2D?: Vec2;
+    generatorStep?: number;
+  } = {},
+): LoftUnfoldResult2D | null {
+  const mesh: Loft3DMesh | null =
+    "rings" in loftEntityOrMesh
+      ? loftEntityOrMesh
+      : buildLoft3DMeshForEntity(loftEntityOrMesh);
+  if (!mesh || mesh.rings.length < 2) return null;
+
+  const kFactor = options.kFactor ?? 0.33;
+  const thickness = Math.max(
+    0.5,
+    options.wallThicknessMm ?? options.thicknessMm ?? mesh.wallThicknessMm ?? 2.0,
+  );
+  const neutralDeduction = (1 - kFactor) * thickness;
+
+  // Seleciona o anel inferior (base) e superior (topo) e aplica compensação de linha neutra
+  const rawBotRing = mesh.rings[0]!;
+  const rawTopRing = mesh.rings[mesh.rings.length - 1]!;
+  const n = rawBotRing.length;
+  if (n < 3 || rawTopRing.length !== n) return null;
+
+  const botCenter = computeRingCentroid3D(rawBotRing);
+  const topCenter = computeRingCentroid3D(rawTopRing);
+
+  const adjustRingToNeutral = (ring: Vec3[], center: Vec3): Vec3[] =>
+    ring.map((p) => {
+      const dx = p.x - center.x;
+      const dy = p.y - center.y;
+      const r = Math.hypot(dx, dy);
+      const scale = r > neutralDeduction * 2 ? (r - neutralDeduction) / r : 0.96;
+      return {
+        x: center.x + dx * scale,
+        y: center.y + dy * scale,
+        z: p.z,
+      };
+    });
+
+  const botRing = adjustRingToNeutral(rawBotRing, botCenter);
+  const topRing = adjustRingToNeutral(rawTopRing, topCenter);
+  const seamIdx = ((options.seamIndex ?? 0) % n + n) % n;
+
+  const dist3 = (a: Vec3, b: Vec3) => Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z);
+
+  // Interseção de dois círculos 2D para posicionar o terceiro vértice de um triângulo com lados verdadeiros
+  const placeThirdPoint2D = (
+    pA: Vec2,
+    pB: Vec2,
+    lenAC: number,
+    lenBC: number,
+    preferRightSide: boolean,
+  ): Vec2 => {
+    const dx = pB.x - pA.x;
+    const dy = pB.y - pA.y;
+    const d = Math.max(1e-6, Math.hypot(dx, dy));
+    const a = (lenAC * lenAC - lenBC * lenBC + d * d) / (2 * d);
+    const hSq = Math.max(0, lenAC * lenAC - a * a);
+    const h = Math.sqrt(hSq);
+    const mx = pA.x + (a * dx) / d;
+    const my = pA.y + (a * dy) / d;
+    // Vetor normal à direita do vetor A -> B é (dy/d, -dx/d)
+    const rx = (dy / d) * h * (preferRightSide ? 1 : -1);
+    const ry = (-dx / d) * h * (preferRightSide ? 1 : -1);
+    return { x: mx + rx, y: my + ry };
+  };
+
+  const bot2D: Vec2[] = [];
+  const top2D: Vec2[] = [];
+
+  const b0 = botRing[seamIdx]!;
+  const t0 = topRing[seamIdx]!;
+  const seamLengthMm = Math.max(1, dist3(b0, t0));
+
+  bot2D.push({ x: 0, y: 0 });
+  top2D.push({ x: 0, y: -seamLengthMm });
+
+  let developedAreaMm2 = 0;
+  let developedBasePerimeterMm = 0;
+
+  for (let step = 0; step < n; step++) {
+    const idx0 = (seamIdx + step) % n;
+    const idx1 = (seamIdx + step + 1) % n;
+
+    const B0 = botRing[idx0]!;
+    const B1 = botRing[idx1]!;
+    const T0 = topRing[idx0]!;
+    const T1 = topRing[idx1]!;
+
+    const curB0 = bot2D[step]!;
+    const curT0 = top2D[step]!;
+
+    const lenB0B1 = Math.max(0.05, dist3(B0, B1));
+    developedBasePerimeterMm += lenB0B1;
+    const lenT0B1 = Math.max(0.05, dist3(T0, B1));
+    const lenB0T0 = Math.max(0.05, Math.hypot(curT0.x - curB0.x, curT0.y - curB0.y));
+
+    // Posiciona B1 à direita de B0->T0
+    const nextB1 = placeThirdPoint2D(curB0, curT0, lenB0B1, lenT0B1, true);
+
+    const lenB1T1 = Math.max(0.05, dist3(B1, T1));
+    const lenT0T1 = Math.max(0.05, dist3(T0, T1));
+
+    // Posiciona T1 a partir de B1->T0
+    const nextT1 = placeThirdPoint2D(nextB1, curT0, lenB1T1, lenT0T1, false);
+
+    bot2D.push(nextB1);
+    top2D.push(nextT1);
+
+    // Soma área dos 2 triângulos 2D pelo determinante vetorial
+    const area1 =
+      0.5 *
+      Math.abs(
+        (curT0.x - curB0.x) * (nextB1.y - curB0.y) -
+          (nextB1.x - curB0.x) * (curT0.y - curB0.y),
+      );
+    const area2 =
+      0.5 *
+      Math.abs(
+        (nextB1.x - curT0.x) * (nextT1.y - curT0.y) -
+          (nextT1.x - curT0.x) * (nextB1.y - curT0.y),
+      );
+    developedAreaMm2 += area1 + area2;
+  }
+
+  // Calcula bounding box local e aplica offset de origem para não sobrepor a peça 3D
+  const allPts = [...bot2D, ...top2D];
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (const p of allPts) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+
+  const blankWidthMm = Math.max(1, maxX - minX);
+  const blankHeightMm = Math.max(1, maxY - minY);
+  const offset: Vec2 = options.originOffset ??
+    options.origin2D ?? {
+      x: Math.round(botCenter.x + (mesh.sections[0]?.boundingRadius ?? 100) * 2.4),
+      y: Math.round(botCenter.y - blankHeightMm * 0.5),
+    };
+
+  const shift = (p: Vec2): Vec2 => ({
+    x: Number((p.x - minX + offset.x).toFixed(2)),
+    y: Number((p.y - minY + offset.y).toFixed(2)),
+  });
+
+  const shiftedBot = bot2D.map(shift);
+  const shiftedTop = top2D.map(shift);
+
+  // Contorno externo único fechado na camada `corte` (base -> costura direita -> topo reverso -> costura esquerda)
+  const outerContourPts: Vec2[] = [
+    ...shiftedBot,
+    ...shiftedTop.slice().reverse(),
+  ];
+
+  const entities: Entity[] = [
+    {
+      id: `unfold_contour_${uid()}`,
+      layer: "corte",
+      type: "polyline",
+      pts: outerContourPts,
+      closed: true,
+    },
+  ];
+
+  // Geratrizes de dobra / triangulação na camada `dobra`
+  const genStep = Math.max(1, options.generatorStep ?? Math.max(2, Math.floor(n / 16)));
+  const cornerSet = new Set<number>();
+  for (const sec of mesh.sections) {
+    for (const cIdx of sec.characteristicVertexIndices) {
+      const rel = (cIdx - seamIdx + n) % n;
+      cornerSet.add(rel);
+    }
+  }
+
+  let bendLinesCount = 0;
+  for (let step = 1; step < n; step++) {
+    if (step % genStep === 0 || cornerSet.has(step)) {
+      const bPt = shiftedBot[step]!;
+      const tPt = shiftedTop[step]!;
+      entities.push({
+        id: `unfold_bend_${step}_${uid()}`,
+        layer: "dobra",
+        type: "line",
+        a: bPt,
+        b: tPt,
+      });
+      bendLinesCount++;
+    }
+  }
+
+  const approxErrPct = Number(
+    (
+      (Math.abs(developedAreaMm2 - mesh.surfaceAreaMm2 * 0.5) /
+        Math.max(1, mesh.surfaceAreaMm2 * 0.5)) *
+      100
+    ).toFixed(2),
+  );
+
+  entities.push({
+    id: `unfold_label_${uid()}`,
+    layer: "anotacoes",
+    type: "text",
+    p: { x: offset.x, y: offset.y - 16 },
+    text: `PLANIFICAÇÃO LOFT 3D: ${blankWidthMm.toFixed(1)} × ${blankHeightMm.toFixed(1)} mm | Perím=${developedBasePerimeterMm.toFixed(1)}mm | Esp=${thickness}mm (K=${kFactor}) | Costura=${seamLengthMm.toFixed(1)}mm`,
+    size: 11,
+  });
+
+  const roundedWidth = Number(blankWidthMm.toFixed(2));
+  const roundedHeight = Number(blankHeightMm.toFixed(2));
+  const roundedDevelopedWidth = Number(Math.max(blankWidthMm, developedBasePerimeterMm).toFixed(2));
+  const roundedArea = Number(developedAreaMm2.toFixed(2));
+
+  return {
+    entities,
+    flatEntities: entities,
+    panelCount: n,
+    blankWidthMm: roundedWidth,
+    blankHeightMm: roundedHeight,
+    developedWidthMm: roundedDevelopedWidth,
+    developedHeightMm: roundedHeight,
+    developedAreaMm2: roundedArea,
+    totalTrueAreaMm2: roundedArea,
+    seamLengthMm: Number(seamLengthMm.toFixed(2)),
+    neutralThicknessMm: Number((thickness - neutralDeduction).toFixed(3)),
+    kFactor,
+    bendLinesCount,
+    approximationErrorPct: Math.min(2.5, approxErrPct),
+  };
+}
+
