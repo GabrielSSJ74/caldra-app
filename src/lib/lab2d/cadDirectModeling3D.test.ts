@@ -811,7 +811,118 @@ describe("CHAMFER CAD — Motor de Modelagem Direta 3D, Edição Topológica e S
     const exploded = applyExplodedView3DToEntities(benchmark.entities, 0.5);
     expect(exploded.length).toBe(benchmark.entities.length);
   });
+
+  it("22. ChamferSolidKernel (Fim do Fallback de Extrusão): Malhas 3D Reais para Revolve, Sweep, Furos (Cego/Rebaixado/Escareado), Frame Metalon 45° e Edge Flange Chapa", async () => {
+    const {
+      applyAdvancedHole3DToEntities,
+      applyDirectRevolve3DToEntities,
+      applyDirectSweep3DToEntities,
+      applySheetMetalEdgeFlange3DToEntities,
+      applyStructuralFrame3DToEntities,
+    } = await import("./chamfer3DMasterSuite");
+    const { buildSolidMesh, resolveEntitySolidFeatureType } = await import("./chamferSolidKernel");
+
+    // 1. Revolve 180° (deve conter superfície de revolução + 2 tampas planas em 0° e 180°)
+    const revBase = {
+      ...rectPolyline({ x: 30, y: 0 }, { x: 60, y: 40 }, "corte", 0),
+      id: "kernel_rev_180",
+    };
+    const revApplied = applyDirectRevolve3DToEntities([revBase], ["kernel_rev_180"], {
+      axis: "y",
+      angleDeg: 180,
+    });
+    const revEnt = revApplied.updatedEntities[0]!;
+    expect(resolveEntitySolidFeatureType(revEnt)).toBe("revolve");
+    const revMesh = buildSolidMesh(revEnt);
+    expect(revMesh.featureType).toBe("revolve");
+    expect(revMesh.faces.some((f) => f.label.includes("Revolução"))).toBe(true);
+    expect(revMesh.faces.some((f) => f.label.includes("Tampa Inicial"))).toBe(true);
+    expect(revMesh.faces.some((f) => f.label.includes("Tampa Final"))).toBe(true);
+    expect(revMesh.volumeMm3).toBeGreaterThan(50_000);
+
+    // 2. Sweep 3D por Caminho Curvo com Transporte Paralelo (Bishop Frame)
+    const swpBase = {
+      ...rectPolyline({ x: -15, y: -15 }, { x: 15, y: 15 }, "corte", 0),
+      id: "kernel_sweep_arc",
+    };
+    const swpApplied = applyDirectSweep3DToEntities([swpBase], ["kernel_sweep_arc"], {
+      pathPoints3D: [
+        { x: 0, y: 0, z: 0 },
+        { x: 40, y: 0, z: 80 },
+        { x: 120, y: 0, z: 120 },
+      ],
+      wallThicknessMm: 2.5,
+    });
+    const swpEnt = swpApplied.updatedEntities[0]!;
+    expect(resolveEntitySolidFeatureType(swpEnt)).toBe("sweep");
+    const swpMesh = buildSolidMesh(swpEnt);
+    expect(swpMesh.featureType).toBe("sweep");
+    expect(swpMesh.faces.some((f) => f.role === "inner_side")).toBe(true);
+
+    // 3. Furos Reais 3D na Cena B-Rep: Cego (Blind), Rebaixado (Counterbore) e Escareado (Countersink)
+    const block = setEntityDirect3DParams(
+      { ...rectPolyline({ x: 0, y: 0 }, { x: 120, y: 120 }, "corte", 0), id: "block_holes" },
+      { extrudeHeightMm: 40 },
+    );
+    const blindRes = applyAdvancedHole3DToEntities([block], ["block_holes"], {
+      holeType: "blind",
+      threadSize: "M12",
+      depthMm: 20,
+      faceCenter3D: { x: 35, y: 60, z: 40 },
+    });
+    const cboreRes = applyAdvancedHole3DToEntities(blindRes.updatedEntities, ["block_holes"], {
+      holeType: "counterbore",
+      threadSize: "M10",
+      faceCenter3D: { x: 85, y: 60, z: 40 },
+    });
+    const holeScene = buildDirectTopology3DScene(cboreRes.updatedEntities, 40);
+    const holeBody = holeScene.bodies.find((b) => b.entityId === "block_holes")!;
+    expect(holeBody.faces.some((f) => f.label.includes("Furo Cego"))).toBe(true);
+    expect(holeBody.faces.some((f) => f.label.includes("Furo Rebaixado"))).toBe(true);
+
+    // 4. Frame Generator sobre Linha Horizontal + Corte Bissetor Miter 45° + Gusset
+    const horizLine = {
+      id: "frame_line_horiz",
+      layer: "corte",
+      type: "line" as const,
+      x1: 0,
+      y1: 0,
+      x2: 400,
+      y2: 0,
+    };
+    const framed = applyStructuralFrame3DToEntities([horizLine], ["frame_line_horiz"], {
+      widthMm: 80,
+      heightMm: 50,
+      wallMm: 3.0,
+      miterStartDeg: 45,
+      miterEndDeg: 45,
+      gussetStart: true,
+    });
+    const frameScene = buildDirectTopology3DScene(framed, 20);
+    expect(frameScene.bodies.length).toBe(1);
+    expect(frameScene.bodies[0]!.deltaX).toBeGreaterThan(380);
+    expect(frameScene.bodies[0]!.faces.some((f) => f.role === "miter")).toBe(true);
+
+    // 5. Sheet Metal Edge Flange 90° (Raio Cilíndrico R=2mm + Aba Inclinada)
+    const sheetBase = {
+      ...rectPolyline({ x: -80, y: -50 }, { x: 80, y: 50 }, "corte", 0),
+      id: "sheet_edge_flange",
+    };
+    const sheetWithFlanges = applySheetMetalEdgeFlange3DToEntities([sheetBase], ["sheet_edge_flange"], {
+      thicknessMm: 2.0,
+      bendRadiusMm: 2.0,
+      angleDeg: 90,
+      flangeLengthMm: 60,
+      edgeSides: ["left", "right"],
+    });
+    const smMesh = buildSolidMesh(sheetWithFlanges[0]!);
+    expect(smMesh.featureType).toBe("sheet_metal");
+    expect(smMesh.faces.some((f) => f.role === "bend")).toBe(true);
+    expect(smMesh.faces.some((f) => f.role === "flange")).toBe(true);
+    expect(smMesh.bbox3D.maxZ).toBeGreaterThan(55);
+  });
 });
+
 
 
 

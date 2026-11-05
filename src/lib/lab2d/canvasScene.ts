@@ -33,6 +33,11 @@ import {
   resolveUnitZWorkplaneOffset,
   type Loft3DMesh,
 } from "./cadLoft3DEngine";
+import {
+  buildSolidMesh,
+  resolveEntitySolidFeatureType,
+  solidMeshToCanvasRenderableMesh,
+} from "./chamferSolidKernel";
 
 export type SceneView = { tx: number; ty: number; k: number };
 
@@ -407,6 +412,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
   // Coleta entidades planas elegíveis para o motor de Hierarquia de Arestas e Profundidade Óptica 3D
   const planarFor3D: Entity[] = [];
   const loftSolidEntities: Entity[] = [];
+  const kernelSolidEntities: Entity[] = [];
   const unitZOffset = is3DWireframeActive
     ? resolveUnitZWorkplaneOffset(Boolean(opts.isIsometric), opts.isoPlane ?? "top", orbitProj)
     : { x: 0, y: 0 };
@@ -426,6 +432,20 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
     if (isLoft3DEntity(e)) {
       loftSolidEntities.push(e);
       continue;
+    }
+
+    // 0.5. SÓLIDOS PARAMÉTRICOS DO `ChamferSolidKernel` (Revolve, Sweep, Structural Frame, Sheet Metal)
+    if (is3DWireframeActive) {
+      const kType = resolveEntitySolidFeatureType(e);
+      if (
+        kType === "revolve" ||
+        kType === "sweep" ||
+        kType === "structural_frame" ||
+        kType === "sheet_metal"
+      ) {
+        kernelSolidEntities.push(e);
+        continue;
+      }
     }
 
     // 1. RENDERIZAÇÃO VOLUMÉTRICA ISOMÉTRICA EXPLÍCITA (ISOMETRIC SOLID FACES / HLR)
@@ -625,6 +645,24 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
         renderLoft3DMeshToCanvas2D(ctx, mesh, {
           isPreview: false,
           isSelected: selection.has(loftEnt.id),
+          isIsometric: Boolean(opts.isIsometric),
+          isoPlane: opts.isoPlane ?? "top",
+          orbitProjection: orbitProj ?? null,
+          viewK: safeK,
+          isLight: opts.isLight,
+        });
+      }
+    }
+  }
+
+  // Renderiza Sólidos do `ChamferSolidKernel` (Revolve, Sweep, Frame Generator, Edge Flange Chapa)
+  if (kernelSolidEntities.length > 0) {
+    for (const kEnt of kernelSolidEntities) {
+      const sMesh = buildSolidMesh(kEnt, entities, isoSheetThickness);
+      if (sMesh && sMesh.quads.length > 0) {
+        renderLoft3DMeshToCanvas2D(ctx, solidMeshToCanvasRenderableMesh(sMesh), {
+          isPreview: false,
+          isSelected: selection.has(kEnt.id),
           isIsometric: Boolean(opts.isIsometric),
           isoPlane: opts.isoPlane ?? "top",
           orbitProjection: orbitProj ?? null,

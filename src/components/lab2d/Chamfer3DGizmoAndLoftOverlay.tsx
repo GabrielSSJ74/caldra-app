@@ -57,6 +57,8 @@ import {
   applyDirectRevolve3DToEntities,
   applyDirectSweep3DToEntities,
   applyExplodedView3DToEntities,
+  applySheetMetalEdgeFlange3DToEntities,
+  applyStructuralFrame3DToEntities,
   computeExactBendAllowance,
   computeTruncatedConeDevelopment,
   evaluateSectionPlane3DCrossSection,
@@ -3326,6 +3328,29 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   {wVal}mm
                 </button>
               ))}
+              <button
+                type="button"
+                data-testid="chamfer-3d-edge-flange-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  onCommitEntities?.(
+                    (prev) =>
+                      applySheetMetalEdgeFlange3DToEntities(prev, activeTargetEntityIds, {
+                        thicknessMm: sheetThickness || 2.0,
+                        bendRadiusMm: 2.0,
+                        kFactor: 0.33,
+                        angleDeg: 90,
+                        flangeLengthMm: 65,
+                        edgeSides: ["left", "right"],
+                      }),
+                    activeTargetEntityIds,
+                  );
+                }}
+                title="Gerar Aba Dobrada Real (Edge Flange 90° com Raio de Dobra R=2mm)"
+                className="shrink-0 rounded-full bg-amber-600 hover:bg-amber-500 px-2.5 py-0.5 font-mono text-[10px] font-bold text-white cursor-pointer"
+              >
+                + Edge Flange 90°
+              </button>
             </>
           )}
 
@@ -3431,6 +3456,29 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   {ang > 0 ? `+${ang}°` : `${ang}°`}
                 </button>
               ))}
+              <button
+                type="button"
+                data-testid="chamfer-3d-frame-generator-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  onCommitEntities?.(
+                    (prev) =>
+                      applyStructuralFrame3DToEntities(prev, activeTargetEntityIds, {
+                        widthMm: 80,
+                        heightMm: 50,
+                        wallMm: 3.0,
+                        miterStartDeg: 45,
+                        miterEndDeg: 45,
+                        gussetStart: true,
+                      }),
+                    activeTargetEntityIds,
+                  );
+                }}
+                title="Converter em Tubo Metalon 80×50×3mm com Corte Bissetor Miter 45° e Mão Francesa (Gusset)"
+                className="shrink-0 rounded-full bg-cyan-600 hover:bg-cyan-500 px-2.5 py-0.5 font-mono text-[10px] font-bold text-white cursor-pointer"
+              >
+                + Frame Metalon 45°
+              </button>
             </>
           )}
 
@@ -3586,6 +3634,38 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   Encostar {ax.toUpperCase()}
                 </button>
               ))}
+              {scene.bodies.length >= 2 && (
+                <>
+                  <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+                  {(
+                    [
+                      { op: "union" as const, label: "∪ Unir" },
+                      { op: "subtract" as const, label: "− Subtrair" },
+                      { op: "intersect" as const, label: "∩ Intersectar" },
+                    ] as const
+                  ).map((bBtn) => (
+                    <button
+                      key={bBtn.op}
+                      type="button"
+                      data-testid={`chamfer-3d-boolean-${bBtn.op}-btn`}
+                      onClick={() => {
+                        triggerHaptic("action");
+                        const ids =
+                          activeTargetEntityIds.length >= 2
+                            ? activeTargetEntityIds
+                            : scene.bodies.slice(0, 2).map((b) => b.entityId);
+                        onCommitEntities?.((prev) => {
+                          const res = applyDirectBoolean3DBetweenBodies(prev, ids, bBtn.op);
+                          return res.updatedEntities;
+                        }, [ids[0]!]);
+                      }}
+                      className={pillBtnClass(false)}
+                    >
+                      {bBtn.label}
+                    </button>
+                  ))}
+                </>
+              )}
             </>
           )}
 

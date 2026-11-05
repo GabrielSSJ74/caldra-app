@@ -485,11 +485,14 @@ export function applyDirectRevolve3DToEntities(
         extrudeHeight: effHeight,
         params: {
           ...(ent.params ?? {}),
+          featureType: "revolve",
           revolve3d: {
             enabled: true,
             angleDeg,
             axis,
+            axisOffsetMm: axisCoord,
             direction: params.direction ?? "ccw",
+            wallThicknessMm: params.wallThicknessMm ?? 0,
             centroidRadiusMm: Number(centroidRadiusMm.toFixed(2)),
             revolvedVolumeMm3: Number(revolvedVolumeMm3.toFixed(2)),
             revolvedAreaMm2: Number(revolvedAreaMm2.toFixed(2)),
@@ -642,14 +645,18 @@ export function applyDirectSweep3DToEntities(
         extrudeHeight: Math.round(effectivePathLen),
         params: {
           ...(ent.params ?? {}),
+          featureType: "sweep",
           sweep3d: {
             enabled: true,
+            pathPoints3D: params.pathPoints3D,
+            pathType: params.pathType,
             pathLengthMm: Number(effectivePathLen.toFixed(2)),
             minCurvatureRadiusMm: Number.isFinite(minCurvatureRadiusMm)
               ? Number(minCurvatureRadiusMm.toFixed(2))
               : 0,
             profileRadiusMm: profRadius,
             wallThicknessMm: wall,
+            twistDeg: params.twistDeg ?? 0,
             sweepVolumeMm3: Number(sweepVol.toFixed(2)),
           },
         },
@@ -853,12 +860,7 @@ export function applyAdvancedHole3DToEntities(
 
   const baseRes = applyDirectHole3DToEntities(entities, targetIds, {
     threadSize,
-    holeType:
-      options.holeType === "blind"
-        ? "blind"
-        : options.holeType === "counterbore"
-          ? "counterbore"
-          : "through",
+    holeType: options.holeType,
     customDiameterMm: holeDia,
     depthMm: options.depthMm,
     faceCenter3D: faceCenter ? { x: faceCenter.x, y: faceCenter.y } : undefined,
@@ -1458,14 +1460,10 @@ export function computeTruncatedConeDevelopment(
       id: `cone_bend_${k}_${uid()}`,
       layer: "dobra",
       type: "line",
-      a: {
-        x: Number((origin2D.x + R2 * Math.cos(a)).toFixed(2)),
-        y: Number((origin2D.y + R2 * Math.sin(a)).toFixed(2)),
-      },
-      b: {
-        x: Number((origin2D.x + R1 * Math.cos(a)).toFixed(2)),
-        y: Number((origin2D.y + R1 * Math.sin(a)).toFixed(2)),
-      },
+      x1: Number((origin2D.x + R2 * Math.cos(a)).toFixed(2)),
+      y1: Number((origin2D.y + R2 * Math.sin(a)).toFixed(2)),
+      x2: Number((origin2D.x + R1 * Math.cos(a)).toFixed(2)),
+      y2: Number((origin2D.y + R1 * Math.sin(a)).toFixed(2)),
     });
   }
 
@@ -1473,7 +1471,8 @@ export function computeTruncatedConeDevelopment(
     id: `cone_label_${uid()}`,
     layer: "anotacoes",
     type: "text",
-    p: { x: origin2D.x + R2, y: origin2D.y },
+    x: origin2D.x + R2,
+    y: origin2D.y,
     text: `TRONCO DE CONE Ø${D1}➔Ø${D2} H=${H} (e=${thicknessMm}mm) | G=${G.toFixed(2)}mm | R1=${R1.toFixed(2)}mm | R2=${R2.toFixed(2)}mm | α=${alphaDeg.toFixed(2)}°`,
     size: 10,
   });
@@ -1542,7 +1541,8 @@ export function computePipeSaddleDevelopment(
       id: `saddle_lbl_${uid()}`,
       layer: "anotacoes",
       type: "text",
-      p: { x: origin2D.x + 10, y: origin2D.y + 20 },
+      x: origin2D.x + 10,
+      y: origin2D.y + 20,
       text: `BOCA DE LOBO Ø${branchDiameterMm}×Ø${headerDiameterMm} (${intersectionAngleDeg}°) | Perímetro: ${circumferenceMm.toFixed(1)}mm`,
       size: 10,
     },
@@ -1653,6 +1653,109 @@ export function applyExplodedView3DToEntities(
  * Constrói um suporte industrial em Chapa Dobrada #14 (`t = 2.0 mm`, `R = 2.0 mm`, `K = 0.33`, `BA = 4.178 mm`)
  * + Transição de Caldeiraria Quadrado-para-Redondo e gera a Planificação 2D (`CORTE`, `DOBRA`, `FUROS`, `ANOTAÇÕES`).
  */
+export function applySheetMetalEdgeFlange3DToEntities(
+  entities: Entity[],
+  targetIds: string[],
+  options: {
+    thicknessMm?: number;
+    bendRadiusMm?: number;
+    kFactor?: number;
+    angleDeg?: number;
+    flangeLengthMm?: number;
+    edgeSides?: ("left" | "right" | "top" | "bottom")[];
+  } = {},
+): Entity[] {
+  const targetSet = new Set(targetIds);
+  const t = Math.max(0.5, options.thicknessMm ?? 2.0);
+  const R = Math.max(0.5, options.bendRadiusMm ?? 2.0);
+  const K = options.kFactor ?? 0.33;
+  const angleDeg = options.angleDeg ?? 90;
+  const flangeLengthMm = options.flangeLengthMm ?? 65;
+  const sides = options.edgeSides ?? ["left", "right"];
+
+  return entities.map((ent) => {
+    if (!targetSet.has(ent.id)) return ent;
+    return setEntityDirect3DParams(
+      {
+        ...ent,
+        sheetThickness: t,
+        extrudeHeight: t,
+        params: {
+          ...(ent.params ?? {}),
+          featureType: "sheet_metal",
+          sheetMetal3D: {
+            enabled: true,
+            thicknessMm: t,
+            bendRadiusMm: R,
+            kFactor: K,
+            flanges: sides.map((s) => ({
+              edgeSide: s,
+              angleDeg,
+              flangeLengthMm,
+              bendRadiusMm: R,
+            })),
+          },
+        },
+      },
+      {
+        extrudeHeightMm: t,
+        sheetThicknessMm: t,
+      },
+    );
+  });
+}
+
+export function applyStructuralFrame3DToEntities(
+  entities: Entity[],
+  targetIds: string[],
+  options: {
+    widthMm?: number;
+    heightMm?: number;
+    wallMm?: number;
+    miterStartDeg?: number;
+    miterEndDeg?: number;
+    endCapStart?: boolean;
+    endCapEnd?: boolean;
+    gussetStart?: boolean;
+  } = {},
+): Entity[] {
+  const targetSet = new Set(targetIds);
+  return entities.map((ent) => {
+    if (!targetSet.has(ent.id)) return ent;
+    const widthMm = options.widthMm ?? 80;
+    const heightMm = options.heightMm ?? 50;
+    const wallMm = options.wallMm ?? 3.0;
+    return setEntityDirect3DParams(
+      {
+        ...ent,
+        shellWallThickness: wallMm,
+        params: {
+          ...(ent.params ?? {}),
+          featureType: "structural_frame",
+          structuralFrame3D: {
+            enabled: true,
+            widthMm,
+            heightMm,
+            wallMm,
+            miterStartDeg: options.miterStartDeg ?? 45,
+            miterEndDeg: options.miterEndDeg ?? 45,
+            endCapStart: Boolean(options.endCapStart),
+            endCapEnd: Boolean(options.endCapEnd),
+            gussetStart: Boolean(options.gussetStart),
+            profileDesignation: `Metalon ${widthMm}×${heightMm}×${wallMm}mm`,
+          },
+        },
+      },
+      {
+        shellThicknessMm: wallMm,
+        shellWallThicknessMm: wallMm,
+        miterCutTopDeg: options.miterEndDeg ?? 45,
+        miterCutBottomDeg: options.miterStartDeg ?? 45,
+      },
+    );
+  });
+}
+
 export function executeDemoChapaCaldeiraria3D(
   thicknessMm = 2.0,
   bendRadiusMm = 2.0,
@@ -1669,6 +1772,20 @@ export function executeDemoChapaCaldeiraria3D(
     {
       ...rectPolyline({ x: -100, y: -60 }, { x: 100, y: 60 }, "corte", 4),
       id: "chapa_base_flange",
+      sheetThickness: thicknessMm,
+      params: {
+        featureType: "sheet_metal",
+        sheetMetal3D: {
+          enabled: true,
+          thicknessMm,
+          bendRadiusMm,
+          kFactor,
+          flanges: [
+            { edgeSide: "left", angleDeg: 90, flangeLengthMm: 80, bendRadiusMm },
+            { edgeSide: "right", angleDeg: 90, flangeLengthMm: 80, bendRadiusMm },
+          ],
+        },
+      },
     },
     {
       extrudeHeightMm: thicknessMm,
@@ -1744,21 +1861,26 @@ export function executeDemoChapaCaldeiraria3D(
       id: "chapa_flat_bend_1",
       layer: "dobra",
       type: "line",
-      a: { x: bend1X, y: flatY0 },
-      b: { x: bend1X, y: flatY0 + 120 },
+      x1: bend1X,
+      y1: flatY0,
+      x2: bend1X,
+      y2: flatY0 + 120,
     },
     {
       id: "chapa_flat_bend_2",
       layer: "dobra",
       type: "line",
-      a: { x: bend2X, y: flatY0 },
-      b: { x: bend2X, y: flatY0 + 120 },
+      x1: bend2X,
+      y1: flatY0,
+      x2: bend2X,
+      y2: flatY0 + 120,
     },
     {
       id: "chapa_flat_label",
       layer: "anotacoes",
       type: "text",
-      p: { x: flatX0 + 12, y: flatY0 + 132 },
+      x: flatX0 + 12,
+      y: flatY0 + 132,
       text: `CHAPA PLANIFICADA: ${developedLengthMm.toFixed(2)} × 120.00 mm (t=${thicknessMm}mm, R=${bendRadiusMm}mm, K=${kFactor}, BA=${ba.bendAllowanceMm.toFixed(3)}mm)`,
       size: 9,
     },
