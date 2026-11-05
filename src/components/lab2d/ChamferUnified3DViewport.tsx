@@ -22,6 +22,10 @@ import {
   type DirectTopology3DScene,
   type SubElementSelectionState3D,
 } from "@/lib/lab2d/cadDirectModeling3D";
+import {
+  convertLoft3DMeshToTessellatedShape,
+  type Loft3DMesh,
+} from "@/lib/lab2d/cadLoft3DEngine";
 
 export interface ChamferUnified3DViewportProps {
   active?: boolean;
@@ -42,7 +46,7 @@ export interface ChamferUnified3DViewportProps {
   isAmoled?: boolean;
   initialTreeJson?: string;
   onTreeChange?: (json: string | undefined) => void;
-  activeLoftPreviewMesh?: unknown;
+  activeLoftPreviewMesh?: Loft3DMesh | null | unknown;
   topologyScene?: DirectTopology3DScene;
   subSelection3D?: SubElementSelectionState3D;
 }
@@ -63,6 +67,7 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
   elevationDeg,
   pivot2D,
   isDark,
+  activeLoftPreviewMesh,
   topologyScene,
   subSelection3D,
 }) => {
@@ -118,12 +123,33 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     const renderer = rendererRef.current;
     if (!renderer) return;
 
-    if (computedScene.bodies.length > 0) {
+    if (
+      computedScene.bodies.length > 0 ||
+      computedScene.tessellatedShape.edges.totalEdges > 0
+    ) {
       renderer.setShape(computedScene.tessellatedShape, false);
     } else {
       renderer.setShape(null, false);
     }
   }, [computedScene]);
+
+  // 3.5. Sincroniza o preview translúcido azul-celeste ("Ghost Preview") do LOFT 3D em tempo real
+  useEffect(() => {
+    const renderer = rendererRef.current;
+    if (!renderer) return;
+
+    const meshCandidate = activeLoftPreviewMesh as Loft3DMesh | null | undefined;
+    if (meshCandidate && Array.isArray(meshCandidate.quads) && meshCandidate.quads.length > 0) {
+      const previewTess = convertLoft3DMeshToTessellatedShape(
+        meshCandidate,
+        "loft_preview",
+        true,
+      );
+      renderer.setLoftPreviewShape(previewTess);
+    } else {
+      renderer.setLoftPreviewShape(null);
+    }
+  }, [activeLoftPreviewMesh]);
 
   // 4. Sincroniza o destaque Ciano Técnico (#00B4D8) das Faces, Arestas e Corpos selecionados no ThreeBRepRenderer
   useEffect(() => {
@@ -140,7 +166,7 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     for (const fId of subSelection3D.faceIds) {
       if (count >= 2) break;
       const f = computedScene.facesById.get(fId);
-      if (f) {
+      if (f && f.centroid && f.normal) {
         renderer.selectEntity(
           {
             id: f.faceId,
@@ -158,7 +184,7 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     for (const eId of subSelection3D.edgeIds) {
       if (count >= 2) break;
       const e = computedScene.edgesById.get(eId);
-      if (e) {
+      if (e && e.midpoint) {
         renderer.selectEntity(
           {
             id: e.edgeId,
@@ -177,14 +203,16 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
         if (count >= 2) break;
         const b = computedScene.bodiesById.get(bId);
         const topF = b?.faces.find((f) => f.role === "top" || f.role === "miter") ?? b?.faces[0];
-        if (topF) {
+        const pt = topF?.centroid ?? b?.pivot3D;
+        const nrm = topF?.normal ?? { x: 0, y: 0, z: 1 };
+        if (topF && pt) {
           renderer.selectEntity(
             {
               id: topF.faceId,
               type: "face",
               index: topF.meshFaceIndex,
-              point: { x: topF.centroid.x, y: -topF.centroid.y, z: topF.centroid.z },
-              normal: { x: topF.normal.x, y: -topF.normal.y, z: topF.normal.z },
+              point: { x: pt.x, y: -pt.y, z: pt.z },
+              normal: { x: nrm.x, y: -nrm.y, z: nrm.z },
             },
             count > 0,
           );
@@ -208,8 +236,8 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     const renderer = rendererRef.current;
     if (!renderer || !active || width <= 0 || height <= 0) return;
 
-    const pivotX = Number.isFinite(pivot2D.x) ? pivot2D.x : 0;
-    const pivotY = Number.isFinite(pivot2D.y) ? pivot2D.y : 0;
+    const pivotX = pivot2D && Number.isFinite(pivot2D.x) ? pivot2D.x : 0;
+    const pivotY = pivot2D && Number.isFinite(pivot2D.y) ? pivot2D.y : 0;
 
     renderer.syncWith2DViewport({
       view2D: view,
@@ -229,8 +257,8 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
     height,
     azimuthDeg,
     elevationDeg,
-    pivot2D.x,
-    pivot2D.y,
+    pivot2D?.x,
+    pivot2D?.y,
     effectiveThickness,
     computedScene,
     renderStyle3D,

@@ -452,6 +452,105 @@ describe("CHAMFER CAD — Motor de Modelagem Direta 3D, Edição Topológica e S
     const topFace = scene.bodies[0]!.faces.find((f) => f.role === "top")!;
     expect(topFace.areaMm2).toBeCloseTo(120 * 120 - Math.PI * 25 * 25, 0);
   });
+
+  it("15. Fluxo Completo Loft 3D Multisseção (AutoCAD 3D): Retângulo (Z=0) ➔ Hexágono (Z=60) ➔ Círculo (Z=120) com Parametrização Polar Zero-Twist (N=120 × M=36)", async () => {
+    const { regularPolygon } = await import("./core");
+    const {
+      LOFT_N_SAMPLES,
+      LOFT_V_RINGS,
+      buildLoft3DMesh,
+      createLoft3DEntity,
+      sampleProfileCrossSection3D,
+      setEntityElevationZ,
+    } = await import("./cadLoft3DEngine");
+
+    expect(LOFT_N_SAMPLES).toBe(120);
+    expect(LOFT_V_RINGS).toBe(36);
+
+    // Etapa 1: 3 perfis concêntricos em Z=0 com is3DProfileCurve: true (não são engolidos como furos!)
+    let rectBase = setEntityDirect3DParams(
+      { ...rectPolyline({ x: 50, y: 50 }, { x: 150, y: 150 }, "corte", 0), id: "loft_rect_z0" },
+      { is3DProfileCurve: true, extrudeHeightMm: 0 },
+    );
+    let hexMid = setEntityDirect3DParams(
+      {
+        ...regularPolygon({ x: 100, y: 100 }, 34, 6, 0, "corte"),
+        id: "loft_hex_z60",
+        isPolygon3D: true,
+        polygonSides: 6,
+      } as Entity,
+      { is3DProfileCurve: true, extrudeHeightMm: 0 },
+    );
+    let circleTop = setEntityDirect3DParams(
+      {
+        id: "loft_circle_z120",
+        layer: "corte",
+        type: "circle",
+        cx: 100,
+        cy: 100,
+        r: 42,
+      },
+      { is3DProfileCurve: true, extrudeHeightMm: 0 },
+    );
+
+    // Verifica que mesmo todos em Z=0 dentro do retângulo, os 3 perfis permanecem corpos 3D independentes e selecionáveis
+    const sceneAtZ0 = buildDirectTopology3DScene([rectBase, hexMid, circleTop], 3.0);
+    expect(sceneAtZ0.bodies.length).toBe(3);
+
+    // Etapa 2: Elevação individual em +Z (Hexágono para Z=60 mm e Círculo para Z=120 mm)
+    rectBase = setEntityElevationZ(rectBase, 0);
+    hexMid = setEntityElevationZ(hexMid, 60);
+    circleTop = setEntityElevationZ(circleTop, 120);
+
+    const s1 = sampleProfileCrossSection3D(rectBase, LOFT_N_SAMPLES)!;
+    const s2 = sampleProfileCrossSection3D(hexMid, LOFT_N_SAMPLES)!;
+    const s3 = sampleProfileCrossSection3D(circleTop, LOFT_N_SAMPLES)!;
+    expect(s1.points.length).toBe(120);
+    expect(s2.points.length).toBe(120);
+    expect(s3.points.length).toBe(120);
+    expect(s1.elevationZ).toBe(0);
+    expect(s2.elevationZ).toBe(60);
+    expect(s3.elevationZ).toBe(120);
+
+    // Etapa 3 & 4: Transição Loft 3D Suave (Catmull-Rom Cúbico) -> "Somente seções transversais"
+    const loftMesh = buildLoft3DMesh([rectBase, hexMid, circleTop], {
+      surfaceMode: "smooth",
+      bodyMode: "solid",
+      vRings: LOFT_V_RINGS,
+    });
+    expect(loftMesh).not.toBeNull();
+    expect(loftMesh!.rings.length).toBe(LOFT_V_RINGS + 1);
+    expect(loftMesh!.quads.length).toBe(LOFT_V_RINGS * LOFT_N_SAMPLES + 2 * LOFT_N_SAMPLES); // Faces laterais + Tampas superior e inferior
+
+    // Verifica cintura côncava no meio (Z=60, raio do hexágono ~34mm < raio da base ~50mm e topo 42mm)
+    const midRing = loftMesh!.rings[Math.floor(36 / 2)]!;
+    const avgMidRadius =
+      midRing.reduce((acc, pt) => acc + Math.hypot(pt.x - 100, pt.y - 100), 0) / midRing.length;
+    expect(avgMidRadius).toBeGreaterThan(28);
+    expect(avgMidRadius).toBeLessThan(36);
+
+    const loftEntity = createLoft3DEntity([rectBase, hexMid, circleTop], "smooth", "solid", 3.0);
+    expect(loftEntity).not.toBeNull();
+
+    const finalScene = buildDirectTopology3DScene([loftEntity!], 3.0);
+    expect(finalScene.bodies.length).toBe(1);
+    const loftBody = finalScene.bodies[0]!;
+    expect(loftBody.extrudeHeightMm).toBeCloseTo(120, 1);
+    expect(loftBody.faces.length).toBeGreaterThanOrEqual(2);
+    expect(loftBody.faces.every((f) => f.centroid && Number.isFinite(f.centroid.x))).toBe(true);
+    expect(loftBody.edges.every((e) => e.midpoint && Number.isFinite(e.midpoint.x))).toBe(true);
+    expect(finalScene.tessellatedShape.mesh.positions.length).toBeGreaterThan(1000);
+
+    // Verifica também o modo Casca Oca (bodyMode === "shell")
+    const shellLoftMesh = buildLoft3DMesh([rectBase, hexMid, circleTop], {
+      surfaceMode: "smooth",
+      bodyMode: "shell",
+      wallThicknessMm: 3.0,
+      vRings: LOFT_V_RINGS,
+    });
+    expect(shellLoftMesh).not.toBeNull();
+    expect(shellLoftMesh!.innerRings?.length).toBe(LOFT_V_RINGS + 1);
+  });
 });
 
 

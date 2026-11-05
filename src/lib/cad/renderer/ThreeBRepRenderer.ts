@@ -66,6 +66,7 @@ export class ThreeBRepRenderer {
   private edgesGroup: THREE.Group;
   private verticesGroup: THREE.Group;
   private sketchWireframeGroup: THREE.Group;
+  private loftPreviewGroup: THREE.Group;
   private selectionOverlayGroup: THREE.Group;
   private measurementGroup: THREE.Group;
   private gridHelper: THREE.GridHelper | null = null;
@@ -243,6 +244,7 @@ export class ThreeBRepRenderer {
     this.edgesGroup = new THREE.Group();
     this.verticesGroup = new THREE.Group();
     this.sketchWireframeGroup = new THREE.Group();
+    this.loftPreviewGroup = new THREE.Group();
     this.selectionOverlayGroup = new THREE.Group();
     this.measurementGroup = new THREE.Group();
 
@@ -250,6 +252,7 @@ export class ThreeBRepRenderer {
     this.rootGroup.add(this.edgesGroup);
     this.rootGroup.add(this.verticesGroup);
     this.rootGroup.add(this.sketchWireframeGroup);
+    this.rootGroup.add(this.loftPreviewGroup);
     this.rootGroup.add(this.selectionOverlayGroup);
     this.rootGroup.add(this.measurementGroup);
     this.scene.add(this.rootGroup);
@@ -633,6 +636,79 @@ export class ThreeBRepRenderer {
       this.fitView(false);
     }
     this.updateGridAndBackground();
+    this.requestRender();
+  }
+
+  /**
+   * Renderiza a malha fantasma translúcida azul-celeste ("Ghost Preview") da transição LOFT 3D em tempo real
+   * ao clicar nas seções [1] -> [2] -> [3], permitindo enxergar todas as seções internas por dentro da peça.
+   */
+  public setLoftPreviewShape(shape: CadTessellatedShape | null): void {
+    while (this.loftPreviewGroup.children.length > 0) {
+      const child = this.loftPreviewGroup.children[0]!;
+      this.loftPreviewGroup.remove(child);
+      if ("geometry" in child && child.geometry) {
+        (child.geometry as THREE.BufferGeometry).dispose();
+      }
+      if ("material" in child && child.material) {
+        const m = child.material as THREE.Material | THREE.Material[];
+        if (Array.isArray(m)) m.forEach((x) => x.dispose());
+        else m.dispose();
+      }
+    }
+
+    if (!shape || !shape.mesh || shape.mesh.vertexCount === 0) {
+      this.requestRender();
+      return;
+    }
+
+    const { mesh, edges } = shape;
+
+    if (mesh.vertexCount > 0 && mesh.triangleCount > 0) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(mesh.positions, 3));
+      geometry.setAttribute("normal", new THREE.BufferAttribute(mesh.normals, 3));
+      geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+
+      const ghostMat = new THREE.MeshPhysicalMaterial({
+        color: 0x60a5fa,
+        emissive: 0x1d4ed8,
+        emissiveIntensity: 0.28,
+        roughness: 0.22,
+        metalness: 0.15,
+        transparent: true,
+        opacity: 0.36,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+
+      const ghostMesh = new THREE.Mesh(geometry, ghostMat);
+      ghostMesh.name = "loft_ghost_preview_mesh";
+      ghostMesh.frustumCulled = false;
+      ghostMesh.renderOrder = 10;
+      this.loftPreviewGroup.add(ghostMesh);
+    }
+
+    if (edges && edges.edges.length > 0) {
+      for (const edge of edges.edges) {
+        if (edge.pointCount < 2) continue;
+        const isFlowGuide = Boolean(edge.isSeam || edge.isTangentEdge);
+        const lineMat = new THREE.LineBasicMaterial({
+          color: isFlowGuide ? 0x93c5fd : 0x38bdf8,
+          linewidth: isFlowGuide ? 1.0 : 2.2,
+          transparent: true,
+          opacity: isFlowGuide ? 0.45 : 0.96,
+          depthTest: false,
+        });
+        const lineGeo = new THREE.BufferGeometry();
+        lineGeo.setAttribute("position", new THREE.BufferAttribute(edge.points, 3));
+        const line = new THREE.Line(lineGeo, lineMat);
+        line.frustumCulled = false;
+        line.renderOrder = 12;
+        this.loftPreviewGroup.add(line);
+      }
+    }
+
     this.requestRender();
   }
 

@@ -23,6 +23,12 @@ import * as THREE from "three";
 import { bbox, boxOf, rectPolyline, translate, uid, type Entity, type Vec2 } from "./core";
 import type { CadTessellatedShape } from "@/lib/cad/core/CadMesh";
 import type { WorkplaneOrbitProjection2D } from "./orbit3dController";
+import {
+  buildLoft3DMeshForEntity,
+  isLoft3DEntity,
+  LOFT_N_SAMPLES,
+  LOFT_V_RINGS,
+} from "./cadLoft3DEngine";
 
 export interface Vec3Mm {
   x: number;
@@ -480,9 +486,16 @@ export function getEntityDirect3DParams(entity: Entity, defaultThicknessMm = 20)
   const p = entity.params ?? {};
 
   // 1. EXTRUDE HEIGHT (Altura / Comprimento de Extrusão 3D em mm) — INDEPENDENTE de espessura de casca/chapa
+  // Suporta Curvas de Perfil 3D puras no plano Z (`is3DProfileCurve: true`, `extrudeHeightMm: 0`) para fluxos como LOFT 3D
   const rawExtrude = p.extrudeHeightMm ?? p.extrudeHeight ?? entity.extrudeHeight;
-  const extrudeHeightMm =
-    typeof rawExtrude === "number" && Number.isFinite(rawExtrude) && rawExtrude > 0.05
+  const is3DProfileCurve = Boolean(
+    p.is3DProfileCurve === true ||
+      p.isLoftSection3D === true ||
+      (typeof rawExtrude === "number" && Number.isFinite(rawExtrude) && Math.abs(rawExtrude) <= 0.05 && p.isExtruded3D === false),
+  );
+  const extrudeHeightMm = is3DProfileCurve
+    ? 0
+    : typeof rawExtrude === "number" && Number.isFinite(rawExtrude) && rawExtrude > 0.05
       ? Number(rawExtrude)
       : Math.max(2, defaultThicknessMm);
 
@@ -591,6 +604,7 @@ export function getEntityDirect3DParams(entity: Entity, defaultThicknessMm = 20)
   const bodyName = typeof p.bodyName === "string" ? p.bodyName : "";
 
   return {
+    is3DProfileCurve,
     extrudeHeightMm,
     elevationZ,
     booleanMode3D,
@@ -623,6 +637,9 @@ export function setEntityDirect3DParams(
 ): Entity {
   const cur = getEntityDirect3DParams(entity);
   const next = { ...cur, ...patch };
+  if (patch.extrudeHeightMm !== undefined && patch.extrudeHeightMm > 0.05 && patch.is3DProfileCurve === undefined) {
+    next.is3DProfileCurve = false;
+  }
 
   const rawBox = boxOf(entity);
   const rawSpanW = Math.max(1, rawBox.maxX - rawBox.minX);
@@ -650,6 +667,7 @@ export function setEntityDirect3DParams(
     sheetThickness: next.sheetThicknessMm,
     params: {
       ...(entity.params ?? {}),
+      is3DProfileCurve: next.is3DProfileCurve,
       extrudeHeightMm: next.extrudeHeightMm,
       extrudeHeight: next.extrudeHeightMm,
       elevationZ: next.elevationZ,
@@ -1367,8 +1385,13 @@ export function buildDirectTopology3DScene(
     bbox2D: { minX: number; maxX: number; minY: number; maxY: number };
     params3D: ReturnType<typeof getEntityDirect3DParams>;
   }[] = [];
+  const loftEntities: Entity[] = [];
 
   for (const ent of entities) {
+    if (isLoft3DEntity(ent)) {
+      loftEntities.push(ent);
+      continue;
+    }
     const extracted = extractBaseClosedLoop2D(ent);
     if (!extracted) continue;
     const areaAbs = Math.abs(signedArea2D(extracted.points));
@@ -1400,17 +1423,30 @@ export function buildDirectTopology3DScene(
     const cand = validLoops[i]!;
     if (assignedAsHole.has(cand.entity.id)) continue;
 
+    // Perfis de Seção 3D (Curvas 3D para Loft) nunca engolem perfis menores nem são engolidos como furos
+    if (cand.params3D.is3DProfileCurve) {
+      groups.push({ outer: cand, holes: [] });
+      continue;
+    }
+
     // Verifica se este perfil é um furo/recorte contido em um perfil maior na mesma faixa Z
     let parentGroup: SolidProfileGroup | null = null;
     for (const grp of groups) {
+      if (grp.outer.params3D.is3DProfileCurve) continue;
       const sameZ = Math.abs(grp.outer.params3D.elevationZ - cand.params3D.elevationZ) < 1.0;
       const isExplicitHole =
         cand.entity.layer === "furo" ||
         cand.entity.layer === "recorte" ||
         cand.entity.params?.booleanMode3D === "subtract";
+      const isRegularPolygonProfile =
+        !isExplicitHole &&
+        (cand.entity.params?.isPolygon3D === true ||
+          cand.entity.params?.shapeKind === "regular_polygon" ||
+          typeof cand.entity.params?.polygonSides === "number");
       const isForceNewBody =
         !isExplicitHole &&
-        (cand.entity.params?.isIndependentBody3D === true ||
+        (isRegularPolygonProfile ||
+          cand.entity.params?.isIndependentBody3D === true ||
           cand.entity.params?.booleanMode3D === "union" ||
           (cand.entity.params?.booleanMode3D === "new_body" &&
             Math.abs(cand.params3D.extrudeHeightMm - grp.outer.params3D.extrudeHeightMm) > 0.5 &&
@@ -1491,6 +1527,189 @@ export function buildDirectTopology3DScene(
         p3d.cornerFilletsMm,
         p3d.cornerChamfersMm,
       );
+    }
+
+    // 2.5. Caso especial: Curva de Perfil 3D pura no plano Z (`is3DProfileCurve: true`, sem extrusão automática)
+    if (p3d.is3DProfileCurve) {
+      const zPlane = p3d.elevationZ;
+      const b2dCurve = boxOf({
+        id: "tmp_curve",
+        layer: "corte",
+        type: "polyline",
+        pts: contour2D,
+        closed: true,
+      });
+      const centroid2D = computePolygonCentroid3D(
+        contour2D.map((pt) => ({ x: pt.x, y: pt.y, z: zPlane })),
+      );
+      const curvePivot3D: Vec3Mm = {
+        x: centroid2D.x,
+        y: centroid2D.y,
+        z: zPlane,
+      };
+      const ring3D: Vec3Mm[] = contour2D.map((pt) =>
+        rotatePoint3DAroundPivot({ x: pt.x, y: pt.y, z: zPlane }, curvePivot3D, p3d.rotation3D),
+      );
+      const closedVerts: number[] = [];
+      for (const p of ring3D) closedVerts.push(p.x, p.y, p.z);
+      if (ring3D.length > 0) {
+        closedVerts.push(ring3D[0]!.x, ring3D[0]!.y, ring3D[0]!.z);
+      }
+      const meshEdgeIndex = globalMeshEdgeIdx++;
+      edgePolylines.push({
+        edgeIndex: meshEdgeIndex,
+        vertices: closedVerts,
+        isSeam: false,
+        isTangentEdge: false,
+      });
+
+      const curveFaces: DirectFace3D[] = [];
+      const curveEdges: DirectEdge3D[] = [];
+      const curveVertices: DirectVertex3D[] = [];
+      const curveAreaMm2 = Math.max(1, Math.abs(signedArea2D(contour2D)));
+
+      const profileFace: DirectFace3D = {
+        faceId: `${bodyId}_face_top`,
+        meshFaceIndex: -1,
+        bodyId,
+        entityId: entId,
+        role: "top",
+        sideIndex: -1,
+        label: `Seção Transversal 3D (Z = ${zPlane.toFixed(1)} mm)`,
+        normal: rotateNormal3D({ x: 0, y: 0, z: 1 }, p3d.rotation3D),
+        centroid: curvePivot3D,
+        areaMm2: curveAreaMm2,
+        polygon3D: ring3D,
+      };
+      curveFaces.push(profileFace);
+      facesById.set(profileFace.faceId, profileFace);
+
+      const perimLen = computePolygonPerimeter3D(ring3D);
+      const closedPoly3D = ring3D.length > 0 ? [...ring3D, ring3D[0]!] : [];
+      const profileEdge: DirectEdge3D = {
+        edgeId: `${bodyId}_edge_profile_0`,
+        meshEdgeIndex,
+        bodyId,
+        entityId: entId,
+        role: "top_loop",
+        edgeIndex: 0,
+        label: `Contorno de Perfil 3D (Z = ${zPlane.toFixed(1)} mm)`,
+        startPt: ring3D[0] ?? curvePivot3D,
+        endPt: ring3D[Math.floor(ring3D.length / 2)] ?? curvePivot3D,
+        midpoint: curvePivot3D,
+        dir: { x: 1, y: 0, z: 0 },
+        lengthMm: perimLen,
+        polyline3D: closedPoly3D,
+      };
+      curveEdges.push(profileEdge);
+      edgesById.set(profileEdge.edgeId, profileEdge);
+      edgesByMeshIndex.set(meshEdgeIndex, profileEdge);
+
+      const cornerPts = outer.corners.length >= 3 ? outer.corners : contour2D.slice(0, 12);
+      cornerPts.forEach((cPt, cIdx) => {
+        const pt3D = rotatePoint3DAroundPivot(
+          { x: cPt.x, y: cPt.y, z: zPlane },
+          curvePivot3D,
+          p3d.rotation3D,
+        );
+        const vObj: DirectVertex3D = {
+          vertexId: `${bodyId}_vert_top_${cIdx}`,
+          bodyId,
+          entityId: entId,
+          cornerIndex: cIdx,
+          end: "top",
+          label: `Vértice de Perfil #${cIdx + 1}`,
+          point3D: pt3D,
+        };
+        curveVertices.push(vObj);
+        verticesById.set(vObj.vertexId, vObj);
+      });
+
+      const snapCandidates: DirectSnapPivotCandidate3D[] = [
+        {
+          id: `${bodyId}_snap_center`,
+          bodyId,
+          entityId: entId,
+          kind: "body_center",
+          label: "Centro Geométrico (⌖)",
+          point3D: curvePivot3D,
+        },
+        ...curveVertices.map((v) => ({
+          id: `${bodyId}_snap_${v.vertexId}`,
+          bodyId,
+          entityId: entId,
+          kind: "vertex" as const,
+          label: v.label,
+          point3D: v.point3D,
+        })),
+      ];
+
+      const curveBody: DirectBody3D = {
+        bodyId,
+        entityId: entId,
+        name: p3d.bodyName || `Perfil 3D #${bodyIdx + 1} (Z=${zPlane.toFixed(0)}mm)`,
+        booleanMode: p3d.booleanMode3D,
+        extrudeHeightMm: 0,
+        elevationZ: zPlane,
+        edgeFilletRadiusMm: p3d.edgeFilletRadiusMm,
+        innerFilletRadiusMm: 0,
+        edgeChamferDistMm: p3d.edgeChamferDistMm,
+        cornerFilletsMm: p3d.cornerFilletsMm,
+        cornerChamfersMm: p3d.cornerChamfersMm,
+        vertexBevelsMm: p3d.vertexBevelsMm,
+        shellWallThicknessMm: 0,
+        shellThicknessMm: 0,
+        sheetThicknessMm: p3d.sheetThicknessMm,
+        shellOpenCaps: [],
+        offsetFaceTopMm: 0,
+        offsetFaceBottomMm: 0,
+        offsetFaceSidesMm: p3d.offsetFaceSidesMm,
+        offsetSidesIndependent: {
+          posX: p3d.offsetFaceSidesMm,
+          negX: p3d.offsetFaceSidesMm,
+          posY: p3d.offsetFaceSidesMm,
+          negY: p3d.offsetFaceSidesMm,
+        },
+        miterCutTopDeg: 0,
+        miterCutTopAxis: "x",
+        miterCutBottomDeg: 0,
+        miterCutBottomAxis: "x",
+        rotation3D: p3d.rotation3D,
+        pivot3D: curvePivot3D,
+        colorHex: p3d.colorHex,
+        materialName: p3d.materialName,
+        densityGPerCm3: 7.85,
+        massGrams: 0,
+        eulerCharacteristic: { V: curveVertices.length, E: curveVertices.length, F: 1, chi: 1 },
+        featureHistory: [
+          {
+            featureId: `${bodyId}_feat_sketch`,
+            kind: "sketch",
+            label: "Seção Transversal 3D",
+            parameterSummary: `Z = ${zPlane.toFixed(1)} mm`,
+          },
+        ],
+        bbox3D: {
+          minX: b2dCurve.minX,
+          maxX: b2dCurve.maxX,
+          minY: b2dCurve.minY,
+          maxY: b2dCurve.maxY,
+          minZ: zPlane,
+          maxZ: zPlane,
+        },
+        deltaX: Math.max(0, b2dCurve.maxX - b2dCurve.minX),
+        deltaY: Math.max(0, b2dCurve.maxY - b2dCurve.minY),
+        deltaZ: 0,
+        totalAreaMm2: curveAreaMm2,
+        volumeMm3: 0,
+        faces: curveFaces,
+        edges: curveEdges,
+        vertices: curveVertices,
+        snapCandidates,
+      };
+      bodies.push(curveBody);
+      bodiesById.set(bodyId, curveBody);
+      return;
     }
 
     // 3. Calcula limites Z (ElevationZ + Extrude + Offset Face Top/Bottom)
@@ -2881,6 +3100,250 @@ export function buildDirectTopology3DScene(
     bodiesById.set(bodyId, bodyObj);
   });
 
+  // -------------------------------------------------------------------------
+  // CORPOS SÓLIDOS DE TRANSIÇÃO MULTISSEÇÃO "LOFT 3D" (AUTOCAD 3D / B-REP)
+  // -------------------------------------------------------------------------
+  loftEntities.forEach((loftEnt, loftIdx) => {
+    const loftMesh = buildLoft3DMeshForEntity(loftEnt, entities, {
+      nSamples: LOFT_N_SAMPLES,
+      vRings: LOFT_V_RINGS,
+    });
+    if (!loftMesh || loftMesh.quads.length === 0) return;
+
+    const p3d = getEntityDirect3DParams(loftEnt, defaultThicknessMm);
+    const entId = loftEnt.id;
+    const bodyId = `body_${entId}`;
+    const bodyFaces: DirectFace3D[] = [];
+    const bodyEdges: DirectEdge3D[] = [];
+    const bodyVertices: DirectVertex3D[] = [];
+
+    let minX = Infinity;
+    let maxX = -Infinity;
+    let minY = Infinity;
+    let maxY = -Infinity;
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+
+    const updateLoftBounds = (p: Vec3Mm) => {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+      if (p.z < minZ) minZ = p.z;
+      if (p.z > maxZ) maxZ = p.z;
+    };
+
+    const startIdx = indices.length;
+    for (const q of loftMesh.quads) {
+      const baseV = positions.length / 3;
+      const pts = [q.p00, q.p10, q.p11, q.p01];
+      const vNorms = [
+        q.n00 ?? q.normal,
+        q.n10 ?? q.normal,
+        q.n11 ?? q.normal,
+        q.n01 ?? q.normal,
+      ];
+      for (let k = 0; k < 4; k++) {
+        const pt = pts[k]!;
+        const vn = vNorms[k]!;
+        positions.push(pt.x, pt.y, pt.z);
+        normals.push(vn.x, vn.y, vn.z);
+        updateLoftBounds(pt);
+      }
+      indices.push(baseV, baseV + 1, baseV + 2, baseV, baseV + 2, baseV + 3);
+    }
+    const countIdx = indices.length - startIdx;
+    const meshFaceIndex = globalMeshFaceIdx++;
+    faceGroups.push({ faceIndex: meshFaceIndex, start: startIdx, count: countIdx });
+
+    const bottomSec = loftMesh.sections[0];
+    const topSec = loftMesh.sections[loftMesh.sections.length - 1];
+
+    if (topSec && topSec.points3D.length >= 3) {
+      const topPoly = topSec.points3D;
+      const topCentroid3D: Vec3Mm = topSec.centroid3D ?? {
+        x: topSec.center?.x ?? 0,
+        y: topSec.center?.y ?? 0,
+        z: topSec.elevationZ ?? 0,
+      };
+      const topFace: DirectFace3D = {
+        faceId: `${bodyId}_face_top`,
+        meshFaceIndex,
+        bodyId,
+        entityId: entId,
+        role: "top",
+        sideIndex: -1,
+        label: `Topo Loft 3D (Z = ${topSec.elevationZ.toFixed(1)} mm)`,
+        normal: { x: 0, y: 0, z: 1 },
+        centroid: topCentroid3D,
+        areaMm2: Math.max(1, (loftMesh.surfaceAreaMm2 || 1000) * 0.2),
+        polygon3D: topPoly,
+      };
+      bodyFaces.push(topFace);
+      facesById.set(topFace.faceId, topFace);
+      facesByMeshIndex.set(meshFaceIndex, topFace);
+
+      const closedTop: number[] = [];
+      for (const p of topPoly) closedTop.push(p.x, p.y, p.z);
+      closedTop.push(topPoly[0]!.x, topPoly[0]!.y, topPoly[0]!.z);
+      const topEdgeMeshIdx = globalMeshEdgeIdx++;
+      edgePolylines.push({
+        edgeIndex: topEdgeMeshIdx,
+        vertices: closedTop,
+        isSeam: false,
+        isTangentEdge: false,
+      });
+      const topEdgeObj: DirectEdge3D = {
+        edgeId: `${bodyId}_edge_top_0`,
+        meshEdgeIndex: topEdgeMeshIdx,
+        bodyId,
+        entityId: entId,
+        role: "top_loop",
+        edgeIndex: 0,
+        label: "Borda Superior Loft 3D",
+        startPt: topPoly[0]!,
+        endPt: topPoly[Math.floor(topPoly.length / 2)]!,
+        midpoint: topCentroid3D,
+        dir: { x: 1, y: 0, z: 0 },
+        lengthMm: computePolygonPerimeter3D(topPoly),
+        polyline3D: [...topPoly, topPoly[0]!],
+      };
+      bodyEdges.push(topEdgeObj);
+      edgesById.set(topEdgeObj.edgeId, topEdgeObj);
+      edgesByMeshIndex.set(topEdgeMeshIdx, topEdgeObj);
+    }
+
+    if (bottomSec && bottomSec.points3D.length >= 3) {
+      const botPoly = bottomSec.points3D;
+      const botCentroid3D: Vec3Mm = bottomSec.centroid3D ?? {
+        x: bottomSec.center?.x ?? 0,
+        y: bottomSec.center?.y ?? 0,
+        z: bottomSec.elevationZ ?? 0,
+      };
+      const botFace: DirectFace3D = {
+        faceId: `${bodyId}_face_bottom`,
+        meshFaceIndex,
+        bodyId,
+        entityId: entId,
+        role: "bottom",
+        sideIndex: -2,
+        label: `Base Loft 3D (Z = ${bottomSec.elevationZ.toFixed(1)} mm)`,
+        normal: { x: 0, y: 0, z: -1 },
+        centroid: botCentroid3D,
+        areaMm2: Math.max(1, (loftMesh.surfaceAreaMm2 || 1000) * 0.25),
+        polygon3D: botPoly,
+      };
+      bodyFaces.push(botFace);
+      facesById.set(botFace.faceId, botFace);
+
+      const closedBot: number[] = [];
+      for (const p of botPoly) closedBot.push(p.x, p.y, p.z);
+      closedBot.push(botPoly[0]!.x, botPoly[0]!.y, botPoly[0]!.z);
+      const botEdgeMeshIdx = globalMeshEdgeIdx++;
+      edgePolylines.push({
+        edgeIndex: botEdgeMeshIdx,
+        vertices: closedBot,
+        isSeam: false,
+        isTangentEdge: false,
+      });
+      const botEdgeObj: DirectEdge3D = {
+        edgeId: `${bodyId}_edge_bottom_0`,
+        meshEdgeIndex: botEdgeMeshIdx,
+        bodyId,
+        entityId: entId,
+        role: "bottom_loop",
+        edgeIndex: 1,
+        label: "Borda Inferior Loft 3D",
+        startPt: botPoly[0]!,
+        endPt: botPoly[Math.floor(botPoly.length / 2)]!,
+        midpoint: botCentroid3D,
+        dir: { x: 1, y: 0, z: 0 },
+        lengthMm: computePolygonPerimeter3D(botPoly),
+        polyline3D: [...botPoly, botPoly[0]!],
+      };
+      bodyEdges.push(botEdgeObj);
+      edgesById.set(botEdgeObj.edgeId, botEdgeObj);
+      edgesByMeshIndex.set(botEdgeMeshIdx, botEdgeObj);
+    }
+
+    const pivot3D: Vec3Mm = {
+      x: Number.isFinite(minX) ? (minX + maxX) * 0.5 : 0,
+      y: Number.isFinite(minY) ? (minY + maxY) * 0.5 : 0,
+      z: Number.isFinite(minZ) ? (minZ + maxZ) * 0.5 : 0,
+    };
+    const loftHeightMm = Number.isFinite(minZ) ? Math.max(1, maxZ - minZ) : p3d.extrudeHeightMm;
+
+    const loftBodyObj: DirectBody3D = {
+      bodyId,
+      entityId: entId,
+      name: p3d.bodyName || `Sólido Loft 3D #${loftIdx + 1} (${loftMesh.sections.length} seções)`,
+      booleanMode: p3d.booleanMode3D,
+      extrudeHeightMm: loftHeightMm,
+      elevationZ: Number.isFinite(minZ) ? minZ : p3d.elevationZ,
+      edgeFilletRadiusMm: 0,
+      innerFilletRadiusMm: 0,
+      edgeChamferDistMm: 0,
+      cornerFilletsMm: {},
+      cornerChamfersMm: {},
+      vertexBevelsMm: {},
+      shellWallThicknessMm: loftMesh.wallThicknessMm,
+      shellThicknessMm: loftMesh.wallThicknessMm,
+      sheetThicknessMm: p3d.sheetThicknessMm,
+      shellOpenCaps: [],
+      offsetFaceTopMm: 0,
+      offsetFaceBottomMm: 0,
+      offsetFaceSidesMm: 0,
+      offsetSidesIndependent: { posX: 0, negX: 0, posY: 0, negY: 0 },
+      miterCutTopDeg: 0,
+      miterCutTopAxis: "x",
+      miterCutBottomDeg: 0,
+      miterCutBottomAxis: "x",
+      rotation3D: p3d.rotation3D,
+      pivot3D,
+      colorHex: p3d.colorHex,
+      materialName: p3d.materialName,
+      densityGPerCm3: 7.85,
+      massGrams: (loftMesh.volumeMm3 / 1000) * 7.85,
+      eulerCharacteristic: { V: 24, E: 36, F: 14, chi: 2 },
+      featureHistory: [
+        {
+          featureId: `${bodyId}_feat_loft`,
+          kind: "extrude",
+          label: `Loft 3D (${loftMesh.sections.length} seções)`,
+          parameterSummary: `${loftMesh.surfaceMode === "smooth" ? "Smooth Fit" : "Ruled"} | ΔZ = ${loftHeightMm.toFixed(1)} mm`,
+        },
+      ],
+      bbox3D: {
+        minX: Number.isFinite(minX) ? minX : -50,
+        maxX: Number.isFinite(maxX) ? maxX : 50,
+        minY: Number.isFinite(minY) ? minY : -50,
+        maxY: Number.isFinite(maxY) ? maxY : 50,
+        minZ: Number.isFinite(minZ) ? minZ : 0,
+        maxZ: Number.isFinite(maxZ) ? maxZ : 100,
+      },
+      deltaX: Number.isFinite(minX) ? Math.max(0, maxX - minX) : 100,
+      deltaY: Number.isFinite(minY) ? Math.max(0, maxY - minY) : 100,
+      deltaZ: loftHeightMm,
+      totalAreaMm2: loftMesh.surfaceAreaMm2,
+      volumeMm3: loftMesh.volumeMm3,
+      faces: bodyFaces,
+      edges: bodyEdges,
+      vertices: bodyVertices,
+      snapCandidates: [
+        {
+          id: `${bodyId}_snap_center`,
+          bodyId,
+          entityId: entId,
+          kind: "body_center",
+          label: "Centro Loft 3D",
+          point3D: pivot3D,
+        },
+      ],
+    };
+    bodies.push(loftBodyObj);
+    bodiesById.set(bodyId, loftBodyObj);
+  });
+
   // Bounding box global da cena 3D
   let gMinX = Infinity;
   let gMaxX = -Infinity;
@@ -3175,7 +3638,8 @@ export function hitTestSubElement3DInScreenSpace(
     }
   }
 
-  // 2. Hit-test nas Faces 3D (ordenadas pela face voltada para a câmera / maior Z projetado)
+  // 2. Hit-test nas Faces 3D (ordenadas pela face voltada para a câmera / maior Z projetado;
+  //    em caso de perfis concêntricos no mesmo plano Z, prioriza o perfil interno de menor área)
   const azRad = (orbitProjection.azimuthDeg * Math.PI) / 180;
   const elRad = (orbitProjection.elevationDeg * Math.PI) / 180;
   const camDir: Vec3Mm = {
@@ -3184,7 +3648,7 @@ export function hitTestSubElement3DInScreenSpace(
     z: Math.sin(elRad),
   };
 
-  let bestFace: { face: DirectFace3D; score: number } | null = null;
+  let bestFace: { face: DirectFace3D; score: number; areaMm2: number } | null = null;
   for (const body of scene.bodies) {
     for (const face of body.faces) {
       if (face.polygon3D.length < 3) continue;
@@ -3197,8 +3661,12 @@ export function hitTestSubElement3DInScreenSpace(
           face.centroid.y * camDir.y +
           face.centroid.z * camDir.z +
           facingDot * 500;
-        if (!bestFace || depthScore > bestFace.score) {
-          bestFace = { face, score: depthScore };
+        if (
+          !bestFace ||
+          depthScore > bestFace.score + 2.5 ||
+          (Math.abs(depthScore - bestFace.score) <= 2.5 && face.areaMm2 < bestFace.areaMm2)
+        ) {
+          bestFace = { face, score: depthScore, areaMm2: face.areaMm2 };
         }
       }
     }

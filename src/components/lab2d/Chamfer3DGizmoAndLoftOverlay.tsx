@@ -27,7 +27,16 @@ import {
   Sparkles,
   X,
 } from "lucide-react";
-import { bbox, type Entity, type Vec2 } from "@/lib/lab2d/core";
+import {
+  bbox,
+  boxOf,
+  rectPolyline,
+  regularPolygon,
+  translate,
+  uid,
+  type Entity,
+  type Vec2,
+} from "@/lib/lab2d/core";
 import type { WorkplaneOrbitProjection2D } from "@/lib/lab2d/orbit3dController";
 import {
   resolveContactAndAlignmentSnaps3D,
@@ -36,6 +45,7 @@ import {
 } from "@/lib/lab2d/cadContactSnapping3D";
 import {
   getEntityElevationZ,
+  setEntityElevationZ,
   type LoftBodyMode,
   type LoftSurfaceMode,
 } from "@/lib/lab2d/cadLoft3DEngine";
@@ -185,9 +195,12 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   onChangeLoftSurfaceMode,
   onSetLoftBodyMode: onSetLoftBodyModeProp,
   onChangeLoftBodyMode,
+  onToggleLoftSection,
   onClearLoftSections: onClearLoftSectionsProp,
   onCancelLoft3D,
   onConfirmLoft3D,
+  onUpdateSectionElevationZ,
+  onAutoSpaceLoftSectionsZ,
   onTranslateSelection3D: onTranslateSelection3DProp,
   onSetSelectionElevationZ: onSetSelectionElevationZProp,
   onLiveElevateSelection,
@@ -303,6 +316,13 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     },
     [onChangeDirect3DTool],
   );
+
+  const isLoftActive = Boolean(
+    tool === "loft_3d" || directTool === "loft_3d" || isLoftToolActive,
+  );
+  const [profile3DCreatorOpen, setProfile3DCreatorOpen] = useState<boolean>(false);
+  const [polygonSides3D, setPolygonSides3D] = useState<number>(6);
+  const [loftDropdownOpen, setLoftDropdownOpen] = useState<boolean>(false);
 
   // Estado de modos internos das ferramentas 3D
   const [booleanMode, setBooleanMode] = useState<BooleanMode3D>("new_body");
@@ -1322,6 +1342,266 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     }));
   }, [primaryBody, scene.bodies, setSubSel]);
 
+  // ============================================================================
+  // CRIAÇÃO E ALINHAMENTO CONCÊNTRICO DE PERFIS 3D (RETÂNGULO / POLÍGONO / CÍRCULO) NO MODO CAD 3D
+  // ============================================================================
+  const getReferenceCenterXY = useCallback((): Vec2 => {
+    if (primaryBody) {
+      return { x: primaryBody.pivot3D.x, y: primaryBody.pivot3D.y };
+    }
+    if (scene.bodies.length > 0) {
+      const b0 = scene.bodies[0]!;
+      return { x: b0.pivot3D.x, y: b0.pivot3D.y };
+    }
+    return { x: 0, y: 0 };
+  }, [primaryBody, scene.bodies]);
+
+  const handleCreate3DProfileCurve = useCallback(
+    (
+      kind: "rectangle" | "polygon" | "circle" | "kit_3_profiles",
+      customSides?: number,
+      elevationZ = 0,
+    ) => {
+      if (!onCommitEntities) return;
+      triggerHaptic("action");
+      const refCenter = getReferenceCenterXY();
+
+      if (kind === "kit_3_profiles") {
+        // Cria as 3 seções concêntricas clássicas do AutoCAD 3D (Retângulo Z=0, Hexágono Z=60, Círculo Z=120)
+        const rectEnt: Entity = {
+          ...rectPolyline(
+            refCenter.x - 50,
+            refCenter.y - 50,
+            refCenter.x + 50,
+            refCenter.y + 50,
+            "corte",
+          ),
+          elevationZ: 0,
+          extrudeHeight: 0,
+          params: {
+            is3DProfileCurve: true,
+            isLoftSection3D: true,
+            extrudeHeightMm: 0,
+            elevationZ: 0,
+            bodyName: "Seção [1] Retângulo (Z=0 mm)",
+          },
+        };
+        const hexEnt: Entity = {
+          ...regularPolygon(refCenter, 36, 6, 0, "corte"),
+          elevationZ: 60,
+          extrudeHeight: 0,
+          params: {
+            is3DProfileCurve: true,
+            isLoftSection3D: true,
+            isPolygon3D: true,
+            polygonSides: 6,
+            extrudeHeightMm: 0,
+            elevationZ: 60,
+            bodyName: "Seção [2] Hexágono (Z=60 mm)",
+          },
+        };
+        const circEnt: Entity = {
+          id: uid(),
+          layer: "corte",
+          type: "circle",
+          cx: refCenter.x,
+          cy: refCenter.y,
+          r: 32,
+          elevationZ: 120,
+          extrudeHeight: 0,
+          params: {
+            is3DProfileCurve: true,
+            isLoftSection3D: true,
+            extrudeHeightMm: 0,
+            elevationZ: 120,
+            bodyName: "Seção [3] Círculo (Z=120 mm)",
+          },
+        };
+        onCommitEntities(
+          (prev) => [...prev, rectEnt, hexEnt, circEnt],
+          [rectEnt.id, hexEnt.id, circEnt.id],
+        );
+        setSubSel({
+          faceIds: [],
+          edgeIds: [],
+          vertexIds: [],
+          bodyIds: [`body_${hexEnt.id}`],
+          selectionScope: "body",
+          activePivot3D: { x: refCenter.x, y: refCenter.y, z: 60 },
+          activeHingeEdgeId: null,
+        });
+        setProfile3DCreatorOpen(false);
+        return;
+      }
+
+      let newEnt: Entity;
+      if (kind === "rectangle") {
+        newEnt = {
+          ...rectPolyline(
+            refCenter.x - 50,
+            refCenter.y - 50,
+            refCenter.x + 50,
+            refCenter.y + 50,
+            "corte",
+          ),
+          elevationZ,
+          extrudeHeight: 0,
+          params: {
+            is3DProfileCurve: true,
+            isLoftSection3D: true,
+            extrudeHeightMm: 0,
+            elevationZ,
+            bodyName: `Retângulo 3D (Z=${elevationZ} mm)`,
+          },
+        };
+      } else if (kind === "polygon") {
+        const sides = Math.max(3, Math.min(12, customSides ?? polygonSides3D));
+        newEnt = {
+          ...regularPolygon(refCenter, 36, sides, 0, "corte"),
+          elevationZ,
+          extrudeHeight: 0,
+          params: {
+            is3DProfileCurve: true,
+            isLoftSection3D: true,
+            isPolygon3D: true,
+            polygonSides: sides,
+            extrudeHeightMm: 0,
+            elevationZ,
+            bodyName: `Polígono ${sides}L 3D (Z=${elevationZ} mm)`,
+          },
+        };
+      } else {
+        newEnt = {
+          id: uid(),
+          layer: "corte",
+          type: "circle",
+          cx: refCenter.x,
+          cy: refCenter.y,
+          r: 32,
+          elevationZ,
+          extrudeHeight: 0,
+          params: {
+            is3DProfileCurve: true,
+            isLoftSection3D: true,
+            extrudeHeightMm: 0,
+            elevationZ,
+            bodyName: `Círculo 3D (Z=${elevationZ} mm)`,
+          },
+        };
+      }
+
+      onCommitEntities((prev) => [...prev, newEnt], [newEnt.id]);
+      setSubSel({
+        faceIds: [],
+        edgeIds: [],
+        vertexIds: [],
+        bodyIds: [`body_${newEnt.id}`],
+        selectionScope: "body",
+        activePivot3D: { x: refCenter.x, y: refCenter.y, z: elevationZ },
+        activeHingeEdgeId: null,
+      });
+      if (!isLoftActive) {
+        setDirectTool("transform_3d");
+      }
+      setProfile3DCreatorOpen(false);
+    },
+    [
+      onCommitEntities,
+      getReferenceCenterXY,
+      polygonSides3D,
+      setSubSel,
+      isLoftActive,
+      setDirectTool,
+    ],
+  );
+
+  // Alinhamento concêntrico 1-clique (Centro Geométrico ⌖ de todos os perfis no mesmo eixo X,Y)
+  const handleCenterProfilesConcentrically = useCallback(() => {
+    if (!onCommitEntities || scene.bodies.length === 0) return;
+    triggerHaptic("action");
+    const refBody =
+      [...scene.bodies].sort((a, b) => b.totalAreaMm2 - a.totalAreaMm2)[0] ??
+      scene.bodies[0]!;
+    const refCx = refBody.pivot3D.x;
+    const refCy = refBody.pivot3D.y;
+
+    onCommitEntities((prev) =>
+      prev.map((ent) => {
+        const b = boxOf(ent);
+        const cx = (b.minX + b.maxX) * 0.5;
+        const cy = (b.minY + b.maxY) * 0.5;
+        const dx = refCx - cx;
+        const dy = refCy - cy;
+        const translated =
+          Math.hypot(dx, dy) > 1e-3 ? translate(ent, dx, dy) : ent;
+        return {
+          ...translated,
+          extrudeHeight: 0,
+          params: {
+            ...(translated.params ?? {}),
+            is3DProfileCurve: true,
+            isLoftSection3D: true,
+            extrudeHeightMm: 0,
+            extrudeHeight: 0,
+          },
+        };
+      }),
+    );
+  }, [onCommitEntities, scene.bodies]);
+
+  // Define elevação absoluta Z (+Z Ortho) do perfil/corpo selecionado
+  const handleSetPrimaryBodyElevationZ = useCallback(
+    (targetZ: number) => {
+      if (!onCommitEntities || !primaryBody) return;
+      triggerHaptic("action");
+      const targetId = primaryBody.entityId;
+      onCommitEntities(
+        (prev) =>
+          prev.map((ent) =>
+            ent.id === targetId ? setEntityElevationZ(ent, targetZ) : ent,
+          ),
+        [targetId],
+      );
+      setSubSel((prev) => ({
+        ...prev,
+        activePivot3D: {
+          x: primaryBody.pivot3D.x,
+          y: primaryBody.pivot3D.y,
+          z: targetZ,
+        },
+      }));
+    },
+    [onCommitEntities, primaryBody, setSubSel],
+  );
+
+  // Alterna entre Curva de Seção 3D (Z) e Sólido Extrudado no perfil selecionado
+  const handleToggle3DProfileCurveMode = useCallback(() => {
+    if (!onCommitEntities || !primaryBody) return;
+    triggerHaptic("selection");
+    const isCurrentlyCurve = primaryBody.extrudeHeightMm <= 0.05;
+    const targetId = primaryBody.entityId;
+    const nextH = isCurrentlyCurve ? Math.max(10, sheetThickness) : 0;
+    onCommitEntities(
+      (prev) =>
+        prev.map((ent) =>
+          ent.id === targetId
+            ? {
+                ...ent,
+                extrudeHeight: nextH,
+                params: {
+                  ...(ent.params ?? {}),
+                  is3DProfileCurve: isCurrentlyCurve ? false : true,
+                  isLoftSection3D: isCurrentlyCurve ? false : true,
+                  extrudeHeightMm: nextH,
+                  extrudeHeight: nextH,
+                },
+              }
+            : ent,
+        ),
+      [targetId],
+    );
+  }, [onCommitEntities, primaryBody, sheetThickness]);
+
   // Escuta filtros rápidos de sub-seleção 3D disparados pelo menu lateral 'SEL'
   useEffect(() => {
     const onSubSelPreset = (ev: Event) => {
@@ -1641,7 +1921,29 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             6.0,
             session.startCenter3D ?? ctx.subSel.activePivot3D,
           );
-          if (snapRes.hasContactSnap || snapRes.hasAlignmentSnap) {
+          // Snap Concêntrico ao Centro Geométrico (⌖) de outros perfis 3D (tolerância 8mm)
+          const startPivot = session.startCenter3D ?? refBody.pivot3D;
+          let matchedCentroidBody: DirectBody3D | null = null;
+          let minCentroidDist = 8.0;
+          for (const ob of otherBodies) {
+            const distXY = Math.hypot(
+              startPivot.x + effDelta.x - ob.pivot3D.x,
+              startPivot.y + effDelta.y - ob.pivot3D.y,
+            );
+            if (distXY <= minCentroidDist) {
+              minCentroidDist = distXY;
+              matchedCentroidBody = ob;
+            }
+          }
+          if (matchedCentroidBody) {
+            effDelta = {
+              x: Math.round(matchedCentroidBody.pivot3D.x - startPivot.x),
+              y: Math.round(matchedCentroidBody.pivot3D.y - startPivot.y),
+              z: 0,
+            };
+            setSnappedPivotLabel("⌖ Centro Geométrico");
+            setActiveContactSnap(null);
+          } else if (snapRes.hasContactSnap || snapRes.hasAlignmentSnap) {
             effDelta = snapRes.snappedDelta;
             setActiveContactSnap(snapRes);
           } else {
@@ -1715,37 +2017,63 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             setActiveContactSnap(null);
           }
         }
-      } else if (session.axis === "x" || session.axis === "y" || session.axis === "z") {
+      } else if (session.axis === "x" || session.axis === "y") {
         const refBody = session.startBody ?? ctx.primaryBody;
         if (refBody) {
           const otherBodies = ctx.scene.bodies.filter(
             (b) => b.bodyId !== refBody.bodyId && !session.copyIdMap.has(b.entityId),
           );
-          const rawVec: Vec3Mm = {
-            x: session.axis === "x" ? currentDeltaMm : 0,
-            y: session.axis === "y" ? currentDeltaMm : 0,
-            z: session.axis === "z" ? currentDeltaMm : 0,
-          };
-          const snapRes = resolveContactAndAlignmentSnaps3D(
-            refBody,
-            otherBodies,
-            rawVec,
-            session.pixelsPerMm,
-            6.0,
-            session.startCenter3D ?? ctx.subSel.activePivot3D,
-          );
-          if (snapRes.hasContactSnap || snapRes.hasAlignmentSnap) {
-            currentDeltaMm =
-              session.axis === "x"
-                ? snapRes.snappedDelta.x
-                : session.axis === "y"
-                  ? snapRes.snappedDelta.y
-                  : snapRes.snappedDelta.z;
-            setActiveContactSnap(snapRes);
-          } else {
-            setActiveContactSnap(null);
+          const startPivot = session.startCenter3D ?? refBody.pivot3D;
+          // Snap Concêntrico ao Centro Geométrico (⌖) no eixo X ou Y
+          let snappedToCentroid = false;
+          for (const ob of otherBodies) {
+            if (
+              session.axis === "x" &&
+              Math.abs(startPivot.x + currentDeltaMm - ob.pivot3D.x) <= 7.0
+            ) {
+              currentDeltaMm = Math.round(ob.pivot3D.x - startPivot.x);
+              setSnappedPivotLabel("⌖ Centro Geométrico (X)");
+              snappedToCentroid = true;
+              break;
+            }
+            if (
+              session.axis === "y" &&
+              Math.abs(startPivot.y + currentDeltaMm - ob.pivot3D.y) <= 7.0
+            ) {
+              currentDeltaMm = Math.round(ob.pivot3D.y - startPivot.y);
+              setSnappedPivotLabel("⌖ Centro Geométrico (Y)");
+              snappedToCentroid = true;
+              break;
+            }
+          }
+          if (!snappedToCentroid) {
+            const rawVec: Vec3Mm = {
+              x: session.axis === "x" ? currentDeltaMm : 0,
+              y: session.axis === "y" ? currentDeltaMm : 0,
+              z: 0,
+            };
+            const snapRes = resolveContactAndAlignmentSnaps3D(
+              refBody,
+              otherBodies,
+              rawVec,
+              session.pixelsPerMm,
+              6.0,
+              session.startCenter3D ?? ctx.subSel.activePivot3D,
+            );
+            if (snapRes.hasContactSnap || snapRes.hasAlignmentSnap) {
+              currentDeltaMm =
+                session.axis === "x"
+                  ? snapRes.snappedDelta.x
+                  : snapRes.snappedDelta.y;
+              setActiveContactSnap(snapRes);
+            } else {
+              setActiveContactSnap(null);
+            }
           }
         }
+      } else if (session.axis === "z") {
+        // Trava Ortogonal Estrita em +Z (Ortho: < +Z): X e Y permanecem 100% fixos, sem interferência lateral
+        setActiveContactSnap(null);
       }
 
       if (currentDeltaMm !== session.lastAppliedDeltaMm) {
@@ -2257,9 +2585,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       className="pointer-events-none absolute inset-0 z-25 overflow-hidden select-none"
     >
       {/* =====================================================================
-          0. PÍLULA SUPERIOR DISCRETA NO MODO SELEÇÃO 3D (ESCOPO: VÉRTICE | ARESTA | FACE | PEÇA INTEIRA)
+          0. PÍLULA SUPERIOR DISCRETA NO MODO SELEÇÃO 3D (ESCOPO + CRIADOR DE PERFIS 3D)
           ===================================================================== */}
-      {is3DEnvironment && directTool === "select_3d" && tool !== "loft_3d" && (
+      {is3DEnvironment && directTool === "select_3d" && !isLoftActive && (
         <div
           data-testid="chamfer-3d-select-quick-bar"
           style={{
@@ -2326,6 +2654,24 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           <span className="mx-0.5 h-3 w-px shrink-0 bg-slate-500/30" />
           <button
             type="button"
+            data-testid="chamfer-3d-add-profile-btn"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              triggerHaptic("selection");
+              setProfile3DCreatorOpen((o) => !o);
+            }}
+            title="Criar e Alinhar Perfis 3D Fechados no Plano Z (Retângulo, Polígono 3..12 lados, Círculo)"
+            className={cn(
+              "shrink-0 rounded-full border px-2.5 py-0.5 font-mono text-[9.5px] font-bold cursor-pointer whitespace-nowrap transition-colors",
+              profile3DCreatorOpen
+                ? "border-sky-400 bg-sky-500/30 text-sky-200"
+                : "border-sky-500/50 bg-sky-500/15 hover:bg-sky-500/25 text-sky-300",
+            )}
+          >
+            + Perfil 3D ⌖
+          </button>
+          <button
+            type="button"
             data-testid="chamfer-3d-demo-structure-btn"
             onClick={(ev) => {
               ev.stopPropagation();
@@ -2378,9 +2724,189 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       )}
 
       {/* =====================================================================
+          0B. BANNER SUPERIOR DO COMANDO "LOFT" NO MODO CAD 3D (SELEÇÃO SEQUENCIAL 1 ➔ 2 ➔ 3)
+          ===================================================================== */}
+      {is3DEnvironment && isLoftActive && (
+        <div
+          data-testid="chamfer-3d-loft-top-prompt"
+          style={{
+            ...themeSurfaceStyle,
+            top: activeMode === "3d" ? "10px" : "34px",
+            maxWidth: "calc(100% - 24px)",
+          }}
+          onPointerDown={(ev) => ev.stopPropagation()}
+          onClick={(ev) => ev.stopPropagation()}
+          className="pointer-events-auto absolute left-1/2 z-30 flex h-[38px] -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none rounded-full border border-sky-500/60 px-3 py-1 shadow-lg backdrop-blur-md"
+        >
+          <span className="shrink-0 font-mono text-[10px] font-bold text-sky-300 whitespace-nowrap">
+            LOFT | Selecione as seções transversais na ordem da transição (Clique 1 ➔ 2 ➔ 3...)
+          </span>
+          <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-500/40" />
+          <button
+            type="button"
+            data-testid="chamfer-3d-loft-open-profiles-btn"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              triggerHaptic("selection");
+              setProfile3DCreatorOpen((o) => !o);
+            }}
+            className="shrink-0 rounded-full border border-sky-400/50 bg-sky-500/20 hover:bg-sky-500/30 px-2.5 py-0.5 font-mono text-[9.5px] font-bold text-sky-200 cursor-pointer whitespace-nowrap"
+          >
+            + Perfil 3D ⌖
+          </button>
+          <button
+            type="button"
+            data-testid="chamfer-3d-loft-kit-3-profiles-btn"
+            onClick={(ev) => {
+              ev.stopPropagation();
+              handleCreate3DProfileCurve("kit_3_profiles");
+            }}
+            title="Criar e elevar automaticamente: [1] Retângulo (Z=0) ➔ [2] Hexágono (Z=60) ➔ [3] Círculo (Z=120)"
+            className="shrink-0 rounded-full border border-amber-400/50 bg-amber-500/20 hover:bg-amber-500/30 px-2.5 py-0.5 font-mono text-[9.5px] font-bold text-amber-200 cursor-pointer whitespace-nowrap"
+          >
+            ✦ Kit 3 Perfis (0/60/120)
+          </button>
+          {scene.bodies.length >= 2 && (
+            <button
+              type="button"
+              onClick={(ev) => {
+                ev.stopPropagation();
+                handleCenterProfilesConcentrically();
+              }}
+              className="shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/15 hover:bg-cyan-500/25 px-2 py-0.5 font-mono text-[9.5px] font-bold text-cyan-300 cursor-pointer whitespace-nowrap"
+            >
+              ⌖ Centralizar
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* =====================================================================
+          0C. POPOVER FLUTUANTE DE CRIAÇÃO E ALINHAMENTO CONCÊNTRICO DE PERFIS 3D (ETAPA 1 E 2)
+          ===================================================================== */}
+      {is3DEnvironment && profile3DCreatorOpen && (
+        <div
+          data-testid="chamfer-3d-profile-creator-popover"
+          style={{
+            ...themeSurfaceStyle,
+            top: activeMode === "3d" ? "50px" : "74px",
+            maxWidth: "calc(100% - 24px)",
+          }}
+          onPointerDown={(ev) => ev.stopPropagation()}
+          onClick={(ev) => ev.stopPropagation()}
+          className="pointer-events-auto absolute left-1/2 z-40 flex flex-wrap items-center justify-center gap-1.5 -translate-x-1/2 rounded-2xl border border-sky-500/50 px-3 py-2 shadow-2xl backdrop-blur-xl"
+        >
+          <span className="font-mono text-[9.5px] font-bold text-sky-400 uppercase">
+            Perfis 3D (Z=0 ⌖):
+          </span>
+          <button
+            type="button"
+            data-testid="chamfer-3d-create-profile-rect"
+            onClick={() => handleCreate3DProfileCurve("rect")}
+            className="rounded-full border border-slate-600 bg-slate-800/90 hover:border-sky-400 hover:text-sky-300 px-2.5 py-0.5 font-mono text-[9.5px] font-bold text-slate-200 cursor-pointer"
+          >
+            ▭ Retângulo (Base)
+          </button>
+          <div className="flex items-center gap-0.5 rounded-full border border-slate-600 bg-slate-800/90 px-1.5 py-0.5">
+            <button
+              type="button"
+              onClick={() => setPolygonSides3D((s) => Math.max(3, s - 1))}
+              className="px-1 font-mono text-[10px] font-bold text-slate-400 hover:text-white cursor-pointer"
+              title="Diminuir número de lados (mín. 3)"
+            >
+              -
+            </button>
+            <button
+              type="button"
+              data-testid="chamfer-3d-create-profile-polygon"
+              onClick={() => handleCreate3DProfileCurve("polygon")}
+              className="px-1.5 font-mono text-[9.5px] font-bold text-sky-300 hover:text-white cursor-pointer"
+            >
+              ⬡ Polígono ({polygonSides3D}L)
+            </button>
+            <button
+              type="button"
+              onClick={() => setPolygonSides3D((s) => Math.min(12, s + 1))}
+              className="px-1 font-mono text-[10px] font-bold text-slate-400 hover:text-white cursor-pointer"
+              title="Aumentar número de lados (máx. 12)"
+            >
+              +
+            </button>
+          </div>
+          <button
+            type="button"
+            data-testid="chamfer-3d-create-profile-circle"
+            onClick={() => handleCreate3DProfileCurve("circle")}
+            className="rounded-full border border-slate-600 bg-slate-800/90 hover:border-sky-400 hover:text-sky-300 px-2.5 py-0.5 font-mono text-[9.5px] font-bold text-slate-200 cursor-pointer"
+          >
+            ◯ Círculo (Topo)
+          </button>
+          <button
+            type="button"
+            data-testid="chamfer-3d-center-profiles-btn"
+            onClick={handleCenterProfilesConcentrically}
+            title="Alinhar todos os perfis concentricamente pelo Centro Geométrico (⌖)"
+            className="rounded-full border border-cyan-500/50 bg-cyan-500/15 hover:bg-cyan-500/25 px-2.5 py-0.5 font-mono text-[9.5px] font-bold text-cyan-300 cursor-pointer"
+          >
+            ⌖ Centralizar (Snap)
+          </button>
+          <button
+            type="button"
+            data-testid="chamfer-3d-create-kit-3-profiles"
+            onClick={() => handleCreate3DProfileCurve("kit_3_profiles")}
+            title="Gerar Retângulo (Z=0), Hexágono (Z=60) e Círculo (Z=120) alinhados no centro ⌖"
+            className="rounded-full border border-amber-500/50 bg-amber-500/20 hover:bg-amber-500/30 px-2.5 py-0.5 font-mono text-[9.5px] font-bold text-amber-200 cursor-pointer"
+          >
+            ✦ Kit 3 Perfis (Z=0/60/120)
+          </button>
+          {primaryBody && (
+            <>
+              <span className="mx-0.5 h-3.5 w-px bg-slate-600" />
+              <button
+                type="button"
+                data-testid="chamfer-3d-toggle-curve-mode"
+                onClick={handleToggle3DProfileCurveMode}
+                className={cn(
+                  "rounded-full border px-2.5 py-0.5 font-mono text-[9.5px] font-bold cursor-pointer",
+                  primaryBody.extrudeHeightMm <= 0.05
+                    ? "border-sky-400 bg-sky-500/25 text-sky-200"
+                    : "border-slate-600 bg-slate-800 text-slate-300",
+                )}
+              >
+                {primaryBody.extrudeHeightMm <= 0.05 ? "● Curva 3D (Z)" : "○ Sólido Extrudado"}
+              </button>
+              {[0, 60, 120].map((zPreset) => (
+                <button
+                  key={zPreset}
+                  type="button"
+                  data-testid={`chamfer-3d-preset-z-${zPreset}`}
+                  onClick={() => handleSetPrimaryBodyElevationZ(zPreset)}
+                  className={cn(
+                    "rounded-full border px-2 py-0.5 font-mono text-[9.5px] font-bold cursor-pointer",
+                    Math.abs((primaryBody.elevationZ || 0) - zPreset) < 0.5
+                      ? "border-blue-400 bg-blue-500/30 text-blue-200"
+                      : "border-slate-700 bg-slate-900 text-slate-300 hover:border-blue-400",
+                  )}
+                >
+                  Z={zPreset}
+                </button>
+              ))}
+            </>
+          )}
+          <button
+            type="button"
+            onClick={() => setProfile3DCreatorOpen(false)}
+            className="rounded-full px-1.5 py-0.5 font-mono text-[10px] text-slate-400 hover:text-white cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* =====================================================================
           1. PÍLULA COMPACTA DE COMANDO ATIVO NO TOPO CENTRAL (ÚNICO HUD NO CANVAS 3D)
           ===================================================================== */}
-      {is3DEnvironment && directTool !== "select_3d" && tool !== "loft_3d" && activePillMeta && (
+      {is3DEnvironment && directTool !== "select_3d" && !isLoftActive && activePillMeta && (
         <div
           data-testid="chamfer-3d-contextual-guide-banner"
           style={{
@@ -3172,6 +3698,17 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             >
               <path d="M 0 1 L 10 5 L 0 9 z" fill="#F59E0B" />
             </marker>
+            <marker
+              id="gizmo-arrow-z-blue"
+              viewBox="0 0 10 10"
+              refX="7"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#3B82F6" />
+            </marker>
           </defs>
 
           {/* ================================================================= */}
@@ -3232,9 +3769,16 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       time: now,
                     };
 
-                    // C. Duplo-toque na peça OU Escopo "Peça Inteira" OU Modo Corpo/Transformar ativo -> Reconhece o CORPO SÓLIDO INTEIRO
+                    // Modo LOFT 3D ativo: clicar em qualquer seção transversal adiciona/alterna na fila [1] ➔ [2] ➔ [3]
+                    if (isLoftActive) {
+                      onToggleLoftSection?.(body.entityId);
+                      return;
+                    }
+
+                    // C. Duplo-toque na peça, Curva de Perfil 3D (extrudeHeightMm <= 0.05), Escopo "Peça Inteira" OU Modo Corpo/Transformar ativo -> Reconhece o CORPO / PERFIL 3D e exibe o Gizmo +X / +Y / +Z no centroide ⌖
                     if (
                       isDoubleTapOnBody ||
+                      body.extrudeHeightMm <= 0.05 ||
                       selectionScope === "body" ||
                       directTool === "transform_3d"
                     ) {
@@ -3243,6 +3787,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         ev.shiftKey ||
                         (directTool === "transform_3d" &&
                           !isDoubleTapOnBody &&
+                          body.extrudeHeightMm > 0.05 &&
                           currentBodies.length > 0)
                           ? currentBodies.includes(face.bodyId)
                             ? currentBodies.length > 1
@@ -3257,7 +3802,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         vertexIds: [],
                         bodyIds: nextBodyIds,
                         selectionScope: selectionScope === "body" ? "body" : "auto",
-                        activePivot3D: body.center3D,
+                        activePivot3D: body.pivot3D,
                         activeHingeEdgeId: null,
                       });
                       onSelectEntities?.([body.entityId]);
@@ -3342,17 +3887,25 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       triggerHaptic("selection");
                       setLastCompletedDrag(null);
 
-                      if (selectionScope === "body") {
+                      if (isLoftActive) {
+                        onToggleLoftSection?.(body.entityId);
+                        return;
+                      }
+
+                      if (selectionScope === "body" || body.extrudeHeightMm <= 0.05) {
                         setSubSel({
                           faceIds: [],
                           edgeIds: [],
                           vertexIds: [],
                           bodyIds: [body.bodyId],
-                          selectionScope: "body",
+                          selectionScope: selectionScope === "body" ? "body" : "auto",
                           activePivot3D: body.pivot3D,
                           activeHingeEdgeId: null,
                         });
                         onSelectEntities?.([body.entityId]);
+                        if (body.extrudeHeightMm <= 0.05) {
+                          setDirectTool("transform_3d");
+                        }
                         return;
                       }
 
@@ -3486,6 +4039,149 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               );
             }),
           )}
+
+          {/* ================================================================= */}
+          {/* B3. CENTRO GEOMÉTRICO (⌖), LINHA VERTICAL DE ELEVAÇÃO Z E BADGES [1] ➔ [2] ➔ [3] DO LOFT */}
+          {/* ================================================================= */}
+          {scene.bodies.map((body) => {
+            const centerSc = toScreen(body.pivot3D);
+            const baseSc = toScreen({ x: body.pivot3D.x, y: body.pivot3D.y, z: 0 });
+            const loftOrderIdx = loftSectionIds.indexOf(body.entityId);
+            const isLoftSection = loftOrderIdx >= 0;
+            const isBodySelected = subSel.bodyIds.includes(body.bodyId);
+            const isProfileCurve = body.extrudeHeightMm <= 0.05;
+
+            return (
+              <g key={`centroid_loft_${body.bodyId}`}>
+                {/* Contorno destacado dos perfis 3D e seções selecionadas no Loft */}
+                {(isProfileCurve || isLoftSection) &&
+                  body.edges.map((edge) => {
+                    const pts = edge.polyline3D
+                      .map((p) => {
+                        const s = toScreen(p);
+                        return `${s.x.toFixed(1)},${s.y.toFixed(1)}`;
+                      })
+                      .join(" ");
+                    return (
+                      <polyline
+                        key={`profile_outline_${edge.edgeId}`}
+                        points={pts}
+                        fill="none"
+                        stroke={
+                          isLoftSection
+                            ? "#38BDF8"
+                            : isBodySelected
+                              ? "#00E5FF"
+                              : "rgba(148, 163, 184, 0.85)"
+                        }
+                        strokeWidth={isLoftSection || isBodySelected ? 2.6 : 1.7}
+                        style={{ pointerEvents: "none" }}
+                      />
+                    );
+                  })}
+
+                {/* Linha tracejada vertical de referência entre Z=0 e a altura Z do perfil */}
+                {body.elevationZ > 0.25 && (
+                  <g style={{ pointerEvents: "none" }}>
+                    <line
+                      x1={baseSc.x}
+                      y1={baseSc.y}
+                      x2={centerSc.x}
+                      y2={centerSc.y}
+                      stroke={isBodySelected || isLoftSection ? "#3B82F6" : "rgba(59, 130, 246, 0.55)"}
+                      strokeWidth={1.6}
+                      strokeDasharray="4 3"
+                    />
+                    <circle
+                      cx={baseSc.x}
+                      cy={baseSc.y}
+                      r={3}
+                      fill="#1E293B"
+                      stroke="#3B82F6"
+                      strokeWidth={1.4}
+                    />
+                  </g>
+                )}
+
+                {/* Marcador de Snap de Centro Geométrico (⌖) no centroide de cada perfil */}
+                <g
+                  data-testid={`chamfer-3d-centroid-marker-${body.entityId}`}
+                  transform={`translate(${centerSc.x}, ${centerSc.y})`}
+                  className="pointer-events-auto cursor-pointer"
+                  onPointerDown={(ev) => {
+                    ev.stopPropagation();
+                    ev.preventDefault();
+                  }}
+                  onClick={(ev) => {
+                    ev.stopPropagation();
+                    triggerHaptic("selection");
+                    if (isLoftActive) {
+                      onToggleLoftSection?.(body.entityId);
+                      return;
+                    }
+                    setSubSel({
+                      faceIds: [],
+                      edgeIds: [],
+                      vertexIds: [],
+                      bodyIds: [body.bodyId],
+                      selectionScope: "body",
+                      activePivot3D: body.pivot3D,
+                      activeHingeEdgeId: null,
+                    });
+                    onSelectEntities?.([body.entityId]);
+                    setDirectTool("transform_3d");
+                  }}
+                >
+                  <circle
+                    cx={0}
+                    cy={0}
+                    r={8}
+                    fill={isLoftSection ? "rgba(56, 189, 248, 0.28)" : "rgba(15, 23, 42, 0.65)"}
+                    stroke={isLoftSection ? "#38BDF8" : isBodySelected ? "#00E5FF" : "#64748B"}
+                    strokeWidth={1.5}
+                  />
+                  <line x1={-5} y1={0} x2={5} y2={0} stroke="#38BDF8" strokeWidth={1.2} />
+                  <line x1={0} y1={-5} x2={0} y2={5} stroke="#38BDF8" strokeWidth={1.2} />
+                </g>
+
+                {/* Badge Numérico Sequencial do Loft: [1], [2], [3] */}
+                {isLoftSection && (
+                  <g
+                    data-testid={`chamfer-3d-loft-badge-${loftOrderIdx + 1}`}
+                    transform={`translate(${centerSc.x + 18}, ${centerSc.y - 14})`}
+                    className="pointer-events-auto cursor-pointer"
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      onToggleLoftSection?.(body.entityId);
+                    }}
+                  >
+                    <rect
+                      x={-16}
+                      y={-11}
+                      width={32}
+                      height={22}
+                      rx={6}
+                      fill="#0284C7"
+                      stroke="#E0F2FE"
+                      strokeWidth={1.6}
+                    />
+                    <text
+                      x={0}
+                      y={1}
+                      fill="#FFFFFF"
+                      fontSize="10.5"
+                      fontWeight="bold"
+                      fontFamily="monospace"
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                    >
+                      {`[${loftOrderIdx + 1}]`}
+                    </text>
+                  </g>
+                )}
+              </g>
+            );
+          })}
 
           {/* ================================================================= */}
           {/* C. VISUALIZAÇÃO DE SNAP DE ENCOSTO SUAVE E GUIAS COLINEARES       */}
@@ -4224,14 +4920,22 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         <text
                           x={0}
                           y={1}
-                          fill={isCopyDrag ? "#34D399" : "#38BDF8"}
+                          fill={
+                            linearAxis === "z"
+                              ? "#60A5FA"
+                              : isCopyDrag
+                                ? "#34D399"
+                                : "#38BDF8"
+                          }
                           fontSize="10.5"
                           fontWeight="bold"
                           fontFamily="monospace"
                           textAnchor="middle"
                           dominantBaseline="central"
                         >
-                          {`${isCopyDrag ? "⧉ " : ""}${currentDistMm >= 0 ? currentDistMm : currentDistMm} mm ✎`}
+                          {linearAxis === "z"
+                            ? `Ortho: ${(primaryBody?.elevationZ ?? currentDistMm).toFixed(2)} mm < +Z`
+                            : `${isCopyDrag ? "⧉ " : ""}${currentDistMm >= 0 ? currentDistMm : currentDistMm} mm ✎`}
                         </text>
                       </g>
                     </g>
@@ -4484,7 +5188,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   </text>
                 </g>
 
-                {/* Eixo Z / Seta de Elevação / Extrusão (Ciano Técnico #00B4D8) */}
+                {/* Eixo Z / Seta Vertical Azul de Elevação (#3B82F6 ficando Dourada #F59E0B ao arrastar) */}
                 <g
                   data-testid="chamfer-gizmo-axis-z"
                   className="pointer-events-auto cursor-grab active:cursor-grabbing"
@@ -4516,27 +5220,39 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     y1={gizmoScreen.origin.y}
                     x2={gizmoScreen.z.endX}
                     y2={gizmoScreen.z.endY}
-                    stroke="#00B4D8"
+                    stroke={activeAxis === "z" ? "#F59E0B" : "#3B82F6"}
                     strokeWidth={
-                      activeAxis === "z" || activeAxis === "extrude" ? 4 : 2.75
+                      activeAxis === "z" || activeAxis === "extrude" ? 4.2 : 3.0
                     }
-                    markerEnd="url(#gizmo-arrow-z)"
+                    markerEnd={
+                      activeAxis === "z"
+                        ? "url(#gizmo-arrow-amber)"
+                        : "url(#gizmo-arrow-z-blue)"
+                    }
                     style={{ pointerEvents: "stroke" }}
                   />
                   <circle
                     cx={gizmoScreen.z.endX + gizmoScreen.z.ux * 12}
                     cy={gizmoScreen.z.endY + gizmoScreen.z.uy * 12}
                     r={14}
-                    fill="rgba(0, 180, 216, 0.15)"
-                    stroke="rgba(0, 180, 216, 0.45)"
-                    strokeWidth={1}
+                    fill={
+                      activeAxis === "z"
+                        ? "rgba(245, 158, 11, 0.22)"
+                        : "rgba(59, 130, 246, 0.18)"
+                    }
+                    stroke={
+                      activeAxis === "z"
+                        ? "rgba(245, 158, 11, 0.75)"
+                        : "rgba(59, 130, 246, 0.65)"
+                    }
+                    strokeWidth={1.3}
                     style={{ pointerEvents: "all" }}
                     className="cursor-pointer"
                   />
                   <text
                     x={gizmoScreen.z.endX + gizmoScreen.z.ux * 12}
                     y={gizmoScreen.z.endY + gizmoScreen.z.uy * 12}
-                    fill="#00B4D8"
+                    fill={activeAxis === "z" ? "#F59E0B" : "#60A5FA"}
                     fontSize="10"
                     fontWeight="bold"
                     fontFamily="monospace"
@@ -4673,19 +5389,25 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   />
                 </g>
 
-                {/* Feedback de Delta / Snap do Pivô durante arraste */}
+                {/* Feedback de Delta / Snap do Pivô / Ortho: < +Z durante arraste */}
                 {activeAxis && (
                   <g
                     transform={`translate(${gizmoScreen.origin.x}, ${gizmoScreen.origin.y - 24})`}
                   >
                     <rect
-                      x={-72}
+                      x={-88}
                       y={-11}
-                      width={144}
+                      width={176}
                       height={20}
                       rx={6}
                       fill={isDark ? "#0B1220" : "#FFFFFF"}
-                      stroke={copyOnTransform ? "#10B981" : "#00B4D8"}
+                      stroke={
+                        activeAxis === "z"
+                          ? "#F59E0B"
+                          : copyOnTransform
+                            ? "#10B981"
+                            : "#00B4D8"
+                      }
                       strokeWidth={1.3}
                     />
                     <text
@@ -4700,16 +5422,18 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     >
                       {activeAxis === "pivot"
                         ? snappedPivotLabel ?? "Pivô Móvel (Snap)"
-                        : activeAxis === "extrude" || activeAxis === "face_normal"
-                          ? `H: ${((primaryBody?.extrudeHeightMm ?? sheetThickness) + dragDeltaMm).toFixed(1)} mm`
-                          : activeAxis === "rot_x" ||
-                              activeAxis === "rot_y" ||
-                              activeAxis === "rot_z" ||
-                              activeAxis === "miter"
-                            ? `∠ ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm}°`
-                            : activeAxis === "planar"
-                              ? `${copyOnTransform ? "COPY " : ""}ΔXY: ${dragDeltaMm} mm`
-                              : `${copyOnTransform ? "COPY " : ""}Δ${activeAxis.toUpperCase()}: ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm} mm`}
+                        : activeAxis === "z"
+                          ? `Ortho: ${(primaryBody?.elevationZ ?? dragDeltaMm).toFixed(2)} mm < +Z`
+                          : activeAxis === "extrude" || activeAxis === "face_normal"
+                            ? `H: ${((primaryBody?.extrudeHeightMm ?? sheetThickness) + dragDeltaMm).toFixed(1)} mm`
+                            : activeAxis === "rot_x" ||
+                                activeAxis === "rot_y" ||
+                                activeAxis === "rot_z" ||
+                                activeAxis === "miter"
+                              ? `∠ ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm}°`
+                              : activeAxis === "planar"
+                                ? `${copyOnTransform ? "COPY " : ""}ΔXY: ${dragDeltaMm} mm`
+                                : `${copyOnTransform ? "COPY " : ""}Δ${activeAxis.toUpperCase()}: ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm} mm`}
                     </text>
                   </g>
                 )}
@@ -5189,73 +5913,228 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       )}
 
       {/* =====================================================================
-          6. BARRA FLUTUANTE COMPACTA DE TRANSIÇÃO MULTISSEÇÃO (LOFT 3D)
+          6. BARRA FLUTUANTE E MENU CONTEXTUAL "SOMENTE SEÇÕES TRANSVERSAIS" (LOFT 3D)
           ===================================================================== */}
-      {tool === "loft_3d" && (
-        <div
-          data-testid="chamfer-loft-3d-panel"
-          style={{
-            ...themeSurfaceStyle,
-            bottom: "14px",
-            maxWidth: "calc(100% - 48px)",
-            height: "42px",
-          }}
-          className="pointer-events-auto absolute left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none rounded-full border px-3 shadow-lg backdrop-blur-md"
-        >
-          <span className="shrink-0 px-2 font-mono text-[10.5px] font-bold text-cyan-600 dark:text-cyan-400">
-            Loft 3D ({loftSectionIds.length} perfis)
-          </span>
-          <button
-            type="button"
-            onClick={() => onSetLoftSurfaceMode("ruled")}
-            className={pillBtnClass(loftSurfaceMode === "ruled")}
+      {isLoftActive && (
+        <>
+          {/* Botão e Seta Azul (▼) de Confirmação do Loft Próximo ao Topo da Peça no Canvas 3D */}
+          {loftSectionIds.length >= 2 &&
+            (() => {
+              const lastSectionId = loftSectionIds[loftSectionIds.length - 1];
+              const topBody =
+                scene.bodies.find((b) => b.entityId === lastSectionId) ??
+                scene.bodies[scene.bodies.length - 1];
+              const topAnchorSc = topBody
+                ? toScreen({
+                    x: topBody.pivot3D.x,
+                    y: topBody.pivot3D.y,
+                    z: topBody.pivot3D.z + 18,
+                  })
+                : { x: width * 0.5, y: height * 0.28 };
+              const clampedLeft = Math.max(24, Math.min(width - 250, topAnchorSc.x + 28));
+              const clampedTop = Math.max(54, Math.min(height - 190, topAnchorSc.y - 16));
+
+              return (
+                <div
+                  style={{ left: `${clampedLeft}px`, top: `${clampedTop}px` }}
+                  onPointerDown={(ev) => ev.stopPropagation()}
+                  onClick={(ev) => ev.stopPropagation()}
+                  className="pointer-events-auto absolute z-45 flex flex-col items-start gap-1 select-none"
+                >
+                  <div className="flex items-center gap-1 rounded-full border border-sky-400/80 bg-slate-950/90 px-2 py-1 shadow-xl backdrop-blur-md">
+                    <button
+                      type="button"
+                      data-testid="chamfer-loft-3d-canvas-confirm-btn"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        triggerHaptic("action");
+                        setLoftDropdownOpen(false);
+                        onConfirmLoft3D();
+                      }}
+                      className="rounded-full bg-sky-600 hover:bg-sky-500 px-2.5 py-0.5 font-mono text-[10px] font-bold text-white cursor-pointer"
+                    >
+                      ✓ Loft ({loftSectionIds.length} seções)
+                    </button>
+                    <button
+                      type="button"
+                      data-testid="chamfer-loft-3d-canvas-dropdown-trigger"
+                      onClick={(ev) => {
+                        ev.stopPropagation();
+                        triggerHaptic("selection");
+                        setLoftDropdownOpen((o) => !o);
+                      }}
+                      title="Abrir opções de transição Loft 3D (Somente seções transversais / Guias / Caminho)"
+                      className="flex size-6 items-center justify-center rounded-full border border-sky-400 bg-sky-500/25 hover:bg-sky-500/40 font-mono text-[11px] font-bold text-sky-300 cursor-pointer"
+                    >
+                      ▼
+                    </button>
+                  </div>
+
+                  {loftDropdownOpen && (
+                    <div
+                      data-testid="chamfer-loft-3d-context-menu"
+                      style={themeSurfaceStyle}
+                      className="w-64 rounded-xl border border-sky-500/50 p-1.5 shadow-2xl backdrop-blur-xl font-mono text-[10.5px]"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSetLoftSurfaceMode("smooth");
+                        }}
+                        className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-slate-300 hover:bg-slate-800/80 cursor-pointer"
+                      >
+                        <span>Guias (Guides)</span>
+                        <span className="text-[9px] text-slate-500">Auto</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          onSetLoftSurfaceMode("smooth");
+                        }}
+                        className="flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-left text-slate-300 hover:bg-slate-800/80 cursor-pointer"
+                      >
+                        <span>Caminho (Path)</span>
+                        <span className="text-[9px] text-slate-500">Eixo Z</span>
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="chamfer-loft-3d-cross-sections-only-btn"
+                        onClick={(ev) => {
+                          ev.stopPropagation();
+                          triggerHaptic("action");
+                          setLoftDropdownOpen(false);
+                          onConfirmLoft3D();
+                        }}
+                        className="my-0.5 flex w-full items-center justify-between rounded-lg border border-sky-500/50 bg-sky-500/20 hover:bg-sky-500/35 px-2.5 py-1.5 text-left font-bold text-sky-200 cursor-pointer"
+                      >
+                        <span>● Somente seções transversais</span>
+                        <span className="text-[9px] text-sky-300">ENTER</span>
+                      </button>
+                      <div className="mt-1 border-t border-slate-700/60 pt-1">
+                        <div className="px-2 py-0.5 text-[9px] font-bold text-slate-400 uppercase">
+                          Configurações (Settings)
+                        </div>
+                        <div className="flex items-center gap-1 px-1.5 py-1">
+                          <button
+                            type="button"
+                            onClick={() => onSetLoftSurfaceMode("smooth")}
+                            className={pillBtnClass(loftSurfaceMode === "smooth")}
+                          >
+                            Suave (Smooth Fit)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onSetLoftSurfaceMode("ruled")}
+                            className={pillBtnClass(loftSurfaceMode === "ruled")}
+                          >
+                            Reto (Ruled)
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-1 px-1.5 pb-1">
+                          <button
+                            type="button"
+                            onClick={() => onSetLoftBodyMode("solid")}
+                            className={pillBtnClass(loftBodyMode === "solid")}
+                          >
+                            Sólido
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onSetLoftBodyMode("shell")}
+                            className={pillBtnClass(loftBodyMode === "shell")}
+                          >
+                            Casca ({sheetThickness}mm)
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+          {/* Barra Inferior do Loft 3D */}
+          <div
+            data-testid="chamfer-loft-3d-panel"
+            style={{
+              ...themeSurfaceStyle,
+              bottom: "14px",
+              maxWidth: "calc(100% - 32px)",
+              height: "42px",
+            }}
+            onPointerDown={(ev) => ev.stopPropagation()}
+            onClick={(ev) => ev.stopPropagation()}
+            className="pointer-events-auto absolute left-1/2 z-30 flex -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none rounded-full border border-sky-500/50 px-3 shadow-lg backdrop-blur-md"
           >
-            Reto
-          </button>
-          <button
-            type="button"
-            onClick={() => onSetLoftSurfaceMode("smooth")}
-            className={pillBtnClass(loftSurfaceMode === "smooth")}
-          >
-            Suave
-          </button>
-          <button
-            type="button"
-            onClick={() => onSetLoftBodyMode("solid")}
-            className={pillBtnClass(loftBodyMode === "solid")}
-          >
-            Sólido
-          </button>
-          <button
-            type="button"
-            onClick={() => onSetLoftBodyMode("shell")}
-            className={pillBtnClass(loftBodyMode === "shell")}
-          >
-            Chapa ({sheetThickness}mm)
-          </button>
-          {loftSectionIds.length > 0 && (
+            <span className="shrink-0 px-1.5 font-mono text-[10.5px] font-bold text-sky-400">
+              Loft 3D ({loftSectionIds.length} perfis)
+            </span>
             <button
               type="button"
-              onClick={onClearLoftSections}
-              className={pillBtnClass(false)}
+              onClick={() => onSetLoftSurfaceMode("smooth")}
+              className={pillBtnClass(loftSurfaceMode === "smooth")}
             >
-              Limpar
+              Suave (Smooth)
             </button>
-          )}
-          <button
-            type="button"
-            disabled={loftSectionIds.length < 2}
-            onClick={onConfirmLoft3D}
-            className={cn(
-              "shrink-0 rounded-full px-3 py-1 font-mono text-[10.5px] font-bold transition-all whitespace-nowrap",
-              loftSectionIds.length >= 2
-                ? "bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
-                : "bg-slate-500/20 text-slate-400 cursor-not-allowed",
+            <button
+              type="button"
+              onClick={() => onSetLoftSurfaceMode("ruled")}
+              className={pillBtnClass(loftSurfaceMode === "ruled")}
+            >
+              Reto (Ruled)
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetLoftBodyMode("solid")}
+              className={pillBtnClass(loftBodyMode === "solid")}
+            >
+              Sólido
+            </button>
+            <button
+              type="button"
+              onClick={() => onSetLoftBodyMode("shell")}
+              className={pillBtnClass(loftBodyMode === "shell")}
+            >
+              Casca ({sheetThickness}mm)
+            </button>
+            {loftSectionIds.length >= 2 && onAutoSpaceLoftSectionsZ && (
+              <button
+                type="button"
+                onClick={() => onAutoSpaceLoftSectionsZ(60)}
+                title="Espaçar perfis selecionados em Z=0, Z=60, Z=120mm"
+                className={pillBtnClass(false)}
+              >
+                Z: 0/60/120
+              </button>
             )}
-          >
-            ✓ Gerar Loft 3D
-          </button>
-        </div>
+            {loftSectionIds.length > 0 && (
+              <button
+                type="button"
+                onClick={onClearLoftSections}
+                className={pillBtnClass(false)}
+              >
+                Limpar
+              </button>
+            )}
+            <button
+              type="button"
+              data-testid="chamfer-loft-3d-confirm-bar-btn"
+              disabled={loftSectionIds.length < 2}
+              onClick={() => {
+                setLoftDropdownOpen(false);
+                onConfirmLoft3D();
+              }}
+              className={cn(
+                "shrink-0 rounded-full px-3 py-1 font-mono text-[10.5px] font-bold transition-all whitespace-nowrap",
+                loftSectionIds.length >= 2
+                  ? "bg-sky-600 text-white hover:bg-sky-500 cursor-pointer shadow-sm"
+                  : "bg-slate-500/20 text-slate-400 cursor-not-allowed",
+              )}
+            >
+              ● Somente seções transversais ✓
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

@@ -46,8 +46,10 @@ export interface LoftSectionSample {
   label: string;
   kindLabel: string;
   center: Vec2;
+  centroid3D: Vec3;
   elevationZ: number;
   points3D: Vec3[]; // N_SAMPLES points ordered CCW starting from angle 0 without twist
+  points: Vec3[];
   boundingRadius: number;
   characteristicVertexIndices: number[]; // indices of sharp corners (e.g. 4 for rect, 6 for hex)
 }
@@ -78,10 +80,12 @@ export interface Loft3DMesh {
   surfaceMode: LoftSurfaceMode;
   bodyMode: LoftBodyMode;
   wallThicknessMm: number;
+  surfaceAreaMm2: number;
+  volumeMm3: number;
 }
 
-export const LOFT_N_SAMPLES = 72;
-export const LOFT_V_RINGS = 24;
+export const LOFT_N_SAMPLES = 120;
+export const LOFT_V_RINGS = 36;
 
 /* ============================================================================
  * 1. LEITURA E ESCRITA CANÔNICA DE ELEVAÇÃO Z (`elevationZ`) E EXTRUSÃO (`extrudeHeight`)
@@ -422,8 +426,10 @@ export function sampleProfileCrossSection3D(
       label,
       kindLabel,
       center,
+      centroid3D: { x: center.x, y: center.y, z },
       elevationZ: z,
       points3D: aligned,
+      points: aligned,
       boundingRadius: e.r,
       characteristicVertexIndices: [0, Math.floor(nSamples / 4), Math.floor(nSamples / 2), Math.floor((3 * nSamples) / 4)],
     };
@@ -453,8 +459,10 @@ export function sampleProfileCrossSection3D(
       label,
       kindLabel,
       center,
+      centroid3D: { x: center.x, y: center.y, z },
       elevationZ: z,
       points3D: aligned,
+      points: aligned,
       boundingRadius: Math.max(e.rx, e.ry),
       characteristicVertexIndices: [0, Math.floor(nSamples / 4), Math.floor(nSamples / 2), Math.floor((3 * nSamples) / 4)],
     };
@@ -502,13 +510,10 @@ export function sampleProfileCrossSection3D(
   }
 
   // Encontra o ponto sobre o perímetro com ângulo polar θ = 0° (raio +X a partir do centroide)
-  // para ancorar s = 0 exatamente na direção +X
   const startPointOnPerimeter = findRayPerimeterIntersectionAtAngleZero(rawVertices, center);
-
-  // Reconstrói loop fechado começando em startPointOnPerimeter
   const orderedLoop = buildLoopStartingAtPoint(rawVertices, startPointOnPerimeter);
 
-  // Calcula comprimento acumulado de perímetro
+  // Calcula comprimento acumulado de perímetro (fallback para contornos côncavos extremos)
   const segLengths: number[] = [];
   let totalLen = 0;
   for (let i = 0; i < orderedLoop.length; i++) {
@@ -518,39 +523,54 @@ export function sampleProfileCrossSection3D(
     segLengths.push(d);
     totalLen += d;
   }
-
   const safeTotalLen = Math.max(1e-3, totalLen);
+
+  // MÉTODO POLAR CONCÊNTRICO (SEÇÃO 4.1):
+  // Parametriza cada seção fechada S_k no sentido anti-horário em N = 120 pontos P_{k,i}
+  // distribuídos por ângulo polar θ_i ∈ [0, 2π) a partir do seu próprio centroide (Cx, Cy)
+  // usando interseção raio-polígono do centro até a borda da forma no ângulo θ_i.
+  // Como cada índice i compartilha exatamente o mesmo ângulo radial θ_i em todas as seções (Z1, Z2, Z3),
+  // a transição vertical nunca sofre torção (Zero-Twist) e alinha perfeitamente Quadrado ➔ Hexágono ➔ Círculo!
   const pts3D: Vec3[] = [];
   let maxR = 1;
 
   for (let i = 0; i < nSamples; i++) {
-    const targetDist = (i / nSamples) * safeTotalLen;
-    let accum = 0;
-    let sampledPt: Vec2 = orderedLoop[0]!;
-    for (let sIdx = 0; sIdx < orderedLoop.length; sIdx++) {
-      const segL = segLengths[sIdx]!;
-      if (accum + segL >= targetDist || sIdx === orderedLoop.length - 1) {
-        const localT = segL > 1e-6 ? Math.min(1, Math.max(0, (targetDist - accum) / segL)) : 0;
-        const p0 = orderedLoop[sIdx]!;
-        const p1 = orderedLoop[(sIdx + 1) % orderedLoop.length]!;
-        sampledPt = {
-          x: p0.x + (p1.x - p0.x) * localT,
-          y: p0.y + (p1.y - p0.y) * localT,
-        };
-        break;
+    const theta = (i / nSamples) * Math.PI * 2;
+    const polarHit = findRayPerimeterIntersectionAtAngle(rawVertices, center, theta);
+
+    let sampledPt: Vec2;
+    if (polarHit) {
+      sampledPt = polarHit;
+    } else {
+      const targetDist = (i / nSamples) * safeTotalLen;
+      let accum = 0;
+      sampledPt = orderedLoop[0]!;
+      for (let sIdx = 0; sIdx < orderedLoop.length; sIdx++) {
+        const segL = segLengths[sIdx]!;
+        if (accum + segL >= targetDist || sIdx === orderedLoop.length - 1) {
+          const localT = segL > 1e-6 ? Math.min(1, Math.max(0, (targetDist - accum) / segL)) : 0;
+          const p0 = orderedLoop[sIdx]!;
+          const p1 = orderedLoop[(sIdx + 1) % orderedLoop.length]!;
+          sampledPt = {
+            x: p0.x + (p1.x - p0.x) * localT,
+            y: p0.y + (p1.y - p0.y) * localT,
+          };
+          break;
+        }
+        accum += segL;
       }
-      accum += segL;
     }
+
     const r = Math.hypot(sampledPt.x - center.x, sampledPt.y - center.y);
     if (r > maxR) maxR = r;
     pts3D.push({ x: sampledPt.x, y: sampledPt.y, z });
   }
 
-  const aligned = referencePreviousPoints
-    ? alignRingCyclicShiftForZeroTwist(pts3D, referencePreviousPoints, center)
-    : pts3D;
+  // Como todas as seções já estão alinhadas pelo ângulo polar θ_i = 2π·i/N,
+  // mantemos o índice i idêntico (zero-twist polar garantido).
+  const aligned = pts3D;
 
-  // Identifica os índices em `aligned` mais próximos das quinas reais de `rawVertices` (para linhas de vinco Ruled)
+  // Identifica os índices em `aligned` mais próximos das quinas reais de `rawVertices` (para linhas de vinco)
   const cornerIndices: number[] = [];
   if (rawVertices.length <= 24) {
     for (const v of rawVertices) {
@@ -574,11 +594,58 @@ export function sampleProfileCrossSection3D(
     label,
     kindLabel,
     center,
+    centroid3D: { x: center.x, y: center.y, z },
     elevationZ: z,
     points3D: aligned,
+    points: aligned,
     boundingRadius: maxR,
     characteristicVertexIndices: cornerIndices.sort((a, b) => a - b),
   };
+}
+
+/**
+ * Calcula a interseção exata entre o raio polar `center + t * (cos θ, sin θ)` (t > 0)
+ * e as arestas do polígono fechado `vertices`.
+ */
+function findRayPerimeterIntersectionAtAngle(
+  vertices: Vec2[],
+  center: Vec2,
+  thetaRad: number,
+): Vec2 | null {
+  const dx = Math.cos(thetaRad);
+  const dy = Math.sin(thetaRad);
+  let bestT = Infinity;
+  let bestPt: Vec2 | null = null;
+  const n = vertices.length;
+
+  for (let i = 0; i < n; i++) {
+    const a = vertices[i]!;
+    const b = vertices[(i + 1) % n]!;
+    const sx = b.x - a.x;
+    const sy = b.y - a.y;
+
+    // Resolve: center + t * d = a + u * s  (t > 0, 0 <= u <= 1)
+    // denom = d x s = dx * sy - dy * sx
+    const denom = dx * sy - dy * sx;
+    if (Math.abs(denom) < 1e-9) continue;
+
+    const acx = a.x - center.x;
+    const acy = a.y - center.y;
+    const t = (acx * sy - acy * sx) / denom;
+    const u = (acx * dy - acy * dx) / denom;
+
+    if (t > 1e-5 && u >= -1e-5 && u <= 1 + 1e-5) {
+      if (t < bestT) {
+        bestT = t;
+        bestPt = {
+          x: center.x + t * dx,
+          y: center.y + t * dy,
+        };
+      }
+    }
+  }
+
+  return bestPt;
 }
 
 function findRayPerimeterIntersectionAtAngleZero(vertices: Vec2[], center: Vec2): {
@@ -857,9 +924,12 @@ export function buildLoft3DMesh(
     rings.push(ring);
   }
 
-  // Gera as faces quadriláteras da parede externa com Smooth Vertex Normals (Δθ < 25°)
-  const cosSmoothThreshold = Math.cos((25 * Math.PI) / 180); // ~0.906307787
+  // Gera as faces quadriláteras da parede externa com normais de vértice 2D progressivas (longitudinal + circunferencial)
+  const cosFullSmooth = Math.cos((16 * Math.PI) / 180);
+  const cosSharpLimit = Math.cos((44 * Math.PI) / 180);
+  const cosSmoothThreshold = Math.cos((25 * Math.PI) / 180);
   const quads: LoftQuadFace[] = [];
+  const allRingQuads: LoftQuadFace[][] = [];
   for (let vIdx = 0; vIdx < vRings; vIdx++) {
     const r0 = rings[vIdx]!;
     const r1 = rings[vIdx + 1]!;
@@ -873,39 +943,83 @@ export function buildLoft3DMesh(
       const { normal, centroid } = computeQuadNormalAndCentroid(p00, p10, p11, p01);
       ringQuads.push({ p00, p10, p11, p01, normal, centroid });
     }
+    allRingQuads.push(ringQuads);
+  }
+
+  const blendCircumferential = (nA: Vec3, nB: Vec3): { blended: Vec3; isSmooth: boolean } => {
+    const dot = nA.x * nB.x + nA.y * nB.y + nA.z * nB.z;
+    if (dot <= cosSharpLimit) {
+      return { blended: nB, isSmooth: false };
+    }
+    const avg = computeNormalizedVec3(nA.x + nB.x, nA.y + nB.y, nA.z + nB.z);
+    if (dot >= cosFullSmooth) {
+      return { blended: avg, isSmooth: true };
+    }
+    const t = (dot - cosSharpLimit) / Math.max(1e-6, cosFullSmooth - cosSharpLimit);
+    const s = t * t * (3 - 2 * t);
+    return {
+      blended: computeNormalizedVec3(
+        nB.x * (1 - s) + avg.x * s,
+        nB.y * (1 - s) + avg.y * s,
+        nB.z * (1 - s) + avg.z * s,
+      ),
+      isSmooth: s > 0.35,
+    };
+  };
+
+  for (let vIdx = 0; vIdx < vRings; vIdx++) {
+    const currRing = allRingQuads[vIdx]!;
+    const prevRing = allRingQuads[Math.max(0, vIdx - 1)]!;
+    const nextRing = allRingQuads[Math.min(vRings - 1, vIdx + 1)]!;
+
     for (let i = 0; i < nSamples; i++) {
-      const prevQ = ringQuads[(i - 1 + nSamples) % nSamples]!;
-      const currQ = ringQuads[i]!;
-      const nextQ = ringQuads[(i + 1) % nSamples]!;
-      const dotLeft =
-        prevQ.normal.x * currQ.normal.x +
-        prevQ.normal.y * currQ.normal.y +
-        prevQ.normal.z * currQ.normal.z;
-      const dotRight =
-        currQ.normal.x * nextQ.normal.x +
-        currQ.normal.y * nextQ.normal.y +
-        currQ.normal.z * nextQ.normal.z;
-      const nLeft =
-        dotLeft >= cosSmoothThreshold
-          ? computeNormalizedVec3(
-              prevQ.normal.x + currQ.normal.x,
-              prevQ.normal.y + currQ.normal.y,
-              prevQ.normal.z + currQ.normal.z,
-            )
-          : currQ.normal;
-      const nRight =
-        dotRight >= cosSmoothThreshold
-          ? computeNormalizedVec3(
-              currQ.normal.x + nextQ.normal.x,
-              currQ.normal.y + nextQ.normal.y,
-              currQ.normal.z + nextQ.normal.z,
-            )
-          : currQ.normal;
-      currQ.n00 = nLeft;
-      currQ.n01 = nLeft;
-      currQ.n10 = nRight;
-      currQ.n11 = nRight;
-      currQ.isSmoothLateral = dotLeft >= cosSmoothThreshold || dotRight >= cosSmoothThreshold;
+      const prevI = (i - 1 + nSamples) % nSamples;
+      const nextI = (i + 1) % nSamples;
+      const currQ = currRing[i]!;
+
+      // Suavização longitudinal no anel inferior (vIdx) e superior (vIdx + 1)
+      const nBottomCurr = computeNormalizedVec3(
+        prevRing[i]!.normal.x + currQ.normal.x,
+        prevRing[i]!.normal.y + currQ.normal.y,
+        prevRing[i]!.normal.z + currQ.normal.z,
+      );
+      const nBottomPrev = computeNormalizedVec3(
+        prevRing[prevI]!.normal.x + currRing[prevI]!.normal.x,
+        prevRing[prevI]!.normal.y + currRing[prevI]!.normal.y,
+        prevRing[prevI]!.normal.z + currRing[prevI]!.normal.z,
+      );
+      const nBottomNext = computeNormalizedVec3(
+        prevRing[nextI]!.normal.x + currRing[nextI]!.normal.x,
+        prevRing[nextI]!.normal.y + currRing[nextI]!.normal.y,
+        prevRing[nextI]!.normal.z + currRing[nextI]!.normal.z,
+      );
+
+      const nTopCurr = computeNormalizedVec3(
+        currQ.normal.x + nextRing[i]!.normal.x,
+        currQ.normal.y + nextRing[i]!.normal.y,
+        currQ.normal.z + nextRing[i]!.normal.z,
+      );
+      const nTopPrev = computeNormalizedVec3(
+        currRing[prevI]!.normal.x + nextRing[prevI]!.normal.x,
+        currRing[prevI]!.normal.y + nextRing[prevI]!.normal.y,
+        currRing[prevI]!.normal.z + nextRing[prevI]!.normal.z,
+      );
+      const nTopNext = computeNormalizedVec3(
+        currRing[nextI]!.normal.x + nextRing[nextI]!.normal.x,
+        currRing[nextI]!.normal.y + nextRing[nextI]!.normal.y,
+        currRing[nextI]!.normal.z + nextRing[nextI]!.normal.z,
+      );
+
+      const b00 = blendCircumferential(nBottomPrev, nBottomCurr);
+      const b10 = blendCircumferential(nBottomNext, nBottomCurr);
+      const b01 = blendCircumferential(nTopPrev, nTopCurr);
+      const b11 = blendCircumferential(nTopNext, nTopCurr);
+
+      currQ.n00 = b00.blended;
+      currQ.n10 = b10.blended;
+      currQ.n01 = b01.blended;
+      currQ.n11 = b11.blended;
+      currQ.isSmoothLateral = b00.isSmooth || b10.isSmooth || b01.isSmooth || b11.isSmooth;
       quads.push(currQ);
     }
   }
@@ -1088,6 +1202,26 @@ export function buildLoft3DMesh(
     longitudinalGuides.push(line);
   }
 
+  let surfaceAreaMm2 = 0;
+  for (const q of quads) {
+    const d1x = q.p11.x - q.p00.x;
+    const d1y = q.p11.y - q.p00.y;
+    const d1z = q.p11.z - q.p00.z;
+    const d2x = q.p01.x - q.p10.x;
+    const d2y = q.p01.y - q.p10.y;
+    const d2z = q.p01.z - q.p10.z;
+    const cx = d1y * d2z - d1z * d2y;
+    const cy = d1z * d2x - d1x * d2z;
+    const cz = d1x * d2y - d1y * d2x;
+    surfaceAreaMm2 += 0.5 * Math.hypot(cx, cy, cz);
+  }
+  const meshMinZ = Math.min(...sampledSections.map((s) => s.elevationZ));
+  const meshMaxZ = Math.max(...sampledSections.map((s) => s.elevationZ));
+  const avgR =
+    sampledSections.reduce((acc, s) => acc + s.boundingRadius, 0) /
+    Math.max(1, sampledSections.length);
+  const volumeMm3 = Math.max(1, Math.PI * avgR * avgR * Math.max(1, meshMaxZ - meshMinZ));
+
   return {
     sections: sampledSections,
     rings,
@@ -1098,6 +1232,8 @@ export function buildLoft3DMesh(
     surfaceMode,
     bodyMode,
     wallThicknessMm,
+    surfaceAreaMm2: Math.max(1, surfaceAreaMm2),
+    volumeMm3,
   };
 }
 
@@ -1425,6 +1561,7 @@ export function renderLoft3DMeshToCanvas2D(
 export function convertLoft3DMeshToTessellatedShape(
   mesh: Loft3DMesh,
   idPrefix = "loft3d",
+  flipYForThreeBRep = false,
 ): CadTessellatedShape {
   const positions: number[] = [];
   const normals: number[] = [];
@@ -1440,13 +1577,15 @@ export function convertLoft3DMeshToTessellatedShape(
   let maxY = -Infinity;
   let maxZ = -Infinity;
 
-  const updateBounds = (p: Vec3) => {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.z < minZ) minZ = p.z;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
-    if (p.z > maxZ) maxZ = p.z;
+  const ySign = flipYForThreeBRep ? -1 : 1;
+
+  const updateBounds = (x: number, y: number, z: number) => {
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (z < minZ) minZ = z;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+    if (z > maxZ) maxZ = z;
   };
 
   const addPolylineEdge = (
@@ -1458,8 +1597,9 @@ export function convertLoft3DMeshToTessellatedShape(
     if (pts.length < 2) return;
     const flat: number[] = [];
     for (const p of pts) {
-      flat.push(p.x, p.y, p.z);
-      updateBounds(p);
+      const py = p.y * ySign;
+      flat.push(p.x, py, p.z);
+      updateBounds(p.x, py, p.z);
     }
     const idx = polyEdges.length;
     polyEdges.push({
@@ -1488,11 +1628,17 @@ export function convertLoft3DMeshToTessellatedShape(
     for (let k = 0; k < 4; k++) {
       const p = pts[k]!;
       const vn = vNorms[k]!;
-      positions.push(p.x, p.y, p.z);
-      normals.push(vn.x, vn.y, vn.z);
-      updateBounds(p);
+      const py = p.y * ySign;
+      const ny = vn.y * ySign;
+      positions.push(p.x, py, p.z);
+      normals.push(vn.x, ny, vn.z);
+      updateBounds(p.x, py, p.z);
     }
-    indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    if (flipYForThreeBRep) {
+      indices.push(base, base + 2, base + 1, base, base + 3, base + 2);
+    } else {
+      indices.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
     vCursor += 4;
 
     const fIdx = faceGroups.length;
@@ -1505,7 +1651,7 @@ export function convertLoft3DMeshToTessellatedShape(
     });
   });
 
-  // Arestas das seções transversais (contornos reais superior e inferior)
+  // Arestas das seções transversais (contornos reais superior, intermediários e inferior)
   mesh.sections.forEach((sec, sIdx) => {
     if (sec.points3D.length > 0) {
       const closedRing = [...sec.points3D, sec.points3D[0]!];
@@ -1513,7 +1659,7 @@ export function convertLoft3DMeshToTessellatedShape(
     }
   });
 
-  // Arestas de fluxo longitudinal (exibidas apenas em SOMB como linhas de tangência quando smooth)
+  // Arestas de fluxo longitudinal (exibidas em preview ou SOMB)
   mesh.longitudinalGuides.forEach((guide, gIdx) => {
     addPolylineEdge(
       `${idPrefix}_guide_${gIdx}`,
@@ -1667,22 +1813,34 @@ export interface CreateLoft3DEntityInput {
  */
 export function createLoft3DEntity(
   arg1: Entity[] | CreateLoft3DEntityInput,
-  arg2?: {
-    surfaceMode: LoftSurfaceMode;
-    bodyMode: LoftBodyMode;
-    wallThicknessMm: number;
-    layer: string;
-    existingId?: string;
-  },
+  arg2?:
+    | {
+        surfaceMode: LoftSurfaceMode;
+        bodyMode: LoftBodyMode;
+        wallThicknessMm: number;
+        layer: string;
+        existingId?: string;
+      }
+    | LoftSurfaceMode,
+  arg3?: LoftBodyMode,
+  arg4?: number,
+  arg5?: string,
 ): Entity | null {
   const sectionEntities = Array.isArray(arg1) ? arg1 : arg1.sectionEntities;
   const options = Array.isArray(arg1)
-    ? (arg2 ?? {
-        surfaceMode: "smooth" as LoftSurfaceMode,
-        bodyMode: "solid" as LoftBodyMode,
-        wallThicknessMm: 3,
-        layer: "corte",
-      })
+    ? typeof arg2 === "string"
+      ? {
+          surfaceMode: arg2,
+          bodyMode: arg3 ?? ("solid" as LoftBodyMode),
+          wallThicknessMm: arg4 ?? 3,
+          layer: arg5 ?? "corte",
+        }
+      : (arg2 ?? {
+          surfaceMode: "smooth" as LoftSurfaceMode,
+          bodyMode: "solid" as LoftBodyMode,
+          wallThicknessMm: 3,
+          layer: "corte",
+        })
     : arg1;
 
   const mesh = buildLoft3DMesh(sectionEntities, options);
@@ -1729,6 +1887,44 @@ export function createLoft3DEntity(
       extrudeHeightMm: Math.max(1, maxZ - minZ),
     },
   };
+}
+
+/**
+ * Reconstrói a malha 3D paramétrica completa (`Loft3DMesh`) a partir de uma entidade Loft 3D salva.
+ */
+export function buildLoft3DMeshForEntity(
+  e: Entity | null | undefined,
+  arg2?: number | Entity[],
+  arg3?: number | { nSamples?: number; vRings?: number },
+): Loft3DMesh | null {
+  const spec = getEntityLoft3DSpec(e);
+  if (!spec || !Array.isArray(spec.sectionEntities) || spec.sectionEntities.length < 2) {
+    return null;
+  }
+  const nSamples =
+    typeof arg2 === "number"
+      ? arg2
+      : typeof arg3 === "object" && arg3 !== null && typeof arg3.nSamples === "number"
+        ? arg3.nSamples
+        : LOFT_N_SAMPLES;
+  const vRings =
+    typeof arg3 === "number"
+      ? arg3
+      : typeof arg3 === "object" && arg3 !== null && typeof arg3.vRings === "number"
+        ? arg3.vRings
+        : LOFT_V_RINGS;
+
+  return buildLoft3DMesh(
+    spec.sectionEntities,
+    {
+      surfaceMode: spec.surfaceMode ?? "smooth",
+      bodyMode: spec.bodyMode ?? "solid",
+      wallThicknessMm: spec.wallThicknessMm ?? 3,
+      vRings,
+    },
+    nSamples,
+    vRings,
+  );
 }
 
 /**

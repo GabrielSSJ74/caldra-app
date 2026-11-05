@@ -570,10 +570,18 @@ export function ChamferCadToolbar({
       {
         id: "transform_3d",
         short: "MOVER",
-        label: "Mover / Girar",
-        desc: "Gizmo completo +X/+Y/+Z, arcos de rotação, Pivô Central e Copy: ON/OFF",
+        label: "Mover / Girar (+Z)",
+        desc: "Gizmo completo +X/+Y/+Z (Ortho < +Z), arcos de rotação, Centro Geométrico ⌖ e Copy: ON/OFF",
         icon: Move,
-        compatibleWith: ["body", "edge", "none"],
+        compatibleWith: ["body", "face", "edge", "none"],
+      },
+      {
+        id: "loft_3d",
+        short: "LOFT",
+        label: "Loft 3D (Transição Multisseção)",
+        desc: "Transição suave 3D entre 2 ou mais seções transversais (ex.: Retângulo ➔ Hexágono ➔ Círculo)",
+        icon: Boxes,
+        compatibleWith: ["body", "face", "edge", "none"],
       },
       {
         id: "fillet_3d",

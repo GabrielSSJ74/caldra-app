@@ -634,6 +634,23 @@ export const polygonEntity = (c: Vec2, r: number, sides: number, layer: LayerId)
   }),
 });
 
+export const regularPolygon = (
+  c: Vec2,
+  r: number,
+  sides: number,
+  rotationRad = 0,
+  layer: LayerId = "corte",
+): Entity => ({
+  id: uid(),
+  layer,
+  type: "polyline",
+  closed: true,
+  pts: Array.from({ length: Math.max(3, sides) }, (_, i) => {
+    const a = (i / Math.max(3, sides)) * Math.PI * 2 - Math.PI / 2 + rotationRad;
+    return { x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) };
+  }),
+});
+
 /* ------------------------------------------------------------------ offset */
 
 export function offsetEntity(e: Entity, d: number): Entity | null {

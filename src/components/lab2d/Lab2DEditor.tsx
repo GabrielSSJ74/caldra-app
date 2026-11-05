@@ -2577,7 +2577,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const selectionSet = useMemo(() => new Set(selection), [selection]);
 
   const activeLoftPreviewMesh = useMemo(() => {
-    if (tool !== "loft_3d" || loftSectionIds.length < 2) return null;
+    if ((tool !== "loft_3d" && activeDirect3DTool !== "loft_3d") || loftSectionIds.length < 2) {
+      return null;
+    }
     const sectionEntities = loftSectionIds
       .map((id) => entities.find((e) => e.id === id))
       .filter((e): e is Entity => Boolean(e));
@@ -2587,7 +2589,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       bodyMode: loftBodyMode,
       wallThicknessMm: thickness,
     });
-  }, [tool, loftSectionIds, entities, loftSurfaceMode, loftBodyMode, thickness]);
+  }, [tool, activeDirect3DTool, loftSectionIds, entities, loftSurfaceMode, loftBodyMode, thickness]);
 
   const handleConfirmLoft3D = useCallback(() => {
     const sectionEntities = loftSectionIds
@@ -2612,8 +2614,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const consumedSet = new Set(loftSectionIds);
     commit((list) => [...list.filter((e) => !consumedSet.has(e.id)), loftEntity]);
     setSelection([loftEntity.id]);
+    setSubSelection3D({
+      faceIds: [],
+      edgeIds: [],
+      vertexIds: [],
+      bodyIds: [`body_${loftEntity.id}`],
+      selectionScope: "body",
+      activePivot3D: null,
+      activeHingeEdgeId: null,
+    });
     setLoftSectionIds([]);
     setTool("select");
+    setActiveDirect3DTool("select_3d");
     toast.success(
       `✓ Sólido Loft 3D criado com ${sectionEntities.length} seções (${
         loftSurfaceMode === "smooth" ? "Suave / Smooth Fit" : "Reto / Ruled"
@@ -6163,8 +6175,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
         if (hit.kind !== "none" && hit.body) {
           const hitBody = hit.body;
+          if (activeDirect3DTool === "loft_3d" || tool === "loft_3d") {
+            triggerHaptic("selection");
+            setLoftSectionIds((prev) =>
+              prev.includes(hitBody.entityId)
+                ? prev.filter((id) => id !== hitBody.entityId)
+                : [...prev, hitBody.entityId],
+            );
+            setSelection([hitBody.entityId]);
+            return;
+          }
           if (
             isDoubleTap ||
+            hitBody.extrudeHeightMm <= 0.05 ||
             activeDirect3DTool === "transform_3d" ||
             hit.kind === "body" ||
             subSelection3D.selectionScope === "body"
@@ -8694,7 +8717,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               setRightSidebarOpen(true);
             }}
             activeDirect3DTool={activeDirect3DTool}
-            onSelectDirect3DTool={setActiveDirect3DTool}
+            onSelectDirect3DTool={(next3DTool) => {
+              setActiveDirect3DTool(next3DTool);
+              if (next3DTool === "loft_3d") {
+                setTool("loft_3d");
+              } else if (tool === "loft_3d") {
+                setTool("select");
+              }
+            }}
             selectionKind3D={
               subSelection3D.faceIds.length > 0
                 ? "face"
@@ -11375,13 +11405,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             onOpenElevationKeypad={(currentZ) => {
               setElevationKeypadState({ open: true, initialZ: currentZ });
             }}
-            isLoftToolActive={tool === "loft_3d"}
+            isLoftToolActive={tool === "loft_3d" || activeDirect3DTool === "loft_3d"}
             loftSectionIds={loftSectionIds}
             loftSurfaceMode={loftSurfaceMode}
             loftBodyMode={loftBodyMode}
             sheetThicknessMm={thickness}
             onChangeLoftSurfaceMode={setLoftSurfaceMode}
             onChangeLoftBodyMode={setLoftBodyMode}
+            onToggleLoftSection={(entityId) => {
+              triggerHaptic("selection");
+              setLoftSectionIds((prev) =>
+                prev.includes(entityId)
+                  ? prev.filter((id) => id !== entityId)
+                  : [...prev, entityId],
+              );
+            }}
+            onClearLoftSections={() => setLoftSectionIds([])}
             onUpdateSectionElevationZ={(entityId, newElevationZ) => {
               commit((list) =>
                 list.map((ent) =>
@@ -11405,6 +11444,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             onCancelLoft3D={() => {
               setLoftSectionIds([]);
               setTool("select");
+              if (activeDirect3DTool === "loft_3d") {
+                setActiveDirect3DTool("select_3d");
+              }
             }}
             onActivateLoftToolFromSelection={() => {
               triggerHaptic("selection");
@@ -11414,6 +11456,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 .map((e) => e.id);
               setLoftSectionIds(closedSel);
               setTool("loft_3d");
+              setActiveDirect3DTool("loft_3d");
               if (
                 drawingProjection !== "isometric" &&
                 !orbitProjection2D.isTilted
@@ -11425,7 +11468,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             subSelection3D={subSelection3D}
             onChangeSubSelection3D={setSubSelection3D}
             activeDirect3DTool={activeDirect3DTool}
-            onChangeDirect3DTool={setActiveDirect3DTool}
+            onChangeDirect3DTool={(next3DTool) => {
+              setActiveDirect3DTool(next3DTool);
+              if (next3DTool === "loft_3d") {
+                setTool("loft_3d");
+              } else if (tool === "loft_3d") {
+                setTool("select");
+              }
+            }}
             onSelectEntities={setSelection}
             onCommitEntities={(updater, toastMessageOrIds) => {
               commit(updater);
