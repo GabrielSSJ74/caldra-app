@@ -2048,7 +2048,7 @@ export function ChamferCadToolbar({
                             },
                             {
                               id: "blue_line" as const,
-                              label: "Referência de Criação de Linha",
+                              label: "Vetor Datum (ΔXY / ∠)",
                               activeClass: "bg-sky-950/80 text-sky-300 border-sky-500/60",
                             },
                           ]
@@ -2088,12 +2088,12 @@ export function ChamferCadToolbar({
                       </div>
                     </div>
 
-                    {/* PONTO DE REFERÊNCIA DINÂMICO (REF) */}
+                    {/* VETOR DATUM DINÂMICO (ΔXY / ∠) */}
                     <div className="flex flex-col gap-1.5 p-2 rounded-xl bg-purple-950/40 border border-purple-500/40">
                       <div className="flex items-center justify-between text-[10px]">
                         <span className="text-purple-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
                           <Crosshair className="size-3 text-rose-500" />
-                          Ponto de Referência (REF)
+                          Vetor Datum (ΔXY / ∠)
                         </span>
                         {temporaryOrigin && (
                           <button
@@ -2104,7 +2104,7 @@ export function ChamferCadToolbar({
                             }}
                             className="text-[9px] text-red-400 hover:text-red-300 font-bold uppercase px-1.5 py-0.5 rounded bg-red-950/60 transition-colors"
                           >
-                            Limpar REF
+                            Limpar Datum
                           </button>
                         )}
                       </div>
@@ -2113,7 +2113,7 @@ export function ChamferCadToolbar({
                         onClick={() => {
                           triggerHaptic("action");
                           if (!interactionGuideMode || interactionGuideMode === "off") {
-                            onSetInteractionGuideMode?.("purple_ref");
+                            onSetInteractionGuideMode?.("blue_line");
                           }
                           onStartSetReferencePoint?.();
                           setOpenCat("none");
@@ -2121,7 +2121,7 @@ export function ChamferCadToolbar({
                         className="mt-0.5 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-mono text-[10.5px] font-bold shadow-sm transition-all active:scale-95"
                       >
                         <Crosshair className="size-3.5" />
-                        <span>{temporaryOrigin ? "Redefinir Ponto de REF" : "Definir Ponto de Referência"}</span>
+                        <span>{temporaryOrigin ? "Redefinir Vetor Datum" : "Definir Vetor Datum"}</span>
                       </button>
                     </div>
 

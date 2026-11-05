@@ -74,7 +74,7 @@ export const BLUE_GUIDE_STROKE = "#38BDF8";
 export const GUIDE_MODE_LABELS: Record<InteractionGuideMode, string> = {
   off: "Desativadas",
   purple_ref: "Referência de Ponto de Encontro",
-  blue_line: "Referência de Criação de Linha",
+  blue_line: "Vetor Datum (ΔXY / ∠)",
 };
 
 export function loadInteractionGuideMode(): InteractionGuideMode {

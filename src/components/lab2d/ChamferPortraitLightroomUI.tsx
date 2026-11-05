@@ -1886,6 +1886,8 @@ export interface ChamferPortraitCanvasMicroPillProps {
   temporaryOrigin: { p: Vec2; label: string } | null;
   onClearTemporaryOrigin: () => void;
   onSetRefAtCursor: () => void;
+  onReanchorDatumHere?: () => void;
+  onResetDatumZero?: () => void;
   zoomPercent?: number;
   onFitPiece?: () => void;
   onFitWorkspace?: () => void;
@@ -1911,6 +1913,8 @@ export function ChamferPortraitCanvasMicroPill({
   temporaryOrigin,
   onClearTemporaryOrigin,
   onSetRefAtCursor,
+  onReanchorDatumHere,
+  onResetDatumZero,
   zoomPercent = 100,
   onFitPiece,
   onFitWorkspace,
@@ -1967,13 +1971,41 @@ export function ChamferPortraitCanvasMicroPill({
 
           <span className={cn("h-2.5 w-px shrink-0", isDark ? "bg-white/[0.12]" : "bg-[#CBD5E1]")} />
 
-          {/* Segmento 2: X / Y ou REF ΔX/ΔY */}
+          {/* Segmento 2: X / Y ou ⌖ DATUM [X0, Y0] ΔX/ΔY + [ ⟳ Aqui ] [ 0,0 ] */}
           {temporaryOrigin ? (
             <div className="flex shrink-0 items-center gap-1">
-              <span className="font-bold text-[#F59E0B]">REF</span>
+              <span className="font-bold text-[#F59E0B]">
+                ⌖ DATUM [{temporaryOrigin.p.x.toFixed(0)},{temporaryOrigin.p.y.toFixed(0)}]
+              </span>
               <span className="tabular-nums">
                 ΔX:{(dx >= 0 ? "+" : "") + dx.toFixed(1)} ΔY:{(dy >= 0 ? "+" : "") + dy.toFixed(1)}
               </span>
+              {onReanchorDatumHere && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onReanchorDatumHere();
+                  }}
+                  title="Reancorar Datum no último ponto criado (Cotagem Incremental em Cadeia)"
+                  className="ml-0.5 rounded bg-sky-500/20 px-1 text-[8.5px] font-bold text-[#38BDF8] hover:bg-sky-500/30 cursor-pointer"
+                >
+                  ⟳ Aqui
+                </button>
+              )}
+              {onResetDatumZero && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onResetDatumZero();
+                  }}
+                  title="Resetar Datum para a origem absoluta (0, 0)"
+                  className="rounded bg-amber-500/15 px-1 text-[8.5px] font-bold text-[#FBBF24] hover:bg-amber-500/25 cursor-pointer"
+                >
+                  0,0
+                </button>
+              )}
               <button
                 type="button"
                 data-cmd-id="pre.ref_origin"
@@ -1981,8 +2013,8 @@ export function ChamferPortraitCanvasMicroPill({
                   e.stopPropagation();
                   onClearTemporaryOrigin();
                 }}
-                title="Limpar REF 0,0"
-                className="ml-0.5 rounded px-1 text-[8.5px] font-bold text-[#F87171] hover:bg-red-500/20 cursor-pointer"
+                title="Limpar Datum"
+                className="rounded px-1 text-[8.5px] font-bold text-[#F87171] hover:bg-red-500/20 cursor-pointer"
               >
                 ✕
               </button>
@@ -1995,7 +2027,7 @@ export function ChamferPortraitCanvasMicroPill({
                 e.stopPropagation();
                 onSetRefAtCursor();
               }}
-              title="Toque para fixar REF (0,0) na posição atual"
+              title="Toque para fixar Vetor Datum (ΔXY / ∠) na posição atual"
               className="flex shrink-0 items-center gap-1 tabular-nums hover:opacity-80 cursor-pointer"
             >
               <span className="text-[#94A3B8]">X:</span>
@@ -4569,10 +4601,10 @@ export function ChamferPortraitBottomBars({
                 icon={Crosshair}
                 label={
                   interactionGuideMode === "blue_line"
-                    ? "Guia Azul"
+                    ? "Vetor Datum"
                     : interactionGuideMode === "purple_ref"
                       ? "Guia Roxa"
-                      : "Guias: OFF"
+                      : "Datum: OFF"
                 }
                 active={interactionGuideMode !== "off"}
                 heightPx={itemHeightPx}
@@ -4590,7 +4622,7 @@ export function ChamferPortraitBottomBars({
               <CarouselToolItem
                 cmdId="pre.ref_origin"
                 icon={Crosshair}
-                label="REF 0,0"
+                label="⌖ Datum"
                 active={Boolean(temporaryOrigin)}
                 heightPx={itemHeightPx}
                 onClick={onStartSetReferencePoint}
@@ -4599,7 +4631,7 @@ export function ChamferPortraitBottomBars({
               {temporaryOrigin && (
                 <CarouselToolItem
                   icon={X}
-                  label="Limpar REF"
+                  label="Limpar Datum"
                   heightPx={itemHeightPx}
                   onClick={onClearTemporaryOrigin}
                   isDark={isDark}

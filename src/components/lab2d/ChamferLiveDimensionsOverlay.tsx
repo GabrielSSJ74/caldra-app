@@ -59,6 +59,8 @@ export interface ChamferLiveDimensionsOverlayProps {
     screenPos: Vec2,
     isLocked: boolean,
   ) => void;
+  /** Destravamento imediato em 1 toque ao clicar no cadeado 🔒 da pílula no canvas */
+  onUnlockMeasure?: (kind: ConstrainableMeasureKind) => void;
   /** Confirmação acionada ao tocar no Centro de Referência Vermelho Carmesim e clicar em [ ✓ Confirmar ] */
   onConfirmReferenceAction?: (
     originPt: Vec2,
@@ -168,6 +170,7 @@ export function ChamferLiveDimensionsOverlay({
   onDimensionClick,
   onInvertEdgeSide,
   onEditMeasure,
+  onUnlockMeasure,
   onConfirmReferenceAction,
   onCancelReferenceAction,
   onEditDelta,
@@ -272,13 +275,13 @@ export function ChamferLiveDimensionsOverlay({
     const rawBubbles: GuideBubble[] = [];
     const pillH = 18 / safeK;
 
-    // 1. Bolha principal da hipotenusa: "L" (Modo Azul) ou "d" (Modo Roxo)
+    // 1. Bolha principal da hipotenusa: "L" (Modo Vetor Datum) ou "d" (Modo Roxo)
     const mainKind: ConstrainableMeasureKind = showBlueGuides ? "L" : "d";
     const isMainLocked = showBlueGuides
       ? typeof lockedConstraints.lockedL === "number"
       : typeof lockedConstraints.lockedDist === "number";
-    const mainText = `${isMainLocked ? "🔒 " : ""}${mainKind} ${totalLen.toFixed(1)} mm`;
-    const mainW = Math.max(68, mainText.length * 5.6 + 12) / safeK;
+    const mainText = `${isMainLocked ? "🔒 " : ""}${mainKind}: ${totalLen.toFixed(1)} mm${isMainLocked ? "" : " ✎"}`;
+    const mainW = Math.max(76, mainText.length * 5.6 + 14) / safeK;
     const diagOffset = 16 / safeK;
 
     rawBubbles.push({
@@ -297,12 +300,12 @@ export function ChamferLiveDimensionsOverlay({
       heightWorld: pillH,
     });
 
-    // 2. Bolha de Ângulo Livre "∠ (°)" (Exclusiva para Referência de Criação de Linha Azul)
+    // 2. Bolha de Ângulo Livre "∠ (°)" (Vetor Datum)
     if (showBlueGuides) {
       const isAngleLocked = typeof lockedConstraints.lockedAngle === "number";
-      const angleText = `${isAngleLocked ? "🔒 " : ""}∠ ${angleDeg.toFixed(1)}°`;
-      const angleW = Math.max(60, angleText.length * 5.6 + 12) / safeK;
-      const arcRadius = Math.min(Math.max(24 / safeK, totalLen * 0.25), 42 / safeK);
+      const angleText = `${isAngleLocked ? "🔒 " : ""}∠ ${angleDeg.toFixed(1)}°${isAngleLocked ? "" : " ✎"}`;
+      const angleW = Math.max(66, angleText.length * 5.6 + 14) / safeK;
+      const arcRadius = Math.min(Math.max(26 / safeK, totalLen * 0.26), 46 / safeK);
       const halfRad = ((angleDeg / 2) * Math.PI) / 180;
       const anchorAngle: Vec2 = {
         x: basePt.x + arcRadius * Math.cos(halfRad),
@@ -326,10 +329,10 @@ export function ChamferLiveDimensionsOverlay({
     }
 
     // 3. Bolha Horizontal: ΔX
-    if (absDx > 2 / safeK || lockedConstraints.lockedDx != null) {
+    if (absDx > 1 / safeK || lockedConstraints.lockedDx != null) {
       const isDxLocked = typeof lockedConstraints.lockedDx === "number";
-      const dxText = `${isDxLocked ? "🔒 " : ""}ΔX ${absDx.toFixed(1)} mm`;
-      const dxW = Math.max(68, dxText.length * 5.6 + 12) / safeK;
+      const dxText = `${isDxLocked ? "🔒 " : ""}ΔX: ${absDx.toFixed(1)} mm${isDxLocked ? "" : " ✎"}`;
+      const dxW = Math.max(76, dxText.length * 5.6 + 14) / safeK;
       const anchorDx: Vec2 = { x: (basePt.x + curPt.x) / 2, y: basePt.y };
       const normalY = dy >= 0 ? -1 : 1;
       rawBubbles.push({
@@ -350,10 +353,10 @@ export function ChamferLiveDimensionsOverlay({
     }
 
     // 4. Bolha Vertical: ΔY
-    if (absDy > 2 / safeK || lockedConstraints.lockedDy != null) {
+    if (absDy > 1 / safeK || lockedConstraints.lockedDy != null) {
       const isDyLocked = typeof lockedConstraints.lockedDy === "number";
-      const dyText = `${isDyLocked ? "🔒 " : ""}ΔY ${absDy.toFixed(1)} mm`;
-      const dyW = Math.max(68, dyText.length * 5.6 + 12) / safeK;
+      const dyText = `${isDyLocked ? "🔒 " : ""}ΔY: ${absDy.toFixed(1)} mm${isDyLocked ? "" : " ✎"}`;
+      const dyW = Math.max(76, dyText.length * 5.6 + 14) / safeK;
       const anchorDy: Vec2 = { x: curPt.x, y: (basePt.y + curPt.y) / 2 };
       const normalX = dx >= 0 ? 1 : -1;
       rawBubbles.push({
@@ -566,11 +569,101 @@ export function ChamferLiveDimensionsOverlay({
       )}
 
       {/* =====================================================================
-          2. MODO AZUL EXCLUSIVO ("blue_line"): REFERÊNCIA DE CRIAÇÃO DE LINHA
-             Funciona imediatamente em qualquer ângulo livre (0° a 360°)
+          1.5 TRILHOS INFINITOS DE RESTRIÇÃO DO VETOR DATUM (CONSTRAINT RAILS 🔒)
+             - Trava em ΔX: Linha guia vertical infinita em X0 ± ΔX
+             - Trava em ΔY: Linha guia horizontal infinita em Y0 ± ΔY
+             - Trava em L / d: Órbita circular guia de raio L ao redor do Datum
+             - Trava em ∠: Raio vetorial infinito no ângulo travado
+          ===================================================================== */}
+      {effectiveOriginPt &&
+        (showBlueGuides || showPurpleGuides) &&
+        (() => {
+          const railSpan = 25000 / safeK;
+          const signX =
+            curPt && curPt.x - effectiveOriginPt.x !== 0
+              ? curPt.x - effectiveOriginPt.x >= 0
+                ? 1
+                : -1
+              : (lockedConstraints.signDx ?? 1);
+          const signY =
+            curPt && curPt.y - effectiveOriginPt.y !== 0
+              ? curPt.y - effectiveOriginPt.y >= 0
+                ? 1
+                : -1
+              : (lockedConstraints.signDy ?? 1);
+          const lockedHyp = lockedConstraints.lockedL ?? lockedConstraints.lockedDist ?? null;
+
+          return (
+            <g aria-label="Trilhos de Restrição do Vetor Datum">
+              {/* Trilho Vertical Infinito (ΔX Travado) */}
+              {typeof lockedConstraints.lockedDx === "number" && (
+                <line
+                  x1={effectiveOriginPt.x + signX * lockedConstraints.lockedDx}
+                  y1={effectiveOriginPt.y - railSpan}
+                  x2={effectiveOriginPt.x + signX * lockedConstraints.lockedDx}
+                  y2={effectiveOriginPt.y + railSpan}
+                  stroke="#F59E0B"
+                  strokeWidth={1.35 / safeK}
+                  strokeDasharray={`${7 / safeK},${4 / safeK}`}
+                  strokeOpacity={0.82}
+                />
+              )}
+
+              {/* Trilho Horizontal Infinito (ΔY Travado) */}
+              {typeof lockedConstraints.lockedDy === "number" && (
+                <line
+                  x1={effectiveOriginPt.x - railSpan}
+                  y1={effectiveOriginPt.y + signY * lockedConstraints.lockedDy}
+                  x2={effectiveOriginPt.x + railSpan}
+                  y2={effectiveOriginPt.y + signY * lockedConstraints.lockedDy}
+                  stroke="#F59E0B"
+                  strokeWidth={1.35 / safeK}
+                  strokeDasharray={`${7 / safeK},${4 / safeK}`}
+                  strokeOpacity={0.82}
+                />
+              )}
+
+              {/* Órbita Circular Guia (Comprimento L / Distância d Travada) */}
+              {typeof lockedHyp === "number" && lockedHyp > 0 && (
+                <circle
+                  cx={effectiveOriginPt.x}
+                  cy={effectiveOriginPt.y}
+                  r={lockedHyp}
+                  fill="none"
+                  stroke="#F59E0B"
+                  strokeWidth={1.35 / safeK}
+                  strokeDasharray={`${6 / safeK},${4 / safeK}`}
+                  strokeOpacity={0.82}
+                />
+              )}
+
+              {/* Raio Vetorial Infinito (Ângulo ∠ Travado) */}
+              {typeof lockedConstraints.lockedAngle === "number" &&
+                (() => {
+                  const rad = (lockedConstraints.lockedAngle * Math.PI) / 180;
+                  return (
+                    <line
+                      x1={effectiveOriginPt.x}
+                      y1={effectiveOriginPt.y}
+                      x2={effectiveOriginPt.x + Math.cos(rad) * railSpan}
+                      y2={effectiveOriginPt.y - Math.sin(rad) * railSpan}
+                      stroke="#F59E0B"
+                      strokeWidth={1.35 / safeK}
+                      strokeDasharray={`${7 / safeK},${4 / safeK}`}
+                      strokeOpacity={0.82}
+                    />
+                  );
+                })()}
+            </g>
+          );
+        })()}
+
+      {/* =====================================================================
+          2. MODO AZUL EXCLUSIVO ("blue_line"): VETOR DATUM (ΔXY / ∠)
+             Inclui Triângulo Retângulo (ΔX, ΔY, L) + Arco Transferidor Óptico
           ===================================================================== */}
       {showBlueGuides && activeGuideData && (
-        <g aria-label="Referência de Criação de Linha Azul">
+        <g aria-label="Vetor Datum Azul (ΔXY / ∠)">
           {/* Linhas auxiliares de cateto (ΔX horizontal e ΔY vertical) com fluxo direcional */}
           {(activeGuideData.absDx > 0.5 / safeK || activeGuideData.absDy > 0.5 / safeK) && (
             <>
@@ -620,21 +713,84 @@ export function ChamferLiveDimensionsOverlay({
             </>
           )}
 
-          {/* Arco indicador de ângulo livre ∠ (°) partindo de (X0, Y0) */}
-          {activeGuideData.totalLen > 18 / safeK && (
-            <path
-              d={describeAngleArc(
-                activeGuideData.basePt,
-                Math.min(Math.max(22 / safeK, activeGuideData.totalLen * 0.22), 38 / safeK),
-                activeGuideData.angleDeg,
-              )}
-              fill="none"
-              stroke={blueMain}
-              strokeWidth={1.1 / safeK}
-              strokeDasharray={`${3 / safeK},${2.5 / safeK}`}
-              strokeOpacity={0.75}
-            />
-          )}
+          {/* ARCO TRANSFERIDOR ÓPTICO (Optical Protractor) no vértice do Datum (X0, Y0) */}
+          {activeGuideData.totalLen > 14 / safeK &&
+            (() => {
+              const arcR = Math.min(Math.max(26 / safeK, activeGuideData.totalLen * 0.24), 46 / safeK);
+              const clampedAng = Math.max(0.5, Math.min(359.5, activeGuideData.angleDeg));
+              const endRad = (clampedAng * Math.PI) / 180;
+              const startX = activeGuideData.basePt.x + arcR;
+              const startY = activeGuideData.basePt.y;
+              const endX = activeGuideData.basePt.x + arcR * Math.cos(endRad);
+              const endY = activeGuideData.basePt.y - arcR * Math.sin(endRad);
+              const largeArc = clampedAng > 180 ? 1 : 0;
+              const sectorPath = `M ${activeGuideData.basePt.x} ${activeGuideData.basePt.y} L ${startX} ${startY} A ${arcR} ${arcR} 0 ${largeArc} 0 ${endX} ${endY} Z`;
+
+              // Traços graduados a cada 15° ao longo do arco transferidor
+              const tickLines: { x1: number; y1: number; x2: number; y2: number; major: boolean }[] = [];
+              for (let deg = 15; deg < clampedAng; deg += 15) {
+                const rRad = (deg * Math.PI) / 180;
+                const isMajor = deg % 45 === 0;
+                const innerR = arcR - (isMajor ? 4.5 / safeK : 2.6 / safeK);
+                tickLines.push({
+                  x1: activeGuideData.basePt.x + innerR * Math.cos(rRad),
+                  y1: activeGuideData.basePt.y - innerR * Math.sin(rRad),
+                  x2: activeGuideData.basePt.x + arcR * Math.cos(rRad),
+                  y2: activeGuideData.basePt.y - arcR * Math.sin(rRad),
+                  major: isMajor,
+                });
+              }
+
+              return (
+                <g aria-label="Arco Transferidor Óptico">
+                  {/* Linha base horizontal de 0° (+X) do transferidor */}
+                  <line
+                    x1={activeGuideData.basePt.x}
+                    y1={activeGuideData.basePt.y}
+                    x2={activeGuideData.basePt.x + arcR + 10 / safeK}
+                    y2={activeGuideData.basePt.y}
+                    stroke={blueMain}
+                    strokeWidth={0.95 / safeK}
+                    strokeDasharray={`${2.5 / safeK},${2.5 / safeK}`}
+                    strokeOpacity={0.55}
+                  />
+                  {/* Cunha translúcida do ângulo */}
+                  <path
+                    d={sectorPath}
+                    fill={
+                      typeof lockedConstraints.lockedAngle === "number"
+                        ? "rgba(245, 158, 11, 0.14)"
+                        : "rgba(56, 189, 248, 0.10)"
+                    }
+                    stroke="none"
+                  />
+                  {/* Arco externo do transferidor */}
+                  <path
+                    d={describeAngleArc(activeGuideData.basePt, arcR, activeGuideData.angleDeg)}
+                    fill="none"
+                    stroke={
+                      typeof lockedConstraints.lockedAngle === "number" ? "#F59E0B" : blueMain
+                    }
+                    strokeWidth={1.25 / safeK}
+                    strokeDasharray={`${3 / safeK},${2 / safeK}`}
+                    strokeOpacity={0.88}
+                  />
+                  {/* Graduações de 15° / 45° */}
+                  {tickLines.map((tk, idx) => (
+                    <line
+                      key={`prot-tick-${idx}`}
+                      x1={tk.x1}
+                      y1={tk.y1}
+                      x2={tk.x2}
+                      y2={tk.y2}
+                      stroke={blueMain}
+                      strokeWidth={(tk.major ? 1.2 : 0.85) / safeK}
+                      strokeOpacity={tk.major ? 0.85 : 0.55}
+                    />
+                  ))}
+                </g>
+              );
+            })()}
 
           {/* Linha principal inclinada (hipotenusa) ligando (X0, Y0) -> (X, Y) em qualquer ângulo livre com fluxo direcional */}
           <line
@@ -668,7 +824,9 @@ export function ChamferLiveDimensionsOverlay({
       )}
 
       {/* =====================================================================
-          3. BOLHAS DE MEDIDA ORGANIZADAS E LIVRES DE COLISÃO (MODO ATIVO)
+          3. PÍLULAS INTERATIVAS DO VETOR DATUM NO CANVAS (ΔX, ΔY, L, ∠)
+             - Clique na pílula abre o Numpad CAD para digitar o valor e TRAVAR (🔒)
+             - Clique no ícone 🔒 destrava imediatamente a restrição em 1 toque
           ===================================================================== */}
       {(showPurpleGuides || showBlueGuides) &&
         activeGuideData &&
@@ -722,7 +880,7 @@ export function ChamferLiveDimensionsOverlay({
                   rx={b.heightWorld / 2}
                   fill={bgBadge}
                   stroke={borderColor}
-                  strokeWidth={(b.locked ? 1.55 : 1.25) / safeK}
+                  strokeWidth={(b.locked ? 1.65 : 1.25) / safeK}
                 />
                 <text
                   x={0}
@@ -735,6 +893,23 @@ export function ChamferLiveDimensionsOverlay({
                 >
                   {b.text}
                 </text>
+
+                {/* Zona dedicada de 1-toque sobre o ícone 🔒 (lado esquerdo da pílula) para destravar imediatamente */}
+                {b.locked && onUnlockMeasure && (
+                  <rect
+                    x={-b.widthWorld / 2}
+                    y={-b.heightWorld / 2}
+                    width={Math.min(22 / safeK, b.widthWorld * 0.34)}
+                    height={b.heightWorld}
+                    rx={b.heightWorld / 2}
+                    fill="transparent"
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUnlockMeasure(b.kind);
+                    }}
+                  />
+                )}
               </g>
             </g>
           );

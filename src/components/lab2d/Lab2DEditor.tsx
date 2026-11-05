@@ -343,6 +343,13 @@ import {
 } from "@/lib/lab2d/globalClipboard";
 import { ChamferDirectDimensionEditor } from "./ChamferDirectDimensionEditor";
 import { ChamferPrecisionLoupeOverlay } from "./ChamferPrecisionLoupeOverlay";
+import {
+  ChamferDraftConfirmationBubble,
+  createPendingDraftShapeState,
+  getPendingDraftShapeGrips,
+  applyPendingDraftGripDrag,
+  type PendingDraftShapeState,
+} from "./ChamferDraftConfirmationBubble";
 import { ChamferOrbit3DPopover } from "./ChamferOrbit3DPopover";
 import { ChamferAxesGizmo3D } from "./ChamferAxesGizmo3D";
 import type { EdgeMode } from "@/lib/viz3d/cameraPresets";
@@ -1111,6 +1118,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     draftRef.current = next;
     setDraftState(next);
   }, []);
+
+  /* ESTADO PRÉ-CONFIRMAÇÃO EDITÁVEL (DRAFT-THEN-COMMIT) & ÚLTIMO VÉRTICE CRIADO */
+  const [pendingDraftShape, setPendingDraftShapeState] = useState<PendingDraftShapeState | null>(null);
+  const pendingDraftShapeRef = useRef<PendingDraftShapeState | null>(null);
+  const setPendingDraftShape = useCallback((next: PendingDraftShapeState | null) => {
+    pendingDraftShapeRef.current = next;
+    setPendingDraftShapeState(next);
+  }, []);
+  const [draggingDraftGripIndex, setDraggingDraftGripIndex] = useState<number | null>(null);
+  const lastCreatedVertexRef = useRef<Vec2>({ x: 0, y: 0 });
   const pointerMoveRafRef = useRef<number | null>(null);
   const pendingPointerMoveRef = useRef<{
     clientX: number;
@@ -2100,7 +2117,64 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     });
   }, []);
 
+  const commitPendingDraftShape = useCallback(
+    (shapeOverride?: PendingDraftShapeState | null) => {
+      const target = shapeOverride ?? pendingDraftShapeRef.current;
+      if (!target) return;
+      const hasAnyLockedConstraint =
+        lockedConstraints.lockedL != null ||
+        lockedConstraints.lockedDx != null ||
+        lockedConstraints.lockedDy != null ||
+        lockedConstraints.lockedDist != null;
+      const baseFinal: Entity =
+        !target.entity.id ||
+        target.entity.id === "draft" ||
+        target.entity.id.startsWith("draft-")
+          ? { ...target.entity, id: uid() }
+          : target.entity;
+      const finalEntity: Entity = hasAnyLockedConstraint
+        ? {
+            ...baseFinal,
+            params: {
+              ...baseFinal.params,
+              lockedConstraints: { ...lockedConstraints },
+            },
+          }
+        : baseFinal;
+      commit((e) => [...e, finalEntity]);
+      lastCreatedVertexRef.current = target.p1;
+      setPendingDraftShape(null);
+      setDraggingDraftGripIndex(null);
+      setSelection([]);
+      setMobileEditorOpenManual(false);
+
+      if (dualToolSecondary === "dim") {
+        const dim = makeDimension("aligned", [{ kind: "entity", id: finalEntity.id }], 20);
+        setDims((list) => [...list, dim]);
+        toast.success("Cota técnica gerada automaticamente via Dual Tool.");
+        if (!dualToolPinned) setDualToolSecondary(null);
+      } else if (dualToolSecondary === "smart_trim") {
+        setTool("smart_trim");
+        toast.info("Dual Tool: selecione o trecho a aparar.");
+      }
+    },
+    [
+      commit,
+      dualToolPinned,
+      dualToolSecondary,
+      lockedConstraints,
+      setPendingDraftShape,
+    ],
+  );
+
   const undo = useCallback(() => {
+    if (pendingDraftShapeRef.current) {
+      setPendingDraftShape(null);
+      setDraggingDraftGripIndex(null);
+      triggerHaptic("selection");
+      toast.info("Forma em pré-confirmação descartada.");
+      return;
+    }
     // Se houver desenho em progresso (pontos de polilinha, draft, etc.), cancela o rascunho primeiro
     if (pending.length > 0) {
       setPending([]);
@@ -4664,6 +4738,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
     setCursor(p);
 
+    // Se houver uma forma em estado Pré-Confirmação Editável (Draft Pending):
+    // 1. Tocar em um de seus grips permite arrastar e ajustar a forma ao vivo
+    // 2. Iniciar novo arrasto em área vazia confirma automaticamente a forma anterior (Fluxo Contínuo)
+    if (pendingDraftShapeRef.current) {
+      const grips = getPendingDraftShapeGrips(pendingDraftShapeRef.current);
+      const safeK = Math.max(0.05, view.k);
+      const gripTol = 18 / safeK;
+      const hitGrip = grips.find((g) => Math.hypot(g.p.x - raw.x, g.p.y - raw.y) <= gripTol);
+      if (hitGrip) {
+        setDraggingDraftGripIndex(hitGrip.index);
+        triggerHaptic("selection");
+        return;
+      }
+      commitPendingDraftShape(pendingDraftShapeRef.current);
+    }
+
     const useOffsetHere = shouldUseTouchOffset(
       pType,
       tool,
@@ -5203,7 +5293,30 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         const [a, b, c] = q as [Vec2, Vec2, Vec2];
         const arc = arcFrom3(a, b, c, activeLayer);
         if (arc) {
-          commit((e) => [...e, arc]);
+          const draftState = createPendingDraftShapeState(
+            "arc",
+            arc,
+            a,
+            c,
+            activeLayer,
+            filletR,
+            {
+              rectMode,
+              circleMode,
+              polygonMode,
+              polygonSides,
+              polygonAcrossFlatsMm,
+              slotMode,
+              slotWidthMm,
+              arcMidPoint: b,
+            },
+          );
+          if (draftState) {
+            setPendingDraftShape(draftState);
+            lastCreatedVertexRef.current = c;
+          } else {
+            commit((e) => [...e, arc]);
+          }
           setSelection([]);
           setMobileEditorOpenManual(false);
         }
@@ -5938,6 +6051,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
+    if (draggingDraftGripIndex !== null && pendingDraftShapeRef.current) {
+      const nextPending = applyPendingDraftGripDrag(
+        pendingDraftShapeRef.current,
+        draggingDraftGripIndex,
+        currentSnapPt,
+      );
+      setPendingDraftShape(nextPending);
+      lastCreatedVertexRef.current = nextPending.p1;
+      return;
+    }
+
     if (dragNode) {
       const p = currentSnapPt;
       setEntities((list) =>
@@ -6455,45 +6579,72 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setMarquee(null);
       return;
     }
+    if (draggingDraftGripIndex !== null) {
+      setDraggingDraftGripIndex(null);
+      triggerHaptic("tap");
+      return;
+    }
+
     const activeDraft = draftRef.current ?? draft;
     if (activeDraft && pending.length === 1 && tool !== "polyline" && tool !== "spline") {
       const box = boxOf(activeDraft);
       const empty = box.maxX - box.minX < 0.01 && box.maxY - box.minY < 0.01;
       if (!empty) {
-        const hasAnyLockedConstraint =
-          lockedConstraints.lockedL != null ||
-          lockedConstraints.lockedDx != null ||
-          lockedConstraints.lockedDy != null ||
-          lockedConstraints.lockedDist != null;
-        const baseFinal: Entity =
-          !activeDraft.id || activeDraft.id === "draft" || activeDraft.id.startsWith("draft-")
-            ? { ...activeDraft, id: uid() }
-            : activeDraft;
-        const finalEntity: Entity = hasAnyLockedConstraint
-          ? {
-              ...baseFinal,
-              params: {
-                ...baseFinal.params,
-                lockedConstraints: { ...lockedConstraints },
-              },
-            }
-          : baseFinal;
-        commit((e) => [...e, finalEntity]);
-        // Desenho contínuo: tela limpa e pronta para o próximo traço (NÃO abre propriedades automaticamente)
-        setSelection([]);
-        setMobileEditorOpenManual(false);
+        const p0 = pending[0]!;
+        const p1 = cursorRef.current;
+        const draftState =
+          drawingProjection !== "isometric"
+            ? createPendingDraftShapeState(tool, activeDraft, p0, p1, activeLayer, filletR, {
+                rectMode,
+                circleMode,
+                polygonMode,
+                polygonSides,
+                polygonAcrossFlatsMm,
+                slotMode,
+                slotWidthMm,
+              })
+            : null;
 
-        // INTEGRAÇÃO DUAL TOOL
-        if (dualToolSecondary === "dim") {
-          const dim = makeDimension("aligned", [{ kind: "entity", id: finalEntity.id }], 20);
-          setDims((list) => [...list, dim]);
-          toast.success("Cota técnica gerada automaticamente via Dual Tool.");
-          if (!dualToolPinned) setDualToolSecondary(null);
-        } else if (dualToolSecondary === "smart_trim") {
-          setTool("smart_trim");
-          toast.info("Dual Tool: selecione o trecho a aparar.");
+        if (draftState) {
+          setPendingDraftShape(draftState);
+          lastCreatedVertexRef.current = draftState.p1;
+          setSelection([]);
+          setMobileEditorOpenManual(false);
+          triggerHaptic("tap");
+        } else {
+          const hasAnyLockedConstraint =
+            lockedConstraints.lockedL != null ||
+            lockedConstraints.lockedDx != null ||
+            lockedConstraints.lockedDy != null ||
+            lockedConstraints.lockedDist != null;
+          const baseFinal: Entity =
+            !activeDraft.id || activeDraft.id === "draft" || activeDraft.id.startsWith("draft-")
+              ? { ...activeDraft, id: uid() }
+              : activeDraft;
+          const finalEntity: Entity = hasAnyLockedConstraint
+            ? {
+                ...baseFinal,
+                params: {
+                  ...baseFinal.params,
+                  lockedConstraints: { ...lockedConstraints },
+                },
+              }
+            : baseFinal;
+          commit((e) => [...e, finalEntity]);
+          lastCreatedVertexRef.current = p1;
+          setSelection([]);
+          setMobileEditorOpenManual(false);
+
+          if (dualToolSecondary === "dim") {
+            const dim = makeDimension("aligned", [{ kind: "entity", id: finalEntity.id }], 20);
+            setDims((list) => [...list, dim]);
+            toast.success("Cota técnica gerada automaticamente via Dual Tool.");
+            if (!dualToolPinned) setDualToolSecondary(null);
+          } else if (dualToolSecondary === "smart_trim") {
+            setTool("smart_trim");
+            toast.info("Dual Tool: selecione o trecho a aparar.");
+          }
         }
-        // Ferramenta permanece ativa continuamente para desenhar múltiplas formas em sequência
       }
       setDraft(null);
       setPending([]);
@@ -6795,6 +6946,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         return;
       }
       if (ev.key === "Escape") {
+        if (pendingDraftShapeRef.current) {
+          setPendingDraftShape(null);
+          setDraggingDraftGripIndex(null);
+          triggerHaptic("tap");
+          toast.info("Forma pendente descartada.");
+          return;
+        }
         setPending([]);
         setDraft(null);
         setSelection([]);
@@ -6807,6 +6965,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setActiveArrayType(null);
         setIsArrayPickingCenter(false);
         setTool("select");
+      }
+      if (ev.key === "Enter" && pendingDraftShapeRef.current) {
+        ev.preventDefault();
+        commitPendingDraftShape(pendingDraftShapeRef.current);
+        triggerHaptic("success");
+        return;
       }
       if (tool === "polyline") {
         if (ev.key === "Enter") {
@@ -9656,6 +9820,32 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
               {!solidOpen && draft && <EntityShape e={draft} k={view.k} preview />}
 
+              {/* Forma em Pré-Confirmação Editável (Draft-Then-Commit) + Grips Interativos */}
+              {!solidOpen && pendingDraftShape && (
+                <g>
+                  <EntityShape e={pendingDraftShape.entity} k={view.k} preview />
+                  {getPendingDraftShapeGrips(pendingDraftShape).map((grip) => (
+                    <g key={`draft-grip-${grip.index}`}>
+                      <circle
+                        cx={grip.p.x}
+                        cy={grip.p.y}
+                        r={9 / view.k}
+                        fill="rgba(16, 185, 129, 0.22)"
+                        stroke="none"
+                      />
+                      <circle
+                        cx={grip.p.x}
+                        cy={grip.p.y}
+                        r={4.5 / view.k}
+                        fill={grip.role === "center" ? "#38BDF8" : "#10B981"}
+                        stroke="#FFFFFF"
+                        strokeWidth={1.6 / view.k}
+                      />
+                    </g>
+                  ))}
+                </g>
+              )}
+
               {/* Pré-visualização da ferramenta DIVIDIR */}
               {!solidOpen && divideEditorOpen && previewDividedEntities.length > 0 && (
                 <g className="pointer-events-none">
@@ -10578,7 +10768,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     onClearTemporaryOrigin={() => {
                       setTemporaryOrigin(null);
                       setPinnedMeetingPoints([]);
-                      toast.success("Origem temporária limpa");
+                      toast.success("Vetor Datum limpo");
+                    }}
+                    onUnlockMeasure={(kind) => {
+                      setLockedConstraints((prev) => {
+                        const next = { ...prev };
+                        if (kind === "L") delete next.lockedL;
+                        if (kind === "angle") delete next.lockedAngle;
+                        if (kind === "dx") delete next.lockedDx;
+                        if (kind === "dy") delete next.lockedDy;
+                        if (kind === "d") delete next.lockedDist;
+                        return next;
+                      });
+                      if (kind === "L") {
+                        setLockedDims((prev) => ({ ...prev, lockedLengthMm: null }));
+                      } else if (kind === "angle") {
+                        setLockedDims((prev) => ({ ...prev, lockedAngleDeg: null }));
+                      }
+                      triggerHaptic("tap");
+                      toast.info(`Trava ${kind.toUpperCase()} destravada`);
                     }}
                     onInvertEdgeSide={() => {
                       setActiveEdgeSide((prev) => (prev === 1 ? -1 : 1));
@@ -11112,18 +11320,46 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 setTemporaryOrigin(null);
                 setPinnedMeetingPoints([]);
                 setLockedConstraints({});
-                toast.success("Ponto de referência limpo");
+                toast.success("Vetor Datum limpo");
               }}
               onSetRefAtCursor={() => {
                 setTemporaryOrigin({
                   id: uid(),
                   p: cursor,
-                  label: "REF (0,0)",
+                  label: "DATUM",
                   kind: "origin",
                   timestamp: Date.now(),
                 });
                 triggerHaptic("success");
-                toast.success(`REF (0,0) fixada em (${cursor.x.toFixed(1)}, ${cursor.y.toFixed(1)}) mm`);
+                toast.success(`⌖ DATUM fixado em (${cursor.x.toFixed(1)}, ${cursor.y.toFixed(1)}) mm`);
+              }}
+              onReanchorDatumHere={() => {
+                const targetPt =
+                  pending.length > 0
+                    ? pending[pending.length - 1]!
+                    : Math.hypot(lastCreatedVertexRef.current.x, lastCreatedVertexRef.current.y) > 1e-3
+                      ? lastCreatedVertexRef.current
+                      : cursor;
+                setTemporaryOrigin({
+                  id: uid(),
+                  p: targetPt,
+                  label: "DATUM",
+                  kind: "origin",
+                  timestamp: Date.now(),
+                });
+                triggerHaptic("action");
+                toast.success(`⌖ DATUM reancorado em (${targetPt.x.toFixed(1)}, ${targetPt.y.toFixed(1)}) mm`);
+              }}
+              onResetDatumZero={() => {
+                setTemporaryOrigin({
+                  id: uid(),
+                  p: { x: 0, y: 0 },
+                  label: "0,0",
+                  kind: "origin",
+                  timestamp: Date.now(),
+                });
+                triggerHaptic("action");
+                toast.success("⌖ DATUM resetado para a origem (0, 0) mm");
               }}
               zoomPercent={Math.round(view.k * 100)}
               onFitPiece={() => fitTo(entities)}
@@ -11351,6 +11587,38 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               );
             }}
           />
+          )}
+
+          {/* BOLHA FLUTUANTE DE CONFIRMAÇÃO E EDIÇÃO RÁPIDA (DRAFT-THEN-COMMIT) */}
+          {!solidOpen && activeMode === "2d" && (
+            <ChamferDraftConfirmationBubble
+              pendingShape={pendingDraftShape}
+              view={view}
+              canvasWidth={canvasSize.w}
+              canvasHeight={canvasSize.h}
+              isDark={isDark}
+              onUpdatePendingShape={(next) => {
+                setPendingDraftShape(next);
+                lastCreatedVertexRef.current = next.p1;
+                if (next.tool === "polygon") {
+                  setPolygonSides(next.polygonSides);
+                  setPolygonMode(next.polygonMode);
+                  setPolygonAcrossFlatsMm(next.polygonAcrossFlatsMm);
+                } else if (next.tool === "slot") {
+                  setSlotWidthMm(next.slotWidthMm);
+                } else if (next.tool === "rect" || next.tool === "rrect") {
+                  setFilletR(next.cornerRadiusMm);
+                }
+              }}
+              onConfirmPendingShape={() => {
+                commitPendingDraftShape(pendingDraftShape);
+              }}
+              onCancelPendingShape={() => {
+                setPendingDraftShape(null);
+                setDraggingDraftGripIndex(null);
+                toast.info("Forma descartada.");
+              }}
+            />
           )}
 
           {/* GIZMO 3D DE TRANSLAÇÃO (X, Y, +Z ORTHO) E MOTOR INTERATIVO LOFT 3D MULTISSEÇÃO */}
@@ -12259,54 +12527,312 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         isDark ? "bg-[#F59E0B]" : "bg-[#D97706]",
                       )}
                     />
-                    REF [{temporaryOrigin.label}]:
+                    ⌖ DATUM [{temporaryOrigin.p.x.toFixed(0)}, {temporaryOrigin.p.y.toFixed(0)}]:
                   </span>
-                  <span className={cn("font-bold", isDark ? "text-[#F59E0B]" : "text-[#D97706]")}>ΔX:</span>
-                  <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>
-                    {(cursor.x - temporaryOrigin.p.x >= 0 ? "+" : "") + (cursor.x - temporaryOrigin.p.x).toFixed(1)}
-                  </strong>
-                  <span className={isDark ? "text-[#293444]" : "text-[#CBD5E1]"}>|</span>
-                  <span className={cn("font-bold", isDark ? "text-[#F59E0B]" : "text-[#D97706]")}>ΔY:</span>
-                  <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>
-                    {(cursor.y - temporaryOrigin.p.y >= 0 ? "+" : "") + (cursor.y - temporaryOrigin.p.y).toFixed(1)} mm
-                  </strong>
+
+                  {/* Pílula Interativa ΔX na Barra Inferior */}
+                  <button
+                    type="button"
+                    onClick={(ev) => {
+                      const rect = ev.currentTarget.getBoundingClientRect();
+                      const dxVal = Number((cursor.x - temporaryOrigin.p.x).toFixed(2));
+                      setLiveDimEditor({
+                        dim: {
+                          id: "datum-dx",
+                          kind: "dx",
+                          value: dxVal,
+                          label: "ΔX do Vetor Datum (mm)",
+                          startPoint: temporaryOrigin.p,
+                          endPoint: cursor,
+                          midPoint: {
+                            x: (temporaryOrigin.p.x + cursor.x) / 2,
+                            y: temporaryOrigin.p.y,
+                          },
+                          normalDir: { x: 0, y: 1 },
+                          isEditable: true,
+                          targetKey: "dx",
+                        },
+                        screenPos: { x: rect.left + rect.width / 2, y: rect.top - 12 },
+                        currentValue: dxVal,
+                        label: "ΔX do Vetor Datum (mm)",
+                        allowInvert: false,
+                        measureKind: "dx",
+                        initialLocked: lockedConstraints.lockedDx != null,
+                      });
+                    }}
+                    title="Clique para digitar e travar ΔX (Trilho Vertical)"
+                    className={cn(
+                      "flex items-center gap-0.5 px-1 py-0.5 rounded border transition-colors cursor-pointer",
+                      lockedConstraints.lockedDx != null
+                        ? "bg-amber-500/20 border-amber-500/60 text-amber-400"
+                        : isDark
+                          ? "bg-[#151C27]/80 border-[#293444] hover:border-amber-500/50"
+                          : "bg-white border-slate-300 hover:border-amber-500/50",
+                    )}
+                  >
+                    <span className={cn("font-bold", isDark ? "text-[#F59E0B]" : "text-[#D97706]")}>ΔX:</span>
+                    <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>
+                      {(cursor.x - temporaryOrigin.p.x >= 0 ? "+" : "") + (cursor.x - temporaryOrigin.p.x).toFixed(1)}
+                    </strong>
+                    <span className="text-[8px] opacity-80">
+                      {lockedConstraints.lockedDx != null ? "🔒" : "✎"}
+                    </span>
+                  </button>
+
+                  {/* Pílula Interativa ΔY na Barra Inferior */}
+                  <button
+                    type="button"
+                    onClick={(ev) => {
+                      const rect = ev.currentTarget.getBoundingClientRect();
+                      const dyVal = Number((cursor.y - temporaryOrigin.p.y).toFixed(2));
+                      setLiveDimEditor({
+                        dim: {
+                          id: "datum-dy",
+                          kind: "dy",
+                          value: dyVal,
+                          label: "ΔY do Vetor Datum (mm)",
+                          startPoint: temporaryOrigin.p,
+                          endPoint: cursor,
+                          midPoint: {
+                            x: cursor.x,
+                            y: (temporaryOrigin.p.y + cursor.y) / 2,
+                          },
+                          normalDir: { x: 1, y: 0 },
+                          isEditable: true,
+                          targetKey: "dy",
+                        },
+                        screenPos: { x: rect.left + rect.width / 2, y: rect.top - 12 },
+                        currentValue: dyVal,
+                        label: "ΔY do Vetor Datum (mm)",
+                        allowInvert: false,
+                        measureKind: "dy",
+                        initialLocked: lockedConstraints.lockedDy != null,
+                      });
+                    }}
+                    title="Clique para digitar e travar ΔY (Trilho Horizontal)"
+                    className={cn(
+                      "flex items-center gap-0.5 px-1 py-0.5 rounded border transition-colors cursor-pointer",
+                      lockedConstraints.lockedDy != null
+                        ? "bg-amber-500/20 border-amber-500/60 text-amber-400"
+                        : isDark
+                          ? "bg-[#151C27]/80 border-[#293444] hover:border-amber-500/50"
+                          : "bg-white border-slate-300 hover:border-amber-500/50",
+                    )}
+                  >
+                    <span className={cn("font-bold", isDark ? "text-[#F59E0B]" : "text-[#D97706]")}>ΔY:</span>
+                    <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>
+                      {(cursor.y - temporaryOrigin.p.y >= 0 ? "+" : "") + (cursor.y - temporaryOrigin.p.y).toFixed(1)}
+                    </strong>
+                    <span className="text-[8px] opacity-80">
+                      {lockedConstraints.lockedDy != null ? "🔒" : "✎"}
+                    </span>
+                  </button>
+
+                  {/* Pílula Interativa L (Hipotenusa) na Barra Inferior */}
+                  <button
+                    type="button"
+                    onClick={(ev) => {
+                      const rect = ev.currentTarget.getBoundingClientRect();
+                      const lVal = Number(
+                        Math.hypot(
+                          cursor.x - temporaryOrigin.p.x,
+                          cursor.y - temporaryOrigin.p.y,
+                        ).toFixed(2),
+                      );
+                      setLiveDimEditor({
+                        dim: {
+                          id: "datum-L",
+                          kind: "length",
+                          value: lVal,
+                          label: "Distância L do Vetor Datum (mm)",
+                          startPoint: temporaryOrigin.p,
+                          endPoint: cursor,
+                          midPoint: {
+                            x: (temporaryOrigin.p.x + cursor.x) / 2,
+                            y: (temporaryOrigin.p.y + cursor.y) / 2,
+                          },
+                          normalDir: { x: 0, y: 1 },
+                          isEditable: true,
+                          targetKey: "length",
+                        },
+                        screenPos: { x: rect.left + rect.width / 2, y: rect.top - 12 },
+                        currentValue: lVal,
+                        label: "Distância L do Vetor Datum (mm)",
+                        allowInvert: false,
+                        measureKind: "L",
+                        initialLocked:
+                          lockedConstraints.lockedL != null || lockedConstraints.lockedDist != null,
+                      });
+                    }}
+                    title="Clique para digitar e travar a Distância Radial L (Órbita Circular)"
+                    className={cn(
+                      "flex items-center gap-0.5 px-1 py-0.5 rounded border transition-colors cursor-pointer",
+                      lockedConstraints.lockedL != null || lockedConstraints.lockedDist != null
+                        ? "bg-amber-500/20 border-amber-500/60 text-amber-400"
+                        : isDark
+                          ? "bg-[#151C27]/80 border-[#293444] hover:border-sky-500/50"
+                          : "bg-white border-slate-300 hover:border-sky-500/50",
+                    )}
+                  >
+                    <span className="font-bold text-[#38BDF8]">L:</span>
+                    <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>
+                      {Math.hypot(
+                        cursor.x - temporaryOrigin.p.x,
+                        cursor.y - temporaryOrigin.p.y,
+                      ).toFixed(1)}
+                    </strong>
+                    <span className="text-[8px] opacity-80">
+                      {lockedConstraints.lockedL != null || lockedConstraints.lockedDist != null
+                        ? "🔒"
+                        : "✎"}
+                    </span>
+                  </button>
+
+                  {/* Pílula Interativa ∠ (Ângulo) na Barra Inferior */}
+                  <button
+                    type="button"
+                    onClick={(ev) => {
+                      const rect = ev.currentTarget.getBoundingClientRect();
+                      const rawDeg =
+                        (Math.atan2(
+                          cursor.y - temporaryOrigin.p.y,
+                          cursor.x - temporaryOrigin.p.x,
+                        ) *
+                          180) /
+                        Math.PI;
+                      const degVal = Number((((rawDeg % 360) + 360) % 360).toFixed(1));
+                      setLiveDimEditor({
+                        dim: {
+                          id: "datum-angle",
+                          kind: "angle",
+                          value: degVal,
+                          label: "Ângulo ∠ do Vetor Datum (°)",
+                          startPoint: temporaryOrigin.p,
+                          endPoint: cursor,
+                          midPoint: temporaryOrigin.p,
+                          normalDir: { x: 0, y: 1 },
+                          isEditable: true,
+                          targetKey: "angle",
+                        },
+                        screenPos: { x: rect.left + rect.width / 2, y: rect.top - 12 },
+                        currentValue: degVal,
+                        label: "Ângulo ∠ do Vetor Datum (°)",
+                        allowInvert: false,
+                        measureKind: "angle",
+                        initialLocked: lockedConstraints.lockedAngle != null,
+                      });
+                    }}
+                    title="Clique para digitar e travar o Ângulo ∠ (Raio Vetor Infinito)"
+                    className={cn(
+                      "flex items-center gap-0.5 px-1 py-0.5 rounded border transition-colors cursor-pointer",
+                      lockedConstraints.lockedAngle != null
+                        ? "bg-amber-500/20 border-amber-500/60 text-amber-400"
+                        : isDark
+                          ? "bg-[#151C27]/80 border-[#293444] hover:border-amber-500/50"
+                          : "bg-white border-slate-300 hover:border-amber-500/50",
+                    )}
+                  >
+                    <span className="font-bold text-[#F59E0B]">∠:</span>
+                    <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>
+                      {(
+                        (((Math.atan2(
+                          cursor.y - temporaryOrigin.p.y,
+                          cursor.x - temporaryOrigin.p.x,
+                        ) *
+                          180) /
+                          Math.PI) %
+                          360 +
+                          360) %
+                        360
+                      ).toFixed(1)}
+                      °
+                    </strong>
+                    <span className="text-[8px] opacity-80">
+                      {lockedConstraints.lockedAngle != null ? "🔒" : "✎"}
+                    </span>
+                  </button>
 
                   {showGlobalCoordsPeek && (
-                    <span className="text-[#94A3B8] text-[8.5px] ml-1">
+                    <span className="text-[#94A3B8] text-[8.5px] ml-0.5">
                       (G: {cursor.x.toFixed(1)}, {cursor.y.toFixed(1)})
                     </span>
                   )}
 
+                  {/* Botão Rápido: [ ⟳ Aqui ] (Reancorar no Ponto Atual / Encadeamento Rápido) */}
                   <button
                     type="button"
-                    onClick={() => setShowGlobalCoordsPeek((v) => !v)}
-                    title="Alternar coordenadas globais"
+                    onClick={() => {
+                      const targetPt =
+                        pending.length > 0
+                          ? pending[pending.length - 1]!
+                          : Math.hypot(lastCreatedVertexRef.current.x, lastCreatedVertexRef.current.y) > 1e-3
+                            ? lastCreatedVertexRef.current
+                            : cursor;
+                      setTemporaryOrigin({
+                        id: uid(),
+                        p: targetPt,
+                        label: "DATUM",
+                        kind: "origin",
+                        timestamp: Date.now(),
+                      });
+                      triggerHaptic("action");
+                      toast.success(
+                        `⌖ DATUM reancorado em (${targetPt.x.toFixed(1)}, ${targetPt.y.toFixed(1)}) mm`,
+                      );
+                    }}
+                    title="Reancorar o Vetor Datum no último vértice criado (Encadeamento incremental)"
                     className={cn(
-                      "px-1 py-0.5 rounded text-[8px] ml-0.5 border",
+                      "flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold text-[8.5px] active:scale-95 border cursor-pointer",
                       isDark
-                        ? "bg-[#151C27] border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
-                        : "bg-[#FFFFFF] border-[#CBD5E1] text-[#64748B] hover:text-[#1E293B]",
+                        ? "bg-[#38BDF8]/15 hover:bg-[#38BDF8]/25 border-[#38BDF8]/40 text-[#38BDF8]"
+                        : "bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-700",
                     )}
                   >
-                    {showGlobalCoordsPeek ? "Ocultar G" : "G"}
+                    ⟳ Aqui
+                  </button>
+
+                  {/* Botão Rápido: [ 0,0 ] (Resetar para a origem absoluta da chapa) */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTemporaryOrigin({
+                        id: uid(),
+                        p: { x: 0, y: 0 },
+                        label: "0,0",
+                        kind: "origin",
+                        timestamp: Date.now(),
+                      });
+                      triggerHaptic("action");
+                      toast.success("⌖ DATUM resetado para a origem (0, 0) mm");
+                    }}
+                    title="Resetar Vetor Datum para a origem absoluta da chapa (0, 0)"
+                    className={cn(
+                      "flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold text-[8.5px] active:scale-95 border cursor-pointer",
+                      isDark
+                        ? "bg-[#151C27] hover:bg-[#1E293B] border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
+                        : "bg-white hover:bg-slate-100 border-slate-300 text-slate-600",
+                    )}
+                  >
+                    0,0
                   </button>
 
                   <button
                     type="button"
                     onClick={() => {
                       setTemporaryOrigin(null);
+                      setLockedConstraints({});
                       triggerHaptic("tap");
-                      toast.success("Origem temporária limpa (retornado ao 0,0 global)");
+                      toast.success("Vetor Datum limpo (retornado ao 0,0 global)");
                     }}
-                    title="Limpar REF 0,0 e voltar ao documento global"
+                    title="Limpar Vetor Datum e voltar ao documento global"
                     className={cn(
-                      "flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold text-[8.5px] active:scale-95 border",
+                      "flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold text-[8.5px] active:scale-95 border cursor-pointer",
                       isDark
                         ? "bg-[#1E293B] hover:bg-[#334155] border-[#334155] text-[#E2E8F0]"
                         : "bg-[#FFFFFF] hover:bg-[#F1F5F9] border-[#CBD5E1] text-[#334155]",
                     )}
                   >
-                    ✕ Limpar REF
+                    ✕ Limpar Datum
                   </button>
                 </div>
               ) : activeEdge ? (
@@ -12404,7 +12930,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     type="button"
                     onClick={() => {
                       const p = smartSnap ? smartSnap.p : { x: cursor.x, y: cursor.y };
-                      const label = smartSnap ? smartSnap.label : "Ponto";
+                      const label = smartSnap ? smartSnap.label : "DATUM";
                       const kind = smartSnap ? smartSnap.kind : "origin";
                       setTemporaryOrigin({
                         id: uid(),
@@ -12415,9 +12941,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       });
                       triggerHaptic("success");
                       AudioManager.play("ui_select");
-                      toast.success(`✓ REF 0,0 fixada em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm`);
+                      toast.success(`✓ ⌖ DATUM fixado em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm`);
                     }}
-                    title="Definir ponto sob o cursor / snap como origem temporária REF (0,0)"
+                    title="Definir ponto sob o cursor / snap como Vetor Datum (ΔXY / ∠)"
                     className={cn(
                       "ml-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all",
                       isSettingReferencePoint
@@ -12427,8 +12953,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           : "bg-[#FFFFFF] hover:bg-[#D97706]/10 border-[#D97706]/45 text-[#D97706]",
                     )}
                   >
-                    <span>📍</span>
-                    <span>REF 0,0</span>
+                    <span>⌖</span>
+                    <span>DATUM</span>
                   </button>
 
                   {selection.length > 0 && (
