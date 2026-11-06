@@ -18,7 +18,7 @@ import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Check, Crosshair, Minimize2 
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { cn } from "@/lib/utils";
 
-export const TOUCH_CURSOR_OFFSET_PX = 0;
+export const TOUCH_CURSOR_OFFSET_PX = 55;
 export const TOUCH_TOP_INVERSION_THRESHOLD_PX = 120;
 export const TOUCH_TOP_EDGE_THRESHOLD_PX = TOUCH_TOP_INVERSION_THRESHOLD_PX;
 
@@ -28,19 +28,21 @@ export type NudgeStepMm = 0.1 | 1 | 5 | 10;
 export const NUDGE_STEP_OPTIONS: NudgeStepMm[] = [0.1, 1, 5, 10];
 
 /**
- * Determina se a ferramenta ativa deve aplicar deslocamento vertical no toque.
- * Calibrado em 1:1 direto (retorna sempre `false`) para que o toque/clique
- * aconteça exatamente no ponto onde o dedo ou cursor toca na tela, sem offset vertical.
+ * Determina se a ferramenta ativa deve aplicar deslocamento vertical (-55px acima do dedo) no toque.
+ * Ativo sempre que `pointerType === "touch"`, `cursorOffsetMode === "offset"` e a ferramenta não for `pan`.
  */
 export function shouldUseTouchOffset(
-  _pointerType: string | undefined,
-  _tool: string,
+  pointerType: string | undefined,
+  tool: string,
   _isDraggingNode = false,
   _isDraggingEntity = false,
-  _cursorOffsetMode: "offset" | "direct" = "direct",
+  cursorOffsetMode: "offset" | "direct" = "offset",
   _hasSelection = false,
 ): boolean {
-  return false;
+  if (pointerType !== "touch") return false;
+  if (cursorOffsetMode === "direct") return false;
+  if (tool === "pan") return false;
+  return true;
 }
 
 export interface TouchCursorCalculationInput {
@@ -54,6 +56,7 @@ export interface TouchCursorCalculationInput {
   panY: number;
   zoom: number;
   offsetEnabled?: boolean;
+  allowTopInversion?: boolean;
 }
 
 export interface TouchCursorCalculationResult {
@@ -68,19 +71,22 @@ export interface TouchCursorCalculationResult {
 }
 
 /**
- * Calcula matematicamente a coordenada exata 1:1 do toque/clique no mundo CAD (`mm`),
- * descontando `rect.left` e `rect.top`, aplicando a razão de escala CSS (`scaleX`, `scaleY`)
- * e convertendo pelo Pan (`panX`, `panY`) e Zoom (`zoom`), sem nenhum offset vertical.
+ * Calcula matematicamente a coordenada da Mira 55px (`touchY - 55`) e do ponto físico do dedo
+ * no mundo CAD (`mm`), descontando `rect.left` e `rect.top`, aplicando a razão de escala CSS (`scaleX`, `scaleY`)
+ * e convertendo pelo Pan (`panX`, `panY`) e Zoom (`zoom`).
  */
 export function computeTouchCursorScreenAndWorld({
   clientX,
   clientY,
+  pointerType,
   canvasRect,
   canvasWidth,
   canvasHeight,
   panX,
   panY,
   zoom,
+  offsetEnabled = false,
+  allowTopInversion = true,
 }: TouchCursorCalculationInput): TouchCursorCalculationResult {
   const safeZoom = Number.isFinite(zoom) && zoom > 0 ? zoom : 1;
   const safePanX = Number.isFinite(panX) ? panX : 0;
@@ -95,22 +101,157 @@ export function computeTouchCursorScreenAndWorld({
   const scaleY =
     typeof canvasHeight === "number" && canvasHeight > 0 && rectH > 0 ? canvasHeight / rectH : 1;
 
-  const canvasX = (clientX - left) * scaleX;
-  const canvasY = (clientY - top) * scaleY;
+  const applyOffset = Boolean(offsetEnabled && pointerType === "touch");
+  const isInverted = Boolean(applyOffset && allowTopInversion && clientY < TOUCH_TOP_INVERSION_THRESHOLD_PX);
+  const offsetY = applyOffset ? (isInverted ? TOUCH_CURSOR_OFFSET_PX : -TOUCH_CURSOR_OFFSET_PX) : 0;
 
-  const worldX = (canvasX - safePanX) / safeZoom;
-  const worldY = (canvasY - safePanY) / safeZoom;
+  const cursorScreenX = clientX;
+  const cursorScreenY = clientY + offsetY;
+
+  const touchCanvasX = (clientX - left) * scaleX;
+  const touchCanvasY = (clientY - top) * scaleY;
+  const cursorCanvasX = (cursorScreenX - left) * scaleX;
+  const cursorCanvasY = (cursorScreenY - top) * scaleY;
+
+  const touchWorldX = (touchCanvasX - safePanX) / safeZoom;
+  const touchWorldY = (touchCanvasY - safePanY) / safeZoom;
+  const cursorWorldX = (cursorCanvasX - safePanX) / safeZoom;
+  const cursorWorldY = (cursorCanvasY - safePanY) / safeZoom;
 
   return {
-    cursorScreenX: clientX,
-    cursorScreenY: clientY,
-    cursorWorldX: worldX,
-    cursorWorldY: worldY,
-    touchWorldX: worldX,
-    touchWorldY: worldY,
-    offsetY: 0,
-    isInverted: false,
+    cursorScreenX,
+    cursorScreenY,
+    cursorWorldX,
+    cursorWorldY,
+    touchWorldX,
+    touchWorldY,
+    offsetY,
+    isInverted,
   };
+}
+
+export interface Crosshair55OverlayOptions {
+  /** Posição física do dedo em pixels CSS relativos ao canvas (touchX, touchY) */
+  touchScreen: Vec2;
+  /** Posição da mira 55px acima do dedo (ou cravada no SnapResult.screenPoint) em pixels CSS relativos ao canvas */
+  reticleScreen?: Vec2 | null;
+  /** Indica se um ponto de SNAP geométrico real está capturado */
+  hasSnap?: boolean;
+  /** Rótulo opcional do SNAP capturado */
+  snapLabel?: string;
+  /** Device Pixel Ratio do canvas */
+  dpr?: number;
+}
+
+/**
+ * Desenho Visual Obrigatório da Mira 55px no Final do Loop de Renderização 2D (`renderCrosshair55Overlay`):
+ *  - A. Anel de Apoio do Dedo em `(touchX, touchY)` (raio 14px, `rgba(56, 189, 248, 0.45)`, `lineWidth: 1.5px`)
+ *  - B. Haste Conectora Vertical de 55px ligando `(touchX, touchY - 14)` até `(touchX, touchY - 55)` (`rgba(56, 189, 248, 0.65)`)
+ *  - C. Retículo Óptico Principal de Precisão em `(touchX, touchY - 55)` (ou cravado no `SnapResult.screenPoint` quando em SNAP):
+ *       círculo técnico de raio 10px (`#38BDF8` ou `#10B981` quando em SNAP), 4 linhas de mira (`16px`) e ponto central de `2px`.
+ */
+export function renderCrosshair55Overlay(
+  ctx: CanvasRenderingContext2D,
+  options: Crosshair55OverlayOptions,
+): void {
+  const { touchScreen, reticleScreen, hasSnap = false, dpr = 1 } = options;
+  if (
+    !touchScreen ||
+    !Number.isFinite(touchScreen.x) ||
+    !Number.isFinite(touchScreen.y)
+  ) {
+    return;
+  }
+
+  const touchX = touchScreen.x;
+  const touchY = touchScreen.y;
+  const targetX =
+    reticleScreen && Number.isFinite(reticleScreen.x) ? reticleScreen.x : touchX;
+  const targetY =
+    reticleScreen && Number.isFinite(reticleScreen.y)
+      ? reticleScreen.y
+      : touchY - TOUCH_CURSOR_OFFSET_PX;
+
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  // A. Anel de Apoio do Dedo em (touchX, touchY) — raio 14px
+  ctx.beginPath();
+  ctx.arc(touchX, touchY, 14, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(56, 189, 248, 0.45)";
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([]);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(touchX, touchY, 2.2, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(56, 189, 248, 0.55)";
+  ctx.fill();
+
+  // B. Haste Conectora Vertical de 55px ligando (touchX, touchY - 14) até o retículo
+  const stemStartX = touchX;
+  const stemStartY = touchY - 14;
+  const stemEndX = targetX;
+  const stemEndY = targetY + 10;
+  if (Math.hypot(stemEndX - stemStartX, stemEndY - stemStartY) > 4) {
+    ctx.beginPath();
+    ctx.moveTo(stemStartX, stemStartY);
+    ctx.lineTo(stemEndX, stemEndY);
+    ctx.strokeStyle = hasSnap ? "rgba(16, 185, 129, 0.78)" : "rgba(56, 189, 248, 0.65)";
+    ctx.lineWidth = 1.35;
+    ctx.setLineDash([4, 3]);
+    ctx.stroke();
+  }
+
+  // C. Retículo Óptico Principal de Precisão em (targetX, targetY)
+  const reticleColor = hasSnap ? "#10B981" : "#38BDF8";
+  ctx.setLineDash([]);
+
+  // Halo de contraste para legibilidade em qualquer tema
+  ctx.beginPath();
+  ctx.arc(targetX, targetY, 10, 0, Math.PI * 2);
+  ctx.strokeStyle = "rgba(15, 23, 42, 0.72)";
+  ctx.lineWidth = 3.2;
+  ctx.stroke();
+
+  // Círculo técnico de precisão (raio 10px)
+  ctx.beginPath();
+  ctx.arc(targetX, targetY, 10, 0, Math.PI * 2);
+  if (hasSnap) {
+    ctx.fillStyle = "rgba(16, 185, 129, 0.16)";
+    ctx.fill();
+  }
+  ctx.strokeStyle = reticleColor;
+  ctx.lineWidth = 1.75;
+  ctx.stroke();
+
+  // 4 linhas de mira (crosshair hairs de 16px) cruzando o centro exato
+  const hairOuter = 16;
+  const hairInner = 3.5;
+  ctx.beginPath();
+  // Esquerda
+  ctx.moveTo(targetX - hairOuter, targetY);
+  ctx.lineTo(targetX - hairInner, targetY);
+  // Direita
+  ctx.moveTo(targetX + hairInner, targetY);
+  ctx.lineTo(targetX + hairOuter, targetY);
+  // Topo
+  ctx.moveTo(targetX, targetY - hairOuter);
+  ctx.lineTo(targetX, targetY - hairInner);
+  // Base
+  ctx.moveTo(targetX, targetY + hairInner);
+  ctx.lineTo(targetX, targetY + hairOuter);
+  ctx.strokeStyle = reticleColor;
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  // Ponto luminoso central de 2px
+  ctx.beginPath();
+  ctx.arc(targetX, targetY, 2, 0, Math.PI * 2);
+  ctx.fillStyle = reticleColor;
+  ctx.fill();
+
+  ctx.restore();
 }
 
 /**
@@ -275,11 +416,12 @@ export function ChamferTechnicalCursorSvg({
   const crosshairOrthoColor = effectiveIsDark ? "rgba(56, 189, 248, 0.36)" : "rgba(0, 102, 255, 0.32)";
 
   // Dimensões do retículo em unidades de tela convertidas para o mundo (inv = 1 / viewK)
-  const gap = 4.5 * inv;
-  const arm = 15 * inv;
+  const gap = 3.5 * inv;
+  const arm = 16 * inv;
   const crosshairSpan = 2200 * inv;
-  const crosshairStart = 19 * inv;
-  const ringR = (isObjectSnap ? 6.5 : 5.5) * inv;
+  const crosshairStart = 20 * inv;
+  const ringR = 10 * inv;
+  const fingerRingR = 14 * inv;
 
   const hasValidTouchOrigin =
     touchOffsetActive &&
@@ -291,38 +433,36 @@ export function ChamferTechnicalCursorSvg({
   return (
     <g
       className="chamfer-technical-cursor pointer-events-none select-none"
-      aria-label="Mira técnica de precisão CAD"
+      data-testid="chamfer-mira-55px-svg"
+      aria-label="Mira técnica de precisão CAD 55px"
     >
-      {/* 1. HASTE GUIA ELÁSTICA DISCRETA (CONEXÃO TOQUE DO DEDO -> CURSOR DESLOCADO) */}
+      {/* 1. ANEL DE APOIO DO DEDO (14PX) + HASTE CONECTORA VERTICAL DE 55PX */}
       {hasValidTouchOrigin && touchWorld && (
-        <g aria-label="Haste guia elástica anti-oclusão">
-          {/* Anel sutil no ponto físico de contato do dedo */}
+        <g aria-label="Haste guia elástica anti-oclusão 55px" data-testid="chamfer-mira-55px-stem">
+          {/* A. Anel de Apoio do Dedo em (touchX, touchY) de raio 14px */}
           <circle
             cx={touchWorld.x}
             cy={touchWorld.y}
-            r={4.5 * inv}
+            r={fingerRingR}
             fill="none"
-            stroke={primaryColor}
-            strokeWidth={1 * inv}
-            strokeOpacity={effectiveIsDark ? 0.38 : 0.35}
+            stroke="rgba(56, 189, 248, 0.45)"
+            strokeWidth={1.5 * inv}
           />
           <circle
             cx={touchWorld.x}
             cy={touchWorld.y}
-            r={1.3 * inv}
-            fill={primaryColor}
-            fillOpacity={effectiveIsDark ? 0.45 : 0.4}
+            r={2.2 * inv}
+            fill="rgba(56, 189, 248, 0.55)"
           />
-          {/* Linha guia fina semitransparente pontilhada */}
+          {/* B. Haste Conectora Vertical de 55px ligando (touchX, touchY - 14) até o retículo */}
           <line
             x1={touchWorld.x}
-            y1={touchWorld.y}
+            y1={touchWorld.y - fingerRingR}
             x2={target.x}
-            y2={target.y}
-            stroke={primaryColor}
-            strokeWidth={1 * inv}
-            strokeOpacity={effectiveIsDark ? 0.48 : 0.42}
-            strokeDasharray={`${3 * inv},${3 * inv}`}
+            y2={target.y + ringR}
+            stroke={isObjectSnap ? "rgba(16, 185, 129, 0.78)" : "rgba(56, 189, 248, 0.65)"}
+            strokeWidth={1.35 * inv}
+            strokeDasharray={`${4 * inv},${3 * inv}`}
           />
         </g>
       )}
@@ -398,8 +538,8 @@ export function ChamferTechnicalCursorSvg({
         </g>
       )}
 
-      {/* 3. MIRA TÉCNICA PRINCIPAL (RETÍCULO DE METROLOGIA 1PX + PICKBOX) */}
-      <g>
+      {/* 3. C. RETÍCULO ÓPTICO PRINCIPAL DE PRECISÃO (RAIO 10PX + 4 LINHAS DE MIRA 16PX + PONTO CENTRAL 2PX) */}
+      <g data-testid="chamfer-mira-55px-reticle">
         {/* Halo de contraste sutil para legibilidade absoluta em ambos os temas */}
         <circle
           cx={target.x}
@@ -407,27 +547,27 @@ export function ChamferTechnicalCursorSvg({
           r={ringR}
           fill="none"
           stroke={effectiveIsDark ? "rgba(15, 23, 42, 0.75)" : "rgba(255, 255, 255, 0.85)"}
-          strokeWidth={2.2 * inv}
+          strokeWidth={2.8 * inv}
         />
 
-        {/* Anel / Pickbox Central */}
+        {/* Círculo Técnico de Precisão (Raio 10px, Ciano #38BDF8 ou Verde #10B981 em SNAP) */}
         <circle
           cx={target.x}
           cy={target.y}
           r={ringR}
-          fill={isObjectSnap ? (effectiveIsDark ? "rgba(16, 185, 129, 0.14)" : "rgba(5, 150, 105, 0.12)") : "none"}
+          fill={isObjectSnap ? (effectiveIsDark ? "rgba(16, 185, 129, 0.16)" : "rgba(5, 150, 105, 0.12)") : "none"}
           stroke={primaryColor}
-          strokeWidth={(isObjectSnap ? 1.35 : 1.05) * inv}
+          strokeWidth={(isObjectSnap ? 1.85 : 1.6) * inv}
         />
 
-        {/* Braços da Mira Técnica (1px) */}
+        {/* 4 Linhas de Mira (Crosshair Hairs de 16px) */}
         <line
           x1={target.x - arm}
           y1={target.y}
           x2={target.x - gap}
           y2={target.y}
           stroke={primaryColor}
-          strokeWidth={1.15 * inv}
+          strokeWidth={1.45 * inv}
           strokeLinecap="round"
         />
         <line
@@ -436,7 +576,7 @@ export function ChamferTechnicalCursorSvg({
           x2={target.x + arm}
           y2={target.y}
           stroke={primaryColor}
-          strokeWidth={1.15 * inv}
+          strokeWidth={1.45 * inv}
           strokeLinecap="round"
         />
         <line
@@ -445,7 +585,7 @@ export function ChamferTechnicalCursorSvg({
           x2={target.x}
           y2={target.y - gap}
           stroke={primaryColor}
-          strokeWidth={1.15 * inv}
+          strokeWidth={1.45 * inv}
           strokeLinecap="round"
         />
         <line
@@ -454,15 +594,15 @@ export function ChamferTechnicalCursorSvg({
           x2={target.x}
           y2={target.y + arm}
           stroke={primaryColor}
-          strokeWidth={1.15 * inv}
+          strokeWidth={1.45 * inv}
           strokeLinecap="round"
         />
 
-        {/* Ponto de precisão exata no centro (1.4px) */}
+        {/* Ponto luminoso central de 2px */}
         <circle
           cx={target.x}
           cy={target.y}
-          r={1.4 * inv}
+          r={2 * inv}
           fill={primaryColor}
         />
       </g>

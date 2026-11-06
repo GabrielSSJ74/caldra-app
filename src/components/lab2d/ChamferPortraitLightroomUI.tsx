@@ -101,6 +101,8 @@ import {
   type VerticalParityDiagnosticReport,
 } from "@/lib/lab2d/chamferCommandRegistry";
 import { getWireframe3DCacheStats } from "@/lib/lab2d/chamferWireframe3D";
+import { getSilkBackgroundCacheStats } from "@/lib/lab2d/canvasScene";
+import { getAuroraEngineTelemetry } from "@/components/chameleon/Aurora";
 import type { Tool } from "./Lab2DEditor";
 import type { DimKind } from "@/lib/lab2d/dimensions";
 import type { CursorOffsetMode, LoupeHudMode } from "@/lib/lab2d/cadInteractionHub";
@@ -422,6 +424,10 @@ export function ChamferPortraitTopBar({
     cacheHits: number;
     cacheMisses: number;
     cacheHitRate: number;
+    silkHits: number;
+    silkMisses: number;
+    silkHitRate: number;
+    auroraSprites: number;
   }>({
     fps: 60,
     frameP50Ms: 16.6,
@@ -434,6 +440,10 @@ export function ChamferPortraitTopBar({
     cacheHits: 0,
     cacheMisses: 0,
     cacheHitRate: 100,
+    silkHits: 0,
+    silkMisses: 0,
+    silkHitRate: 100,
+    auroraSprites: 0,
   });
 
   useEffect(() => {
@@ -462,6 +472,8 @@ export function ChamferPortraitTopBar({
         const vramMb = (w * dpr * (h * dpr) * 4 * 3) / (1024 * 1024);
         const mem = (performance as unknown as { memory?: { usedJSHeapSize: number; totalJSHeapSize: number } }).memory;
         const cStats = getWireframe3DCacheStats();
+        const silkStats = getSilkBackgroundCacheStats();
+        const auroraStats = getAuroraEngineTelemetry();
         setPerfTelemetry({
           fps: Math.min(120, Math.round(1000 / Math.max(1, avgDt))),
           frameP50Ms: Number(p50.toFixed(1)),
@@ -474,6 +486,10 @@ export function ChamferPortraitTopBar({
           cacheHits: cStats.hits,
           cacheMisses: cStats.misses,
           cacheHitRate: cStats.hitRatePercent,
+          silkHits: silkStats.hits,
+          silkMisses: silkStats.misses,
+          silkHitRate: silkStats.hitRatePercent,
+          auroraSprites: auroraStats.spriteCacheSize,
         });
       }
       rafId = window.requestAnimationFrame(sampleFrame);
@@ -1812,8 +1828,24 @@ export function ChamferPortraitTopBar({
                     </div>
                   </div>
 
+                  <div className="rounded-xl border border-white/[0.08] bg-black/20 p-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[8.5px] uppercase text-[#94A3B8]">
+                        Cache Offscreen Fluid Aurora / Silk 2D
+                      </span>
+                      <span className="text-xs font-bold text-[#A855F7]">
+                        {perfTelemetry.silkHitRate}% Hit
+                      </span>
+                    </div>
+                    <span className="block text-[9px] text-[#94A3B8]">
+                      Blits O(1): {perfTelemetry.silkHits} • Raster: {perfTelemetry.silkMisses} • Sprites LUT: {perfTelemetry.auroraSprites}
+                    </span>
+                  </div>
+
                   <div className="rounded-xl border border-white/[0.08] bg-black/20 p-2.5 text-[9.5px] leading-relaxed text-[#94A3B8]">
                     <div className="font-bold text-[#F8FAFC] mb-1">Otimizações Ativas no Ecossistema:</div>
+                    <div>• Fluid Aurora Offscreen High-DPI Cache + Sprites LUT (0 alloc/frame)</div>
+                    <div>• Remoção de Convolução Blur 110px Redundante em Véus Gaussianos</div>
                     <div>• KeepAlive Lazy Split (Abas & Motor 3D sob demanda)</div>
                     <div>• Suspensão Automática de rAF Offscreen (Home Hero & Aurora GPU)</div>
                     <div>• Cache O(1) de Loops Fechados e Furos na Órbita 3D 60fps</div>

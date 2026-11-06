@@ -2217,23 +2217,7 @@
 /* =========================================================================
    CONTROLE DE ACESSIBILIDADE E ECONOMIA DE RECURSOS
    ========================================================================= */
-@media (prefers-reduced-motion: reduce) {
-  .organic-mass,
-  .deep-space-field,
-  .mass-body,
-  .field-body,
-  .mass-inner,
-  .field-inner,
-  .mass-core,
-  .field-core-primary,
-  .field-core-secondary,
-  .ai-processing-crest,
-  .ai-processing-waves {
-    animation: none !important;
-    will-change: auto;
-  }
-}
-
+/* Movimento sempre vivo para Fluid e Fluid Aurora (sem congelamento por prefers-reduced-motion) */
 .aurora-root[data-animated="off"] .organic-mass,
 .aurora-root[data-animated="off"] .deep-space-field,
 .aurora-root[data-animated="off"] .mass-body,
@@ -2244,16 +2228,26 @@
 .aurora-root[data-animated="off"] .field-core-primary,
 .aurora-root[data-animated="off"] .field-core-secondary,
 .aurora-root[data-animated="off"] .ai-processing-crest,
-.aurora-root[data-animated="off"] .ai-processing-waves {
+.aurora-root[data-animated="off"] .ai-processing-waves,
+.aurora-root[data-animated="off"] .aurora-autonomous-orb,
+.aurora-root[data-animated="off"] .aurora-autonomous-orb-secondary {
   animation-play-state: paused !important;
 }
 
-/* Rota sem Aurora (editor CHAMFER): oculto sem destruir o contexto WebGL. */
+/* Rota sem Aurora (editor CHAMFER): oculto e desativado no compositor GPU. */
 .aurora-root[data-active="off"] {
   visibility: hidden;
+  display: none !important;
+  content-visibility: hidden;
+}
+.aurora-root[data-active="off"] .liquid-silk-field,
+.aurora-root[data-active="off"] .fluid-aurora-veil,
+.aurora-root[data-active="off"] .aurora-autonomous-orb,
+.aurora-root[data-active="off"] .aurora-autonomous-orb-secondary {
+  animation-play-state: paused !important;
 }
 
-/* AURORA 2.0 — FLUIDO usa o shader + Liquid Silk Mesh; SUAVE usa o motor CSS Fluid Aurora (Ultra-Silk Multi-Layer). */
+/* AURORA 3.0 — 7 MASSAS LUMINOSAS AUTÔNOMAS ("FLUID" & "FLUID AURORA") */
 .aurora-root[data-style="fluido"] .aurora-css {
   display: none;
 }
@@ -2269,198 +2263,293 @@
 }
 
 /* =========================================================================
-   UPGRADE ULTRA-HD DOS ESTILOS "FLUID" E "FLUID AURORA"
-   Acabamento de Seda Líquida (12-bit look), Interpolação Anti-Banding de
-   10 Paradas (Curva Senoidal Ease-Out Scrim), Inset -35% (Zero Box Clipping)
-   e Camada de Difusão Sub-Pixel (Silk Micro-Dither).
+   ECOSSISTEMA DO FUNDO (LUZ VIVA) — ORBES VIVOS & COSMOS RADIAL
+   - Base de Espaço Profundo: #060911 (#020408 no AMOLED / #F3F6FC no tema claro)
+   - Diâmetro Base: width: 44vmin; height: 44vmin; border-radius: 50%; pointer-events: none;
+   - Escala Contínua por Dominância (smoothstep):
+     Secundária (dominance ≈ 0): scale = 0.72, opacity = 0.22
+     Prioritária Máxima (dominance ➔ 1.0): scale = 2.25, opacity = 0.56 (~40% da tela)
+   - Zero @keyframes CSS: Controle 100% via requestAnimationFrame + acumuladores de fase (dt)
+   - Decaimento Gaussiano Suave de 5 Paradas:
+     0% (0.80) -> 25% (0.55) -> 50% (0.28) -> 75% (0.09) -> 100% (transparent) + blur(42px)
+   ========================================================================= */
+
+.aurora-root {
+  background-color: #060911;
+}
+
+:root:not(.dark) .aurora-root {
+  background-color: #F3F6FC;
+}
+
+.amoled .aurora-root {
+  background-color: #020408;
+}
+
+.aurora-autonomous-orb-stage {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  isolation: isolate;
+  transform: translate3d(0, 0, 0);
+}
+
+.aurora-autonomous-orb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 44vmin;
+  height: 44vmin;
+  border-radius: 50%;
+  pointer-events: none;
+  filter: blur(42px);
+  mix-blend-mode: screen;
+  animation: none !important;
+  transition: none !important;
+  will-change: transform, opacity;
+  transform: translate3d(calc(50vw - 50%), calc(50vh - 50%), 0) scale(0.72);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+:root:not(.dark) .aurora-autonomous-orb {
+  mix-blend-mode: normal;
+  filter: blur(42px);
+}
+
+/* 1. Massa 1 — Vermelho Carmesim (#E11D48) | baseSpeedX = 0.032, baseSpeedY = 0.027 */
+.aurora-orb-1-crimson {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(225, 29, 72, 0.80) 0%,
+    rgba(225, 29, 72, 0.55) 25%,
+    rgba(225, 29, 72, 0.28) 50%,
+    rgba(225, 29, 72, 0.09) 75%,
+    transparent 100%
+  );
+}
+
+/* 2. Massa 2 — Rosa Magenta (#EC4899) | baseSpeedX = 0.041, baseSpeedY = 0.035 */
+.aurora-orb-2-magenta {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(236, 72, 153, 0.80) 0%,
+    rgba(236, 72, 153, 0.55) 25%,
+    rgba(236, 72, 153, 0.28) 50%,
+    rgba(236, 72, 153, 0.09) 75%,
+    transparent 100%
+  );
+}
+
+/* 3. Massa 3 — Azul Técnico (#3B82F6) | baseSpeedX = 0.026, baseSpeedY = 0.031 */
+.aurora-orb-3-cobalt {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(59, 130, 246, 0.80) 0%,
+    rgba(59, 130, 246, 0.55) 25%,
+    rgba(59, 130, 246, 0.28) 50%,
+    rgba(59, 130, 246, 0.09) 75%,
+    transparent 100%
+  );
+}
+
+/* 4. Massa 4 — Verde Esmeralda (#10B981) | baseSpeedX = 0.046, baseSpeedY = 0.038 */
+.aurora-orb-4-emerald {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(16, 185, 129, 0.80) 0%,
+    rgba(16, 185, 129, 0.55) 25%,
+    rgba(16, 185, 129, 0.28) 50%,
+    rgba(16, 185, 129, 0.09) 75%,
+    transparent 100%
+  );
+}
+
+/* 5. Massa 5 — Âmbar Ouro (#F59E0B) | baseSpeedX = 0.029, baseSpeedY = 0.024 */
+.aurora-orb-5-amber {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(245, 158, 11, 0.80) 0%,
+    rgba(245, 158, 11, 0.55) 25%,
+    rgba(245, 158, 11, 0.28) 50%,
+    rgba(245, 158, 11, 0.09) 75%,
+    transparent 100%
+  );
+}
+
+/* 6. Massa 6 — Roxo Violeta (#A855F7) | baseSpeedX = 0.037, baseSpeedY = 0.042 */
+.aurora-orb-6-violet {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(168, 85, 247, 0.80) 0%,
+    rgba(168, 85, 247, 0.55) 25%,
+    rgba(168, 85, 247, 0.28) 50%,
+    rgba(168, 85, 247, 0.09) 75%,
+    transparent 100%
+  );
+}
+
+/* 7. Massa 7 — Ciano Boreal (#06B6D4) | baseSpeedX = 0.023, baseSpeedY = 0.028 */
+.aurora-orb-7-cyan {
+  background: radial-gradient(
+    circle at 50% 50%,
+    rgba(6, 182, 212, 0.80) 0%,
+    rgba(6, 182, 212, 0.55) 25%,
+    rgba(6, 182, 212, 0.28) 50%,
+    rgba(6, 182, 212, 0.09) 75%,
+    transparent 100%
+  );
+}
+
+/* =========================================================================
+   ESTÁGIOS COMPLEMENTARES "FLUID" E "FLUID AURORA"
+   Calibrados com Base #060911, Blur 42px e Núcleo Concentrado de 5 Paradas
    ========================================================================= */
 
 .silk-light-generator-bleed {
   position: absolute;
-  inset: -35%;
+  inset: -20%;
   pointer-events: none;
+  contain: layout style paint;
+  isolation: isolate;
   transform: translate3d(0, 0, 0);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
 }
 
-/* 2. ARQUITETURA VISUAL DE SEDA PARA O ESTILO "FLUID" (Liquid Silk Mesh) */
 .liquid-silk-fluid-stage {
   position: absolute;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
   isolation: isolate;
-  background: linear-gradient(160deg, #0D1420 0%, #111927 52%, #0D1420 100%);
+  background: #060911;
   transform: translate3d(0, 0, 0);
 }
 
 :root:not(.dark) .liquid-silk-fluid-stage {
-  background: linear-gradient(160deg, #F2F6FC 0%, #E9F0FA 52%, #F2F6FC 100%);
+  background: #F3F6FC;
 }
 
 .amoled .liquid-silk-fluid-stage {
-  background: linear-gradient(160deg, #05080F 0%, #09101C 52%, #05080F 100%);
+  background: #020408;
 }
 
 .liquid-silk-field {
   position: absolute;
-  width: 140vmax;
-  height: 140vmax;
+  width: min(72vw, 340px);
+  height: min(72vw, 340px);
   border-radius: 50%;
   pointer-events: none;
-  filter: blur(50px);
+  filter: blur(42px);
+  mix-blend-mode: screen;
   transform: translate3d(0, 0, 0);
-  will-change: transform;
+  will-change: transform, opacity;
 }
 
 :root:not(.dark) .liquid-silk-field {
-  filter: blur(50px);
+  filter: blur(42px);
+  mix-blend-mode: normal;
 }
 
-/* Campo 1 — Azul-Titânio (#1E3A5F no Escuro / Gelo Azulado #DCE8F9 no Claro) com 10 paradas senoidais */
+/* Campo 1 — Vermelho Carmesim (#E11D48) com 5 paradas concentradas */
 .liquid-silk-field-1 {
-  top: -12%;
-  left: -14%;
+  top: 8%;
+  left: 6%;
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(30, 58, 95, 0.7200) 0%,
-    rgba(30, 58, 95, 0.6624) 15%,
-    rgba(30, 58, 95, 0.5616) 30%,
-    rgba(30, 58, 95, 0.4176) 45%,
-    rgba(30, 58, 95, 0.2736) 60%,
-    rgba(30, 58, 95, 0.1440) 75%,
-    rgba(30, 58, 95, 0.0504) 88%,
-    rgba(30, 58, 95, 0.0144) 95%,
-    rgba(30, 58, 95, 0.0000) 100%
+    rgba(225, 29, 72, 0.78) 0%,
+    rgba(225, 29, 72, 0.58) 22%,
+    rgba(225, 29, 72, 0.30) 48%,
+    rgba(225, 29, 72, 0.10) 72%,
+    rgba(225, 29, 72, 0.00) 100%
   );
-  animation: liquid-silk-drift-1 34s cubic-bezier(0.37, 0, 0.63, 1) infinite alternate;
+  animation: liquid-silk-drift-1 19s cubic-bezier(0.45, 0.05, 0.55, 0.95) infinite alternate;
 }
 
-:root:not(.dark) .liquid-silk-field-1 {
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(220, 232, 249, 0.8500) 0%,
-    rgba(220, 232, 249, 0.7820) 15%,
-    rgba(220, 232, 249, 0.6630) 30%,
-    rgba(220, 232, 249, 0.4930) 45%,
-    rgba(220, 232, 249, 0.3230) 60%,
-    rgba(220, 232, 249, 0.1700) 75%,
-    rgba(220, 232, 249, 0.0595) 88%,
-    rgba(220, 232, 249, 0.0170) 95%,
-    rgba(220, 232, 249, 0.0000) 100%
-  );
-}
-
-/* Campo 2 — Índigo Profundo (#1E2648 no Escuro / Lavanda Sutil #E8E6FA no Claro) com 10 paradas senoidais */
+/* Campo 2 — Azul Técnico / Cobalto (#3B82F6) com 5 paradas concentradas */
 .liquid-silk-field-2 {
-  top: 6%;
-  right: -16%;
+  top: 28%;
+  right: 8%;
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(30, 38, 72, 0.6800) 0%,
-    rgba(30, 38, 72, 0.6256) 15%,
-    rgba(30, 38, 72, 0.5304) 30%,
-    rgba(30, 38, 72, 0.3944) 45%,
-    rgba(30, 38, 72, 0.2584) 60%,
-    rgba(30, 38, 72, 0.1360) 75%,
-    rgba(30, 38, 72, 0.0476) 88%,
-    rgba(30, 38, 72, 0.0136) 95%,
-    rgba(30, 38, 72, 0.0000) 100%
+    rgba(59, 130, 246, 0.78) 0%,
+    rgba(59, 130, 246, 0.58) 22%,
+    rgba(59, 130, 246, 0.30) 48%,
+    rgba(59, 130, 246, 0.10) 72%,
+    rgba(59, 130, 246, 0.00) 100%
   );
-  animation: liquid-silk-drift-2 41s cubic-bezier(0.37, 0, 0.63, 1) -11s infinite alternate;
+  animation: liquid-silk-drift-2 23s cubic-bezier(0.45, 0.05, 0.55, 0.95) -7s infinite alternate;
 }
 
-:root:not(.dark) .liquid-silk-field-2 {
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(232, 230, 250, 0.8200) 0%,
-    rgba(232, 230, 250, 0.7544) 15%,
-    rgba(232, 230, 250, 0.6396) 30%,
-    rgba(232, 230, 250, 0.4756) 45%,
-    rgba(232, 230, 250, 0.3116) 60%,
-    rgba(232, 230, 250, 0.1640) 75%,
-    rgba(232, 230, 250, 0.0574) 88%,
-    rgba(232, 230, 250, 0.0164) 95%,
-    rgba(232, 230, 250, 0.0000) 100%
-  );
-}
-
-/* Campo 3 — Ciano-Ardósia Sutil (#163E52 no Escuro / Branco Quente #FFFFFF no Claro) com 10 paradas senoidais */
+/* Campo 3 — Verde Esmeralda (#10B981) com 5 paradas concentradas */
 .liquid-silk-field-3 {
-  bottom: -18%;
-  left: 8%;
+  bottom: 12%;
+  left: 16%;
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(22, 62, 82, 0.6400) 0%,
-    rgba(22, 62, 82, 0.5888) 15%,
-    rgba(22, 62, 82, 0.4992) 30%,
-    rgba(22, 62, 82, 0.3712) 45%,
-    rgba(22, 62, 82, 0.2432) 60%,
-    rgba(22, 62, 82, 0.1280) 75%,
-    rgba(22, 62, 82, 0.0448) 88%,
-    rgba(22, 62, 82, 0.0128) 95%,
-    rgba(22, 62, 82, 0.0000) 100%
+    rgba(16, 185, 129, 0.78) 0%,
+    rgba(16, 185, 129, 0.58) 22%,
+    rgba(16, 185, 129, 0.30) 48%,
+    rgba(16, 185, 129, 0.10) 72%,
+    rgba(16, 185, 129, 0.00) 100%
   );
-  animation: liquid-silk-drift-3 38s cubic-bezier(0.37, 0, 0.63, 1) -19s infinite alternate;
-}
-
-:root:not(.dark) .liquid-silk-field-3 {
-  background: radial-gradient(
-    circle at 50% 50%,
-    rgba(255, 255, 255, 0.9000) 0%,
-    rgba(255, 255, 255, 0.8280) 15%,
-    rgba(255, 255, 255, 0.7020) 30%,
-    rgba(255, 255, 255, 0.5220) 45%,
-    rgba(255, 255, 255, 0.3420) 60%,
-    rgba(255, 255, 255, 0.1800) 75%,
-    rgba(255, 255, 255, 0.0630) 88%,
-    rgba(255, 255, 255, 0.0180) 95%,
-    rgba(255, 255, 255, 0.0000) 100%
-  );
+  animation: liquid-silk-drift-3 29s cubic-bezier(0.45, 0.05, 0.55, 0.95) -13s infinite alternate;
 }
 
 @keyframes liquid-silk-drift-1 {
   0% {
-    transform: translate3d(-3%, -2%, 0) scale(1);
+    transform: translate3d(-10%, 4%, 0) scale(0.65);
+    opacity: 0.35;
   }
   50% {
-    transform: translate3d(5%, 4%, 0) scale(1.06, 0.96);
+    transform: translate3d(42%, 34%, 0) scale(1.75);
+    opacity: 0.65;
   }
   100% {
-    transform: translate3d(2%, -3%, 0) scale(0.97, 1.05);
+    transform: translate3d(18%, 68%, 0) scale(0.72);
+    opacity: 0.35;
   }
 }
 
 @keyframes liquid-silk-drift-2 {
   0% {
-    transform: translate3d(3%, -2%, 0) scale(1);
+    transform: translate3d(8%, -6%, 0) scale(1.70);
+    opacity: 0.65;
   }
   50% {
-    transform: translate3d(-6%, 5%, 0) scale(0.95, 1.06);
+    transform: translate3d(-44%, 28%, 0) scale(0.62);
+    opacity: 0.35;
   }
   100% {
-    transform: translate3d(-2%, -4%, 0) scale(1.05, 0.97);
+    transform: translate3d(-16%, 54%, 0) scale(1.25);
+    opacity: 0.48;
   }
 }
 
 @keyframes liquid-silk-drift-3 {
   0% {
-    transform: translate3d(-2%, 3%, 0) scale(1);
+    transform: translate3d(-8%, 6%, 0) scale(0.60);
+    opacity: 0.35;
   }
   50% {
-    transform: translate3d(6%, -4%, 0) scale(1.05, 0.96);
+    transform: translate3d(38%, -36%, 0) scale(1.78);
+    opacity: 0.65;
   }
   100% {
-    transform: translate3d(-4%, -2%, 0) scale(0.96, 1.04);
+    transform: translate3d(-14%, -52%, 0) scale(0.70);
+    opacity: 0.35;
   }
 }
 
-/* 3. ARQUITETURA VISUAL "FLUID AURORA" — ULTRA-SILK MULTI-LAYER (4 VÉUS ELÍPTICOS INCLINADOS SOBREPOSTOS) */
+/* 3. ARQUITETURA VISUAL "FLUID AURORA" — MASSAS RADIAIS CONTIDAS + BLUR 42PX */
 .fluid-aurora-veils-bleed {
   position: absolute;
-  inset: -35%;
+  inset: -20%;
   pointer-events: none;
+  contain: layout style paint;
+  isolation: isolate;
   transform: translate3d(0, 0, 0);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
@@ -2468,202 +2557,140 @@
 
 .fluid-aurora-veil {
   position: absolute;
+  width: min(72vw, 340px);
+  height: min(72vw, 340px);
   border-radius: 50%;
   pointer-events: none;
-  filter: blur(48px);
-  mix-blend-mode: normal;
+  filter: blur(42px);
+  mix-blend-mode: screen;
   transform: translate3d(0, 0, 0);
-  will-change: transform;
+  will-change: transform, opacity;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
 }
 
 :root:not(.dark) .fluid-aurora-veil {
-  filter: blur(48px);
+  filter: blur(42px);
   mix-blend-mode: normal;
 }
 
-/* Véu 1 (Plano 1 Protagonista) — Âmbar Solar Suave (#F59E0B no Escuro / Dourado Solar #FBBF24 no Claro) com Curva Gaussiana de 5 Paradas */
+/* Véu 1 — Âmbar Caldeiraria / Ouro (#F59E0B) com 5 Paradas Concentradas */
 .fluid-aurora-veil-amber {
-  top: 4%;
-  left: 2%;
-  width: 162vmax;
-  height: 102vmax;
-  filter: blur(105px);
-  mix-blend-mode: screen;
-  background: radial-gradient(
-    ellipse 50% 50% at 50% 50%,
-    rgba(245, 158, 11, 0.3400) 0%,
-    rgba(245, 158, 11, 0.2550) 22%,
-    rgba(245, 158, 11, 0.1428) 48%,
-    rgba(245, 158, 11, 0.0476) 74%,
-    rgba(245, 158, 11, 0.0000) 100%
-  );
-  animation: aurora-veil-flow-amber 34s cubic-bezier(0.37, 0, 0.63, 1) -19s infinite;
-}
-
-:root:not(.dark) .fluid-aurora-veil-amber {
-  mix-blend-mode: normal;
-  background: radial-gradient(
-    ellipse 50% 50% at 50% 50%,
-    rgba(251, 191, 36, 0.4200) 0%,
-    rgba(251, 191, 36, 0.3150) 22%,
-    rgba(251, 191, 36, 0.1764) 48%,
-    rgba(251, 191, 36, 0.0588) 74%,
-    rgba(251, 191, 36, 0.0000) 100%
-  );
-}
-
-/* Véu 2 (Plano 1/2 Transição Superior) — Coral/Carmesim Difuso (#E11D48 no Escuro / Rosa Quartzo #F472B6 no Claro) com Curva Gaussiana de 5 Paradas */
-.fluid-aurora-veil-coral {
   top: 8%;
-  left: 26%;
-  width: 148vmax;
-  height: 88vmax;
-  filter: blur(85px);
-  mix-blend-mode: screen;
+  left: 8%;
   background: radial-gradient(
-    ellipse 50% 50% at 50% 50%,
-    rgba(225, 29, 72, 0.2900) 0%,
-    rgba(225, 29, 72, 0.2175) 22%,
-    rgba(225, 29, 72, 0.1218) 48%,
-    rgba(225, 29, 72, 0.0406) 74%,
-    rgba(225, 29, 72, 0.0000) 100%
+    circle at 50% 50%,
+    rgba(245, 158, 11, 0.78) 0%,
+    rgba(245, 158, 11, 0.58) 22%,
+    rgba(245, 158, 11, 0.30) 48%,
+    rgba(245, 158, 11, 0.10) 72%,
+    rgba(245, 158, 11, 0.00) 100%
   );
-  animation: aurora-veil-flow-coral 23s cubic-bezier(0.37, 0, 0.63, 1) -11s infinite;
+  animation: aurora-veil-flow-amber 23s cubic-bezier(0.45, 0.05, 0.55, 0.95) -5s infinite alternate;
 }
 
-:root:not(.dark) .fluid-aurora-veil-coral {
-  mix-blend-mode: normal;
+/* Véu 2 — Vermelho Carmesim & Magenta (#E11D48 / #EC4899) com 5 Paradas Concentradas */
+.fluid-aurora-veil-coral {
+  top: 16%;
+  right: 10%;
   background: radial-gradient(
-    ellipse 50% 50% at 50% 50%,
-    rgba(244, 114, 182, 0.3600) 0%,
-    rgba(244, 114, 182, 0.2700) 22%,
-    rgba(244, 114, 182, 0.1512) 48%,
-    rgba(244, 114, 182, 0.0504) 74%,
-    rgba(244, 114, 182, 0.0000) 100%
+    circle at 50% 50%,
+    rgba(225, 29, 72, 0.78) 0%,
+    rgba(236, 72, 153, 0.58) 22%,
+    rgba(225, 29, 72, 0.30) 48%,
+    rgba(236, 72, 153, 0.10) 72%,
+    rgba(225, 29, 72, 0.00) 100%
   );
+  animation: aurora-veil-flow-coral 17s cubic-bezier(0.45, 0.05, 0.55, 0.95) -9s infinite alternate;
 }
 
-/* Véu 3 (Plano 2 Ritmo e Transição Central) — Ciano Boreal (#0EA5E9 no Escuro / Ciano Celeste #38BDF8 no Claro) com Curva Gaussiana de 5 Paradas */
+/* Véu 3 — Ciano Boreal & Verde Esmeralda (#06B6D4 / #10B981) com 5 Paradas Concentradas */
 .fluid-aurora-veil-cyan {
-  top: 24%;
-  right: 4%;
-  width: 152vmax;
-  height: 90vmax;
-  filter: blur(75px);
-  mix-blend-mode: screen;
+  bottom: 18%;
+  right: 12%;
   background: radial-gradient(
-    ellipse 50% 50% at 50% 50%,
-    rgba(14, 165, 233, 0.3500) 0%,
-    rgba(14, 165, 233, 0.2625) 22%,
-    rgba(14, 165, 233, 0.1470) 48%,
-    rgba(14, 165, 233, 0.0490) 74%,
-    rgba(14, 165, 233, 0.0000) 100%
+    circle at 50% 50%,
+    rgba(6, 182, 212, 0.78) 0%,
+    rgba(16, 185, 129, 0.58) 22%,
+    rgba(6, 182, 212, 0.30) 48%,
+    rgba(16, 185, 129, 0.10) 72%,
+    rgba(6, 182, 212, 0.00) 100%
   );
-  animation: aurora-veil-flow-cyan 29s cubic-bezier(0.37, 0, 0.63, 1) -17s infinite;
+  animation: aurora-veil-flow-cyan 29s cubic-bezier(0.45, 0.05, 0.55, 0.95) -14s infinite alternate;
 }
 
-:root:not(.dark) .fluid-aurora-veil-cyan {
-  mix-blend-mode: normal;
-  background: radial-gradient(
-    ellipse 50% 50% at 50% 50%,
-    rgba(56, 189, 248, 0.4400) 0%,
-    rgba(56, 189, 248, 0.3300) 22%,
-    rgba(56, 189, 248, 0.1848) 48%,
-    rgba(56, 189, 248, 0.0616) 74%,
-    rgba(56, 189, 248, 0.0000) 100%
-  );
-}
-
-/* Véu 4 (Plano 3 Ancoragem Profunda Base) — Violeta/Índigo Atmosférico (#6366F1 no Escuro / Lavanda #A78BFA no Claro) com Curva Gaussiana de 5 Paradas */
+/* Véu 4 — Roxo / Violeta & Azul Cobalto (#A855F7 / #3B82F6) com 5 Paradas Concentradas */
 .fluid-aurora-veil-violet {
-  bottom: 4%;
-  left: 10%;
-  width: 172vmax;
-  height: 98vmax;
-  filter: blur(110px);
-  mix-blend-mode: screen;
+  bottom: 10%;
+  left: 12%;
   background: radial-gradient(
-    ellipse 50% 50% at 50% 50%,
-    rgba(99, 102, 241, 0.3000) 0%,
-    rgba(99, 102, 241, 0.2250) 22%,
-    rgba(99, 102, 241, 0.1260) 48%,
-    rgba(99, 102, 241, 0.0420) 74%,
-    rgba(99, 102, 241, 0.0000) 100%
+    circle at 50% 50%,
+    rgba(168, 85, 247, 0.78) 0%,
+    rgba(59, 130, 246, 0.58) 22%,
+    rgba(168, 85, 247, 0.30) 48%,
+    rgba(59, 130, 246, 0.10) 72%,
+    rgba(168, 85, 247, 0.00) 100%
   );
-  animation: aurora-veil-flow-violet 41s cubic-bezier(0.37, 0, 0.63, 1) -31s infinite;
-}
-
-:root:not(.dark) .fluid-aurora-veil-violet {
-  mix-blend-mode: normal;
-  background: radial-gradient(
-    ellipse 50% 50% at 50% 50%,
-    rgba(167, 139, 250, 0.3800) 0%,
-    rgba(167, 139, 250, 0.2850) 22%,
-    rgba(167, 139, 250, 0.1596) 48%,
-    rgba(167, 139, 250, 0.0532) 74%,
-    rgba(167, 139, 250, 0.0000) 100%
-  );
+  animation: aurora-veil-flow-violet 31s cubic-bezier(0.45, 0.05, 0.55, 0.95) -19s infinite alternate;
 }
 
 @keyframes aurora-veil-flow-amber {
   0% {
-    transform: translate3d(0%, 0%, 0) rotate(-13deg) scale(1);
+    transform: translate3d(-8%, 0%, 0) scale(0.65);
+    opacity: 0.35;
   }
-  33% {
-    transform: translate3d(6%, 4%, 0) rotate(-8deg) scale(1.12);
-  }
-  66% {
-    transform: translate3d(-4%, 2%, 0) rotate(-17deg) scale(0.94);
+  50% {
+    transform: translate3d(36%, 28%, 0) scale(1.75);
+    opacity: 0.65;
   }
   100% {
-    transform: translate3d(0%, 0%, 0) rotate(-13deg) scale(1);
+    transform: translate3d(14%, 56%, 0) scale(0.72);
+    opacity: 0.35;
   }
 }
 
 @keyframes aurora-veil-flow-coral {
   0% {
-    transform: translate3d(0%, 0%, 0) rotate(10deg) scale(0.98);
+    transform: translate3d(6%, -4%, 0) scale(1.72);
+    opacity: 0.65;
   }
-  33% {
-    transform: translate3d(-6%, 5%, 0) rotate(15deg) scale(1.10);
-  }
-  66% {
-    transform: translate3d(5%, -3%, 0) rotate(6deg) scale(0.92);
+  50% {
+    transform: translate3d(-38%, 32%, 0) scale(0.62);
+    opacity: 0.35;
   }
   100% {
-    transform: translate3d(0%, 0%, 0) rotate(10deg) scale(0.98);
+    transform: translate3d(-12%, 58%, 0) scale(1.20);
+    opacity: 0.48;
   }
 }
 
 @keyframes aurora-veil-flow-cyan {
   0% {
-    transform: translate3d(0%, 0%, 0) rotate(-15deg) scale(0.96);
+    transform: translate3d(4%, 6%, 0) scale(0.60);
+    opacity: 0.35;
   }
-  33% {
-    transform: translate3d(-7%, -4%, 0) rotate(-10deg) scale(1.09);
-  }
-  66% {
-    transform: translate3d(4%, 5%, 0) rotate(-19deg) scale(0.93);
+  50% {
+    transform: translate3d(-36%, -32%, 0) scale(1.78);
+    opacity: 0.65;
   }
   100% {
-    transform: translate3d(0%, 0%, 0) rotate(-15deg) scale(0.96);
+    transform: translate3d(-10%, -54%, 0) scale(0.68);
+    opacity: 0.35;
   }
 }
 
 @keyframes aurora-veil-flow-violet {
   0% {
-    transform: translate3d(0%, 0%, 0) rotate(9deg) scale(1.00);
+    transform: translate3d(-6%, 4%, 0) scale(1.68);
+    opacity: 0.65;
   }
-  33% {
-    transform: translate3d(6%, -3%, 0) rotate(14deg) scale(1.11);
-  }
-  66% {
-    transform: translate3d(-5%, 3%, 0) rotate(5deg) scale(0.93);
+  50% {
+    transform: translate3d(38%, -28%, 0) scale(0.64);
+    opacity: 0.35;
   }
   100% {
-    transform: translate3d(0%, 0%, 0) rotate(9deg) scale(1.00);
+    transform: translate3d(16%, -52%, 0) scale(1.15);
+    opacity: 0.48;
   }
 }
 
@@ -2677,15 +2704,10 @@
   image-rendering: auto;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .liquid-silk-field,
-  .fluid-aurora-veil {
-    animation-play-state: paused !important;
-  }
-}
-
 .aurora-root[data-animated="off"] .liquid-silk-field,
-.aurora-root[data-animated="off"] .fluid-aurora-veil {
+.aurora-root[data-animated="off"] .fluid-aurora-veil,
+[data-paused="true"] .liquid-silk-field,
+[data-paused="true"] .fluid-aurora-veil {
   animation-play-state: paused !important;
 }
 

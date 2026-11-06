@@ -424,6 +424,130 @@ export function inferAssociativeMarkFromPoint(
     );
   }
 
+  return buildAssociativeMarkForTargetEntity(
+    point,
+    targetEntity,
+    toleranceWorld,
+    preferredSnapKind,
+    layer,
+  );
+}
+
+/**
+ * Avalia estritamente se o ponto da Mira 55px + SNAP capturou um ponto geométrico real
+ * de uma entidade existente (Centro, Vértice/Extremidade, Ponto Médio, Interseção, Quadrante, Tangência).
+ * Se o toque/mira estiver no espaço vazio (sem geometria próxima), retorna `null` (JAMAIS cria marcos órfãos no vazio!).
+ */
+export function inferValidGeometricMarkCandidate(
+  point: Vec2,
+  entities: Entity[],
+  layer: LayerId = "referencia",
+  smartSnap?: { p?: Vec2; kind?: string; entityId?: string; secondaryEntityId?: string } | null,
+  toleranceWorld = 18,
+): (Entity & { type: "point"; position: Vec2; spec: GeometricMarkSpec }) | null {
+  if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return null;
+  const candidates = entities.filter((e) => !isNonCutReferenceEntity(e));
+  if (candidates.length === 0) return null;
+
+  const effectivePt =
+    smartSnap?.p &&
+    Number.isFinite(smartSnap.p.x) &&
+    Number.isFinite(smartSnap.p.y) &&
+    smartSnap.kind !== "grid"
+      ? smartSnap.p
+      : point;
+
+  // Procura a entidade real mais próxima dentro do raio estrito de captura
+  let bestEntity: Entity | undefined = smartSnap?.entityId
+    ? candidates.find((e) => e.id === smartSnap.entityId)
+    : undefined;
+
+  let minD = Infinity;
+  for (const ent of candidates) {
+    if (ent.type === "circle" || ent.type === "arc" || ent.type === "ellipse") {
+      const dCenter = dist(effectivePt, { x: ent.cx, y: ent.cy });
+      if (dCenter < minD) {
+        minD = dCenter;
+        if (!bestEntity) bestEntity = ent;
+      }
+      if (ent.type === "circle" || ent.type === "arc") {
+        const dEdge = Math.abs(dCenter - ent.r);
+        if (dEdge < minD) {
+          minD = dEdge;
+          if (!bestEntity || dEdge < dCenter) bestEntity = ent;
+        }
+      }
+    }
+    if (ent.type === "polyline" && ent.closed && ent.pts.length >= 3) {
+      let sx = 0;
+      let sy = 0;
+      for (const p of ent.pts) {
+        sx += p.x;
+        sy += p.y;
+      }
+      const c = { x: sx / ent.pts.length, y: sy / ent.pts.length };
+      const dCentroid = dist(effectivePt, c);
+      if (dCentroid < minD) {
+        minD = dCentroid;
+        if (!bestEntity) bestEntity = ent;
+      }
+    }
+    for (const s of segmentsOf(ent)) {
+      const cp = closestOnSegment(effectivePt, s);
+      const dSeg = dist(effectivePt, cp);
+      if (dSeg < minD) {
+        minD = dSeg;
+        bestEntity = ent;
+      }
+    }
+  }
+
+  // Se não há nenhuma entidade real dentro da tolerância, é espaço vazio -> retorna null!
+  if (!bestEntity || minD > toleranceWorld) {
+    return null;
+  }
+
+  return buildAssociativeMarkForTargetEntity(
+    effectivePt,
+    bestEntity,
+    toleranceWorld,
+    smartSnap?.kind,
+    layer,
+  );
+}
+
+/**
+ * Remove todos os Marcos Geométricos (ou apenas os órfãos) da lista de entidades.
+ */
+export function clearGeometricMarksFromEntities(
+  entities: Entity[],
+  onlyOrphans = false,
+): { cleaned: Entity[]; removedCount: number } {
+  let removedCount = 0;
+  const cleaned = entities.filter((e) => {
+    if (!isGeometricMarkEntity(e)) return true;
+    if (onlyOrphans) {
+      const spec = getGeometricMarkSpec(e);
+      if (spec?.isOrphan || !spec?.parentEntityId) {
+        removedCount += 1;
+        return false;
+      }
+      return true;
+    }
+    removedCount += 1;
+    return false;
+  });
+  return { cleaned, removedCount };
+}
+
+function buildAssociativeMarkForTargetEntity(
+  point: Vec2,
+  targetEntity: Entity,
+  toleranceWorld: number,
+  preferredSnapKind: string | undefined,
+  layer: LayerId,
+): Entity & { type: "point"; position: Vec2; spec: GeometricMarkSpec } {
+
   if (targetEntity.type === "circle") {
     const dCenter = dist(point, { x: targetEntity.cx, y: targetEntity.cy });
     if (dCenter <= toleranceWorld * 1.5 || preferredSnapKind === "center") {

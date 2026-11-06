@@ -67,6 +67,14 @@ export interface ChamferLiveDimensionsOverlayProps {
   relationalPicks?: RelationalPickItem[];
   onTriggerRelationalSynthesis?: (mode: RelationalSynthesisMode, divisions?: number) => void;
   onClearRelationalPicks?: () => void;
+  /** Prévia pulsante do Marco Geométrico enquanto desliza a Mira 55px sobre ponto válido */
+  previewGeometricMarkCandidate?: (Entity & { type: "point" }) | null;
+  /** Marco Geométrico aguardando confirmação explícita na Mini-Bolha após soltar o dedo */
+  pendingGeometricMarkConfirmation?: (Entity & { type: "point" }) | null;
+  onConfirmPendingGeometricMark?: () => void;
+  onStartRelationalFromPendingMark?: () => void;
+  onCancelPendingGeometricMark?: () => void;
+  onClearAllGeometricMarks?: () => void;
   /** Callbacks para Datum Persistente (Seção 3) */
   activeDatumComponent?: DatumComponentKind | null;
   onSelectDatumComponent?: (datumId: string | null, component: DatumComponentKind, currentValue: number, screenPos: Vec2) => void;
@@ -200,6 +208,12 @@ export function ChamferLiveDimensionsOverlay({
   relationalPicks = [],
   onTriggerRelationalSynthesis,
   onClearRelationalPicks,
+  previewGeometricMarkCandidate = null,
+  pendingGeometricMarkConfirmation = null,
+  onConfirmPendingGeometricMark,
+  onStartRelationalFromPendingMark,
+  onCancelPendingGeometricMark,
+  onClearAllGeometricMarks,
   activeDatumComponent = null,
   onSelectDatumComponent,
   onConvertDatumToLines,
@@ -457,7 +471,20 @@ export function ChamferLiveDimensionsOverlay({
   }, [showPurpleGuides, activeGuideData, safeK, pendingShape, entities]);
 
   const geometricMarkEntities = useMemo(
-    () => entities.filter((e) => isGeometricMarkEntity(e)),
+    () =>
+      entities.filter((e) => {
+        if (!isGeometricMarkEntity(e)) return false;
+        const spec = getGeometricMarkSpec(e);
+        if (!spec || spec.isOrphan) return false;
+        // Só exibe marcos vinculados a uma entidade real ou síntese relacional válida
+        const hasValidParent = Boolean(
+          spec.parentEntityId ||
+            spec.secondaryEntityId ||
+            (spec.anchorA && spec.anchorB) ||
+            spec.referenceType === "intersection",
+        );
+        return hasValidParent;
+      }),
     [entities],
   );
 
@@ -475,7 +502,7 @@ export function ChamferLiveDimensionsOverlay({
               - Cor violeta técnica (#A855F7 / #C084FC)
               - Tamanho adaptativo invariante ao zoom (14px no espaço de tela)
               - Diferenciação visual por tipo (Vértice, Centro, Meio, Interseção, ÷N)
-              - Indicador discreto de órfão caso a entidade-mãe seja removida
+              - Proibido exibir ou criar marcos "ÓRFÃO" no vazio!
           ===================================================================== */}
       {geometricMarkEntities.map((ent) => {
         const spec = getGeometricMarkSpec(ent);
@@ -483,11 +510,7 @@ export function ChamferLiveDimensionsOverlay({
         const pt = { x: ent.x, y: ent.y };
         const isSelected = selectedSet.has(ent.id);
         const armPx = isSelected ? 9 / safeK : 7.5 / safeK;
-        const strokeColor = spec.isOrphan
-          ? "#F59E0B"
-          : isSelected
-            ? "#E879F9"
-            : "#A855F7";
+        const strokeColor = isSelected ? "#E879F9" : "#A855F7";
         const subType = spec.referenceType;
 
         return (
@@ -594,14 +617,13 @@ export function ChamferLiveDimensionsOverlay({
               cx={pt.x}
               cy={pt.y}
               r={2.1 / safeK}
-              fill={spec.isOrphan ? "#F59E0B" : "#E879F9"}
+              fill="#E879F9"
             />
 
-            {/* Etiqueta compacta para divisão ÷N, interseção virtual ou estado órfão */}
+            {/* Etiqueta compacta apenas para divisão ÷N, interseção virtual, simetria ou quando selecionado */}
             {(subType === "span_division" ||
               subType === "virtual_intersection" ||
               subType === "symmetry_midpoint" ||
-              spec.isOrphan ||
               isSelected) && (
               <g transform={`translate(${pt.x}, ${pt.y - 14 / safeK})`}>
                 <rect
@@ -617,27 +639,223 @@ export function ChamferLiveDimensionsOverlay({
                 <text
                   x={0}
                   y={2.5 / safeK}
-                  fill={spec.isOrphan ? "#FBBF24" : "#E9D5FF"}
+                  fill="#E9D5FF"
                   fontSize={7.2 / safeK}
                   fontWeight="bold"
                   fontFamily="ui-monospace, monospace"
                   textAnchor="middle"
                 >
-                  {spec.isOrphan
-                    ? "ÓRFÃO"
-                    : subType === "span_division" && spec.divisionIndex && spec.divisionTotal
-                      ? `÷${spec.divisionTotal} (${spec.divisionIndex}/${spec.divisionTotal})`
-                      : subType === "virtual_intersection"
-                        ? "✕ VIRTUAL"
-                        : subType === "symmetry_midpoint"
-                          ? "⌖ SIMETRIA"
-                          : "MARCO"}
+                  {subType === "span_division" && spec.divisionIndex && spec.divisionTotal
+                    ? `÷${spec.divisionTotal} (${spec.divisionIndex}/${spec.divisionTotal})`
+                    : subType === "virtual_intersection"
+                      ? "✕ VIRTUAL"
+                      : subType === "symmetry_midpoint"
+                        ? "⌖ SIMETRIA"
+                        : "MARCO"}
                 </text>
               </g>
             )}
           </g>
         );
       })}
+
+      {/* =====================================================================
+          0A-PREVIEW & MINI-BOLHA DE CONFIRMAÇÃO DO MARCO GEOMÉTRICO (SEÇÃO 2.3)
+          - Durante o toque/deslize sobre um ponto SNAP válido: Prévia Pulsante do Marco Violeta
+          - Ao soltar o dedo sobre o ponto válido: Mini-Bolha [ ✓ Inserir Marco ] | [ ÷N Entre 2 Pontos ] | [ ✕ ]
+          ===================================================================== */}
+      {interactionGuideMode === "purple_ref" &&
+        !isMultitouchNavigating &&
+        (() => {
+          const activeCandidate = pendingGeometricMarkConfirmation ?? previewGeometricMarkCandidate;
+          if (!activeCandidate) return null;
+          const spec = getGeometricMarkSpec(activeCandidate);
+          const pt = { x: activeCandidate.x, y: activeCandidate.y };
+          const isAwaitingConfirm = Boolean(pendingGeometricMarkConfirmation);
+          const armPx = 9.5 / safeK;
+
+          return (
+            <g
+              aria-label="Prévia e Confirmação de Marco Geométrico"
+              data-testid="geometric-mark-preview-group"
+            >
+              {/* Anel Pulsante do Marco Violeta cravado no ponto SNAP válido */}
+              <circle
+                cx={pt.x}
+                cy={pt.y}
+                r={13 / safeK}
+                fill="rgba(168, 85, 247, 0.18)"
+                stroke="#E879F9"
+                strokeWidth={1.6 / safeK}
+                strokeDasharray={`${4 / safeK},${2.5 / safeK}`}
+              />
+              <line
+                x1={pt.x - armPx}
+                y1={pt.y}
+                x2={pt.x + armPx}
+                y2={pt.y}
+                stroke="#E879F9"
+                strokeWidth={2.2 / safeK}
+                strokeLinecap="round"
+              />
+              <line
+                x1={pt.x}
+                y1={pt.y - armPx}
+                x2={pt.x}
+                y2={pt.y + armPx}
+                stroke="#E879F9"
+                strokeWidth={2.2 / safeK}
+                strokeLinecap="round"
+              />
+              <circle cx={pt.x} cy={pt.y} r={2.6 / safeK} fill="#FFFFFF" />
+
+              {/* Etiqueta do ponto capturado quando ainda deslizando */}
+              {!isAwaitingConfirm && (
+                <g transform={`translate(${pt.x}, ${pt.y - 18 / safeK})`}>
+                  <rect
+                    x={-48 / safeK}
+                    y={-8 / safeK}
+                    width={96 / safeK}
+                    height={15 / safeK}
+                    rx={4 / safeK}
+                    fill={isDark ? "rgba(13, 10, 26, 0.94)" : "rgba(255, 255, 255, 0.96)"}
+                    stroke="#A855F7"
+                    strokeWidth={1.1 / safeK}
+                  />
+                  <text
+                    x={0}
+                    y={2.8 / safeK}
+                    fill="#E9D5FF"
+                    fontSize={7.5 / safeK}
+                    fontWeight="bold"
+                    fontFamily="ui-monospace, monospace"
+                    textAnchor="middle"
+                  >
+                    {spec?.badgeLabel ?? "Marco Geométrico"}
+                  </text>
+                </g>
+              )}
+
+              {/* Mini-Bolha de Confirmação ao soltar o dedo sobre o ponto válido */}
+              {isAwaitingConfirm && (
+                <g
+                  transform={`translate(${pt.x}, ${pt.y - 32 / safeK})`}
+                  className="pointer-events-auto"
+                  data-testid="geometric-mark-confirm-bubble"
+                  onPointerDown={(e) => e.stopPropagation()}
+                >
+                  <rect
+                    x={-130 / safeK}
+                    y={-15 / safeK}
+                    width={260 / safeK}
+                    height={30 / safeK}
+                    rx={8 / safeK}
+                    fill={isDark ? "rgba(13, 10, 26, 0.97)" : "rgba(255, 255, 255, 0.98)"}
+                    stroke="#A855F7"
+                    strokeWidth={1.5 / safeK}
+                  />
+
+                  {/* [ ✓ Inserir Marco ] */}
+                  <g
+                    transform={`translate(${-74 / safeK}, 0)`}
+                    className="cursor-pointer"
+                    data-testid="confirm-insert-geometric-mark-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onConfirmPendingGeometricMark?.();
+                    }}
+                  >
+                    <rect
+                      x={-50 / safeK}
+                      y={-10 / safeK}
+                      width={100 / safeK}
+                      height={20 / safeK}
+                      rx={5 / safeK}
+                      fill="#9333EA"
+                    />
+                    <text
+                      x={0}
+                      y={3.2 / safeK}
+                      fill="#FFFFFF"
+                      fontSize={8 / safeK}
+                      fontWeight="bold"
+                      fontFamily="ui-monospace, monospace"
+                      textAnchor="middle"
+                    >
+                      ✓ Inserir Marco
+                    </text>
+                  </g>
+
+                  {/* [ ÷N Entre 2 Pontos ] */}
+                  <g
+                    transform={`translate(${32 / safeK}, 0)`}
+                    className="cursor-pointer"
+                    data-testid="relational-mode-from-mark-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onStartRelationalFromPendingMark?.();
+                    }}
+                  >
+                    <rect
+                      x={-50 / safeK}
+                      y={-10 / safeK}
+                      width={100 / safeK}
+                      height={20 / safeK}
+                      rx={5 / safeK}
+                      fill="#6B21A8"
+                      stroke="#C084FC"
+                      strokeWidth={0.9 / safeK}
+                    />
+                    <text
+                      x={0}
+                      y={3.2 / safeK}
+                      fill="#F3E8FF"
+                      fontSize={7.6 / safeK}
+                      fontWeight="bold"
+                      fontFamily="ui-monospace, monospace"
+                      textAnchor="middle"
+                    >
+                      ÷N Entre 2 Pontos
+                    </text>
+                  </g>
+
+                  {/* [ ✕ ] */}
+                  <g
+                    transform={`translate(${106 / safeK}, 0)`}
+                    className="cursor-pointer"
+                    data-testid="cancel-pending-geometric-mark-btn"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onCancelPendingGeometricMark?.();
+                    }}
+                  >
+                    <rect
+                      x={-16 / safeK}
+                      y={-10 / safeK}
+                      width={32 / safeK}
+                      height={20 / safeK}
+                      rx={5 / safeK}
+                      fill="rgba(239, 68, 68, 0.22)"
+                      stroke="#EF4444"
+                      strokeWidth={0.9 / safeK}
+                    />
+                    <text
+                      x={0}
+                      y={3.2 / safeK}
+                      fill="#FCA5A5"
+                      fontSize={8.5 / safeK}
+                      fontWeight="bold"
+                      fontFamily="ui-monospace, monospace"
+                      textAnchor="middle"
+                    >
+                      ✕
+                    </text>
+                  </g>
+                </g>
+              )}
+            </g>
+          );
+        })()}
 
       {/* =====================================================================
           0B. SÍNTESE RELACIONAL ENTRE 2 ELEMENTOS (MODO 2 DO MARCO GEOMÉTRICO)

@@ -169,18 +169,42 @@ function drawSinusoidalRadialField(
   ctx.restore();
 }
 
-/**
- * Renderiza o acabamento de Seda Líquida ("Fluid" / "fluido") ou Refinamento Óptico em 3 Planos ("Fluid Aurora" / "suave")
- * diretamente no contexto Canvas 2D High-DPI com coordenadas em ponto flutuante escaladas por devicePixelRatio.
- */
-function renderCanvasSilkBackground(
+interface SilkBackgroundCacheState {
+  key: string;
+  canvas: HTMLCanvasElement | null;
+  hits: number;
+  misses: number;
+}
+
+const silkBackgroundCache: SilkBackgroundCacheState = {
+  key: "",
+  canvas: null,
+  hits: 0,
+  misses: 0,
+};
+
+export function getSilkBackgroundCacheStats(): {
+  hits: number;
+  misses: number;
+  hitRatePercent: number;
+  cachedKey: string;
+} {
+  const total = silkBackgroundCache.hits + silkBackgroundCache.misses;
+  return {
+    hits: silkBackgroundCache.hits,
+    misses: silkBackgroundCache.misses,
+    hitRatePercent: total > 0 ? Math.round((silkBackgroundCache.hits / total) * 100) : 100,
+    cachedKey: silkBackgroundCache.key,
+  };
+}
+
+function paintSilkFieldsDirectly(
   ctx: CanvasRenderingContext2D,
   width: number,
   height: number,
   isLight: boolean,
-  bgStyle?: "padrao" | "suave" | "fluido",
+  bgStyle: "suave" | "fluido",
 ) {
-  if (bgStyle !== "fluido" && bgStyle !== "suave") return;
   const maxDim = Math.max(width, height, 320);
 
   ctx.save();
@@ -228,6 +252,63 @@ function renderCanvasSilkBackground(
   }
 
   ctx.restore();
+}
+
+/**
+ * Renderiza o acabamento de Seda Líquida ("Fluid" / "fluido") ou Refinamento Óptico em 3 Planos ("Fluid Aurora" / "suave")
+ * diretamente no contexto Canvas 2D High-DPI com coordenadas em ponto flutuante escaladas por devicePixelRatio.
+ * Utiliza cache Offscreen High-DPI O(1) para evitar re-rasterizar 4 gradientes elípticos a cada quadro de pan/zoom.
+ */
+export function renderCanvasSilkBackground(
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+  isLight: boolean,
+  bgStyle?: "padrao" | "suave" | "fluido",
+  dpr = 1,
+) {
+  if (bgStyle !== "fluido" && bgStyle !== "suave") return;
+  const safeDpr = Number.isFinite(dpr) && dpr > 0 ? Math.min(dpr, 3) : 1;
+  const physW = Math.max(1, Math.round(width * safeDpr));
+  const physH = Math.max(1, Math.round(height * safeDpr));
+  const cacheKey = `${physW}x${physH}:${safeDpr.toFixed(2)}:${isLight ? "light" : "dark"}:${bgStyle}`;
+
+  if (typeof document !== "undefined" && typeof ctx.drawImage === "function") {
+    if (silkBackgroundCache.key === cacheKey && silkBackgroundCache.canvas) {
+      silkBackgroundCache.hits += 1;
+      ctx.save();
+      ctx.globalCompositeOperation = !isLight && bgStyle === "suave" ? "screen" : "source-over";
+      ctx.drawImage(silkBackgroundCache.canvas, 0, 0, width, height);
+      ctx.restore();
+      return;
+    }
+
+    let offCanvas = silkBackgroundCache.canvas;
+    if (!offCanvas) {
+      offCanvas = document.createElement("canvas");
+      silkBackgroundCache.canvas = offCanvas;
+    }
+    if (offCanvas.width !== physW || offCanvas.height !== physH) {
+      offCanvas.width = physW;
+      offCanvas.height = physH;
+    }
+    const offCtx = offCanvas.getContext("2d");
+    if (offCtx) {
+      silkBackgroundCache.misses += 1;
+      silkBackgroundCache.key = cacheKey;
+      offCtx.setTransform(safeDpr, 0, 0, safeDpr, 0, 0);
+      offCtx.clearRect(0, 0, width, height);
+      paintSilkFieldsDirectly(offCtx, width, height, isLight, bgStyle);
+      ctx.save();
+      ctx.globalCompositeOperation = !isLight && bgStyle === "suave" ? "screen" : "source-over";
+      ctx.drawImage(offCanvas, 0, 0, width, height);
+      ctx.restore();
+      return;
+    }
+  }
+
+  silkBackgroundCache.misses += 1;
+  paintSilkFieldsDirectly(ctx, width, height, isLight, bgStyle);
 }
 
 /** Ordena por camada técnica ou por profundidade Z (Painter's Algorithm para oclusão 2.5D/3D). */
@@ -379,7 +460,7 @@ export function drawScene(ctx: CanvasRenderingContext2D, opts: SceneOptions) {
 
   // Renderiza os gradientes de fundo de 10 paradas senoidais quando Fluid ou Fluid Aurora estão ativos
   if (opts.bgStyle === "fluido" || opts.bgStyle === "suave") {
-    renderCanvasSilkBackground(ctx, safeW, safeH, !!opts.isLight, opts.bgStyle);
+    renderCanvasSilkBackground(ctx, safeW, safeH, !!opts.isLight, opts.bgStyle, safeDpr);
   }
 
   ctx.setTransform(safeDpr * safeK, 0, 0, safeDpr * safeK, safeDpr * safeTx, safeDpr * safeTy);

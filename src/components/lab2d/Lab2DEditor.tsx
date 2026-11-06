@@ -257,6 +257,10 @@ import {
 } from "@/lib/lab2d/cadArrayEngine";
 import {
   inferAssociativeMarkFromPoint,
+  inferValidGeometricMarkCandidate,
+  clearGeometricMarksFromEntities,
+  isGeometricMarkEntity,
+  getGeometricMarkSpec,
   buildRelationalGeometricMarks,
   syncAssociativeGeometricMarks,
   createPersistentDatumEntity,
@@ -396,8 +400,10 @@ import {
 import {
   ChamferTechnicalCursorSvg,
   ChamferNudgeControlHUD,
+  TOUCH_CURSOR_OFFSET_PX,
   shouldUseTouchOffset,
   computeTouchCursorScreenAndWorld,
+  renderCrosshair55Overlay,
   computeNudgeDelta,
   type NudgeDirection,
   type NudgeStepMm,
@@ -1005,6 +1011,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     temporaryOrigin: TemporaryOrigin | null;
     pending: Vec2[];
     draft: Entity | null;
+    selection: string[];
   } | null>(null);
   const preEditKeypadSnapshotRef = useRef<{
     cursor: Vec2;
@@ -1455,10 +1462,43 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const [pinnedMeetingPoints, setPinnedMeetingPoints] = useState<Vec2[]>([]);
   const [relationalPicks, setRelationalPicks] = useState<RelationalPickItem[]>([]);
+  const [previewGeometricMarkCandidate, setPreviewGeometricMarkCandidate] = useState<
+    (Entity & { type: "point" }) | null
+  >(null);
+  const previewGeometricMarkCandidateRef = useRef<(Entity & { type: "point" }) | null>(null);
+  const [pendingGeometricMarkConfirmation, setPendingGeometricMarkConfirmation] = useState<
+    (Entity & { type: "point" }) | null
+  >(null);
+  const isMultiTouchGestureRef = useRef<boolean>(false);
+  const gestureCooldownUntilRef = useRef<number>(0);
+  const wasCameraPannedRef = useRef<boolean>(false);
+  const pointerDownClientRef = useRef<Vec2 | null>(null);
+  const [activeTouchScreenPos, setActiveTouchScreenPos] = useState<Vec2 | null>(null);
+  const activeTouchScreenPosRef = useRef<Vec2 | null>(null);
+
   const [activeDatumComponent, setActiveDatumComponent] = useState<{
     datumId: string;
     component: "dx" | "dy" | "L" | "angle";
   } | null>(null);
+
+  // Remove automaticamente quaisquer marcos "ÓRFÃO" antigos que tenham ficado salvos sem entidade-mãe
+  useEffect(() => {
+    setEntities((prev) => {
+      const hasOrphans = prev.some((e) => {
+        if (!isGeometricMarkEntity(e)) return false;
+        const spec = getGeometricMarkSpec(e);
+        return Boolean(
+          spec?.isOrphan ||
+            (!spec?.parentEntityId &&
+              !spec?.secondaryEntityId &&
+              !(spec?.anchorA && spec?.anchorB) &&
+              spec?.referenceType !== "intersection"),
+        );
+      });
+      if (!hasOrphans) return prev;
+      return clearGeometricMarksFromEntities(prev, true).cleaned;
+    });
+  }, []);
 
   const handleSetInteractionGuideMode = useCallback(
     (nextMode: InteractionGuideMode) => {
@@ -1468,6 +1508,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setLiveDimensions([]);
       setIsSettingReferencePoint(false);
       setRelationalPicks([]);
+      previewGeometricMarkCandidateRef.current = null;
+      setPreviewGeometricMarkCandidate(null);
+      setPendingGeometricMarkConfirmation(null);
 
       if (nextMode !== "off") {
         const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
@@ -1479,7 +1522,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           temporaryOrigin?.p ??
           (pending.length > 0 ? pending[pending.length - 1]! : viewportCenter);
 
-        if (!temporaryOrigin) {
+        if (!temporaryOrigin && nextMode === "blue_line") {
           setTemporaryOrigin({
             id: "ref_origin",
             p: currentOrigin,
@@ -1800,6 +1843,39 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   );
 
   /* --------------------------------------------------------- coordenadas */
+  const getTouchCanvasScreenPos = useCallback(
+    (ev: {
+      clientX?: number;
+      clientY?: number;
+      touches?: ArrayLike<{ clientX: number; clientY: number }>;
+      changedTouches?: ArrayLike<{ clientX: number; clientY: number }>;
+    }): Vec2 => {
+      const el = svgRef.current ?? canvasViewportRef.current ?? canvasRef.current;
+      const rect = el?.getBoundingClientRect();
+      if (!rect) return { x: 0, y: 0 };
+
+      const touchPt =
+        ev.touches && ev.touches.length > 0
+          ? ev.touches[0]
+          : ev.changedTouches && ev.changedTouches.length > 0
+            ? ev.changedTouches[0]
+            : null;
+      const rawClientX = touchPt ? touchPt.clientX : (ev.clientX ?? 0);
+      const rawClientY = touchPt ? touchPt.clientY : (ev.clientY ?? 0);
+
+      const scaleX =
+        canvasSize.w > 0 && rect.width > 0 ? canvasSize.w / rect.width : 1;
+      const scaleY =
+        canvasSize.h > 0 && rect.height > 0 ? canvasSize.h / rect.height : 1;
+
+      return {
+        x: (rawClientX - rect.left) * scaleX,
+        y: (rawClientY - rect.top) * scaleY,
+      };
+    },
+    [canvasSize.w, canvasSize.h],
+  );
+
   const toWorld = useCallback(
     (
       ev: {
@@ -1809,7 +1885,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         touches?: ArrayLike<{ clientX: number; clientY: number }>;
         changedTouches?: ArrayLike<{ clientX: number; clientY: number }>;
       },
-      _forceDirect = false,
+      forceDirect = false,
     ): Vec2 => {
       const el = svgRef.current ?? canvasViewportRef.current ?? canvasRef.current;
       const rect = el?.getBoundingClientRect();
@@ -1829,8 +1905,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const scaleY =
         canvasSize.h > 0 && rect.height > 0 ? canvasSize.h / rect.height : 1;
 
-      const canvasX = (rawClientX - rect.left) * scaleX;
-      const canvasY = (rawClientY - rect.top) * scaleY;
+      const touchX = (rawClientX - rect.left) * scaleX;
+      const touchY = (rawClientY - rect.top) * scaleY;
+
+      const isTouchOrActiveMira55 =
+        !forceDirect &&
+        cursorOffsetMode === "offset" &&
+        tool !== "pan" &&
+        (ev.pointerType === "touch" ||
+          Boolean(touchPt) ||
+          lastPointerTypeRef.current === "touch" ||
+          (ptrsRef.current.size === 1 && !panRef.current));
+
+      // Coordenada Real da Mira (55px Acima do Toque): crosshairScreenY = touchY - 55
+      const crosshairScreenX = touchX;
+      const crosshairScreenY = isTouchOrActiveMira55
+        ? touchY - TOUCH_CURSOR_OFFSET_PX
+        : touchY;
 
       const v = viewRef.current;
       const safeK = v && Number.isFinite(v.k) && v.k > 0 ? v.k : 1;
@@ -1838,8 +1929,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const safeTy = v && Number.isFinite(v.ty) ? v.ty : 0;
 
       const projectedPt: Vec2 = {
-        x: (canvasX - safeTx) / safeK,
-        y: (canvasY - safeTy) / safeK,
+        x: (crosshairScreenX - safeTx) / safeK,
+        y: (crosshairScreenY - safeTy) / safeK,
       };
 
       if (!solidOpen && orbitProjection2DRef.current.isTilted) {
@@ -1852,7 +1943,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
       return projectedPt;
     },
-    [canvasSize.w, canvasSize.h, solidOpen],
+    [canvasSize.w, canvasSize.h, solidOpen, cursorOffsetMode, tool],
   );
 
   /** Enquadra uma caixa do desenho na viewport com escala proporcional, centralização exata e limites seguros. */
@@ -2454,9 +2545,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               d = Math.min(
                 dist(p, spec.origin),
                 dist(p, spec.target),
-                dist(p, closestOnSegment(p, { a: spec.origin, b: spec.target })),
-                dist(p, closestOnSegment(p, { a: spec.origin, b: corner })),
-                dist(p, closestOnSegment(p, { a: corner, b: spec.target })),
+                dist(p, closestOnSegment(p, [spec.origin, spec.target])),
+                dist(p, closestOnSegment(p, [spec.origin, corner])),
+                dist(p, closestOnSegment(p, [corner, spec.target])),
               );
             } else {
               d = dist(p, { x: e.x, y: e.y });
@@ -2799,6 +2890,49 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         bgStyle,
         activeLoftPreviewMesh,
       });
+
+      // Renderiza a Mira 55px no final do loop 2D do <canvas> (Seção 3.2):
+      // A. Anel de Apoio do Dedo em (touchX, touchY) (raio 14px)
+      // B. Haste Conectora Vertical de 55px (tracejada)
+      // C. Retículo Óptico Principal de Precisão em (touchX, touchY - 55) ou travado no SNAP
+      if (
+        cursorOffsetMode === "offset" &&
+        tool !== "pan" &&
+        !isMultiTouchGestureRef.current &&
+        touchInteractionState !== "MULTITOUCH_NAVIGATION" &&
+        activeTouchScreenPos
+      ) {
+        const activeSnapObj = smartSnap ?? snapHit;
+        const snapScreenPt = activeSnapObj
+          ? {
+              x: activeSnapObj.p.x * view.k + view.tx,
+              y: activeSnapObj.p.y * view.k + view.ty,
+            }
+          : {
+              x: activeTouchScreenPos.x,
+              y: activeTouchScreenPos.y - TOUCH_CURSOR_OFFSET_PX,
+            };
+
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        renderCrosshair55Overlay(ctx, {
+          touchScreen: activeTouchScreenPos,
+          reticleScreen: snapScreenPt,
+          hasSnap: Boolean(activeSnapObj),
+          snapLabel:
+            smartSnap?.label ??
+            (snapHit
+              ? snapHit.kind === "end"
+                ? "Vértice"
+                : snapHit.kind === "mid"
+                  ? "Ponto Médio"
+                  : snapHit.kind === "center"
+                    ? "Centro"
+                    : "Grade"
+              : null),
+        });
+        ctx.restore();
+      }
     },
     [
       cadPhase,
@@ -2824,6 +2958,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       showGrid,
       grid,
       activeLoftPreviewMesh,
+      cursorOffsetMode,
+      tool,
+      touchInteractionState,
+      activeTouchScreenPos,
+      smartSnap,
+      snapHit,
     ],
   );
 
@@ -4647,64 +4787,80 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
   }, [isoPlane]);
 
+  const abortForMultiTouchGesture = useCallback(() => {
+    isMultiTouchGestureRef.current = true;
+    touchInteractionStateRef.current = "MULTITOUCH_NAVIGATION";
+    setTouchInteractionState("MULTITOUCH_NAVIGATION");
+    setLoupeVisible(false);
+    setIsDraggingUnlocked(false);
+    setDragNode(null);
+    setTouchOffsetActive(false);
+    setTouchWorldPos(null);
+    activeTouchScreenPosRef.current = null;
+    setActiveTouchScreenPos(null);
+
+    // Descarta instantaneamente qualquer prévia ou confirmação pendente do Marco Geométrico
+    previewGeometricMarkCandidateRef.current = null;
+    setPreviewGeometricMarkCandidate(null);
+    setPendingGeometricMarkConfirmation(null);
+
+    if (pointerMoveRafRef.current !== null) {
+      cancelAnimationFrame(pointerMoveRafRef.current);
+      pointerMoveRafRef.current = null;
+    }
+    pendingPointerMoveRef.current = null;
+
+    if (dragLongPressRef.current) {
+      clearTimeout(dragLongPressRef.current.timer);
+      dragLongPressRef.current = null;
+    }
+    if (longPressRef.current) {
+      clearTimeout(longPressRef.current.timer);
+      longPressRef.current = null;
+    }
+
+    if (dragEntityRef.current) {
+      if (dragRafRef.current) {
+        cancelAnimationFrame(dragRafRef.current);
+        dragRafRef.current = null;
+      }
+      setEntities(dragEntityRef.current.initialEntitiesSnapshot);
+      dragEntityRef.current = null;
+      isDraggingEntityRef.current = false;
+      pendingDragEntitiesRef.current = null;
+    }
+
+    if (preGestureSnapshotRef.current) {
+      const snap = preGestureSnapshotRef.current;
+      cursorRef.current = snap.cursor;
+      setCursor(snap.cursor);
+      setTemporaryOrigin(snap.temporaryOrigin);
+      setPending(snap.pending);
+      setDraft(snap.draft);
+      setSelection(snap.selection);
+    } else {
+      setDraft(null);
+      setPending([]);
+    }
+
+    setMarquee(null);
+    swipeTrimFenceRef.current = [];
+    setSwipeTrimCutPreview([]);
+    setOverlappingCandidates([]);
+
+    const now = performance.now();
+    gestureCooldownUntilRef.current = Math.max(gestureCooldownUntilRef.current, now + 150);
+    dragCooldownUntilRef.current = Math.max(dragCooldownUntilRef.current, now + 200);
+    gestureUntilRef.current = Math.max(gestureUntilRef.current, now + 200);
+  }, []);
+
   const onPointerDown = (ev: React.PointerEvent) => {
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
     ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
 
-    // dois dedos sempre navegam (MULTITOUCH_NAVIGATION), bloqueando referências e guias
+    // 1. BLINDAGEM GLOBAL DE GESTOS MULTITOQUE: 2 ou mais dedos bloqueiam e abortam imediatamente qualquer ferramenta
     if (ptrsRef.current.size >= 2) {
-      touchInteractionStateRef.current = "MULTITOUCH_NAVIGATION";
-      setTouchInteractionState("MULTITOUCH_NAVIGATION");
-      setLoupeVisible(false);
-      setIsDraggingUnlocked(false);
-      setDragNode(null);
-
-      if (pointerMoveRafRef.current !== null) {
-        cancelAnimationFrame(pointerMoveRafRef.current);
-        pointerMoveRafRef.current = null;
-      }
-      pendingPointerMoveRef.current = null;
-
-      // a) Cancele imediatamente qualquer timer de Long-Press pendente
-      if (dragLongPressRef.current) {
-        clearTimeout(dragLongPressRef.current.timer);
-        dragLongPressRef.current = null;
-      }
-      if (longPressRef.current) clearTimeout(longPressRef.current.timer);
-      longPressRef.current = null;
-
-      // b) Se uma peça já estava sendo movida, aborte imediatamente o arraste e restaure à posição original do snapshot
-      if (dragEntityRef.current) {
-        if (dragRafRef.current) {
-          cancelAnimationFrame(dragRafRef.current);
-          dragRafRef.current = null;
-        }
-        setEntities(dragEntityRef.current.initialEntitiesSnapshot);
-        dragEntityRef.current = null;
-        isDraggingEntityRef.current = false;
-        pendingDragEntitiesRef.current = null;
-      }
-
-      // c) Restaura a posição estável anterior ao gesto (descarta microdeslocamentos do 1º dedo)
-      if (preGestureSnapshotRef.current) {
-        const snap = preGestureSnapshotRef.current;
-        cursorRef.current = snap.cursor;
-        setCursor(snap.cursor);
-        setTemporaryOrigin(snap.temporaryOrigin);
-        setPending(snap.pending);
-        setDraft(snap.draft);
-      } else {
-        setDraft(null);
-        setPending([]);
-      }
-      setMarquee(null);
-      swipeTrimFenceRef.current = [];
-      setSwipeTrimCutPreview([]);
-      setOverlappingCandidates([]);
-
-      // d) Cooldown de 200ms após soltar o gesto multitouch
-      dragCooldownUntilRef.current = performance.now() + 200;
-      gestureUntilRef.current = Math.max(gestureUntilRef.current, performance.now() + 200);
+      abortForMultiTouchGesture();
 
       const [a, b] = [...ptrsRef.current.values()];
       if (a && b) {
@@ -4719,11 +4875,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
-    // ignora toques fantasma durante MULTITOUCH_NAVIGATION ou POST_GESTURE_COOLDOWN (200ms)
+    // 2. Trava pós-gesto (Gesture Cooldown >= 120ms): ignora qualquer toque fantasma durante ou logo após pinça/zoom
     if (
+      isMultiTouchGestureRef.current ||
       touchInteractionStateRef.current === "MULTITOUCH_NAVIGATION" ||
       touchInteractionStateRef.current === "POST_GESTURE_COOLDOWN" ||
-      performance.now() < Math.max(gestureUntilRef.current, dragCooldownUntilRef.current)
+      performance.now() <
+        Math.max(
+          gestureCooldownUntilRef.current,
+          gestureUntilRef.current,
+          dragCooldownUntilRef.current,
+        )
     ) {
       return;
     }
@@ -4734,7 +4896,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       temporaryOrigin: temporaryOrigin ? { ...temporaryOrigin, p: { ...temporaryOrigin.p } } : null,
       pending: pending.map((pt) => ({ ...pt })),
       draft: draftRef.current ? { ...draftRef.current } : null,
+      selection: [...selection],
     };
+    pointerDownClientRef.current = { x: ev.clientX, y: ev.clientY };
+    wasCameraPannedRef.current = false;
     touchInteractionStateRef.current = "SINGLE_POINTER";
     setTouchInteractionState("SINGLE_POINTER");
 
@@ -4744,6 +4909,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setLoupeVisible(false);
       setTouchOffsetActive(false);
       setTouchWorldPos(null);
+      activeTouchScreenPosRef.current = null;
+      setActiveTouchScreenPos(null);
       orbitStartClientRef.current = {
         x: ev.clientX,
         y: ev.clientY,
@@ -4757,6 +4924,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     lastPointerTypeRef.current = pType;
     setActivePointerType(pType);
 
+    const touchCanvasPt = getTouchCanvasScreenPos(ev);
     const raw = toWorld(ev);
     const directTouchWorld = toWorld(ev, true);
     let p = snapPoint(raw);
@@ -4815,28 +4983,36 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       commitPendingDraftShape(pendingDraftShapeRef.current);
     }
 
-    const useOffsetHere = shouldUseTouchOffset(
-      pType,
-      tool,
-      dragNode !== null,
-      isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
-      cursorOffsetMode,
-      selection.length > 0,
-    );
+    const useOffsetHere =
+      cursorOffsetMode === "offset" &&
+      tool !== "pan" &&
+      (pType === "touch" ||
+        shouldUseTouchOffset(
+          pType,
+          tool,
+          dragNode !== null,
+          isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
+          cursorOffsetMode,
+          selection.length > 0,
+        ));
     globalCADInteractionHub.beginActiveInteraction({
       directWorld: directTouchWorld,
       cursorWorld: raw,
       cursorScreen: { x: ev.clientX, y: ev.clientY },
-      appliedOffsetY: useOffsetHere ? -55 : 0,
+      appliedOffsetY: useOffsetHere ? -TOUCH_CURSOR_OFFSET_PX : 0,
       invertedTopEdge: false,
     });
-    if (pType === "touch" && useOffsetHere) {
+    if (useOffsetHere) {
+      activeTouchScreenPosRef.current = touchCanvasPt;
+      setActiveTouchScreenPos(touchCanvasPt);
       setTouchWorldPos(directTouchWorld);
       setTouchOffsetActive(true);
-      if (tool !== "select") {
+      if (pType === "touch" && tool !== "select") {
         setNudgeHudVisible(true);
       }
     } else {
+      activeTouchScreenPosRef.current = null;
+      setActiveTouchScreenPos(null);
       setTouchOffsetActive(false);
       setTouchWorldPos(null);
     }
@@ -4859,6 +5035,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       tool === "move" ||
       tool === "node" ||
       tool === "leader" ||
+      interactionGuideMode === "purple_ref" ||
       dragNode !== null ||
       dragEntityRef.current !== null
     );
@@ -5101,26 +5278,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const targetEntity = hit;
 
       // Modo MARCO GEOMÉTRICO (interactionGuideMode === "purple_ref"):
-      // Modo 1 (1 Toque): cria Marco Geométrico Associativo no ponto/entidade capturado
-      // Modo 2 (2 Toques): acumula os 2 últimos pontos/entidades para Síntese Relacional (Ponto Médio, Interseção Virtual, Divisão ÷N)
+      // PROIBIDO criar ou comitar entidade no pointerdown / touchstart e PROIBIDO gerar marcos "ÓRFÃO" no vazio!
+      // No início do toque (1 dedo), apenas atualiza a prévia pulsante se houver um ponto SNAP válido real.
       if (interactionGuideMode === "purple_ref" && !bestNode) {
-        const markEntity = inferAssociativeMarkFromPoint(p, entities, activeLayer, smartSnap, 55 / view.k);
-        commit((prev) => [...prev, markEntity]);
-        setRelationalPicks((prev) => {
-          const nextPick: RelationalPickItem = {
-            point: { x: markEntity.x, y: markEntity.y },
-            entityId: (markEntity.params?.geometricMarkSpec as { parentEntityId?: string })?.parentEntityId ?? hit?.id,
-            label: markEntity.label,
-          };
-          if (prev.length >= 2) {
-            return [prev[prev.length - 1]!, nextPick];
-          }
-          if (prev.length === 1 && Math.hypot(prev[0]!.point.x - nextPick.point.x, prev[0]!.point.y - nextPick.point.y) < 1e-3) {
-            return prev;
-          }
-          return [...prev, nextPick];
-        });
-        triggerHaptic("action");
+        const validCandidate = inferValidGeometricMarkCandidate(
+          p,
+          entities,
+          activeLayer,
+          smartSnap,
+          55 / view.k,
+        );
+        previewGeometricMarkCandidateRef.current = validCandidate;
+        setPreviewGeometricMarkCandidate(validCandidate);
       }
 
       // =========================================================================
@@ -5676,29 +5845,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (ptrsRef.current.has(ev.pointerId))
       ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
 
-    // Multi-Touch Guard: se 2 ou mais dedos estiverem no canvas, cancela arraste e restaura snapshot
-    if (ptrsRef.current.size >= 2) {
-      setLoupeVisible(false);
-      setIsDraggingUnlocked(false);
-      if (dragLongPressRef.current) {
-        clearTimeout(dragLongPressRef.current.timer);
-        dragLongPressRef.current = null;
-      }
-      if (longPressRef.current) {
-        clearTimeout(longPressRef.current.timer);
-        longPressRef.current = null;
-      }
-      if (dragEntityRef.current) {
-        if (dragRafRef.current) {
-          cancelAnimationFrame(dragRafRef.current);
-          dragRafRef.current = null;
-        }
-        setEntities(dragEntityRef.current.initialEntitiesSnapshot);
-        dragEntityRef.current = null;
-        isDraggingEntityRef.current = false;
-        pendingDragEntitiesRef.current = null;
-      }
-      dragCooldownUntilRef.current = performance.now() + 150;
+    // Multi-Touch Guard: se 2 ou mais dedos estiverem no canvas, bloqueia e aborta qualquer ferramenta imediatamente
+    if (ptrsRef.current.size >= 2 || isMultiTouchGestureRef.current) {
+      abortForMultiTouchGesture();
     }
 
     // REGRA 1.1: Tolerância de oscilação de 8px antes de completar os 320ms
@@ -5723,6 +5872,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     // ---- pinça + pan (2 ponteiros, qualquer ferramenta) ----
     if (pinchRef.current && ptrsRef.current.size >= 2) {
       ev.preventDefault();
+      wasCameraPannedRef.current = true;
       const [a, b] = [...ptrsRef.current.values()];
       if (!a || !b) return;
       const d = Math.hypot(b.x - a.x, b.y - a.y) || 1;
@@ -5745,6 +5895,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
+    if (isMultiTouchGestureRef.current || ptrsRef.current.size >= 2) {
+      return;
+    }
+
     // ---- arraste livre de Órbita 3D (1 dedo ou mouse quando ÓRBITA 3D ativo) ----
     if (orbitDragRef.current && ptrsRef.current.size === 1) {
       ev.preventDefault();
@@ -5752,6 +5906,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const dy = ev.clientY - orbitDragRef.current.y;
       orbitDragRef.current = { x: ev.clientX, y: ev.clientY };
       if (Math.abs(dx) > 0.2 || Math.abs(dy) > 0.2) {
+        wasCameraPannedRef.current = true;
         handleDragOrbitDelta(dx, dy);
         markGesture();
       }
@@ -5765,6 +5920,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (panRef.current) {
       const dx = ev.clientX - panRef.current.x;
       const dy = ev.clientY - panRef.current.y;
+      if (Math.hypot(dx, dy) > 1.5) {
+        wasCameraPannedRef.current = true;
+      }
       panRef.current = { x: ev.clientX, y: ev.clientY };
       const v = viewRef.current;
       applyView({ ...v, tx: v.tx + dx, ty: v.ty + dy });
@@ -5937,6 +6095,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const flushPointerMoveFrame = (clientX: number, clientY: number, pType: string) => {
     if (
+      isMultiTouchGestureRef.current ||
       touchInteractionStateRef.current === "MULTITOUCH_NAVIGATION" ||
       touchInteractionStateRef.current === "POST_GESTURE_COOLDOWN" ||
       ptrsRef.current.size >= 2 ||
@@ -5945,21 +6104,33 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       return;
     }
 
+    const touchCanvasPt = getTouchCanvasScreenPos({ clientX, clientY });
     const raw = toWorld({ clientX, clientY, pointerType: pType });
     const directTouchWorld = toWorld({ clientX, clientY, pointerType: pType }, true);
 
-    const useOffsetMove = shouldUseTouchOffset(
-      pType,
-      tool,
-      dragNode !== null || isDraggingArrayCenterRef.current || isArrayPickingCenter,
-      isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
-      cursorOffsetMode,
-      selection.length > 0,
-    );
-    if (pType === "touch" && useOffsetMove && ptrsRef.current.size === 1 && !panRef.current) {
+    const useOffsetMove =
+      cursorOffsetMode === "offset" &&
+      tool !== "pan" &&
+      !panRef.current &&
+      ptrsRef.current.size <= 1 &&
+      (pType === "touch" ||
+        ptrsRef.current.size === 1 ||
+        shouldUseTouchOffset(
+          pType,
+          tool,
+          dragNode !== null || isDraggingArrayCenterRef.current || isArrayPickingCenter,
+          isDraggingEntityRef.current || !!dragEntityRef.current?.unlocked,
+          cursorOffsetMode,
+          selection.length > 0,
+        ));
+    if (useOffsetMove) {
+      activeTouchScreenPosRef.current = touchCanvasPt;
+      setActiveTouchScreenPos(touchCanvasPt);
       setTouchWorldPos(directTouchWorld);
       setTouchOffsetActive(true);
-    } else if (pType !== "touch" || ptrsRef.current.size >= 2 || panRef.current || !useOffsetMove) {
+    } else if (ptrsRef.current.size >= 2 || panRef.current || !useOffsetMove) {
+      activeTouchScreenPosRef.current = null;
+      setActiveTouchScreenPos(null);
       setTouchOffsetActive(false);
       setTouchWorldPos(null);
     }
@@ -5986,6 +6157,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       tool === "move" ||
       tool === "node" ||
       tool === "leader" ||
+      interactionGuideMode === "purple_ref" ||
       dragNode !== null ||
       dragEntityRef.current !== null ||
       (tool === "select" && (isDraggingEntityRef.current || selection.length > 0 || marquee !== null))
@@ -6067,6 +6239,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
     cursorRef.current = currentSnapPt;
     setCursor(currentSnapPt);
+
+    // Prévia ao Vivo do Marco Geométrico (Seção 2.3):
+    // Enquanto o dedo desliza com Marco Geométrico ativo, exibe a prévia pulsante somente se capturar um ponto SNAP geométrico real!
+    if (interactionGuideMode === "purple_ref") {
+      const activeSmart =
+        smartSnap && dist(currentSnapPt, smartSnap.p) <= 1e-3 ? smartSnap : null;
+      const validCand = inferValidGeometricMarkCandidate(
+        currentSnapPt,
+        entities,
+        activeLayer,
+        activeSmart,
+        55 / view.k,
+      );
+      previewGeometricMarkCandidateRef.current = validCand;
+      setPreviewGeometricMarkCandidate(validCand);
+    }
 
     // Atualização em tempo real apenas das Cotas Vivas de Borda Ativa (evita duplicação com guias azuis/roxas)
     if (activeEdge) {
@@ -6285,6 +6473,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       pointerMoveRafRef.current = null;
     }
     const isMultitouchNow =
+      isMultiTouchGestureRef.current ||
       touchInteractionStateRef.current === "MULTITOUCH_NAVIGATION" ||
       touchInteractionStateRef.current === "POST_GESTURE_COOLDOWN" ||
       pinchRef.current !== null ||
@@ -6304,6 +6493,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setIsDraggingUnlocked(false);
     setTouchOffsetActive(false);
     setTouchWorldPos(null);
+    activeTouchScreenPosRef.current = null;
+    setActiveTouchScreenPos(null);
     // Regra Zero-Idle (Seção 2.2): libera listeners e animações transitórias ao soltar o toque
     globalCADInteractionHub.enterIdleState();
 
@@ -6316,23 +6507,36 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (ev) ptrsRef.current.delete(ev.pointerId);
 
     const wasMultitouch =
-      pinchRef.current !== null || touchInteractionStateRef.current === "MULTITOUCH_NAVIGATION";
+      isMultiTouchGestureRef.current ||
+      pinchRef.current !== null ||
+      touchInteractionStateRef.current === "MULTITOUCH_NAVIGATION" ||
+      touchInteractionStateRef.current === "POST_GESTURE_COOLDOWN";
     if (wasMultitouch) {
+      previewGeometricMarkCandidateRef.current = null;
+      setPreviewGeometricMarkCandidate(null);
+      setPendingGeometricMarkConfirmation(null);
+      setMarquee(null);
+
       if (ptrsRef.current.size < 2) {
         pinchRef.current = null;
       }
       panRef.current = null;
       orbitDragRef.current = null;
+
+      // Mantenha o bloqueio até TODOS os dedos saírem da tela + janela de segurança (>= 120ms)
       if (ptrsRef.current.size === 0) {
         touchInteractionStateRef.current = "POST_GESTURE_COOLDOWN";
         setTouchInteractionState("POST_GESTURE_COOLDOWN");
-        gestureUntilRef.current = performance.now() + 200;
-        dragCooldownUntilRef.current = performance.now() + 200;
+        const now = performance.now();
+        gestureCooldownUntilRef.current = now + 150;
+        gestureUntilRef.current = now + 200;
+        dragCooldownUntilRef.current = now + 200;
         if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
         cooldownTimerRef.current = setTimeout(() => {
+          isMultiTouchGestureRef.current = false;
           touchInteractionStateRef.current = "IDLE";
           setTouchInteractionState("IDLE");
-        }, 200);
+        }, 160);
       }
       return;
     }
@@ -6340,6 +6544,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (ptrsRef.current.size === 0 && touchInteractionStateRef.current === "SINGLE_POINTER") {
       touchInteractionStateRef.current = "IDLE";
       setTouchInteractionState("IDLE");
+    }
+
+    // 3. Filtro de Arraste de Câmera (Pan Threshold):
+    // Se houve movimento de câmera (pan / pinça), nenhum clique de ferramenta ou Marco Geométrico pode ser disparado
+    if (wasCameraPannedRef.current) {
+      wasCameraPannedRef.current = false;
+      panRef.current = null;
+      orbitDragRef.current = null;
+      previewGeometricMarkCandidateRef.current = null;
+      setPreviewGeometricMarkCandidate(null);
+      setMarquee(null);
+      return;
     }
 
     panRef.current = null;
@@ -6621,8 +6837,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setEntities(syncAssociativeGeometricMarks(revalidateShared(finalEntities)));
         toast.success("Peça posicionada com sucesso.");
         triggerHaptic("tap");
+        return;
       }
-      return;
     }
     // Finaliza Swipe-to-Trim se o usuário arrastou uma cerca de corte sobre segmentos
     if ((tool === "smart_trim" || tool === "trim") && swipeTrimFenceRef.current.length >= 2) {
@@ -6639,6 +6855,33 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
     swipeTrimFenceRef.current = [];
     setSwipeTrimCutPreview([]);
+
+    // Fluxo de Toque com Prévia + Confirmação Explícita do MARCO GEOMÉTRICO (Seção 2.3):
+    // Ao soltar o dedo sobre um ponto SNAP geométrico válido, exibe a Mini-Bolha de Confirmação
+    // ([ ✓ Inserir Marco ] | [ ÷N Entre 2 Pontos ] | [ ✕ ]).
+    // Se soltar no vazio (sem ponto SNAP de entidade real), NADA é criado!
+    if (interactionGuideMode === "purple_ref" && (tool === "select" || tool === "node")) {
+      const activeSmart =
+        smartSnap && dist(cursorRef.current, smartSnap.p) <= 1e-3 ? smartSnap : null;
+      const validCandidate =
+        previewGeometricMarkCandidateRef.current ??
+        inferValidGeometricMarkCandidate(
+          cursorRef.current,
+          entities,
+          activeLayer,
+          activeSmart,
+          55 / view.k,
+        );
+      previewGeometricMarkCandidateRef.current = null;
+      setPreviewGeometricMarkCandidate(null);
+
+      if (validCandidate) {
+        setMarquee(null);
+        setPendingGeometricMarkConfirmation(validCandidate);
+        triggerHaptic("selection");
+        return;
+      }
+    }
 
     if (marquee) {
       const box = {
@@ -9001,7 +9244,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           )}
         >
           {bgStyle === "fluido" && (
-            <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+            <div
+              aria-hidden="true"
+              data-paused={gesturing || solidOpen || isInPlaceSolid3DActive ? "true" : "false"}
+              className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
+            >
               <div className="silk-light-generator-bleed">
                 <div className="liquid-silk-field liquid-silk-field-1" />
                 <div className="liquid-silk-field liquid-silk-field-2" />
@@ -9011,7 +9258,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           )}
           {bgStyle === "suave" && (
-            <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-0 overflow-hidden">
+            <div
+              aria-hidden="true"
+              data-paused={gesturing || solidOpen || isInPlaceSolid3DActive ? "true" : "false"}
+              className="pointer-events-none absolute inset-0 z-0 overflow-hidden"
+            >
               <div className="fluid-aurora-veils-bleed">
                 <div className="fluid-aurora-veil fluid-aurora-veil-amber" />
                 <div className="fluid-aurora-veil fluid-aurora-veil-coral" />
@@ -9383,6 +9634,44 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               "absolute inset-0 size-full touch-none",
               isOrbitToolActive && "cursor-grab active:cursor-grabbing",
             )}
+            onTouchStart={(e) => {
+              if (e.touches.length >= 2) {
+                abortForMultiTouchGesture();
+              }
+            }}
+            onTouchMove={(e) => {
+              if (e.touches.length >= 2) {
+                abortForMultiTouchGesture();
+              }
+            }}
+            onTouchEnd={(e) => {
+              if (isMultiTouchGestureRef.current) {
+                if (e.touches.length === 0) {
+                  const now = performance.now();
+                  gestureCooldownUntilRef.current = now + 150;
+                  gestureUntilRef.current = now + 200;
+                  dragCooldownUntilRef.current = now + 200;
+                  if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+                  cooldownTimerRef.current = setTimeout(() => {
+                    isMultiTouchGestureRef.current = false;
+                    touchInteractionStateRef.current = "IDLE";
+                    setTouchInteractionState("IDLE");
+                  }, 160);
+                }
+              }
+            }}
+            onTouchCancel={() => {
+              if (isMultiTouchGestureRef.current) {
+                const now = performance.now();
+                gestureCooldownUntilRef.current = now + 150;
+                if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+                cooldownTimerRef.current = setTimeout(() => {
+                  isMultiTouchGestureRef.current = false;
+                  touchInteractionStateRef.current = "IDLE";
+                  setTouchInteractionState("IDLE");
+                }, 160);
+              }
+            }}
             onPointerDown={(e) => {
               if (
                 !isLandscape &&
@@ -10655,9 +10944,79 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     interactionGuideMode={interactionGuideMode}
                     lockedConstraints={effectiveConstraints}
                     isMultitouchNavigating={
+                      isMultiTouchGestureRef.current ||
                       touchInteractionState === "MULTITOUCH_NAVIGATION" ||
                       touchInteractionState === "POST_GESTURE_COOLDOWN"
                     }
+                    previewGeometricMarkCandidate={previewGeometricMarkCandidate}
+                    pendingGeometricMarkConfirmation={pendingGeometricMarkConfirmation}
+                    onConfirmPendingGeometricMark={() => {
+                      if (!pendingGeometricMarkConfirmation) return;
+                      const markEntity = pendingGeometricMarkConfirmation;
+                      commit((prev) => [...prev, markEntity]);
+                      setPendingGeometricMarkConfirmation(null);
+                      previewGeometricMarkCandidateRef.current = null;
+                      setPreviewGeometricMarkCandidate(null);
+                      triggerHaptic("success");
+                      toast.success(
+                        `✓ Marco Geométrico Associativo (${markEntity.label ?? "Marco"}) inserido em (${markEntity.x.toFixed(1)}, ${markEntity.y.toFixed(1)}) mm.`,
+                      );
+                    }}
+                    onStartRelationalFromPendingMark={() => {
+                      if (!pendingGeometricMarkConfirmation) return;
+                      const markEntity = pendingGeometricMarkConfirmation;
+                      const spec = getGeometricMarkSpec(markEntity);
+                      commit((prev) => [...prev, markEntity]);
+                      setRelationalPicks((prev) => {
+                        const nextPick: RelationalPickItem = {
+                          point: { x: markEntity.x, y: markEntity.y },
+                          entityId: spec?.parentEntityId,
+                          label: markEntity.label,
+                        };
+                        if (prev.length >= 2) {
+                          return [prev[prev.length - 1]!, nextPick];
+                        }
+                        if (
+                          prev.length === 1 &&
+                          Math.hypot(
+                            prev[0]!.point.x - nextPick.point.x,
+                            prev[0]!.point.y - nextPick.point.y,
+                          ) < 1e-3
+                        ) {
+                          return prev;
+                        }
+                        return [...prev, nextPick];
+                      });
+                      setPendingGeometricMarkConfirmation(null);
+                      previewGeometricMarkCandidateRef.current = null;
+                      setPreviewGeometricMarkCandidate(null);
+                      triggerHaptic("action");
+                      toast.info(
+                        relationalPicks.length === 0
+                          ? "1º ponto relacional confirmado! Deslize até o 2º ponto SNAP e confirme para dividir o vão (÷N) ou achar o ponto médio."
+                          : "2º ponto relacional capturado! Escolha a operação (⌖ Ponto Médio, ✕ Interseção ou ÷N).",
+                      );
+                    }}
+                    onCancelPendingGeometricMark={() => {
+                      setPendingGeometricMarkConfirmation(null);
+                      previewGeometricMarkCandidateRef.current = null;
+                      setPreviewGeometricMarkCandidate(null);
+                      triggerHaptic("tap");
+                    }}
+                    onClearAllGeometricMarks={() => {
+                      const res = clearGeometricMarksFromEntities(entities, false);
+                      setPendingGeometricMarkConfirmation(null);
+                      previewGeometricMarkCandidateRef.current = null;
+                      setPreviewGeometricMarkCandidate(null);
+                      setRelationalPicks([]);
+                      if (res.removedCount > 0) {
+                        commit(res.cleaned);
+                        triggerHaptic("action");
+                        toast.success(`🧹 ${res.removedCount} Marco(s) Geométrico(s) removido(s).`);
+                      } else {
+                        toast.info("Nenhum Marco Geométrico para limpar.");
+                      }
+                    }}
                     relationalPicks={relationalPicks}
                     onTriggerRelationalSynthesis={(mode: RelationalSynthesisMode, divN?: number) => {
                       if (relationalPicks.length < 2) return;
@@ -10780,18 +11139,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           `✓ Datum Persistente fixado (ΔX ${(targetPt.x - originPt.x).toFixed(1)}, ΔY ${(targetPt.y - originPt.y).toFixed(1)}, L ${len.toFixed(1)} mm).`,
                         );
                       } else if (mode === "purple_ref") {
-                        // Cria Marco Geométrico Associativo Violeta (+) no ponto confirmado (Seção 4)
+                        // Cria Marco Geométrico Associativo Violeta (+) somente sobre ponto SNAP de entidade real (PROIBIDO criar ÓRFÃO no vazio!)
                         const fixedPt: Vec2 = {
                           x: Number(targetPt.x.toFixed(4)),
                           y: Number(targetPt.y.toFixed(4)),
                         };
-                        const markEnt = inferAssociativeMarkFromPoint(
+                        const markEnt = inferValidGeometricMarkCandidate(
                           fixedPt,
                           entities,
                           activeLayer,
                           smartSnap,
                           55 / view.k,
                         );
+                        if (!markEnt) {
+                          toast.info(
+                            "Posicione a Mira 55px sobre um ponto real da geometria (Centro, Vértice, Ponto Médio, Interseção, Quadrante ou Tangência).",
+                          );
+                          return;
+                        }
                         commit((prev) => [...prev, markEnt]);
                         cursorRef.current = fixedPt;
                         setCursor(fixedPt);
@@ -11389,6 +11754,43 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               })()}
             </g>
           </svg>
+
+          {/* BOTÃO RÁPIDO [ 🧹 Limpar Marcos ] QUANDO O MARCO GEOMÉTRICO ESTÁ ATIVO OU HÁ MARCOS NO PROJETO */}
+          {!solidOpen &&
+            activeMode !== "3d" &&
+            (interactionGuideMode === "purple_ref" ||
+              entities.some((e) => isGeometricMarkEntity(e))) && (
+              <div className="pointer-events-auto absolute top-8 right-3 z-30 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  data-testid="clear-geometric-marks-hud-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const res = clearGeometricMarksFromEntities(entities, false);
+                    setPendingGeometricMarkConfirmation(null);
+                    previewGeometricMarkCandidateRef.current = null;
+                    setPreviewGeometricMarkCandidate(null);
+                    setRelationalPicks([]);
+                    if (res.removedCount > 0) {
+                      commit(res.cleaned);
+                      triggerHaptic("action");
+                      toast.success(`🧹 ${res.removedCount} Marco(s) Geométrico(s) removido(s).`);
+                    } else {
+                      toast.info("Nenhum Marco Geométrico para limpar.");
+                    }
+                  }}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[11px] font-semibold shadow-md transition-colors",
+                    isDark
+                      ? "border-purple-500/60 bg-slate-950/90 text-purple-200 hover:bg-purple-950/80"
+                      : "border-purple-500/70 bg-white/95 text-purple-800 hover:bg-purple-50",
+                  )}
+                  title="Remover todos os Marcos Geométricos do plano atual"
+                >
+                  <span>🧹 Limpar Marcos</span>
+                </button>
+              </div>
+            )}
 
           {activeMode !== "3d" && (
             <Rulers

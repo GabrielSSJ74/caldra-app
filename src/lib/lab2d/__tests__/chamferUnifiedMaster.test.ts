@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import type { Entity } from "../types";
 import {
   inferAssociativeMarkFromPoint,
+  inferValidGeometricMarkCandidate,
+  clearGeometricMarksFromEntities,
   buildRelationalGeometricMarks,
   syncAssociativeGeometricMarks,
   getGeometricMarkSpec,
@@ -12,6 +14,10 @@ import {
   updatePersistentDatumTargetByComponent,
   convertDatumToCadLines,
 } from "../cadGeometricMarks";
+import {
+  TOUCH_CURSOR_OFFSET_PX,
+  computeTouchCursorScreenAndWorld,
+} from "../../../components/lab2d/ChamferVirtualCursor";
 import {
   findEnclosedAndConnectedAssembly,
   applyArrayAutoTrim,
@@ -23,6 +29,18 @@ import {
   findSmartSnap,
   buildUnifiedSnapResult,
 } from "../cadReferenceSnaps";
+import { closestOnSegment } from "../core";
+import { getSilkBackgroundCacheStats } from "../canvasScene";
+import {
+  getAuroraEngineTelemetry,
+  AUTONOMOUS_COLOR_ORBS,
+  RADIAL_CORE_5_STOPS,
+  LIQUID_SILK_10_STOPS,
+  lerpRGB,
+  createInitialOrbRuntimeState,
+  stepOrbRuntimeState,
+  computeOrbOpticalHierarchyState,
+} from "../../../components/chameleon/Aurora";
 
 describe("CHAMFER CAD — Prompt Mestre Unificado (Pure Logic Verification)", () => {
   describe("Seção 2 / Teste 2: Array Inteligente de Conjuntos Geométricos + Auto-Trim", () => {
@@ -285,4 +303,172 @@ describe("CHAMFER CAD — Prompt Mestre Unificado (Pure Logic Verification)", ()
       assert.deepEqual(emptyResult.worldPoint, { x: 300, y: 400 });
     });
   });
+
+  describe("Correção Mobile: Proibição de Marcos 'ÓRFÃO' no Vazio e Restauração da Mira 55px", () => {
+    it("inferValidGeometricMarkCandidate retorna null no espaço vazio (nunca cria marco ÓRFÃO) e captura apenas entidades reais", () => {
+      const circle: Entity = {
+        id: "hole-main",
+        layer: "corte",
+        type: "circle",
+        cx: 100,
+        cy: 100,
+        r: 20,
+      };
+
+      // Toque no espaço vazio longe da geometria -> deve retornar null (proibido criar "ÓRFÃO")
+      const emptyTap = inferValidGeometricMarkCandidate(
+        { x: 400, y: 400 },
+        [circle],
+        "corte",
+        null,
+        15,
+      );
+      assert.equal(emptyTap, null, "Toque no fundo vazio do canvas não deve gerar nenhum marco");
+
+      // Toque com Mira 55px sobre o centro real do círculo -> deve retornar candidato válido não-órfão
+      const centerTap = inferValidGeometricMarkCandidate(
+        { x: 101, y: 99.5 },
+        [circle],
+        "corte",
+        null,
+        15,
+      );
+      assert.ok(centerTap, "Deve capturar o centro real do círculo");
+      const spec = getGeometricMarkSpec(centerTap);
+      assert.ok(spec);
+      assert.equal(Boolean(spec.isOrphan), false);
+      assert.equal(spec.parentEntityId, "hole-main");
+      assert.equal(spec.referenceType, "center");
+    });
+
+    it("clearGeometricMarksFromEntities limpa marcos geométricos existentes em 1 clique", () => {
+      const circle: Entity = {
+        id: "hole-1",
+        layer: "corte",
+        type: "circle",
+        cx: 50,
+        cy: 50,
+        r: 10,
+      };
+      const validMark = inferValidGeometricMarkCandidate(
+        { x: 50, y: 50 },
+        [circle],
+        "corte",
+        null,
+        12,
+      )!;
+      const res = clearGeometricMarksFromEntities([circle, validMark], false);
+      assert.equal(res.removedCount, 1);
+      assert.equal(res.cleaned.length, 1);
+      assert.equal(res.cleaned[0]!.id, "hole-1");
+    });
+
+    it("Mira 55px desloca a coordenada da mira exatamente 55px acima do dedo (touchY - 55)", () => {
+      assert.equal(TOUCH_CURSOR_OFFSET_PX, 55);
+      const res = computeTouchCursorScreenAndWorld({
+        clientX: 200,
+        clientY: 300,
+        pointerType: "touch",
+        canvasRect: { left: 0, top: 0 },
+        panX: 0,
+        panY: 0,
+        zoom: 1,
+        offsetEnabled: true,
+      });
+      assert.equal(res.offsetY, -55);
+      assert.equal(res.cursorScreenX, 200);
+      assert.equal(res.cursorScreenY, 245);
+      assert.equal(res.cursorWorldX, 200);
+      assert.equal(res.cursorWorldY, 245);
+    });
+  });
+
+  describe("Estabilidade de HitTest (closestOnSegment) e Telemetria Fluid Aurora", () => {
+    it("closestOnSegment aceita tanto tupla [a, b] quanto objeto { a, b } sem lançar TypeError: s is not iterable", () => {
+      const p = { x: 50, y: 15 };
+      const fromTuple = closestOnSegment(p, [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ]);
+      const fromObject = closestOnSegment(p, {
+        a: { x: 0, y: 0 },
+        b: { x: 100, y: 0 },
+      });
+      assert.deepEqual(fromTuple, { x: 50, y: 0 });
+      assert.deepEqual(fromObject, { x: 50, y: 0 });
+    });
+
+    it("expõe telemetria de cache Offscreen High-DPI para Fluid Aurora e Sprites LUT com 0 regressões", () => {
+      const silkStats = getSilkBackgroundCacheStats();
+      assert.equal(typeof silkStats.hitRatePercent, "number");
+      assert.ok(silkStats.hitRatePercent >= 0 && silkStats.hitRatePercent <= 100);
+
+      const auroraTelemetry = getAuroraEngineTelemetry();
+      assert.equal(typeof auroraTelemetry.spriteCacheSize, "number");
+      assert.equal(auroraTelemetry.autonomousOrbCount, 7);
+      assert.ok(auroraTelemetry.hitRatePercent >= 0 && auroraTelemetry.hitRatePercent <= 100);
+    });
+
+    it("implementa o Ecossistema do Fundo (Luz Viva) com acumuladores incrementais (dt), velocidades base lentas, +65% impulso dominante, escala 0.72->2.25 (~40% da tela) e lerpRGB", () => {
+      assert.equal(AUTONOMOUS_COLOR_ORBS.length, 7);
+      assert.deepEqual(
+        AUTONOMOUS_COLOR_ORBS.map((o) => o.primaryHex),
+        ["#E11D48", "#EC4899", "#3B82F6", "#10B981", "#F59E0B", "#A855F7", "#06B6D4"],
+      );
+      assert.deepEqual(
+        AUTONOMOUS_COLOR_ORBS.map((o) => o.baseSpeedX),
+        [0.032, 0.041, 0.026, 0.046, 0.029, 0.037, 0.023],
+      );
+      assert.deepEqual(
+        AUTONOMOUS_COLOR_ORBS.map((o) => o.baseSpeedY),
+        [0.027, 0.035, 0.031, 0.038, 0.024, 0.042, 0.028],
+      );
+      assert.deepEqual(
+        AUTONOMOUS_COLOR_ORBS.map((o) => o.colorSpeed),
+        [0.035, 0.035, 0.035, 0.035, 0.035, 0.035, 0.035],
+      );
+
+      // Decaimento Gaussiano suave de 5 paradas: 0% (0.80), 25% (0.55), 50% (0.28), 75% (0.09), 100% (0.00)
+      assert.deepEqual(RADIAL_CORE_5_STOPS, [
+        [0.0, 0.8],
+        [0.25, 0.55],
+        [0.5, 0.28],
+        [0.75, 0.09],
+        [1.0, 0.0],
+      ]);
+      assert.equal(LIQUID_SILK_10_STOPS.length, 10);
+
+      // Interpolação RGB linear suave (lerpRGB)
+      assert.deepEqual(lerpRGB([225, 29, 72], [236, 72, 153], 0), [225, 29, 72]);
+      assert.deepEqual(lerpRGB([225, 29, 72], [236, 72, 153], 1), [236, 72, 153]);
+
+      // Acumulador de fase incremental (dt <= 0.033s) sem saltos + impulso de +65% na massa dominante
+      const runtimeOrb = createInitialOrbRuntimeState(AUTONOMOUS_COLOR_ORBS[0]!);
+      assert.equal(runtimeOrb.dominance, 1);
+      assert.equal(Number(runtimeOrb.scale.toFixed(2)), 2.25);
+      assert.equal(Number(runtimeOrb.opacity.toFixed(2)), 0.56);
+      assert.equal(Number(runtimeOrb.currentSpeedX.toFixed(5)), Number((0.032 * 1.65).toFixed(5)));
+      assert.equal(Number(runtimeOrb.currentSpeedY.toFixed(5)), Number((0.027 * 1.65).toFixed(5)));
+
+      const prevPhaseX = runtimeOrb.phaseX;
+      stepOrbRuntimeState(runtimeOrb, 0.016);
+      assert.ok(runtimeOrb.phaseX > prevPhaseX, "Acumulador de fase deve avançar suavemente com dt");
+
+      // Verifica extremos de dominância: Secundária (dominance = 0 -> scale 0.72, opacity 0.22)
+      // e Prioritária Máxima (dominance = 1 -> scale 2.25, opacity 0.56)
+      const statesAtT0 = AUTONOMOUS_COLOR_ORBS.map((orb) => computeOrbOpticalHierarchyState(orb, 0));
+      const maxDomState = statesAtT0[0]!;
+      assert.equal(maxDomState.dominance, 1);
+      assert.equal(maxDomState.scale, 2.25);
+      assert.equal(maxDomState.opacity, 0.56);
+
+      const secondaryStates = statesAtT0.filter((s) => s.dominance === 0);
+      assert.ok(secondaryStates.length >= 3);
+      for (const s of secondaryStates) {
+        assert.equal(s.scale, 0.72);
+        assert.equal(s.opacity, 0.22);
+      }
+    });
+  });
 });
+

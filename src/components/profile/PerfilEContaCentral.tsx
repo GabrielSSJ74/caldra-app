@@ -65,9 +65,21 @@ const THEMES: { id: ThemeMode; label: string; icon: typeof Sun }[] = [
 ];
 
 const AURORA_STYLES: { id: AuroraStyle; label: string; hint: string }[] = [
-  { id: "fluido", label: "Fluido", hint: "Shader líquido em movimento contínuo" },
-  { id: "suave", label: "Fluid Aurora", hint: "Campos de luz flutuando em espaço profundo" },
-  { id: "padrao", label: "Padrão", hint: "Sem fundo animado — cor sólida do tema" },
+  {
+    id: "fluido",
+    label: "ORBES VIVOS",
+    hint: "Massas radiais autônomas vivas em transição cromática pelo espaço profundo",
+  },
+  {
+    id: "suave",
+    label: "COSMOS RADIAL",
+    hint: "Massas radiais autônomas vivas em transição cromática pelo espaço profundo",
+  },
+  {
+    id: "padrao",
+    label: "PADRÃO",
+    hint: "Massas radiais autônomas vivas em transição cromática pelo espaço profundo",
+  },
 ];
 
 const ACCENTS: { id: AccentColor; label: string; swatch: string }[] = [
@@ -974,10 +986,10 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
               </div>
             </div>
 
-            {/* Estilo do Fundo / Aurora */}
+            {/* Ecossistema do Fundo (Luz Viva) */}
             <div className="space-y-1.5">
               <span className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                Estilo do Fundo (Aurora)
+                ECOSSISTEMA DO FUNDO (LUZ VIVA)
               </span>
               <div className="grid grid-cols-3 gap-2">
                 {AURORA_STYLES.map((a) => {
@@ -990,9 +1002,9 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                       onClick={() => {
                         triggerHaptic("tap");
                         if (isProGated) {
-                          toast.info("O estilo de fundo Fluido é exclusivo do CALDRA PRO.", {
+                          toast.info("O estilo de fundo Orbes Vivos é exclusivo do CALDRA PRO.", {
                             description:
-                              "Faça upgrade para o CALDRA PRO para ativar o fundo dinâmico fluido.",
+                              "Faça upgrade para o CALDRA PRO para ativar o ecossistema de Orbes Vivos.",
                             action: {
                               label: "Ver Planos",
                               onClick: () => {
@@ -1023,7 +1035,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                 })}
               </div>
               <p className="text-[10px] text-muted-foreground">
-                {AURORA_STYLES.find((a) => a.id === auroraStyle)?.hint}
+                Massas radiais autônomas vivas em transição cromática pelo espaço profundo
               </p>
             </div>
 

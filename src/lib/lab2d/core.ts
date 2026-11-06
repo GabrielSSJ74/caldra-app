@@ -297,8 +297,10 @@ export function lineIntersection(a: [Vec2, Vec2], b: [Vec2, Vec2], bounded = tru
   return { x: p1.x + t * (p2.x - p1.x), y: p1.y + t * (p2.y - p1.y) };
 }
 
-export function closestOnSegment(p: Vec2, s: [Vec2, Vec2]): Vec2 {
-  const [a, b] = s;
+export function closestOnSegment(p: Vec2, s: [Vec2, Vec2] | { a: Vec2; b: Vec2 }): Vec2 {
+  const a = Array.isArray(s) ? s[0] : s.a;
+  const b = Array.isArray(s) ? s[1] : s.b;
+  if (!a || !b) return p;
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const l2 = dx * dx + dy * dy;
