@@ -34,6 +34,7 @@ import { getSilkBackgroundCacheStats } from "../canvasScene";
 import {
   getAuroraEngineTelemetry,
   AUTONOMOUS_COLOR_ORBS,
+  COSMOS_RADIAL_6_STOPS,
   RADIAL_CORE_5_STOPS,
   LIQUID_SILK_10_STOPS,
   lerpRGB,
@@ -409,7 +410,7 @@ describe("CHAMFER CAD — Prompt Mestre Unificado (Pure Logic Verification)", ()
       assert.ok(auroraTelemetry.hitRatePercent >= 0 && auroraTelemetry.hitRatePercent <= 100);
     });
 
-    it("implementa o Ecossistema do Fundo (Luz Viva) com acumuladores incrementais (dt), velocidades base lentas, +65% impulso dominante, escala 0.72->2.25 (~40% da tela) e lerpRGB", () => {
+    it("implementa a Calibração Fina do COSMOS RADIAL (High-Energy 6-Stops 0.96, velocidades meio-termo, +85% impulso dominante, scale 0.78->2.25, opacity 0.38->0.78) e preserva ORBES VIVOS", () => {
       assert.equal(AUTONOMOUS_COLOR_ORBS.length, 7);
       assert.deepEqual(
         AUTONOMOUS_COLOR_ORBS.map((o) => o.primaryHex),
@@ -417,57 +418,66 @@ describe("CHAMFER CAD — Prompt Mestre Unificado (Pure Logic Verification)", ()
       );
       assert.deepEqual(
         AUTONOMOUS_COLOR_ORBS.map((o) => o.baseSpeedX),
-        [0.032, 0.041, 0.026, 0.046, 0.029, 0.037, 0.023],
+        [0.058, 0.074, 0.048, 0.082, 0.052, 0.067, 0.043],
       );
       assert.deepEqual(
         AUTONOMOUS_COLOR_ORBS.map((o) => o.baseSpeedY),
-        [0.027, 0.035, 0.031, 0.038, 0.024, 0.042, 0.028],
+        [0.049, 0.063, 0.056, 0.068, 0.044, 0.076, 0.051],
       );
       assert.deepEqual(
         AUTONOMOUS_COLOR_ORBS.map((o) => o.colorSpeed),
-        [0.035, 0.035, 0.035, 0.035, 0.035, 0.035, 0.035],
+        [0.062, 0.062, 0.062, 0.062, 0.062, 0.062, 0.062],
       );
 
-      // Decaimento Gaussiano suave de 5 paradas: 0% (0.80), 25% (0.55), 50% (0.28), 75% (0.09), 100% (0.00)
-      assert.deepEqual(RADIAL_CORE_5_STOPS, [
-        [0.0, 0.8],
-        [0.25, 0.55],
-        [0.5, 0.28],
-        [0.75, 0.09],
+      // Curva High-Energy de 6 paradas do COSMOS RADIAL: 0% (0.96), 18% (0.82), 36% (0.56), 58% (0.28), 78% (0.09), 100% (0.00)
+      assert.deepEqual(COSMOS_RADIAL_6_STOPS, [
+        [0.0, 0.96],
+        [0.18, 0.82],
+        [0.36, 0.56],
+        [0.58, 0.28],
+        [0.78, 0.09],
         [1.0, 0.0],
       ]);
+      assert.equal(RADIAL_CORE_5_STOPS.length, 5);
       assert.equal(LIQUID_SILK_10_STOPS.length, 10);
 
       // Interpolação RGB linear suave (lerpRGB)
       assert.deepEqual(lerpRGB([225, 29, 72], [236, 72, 153], 0), [225, 29, 72]);
       assert.deepEqual(lerpRGB([225, 29, 72], [236, 72, 153], 1), [236, 72, 153]);
 
-      // Acumulador de fase incremental (dt <= 0.033s) sem saltos + impulso de +65% na massa dominante
-      const runtimeOrb = createInitialOrbRuntimeState(AUTONOMOUS_COLOR_ORBS[0]!);
-      assert.equal(runtimeOrb.dominance, 1);
-      assert.equal(Number(runtimeOrb.scale.toFixed(2)), 2.25);
-      assert.equal(Number(runtimeOrb.opacity.toFixed(2)), 0.56);
-      assert.equal(Number(runtimeOrb.currentSpeedX.toFixed(5)), Number((0.032 * 1.65).toFixed(5)));
-      assert.equal(Number(runtimeOrb.currentSpeedY.toFixed(5)), Number((0.027 * 1.65).toFixed(5)));
+      // COSMOS RADIAL ("suave"): Acumulador de fase incremental (dt <= 0.033s) + impulso de +85% na massa dominante
+      const cosmosOrb = createInitialOrbRuntimeState(AUTONOMOUS_COLOR_ORBS[0]!, "suave");
+      assert.equal(cosmosOrb.dominance, 1);
+      assert.equal(Number(cosmosOrb.scale.toFixed(2)), 2.25);
+      assert.equal(Number(cosmosOrb.opacity.toFixed(2)), 0.78);
+      assert.equal(Number(cosmosOrb.currentSpeedX.toFixed(5)), Number((0.058 * 1.85).toFixed(5)));
+      assert.equal(Number(cosmosOrb.currentSpeedY.toFixed(5)), Number((0.049 * 1.85).toFixed(5)));
 
-      const prevPhaseX = runtimeOrb.phaseX;
-      stepOrbRuntimeState(runtimeOrb, 0.016);
-      assert.ok(runtimeOrb.phaseX > prevPhaseX, "Acumulador de fase deve avançar suavemente com dt");
+      const prevPhaseX = cosmosOrb.phaseX;
+      stepOrbRuntimeState(cosmosOrb, 0.016, "suave");
+      assert.ok(cosmosOrb.phaseX > prevPhaseX, "Acumulador de fase deve avançar suavemente com dt");
 
-      // Verifica extremos de dominância: Secundária (dominance = 0 -> scale 0.72, opacity 0.22)
-      // e Prioritária Máxima (dominance = 1 -> scale 2.25, opacity 0.56)
-      const statesAtT0 = AUTONOMOUS_COLOR_ORBS.map((orb) => computeOrbOpticalHierarchyState(orb, 0));
+      // Verifica extremos de dominância no COSMOS RADIAL: Secundária (dominance = 0 -> scale 0.78, opacity 0.38)
+      // e Prioritária Máxima (dominance = 1 -> scale 2.25, opacity 0.78)
+      const statesAtT0 = AUTONOMOUS_COLOR_ORBS.map((orb) =>
+        computeOrbOpticalHierarchyState(orb, 0, "suave"),
+      );
       const maxDomState = statesAtT0[0]!;
       assert.equal(maxDomState.dominance, 1);
       assert.equal(maxDomState.scale, 2.25);
-      assert.equal(maxDomState.opacity, 0.56);
+      assert.equal(maxDomState.opacity, 0.78);
 
       const secondaryStates = statesAtT0.filter((s) => s.dominance === 0);
       assert.ok(secondaryStates.length >= 3);
       for (const s of secondaryStates) {
-        assert.equal(s.scale, 0.72);
-        assert.equal(s.opacity, 0.22);
+        assert.equal(s.scale, 0.78);
+        assert.equal(s.opacity, 0.38);
       }
+
+      // Verifica preservação do modo ORBES VIVOS ("fluido"): scale 0.72 -> 2.25, opacity 0.22 -> 0.56
+      const orbesVivosMax = computeOrbOpticalHierarchyState(AUTONOMOUS_COLOR_ORBS[0]!, 0, "fluido");
+      assert.equal(orbesVivosMax.scale, 2.25);
+      assert.equal(orbesVivosMax.opacity, 0.56);
     });
   });
 });

@@ -2263,15 +2263,17 @@
 }
 
 /* =========================================================================
-   ECOSSISTEMA DO FUNDO (LUZ VIVA) — ORBES VIVOS & COSMOS RADIAL
+   ECOSSISTEMA DO FUNDO (LUZ VIVA) — COSMOS RADIAL & ORBES VIVOS
    - Base de Espaço Profundo: #060911 (#020408 no AMOLED / #F3F6FC no tema claro)
    - Diâmetro Base: width: 44vmin; height: 44vmin; border-radius: 50%; pointer-events: none;
-   - Escala Contínua por Dominância (smoothstep):
-     Secundária (dominance ≈ 0): scale = 0.72, opacity = 0.22
-     Prioritária Máxima (dominance ➔ 1.0): scale = 2.25, opacity = 0.56 (~40% da tela)
+   - COSMOS RADIAL (data-style="suave"):
+     * High-Energy Radial Core (6 Paradas): 0% (0.96) -> 18% (0.82) -> 36% (0.56) -> 58% (0.28) -> 78% (0.09) -> 100% (transparent)
+     * Desfoque Calibrado: filter: blur(34px)
+     * Secundária (dominance ≈ 0): scale = 0.78, opacity = 0.38
+     * Prioritária Máxima (dominance ➔ 1.0): scale = 2.25, opacity = 0.78 (~40% da tela)
+   - ORBES VIVOS (data-style="fluido"):
+     * filter: blur(42px), scale 0.72 -> 2.25, opacity 0.22 -> 0.56
    - Zero @keyframes CSS: Controle 100% via requestAnimationFrame + acumuladores de fase (dt)
-   - Decaimento Gaussiano Suave de 5 Paradas:
-     0% (0.80) -> 25% (0.55) -> 50% (0.28) -> 75% (0.09) -> 100% (transparent) + blur(42px)
    ========================================================================= */
 
 .aurora-root {
@@ -2303,101 +2305,116 @@
   height: 44vmin;
   border-radius: 50%;
   pointer-events: none;
-  filter: blur(42px);
+  filter: blur(34px);
   mix-blend-mode: screen;
   animation: none !important;
   transition: none !important;
   will-change: transform, opacity;
-  transform: translate3d(calc(50vw - 50%), calc(50vh - 50%), 0) scale(0.72);
+  transform: translate3d(calc(50vw - 50%), calc(50vh - 50%), 0) scale(0.78);
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
 }
 
-:root:not(.dark) .aurora-autonomous-orb {
-  mix-blend-mode: normal;
+.aurora-root[data-style="fluido"] .aurora-autonomous-orb {
   filter: blur(42px);
 }
 
-/* 1. Massa 1 — Vermelho Carmesim (#E11D48) | baseSpeedX = 0.032, baseSpeedY = 0.027 */
+:root:not(.dark) .aurora-autonomous-orb {
+  mix-blend-mode: normal;
+  filter: blur(34px);
+}
+
+:root:not(.dark) .aurora-root[data-style="fluido"] .aurora-autonomous-orb {
+  filter: blur(42px);
+}
+
+/* 1. Massa 1 — Vermelho Carmesim (#E11D48) | baseSpeedX = 0.058, baseSpeedY = 0.049 */
 .aurora-orb-1-crimson {
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(225, 29, 72, 0.80) 0%,
-    rgba(225, 29, 72, 0.55) 25%,
-    rgba(225, 29, 72, 0.28) 50%,
-    rgba(225, 29, 72, 0.09) 75%,
+    rgba(225, 29, 72, 0.96) 0%,
+    rgba(225, 29, 72, 0.82) 18%,
+    rgba(225, 29, 72, 0.56) 36%,
+    rgba(225, 29, 72, 0.28) 58%,
+    rgba(225, 29, 72, 0.09) 78%,
     transparent 100%
   );
 }
 
-/* 2. Massa 2 — Rosa Magenta (#EC4899) | baseSpeedX = 0.041, baseSpeedY = 0.035 */
+/* 2. Massa 2 — Rosa Magenta (#EC4899) | baseSpeedX = 0.074, baseSpeedY = 0.063 */
 .aurora-orb-2-magenta {
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(236, 72, 153, 0.80) 0%,
-    rgba(236, 72, 153, 0.55) 25%,
-    rgba(236, 72, 153, 0.28) 50%,
-    rgba(236, 72, 153, 0.09) 75%,
+    rgba(236, 72, 153, 0.96) 0%,
+    rgba(236, 72, 153, 0.82) 18%,
+    rgba(236, 72, 153, 0.56) 36%,
+    rgba(236, 72, 153, 0.28) 58%,
+    rgba(236, 72, 153, 0.09) 78%,
     transparent 100%
   );
 }
 
-/* 3. Massa 3 — Azul Técnico (#3B82F6) | baseSpeedX = 0.026, baseSpeedY = 0.031 */
+/* 3. Massa 3 — Azul Técnico (#3B82F6) | baseSpeedX = 0.048, baseSpeedY = 0.056 */
 .aurora-orb-3-cobalt {
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(59, 130, 246, 0.80) 0%,
-    rgba(59, 130, 246, 0.55) 25%,
-    rgba(59, 130, 246, 0.28) 50%,
-    rgba(59, 130, 246, 0.09) 75%,
+    rgba(59, 130, 246, 0.96) 0%,
+    rgba(59, 130, 246, 0.82) 18%,
+    rgba(59, 130, 246, 0.56) 36%,
+    rgba(59, 130, 246, 0.28) 58%,
+    rgba(59, 130, 246, 0.09) 78%,
     transparent 100%
   );
 }
 
-/* 4. Massa 4 — Verde Esmeralda (#10B981) | baseSpeedX = 0.046, baseSpeedY = 0.038 */
+/* 4. Massa 4 — Verde Esmeralda (#10B981) | baseSpeedX = 0.082, baseSpeedY = 0.068 */
 .aurora-orb-4-emerald {
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(16, 185, 129, 0.80) 0%,
-    rgba(16, 185, 129, 0.55) 25%,
-    rgba(16, 185, 129, 0.28) 50%,
-    rgba(16, 185, 129, 0.09) 75%,
+    rgba(16, 185, 129, 0.96) 0%,
+    rgba(16, 185, 129, 0.82) 18%,
+    rgba(16, 185, 129, 0.56) 36%,
+    rgba(16, 185, 129, 0.28) 58%,
+    rgba(16, 185, 129, 0.09) 78%,
     transparent 100%
   );
 }
 
-/* 5. Massa 5 — Âmbar Ouro (#F59E0B) | baseSpeedX = 0.029, baseSpeedY = 0.024 */
+/* 5. Massa 5 — Âmbar Ouro (#F59E0B) | baseSpeedX = 0.052, baseSpeedY = 0.044 */
 .aurora-orb-5-amber {
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(245, 158, 11, 0.80) 0%,
-    rgba(245, 158, 11, 0.55) 25%,
-    rgba(245, 158, 11, 0.28) 50%,
-    rgba(245, 158, 11, 0.09) 75%,
+    rgba(245, 158, 11, 0.96) 0%,
+    rgba(245, 158, 11, 0.82) 18%,
+    rgba(245, 158, 11, 0.56) 36%,
+    rgba(245, 158, 11, 0.28) 58%,
+    rgba(245, 158, 11, 0.09) 78%,
     transparent 100%
   );
 }
 
-/* 6. Massa 6 — Roxo Violeta (#A855F7) | baseSpeedX = 0.037, baseSpeedY = 0.042 */
+/* 6. Massa 6 — Roxo Violeta (#A855F7) | baseSpeedX = 0.067, baseSpeedY = 0.076 */
 .aurora-orb-6-violet {
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(168, 85, 247, 0.80) 0%,
-    rgba(168, 85, 247, 0.55) 25%,
-    rgba(168, 85, 247, 0.28) 50%,
-    rgba(168, 85, 247, 0.09) 75%,
+    rgba(168, 85, 247, 0.96) 0%,
+    rgba(168, 85, 247, 0.82) 18%,
+    rgba(168, 85, 247, 0.56) 36%,
+    rgba(168, 85, 247, 0.28) 58%,
+    rgba(168, 85, 247, 0.09) 78%,
     transparent 100%
   );
 }
 
-/* 7. Massa 7 — Ciano Boreal (#06B6D4) | baseSpeedX = 0.023, baseSpeedY = 0.028 */
+/* 7. Massa 7 — Ciano Boreal (#06B6D4) | baseSpeedX = 0.043, baseSpeedY = 0.051 */
 .aurora-orb-7-cyan {
   background: radial-gradient(
     circle at 50% 50%,
-    rgba(6, 182, 212, 0.80) 0%,
-    rgba(6, 182, 212, 0.55) 25%,
-    rgba(6, 182, 212, 0.28) 50%,
-    rgba(6, 182, 212, 0.09) 75%,
+    rgba(6, 182, 212, 0.96) 0%,
+    rgba(6, 182, 212, 0.82) 18%,
+    rgba(6, 182, 212, 0.56) 36%,
+    rgba(6, 182, 212, 0.28) 58%,
+    rgba(6, 182, 212, 0.09) 78%,
     transparent 100%
   );
 }
