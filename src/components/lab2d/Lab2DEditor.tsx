@@ -247,12 +247,26 @@ import {
   validateArray,
   getGroupCenter,
   getEntityArraySpec,
+  findEnclosedAndConnectedAssembly,
+  applyArrayAutoTrim,
   type ArrayType,
   type PolarArrayParams,
   type LinearArrayParams,
   type HostDetectionResult,
   type ArraySpec,
 } from "@/lib/lab2d/cadArrayEngine";
+import {
+  inferAssociativeMarkFromPoint,
+  buildRelationalGeometricMarks,
+  syncAssociativeGeometricMarks,
+  createPersistentDatumEntity,
+  convertDatumToCadLines,
+  isPersistentDatumEntity,
+  getPersistentDatumSpec,
+  type RelationalSynthesisMode,
+  type PersistentDatumSpec,
+} from "@/lib/lab2d/cadGeometricMarks";
+import type { RelationalPickItem } from "./ChamferLiveDimensionsOverlay";
 
 import {
   MorphTransitionController,
@@ -286,6 +300,7 @@ import {
   findSmartSnap,
   extractEntitySmartReferences,
   extractIntersections,
+  buildUnifiedSnapResult,
   type SmartReferencePoint,
 } from "@/lib/lab2d/cadReferenceSnaps";
 import {
@@ -1439,6 +1454,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   } | null>(null);
 
   const [pinnedMeetingPoints, setPinnedMeetingPoints] = useState<Vec2[]>([]);
+  const [relationalPicks, setRelationalPicks] = useState<RelationalPickItem[]>([]);
+  const [activeDatumComponent, setActiveDatumComponent] = useState<{
+    datumId: string;
+    component: "dx" | "dy" | "L" | "angle";
+  } | null>(null);
 
   const handleSetInteractionGuideMode = useCallback(
     (nextMode: InteractionGuideMode) => {
@@ -1447,6 +1467,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       setLiveDimEditor(null);
       setLiveDimensions([]);
       setIsSettingReferencePoint(false);
+      setRelationalPicks([]);
 
       if (nextMode !== "off") {
         const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
@@ -2094,7 +2115,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const seenIds = new Set<string>();
       const prevIds = new Set(prev.map((e) => e.id));
       const strokeOverride = activeStrokeColorRef.current;
-      return updated.map((ent) => {
+      const normalizedList = updated.map((ent) => {
         let entId = ent.id;
         const isBrandNew =
           !entId || entId === "draft" || entId.startsWith("draft-") || !prevIds.has(entId);
@@ -2114,6 +2135,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         }
         return nextEnt;
       });
+      return syncAssociativeGeometricMarks(normalizedList);
     });
   }, []);
 
@@ -2380,11 +2402,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const hitTest = useCallback(
     (p: Vec2): Entity | null => {
-      // Tolerância matemática de 12px / zoom conforme Seção 2 da especificação
-      const tol = 12 / view.k;
+      // Raio de Captura da Mira: 55px na tela convertido para 55 / zoom em coordenadas de mundo (Seção 5.2 / 5.3)
+      // Avalia a distância perpendicular exata às arestas/contornos ao redor do centro real do retículo (cx, cy)
+      const tol = 55 / view.k;
       const candidates: { e: Entity; d: number }[] = [];
 
-      for (const e of near(p, Math.max(tol, 25 / view.k))) {
+      for (const e of near(p, Math.max(tol, 55 / view.k))) {
         if (layerOf(e.layer)?.locked) continue;
         let d = Infinity;
         if (e.type === "circle") {
@@ -2424,7 +2447,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         } else if (e.type === "text") {
           d = dist(p, { x: e.x, y: e.y });
         } else if (e.type === "point") {
-          d = dist(p, { x: e.x, y: e.y });
+          if (isPersistentDatumEntity(e)) {
+            const spec = getPersistentDatumSpec(e);
+            if (spec) {
+              const corner = { x: spec.target.x, y: spec.origin.y };
+              d = Math.min(
+                dist(p, spec.origin),
+                dist(p, spec.target),
+                dist(p, closestOnSegment(p, { a: spec.origin, b: spec.target })),
+                dist(p, closestOnSegment(p, { a: spec.origin, b: corner })),
+                dist(p, closestOnSegment(p, { a: corner, b: spec.target })),
+              );
+            } else {
+              d = dist(p, { x: e.x, y: e.y });
+            }
+          } else {
+            d = dist(p, { x: e.x, y: e.y });
+          }
         } else {
           // Linhas e polilinhas (abertas ou fechadas / retângulos / polígonos):
           // Mede estritamente a distância matemática às arestas/traços reais.
@@ -4013,17 +4052,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     handleStartArray("polar");
   }, [handleStartArray]);
 
+  const arraySourceAssembly = useMemo(() => {
+    if (!activeArrayType || selected.length === 0) return selected;
+    const includeAssembly =
+      activeArrayType === "polar"
+        ? arrayPolarParams.includeAssembly !== false
+        : arrayLinearParams.includeAssembly !== false;
+    if (!includeAssembly) return selected;
+    return findEnclosedAndConnectedAssembly(entities, selected);
+  }, [activeArrayType, selected, entities, arrayPolarParams.includeAssembly, arrayLinearParams.includeAssembly]);
+
   const arrayPreview = useMemo(() => {
-    if (!activeArrayType || selected.length === 0) return null;
+    if (!activeArrayType || arraySourceAssembly.length === 0) return null;
     const spec: ArraySpec = {
       id: editingArrayGroupId ?? "preview-spec",
       type: activeArrayType,
-      sourceEntityIds: selected.map((e) => e.id),
+      sourceEntityIds: arraySourceAssembly.map((e) => e.id),
       polar: activeArrayType === "polar" ? arrayPolarParams : undefined,
       linear: activeArrayType === "linear" ? arrayLinearParams : undefined,
     };
-    return computeInstances(spec, selected, arrayHostInfo);
-  }, [activeArrayType, editingArrayGroupId, selected, arrayPolarParams, arrayLinearParams, arrayHostInfo]);
+    return computeInstances(spec, arraySourceAssembly, arrayHostInfo);
+  }, [activeArrayType, editingArrayGroupId, arraySourceAssembly, arrayPolarParams, arrayLinearParams, arrayHostInfo]);
 
   // Auto-Frame on Open e quando as dimensões do Array mudarem significativamente
   useEffect(() => {
@@ -4034,7 +4083,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (isDraggingArrayCenterRef.current) return;
 
     const previewEnts = arrayPreview ? arrayPreview.ghostSlots.flatMap((s) => s.entities) : [];
-    const combinedBox = bbox([...entities, ...selected, ...previewEnts]);
+    const combinedBox = bbox([...entities, ...arraySourceAssembly, ...previewEnts]);
     if (!combinedBox) return;
 
     const w = Math.max(10, combinedBox.maxX - combinedBox.minX);
@@ -4053,7 +4102,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (shouldReFrame) {
       lastFramedArrayBoxRef.current = { type: activeArrayType, w, h, cx, cy };
       fitArrayAndHostToVisibleCanvas(
-        selected,
+        arraySourceAssembly,
         previewEnts,
         activeArrayType === "polar" ? arrayPolarParams.center : null,
         activeArrayType === "polar" ? arrayPolarParams.radius : undefined,
@@ -4064,7 +4113,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     activeArrayType,
     arrayPreview,
     entities,
-    selected,
+    arraySourceAssembly,
     arrayPolarParams.center,
     arrayPolarParams.radius,
     arrayHostInfo.sheetBounds,
@@ -4072,7 +4121,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   ]);
 
   const arrayValidation = useMemo(() => {
-    if (!activeArrayType || selected.length === 0) {
+    if (!activeArrayType || arraySourceAssembly.length === 0) {
       return {
         isValid: true,
         errors: [],
@@ -4087,30 +4136,30 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const spec: ArraySpec = {
       id: editingArrayGroupId ?? "validation-spec",
       type: activeArrayType,
-      sourceEntityIds: selected.map((e) => e.id),
+      sourceEntityIds: arraySourceAssembly.map((e) => e.id),
       polar: activeArrayType === "polar" ? arrayPolarParams : undefined,
       linear: activeArrayType === "linear" ? arrayLinearParams : undefined,
     };
-    return validateArray(spec, selected, arrayHostInfo);
-  }, [activeArrayType, editingArrayGroupId, selected, arrayPolarParams, arrayLinearParams, arrayHostInfo]);
+    return validateArray(spec, arraySourceAssembly, arrayHostInfo);
+  }, [activeArrayType, editingArrayGroupId, arraySourceAssembly, arrayPolarParams, arrayLinearParams, arrayHostInfo]);
 
   const handleCommitArray = useCallback(() => {
-    if (!activeArrayType || selected.length === 0) return;
+    if (!activeArrayType || arraySourceAssembly.length === 0) return;
     const specId = editingArrayGroupId ?? uid();
     const spec: ArraySpec = {
       id: specId,
       type: activeArrayType,
-      sourceEntityIds: selected.map((e) => e.id),
+      sourceEntityIds: arraySourceAssembly.map((e) => e.id),
       polar: activeArrayType === "polar" ? arrayPolarParams : undefined,
       linear: activeArrayType === "linear" ? arrayLinearParams : undefined,
     };
-    const { instances, repositionedOriginals } = computeInstances(spec, selected, arrayHostInfo);
+    const { instances, repositionedOriginals } = computeInstances(spec, arraySourceAssembly, arrayHostInfo);
     if (instances.length === 0 && !repositionedOriginals) {
       toast.info("Nenhuma cópia gerada.");
       return;
     }
 
-    const selectedIdSet = new Set(selected.map((e) => e.id));
+    const selectedIdSet = new Set(arraySourceAssembly.map((e) => e.id));
     const repoMap = new Map<string, Entity>();
     if (repositionedOriginals) {
       for (const ro of repositionedOriginals) {
@@ -4118,6 +4167,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }
     }
 
+    const shouldAutoTrim =
+      activeArrayType === "polar" ? Boolean(arrayPolarParams.autoTrim) : Boolean(arrayLinearParams.autoTrim);
+
+    let trimmedCount = 0;
     commit((prev) => {
       // Se estiver reeditando um Array associativo, substitui as cópias anteriores daquele grupo
       const cleaned = editingArrayGroupId
@@ -4141,6 +4194,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         };
       });
 
+      if (shouldAutoTrim) {
+        const res = applyArrayAutoTrim(updatedOriginals, instances, arraySourceAssembly);
+        trimmedCount = res.trimmedCount;
+        return res.entities;
+      }
+
       return [...updatedOriginals, ...instances];
     });
 
@@ -4148,15 +4207,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setEditingArrayGroupId(null);
     setIsArrayPickingCenter(false);
     isDraggingArrayCenterRef.current = false;
-    setSelection([...selected.map((e) => e.id), ...instances.map((e) => e.id)]);
+    setSelection([...arraySourceAssembly.map((e) => e.id), ...instances.map((e) => e.id)]);
     triggerHaptic("success");
     AudioManager.play("ui_select");
     toast.success(
-      activeArrayType === "polar"
-        ? `Padrão circular aplicado (+${instances.length} cópias, PCD ${((arrayPolarParams.radius ?? 0) * 2).toFixed(1)} mm).`
-        : `Padrão linear aplicado (+${instances.length} cópias).`,
+      shouldAutoTrim && trimmedCount > 0
+        ? `Array aplicado com Auto-Trim (${trimmedCount} interseções aparadas no contorno).`
+        : activeArrayType === "polar"
+          ? `Padrão circular aplicado (+${instances.length} cópias, PCD ${((arrayPolarParams.radius ?? 0) * 2).toFixed(1)} mm).`
+          : `Padrão linear aplicado (+${instances.length} cópias).`,
     );
-  }, [activeArrayType, editingArrayGroupId, selected, arrayPolarParams, arrayLinearParams, arrayHostInfo, commit]);
+  }, [activeArrayType, editingArrayGroupId, arraySourceAssembly, arrayPolarParams, arrayLinearParams, arrayHostInfo, commit]);
 
   const handleCancelArray = useCallback(() => {
     setActiveArrayType(null);
@@ -5035,9 +5096,32 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         }
       }
 
-      // 2. Teste de colisão com formas geométricas existentes
-      const hit = hitTest(raw) ?? hitTest(directTouchWorld);
+      // 2. Teste de colisão estritamente a partir do centro real do retículo (cx, cy) com raio de captura 55px / zoom (Seção 5.2)
+      const hit = hitTest(raw);
       const targetEntity = hit;
+
+      // Modo MARCO GEOMÉTRICO (interactionGuideMode === "purple_ref"):
+      // Modo 1 (1 Toque): cria Marco Geométrico Associativo no ponto/entidade capturado
+      // Modo 2 (2 Toques): acumula os 2 últimos pontos/entidades para Síntese Relacional (Ponto Médio, Interseção Virtual, Divisão ÷N)
+      if (interactionGuideMode === "purple_ref" && !bestNode) {
+        const markEntity = inferAssociativeMarkFromPoint(p, entities, activeLayer, smartSnap, 55 / view.k);
+        commit((prev) => [...prev, markEntity]);
+        setRelationalPicks((prev) => {
+          const nextPick: RelationalPickItem = {
+            point: { x: markEntity.x, y: markEntity.y },
+            entityId: (markEntity.params?.geometricMarkSpec as { parentEntityId?: string })?.parentEntityId ?? hit?.id,
+            label: markEntity.label,
+          };
+          if (prev.length >= 2) {
+            return [prev[prev.length - 1]!, nextPick];
+          }
+          if (prev.length === 1 && Math.hypot(prev[0]!.point.x - nextPick.point.x, prev[0]!.point.y - nextPick.point.y) < 1e-3) {
+            return prev;
+          }
+          return [...prev, nextPick];
+        });
+        triggerHaptic("action");
+      }
 
       // =========================================================================
       // MÁQUINA DE ESTADOS BASEADA NO ALVO DO TOQUE (HIT-TEST CONTEXT)
@@ -5083,17 +5167,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               : target;
           setSelection(nextSel);
 
-          // Duplo clique / duplo toque intencional para abrir janela de propriedades da entidade (Regra 3.2)
+          // Selecionar ou clicar na entidade JAMAIS abre automaticamente o painel lateral direito (Seção 1.3)
           const now = performance.now();
-          if (lastEntityTapRef.current && lastEntityTapRef.current.id === hit.id && now - lastEntityTapRef.current.time < 380) {
-            setMobileEditorOpenManual(true);
-            setRightSidebarOpen(true);
-            setActiveSidebarTab("propriedades");
-            triggerHaptic("action");
-            lastEntityTapRef.current = null;
-          } else {
-            lastEntityTapRef.current = { id: hit.id, time: now };
-          }
+          lastEntityTapRef.current = { id: hit.id, time: now };
 
           if (tool === "select") {
             const inCooldown = performance.now() < Math.max(gestureUntilRef.current, dragCooldownUntilRef.current);
@@ -6501,7 +6577,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (dragNode) {
       setDragNode(null);
       past.current = [...past.current, entities];
-      setEntities((list) => revalidateShared(list));
+      setEntities((list) => syncAssociativeGeometricMarks(revalidateShared(list)));
       return;
     }
     if (dragRafRef.current) {
@@ -6542,7 +6618,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           }
           return translated;
         });
-        setEntities(revalidateShared(finalEntities));
+        setEntities(syncAssociativeGeometricMarks(revalidateShared(finalEntities)));
         toast.success("Peça posicionada com sucesso.");
         triggerHaptic("tap");
       }
@@ -7317,12 +7393,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const isLandscape = !verticalLayout.isVerticalCompactActive;
 
   // Janela lateral direita estruturada do CHAMFER (Propriedades / Camadas / Corte / Cotas)
-  // Inicia recolhida no modo retrato ou em telas menores para liberar toda a largura central para o desenho
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(
-    typeof window !== "undefined"
-      ? window.innerWidth >= 1024 && window.innerWidth >= window.innerHeight
-      : true
-  );
+  // Inicia sempre recolhida (open = false) para preservar área máxima de desenho; abre exclusivamente pela seta (<) ou botões da doca (Seção 1.3)
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
   const [activeSidebarTab, setActiveSidebarTab] = useState<ChamferSidebarTab>("propriedades");
   // Bottom Sheet Compacto em modo retrato para painéis longos (Propriedades, Camadas, Corte, Cotas, Eng. Reversa)
   const [portraitDrawerOpen, setPortraitDrawerOpen] = useState(false);
@@ -7343,7 +7415,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     unit: string;
   } | null>(null);
 
-  // Entidade única selecionada para o editor contextual mobile
+  // Entidade única selecionada
   const selectedEntity = useMemo(() => {
     if (selected.length === 1) {
       return selected[0] ?? null;
@@ -7351,11 +7423,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     return null;
   }, [selected]);
 
-  // Editor contextual móvel aberto EXCLUSIVAMENTE sob solicitação explícita do usuário (Regra 3):
-  // 1. Tocar no botão de propriedades (ícone de ajustes na barra lateral / botão chapa);
-  // 2. Duplo clique / duplo toque intencional em cima de uma entidade já existente.
-  // JAMAIS abre automaticamente pós-criação de formas geométricas ou por desenho contínuo.
-  const mobileEditorOpen = !solidOpen && !divideEditorOpen && selectedEntity !== null && mobileEditorOpenManual;
+  // Card flutuante grande sobre o meio do canvas desativado (Seção 1.2):
+  // Todas as propriedades foram unificadas no painel lateral direito PROPRIEDADES, mantendo no canvas apenas a pílula rápida horizontal de seleção.
+  const mobileEditorOpen = false;
 
   // Enquadramento Inteligente do CAD (Regra 7)
   useSmartFraming({
@@ -10580,6 +10650,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     activeStartPoint={activeStartPt}
                     pinnedMeetingPoints={pinnedMeetingPoints}
                     entities={entities}
+                    selectedIds={selection}
                     pendingShape={pendingShapeSpec}
                     interactionGuideMode={interactionGuideMode}
                     lockedConstraints={effectiveConstraints}
@@ -10587,28 +10658,116 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       touchInteractionState === "MULTITOUCH_NAVIGATION" ||
                       touchInteractionState === "POST_GESTURE_COOLDOWN"
                     }
+                    relationalPicks={relationalPicks}
+                    onTriggerRelationalSynthesis={(mode: RelationalSynthesisMode, divN?: number) => {
+                      if (relationalPicks.length < 2) return;
+                      const pickA = relationalPicks[0]!;
+                      const pickB = relationalPicks[1]!;
+                      const entA = pickA.entityId ? entities.find((e) => e.id === pickA.entityId) ?? null : null;
+                      const entB = pickB.entityId ? entities.find((e) => e.id === pickB.entityId) ?? null : null;
+                      const newMarks = buildRelationalGeometricMarks(
+                        pickA.point,
+                        pickB.point,
+                        entA,
+                        entB,
+                        mode,
+                        activeLayer,
+                        divN,
+                      );
+                      if (newMarks.length === 0) {
+                        toast.warning("As duas referências são paralelas (sem interseção virtual).");
+                        return;
+                      }
+                      commit((prev) => [...prev, ...newMarks]);
+                      setRelationalPicks([]);
+                      triggerHaptic("success");
+                      toast.success(
+                        mode === "span_division"
+                          ? `✓ Vão dividido em ÷${divN ?? 2} (${newMarks.length} Marcos Geométricos associativos criados).`
+                          : mode === "virtual_intersection"
+                            ? "✓ Marco Geométrico de Interseção Virtual Projetada (✕) criado."
+                            : "✓ Marco Geométrico de Ponto Médio / Simetria (⌖) criado.",
+                      );
+                    }}
+                    onClearRelationalPicks={() => setRelationalPicks([])}
+                    activeDatumComponent={activeDatumComponent?.component ?? null}
+                    onSelectDatumComponent={(datumId, comp, currentVal, screenPos) => {
+                      const datumEnt = datumId
+                        ? entities.find((e) => e.id === datumId)
+                        : entities.find((e) => isPersistentDatumEntity(e));
+                      if (!datumEnt) return;
+                      setActiveDatumComponent({ datumId: datumEnt.id, component: comp });
+                      setSelection([datumEnt.id]);
+                      const spec = getPersistentDatumSpec(datumEnt);
+                      if (!spec) return;
+                      const dimKindMap: Record<"dx" | "dy" | "L" | "angle", LiveDimension["kind"]> = {
+                        dx: "dx",
+                        dy: "dy",
+                        L: "length",
+                        angle: "angle",
+                      };
+                      const labelMap: Record<"dx" | "dy" | "L" | "angle", string> = {
+                        dx: "Cateto Horizontal ΔX do Datum (mm)",
+                        dy: "Cateto Vertical ΔY do Datum (mm)",
+                        L: "Hipotenusa L do Datum (mm)",
+                        angle: "Ângulo ∠ do Datum (°)",
+                      };
+                      setLiveDimEditor({
+                        dim: {
+                          id: `pdatum-${datumEnt.id}-${comp}`,
+                          kind: dimKindMap[comp],
+                          value: currentVal,
+                          label: labelMap[comp],
+                          startPoint: spec.origin,
+                          endPoint: spec.target,
+                          midPoint: {
+                            x: (spec.origin.x + spec.target.x) / 2,
+                            y: (spec.origin.y + spec.target.y) / 2,
+                          },
+                          normalDir: comp === "dx" ? { x: 0, y: 1 } : { x: 1, y: 0 },
+                          isEditable: true,
+                          targetKey: comp === "L" ? "length" : comp,
+                          entityId: datumEnt.id,
+                        },
+                        screenPos,
+                        currentValue: currentVal,
+                        label: labelMap[comp],
+                        allowInvert: false,
+                        measureKind: comp,
+                        initialLocked: false,
+                      });
+                    }}
+                    onConvertDatumToLines={(datumId, component, originPt, targetPt) => {
+                      const datumEnt = datumId ? entities.find((e) => e.id === datumId) : undefined;
+                      const spec = datumEnt ? getPersistentDatumSpec(datumEnt) : null;
+                      const effOrigin = spec?.origin ?? originPt ?? temporaryOrigin?.p;
+                      const effTarget = spec?.target ?? targetPt ?? cursor;
+                      if (!effOrigin || !effTarget) return;
+                      const lines = convertDatumToCadLines(effOrigin, effTarget, component, activeLayer);
+                      if (lines.length === 0) {
+                        toast.info("Medida nula neste cateto para gerar linha.");
+                        return;
+                      }
+                      commit((prev) => [...prev, ...lines]);
+                      setSelection(lines.map((l) => l.id));
+                      triggerHaptic("success");
+                      toast.success(
+                        component === "both_legs"
+                          ? `✓ 2 linhas ortogonais dos catetos (ΔX + ΔY) geradas no projeto.`
+                          : `✓ Linha ${component === "dx" ? "ΔX" : component === "dy" ? "ΔY" : "L"} gerada a partir do Datum.`,
+                      );
+                    }}
                     onConfirmReferenceAction={(originPt, targetPt, mode) => {
                       if (mode === "blue_line") {
-                        // Cria e grava definitivamente no desenho CAD o segmento de linha real de (X0, Y0) até (X, Y)
+                        // Persiste o DATUM com projeção nos dois catetos (ΔX, ΔY) e hipotenusa (L, ∠) no projeto e no Undo/Redo (Seção 3.1)
                         const len = Math.hypot(targetPt.x - originPt.x, targetPt.y - originPt.y);
                         if (len < 0.05) {
-                          toast.info("Desloque o ponto final para criar a linha.");
+                          toast.info("Desloque o ponto final para fixar o Vetor Datum.");
                           return;
                         }
-                        const newLine: Entity = {
-                          id: uid(),
-                          layer: activeLayer,
-                          type: "line",
-                          x1: Number(originPt.x.toFixed(4)),
-                          y1: Number(originPt.y.toFixed(4)),
-                          x2: Number(targetPt.x.toFixed(4)),
-                          y2: Number(targetPt.y.toFixed(4)),
-                          params:
-                            Object.keys(effectiveConstraints).length > 0
-                              ? { lockedConstraints: { ...effectiveConstraints } }
-                              : undefined,
-                        };
-                        commit((prev) => [...prev, newLine]);
+                        const datumEntity = createPersistentDatumEntity(originPt, targetPt, activeLayer);
+                        commit((prev) => [...prev, datumEntity]);
+                        setSelection([datumEntity.id]);
                         setPending([]);
                         setDraft(null);
                         setTemporaryOrigin({
@@ -10618,20 +10777,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         });
                         triggerHaptic("success");
                         toast.success(
-                          `✓ Linha criada (L = ${len.toFixed(1)} mm) no desenho CAD.`,
+                          `✓ Datum Persistente fixado (ΔX ${(targetPt.x - originPt.x).toFixed(1)}, ΔY ${(targetPt.y - originPt.y).toFixed(1)}, L ${len.toFixed(1)} mm).`,
                         );
                       } else if (mode === "purple_ref") {
-                        // Fixa definitivamente a Cruz (+) Roxa Pontilhada no ponto de encontro diagonal (X, Y)
+                        // Cria Marco Geométrico Associativo Violeta (+) no ponto confirmado (Seção 4)
                         const fixedPt: Vec2 = {
                           x: Number(targetPt.x.toFixed(4)),
                           y: Number(targetPt.y.toFixed(4)),
                         };
-                        setPinnedMeetingPoints((prev) => [...prev, fixedPt]);
+                        const markEnt = inferAssociativeMarkFromPoint(
+                          fixedPt,
+                          entities,
+                          activeLayer,
+                          smartSnap,
+                          55 / view.k,
+                        );
+                        commit((prev) => [...prev, markEnt]);
                         cursorRef.current = fixedPt;
                         setCursor(fixedPt);
                         triggerHaptic("success");
                         toast.success(
-                          `✓ Cruz (+) de Ponto de Encontro fixada em (${fixedPt.x.toFixed(1)}, ${fixedPt.y.toFixed(1)}) mm.`,
+                          `✓ Marco Geométrico Associativo (+) criado em (${fixedPt.x.toFixed(1)}, ${fixedPt.y.toFixed(1)}) mm.`,
                         );
                       }
                     }}
@@ -11976,6 +12142,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               onApply={handleCommitArray}
               onCancel={handleCancelArray}
               isDark={isDark}
+              enclosedAssemblyCount={arraySourceAssembly.length}
             />
           ) : (
             <ChamferRightSidebar
@@ -12004,6 +12171,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 );
               }}
               onDivideEntity={handleOpenDivide}
+              onOpenArray={() => handleStartArray(arrayHostInfo.suggestedType || "polar")}
               dims={dims}
               onDimsChange={setDims}
               dimKind={dimKind}
@@ -12757,6 +12925,73 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       (G: {cursor.x.toFixed(1)}, {cursor.y.toFixed(1)})
                     </span>
                   )}
+
+                  {/* Ações Rápidas do Datum: Fixar Datum Persistente + Conversão Direta em LINE (ΔX, ΔY, L, Catetos X+Y) (Seção 3.3) */}
+                  <button
+                    type="button"
+                    data-testid="datum-bar-persist-btn"
+                    onClick={() => {
+                      const datumEnt = createPersistentDatumEntity(temporaryOrigin.p, cursor, activeLayer);
+                      commit((prev) => [...prev, datumEnt]);
+                      setSelection([datumEnt.id]);
+                      triggerHaptic("success");
+                      toast.success("✓ Datum Persistente gravado no canvas com projeção nos dois catetos.");
+                    }}
+                    title="Fixar Vetor Datum Persistente no canvas (participa do Undo/Redo)"
+                    className={cn(
+                      "flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold text-[8.5px] active:scale-95 border cursor-pointer",
+                      isDark
+                        ? "bg-amber-500/20 hover:bg-amber-500/30 border-amber-500/50 text-amber-300"
+                        : "bg-amber-50 hover:bg-amber-100 border-amber-400 text-amber-800",
+                    )}
+                  >
+                    📌 Fixar Datum
+                  </button>
+
+                  {(
+                    [
+                      { key: "dx", label: "+ Linha ΔX" },
+                      { key: "dy", label: "+ Linha ΔY" },
+                      { key: "L", label: "+ Linha L" },
+                      { key: "both_legs", label: "↱ Catetos X+Y" },
+                    ] as const
+                  ).map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      data-testid={`datum-bar-convert-${item.key}`}
+                      onClick={() => {
+                        const tempSpec: PersistentDatumSpec = {
+                          id: uid(),
+                          origin: temporaryOrigin.p,
+                          target: cursor,
+                          label: "DATUM",
+                          createdAt: Date.now(),
+                        };
+                        const lines = convertDatumToCadLines(tempSpec, item.key, activeLayer);
+                        if (lines.length === 0) {
+                          toast.info("Desloque o cursor para gerar linha com comprimento > 0.");
+                          return;
+                        }
+                        commit((prev) => [...prev, ...lines]);
+                        setSelection(lines.map((l) => l.id));
+                        triggerHaptic("success");
+                        toast.success(
+                          item.key === "both_legs"
+                            ? "✓ 2 linhas ortogonais dos catetos (ΔX + ΔY) criadas!"
+                            : `✓ Linha ${item.label.replace("+ Linha ", "")} criada no desenho!`,
+                        );
+                      }}
+                      className={cn(
+                        "flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold text-[8.5px] active:scale-95 border cursor-pointer",
+                        isDark
+                          ? "bg-sky-500/15 hover:bg-sky-500/25 border-sky-500/40 text-sky-300"
+                          : "bg-sky-50 hover:bg-sky-100 border-sky-300 text-sky-700",
+                      )}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
 
                   {/* Botão Rápido: [ ⟳ Aqui ] (Reancorar no Ponto Atual / Encadeamento Rápido) */}
                   <button
@@ -14275,6 +14510,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           screenPos={loupeScreenPos}
           cadPos={loupeCadPos}
           activeSnap={smartSnap ?? snapHit}
+          activeSnapResult={buildUnifiedSnapResult(loupeCadPos, smartSnap, snapHit, view)}
           baseCadPoint={pending.length > 0 ? pending[pending.length - 1] : null}
           temporaryOrigin={temporaryOrigin}
           activeEdge={activeEdge}
@@ -14547,12 +14783,30 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               setCursor(constrainedPt);
               setLoupeCadPos(constrainedPt);
 
-              // Se há uma linha única selecionada (em SEL), atualiza atomicamente a entidade + restrição
+              // Se há uma linha única ou um Datum Persistente selecionado, atualiza atomicamente a entidade
               if (liveDimEditor.dim.entityId) {
                 const targetId = liveDimEditor.dim.entityId;
                 commit((prev) =>
                   prev.map((ent) => {
-                    if (ent.id !== targetId || ent.type !== "line") return ent;
+                    if (ent.id !== targetId) return ent;
+                    if (isPersistentDatumEntity(ent)) {
+                      const prevSpec = getPersistentDatumSpec(ent);
+                      if (!prevSpec) return ent;
+                      const nextSpec: PersistentDatumSpec = {
+                        ...prevSpec,
+                        target: { x: constrainedPt.x, y: constrainedPt.y },
+                      };
+                      return {
+                        ...ent,
+                        x: constrainedPt.x,
+                        y: constrainedPt.y,
+                        params: {
+                          ...ent.params,
+                          persistentDatumSpec: nextSpec,
+                        },
+                      };
+                    }
+                    if (ent.type !== "line") return ent;
                     const prevLocked =
                       (ent.params?.lockedConstraints as DimensionalConstraints | undefined) ?? {};
                     const nextEntLocked: DimensionalConstraints = { ...prevLocked };
@@ -15299,6 +15553,7 @@ export const EntityShape = React.memo(function EntityShape({
     }
     if (e.type === "point") {
       if (!Number.isFinite(e.x) || !Number.isFinite(e.y)) return null;
+      if (e.params?.isGeometricMark || e.params?.isPersistentDatum) return null;
       return (
         <g key={key}>
           <circle

@@ -18,9 +18,9 @@ export default defineConfig({
       allowedHosts: true,
     },
     optimizeDeps: {
-      entries: ["src/client.tsx", "src/routes/**/*.tsx"],
+      entries: [],
       exclude: ["occt-wasm", "@lovable.dev/cloud-auth-js"],
-      holdUntilCrawlEnd: true,
+      holdUntilCrawlEnd: false,
       include: [
         "@google/genai",
         "@radix-ui/react-accordion",

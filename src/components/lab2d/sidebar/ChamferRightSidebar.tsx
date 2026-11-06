@@ -76,6 +76,7 @@ interface ChamferRightSidebarProps {
   renderCotas?: () => React.ReactNode;
   renderRevEng?: () => React.ReactNode;
   onDivideEntity?: (e: Entity) => void;
+  onOpenArray?: () => void;
   // Callbacks de corte
   onHighlightCut?: (cand: ShareCandidate | null) => void;
   isDark?: boolean;
@@ -116,14 +117,16 @@ export function ChamferRightSidebar({
   renderCotas,
   renderRevEng,
   onDivideEntity,
+  onOpenArray,
   onHighlightCut,
   isDark = true,
   className,
 }: ChamferRightSidebarProps) {
-  // Se a barra estiver fechada / recolhida, exibe o mini-dock lateral
+  // Se a barra estiver fechada / recolhida, exibe o mini-dock lateral com a seta (<)
   if (!open) {
     return (
       <aside
+        data-testid="chamfer-right-sidebar-collapsed"
         style={{
           backgroundColor: "var(--chamfer-bar-bg)",
           borderColor: "var(--chamfer-border)",
@@ -131,9 +134,10 @@ export function ChamferRightSidebar({
         }}
         className="relative z-30 flex flex-col items-center justify-start border py-2 select-none shadow-md backdrop-blur-md transition-all w-8 sm:w-9 shrink-0 rounded-2xl"
       >
-        {/* Botão de Expandir Painel */}
+        {/* Botão de Expandir Painel (<) */}
         <button
           type="button"
+          data-testid="chamfer-sidebar-expand-btn"
           onClick={() => {
             triggerHaptic("selection");
             onToggleOpen();
@@ -155,6 +159,7 @@ export function ChamferRightSidebar({
           {/* PROPRIEDADES */}
           <button
             type="button"
+            data-testid="chamfer-minidock-tab-propriedades"
             onClick={() => {
               triggerHaptic("selection");
               onTabChange("propriedades");
@@ -272,17 +277,21 @@ export function ChamferRightSidebar({
   }
 
   // -------------------------------------------------------------------------
-  // JANELA LATERAL DIREITA COMPACTA EXPANDIDA (GAVETA OVERLAY NO MODO RETRATO)
+  // JANELA LATERAL DIREITA COMPACTA EXPANDIDA (268px - 280px)
   // -------------------------------------------------------------------------
   return (
     <aside
+      data-testid="chamfer-right-sidebar-expanded"
       style={{
+        width: 276,
+        minWidth: 268,
+        maxWidth: 280,
         backgroundColor: "var(--chamfer-bar-bg)",
         borderColor: "var(--chamfer-border)",
         color: "var(--chamfer-text-primary)",
       }}
       className={cn(
-        "z-40 flex w-[265px] max-w-[86vw] sm:w-[285px] shrink-0 flex-col overflow-hidden border-l select-none shadow-2xl backdrop-blur-md transition-all",
+        "z-40 flex w-[276px] shrink-0 flex-col overflow-hidden border-l select-none shadow-2xl backdrop-blur-md",
         "max-md:absolute max-md:right-1 max-md:top-1 max-md:bottom-1 max-md:rounded-2xl max-md:border md:relative",
         className,
       )}
@@ -295,7 +304,7 @@ export function ChamferRightSidebar({
           backgroundColor: "var(--chamfer-surface-elevated)",
           borderColor: "var(--chamfer-border)",
         }}
-        className="flex h-10 shrink-0 items-center justify-between border-b px-2"
+        className="flex h-9 shrink-0 items-center justify-between border-b px-2"
       >
         <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
           {/* ABA PROPRIEDADES */}
@@ -409,9 +418,10 @@ export function ChamferRightSidebar({
           )}
         </div>
 
-        {/* Botão de Recolher Janela */}
+        {/* Botão de Recolher Janela (>) */}
         <button
           type="button"
+          data-testid="chamfer-sidebar-collapse-btn"
           onClick={() => {
             triggerHaptic("selection");
             onToggleOpen();
@@ -428,13 +438,14 @@ export function ChamferRightSidebar({
       {/* ---------------------------------------------------- */}
       {/* CONTEÚDO SCROLLÁVEL DA ABA ATIVA                     */}
       {/* ---------------------------------------------------- */}
-      <div className="flex-1 overflow-y-auto px-2.5 pt-2.5 scrollbar-thin">
+      <div className="flex-1 overflow-y-auto px-2 pt-2 scrollbar-thin">
         {activeTab === "propriedades" && (
           <ChamferPropertiesTab
             entities={entities}
             selection={selection}
             setSelection={setSelection}
             layers={layers}
+            setLayers={setLayers}
             thickness={thickness}
             onThicknessChange={onThicknessChange}
             onUpdateEntity={(updated) => {
@@ -447,6 +458,7 @@ export function ChamferRightSidebar({
               commit((list) => [...list, ent]);
             }}
             onDivideEntity={onDivideEntity}
+            onOpenArray={onOpenArray}
             onDecomposeLoftEntity={(loftEnt) => {
               const spec = loftEnt.params?.loft3d;
               if (!spec || !Array.isArray(spec.sectionEntities)) return;

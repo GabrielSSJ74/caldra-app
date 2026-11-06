@@ -182,6 +182,10 @@ for (const f of lovableConfigFiles) {
       from: '\t\t\tresolve: {\n\t\t\t\talias: { "@": `${process.cwd()}/src` },',
       to: '\t\t\tresolve: {\n\t\t\t\ttsconfigPaths: true,\n\t\t\t\talias: { "@": `${process.cwd()}/src` },',
     },
+    {
+      from: "injectSource: { enabled: true }",
+      to: "injectSource: { enabled: false }",
+    },
   ]);
 }
 

@@ -12,7 +12,18 @@ import { Pin, PinOff } from "lucide-react";
 import type { Vec2 } from "@/lib/geometry/types";
 import type { Entity, Snap } from "@/lib/lab2d/core";
 import { techStyle } from "@/lib/lab2d/technical";
-import type { SmartReferencePoint } from "@/lib/lab2d/cadReferenceSnaps";
+import {
+  mapSmartSnapKindToCanonicalType,
+  type CanonicalSnapResultType,
+  type SmartReferencePoint,
+  type SnapResult,
+} from "@/lib/lab2d/cadReferenceSnaps";
+import {
+  isGeometricMarkEntity,
+  isPersistentDatumEntity,
+  getPersistentDatumSpec,
+  GEOMETRIC_MARK_VIOLET_PRIMARY,
+} from "@/lib/lab2d/cadGeometricMarks";
 import { ISO_PLANES, type DrawingProjectionMode, type IsoPlane } from "@/lib/lab2d/isometricEngine";
 import type { TemporaryOrigin } from "@/lib/lab2d/cadCoordinateFrames";
 import type { EdgeReference } from "@/lib/lab2d/cadGeometricReferences";
@@ -22,9 +33,11 @@ export interface ChamferPrecisionLoupeProps {
   visible: boolean;
   /** Posição na tela (clientX, clientY) do ponteiro / toque */
   screenPos: Vec2 | null;
-  /** Ponto exato no mundo CAD que está sob a mira (já com snap se ativo) */
+  /** Ponto exato no mundo CAD sob o centro do retículo */
   cadPos: Vec2 | null;
-  /** Snap ativo no momento */
+  /** Resultado único e centralizado do motor de SNAP (Seção 6.2) */
+  activeSnapResult?: SnapResult | null;
+  /** Snap legado opcional para retrocompatibilidade */
   activeSnap?: SmartReferencePoint | Snap | null;
   /** Ponto base do comando atual (para mostrar L e Ângulo na telemetria interna) */
   baseCadPoint?: Vec2 | null;
@@ -59,11 +72,141 @@ const LOUPE_HEIGHT = 116;
 const LOUPE_RADIUS_PX = 28;
 const MAGNIFICATION_FACTOR = 2.5;
 
+function drawSnapSymbolInLoupe(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  snapType: CanonicalSnapResultType,
+  color: string,
+) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.fillStyle = color;
+  ctx.lineWidth = 1.65;
+  ctx.setLineDash([]);
+
+  switch (snapType) {
+    case "endpoint": {
+      // Quadrado técnico de extremidade
+      const s = 5.5;
+      ctx.strokeRect(cx - s, cy - s, s * 2, s * 2);
+      break;
+    }
+    case "midpoint": {
+      // Triângulo equilátero técnico de ponto médio
+      const r = 6.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r);
+      ctx.lineTo(cx + r * 0.92, cy + r * 0.72);
+      ctx.lineTo(cx - r * 0.92, cy + r * 0.72);
+      ctx.closePath();
+      ctx.stroke();
+      break;
+    }
+    case "center": {
+      // Círculo com centro marcado
+      ctx.beginPath();
+      ctx.arc(cx, cy, 6.2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case "intersection":
+    case "extension": {
+      // Cruz em X de interseção
+      const r = 5.8;
+      ctx.beginPath();
+      ctx.moveTo(cx - r, cy - r);
+      ctx.lineTo(cx + r, cy + r);
+      ctx.moveTo(cx + r, cy - r);
+      ctx.lineTo(cx - r, cy + r);
+      ctx.stroke();
+      break;
+    }
+    case "tangent": {
+      // Círculo com reta tangente superior
+      const r = 5.2;
+      ctx.beginPath();
+      ctx.arc(cx, cy + 1, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - 7, cy - r + 1);
+      ctx.lineTo(cx + 7, cy - r + 1);
+      ctx.stroke();
+      break;
+    }
+    case "quadrant": {
+      // Losango (diamante) técnico de quadrante
+      const r = 6.2;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - r);
+      ctx.lineTo(cx + r, cy);
+      ctx.lineTo(cx, cy + r);
+      ctx.lineTo(cx - r, cy);
+      ctx.closePath();
+      ctx.stroke();
+      break;
+    }
+    case "perpendicular": {
+      // Símbolo de ângulo reto (⊥)
+      const s = 5.5;
+      ctx.beginPath();
+      ctx.moveTo(cx - s, cy + s);
+      ctx.lineTo(cx - s, cy - s);
+      ctx.moveTo(cx - s, cy + s);
+      ctx.lineTo(cx + s, cy + s);
+      ctx.moveTo(cx - s, cy);
+      ctx.lineTo(cx, cy);
+      ctx.lineTo(cx, cy + s);
+      ctx.stroke();
+      break;
+    }
+    case "geometric_mark": {
+      // Cruz violeta de Marco Geométrico (+) com micro-anel central
+      const arm = 7.2;
+      ctx.beginPath();
+      ctx.moveTo(cx - arm, cy);
+      ctx.lineTo(cx + arm, cy);
+      ctx.moveTo(cx, cy - arm);
+      ctx.lineTo(cx, cy + arm);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.arc(cx, cy, 3.2, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    }
+    case "datum_ref": {
+      // Alvo técnico de referência do DATUM
+      ctx.beginPath();
+      ctx.arc(cx, cy, 6.2, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx - 8.5, cy);
+      ctx.lineTo(cx + 8.5, cy);
+      ctx.moveTo(cx, cy - 8.5);
+      ctx.lineTo(cx, cy + 8.5);
+      ctx.stroke();
+      break;
+    }
+    default: {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 5.2, 0, Math.PI * 2);
+      ctx.stroke();
+      break;
+    }
+  }
+
+  ctx.restore();
+}
+
 export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> = React.memo(
   function ChamferPrecisionLoupeOverlay({
     visible,
     screenPos,
     cadPos,
+    activeSnapResult,
     activeSnap,
     baseCadPoint,
     temporaryOrigin,
@@ -87,8 +230,39 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
     const safeK = Number.isFinite(cameraZoom) && cameraZoom > 0 ? cameraZoom : 1;
     const loupeZoom = safeK * MAGNIFICATION_FACTOR;
 
+    // Sincronização 100% com o SnapResult central (Seção 6.3):
+    // Quando valid === true, trava a câmera da lupa exatamente em worldPoint.
+    // Quando valid === false, segue o centro exato da mira (cadPos) e limpa qualquer indicador residual.
+    const hasValidSnapResult = Boolean(
+      activeSnapResult
+        ? activeSnapResult.valid
+        : activeSnap && Number.isFinite(activeSnap.p.x) && Number.isFinite(activeSnap.p.y),
+    );
+
+    const resolvedSnapType: CanonicalSnapResultType = activeSnapResult
+      ? activeSnapResult.valid
+        ? activeSnapResult.type
+        : "none"
+      : activeSnap
+        ? mapSmartSnapKindToCanonicalType(activeSnap.kind)
+        : "none";
+
+    const lockedCenterWorld: Vec2 | null =
+      hasValidSnapResult && activeSnapResult
+        ? activeSnapResult.worldPoint
+        : hasValidSnapResult && activeSnap
+          ? activeSnap.p
+          : cadPos;
+
+    const snapIndicatorColor =
+      resolvedSnapType === "geometric_mark"
+        ? GEOMETRIC_MARK_VIOLET_PRIMARY
+        : resolvedSnapType === "datum_ref"
+          ? "#38BDF8"
+          : "#10B981";
+
     useEffect(() => {
-      if (!visible || !cadPos) return;
+      if (!visible || !lockedCenterWorld) return;
       const cvs = canvasRef.current;
       if (!cvs) return;
       const ctx = cvs.getContext("2d");
@@ -116,18 +290,21 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
       ctx.fillRect(0, 0, LOUPE_WIDTH, LOUPE_HEIGHT);
       ctx.restore();
 
-      // 2. Transformação do mundo CAD ampliado em 2.5x centrado em cadPos
+      // 2. Transformação do mundo CAD ampliado em 2.5x centrado exatamente em lockedCenterWorld
       ctx.save();
-      ctx.translate(halfW - cadPos.x * loupeZoom, halfH - cadPos.y * loupeZoom);
+      ctx.translate(
+        halfW - lockedCenterWorld.x * loupeZoom,
+        halfH - lockedCenterWorld.y * loupeZoom,
+      );
 
       // 2a. Grade ampliada sutil
       if (showGrid && grid > 0) {
         const spanW = halfW / loupeZoom;
         const spanH = halfH / loupeZoom;
-        const minX = Math.floor((cadPos.x - spanW) / grid) * grid;
-        const maxX = Math.ceil((cadPos.x + spanW) / grid) * grid;
-        const minY = Math.floor((cadPos.y - spanH) / grid) * grid;
-        const maxY = Math.ceil((cadPos.y + spanH) / grid) * grid;
+        const minX = Math.floor((lockedCenterWorld.x - spanW) / grid) * grid;
+        const maxX = Math.ceil((lockedCenterWorld.x + spanW) / grid) * grid;
+        const minY = Math.floor((lockedCenterWorld.y - spanH) / grid) * grid;
+        const maxY = Math.ceil((lockedCenterWorld.y + spanH) / grid) * grid;
 
         ctx.strokeStyle = isDark ? "rgba(148, 163, 184, 0.14)" : "rgba(71, 85, 105, 0.14)";
         ctx.lineWidth = 0.8;
@@ -153,8 +330,52 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
         ctx.stroke();
       }
 
-      // 2b. Entidades visíveis do desenho ampliadas em 2.5x
+      // 2b. Entidades visíveis do desenho ampliadas em 2.5x (incluindo Marcos Geométricos e Datums)
       const renderEntityOnLoupe = (e: Entity, isPreview: boolean) => {
+        if (isGeometricMarkEntity(e) && e.type === "point") {
+          const gx = e.x * loupeZoom;
+          const gy = e.y * loupeZoom;
+          ctx.save();
+          ctx.strokeStyle = GEOMETRIC_MARK_VIOLET_PRIMARY;
+          ctx.lineWidth = 1.6;
+          ctx.setLineDash([]);
+          ctx.beginPath();
+          ctx.moveTo(gx - 6, gy);
+          ctx.lineTo(gx + 6, gy);
+          ctx.moveTo(gx, gy - 6);
+          ctx.lineTo(gx, gy + 6);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(gx, gy, 2.2, 0, Math.PI * 2);
+          ctx.fillStyle = GEOMETRIC_MARK_VIOLET_PRIMARY;
+          ctx.fill();
+          ctx.restore();
+          return;
+        }
+
+        if (isPersistentDatumEntity(e)) {
+          const spec = getPersistentDatumSpec(e);
+          if (spec) {
+            const ox = spec.origin.x * loupeZoom;
+            const oy = spec.origin.y * loupeZoom;
+            const tx = spec.target.x * loupeZoom;
+            const ty = spec.target.y * loupeZoom;
+            ctx.save();
+            ctx.strokeStyle = "rgba(56, 189, 248, 0.78)";
+            ctx.lineWidth = 1.25;
+            ctx.setLineDash([4, 3]);
+            ctx.beginPath();
+            ctx.moveTo(ox, oy);
+            ctx.lineTo(tx, oy);
+            ctx.lineTo(tx, ty);
+            ctx.moveTo(ox, oy);
+            ctx.lineTo(tx, ty);
+            ctx.stroke();
+            ctx.restore();
+          }
+          return;
+        }
+
         const st = techStyle(e.layer);
         const isCutOrWhite = st.color === "#FFFFFF" || e.layer === "corte";
         ctx.strokeStyle = isPreview
@@ -238,7 +459,7 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
         ctx.setLineDash([4, 3]);
         ctx.beginPath();
         ctx.moveTo(refVectorOrigin.x * loupeZoom, refVectorOrigin.y * loupeZoom);
-        ctx.lineTo(cadPos.x * loupeZoom, cadPos.y * loupeZoom);
+        ctx.lineTo(lockedCenterWorld.x * loupeZoom, lockedCenterWorld.y * loupeZoom);
         ctx.stroke();
         ctx.setLineDash([]);
       }
@@ -257,7 +478,7 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
       ctx.fillRect(0, 0, LOUPE_WIDTH, LOUPE_HEIGHT);
       ctx.restore();
 
-      // 4. Retículo Óptico Fino no Centro da Lente + Indicador de Snap
+      // 4. Retículo Óptico Fino no Centro da Lente + Indicador de Snap Real
       ctx.save();
       if (drawingProjection === "isometric") {
         const planeCfg = ISO_PLANES[isoPlane];
@@ -275,15 +496,15 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
         ctx.setLineDash([]);
       }
 
-      const reticleCol = activeSnap
-        ? "#10B981"
+      const reticleCol = hasValidSnapResult
+        ? snapIndicatorColor
         : isDark
           ? "rgba(248, 250, 252, 0.82)"
           : "rgba(15, 23, 42, 0.78)";
       ctx.strokeStyle = reticleCol;
       ctx.lineWidth = 1.05;
-      const gap = 5;
-      const arm = 20;
+      const gap = hasValidSnapResult ? 7 : 5;
+      const arm = 21;
       ctx.beginPath();
       ctx.moveTo(halfW - arm, halfH);
       ctx.lineTo(halfW - gap, halfH);
@@ -295,25 +516,31 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
       ctx.lineTo(halfW, halfH + arm);
       ctx.stroke();
 
-      // Anel micrométrico central
-      ctx.beginPath();
-      ctx.arc(halfW, halfH, activeSnap ? 5.5 : 3.5, 0, Math.PI * 2);
-      ctx.strokeStyle = activeSnap ? "#10B981" : "#DC143C";
-      ctx.lineWidth = activeSnap ? 1.5 : 1.15;
-      ctx.stroke();
+      if (hasValidSnapResult && resolvedSnapType !== "none") {
+        drawSnapSymbolInLoupe(ctx, halfW, halfH, resolvedSnapType, snapIndicatorColor);
+      } else {
+        // Sem SNAP ativo: apenas anel micrométrico neutro
+        ctx.beginPath();
+        ctx.arc(halfW, halfH, 3.5, 0, Math.PI * 2);
+        ctx.strokeStyle = "#DC143C";
+        ctx.lineWidth = 1.15;
+        ctx.stroke();
+      }
 
       // Ponto central sub-pixel
       ctx.beginPath();
       ctx.arc(halfW, halfH, 1.3, 0, Math.PI * 2);
-      ctx.fillStyle = activeSnap ? "#10B981" : "#DC143C";
+      ctx.fillStyle = hasValidSnapResult ? snapIndicatorColor : "#DC143C";
       ctx.fill();
 
       ctx.restore();
       ctx.restore();
     }, [
       visible,
-      cadPos,
-      activeSnap,
+      lockedCenterWorld,
+      hasValidSnapResult,
+      resolvedSnapType,
+      snapIndicatorColor,
       baseCadPoint,
       temporaryOrigin,
       loupeZoom,
@@ -327,19 +554,16 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
       isDark,
     ]);
 
-    if (!visible || !cadPos) return null;
+    if (!visible || !lockedCenterWorld) return null;
 
     const winW = typeof window !== "undefined" ? window.innerWidth : 1280;
     const winH = typeof window !== "undefined" ? window.innerHeight : 800;
 
-    // Smart Auto-Dodge (Esquiva Automática do Dedo):
-    // Posição padrão: Canto Superior Direito (abaixo da régua horizontal).
-    // Se o dedo/cursor se aproximar do quadrante superior direito onde a lupa flutua,
-    // ela desliza suavemente (220ms cubic-bezier) para o Canto Superior Esquerdo!
+    // Smart Auto-Dodge (Esquiva Automática do Dedo)
     const effectiveRightOffset = Math.max(12, rightOffset);
     const rightDockX = Math.max(12, winW - LOUPE_WIDTH - effectiveRightOffset);
-    const leftDockX = 32; // Logo à direita da régua vertical (22px)
-    const dockY = 32; // Logo abaixo da régua horizontal (22px)
+    const leftDockX = 32;
+    const dockY = 32;
 
     if (screenPos) {
       const nearRightDock =
@@ -362,7 +586,6 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
     let topPx = dockY;
 
     if (!pinned && screenPos) {
-      // Modo Seguindo Dedo (Floating) com prevenção de oclusão
       const verticalOffset = LOUPE_HEIGHT + 44;
       leftPx = Math.min(Math.max(12, screenPos.x - LOUPE_WIDTH / 2), winW - LOUPE_WIDTH - 12);
       topPx = screenPos.y - verticalOffset;
@@ -371,25 +594,29 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
       }
     }
 
-    // Cálculo de telemetria integrada na curvatura interna inferior da lente
+    // Cálculo de telemetria integrada na curvatura interna inferior da lente (usando lockedCenterWorld)
     const vectorOrigin = baseCadPoint ?? temporaryOrigin?.p ?? null;
     const hasVector = vectorOrigin !== null;
-    const dx = hasVector ? cadPos.x - vectorOrigin!.x : cadPos.x;
-    const dy = hasVector ? cadPos.y - vectorOrigin!.y : cadPos.y;
+    const dx = hasVector ? lockedCenterWorld.x - vectorOrigin!.x : lockedCenterWorld.x;
+    const dy = hasVector ? lockedCenterWorld.y - vectorOrigin!.y : lockedCenterWorld.y;
     const distL = hasVector ? Math.hypot(dx, dy) : 0;
     const angleDeg = hasVector
       ? (((Math.atan2(-dy, dx) * 180) / Math.PI) + 360) % 360
       : 0;
 
-    const snapLabel =
-      activeSnap && "label" in activeSnap && activeSnap.label
-        ? activeSnap.label
-        : activeSnap
-          ? activeSnap.kind.toUpperCase()
-          : null;
+    const snapLabel = hasValidSnapResult
+      ? activeSnapResult?.label ||
+        (activeSnap && "label" in activeSnap && activeSnap.label
+          ? activeSnap.label
+          : resolvedSnapType.toUpperCase())
+      : null;
+
+    const isVioletMark = resolvedSnapType === "geometric_mark";
 
     const edgeUV =
-      activeEdge && cadPos ? CoordinateFrameManager.worldToUV(cadPos, activeEdge) : null;
+      activeEdge && lockedCenterWorld
+        ? CoordinateFrameManager.worldToUV(lockedCenterWorld, activeEdge)
+        : null;
 
     return (
       <div
@@ -429,12 +656,27 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
         <div className="pointer-events-none absolute inset-x-2.5 top-1.5 flex items-center justify-between">
           {snapLabel ? (
             <span
+              data-testid="loupe-snap-badge"
               className="truncate rounded-full px-1.5 py-0.5 font-mono text-[8.5px] font-bold uppercase tracking-tight"
               style={{
-                maxWidth: 92,
-                backgroundColor: isDark ? "rgba(6, 78, 59, 0.72)" : "rgba(209, 250, 229, 0.85)",
-                color: isDark ? "#6EE7B7" : "#047857",
-                border: "1px solid rgba(16, 185, 129, 0.4)",
+                maxWidth: 96,
+                backgroundColor: isVioletMark
+                  ? isDark
+                    ? "rgba(88, 28, 135, 0.78)"
+                    : "rgba(243, 232, 255, 0.9)"
+                  : isDark
+                    ? "rgba(6, 78, 59, 0.72)"
+                    : "rgba(209, 250, 229, 0.85)",
+                color: isVioletMark
+                  ? isDark
+                    ? "#E9D5FF"
+                    : "#6B21A8"
+                  : isDark
+                    ? "#6EE7B7"
+                    : "#047857",
+                border: isVioletMark
+                  ? "1px solid rgba(168, 85, 247, 0.55)"
+                  : "1px solid rgba(16, 185, 129, 0.4)",
               }}
             >
               ● {snapLabel}
@@ -473,8 +715,9 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
           )}
         </div>
 
-        {/* Curvatura Interna Inferior da Lente: Telemetria Minimalista Integrada (Sem barra externa opaca) */}
+        {/* Curvatura Interna Inferior da Lente: Telemetria Minimalista Integrada */}
         <div
+          data-testid="loupe-coords-readout"
           className="pointer-events-none absolute inset-x-1.5 bottom-1.5 flex items-center justify-center rounded-full px-2 py-0.5 font-mono text-[8.5px] font-semibold tabular-nums leading-tight"
           style={{
             backgroundColor: isDark ? "rgba(9, 13, 22, 0.62)" : "rgba(255, 255, 255, 0.72)",
@@ -490,14 +733,14 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
             </span>
           ) : hasVector && distL > 0.05 ? (
             <span className="truncate">
-              X:{cadPos.x.toFixed(0)} Y:{cadPos.y.toFixed(0)}{" "}
+              X:{lockedCenterWorld.x.toFixed(0)} Y:{lockedCenterWorld.y.toFixed(0)}{" "}
               <span style={{ color: "#38BDF8" }}>
                 • L:{distL.toFixed(1)} ∠{angleDeg.toFixed(1)}°
               </span>
             </span>
           ) : (
             <span className="truncate">
-              X: {cadPos.x.toFixed(1)} &nbsp;Y: {cadPos.y.toFixed(1)}
+              X: {lockedCenterWorld.x.toFixed(1)} &nbsp;Y: {lockedCenterWorld.y.toFixed(1)}
             </span>
           )}
         </div>
@@ -505,3 +748,4 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
     );
   },
 );
+

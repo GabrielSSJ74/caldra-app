@@ -4603,7 +4603,7 @@ export function ChamferPortraitBottomBars({
                   interactionGuideMode === "blue_line"
                     ? "Vetor Datum"
                     : interactionGuideMode === "purple_ref"
-                      ? "Guia Roxa"
+                      ? "Marco Geom."
                       : "Datum: OFF"
                 }
                 active={interactionGuideMode !== "off"}

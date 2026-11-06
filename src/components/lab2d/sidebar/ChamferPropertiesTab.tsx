@@ -1,16 +1,16 @@
 /**
- * CALDRA CHAMFER — ABA PROPRIEDADES (INSPETOR CAD CONTEXTUAL COMPLETO)
+ * CALDRA CHAMFER — ABA PROPRIEDADES UNIFICADA E COMPACTA (PADRÃO SHAPR3D / FUSION / ONSHAPE)
  *
- * Exibe propriedades contextuais da geometria selecionada ou da chapa/projeto:
- * - LINHA: X1, Y1, X2, Y2, comprimento, ângulo polar, comprimento real
- * - CÍRCULO: centro X, centro Y, diâmetro (Ø), raio (R), perímetro, área
- * - ARCO: centro X, centro Y, raio (R), ângulo inicial, ângulo final, comprimento
- * - POLILINHA / RETÂNGULO: largura, altura, perímetro, vértices, fechamento
- * - CHAPA / PEÇA: comprimento, largura, espessura, material, dobra, raio, K-factor
- *
- * INTEGRAÇÃO COM EDITOR COMPACTO:
- * Ao tocar em qualquer medida, abre o ChamferCompactNumericEditor no local,
- * alterando a geometria no canvas EM TEMPO REAL.
+ * Hierarquia Técnica Compacta (Seção 1.3):
+ *  A. Cabeçalho Compacto (1 Linha): Ícone da entidade + Nome/Tipo + Badge de Camada + Ações Rápidas.
+ *  B. Dimensões (Grade de 2 Colunas — apenas campos compatíveis com a entidade):
+ *     - Retângulo / Chapa / Perfil: Largura (X) e Altura (Y)
+ *     - Círculo / Arco: Raio (R) e Diâmetro (Ø)
+ *     - Linha: Comprimento (L) e Ângulo (∠)
+ *     - Resumo técnico discreto em linha única: Perímetro · Área · Nº de vértices
+ *  C. Transformação (Grade de 2 Colunas): Posição X, Posição Y, Rotação (°).
+ *  D. Perfil Estrutural (BOM) & Aparência: Chapa Plana vs Metalão / Perfil BOM, Camada, Cor e Visibilidade.
+ *  E. Ações Rápidas: Editar, Duplicar, Array e Excluir (vermelho reservado exclusivamente para Excluir).
  */
 
 import React, { useState, useMemo } from "react";
@@ -21,31 +21,38 @@ import {
   Square,
   Type,
   Layers,
-  Sparkles,
   ChevronDown,
   ChevronRight,
   Copy,
   Trash2,
   Divide,
-  Maximize2,
   Box,
-  Ruler,
-  FolderOpen,
+  Grid,
+  Eye,
+  EyeOff,
+  Edit3,
+  Crosshair,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
-import type { Entity, Layer } from "@/lib/lab2d/core";
-import { techColor, isUserLayer } from "@/lib/lab2d/technical";
+import { type Entity, type Layer, translate, rotate } from "@/lib/lab2d/core";
+import { techColor } from "@/lib/lab2d/technical";
 import { ChamferCompactNumericEditor } from "@/components/lab2d/mobileEdit/ChamferCompactNumericEditor";
 import type { NumericPropertyDef } from "@/components/lab2d/mobileEdit/types";
 import { copyToGlobalClipboard } from "@/lib/lab2d/globalClipboard";
 import { toast } from "@/lib/lab2d/chamferNotify";
 import { ChamferStructuralProfileCard } from "@/components/lab2d/sidebar/ChamferStructuralProfileCard";
 import {
-  formatStructuralProfileClosureLabel,
   getEntityStructuralProfile,
   syncStructuralProfileOnGeometryChange,
 } from "@/lib/lab2d/structuralProfile";
+import {
+  isGeometricMarkEntity,
+  getGeometricMarkSpec,
+  isPersistentDatumEntity,
+  getPersistentDatumSpec,
+  computePersistentDatumMetrics,
+} from "@/lib/lab2d/cadGeometricMarks";
 import {
   classifyProfileKindLabel,
   createLoft3DEntity,
@@ -65,12 +72,14 @@ interface ChamferPropertiesTabProps {
   selection: string[];
   setSelection: (ids: string[]) => void;
   layers: Layer[];
+  setLayers?: (layers: Layer[] | ((prev: Layer[]) => Layer[])) => void;
   thickness: number;
   onThicknessChange: (th: number) => void;
   onUpdateEntity: (e: Entity) => void;
   onDeleteEntity: (id: string) => void;
   onDuplicateEntity: (e: Entity) => void;
   onDivideEntity?: (e: Entity) => void;
+  onOpenArray?: () => void;
   onDecomposeLoftEntity?: (e: Entity) => void;
   projectName: string;
   onProjectNameChange: (name: string) => void;
@@ -88,33 +97,33 @@ export function ChamferPropertiesTab({
   selection,
   setSelection,
   layers,
+  setLayers,
   thickness,
   onThicknessChange,
   onUpdateEntity,
   onDeleteEntity,
   onDuplicateEntity,
   onDivideEntity,
+  onOpenArray,
   onDecomposeLoftEntity,
   projectName,
   onProjectNameChange,
   material,
   onMaterialChange,
-  kFactor = 0.40,
+  kFactor = 0.4,
   onKFactorChange,
   bendRadius = 3.0,
   onBendRadiusChange,
-  isDark = true,
 }: ChamferPropertiesTabProps) {
-  // Propriedade ativa em edição pelo ChamferCompactNumericEditor
   const [activeNumericProp, setActiveNumericProp] = useState<NumericPropertyDef | null>(null);
+  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({
+    loft3d: true,
+  });
 
-  // Seções colapsáveis
-  const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
   const toggleSection = (id: string) => {
     setCollapsedSections((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  // Entidade única selecionada
   const selectedEntity = useMemo(() => {
     if (selection.length === 1) {
       return entities.find((e) => e.id === selection[0]) ?? null;
@@ -122,7 +131,6 @@ export function ChamferPropertiesTab({
     return null;
   }, [selection, entities]);
 
-  // Multiseleção
   const selectedEntities = useMemo(() => {
     if (selection.length > 1) {
       return entities.filter((e) => selection.includes(e.id));
@@ -130,11 +138,11 @@ export function ChamferPropertiesTab({
     return [];
   }, [selection, entities]);
 
-  // Cálculo da Bounding Box Geral do Projeto ou da Seleção
   const overallBounds = useMemo(() => {
     const targetList = selectedEntities.length > 0 ? selectedEntities : entities;
-    if (targetList.length === 0) return { minX: 0, maxX: 200, minY: 0, maxY: 100, width: 200, height: 100 };
-
+    if (targetList.length === 0) {
+      return { minX: 0, maxX: 200, minY: 0, maxY: 100, width: 200, height: 100 };
+    }
     let minX = Infinity;
     let maxX = -Infinity;
     let minY = Infinity;
@@ -158,10 +166,17 @@ export function ChamferPropertiesTab({
           minY = Math.min(minY, p.y);
           maxY = Math.max(maxY, p.y);
         }
+      } else if (ent.type === "point") {
+        minX = Math.min(minX, ent.x);
+        maxX = Math.max(maxX, ent.x);
+        minY = Math.min(minY, ent.y);
+        maxY = Math.max(maxY, ent.y);
       }
     }
 
-    if (minX === Infinity) return { minX: 0, maxX: 100, minY: 0, maxY: 100, width: 100, height: 100 };
+    if (minX === Infinity) {
+      return { minX: 0, maxX: 100, minY: 0, maxY: 100, width: 100, height: 100 };
+    }
     return {
       minX,
       maxX,
@@ -172,7 +187,6 @@ export function ChamferPropertiesTab({
     };
   }, [selectedEntities, entities]);
 
-  // Perímetro e Área Totais
   const totalPerimeter = useMemo(() => {
     let len = 0;
     for (const e of entities) {
@@ -189,33 +203,128 @@ export function ChamferPropertiesTab({
           len += Math.hypot(e.pts[i + 1].x - e.pts[i].x, e.pts[i + 1].y - e.pts[i].y);
         }
         if (e.closed && e.pts.length > 2) {
-          len += Math.hypot(e.pts[0].x - e.pts[e.pts.length - 1].x, e.pts[0].y - e.pts[e.pts.length - 1].y);
+          len += Math.hypot(
+            e.pts[0].x - e.pts[e.pts.length - 1].x,
+            e.pts[0].y - e.pts[e.pts.length - 1].y,
+          );
         }
       }
     }
     return len;
   }, [entities]);
 
-  // Aplicação de mutação em tempo real pelo ChamferCompactNumericEditor
+  // Geometria e centro da entidade única selecionada
+  const entityMetrics = useMemo(() => {
+    if (!selectedEntity) return null;
+    if (selectedEntity.type === "circle") {
+      const r = selectedEntity.r;
+      return {
+        posX: selectedEntity.cx,
+        posY: selectedEntity.cy,
+        rotDeg: Number(selectedEntity.params?.rotationDeg ?? 0),
+        perimeter: 2 * Math.PI * r,
+        area: Math.PI * r * r,
+        vertexCount: 1,
+      };
+    }
+    if (selectedEntity.type === "arc") {
+      let sw = selectedEntity.a1 - selectedEntity.a0;
+      while (sw < 0) sw += Math.PI * 2;
+      return {
+        posX: selectedEntity.cx,
+        posY: selectedEntity.cy,
+        rotDeg: deg(selectedEntity.a0),
+        perimeter: selectedEntity.r * sw,
+        area: 0.5 * selectedEntity.r * selectedEntity.r * sw,
+        vertexCount: 2,
+      };
+    }
+    if (selectedEntity.type === "line") {
+      const dx = selectedEntity.x2 - selectedEntity.x1;
+      const dy = selectedEntity.y2 - selectedEntity.y1;
+      const len = Math.hypot(dx, dy);
+      return {
+        posX: (selectedEntity.x1 + selectedEntity.x2) / 2,
+        posY: (selectedEntity.y1 + selectedEntity.y2) / 2,
+        rotDeg: (Math.atan2(dy, dx) * 180) / Math.PI,
+        perimeter: len,
+        area: 0,
+        vertexCount: 2,
+      };
+    }
+    if (selectedEntity.type === "polyline" && selectedEntity.pts.length > 0) {
+      const xs = selectedEntity.pts.map((p) => p.x);
+      const ys = selectedEntity.pts.map((p) => p.y);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minY = Math.min(...ys);
+      const maxY = Math.max(...ys);
+      let perim = 0;
+      let signedArea2 = 0;
+      const n = selectedEntity.pts.length;
+      for (let i = 0; i < n - 1; i++) {
+        const a = selectedEntity.pts[i]!;
+        const b = selectedEntity.pts[i + 1]!;
+        perim += Math.hypot(b.x - a.x, b.y - a.y);
+      }
+      if (selectedEntity.closed && n > 2) {
+        const first = selectedEntity.pts[0]!;
+        const last = selectedEntity.pts[n - 1]!;
+        perim += Math.hypot(first.x - last.x, first.y - last.y);
+        for (let i = 0; i < n; i++) {
+          const a = selectedEntity.pts[i]!;
+          const b = selectedEntity.pts[(i + 1) % n]!;
+          signedArea2 += a.x * b.y - b.x * a.y;
+        }
+      }
+      return {
+        posX: (minX + maxX) / 2,
+        posY: (minY + maxY) / 2,
+        rotDeg: Number(selectedEntity.params?.rotationDeg ?? 0),
+        perimeter: perim,
+        area: Math.abs(signedArea2) * 0.5,
+        vertexCount: n,
+        width: Math.max(0.1, maxX - minX),
+        height: Math.max(0.1, maxY - minY),
+        minX,
+        minY,
+      };
+    }
+    if (selectedEntity.type === "point" || selectedEntity.type === "text") {
+      return {
+        posX: selectedEntity.x,
+        posY: selectedEntity.y,
+        rotDeg: selectedEntity.type === "text" ? deg(selectedEntity.rotation ?? 0) : 0,
+        perimeter: 0,
+        area: 0,
+        vertexCount: 1,
+      };
+    }
+    return {
+      posX: 0,
+      posY: 0,
+      rotDeg: 0,
+      perimeter: 0,
+      area: 0,
+      vertexCount: 0,
+    };
+  }, [selectedEntity]);
+
   const handleNumericPropChange = (key: string, val: number) => {
-    // 1. Espessura da chapa
     if (key === "thickness") {
       onThicknessChange(val);
       return;
     }
-    // 2. Fator K
     if (key === "kFactor" && onKFactorChange) {
       onKFactorChange(val);
       return;
     }
-    // 3. Raio de dobra
     if (key === "bendRadius" && onBendRadiusChange) {
       onBendRadiusChange(val);
       return;
     }
 
-    // 4. Entidade selecionada
-    if (!selectedEntity) return;
+    if (!selectedEntity || !entityMetrics) return;
 
     if (key === "elevationZ") {
       onUpdateEntity(setEntityElevationZ(selectedEntity, val));
@@ -226,29 +335,49 @@ export function ChamferPropertiesTab({
       return;
     }
 
+    // Transformação universal: Posição X, Posição Y, Rotação (°)
+    if (key === "posX") {
+      const dx = val - entityMetrics.posX;
+      onUpdateEntity(syncStructuralProfileOnGeometryChange(translate(selectedEntity, dx, 0)));
+      return;
+    }
+    if (key === "posY") {
+      const dy = val - entityMetrics.posY;
+      onUpdateEntity(syncStructuralProfileOnGeometryChange(translate(selectedEntity, 0, dy)));
+      return;
+    }
+    if (key === "rotDeg") {
+      const deltaDeg = val - entityMetrics.rotDeg;
+      const rotated = rotate(
+        selectedEntity,
+        { x: entityMetrics.posX, y: entityMetrics.posY },
+        rad(deltaDeg),
+      );
+      onUpdateEntity(
+        syncStructuralProfileOnGeometryChange({
+          ...rotated,
+          params: {
+            ...(rotated.params ?? {}),
+            rotationDeg: val,
+          },
+        }),
+      );
+      return;
+    }
+
     if (selectedEntity.type === "circle") {
       if (key === "diameter") {
         onUpdateEntity({ ...selectedEntity, r: Math.max(0.1, val / 2) });
       } else if (key === "radius") {
         onUpdateEntity({ ...selectedEntity, r: Math.max(0.05, val) });
-      } else if (key === "cx") {
-        onUpdateEntity({ ...selectedEntity, cx: val });
-      } else if (key === "cy") {
-        onUpdateEntity({ ...selectedEntity, cy: val });
       }
     } else if (selectedEntity.type === "arc") {
       if (key === "radius") {
         onUpdateEntity({ ...selectedEntity, r: Math.max(0.05, val) });
+      } else if (key === "diameter") {
+        onUpdateEntity({ ...selectedEntity, r: Math.max(0.05, val / 2) });
       } else if (key === "sweep") {
         onUpdateEntity({ ...selectedEntity, a1: selectedEntity.a0 + rad(val) });
-      } else if (key === "a0") {
-        onUpdateEntity({ ...selectedEntity, a0: rad(val) });
-      } else if (key === "a1") {
-        onUpdateEntity({ ...selectedEntity, a1: rad(val) });
-      } else if (key === "cx") {
-        onUpdateEntity({ ...selectedEntity, cx: val });
-      } else if (key === "cy") {
-        onUpdateEntity({ ...selectedEntity, cy: val });
       }
     } else if (selectedEntity.type === "line") {
       const dx = selectedEntity.x2 - selectedEntity.x1;
@@ -274,22 +403,12 @@ export function ChamferPropertiesTab({
             y2: selectedEntity.y1 + curLen * Math.sin(nextAng),
           }),
         );
-      } else if (key === "x1") {
-        onUpdateEntity(syncStructuralProfileOnGeometryChange({ ...selectedEntity, x1: val }));
-      } else if (key === "y1") {
-        onUpdateEntity(syncStructuralProfileOnGeometryChange({ ...selectedEntity, y1: val }));
-      } else if (key === "x2") {
-        onUpdateEntity(syncStructuralProfileOnGeometryChange({ ...selectedEntity, x2: val }));
-      } else if (key === "y2") {
-        onUpdateEntity(syncStructuralProfileOnGeometryChange({ ...selectedEntity, y2: val }));
       }
     } else if (selectedEntity.type === "polyline" && selectedEntity.pts.length > 0) {
-      const xs = selectedEntity.pts.map((p) => p.x);
-      const ys = selectedEntity.pts.map((p) => p.y);
-      const minX = Math.min(...xs);
-      const minY = Math.min(...ys);
-      const curW = Math.max(...xs) - minX;
-      const curH = Math.max(...ys) - minY;
+      const curW = entityMetrics.width ?? 1;
+      const curH = entityMetrics.height ?? 1;
+      const minX = entityMetrics.minX ?? 0;
+      const minY = entityMetrics.minY ?? 0;
 
       if (key === "width" && curW > 0.001) {
         const scaleX = Math.max(0.1, val) / curW;
@@ -317,62 +436,43 @@ export function ChamferPropertiesTab({
     } else if (selectedEntity.type === "text") {
       if (key === "size") onUpdateEntity({ ...selectedEntity, size: Math.max(1, val) });
       if (key === "rotation") onUpdateEntity({ ...selectedEntity, rotation: rad(val) });
-      if (key === "x") onUpdateEntity({ ...selectedEntity, x: val });
-      if (key === "y") onUpdateEntity({ ...selectedEntity, y: val });
     }
   };
 
   /**
-   * Componente de Campo Numérico Conectado ao ChamferCompactNumericEditor
+   * Célula Compacta para Grade de 2 Colunas (conectada ao ChamferCompactNumericEditor)
    */
-  const renderNumericField = (
-    def: NumericPropertyDef,
-    highlight: boolean = false,
-  ) => {
+  const renderGridCellField = (def: NumericPropertyDef, colSpan2 = false) => {
     const isEditingThis = activeNumericProp?.key === def.key;
-
     return (
-      <div key={def.key} className="relative py-0.5">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 min-w-0">
-            {def.symbol && (
-              <span className="font-mono text-red-500 font-bold text-xs shrink-0">
-                {def.symbol}
-              </span>
-            )}
-            <span className="font-mono text-[10px] text-slate-400 truncate">
-              {def.label}
-            </span>
-          </div>
+      <div
+        key={def.key}
+        className={cn("relative flex flex-col gap-0.5", colSpan2 && "col-span-2")}
+      >
+        <span className="font-mono text-[9px] text-slate-400 truncate flex items-center gap-1">
+          {def.symbol && <b className="text-sky-400">{def.symbol}</b>}
+          <span>{def.label}</span>
+        </span>
+        <button
+          type="button"
+          data-testid={`prop-field-${def.key}`}
+          onClick={() => {
+            triggerHaptic("selection");
+            setActiveNumericProp(isEditingThis ? null : def);
+          }}
+          className={cn(
+            "flex h-7 w-full items-center justify-between rounded-md border px-2 font-mono text-[11px] font-semibold transition-all cursor-pointer",
+            isEditingThis
+              ? "border-sky-400 bg-sky-600/25 text-white ring-1 ring-sky-400/50"
+              : "border-slate-700/90 bg-slate-950/90 text-slate-100 hover:border-sky-500/60 hover:bg-slate-900",
+          )}
+        >
+          <span className="truncate tabular-nums">{def.value.toFixed(def.decimals ?? 1)}</span>
+          {def.unit && <span className="text-[9px] text-slate-400 font-normal ml-1">{def.unit}</span>}
+        </button>
 
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("selection");
-              setActiveNumericProp(isEditingThis ? null : def);
-            }}
-            title={`Editar ${def.label} com o editor compacto`}
-            className={cn(
-              "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-mono text-[11px] font-semibold transition-all cursor-pointer shadow-2xs",
-              isEditingThis
-                ? "border-red-500 bg-red-600 text-white shadow-red-900/30 ring-1 ring-red-400"
-                : highlight
-                ? "border-red-500/50 bg-slate-900 text-white hover:border-red-500 hover:bg-slate-800"
-                : "border-slate-800 bg-slate-900/90 text-slate-200 hover:border-slate-700 hover:bg-slate-800"
-            )}
-          >
-            <span>{def.value.toFixed(def.decimals ?? 2)}</span>
-            {def.unit && (
-              <span className="text-[9px] text-slate-400 font-normal">
-                {def.unit}
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* Popover flutuante do Editor Compacto do CHAMFER */}
         {isEditingThis && (
-          <div className="absolute right-0 top-full mt-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
+          <div className="absolute right-0 top-full mt-1 z-50 animate-in fade-in zoom-in-95 duration-100">
             <ChamferCompactNumericEditor
               property={def}
               onChange={(newVal) => handleNumericPropChange(def.key, newVal)}
@@ -388,153 +488,100 @@ export function ChamferPropertiesTab({
     );
   };
 
-  /**
-   * Componente de Campo de Leitura / Informação
-   */
-  const renderInfoRow = (label: string, value: string, symbol?: string) => (
-    <div key={label} className="flex items-center justify-between gap-2 py-0.5">
-      <div className="flex items-center gap-1.5">
-        {symbol && <span className="font-mono text-[10px] text-slate-500">{symbol}</span>}
-        <span className="font-mono text-[10px] text-slate-400">{label}</span>
-      </div>
-      <span className="font-mono text-[10.5px] font-medium text-slate-300">{value}</span>
-    </div>
-  );
+  const activeLayerObj = selectedEntity
+    ? layers.find((l) => l.id === selectedEntity.layer)
+    : null;
 
   return (
-    <div className="flex flex-col gap-2.5 text-slate-200 select-none pb-4">
+    <div
+      data-testid="chamfer-properties-tab"
+      className="flex flex-col gap-2 text-slate-200 select-none pb-3"
+    >
       {/* ===================================================================== */}
-      {/* CASO 1: SEM SELEÇÃO → PROPRIEDADES DA PEÇA & CHAPA                    */}
+      {/* CASO 1: SEM SELEÇÃO → PROPRIEDADES COMPACTAS DA PEÇA & CHAPA          */}
       {/* ===================================================================== */}
       {!selectedEntity && selectedEntities.length === 0 && (
-        <div className="flex flex-col gap-2.5">
-          {/* Cabeçalho da Peça */}
-          <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-            <div className="flex items-center gap-2">
-              <div className="flex size-7 items-center justify-center rounded-lg bg-red-600/15 text-red-500 border border-red-500/25">
-                <Box className="size-4" />
+        <div className="flex flex-col gap-2">
+          {/* A. Cabeçalho Compacto (1 Linha) */}
+          <div className="flex items-center justify-between rounded-lg border border-slate-800/90 bg-slate-900/70 px-2 py-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <div className="flex size-5 shrink-0 items-center justify-center rounded bg-sky-500/15 text-sky-400 border border-sky-500/30">
+                <Box className="size-3" />
+              </div>
+              <span className="font-sans text-[11px] font-bold text-white truncate">
+                Peça & Chapa
+              </span>
+            </div>
+            <span className="rounded bg-slate-800 px-1.5 py-0.5 font-mono text-[9px] text-slate-300">
+              {entities.length} ent.
+            </span>
+          </div>
+
+          {/* Identificação Compacta */}
+          <div className="rounded-lg border border-slate-800/80 bg-slate-900/50 p-2 flex flex-col gap-1.5">
+            <div className="grid grid-cols-1 gap-1.5">
+              <div>
+                <label className="text-[9px] font-mono text-slate-400 block mb-0.5">
+                  Nome da Peça
+                </label>
+                <input
+                  type="text"
+                  value={projectName}
+                  onChange={(e) => onProjectNameChange(e.target.value)}
+                  placeholder="Nome da peça CAD"
+                  className="h-7 w-full rounded-md border border-slate-700 bg-slate-950 px-2 font-sans text-[11px] text-white outline-none focus:border-sky-500"
+                />
               </div>
               <div>
-                <h4 className="font-sans text-xs font-bold text-white leading-tight">
-                  Peça & Chapa
-                </h4>
-                <span className="font-mono text-[9px] text-slate-400">
-                  {entities.length} entidades no desenho
-                </span>
+                <label className="text-[9px] font-mono text-slate-400 block mb-0.5">
+                  Material
+                </label>
+                <select
+                  value={material}
+                  onChange={(e) => onMaterialChange(e.target.value)}
+                  className="h-7 w-full rounded-md border border-slate-700 bg-slate-950 px-1.5 font-sans text-[11px] text-white outline-none focus:border-sky-500"
+                >
+                  <option value="Aço carbono (1020)">Aço Carbono (SAE 1020)</option>
+                  <option value="Aço carbono (A36)">Aço Estrutural (ASTM A36)</option>
+                  <option value="Aço inoxidável (304)">Aço Inox (AISI 304)</option>
+                  <option value="Alumínio (5052-H32)">Alumínio Naval (5052-H32)</option>
+                  <option value="Aço corten">Aço Corten / Resistente</option>
+                </select>
               </div>
             </div>
           </div>
 
-          {/* Seção 1: Identificação do Projeto */}
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5">
-            <div
-              onClick={() => toggleSection("ident")}
-              className="flex items-center justify-between cursor-pointer text-slate-400 hover:text-white mb-2"
-            >
-              <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-slate-300">
-                Identificação
-              </span>
-              {collapsedSections.ident ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-            </div>
-
-            {!collapsedSections.ident && (
-              <div className="flex flex-col gap-2">
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-mono text-slate-400">Nome da Peça</label>
-                  <input
-                    type="text"
-                    value={projectName}
-                    onChange={(e) => onProjectNameChange(e.target.value)}
-                    placeholder="Nome da peça CAD"
-                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 font-sans text-xs text-white outline-none focus:border-red-500"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1">
-                  <label className="text-[10px] font-mono text-slate-400">Material de Fabricação</label>
-                  <select
-                    value={material}
-                    onChange={(e) => onMaterialChange(e.target.value)}
-                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 font-sans text-xs text-white outline-none focus:border-red-500"
-                  >
-                    <option value="Aço carbono (1020)">Aço Carbono (SAE 1020)</option>
-                    <option value="Aço carbono (A36)">Aço Estrutural (ASTM A36)</option>
-                    <option value="Aço inoxidável (304)">Aço Inox (AISI 304)</option>
-                    <option value="Alumínio (5052-H32)">Alumínio Naval (5052-H32)</option>
-                    <option value="Aço corten">Aço Corten / Resistente</option>
-                  </select>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Seção 2: Dimensões Globais da Chapa */}
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5">
-            <div
-              onClick={() => toggleSection("dims")}
-              className="flex items-center justify-between cursor-pointer text-slate-400 hover:text-white mb-2"
-            >
-              <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-slate-300">
-                Dimensões da Chapa
-              </span>
-              {collapsedSections.dims ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-            </div>
-
-            {!collapsedSections.dims && (
-              <div className="flex flex-col gap-1">
-                {renderNumericField(
-                  {
-                    key: "thickness",
-                    label: "Espessura da Chapa",
-                    symbol: "e",
-                    value: thickness,
-                    unit: "mm",
-                    min: 0.5,
-                    max: 50,
-                    defaultStep: 0.5,
-                    stepOptions: [0.1, 0.5, 1, 2],
-                  },
-                  true
-                )}
-                {renderInfoRow("Comprimento (X)", `${overallBounds.width.toFixed(2)} mm`, "↔")}
-                {renderInfoRow("Largura (Y)", `${overallBounds.height.toFixed(2)} mm`, "↕")}
-                {renderInfoRow(
-                  "Área da chapa",
-                  `${((overallBounds.width * overallBounds.height) / 1e6).toFixed(4)} m²`,
-                  "▨"
-                )}
-                {renderInfoRow("Perímetro de corte", `${(totalPerimeter / 1000).toFixed(3)} m`, "✂")}
-              </div>
-            )}
-          </div>
-
-          {/* Seção 3: Parâmetros de Dobra & K-Factor */}
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5">
-            <div
-              onClick={() => toggleSection("dobra")}
-              className="flex items-center justify-between cursor-pointer text-slate-400 hover:text-white mb-2"
-            >
-              <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-slate-300">
-                Dobra & Conformação
-              </span>
-              {collapsedSections.dobra ? <ChevronRight className="size-3.5" /> : <ChevronDown className="size-3.5" />}
-            </div>
-
-            {!collapsedSections.dobra && (
-              <div className="flex flex-col gap-1">
-                {renderNumericField({
-                  key: "bendRadius",
-                  label: "Raio Interno de Dobra",
-                  symbol: "R",
-                  value: bendRadius,
-                  unit: "mm",
-                  min: 0.5,
-                  defaultStep: 0.5,
-                  stepOptions: [0.5, 1, 2, 5],
-                })}
-                {renderNumericField({
+          {/* Dimensões Globais & Dobra em Grade de 2 Colunas */}
+          <div className="rounded-lg border border-slate-800/80 bg-slate-900/50 p-2 flex flex-col gap-1.5">
+            <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-slate-400">
+              Chapa & Conformação
+            </span>
+            <div className="grid grid-cols-2 gap-1.5">
+              {renderGridCellField({
+                key: "thickness",
+                label: "Espessura",
+                symbol: "e",
+                value: thickness,
+                unit: "mm",
+                min: 0.5,
+                max: 50,
+                defaultStep: 0.5,
+                stepOptions: [0.1, 0.5, 1, 2],
+              })}
+              {renderGridCellField({
+                key: "bendRadius",
+                label: "Raio Dobra",
+                symbol: "R",
+                value: bendRadius,
+                unit: "mm",
+                min: 0.5,
+                defaultStep: 0.5,
+                stepOptions: [0.5, 1, 2, 5],
+              })}
+              {renderGridCellField(
+                {
                   key: "kFactor",
-                  label: "Fator K",
+                  label: "Fator K Neutro",
                   symbol: "K",
                   value: kFactor,
                   unit: "",
@@ -543,78 +590,92 @@ export function ChamferPropertiesTab({
                   decimals: 2,
                   defaultStep: 0.05,
                   stepOptions: [0.01, 0.05, 0.1],
-                })}
-              </div>
-            )}
+                },
+                true,
+              )}
+            </div>
+            {/* Resumo técnico em linha única */}
+            <div className="mt-0.5 flex items-center justify-between border-t border-slate-800/80 pt-1.5 font-mono text-[9px] text-slate-400">
+              <span>
+                {overallBounds.width.toFixed(0)}×{overallBounds.height.toFixed(0)} mm
+              </span>
+              <span>•</span>
+              <span>{((overallBounds.width * overallBounds.height) / 1e6).toFixed(3)} m²</span>
+              <span>•</span>
+              <span>Corte {(totalPerimeter / 1000).toFixed(2)} m</span>
+            </div>
           </div>
         </div>
       )}
 
       {/* ===================================================================== */}
-      {/* CASO 2: UMA ENTIDADE SELECIONADA → INSPETOR COMPLETO                  */}
+      {/* CASO 2: UMA ENTIDADE SELECIONADA → LAYOUT COMPACTO SHAPR3D / FUSION   */}
       {/* ===================================================================== */}
-      {selectedEntity && (
-        <div className="flex flex-col gap-2.5">
-          {/* Cabeçalho da Entidade com Tipo e Camada */}
-          <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-            <div className="flex items-center gap-2">
+      {selectedEntity && entityMetrics && (
+        <div className="flex flex-col gap-2">
+          {/* A. CABEÇALHO COMPACTO (1 LINHA): Ícone + Nome/Tipo + Badge Camada + Botões Rápidos */}
+          <div
+            data-testid="properties-entity-header"
+            className="flex items-center justify-between gap-1 rounded-lg border border-slate-800/90 bg-slate-900/80 px-2 py-1.5"
+          >
+            <div className="flex items-center gap-1.5 min-w-0">
               <div
-                className="flex size-7 items-center justify-center rounded-lg border"
+                className="flex size-5 shrink-0 items-center justify-center rounded border"
                 style={{
                   background: `${techColor(selectedEntity.layer)}20`,
-                  borderColor: `${techColor(selectedEntity.layer)}40`,
+                  borderColor: `${techColor(selectedEntity.layer)}45`,
                   color: techColor(selectedEntity.layer),
                 }}
               >
-                {selectedEntity.type === "circle" && <Circle className="size-3.5" />}
-                {selectedEntity.type === "arc" && <CornerUpRight className="size-3.5" />}
-                {selectedEntity.type === "line" && <Minus className="size-3.5" />}
-                {selectedEntity.type === "polyline" && <Square className="size-3.5" />}
-                {selectedEntity.type === "text" && <Type className="size-3.5" />}
+                {selectedEntity.type === "circle" && <Circle className="size-3" />}
+                {selectedEntity.type === "arc" && <CornerUpRight className="size-3" />}
+                {selectedEntity.type === "line" && <Minus className="size-3" />}
+                {selectedEntity.type === "polyline" && <Square className="size-3" />}
+                {selectedEntity.type === "text" && <Type className="size-3" />}
+                {selectedEntity.type === "point" && <Crosshair className="size-3" />}
               </div>
-              <div>
-                <h4 className="font-sans text-xs font-bold text-white capitalize">
-                  {selectedEntity.type === "circle" && "Círculo"}
-                  {selectedEntity.type === "arc" && "Arco de Circunferência"}
-                  {selectedEntity.type === "line" && "Linha Reta"}
-                  {selectedEntity.type === "polyline" && (selectedEntity.closed ? "Retângulo / Polígono" : "Polilinha")}
-                  {selectedEntity.type === "text" && "Texto Técnico"}
-                  {selectedEntity.type === "point" && "Ponto de Referência"}
-                </h4>
-                <span className="font-mono text-[9px] uppercase tracking-wider text-slate-400">
-                  Camada: {selectedEntity.layer}
-                </span>
-              </div>
+              <span className="font-sans text-[11px] font-bold text-white truncate">
+                {isGeometricMarkEntity(selectedEntity)
+                  ? "Marco Geométrico"
+                  : isPersistentDatumEntity(selectedEntity)
+                    ? "Vetor Datum"
+                    : selectedEntity.type === "circle"
+                      ? "Círculo"
+                      : selectedEntity.type === "arc"
+                        ? "Arco"
+                        : selectedEntity.type === "line"
+                          ? "Linha"
+                          : selectedEntity.type === "polyline"
+                            ? selectedEntity.closed
+                              ? "Chapa / Retângulo"
+                              : "Polilinha"
+                            : selectedEntity.type === "text"
+                              ? "Texto"
+                              : "Ponto"}
+              </span>
+              <span
+                className="shrink-0 rounded px-1 py-0.5 font-mono text-[8.5px] font-bold uppercase"
+                style={{
+                  backgroundColor: `${techColor(selectedEntity.layer)}22`,
+                  color: techColor(selectedEntity.layer),
+                }}
+              >
+                {selectedEntity.layer}
+              </span>
             </div>
 
-            {/* Ações Rápidas: Duplicar, Dividir e Excluir */}
-            <div className="flex items-center gap-1">
-              {onDivideEntity && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    onDivideEntity(selectedEntity);
-                  }}
-                  title="Dividir em partes iguais (2 a 50)"
-                  className="rounded-lg p-1 text-slate-400 hover:bg-red-500/20 hover:text-red-400 transition-colors cursor-pointer"
-                >
-                  <Divide className="size-3.5" />
-                </button>
-              )}
+            <div className="flex items-center gap-0.5 shrink-0">
               <button
                 type="button"
                 onClick={() => {
                   triggerHaptic("selection");
-                  const item = copyToGlobalClipboard(entities, [selectedEntity.id]);
-                  if (item) {
-                    toast.success(`✓ "${item.title}" copiado para a Área de Transferência.`);
-                  }
+                  const dup = translate(selectedEntity, 10, 10);
+                  onDuplicateEntity({ ...dup, id: `ent_${Math.random().toString(36).slice(2, 9)}` });
                 }}
-                title="Copiar para Área de Transferência"
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors"
+                title="Duplicar entidade"
+                className="rounded p-1 text-slate-400 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer"
               >
-                <Copy className="size-3.5" />
+                <Copy className="size-3" />
               </button>
               <button
                 type="button"
@@ -624,656 +685,554 @@ export function ChamferPropertiesTab({
                   setSelection([]);
                 }}
                 title="Excluir entidade"
-                className="rounded-lg p-1 text-slate-400 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                className="rounded p-1 text-slate-400 hover:bg-red-500/20 hover:text-red-400 transition-colors cursor-pointer"
               >
-                <Trash2 className="size-3.5" />
+                <Trash2 className="size-3" />
               </button>
             </div>
           </div>
 
-          {/* ---------------- LINHA ---------------- */}
-          {selectedEntity.type === "line" && (() => {
-            const dx = selectedEntity.x2 - selectedEntity.x1;
-            const dy = selectedEntity.y2 - selectedEntity.y1;
-            const len = Math.hypot(dx, dy);
-            const ang = (Math.atan2(dy, dx) * 180) / Math.PI;
+          {/* B. DIMENSÕES (GRADE DE 2 COLUNAS — APENAS CAMPOS COMPATÍVEIS COM A ENTIDADE) */}
+          <div
+            data-testid="properties-dimensions-section"
+            className="rounded-lg border border-slate-800/80 bg-slate-900/50 p-2 flex flex-col gap-1.5"
+          >
+            <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-slate-400">
+              Dimensões
+            </span>
 
-            return (
-              <div className="flex flex-col gap-2">
-                <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 flex flex-col gap-1">
-                  <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-1">
-                    Comprimento & Direção
-                  </span>
-                  {renderNumericField(
-                    {
-                      key: "length",
-                      label: "Comprimento",
-                      symbol: "↔",
-                      value: len,
-                      unit: "mm",
-                      min: 0.1,
-                      defaultStep: 5,
-                      stepOptions: [0.1, 1, 5, 10],
-                    },
-                    true
-                  )}
-                  {renderNumericField({
-                    key: "angle",
-                    label: "Ângulo Polar",
-                    symbol: "∠",
-                    value: ang,
-                    unit: "°",
-                    defaultStep: 5,
-                    stepOptions: [1, 5, 15, 45],
-                    allowNegative: true,
-                  })}
-                  {renderInfoRow("Comprimento Real", `${len.toFixed(2)} mm`, "📏")}
-                  {renderInfoRow("Projeção ΔX", `${Math.abs(dx).toFixed(2)} mm`)}
-                  {renderInfoRow("Projeção ΔY", `${Math.abs(dy).toFixed(2)} mm`)}
-                </div>
-
-                <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 flex flex-col gap-1">
-                  <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-1">
-                    Pontos Extremos
-                  </span>
-                  {renderNumericField({
-                    key: "x1",
-                    label: "X Inicial (X1)",
-                    symbol: "X1",
-                    value: selectedEntity.x1,
-                    unit: "mm",
-                    defaultStep: 5,
-                    allowNegative: true,
-                  })}
-                  {renderNumericField({
-                    key: "y1",
-                    label: "Y Inicial (Y1)",
-                    symbol: "Y1",
-                    value: selectedEntity.y1,
-                    unit: "mm",
-                    defaultStep: 5,
-                    allowNegative: true,
-                  })}
-                  {renderNumericField({
-                    key: "x2",
-                    label: "X Final (X2)",
-                    symbol: "X2",
-                    value: selectedEntity.x2,
-                    unit: "mm",
-                    defaultStep: 5,
-                    allowNegative: true,
-                  })}
-                  {renderNumericField({
-                    key: "y2",
-                    label: "Y Final (Y2)",
-                    symbol: "Y2",
-                    value: selectedEntity.y2,
-                    unit: "mm",
-                    defaultStep: 5,
-                    allowNegative: true,
-                  })}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* ---------------- CÍRCULO ---------------- */}
-          {selectedEntity.type === "circle" && (() => {
-            const diameter = selectedEntity.r * 2;
-            const perimeter = 2 * Math.PI * selectedEntity.r;
-            const area = Math.PI * Math.pow(selectedEntity.r, 2);
-
-            return (
-              <div className="flex flex-col gap-2">
-                <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 flex flex-col gap-1">
-                  <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-1">
-                    Dimensões Radiais
-                  </span>
-                  {renderNumericField(
-                    {
-                      key: "diameter",
-                      label: "Diâmetro",
-                      symbol: "Ø",
-                      value: diameter,
-                      unit: "mm",
-                      min: 0.1,
-                      defaultStep: 1,
-                      stepOptions: [0.1, 1, 5, 10],
-                    },
-                    true
-                  )}
-                  {renderNumericField({
-                    key: "radius",
-                    label: "Raio (R)",
-                    symbol: "R",
-                    value: selectedEntity.r,
-                    unit: "mm",
-                    min: 0.05,
-                    defaultStep: 1,
-                    stepOptions: [0.1, 1, 5, 10],
-                  })}
-                  {renderInfoRow("Circunferência", `${perimeter.toFixed(2)} mm`)}
-                  {renderInfoRow("Área do furo", `${area.toFixed(2)} mm²`)}
-                </div>
-
-                <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 flex flex-col gap-1">
-                  <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-1">
-                    Centro do Furo
-                  </span>
-                  {renderNumericField({
-                    key: "cx",
-                    label: "Centro X",
-                    symbol: "X",
-                    value: selectedEntity.cx,
-                    unit: "mm",
-                    defaultStep: 5,
-                    stepOptions: [0.1, 1, 5, 10],
-                    allowNegative: true,
-                  })}
-                  {renderNumericField({
-                    key: "cy",
-                    label: "Centro Y",
-                    symbol: "Y",
-                    value: selectedEntity.cy,
-                    unit: "mm",
-                    defaultStep: 5,
-                    stepOptions: [0.1, 1, 5, 10],
-                    allowNegative: true,
-                  })}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* ---------------- ARCO ---------------- */}
-          {selectedEntity.type === "arc" && (() => {
-            let sweep = selectedEntity.a1 - selectedEntity.a0;
-            while (sweep < 0) sweep += Math.PI * 2;
-            const sweepDeg = (sweep * 180) / Math.PI;
-            const arcLength = selectedEntity.r * sweep;
-
-            return (
-              <div className="flex flex-col gap-2">
-                <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 flex flex-col gap-1">
-                  <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-1">
-                    Dimensões do Arco
-                  </span>
-                  {renderNumericField(
-                    {
-                      key: "radius",
-                      label: "Raio (R)",
-                      symbol: "R",
-                      value: selectedEntity.r,
-                      unit: "mm",
-                      min: 0.1,
-                      defaultStep: 1,
-                      stepOptions: [0.1, 1, 5, 10],
-                    },
-                    true
-                  )}
-                  {renderNumericField({
-                    key: "sweep",
-                    label: "Ângulo de Abertura",
-                    symbol: "∠",
-                    value: sweepDeg,
-                    unit: "°",
-                    min: 1,
-                    max: 360,
-                    defaultStep: 5,
-                    stepOptions: [1, 5, 15, 45],
-                  })}
-                  {renderNumericField({
-                    key: "a0",
-                    label: "Ângulo Inicial",
-                    symbol: "∠0",
-                    value: deg(selectedEntity.a0),
-                    unit: "°",
-                    defaultStep: 15,
-                    stepOptions: [1, 5, 15, 45],
-                    allowNegative: true,
-                  })}
-                  {renderNumericField({
-                    key: "a1",
-                    label: "Ângulo Final",
-                    symbol: "∠1",
-                    value: deg(selectedEntity.a1),
-                    unit: "°",
-                    defaultStep: 15,
-                    stepOptions: [1, 5, 15, 45],
-                    allowNegative: true,
-                  })}
-                  {renderInfoRow("Comprimento do arco", `${arcLength.toFixed(2)} mm`, "⌒")}
-                </div>
-
-                <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 flex flex-col gap-1">
-                  <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-1">
-                    Centro do Arco
-                  </span>
-                  {renderNumericField({
-                    key: "cx",
-                    label: "Centro X",
-                    symbol: "X",
-                    value: selectedEntity.cx,
-                    unit: "mm",
-                    defaultStep: 5,
-                    allowNegative: true,
-                  })}
-                  {renderNumericField({
-                    key: "cy",
-                    label: "Centro Y",
-                    symbol: "Y",
-                    value: selectedEntity.cy,
-                    unit: "mm",
-                    defaultStep: 5,
-                    allowNegative: true,
-                  })}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* ---------------- POLILINHA / RETÂNGULO ---------------- */}
-          {selectedEntity.type === "polyline" && (() => {
-            const xs = selectedEntity.pts.map((p) => p.x);
-            const ys = selectedEntity.pts.map((p) => p.y);
-            const minX = Math.min(...xs);
-            const minY = Math.min(...ys);
-            const w = Math.max(...xs) - minX;
-            const h = Math.max(...ys) - minY;
-
-            let polyLen = 0;
-            for (let i = 0; i < selectedEntity.pts.length - 1; i++) {
-              polyLen += Math.hypot(selectedEntity.pts[i + 1].x - selectedEntity.pts[i].x, selectedEntity.pts[i + 1].y - selectedEntity.pts[i].y);
-            }
-            if (selectedEntity.closed && selectedEntity.pts.length > 2) {
-              polyLen += Math.hypot(selectedEntity.pts[0].x - selectedEntity.pts[selectedEntity.pts.length - 1].x, selectedEntity.pts[0].y - selectedEntity.pts[selectedEntity.pts.length - 1].y);
-            }
-
-            const activeStructProfile = getEntityStructuralProfile(selectedEntity);
-            const closureLabel = activeStructProfile
-              ? formatStructuralProfileClosureLabel(activeStructProfile)
-              : selectedEntity.closed
-                ? "Fechada (Chapa/Loop)"
-                : "Aberta";
-
-            return (
-              <div className="flex flex-col gap-2">
-                <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 flex flex-col gap-1">
-                  <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-1">
-                    Dimensões do Contorno
-                  </span>
-                  {renderNumericField(
-                    {
-                      key: "width",
-                      label: "Largura (X)",
-                      symbol: "↔",
-                      value: w,
-                      unit: "mm",
-                      min: 0.1,
-                      defaultStep: 5,
-                      stepOptions: [0.1, 1, 5, 10],
-                    },
-                    true
-                  )}
-                  {renderNumericField(
-                    {
-                      key: "height",
-                      label: "Altura (Y)",
-                      symbol: "↕",
-                      value: h,
-                      unit: "mm",
-                      min: 0.1,
-                      defaultStep: 5,
-                      stepOptions: [0.1, 1, 5, 10],
-                    },
-                    true
-                  )}
-                  {renderInfoRow("Perímetro de contorno", `${polyLen.toFixed(2)} mm`)}
-                  {renderInfoRow("Número de vértices", `${selectedEntity.pts.length}`)}
-                  {renderInfoRow("Fechamento", closureLabel)}
-                </div>
-
-                {/* NOVO CARTÃO: PERFIL ESTRUTURAL (CATÁLOGO BOM) ABAIXO DE DIMENSÕES DO CONTORNO E ACIMA DE CAMADA */}
-                <ChamferStructuralProfileCard
-                  entity={selectedEntity}
-                  onUpdateEntity={onUpdateEntity}
-                />
-              </div>
-            );
-          })()}
-
-          {/* ---------------- TEXTO ---------------- */}
-          {selectedEntity.type === "text" && (
-            <div className="flex flex-col gap-2">
-              <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 flex flex-col gap-1">
-                <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-1">
-                  Conteúdo do Texto
-                </span>
-                <input
-                  type="text"
-                  value={selectedEntity.text}
-                  onChange={(e) => onUpdateEntity({ ...selectedEntity, text: e.target.value })}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-1.5 font-sans text-xs text-white outline-none focus:border-red-500 mb-1.5"
-                />
-                {renderNumericField({
-                  key: "size",
-                  label: "Altura da Fonte",
-                  symbol: "H",
-                  value: selectedEntity.size,
+            {/* Retângulo / Chapa / Polilinha -> Largura (X) e Altura (Y) */}
+            {selectedEntity.type === "polyline" && (
+              <div className="grid grid-cols-2 gap-1.5">
+                {renderGridCellField({
+                  key: "width",
+                  label: "Largura (X)",
+                  symbol: "W",
+                  value: entityMetrics.width ?? 0,
                   unit: "mm",
-                  min: 1,
-                  defaultStep: 1,
-                  stepOptions: [0.5, 1, 2, 5],
+                  min: 0.1,
+                  defaultStep: 5,
+                  stepOptions: [0.1, 1, 5, 10],
                 })}
-                {renderNumericField({
-                  key: "rotation",
-                  label: "Rotação",
+                {renderGridCellField({
+                  key: "height",
+                  label: "Altura (Y)",
+                  symbol: "H",
+                  value: entityMetrics.height ?? 0,
+                  unit: "mm",
+                  min: 0.1,
+                  defaultStep: 5,
+                  stepOptions: [0.1, 1, 5, 10],
+                })}
+              </div>
+            )}
+
+            {/* Círculo / Arco -> Raio (R) e Diâmetro (Ø) */}
+            {(selectedEntity.type === "circle" || selectedEntity.type === "arc") && (
+              <div className="grid grid-cols-2 gap-1.5">
+                {renderGridCellField({
+                  key: "radius",
+                  label: "Raio (R)",
+                  symbol: "R",
+                  value: selectedEntity.r,
+                  unit: "mm",
+                  min: 0.05,
+                  defaultStep: 1,
+                  stepOptions: [0.1, 1, 5, 10],
+                })}
+                {renderGridCellField({
+                  key: "diameter",
+                  label: "Diâmetro (Ø)",
+                  symbol: "Ø",
+                  value: selectedEntity.r * 2,
+                  unit: "mm",
+                  min: 0.1,
+                  defaultStep: 1,
+                  stepOptions: [0.1, 1, 5, 10],
+                })}
+              </div>
+            )}
+
+            {/* Linha -> Comprimento (L) e Ângulo (∠) */}
+            {selectedEntity.type === "line" && (
+              <div className="grid grid-cols-2 gap-1.5">
+                {renderGridCellField({
+                  key: "length",
+                  label: "Comprimento (L)",
+                  symbol: "L",
+                  value: entityMetrics.perimeter,
+                  unit: "mm",
+                  min: 0.1,
+                  defaultStep: 5,
+                  stepOptions: [0.1, 1, 5, 10],
+                })}
+                {renderGridCellField({
+                  key: "angle",
+                  label: "Ângulo (∠)",
                   symbol: "∠",
-                  value: deg(selectedEntity.rotation ?? 0),
+                  value: entityMetrics.rotDeg,
                   unit: "°",
-                  defaultStep: 15,
+                  defaultStep: 5,
                   stepOptions: [1, 5, 15, 45],
                   allowNegative: true,
                 })}
               </div>
-            </div>
-          )}
+            )}
 
-          {/* ================================================================= */}
-          {/* MODELAGEM SÓLIDA 3D (ELEVAÇÃO +Z, EXTRUSÃO & LOFT 3D MULTISSEÇÃO) */}
-          {/* ================================================================= */}
-          <div className="rounded-xl border border-sky-500/30 bg-slate-900/75 p-2.5 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-sky-400">
-                Modelagem Sólida 3D (Loft / +Z)
-              </span>
-              <span className="rounded bg-sky-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-sky-300 border border-sky-500/30">
-                Z = {getEntityElevationZ(selectedEntity).toFixed(1)} mm
-              </span>
-            </div>
+            {/* Texto -> Altura e Rotação */}
+            {selectedEntity.type === "text" && (
+              <div className="flex flex-col gap-1.5">
+                <input
+                  type="text"
+                  value={selectedEntity.text}
+                  onChange={(e) => onUpdateEntity({ ...selectedEntity, text: e.target.value })}
+                  className="h-7 w-full rounded-md border border-slate-700 bg-slate-950 px-2 font-sans text-[11px] text-white outline-none focus:border-sky-500"
+                />
+                <div className="grid grid-cols-2 gap-1.5">
+                  {renderGridCellField({
+                    key: "size",
+                    label: "Altura",
+                    symbol: "H",
+                    value: selectedEntity.size,
+                    unit: "mm",
+                    min: 1,
+                    defaultStep: 1,
+                    stepOptions: [0.5, 1, 2, 5],
+                  })}
+                  {renderGridCellField({
+                    key: "rotation",
+                    label: "Ângulo",
+                    symbol: "∠",
+                    value: deg(selectedEntity.rotation ?? 0),
+                    unit: "°",
+                    defaultStep: 15,
+                    allowNegative: true,
+                  })}
+                </div>
+              </div>
+            )}
 
-            <div className="flex flex-col gap-1">
-              {renderNumericField({
-                key: "elevationZ",
-                label: "Elevação Z (+Z)",
-                symbol: "↕Z",
-                value: getEntityElevationZ(selectedEntity),
-                unit: "mm",
-                defaultStep: 10,
-                stepOptions: [1, 5, 10, 20, 60],
-                allowNegative: true,
-              })}
-              {renderNumericField({
-                key: "extrudeHeight",
-                label: "Altura Extrusão 3D",
-                symbol: "H3D",
-                value: getEntityExtrudeHeight(selectedEntity, thickness),
-                unit: "mm",
-                defaultStep: 5,
-                stepOptions: [1, 2, 5, 10, 25],
-                min: 0,
-              })}
-            </div>
-
-            {/* Atalhos rápidos de cota de elevação Z */}
-            <div className="grid grid-cols-4 gap-1">
-              {[0, 40, 60, 120].map((zPreset) => {
-                const activeZ = Math.abs(getEntityElevationZ(selectedEntity) - zPreset) < 0.05;
-                return (
-                  <button
-                    key={zPreset}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic("selection");
-                      onUpdateEntity(setEntityElevationZ(selectedEntity, zPreset));
-                    }}
-                    className={`rounded-md border py-1 font-mono text-[9px] font-bold transition-colors ${
-                      activeZ
-                        ? "border-sky-400 bg-sky-500/25 text-white"
-                        : "border-slate-700/80 bg-slate-950/80 text-slate-300 hover:border-sky-500/50"
-                    }`}
-                  >
-                    Z {zPreset}mm
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Painel Paramétrico de Sólido LOFT 3D */}
-            {isLoft3DEntity(selectedEntity) && (() => {
-              const spec = getEntityLoft3DSpec(selectedEntity);
-              if (!spec) return null;
-              return (
-                <div className="mt-1 flex flex-col gap-2 border-t border-slate-800 pt-2">
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-amber-400">
-                      Transição Loft 3D ({spec.sectionEntities.length} Seções)
+            {/* Marco Geométrico ou Datum Persistente */}
+            {selectedEntity.type === "point" && (
+              <div className="font-mono text-[9.5px] text-slate-300">
+                {isGeometricMarkEntity(selectedEntity) ? (
+                  <div className="flex items-center justify-between rounded bg-purple-950/50 border border-purple-500/40 px-2 py-1 text-purple-200">
+                    <span>{getGeometricMarkSpec(selectedEntity)?.badgeLabel ?? "Marco Associativo"}</span>
+                    <span className="text-[8.5px] text-purple-300">
+                      {getGeometricMarkSpec(selectedEntity)?.isOrphan ? "⚠ Órfão" : "✓ Vinculado"}
                     </span>
                   </div>
+                ) : isPersistentDatumEntity(selectedEntity) ? (
+                  (() => {
+                    const ds = getPersistentDatumSpec(selectedEntity);
+                    if (!ds) return null;
+                    const dm = computePersistentDatumMetrics(ds.origin, ds.target);
+                    return (
+                      <div className="grid grid-cols-2 gap-1 text-[9px] text-sky-300">
+                        <span>ΔX: {dm.dx.toFixed(1)} mm</span>
+                        <span>ΔY: {dm.dy.toFixed(1)} mm</span>
+                        <span>L: {dm.lengthL.toFixed(1)} mm</span>
+                        <span>∠: {dm.angleDeg.toFixed(1)}°</span>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <span>Ponto de Referência ({selectedEntity.x.toFixed(1)}, {selectedEntity.y.toFixed(1)})</span>
+                )}
+              </div>
+            )}
 
-                  {/* Modo da Superfície: Suave vs Reto */}
-                  <div className="grid grid-cols-2 gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        const rebuilt = createLoft3DEntity({
-                          sectionEntities: spec.sectionEntities,
-                          surfaceMode: "smooth",
-                          bodyMode: spec.bodyMode,
-                          wallThicknessMm: spec.wallThicknessMm,
-                          layer: selectedEntity.layer,
-                          existingId: selectedEntity.id,
-                        });
-                        if (rebuilt) onUpdateEntity(rebuilt);
-                      }}
-                      className={`rounded-lg border py-1 font-mono text-[9px] font-bold ${
-                        spec.surfaceMode === "smooth"
-                          ? "border-sky-400 bg-sky-500/25 text-white"
-                          : "border-slate-700 bg-slate-950 text-slate-400"
-                      }`}
-                    >
-                      Suave (Smooth)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        const rebuilt = createLoft3DEntity({
-                          sectionEntities: spec.sectionEntities,
-                          surfaceMode: "ruled",
-                          bodyMode: spec.bodyMode,
-                          wallThicknessMm: spec.wallThicknessMm,
-                          layer: selectedEntity.layer,
-                          existingId: selectedEntity.id,
-                        });
-                        if (rebuilt) onUpdateEntity(rebuilt);
-                      }}
-                      className={`rounded-lg border py-1 font-mono text-[9px] font-bold ${
-                        spec.surfaceMode === "ruled"
-                          ? "border-sky-400 bg-sky-500/25 text-white"
-                          : "border-slate-700 bg-slate-950 text-slate-400"
-                      }`}
-                    >
-                      Reto (Ruled)
-                    </button>
-                  </div>
-
-                  {/* Modo de Corpo: Maciço vs Casca */}
-                  <div className="grid grid-cols-2 gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        const rebuilt = createLoft3DEntity({
-                          sectionEntities: spec.sectionEntities,
-                          surfaceMode: spec.surfaceMode,
-                          bodyMode: "solid",
-                          wallThicknessMm: spec.wallThicknessMm,
-                          layer: selectedEntity.layer,
-                          existingId: selectedEntity.id,
-                        });
-                        if (rebuilt) onUpdateEntity(rebuilt);
-                      }}
-                      className={`rounded-lg border py-1 font-mono text-[9px] font-bold ${
-                        spec.bodyMode === "solid"
-                          ? "border-emerald-400 bg-emerald-500/20 text-white"
-                          : "border-slate-700 bg-slate-950 text-slate-400"
-                      }`}
-                    >
-                      Sólido Maciço
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("selection");
-                        const rebuilt = createLoft3DEntity({
-                          sectionEntities: spec.sectionEntities,
-                          surfaceMode: spec.surfaceMode,
-                          bodyMode: "shell",
-                          wallThicknessMm: thickness,
-                          layer: selectedEntity.layer,
-                          existingId: selectedEntity.id,
-                        });
-                        if (rebuilt) onUpdateEntity(rebuilt);
-                      }}
-                      className={`rounded-lg border py-1 font-mono text-[9px] font-bold ${
-                        spec.bodyMode === "shell"
-                          ? "border-emerald-400 bg-emerald-500/20 text-white"
-                          : "border-slate-700 bg-slate-950 text-slate-400"
-                      }`}
-                    >
-                      Casca ({thickness}mm)
-                    </button>
-                  </div>
-
-                  {/* Lista de Seções Transversais com edição rápida de Z */}
-                  <div className="flex flex-col gap-1">
-                    {spec.sectionEntities.map((sec, idx) => {
-                      const zVal = getEntityElevationZ(sec);
-                      return (
-                        <div
-                          key={sec.id || idx}
-                          className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950/90 px-2 py-1"
-                        >
-                          <span className="font-mono text-[9px] text-slate-300">
-                            <b>[{idx + 1}]</b> {classifyProfileKindLabel(sec)}
-                          </span>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextSections = spec.sectionEntities.map((s, i) =>
-                                  i === idx ? setEntityElevationZ(s, zVal - 15) : s,
-                                );
-                                const rebuilt = createLoft3DEntity({
-                                  sectionEntities: nextSections,
-                                  surfaceMode: spec.surfaceMode,
-                                  bodyMode: spec.bodyMode,
-                                  wallThicknessMm: spec.wallThicknessMm,
-                                  layer: selectedEntity.layer,
-                                  existingId: selectedEntity.id,
-                                });
-                                if (rebuilt) onUpdateEntity(rebuilt);
-                              }}
-                              className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[9px] text-slate-300 hover:bg-slate-800"
-                            >
-                              -15
-                            </button>
-                            <span className="min-w-[52px] text-center font-mono text-[9px] font-bold text-sky-400">
-                              {zVal.toFixed(0)} mm
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const nextSections = spec.sectionEntities.map((s, i) =>
-                                  i === idx ? setEntityElevationZ(s, zVal + 15) : s,
-                                );
-                                const rebuilt = createLoft3DEntity({
-                                  sectionEntities: nextSections,
-                                  surfaceMode: spec.surfaceMode,
-                                  bodyMode: spec.bodyMode,
-                                  wallThicknessMm: spec.wallThicknessMm,
-                                  layer: selectedEntity.layer,
-                                  existingId: selectedEntity.id,
-                                });
-                                if (rebuilt) onUpdateEntity(rebuilt);
-                              }}
-                              className="rounded border border-slate-700 bg-slate-900 px-1.5 py-0.5 font-mono text-[9px] text-slate-300 hover:bg-slate-800"
-                            >
-                              +15
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  {onDecomposeLoftEntity && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("action");
-                        onDecomposeLoftEntity(selectedEntity);
-                        toast.success("Sólido Loft 3D decomposto em seus perfis 2D originais.");
-                      }}
-                      className="mt-1 flex items-center justify-center gap-1.5 rounded-lg border border-amber-500/40 bg-amber-500/15 py-1.5 font-mono text-[10px] font-bold text-amber-300 hover:bg-amber-500/25"
-                    >
-                      Decompor em Perfis 2D
-                    </button>
-                  )}
-                </div>
-              );
-            })()}
+            {/* Resumo Técnico Discreto em Linha Única: Perímetro, Área, Nº de Vértices */}
+            <div
+              data-testid="properties-technical-summary"
+              className="mt-0.5 flex items-center justify-between border-t border-slate-800/80 pt-1 font-mono text-[9px] text-slate-400"
+            >
+              <span title="Perímetro">Perím: {entityMetrics.perimeter.toFixed(1)}mm</span>
+              <span>•</span>
+              <span title="Área">Área: {(entityMetrics.area / 100).toFixed(1)}cm²</span>
+              <span>•</span>
+              <span title="Número de vértices">Vértices: {entityMetrics.vertexCount}</span>
+            </div>
           </div>
 
-          {/* Seletor de Camada da Entidade */}
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 flex items-center justify-between">
-            <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-slate-400">
-              Camada
+          {/* C. TRANSFORMAÇÃO (GRADE DE 2 COLUNAS: Posição X, Posição Y, Rotação °) */}
+          <div
+            data-testid="properties-transform-section"
+            className="rounded-lg border border-slate-800/80 bg-slate-900/50 p-2 flex flex-col gap-1.5"
+          >
+            <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-slate-400">
+              Transformação
             </span>
-            <select
-              value={selectedEntity.layer}
-              onChange={(e) => onUpdateEntity({ ...selectedEntity, layer: e.target.value })}
-              className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1 font-mono text-xs text-white outline-none focus:border-red-500"
+            <div className="grid grid-cols-2 gap-1.5">
+              {renderGridCellField({
+                key: "posX",
+                label: "Posição X",
+                symbol: "X",
+                value: entityMetrics.posX,
+                unit: "mm",
+                defaultStep: 5,
+                stepOptions: [0.1, 1, 5, 10],
+                allowNegative: true,
+              })}
+              {renderGridCellField({
+                key: "posY",
+                label: "Posição Y",
+                symbol: "Y",
+                value: entityMetrics.posY,
+                unit: "mm",
+                defaultStep: 5,
+                stepOptions: [0.1, 1, 5, 10],
+                allowNegative: true,
+              })}
+              {renderGridCellField(
+                {
+                  key: "rotDeg",
+                  label: "Rotação (°)",
+                  symbol: "∠",
+                  value: entityMetrics.rotDeg,
+                  unit: "°",
+                  defaultStep: 15,
+                  stepOptions: [1, 5, 15, 45, 90],
+                  allowNegative: true,
+                },
+                true,
+              )}
+            </div>
+          </div>
+
+          {/* D. PERFIL ESTRUTURAL (BOM) & APARÊNCIA (Chapa Plana vs Metalão / Perfil BOM, Camada, Cor, Visibilidade) */}
+          <div
+            data-testid="properties-bom-appearance-section"
+            className="flex flex-col gap-1.5"
+          >
+            {(selectedEntity.type === "polyline" || selectedEntity.type === "line") && (
+              <ChamferStructuralProfileCard
+                entity={selectedEntity}
+                onUpdateEntity={onUpdateEntity}
+              />
+            )}
+
+            <div className="rounded-lg border border-slate-800/80 bg-slate-900/50 p-2 flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                  Camada & Aparência
+                </span>
+                <span className="font-mono text-[8.5px] text-slate-400">
+                  {getEntityStructuralProfile(selectedEntity) ? "Metalão / Perfil BOM" : "Chapa Plana"}
+                </span>
+              </div>
+
+              <div className="grid grid-cols-[1fr_auto_auto] items-center gap-1.5">
+                <select
+                  aria-label="Camada da entidade"
+                  value={selectedEntity.layer}
+                  onChange={(e) => onUpdateEntity({ ...selectedEntity, layer: e.target.value })}
+                  className="h-7 w-full rounded-md border border-slate-700 bg-slate-950 px-1.5 font-mono text-[10.5px] text-white outline-none focus:border-sky-500"
+                >
+                  {layers.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Indicador de Cor Técnica */}
+                <div
+                  title={`Cor da camada: ${techColor(selectedEntity.layer)}`}
+                  className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-700 bg-slate-950"
+                >
+                  <span
+                    className="size-3.5 rounded-full border border-white/20"
+                    style={{ backgroundColor: techColor(selectedEntity.layer) }}
+                  />
+                </div>
+
+                {/* Botão de Visibilidade da Camada */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!setLayers || !activeLayerObj) return;
+                    triggerHaptic("selection");
+                    setLayers((prev) =>
+                      prev.map((l) =>
+                        l.id === activeLayerObj.id ? { ...l, visible: !l.visible } : l,
+                      ),
+                    );
+                  }}
+                  title={
+                    activeLayerObj?.visible !== false
+                      ? "Camada visível (clique para ocultar)"
+                      : "Camada oculta (clique para exibir)"
+                  }
+                  className="flex h-7 w-7 items-center justify-center rounded-md border border-slate-700 bg-slate-950 text-slate-300 hover:border-sky-500/50 hover:text-white cursor-pointer"
+                >
+                  {activeLayerObj?.visible !== false ? (
+                    <Eye className="size-3.5 text-sky-400" />
+                  ) : (
+                    <EyeOff className="size-3.5 text-slate-500" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* E. AÇÕES RÁPIDAS: Editar, Duplicar, Array e Excluir (Vermelho reservado exclusivamente para Excluir) */}
+          <div
+            data-testid="properties-quick-actions"
+            className="rounded-lg border border-slate-800/80 bg-slate-900/50 p-2 flex flex-col gap-1.5"
+          >
+            <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-slate-400">
+              Ações Rápidas
+            </span>
+            <div className="grid grid-cols-4 gap-1">
+              {/* Editar */}
+              <button
+                type="button"
+                data-testid="prop-action-edit"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  if (selectedEntity.type === "polyline") {
+                    setActiveNumericProp({
+                      key: "width",
+                      label: "Largura (X)",
+                      symbol: "W",
+                      value: entityMetrics.width ?? 100,
+                      unit: "mm",
+                      min: 0.1,
+                      defaultStep: 5,
+                    });
+                  } else if (selectedEntity.type === "circle" || selectedEntity.type === "arc") {
+                    setActiveNumericProp({
+                      key: "diameter",
+                      label: "Diâmetro (Ø)",
+                      symbol: "Ø",
+                      value: selectedEntity.r * 2,
+                      unit: "mm",
+                      min: 0.1,
+                      defaultStep: 1,
+                    });
+                  } else if (selectedEntity.type === "line") {
+                    setActiveNumericProp({
+                      key: "length",
+                      label: "Comprimento (L)",
+                      symbol: "L",
+                      value: entityMetrics.perimeter,
+                      unit: "mm",
+                      min: 0.1,
+                      defaultStep: 5,
+                    });
+                  } else {
+                    setActiveNumericProp({
+                      key: "posX",
+                      label: "Posição X",
+                      symbol: "X",
+                      value: entityMetrics.posX,
+                      unit: "mm",
+                      defaultStep: 5,
+                      allowNegative: true,
+                    });
+                  }
+                }}
+                className="flex flex-col items-center justify-center gap-0.5 rounded-md border border-slate-700/80 bg-slate-950/90 py-1.5 font-mono text-[9px] font-semibold text-slate-200 hover:border-sky-500/60 hover:text-sky-300 transition-colors cursor-pointer"
+              >
+                <Edit3 className="size-3.5 text-sky-400" />
+                <span>Editar</span>
+              </button>
+
+              {/* Duplicar */}
+              <button
+                type="button"
+                data-testid="prop-action-duplicate"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  copyToGlobalClipboard(entities, [selectedEntity.id]);
+                  const dup = translate(selectedEntity, 10, 10);
+                  const newEnt = { ...dup, id: `ent_${Math.random().toString(36).slice(2, 9)}` };
+                  onDuplicateEntity(newEnt);
+                  setSelection([newEnt.id]);
+                  toast.success("Entidade duplicada (+10, +10 mm).");
+                }}
+                className="flex flex-col items-center justify-center gap-0.5 rounded-md border border-slate-700/80 bg-slate-950/90 py-1.5 font-mono text-[9px] font-semibold text-slate-200 hover:border-sky-500/60 hover:text-sky-300 transition-colors cursor-pointer"
+              >
+                <Copy className="size-3.5 text-sky-400" />
+                <span>Duplicar</span>
+              </button>
+
+              {/* Array */}
+              <button
+                type="button"
+                data-testid="prop-action-array"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  if (onOpenArray) {
+                    onOpenArray();
+                  } else if (onDivideEntity) {
+                    onDivideEntity(selectedEntity);
+                  }
+                }}
+                className="flex flex-col items-center justify-center gap-0.5 rounded-md border border-slate-700/80 bg-slate-950/90 py-1.5 font-mono text-[9px] font-semibold text-slate-200 hover:border-sky-500/60 hover:text-sky-300 transition-colors cursor-pointer"
+              >
+                <Grid className="size-3.5 text-sky-400" />
+                <span>Array</span>
+              </button>
+
+              {/* Excluir (Vermelho reservado exclusivamente para ação destrutiva) */}
+              <button
+                type="button"
+                data-testid="prop-action-delete"
+                onClick={() => {
+                  triggerHaptic("warning");
+                  onDeleteEntity(selectedEntity.id);
+                  setSelection([]);
+                }}
+                className="flex flex-col items-center justify-center gap-0.5 rounded-md border border-red-900/60 bg-red-950/40 py-1.5 font-mono text-[9px] font-semibold text-red-300 hover:border-red-500 hover:bg-red-900/60 hover:text-white transition-colors cursor-pointer"
+              >
+                <Trash2 className="size-3.5 text-red-400" />
+                <span>Excluir</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Modelagem Sólida 3D (+Z / Loft) recolhível para manter o painel enxuto */}
+          <div className="rounded-lg border border-slate-800/80 bg-slate-900/40 p-2 flex flex-col gap-1.5">
+            <button
+              type="button"
+              onClick={() => toggleSection("loft3d")}
+              className="flex items-center justify-between text-left cursor-pointer"
             >
-              {layers.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
-            </select>
+              <span className="font-mono text-[9px] font-bold uppercase tracking-wider text-sky-400">
+                Elevação +Z & Extrusão 3D
+              </span>
+              <div className="flex items-center gap-1">
+                <span className="rounded bg-sky-500/15 px-1 py-0.5 font-mono text-[8.5px] font-bold text-sky-300">
+                  Z={getEntityElevationZ(selectedEntity).toFixed(0)}mm
+                </span>
+                {collapsedSections.loft3d ? (
+                  <ChevronRight className="size-3.5 text-slate-400" />
+                ) : (
+                  <ChevronDown className="size-3.5 text-slate-400" />
+                )}
+              </div>
+            </button>
+
+            {!collapsedSections.loft3d && (
+              <div className="flex flex-col gap-1.5 pt-1">
+                <div className="grid grid-cols-2 gap-1.5">
+                  {renderGridCellField({
+                    key: "elevationZ",
+                    label: "Elevação Z",
+                    symbol: "+Z",
+                    value: getEntityElevationZ(selectedEntity),
+                    unit: "mm",
+                    defaultStep: 10,
+                    stepOptions: [1, 5, 10, 20, 60],
+                    allowNegative: true,
+                  })}
+                  {renderGridCellField({
+                    key: "extrudeHeight",
+                    label: "Extrusão 3D",
+                    symbol: "H",
+                    value: getEntityExtrudeHeight(selectedEntity, thickness),
+                    unit: "mm",
+                    defaultStep: 5,
+                    stepOptions: [1, 2, 5, 10, 25],
+                    min: 0,
+                  })}
+                </div>
+
+                {isLoft3DEntity(selectedEntity) &&
+                  (() => {
+                    const spec = getEntityLoft3DSpec(selectedEntity);
+                    if (!spec) return null;
+                    return (
+                      <div className="mt-1 flex flex-col gap-1.5 border-t border-slate-800 pt-1.5">
+                        <div className="grid grid-cols-2 gap-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const rebuilt = createLoft3DEntity({
+                                sectionEntities: spec.sectionEntities,
+                                surfaceMode: "smooth",
+                                bodyMode: spec.bodyMode,
+                                wallThicknessMm: spec.wallThicknessMm,
+                                layer: selectedEntity.layer,
+                                existingId: selectedEntity.id,
+                              });
+                              if (rebuilt) onUpdateEntity(rebuilt);
+                            }}
+                            className={cn(
+                              "rounded border py-1 font-mono text-[9px] font-bold",
+                              spec.surfaceMode === "smooth"
+                                ? "border-sky-400 bg-sky-500/25 text-white"
+                                : "border-slate-700 bg-slate-950 text-slate-400",
+                            )}
+                          >
+                            Suave
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const rebuilt = createLoft3DEntity({
+                                sectionEntities: spec.sectionEntities,
+                                surfaceMode: "ruled",
+                                bodyMode: spec.bodyMode,
+                                wallThicknessMm: spec.wallThicknessMm,
+                                layer: selectedEntity.layer,
+                                existingId: selectedEntity.id,
+                              });
+                              if (rebuilt) onUpdateEntity(rebuilt);
+                            }}
+                            className={cn(
+                              "rounded border py-1 font-mono text-[9px] font-bold",
+                              spec.surfaceMode === "ruled"
+                                ? "border-sky-400 bg-sky-500/25 text-white"
+                                : "border-slate-700 bg-slate-950 text-slate-400",
+                            )}
+                          >
+                            Reto
+                          </button>
+                        </div>
+                        {onDecomposeLoftEntity && (
+                          <button
+                            type="button"
+                            onClick={() => onDecomposeLoftEntity(selectedEntity)}
+                            className="rounded border border-amber-500/40 bg-amber-500/15 py-1 font-mono text-[9px] font-bold text-amber-300"
+                          >
+                            Decompor Perfis ({spec.sectionEntities.length})
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+              </div>
+            )}
           </div>
         </div>
       )}
 
       {/* ===================================================================== */}
-      {/* CASO 3: MULTISELEÇÃO → PROPRIEDADES E AÇÕES EM LOTE                   */}
+      {/* CASO 3: MULTISELEÇÃO → PROPRIEDADES E AÇÕES EM LOTE COMPACTAS         */}
       {/* ===================================================================== */}
       {selectedEntities.length > 1 && (
-        <div className="flex flex-col gap-2.5">
-          <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
-            <div className="flex items-center gap-2">
-              <div className="flex size-7 items-center justify-center rounded-lg bg-red-600/15 text-red-500 border border-red-500/25">
-                <Layers className="size-4" />
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between rounded-lg border border-slate-800/90 bg-slate-900/80 px-2 py-1.5">
+            <div className="flex items-center gap-1.5">
+              <div className="flex size-5 items-center justify-center rounded bg-sky-500/15 text-sky-400 border border-sky-500/30">
+                <Layers className="size-3" />
               </div>
-              <div>
-                <h4 className="font-sans text-xs font-bold text-white leading-tight">
-                  Multiseleção
-                </h4>
-                <span className="font-mono text-[9px] text-slate-400">
-                  {selectedEntities.length} entidades selecionadas
-                </span>
-              </div>
+              <span className="font-sans text-[11px] font-bold text-white">
+                Conjunto Selecionado
+              </span>
             </div>
+            <span className="rounded bg-sky-500/20 px-1.5 py-0.5 font-mono text-[9px] font-bold text-sky-300">
+              {selectedEntities.length} itens
+            </span>
           </div>
 
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 flex flex-col gap-1">
-            <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-slate-300 mb-1">
-              Caixa Delimitadora Conjunta
-            </span>
-            {renderInfoRow("Largura total (X)", `${overallBounds.width.toFixed(2)} mm`, "↔")}
-            {renderInfoRow("Altura total (Y)", `${overallBounds.height.toFixed(2)} mm`, "↕")}
+          <div className="rounded-lg border border-slate-800/80 bg-slate-900/50 p-2 flex items-center justify-between font-mono text-[9.5px] text-slate-300">
+            <span>L: {overallBounds.width.toFixed(1)} mm</span>
+            <span>•</span>
+            <span>A: {overallBounds.height.toFixed(1)} mm</span>
           </div>
 
           <ChamferStructuralProfileCard
@@ -1281,42 +1240,44 @@ export function ChamferPropertiesTab({
             onUpdateEntity={onUpdateEntity}
           />
 
-          {/* Ações em lote */}
-          <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-2.5 flex flex-col gap-2">
-            <span className="font-sans text-[10px] font-bold uppercase tracking-wider text-slate-300">
-              Ações em Lote
-            </span>
-            <div className="grid grid-cols-2 gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  const item = copyToGlobalClipboard(entities, selection);
-                  if (item) {
-                    toast.success(`✓ "${item.title}" copiado para a Área de Transferência.`);
-                  }
-                }}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-slate-700 bg-slate-900 py-1.5 font-mono text-[10px] font-semibold text-slate-200 hover:bg-slate-800"
-              >
-                <Copy className="size-3.5" />
-                <span>Copiar Todas</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("warning");
-                  for (const ent of selectedEntities) {
-                    onDeleteEntity(ent.id);
-                  }
-                  setSelection([]);
-                }}
-                className="flex items-center justify-center gap-1.5 rounded-lg border border-red-900/50 bg-red-950/40 py-1.5 font-mono text-[10px] font-semibold text-red-300 hover:bg-red-900/60"
-              >
-                <Trash2 className="size-3.5" />
-                <span>Excluir Todas</span>
-              </button>
-            </div>
+          <div className="grid grid-cols-3 gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                copyToGlobalClipboard(entities, selection);
+                toast.success("Seleção copiada.");
+              }}
+              className="flex flex-col items-center justify-center gap-0.5 rounded-md border border-slate-700 bg-slate-950 py-1.5 font-mono text-[9px] font-semibold text-slate-200 hover:border-sky-500/50 cursor-pointer"
+            >
+              <Copy className="size-3.5 text-sky-400" />
+              <span>Copiar</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("selection");
+                onOpenArray?.();
+              }}
+              className="flex flex-col items-center justify-center gap-0.5 rounded-md border border-slate-700 bg-slate-950 py-1.5 font-mono text-[9px] font-semibold text-slate-200 hover:border-sky-500/50 cursor-pointer"
+            >
+              <Grid className="size-3.5 text-sky-400" />
+              <span>Array</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic("warning");
+                for (const ent of selectedEntities) {
+                  onDeleteEntity(ent.id);
+                }
+                setSelection([]);
+              }}
+              className="flex flex-col items-center justify-center gap-0.5 rounded-md border border-red-900/60 bg-red-950/40 py-1.5 font-mono text-[9px] font-semibold text-red-300 hover:bg-red-900/60 cursor-pointer"
+            >
+              <Trash2 className="size-3.5 text-red-400" />
+              <span>Excluir</span>
+            </button>
           </div>
         </div>
       )}

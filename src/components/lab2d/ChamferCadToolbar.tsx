@@ -2029,9 +2029,9 @@ export function ChamferCadToolbar({
                     <div className="flex flex-col gap-1.5 p-2 rounded-xl bg-slate-900/95 border border-slate-800">
                       <div className="flex items-center justify-between text-[10px]">
                         <span className="text-slate-200 font-bold uppercase tracking-wider">
-                          GUIAS DE INTERAÇÃO
+                          MARCO GEOMÉTRICO & DATUM
                         </span>
-                        <span className="font-mono text-[9px] text-slate-400">Exclusivo</span>
+                        <span className="font-mono text-[9px] text-slate-400">Associativo</span>
                       </div>
                       <div className="flex flex-col gap-1">
                         {(
@@ -2043,12 +2043,12 @@ export function ChamferCadToolbar({
                             },
                             {
                               id: "purple_ref" as const,
-                              label: "Referência de Ponto de Encontro",
+                              label: "Marco Geométrico (Associativo & ÷N)",
                               activeClass: "bg-purple-950/80 text-purple-300 border-purple-500/60",
                             },
                             {
                               id: "blue_line" as const,
-                              label: "Vetor Datum (ΔXY / ∠)",
+                              label: "Vetor Datum Persistente (ΔX / ΔY / ∠)",
                               activeClass: "bg-sky-950/80 text-sky-300 border-sky-500/60",
                             },
                           ]
@@ -2058,12 +2058,13 @@ export function ChamferCadToolbar({
                             <button
                               key={opt.id}
                               type="button"
+                              data-testid={`guide-mode-${opt.id}`}
                               onClick={() => {
                                 triggerHaptic("selection");
                                 onSetInteractionGuideMode?.(opt.id);
                               }}
                               className={cn(
-                                "flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[10.5px] font-bold transition-all border text-left",
+                                "flex items-center justify-between rounded-lg px-2.5 py-1.5 text-[10.5px] font-bold transition-all border text-left cursor-pointer",
                                 isSelected
                                   ? opt.activeClass
                                   : "bg-slate-950/60 border-slate-800/80 text-slate-400 hover:text-slate-200",
@@ -2088,12 +2089,12 @@ export function ChamferCadToolbar({
                       </div>
                     </div>
 
-                    {/* VETOR DATUM DINÂMICO (ΔXY / ∠) */}
-                    <div className="flex flex-col gap-1.5 p-2 rounded-xl bg-purple-950/40 border border-purple-500/40">
+                    {/* VETOR DATUM PERSISTENTE (ΔX / ΔY / ∠) */}
+                    <div className="flex flex-col gap-1.5 p-2 rounded-xl bg-sky-950/35 border border-sky-500/40">
                       <div className="flex items-center justify-between text-[10px]">
-                        <span className="text-purple-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                        <span className="text-sky-300 font-bold uppercase tracking-wider flex items-center gap-1.5">
                           <Crosshair className="size-3 text-rose-500" />
-                          Vetor Datum (ΔXY / ∠)
+                          Vetor Datum Persistente
                         </span>
                         {temporaryOrigin && (
                           <button
@@ -2102,7 +2103,7 @@ export function ChamferCadToolbar({
                               triggerHaptic("selection");
                               onClearTemporaryOrigin?.();
                             }}
-                            className="text-[9px] text-red-400 hover:text-red-300 font-bold uppercase px-1.5 py-0.5 rounded bg-red-950/60 transition-colors"
+                            className="text-[9px] text-red-400 hover:text-red-300 font-bold uppercase px-1.5 py-0.5 rounded bg-red-950/60 transition-colors cursor-pointer"
                           >
                             Limpar Datum
                           </button>
@@ -2110,6 +2111,7 @@ export function ChamferCadToolbar({
                       </div>
                       <button
                         type="button"
+                        data-testid="toolbar-define-datum-btn"
                         onClick={() => {
                           triggerHaptic("action");
                           if (!interactionGuideMode || interactionGuideMode === "off") {
@@ -2118,7 +2120,7 @@ export function ChamferCadToolbar({
                           onStartSetReferencePoint?.();
                           setOpenCat("none");
                         }}
-                        className="mt-0.5 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white font-mono text-[10.5px] font-bold shadow-sm transition-all active:scale-95"
+                        className="mt-0.5 flex items-center justify-center gap-1.5 py-1.5 px-2.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-mono text-[10.5px] font-bold shadow-sm transition-all active:scale-95 cursor-pointer"
                       >
                         <Crosshair className="size-3.5" />
                         <span>{temporaryOrigin ? "Redefinir Vetor Datum" : "Definir Vetor Datum"}</span>

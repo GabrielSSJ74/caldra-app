@@ -119,14 +119,16 @@ r.style.setProperty("--bubble-border-alpha",bBorder);
 r.style.setProperty("--ui-opacity",uiOp);
 r.setAttribute("data-bg-style",s.auroraStyle||"padrao");
 r.lang=s.language==="en"?"en":s.language==="es"?"es":"pt-BR";
+if(location.search.indexOf("autostart=1")!==-1||sessionStorage.getItem("caldra.genesis_session_done")==="1"){r.classList.add("boot-done");}
 var m=document.querySelector('meta[name="theme-color"]');
 if(m)m.setAttribute("content",resolved==="light"?"#EAEEF3":resolved==="amoled"?"#000000":"#0B0D11");
 }catch(e){}})();`;
 
 /** Splash de abertura: pinta o fundo escuro técnico (#030712) antes do JS e entrega sem flash para a animação CAD 3D. */
 const BOOT_SPLASH_STYLE = `
-#caldra-boot{position:fixed;inset:0;z-index:9999;background:#030712;transition:opacity .25s ease}
-#caldra-boot.done{opacity:0;pointer-events:none}
+@keyframes caldraBootAutoHide{to{opacity:0;pointer-events:none}}
+#caldra-boot{position:fixed;inset:0;z-index:9999;background:#030712;transition:opacity .25s ease;animation:caldraBootAutoHide .25s ease 1.5s forwards}
+#caldra-boot.done,.boot-done #caldra-boot{opacity:0;pointer-events:none;display:none}
 `;
 const BOOT_SPLASH_HTML = ``;
 

@@ -105,6 +105,8 @@ export interface PolarArrayParams {
   repositionOriginalToPcd?: boolean; // true quando usuário aciona [ ⌖ Centralizar na aba ] ou altera PCD
   skippedIndices?: number[]; // índices k >= 1 omitidos pelo usuário no canvas
   lockedFields?: Partial<Record<PolarLockedField, boolean>>;
+  autoTrim?: boolean; // [ ⚡ Auto-Trim / Unir Contorno ]
+  includeAssembly?: boolean; // inclui automaticamente furos e geometrias internas conectadas
 }
 
 export interface LinearArrayParams {
@@ -126,6 +128,8 @@ export interface LinearArrayParams {
   includeOriginal?: boolean; // padrão: true
   skippedIndices?: number[]; // índices lineares k >= 1 omitidos pelo usuário
   lockedFields?: Partial<Record<LinearLockedField, boolean>>;
+  autoTrim?: boolean; // [ ⚡ Auto-Trim / Unir Contorno ]
+  includeAssembly?: boolean; // inclui automaticamente furos e geometrias internas conectadas
 }
 
 export interface ArraySpec {
@@ -134,6 +138,8 @@ export interface ArraySpec {
   sourceEntityIds: string[];
   polar?: PolarArrayParams;
   linear?: LinearArrayParams;
+  autoTrim?: boolean;
+  includeAssembly?: boolean;
 }
 
 export type CollisionReasonBadge =
@@ -1573,3 +1579,473 @@ export function getEntityArraySpec(entity: Entity | undefined | null): {
   if (!groupId || !spec || typeof spec !== "object") return null;
   return { arrayGroupId: groupId, spec };
 }
+
+// -------------------------------------------------------------
+// 5. DETECÇÃO AUTOMÁTICA DE CONJUNTO GEOMÉTRICO (SEÇÃO 2.2)
+// -------------------------------------------------------------
+
+/**
+ * Quando o usuário seleciona um contorno fechado principal (chapa retangular, polilinha fechada,
+ * contorno de linhas ou círculo externo), identifica automaticamente todos os elementos geométricos
+ * contidos ou conectados a ele:
+ * - Furos internos e círculos concêntricos
+ * - Rasgos, oblongos, polilinhas internas e subcontornos conectados
+ * - Linhas de construção vinculadas que estejam dentro do contorno
+ */
+export type EnclosedAssemblyResult = Entity[] & {
+  assemblyEntities: Entity[];
+  autoAddedEntities: Entity[];
+  autoAddedIds: string[];
+};
+
+export function findEnclosedAndConnectedAssembly(
+  allEntities: Entity[],
+  primarySelected: Entity[],
+): EnclosedAssemblyResult {
+  const makeResult = (
+    assemblyEntities: Entity[],
+    autoAddedEntities: Entity[],
+    autoAddedIds: string[],
+  ): EnclosedAssemblyResult => {
+    const arr = [...assemblyEntities] as EnclosedAssemblyResult;
+    arr.assemblyEntities = assemblyEntities;
+    arr.autoAddedEntities = autoAddedEntities;
+    arr.autoAddedIds = autoAddedIds;
+    return arr;
+  };
+
+  if (primarySelected.length === 0) {
+    return makeResult([], [], []);
+  }
+
+  const selectedIds = new Set(primarySelected.map((e) => e.id));
+  const autoAddedEntities: Entity[] = [];
+  const autoAddedIds: string[] = [];
+
+  // Identifica se a seleção principal contém contornos fechados (polilinha fechada ou círculo externo)
+  const closedPolys: Vec2[][] = [];
+  const outerCircles: { cx: number; cy: number; r: number; id: string }[] = [];
+
+  for (const e of primarySelected) {
+    if (e.type === "polyline" && e.closed && e.pts.length >= 3) {
+      closedPolys.push(e.pts);
+    } else if (e.type === "circle") {
+      // Verifica se este círculo engloba alguma outra entidade do projeto
+      const hasInnerEntity = allEntities.some((other) => {
+        if (other.id === e.id || other.layer === "cota") return false;
+        const c = getEntityCenter(other);
+        const rOther = other.type === "circle" || other.type === "arc" ? other.r : 0;
+        return dist({ x: e.cx, y: e.cy }, c) + rOther <= e.r + 0.5 && rOther < e.r - 0.1;
+      });
+      if (hasInnerEntity) {
+        outerCircles.push({ cx: e.cx, cy: e.cy, r: e.r, id: e.id });
+      }
+    }
+  }
+
+  // Também reconstrói polígono fechado caso o usuário tenha selecionado as linhas de um contorno fechado
+  if (closedPolys.length === 0) {
+    const extracted = extractClosedPolygons(primarySelected);
+    for (const poly of extracted) {
+      closedPolys.push(poly.pts);
+    }
+  }
+
+  if (closedPolys.length === 0 && outerCircles.length === 0) {
+    return makeResult(primarySelected, [], []);
+  }
+
+  const isPointInsideAnyPrimaryContour = (pt: Vec2, radiusMargin = 0): boolean => {
+    for (const oc of outerCircles) {
+      if (dist({ x: oc.cx, y: oc.cy }, pt) + radiusMargin <= oc.r + 0.25) {
+        return true;
+      }
+    }
+    for (const poly of closedPolys) {
+      if (pointInPoly(pt, poly)) {
+        if (radiusMargin <= 0) return true;
+        const edgeDist = minDistanceToPolygonEdges(pt, poly);
+        if (edgeDist + 0.25 >= radiusMargin) return true;
+      }
+    }
+    return false;
+  };
+
+  for (const cand of allEntities) {
+    if (selectedIds.has(cand.id)) continue;
+    if (cand.layer === "cota") continue;
+    // Ignora marcos geométricos e datums independentes
+    const semKind = cand.params?.cadSemanticKind;
+    if (semKind === "geometric_mark" || semKind === "persistent_datum") continue;
+
+    let isContainedOrConnected = false;
+
+    if (cand.type === "circle" || cand.type === "arc") {
+      isContainedOrConnected = isPointInsideAnyPrimaryContour(
+        { x: cand.cx, y: cand.cy },
+        cand.r * 0.5,
+      );
+    } else if (cand.type === "line") {
+      const p1 = { x: cand.x1, y: cand.y1 };
+      const p2 = { x: cand.x2, y: cand.y2 };
+      const mid = { x: (cand.x1 + cand.x2) / 2, y: (cand.y1 + cand.y2) / 2 };
+      isContainedOrConnected =
+        isPointInsideAnyPrimaryContour(mid) &&
+        (isPointInsideAnyPrimaryContour(p1) || isPointInsideAnyPrimaryContour(p2));
+    } else if (cand.type === "polyline") {
+      if (cand.pts.length > 0) {
+        const center = getEntityCenter(cand);
+        const insideCount = cand.pts.filter((p) => isPointInsideAnyPrimaryContour(p)).length;
+        isContainedOrConnected =
+          isPointInsideAnyPrimaryContour(center) &&
+          insideCount >= Math.ceil(cand.pts.length * 0.5);
+      }
+    } else if (cand.type === "point" || cand.type === "ellipse") {
+      const center = getEntityCenter(cand);
+      isContainedOrConnected = isPointInsideAnyPrimaryContour(center);
+    }
+
+    if (isContainedOrConnected) {
+      selectedIds.add(cand.id);
+      autoAddedEntities.push(cand);
+      autoAddedIds.push(cand.id);
+    }
+  }
+
+  return makeResult([...primarySelected, ...autoAddedEntities], autoAddedEntities, autoAddedIds);
+}
+
+// -------------------------------------------------------------
+// 6. AUTO-TRIM / UNIÃO ANALÍTICA DE CONTORNOS EM ARRAY (SEÇÃO 2.4)
+// -------------------------------------------------------------
+
+function intersectTwoCirclesAnalytical(
+  c1: { cx: number; cy: number; r: number },
+  c2: { cx: number; cy: number; r: number },
+): Vec2[] {
+  const dx = c2.cx - c1.cx;
+  const dy = c2.cy - c1.cy;
+  const d = Math.hypot(dx, dy);
+  if (d > c1.r + c2.r - 1e-5 || d < Math.abs(c1.r - c2.r) + 1e-5 || d < 1e-6) {
+    return [];
+  }
+  const a = (c1.r * c1.r - c2.r * c2.r + d * d) / (2 * d);
+  const h2 = c1.r * c1.r - a * a;
+  if (h2 <= 1e-8) return [];
+  const h = Math.sqrt(h2);
+  const mx = c1.cx + (a * dx) / d;
+  const my = c1.cy + (a * dy) / d;
+  const rx = (-dy * h) / d;
+  const ry = (dx * h) / d;
+  return [
+    { x: mx + rx, y: my + ry },
+    { x: mx - rx, y: my - ry },
+  ];
+}
+
+function intersectSegmentWithCircleAnalytical(
+  p1: Vec2,
+  p2: Vec2,
+  c: { cx: number; cy: number; r: number },
+): { t: number; point: Vec2 }[] {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const fx = p1.x - c.cx;
+  const fy = p1.y - c.cy;
+  const a = dx * dx + dy * dy;
+  if (a < 1e-10) return [];
+  const b = 2 * (fx * dx + fy * dy);
+  const cc = fx * fx + fy * fy - c.r * c.r;
+  const disc = b * b - 4 * a * cc;
+  if (disc <= 1e-8) return [];
+  const sqrtD = Math.sqrt(disc);
+  const t1 = (-b - sqrtD) / (2 * a);
+  const t2 = (-b + sqrtD) / (2 * a);
+  const hits: { t: number; point: Vec2 }[] = [];
+  if (t1 > 1e-4 && t1 < 1 - 1e-4) {
+    hits.push({ t: t1, point: { x: p1.x + t1 * dx, y: p1.y + t1 * dy } });
+  }
+  if (t2 > 1e-4 && t2 < 1 - 1e-4) {
+    hits.push({ t: t2, point: { x: p1.x + t2 * dx, y: p1.y + t2 * dy } });
+  }
+  return hits;
+}
+
+/**
+ * Subtrai de uma circunferência `targetCircle` todos os sub-arcos cujo ponto médio
+ * caia estritamente dentro de qualquer um dos `cutterCircles` ou dentro de um polígono fechado.
+ * Retorna os arcos sobreviventes (ou a circunferência original caso não tenha sofrido cortes).
+ */
+function splitAndFilterCircleArcs(
+  targetCircle: Extract<Entity, { type: "circle" }>,
+  cutPoints: Vec2[],
+  isMidpointTrimmed: (midPt: Vec2) => boolean,
+): { survivingEntities: Entity[]; wasTrimmed: boolean } {
+  if (cutPoints.length < 2) {
+    return { survivingEntities: [targetCircle], wasTrimmed: false };
+  }
+
+  // Converte pontos de corte em ângulos ordenados em [0, 360)
+  const rawAngles = cutPoints.map((pt) => {
+    const rad = Math.atan2(pt.y - targetCircle.cy, pt.x - targetCircle.cx);
+    let deg = rad * RAD_TO_DEG;
+    if (deg < 0) deg += 360;
+    return deg;
+  });
+  rawAngles.sort((a, b) => a - b);
+
+  // Remove ângulos duplicados muito próximos (< 0.1°)
+  const uniqueAngles: number[] = [];
+  for (const ang of rawAngles) {
+    if (
+      uniqueAngles.length === 0 ||
+      Math.abs(ang - uniqueAngles[uniqueAngles.length - 1]!) > 0.1
+    ) {
+      uniqueAngles.push(ang);
+    }
+  }
+  if (
+    uniqueAngles.length >= 2 &&
+    360 - uniqueAngles[uniqueAngles.length - 1]! + uniqueAngles[0]! <= 0.1
+  ) {
+    uniqueAngles.pop();
+  }
+
+  if (uniqueAngles.length < 2) {
+    return { survivingEntities: [targetCircle], wasTrimmed: false };
+  }
+
+  // Constrói intervalos circulares consecutivos
+  const intervals: { start: number; end: number; kept: boolean }[] = [];
+  let anyTrimmed = false;
+
+  for (let i = 0; i < uniqueAngles.length; i++) {
+    const a1 = uniqueAngles[i]!;
+    const a2 = uniqueAngles[(i + 1) % uniqueAngles.length]!;
+    const span = a2 > a1 ? a2 - a1 : 360 - a1 + a2;
+    const midDeg = (a1 + span / 2) % 360;
+    const midRad = midDeg * DEG_TO_RAD;
+    const midPt: Vec2 = {
+      x: targetCircle.cx + targetCircle.r * Math.cos(midRad),
+      y: targetCircle.cy + targetCircle.r * Math.sin(midRad),
+    };
+    const trimmed = isMidpointTrimmed(midPt);
+    if (trimmed) anyTrimmed = true;
+    intervals.push({ start: a1, end: a2, kept: !trimmed });
+  }
+
+  if (!anyTrimmed) {
+    return { survivingEntities: [targetCircle], wasTrimmed: false };
+  }
+
+  // Funde intervalos adjacentes que foram mantidos (kept === true)
+  const keptIntervals = intervals.filter((iv) => iv.kept);
+  if (keptIntervals.length === 0) {
+    return { survivingEntities: [], wasTrimmed: true };
+  }
+
+  const merged: { start: number; end: number }[] = [];
+  for (const iv of intervals) {
+    if (!iv.kept) continue;
+    const last = merged[merged.length - 1];
+    if (last && Math.abs(((last.end - iv.start + 540) % 360) - 180) < 0.15) {
+      last.end = iv.end;
+    } else {
+      merged.push({ start: iv.start, end: iv.end });
+    }
+  }
+  // Fusão wrap-around entre o último e o primeiro intervalo
+  if (
+    merged.length >= 2 &&
+    Math.abs(((merged[merged.length - 1]!.end - merged[0]!.start + 540) % 360) - 180) < 0.15
+  ) {
+    merged[0]!.start = merged[merged.length - 1]!.start;
+    merged.pop();
+  }
+
+  const arcs: Entity[] = merged.map((iv, idx) => ({
+    id: idx === 0 ? targetCircle.id : uid(),
+    type: "arc",
+    layer: targetCircle.layer,
+    cx: targetCircle.cx,
+    cy: targetCircle.cy,
+    r: targetCircle.r,
+    a0: Number((iv.start * DEG_TO_RAD).toFixed(6)),
+    a1: Number((iv.end * DEG_TO_RAD).toFixed(6)),
+    start: Number(iv.start.toFixed(4)),
+    end: Number(iv.end.toFixed(4)),
+    ccw: true,
+    group: targetCircle.group,
+    cnc: targetCircle.cnc ? { ...targetCircle.cnc } : undefined,
+    params: targetCircle.params ? { ...targetCircle.params, autoTrimmed: true } : { autoTrimmed: true },
+  }));
+
+  return { survivingEntities: arcs, wasTrimmed: true };
+}
+
+/**
+ * Executa o Auto-Trim analítico das geometrias geradas pelo Array contra o contorno base
+ * (círculo maior de base, polilinha fechada ou círculos sobrepostos do próprio Array),
+ * eliminando automaticamente os segmentos internos sobrepostos em uma única operação transacional.
+ */
+export function applyArrayAutoTrim(
+  existingEntities: Entity[],
+  arrayNewInstances: Entity[],
+  sourceEntities: Entity[],
+): {
+  entities: Entity[];
+  trimmedCount: number;
+} {
+  // Conjunto total de entidades do padrão (originais + novas cópias)
+  const sourceIds = new Set(sourceEntities.map((e) => e.id));
+  const patternCircles = [
+    ...existingEntities.filter(
+      (e): e is Extract<Entity, { type: "circle" }> =>
+        e.type === "circle" && sourceIds.has(e.id),
+    ),
+    ...arrayNewInstances.filter(
+      (e): e is Extract<Entity, { type: "circle" }> => e.type === "circle",
+    ),
+  ];
+
+  // Se não houver círculos no padrão, retorna lista padrão combinada
+  if (patternCircles.length === 0) {
+    return {
+      entities: [...existingEntities, ...arrayNewInstances],
+      trimmedCount: 0,
+    };
+  }
+
+  const patternCircleIds = new Set(patternCircles.map((c) => c.id));
+
+  // Círculos de base candidatos (que não fazem parte do padrão repetido e interceptam círculos do padrão)
+  const baseCircles = existingEntities.filter(
+    (e): e is Extract<Entity, { type: "circle" }> =>
+      e.type === "circle" &&
+      !patternCircleIds.has(e.id) &&
+      e.layer !== "construcao" &&
+      e.layer !== "referencia" &&
+      e.layer !== "cota",
+  );
+
+  // Polilinhas fechadas de base (ex: chapa retangular cuja borda é cruzada pelos círculos do array)
+  const baseClosedPolys = existingEntities.filter(
+    (e): e is Extract<Entity, { type: "polyline" }> =>
+      e.type === "polyline" &&
+      Boolean(e.closed) &&
+      e.pts.length >= 3 &&
+      !sourceIds.has(e.id),
+  );
+
+  let trimmedCount = 0;
+  const replacementMap = new Map<string, Entity[]>();
+
+  // 1. Auto-Trim de cada círculo do padrão (contra círculos de base, outros círculos do padrão e polilinhas de base)
+  for (const pCircle of patternCircles) {
+    const cutPoints: Vec2[] = [];
+    const intersectingBaseCircles: Extract<Entity, { type: "circle" }>[] = [];
+    const intersectingPeerCircles: Extract<Entity, { type: "circle" }>[] = [];
+    const intersectingPolys: Extract<Entity, { type: "polyline" }>[] = [];
+
+    for (const bCircle of baseCircles) {
+      const pts = intersectTwoCirclesAnalytical(pCircle, bCircle);
+      if (pts.length >= 2) {
+        cutPoints.push(...pts);
+        intersectingBaseCircles.push(bCircle);
+      }
+    }
+
+    for (const peer of patternCircles) {
+      if (peer.id === pCircle.id) continue;
+      const pts = intersectTwoCirclesAnalytical(pCircle, peer);
+      if (pts.length >= 2) {
+        cutPoints.push(...pts);
+        intersectingPeerCircles.push(peer);
+      }
+    }
+
+    for (const poly of baseClosedPolys) {
+      let hitPoly = false;
+      for (let i = 0; i < poly.pts.length; i++) {
+        const a = poly.pts[i]!;
+        const b = poly.pts[(i + 1) % poly.pts.length]!;
+        const hits = intersectSegmentWithCircleAnalytical(a, b, pCircle);
+        if (hits.length > 0) {
+          hitPoly = true;
+          cutPoints.push(...hits.map((h) => h.point));
+        }
+      }
+      if (hitPoly) intersectingPolys.push(poly);
+    }
+
+    if (cutPoints.length >= 2) {
+      const { survivingEntities, wasTrimmed } = splitAndFilterCircleArcs(
+        pCircle,
+        cutPoints,
+        (midPt) => {
+          // Remove o arco interno que cai dentro do círculo base, dentro de outro círculo do array ou dentro da chapa
+          for (const bc of intersectingBaseCircles) {
+            if (dist(midPt, { x: bc.cx, y: bc.cy }) < bc.r - 1e-3) return true;
+          }
+          for (const pc of intersectingPeerCircles) {
+            if (dist(midPt, { x: pc.cx, y: pc.cy }) < pc.r - 1e-3) return true;
+          }
+          for (const poly of intersectingPolys) {
+            if (pointInPoly(midPt, poly.pts)) return true;
+          }
+          return false;
+        },
+      );
+      if (wasTrimmed) {
+        replacementMap.set(pCircle.id, survivingEntities);
+        trimmedCount++;
+      }
+    }
+  }
+
+  // 2. Auto-Trim dos círculos de base que foram cruzados pelos círculos do Array
+  for (const bCircle of baseCircles) {
+    const cutPoints: Vec2[] = [];
+    const cutters: Extract<Entity, { type: "circle" }>[] = [];
+
+    for (const pCircle of patternCircles) {
+      const pts = intersectTwoCirclesAnalytical(bCircle, pCircle);
+      if (pts.length >= 2) {
+        cutPoints.push(...pts);
+        cutters.push(pCircle);
+      }
+    }
+
+    if (cutPoints.length >= 2) {
+      const { survivingEntities, wasTrimmed } = splitAndFilterCircleArcs(
+        bCircle,
+        cutPoints,
+        (midPt) =>
+          cutters.some((cutter) => dist(midPt, { x: cutter.cx, y: cutter.cy }) < cutter.r - 1e-3),
+      );
+      if (wasTrimmed) {
+        replacementMap.set(bCircle.id, survivingEntities);
+        trimmedCount++;
+      }
+    }
+  }
+
+  // 3. Reconstrói a lista unificada substituindo as entidades aparadas pelos arcos resultantes
+  const combinedInput = [...existingEntities, ...arrayNewInstances];
+  if (trimmedCount === 0) {
+    return { entities: combinedInput, trimmedCount: 0 };
+  }
+
+  const finalEntities: Entity[] = [];
+  for (const ent of combinedInput) {
+    const replaced = replacementMap.get(ent.id);
+    if (replaced !== undefined) {
+      finalEntities.push(...replaced);
+    } else {
+      finalEntities.push(ent);
+    }
+  }
+
+  return { entities: finalEntities, trimmedCount };
+}
+

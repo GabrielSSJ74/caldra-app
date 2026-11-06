@@ -11,7 +11,19 @@ import type { Vec2 } from "@/lib/geometry/types";
 import type { TemporaryOrigin } from "@/lib/lab2d/cadCoordinateFrames";
 import type { EdgeReference } from "@/lib/lab2d/cadGeometricReferences";
 import type { LiveDimension } from "@/lib/lab2d/cadDynamicDimensions";
-import type { Entity } from "@/lib/lab2d/types";
+import type { Entity } from "@/lib/lab2d/core";
+import {
+  isGeometricMarkEntity,
+  getGeometricMarkSpec,
+  formatGeometricMarkLabel,
+  isPersistentDatumEntity,
+  getPersistentDatumSpec,
+  computePersistentDatumMetrics,
+  computeRelationalVirtualIntersection,
+  type DatumComponentKind,
+  type DatumLineConversionMode,
+  type RelationalSynthesisMode,
+} from "@/lib/lab2d/cadGeometricMarks";
 import {
   CRIMSON_RED_CENTER,
   resolveBubbleCollisions,
@@ -22,6 +34,12 @@ import {
   type ConstrainableMeasureKind,
   type GuideBubble,
 } from "@/lib/lab2d/cadInteractionGuides";
+
+export interface RelationalPickItem {
+  point: Vec2;
+  entityId?: string | null;
+  label?: string;
+}
 
 export interface ChamferLiveDimensionsOverlayProps {
   temporaryOrigin: TemporaryOrigin | null;
@@ -39,10 +57,22 @@ export interface ChamferLiveDimensionsOverlayProps {
   lockedConstraints?: DimensionalConstraints;
   /** Bloqueio de eventos durante gestos multitouch (zoom/pan) */
   isMultitouchNavigating?: boolean;
-  /** Pontos de encontro roxos (+) já confirmados/fixados no canvas */
+  /** Marcos geométricos temporários / legados no canvas */
   pinnedMeetingPoints?: Vec2[];
-  /** Entidades do desenho para adaptar a cruz (+) ponta a ponta sobre furos/formas */
+  /** Entidades do desenho (inclui Marcos Geométricos Associativos e Datums Persistentes) */
   entities?: Entity[];
+  /** IDs atualmente selecionados no canvas */
+  selectedIds?: string[];
+  /** Pontos/elementos capturados para síntese relacional (Modo 2 do Marco Geométrico) */
+  relationalPicks?: RelationalPickItem[];
+  onTriggerRelationalSynthesis?: (mode: RelationalSynthesisMode, divisions?: number) => void;
+  onClearRelationalPicks?: () => void;
+  /** Callbacks para Datum Persistente (Seção 3) */
+  activeDatumComponent?: DatumComponentKind | null;
+  onSelectDatumComponent?: (datumId: string | null, component: DatumComponentKind, currentValue: number, screenPos: Vec2) => void;
+  onConvertDatumToLines?: (datumId: string | null, mode: DatumLineConversionMode, originPt?: Vec2, targetPt?: Vec2) => void;
+  onPersistLiveDatum?: (originPt: Vec2, targetPt: Vec2) => void;
+  onDeletePersistentDatum?: (datumId: string) => void;
   pendingShape?: {
     type: string;
     center?: Vec2;
@@ -166,6 +196,15 @@ export function ChamferLiveDimensionsOverlay({
   isMultitouchNavigating = false,
   pinnedMeetingPoints = [],
   entities = [],
+  selectedIds = [],
+  relationalPicks = [],
+  onTriggerRelationalSynthesis,
+  onClearRelationalPicks,
+  activeDatumComponent = null,
+  onSelectDatumComponent,
+  onConvertDatumToLines,
+  onPersistLiveDatum,
+  onDeletePersistentDatum,
   pendingShape = null,
   onDimensionClick,
   onInvertEdgeSide,
@@ -275,12 +314,14 @@ export function ChamferLiveDimensionsOverlay({
     const rawBubbles: GuideBubble[] = [];
     const pillH = 18 / safeK;
 
-    // 1. Bolha principal da hipotenusa: "L" (Modo Vetor Datum) ou "d" (Modo Roxo)
+    // 1. Bolha principal da hipotenusa: "L" (Modo Vetor Datum) ou "d" (Modo Marco Geométrico)
     const mainKind: ConstrainableMeasureKind = showBlueGuides ? "L" : "d";
     const isMainLocked = showBlueGuides
       ? typeof lockedConstraints.lockedL === "number"
-      : typeof lockedConstraints.lockedDist === "number";
-    const mainText = `${isMainLocked ? "🔒 " : ""}${mainKind}: ${totalLen.toFixed(1)} mm${isMainLocked ? "" : " ✎"}`;
+      : false;
+    const mainText = showBlueGuides
+      ? `${isMainLocked ? "🔒 " : ""}${mainKind}: ${totalLen.toFixed(1)} mm${isMainLocked ? "" : " ✎"}`
+      : `d: ${totalLen.toFixed(1)} mm`;
     const mainW = Math.max(76, mainText.length * 5.6 + 14) / safeK;
     const diagOffset = 16 / safeK;
 
@@ -329,9 +370,11 @@ export function ChamferLiveDimensionsOverlay({
     }
 
     // 3. Bolha Horizontal: ΔX
-    if (absDx > 1 / safeK || lockedConstraints.lockedDx != null) {
-      const isDxLocked = typeof lockedConstraints.lockedDx === "number";
-      const dxText = `${isDxLocked ? "🔒 " : ""}ΔX: ${absDx.toFixed(1)} mm${isDxLocked ? "" : " ✎"}`;
+    if (absDx > 1 / safeK || (showBlueGuides && lockedConstraints.lockedDx != null)) {
+      const isDxLocked = showBlueGuides && typeof lockedConstraints.lockedDx === "number";
+      const dxText = showBlueGuides
+        ? `${isDxLocked ? "🔒 " : ""}ΔX: ${absDx.toFixed(1)} mm${isDxLocked ? "" : " ✎"}`
+        : `ΔX: ${absDx.toFixed(1)} mm`;
       const dxW = Math.max(76, dxText.length * 5.6 + 14) / safeK;
       const anchorDx: Vec2 = { x: (basePt.x + curPt.x) / 2, y: basePt.y };
       const normalY = dy >= 0 ? -1 : 1;
@@ -353,9 +396,11 @@ export function ChamferLiveDimensionsOverlay({
     }
 
     // 4. Bolha Vertical: ΔY
-    if (absDy > 1 / safeK || lockedConstraints.lockedDy != null) {
-      const isDyLocked = typeof lockedConstraints.lockedDy === "number";
-      const dyText = `${isDyLocked ? "🔒 " : ""}ΔY: ${absDy.toFixed(1)} mm${isDyLocked ? "" : " ✎"}`;
+    if (absDy > 1 / safeK || (showBlueGuides && lockedConstraints.lockedDy != null)) {
+      const isDyLocked = showBlueGuides && typeof lockedConstraints.lockedDy === "number";
+      const dyText = showBlueGuides
+        ? `${isDyLocked ? "🔒 " : ""}ΔY: ${absDy.toFixed(1)} mm${isDyLocked ? "" : " ✎"}`
+        : `ΔY: ${absDy.toFixed(1)} mm`;
       const dyW = Math.max(76, dyText.length * 5.6 + 14) / safeK;
       const anchorDy: Vec2 = { x: curPt.x, y: (basePt.y + curPt.y) / 2 };
       const normalX = dx >= 0 ? 1 : -1;
@@ -411,8 +456,783 @@ export function ChamferLiveDimensionsOverlay({
     return computeAdaptiveCrossArms(activeGuideData.curPt, safeK, pendingShape, entities);
   }, [showPurpleGuides, activeGuideData, safeK, pendingShape, entities]);
 
+  const geometricMarkEntities = useMemo(
+    () => entities.filter((e) => isGeometricMarkEntity(e)),
+    [entities],
+  );
+
+  const persistentDatumEntities = useMemo(
+    () => entities.filter((e) => isPersistentDatumEntity(e)),
+    [entities],
+  );
+
+  const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+
   return (
     <g className="select-none pointer-events-none">
+      {/* =====================================================================
+          0A. MARCOS GEOMÉTRICOS ASSOCIATIVOS PERSISTENTES (SEÇÃO 4)
+              - Cor violeta técnica (#A855F7 / #C084FC)
+              - Tamanho adaptativo invariante ao zoom (14px no espaço de tela)
+              - Diferenciação visual por tipo (Vértice, Centro, Meio, Interseção, ÷N)
+              - Indicador discreto de órfão caso a entidade-mãe seja removida
+          ===================================================================== */}
+      {geometricMarkEntities.map((ent) => {
+        const spec = getGeometricMarkSpec(ent);
+        if (!spec || spec.visible === false) return null;
+        const pt = { x: ent.x, y: ent.y };
+        const isSelected = selectedSet.has(ent.id);
+        const armPx = isSelected ? 9 / safeK : 7.5 / safeK;
+        const strokeColor = spec.isOrphan
+          ? "#F59E0B"
+          : isSelected
+            ? "#E879F9"
+            : "#A855F7";
+        const subType = spec.referenceType;
+
+        return (
+          <g
+            key={`geo-mark-${ent.id}`}
+            data-testid={`geometric-mark-${ent.id}`}
+            aria-label={`Marco Geométrico: ${formatGeometricMarkLabel(spec)}`}
+          >
+            {/* Halo sutil de contraste em espaço de tela */}
+            <circle
+              cx={pt.x}
+              cy={pt.y}
+              r={10 / safeK}
+              fill={isSelected ? "rgba(168, 85, 247, 0.20)" : "rgba(168, 85, 247, 0.08)"}
+              stroke={isSelected ? "#C084FC" : "none"}
+              strokeWidth={1.1 / safeK}
+            />
+
+            {/* Cruz técnica violeta invariante ao zoom (+) */}
+            <line
+              x1={pt.x - armPx}
+              y1={pt.y}
+              x2={pt.x + armPx}
+              y2={pt.y}
+              stroke={strokeColor}
+              strokeWidth={(isSelected ? 2.1 : 1.75) / safeK}
+              strokeLinecap="round"
+            />
+            <line
+              x1={pt.x}
+              y1={pt.y - armPx}
+              x2={pt.x}
+              y2={pt.y + armPx}
+              stroke={strokeColor}
+              strokeWidth={(isSelected ? 2.1 : 1.75) / safeK}
+              strokeLinecap="round"
+            />
+
+            {/* Sub-marcador específico por tipo topológico */}
+            {subType === "center" && (
+              <circle
+                cx={pt.x}
+                cy={pt.y}
+                r={4.5 / safeK}
+                fill="none"
+                stroke="#C084FC"
+                strokeWidth={1.3 / safeK}
+              />
+            )}
+
+            {(subType === "midpoint" || subType === "symmetry_midpoint") && (
+              <polygon
+                points={`${pt.x},${pt.y - 4.8 / safeK} ${pt.x - 4.2 / safeK},${pt.y + 3.6 / safeK} ${pt.x + 4.2 / safeK},${pt.y + 3.6 / safeK}`}
+                fill="none"
+                stroke="#C084FC"
+                strokeWidth={1.15 / safeK}
+              />
+            )}
+
+            {(subType === "intersection" || subType === "virtual_intersection") && (
+              <>
+                <line
+                  x1={pt.x - 4.5 / safeK}
+                  y1={pt.y - 4.5 / safeK}
+                  x2={pt.x + 4.5 / safeK}
+                  y2={pt.y + 4.5 / safeK}
+                  stroke="#E879F9"
+                  strokeWidth={1.3 / safeK}
+                />
+                <line
+                  x1={pt.x + 4.5 / safeK}
+                  y1={pt.y - 4.5 / safeK}
+                  x2={pt.x - 4.5 / safeK}
+                  y2={pt.y + 4.5 / safeK}
+                  stroke="#E879F9"
+                  strokeWidth={1.3 / safeK}
+                />
+              </>
+            )}
+
+            {subType === "tangent" && (
+              <>
+                <circle
+                  cx={pt.x}
+                  cy={pt.y + 2 / safeK}
+                  r={3.5 / safeK}
+                  fill="none"
+                  stroke="#C084FC"
+                  strokeWidth={1.15 / safeK}
+                />
+                <line
+                  x1={pt.x - 5.5 / safeK}
+                  y1={pt.y - 1.8 / safeK}
+                  x2={pt.x + 5.5 / safeK}
+                  y2={pt.y - 1.8 / safeK}
+                  stroke="#E879F9"
+                  strokeWidth={1.25 / safeK}
+                />
+              </>
+            )}
+
+            {/* Núcleo central nítido */}
+            <circle
+              cx={pt.x}
+              cy={pt.y}
+              r={2.1 / safeK}
+              fill={spec.isOrphan ? "#F59E0B" : "#E879F9"}
+            />
+
+            {/* Etiqueta compacta para divisão ÷N, interseção virtual ou estado órfão */}
+            {(subType === "span_division" ||
+              subType === "virtual_intersection" ||
+              subType === "symmetry_midpoint" ||
+              spec.isOrphan ||
+              isSelected) && (
+              <g transform={`translate(${pt.x}, ${pt.y - 14 / safeK})`}>
+                <rect
+                  x={-26 / safeK}
+                  y={-7 / safeK}
+                  width={52 / safeK}
+                  height={13 / safeK}
+                  rx={4 / safeK}
+                  fill={bgBadge}
+                  stroke={strokeColor}
+                  strokeWidth={1 / safeK}
+                />
+                <text
+                  x={0}
+                  y={2.5 / safeK}
+                  fill={spec.isOrphan ? "#FBBF24" : "#E9D5FF"}
+                  fontSize={7.2 / safeK}
+                  fontWeight="bold"
+                  fontFamily="ui-monospace, monospace"
+                  textAnchor="middle"
+                >
+                  {spec.isOrphan
+                    ? "ÓRFÃO"
+                    : subType === "span_division" && spec.divisionIndex && spec.divisionTotal
+                      ? `÷${spec.divisionTotal} (${spec.divisionIndex}/${spec.divisionTotal})`
+                      : subType === "virtual_intersection"
+                        ? "✕ VIRTUAL"
+                        : subType === "symmetry_midpoint"
+                          ? "⌖ SIMETRIA"
+                          : "MARCO"}
+                </text>
+              </g>
+            )}
+          </g>
+        );
+      })}
+
+      {/* =====================================================================
+          0B. SÍNTESE RELACIONAL ENTRE 2 ELEMENTOS (MODO 2 DO MARCO GEOMÉTRICO)
+              - Exibe pílula flutuante compacta quando 1 ou 2 pontos/entidades são tocados:
+                [ ⌖ Ponto Médio ] [ ✕ Interseção Virtual ] [ ÷2 ] [ ÷3 ] [ ÷4 ] [ ÷5 ]
+          ===================================================================== */}
+      {interactionGuideMode === "purple_ref" && relationalPicks.length > 0 && (
+        <g aria-label="Síntese Relacional de Marco Geométrico">
+          {relationalPicks.map((pk, idx) => (
+            <g key={`rel-pick-${idx}`}>
+              <circle
+                cx={pk.point.x}
+                cy={pk.point.y}
+                r={8 / safeK}
+                fill="rgba(168, 85, 247, 0.22)"
+                stroke="#E879F9"
+                strokeWidth={1.6 / safeK}
+              />
+              <text
+                x={pk.point.x + 10 / safeK}
+                y={pk.point.y - 6 / safeK}
+                fill="#E879F9"
+                fontSize={8.5 / safeK}
+                fontWeight="bold"
+                fontFamily="ui-monospace, monospace"
+              >
+                R{idx + 1}
+              </text>
+            </g>
+          ))}
+
+          {relationalPicks.length >= 2 &&
+            (() => {
+              const pA = relationalPicks[0]!.point;
+              const pB = relationalPicks[1]!.point;
+              const midPt: Vec2 = { x: (pA.x + pB.x) / 2, y: (pA.y + pB.y) / 2 };
+              const entA = relationalPicks[0]!.entityId
+                ? entities.find((e) => e.id === relationalPicks[0]!.entityId)
+                : undefined;
+              const entB = relationalPicks[1]!.entityId
+                ? entities.find((e) => e.id === relationalPicks[1]!.entityId)
+                : undefined;
+              const virtualHit = computeRelationalVirtualIntersection(entA, entB, pA, pB);
+
+              return (
+                <g>
+                  {/* Linha conectora violeta entre R1 e R2 */}
+                  <line
+                    x1={pA.x}
+                    y1={pA.y}
+                    x2={pB.x}
+                    y2={pB.y}
+                    stroke="#C084FC"
+                    strokeWidth={1.4 / safeK}
+                    strokeDasharray={`${5 / safeK},${3 / safeK}`}
+                  />
+
+                  {/* Linhas de extensão projetadas caso exista interseção virtual */}
+                  {virtualHit && (
+                    <>
+                      <line
+                        x1={pA.x}
+                        y1={pA.y}
+                        x2={virtualHit.x}
+                        y2={virtualHit.y}
+                        stroke="#E879F9"
+                        strokeWidth={1.15 / safeK}
+                        strokeDasharray={`${3 / safeK},${3 / safeK}`}
+                        strokeOpacity={0.75}
+                      />
+                      <line
+                        x1={pB.x}
+                        y1={pB.y}
+                        x2={virtualHit.x}
+                        y2={virtualHit.y}
+                        stroke="#E879F9"
+                        strokeWidth={1.15 / safeK}
+                        strokeDasharray={`${3 / safeK},${3 / safeK}`}
+                        strokeOpacity={0.75}
+                      />
+                      <circle
+                        cx={virtualHit.x}
+                        cy={virtualHit.y}
+                        r={5 / safeK}
+                        fill="none"
+                        stroke="#E879F9"
+                        strokeWidth={1.4 / safeK}
+                      />
+                    </>
+                  )}
+
+                  {/* Pílula Contextual Compacta de Síntese Relacional (Seção 4.4 Modo 2) */}
+                  <g
+                    transform={`translate(${midPt.x}, ${midPt.y - 34 / safeK})`}
+                    className="pointer-events-auto"
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <rect
+                      x={-166 / safeK}
+                      y={-15 / safeK}
+                      width={332 / safeK}
+                      height={30 / safeK}
+                      rx={8 / safeK}
+                      fill={isDark ? "rgba(13, 10, 26, 0.96)" : "rgba(255, 255, 255, 0.98)"}
+                      stroke="#A855F7"
+                      strokeWidth={1.5 / safeK}
+                    />
+
+                    {/* [ ⌖ Ponto Médio ] */}
+                    <g
+                      transform={`translate(${-118 / safeK}, 0)`}
+                      className="cursor-pointer"
+                      data-testid="relational-btn-midpoint"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTriggerRelationalSynthesis?.("symmetry_midpoint");
+                      }}
+                    >
+                      <rect
+                        x={-42 / safeK}
+                        y={-10 / safeK}
+                        width={84 / safeK}
+                        height={20 / safeK}
+                        rx={5 / safeK}
+                        fill="#7E22CE"
+                      />
+                      <text
+                        x={0}
+                        y={3.2 / safeK}
+                        fill="#FFFFFF"
+                        fontSize={8 / safeK}
+                        fontWeight="bold"
+                        fontFamily="ui-monospace, monospace"
+                        textAnchor="middle"
+                      >
+                        ⌖ Ponto Médio
+                      </text>
+                    </g>
+
+                    {/* [ ✕ Interseção Virtual ] */}
+                    <g
+                      transform={`translate(${-30 / safeK}, 0)`}
+                      className="cursor-pointer"
+                      data-testid="relational-btn-virtual-intersection"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTriggerRelationalSynthesis?.("virtual_intersection");
+                      }}
+                    >
+                      <rect
+                        x={-41 / safeK}
+                        y={-10 / safeK}
+                        width={82 / safeK}
+                        height={20 / safeK}
+                        rx={5 / safeK}
+                        fill={virtualHit ? "#9333EA" : "#475569"}
+                      />
+                      <text
+                        x={0}
+                        y={3.2 / safeK}
+                        fill="#FFFFFF"
+                        fontSize={7.8 / safeK}
+                        fontWeight="bold"
+                        fontFamily="ui-monospace, monospace"
+                        textAnchor="middle"
+                      >
+                        ✕ Interseção
+                      </text>
+                    </g>
+
+                    {/* Botões de Divisão de Vão [ ÷2 ] [ ÷3 ] [ ÷4 ] [ ÷5 ] */}
+                    {[2, 3, 4, 5].map((divN, i) => {
+                      const offsetX = (28 + i * 25) / safeK;
+                      return (
+                        <g
+                          key={`div-btn-${divN}`}
+                          transform={`translate(${offsetX}, 0)`}
+                          className="cursor-pointer"
+                          data-testid={`relational-btn-div-${divN}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onTriggerRelationalSynthesis?.("span_division", divN);
+                          }}
+                        >
+                          <rect
+                            x={-11 / safeK}
+                            y={-10 / safeK}
+                            width={22 / safeK}
+                            height={20 / safeK}
+                            rx={4 / safeK}
+                            fill="#6B21A8"
+                            stroke="#C084FC"
+                            strokeWidth={0.9 / safeK}
+                          />
+                          <text
+                            x={0}
+                            y={3.2 / safeK}
+                            fill="#F3E8FF"
+                            fontSize={8 / safeK}
+                            fontWeight="bold"
+                            fontFamily="ui-monospace, monospace"
+                            textAnchor="middle"
+                          >
+                            ÷{divN}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* [ ✕ Limpar ] */}
+                    <g
+                      transform={`translate(${146 / safeK}, 0)`}
+                      className="cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onClearRelationalPicks?.();
+                      }}
+                    >
+                      <rect
+                        x={-14 / safeK}
+                        y={-10 / safeK}
+                        width={28 / safeK}
+                        height={20 / safeK}
+                        rx={4 / safeK}
+                        fill="#334155"
+                      />
+                      <text
+                        x={0}
+                        y={3.2 / safeK}
+                        fill="#F8FAFC"
+                        fontSize={8 / safeK}
+                        fontWeight="bold"
+                        fontFamily="ui-monospace, monospace"
+                        textAnchor="middle"
+                      >
+                        ✕
+                      </text>
+                    </g>
+                  </g>
+                </g>
+              );
+            })()}
+        </g>
+      )}
+
+      {/* =====================================================================
+          0C. DATUMS PERSISTENTES NO PROJETO (SEÇÃO 3)
+              - Persistem após soltar o dedo/cursor
+              - Exibem Cateto Horizontal (ΔX), Cateto Vertical (ΔY), Hipotenusa (L) e Ângulo (∠)
+              - Destaque visual da medida selecionada e conversão direta em linhas reais (LINE)
+          ===================================================================== */}
+      {persistentDatumEntities.map((datumEnt) => {
+        const spec = getPersistentDatumSpec(datumEnt);
+        if (!spec || spec.visible === false) return null;
+        const metrics = computePersistentDatumMetrics(spec.origin, spec.target);
+        const isSelected = selectedSet.has(datumEnt.id);
+        const activeComp = spec.selectedComponent ?? activeDatumComponent;
+        const dxActive = activeComp === "dx";
+        const dyActive = activeComp === "dy";
+        const lActive = activeComp === "L";
+        const angActive = activeComp === "angle";
+
+        return (
+          <g
+            key={`persistent-datum-${datumEnt.id}`}
+            data-testid={`persistent-datum-${datumEnt.id}`}
+            aria-label="Vetor Datum Persistente com Projeção nos Catetos"
+          >
+            {/* Cateto Horizontal ΔX: (x1, y1) -> (x2, y1) */}
+            {metrics.absDx > 0.5 / safeK && (
+              <line
+                x1={spec.origin.x}
+                y1={spec.origin.y}
+                x2={metrics.corner.x}
+                y2={metrics.corner.y}
+                stroke={dxActive ? "#FBBF24" : blueMain}
+                strokeWidth={(dxActive ? 2.4 : isSelected ? 1.7 : 1.3) / safeK}
+                strokeDasharray={`${5 / safeK},${3 / safeK}`}
+                strokeOpacity={dxActive ? 1 : 0.85}
+              />
+            )}
+
+            {/* Cateto Vertical ΔY: (x2, y1) -> (x2, y2) */}
+            {metrics.absDy > 0.5 / safeK && (
+              <line
+                x1={metrics.corner.x}
+                y1={metrics.corner.y}
+                x2={spec.target.x}
+                y2={spec.target.y}
+                stroke={dyActive ? "#FBBF24" : blueMain}
+                strokeWidth={(dyActive ? 2.4 : isSelected ? 1.7 : 1.3) / safeK}
+                strokeDasharray={`${5 / safeK},${3 / safeK}`}
+                strokeOpacity={dyActive ? 1 : 0.85}
+              />
+            )}
+
+            {/* Hipotenusa L: (x1, y1) -> (x2, y2) */}
+            <line
+              x1={spec.origin.x}
+              y1={spec.origin.y}
+              x2={spec.target.x}
+              y2={spec.target.y}
+              stroke={lActive ? "#FBBF24" : blueMain}
+              strokeWidth={(lActive ? 2.5 : isSelected ? 1.9 : 1.45) / safeK}
+              strokeDasharray={`${6 / safeK},${3.5 / safeK}`}
+            />
+
+            {/* Marcador de Origem A e Alvo B do Datum Persistente */}
+            <circle
+              cx={spec.origin.x}
+              cy={spec.origin.y}
+              r={4.5 / safeK}
+              fill={crimsonMain}
+              stroke="#FFFFFF"
+              strokeWidth={1 / safeK}
+            />
+            <circle
+              cx={spec.target.x}
+              cy={spec.target.y}
+              r={3.8 / safeK}
+              fill={isDark ? "#090D16" : "#FFFFFF"}
+              stroke={blueMain}
+              strokeWidth={1.6 / safeK}
+            />
+
+            {/* Pílula Interativa Cateto ΔX */}
+            {metrics.absDx > 1 / safeK && (
+              <g
+                transform={`translate(${(spec.origin.x + metrics.corner.x) / 2}, ${
+                  spec.origin.y + (metrics.dy >= 0 ? -13 : 13) / safeK
+                })`}
+                className="pointer-events-auto cursor-pointer"
+                data-testid={`datum-pill-dx-${datumEnt.id}`}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectDatumComponent?.(datumEnt.id, "dx", metrics.absDx, {
+                    x: e.clientX,
+                    y: e.clientY,
+                  });
+                }}
+              >
+                <rect
+                  x={-36 / safeK}
+                  y={-8 / safeK}
+                  width={72 / safeK}
+                  height={16 / safeK}
+                  rx={8 / safeK}
+                  fill={bgBadge}
+                  stroke={dxActive ? "#F59E0B" : blueMain}
+                  strokeWidth={(dxActive ? 1.8 : 1.15) / safeK}
+                />
+                <text
+                  x={0}
+                  y={3 / safeK}
+                  fill={dxActive ? "#FDE68A" : blueMain}
+                  fontSize={7.8 / safeK}
+                  fontWeight="bold"
+                  fontFamily="ui-monospace, monospace"
+                  textAnchor="middle"
+                >
+                  ΔX: {metrics.absDx.toFixed(1)}
+                </text>
+              </g>
+            )}
+
+            {/* Pílula Interativa Cateto ΔY */}
+            {metrics.absDy > 1 / safeK && (
+              <g
+                transform={`translate(${
+                  metrics.corner.x + (metrics.dx >= 0 ? 42 : -42) / safeK
+                }, ${(metrics.corner.y + spec.target.y) / 2})`}
+                className="pointer-events-auto cursor-pointer"
+                data-testid={`datum-pill-dy-${datumEnt.id}`}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSelectDatumComponent?.(datumEnt.id, "dy", metrics.absDy, {
+                    x: e.clientX,
+                    y: e.clientY,
+                  });
+                }}
+              >
+                <rect
+                  x={-36 / safeK}
+                  y={-8 / safeK}
+                  width={72 / safeK}
+                  height={16 / safeK}
+                  rx={8 / safeK}
+                  fill={bgBadge}
+                  stroke={dyActive ? "#F59E0B" : blueMain}
+                  strokeWidth={(dyActive ? 1.8 : 1.15) / safeK}
+                />
+                <text
+                  x={0}
+                  y={3 / safeK}
+                  fill={dyActive ? "#FDE68A" : blueMain}
+                  fontSize={7.8 / safeK}
+                  fontWeight="bold"
+                  fontFamily="ui-monospace, monospace"
+                  textAnchor="middle"
+                >
+                  ΔY: {metrics.absDy.toFixed(1)}
+                </text>
+              </g>
+            )}
+
+            {/* Pílula Interativa Hipotenusa L e Ângulo ∠ */}
+            <g
+              transform={`translate(${(spec.origin.x + spec.target.x) / 2}, ${
+                (spec.origin.y + spec.target.y) / 2 - 14 / safeK
+              })`}
+              className="pointer-events-auto cursor-pointer"
+              data-testid={`datum-pill-L-${datumEnt.id}`}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectDatumComponent?.(datumEnt.id, "L", metrics.length, {
+                  x: e.clientX,
+                  y: e.clientY,
+                });
+              }}
+            >
+              <rect
+                x={-52 / safeK}
+                y={-8 / safeK}
+                width={104 / safeK}
+                height={16 / safeK}
+                rx={8 / safeK}
+                fill={bgBadge}
+                stroke={lActive || angActive ? "#F59E0B" : blueMain}
+                strokeWidth={(lActive || angActive ? 1.8 : 1.2) / safeK}
+              />
+              <text
+                x={0}
+                y={3 / safeK}
+                fill={lActive || angActive ? "#FDE68A" : blueMain}
+                fontSize={7.8 / safeK}
+                fontWeight="bold"
+                fontFamily="ui-monospace, monospace"
+                textAnchor="middle"
+              >
+                L: {metrics.length.toFixed(1)} · ∠{metrics.angleDeg.toFixed(0)}°
+              </text>
+            </g>
+
+            {/* Barra de Conversão Direta em Linhas Reais (LINE) (Seção 3.4) */}
+            {onConvertDatumToLines && (
+              <g
+                transform={`translate(${(spec.origin.x + spec.target.x) / 2}, ${
+                  Math.max(spec.origin.y, spec.target.y) + 24 / safeK
+                })`}
+                className="pointer-events-auto"
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <rect
+                  x={-148 / safeK}
+                  y={-12 / safeK}
+                  width={296 / safeK}
+                  height={24 / safeK}
+                  rx={6 / safeK}
+                  fill={isDark ? "rgba(9, 13, 22, 0.96)" : "rgba(255, 255, 255, 0.98)"}
+                  stroke={blueMain}
+                  strokeWidth={1.25 / safeK}
+                />
+
+                {/* [ + Linha ΔX ] */}
+                <g
+                  transform={`translate(${-110 / safeK}, 0)`}
+                  className="cursor-pointer"
+                  data-testid={`datum-create-line-dx-${datumEnt.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onConvertDatumToLines(datumEnt.id, "dx", spec.origin, spec.target);
+                  }}
+                >
+                  <rect
+                    x={-33 / safeK}
+                    y={-8.5 / safeK}
+                    width={66 / safeK}
+                    height={17 / safeK}
+                    rx={4 / safeK}
+                    fill="#0284C7"
+                  />
+                  <text
+                    x={0}
+                    y={2.8 / safeK}
+                    fill="#FFFFFF"
+                    fontSize={7.3 / safeK}
+                    fontWeight="bold"
+                    fontFamily="ui-monospace, monospace"
+                    textAnchor="middle"
+                  >
+                    + Linha ΔX
+                  </text>
+                </g>
+
+                {/* [ + Linha ΔY ] */}
+                <g
+                  transform={`translate(${-40 / safeK}, 0)`}
+                  className="cursor-pointer"
+                  data-testid={`datum-create-line-dy-${datumEnt.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onConvertDatumToLines(datumEnt.id, "dy", spec.origin, spec.target);
+                  }}
+                >
+                  <rect
+                    x={-33 / safeK}
+                    y={-8.5 / safeK}
+                    width={66 / safeK}
+                    height={17 / safeK}
+                    rx={4 / safeK}
+                    fill="#0284C7"
+                  />
+                  <text
+                    x={0}
+                    y={2.8 / safeK}
+                    fill="#FFFFFF"
+                    fontSize={7.3 / safeK}
+                    fontWeight="bold"
+                    fontFamily="ui-monospace, monospace"
+                    textAnchor="middle"
+                  >
+                    + Linha ΔY
+                  </text>
+                </g>
+
+                {/* [ + Linha L ] */}
+                <g
+                  transform={`translate(${28 / safeK}, 0)`}
+                  className="cursor-pointer"
+                  data-testid={`datum-create-line-L-${datumEnt.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onConvertDatumToLines(datumEnt.id, "L", spec.origin, spec.target);
+                  }}
+                >
+                  <rect
+                    x={-31 / safeK}
+                    y={-8.5 / safeK}
+                    width={62 / safeK}
+                    height={17 / safeK}
+                    rx={4 / safeK}
+                    fill="#0369A1"
+                  />
+                  <text
+                    x={0}
+                    y={2.8 / safeK}
+                    fill="#FFFFFF"
+                    fontSize={7.3 / safeK}
+                    fontWeight="bold"
+                    fontFamily="ui-monospace, monospace"
+                    textAnchor="middle"
+                  >
+                    + Linha L
+                  </text>
+                </g>
+
+                {/* [ ↱ Catetos X+Y ] */}
+                <g
+                  transform={`translate(${103 / safeK}, 0)`}
+                  className="cursor-pointer"
+                  data-testid={`datum-create-both-legs-${datumEnt.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onConvertDatumToLines(datumEnt.id, "both_legs", spec.origin, spec.target);
+                  }}
+                >
+                  <rect
+                    x={-40 / safeK}
+                    y={-8.5 / safeK}
+                    width={80 / safeK}
+                    height={17 / safeK}
+                    rx={4 / safeK}
+                    fill="#059669"
+                  />
+                  <text
+                    x={0}
+                    y={2.8 / safeK}
+                    fill="#FFFFFF"
+                    fontSize={7.3 / safeK}
+                    fontWeight="bold"
+                    fontFamily="ui-monospace, monospace"
+                    textAnchor="middle"
+                  >
+                    ↱ Catetos X+Y
+                  </text>
+                </g>
+              </g>
+            )}
+          </g>
+        );
+      })}
+
       {/* =====================================================================
           0. PONTOS DE ENCONTRO ROXOS (+) CONFIRMADOS / FIXADOS NO CANVAS
              Adaptam-se automaticamente ponta a ponta a círculos/formas!

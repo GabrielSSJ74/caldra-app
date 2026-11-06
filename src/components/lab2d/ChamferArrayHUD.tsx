@@ -40,6 +40,11 @@ export interface ChamferArrayHUDProps {
   isPickingCenter: boolean;
   onTogglePickCenter: () => void;
   onSelectCandidateCenter?: (center: Vec2) => void;
+  autoIncludedCount?: number;
+  includeAssembly?: boolean;
+  onToggleIncludeAssembly?: () => void;
+  autoTrim?: boolean;
+  onToggleAutoTrim?: () => void;
   onApply: () => void;
   onCancel: () => void;
   isDark: boolean;
@@ -78,6 +83,11 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
   isPickingCenter,
   onTogglePickCenter,
   onSelectCandidateCenter,
+  autoIncludedCount = 0,
+  includeAssembly = true,
+  onToggleIncludeAssembly,
+  autoTrim,
+  onToggleAutoTrim,
   onApply,
   onCancel,
   isDark,
@@ -294,10 +304,10 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
             </button>
           </div>
 
-          {/* Seletor Segmentado de Largura Total no Topo */}
+          {/* Seletor Segmentado de 3 Modos Completos: Linear, Retangular e Polar */}
           <div
             className={cn(
-              "grid grid-cols-2 gap-1 rounded-xl border p-1",
+              "grid grid-cols-3 gap-1 rounded-xl border p-1",
               isDark
                 ? "border-[#293444] bg-[#151C27]"
                 : "border-[#CBD5E1] bg-[#FFFFFF]",
@@ -305,12 +315,57 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
           >
             <button
               type="button"
+              data-testid="array-mode-linear"
+              onClick={() => {
+                triggerHaptic("selection");
+                onChangeArrayType("linear");
+                onChangeLinearParams((p) => ({ ...p, rows: 1 }));
+              }}
+              className={cn(
+                "flex items-center justify-center gap-1 rounded-lg py-1.5 font-mono text-[10px] font-bold transition-all cursor-pointer",
+                arrayType === "linear" && (linearParams.rows ?? 1) <= 1
+                  ? "bg-cyan-500 text-slate-950 shadow-sm"
+                  : isDark
+                    ? "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+              )}
+            >
+              <ArrowLeftRight className="size-3" />
+              <span>Linear</span>
+            </button>
+            <button
+              type="button"
+              data-testid="array-mode-rectangular"
+              onClick={() => {
+                triggerHaptic("selection");
+                onChangeArrayType("linear");
+                onChangeLinearParams((p) => ({
+                  ...p,
+                  rows: Math.max(2, p.rows || 2),
+                  cols: Math.max(2, p.cols || 2),
+                }));
+              }}
+              className={cn(
+                "flex items-center justify-center gap-1 rounded-lg py-1.5 font-mono text-[10px] font-bold transition-all cursor-pointer",
+                arrayType === "linear" && (linearParams.rows ?? 1) > 1
+                  ? "bg-cyan-500 text-slate-950 shadow-sm"
+                  : isDark
+                    ? "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+              )}
+            >
+              <Grid className="size-3" />
+              <span>Retangular</span>
+            </button>
+            <button
+              type="button"
+              data-testid="array-mode-polar"
               onClick={() => {
                 triggerHaptic("selection");
                 onChangeArrayType("polar");
               }}
               className={cn(
-                "flex items-center justify-center gap-1.5 rounded-lg py-1.5 font-mono text-[10px] font-bold transition-all cursor-pointer",
+                "flex items-center justify-center gap-1 rounded-lg py-1.5 font-mono text-[10px] font-bold transition-all cursor-pointer",
                 arrayType === "polar"
                   ? "bg-cyan-500 text-slate-950 shadow-sm"
                   : isDark
@@ -319,25 +374,7 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
               )}
             >
               <RotateCw className="size-3" />
-              <span>Padrão Circular</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                onChangeArrayType("linear");
-              }}
-              className={cn(
-                "flex items-center justify-center gap-1.5 rounded-lg py-1.5 font-mono text-[10px] font-bold transition-all cursor-pointer",
-                arrayType === "linear"
-                  ? "bg-cyan-500 text-slate-950 shadow-sm"
-                  : isDark
-                    ? "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-              )}
-            >
-              <Grid className="size-3" />
-              <span>Padrão Linear</span>
+              <span>Polar</span>
             </button>
           </div>
         </div>
@@ -1334,6 +1371,82 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
             </div>
 
             <div className="space-y-1.5">
+              {/* Toggle [ ⚡ Auto-Trim / Unir Contorno ] */}
+              {(() => {
+                const isAutoTrimActive =
+                  autoTrim ??
+                  (arrayType === "polar"
+                    ? Boolean(polarParams.autoTrim)
+                    : Boolean(linearParams.autoTrim));
+                return (
+                  <button
+                    type="button"
+                    data-testid="array-autotrim-toggle"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      if (onToggleAutoTrim) {
+                        onToggleAutoTrim();
+                      } else if (arrayType === "polar") {
+                        onChangePolarParams((p) => ({ ...p, autoTrim: !p.autoTrim }));
+                      } else {
+                        onChangeLinearParams((p) => ({ ...p, autoTrim: !p.autoTrim }));
+                      }
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-1.5 font-mono text-[10px] font-bold transition-all cursor-pointer",
+                      isAutoTrimActive
+                        ? "border-amber-400 bg-amber-500/20 text-amber-200 shadow-xs"
+                        : isDark
+                          ? "border-slate-800 bg-slate-950/75 text-slate-300 hover:border-amber-500/40"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-amber-400",
+                    )}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <span>⚡ Auto-Trim / Unir Contorno</span>
+                    </span>
+                    <span
+                      className={cn(
+                        "rounded px-2 py-0.5 font-mono text-[9px] font-bold",
+                        isAutoTrimActive
+                          ? "bg-amber-400 text-slate-950"
+                          : isDark
+                            ? "bg-slate-800 text-slate-400"
+                            : "bg-slate-100 text-slate-500",
+                      )}
+                    >
+                      {isAutoTrimActive ? "ON" : "OFF"}
+                    </span>
+                  </button>
+                );
+              })()}
+
+              {/* Conjunto Geométrico Automático (Furos e Geometrias Internas) */}
+              {(autoIncludedCount > 0 || onToggleIncludeAssembly) && (
+                <div className={rowClass}>
+                  <span className="font-mono text-[10px] font-semibold">
+                    Conjunto Interno ({autoIncludedCount} item{autoIncludedCount === 1 ? "" : "s"})
+                  </span>
+                  <button
+                    type="button"
+                    data-testid="array-assembly-toggle"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      onToggleIncludeAssembly?.();
+                    }}
+                    className={cn(
+                      "rounded-md border px-2.5 py-0.5 font-mono text-[10px] font-bold transition-colors cursor-pointer",
+                      includeAssembly
+                        ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
+                        : isDark
+                          ? "border-slate-700 bg-slate-900 text-slate-400"
+                          : "border-slate-300 bg-slate-100 text-slate-600",
+                    )}
+                  >
+                    {includeAssembly ? "INCLUÍDO" : "SÓ BORDA"}
+                  </button>
+                </div>
+              )}
+
               {arrayType === "polar" && (
                 <div className={rowClass}>
                   <span className="font-mono text-[10px] font-semibold">

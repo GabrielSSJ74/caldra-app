@@ -21,24 +21,58 @@ import type { Vec2 } from "@/lib/geometry/types";
 import { dist, type Entity, segmentsOf, lineIntersection, closestOnSegment, entityPoints } from "./core";
 
 export type SmartSnapKind =
-  | "end"          // Extremidade
-  | "mid"          // Ponto Médio
-  | "center"       // Centro
-  | "quadrant"     // Quadrante
-  | "intersection" // Interseção Real
-  | "proj_inter"   // Interseção Projetada
-  | "tangent"      // Tangência
-  | "perp"         // Perpendicular
-  | "geratriz"     // Geratriz de Caldeiraria
-  | "division"     // Divisão Virtual de Snap
-  | "construction" // Ponto de Construção / Bounding Box
-  | "origin"       // Origem (0, 0)
-  | "near";        // Mais Próximo
+  | "end"            // Extremidade
+  | "mid"            // Ponto Médio
+  | "center"         // Centro
+  | "quadrant"       // Quadrante
+  | "intersection"   // Interseção Real
+  | "proj_inter"     // Interseção Projetada
+  | "tangent"        // Tangência
+  | "perp"           // Perpendicular
+  | "geratriz"       // Geratriz de Caldeiraria
+  | "division"       // Divisão Virtual de Snap
+  | "construction"   // Ponto de Construção / Bounding Box
+  | "origin"         // Origem (0, 0)
+  | "geometric_mark" // Marco Geométrico Associativo (+)
+  | "datum_ref"      // Referência de Datum Persistente
+  | "near";          // Mais Próximo
+
+export type CanonicalSnapResultType =
+  | "endpoint"
+  | "midpoint"
+  | "center"
+  | "intersection"
+  | "perpendicular"
+  | "tangent"
+  | "quadrant"
+  | "nearest"
+  | "extension"
+  | "grid"
+  | "geometric_mark"
+  | "datum_ref"
+  | "none";
+
+/**
+ * Estrutura única e autoritativa de resultado do motor central de SNAP (Seção 6.2),
+ * compartilhada entre a prancheta principal e a Lupa de Precisão sem recálculos paralelos.
+ */
+export interface SnapResult {
+  valid: boolean;
+  type: CanonicalSnapResultType;
+  worldPoint: { x: number; y: number };
+  screenPoint: { x: number; y: number };
+  entityId?: string;
+  subEntityId?: string;
+  distancePx: number;
+  priority: number;
+  label: string;
+}
 
 export interface SmartReferencePoint {
   p: Vec2;
   kind: SmartSnapKind;
   entityId?: string;
+  subEntityId?: string;
   label: string;
   desc?: string;
   priority: number;
@@ -57,8 +91,112 @@ export const SMART_SNAP_LABELS: Record<SmartSnapKind, string> = {
   division: "Divisão do Snap",
   construction: "Construção",
   origin: "Origem (0,0)",
+  geometric_mark: "Marco Geométrico",
+  datum_ref: "Datum",
   near: "Mais Próximo",
 };
+
+export function mapSmartSnapKindToCanonicalType(kind: string): CanonicalSnapResultType {
+  switch (kind) {
+    case "end":
+    case "origin":
+      return "endpoint";
+    case "mid":
+    case "division":
+    case "geratriz":
+      return "midpoint";
+    case "center":
+    case "construction":
+      return "center";
+    case "intersection":
+    case "cross":
+      return "intersection";
+    case "proj_inter":
+      return "extension";
+    case "perp":
+      return "perpendicular";
+    case "tangent":
+      return "tangent";
+    case "quadrant":
+      return "quadrant";
+    case "geometric_mark":
+      return "geometric_mark";
+    case "datum_ref":
+      return "datum_ref";
+    case "grid":
+      return "grid";
+    case "near":
+      return "nearest";
+    default:
+      return "none";
+  }
+}
+
+/**
+ * Constrói o `SnapResult` único e determinístico a partir do resultado do motor de SNAP central.
+ */
+export function buildUnifiedSnapResult(
+  rawWorldCursor: Vec2,
+  smartSnap: SmartReferencePoint | null | undefined,
+  fallbackSnap: { p: Vec2; kind: string } | null | undefined,
+  view: { k: number; tx: number; ty: number },
+): SnapResult {
+  const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
+  const toScreen = (pt: Vec2) => ({
+    x: pt.x * safeK + (Number.isFinite(view.tx) ? view.tx : 0),
+    y: pt.y * safeK + (Number.isFinite(view.ty) ? view.ty : 0),
+  });
+
+  if (smartSnap && Number.isFinite(smartSnap.p.x) && Number.isFinite(smartSnap.p.y)) {
+    const dWorld = dist(rawWorldCursor, smartSnap.p);
+    return {
+      valid: true,
+      type: mapSmartSnapKindToCanonicalType(smartSnap.kind),
+      worldPoint: { x: smartSnap.p.x, y: smartSnap.p.y },
+      screenPoint: toScreen(smartSnap.p),
+      entityId: smartSnap.entityId,
+      subEntityId: smartSnap.subEntityId,
+      distancePx: Number((dWorld * safeK).toFixed(2)),
+      priority: smartSnap.priority,
+      label: smartSnap.label,
+    };
+  }
+
+  if (fallbackSnap && Number.isFinite(fallbackSnap.p.x) && Number.isFinite(fallbackSnap.p.y)) {
+    const dWorld = dist(rawWorldCursor, fallbackSnap.p);
+    const canonType = mapSmartSnapKindToCanonicalType(fallbackSnap.kind);
+    return {
+      valid: true,
+      type: canonType,
+      worldPoint: { x: fallbackSnap.p.x, y: fallbackSnap.p.y },
+      screenPoint: toScreen(fallbackSnap.p),
+      distancePx: Number((dWorld * safeK).toFixed(2)),
+      priority: canonType === "grid" ? 10 : 5,
+      label:
+        canonType === "grid"
+          ? "Grade"
+          : canonType === "endpoint"
+            ? "Extremidade"
+            : canonType === "midpoint"
+              ? "Ponto Médio"
+              : canonType === "center"
+                ? "Centro"
+                : canonType === "intersection"
+                  ? "Interseção"
+                  : "Snap",
+    };
+  }
+
+  return {
+    valid: false,
+    type: "none",
+    worldPoint: { x: rawWorldCursor.x, y: rawWorldCursor.y },
+    screenPoint: toScreen(rawWorldCursor),
+    distancePx: 0,
+    priority: 999,
+    label: "",
+  };
+}
 
 /**
  * Normaliza um ângulo em radianos para o intervalo [0, 2π).
@@ -519,6 +657,65 @@ export function extractEntitySmartReferences(
       { p: { x: e.cx, y: e.cy + e.ry }, kind: "quadrant", entityId: e.id, label: "Quadrante Menor", priority: 2 },
       { p: { x: e.cx, y: e.cy - e.ry }, kind: "quadrant", entityId: e.id, label: "Quadrante Menor", priority: 2 },
     );
+    return refs;
+  }
+
+  // 6. Ponto Técnico / Marco Geométrico Associativo (+) / Datum Persistente
+  if (e.type === "point") {
+    const semKind = e.params?.cadSemanticKind;
+    if (semKind === "geometric_mark") {
+      refs.push({
+        p: { x: e.x, y: e.y },
+        kind: "geometric_mark",
+        entityId: e.id,
+        label: e.label ?? "Marco Geométrico (+)",
+        priority: 0.25,
+      });
+      return refs;
+    }
+    if (semKind === "persistent_datum") {
+      const datumSpec = e.params?.persistentDatumSpec as
+        | { origin?: Vec2; target?: Vec2 }
+        | undefined;
+      const orig = datumSpec?.origin ?? { x: e.x, y: e.y };
+      const targ = datumSpec?.target;
+      refs.push({
+        p: orig,
+        kind: "datum_ref",
+        entityId: e.id,
+        subEntityId: "origin",
+        label: "Datum · Origem A",
+        priority: 0.35,
+      });
+      if (targ && Number.isFinite(targ.x) && Number.isFinite(targ.y)) {
+        refs.push(
+          {
+            p: targ,
+            kind: "datum_ref",
+            entityId: e.id,
+            subEntityId: "target",
+            label: "Datum · Alvo B",
+            priority: 0.35,
+          },
+          {
+            p: { x: targ.x, y: orig.y },
+            kind: "datum_ref",
+            entityId: e.id,
+            subEntityId: "corner",
+            label: "Datum · Esquadro (ΔX/ΔY)",
+            priority: 0.5,
+          },
+        );
+      }
+      return refs;
+    }
+    refs.push({
+      p: { x: e.x, y: e.y },
+      kind: "end",
+      entityId: e.id,
+      label: e.label ?? "Ponto",
+      priority: 1,
+    });
     return refs;
   }
 
