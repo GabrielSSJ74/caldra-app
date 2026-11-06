@@ -651,6 +651,7 @@ export const ChamferDraftConfirmationBubble: React.FC<ChamferDraftConfirmationBu
     value: number;
     unit: string;
     screenPos: Vec2;
+    snapshotShape: PendingDraftShape;
   } | null>(null);
 
   if (!pendingShape) return null;
@@ -662,9 +663,13 @@ export const ChamferDraftConfirmationBubble: React.FC<ChamferDraftConfirmationBu
   const screenMinY = box.minY * safeK + view.ty;
   const screenMaxY = box.maxY * safeK + view.ty;
 
-  // Posiciona a bolha logo abaixo ou ao lado da forma, NUNCA cobrindo a geometria!
+  // Posiciona a bolha logo abaixo ou ao lado da forma, NUNCA cobrindo a geometria nem o painel direito!
   const centerX = (screenMinX + screenMaxX) / 2;
-  const clampedLeft = Math.min(Math.max(168, centerX), Math.max(170, canvasWidth - 168));
+  const rightSafeMargin = activeField ? 290 : 168;
+  const clampedLeft = Math.min(
+    Math.max(168, centerX),
+    Math.max(170, canvasWidth - rightSafeMargin),
+  );
   let bubbleTop = screenMaxY + 18;
   if (bubbleTop > canvasHeight - 96) {
     // Se a forma estiver próxima da borda inferior, posiciona acima da forma
@@ -686,6 +691,7 @@ export const ChamferDraftConfirmationBubble: React.FC<ChamferDraftConfirmationBu
       value,
       unit,
       screenPos: { x: ev.clientX, y: ev.clientY },
+      snapshotShape: pendingShape,
     });
   };
 
@@ -957,7 +963,10 @@ export const ChamferDraftConfirmationBubble: React.FC<ChamferDraftConfirmationBu
       {activeField && (
         <ChamferDirectDimensionEditor
           open={true}
-          onClose={() => setActiveField(null)}
+          onClose={() => {
+            onUpdatePendingShape(activeField.snapshotShape);
+            setActiveField(null);
+          }}
           screenPos={activeField.screenPos}
           currentValue={activeField.value}
           label={activeField.label}

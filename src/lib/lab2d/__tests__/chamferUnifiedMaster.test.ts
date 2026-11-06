@@ -16,8 +16,19 @@ import {
 } from "../cadGeometricMarks";
 import {
   TOUCH_CURSOR_OFFSET_PX,
+  NUDGE_AUTO_REPEAT_DELAY_MS,
+  NUDGE_AUTO_REPEAT_INTERVAL_MS,
   computeTouchCursorScreenAndWorld,
+  computeNudgeDelta,
+  resolveAccentHex,
+  resolveAccentContrastText,
 } from "../../../components/lab2d/ChamferVirtualCursor";
+import {
+  AUTO_FRAMING_DURATION_MS,
+  evaluateFluidFramingEasing,
+  computeEntitiesBoundingBox,
+  computeLeftSideFramingView,
+} from "../../../components/lab2d/mobileEdit/useSmartFraming";
 import {
   findEnclosedAndConnectedAssembly,
   applyArrayAutoTrim,
@@ -478,6 +489,80 @@ describe("CHAMFER CAD — Prompt Mestre Unificado (Pure Logic Verification)", ()
       const orbesVivosMax = computeOrbOpticalHierarchyState(AUTONOMOUS_COLOR_ORBS[0]!, 0, "fluido");
       assert.equal(orbesVivosMax.scale, 2.25);
       assert.equal(orbesVivosMax.opacity, 0.56);
+    });
+  });
+
+  describe("Seção 9 / Teste 9: Ajuste Fino (Auto-Repeat + Accent Color) e Auto-Enquadramento Fluido à Esquerda", () => {
+    it("valida constantes de auto-repetição (250ms/70ms), paleta de destaque e incremento direcional exato", () => {
+      assert.equal(NUDGE_AUTO_REPEAT_DELAY_MS, 250);
+      assert.equal(NUDGE_AUTO_REPEAT_INTERVAL_MS, 70);
+
+      // Adaptação à Cor de Destaque (ex: Laranja/Âmbar #FF6B00 no escuro, #EA580C no claro)
+      assert.equal(resolveAccentHex("amber", true), "#FF6B00");
+      assert.equal(resolveAccentHex("amber", false), "#EA580C");
+      assert.equal(resolveAccentContrastText("amber", true), "#05070B");
+      assert.equal(resolveAccentContrastText("amber", false), "#FFFFFF");
+
+      const deltaRight = computeNudgeDelta("right", 5, "orthographic");
+      assert.deepEqual(deltaRight, { x: 5, y: 0 });
+      const deltaUp = computeNudgeDelta("up", 0.1, "orthographic");
+      assert.deepEqual(deltaUp, { x: 0, y: -0.1 });
+    });
+
+    it("enquadra e centraliza a peça exatamente na Área Livre Disponível à esquerda da janela de medidas", () => {
+      assert.equal(AUTO_FRAMING_DURATION_MS, 420);
+      assert.equal(evaluateFluidFramingEasing(0), 0);
+      assert.equal(evaluateFluidFramingEasing(1), 1);
+      assert.ok(evaluateFluidFramingEasing(0.5) > 0.85, "Curva cubic-bezier(0.22, 1, 0.36, 1) desacelera suavemente");
+
+      const rectPoly: Entity = {
+        id: "r-piece",
+        layer: "corte",
+        type: "polyline",
+        closed: true,
+        pts: [
+          { x: 100, y: 200 },
+          { x: 500, y: 200 },
+          { x: 500, y: 400 },
+          { x: 100, y: 400 },
+        ],
+      };
+
+      const bbox = computeEntitiesBoundingBox([rectPoly]);
+      assert.ok(bbox);
+      assert.deepEqual(bbox, { minX: 100, minY: 200, maxX: 500, maxY: 400 });
+
+      const canvasWidth = 844;
+      const canvasHeight = 390;
+      const leftInsetPx = 174; // Borda direita do FINO • MIRA
+      const rightReservedPx = 296; // Borda esquerda da janela de medidas à direita (52 + 228 + 16)
+
+      const framedView = computeLeftSideFramingView({
+        bbox,
+        canvasWidth,
+        canvasHeight,
+        leftInsetPx,
+        rightReservedPx,
+        topInsetPx: 56,
+        bottomInsetPx: 76,
+      });
+
+      const pieceCenterX = (bbox.minX + bbox.maxX) / 2; // 300
+      const pieceCenterY = (bbox.minY + bbox.maxY) / 2; // 300
+      const projectedScreenCenterX = framedView.tx + pieceCenterX * framedView.k;
+      const projectedScreenCenterY = framedView.ty + pieceCenterY * framedView.k;
+
+      const expectedFreeLeftCenterX = leftInsetPx + (canvasWidth - leftInsetPx - rightReservedPx) / 2;
+      const expectedFreeCenterY = 56 + (canvasHeight - 56 - 76) / 2;
+
+      assert.ok(
+        Math.abs(projectedScreenCenterX - expectedFreeLeftCenterX) < 1e-4,
+        "O centro horizontal da peça deve coincidir com o centro exato da sub-janela esquerda livre",
+      );
+      assert.ok(
+        Math.abs(projectedScreenCenterY - expectedFreeCenterY) < 1e-4,
+        "O centro vertical da peça deve coincidir com o centro útil entre topo e rodapé",
+      );
     });
   });
 });

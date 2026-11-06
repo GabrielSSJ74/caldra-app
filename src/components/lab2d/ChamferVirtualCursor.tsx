@@ -14,13 +14,16 @@ import type { Snap } from "@/lib/lab2d/core";
 import type { SmartReferencePoint } from "@/lib/lab2d/cadReferenceSnaps";
 import type { IsoPlane } from "@/lib/lab2d/isometricEngine";
 import { useSettings, type AccentColor, type ThemeMode } from "@/lib/settings/SettingsProvider";
-import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Check, Crosshair, Minimize2 } from "lucide-react";
+import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Check, Minimize2, Pin, PinOff } from "lucide-react";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { cn } from "@/lib/utils";
 
 export const TOUCH_CURSOR_OFFSET_PX = 55;
 export const TOUCH_TOP_INVERSION_THRESHOLD_PX = 120;
 export const TOUCH_TOP_EDGE_THRESHOLD_PX = TOUCH_TOP_INVERSION_THRESHOLD_PX;
+
+export const NUDGE_AUTO_REPEAT_DELAY_MS = 250;
+export const NUDGE_AUTO_REPEAT_INTERVAL_MS = 70;
 
 export type NudgeDirection = "up" | "down" | "left" | "right";
 export type NudgeStepMm = 0.1 | 1 | 5 | 10;
@@ -318,18 +321,50 @@ export function computeNudgeDelta(
   }
 }
 
-function resolveAccentHex(accent: AccentColor, dark: boolean): string {
+export function resolveAccentHex(accent: AccentColor, dark: boolean): string {
   switch (accent) {
     case "amber":
+      return dark ? "#FF6B00" : "#EA580C";
+    case "gold":
       return dark ? "#F59E0B" : "#D97706";
+    case "emerald":
+      return dark ? "#10B981" : "#059669";
+    case "violet":
+      return dark ? "#8B5CF6" : "#7C3AED";
     case "crimson":
+      return dark ? "#F43F5E" : "#E11D48";
     case "magenta":
-      return dark ? "#EF4444" : "#B22222";
+      return dark ? "#EC4899" : "#DB2777";
+    case "cyan":
+      return dark ? "#06B6D4" : "#0891B2";
+    case "lime":
+      return dark ? "#84CC16" : "#65A30D";
+    case "titanium":
     case "default":
-      return dark ? "#CBD5E1" : "#334155";
+      return dark ? "#94A3B8" : "#475569";
     case "blue":
     default:
-      return dark ? "#38BDF8" : "#0066FF";
+      return dark ? "#38BDF8" : "#0284C7";
+  }
+}
+
+export function resolveAccentContrastText(accent: AccentColor, dark: boolean): string {
+  if (!dark) return "#FFFFFF";
+  switch (accent) {
+    case "amber":
+    case "gold":
+    case "emerald":
+    case "cyan":
+    case "lime":
+    case "blue":
+    case "titanium":
+    case "default":
+      return "#05070B";
+    case "violet":
+    case "crimson":
+    case "magenta":
+    default:
+      return "#FFFFFF";
   }
 }
 
@@ -627,10 +662,13 @@ export interface ChamferNudgeControlHUDProps {
 }
 
 /**
- * HUD Técnico de Ajuste Fino Incremental (Nudge — Padrão Desktop no Touch)
- * Permite deslocar o cursor geométrico, o vértice ativo ou a peça selecionada
- * em incrementos cirúrgicos (0.1mm, 1mm, 5mm, 10mm) ou digitar coordenadas X/Y sob demanda,
- * fechando e liberando eventos ao confirmar.
+ * HUD Técnico de Ajuste Fino Incremental (FINO • MIRA) — Inspirado na Lupa de Precisão
+ * - Adaptação total ao Tema (Claro, Escuro, AMOLED), Opacidade e Cor de Destaque (Accent Color)
+ * - Moldura translúcida com micro-grade técnica ao fundo
+ * - Cabeçalho estilo Lupa com ponto luminoso na cor de destaque, botão de fixar (📌) e minimizar
+ * - Seletor de passo segmentado slim (0.1 | 1 | 5 | 10)
+ * - D-Pad tátil circular/anelar com repetição contínua ao segurar (250ms delay inicial + 70ms repetição)
+ * - Rodapé de telemetria limpo (X: ... Y: ...) idêntico à Lupa
  */
 export function ChamferNudgeControlHUD({
   visible,
@@ -641,31 +679,113 @@ export function ChamferNudgeControlHUD({
   onSetExactCoord,
   canConfirmPoint = false,
   confirmLabel = "PONTO",
-  targetLabel = "CURSOR",
+  targetLabel = "MIRA",
   cursorPos,
   onClose,
+  isDark: isDarkProp,
   className,
 }: ChamferNudgeControlHUDProps) {
+  let settingsAccent: AccentColor = "blue";
+  let settingsTheme: ThemeMode = "dark";
+  let settingsCardOpacity = 90;
+  try {
+    const s = useSettings();
+    settingsAccent = s.accent;
+    settingsTheme = s.theme;
+    settingsCardOpacity = s.cardOpacity ?? 90;
+  } catch {
+    // Fallback para testes unitários isolados
+  }
+
+  const isLight = isDarkProp === false || (isDarkProp === undefined && settingsTheme === "light");
+  const isAmoled = !isLight && settingsTheme === "amoled";
+
   const [editingCoord, setEditingCoord] = React.useState(false);
   const [xInput, setXInput] = React.useState("");
   const [yInput, setYInput] = React.useState("");
+  const [isPinned, setIsPinned] = React.useState(true);
+  const [activeHoldDir, setActiveHoldDir] = React.useState<NudgeDirection | null>(null);
+
+  const onNudgeRef = React.useRef(onNudge);
+  onNudgeRef.current = onNudge;
+
+  const holdTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const holdIntervalRef = React.useRef<ReturnType<typeof setInterval> | null>(null);
+  const suppressNextClickRef = React.useRef(false);
+
+  const stopAutoRepeat = React.useCallback(() => {
+    if (holdTimeoutRef.current !== null) {
+      clearTimeout(holdTimeoutRef.current);
+      holdTimeoutRef.current = null;
+    }
+    if (holdIntervalRef.current !== null) {
+      clearInterval(holdIntervalRef.current);
+      holdIntervalRef.current = null;
+    }
+    setActiveHoldDir(null);
+  }, []);
 
   React.useEffect(() => {
     if (!visible) {
       setEditingCoord(false);
+      stopAutoRepeat();
     }
-  }, [visible]);
+    return () => stopAutoRepeat();
+  }, [visible, stopAutoRepeat]);
 
   if (!visible) return null;
+
+  const accentHex = resolveAccentHex(settingsAccent, !isLight);
+  const accentContrast = resolveAccentContrastText(settingsAccent, !isLight);
+
+  const normalizedOpacity = Math.max(0.76, Math.min(0.98, settingsCardOpacity / 100));
+  const surfaceBg = isLight
+    ? `rgba(255, 255, 255, ${normalizedOpacity})`
+    : isAmoled
+      ? `rgba(4, 6, 11, ${Math.min(0.98, normalizedOpacity + 0.04)})`
+      : `rgba(11, 16, 27, ${normalizedOpacity})`;
+
+  const innerWellBg = isLight
+    ? "rgba(241, 245, 249, 0.92)"
+    : isAmoled
+      ? "rgba(9, 13, 22, 0.95)"
+      : "rgba(15, 23, 42, 0.86)";
+
+  const microGridLine = isLight
+    ? "rgba(15, 23, 42, 0.045)"
+    : "rgba(148, 163, 184, 0.06)";
+
+  const textPrimary = isLight ? "#0F172A" : "#F8FAFC";
+  const textMuted = isLight ? "#64748B" : "#94A3B8";
+  const borderSubtle = isLight ? "rgba(15, 23, 42, 0.12)" : "rgba(148, 163, 184, 0.16)";
 
   const handleStep = (s: NudgeStepMm) => {
     triggerHaptic("selection");
     onStepChange(s);
   };
 
-  const handleDir = (dir: NudgeDirection) => {
+  const startDirectionPress = (dir: NudgeDirection, ev: React.PointerEvent<HTMLButtonElement>) => {
+    ev.stopPropagation();
+    suppressNextClickRef.current = true;
+    stopAutoRepeat();
+    setActiveHoldDir(dir);
     triggerHaptic("tap");
-    onNudge(dir);
+    onNudgeRef.current(dir);
+
+    holdTimeoutRef.current = setTimeout(() => {
+      holdIntervalRef.current = setInterval(() => {
+        onNudgeRef.current(dir);
+      }, NUDGE_AUTO_REPEAT_INTERVAL_MS);
+    }, NUDGE_AUTO_REPEAT_DELAY_MS);
+  };
+
+  const handleDirectionClick = (dir: NudgeDirection) => {
+    if (suppressNextClickRef.current) {
+      suppressNextClickRef.current = false;
+      return;
+    }
+    triggerHaptic("tap");
+    onNudgeRef.current(dir);
   };
 
   const handleOpenCoordInput = () => {
@@ -687,56 +807,169 @@ export function ChamferNudgeControlHUD({
     setEditingCoord(false);
   };
 
+  const renderDirectionalSectorButton = (
+    dir: NudgeDirection,
+    Icon: typeof ArrowUp,
+    posClass: string,
+    ariaLabel: string,
+    titleText: string,
+  ) => {
+    const isPressed = activeHoldDir === dir;
+    return (
+      <button
+        type="button"
+        data-testid={`chamfer-nudge-${dir}`}
+        onPointerDown={(ev) => startDirectionPress(dir, ev)}
+        onPointerUp={stopAutoRepeat}
+        onPointerLeave={stopAutoRepeat}
+        onPointerCancel={stopAutoRepeat}
+        onClick={() => handleDirectionClick(dir)}
+        aria-label={ariaLabel}
+        title={titleText}
+        style={{
+          backgroundColor: isPressed
+            ? accentHex
+            : isLight
+              ? "rgba(255, 255, 255, 0.94)"
+              : "rgba(30, 41, 59, 0.88)",
+          color: isPressed ? accentContrast : textPrimary,
+          borderColor: isPressed ? accentHex : borderSubtle,
+          boxShadow: isPressed
+            ? `0 0 12px ${accentHex}66`
+            : isLight
+              ? "0 2px 5px rgba(15, 23, 42, 0.08)"
+              : "0 2px 6px rgba(0, 0, 0, 0.38)",
+        }}
+        className={cn(
+          "absolute flex size-8 items-center justify-center rounded-full border transition-all active:scale-92 cursor-pointer touch-none select-none",
+          posClass,
+        )}
+      >
+        <Icon className="size-3.5 stroke-[2.4]" />
+      </button>
+    );
+  };
+
   return (
     <div
       role="region"
+      data-testid="chamfer-nudge-hud"
       aria-label="Controle de Ajuste Fino Incremental CAD"
       onPointerDown={(e) => e.stopPropagation()}
+      style={{
+        width: 156,
+        borderRadius: 18,
+        backgroundColor: surfaceBg,
+        backgroundImage: `linear-gradient(to right, ${microGridLine} 1px, transparent 1px), linear-gradient(to bottom, ${microGridLine} 1px, transparent 1px)`,
+        backgroundSize: "12px 12px",
+        border: `1px solid ${accentHex}55`,
+        boxShadow: isLight
+          ? `0 12px 28px rgba(15, 23, 42, 0.14), 0 0 0 1px ${accentHex}22, inset 0 1px 0 rgba(255, 255, 255, 0.8)`
+          : `0 14px 32px rgba(0, 0, 0, 0.58), 0 0 16px ${accentHex}1F, inset 0 1px 0 rgba(255, 255, 255, 0.08)`,
+        backdropFilter: "blur(14px)",
+        WebkitBackdropFilter: "blur(14px)",
+        color: textPrimary,
+      }}
       className={cn(
-        "hud-loupe-card pointer-events-auto fixed bottom-12 left-3 z-40 flex w-[158px] flex-col rounded-[12px] p-2 select-none",
+        "pointer-events-auto fixed bottom-12 left-3 z-40 flex flex-col p-2 select-none",
         className,
       )}
     >
-      {/* CABEÇALHO INTEGRADO: MODO + BOTÃO MINIMIZAR */}
-      <div className="flex items-center justify-between pb-1.5">
-        <div className="flex items-center gap-1">
-          <Crosshair className="size-3 shrink-0" style={{ color: "var(--accent)" }} />
-          <span className="font-mono text-[9.5px] font-semibold tracking-[0.4px] uppercase">
+      {/* 1. CABEÇALHO ESTILO LUPA: PÍLULA COM PONTO LUMINOSO NA COR DE DESTAQUE + FIXAR/MINIMIZAR */}
+      <div className="mb-1.5 flex items-center justify-between gap-1">
+        <div
+          style={{
+            backgroundColor: innerWellBg,
+            borderColor: `${accentHex}45`,
+          }}
+          className="flex items-center gap-1.5 rounded-full border px-2 py-0.5"
+        >
+          <span
+            style={{
+              backgroundColor: accentHex,
+              boxShadow: `0 0 8px ${accentHex}`,
+            }}
+            className="size-1.5 shrink-0 rounded-full"
+          />
+          <span
+            style={{ color: textPrimary }}
+            className="font-mono text-[9px] font-bold tracking-[0.45px] uppercase truncate max-w-[82px]"
+          >
             FINO · {targetLabel}
           </span>
         </div>
-        {onClose && (
+
+        <div className="flex items-center gap-0.5">
           <button
             type="button"
             onClick={(e) => {
               e.stopPropagation();
               triggerHaptic("selection");
-              onClose();
+              setIsPinned((prev) => !prev);
             }}
-            title="Fechar painel de ajuste fino e liberar eventos"
-            aria-label="Ocultar painel de ajuste fino"
-            className="hud-loupe-pin-btn flex size-5 items-center justify-center rounded-[5px] cursor-pointer"
+            title={isPinned ? "Painel fixado na posição" : "Fixar painel"}
+            aria-label="Fixar painel de ajuste fino"
+            style={{
+              backgroundColor: isPinned ? `${accentHex}24` : innerWellBg,
+              borderColor: isPinned ? `${accentHex}66` : borderSubtle,
+              color: isPinned ? accentHex : textMuted,
+            }}
+            className="flex size-5 items-center justify-center rounded-md border transition-colors cursor-pointer"
           >
-            <Minimize2 className="size-3" />
+            {isPinned ? <Pin className="size-2.5" /> : <PinOff className="size-2.5" />}
           </button>
-        )}
+
+          {onClose && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic("selection");
+                onClose();
+              }}
+              title="Minimizar ajuste fino"
+              aria-label="Ocultar painel de ajuste fino"
+              style={{
+                backgroundColor: innerWellBg,
+                borderColor: borderSubtle,
+                color: textMuted,
+              }}
+              className="flex size-5 items-center justify-center rounded-md border hover:opacity-90 transition-colors cursor-pointer"
+            >
+              <Minimize2 className="size-2.5" />
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* SELETOR DE PASSO INCREMENTAL (0.1 | 1 | 5 | 10 mm) */}
-      <div className="hud-loupe-viewport mb-1.5 grid grid-cols-4 gap-0.5 rounded-[7px] p-0.5">
+      {/* 2. SELETOR DE PASSO SEGMENTADO SLIM (0.1 | 1 | 5 | 10 mm) */}
+      <div
+        style={{
+          backgroundColor: innerWellBg,
+          borderColor: borderSubtle,
+        }}
+        className="mb-2 grid grid-cols-4 gap-0.5 rounded-full border p-0.5"
+      >
         {NUDGE_STEP_OPTIONS.map((opt) => {
           const active = Math.abs(stepMm - opt) < 1e-4;
           return (
             <button
               key={opt}
               type="button"
+              data-testid={`chamfer-nudge-step-${opt}`}
               onClick={() => handleStep(opt)}
-              className={cn(
-                "rounded-[5px] py-1 font-mono text-[9.5px] font-semibold transition-colors cursor-pointer",
+              style={
                 active
-                  ? "bg-accent text-accent-foreground shadow-2xs"
-                  : "hud-loupe-muted hover:text-foreground",
-              )}
+                  ? {
+                      backgroundColor: accentHex,
+                      color: accentContrast,
+                      boxShadow: `0 1px 6px ${accentHex}55`,
+                    }
+                  : {
+                      color: textMuted,
+                    }
+              }
+              className="rounded-full py-0.5 font-mono text-[9.5px] font-bold transition-all cursor-pointer"
             >
               {opt}
             </button>
@@ -744,78 +977,139 @@ export function ChamferNudgeControlHUD({
         })}
       </div>
 
-      {/* D-PAD DIRECIONAL DE PRECISÃO + AÇÃO CENTRAL */}
-      <div className="grid grid-cols-3 gap-1">
-        <div />
-        <button
-          type="button"
-          onClick={() => handleDir("up")}
-          aria-label={`Mover acima ${stepMm} mm`}
-          title={`Ajuste fino +Y (${stepMm} mm)`}
-          className="hud-loupe-viewport flex h-8 items-center justify-center rounded-[7px] hover:border-accent active:scale-95 transition-all cursor-pointer"
+      {/* 3. D-PAD TÁTIL CIRCULAR / ANELAR DE ALTA EFICIÊNCIA COM REPETIÇÃO CONTÍNUA AO SEGURAR */}
+      <div className="my-0.5 flex items-center justify-center">
+        <div
+          style={{
+            backgroundColor: innerWellBg,
+            borderColor: `${accentHex}38`,
+            boxShadow: isLight
+              ? "inset 0 2px 6px rgba(15, 23, 42, 0.06)"
+              : "inset 0 2px 8px rgba(0, 0, 0, 0.48)",
+          }}
+          className="relative flex size-[116px] items-center justify-center rounded-full border"
         >
-          <ArrowUp className="size-3.5" />
-        </button>
-        <div />
-
-        <button
-          type="button"
-          onClick={() => handleDir("left")}
-          aria-label={`Mover à esquerda ${stepMm} mm`}
-          title={`Ajuste fino -X (${stepMm} mm)`}
-          className="hud-loupe-viewport flex h-8 items-center justify-center rounded-[7px] hover:border-accent active:scale-95 transition-all cursor-pointer"
-        >
-          <ArrowLeft className="size-3.5" />
-        </button>
-
-        {canConfirmPoint && onConfirmPoint ? (
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("action");
-              onConfirmPoint();
-            }}
-            aria-label={`Confirmar ${confirmLabel}`}
-            title={`Fixar ${confirmLabel} na coordenada exata`}
-            style={{ backgroundColor: "var(--accent)", color: "var(--accent-foreground)" }}
-            className="flex h-8 flex-col items-center justify-center rounded-[7px] font-mono text-[8.5px] font-bold uppercase shadow-xs active:scale-95 transition-all cursor-pointer"
+          {/* Anel óptico interno sutil e eixos de referência */}
+          <svg
+            viewBox="0 0 116 116"
+            className="pointer-events-none absolute inset-0 size-full"
+            aria-hidden="true"
           >
-            <Check className="size-3 stroke-[2.5]" />
-            <span className="leading-none mt-0.5">{confirmLabel}</span>
-          </button>
-        ) : (
-          <div className="hud-loupe-viewport flex h-8 flex-col items-center justify-center rounded-[7px] font-mono text-[8.5px] hud-loupe-muted">
-            <span>±{stepMm}</span>
-            <span className="text-[7.5px]">mm</span>
-          </div>
-        )}
+            <circle
+              cx="58"
+              cy="58"
+              r="41"
+              fill="none"
+              stroke={accentHex}
+              strokeOpacity={0.22}
+              strokeWidth="1"
+              strokeDasharray="3 3"
+            />
+            <line
+              x1="58"
+              y1="8"
+              x2="58"
+              y2="108"
+              stroke={accentHex}
+              strokeOpacity={0.14}
+              strokeWidth="1"
+            />
+            <line
+              x1="8"
+              y1="58"
+              x2="108"
+              y2="58"
+              stroke={accentHex}
+              strokeOpacity={0.14}
+              strokeWidth="1"
+            />
+          </svg>
 
-        <button
-          type="button"
-          onClick={() => handleDir("right")}
-          aria-label={`Mover à direita ${stepMm} mm`}
-          title={`Ajuste fino +X (${stepMm} mm)`}
-          className="hud-loupe-viewport flex h-8 items-center justify-center rounded-[7px] hover:border-accent active:scale-95 transition-all cursor-pointer"
-        >
-          <ArrowRight className="size-3.5" />
-        </button>
+          {/* Seta Cima (↑) */}
+          {renderDirectionalSectorButton(
+            "up",
+            ArrowUp,
+            "top-1 left-1/2 -translate-x-1/2",
+            `Mover acima ${stepMm} mm`,
+            `Ajuste fino +Y (${stepMm} mm) — segure para avanço contínuo`,
+          )}
 
-        <div />
-        <button
-          type="button"
-          onClick={() => handleDir("down")}
-          aria-label={`Mover abaixo ${stepMm} mm`}
-          title={`Ajuste fino -Y (${stepMm} mm)`}
-          className="hud-loupe-viewport flex h-8 items-center justify-center rounded-[7px] hover:border-accent active:scale-95 transition-all cursor-pointer"
-        >
-          <ArrowDown className="size-3.5" />
-        </button>
-        <div />
+          {/* Seta Esquerda (←) */}
+          {renderDirectionalSectorButton(
+            "left",
+            ArrowLeft,
+            "left-1 top-1/2 -translate-y-1/2",
+            `Mover à esquerda ${stepMm} mm`,
+            `Ajuste fino -X (${stepMm} mm) — segure para avanço contínuo`,
+          )}
+
+          {/* NÚCLEO CENTRAL INTERATIVO (±1 mm / ✓ INÍCIO / PONTO) */}
+          {canConfirmPoint && onConfirmPoint ? (
+            <button
+              type="button"
+              data-testid="chamfer-nudge-confirm-btn"
+              onClick={() => {
+                triggerHaptic("action");
+                onConfirmPoint();
+              }}
+              aria-label={`Confirmar ${confirmLabel}`}
+              title={`Fixar ${confirmLabel} na coordenada exata`}
+              style={{
+                backgroundColor: accentHex,
+                color: accentContrast,
+                boxShadow: `0 0 12px ${accentHex}66`,
+              }}
+              className="z-10 flex size-11 flex-col items-center justify-center rounded-full font-mono text-[8px] font-extrabold uppercase transition-transform active:scale-92 cursor-pointer"
+            >
+              <Check className="size-3 stroke-[2.8]" />
+              <span className="mt-0.5 leading-none tracking-tight">{confirmLabel}</span>
+            </button>
+          ) : (
+            <div
+              style={{
+                backgroundColor: isLight ? "rgba(255, 255, 255, 0.92)" : "rgba(15, 23, 42, 0.92)",
+                borderColor: `${accentHex}55`,
+                color: accentHex,
+              }}
+              className="z-10 flex size-11 flex-col items-center justify-center rounded-full border font-mono text-[8.5px] font-bold leading-tight"
+            >
+              <span>±{stepMm}</span>
+              <span style={{ color: textMuted }} className="text-[7px] font-semibold">
+                mm
+              </span>
+            </div>
+          )}
+
+          {/* Seta Direita (→) */}
+          {renderDirectionalSectorButton(
+            "right",
+            ArrowRight,
+            "right-1 top-1/2 -translate-y-1/2",
+            `Mover à direita ${stepMm} mm`,
+            `Ajuste fino +X (${stepMm} mm) — segure para avanço contínuo`,
+          )}
+
+          {/* Seta Baixo (↓) */}
+          {renderDirectionalSectorButton(
+            "down",
+            ArrowDown,
+            "bottom-1 left-1/2 -translate-x-1/2",
+            `Mover abaixo ${stepMm} mm`,
+            `Ajuste fino -Y (${stepMm} mm) — segure para avanço contínuo`,
+          )}
+        </div>
       </div>
 
-      {/* RODAPÉ DE COORDENADAS ATUAIS OU ENTRADA NUMÉRICA SOB DEMANDA */}
+      {/* 4. RODAPÉ DE TELEMETRIA LIMPO (IDÊNTICO À LUPA): X: 1040.0  Y: 140.0 */}
       {editingCoord ? (
-        <form onSubmit={handleApplyCoord} className="mt-1.5 flex items-center gap-1 border-t border-line/60 pt-1.5">
+        <form
+          onSubmit={handleApplyCoord}
+          style={{
+            backgroundColor: innerWellBg,
+            borderColor: `${accentHex}55`,
+          }}
+          className="mt-1.5 flex items-center gap-1 rounded-full border px-1.5 py-1"
+        >
           <input
             type="text"
             inputMode="decimal"
@@ -823,8 +1117,12 @@ export function ChamferNudgeControlHUD({
             onChange={(e) => setXInput(e.target.value)}
             aria-label="Coordenada X (mm)"
             placeholder="X"
-            className="hud-loupe-viewport w-14 rounded-[5px] px-1 py-0.5 text-center font-mono text-[9.5px] font-semibold outline-none focus:border-accent"
+            style={{ color: textPrimary }}
+            className="w-12 bg-transparent text-center font-mono text-[9.5px] font-bold outline-none"
           />
+          <span style={{ color: textMuted }} className="text-[9px]">
+            |
+          </span>
           <input
             type="text"
             inputMode="decimal"
@@ -832,16 +1130,17 @@ export function ChamferNudgeControlHUD({
             onChange={(e) => setYInput(e.target.value)}
             aria-label="Coordenada Y (mm)"
             placeholder="Y"
-            className="hud-loupe-viewport w-14 rounded-[5px] px-1 py-0.5 text-center font-mono text-[9.5px] font-semibold outline-none focus:border-accent"
+            style={{ color: textPrimary }}
+            className="w-12 bg-transparent text-center font-mono text-[9.5px] font-bold outline-none"
           />
           <button
             type="submit"
             title="Ir para coordenada X, Y"
             aria-label="Confirmar coordenada"
-            style={{ backgroundColor: "var(--accent)", color: "var(--accent-foreground)" }}
-            className="flex size-5 shrink-0 items-center justify-center rounded-[5px] cursor-pointer"
+            style={{ backgroundColor: accentHex, color: accentContrast }}
+            className="flex size-4 shrink-0 items-center justify-center rounded-full cursor-pointer"
           >
-            <Check className="size-3" />
+            <Check className="size-2.5 stroke-[2.8]" />
           </button>
         </form>
       ) : (
@@ -849,13 +1148,28 @@ export function ChamferNudgeControlHUD({
           type="button"
           onClick={handleOpenCoordInput}
           title="Toque para digitar coordenadas X e Y exatas sob demanda"
-          className="mt-1.5 flex w-full items-center justify-center gap-1 border-t border-line/60 pt-1 font-mono text-[9.5px] tabular-nums hover:opacity-85 cursor-pointer"
+          style={{
+            backgroundColor: innerWellBg,
+            borderColor: borderSubtle,
+            color: textPrimary,
+          }}
+          className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-full border px-2 py-1 font-mono text-[9.5px] tabular-nums hover:opacity-90 transition-opacity cursor-pointer"
         >
-          <span className="hud-loupe-muted">X:</span>
-          <span className="font-semibold">{cursorPos.x.toFixed(1)}</span>
-          <span className="hud-loupe-sep mx-0.5">|</span>
-          <span className="hud-loupe-muted">Y:</span>
-          <span className="font-semibold">{cursorPos.y.toFixed(1)}</span>
+          <span>
+            <span style={{ color: accentHex }} className="font-bold">
+              X:
+            </span>{" "}
+            <span className="font-semibold">{cursorPos.x.toFixed(1)}</span>
+          </span>
+          <span style={{ color: textMuted }} className="opacity-50">
+            ·
+          </span>
+          <span>
+            <span style={{ color: accentHex }} className="font-bold">
+              Y:
+            </span>{" "}
+            <span className="font-semibold">{cursorPos.y.toFixed(1)}</span>
+          </span>
         </button>
       )}
     </div>

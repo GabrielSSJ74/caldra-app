@@ -1,21 +1,24 @@
 /**
  * CALDRA CHAMFER — TECLADO NUMÉRICO CAD INTEGRADO E TRAVA DIMENSIONAL REAL
  *
- * Especificação Técnica (Seções 7, 8 e 9):
+ * Especificação Técnica:
  *  - NUNCA utiliza <input> focável (impede 100% a abertura do teclado virtual nativo Android/iOS);
- *  - Visor numérico próprio com valor atual, unidade (mm) e estado da restrição (LIVRE / 🔒 FIXA);
- *  - Botões táteis "0–9", separador decimal (","), inversão de sinal ("±"), apagar ("⌫") e limpar ("C");
- *  - Seletor de passo de incremento fino ("0,1 mm", "1 mm", "10 mm") com botões "−" e "+";
- *  - Prévia ao vivo ("onPreviewChange") durante a digitação, aplicando definitivamente apenas em "✓ Confirmar";
- *  - Botão funcional "🔒 Fixar Medida" que estabelece ou remove restrição dimensional geométrica real.
+ *  - Posição fixa à direita do canvas (right: 52px, centralizado verticalmente entre a barra superior e inferior, sem jamais cobri-las);
+ *  - Tamanho compacto (width: 228px, padding: 10px, border-radius: 18px) e visual refinado inspirado na Lupa;
+ *  - Adaptação total ao Tema (Claro, Escuro, AMOLED), Opacidade e Cor de Destaque (Accent Color);
+ *  - Prévia ao vivo ("onPreviewChange") em tempo real na peça enquadrada à esquerda;
+ *  - Rodapé unificado com botão compacto "🔒 Fixar", "✕ Cancelar" e "✓ Confirmar".
  */
 
 import React, { useState, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Check, X, Minus, Plus, Lock, Unlock, Delete, RotateCcw, ArrowLeftRight } from "lucide-react";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
 import { globalParametricStore } from "@/lib/lab2d/cadParametricVariables";
 import { DimensionInteractionEngine } from "@/lib/lab2d/cadDimensionInteractionEngine";
+import { useSettings, type AccentColor, type ThemeMode } from "@/lib/settings/SettingsProvider";
+import { resolveAccentHex, resolveAccentContrastText } from "@/components/lab2d/ChamferVirtualCursor";
 import { cn } from "@/lib/utils";
 
 export interface ChamferDirectDimensionEditorProps {
@@ -46,7 +49,6 @@ type StepOption = 0.1 | 1 | 10;
 export function ChamferDirectDimensionEditor({
   open,
   onClose,
-  screenPos,
   currentValue,
   label,
   onConfirm,
@@ -59,6 +61,28 @@ export function ChamferDirectDimensionEditor({
   unit = "mm",
   presets,
 }: ChamferDirectDimensionEditorProps) {
+  let settingsAccent: AccentColor = "blue";
+  let settingsTheme: ThemeMode = "dark";
+  let settingsCardOpacity = 92;
+  try {
+    const s = useSettings();
+    settingsAccent = s.accent;
+    settingsTheme = s.theme;
+    settingsCardOpacity = s.cardOpacity ?? 92;
+  } catch {
+    // Fallback para testes unitários isolados
+  }
+
+  const isLight = settingsTheme === "light";
+  const isAmoled = settingsTheme === "amoled";
+  const accentHex = resolveAccentHex(settingsAccent, !isLight);
+  const accentContrast = resolveAccentContrastText(settingsAccent, !isLight);
+
+  const allowZero =
+    allowNegative ||
+    currentValue === 0 ||
+    /raio de canto|chanfro|offset|ângulo|angulo/i.test(label || "");
+
   const formatInitial = (val: number) => {
     if (!Number.isFinite(val)) return "0";
     return String(Number(val.toFixed(4))).replace(".", ",");
@@ -76,12 +100,27 @@ export function ChamferDirectDimensionEditor({
       setFreshEntry(true);
       setIsLocked(initialLocked);
       setErrorMsg(null);
-      // Garante que qualquer elemento focado anteriormente perca o foco para nunca abrir teclado nativo
       if (typeof document !== "undefined" && document.activeElement instanceof HTMLElement) {
         document.activeElement.blur();
       }
     }
   }, [open, currentValue, initialLocked]);
+
+  // Dispara evento de visibilidade para o Auto-Enquadramento Fluido da Peça à Esquerda (Seção 4)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (open) {
+      window.dispatchEvent(
+        new CustomEvent("chamfer:measure-editor-state", { detail: { open: true, label } }),
+      );
+      return () => {
+        window.dispatchEvent(
+          new CustomEvent("chamfer:measure-editor-state", { detail: { open: false, label } }),
+        );
+      };
+    }
+    return undefined;
+  }, [open, label]);
 
   const parseNormalized = useCallback((rawStr: string): number | null => {
     const clean = rawStr.trim().replace(/,/g, ".");
@@ -96,14 +135,23 @@ export function ChamferDirectDimensionEditor({
     return Number.isFinite(direct) ? direct : null;
   }, []);
 
+  const isValuePermitted = useCallback(
+    (val: number) => {
+      if (allowNegative) return true;
+      if (allowZero) return val >= 0;
+      return val > 0;
+    },
+    [allowNegative, allowZero],
+  );
+
   const notifyPreviewIfValid = useCallback(
     (nextStr: string) => {
       const val = parseNormalized(nextStr);
-      if (val !== null && (allowNegative || val > 0)) {
+      if (val !== null && isValuePermitted(val)) {
         onPreviewChange?.(val);
       }
     },
-    [parseNormalized, allowNegative, onPreviewChange],
+    [parseNormalized, isValuePermitted, onPreviewChange],
   );
 
   const handleDigit = useCallback(
@@ -136,24 +184,30 @@ export function ChamferDirectDimensionEditor({
     setFreshEntry(false);
     if (displayStr.length <= 1 || (displayStr.length === 2 && displayStr.startsWith("-"))) {
       setDisplayStr("0");
+      if (allowZero) {
+        onPreviewChange?.(0);
+      }
       return;
     }
     const next = displayStr.slice(0, -1);
     setDisplayStr(next);
     notifyPreviewIfValid(next);
-  }, [displayStr, notifyPreviewIfValid]);
+  }, [displayStr, allowZero, onPreviewChange, notifyPreviewIfValid]);
 
   const handleClear = useCallback(() => {
     triggerHaptic("selection");
     setErrorMsg(null);
     setFreshEntry(true);
     setDisplayStr("0");
-  }, []);
+    if (allowZero) {
+      onPreviewChange?.(0);
+    }
+  }, [allowZero, onPreviewChange]);
 
   const handleToggleSign = useCallback(() => {
     triggerHaptic("selection");
     if (!allowNegative) {
-      setErrorMsg("Esta medida exige valor estritamente positivo (> 0 mm).");
+      setErrorMsg("Esta medida exige valor positivo.");
       return;
     }
     setErrorMsg(null);
@@ -169,8 +223,8 @@ export function ChamferDirectDimensionEditor({
       triggerHaptic("selection");
       const currentParsed = parseNormalized(displayStr) ?? currentValue;
       const candidate = Number((currentParsed + direction * stepMm).toFixed(4));
-      if (!allowNegative && candidate <= 0) {
-        setErrorMsg("Esta medida deve permanecer maior que 0 mm.");
+      if (!isValuePermitted(candidate)) {
+        setErrorMsg(allowZero ? "Valor mínimo: 0." : "A medida deve ser > 0.");
         return;
       }
       setErrorMsg(null);
@@ -179,18 +233,18 @@ export function ChamferDirectDimensionEditor({
       setDisplayStr(formatted);
       onPreviewChange?.(candidate);
     },
-    [displayStr, currentValue, stepMm, allowNegative, parseNormalized, onPreviewChange],
+    [displayStr, currentValue, stepMm, allowZero, isValuePermitted, parseNormalized, onPreviewChange],
   );
 
   const handleConfirm = useCallback(
     (overrideLock?: boolean) => {
       const evaluated = parseNormalized(displayStr);
       if (evaluated === null || !Number.isFinite(evaluated)) {
-        setErrorMsg("Digite um valor numérico válido em mm.");
+        setErrorMsg("Digite um valor numérico válido.");
         return;
       }
-      if (!allowNegative && evaluated <= 0) {
-        setErrorMsg("O valor deve ser maior que 0 mm.");
+      if (!isValuePermitted(evaluated)) {
+        setErrorMsg(allowZero ? "O valor deve ser ≥ 0." : "O valor deve ser > 0.");
         return;
       }
       const finalLock = typeof overrideLock === "boolean" ? overrideLock : isLocked;
@@ -198,7 +252,7 @@ export function ChamferDirectDimensionEditor({
       AudioManager.play("ui_select");
       onConfirm(evaluated, finalLock);
     },
-    [displayStr, parseNormalized, allowNegative, isLocked, onConfirm],
+    [displayStr, parseNormalized, isValuePermitted, allowZero, isLocked, onConfirm],
   );
 
   const handleToggleLockButton = useCallback(() => {
@@ -206,11 +260,11 @@ export function ChamferDirectDimensionEditor({
     const nextLock = !isLocked;
     setIsLocked(nextLock);
     const evaluated = parseNormalized(displayStr);
-    if (evaluated !== null && Number.isFinite(evaluated) && (allowNegative || evaluated > 0)) {
+    if (evaluated !== null && Number.isFinite(evaluated) && isValuePermitted(evaluated)) {
       AudioManager.play("ui_select");
       onConfirm(evaluated, nextLock);
     }
-  }, [isLocked, displayStr, parseNormalized, allowNegative, onConfirm]);
+  }, [isLocked, displayStr, parseNormalized, isValuePermitted, onConfirm]);
 
   // Suporte opcional a teclado físico em Desktop sem qualquer <input> focável
   useEffect(() => {
@@ -245,202 +299,242 @@ export function ChamferDirectDimensionEditor({
 
   if (!open) return null;
 
-  // Posicionamento seguro dentro da viewport para nunca cortar em telas mobile
-  const vw = typeof window !== "undefined" ? window.innerWidth : 400;
-  const vh = typeof window !== "undefined" ? window.innerHeight : 700;
-  const cardW = 248;
-  const cardH = 310;
-  const posX = Math.max(cardW / 2 + 8, Math.min(vw - cardW / 2 - 8, screenPos.x));
-  const posY = Math.max(cardH / 2 + 12, Math.min(vh - cardH / 2 - 12, screenPos.y));
+  const normalizedOpacity = Math.max(0.82, Math.min(0.98, settingsCardOpacity / 100));
+  const surfaceBg = isLight
+    ? `rgba(255, 255, 255, ${normalizedOpacity})`
+    : isAmoled
+      ? `rgba(4, 6, 11, ${Math.min(0.98, normalizedOpacity + 0.04)})`
+      : `rgba(11, 16, 27, ${normalizedOpacity})`;
 
-  const isDark =
-    typeof document !== "undefined"
-      ? !document.documentElement.classList.contains("light") &&
-        document.documentElement.getAttribute("data-theme") !== "light"
-      : true;
+  const innerWellBg = isLight
+    ? "rgba(241, 245, 249, 0.94)"
+    : isAmoled
+      ? "rgba(9, 13, 22, 0.96)"
+      : "rgba(15, 23, 42, 0.88)";
 
-  return (
+  const keyBg = isLight
+    ? "rgba(248, 250, 252, 0.96)"
+    : isAmoled
+      ? "rgba(10, 14, 24, 0.96)"
+      : "rgba(15, 23, 42, 0.92)";
+
+  const microGridLine = isLight
+    ? "rgba(15, 23, 42, 0.04)"
+    : "rgba(148, 163, 184, 0.055)";
+
+  const textPrimary = isLight ? "#0F172A" : "#F8FAFC";
+  const textMuted = isLight ? "#64748B" : "#94A3B8";
+  const borderSubtle = isLight ? "rgba(15, 23, 42, 0.12)" : "rgba(148, 163, 184, 0.16)";
+
+  const hasPresets = Boolean(presets && presets.length > 0);
+  const keyButtonHeight = hasPresets ? 25 : 29;
+
+  const panelNode = (
     <div
-      className="fixed z-50 transform -translate-x-1/2 -translate-y-1/2 select-none animate-in zoom-in-95 duration-100"
-      style={{ left: `${posX}px`, top: `${posY}px`, width: `${cardW}px` }}
+      data-testid="chamfer-direct-dim-editor"
       onClick={(e) => e.stopPropagation()}
       onPointerDown={(e) => e.stopPropagation()}
+      style={{
+        position: "fixed",
+        right: 52,
+        top: "50%",
+        transform: "translateY(-50%)",
+        width: 228,
+        maxHeight: "calc(100dvh - 96px)",
+        padding: "8px 10px",
+        borderRadius: 18,
+        backgroundColor: surfaceBg,
+        backgroundImage: `linear-gradient(to right, ${microGridLine} 1px, transparent 1px), linear-gradient(to bottom, ${microGridLine} 1px, transparent 1px)`,
+        backgroundSize: "12px 12px",
+        border: `1px solid ${accentHex}55`,
+        boxShadow: isLight
+          ? `0 14px 34px rgba(15, 23, 42, 0.16), 0 0 0 1px ${accentHex}22, inset 0 1px 0 rgba(255, 255, 255, 0.85)`
+          : `0 16px 38px rgba(0, 0, 0, 0.68), 0 0 18px ${accentHex}22, inset 0 1px 0 rgba(255, 255, 255, 0.08)`,
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+        color: textPrimary,
+      }}
+      className="z-50 flex flex-col gap-1 overflow-y-auto scrollbar-none select-none animate-in fade-in zoom-in-95 duration-150"
     >
+      {/* 1. CABEÇALHO ENXUTO: TÍTULO CURTO COM TRUNCAMENTO + BADGE LIVRE / 🔒 FIXO + BOTÃO ✕ */}
       <div
-        className={cn(
-          "flex flex-col gap-2 p-2.5 border rounded-2xl backdrop-blur-xl",
-          isDark
-            ? "bg-[#151C27]/98 border-[#293444] shadow-[0_14px_44px_rgba(0,0,0,0.9)] text-[#E6EDF5]"
-            : "bg-[#FFFFFF]/98 border-[#CBD5E1] shadow-[0_14px_44px_rgba(15,23,42,0.18)] text-[#1E293B]",
-        )}
+        style={{ borderColor: borderSubtle }}
+        className="flex shrink-0 items-center justify-between gap-1 border-b pb-1"
       >
-        {/* CABEÇALHO TÉCNICO: TÍTULO E ESTADO DA MEDIDA */}
-        <div
-          className={cn(
-            "flex items-center justify-between border-b pb-1.5",
-            isDark ? "border-[#293444]" : "border-[#CBD5E1]",
-          )}
-        >
-          <div className="flex items-center gap-1.5 truncate">
-            <span
-              className={cn(
-                "text-[10px] font-mono font-bold uppercase tracking-wider truncate",
-                isDark ? "text-[#38BDF8]" : "text-[#0284C7]",
-              )}
-            >
-              {label || "Medida CAD"}
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            <span
-              className={cn(
-                "px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase",
-                isLocked
-                  ? "bg-[#F59E0B]/20 text-[#F59E0B] border border-[#F59E0B]/40"
-                  : isDark
-                    ? "bg-[#0D121B] text-[#94A3B8] border border-[#293444]"
-                    : "bg-[#F1F5F9] text-[#64748B] border border-[#CBD5E1]",
-              )}
-            >
-              {isLocked ? "🔒 FIXA" : "LIVRE"}
-            </span>
-            <button
-              type="button"
-              onClick={onClose}
-              className={cn(
-                "size-5 rounded-lg flex items-center justify-center cursor-pointer transition-colors",
-                isDark
-                  ? "bg-[#0D121B] hover:bg-[#293444] text-[#94A3B8] hover:text-white"
-                  : "bg-[#F1F5F9] hover:bg-[#CBD5E1] text-[#64748B] hover:text-[#1E293B]",
-              )}
-              title="Cancelar"
-            >
-              <X className="size-3.5" />
-            </button>
-          </div>
+        <div className="flex min-w-0 items-center gap-1.5">
+          <span
+            style={{
+              backgroundColor: accentHex,
+              boxShadow: `0 0 8px ${accentHex}`,
+            }}
+            className="size-1.5 shrink-0 rounded-full"
+          />
+          <span
+            style={{ color: accentHex }}
+            className="truncate font-mono text-[9.5px] font-bold tracking-wider uppercase"
+            title={label || "Medida CAD"}
+          >
+            {label || "Medida CAD"}
+          </span>
         </div>
 
-        {/* VISOR NUMÉRICO INTEGRADO (SEM <INPUT> FOCÁVEL — ZERO TECLADO NATIVO) */}
-        <div
-          role="spinbutton"
-          aria-label={label}
-          aria-valuenow={parseNormalized(displayStr) ?? currentValue}
-          className={cn(
-            "flex items-center justify-between rounded-xl px-2.5 py-1.5 border transition-colors",
-            isDark ? "bg-[#0D121B]" : "bg-[#F8FAFC]",
-            errorMsg
-              ? "border-[#EF4444]"
-              : isLocked
-                ? "border-[#F59E0B]"
-                : isDark
-                  ? "border-[#38BDF8]"
-                  : "border-[#0284C7]",
-          )}
-        >
+        <div className="flex shrink-0 items-center gap-1">
+          <span
+            style={
+              isLocked
+                ? {
+                    backgroundColor: `${accentHex}22`,
+                    borderColor: `${accentHex}66`,
+                    color: accentHex,
+                  }
+                : {
+                    backgroundColor: innerWellBg,
+                    borderColor: borderSubtle,
+                    color: textMuted,
+                  }
+            }
+            className="rounded-md border px-1.5 py-0.5 font-mono text-[8.5px] font-bold uppercase leading-none"
+          >
+            {isLocked ? "🔒 FIXO" : "LIVRE"}
+          </span>
           <button
             type="button"
-            onClick={() => handleStep(-1)}
-            className={cn(
-              "size-7 rounded-lg flex items-center justify-center active:scale-95 transition-transform cursor-pointer border",
-              isDark
-                ? "bg-[#151C27] border-[#293444] hover:bg-[#293444] text-[#E6EDF5]"
-                : "bg-[#FFFFFF] border-[#CBD5E1] hover:bg-[#F1F5F9] text-[#1E293B]",
-            )}
-            title={`-${stepMm} ${unit}`}
+            onClick={onClose}
+            style={{
+              backgroundColor: innerWellBg,
+              borderColor: borderSubtle,
+              color: textMuted,
+            }}
+            className="flex size-5 items-center justify-center rounded-md border hover:opacity-90 transition-opacity cursor-pointer"
+            title="Cancelar"
           >
-            <Minus className="size-3.5" />
+            <X className="size-3" />
           </button>
+        </div>
+      </div>
 
-          <div className="flex flex-col items-center justify-center min-w-0 px-2">
-            <div className="flex items-baseline gap-1">
-              <span
-                data-testid="cad-keypad-display"
-                className={cn(
-                  "font-mono font-bold text-base tracking-tight",
-                  freshEntry
-                    ? isDark
-                      ? "text-[#38BDF8]"
-                      : "text-[#0284C7]"
-                    : isDark
-                      ? "text-[#E6EDF5]"
-                      : "text-[#1E293B]",
-                )}
-              >
-                {displayStr}
-              </span>
-              <span className={cn("font-mono text-[10px] font-semibold", isDark ? "text-[#94A3B8]" : "text-[#64748B]")}>
+      {/* 2. VISOR INTEGRADO (HEIGHT: 42PX): BOTÃO '-' À ESQUERDA, VALOR NO CENTRO + ATUAL ABAIXO, BOTÃO '+' À DIREITA */}
+      <div
+        role="spinbutton"
+        aria-label={label}
+        aria-valuenow={parseNormalized(displayStr) ?? currentValue}
+        style={{
+          height: hasPresets ? 38 : 42,
+          backgroundColor: innerWellBg,
+          borderColor: errorMsg ? "#EF4444" : `${accentHex}88`,
+          boxShadow: errorMsg ? "none" : `inset 0 0 12px ${accentHex}14`,
+        }}
+        className="flex shrink-0 items-center justify-between rounded-xl border px-2 transition-colors"
+      >
+        <button
+          type="button"
+          onClick={() => handleStep(-1)}
+          style={{
+            backgroundColor: keyBg,
+            borderColor: borderSubtle,
+            color: textPrimary,
+          }}
+          className="flex size-7 shrink-0 items-center justify-center rounded-lg border active:scale-92 transition-transform cursor-pointer"
+          title={`-${stepMm} ${unit}`}
+        >
+          <Minus className="size-3.5" />
+        </button>
+
+        <div className="flex min-w-0 flex-col items-center justify-center px-1.5 leading-none">
+          <div className="flex items-baseline gap-1">
+            <span
+              data-testid="cad-keypad-display"
+              style={{ color: freshEntry ? accentHex : textPrimary }}
+              className="font-mono text-[15px] font-extrabold tracking-tight tabular-nums"
+            >
+              {displayStr}
+            </span>
+            {unit && (
+              <span style={{ color: textMuted }} className="font-mono text-[9.5px] font-semibold">
                 {unit}
               </span>
-            </div>
-            <span className={cn("font-mono text-[8.5px]", isDark ? "text-[#94A3B8]" : "text-[#64748B]")}>
-              Atual: {String(Number((Number.isFinite(currentValue) ? currentValue : 0).toFixed(2))).replace(".", ",")} {unit}
-            </span>
-          </div>
-
-          <button
-            type="button"
-            onClick={() => handleStep(1)}
-            className={cn(
-              "size-7 rounded-lg flex items-center justify-center active:scale-95 transition-transform cursor-pointer border",
-              isDark
-                ? "bg-[#151C27] border-[#293444] hover:bg-[#293444] text-[#E6EDF5]"
-                : "bg-[#FFFFFF] border-[#CBD5E1] hover:bg-[#F1F5F9] text-[#1E293B]",
             )}
-            title={`+${stepMm} ${unit}`}
-          >
-            <Plus className="size-3.5" />
-          </button>
+          </div>
+          <span style={{ color: textMuted }} className="mt-0.5 font-mono text-[8px] tabular-nums">
+            Atual: {String(Number((Number.isFinite(currentValue) ? currentValue : 0).toFixed(2))).replace(".", ",")}{" "}
+            {unit}
+          </span>
         </div>
 
-        {/* MENSAGEM DE VALIDAÇÃO OU CONFLITO */}
-        {errorMsg && (
-          <div className="px-2 py-1 rounded-lg bg-[#EF4444]/15 border border-[#EF4444]/50 text-[9.5px] font-mono text-[#EF4444] leading-tight">
-            {errorMsg}
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={() => handleStep(1)}
+          style={{
+            backgroundColor: keyBg,
+            borderColor: borderSubtle,
+            color: textPrimary,
+          }}
+          className="flex size-7 shrink-0 items-center justify-center rounded-lg border active:scale-92 transition-transform cursor-pointer"
+          title={`+${stepMm} ${unit}`}
+        >
+          <Plus className="size-3.5" />
+        </button>
+      </div>
 
-        {/* ATALHOS RÁPIDOS SOB DEMANDA (EX: N = 3, 4, 6, 8, 12, 16 OU ÂNGULO = 360°, 180°, 90°) */}
-        {presets && presets.length > 0 && (
-          <div className="flex items-center gap-1 flex-wrap py-0.5">
-            <span className={cn("text-[8.5px] font-mono font-bold uppercase mr-0.5", isDark ? "text-[#94A3B8]" : "text-[#64748B]")}>
-              Rápido:
-            </span>
-            {presets.map((p) => {
-              const curNum = parseNormalized(displayStr) ?? currentValue;
-              const isActive = Math.abs(curNum - p.value) < 1e-3;
-              return (
-                <button
-                  key={`preset-${p.label}-${p.value}`}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    const formatted = String(p.value).replace(".", ",");
-                    setDisplayStr(formatted);
-                    setFreshEntry(false);
-                    setErrorMsg(null);
-                    onPreviewChange?.(p.value);
-                  }}
-                  className={cn(
-                    "px-2 py-0.5 rounded-md font-mono text-[9.5px] font-bold transition-colors cursor-pointer active:scale-95",
-                    isActive
-                      ? isDark
-                        ? "bg-[#38BDF8] text-[#0B0F14] shadow-xs"
-                        : "bg-[#0284C7] text-white shadow-xs"
-                      : isDark
-                        ? "bg-[#0D121B] border border-[#293444] text-[#E6EDF5] hover:border-[#38BDF8]"
-                        : "bg-[#F1F5F9] border border-[#CBD5E1] text-[#1E293B] hover:border-[#0284C7]",
-                  )}
-                >
-                  {p.label}
-                </button>
-              );
-            })}
-          </div>
-        )}
+      {/* MENSAGEM DE VALIDAÇÃO COMPACTA */}
+      {errorMsg && (
+        <div className="shrink-0 rounded-lg border border-red-500/50 bg-red-500/15 px-2 py-0.5 font-mono text-[8.5px] text-red-400 leading-tight">
+          {errorMsg}
+        </div>
+      )}
 
-        {/* SELETOR DE PASSO FINO (0,1 mm | 1 mm | 10 mm) */}
-        <div className="grid grid-cols-3 gap-1">
-          {([0.1, 1, 10] as StepOption[]).map((s) => (
+      {/* ATALHOS RÁPIDOS SOB DEMANDA EM LINHA COMPACTA (QUANDO DISPONÍVEIS) */}
+      {presets && presets.length > 0 && (
+        <div className="flex shrink-0 items-center gap-1 overflow-x-auto scrollbar-none py-0.5">
+          {presets.map((p) => {
+            const curNum = parseNormalized(displayStr) ?? currentValue;
+            const isActive = Math.abs(curNum - p.value) < 1e-3;
+            return (
+              <button
+                key={`preset-${p.label}-${p.value}`}
+                type="button"
+                onClick={() => {
+                  triggerHaptic("selection");
+                  const formatted = String(p.value).replace(".", ",");
+                  setDisplayStr(formatted);
+                  setFreshEntry(false);
+                  setErrorMsg(null);
+                  onPreviewChange?.(p.value);
+                }}
+                style={
+                  isActive
+                    ? {
+                        backgroundColor: accentHex,
+                        color: accentContrast,
+                        borderColor: accentHex,
+                      }
+                    : {
+                        backgroundColor: keyBg,
+                        borderColor: borderSubtle,
+                        color: textPrimary,
+                      }
+                }
+                className="shrink-0 rounded-md border px-1.5 py-0.5 font-mono text-[8px] font-bold transition-all active:scale-95 cursor-pointer"
+              >
+                {p.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* 3. PÍLULAS RÁPIDAS DE INCREMENTO (±0,1 | ±1 | ±10 — HEIGHT: 26PX) */}
+      <div
+        style={{
+          height: hasPresets ? 24 : 26,
+          backgroundColor: innerWellBg,
+          borderColor: borderSubtle,
+        }}
+        className="grid shrink-0 grid-cols-3 gap-0.5 rounded-full border p-0.5"
+      >
+        {([0.1, 1, 10] as StepOption[]).map((s) => {
+          const active = stepMm === s;
+          return (
             <button
               key={`step-${s}`}
               type="button"
@@ -448,220 +542,265 @@ export function ChamferDirectDimensionEditor({
                 triggerHaptic("selection");
                 setStepMm(s);
               }}
-              className={cn(
-                "py-1 rounded-lg font-mono text-[9.5px] font-bold transition-colors cursor-pointer",
-                stepMm === s
-                  ? isDark
-                    ? "bg-[#38BDF8]/20 border border-[#38BDF8]/60 text-[#38BDF8]"
-                    : "bg-[#0284C7]/15 border border-[#0284C7]/60 text-[#0284C7]"
-                  : isDark
-                    ? "bg-[#0D121B] border border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
-                    : "bg-[#F1F5F9] border border-[#CBD5E1] text-[#64748B] hover:text-[#1E293B]",
-              )}
+              style={
+                active
+                  ? {
+                      backgroundColor: accentHex,
+                      color: accentContrast,
+                      boxShadow: `0 1px 6px ${accentHex}55`,
+                    }
+                  : {
+                      color: textMuted,
+                    }
+              }
+              className="flex items-center justify-center rounded-full font-mono text-[9px] font-bold leading-none transition-all cursor-pointer"
             >
               ±{String(s).replace(".", ",")} {unit}
             </button>
-          ))}
-        </div>
+          );
+        })}
+      </div>
 
-        {/* GRADE DO TECLADO NUMÉRICO CAD (0-9, VÍRGULA, ±, ⌫, C) */}
-        <div className="grid grid-cols-4 gap-1 font-mono">
-          {["7", "8", "9"].map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => handleDigit(d)}
-              className={cn(
-                "h-8 rounded-lg border text-xs font-bold active:scale-95 transition-all cursor-pointer",
-                isDark
-                  ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#E6EDF5]"
-                  : "bg-[#F8FAFC] hover:bg-[#F1F5F9] border-[#CBD5E1] text-[#1E293B]",
-              )}
-            >
-              {d}
-            </button>
-          ))}
+      {/* 4. GRADE NUMÉRICA COMPACTA (4x4, HEIGHT: 32PX, GAP: 5PX) */}
+      <div style={{ gap: hasPresets ? 4 : 5 }} className="grid shrink-0 grid-cols-4 font-mono">
+        {["7", "8", "9"].map((d) => (
+          <button
+            key={d}
+            type="button"
+            onClick={() => handleDigit(d)}
+            style={{
+              height: keyButtonHeight,
+              backgroundColor: keyBg,
+              borderColor: borderSubtle,
+              color: textPrimary,
+            }}
+            className="rounded-lg border text-[11.5px] font-bold active:scale-95 transition-transform cursor-pointer"
+          >
+            {d}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={handleBackspace}
+          style={{
+            height: keyButtonHeight,
+            backgroundColor: keyBg,
+            borderColor: borderSubtle,
+            color: accentHex,
+          }}
+          className="flex items-center justify-center rounded-lg border text-xs font-bold active:scale-95 transition-transform cursor-pointer"
+          title="Apagar último dígito (⌫)"
+        >
+          <Delete className="size-3.5" />
+        </button>
+
+        {["4", "5", "6"].map((d) => (
+          <button
+            key={d}
+            type="button"
+            onClick={() => handleDigit(d)}
+            style={{
+              height: keyButtonHeight,
+              backgroundColor: keyBg,
+              borderColor: borderSubtle,
+              color: textPrimary,
+            }}
+            className="rounded-lg border text-[11.5px] font-bold active:scale-95 transition-transform cursor-pointer"
+          >
+            {d}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={handleClear}
+          style={{
+            height: keyButtonHeight,
+            backgroundColor: keyBg,
+            borderColor: borderSubtle,
+            color: "#FB7185",
+          }}
+          className="flex items-center justify-center rounded-lg border text-[10.5px] font-bold active:scale-95 transition-transform cursor-pointer"
+          title="Limpar entrada (C)"
+        >
+          C
+        </button>
+
+        {["1", "2", "3"].map((d) => (
+          <button
+            key={d}
+            type="button"
+            onClick={() => handleDigit(d)}
+            style={{
+              height: keyButtonHeight,
+              backgroundColor: keyBg,
+              borderColor: borderSubtle,
+              color: textPrimary,
+            }}
+            className="rounded-lg border text-[11.5px] font-bold active:scale-95 transition-transform cursor-pointer"
+          >
+            {d}
+          </button>
+        ))}
+        <button
+          type="button"
+          onClick={handleToggleSign}
+          style={{
+            height: keyButtonHeight,
+            backgroundColor: keyBg,
+            borderColor: borderSubtle,
+            color: allowNegative ? textPrimary : textMuted,
+            opacity: allowNegative ? 1 : 0.45,
+          }}
+          className="flex items-center justify-center rounded-lg border text-xs font-bold active:scale-95 transition-transform cursor-pointer"
+          title="Inverter sinal (±)"
+        >
+          ±
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleDigit("0")}
+          style={{
+            height: keyButtonHeight,
+            backgroundColor: keyBg,
+            borderColor: borderSubtle,
+            color: textPrimary,
+          }}
+          className="col-span-2 rounded-lg border text-[11.5px] font-bold active:scale-95 transition-transform cursor-pointer"
+        >
+          0
+        </button>
+        <button
+          type="button"
+          onClick={handleDecimal}
+          style={{
+            height: keyButtonHeight,
+            backgroundColor: keyBg,
+            borderColor: borderSubtle,
+            color: accentHex,
+          }}
+          className="rounded-lg border text-sm font-bold active:scale-95 transition-transform cursor-pointer"
+          title="Separador decimal (,)"
+        >
+          ,
+        </button>
+        {allowInvert && onInvertSide ? (
           <button
             type="button"
-            onClick={handleBackspace}
-            className={cn(
-              "h-8 rounded-lg border text-xs font-bold flex items-center justify-center active:scale-95 transition-all cursor-pointer",
-              isDark
-                ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#F59E0B]"
-                : "bg-[#F1F5F9] hover:bg-[#E9EEF4] border-[#CBD5E1] text-[#D97706]",
-            )}
-            title="Apagar último dígito (⌫)"
+            onClick={onInvertSide}
+            style={{
+              height: keyButtonHeight,
+              backgroundColor: `${accentHex}22`,
+              borderColor: `${accentHex}66`,
+              color: accentHex,
+            }}
+            className="flex items-center justify-center rounded-lg border active:scale-95 transition-transform cursor-pointer"
+            title="Inverter Lado"
           >
-            <Delete className="size-3.5" />
+            <ArrowLeftRight className="size-3.5" />
           </button>
-
-          {["4", "5", "6"].map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => handleDigit(d)}
-              className={cn(
-                "h-8 rounded-lg border text-xs font-bold active:scale-95 transition-all cursor-pointer",
-                isDark
-                  ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#E6EDF5]"
-                  : "bg-[#F8FAFC] hover:bg-[#F1F5F9] border-[#CBD5E1] text-[#1E293B]",
-              )}
-            >
-              {d}
-            </button>
-          ))}
+        ) : (
           <button
             type="button"
-            onClick={handleClear}
-            className={cn(
-              "h-8 rounded-lg border text-[11px] font-bold flex items-center justify-center active:scale-95 transition-all cursor-pointer",
-              isDark
-                ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#FB7185]"
-                : "bg-[#F1F5F9] hover:bg-[#E9EEF4] border-[#CBD5E1] text-[#E11D48]",
-            )}
-            title="Limpar entrada (C)"
+            onClick={() => {
+              triggerHaptic("selection");
+              const formatted = formatInitial(currentValue);
+              setDisplayStr(formatted);
+              setFreshEntry(true);
+              setErrorMsg(null);
+              onPreviewChange?.(currentValue);
+            }}
+            style={{
+              height: keyButtonHeight,
+              backgroundColor: keyBg,
+              borderColor: borderSubtle,
+              color: textMuted,
+            }}
+            className="flex items-center justify-center rounded-lg border active:scale-95 transition-transform cursor-pointer"
+            title="Restaurar valor original"
           >
-            C
+            <RotateCcw className="size-3" />
           </button>
+        )}
+      </div>
 
-          {["1", "2", "3"].map((d) => (
-            <button
-              key={d}
-              type="button"
-              onClick={() => handleDigit(d)}
-              className={cn(
-                "h-8 rounded-lg border text-xs font-bold active:scale-95 transition-all cursor-pointer",
-                isDark
-                  ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#E6EDF5]"
-                  : "bg-[#F8FAFC] hover:bg-[#F1F5F9] border-[#CBD5E1] text-[#1E293B]",
-              )}
-            >
-              {d}
-            </button>
-          ))}
-          <button
-            type="button"
-            onClick={handleToggleSign}
-            className={cn(
-              "h-8 rounded-lg border text-xs font-bold flex items-center justify-center active:scale-95 transition-all cursor-pointer",
-              allowNegative
-                ? isDark
-                  ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#E6EDF5]"
-                  : "bg-[#F1F5F9] hover:bg-[#E9EEF4] border-[#CBD5E1] text-[#1E293B]"
-                : isDark
-                  ? "bg-[#0D121B]/50 border-[#293444]/60 text-[#94A3B8]/50"
-                  : "bg-[#F1F5F9]/60 border-[#CBD5E1]/60 text-[#64748B]/50",
-            )}
-            title="Inverter sinal (±)"
-          >
-            ±
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleDigit("0")}
-            className={cn(
-              "col-span-2 h-8 rounded-lg border text-xs font-bold active:scale-95 transition-all cursor-pointer",
-              isDark
-                ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#E6EDF5]"
-                : "bg-[#F8FAFC] hover:bg-[#F1F5F9] border-[#CBD5E1] text-[#1E293B]",
-            )}
-          >
-            0
-          </button>
-          <button
-            type="button"
-            onClick={handleDecimal}
-            className={cn(
-              "h-8 rounded-lg border text-sm font-bold active:scale-95 transition-all cursor-pointer",
-              isDark
-                ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#38BDF8]"
-                : "bg-[#F8FAFC] hover:bg-[#F1F5F9] border-[#CBD5E1] text-[#0284C7]",
-            )}
-            title="Separador decimal (,)"
-          >
-            ,
-          </button>
-          {allowInvert && onInvertSide ? (
-            <button
-              type="button"
-              onClick={onInvertSide}
-              className="h-8 rounded-lg bg-[#F59E0B]/20 hover:bg-[#F59E0B]/30 border border-[#F59E0B]/40 text-[#F59E0B] flex items-center justify-center active:scale-95 transition-all cursor-pointer"
-              title="Inverter Lado"
-            >
-              <ArrowLeftRight className="size-3.5" />
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("selection");
-                setDisplayStr(formatInitial(currentValue));
-                setFreshEntry(true);
-                setErrorMsg(null);
-              }}
-              className={cn(
-                "h-8 rounded-lg border flex items-center justify-center active:scale-95 transition-all cursor-pointer",
-                isDark
-                  ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#94A3B8]"
-                  : "bg-[#F1F5F9] hover:bg-[#E9EEF4] border-[#CBD5E1] text-[#64748B]",
-              )}
-              title="Restaurar valor original"
-            >
-              <RotateCcw className="size-3" />
-            </button>
-          )}
-        </div>
-
-        {/* BOTÃO FUNCIONAL: 🔒 FIXAR MEDIDA (RESTRIÇÃO DIMENSIONAL REAL) */}
+      {/* 5. RODAPÉ UNIFICADO: BOTÃO COMPACTO '🔒 FIXAR' + '✕ CANCELAR' + '✓ CONFIRMAR' */}
+      <div className="flex shrink-0 items-center gap-1 pt-0.5">
         {allowLock && (
           <button
             type="button"
             onClick={handleToggleLockButton}
-            className={cn(
-              "w-full py-1.5 px-2.5 rounded-xl font-mono text-[10.5px] font-bold flex items-center justify-center gap-1.5 border transition-all active:scale-98 cursor-pointer",
+            style={
               isLocked
-                ? "bg-[#F59E0B]/20 border-[#F59E0B] text-[#F59E0B] shadow-xs"
-                : isDark
-                  ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#E6EDF5]"
-                  : "bg-[#F1F5F9] hover:bg-[#E9EEF4] border-[#CBD5E1] text-[#1E293B]",
-            )}
+                ? {
+                    height: 28,
+                    backgroundColor: `${accentHex}24`,
+                    borderColor: accentHex,
+                    color: accentHex,
+                  }
+                : {
+                    height: 28,
+                    backgroundColor: keyBg,
+                    borderColor: borderSubtle,
+                    color: textPrimary,
+                  }
+            }
+            className="flex shrink-0 items-center justify-center gap-1 rounded-xl border px-2 font-mono text-[9px] font-bold active:scale-95 transition-all cursor-pointer"
+            title={isLocked ? "Destravar Medida (Restrição Ativa)" : "Fixar Medida"}
           >
-            {isLocked ? <Unlock className="size-3.5 text-[#F59E0B]" /> : <Lock className="size-3.5 text-[#F59E0B]" />}
-            <span>{isLocked ? "🔓 Destravar Medida (Restrição Ativa)" : "🔒 Fixar Medida"}</span>
+            {isLocked ? (
+              <Unlock className="size-3 shrink-0" style={{ color: accentHex }} />
+            ) : (
+              <Lock className="size-3 shrink-0" style={{ color: accentHex }} />
+            )}
+            <span>{isLocked ? "Fixo" : "Fixar"}</span>
           </button>
         )}
 
-        {/* RODAPÉ: CANCELAR E ✓ CONFIRMAR */}
-        <div className="grid grid-cols-2 gap-1.5 pt-0.5">
-          <button
-            type="button"
-            onClick={onClose}
-            className={cn(
-              "py-1.5 rounded-xl border font-mono text-[10.5px] font-bold flex items-center justify-center gap-1 active:scale-95 transition-transform cursor-pointer",
-              isDark
-                ? "bg-[#0D121B] hover:bg-[#293444] border-[#293444] text-[#E6EDF5]"
-                : "bg-[#F1F5F9] hover:bg-[#E9EEF4] border-[#CBD5E1] text-[#1E293B]",
-            )}
-          >
-            <X className="size-3.5" />
-            <span>Cancelar</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => handleConfirm()}
-            className={cn(
-              "py-1.5 rounded-xl font-mono text-[10.5px] font-bold flex items-center justify-center gap-1 shadow-md active:scale-95 transition-transform cursor-pointer",
-              isDark
-                ? "bg-[#34D399] hover:bg-emerald-300 text-[#0B0F14] shadow-[#34D399]/20"
-                : "bg-[#059669] hover:bg-emerald-700 text-white shadow-[#059669]/20",
-            )}
-          >
-            <Check className="size-3.5 stroke-[2.5]" />
-            <span>Confirmar</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          style={{
+            height: 28,
+            backgroundColor: keyBg,
+            borderColor: borderSubtle,
+            color: textPrimary,
+          }}
+          className={cn(
+            "flex items-center justify-center gap-1 rounded-xl border px-2 font-mono text-[9px] font-bold active:scale-95 transition-transform cursor-pointer",
+            allowLock ? "flex-1" : "w-1/2",
+          )}
+          title="Cancelar edição"
+        >
+          <X className="size-3 shrink-0" />
+          <span>Cancelar</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleConfirm()}
+          style={{
+            height: 28,
+            backgroundColor: accentHex,
+            color: accentContrast,
+            boxShadow: `0 2px 10px ${accentHex}44`,
+          }}
+          className={cn(
+            "flex items-center justify-center gap-1 rounded-xl px-2 font-mono text-[9px] font-extrabold active:scale-95 transition-transform cursor-pointer",
+            allowLock ? "flex-1" : "w-1/2",
+          )}
+          title="Confirmar medida"
+        >
+          <Check className="size-3 shrink-0 stroke-[2.8]" />
+          <span>Confirmar</span>
+        </button>
       </div>
     </div>
   );
+
+  if (typeof document !== "undefined" && document.body) {
+    return createPortal(panelNode, document.body);
+  }
+  return panelNode;
 }
+

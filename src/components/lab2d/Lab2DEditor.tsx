@@ -403,7 +403,6 @@ import {
   TOUCH_CURSOR_OFFSET_PX,
   shouldUseTouchOffset,
   computeTouchCursorScreenAndWorld,
-  renderCrosshair55Overlay,
   computeNudgeDelta,
   type NudgeDirection,
   type NudgeStepMm,
@@ -2891,48 +2890,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         activeLoftPreviewMesh,
       });
 
-      // Renderiza a Mira 55px no final do loop 2D do <canvas> (Seção 3.2):
-      // A. Anel de Apoio do Dedo em (touchX, touchY) (raio 14px)
-      // B. Haste Conectora Vertical de 55px (tracejada)
-      // C. Retículo Óptico Principal de Precisão em (touchX, touchY - 55) ou travado no SNAP
-      if (
-        cursorOffsetMode === "offset" &&
-        tool !== "pan" &&
-        !isMultiTouchGestureRef.current &&
-        touchInteractionState !== "MULTITOUCH_NAVIGATION" &&
-        activeTouchScreenPos
-      ) {
-        const activeSnapObj = smartSnap ?? snapHit;
-        const snapScreenPt = activeSnapObj
-          ? {
-              x: activeSnapObj.p.x * view.k + view.tx,
-              y: activeSnapObj.p.y * view.k + view.ty,
-            }
-          : {
-              x: activeTouchScreenPos.x,
-              y: activeTouchScreenPos.y - TOUCH_CURSOR_OFFSET_PX,
-            };
-
-        ctx.save();
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        renderCrosshair55Overlay(ctx, {
-          touchScreen: activeTouchScreenPos,
-          reticleScreen: snapScreenPt,
-          hasSnap: Boolean(activeSnapObj),
-          snapLabel:
-            smartSnap?.label ??
-            (snapHit
-              ? snapHit.kind === "end"
-                ? "Vértice"
-                : snapHit.kind === "mid"
-                  ? "Ponto Médio"
-                  : snapHit.kind === "center"
-                    ? "Centro"
-                    : "Grade"
-              : null),
-        });
-        ctx.restore();
-      }
+      // Nota (Seção 1.1): A Mira Principal (Retículo + Haste Elástica + Anel de Toque)
+      // é renderizada exclusivamente por <ChamferTechnicalCursorSvg /> no SVG Overlay,
+      // eliminando qualquer segunda mira duplicada/fantasma no Canvas 2D.
+      void activeTouchScreenPos;
     },
     [
       cadPhase,
@@ -2958,12 +2919,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       showGrid,
       grid,
       activeLoftPreviewMesh,
-      cursorOffsetMode,
-      tool,
-      touchInteractionState,
       activeTouchScreenPos,
-      smartSnap,
-      snapHit,
     ],
   );
 
@@ -3697,16 +3653,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     [canvasSize, view, groups, commit],
   );
 
-  const handleDirectDimUpdate = (newVal: number) => {
+  const applyDirectDimValue = (newVal: number, isFinalCommit: boolean) => {
     if (!directDimEditor) return;
     const { dimId } = directDimEditor;
     const dim = dims.find((d) => d.id === dimId);
     if (!dim) return;
 
+    const updater = isFinalCommit ? commit : setEntities;
     const entRef = dim.refs.find((r) => r.kind === "entity");
     if (entRef && entRef.kind === "entity") {
       const entId = entRef.id;
-      commit((prev) =>
+      updater((prev) =>
         prev.map((e) => {
           if (e.id !== entId) return e;
           if (e.type === "circle") {
@@ -3755,7 +3712,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const pt0 = dim.refs[0]?.kind === "point" ? dim.refs[0].p : null;
       const pt1 = dim.refs[1]?.kind === "point" ? dim.refs[1].p : null;
       if (pt0 && pt1) {
-        commit((prev) =>
+        updater((prev) =>
           prev.map((e) => {
             if (e.type === "line") {
               const d0 = Math.hypot(e.x1 - pt0.x, e.y1 - pt0.y);
@@ -3777,8 +3734,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     setDims((prev) =>
       prev.map((d) => (d.id === dimId ? { ...d, label: `${newVal.toFixed(2)} mm` } : d)),
     );
-    toast.success(`Cota atualizada para ${newVal.toFixed(2)} mm e geometria recalculada.`);
-    setDirectDimEditor(null);
+    if (isFinalCommit) {
+      toast.success(`Cota atualizada para ${newVal.toFixed(2)} mm e geometria recalculada.`);
+      setDirectDimEditor(null);
+    }
+  };
+
+  const handleDirectDimUpdate = (newVal: number) => {
+    applyDirectDimValue(newVal, true);
   };
 
   /* PONTOS DE REFERÊNCIA INTELIGENTES (OSNAP CAD DINÂMICO) */
@@ -6995,17 +6958,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             }),
           ),
         );
+        const currentC = cursorRef.current;
         const nextC = {
-          x: Number((cursor.x + delta.x).toFixed(4)),
-          y: Number((cursor.y + delta.y).toFixed(4)),
+          x: Number((currentC.x + delta.x).toFixed(4)),
+          y: Number((currentC.y + delta.y).toFixed(4)),
         };
+        cursorRef.current = nextC;
         setCursor(nextC);
         setLoupeCadPos(nextC);
+        setTouchWorldPos((prev) =>
+          prev
+            ? {
+                x: Number((prev.x + delta.x).toFixed(4)),
+                y: Number((prev.y + delta.y).toFixed(4)),
+              }
+            : null,
+        );
         return;
       }
 
       // 2. Desloca o cursor ativo com precisão cirúrgica e atualiza o draft/cotas em tempo real
-      const basePt = (smartSnap ?? snapHit)?.p ?? cursor;
+      const basePt = (smartSnap ?? snapHit)?.p ?? cursorRef.current;
       const rawNextCursor = {
         x: Number((basePt.x + delta.x).toFixed(4)),
         y: Number((basePt.y + delta.y).toFixed(4)),
@@ -7025,8 +6998,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         : rawNextCursor;
       setSmartSnap(null);
       setSnapHit(null);
+      cursorRef.current = nextCursor;
       setCursor(nextCursor);
       setLoupeCadPos(nextCursor);
+      setTouchWorldPos((prev) =>
+        prev
+          ? {
+              x: Number((prev.x + delta.x).toFixed(4)),
+              y: Number((prev.y + delta.y).toFixed(4)),
+            }
+          : null,
+      );
 
       if (activeEdge) {
         setLiveDimensions(DynamicDimensionInteraction.generateEdgeOffsetDimensions(nextCursor, activeEdge, activeEdgeSide));
@@ -7670,10 +7652,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   // Todas as propriedades foram unificadas no painel lateral direito PROPRIEDADES, mantendo no canvas apenas a pílula rápida horizontal de seleção.
   const mobileEditorOpen = false;
 
-  // Enquadramento Inteligente do CAD (Regra 7)
+  const framingTargetEntities = useMemo(() => {
+    if (pendingDraftShape) return [pendingDraftShape.entity];
+    if (draft) return [draft];
+    if (selected.length > 0) return selected;
+    return entities;
+  }, [pendingDraftShape, draft, selected, entities]);
+
+  // Auto-Enquadramento Dinâmico e Fluido da Peça à Esquerda (Seção 4)
   useSmartFraming({
-    isOpen: mobileEditorOpen,
+    isOpen: Boolean(
+      mobileEditorOpen ||
+        directDimEditor?.open ||
+        liveDimEditor !== null ||
+        workspaceKeypadEditor !== null ||
+        elevationKeypadState.open,
+    ),
     selectedEntity,
+    targetEntities: framingTargetEntities,
+    nudgeHudVisible: !solidOpen && nudgeHudVisible,
     view,
     setView,
     canvasWidth: canvasSize.w,
@@ -7989,6 +7986,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
     return getOperationFeedback(tool, pending.length, selected.length);
   }, [activeArrayType, isArrayPickingCenter, arrayPolarParams, arrayLinearParams, tool, pending.length, selected.length]);
+  void operationFeedback;
 
   // Pré-aquece o chunk do CHAMFER INTENT e do CAD 3D Stage em background após o canvas 2D estar interativo
   useEffect(() => {
@@ -12406,30 +12404,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           )}
 
-          {/* BARRA FLUTUANTE DE COMANDO / FEEDBACK CAD TÉCNICO 2D (OCULTA NO MODO CAD 3D) */}
-          {activeArrayType === null && activeMode !== "3d" && (
-            <div
-              style={{
-                backgroundColor: "var(--chamfer-bubble-bg)",
-                borderColor: "var(--chamfer-border)",
-                color: "var(--chamfer-text-secondary)",
-              }}
-              className="pointer-events-none absolute bottom-3 left-4 z-20 hidden md:flex items-center gap-2 rounded-xl border px-3 py-1.5 font-mono text-[10px] shadow-lg backdrop-blur-md transition-colors"
-            >
-              <span
-                style={{ color: "var(--chamfer-accent)" }}
-                className="font-bold uppercase tracking-wider"
-              >
-                {isOrbitToolActive ? "ÓRBITA 3D" : operationFeedback.command}
-              </span>
-              <span style={{ color: "var(--chamfer-border-strong)" }}>|</span>
-              <span style={{ color: "var(--chamfer-text-primary)" }}>
-                {isOrbitToolActive
-                  ? `Arraste com 1 dedo/mouse para orbitar (θ ${Math.round(orbitAzimuthDeg)}° · φ ${Math.round(orbitElevationDeg)}°)`
-                  : operationFeedback.instruction}
-              </span>
-            </div>
-          )}
+          {/* Nota (Seção 1.2): Mensagens e banners de dicas de ferramentas acima da barra inferior removidos para manter o canvas 100% limpo */}
 
           {zoomHud !== null && (
             <div className="metal pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 font-mono text-[11px] text-accent tabular-nums">
@@ -13700,22 +13675,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 </div>
               )}
 
-              <div className={cn("mx-0.5 h-3.5 w-px shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
-
-              {/* ESTADO DA OPERAÇÃO CAD */}
-              <div className="hidden lg:flex items-center gap-1.5 text-[9.5px] truncate max-w-[260px]">
-                <span
-                  style={{ backgroundColor: "var(--chamfer-accent)" }}
-                  className="size-1.5 rounded-full animate-pulse shrink-0"
-                />
-                <strong style={{ color: "var(--chamfer-accent)" }} className="uppercase">
-                  {operationFeedback.command}:
-                </strong>
-                <span className="truncate" style={{ color: "var(--chamfer-text-secondary)" }}>
-                  {operationFeedback.instruction}
-                </span>
-              </div>
-
               <div className={cn("mx-0.5 h-3.5 w-px hidden sm:block shrink-0", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
 
               {/* INFORMAÇÕES DA SELEÇÃO */}
@@ -14068,6 +14027,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       }
                       triggerHaptic("selection");
                       const rect = e.currentTarget.getBoundingClientRect();
+                      setStatusWorkspaceMenuOpen(false);
                       setWorkspaceKeypadEditor({
                         axis: "w",
                         currentValue: frame.w,
@@ -14098,6 +14058,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       }
                       triggerHaptic("selection");
                       const rect = e.currentTarget.getBoundingClientRect();
+                      setStatusWorkspaceMenuOpen(false);
                       setWorkspaceKeypadEditor({
                         axis: "h",
                         currentValue: frame.h,
@@ -14939,8 +14900,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         onNudge={handleNudge}
         onConfirmPoint={handleConfirmNudgePoint}
         onSetExactCoord={(pt) => {
+          cursorRef.current = pt;
           setCursor(pt);
           setLoupeCadPos(pt);
+          setTouchWorldPos(null);
           toast.success(`Mira posicionada em X: ${pt.x.toFixed(1)}, Y: ${pt.y.toFixed(1)} mm`);
         }}
         canConfirmPoint={
@@ -15032,10 +14995,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       {directDimEditor && (
         <ChamferDirectDimensionEditor
           open={directDimEditor.open}
-          onClose={() => setDirectDimEditor(null)}
+          onClose={() => {
+            applyDirectDimValue(directDimEditor.value, false);
+            setDirectDimEditor(null);
+          }}
           screenPos={directDimEditor.pos}
           currentValue={directDimEditor.value}
           label={directDimEditor.label}
+          onPreviewChange={(previewVal) => applyDirectDimValue(previewVal, false)}
           onConfirm={handleDirectDimUpdate}
         />
       )}
