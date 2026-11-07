@@ -429,7 +429,6 @@ export function WorkshopDashboard() {
             - Na direita (mesma linha de "Início"): chip [ ✦ PRO ] + botões circulares ✦, 🔍 e 👤
             ========================================================================= */}
         <NavigationAreaHeader
-          className="!flex-row !items-end !justify-between !gap-2 !pb-2.5"
           badgeText="SUA OFICINA DIGITAL"
           badgeColor="text-amber-500"
           indicatorColor="bg-amber-500"
@@ -440,69 +439,6 @@ export function WorkshopDashboard() {
             </span>
           }
           title="Início"
-          actions={
-            <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 self-end">
-              <Link
-                to="/pro"
-                onClick={() => {
-                  triggerHaptic("selection");
-                  AudioManager.play("ui_nav");
-                }}
-                aria-label="CALDRA PRO"
-                className="inline-flex h-8.5 items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/10 px-2.5 font-mono text-[10px] font-bold tracking-wider text-amber-500 hover:bg-amber-500 hover:text-slate-950 active:scale-95 transition-all cursor-pointer"
-              >
-                <span aria-hidden="true">✦</span>
-                <span>PRO</span>
-              </Link>
-
-              <button
-                type="button"
-                aria-label={auroraStyle !== "padrao" ? "Desativar Fluid AURORA" : "Ativar Fluid AURORA"}
-                aria-pressed={auroraStyle !== "padrao"}
-                title={auroraStyle !== "padrao" ? "Fluid AURORA Ativo (toque para alternar)" : "Ativar Fluid AURORA"}
-                onClick={() => {
-                  triggerHaptic("selection");
-                  AudioManager.play("ui_pop");
-                  setAuroraStyle(auroraStyle !== "padrao" ? "padrao" : "suave");
-                }}
-                className={cn(
-                  "caldra-bubble-base flex size-8.5 items-center justify-center active:scale-95 transition-all duration-200 cursor-pointer touch-manipulation",
-                  auroraStyle !== "padrao"
-                    ? "caldra-bubble-center glow-ring"
-                    : "caldra-bubble-neutral hover:border-[var(--accent-color)] hover:text-[var(--accent-color)]",
-                )}
-              >
-                <Sparkles className="size-4 shrink-0" strokeWidth={1.9} style={{ transform: "translateZ(0)" }} />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic("tap");
-                  AudioManager.play("ui_nav");
-                  setToolsOpen(true);
-                }}
-                aria-label="Buscar ferramentas"
-                title="Buscar ferramentas"
-                className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-[var(--accent-color)] hover:text-[var(--accent-color)] active:scale-95 transition-all cursor-pointer touch-manipulation"
-              >
-                <Search className="size-4 shrink-0" strokeWidth={1.8} style={{ transform: "translateZ(0)" }} />
-              </button>
-
-              <Link
-                to="/perfil"
-                onClick={() => {
-                  triggerHaptic("tap");
-                  AudioManager.play("ui_nav");
-                }}
-                aria-label="Perfil e Conta"
-                title="Perfil e Conta"
-                className="caldra-bubble-base caldra-bubble-neutral flex size-8.5 items-center justify-center hover:border-[var(--accent-color)] hover:text-[var(--accent-color)] active:scale-95 transition-all cursor-pointer touch-manipulation"
-              >
-                <User className="size-4 shrink-0" strokeWidth={1.8} style={{ transform: "translateZ(0)" }} />
-              </Link>
-            </div>
-          }
         />
 
         {/* =========================================================================

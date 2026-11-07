@@ -1,22 +1,20 @@
-import { useRouterState, Link, useNavigate } from "@tanstack/react-router";
+import { useRouterState, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { Sparkles } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
-import { useSettings } from "@/lib/settings/SettingsProvider";
 import { useProfile } from "@/lib/profile/ProfileProvider";
 import { MasterModeDialog } from "./MasterModeDialog";
 import { BubbleNav } from "./BubbleNav";
 import { MainTabsKeepAlive, MAIN_TAB_PATHS } from "./MainTabsKeepAlive";
 import { Intro, useIntro } from "./Intro";
 import { Onboarding } from "./Onboarding";
-import { Avatar, ProfileDialog } from "./Profile";
+import { ProfileDialog } from "./Profile";
 import { PaywallDialog } from "./Paywall";
 import { AuroraBackground } from "./Aurora";
 import { ShellActionsProvider } from "./ShellActions";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
-import { AudioQuickControl } from "@/components/audio/AudioQuickControl";
+import { UnifiedQuickActionsBar } from "./UnifiedQuickActionsBar";
 import { CaldraGenesisPreIntro } from "@/components/caldra/CaldraGenesisPreIntro";
 
 /** Fundo AURORA ativo em todas as telas não-imersivas (Home, Chamfer Lobby, Projetar, Produzir, Aprenda, Perfil, etc.) */
@@ -33,19 +31,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [masterOpen, setMasterOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const navigate = useNavigate();
-  const { isMestre, closeGate } = useFeatureAccess();
-  const { auroraStyle, setAuroraStyle } = useSettings();
+  const { closeGate } = useFeatureAccess();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const intro = useIntro();
   const profile = useProfile();
-
-  const isAuroraActive = auroraStyle !== "padrao";
-
-  const handleToggleFluidAurora = () => {
-    triggerHaptic("selection");
-    AudioManager.play("ui_pop");
-    setAuroraStyle(isAuroraActive ? "padrao" : "suave");
-  };
 
   // Executa na abertura do aplicativo por exatamente 5,000 segundos
   const [startupGenesis, setStartupGenesis] = useState(false);
@@ -107,36 +96,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="relative flex min-h-screen flex-col overflow-x-hidden text-foreground bg-background">
         <AuroraBackground active={auroraVisible(pathname)} className="fixed inset-0 z-0" />
 
-        {!immersive && !standalone && pathname !== "/" && (
-          <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
-            <AudioQuickControl />
-            <button
-              type="button"
-              aria-pressed={isAuroraActive}
-              onClick={handleToggleFluidAurora}
-              aria-label={isAuroraActive ? "Desativar Fluid AURORA" : "Ativar Fluid AURORA"}
-              title={isAuroraActive ? "Fluid AURORA ativo (Toque para desativar)" : "Ativar Fluid AURORA"}
-              className={cn(
-                "caldra-bubble-base size-9 transition-all duration-200 [transition-timing-function:var(--ease-natural)] touch-manipulation select-none cursor-pointer hover:scale-105 active:scale-95",
-                isAuroraActive
-                  ? "caldra-bubble-center glow-ring"
-                  : "caldra-bubble-neutral text-muted-foreground hover:text-[var(--accent-color)] hover:border-[var(--accent-color)]",
-              )}
-            >
-              <Sparkles className="size-4 shrink-0" />
-            </button>
-            <Link
-              to="/perfil"
-              onClick={() => {
-                triggerHaptic("tap");
-                AudioManager.play("ui_nav");
-              }}
-              aria-label="Perfil e Conta"
-              title="Perfil e Conta"
-              className="rounded-full transition-transform duration-180 [transition-timing-function:var(--ease-natural)] hover:scale-105 active:scale-95 touch-manipulation cursor-pointer"
-            >
-              <Avatar photo={profile.photo} size={36} className="shadow-sm" />
-            </Link>
+        {!immersive && !standalone && (
+          <div className="fixed top-3 right-4 z-40">
+            <UnifiedQuickActionsBar />
           </div>
         )}
 
