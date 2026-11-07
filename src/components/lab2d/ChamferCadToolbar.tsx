@@ -2043,8 +2043,8 @@ export function ChamferCadToolbar({
                             },
                             {
                               id: "purple_ref" as const,
-                              label: "Marco Geométrico (Associativo & ÷N)",
-                              activeClass: "bg-purple-950/80 text-purple-300 border-purple-500/60",
+                              label: "Marco Geométrico / Âncora (A–E)",
+                              activeClass: "bg-cyan-950/80 text-cyan-300 border-cyan-500/60",
                             },
                             {
                               id: "blue_line" as const,

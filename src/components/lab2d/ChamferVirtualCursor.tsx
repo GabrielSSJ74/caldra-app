@@ -14,6 +14,7 @@ import type { Snap } from "@/lib/lab2d/core";
 import type { SmartReferencePoint } from "@/lib/lab2d/cadReferenceSnaps";
 import type { IsoPlane } from "@/lib/lab2d/isometricEngine";
 import { useSettings, type AccentColor, type ThemeMode } from "@/lib/settings/SettingsProvider";
+import { ReferenceService } from "@/lib/lab2d/referenceService";
 import { ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Check, Minimize2, Pin, PinOff } from "lucide-react";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { cn } from "@/lib/utils";
@@ -788,21 +789,51 @@ export function ChamferNudgeControlHUD({
     onNudgeRef.current(dir);
   };
 
+  const activeAnchor = ReferenceService.getActive();
+  const isAnchorCoordMode =
+    Boolean(activeAnchor) && ReferenceService.getCoordinateInputMode() === "anchor";
+  const displayedCoord =
+    isAnchorCoordMode && activeAnchor
+      ? ReferenceService.toLocal(cursorPos, activeAnchor)
+      : cursorPos;
+
   const handleOpenCoordInput = () => {
     if (!onSetExactCoord) return;
     triggerHaptic("selection");
-    setXInput(cursorPos.x.toFixed(1));
-    setYInput(cursorPos.y.toFixed(1));
+    setXInput(displayedCoord.x.toFixed(1));
+    setYInput(displayedCoord.y.toFixed(1));
     setEditingCoord((prev) => !prev);
   };
 
   const handleApplyCoord = (e: React.FormEvent) => {
     e.preventDefault();
+    if (!onSetExactCoord) {
+      setEditingCoord(false);
+      return;
+    }
+    const rawCombined = xInput.includes("<") || xInput.startsWith("@")
+      ? xInput.trim()
+      : `${xInput.trim()},${yInput.trim()}`;
+    const parsedPt = ReferenceService.parseRelativeInput(
+      rawCombined,
+      isAnchorCoordMode ? "anchor" : "world",
+      activeAnchor,
+    );
+    if (parsedPt) {
+      triggerHaptic("action");
+      onSetExactCoord(parsedPt);
+      setEditingCoord(false);
+      return;
+    }
     const nx = Number(xInput.replace(",", "."));
     const ny = Number(yInput.replace(",", "."));
-    if (Number.isFinite(nx) && Number.isFinite(ny) && onSetExactCoord) {
+    if (Number.isFinite(nx) && Number.isFinite(ny)) {
       triggerHaptic("action");
-      onSetExactCoord({ x: nx, y: ny });
+      const targetPt =
+        isAnchorCoordMode && activeAnchor
+          ? ReferenceService.toWorld({ x: nx, y: ny }, activeAnchor)
+          : { x: nx, y: ny };
+      onSetExactCoord(targetPt);
     }
     setEditingCoord(false);
   };
@@ -1157,18 +1188,18 @@ export function ChamferNudgeControlHUD({
         >
           <span>
             <span style={{ color: accentHex }} className="font-bold">
-              X:
+              {isAnchorCoordMode ? `X'(${activeAnchor?.id}):` : "X:"}
             </span>{" "}
-            <span className="font-semibold">{cursorPos.x.toFixed(1)}</span>
+            <span className="font-semibold">{displayedCoord.x.toFixed(1)}</span>
           </span>
           <span style={{ color: textMuted }} className="opacity-50">
             ·
           </span>
           <span>
             <span style={{ color: accentHex }} className="font-bold">
-              Y:
+              {isAnchorCoordMode ? "Y':" : "Y:"}
             </span>{" "}
-            <span className="font-semibold">{cursorPos.y.toFixed(1)}</span>
+            <span className="font-semibold">{displayedCoord.y.toFixed(1)}</span>
           </span>
         </button>
       )}

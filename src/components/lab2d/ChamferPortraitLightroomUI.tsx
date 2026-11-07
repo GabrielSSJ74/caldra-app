@@ -4635,7 +4635,7 @@ export function ChamferPortraitBottomBars({
                   interactionGuideMode === "blue_line"
                     ? "Vetor Datum"
                     : interactionGuideMode === "purple_ref"
-                      ? "Marco Geom."
+                      ? "Marco / Âncora"
                       : "Datum: OFF"
                 }
                 active={interactionGuideMode !== "off"}

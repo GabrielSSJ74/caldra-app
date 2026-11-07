@@ -28,6 +28,7 @@ import { ISO_PLANES, type DrawingProjectionMode, type IsoPlane } from "@/lib/lab
 import type { TemporaryOrigin } from "@/lib/lab2d/cadCoordinateFrames";
 import type { EdgeReference } from "@/lib/lab2d/cadGeometricReferences";
 import { CoordinateFrameManager } from "@/lib/lab2d/cadCoordinateFrames";
+import { ReferenceService, ANCHOR_CYAN_PRIMARY, ANCHOR_VIOLET_PRIMARY } from "@/lib/lab2d/referenceService";
 
 export interface ChamferPrecisionLoupeProps {
   visible: boolean;
@@ -449,6 +450,45 @@ export const ChamferPrecisionLoupeOverlay: React.FC<ChamferPrecisionLoupeProps> 
 
       if (draft) {
         renderEntityOnLoupe(draft, true);
+      }
+
+      // 2c.2 Marcos Geométricos / Âncoras (A–E), Divisores ÷N e Encontros de Guias na Lente 2.5x
+      const refState = ReferenceService.getState();
+      for (const anchor of refState.anchors) {
+        const ax = anchor.origin.x * loupeZoom;
+        const ay = anchor.origin.y * loupeZoom;
+        const rad = (anchor.thetaDeg * Math.PI) / 180;
+        const cosA = Math.cos(rad);
+        const sinA = Math.sin(rad);
+        ctx.save();
+        ctx.strokeStyle = anchor.id === refState.activeAnchorId ? ANCHOR_CYAN_PRIMARY : ANCHOR_VIOLET_PRIMARY;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 2]);
+        ctx.beginPath();
+        ctx.moveTo(ax - cosA * 12, ay - sinA * 12);
+        ctx.lineTo(ax + cosA * 12, ay + sinA * 12);
+        ctx.moveTo(ax + sinA * 12, ay - cosA * 12);
+        ctx.lineTo(ax - sinA * 12, ay + cosA * 12);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.arc(ax, ay, 3.2, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+      for (const mt of refState.meetings) {
+        const mx = mt.point.x * loupeZoom;
+        const my = mt.point.y * loupeZoom;
+        ctx.save();
+        ctx.strokeStyle = ANCHOR_CYAN_PRIMARY;
+        ctx.lineWidth = 1.3;
+        ctx.beginPath();
+        ctx.moveTo(mx - 4, my - 4);
+        ctx.lineTo(mx + 4, my + 4);
+        ctx.moveTo(mx + 4, my - 4);
+        ctx.lineTo(mx - 4, my + 4);
+        ctx.stroke();
+        ctx.restore();
       }
 
       // 2d. Vetor Datum / Ponto Base -> Mira

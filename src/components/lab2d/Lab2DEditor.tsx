@@ -267,9 +267,15 @@ import {
   convertDatumToCadLines,
   isPersistentDatumEntity,
   getPersistentDatumSpec,
+  ReferenceService,
+  evaluateSmartPick,
+  type SmartPickCandidate,
+  type ReferenceServiceState,
   type RelationalSynthesisMode,
   type PersistentDatumSpec,
 } from "@/lib/lab2d/cadGeometricMarks";
+import { ChamferGeometricAnchorOverlay } from "./ChamferGeometricAnchorOverlay";
+import { ChamferGeometricAnchorBar } from "./ChamferGeometricAnchorBar";
 import type { RelationalPickItem } from "./ChamferLiveDimensionsOverlay";
 
 import {
@@ -1461,6 +1467,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
 
   const [pinnedMeetingPoints, setPinnedMeetingPoints] = useState<Vec2[]>([]);
   const [relationalPicks, setRelationalPicks] = useState<RelationalPickItem[]>([]);
+  const [referenceState, setReferenceState] = useState<ReferenceServiceState>(() =>
+    ReferenceService.getState(),
+  );
+  const [smartPickCandidate, setSmartPickCandidate] = useState<SmartPickCandidate | null>(null);
+  const smartPickCandidateRef = useRef<SmartPickCandidate | null>(null);
+  const pastReferenceSnapshotsRef = useRef<ReferenceServiceState[]>([]);
+  const futureReferenceSnapshotsRef = useRef<ReferenceServiceState[]>([]);
+
+  useEffect(() => {
+    return ReferenceService.subscribe((nextRefState) => {
+      setReferenceState(nextRefState);
+    });
+  }, []);
+
   const [previewGeometricMarkCandidate, setPreviewGeometricMarkCandidate] = useState<
     (Entity & { type: "point" }) | null
   >(null);
@@ -1510,6 +1530,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       previewGeometricMarkCandidateRef.current = null;
       setPreviewGeometricMarkCandidate(null);
       setPendingGeometricMarkConfirmation(null);
+      smartPickCandidateRef.current = null;
+      setSmartPickCandidate(null);
 
       if (nextMode !== "off") {
         const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
@@ -2199,7 +2221,12 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const commit = useCallback((next: Entity[] | ((p: Entity[]) => Entity[])) => {
     setEntities((prev) => {
       past.current = [...past.current.slice(-49), prev];
+      pastReferenceSnapshotsRef.current = [
+        ...pastReferenceSnapshotsRef.current.slice(-49),
+        ReferenceService.getSnapshot(),
+      ];
       future.current = [];
+      futureReferenceSnapshotsRef.current = [];
       setHistoryState({ canUndo: past.current.length > 0, canRedo: false });
       const updated = typeof next === "function" ? next(prev) : next;
       const seenIds = new Set<string>();
@@ -2209,7 +2236,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         let entId = ent.id;
         const isBrandNew =
           !entId || entId === "draft" || entId.startsWith("draft-") || !prevIds.has(entId);
-        if (!entId || entId === "draft" || entId.startsWith("draft-") || seenIds.has(entId)) {
+        if (!entId || entId === "draft" || entId === "draft-" || seenIds.has(entId)) {
           entId = uid();
         }
         seenIds.add(entId);
@@ -2225,7 +2252,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         }
         return nextEnt;
       });
-      return syncAssociativeGeometricMarks(normalizedList);
+      const synced = syncAssociativeGeometricMarks(normalizedList);
+      ReferenceService.syncWithEntities(synced);
+      return synced;
     });
   }, []);
 
@@ -2301,8 +2330,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
     const last = past.current.pop();
     if (!last) return;
+    const prevRefSnap = pastReferenceSnapshotsRef.current.pop();
+    if (prevRefSnap) {
+      futureReferenceSnapshotsRef.current = [
+        ReferenceService.getSnapshot(),
+        ...futureReferenceSnapshotsRef.current,
+      ];
+      ReferenceService.restoreSnapshot(prevRefSnap);
+    }
     setEntities((prev) => {
       future.current = [prev, ...future.current];
+      ReferenceService.syncWithEntities(last);
       return last;
     });
     setHistoryState({ canUndo: past.current.length > 0, canRedo: future.current.length + 1 > 0 });
@@ -2314,8 +2352,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const [next, ...rest] = future.current;
     if (!next) return;
     future.current = rest;
+    const [nextRefSnap, ...restRefSnaps] = futureReferenceSnapshotsRef.current;
+    if (nextRefSnap) {
+      pastReferenceSnapshotsRef.current = [
+        ...pastReferenceSnapshotsRef.current,
+        ReferenceService.getSnapshot(),
+      ];
+      futureReferenceSnapshotsRef.current = restRefSnaps;
+      ReferenceService.restoreSnapshot(nextRefSnap);
+    }
     setEntities((prev) => {
       past.current = [...past.current, prev];
+      ReferenceService.syncWithEntities(next);
       return next;
     });
     setHistoryState({ canUndo: true, canRedo: rest.length > 0 });
@@ -2658,6 +2706,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     (p: Vec2): Vec2 => {
       if (!snapOn) return p;
       const tol = (nudgeHudVisible ? 6 : 12) / view.k;
+
+      // Prioridade máxima para Âncoras A–E, Divisores ÷N e Encontros de Guias do ReferenceService
+      const refCandidates = ReferenceService.snapCandidates(entities);
+      for (const rc of refCandidates) {
+        if (dist(p, rc.point) <= tol * 1.45) {
+          return { x: rc.point.x, y: rc.point.y };
+        }
+      }
 
       // Prioridade máxima para Pontos de Encontro Roxos (+) confirmados
       for (const mp of pinnedMeetingPoints) {
@@ -4766,6 +4822,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     previewGeometricMarkCandidateRef.current = null;
     setPreviewGeometricMarkCandidate(null);
     setPendingGeometricMarkConfirmation(null);
+    smartPickCandidateRef.current = null;
+    setSmartPickCandidate(null);
 
     if (pointerMoveRafRef.current !== null) {
       cancelAnimationFrame(pointerMoveRafRef.current);
@@ -5240,16 +5298,23 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const hit = hitTest(raw);
       const targetEntity = hit;
 
-      // Modo MARCO GEOMÉTRICO (interactionGuideMode === "purple_ref"):
+      // Modo MARCO GEOMÉTRICO / ÂNCORA (interactionGuideMode === "purple_ref"):
       // PROIBIDO criar ou comitar entidade no pointerdown / touchstart e PROIBIDO gerar marcos "ÓRFÃO" no vazio!
-      // No início do toque (1 dedo), apenas atualiza a prévia pulsante se houver um ponto SNAP válido real.
+      // No início do toque (1 dedo), apenas atualiza o Smart Pick (<= 24px) e a prévia pulsante se houver um ponto válido real.
       if (interactionGuideMode === "purple_ref" && !bestNode) {
+        const smartCand = evaluateSmartPick(p, entities, view.k, {
+          maxPixelRadius: 24,
+          guideMeetings: ReferenceService.getState().meetings,
+        }).best;
+        smartPickCandidateRef.current = smartCand;
+        setSmartPickCandidate(smartCand);
+
         const validCandidate = inferValidGeometricMarkCandidate(
           p,
           entities,
           activeLayer,
           smartSnap,
-          55 / view.k,
+          24 / view.k,
         );
         previewGeometricMarkCandidateRef.current = validCandidate;
         setPreviewGeometricMarkCandidate(validCandidate);
@@ -6145,16 +6210,37 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       const tol = (nudgeHudVisible ? 6 : 12) / view.k;
       const hysteresisTol = smartSnap ? tol * 1.35 : tol;
 
-      // Verifica primeiro os Pontos de Encontro Roxos (+) confirmados
-      let matchedPinned: Vec2 | null = null;
-      for (const mp of pinnedMeetingPoints) {
-        if (dist(raw, mp) <= hysteresisTol) {
-          matchedPinned = mp;
+      // Verifica primeiro Âncoras A–E, Divisores ÷N e Encontros de Guias do ReferenceService
+      const refCandidates = ReferenceService.snapCandidates(entities);
+      let matchedRefCand: (typeof refCandidates)[number] | null = null;
+      for (const rc of refCandidates) {
+        if (dist(raw, rc.point) <= hysteresisTol) {
+          matchedRefCand = rc;
           break;
         }
       }
 
-      if (matchedPinned) {
+      // Verifica depois os Pontos de Encontro Roxos (+) confirmados
+      let matchedPinned: Vec2 | null = null;
+      if (!matchedRefCand) {
+        for (const mp of pinnedMeetingPoints) {
+          if (dist(raw, mp) <= hysteresisTol) {
+            matchedPinned = mp;
+            break;
+          }
+        }
+      }
+
+      if (matchedRefCand) {
+        setSmartSnap({
+          p: matchedRefCand.point,
+          kind: matchedRefCand.kind === "meeting" ? "intersection" : "geometric_mark",
+          label: matchedRefCand.label,
+          priority: 110,
+        });
+        setSnapHit(null);
+        currentSnapPt = matchedRefCand.point;
+      } else if (matchedPinned) {
         setSmartSnap({
           p: matchedPinned,
           kind: "intersection",
@@ -6188,13 +6274,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     }
 
     // Aplica restrições dimensionais reais (L, ∠, ΔX, ΔY, d) se ativas no modo atual
+    const activeRefAnchor = ReferenceService.getActive();
     const constraintBase =
       interactionGuideMode === "blue_line"
         ? pending.length > 0
           ? pending[pending.length - 1]!
           : temporaryOrigin?.p ?? null
-        : interactionGuideMode === "purple_ref" && temporaryOrigin
-          ? temporaryOrigin.p
+        : interactionGuideMode === "purple_ref"
+          ? activeRefAnchor?.origin ?? temporaryOrigin?.p ?? null
           : null;
     if (constraintBase) {
       currentSnapPt = applyDimensionalConstraintsToPoint(constraintBase, currentSnapPt, lockedConstraints);
@@ -6203,9 +6290,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     cursorRef.current = currentSnapPt;
     setCursor(currentSnapPt);
 
-    // Prévia ao Vivo do Marco Geométrico (Seção 2.3):
-    // Enquanto o dedo desliza com Marco Geométrico ativo, exibe a prévia pulsante somente se capturar um ponto SNAP geométrico real!
+    // Prévia ao Vivo do Marco Geométrico / Âncora (Seção 4.2 Smart Pick <= 24px):
+    // Enquanto o dedo desliza com Marco Geométrico ativo, destaca o candidato dentro do raio <= 24px sem criar órfãos no vazio!
     if (interactionGuideMode === "purple_ref") {
+      const smartCand = evaluateSmartPick(raw, entities, view.k, {
+        maxPixelRadius: 24,
+        guideMeetings: ReferenceService.getState().meetings,
+      }).best;
+      smartPickCandidateRef.current = smartCand;
+      setSmartPickCandidate(smartCand);
+
       const activeSmart =
         smartSnap && dist(currentSnapPt, smartSnap.p) <= 1e-3 ? smartSnap : null;
       const validCand = inferValidGeometricMarkCandidate(
@@ -6213,7 +6307,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         entities,
         activeLayer,
         activeSmart,
-        55 / view.k,
+        24 / view.k,
       );
       previewGeometricMarkCandidateRef.current = validCand;
       setPreviewGeometricMarkCandidate(validCand);
@@ -6819,11 +6913,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     swipeTrimFenceRef.current = [];
     setSwipeTrimCutPreview([]);
 
-    // Fluxo de Toque com Prévia + Confirmação Explícita do MARCO GEOMÉTRICO (Seção 2.3):
-    // Ao soltar o dedo sobre um ponto SNAP geométrico válido, exibe a Mini-Bolha de Confirmação
-    // ([ ✓ Inserir Marco ] | [ ÷N Entre 2 Pontos ] | [ ✕ ]).
-    // Se soltar no vazio (sem ponto SNAP de entidade real), NADA é criado!
+    // Fluxo de Toque com Smart Pick (<= 24px) e Ciclo do MARCO GEOMÉTRICO / ÂNCORA (A–E) (Seção 4.2):
+    // Se soltar sobre um candidato dentro de <= 24px (ou repetir toque na mesma entidade para Ciclar),
+    // cria/atualiza a Âncora A–E no ReferenceService e exibe confirmação.
+    // Se soltar no espaço vazio sem candidato <= 24px, NADA é criado (zero órfãos acidentais)!
     if (interactionGuideMode === "purple_ref" && (tool === "select" || tool === "node")) {
+      const pickedCand =
+        smartPickCandidateRef.current ??
+        evaluateSmartPick(cursorRef.current, entities, view.k, {
+          maxPixelRadius: 24,
+          guideMeetings: ReferenceService.getState().meetings,
+        }).best;
+      smartPickCandidateRef.current = null;
+      setSmartPickCandidate(null);
+
       const activeSmart =
         smartSnap && dist(cursorRef.current, smartSnap.p) <= 1e-3 ? smartSnap : null;
       const validCandidate =
@@ -6833,15 +6936,40 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           entities,
           activeLayer,
           activeSmart,
-          55 / view.k,
+          24 / view.k,
         );
       previewGeometricMarkCandidateRef.current = null;
       setPreviewGeometricMarkCandidate(null);
 
-      if (validCandidate) {
+      if (pickedCand) {
+        const currentActiveAnchor = ReferenceService.getActive();
+        // Toque repetido na mesma entidade cicla automaticamente entre seus pontos notáveis (Seção 4.2)
+        if (
+          currentActiveAnchor &&
+          pickedCand.entityId &&
+          currentActiveAnchor.parentEntityId === pickedCand.entityId &&
+          dist(currentActiveAnchor.origin, pickedCand.point) <= 28 / view.k
+        ) {
+          const cycled = ReferenceService.cycleActiveAnchor(entities);
+          if (cycled) {
+            setMarquee(null);
+            triggerHaptic("selection");
+            toast.success(
+              `↻ Âncora ${cycled.id} ciclada para ${cycled.badgeLabel} (${cycled.origin.x.toFixed(1)}, ${cycled.origin.y.toFixed(1)}) mm`,
+            );
+            return;
+          }
+        }
+
+        const anchor = ReferenceService.upsertAnchor(pickedCand);
+        if (validCandidate) {
+          commit((prev) => [...prev, validCandidate]);
+        }
         setMarquee(null);
-        setPendingGeometricMarkConfirmation(validCandidate);
-        triggerHaptic("selection");
+        triggerHaptic("success");
+        toast.success(
+          `✓ Âncora ${anchor.id} (${anchor.badgeLabel}) fixada em (${anchor.origin.x.toFixed(1)}, ${anchor.origin.y.toFixed(1)}) mm${anchor.thetaDeg !== 0 ? ` • X' ∠${anchor.thetaDeg.toFixed(1)}°` : ""}`,
+        );
         return;
       }
     }
@@ -7253,6 +7381,29 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           triggerHaptic("tap");
           toast.info("Forma pendente descartada.");
           return;
+        }
+        // Limpeza progressiva de 2 níveis do Marco Geométrico / Âncora (Seção 4.5.6):
+        // 1º ESC remove Guias e Eco; 2º ESC limpa as Âncoras A–E
+        const refNow = ReferenceService.getState();
+        if (
+          refNow.guides.length > 0 ||
+          refNow.echo.mode !== "off" ||
+          refNow.spanDivision !== null ||
+          refNow.anchors.length > 0
+        ) {
+          const clearedStage = ReferenceService.handleProgressiveClear();
+          if (clearedStage === "cleared_aux") {
+            triggerHaptic("tap");
+            toast.info("1º ESC: Guias infinitas, Encontros e Eco removidos.");
+            return;
+          }
+          if (clearedStage === "cleared_anchors") {
+            const res = clearGeometricMarksFromEntities(entities, false);
+            if (res.removedCount > 0) commit(res.cleaned);
+            triggerHaptic("tap");
+            toast.info("2º ESC: Âncoras A–E limpas.");
+            return;
+          }
         }
         setPending([]);
         setDraft(null);
@@ -10926,28 +11077,86 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     : lockedConstraints;
 
                 return (
-                  <ChamferLiveDimensionsOverlay
-                    temporaryOrigin={temporaryOrigin}
-                    activeEdge={activeEdge}
-                    activeEdgeSide={activeEdgeSide}
-                    liveDimensions={liveDimensions}
-                    viewK={view.k}
-                    isDark={isDark}
-                    cursor={overlayCursor}
-                    activeStartPoint={activeStartPt}
-                    pinnedMeetingPoints={pinnedMeetingPoints}
-                    entities={entities}
-                    selectedIds={selection}
-                    pendingShape={pendingShapeSpec}
-                    interactionGuideMode={interactionGuideMode}
-                    lockedConstraints={effectiveConstraints}
-                    isMultitouchNavigating={
-                      isMultiTouchGestureRef.current ||
-                      touchInteractionState === "MULTITOUCH_NAVIGATION" ||
-                      touchInteractionState === "POST_GESTURE_COOLDOWN"
-                    }
-                    previewGeometricMarkCandidate={previewGeometricMarkCandidate}
-                    pendingGeometricMarkConfirmation={pendingGeometricMarkConfirmation}
+                  <>
+                    <ChamferGeometricAnchorOverlay
+                      referenceState={referenceState}
+                      entities={entities}
+                      draft={draft}
+                      cursor={overlayCursor}
+                      viewK={view.k}
+                      isDark={isDark}
+                      isAnchorToolActive={interactionGuideMode === "purple_ref"}
+                      smartPickPreview={smartPickCandidate}
+                      workspaceBounds={{ x: 0, y: 0, w: frame.w, h: frame.h }}
+                      onSelectAnchor={(id) => {
+                        ReferenceService.setActive(id);
+                        triggerHaptic("selection");
+                        toast.info(`Âncora ${id} ativada como quadro local (X', Y').`);
+                      }}
+                      onCaptureExtremity={(pt, anchor) => {
+                        const cand = evaluateSmartPick(pt, entities, view.k, {
+                          maxPixelRadius: 24,
+                          guideMeetings: referenceState.meetings,
+                        }).best;
+                        if (cand) {
+                          const nextAnchor = ReferenceService.upsertAnchor(cand);
+                          triggerHaptic("success");
+                          toast.success(
+                            `✓ Extremidade capturada como Âncora ${nextAnchor.id} (${nextAnchor.origin.x.toFixed(1)}, ${nextAnchor.origin.y.toFixed(1)}) mm`,
+                          );
+                        } else {
+                          cursorRef.current = pt;
+                          setCursor(pt);
+                          triggerHaptic("selection");
+                          toast.info(
+                            `Cursor posicionado na extremidade de ${anchor.id}: (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}) mm`,
+                          );
+                        }
+                      }}
+                      onRadarChipAction={(chip, createDim) => {
+                        if (createDim) {
+                          const dim = makeDimension(
+                            "aligned",
+                            [
+                              { kind: "point", p: chip.fromPoint },
+                              { kind: "point", p: chip.toPoint },
+                            ],
+                            14,
+                          );
+                          setDims((prev) => [...prev, dim]);
+                          triggerHaptic("success");
+                          toast.success(`✓ Cota associativa (${chip.distanceMm.toFixed(1)} mm) criada a partir do Radar.`);
+                        } else {
+                          if (typeof navigator !== "undefined" && navigator.clipboard) {
+                            navigator.clipboard.writeText(chip.distanceMm.toFixed(2)).catch(() => {});
+                          }
+                          triggerHaptic("selection");
+                          toast.info(`Distância ${chip.directionLabel}: ${chip.distanceMm.toFixed(1)} mm copiada.`);
+                        }
+                      }}
+                    />
+                    <ChamferLiveDimensionsOverlay
+                      temporaryOrigin={temporaryOrigin}
+                      activeEdge={activeEdge}
+                      activeEdgeSide={activeEdgeSide}
+                      liveDimensions={liveDimensions}
+                      viewK={view.k}
+                      isDark={isDark}
+                      cursor={overlayCursor}
+                      activeStartPoint={activeStartPt}
+                      pinnedMeetingPoints={pinnedMeetingPoints}
+                      entities={entities}
+                      selectedIds={selection}
+                      pendingShape={pendingShapeSpec}
+                      interactionGuideMode={interactionGuideMode}
+                      lockedConstraints={effectiveConstraints}
+                      isMultitouchNavigating={
+                        isMultiTouchGestureRef.current ||
+                        touchInteractionState === "MULTITOUCH_NAVIGATION" ||
+                        touchInteractionState === "POST_GESTURE_COOLDOWN"
+                      }
+                      previewGeometricMarkCandidate={previewGeometricMarkCandidate}
+                      pendingGeometricMarkConfirmation={pendingGeometricMarkConfirmation}
                     onConfirmPendingGeometricMark={() => {
                       if (!pendingGeometricMarkConfirmation) return;
                       const markEntity = pendingGeometricMarkConfirmation;
@@ -11322,6 +11531,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       triggerHaptic("selection");
                     }}
                   />
+                  </>
                 );
               })()}
 
@@ -11753,40 +11963,223 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </g>
           </svg>
 
-          {/* BOTÃO RÁPIDO [ 🧹 Limpar Marcos ] QUANDO O MARCO GEOMÉTRICO ESTÁ ATIVO OU HÁ MARCOS NO PROJETO */}
+          {/* BARRA CONTEXTUAL DE 1 LINHA ROLÁVEL E CHIP UNIVERSAL DO MARCO GEOMÉTRICO / ÂNCORA (A–E) */}
           {!solidOpen &&
             activeMode !== "3d" &&
             (interactionGuideMode === "purple_ref" ||
+              referenceState.anchors.length > 0 ||
               entities.some((e) => isGeometricMarkEntity(e))) && (
-              <div className="pointer-events-auto absolute top-8 right-3 z-30 flex items-center gap-1.5">
-                <button
-                  type="button"
-                  data-testid="clear-geometric-marks-hud-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    const res = clearGeometricMarksFromEntities(entities, false);
-                    setPendingGeometricMarkConfirmation(null);
-                    previewGeometricMarkCandidateRef.current = null;
-                    setPreviewGeometricMarkCandidate(null);
-                    setRelationalPicks([]);
-                    if (res.removedCount > 0) {
-                      commit(res.cleaned);
-                      triggerHaptic("action");
-                      toast.success(`🧹 ${res.removedCount} Marco(s) Geométrico(s) removido(s).`);
+              <div className="pointer-events-auto absolute top-8 left-1/2 -translate-x-1/2 z-30 flex items-center justify-center">
+                <ChamferGeometricAnchorBar
+                  visible={
+                    interactionGuideMode === "purple_ref" ||
+                    referenceState.anchors.length > 0 ||
+                    entities.some((e) => isGeometricMarkEntity(e))
+                  }
+                  referenceState={referenceState}
+                  entities={entities}
+                  selectedIds={selection}
+                  isDark={isDark}
+                  onCycleAnchor={() => {
+                    const cycled = ReferenceService.cycleActiveAnchor(entities);
+                    if (cycled) {
+                      triggerHaptic("selection");
+                      toast.success(
+                        `↻ Âncora ${cycled.id} ciclada para ${cycled.badgeLabel} (${cycled.origin.x.toFixed(1)}, ${cycled.origin.y.toFixed(1)}) mm`,
+                      );
                     } else {
-                      toast.info("Nenhum Marco Geométrico para limpar.");
+                      toast.info("Toque em uma entidade com o Marco Geométrico para ciclar seus candidatos.");
                     }
                   }}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-md border px-2.5 py-1 font-mono text-[11px] font-semibold shadow-md transition-colors",
-                    isDark
-                      ? "border-purple-500/60 bg-slate-950/90 text-purple-200 hover:bg-purple-950/80"
-                      : "border-purple-500/70 bg-white/95 text-purple-800 hover:bg-purple-50",
-                  )}
-                  title="Remover todos os Marcos Geométricos do plano atual"
-                >
-                  <span>🧹 Limpar Marcos</span>
-                </button>
+                  onSetAnchorAngle={(thetaDeg) => {
+                    ReferenceService.setActiveAnchorAngle(thetaDeg, true);
+                    triggerHaptic("selection");
+                    toast.success(`✓ Eixo X' da Âncora rotacionado para ${thetaDeg.toFixed(1)}°`);
+                  }}
+                  onAddGuide={(kind, opts) => {
+                    const g = ReferenceService.addConstructionGuide(kind, {
+                      ...opts,
+                      entities,
+                    });
+                    if (g) {
+                      triggerHaptic("action");
+                      toast.success(
+                        `✓ Guia infinita (${g.label}) criada • ${ReferenceService.getState().meetings.length} Encontro(s) ativo(s).`,
+                      );
+                    } else {
+                      toast.info("Fixe uma Âncora primeiro para adicionar Guias de Construção.");
+                    }
+                  }}
+                  onMidpointAB={() => {
+                    const midAnchor = ReferenceService.createMidpointBetweenAnchors();
+                    if (midAnchor) {
+                      triggerHaptic("success");
+                      toast.success(
+                        `✓ Âncora ${midAnchor.id} criada no Ponto Médio (${midAnchor.origin.x.toFixed(1)}, ${midAnchor.origin.y.toFixed(1)}) mm`,
+                      );
+                    }
+                  }}
+                  onAlignAxisAB={() => {
+                    const angle = ReferenceService.alignAxisByAnchors();
+                    if (angle !== null) {
+                      triggerHaptic("success");
+                      toast.success(`✓ Eixo X' alinhado por A→B (θ = ${angle.toFixed(2)}°)`);
+                    }
+                  }}
+                  onDivideSpanAB={(divN) => {
+                    const group = ReferenceService.divideSpanBetweenAnchors(divN);
+                    if (group) {
+                      triggerHaptic("success");
+                      toast.success(
+                        `✓ Vão ${group.fromAnchor}–${group.toAnchor} dividido em ÷${divN} (${group.points.length} pontos de snap equidistantes).`,
+                      );
+                    }
+                  }}
+                  onDimensionAB={() => {
+                    const metrics = ReferenceService.computeAnchorPairMetrics();
+                    if (!metrics) return;
+                    const dim = makeDimension(
+                      "aligned",
+                      [
+                        { kind: "point", p: metrics.fromAnchor.origin },
+                        { kind: "point", p: metrics.toAnchor.origin },
+                      ],
+                      18,
+                    );
+                    setDims((prev) => [...prev, dim]);
+                    triggerHaptic("success");
+                    toast.success(
+                      `✓ Cota ${metrics.fromAnchor.id}–${metrics.toAnchor.id} (${metrics.distance.toFixed(1)} mm) adicionada.`,
+                    );
+                  }}
+                  onToggleRadar={() => {
+                    const nextRadar = !referenceState.radarEnabled;
+                    ReferenceService.setRadarEnabled(nextRadar);
+                    triggerHaptic("selection");
+                    toast.info(nextRadar ? "Radar de Bordas ativado." : "Radar de Bordas ocultado.");
+                  }}
+                  onSetEchoMode={(mode) => {
+                    ReferenceService.setEchoConfig({ mode });
+                    triggerHaptic("selection");
+                    toast.info(
+                      mode === "off"
+                        ? "Eco de Simetria desativado."
+                        : `Eco de Simetria (${mode}) ativo na Âncora ${referenceState.activeAnchorId ?? "A"}.`,
+                    );
+                  }}
+                  onCommitEchoEntities={() => {
+                    const act = ReferenceService.getActive();
+                    if (!act) return;
+                    const sources =
+                      selection.length > 0
+                        ? entities.filter((e) => selection.includes(e.id))
+                        : draft
+                          ? [draft]
+                          : entities.slice(-1);
+                    const echoed = ReferenceService.computeEchoEntities(sources, act);
+                    if (echoed.length === 0) {
+                      toast.info("Selecione ou desenhe uma geometria para gerar o Eco.");
+                      return;
+                    }
+                    commit((prev) => [...prev, ...echoed]);
+                    ReferenceService.setEchoConfig({ mode: "off" });
+                    triggerHaptic("success");
+                    toast.success(`✓ ${echoed.length} entidade(s) gerada(s) pelo Eco de Simetria.`);
+                  }}
+                  onGenerateTable={(exportCsv) => {
+                    const { rows, csv, cadEntities } =
+                      ReferenceService.generateAnchorCoordinateTable(entities, selection, undefined, "cotas");
+                    if (cadEntities.length > 0) {
+                      commit((prev) => [...prev, ...cadEntities]);
+                    }
+                    if (exportCsv && typeof document !== "undefined") {
+                      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `tabela-ancoras-${referenceState.activeAnchorId ?? "A"}.csv`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      toast.success(`✓ Tabela CSV exportada (${rows.length} coordenadas em X', Y').`);
+                    } else {
+                      toast.success(
+                        `✓ ${cadEntities.length} cota(s) por ordenada (X', Y') inserida(s) na camada COTAS.`,
+                      );
+                    }
+                    triggerHaptic("success");
+                  }}
+                  onProgressiveClear={() => {
+                    const stage = ReferenceService.handleProgressiveClear();
+                    if (stage === "cleared_aux") {
+                      triggerHaptic("action");
+                      toast.info("Guias infinitas, Encontros e Eco limpos (toque novamente para limpar Âncoras A–E).");
+                    } else if (stage === "cleared_anchors") {
+                      const res = clearGeometricMarksFromEntities(entities, false);
+                      if (res.removedCount > 0) commit(res.cleaned);
+                      triggerHaptic("action");
+                      toast.success("🧹 Todas as Âncoras A–E e Marcos Geométricos foram limpos.");
+                    } else {
+                      const res = clearGeometricMarksFromEntities(entities, false);
+                      if (res.removedCount > 0) {
+                        commit(res.cleaned);
+                        triggerHaptic("action");
+                        toast.success(`🧹 ${res.removedCount} Marco(s) Geométrico(s) removido(s).`);
+                      } else {
+                        toast.info("Nenhuma Âncora ou Guia ativa para limpar.");
+                      }
+                    }
+                  }}
+                  onUseActiveAnchorInTool={(anchor) => {
+                    const pt = { x: anchor.origin.x, y: anchor.origin.y };
+                    cursorRef.current = pt;
+                    setCursor(pt);
+                    if (activeArrayType === "polar") {
+                      setArrayPolarParams((prev) => {
+                        const baseCenter = selected.length > 0 ? getGroupCenter(selected) : pt;
+                        return {
+                          ...prev,
+                          center: pt,
+                          radius: dist(pt, baseCenter),
+                          startAngleDeg:
+                            Math.atan2(baseCenter.y - pt.y, baseCenter.x - pt.x) * (180 / Math.PI),
+                        };
+                      });
+                      setIsArrayPickingCenter(false);
+                      triggerHaptic("success");
+                      toast.success(
+                        `✓ Âncora ${anchor.id} aplicada como centro do Array Polar (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}) mm`,
+                      );
+                      return;
+                    }
+                    if (
+                      tool === "line" ||
+                      tool === "construction_line" ||
+                      tool === "polyline" ||
+                      tool === "spline" ||
+                      tool === "rect" ||
+                      tool === "circle" ||
+                      tool === "ellipse" ||
+                      tool === "arc" ||
+                      tool === "measure"
+                    ) {
+                      setPending((prev) => [...prev, pt]);
+                      triggerHaptic("success");
+                      toast.success(
+                        `✓ Âncora ${anchor.id} (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}) aplicada na ferramenta atual.`,
+                      );
+                      return;
+                    }
+                    setTemporaryOrigin({
+                      id: `anchor_${anchor.id}`,
+                      p: pt,
+                      label: `ÂNCORA ${anchor.id}`,
+                    });
+                    triggerHaptic("success");
+                    toast.success(
+                      `✓ Cursor e origem posicionados na Âncora ${anchor.id} (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}) mm.`,
+                    );
+                  }}
+                />
               </div>
             )}
 
@@ -13474,26 +13867,6 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         className="px-1.5 py-0.5 rounded bg-[#151C27] hover:bg-[#293444] border border-[#38BDF8]/40 text-[#38BDF8] font-bold text-[8.5px] active:scale-95"
                       >
                         ⇄ Lado {activeEdgeSide === 1 ? "A" : "B"}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const line = GeometricConstraintResolver.createMarkingOrBendLine(
-                            activeEdge,
-                            activeEdgeOffset,
-                            activeEdgeSide,
-                            "marcacao"
-                          );
-                          commit((prev) => [...prev, line]);
-                          triggerHaptic("action");
-                          AudioManager.play("ui_select");
-                          toast.success(`✓ Linha de marcação gerada a ${activeEdgeOffset} mm da borda!`);
-                        }}
-                        title={`Criar linha de marcação paralela a ${activeEdgeOffset} mm`}
-                        className="px-1.5 py-0.5 rounded bg-[#F59E0B]/15 hover:bg-[#F59E0B]/25 border border-[#F59E0B]/40 text-[#FBBF24] font-bold text-[8.5px] active:scale-95"
-                      >
-                        + MAR ({activeEdgeOffset}mm)
                       </button>
 
                       <button

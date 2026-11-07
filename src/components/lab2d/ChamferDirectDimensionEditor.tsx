@@ -12,13 +12,14 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { Check, X, Minus, Plus, Lock, Unlock, Delete, RotateCcw, ArrowLeftRight } from "lucide-react";
+import { Check, X, Minus, Plus, Delete, RotateCcw, ArrowLeftRight } from "lucide-react";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
 import { globalParametricStore } from "@/lib/lab2d/cadParametricVariables";
 import { DimensionInteractionEngine } from "@/lib/lab2d/cadDimensionInteractionEngine";
 import { useSettings, type AccentColor, type ThemeMode } from "@/lib/settings/SettingsProvider";
 import { resolveAccentHex, resolveAccentContrastText } from "@/components/lab2d/ChamferVirtualCursor";
+import { ReferenceService } from "@/lib/lab2d/referenceService";
 import { cn } from "@/lib/utils";
 
 export interface ChamferDirectDimensionEditorProps {
@@ -54,7 +55,6 @@ export function ChamferDirectDimensionEditor({
   onConfirm,
   onPreviewChange,
   initialLocked = false,
-  allowLock = true,
   allowNegative = false,
   allowInvert = false,
   onInvertSide,
@@ -255,17 +255,6 @@ export function ChamferDirectDimensionEditor({
     [displayStr, parseNormalized, isValuePermitted, allowZero, isLocked, onConfirm],
   );
 
-  const handleToggleLockButton = useCallback(() => {
-    triggerHaptic("action");
-    const nextLock = !isLocked;
-    setIsLocked(nextLock);
-    const evaluated = parseNormalized(displayStr);
-    if (evaluated !== null && Number.isFinite(evaluated) && isValuePermitted(evaluated)) {
-      AudioManager.play("ui_select");
-      onConfirm(evaluated, nextLock);
-    }
-  }, [isLocked, displayStr, parseNormalized, isValuePermitted, onConfirm]);
-
   // Suporte opcional a teclado físico em Desktop sem qualquer <input> focável
   useEffect(() => {
     if (!open) return;
@@ -379,9 +368,18 @@ export function ChamferDirectDimensionEditor({
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
-          <span
+          <button
+            type="button"
+            data-testid="numpad-coord-mode-toggle"
+            onClick={() => {
+              triggerHaptic("selection");
+              const next =
+                ReferenceService.getCoordinateInputMode() === "anchor" ? "world" : "anchor";
+              ReferenceService.setCoordinateInputMode(next);
+            }}
             style={
-              isLocked
+              ReferenceService.getActive() &&
+              ReferenceService.getCoordinateInputMode() === "anchor"
                 ? {
                     backgroundColor: `${accentHex}22`,
                     borderColor: `${accentHex}66`,
@@ -393,10 +391,14 @@ export function ChamferDirectDimensionEditor({
                     color: textMuted,
                   }
             }
-            className="rounded-md border px-1.5 py-0.5 font-mono text-[8.5px] font-bold uppercase leading-none"
+            className="rounded-md border px-1.5 py-0.5 font-mono text-[8.5px] font-bold uppercase leading-none cursor-pointer"
+            title="Alternar referencial entre Mundo (X, Y) e Âncora ativa (X', Y')"
           >
-            {isLocked ? "🔒 FIXO" : "LIVRE"}
-          </span>
+            {ReferenceService.getActive() &&
+            ReferenceService.getCoordinateInputMode() === "anchor"
+              ? `ÂNCORA ${ReferenceService.getActive()!.id}`
+              : "MUNDO"}
+          </button>
           <button
             type="button"
             onClick={onClose}
@@ -724,39 +726,8 @@ export function ChamferDirectDimensionEditor({
         )}
       </div>
 
-      {/* 5. RODAPÉ UNIFICADO: BOTÃO COMPACTO '🔒 FIXAR' + '✕ CANCELAR' + '✓ CONFIRMAR' */}
+      {/* 5. RODAPÉ UNIFICADO: '✕ CANCELAR' + '✓ CONFIRMAR' (SEM CADEADO/TRAVA) */}
       <div className="flex shrink-0 items-center gap-1 pt-0.5">
-        {allowLock && (
-          <button
-            type="button"
-            onClick={handleToggleLockButton}
-            style={
-              isLocked
-                ? {
-                    height: 28,
-                    backgroundColor: `${accentHex}24`,
-                    borderColor: accentHex,
-                    color: accentHex,
-                  }
-                : {
-                    height: 28,
-                    backgroundColor: keyBg,
-                    borderColor: borderSubtle,
-                    color: textPrimary,
-                  }
-            }
-            className="flex shrink-0 items-center justify-center gap-1 rounded-xl border px-2 font-mono text-[9px] font-bold active:scale-95 transition-all cursor-pointer"
-            title={isLocked ? "Destravar Medida (Restrição Ativa)" : "Fixar Medida"}
-          >
-            {isLocked ? (
-              <Unlock className="size-3 shrink-0" style={{ color: accentHex }} />
-            ) : (
-              <Lock className="size-3 shrink-0" style={{ color: accentHex }} />
-            )}
-            <span>{isLocked ? "Fixo" : "Fixar"}</span>
-          </button>
-        )}
-
         <button
           type="button"
           onClick={onClose}
@@ -766,10 +737,7 @@ export function ChamferDirectDimensionEditor({
             borderColor: borderSubtle,
             color: textPrimary,
           }}
-          className={cn(
-            "flex items-center justify-center gap-1 rounded-xl border px-2 font-mono text-[9px] font-bold active:scale-95 transition-transform cursor-pointer",
-            allowLock ? "flex-1" : "w-1/2",
-          )}
+          className="flex w-1/2 items-center justify-center gap-1 rounded-xl border px-2 font-mono text-[9px] font-bold active:scale-95 transition-transform cursor-pointer"
           title="Cancelar edição"
         >
           <X className="size-3 shrink-0" />
@@ -778,17 +746,14 @@ export function ChamferDirectDimensionEditor({
 
         <button
           type="button"
-          onClick={() => handleConfirm()}
+          onClick={() => handleConfirm(false)}
           style={{
             height: 28,
             backgroundColor: accentHex,
             color: accentContrast,
             boxShadow: `0 2px 10px ${accentHex}44`,
           }}
-          className={cn(
-            "flex items-center justify-center gap-1 rounded-xl px-2 font-mono text-[9px] font-extrabold active:scale-95 transition-transform cursor-pointer",
-            allowLock ? "flex-1" : "w-1/2",
-          )}
+          className="flex w-1/2 items-center justify-center gap-1 rounded-xl px-2 font-mono text-[9px] font-extrabold active:scale-95 transition-transform cursor-pointer"
           title="Confirmar medida"
         >
           <Check className="size-3 shrink-0 stroke-[2.8]" />

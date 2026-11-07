@@ -16,6 +16,7 @@ import {
 } from "@/lib/lab2d/core";
 import { createSlotPolyline } from "@/lib/lab2d/cadGeometryCore";
 import { makeDimension, type Dimension } from "@/lib/lab2d/dimensions";
+import { ReferenceService, type AnchorLabel } from "@/lib/lab2d/referenceService";
 import { calculateSquareToRound } from "@/lib/geometry/squareToRound";
 import { elbowModel } from "@/lib/geometry/elbowSegments";
 import { branchDevelopments } from "@/lib/geometry/branch";
@@ -1177,4 +1178,19 @@ export class ChamferGeometricExecutionEngine {
       params.layer ?? "corte",
     );
   }
+
+  /**
+   * 4.5.5 Integração com CHAMFER INTENT:
+   * Resolve referências posicionais relativas a uma Âncora A–E ({anchor: 'A', dx, dy} ou {anchor: 'A', r, angle}).
+   */
+  public static resolveAnchorOriginReference(spec: {
+    anchor: AnchorLabel;
+    dx?: number;
+    dy?: number;
+    r?: number;
+    angle?: number;
+  }): Vec2 {
+    return ReferenceService.resolveIntentAnchorReference(spec) ?? { x: spec.dx ?? 0, y: spec.dy ?? 0 };
+  }
 }
+

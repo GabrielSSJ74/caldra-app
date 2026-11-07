@@ -1420,3 +1420,29 @@ export function convertDatumToCadLines(
   return out;
 }
 
+export {
+  ReferenceService,
+  anchorLocalToWorld,
+  anchorWorldToLocal,
+  evaluateSmartPick,
+  listEntityCycleCandidates,
+  computeEntityAdaptiveArms,
+  snapAxisAngleDeg,
+  ANCHOR_LABELS,
+  ANCHOR_CYAN_PRIMARY,
+  ANCHOR_VIOLET_PRIMARY,
+  ANCHOR_VIOLET_ACCENT,
+  type AnchorLabel,
+  type AnchorPointSymbolKind,
+  type GeometricAnchor,
+  type SmartPickCandidate,
+  type ConstructionGuide,
+  type ConstructionGuideKind,
+  type GuideMeetingPoint,
+  type SpanDivisionGroup,
+  type EdgeRadarChip,
+  type EchoMode,
+  type EchoConfig,
+  type AnchorCoordinateTableRow,
+  type ReferenceServiceState,
+} from "./referenceService";
