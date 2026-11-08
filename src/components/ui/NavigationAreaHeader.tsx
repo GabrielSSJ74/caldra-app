@@ -58,15 +58,15 @@ export function NavigationAreaHeader({
       <div className="flex items-start gap-2.5 min-w-0">
         {leadingVisual && <div className="shrink-0 mt-0.5">{leadingVisual}</div>}
         <div className="min-w-0 flex-1">
-          {/* 1. Identificador superior com indicador pulsante e texto maiúsculo */}
-          <div className="flex items-center gap-2 flex-wrap">
+          {/* 1. Identificador superior em linha única com indicador pulsante, subtítulo e badge */}
+          <div className="flex items-center gap-2 flex-nowrap min-w-0">
             <span
               className={cn("size-2 rounded-full animate-pulse shrink-0", indicatorColor)}
               aria-hidden="true"
             />
             <span
               className={cn(
-                "font-mono text-[10px] font-bold tracking-[0.2em] uppercase",
+                "font-mono text-[10.5px] font-bold tracking-[0.06em] sm:tracking-[0.14em] uppercase whitespace-nowrap truncate",
                 badgeColor,
               )}
             >
@@ -75,8 +75,8 @@ export function NavigationAreaHeader({
             {secondaryBadge}
           </div>
 
-          {/* 2. Título principal com escala idêntica a Perfil e Conta */}
-          <h1 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground mt-0.5 leading-tight">
+          {/* 2. Título principal unificado em linha única */}
+          <h1 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground mt-0.5 leading-tight whitespace-nowrap">
             {title}
           </h1>
 

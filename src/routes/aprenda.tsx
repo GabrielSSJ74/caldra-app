@@ -1131,20 +1131,20 @@ export function AprendaPage() {
     >
       <NavigationAreaContainer className="space-y-4 pb-[calc(135px+env(safe-area-inset-bottom,16px))]">
         {/* 1. IDENTIDADE INSTITUCIONAL NO TOPO
-            Linha única idêntica à seção Projetar: Ponto luminoso + FORMAÇÃO TÉCNICA + CALDRA ACADEMY */}
+            Linha única padronizada: Ponto luminoso + ESPECIALIZAÇÃO, FÓRMULAS & NORMAS + CALDRA ACADEMY */}
         <NavigationAreaHeader
-          badgeText="FORMAÇÃO TÉCNICA"
+          badgeText="ESPECIALIZAÇÃO, FÓRMULAS & NORMAS"
           badgeColor="text-[var(--text-secondary)]"
           indicatorColor="bg-[var(--accent-primary)]"
           secondaryBadge={
             <span
               style={proGoldBadgeStyle}
-              className="rounded px-1.5 py-0.2 font-mono text-[8px] font-bold uppercase whitespace-nowrap shrink-0"
+              className="inline-flex items-center rounded-md px-2 py-0.5 font-mono text-[9.5px] font-bold tracking-wider uppercase whitespace-nowrap shrink-0"
             >
               CALDRA ACADEMY
             </span>
           }
-          title="Aprenda & Domine"
+          title="Formação e Acervo"
         />
 
         {/* 2. NAVEGAÇÃO NÍVEL 1 — BARRA DAS 4 ABAS PRINCIPAIS + BUSCA UNIVERSAL (🔍)

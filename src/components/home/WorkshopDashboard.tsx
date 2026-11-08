@@ -15,7 +15,6 @@ import {
   Wrench,
   PenTool,
 } from "lucide-react";
-import { CaldraLogo } from "@/components/caldra/Logo";
 import { HomeCinematicHero } from "@/components/home/HomeCinematicHero";
 import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
 import {
@@ -429,16 +428,15 @@ export function WorkshopDashboard() {
             - Na direita (mesma linha de "Início"): chip [ ✦ PRO ] + botões circulares ✦, 🔍 e 👤
             ========================================================================= */}
         <NavigationAreaHeader
-          badgeText="SUA OFICINA DIGITAL"
+          badgeText="COMANDO & PROJETOS ATIVOS"
           badgeColor="text-amber-500"
           indicatorColor="bg-amber-500"
           secondaryBadge={
-            <span className="inline-flex items-center gap-1.5 rounded bg-amber-500/10 px-1.5 py-0.5 font-mono text-[8px] font-bold text-amber-500 border border-amber-500/30">
-              <CaldraLogo size={14} className="rounded-sm" />
-              <span>CALDRA</span>
+            <span className="inline-flex items-center rounded-md bg-amber-500/10 px-2 py-0.5 font-mono text-[9.5px] font-bold tracking-wider uppercase text-amber-500 border border-amber-500/30 whitespace-nowrap shrink-0">
+              CALDRA HUB
             </span>
           }
-          title="Início"
+          title="Oficina Digital"
         />
 
         {/* =========================================================================

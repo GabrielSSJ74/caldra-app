@@ -251,10 +251,15 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
           CABEÇALHO DA CENTRAL — COMPACTO E TÉCNICO
           ========================================================================= */}
       <NavigationAreaHeader
-        badgeText="CENTRAL UNIFICADA"
+        badgeText="IDENTIDADE TÉCNICA & ASSINATURA"
         badgeColor="text-amber-500"
         indicatorColor="bg-amber-500"
-        title="Perfil e Conta"
+        secondaryBadge={
+          <span className="inline-flex items-center rounded-md bg-amber-500/10 px-2 py-0.5 font-mono text-[9.5px] font-bold tracking-wider uppercase text-amber-500 border border-amber-500/30 whitespace-nowrap shrink-0">
+            CALDRA ID
+          </span>
+        }
+        title="Credencial & Plano"
         actions={
           <>
             <button

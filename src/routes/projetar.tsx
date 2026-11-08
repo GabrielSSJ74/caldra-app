@@ -468,15 +468,15 @@ export function ProjetarPage() {
             - Identificador: "PROJETO TÉCNICO & CAD"
             ========================================================================= */}
         <NavigationAreaHeader
-          badgeText="PROJETO TÉCNICO & CAD"
+          badgeText="Projeto Técnico e Modelagens CAD"
           badgeColor="text-sky-500"
           indicatorColor="bg-sky-500"
           secondaryBadge={
-            <span className="rounded bg-sky-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-sky-500 border border-sky-500/30">
+            <span className="inline-flex items-center rounded-md bg-sky-500/10 px-2 py-0.5 font-mono text-[9.5px] font-bold tracking-wider uppercase text-sky-500 border border-sky-500/30 whitespace-nowrap shrink-0">
               CALDRA LAB
             </span>
           }
-          title="Projetar"
+          title="Estúdio CAD e Traçagem"
         />
 
         {/* =========================================================================
