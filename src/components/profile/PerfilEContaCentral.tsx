@@ -67,8 +67,8 @@ const THEMES: { id: ThemeMode; label: string; icon: typeof Sun }[] = [
 const AURORA_STYLES: { id: AuroraStyle; label: string; hint: string }[] = [
   {
     id: "fluido",
-    label: "AURORA LÍQUIDA",
-    hint: "Campos de luz em fusão líquida contínua (Shader GLSL Domain Warping)",
+    label: "FLUIDO",
+    hint: "Shader líquido em movimento contínuo",
   },
   {
     id: "suave",
@@ -1141,7 +1141,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
 
               <p className="text-[10px] text-muted-foreground" data-testid="aurora-style-description">
                 {auroraStyle === "fluido"
-                  ? "Campos de luz em fusão líquida contínua (Shader GLSL Domain Warping)"
+                  ? "Shader líquido em movimento contínuo"
                   : "Massas radiais autônomas vivas em transição cromática pelo espaço profundo"}
               </p>
             </div>
