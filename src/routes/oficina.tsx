@@ -83,29 +83,59 @@ type TabId = (typeof TABS)[number]["id"];
 
 function OficinaPage() {
   const navigate = useNavigate();
+  const search = Route.useSearch();
+  const [section, setSection] = useState<"bancada" | "engenharia" | "materiais">("bancada");
 
   return (
-    <div className="space-y-5">
-      <CaldraIntegratedWorkshopModal
-        open={true}
-        onClose={() => {}}
-        embedded={true}
-        onInsertEntitiesToCad={(entities) => {
-          const proj = newProject(`Estrutura Oficina ${new Date().toLocaleDateString("pt-BR")}`, entities);
-          saveProject(proj);
-          navigate({ to: "/desenho-2d/$projectId", params: { projectId: proj.id } });
-        }}
-      />
-      {/* Materiais moraram em Configurações; agora ficam ao lado de quem os usa.
-          Fora do FeatureGate: continuam disponíveis no plano gratuito. */}
-      <MaterialManager />
-      <FeatureGate
-        feature="workshop.manage"
-        title="OFICINA"
-        description="Encaixe na chapa, custo de fabricação, orçamento e ficha de produção. Disponível no CALDRA Pro."
-      >
-        <Oficina />
-      </FeatureGate>
+    <div className="space-y-4 pb-28">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-line bg-card/70 p-1.5">
+        {(
+          [
+            { id: "bancada", label: "Bancada de Oficina & Lote" },
+            { id: "engenharia", label: "Engenharia de Produção & PCP" },
+            { id: "materiais", label: "Materiais & Ligas" },
+          ] as const
+        ).map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setSection(s.id)}
+            className={cn(
+              "flex-1 rounded-xl px-3 py-2 font-mono text-[10px] font-bold uppercase tracking-wider transition-all whitespace-nowrap",
+              section === s.id
+                ? "bg-accent text-background shadow-xs"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {section === "bancada" && (
+        <FeatureGate
+          feature="workshop.manage"
+          title="OFICINA"
+          description="Encaixe na chapa, custo de fabricação, orçamento e ficha de produção. Disponível no CALDRA Pro."
+        >
+          <Oficina initialTab={search.tab} />
+        </FeatureGate>
+      )}
+
+      {section === "engenharia" && (
+        <CaldraIntegratedWorkshopModal
+          open={true}
+          onClose={() => {}}
+          embedded={true}
+          onInsertEntitiesToCad={(entities) => {
+            const proj = newProject(`Estrutura Oficina ${new Date().toLocaleDateString("pt-BR")}`, entities);
+            saveProject(proj);
+            navigate({ to: "/desenho-2d/$projectId", params: { projectId: proj.id } });
+          }}
+        />
+      )}
+
+      {section === "materiais" && <MaterialManager />}
     </div>
   );
 }
@@ -172,20 +202,62 @@ function TextField({
 
 /* ------------------------------------------------------------------ raiz */
 
-function Oficina() {
+export function Oficina({
+  embedded = false,
+  initialTab,
+}: {
+  embedded?: boolean;
+  initialTab?: TabId;
+} = {}) {
   const { regionConfig } = useSettings();
   const materials = useMaterials();
 
-  const search = Route.useSearch();
-  const [tab, setTab] = useState<TabId>(() => search.tab ?? "chapa");
+  const [tab, setTab] = useState<TabId>(() => initialTab ?? "chapa");
 
   useEffect(() => {
-    if (search.tab && TABS.some((t) => t.id === search.tab)) {
-      setTab(search.tab);
+    if (initialTab && TABS.some((t) => t.id === initialTab)) {
+      setTab(initialTab);
     }
-  }, [search.tab]);
+  }, [initialTab]);
   const [projects, setProjects] = useState<Project[]>([]);
-  const [parts, setParts] = useState<ProductionPart[]>([]);
+  const [parts, setParts] = useState<ProductionPart[]>(() => [
+    {
+      id: "lote-corpo-01",
+      name: "Corpo Cilíndrico Ø400",
+      w: 1256.6,
+      h: 1000,
+      areaMm2: 1256600,
+      cutLengthMm: 4513.2,
+      pierces: 1,
+      bends: 0,
+      quantity: 2,
+      allowRotate: true,
+    },
+    {
+      id: "lote-cone-02",
+      name: "Chapéu Cônico Superior",
+      w: 620,
+      h: 430,
+      areaMm2: 266600,
+      cutLengthMm: 2100,
+      pierces: 2,
+      bends: 0,
+      quantity: 1,
+      allowRotate: true,
+    },
+    {
+      id: "lote-flange-03",
+      name: "Flange de Base DN150",
+      w: 285,
+      h: 285,
+      areaMm2: 81225,
+      cutLengthMm: 1420,
+      pierces: 9,
+      bends: 0,
+      quantity: 4,
+      allowRotate: true,
+    },
+  ]);
 
   const [materialId, setMaterialId] = useState(materials.defaultMaterialId);
   const [thickness, setThickness] = useState(materials.defaultThickness);
@@ -331,29 +403,32 @@ function Oficina() {
     );
 
   return (
-    <div className="space-y-5 pb-6">
-      <NavigationAreaHeader
-        badgeText="BANCADA DE OFICINA & CHÃO DE FÁBRICA"
-        badgeColor="text-emerald-500"
-        indicatorColor="bg-emerald-500"
-        secondaryBadge={
-          <span className="rounded bg-emerald-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-emerald-500 border border-emerald-500/30">
-            CALDRA SHOP
-          </span>
-        }
-        title="Bancada de Oficina"
-      />
+    <div className="space-y-4 pb-6">
+      {!embedded && (
+        <NavigationAreaHeader
+          badgeText="BANCADA DE OFICINA & CHÃO DE FÁBRICA"
+          badgeColor="text-emerald-500"
+          indicatorColor="bg-emerald-500"
+          secondaryBadge={
+            <span className="rounded bg-emerald-500/10 px-1.5 py-0.2 font-mono text-[8px] font-bold text-emerald-500 border border-emerald-500/30">
+              CALDRA SHOP
+            </span>
+          }
+          title="Bancada de Oficina"
+        />
+      )}
 
       <nav className="flex flex-wrap gap-1.5">
         {TABS.map((t) => (
           <button
             key={t.id}
+            type="button"
             onClick={() => setTab(t.id)}
             className={cn(
-              "flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-mono text-[10px] tracking-[0.16em] uppercase transition-colors",
+              "flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-mono text-[10px] tracking-[0.12em] uppercase transition-colors whitespace-nowrap",
               tab === t.id
-                ? "bg-accent/12 text-accent amber-ring"
-                : "border border-line text-muted-foreground hover:text-foreground",
+                ? "bg-accent text-background font-bold shadow-xs"
+                : "border border-line bg-card/60 text-muted-foreground hover:text-foreground",
             )}
           >
             <t.icon className="size-3.5" /> {t.label}
@@ -449,7 +524,7 @@ function Oficina() {
 
 /* ------------------------------------------------------------ peças */
 
-function PartsPanel({
+export function PartsPanel({
   parts,
   projects,
   onImport,
@@ -464,18 +539,21 @@ function PartsPanel({
   onRemove: (id: string) => void;
   onPatch: (id: string, p: Partial<ProductionPart>) => void;
 }) {
+  const [expandedPartId, setExpandedPartId] = useState<string | null>(null);
+
   return (
-    <Panel className="p-4">
+    <Panel className="p-3.5 sm:p-4 space-y-3">
       <SectionLabel
         action={
-          <div className="flex items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             <select
+              aria-label="Importar do CHAMFER"
               defaultValue=""
               onChange={(e) => {
                 if (e.target.value) onImport(e.target.value);
                 e.currentTarget.value = "";
               }}
-              className="rounded-xl border border-line bg-card/60 px-2 py-1 font-mono text-[10px] uppercase"
+              className="rounded-xl border border-line bg-card/60 px-2 py-1 font-mono text-[10px] uppercase text-foreground"
             >
               <option value="">Importar do CHAMFER</option>
               {projects.map((p) => (
@@ -485,10 +563,11 @@ function PartsPanel({
               ))}
             </select>
             <button
+              type="button"
               onClick={onAdd}
-              className="flex items-center gap-1 rounded-xl border border-line px-2 py-1 font-mono text-[10px] uppercase"
+              className="flex items-center gap-1 rounded-xl border border-line bg-card/60 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase text-foreground hover:border-accent"
             >
-              <Plus className="size-3" /> Peça
+              <Plus className="size-3 text-accent" /> Peça
             </button>
           </div>
         }
@@ -501,65 +580,162 @@ function PartsPanel({
           Importe um projeto do CHAMFER ou adicione uma peça manual para começar.
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[560px] text-left text-[12px]">
-            <thead className="font-mono text-[9px] tracking-wider text-muted-foreground uppercase">
-              <tr>
-                <th className="py-1.5 pr-2 font-normal">Peça</th>
-                <th className="py-1.5 pr-2 font-normal">L (mm)</th>
-                <th className="py-1.5 pr-2 font-normal">A (mm)</th>
-                <th className="py-1.5 pr-2 font-normal">Corte (mm)</th>
-                <th className="py-1.5 pr-2 font-normal">Furos</th>
-                <th className="py-1.5 pr-2 font-normal">Dobras</th>
-                <th className="py-1.5 pr-2 font-normal">Qtd</th>
-                <th className="py-1.5 font-normal">Girar</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {parts.map((p) => (
-                <tr key={p.id} className="border-t border-line">
-                  <td className="max-w-[180px] truncate py-1.5 pr-2">{p.name}</td>
-                  {(
-                    [
-                      ["w", p.w],
-                      ["h", p.h],
-                      ["cutLengthMm", p.cutLengthMm],
-                      ["pierces", p.pierces],
-                      ["bends", p.bends],
-                      ["quantity", p.quantity],
-                    ] as const
-                  ).map(([key, value]) => (
-                    <td key={key} className="py-1.5 pr-2">
-                      <input
-                        type="number"
-                        value={Math.round(value * 100) / 100}
-                        onChange={(e) => onPatch(p.id, { [key]: Number(e.target.value) })}
-                        className="w-[68px] rounded-lg border border-line bg-card/60 px-1.5 py-1 font-mono text-[11px] outline-none"
-                      />
-                    </td>
-                  ))}
-                  <td className="py-1.5">
-                    <input
-                      type="checkbox"
-                      checked={p.allowRotate}
-                      onChange={(e) => onPatch(p.id, { allowRotate: e.target.checked })}
-                      className="size-3.5 accent-[var(--accent)]"
-                    />
-                  </td>
-                  <td className="py-1.5 text-right">
-                    <button
-                      onClick={() => onRemove(p.id)}
-                      aria-label={`Remover ${p.name}`}
-                      className="text-muted-foreground transition-colors hover:text-warn"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="space-y-1.5" data-testid="pecas-do-lote-grid">
+          {/* Cabeçalho de 4 Colunas Responsivo — Zero Scroll Horizontal em 320px–412px */}
+          <div
+            className="grid items-center gap-1.5 px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase text-muted-foreground"
+            style={{ gridTemplateColumns: "1.35fr 0.9fr 0.9fr 0.95fr" }}
+          >
+            <span>PEÇA</span>
+            <span className="text-right">L (MM)</span>
+            <span className="text-right">A (MM)</span>
+            <span className="text-right">CORTE (MM)</span>
+          </div>
+
+          {parts.map((p) => {
+            const isExpanded = expandedPartId === p.id;
+            return (
+              <div
+                key={p.id}
+                className={cn(
+                  "rounded-xl border transition-colors",
+                  isExpanded
+                    ? "border-accent/50 bg-accent/5"
+                    : "border-line bg-background/40 hover:border-accent/30",
+                )}
+              >
+                <div
+                  className="grid items-center gap-1.5 p-2"
+                  style={{ gridTemplateColumns: "1.35fr 0.9fr 0.9fr 0.95fr" }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setExpandedPartId(isExpanded ? null : p.id)}
+                    className="min-w-0 text-left"
+                    title="Toque para editar quantidade, furos, dobras e rotação"
+                  >
+                    <p className="truncate font-display text-xs font-semibold text-foreground">
+                      {p.name}
+                    </p>
+                    <p className="truncate font-mono text-[9.5px] tabular-nums text-muted-foreground">
+                      {p.quantity} un · {p.pierces} furo(s) · {p.bends} dobra(s)
+                    </p>
+                  </button>
+
+                  <input
+                    type="number"
+                    aria-label={`Largura L (mm) de ${p.name}`}
+                    value={Math.round(p.w * 100) / 100}
+                    onChange={(e) => onPatch(p.id, { w: Number(e.target.value) })}
+                    className="w-full min-w-0 rounded-lg border border-line bg-card/80 px-1.5 py-1 text-right font-mono text-[11px] font-semibold tabular-nums text-foreground outline-none focus:border-accent"
+                  />
+
+                  <input
+                    type="number"
+                    aria-label={`Altura A (mm) de ${p.name}`}
+                    value={Math.round(p.h * 100) / 100}
+                    onChange={(e) => onPatch(p.id, { h: Number(e.target.value) })}
+                    className="w-full min-w-0 rounded-lg border border-line bg-card/80 px-1.5 py-1 text-right font-mono text-[11px] font-semibold tabular-nums text-foreground outline-none focus:border-accent"
+                  />
+
+                  <input
+                    type="number"
+                    aria-label={`Perímetro de Corte (mm) de ${p.name}`}
+                    value={Math.round(p.cutLengthMm * 100) / 100}
+                    onChange={(e) => onPatch(p.id, { cutLengthMm: Number(e.target.value) })}
+                    className="w-full min-w-0 rounded-lg border border-line bg-card/80 px-1.5 py-1 text-right font-mono text-[11px] font-semibold tabular-nums text-accent outline-none focus:border-accent"
+                  />
+                </div>
+
+                {/* Gaveta Inline de Edição Completa da Peça */}
+                {isExpanded && (
+                  <div className="border-t border-line/70 bg-card/60 p-2.5 space-y-2.5">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                      <label className="block">
+                        <span className="font-mono text-[9px] uppercase text-muted-foreground">
+                          Nome da Peça
+                        </span>
+                        <input
+                          value={p.name}
+                          onChange={(e) => onPatch(p.id, { name: e.target.value })}
+                          className="mt-0.5 w-full rounded-lg border border-line bg-background px-2 py-1 text-xs text-foreground outline-none focus:border-accent"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="font-mono text-[9px] uppercase text-muted-foreground">
+                          Quantidade (un)
+                        </span>
+                        <input
+                          type="number"
+                          value={p.quantity}
+                          onChange={(e) =>
+                            onPatch(p.id, { quantity: Math.max(1, Number(e.target.value)) })
+                          }
+                          className="mt-0.5 w-full rounded-lg border border-line bg-background px-2 py-1 font-mono text-xs tabular-nums text-foreground outline-none focus:border-accent"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="font-mono text-[9px] uppercase text-muted-foreground">
+                          Furos / Pierces
+                        </span>
+                        <input
+                          type="number"
+                          value={p.pierces}
+                          onChange={(e) =>
+                            onPatch(p.id, { pierces: Math.max(0, Number(e.target.value)) })
+                          }
+                          className="mt-0.5 w-full rounded-lg border border-line bg-background px-2 py-1 font-mono text-xs tabular-nums text-foreground outline-none focus:border-accent"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="font-mono text-[9px] uppercase text-muted-foreground">
+                          Dobras CNC
+                        </span>
+                        <input
+                          type="number"
+                          value={p.bends}
+                          onChange={(e) =>
+                            onPatch(p.id, { bends: Math.max(0, Number(e.target.value)) })
+                          }
+                          className="mt-0.5 w-full rounded-lg border border-line bg-background px-2 py-1 font-mono text-xs tabular-nums text-foreground outline-none focus:border-accent"
+                        />
+                      </label>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={p.allowRotate}
+                          onChange={(e) => onPatch(p.id, { allowRotate: e.target.checked })}
+                          className="size-3.5 accent-[var(--accent)]"
+                        />
+                        <span>Permitir rotação 90° no Nesting</span>
+                      </label>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => onRemove(p.id)}
+                          aria-label={`Remover ${p.name}`}
+                          className="flex items-center gap-1 rounded-lg border border-destructive/40 bg-destructive/10 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase text-destructive"
+                        >
+                          <Trash2 className="size-3" /> Excluir Peça
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setExpandedPartId(null)}
+                          className="rounded-lg bg-accent px-2.5 py-1 font-mono text-[10px] font-bold uppercase text-background"
+                        >
+                          Concluir
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </Panel>

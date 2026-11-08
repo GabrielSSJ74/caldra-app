@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   GraduationCap,
   BookOpen,
@@ -748,39 +748,11 @@ export function AprendaPage() {
     return domainBibliotecaBadgeStyle;
   };
 
-  // Controle de fixação no scroll (Sticky Header Offset em top: 68px abaixo da pílula + PRO)
-  const tabBarSentinelRef = useRef<HTMLDivElement | null>(null);
-  const [isTabBarPinned, setIsTabBarPinned] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handleScroll = () => {
-      const el = tabBarSentinelRef.current;
-      if (!el) {
-        setIsTabBarPinned(window.scrollY > 145);
-        return;
-      }
-      const rect = el.getBoundingClientRect();
-      setIsTabBarPinned(rect.top <= 68);
-    };
-    handleScroll();
-    window.addEventListener("scroll", handleScroll, { passive: true });
-    window.addEventListener("resize", handleScroll, { passive: true });
-    return () => {
-      window.removeEventListener("scroll", handleScroll);
-      window.removeEventListener("resize", handleScroll);
-    };
-  }, [activeLessonData]);
-
-  const topScrollShieldStyle: React.CSSProperties = {
-    background: isLight
-      ? "linear-gradient(to bottom, rgba(234, 238, 243, 0.94) 65%, rgba(234, 238, 243, 0) 100%)"
-      : isAmoled
-        ? "linear-gradient(to bottom, rgba(0, 0, 0, 0.95) 65%, rgba(0, 0, 0, 0) 100%)"
-        : "linear-gradient(to bottom, rgba(11, 13, 17, 0.94) 65%, rgba(11, 13, 17, 0) 100%)",
-    backdropFilter: "blur(8px)",
-    WebkitBackdropFilter: "blur(8px)",
-  };
+  // Garantia de aba válida (fallback para a primeira aba 'estudo' contra estados nulos)
+  const safeActiveTab: MainAcademyTab =
+    activeTab === "trilhas" || activeTab === "biblioteca" || activeTab === "formulas"
+      ? activeTab
+      : "estudo";
 
   /* =========================================================================
      RENDERIZAÇÃO DO LEITOR DE AULA IMERSIVO (QUANDO UMA AULA ESTÁ ABERTA)
@@ -801,25 +773,12 @@ export function AprendaPage() {
         style={academyCssVariables}
         className="w-full min-h-screen bg-[var(--surface-page)] text-[var(--text-primary)]"
       >
-        <div
-          style={topScrollShieldStyle}
-          className="fixed top-0 inset-x-0 h-[68px] z-20 pointer-events-none"
-        />
         <NavigationAreaContainer className="space-y-4 pb-[calc(135px+env(safe-area-inset-bottom,16px))]">
-          <div ref={tabBarSentinelRef} className="h-0 w-full" />
-          {isTabBarPinned && <div className="h-[74px] w-full" aria-hidden="true" />}
-
-          {/* Barra Superior do Leitor Imersivo com Offset Seguro (top: 68px abaixo da pílula + PRO) */}
-          <div
-            className={cn(
-              isTabBarPinned
-                ? "fixed top-[68px] inset-x-0 z-30 mx-auto w-full max-w-3xl px-5 sm:px-6"
-                : "relative z-30",
-            )}
-          >
+          {/* Barra Superior do Leitor Imersivo (relativa e contida) */}
+          <div className="relative z-10 overflow-hidden rounded-2xl">
             <div
               style={cardSurfaceStyle}
-              className="rounded-2xl p-3 sm:p-3.5 transition-all"
+              className="relative overflow-hidden rounded-2xl p-3 sm:p-3.5 transition-all"
             >
               <div className="flex items-center justify-between gap-2">
                 <button
@@ -1170,14 +1129,6 @@ export function AprendaPage() {
       style={academyCssVariables}
       className="w-full min-h-screen bg-[var(--surface-page)] text-[var(--text-primary)]"
     >
-      {/* Escudo superior protetor para a faixa 0..68px quando a página é rolada */}
-      {isTabBarPinned && (
-        <div
-          style={topScrollShieldStyle}
-          className="fixed top-0 inset-x-0 h-[68px] z-20 pointer-events-none"
-        />
-      )}
-
       <NavigationAreaContainer className="space-y-4 pb-[calc(135px+env(safe-area-inset-bottom,16px))]">
         {/* 1. IDENTIDADE INSTITUCIONAL NO TOPO
             Subtítulo em caixa alta em cinza técnico neutro (--text-secondary),
@@ -1197,24 +1148,17 @@ export function AprendaPage() {
           title="Aprenda & Domine"
         />
 
-        {/* Sentinela de scroll + Espaçador quando a barra de 4 abas está fixada em top: 68px */}
-        <div ref={tabBarSentinelRef} className="h-0 w-full !mt-0" />
-        {isTabBarPinned && <div className="h-[58px] w-full !mt-0" aria-hidden="true" />}
-
         {/* 2. NAVEGAÇÃO NÍVEL 1 — BARRA DAS 4 ABAS PRINCIPAIS + BUSCA UNIVERSAL (🔍)
-            Fixada em top: 68px (abaixo da pílula flutuante + PRO) ao rolar a página */}
+            Container estritamente relativo (position: relative), com overflow-hidden e z-index controlado (z-10)
+            para ancorar a pílula ativa dentro dos limites arredondados sem salto para o topo (0,0) */}
         <div
-          className={cn(
-            isTabBarPinned
-              ? "fixed top-[68px] inset-x-0 z-30 mx-auto w-full max-w-3xl px-5 sm:px-6 !mt-0"
-              : "relative z-30",
-          )}
+          style={cardSurfaceStyle}
+          className="relative z-10 overflow-hidden rounded-2xl p-1.5 transition-colors"
         >
-          <div style={cardSurfaceStyle} className="rounded-2xl p-1.5 transition-all">
           <div
             role="tablist"
             aria-label="Navegação da Academia CALDRA"
-            className="grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-center gap-1"
+            className="relative overflow-hidden grid grid-cols-[1fr_1fr_1fr_1fr_auto] items-center gap-1"
           >
             {(
               [
@@ -1225,7 +1169,7 @@ export function AprendaPage() {
               ] as const
             ).map((tab) => {
               const Icon = tab.icon;
-              const isActive = activeTab === tab.id && !universalSearchOpen;
+              const isActive = safeActiveTab === tab.id && !universalSearchOpen;
               return (
                 <button
                   key={tab.id}
@@ -1240,12 +1184,12 @@ export function AprendaPage() {
                   }}
                   style={isActive ? level1ActiveTabStyle : undefined}
                   className={cn(
-                    "flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 rounded-xl py-2 px-1 sm:px-2.5 text-[10.5px] sm:text-xs font-bold tracking-tight transition-all cursor-pointer min-w-0",
+                    "relative z-10 overflow-hidden flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 rounded-xl py-2 px-1 sm:px-2.5 text-[10.5px] sm:text-xs font-bold tracking-tight transition-colors cursor-pointer min-w-0",
                     !isActive && subtitleTextClass,
                   )}
                 >
-                  <Icon className="size-3.5 shrink-0" />
-                  <span className="truncate">{tab.label}</span>
+                  <Icon className="relative z-10 size-3.5 shrink-0" />
+                  <span className="relative z-10 truncate">{tab.label}</span>
                 </button>
               );
             })}
@@ -1263,12 +1207,12 @@ export function AprendaPage() {
               title="Pesquisar aulas, fórmulas, tabelas NBR e glossário"
               style={universalSearchOpen ? level1ActiveTabStyle : neutralBubbleStyle}
               className={cn(
-                "grid size-9 place-items-center rounded-xl transition-all cursor-pointer shrink-0",
+                "relative z-10 overflow-hidden grid size-9 place-items-center rounded-xl transition-colors cursor-pointer shrink-0",
                 !universalSearchOpen && titleTextClass,
               )}
             >
               <Search
-                className={cn("size-4", !universalSearchOpen && "text-[var(--accent-primary)]")}
+                className={cn("relative z-10 size-4", !universalSearchOpen && "text-[var(--accent-primary)]")}
               />
             </button>
           </div>
@@ -1454,7 +1398,6 @@ export function AprendaPage() {
               )}
             </div>
           )}
-          </div>
         </div>
 
         {/* =====================================================================

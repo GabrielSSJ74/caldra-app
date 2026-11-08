@@ -511,16 +511,16 @@ export function CaldraIntegratedWorkshopModal({
             <Boxes className="size-5" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <h2 className="font-display text-sm sm:text-base font-bold tracking-tight text-foreground">
-                Oficina Digital Integrada CALDRA · Fonte Única de Verdade
+                Engenharia de Produção &amp; PCP
               </h2>
               <span className="font-mono text-[10px] text-accent">
-                Catálogo Costa Ferro · Tempo Real
+                Planejamento Técnico · BOM · Corte 6m · Dossiê ABNT · Catálogo Costa Ferro
               </span>
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Altere qualquer medida ou perfil: o Desenho Multi-Vistas, a Lista de Corte 6m, o BOM e o Orçamento recalculam juntos.
+              Altere qualquer medida ou perfil: o Desenho Multi-Vistas, a Lista de Corte 6m, o BOM e os Custos recalculam em tempo real.
             </p>
           </div>
         </div>
@@ -532,20 +532,20 @@ export function CaldraIntegratedWorkshopModal({
               type="button"
               onClick={() => handleSelectMode("ESTRUTURA_MONTAGEM")}
               className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-[10px] font-semibold uppercase transition-all",
+                "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-[10px] font-semibold uppercase transition-all whitespace-nowrap",
                 model.mode === "ESTRUTURA_MONTAGEM"
                   ? "bg-accent text-background shadow-xs"
                   : "text-muted-foreground hover:text-foreground",
               )}
             >
               <Boxes className="size-3.5" />
-              Modo Estrutura & Serralheria
+              Modo Estrutura &amp; Serralheria
             </button>
             <button
               type="button"
               onClick={() => handleSelectMode("PECA_INDIVIDUAL")}
               className={cn(
-                "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-[10px] font-semibold uppercase transition-all",
+                "flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 font-mono text-[10px] font-semibold uppercase transition-all whitespace-nowrap",
                 model.mode === "PECA_INDIVIDUAL"
                   ? "bg-accent text-background shadow-xs"
                   : "text-muted-foreground hover:text-foreground",
@@ -570,76 +570,95 @@ export function CaldraIntegratedWorkshopModal({
       </div>
 
       {/* =================================================================== */}
-      {/* 2. CARD DE RESUMO SUPERIOR (INDICADORES EM TEMPO REAL)              */}
+      {/* 2. GRADE BENTO 2x2 DE KPIs + BARRA DE VALOR TÉCNICO SUGERIDO       */}
       {/* =================================================================== */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-        <div className="rounded-xl border border-line bg-background/50 px-3 py-2">
-          <span className="font-mono text-[9px] uppercase text-muted-foreground">
-            Medida Principal
-          </span>
-          <p className="font-mono text-sm font-bold text-foreground">
-            {model.mode === "ESTRUTURA_MONTAGEM"
-              ? `${model.widthMm} × ${model.heightMm} mm`
-              : model.partTemplate === "flange-industrial"
-                ? `Ø ${model.outerDiameterMm} × Ø ${model.innerDiameterMm} mm`
-                : `${model.widthMm} × ${model.heightMm} mm`}
-          </p>
+      <div className="space-y-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="rounded-xl border border-line bg-background/50 px-3 py-2">
+            <span className="font-mono text-[9px] uppercase text-muted-foreground">
+              Medida Principal
+            </span>
+            <p className="font-mono text-sm font-bold tabular-nums text-foreground">
+              {model.mode === "ESTRUTURA_MONTAGEM"
+                ? `${model.widthMm} × ${model.heightMm} mm`
+                : model.partTemplate === "flange-industrial"
+                  ? `Ø ${model.outerDiameterMm} × Ø ${model.innerDiameterMm} mm`
+                  : `${model.widthMm} × ${model.heightMm} mm`}
+            </p>
+          </div>
+          <div className="rounded-xl border border-line bg-background/50 px-3 py-2">
+            <span className="font-mono text-[9px] uppercase text-muted-foreground">
+              Massa Total Calculada
+            </span>
+            <p className="font-mono text-sm font-bold tabular-nums text-accent">
+              {dossier.totalWeightKg.toFixed(2)} kg
+            </p>
+          </div>
+          <div className="rounded-xl border border-line bg-background/50 px-3 py-2">
+            <span className="font-mono text-[9px] uppercase text-muted-foreground">
+              Barras 6m / Chapas
+            </span>
+            <p className="font-mono text-sm font-bold tabular-nums text-foreground">
+              {dossier.totalBars6mCount} barra(s) · {dossier.totalSheetsCount} ch
+            </p>
+          </div>
+          <div className="rounded-xl border border-line bg-background/50 px-3 py-2">
+            <div className="flex items-center justify-between gap-1">
+              <span className="font-mono text-[9px] uppercase text-muted-foreground">
+                Custo Direto de Materiais
+              </span>
+              <span className="font-mono text-[8.5px] font-semibold uppercase text-emerald-500">
+                Calculado
+              </span>
+            </div>
+            <p className="font-mono text-sm font-bold tabular-nums text-foreground">
+              {fmtBRL(dossier.budget.totalMaterialsBRL)}
+            </p>
+          </div>
         </div>
-        <div className="rounded-xl border border-line bg-background/50 px-3 py-2">
-          <span className="font-mono text-[9px] uppercase text-muted-foreground">
-            Peso Total Calculado
-          </span>
-          <p className="font-mono text-sm font-bold text-accent">
-            {dossier.totalWeightKg.toFixed(2)} kg
-          </p>
-        </div>
-        <div className="rounded-xl border border-line bg-background/50 px-3 py-2">
-          <span className="font-mono text-[9px] uppercase text-muted-foreground">
-            Barras 6m / Chapas
-          </span>
-          <p className="font-mono text-sm font-bold text-foreground">
-            {dossier.totalBars6mCount} barra(s) · {dossier.totalSheetsCount} ch
-          </p>
-        </div>
-        <div className="rounded-xl border border-line bg-background/50 px-3 py-2">
-          <span className="font-mono text-[9px] uppercase text-muted-foreground">
-            Custo de Materiais
-          </span>
-          <p className="font-mono text-sm font-bold text-foreground">
-            {fmtBRL(dossier.budget.totalMaterialsBRL)}
-          </p>
-        </div>
-        <div className="col-span-2 sm:col-span-1 rounded-xl border border-accent/40 bg-accent/10 px-3 py-2">
-          <span className="font-mono text-[9px] uppercase text-accent">
-            Orçamento Final Sugerido
-          </span>
-          <p className="font-mono text-sm font-bold text-accent">
+
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-accent/40 bg-accent/10 px-3.5 py-2">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[10px] font-bold uppercase tracking-wider text-accent">
+              Orçamento / Valor Técnico Sugerido
+            </span>
+            <span className="font-mono text-[10px] text-muted-foreground">
+              ({fmtBRL(dossier.budget.pricePerKgBRL)}/kg · Revisão {model.revision})
+            </span>
+          </div>
+          <p className="font-mono text-base font-bold tabular-nums text-accent">
             {fmtBRL(dossier.budget.finalClientPriceBRL)}
           </p>
         </div>
       </div>
 
       {/* =================================================================== */}
-      {/* 3. BARRA DE SELEÇÃO DAS 5 ABAS E BOTÕES DE AÇÃO                     */}
+      {/* 3. ABAS HORIZONTAIS INTERATIVAS NO TOPO DO WORKSPACE                */}
       {/* =================================================================== */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line pb-2">
-        <div className="flex flex-wrap gap-1">
+        <div
+          role="tablist"
+          aria-label="Visões da Central de Engenharia e PCP"
+          className="flex items-center gap-1 overflow-x-auto no-scrollbar pb-0.5"
+        >
           {[
-            { id: 1, label: "1. PROJETO & CATÁLOGO COSTA FERRO", icon: Sliders, active: isTab1 },
-            { id: 2, label: "2. DOSSIÊ MULTI-VISTAS (ABNT)", icon: FileText, active: isTab2 },
-            { id: 3, label: `3. LISTA DE CORTE (${dossier.cutList.length + dossier.sheetPieces.length})`, icon: Scissors, active: isTab3 },
-            { id: 4, label: `4. LISTA DE MATERIAIS / BOM (${dossier.bom.length})`, icon: Layers, active: isTab4 },
-            { id: 5, label: "5. ORÇAMENTO & PROPOSTA", icon: Receipt, active: isTab5 },
+            { id: 1, label: "1. Projeto & Catálogo Costa Ferro", icon: Sliders, active: isTab1 },
+            { id: 2, label: "2. Dossiê Multi-Vistas (ABNT)", icon: FileText, active: isTab2 },
+            { id: 3, label: `3. Lista de Corte (6m) (${dossier.cutList.length + dossier.sheetPieces.length})`, icon: Scissors, active: isTab3 },
+            { id: 4, label: `4. Lista de Materiais / BOM (${dossier.bom.length})`, icon: Layers, active: isTab4 },
+            { id: 5, label: "5. Orçamento & Proposta", icon: Receipt, active: isTab5 },
           ].map((t) => (
             <button
               key={t.id}
               type="button"
+              role="tab"
+              aria-selected={t.active}
               onClick={() => setActiveTab(t.id as WorkshopStudioTab)}
               className={cn(
-                "flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition-colors",
+                "flex items-center gap-1.5 rounded-xl px-3 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-wider transition-colors whitespace-nowrap shrink-0",
                 t.active
-                  ? "bg-accent/15 text-accent ring-1 ring-accent/30 font-bold"
-                  : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
+                  ? "bg-accent text-background font-bold shadow-xs"
+                  : "border border-line bg-background/50 text-muted-foreground hover:bg-muted/50 hover:text-foreground",
               )}
             >
               <t.icon className="size-3.5" />
