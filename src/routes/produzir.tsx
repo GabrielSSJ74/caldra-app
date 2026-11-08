@@ -278,21 +278,24 @@ export function ProduzirCommandCenter() {
       2,
     );
 
-    let primaryHex = isLight ? "#0066FF" : "#3B82F6";
-    let textHex = isLight ? "#1D4ED8" : "#60A5FA";
+    let primaryHex = isLight ? "#003471" : "#00A8FF";
+    let textHex = isLight ? "#003471" : "#00A8FF";
     let solidFg = "#FFFFFF";
-    let rgb = isLight ? "37, 99, 235" : "59, 130, 246";
+    let rgb = isLight ? "0, 52, 113" : "0, 168, 255";
 
     if (
       rawCandidate === "amber" ||
       rawCandidate === "ambar" ||
       rawCandidate === "#f59e0b" ||
-      rawCandidate === "#d97706"
+      rawCandidate === "#d97706" ||
+      rawCandidate === "#d16002" ||
+      rawCandidate === "#8a3300" ||
+      rawCandidate === "#f7941d"
     ) {
-      primaryHex = isLight ? "#D97706" : "#F59E0B";
-      textHex = isLight ? "#B45309" : "#FBBF24";
+      primaryHex = isLight ? "#D16002" : "#F7941D";
+      textHex = isLight ? "#8A3300" : "#F7941D";
       solidFg = isLight ? "#FFFFFF" : "#0F172A";
-      rgb = "245, 158, 11";
+      rgb = isLight ? "209, 96, 2" : "247, 148, 29";
     } else if (
       rawCandidate === "orange" ||
       rawCandidate === "laranja" ||
@@ -329,20 +332,35 @@ export function ProduzirCommandCenter() {
       rawCandidate === "#06b6d4" ||
       rawCandidate === "#0891b2"
     ) {
-      primaryHex = isLight ? "#0891B2" : "#06B6D4";
-      textHex = isLight ? "#0E7490" : "#22D3EE";
-      rgb = "6, 182, 212";
+      primaryHex = isLight ? "#0891B2" : "#2CA5D6";
+      textHex = isLight ? "#0E7490" : "#2CA5D6";
+      rgb = "44, 165, 214";
     } else if (
       rawCandidate === "crimson" ||
       rawCandidate === "magenta" ||
       rawCandidate === "vermelho" ||
       rawCandidate === "red" ||
       rawCandidate === "#b22222" ||
+      rawCandidate === "#d61818" ||
+      rawCandidate === "#e51a4c" ||
+      rawCandidate === "#c11034" ||
       rawCandidate === "#ef4444"
     ) {
-      primaryHex = isLight ? "#B22222" : "#EF4444";
-      textHex = isLight ? "#991B1B" : "#F87171";
-      rgb = isLight ? "178, 34, 34" : "239, 68, 68";
+      primaryHex = isLight ? "#D61818" : "#E51A4C";
+      textHex = isLight ? "#C11034" : "#E51A4C";
+      rgb = isLight ? "214, 24, 24" : "229, 26, 76";
+    } else if (
+      rawCandidate === "blue" ||
+      rawCandidate === "azul" ||
+      rawCandidate === "#0066ff" ||
+      rawCandidate === "#003471" ||
+      rawCandidate === "#00a8ff" ||
+      rawCandidate === "#2ca5d6" ||
+      rawCandidate === "#3b82f6"
+    ) {
+      primaryHex = isLight ? "#003471" : "#00A8FF";
+      textHex = isLight ? "#003471" : "#00A8FF";
+      rgb = isLight ? "0, 52, 113" : "0, 168, 255";
     } else if (rawCandidate.startsWith("#")) {
       const parsed = hexToRgbChannels(rawCandidate);
       if (parsed) {

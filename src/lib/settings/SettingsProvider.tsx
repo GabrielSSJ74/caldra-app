@@ -59,6 +59,8 @@ export type Settings = {
   region: RegionId;
   /** Estilo do fundo AURORA (recurso PRO para a versão animada). */
   auroraStyle: AuroraStyle;
+  /** Quando true, os Orbes do fundo usam a tríade da Cor de Destaque ativa; quando false (padrão), usam as 7 cores originais. */
+  useAccentInOrbs: boolean;
   /** Modo de ângulo da calculadora científica. */
   calcAngle: "RAD" | "DEG" | "GRAD";
   /** Casas decimais exibidas na calculadora científica. */
@@ -78,6 +80,7 @@ const DEFAULTS: Settings = {
   level: "aprendiz",
   region: DEFAULT_REGION,
   auroraStyle: "padrao",
+  useAccentInOrbs: false,
   calcAngle: "DEG",
   calcPlaces: 4,
   cardOpacity: DEFAULT_CARD_OPACITY,
@@ -93,6 +96,7 @@ type SettingsValue = Settings & {
   setLevel: (l: Level) => void;
   setRegion: (r: RegionId) => void;
   setAuroraStyle: (s: AuroraStyle) => void;
+  setUseAccentInOrbs: (v: boolean) => void;
   setCalcAngle: (a: "RAD" | "DEG" | "GRAD") => void;
   setCalcPlaces: (n: number) => void;
   setCardOpacity: (pct: number) => void;
@@ -127,6 +131,7 @@ export function readStoredSettings(
     theme: appearance.theme,
     accent: appearance.accent,
     auroraStyle: appearance.auroraStyle,
+    useAccentInOrbs: appearance.useAccentInOrbs,
   };
 
   if (!storage) return { ...baseDefaults, isProViolation: false };
@@ -153,6 +158,7 @@ export function readStoredSettings(
       theme: appearance.theme,
       accent: appearance.accent,
       auroraStyle: appearance.auroraStyle,
+      useAccentInOrbs: appearance.useAccentInOrbs,
       language,
       cardOpacity,
       bubbleOpacity,
@@ -174,9 +180,11 @@ function applyToDom(s: Settings) {
   root.classList.toggle("amoled", resolvedTheme === "amoled");
   root.classList.toggle("accent-default", s.accent === "default");
   root.classList.toggle("accent-blue", s.accent === "blue");
+  root.classList.toggle("accent-amber", s.accent === "amber");
   const isCrimson = s.accent === "crimson" || s.accent === "magenta";
   root.classList.toggle("accent-crimson", isCrimson);
   root.classList.toggle("accent-magenta", isCrimson);
+  root.dataset.orbsAccent = s.useAccentInOrbs ? "true" : "false";
   root.lang = s.language === "pt" ? "pt-BR" : s.language;
 
   setMetaThemeColor(resolvedTheme);
@@ -193,9 +201,16 @@ function applyToDom(s: Settings) {
   } catch {
     storedRawHex = null;
   }
-  const { accentColor, accentRgb } = resolveAccentColorTokens(s.accent, dark, storedRawHex);
-  root.style.setProperty("--accent-color", accentColor);
-  root.style.setProperty("--accent-rgb", accentRgb);
+  const triad = resolveAccentColorTokens(s.accent, dark, storedRawHex);
+  root.style.setProperty("--accent-color", triad.accentColor);
+  root.style.setProperty("--accent-rgb", triad.accentRgb);
+  root.style.setProperty("--accent-primary", triad.accentPrimary);
+  root.style.setProperty("--accent-mid", triad.accentMid);
+  root.style.setProperty("--accent-deep", triad.accentDeep);
+  root.style.setProperty("--accent-gradient", triad.accentGradient);
+  root.style.setProperty("--accent-border", triad.accentBorder);
+  root.style.setProperty("--accent-surface", triad.accentSurface);
+  root.style.setProperty("--accent-glow", triad.accentGlow);
 
   const cardOp =
     Math.min(
@@ -266,11 +281,19 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           theme: settings.theme,
           accent: settings.accent,
           auroraStyle: "padrao",
+          useAccentInOrbs: settings.useAccentInOrbs,
         });
       }
       warnProFluidViolation();
     }
-  }, [isPro, settings.auroraStyle, settings.theme, settings.accent, warnProFluidViolation]);
+  }, [
+    isPro,
+    settings.auroraStyle,
+    settings.theme,
+    settings.accent,
+    settings.useAccentInOrbs,
+    warnProFluidViolation,
+  ]);
 
   useEffect(() => {
     if (isInitialMount.current) {
@@ -366,6 +389,16 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           return next;
         });
       },
+      setUseAccentInOrbs: (useAccentInOrbs) => {
+        setSettings((s) => {
+          const next = { ...s, useAccentInOrbs };
+          if (typeof window !== "undefined") {
+            persistAppearancePreferences(window.localStorage, next);
+            applyToDom(next);
+          }
+          return next;
+        });
+      },
       setCalcAngle: (calcAngle) => setSettings((s) => ({ ...s, calcAngle })),
       setCalcPlaces: (calcPlaces) => setSettings((s) => ({ ...s, calcPlaces })),
       setCardOpacity: (cardOpacity) => {
@@ -395,6 +428,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
           theme: "light" as ThemeMode,
           accent: "blue" as AccentColor,
           auroraStyle: (isPro ? "fluido" : "padrao") as AuroraStyle,
+          useAccentInOrbs: false,
           cardOpacity: DEFAULT_CARD_OPACITY,
           bubbleOpacity: DEFAULT_BUBBLE_OPACITY,
         };
@@ -410,6 +444,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
                 theme: "light" as ThemeMode,
                 accent: "blue" as AccentColor,
                 auroraStyle: (isPro ? "fluido" : "padrao") as AuroraStyle,
+                useAccentInOrbs: false,
                 cardOpacity: DEFAULT_CARD_OPACITY,
                 bubbleOpacity: DEFAULT_BUBBLE_OPACITY,
               };

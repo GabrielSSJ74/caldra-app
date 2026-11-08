@@ -228,6 +228,57 @@ const PALETTE_RGB: ReadonlyArray<readonly [number, number, number]> = AUTONOMOUS
 );
 
 /**
+ TRÍADES TRI-TONAIS PARA O MODO OPCIONAL "USAR COR DE DESTAQUE" NOS ORBES:
+ * Distribuídas ao longo das 7 massas respeitando a hierarquia física:
+ * - Primária (predominante) -> Intermediária (transição/luz) -> Final (profundidade/reflexo)
+ */
+export const ACCENT_TRIAD_PALETTES_RGB: Record<
+  "crimson" | "blue" | "amber" | "default",
+  ReadonlyArray<readonly [number, number, number]>
+> = {
+  // 1.1 Vermelho Carmesim: #D61818 (primária) -> #E51A4C (intermediária) -> #C11034 (final denso)
+  crimson: [
+    [214, 24, 24], // #D61818 (Primária)
+    [229, 26, 76], // #E51A4C (Intermediária)
+    [214, 24, 24], // #D61818 (Primária)
+    [193, 16, 52], // #C11034 (Final)
+    [214, 24, 24], // #D61818 (Primária)
+    [229, 26, 76], // #E51A4C (Intermediária)
+    [193, 16, 52], // #C11034 (Final)
+  ],
+  // 1.2 Azul: #003471 (primária profunda) -> #00A8FF (intermediária luminosa) -> #2CA5D6 (final reflexo)
+  blue: [
+    [0, 52, 113], // #003471 (Primária)
+    [0, 168, 255], // #00A8FF (Intermediária)
+    [0, 52, 113], // #003471 (Primária)
+    [44, 165, 214], // #2CA5D6 (Final)
+    [0, 52, 113], // #003471 (Primária)
+    [0, 168, 255], // #00A8FF (Intermediária)
+    [44, 165, 214], // #2CA5D6 (Final)
+  ],
+  // 1.3 Âmbar Material: #D16002 (primária mel escuro) -> #8A3300 (densidade conhaque) -> #F7941D (reflexo dourado)
+  amber: [
+    [209, 96, 2], // #D16002 (Primária)
+    [138, 51, 0], // #8A3300 (Secundária/Densidade)
+    [209, 96, 2], // #D16002 (Primária)
+    [247, 148, 29], // #F7941D (Final/Reflexo)
+    [209, 96, 2], // #D16002 (Primária)
+    [138, 51, 0], // #8A3300 (Secundária/Densidade)
+    [247, 148, 29], // #F7941D (Final/Reflexo)
+  ],
+  // Neutro / Monocromático: Prata-titânio tri-tonal
+  default: [
+    [100, 116, 139], // #64748B
+    [148, 163, 184], // #94A3B8
+    [100, 116, 139], // #64748B
+    [71, 85, 105], // #475569
+    [100, 116, 139], // #64748B
+    [148, 163, 184], // #94A3B8
+    [71, 85, 105], // #475569
+  ],
+};
+
+/**
  * Interpolação linear suave entre duas cores RGB (`lerpRGB`).
  */
 export function lerpRGB(
@@ -244,7 +295,7 @@ export function lerpRGB(
 }
 
 /**
- * Resolve a cor RGB contínua ao longo do anel das 7 cores da paleta a partir de `colorPhase`.
+ * Resolve a cor RGB contínua ao longo do anel das 7 cores originais da paleta a partir de `colorPhase`.
  */
 export function resolveContinuousPaletteRGB(colorPhase: number): [number, number, number] {
   const n = PALETTE_RGB.length;
@@ -253,6 +304,31 @@ export function resolveContinuousPaletteRGB(colorPhase: number): [number, number
   const idx1 = (idx0 + 1) % n;
   const frac = wrapped - idx0;
   return lerpRGB(PALETTE_RGB[idx0]!, PALETTE_RGB[idx1]!, frac);
+}
+
+/**
+ * Resolve a cor RGB contínua ao longo da Tríade de 3 Estágios da Cor de Destaque ativa
+ * quando `useAccentInOrbs` está ativado pelo usuário.
+ */
+export function resolveAccentTriadContinuousRGB(
+  colorPhase: number,
+  accent: "blue" | "amber" | "crimson" | "magenta" | "default" = "blue",
+): [number, number, number] {
+  const familyKey: "crimson" | "blue" | "amber" | "default" =
+    accent === "crimson" || accent === "magenta"
+      ? "crimson"
+      : accent === "amber"
+        ? "amber"
+        : accent === "default"
+          ? "default"
+          : "blue";
+  const ring = ACCENT_TRIAD_PALETTES_RGB[familyKey];
+  const n = ring.length;
+  const wrapped = ((colorPhase % n) + n) % n;
+  const idx0 = Math.floor(wrapped);
+  const idx1 = (idx0 + 1) % n;
+  const frac = wrapped - idx0;
+  return lerpRGB(ring[idx0]!, ring[idx1]!, frac);
 }
 
 export interface OrbRuntimeState {
@@ -279,6 +355,9 @@ export interface OrbRuntimeState {
   g: number;
   b: number;
   lastStyleKey: string;
+  lastColorModeKey?: string;
+  fromRgb?: [number, number, number];
+  modeBlend?: number;
 }
 
 /**
@@ -335,21 +414,25 @@ export function createInitialOrbRuntimeState(
     g,
     b,
     lastStyleKey: "",
+    lastColorModeKey: "original",
+    fromRgb: [r, g, b],
+    modeBlend: 1,
   };
 }
 
 /**
  * Avança o estado de uma massa por um incremento `dt` (em segundos) usando exclusivamente
  * acumuladores de fase incremental (zero piscadas e zero saltos quando a velocidade muda).
- * - Quando `styleMode === "suave"` (COSMOS RADIAL): aplica o núcleo intenso (opacity 0.38 -> 0.78,
- *   scale 0.78 -> 2.25) e velocidade de meio-termo ideal (+85% na dominante, priorityPhase += 0.095 * dt,
- *   lerp 2.0 * dt, colorSpeed = 0.062 rad/s).
- * - Quando `styleMode === "fluido"` (ORBES VIVOS): preserva o perfil contemplativo anterior.
+ * - Quando `useAccentInOrbs === false` (padrão): usa as 7 cores originais.
+ * - Quando `useAccentInOrbs === true`: usa a tríade de 3 estágios da Cor de Destaque ativa
+ *   com derretimento suave (`lerpRGB`) ao alternar entre modos.
  */
 export function stepOrbRuntimeState(
   orb: OrbRuntimeState,
   rawDtSec: number,
   styleMode: "suave" | "fluido" = "suave",
+  useAccentInOrbs = false,
+  accentColor: "blue" | "amber" | "crimson" | "magenta" | "default" = "blue",
 ): OrbRuntimeState {
   const dt = Math.min(0.033, Math.max(0, rawDtSec));
   const isCosmosRadial = styleMode === "suave";
@@ -388,11 +471,35 @@ export function stepOrbRuntimeState(
   orb.xPct = 50 + 30 * Math.sin(orb.phaseX) + 12 * Math.cos(phaseYOffset(orb));
   orb.yPct = 50 + 28 * Math.cos(orb.phaseY) + 12 * Math.sin(phaseXOffset(orb));
 
-  // 6. Transição de cor contínua (`lerpRGB`) ao longo da paleta de 7 cores
-  const [r, g, b] = resolveContinuousPaletteRGB(orb.colorPhase);
-  orb.r = r;
-  orb.g = g;
-  orb.b = b;
+  // 6. Transição de cor contínua (`lerpRGB`):
+  //    - MODO A (useAccentInOrbs = false): Paleta original de 7 cores
+  //    - MODO B (useAccentInOrbs = true): Tríade de 3 estágios da Cor de Destaque ativa
+  const currentModeKey = useAccentInOrbs ? `triad:${accentColor}` : "original";
+  const targetRgb = useAccentInOrbs
+    ? resolveAccentTriadContinuousRGB(orb.colorPhase, accentColor)
+    : resolveContinuousPaletteRGB(orb.colorPhase);
+
+  if (orb.lastColorModeKey !== undefined && orb.lastColorModeKey !== currentModeKey) {
+    orb.fromRgb = [orb.r, orb.g, orb.b];
+    orb.modeBlend = 0;
+    orb.lastColorModeKey = currentModeKey;
+  } else if (orb.lastColorModeKey === undefined) {
+    orb.lastColorModeKey = currentModeKey;
+    orb.modeBlend = 1;
+  }
+
+  if (orb.modeBlend !== undefined && orb.modeBlend < 1 && orb.fromRgb) {
+    orb.modeBlend = Math.min(1, orb.modeBlend + dt * 1.6);
+    const tSmooth = orb.modeBlend * orb.modeBlend * (3 - 2 * orb.modeBlend);
+    const [r, g, b] = lerpRGB(orb.fromRgb, targetRgb, tSmooth);
+    orb.r = r;
+    orb.g = g;
+    orb.b = b;
+  } else {
+    orb.r = targetRgb[0];
+    orb.g = targetRgb[1];
+    orb.b = targetRgb[2];
+  }
 
   return orb;
 }
@@ -686,7 +793,7 @@ export const AuroraBackground = React.memo(function AuroraBackground({
   active?: boolean;
   className?: string;
 }) {
-  const { auroraStyle } = useSettings();
+  const { auroraStyle, accent, useAccentInOrbs } = useSettings();
   const { isMestre } = useFeatureAccess();
   const pageVisible = usePageVisible();
   const darkSurface = useDarkSurface();
@@ -741,6 +848,8 @@ export const AuroraBackground = React.memo(function AuroraBackground({
     darkSurface,
     amoledSurface,
     aiBoostActive,
+    accent,
+    useAccentInOrbs,
   });
   liveConfigRef.current = {
     active,
@@ -749,6 +858,8 @@ export const AuroraBackground = React.memo(function AuroraBackground({
     darkSurface,
     amoledSurface,
     aiBoostActive,
+    accent,
+    useAccentInOrbs,
   };
 
   // Loop único e permanente de 60 FPS: nunca reinicia nem pisca durante navegação ou carrossel
@@ -796,7 +907,13 @@ export const AuroraBackground = React.memo(function AuroraBackground({
         // 1. Atualiza acumuladores de fase incremental de cada uma das 7 massas
         for (let i = 0; i < orbs.length; i++) {
           const orb = orbs[i]!;
-          stepOrbRuntimeState(orb, effectiveDt, styleMode);
+          stepOrbRuntimeState(
+            orb,
+            effectiveDt,
+            styleMode,
+            cfg.useAccentInOrbs,
+            cfg.accent,
+          );
 
           const domEl = orbRefs.current[orb.index];
           if (domEl) {
@@ -865,6 +982,7 @@ export const AuroraBackground = React.memo(function AuroraBackground({
       data-animated={animated ? "on" : "off"}
       data-active={active ? "on" : "off"}
       data-style={shaderStyle ? "fluido" : "suave"}
+      data-orbs-accent={useAccentInOrbs ? "true" : "false"}
       data-processing={aiBoostActive ? "active" : "idle"}
     >
       <IsolatedAuroraViewport canvasRef={canvasRef} orbRefs={orbRefs} />

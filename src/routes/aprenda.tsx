@@ -134,24 +134,27 @@ function deriveAccentLayerTokens(
   const tabAlpha = (0.16 + bubbleRatio * 0.76).toFixed(3);
   const useSolidTabFg = clampedBubble >= 52;
 
-  // Identificação semântica de paleta de destaque
-  let primaryHex = isLight ? "#0066FF" : "#3B82F6";
-  let hoverHex = isLight ? "#0052CC" : "#2563EB";
-  let textHex = isLight ? "#0052CC" : "#60A5FA";
+  // Identificação semântica de paleta de destaque (Padrão: Tríade Azul #003471 -> #00A8FF -> #2CA5D6)
+  let primaryHex = isLight ? "#003471" : "#00A8FF";
+  let hoverHex = isLight ? "#00A8FF" : "#2CA5D6";
+  let textHex = isLight ? "#003471" : "#00A8FF";
   let solidFg = "#FFFFFF";
-  let rgb = "0, 102, 255";
+  let rgb = isLight ? "0, 52, 113" : "0, 168, 255";
 
   if (
     rawCandidate === "amber" ||
     rawCandidate === "ambar" ||
     rawCandidate === "#f59e0b" ||
-    rawCandidate === "#d97706"
+    rawCandidate === "#d97706" ||
+    rawCandidate === "#d16002" ||
+    rawCandidate === "#8a3300" ||
+    rawCandidate === "#f7941d"
   ) {
-    primaryHex = isLight ? "#D97706" : "#F59E0B";
-    hoverHex = isLight ? "#B45309" : "#D97706";
-    textHex = isLight ? "#B45309" : "#FBBF24";
+    primaryHex = isLight ? "#D16002" : "#F7941D";
+    hoverHex = isLight ? "#8A3300" : "#D16002";
+    textHex = isLight ? "#8A3300" : "#F7941D";
     solidFg = isLight ? "#FFFFFF" : "#0F172A";
-    rgb = "245, 158, 11";
+    rgb = isLight ? "209, 96, 2" : "247, 148, 29";
   } else if (
     rawCandidate === "orange" ||
     rawCandidate === "laranja" ||
@@ -196,25 +199,28 @@ function deriveAccentLayerTokens(
     rawCandidate === "#0891b2" ||
     rawCandidate === "#00ccff"
   ) {
-    primaryHex = isLight ? "#0891B2" : "#06B6D4";
-    hoverHex = isLight ? "#0E7490" : "#0891B2";
-    textHex = isLight ? "#0E7490" : "#22D3EE";
+    primaryHex = isLight ? "#0891B2" : "#2CA5D6";
+    hoverHex = isLight ? "#0E7490" : "#00A8FF";
+    textHex = isLight ? "#0E7490" : "#2CA5D6";
     solidFg = "#FFFFFF";
-    rgb = "6, 182, 212";
+    rgb = "44, 165, 214";
   } else if (
     rawCandidate === "crimson" ||
     rawCandidate === "magenta" ||
     rawCandidate === "vermelho" ||
     rawCandidate === "red" ||
     rawCandidate === "#b22222" ||
+    rawCandidate === "#d61818" ||
+    rawCandidate === "#e51a4c" ||
+    rawCandidate === "#c11034" ||
     rawCandidate === "#ef4444" ||
     rawCandidate === "#dc2626"
   ) {
-    primaryHex = isLight ? "#B22222" : "#EF4444";
-    hoverHex = isLight ? "#991B1B" : "#DC2626";
-    textHex = isLight ? "#991B1B" : "#F87171";
+    primaryHex = isLight ? "#D61818" : "#E51A4C";
+    hoverHex = isLight ? "#C11034" : "#D61818";
+    textHex = isLight ? "#C11034" : "#E51A4C";
     solidFg = "#FFFFFF";
-    rgb = isLight ? "178, 34, 34" : "239, 68, 68";
+    rgb = isLight ? "214, 24, 24" : "229, 26, 76";
   } else if (
     rawCandidate === "default" ||
     rawCandidate === "neutro" ||
@@ -226,6 +232,20 @@ function deriveAccentLayerTokens(
     textHex = isLight ? "#0F172A" : "#F8FAFC";
     solidFg = isLight ? "#FFFFFF" : "#0F172A";
     rgb = isLight ? "15, 23, 42" : "226, 232, 240";
+  } else if (
+    rawCandidate === "blue" ||
+    rawCandidate === "azul" ||
+    rawCandidate === "#0066ff" ||
+    rawCandidate === "#003471" ||
+    rawCandidate === "#00a8ff" ||
+    rawCandidate === "#2ca5d6" ||
+    rawCandidate === "#3b82f6"
+  ) {
+    primaryHex = isLight ? "#003471" : "#00A8FF";
+    hoverHex = isLight ? "#00A8FF" : "#2CA5D6";
+    textHex = isLight ? "#003471" : "#00A8FF";
+    solidFg = "#FFFFFF";
+    rgb = isLight ? "0, 52, 113" : "0, 168, 255";
   } else if (rawCandidate.startsWith("#")) {
     const parsed = hexToRgbChannels(rawCandidate);
     if (parsed) {

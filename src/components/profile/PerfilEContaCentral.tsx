@@ -82,11 +82,36 @@ const AURORA_STYLES: { id: AuroraStyle; label: string; hint: string }[] = [
   },
 ];
 
-const ACCENTS: { id: AccentColor; label: string; swatch: string }[] = [
-  { id: "default", label: "Neutro / Monocromático", swatch: "var(--foreground)" },
-  { id: "amber", label: "Âmbar Caldeiraria", swatch: "#F59E0B" },
-  { id: "blue", label: "Azul Técnico", swatch: "#0066FF" },
-  { id: "crimson", label: "Vermelho Carmesim", swatch: "#B22222" },
+const ACCENTS: {
+  id: AccentColor;
+  label: string;
+  swatch: string;
+  triad: [string, string, string];
+}[] = [
+  {
+    id: "default",
+    label: "Neutro / Monocromático",
+    swatch: "linear-gradient(135deg, #0F172A 0%, #334155 58%, #94A3B8 100%)",
+    triad: ["#0F172A", "#334155", "#94A3B8"],
+  },
+  {
+    id: "amber",
+    label: "Âmbar Caldeiraria",
+    swatch: "var(--amber-gradient, linear-gradient(135deg, #8A3300 0%, #D16002 45%, #F7941D 100%))",
+    triad: ["#D16002", "#8A3300", "#F7941D"],
+  },
+  {
+    id: "blue",
+    label: "Azul Técnico",
+    swatch: "var(--blue-gradient, linear-gradient(135deg, #003471 0%, #00A8FF 62%, #2CA5D6 100%))",
+    triad: ["#003471", "#00A8FF", "#2CA5D6"],
+  },
+  {
+    id: "crimson",
+    label: "Vermelho Carmesim",
+    swatch: "var(--crimson-gradient, linear-gradient(135deg, #D61818 0%, #E51A4C 60%, #C11034 100%))",
+    triad: ["#D61818", "#E51A4C", "#C11034"],
+  },
 ];
 
 const LANGUAGES: { id: AppLanguage; label: string }[] = [
@@ -128,6 +153,8 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
     setRegion,
     auroraStyle,
     setAuroraStyle,
+    useAccentInOrbs,
+    setUseAccentInOrbs,
     language,
     setLanguage,
     cardOpacity,
@@ -955,10 +982,10 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
               </div>
             </div>
 
-            {/* Cor de destaque — botões de 44 px */}
+            {/* Cor de destaque — botões de 44 px com tríade cromática */}
             <div className="space-y-1.5">
               <span className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                Cor de Destaque
+                Cor de Destaque (Tríade Cromática)
               </span>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 {ACCENTS.map((a) => {
@@ -972,17 +999,27 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                         if (a.id !== "blue" && a.id !== "crimson" && !requirePro("accent.colors")) return;
                         setAccent(a.id);
                       }}
-                      className={cn(
-                        "flex h-11 items-center justify-center gap-2 rounded-xl border px-2.5 font-mono text-xs transition-colors cursor-pointer",
+                      style={
                         isActive
-                          ? "border-amber-500/40 bg-amber-500/10 text-amber-500 font-semibold"
+                          ? {
+                              borderColor: "var(--accent-border)",
+                              backgroundColor: "var(--accent-surface)",
+                              color: "var(--accent-color)",
+                              boxShadow: "var(--accent-glow)",
+                            }
+                          : undefined
+                      }
+                      className={cn(
+                        "flex h-11 items-center justify-center gap-2 rounded-xl border px-2.5 font-mono text-xs transition-all duration-300 cursor-pointer",
+                        isActive
+                          ? "font-semibold"
                           : "border-border/70 text-muted-foreground hover:text-foreground",
                       )}
                     >
                       <span
                         aria-hidden
-                        className="size-2.5 rounded-full ring-1 ring-black/10 dark:ring-white/15"
-                        style={{ background: a.swatch }}
+                        className="size-3 rounded-full ring-1 ring-black/10 dark:ring-white/20 shrink-0"
+                        style={{ backgroundImage: a.swatch }}
                       />
                       <span className="truncate">{a.label}</span>
                     </button>
@@ -992,7 +1029,7 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
             </div>
 
             {/* Ecossistema do Fundo (Luz Viva) */}
-            <div className="space-y-1.5">
+            <div className="space-y-2">
               <span className="block font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
                 ECOSSISTEMA DO FUNDO (LUZ VIVA)
               </span>
@@ -1039,6 +1076,89 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                   );
                 })}
               </div>
+
+              {/* Botão / Toggle "Usar Cor de Destaque" nos Orbes (Não-Destrutivo) */}
+              {(() => {
+                const activeTriadObj =
+                  ACCENTS.find((item) =>
+                    item.id === (accent === "magenta" ? "crimson" : accent),
+                  ) ?? ACCENTS[2]!;
+                return (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={useAccentInOrbs}
+                    data-testid="toggle-orbs-use-accent"
+                    onClick={() => {
+                      triggerHaptic("tap");
+                      setUseAccentInOrbs(!useAccentInOrbs);
+                    }}
+                    style={
+                      useAccentInOrbs
+                        ? {
+                            borderColor: "var(--accent-border)",
+                            backgroundColor: "var(--accent-surface)",
+                            boxShadow: "var(--accent-glow)",
+                          }
+                        : undefined
+                    }
+                    className={cn(
+                      "w-full flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-all duration-300 cursor-pointer",
+                      useAccentInOrbs
+                        ? "text-foreground"
+                        : "border-border/70 bg-muted/15 text-muted-foreground hover:text-foreground",
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="font-mono text-[11px] font-semibold uppercase tracking-wider"
+                          style={useAccentInOrbs ? { color: "var(--accent-color)" } : undefined}
+                        >
+                          Usar Cor de Destaque
+                        </span>
+                        <span className="inline-flex items-center gap-1" aria-hidden>
+                          {activeTriadObj.triad.map((hex, idx) => (
+                            <span
+                              key={idx}
+                              className="size-2 rounded-full ring-1 ring-black/10 dark:ring-white/20"
+                              style={{ backgroundColor: hex }}
+                            />
+                          ))}
+                        </span>
+                      </div>
+                      <p className="mt-0.5 text-[10px] text-muted-foreground truncate">
+                        {useAccentInOrbs
+                          ? `Ativado — Orbes seguem a tríade ${activeTriadObj.label}`
+                          : "Desativado — Mantém as 7 cores originais dos Orbes"}
+                      </p>
+                    </div>
+
+                    <span
+                      aria-hidden
+                      style={
+                        useAccentInOrbs
+                          ? { backgroundImage: "var(--accent-gradient)" }
+                          : undefined
+                      }
+                      className={cn(
+                        "relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-all duration-300",
+                        useAccentInOrbs
+                          ? "border-transparent"
+                          : "border-border/80 bg-muted/60",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "inline-block size-4 rounded-full bg-white shadow-sm transition-transform duration-300",
+                          useAccentInOrbs ? "translate-x-5.5" : "translate-x-1",
+                        )}
+                      />
+                    </span>
+                  </button>
+                );
+              })()}
+
               <p className="text-[10px] text-muted-foreground">
                 Massas radiais autônomas vivas em transição cromática pelo espaço profundo
               </p>

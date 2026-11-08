@@ -326,6 +326,52 @@
   --bubble-border-alpha: 0.326;
   --ui-opacity: 0.90;
 
+  /* ——— SISTEMA CROMÁTICO TRI-TONAL CALDRA (CARMESIM, AZUL E ÂMBAR) ——— */
+  /* Paleta Vermelho Carmesim (3 Estágios) */
+  --crimson-primary: #D61818;
+  --crimson-mid: #E51A4C;
+  --crimson-deep: #C11034;
+  --crimson-rgb: 214, 24, 24;
+  --crimson-mid-rgb: 229, 26, 76;
+  --crimson-deep-rgb: 193, 16, 52;
+
+  /* Paleta Azul (3 Estágios) */
+  --blue-primary: #003471;
+  --blue-light: #00A8FF;
+  --blue-reflect: #2CA5D6;
+  --blue-rgb: 0, 52, 113;
+  --blue-light-rgb: 0, 168, 255;
+  --blue-reflect-rgb: 44, 165, 214;
+
+  /* Paleta Âmbar (3 Estágios) */
+  --amber-primary: #D16002;
+  --amber-deep: #8A3300;
+  --amber-highlight: #F7941D;
+  --amber-rgb: 209, 96, 2;
+  --amber-deep-rgb: 138, 51, 0;
+  --amber-highlight-rgb: 247, 148, 29;
+
+  /* Gradientes Suaves das 3 Paletas */
+  --crimson-gradient: linear-gradient(135deg, #D61818 0%, #D61818 42%, #E51A4C 74%, #C11034 100%);
+  --blue-gradient: linear-gradient(135deg, #003471 0%, #003471 45%, #00A8FF 78%, #2CA5D6 100%);
+  --amber-gradient: linear-gradient(135deg, #8A3300 0%, #D16002 38%, #D16002 68%, #F7941D 100%);
+
+  /* Tokens Derivados de Superfície, Borda, Brilho e Hover */
+  --crimson-border: rgba(229, 26, 76, 0.34);
+  --crimson-surface: rgba(214, 24, 24, 0.14);
+  --crimson-glow: 0 10px 28px rgba(214, 24, 24, 0.28);
+  --crimson-hover: #E51A4C;
+
+  --blue-border: rgba(0, 168, 255, 0.32);
+  --blue-surface: rgba(0, 52, 113, 0.20);
+  --blue-glow: 0 10px 28px rgba(0, 168, 255, 0.24);
+  --blue-hover: #00A8FF;
+
+  --amber-border: rgba(247, 148, 29, 0.34);
+  --amber-surface: rgba(209, 96, 2, 0.15);
+  --amber-glow: 0 10px 28px rgba(209, 96, 2, 0.26);
+  --amber-hover: #F7941D;
+
   /* modo claro */
   --background: oklch(0.982 0.004 250);
   --foreground: oklch(0.24 0.021 250);
@@ -333,24 +379,31 @@
   --card-foreground: oklch(0.24 0.021 250);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.24 0.021 250);
-  --primary: oklch(0.66 0.15 62);
+  --primary: var(--amber-primary);
   --primary-foreground: oklch(0.99 0.003 80);
   --secondary: oklch(0.95 0.005 80);
   --secondary-foreground: oklch(0.3 0.01 80);
   --muted: oklch(0.95 0.005 80);
   --muted-foreground: oklch(0.52 0.01 80);
-  --accent: oklch(0.66 0.15 62);
-  --accent-color: #D97706;
-  --accent-rgb: 245, 158, 11;
+  --accent: var(--amber-primary);
+  --accent-color: #D16002;
+  --accent-rgb: 209, 96, 2;
+  --accent-primary: #D16002;
+  --accent-mid: #F7941D;
+  --accent-deep: #8A3300;
+  --accent-gradient: var(--amber-gradient);
+  --accent-border: var(--amber-border);
+  --accent-surface: var(--amber-surface);
+  --accent-glow: var(--amber-glow);
   --accent-foreground: oklch(0.99 0.003 80);
   --accent2: oklch(0.55 0.1 180);
-  --warn: oklch(0.68 0.15 70);
-  --destructive: oklch(0.58 0.2 25);
+  --warn: var(--amber-primary);
+  --destructive: var(--crimson-primary);
   --destructive-foreground: oklch(0.99 0.003 80);
   --border: oklch(0.9 0.005 80);
   --line: oklch(0.9 0.005 80);
   --input: oklch(0.9 0.005 80);
-  --ring: oklch(0.66 0.15 62);
+  --ring: var(--amber-primary);
 
   /* PRO — segue o acento da interface (sem cor própria). */
   --gradient-pro: var(--gradient-brand);
@@ -403,24 +456,31 @@
   --card-foreground: oklch(0.935 0.004 80);
   --popover: oklch(0.188 0.006 60);
   --popover-foreground: oklch(0.935 0.004 80);
-  --primary: oklch(0.77 0.163 70);
+  --primary: var(--amber-highlight);
   --primary-foreground: oklch(0.145 0.006 60);
   --secondary: oklch(0.225 0.006 60);
   --secondary-foreground: oklch(0.935 0.004 80);
   --muted: oklch(0.225 0.006 60);
   --muted-foreground: oklch(0.66 0.008 75);
-  --accent: oklch(0.77 0.163 70); /* âmbar #F59E0B */
-  --accent-color: #F59E0B;
-  --accent-rgb: 245, 158, 11;
+  --accent: var(--amber-highlight); /* âmbar reflexo #F7941D no escuro + base #D16002 */
+  --accent-color: #F7941D;
+  --accent-rgb: 209, 96, 2;
+  --accent-primary: #D16002;
+  --accent-mid: #F7941D;
+  --accent-deep: #8A3300;
+  --accent-gradient: var(--amber-gradient);
+  --accent-border: var(--amber-border);
+  --accent-surface: var(--amber-surface);
+  --accent-glow: var(--amber-glow);
   --accent-foreground: oklch(0.145 0.006 60);
   --accent2: oklch(0.78 0.11 178); /* turquesa secundária */
-  --warn: oklch(0.79 0.155 70);
-  --destructive: oklch(0.64 0.19 25);
+  --warn: var(--amber-highlight);
+  --destructive: var(--crimson-mid);
   --destructive-foreground: oklch(0.98 0.003 80);
   --border: oklch(0.27 0.006 60);
   --line: oklch(0.27 0.006 60);
   --input: oklch(0.27 0.006 60);
-  --ring: oklch(0.77 0.163 70);
+  --ring: var(--amber-highlight);
 
   --gradient-pro: var(--gradient-brand);
 
@@ -721,13 +781,20 @@
   color: var(--muted-foreground);
 }
 
-/* ——— acento cromático selecionável (Âmbar / Azul Real / Magenta) ——— */
+/* ——— acento cromático selecionável (Tríades: Âmbar / Azul / Vermelho Carmesim / Neutro) ——— */
 .accent-default {
   --primary: var(--foreground);
   --primary-foreground: var(--background);
   --accent: var(--foreground);
   --accent-color: #0F172A;
   --accent-rgb: 15, 23, 42;
+  --accent-primary: #0F172A;
+  --accent-mid: #334155;
+  --accent-deep: #64748B;
+  --accent-gradient: linear-gradient(135deg, #0F172A 0%, #334155 68%, #64748B 100%);
+  --accent-border: rgba(51, 65, 85, 0.34);
+  --accent-surface: rgba(15, 23, 42, 0.12);
+  --accent-glow: 0 10px 28px rgba(15, 23, 42, 0.22);
   --accent-foreground: var(--background);
   --accent2: var(--muted-foreground);
   --ring: var(--foreground);
@@ -738,59 +805,162 @@
 .dark .accent-default {
   --accent-color: #F1F5F9;
   --accent-rgb: 241, 245, 249;
+  --accent-primary: #F1F5F9;
+  --accent-mid: #94A3B8;
+  --accent-deep: #475569;
+  --accent-gradient: linear-gradient(135deg, #F1F5F9 0%, #94A3B8 68%, #475569 100%);
 }
 
-/* Azul Oficial CALDRA #0066FF — vívido e de alto contraste em modo claro, luminoso em modo escuro */
-.accent-blue {
-  --primary: #0066FF;
+/* Paleta Âmbar Caldeiraria Tri-Tonal (#D16002 -> #8A3300 -> #F7941D) */
+.accent-amber {
+  --primary: var(--amber-primary);
   --primary-foreground: #ffffff;
-  --accent: #0066FF;
-  --accent-color: #0066FF;
-  --accent-rgb: 0, 102, 255;
+  --accent: var(--amber-primary);
+  --accent-color: var(--amber-primary);
+  --accent-rgb: var(--amber-rgb);
+  --accent-primary: var(--amber-primary);
+  --accent-mid: var(--amber-highlight);
+  --accent-deep: var(--amber-deep);
+  --accent-gradient: var(--amber-gradient);
+  --accent-border: var(--amber-border);
+  --accent-surface: var(--amber-surface);
+  --accent-glow: var(--amber-glow);
   --accent-foreground: #ffffff;
-  --accent2: #0099FF;
-  --ring: #0066FF;
-  --gradient-brand: linear-gradient(120deg, #0066FF, #00C8FF);
+  --accent2: var(--amber-highlight);
+  --ring: var(--amber-primary);
+  --gradient-brand: var(--amber-gradient);
+}
+
+.dark.accent-amber,
+.dark .accent-amber {
+  --primary: var(--amber-primary);
+  --primary-foreground: #ffffff;
+  --accent: var(--amber-highlight);
+  --accent-color: var(--amber-highlight);
+  --accent-rgb: var(--amber-rgb);
+  --accent-primary: var(--amber-primary);
+  --accent-mid: var(--amber-highlight);
+  --accent-deep: var(--amber-deep);
+  --accent-gradient: var(--amber-gradient);
+  --accent-border: var(--amber-border);
+  --accent-surface: var(--amber-surface);
+  --accent-glow: var(--amber-glow);
+  --accent-foreground: #090D16;
+  --accent2: var(--amber-primary);
+  --ring: var(--amber-highlight);
+  --gradient-brand: var(--amber-gradient);
+}
+
+/* Paleta Azul Técnico Tri-Tonal (#003471 -> #00A8FF -> #2CA5D6) */
+.accent-blue {
+  --primary: var(--blue-primary);
+  --primary-foreground: #ffffff;
+  --accent: var(--blue-primary);
+  --accent-color: var(--blue-primary);
+  --accent-rgb: var(--blue-rgb);
+  --accent-primary: var(--blue-primary);
+  --accent-mid: var(--blue-light);
+  --accent-deep: var(--blue-reflect);
+  --accent-gradient: var(--blue-gradient);
+  --accent-border: var(--blue-border);
+  --accent-surface: var(--blue-surface);
+  --accent-glow: var(--blue-glow);
+  --accent-foreground: #ffffff;
+  --accent2: var(--blue-light);
+  --ring: var(--blue-light);
+  --gradient-brand: var(--blue-gradient);
 }
 
 .dark.accent-blue,
 .dark .accent-blue {
-  --primary: #0066FF;
+  --primary: var(--blue-primary);
   --primary-foreground: #ffffff;
-  --accent: #38BDF8;
-  --accent-color: #3B82F6;
-  --accent-rgb: 0, 102, 255;
+  --accent: var(--blue-light);
+  --accent-color: var(--blue-light);
+  --accent-rgb: var(--blue-light-rgb);
+  --accent-primary: var(--blue-primary);
+  --accent-mid: var(--blue-light);
+  --accent-deep: var(--blue-reflect);
+  --accent-gradient: var(--blue-gradient);
+  --accent-border: var(--blue-border);
+  --accent-surface: var(--blue-surface);
+  --accent-glow: var(--blue-glow);
   --accent-foreground: #090D16;
-  --accent2: #00CCFF;
-  --ring: #38BDF8;
-  --gradient-brand: linear-gradient(120deg, #0066FF, #38BDF8);
+  --accent2: var(--blue-reflect);
+  --ring: var(--blue-light);
+  --gradient-brand: var(--blue-gradient);
 }
 
-/* Vermelho Carmesim #B22222 — sólido para controles; no escuro o acento ganha luminosidade (#E53935). */
+/* Paleta Vermelho Carmesim Tri-Tonal (#D61818 -> #E51A4C -> #C11034) */
 .accent-crimson,
 .accent-magenta {
-  --primary: #B22222;
+  --primary: var(--crimson-primary);
   --primary-foreground: #ffffff;
-  --accent: #B22222;
-  --accent-color: #B22222;
-  --accent-rgb: 178, 34, 34;
+  --accent: var(--crimson-primary);
+  --accent-color: var(--crimson-primary);
+  --accent-rgb: var(--crimson-rgb);
+  --accent-primary: var(--crimson-primary);
+  --accent-mid: var(--crimson-mid);
+  --accent-deep: var(--crimson-deep);
+  --accent-gradient: var(--crimson-gradient);
+  --accent-border: var(--crimson-border);
+  --accent-surface: var(--crimson-surface);
+  --accent-glow: var(--crimson-glow);
   --accent-foreground: #ffffff;
-  --accent2: #D32F2F;
-  --ring: #B22222;
-  --gradient-brand: linear-gradient(120deg, #B22222, #D32F2F);
+  --accent2: var(--crimson-mid);
+  --ring: var(--crimson-primary);
+  --gradient-brand: var(--crimson-gradient);
 }
 
 .dark.accent-crimson,
-.dark.accent-magenta {
-  --primary: #B22222;
+.dark.accent-magenta,
+.dark .accent-crimson,
+.dark .accent-magenta {
+  --primary: var(--crimson-primary);
   --primary-foreground: #ffffff;
-  --accent: #E53935; /* Carmesim luminoso legível como texto e realce no escuro */
-  --accent-color: #EF4444;
-  --accent-rgb: 239, 68, 68;
+  --accent: var(--crimson-mid);
+  --accent-color: var(--crimson-mid);
+  --accent-rgb: var(--crimson-rgb);
+  --accent-primary: var(--crimson-primary);
+  --accent-mid: var(--crimson-mid);
+  --accent-deep: var(--crimson-deep);
+  --accent-gradient: var(--crimson-gradient);
+  --accent-border: var(--crimson-border);
+  --accent-surface: var(--crimson-surface);
+  --accent-glow: var(--crimson-glow);
   --accent-foreground: #ffffff;
-  --accent2: #EF5350;
-  --ring: #E53935;
-  --gradient-brand: linear-gradient(120deg, #B22222, #E53935);
+  --accent2: var(--crimson-deep);
+  --ring: var(--crimson-mid);
+  --gradient-brand: var(--crimson-gradient);
+}
+
+/* Transição lenta e contínua (8s–12s) entre os 3 estágios tonais da paleta ativa */
+@keyframes caldra-triad-flow {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.caldra-triad-surface {
+  background-image: var(--accent-gradient);
+  background-size: 200% 200%;
+  animation: caldra-triad-flow 10s ease-in-out infinite;
+  box-shadow: var(--accent-glow);
+  transition:
+    background-color 600ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 600ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 600ms cubic-bezier(0.22, 1, 0.36, 1),
+    color 400ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .caldra-triad-surface {
+    animation: none !important;
+    background-position: 0% 50% !important;
+  }
 }
 
 /* ——— render sólido 3D (estilo CAD metálico natural clássico) ——— */
@@ -2909,13 +3079,13 @@
   --caldra-home-border: #D7E1EC;
   --caldra-home-text: #172334;
   --caldra-home-text-muted: #637185;
-  --caldra-home-amber: #F59E0B;
+  --caldra-home-amber: var(--amber-primary);
   --caldra-home-amber-soft: #FFF3D5;
   --caldra-home-on-amber: #291B05;
-  --caldra-home-blue: #0284C7;
-  --caldra-home-cyan: #06B6D4;
+  --caldra-home-blue: var(--blue-primary);
+  --caldra-home-cyan: var(--blue-reflect);
   --caldra-home-green: #059669;
-  --caldra-home-red: #E11D48;
+  --caldra-home-red: var(--crimson-primary);
 }
 
 .dark {
@@ -2926,13 +3096,13 @@
   --caldra-home-border: #293642;
   --caldra-home-text: #F1F5F9;
   --caldra-home-text-muted: #A1AFBF;
-  --caldra-home-amber: #F59E0B;
+  --caldra-home-amber: var(--amber-highlight);
   --caldra-home-amber-soft: #30230D;
   --caldra-home-on-amber: #211704;
-  --caldra-home-blue: #38BDF8;
-  --caldra-home-cyan: #22D3EE;
+  --caldra-home-blue: var(--blue-light);
+  --caldra-home-cyan: var(--blue-reflect);
   --caldra-home-green: #34D399;
-  --caldra-home-red: #FB7185;
+  --caldra-home-red: var(--crimson-mid);
 }
 
 .amoled {
@@ -3233,40 +3403,40 @@
   flex-shrink: 0;
 }
 
-/* Bolha Âmbar Principal (Novo Projeto / Ação Principal) */
+/* Bolha Âmbar Principal (Novo Projeto / Ação Principal) — Tríade Âmbar (#D16002 / #8A3300 / #F7941D) */
 .caldra-bubble-amber-primary {
-  background-color: rgba(245, 158, 11, var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(217, 119, 6, var(--bubble-border-alpha, 0.326));
-  color: #B96D00;
+  background-color: rgba(var(--amber-rgb, 209, 96, 2), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--amber-rgb, 209, 96, 2), var(--bubble-border-alpha, 0.326));
+  color: var(--amber-primary, #D16002);
 }
 .dark .caldra-bubble-amber-primary {
-  background-color: rgba(245, 158, 11, var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(245, 158, 11, var(--bubble-border-alpha, 0.326));
-  color: #FBBF24;
+  background-color: rgba(var(--amber-rgb, 209, 96, 2), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--amber-highlight-rgb, 247, 148, 29), var(--bubble-border-alpha, 0.326));
+  color: var(--amber-highlight, #F7941D);
 }
 
-/* Bolha Âmbar Secundária (Ferramentas) */
+/* Bolha Âmbar Secundária (Ferramentas) — Tríade Âmbar */
 .caldra-bubble-amber {
-  background-color: rgba(245, 158, 11, var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(217, 119, 6, var(--bubble-border-alpha, 0.326));
-  color: #B96D00;
+  background-color: rgba(var(--amber-rgb, 209, 96, 2), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--amber-rgb, 209, 96, 2), var(--bubble-border-alpha, 0.326));
+  color: var(--amber-primary, #D16002);
 }
 .dark .caldra-bubble-amber {
-  background-color: rgba(245, 158, 11, var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(245, 158, 11, var(--bubble-border-alpha, 0.326));
-  color: #FBBF24;
+  background-color: rgba(var(--amber-rgb, 209, 96, 2), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--amber-highlight-rgb, 247, 148, 29), var(--bubble-border-alpha, 0.326));
+  color: var(--amber-highlight, #F7941D);
 }
 
-/* Bolha Azul/Ciano Técnico (Projetos & Engenharia) */
+/* Bolha Azul/Ciano Técnico (Projetos & Engenharia) — Tríade Azul (#003471 / #00A8FF / #2CA5D6) */
 .caldra-bubble-sky {
-  background-color: rgba(2, 132, 199, var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(2, 132, 199, var(--bubble-border-alpha, 0.326));
-  color: #0284C7;
+  background-color: rgba(var(--blue-rgb, 0, 52, 113), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--blue-light-rgb, 0, 168, 255), var(--bubble-border-alpha, 0.326));
+  color: var(--blue-primary, #003471);
 }
 .dark .caldra-bubble-sky {
-  background-color: rgba(56, 189, 248, var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(56, 189, 248, var(--bubble-border-alpha, 0.326));
-  color: #38BDF8;
+  background-color: rgba(var(--blue-light-rgb, 0, 168, 255), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--blue-light-rgb, 0, 168, 255), var(--bubble-border-alpha, 0.326));
+  color: var(--blue-light, #00A8FF);
 }
 
 /* Bolha Verde de Confirmação (Orçamentos) */
@@ -3281,28 +3451,28 @@
   color: #34D399;
 }
 
-/* Bolha Vermelha de Alerta/Erro Crítico (#E11D48 Claro / #FB7185 Escuro) */
+/* Bolha Vermelha de Alerta/Erro Crítico — Tríade Carmesim (#D61818 / #E51A4C / #C11034) */
 .caldra-bubble-red {
-  background-color: rgba(225, 29, 72, var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(225, 29, 72, var(--bubble-border-alpha, 0.326));
-  color: #E11D48;
+  background-color: rgba(var(--crimson-rgb, 214, 24, 24), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--crimson-mid-rgb, 229, 26, 76), var(--bubble-border-alpha, 0.326));
+  color: var(--crimson-primary, #D61818);
 }
 .dark .caldra-bubble-red {
-  background-color: rgba(251, 113, 133, var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(251, 113, 133, var(--bubble-border-alpha, 0.326));
-  color: #FB7185;
+  background-color: rgba(var(--crimson-mid-rgb, 229, 26, 76), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--crimson-mid-rgb, 229, 26, 76), var(--bubble-border-alpha, 0.326));
+  color: var(--crimson-mid, #E51A4C);
 }
 
-/* Bolha Ciano/Azul Complementar (Especialização / Técnico) */
+/* Bolha Ciano/Azul Complementar (Especialização / Técnico) — Estágio Final Azul (#2CA5D6) */
 .caldra-bubble-indigo {
-  background-color: rgba(6, 182, 212, var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(2, 132, 199, var(--bubble-border-alpha, 0.326));
-  color: #0284C7;
+  background-color: rgba(var(--blue-reflect-rgb, 44, 165, 214), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--blue-light-rgb, 0, 168, 255), var(--bubble-border-alpha, 0.326));
+  color: var(--blue-primary, #003471);
 }
 .dark .caldra-bubble-indigo {
-  background-color: rgba(34, 211, 238, var(--bubble-tint-alpha, 0.153));
-  border: 1px solid rgba(56, 189, 248, var(--bubble-border-alpha, 0.326));
-  color: #22D3EE;
+  background-color: rgba(var(--blue-reflect-rgb, 44, 165, 214), var(--bubble-tint-alpha, 0.153));
+  border: 1px solid rgba(var(--blue-light-rgb, 0, 168, 255), var(--bubble-border-alpha, 0.326));
+  color: var(--blue-reflect, #2CA5D6);
 }
 
 /* Bolha de Ação no Topo (Botões de pesquisa, Fluid AURORA e perfil no cabeçalho) — reativa a --bubble-tint-alpha e --accent-color */
