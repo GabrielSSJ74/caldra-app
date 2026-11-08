@@ -24,6 +24,8 @@ import {
   cutTimeMinutes,
   DEFAULT_RATES,
 } from "@/lib/costing/fabrication";
+import { useSettings } from "@/lib/settings/SettingsProvider";
+import { resolveAccentColorTokens } from "@/lib/settings/appearancePreferences";
 
 export type CinematicSceneId =
   | "chamfer-cad"
@@ -103,7 +105,7 @@ export const CALDRA_THREE_PILLARS: CaldraHeroPillar[] = [
   {
     id: "caldeiraria-tracagem",
     tabNumber: "2.",
-    tabLabel: "Caldeiraria",
+    tabLabel: "Caldeiraria 1:1",
     title: "Traçagem e Planificação 1:1",
     subtitle: "Desenvolva cones, transições, curvas de gomos e chapas dobradas.",
     telemetryPill: "CONE Ø120×60 • PLANIFICADO",
@@ -113,7 +115,7 @@ export const CALDRA_THREE_PILLARS: CaldraHeroPillar[] = [
   {
     id: "preparacao-fabricacao",
     tabNumber: "3.",
-    tabLabel: "Corte & Custo",
+    tabLabel: "Corte & Custos",
     title: "Corte CNC, Peso e Orçamento",
     subtitle: "Aproveitamento de chapa, tempo de laser, peso e custo imediato.",
     telemetryPill: "CORTE 5.92m • R$ 433,56",
@@ -1542,12 +1544,20 @@ interface HomeCinematicHeroProps {
 
 export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
   const navigate = useNavigate();
+  const { accentColor, theme } = useSettings();
+  const isDark = theme === "dark" || theme === "amoled";
+  const triad = useMemo(
+    () => resolveAccentColorTokens(accentColor, isDark),
+    [accentColor, isDark],
+  );
+
   const [activeIndex, setActiveIndex] = useState(0);
   const [sceneProgress, setSceneProgress] = useState(0);
   const [isInViewport, setIsInViewport] = useState(true);
   const [isDocVisible, setIsDocVisible] = useState(true);
   const [isTabLayerVisible, setIsTabLayerVisible] = useState(true);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [isUserPaused, setIsUserPaused] = useState(false);
 
   const containerRef = useRef<HTMLElement | null>(null);
   const sceneStartRef = useRef<number>(0);
@@ -1619,10 +1629,14 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
     return () => observer.disconnect();
   }, []);
 
-  const isRunning = isInViewport && isDocVisible && isTabLayerVisible;
+  const isRunning = isInViewport && isDocVisible && isTabLayerVisible && !isUserPaused;
 
-  // Loop contínuo sincronizando progresso de 5.5s por pilar e avanço automático
+  // Loop contínuo sincronizando progresso de 5.5s por pilar e avanço automático (pausa ao toque do usuário)
   useEffect(() => {
+    if (isUserPaused) {
+      setSceneProgress(0.88);
+      return;
+    }
     if (!isRunning) return;
     if (prefersReducedMotion) {
       setSceneProgress(0.88);
@@ -1652,18 +1666,19 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
     rafId = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(rafId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isRunning, prefersReducedMotion, activeIndex]);
+  }, [isRunning, prefersReducedMotion, activeIndex, isUserPaused]);
 
   const currentPillar =
     CALDRA_THREE_PILLARS[activeIndex] ?? CALDRA_THREE_PILLARS[0]!;
 
-  // Selecionar diretamente um dos 3 Pilares no topo (Zona A)
+  // Selecionar diretamente um dos 3 Pilares no topo (Zona A) — pausa auto-rotação imediatamente
   const handleSelectPillar = useCallback(
     (index: number, e: React.MouseEvent | React.KeyboardEvent) => {
       e.stopPropagation();
       triggerHaptic("tap");
+      setIsUserPaused(true);
       sceneStartRef.current = typeof performance !== "undefined" ? performance.now() : 0;
-      setSceneProgress(0);
+      setSceneProgress(0.88);
       setActiveIndex(index);
     },
     [],
@@ -1691,19 +1706,26 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
       aria-label={`${currentPillar.title} — ${currentPillar.ctaLabel}`}
       data-testid="home-cinematic-hero"
       data-active-scene={currentPillar.id}
+      data-user-paused={isUserPaused ? "true" : "false"}
+      onPointerDown={() => {
+        if (!isUserPaused) {
+          setIsUserPaused(true);
+          setSceneProgress(0.88);
+        }
+      }}
       className={cn(
-        "caldra-hero relative flex w-full flex-col justify-between overflow-hidden rounded-2xl p-3 sm:p-3.5 shadow-xl select-none",
+        "caldra-hero relative flex w-full flex-col justify-between overflow-hidden rounded-[22px] p-3.5 sm:p-4 shadow-lg select-none border border-slate-900/10 dark:border-white/10 bg-white/88 dark:bg-slate-900/75 backdrop-blur-xl",
         className,
       )}
     >
       {/* =====================================================================
-          ZONA A — SELETOR SUPERIOR DOS 3 PILARES (IDENTIDADE IMEDIATA DO APP)
-          Avança automaticamente a cada 5.5s com barra fina de progresso
+          ZONA A — BARRA SEGMENTADA DE 3 ABAS NO TOPO (ZERO TRUNCAMENTO COM ...)
+          border-radius: 20px, padding: 4px, gap: 4px
           ===================================================================== */}
       <div
         role="tablist"
         aria-label="Pilares do CALDRA"
-        className="grid grid-cols-3 gap-1.5 rounded-xl border border-slate-300/70 dark:border-slate-800/90 bg-slate-200/75 dark:bg-[#080C14]/90 p-1"
+        className="grid grid-cols-3 gap-[4px] rounded-[20px] border border-slate-900/10 dark:border-white/10 bg-slate-900/[0.05] dark:bg-white/[0.05] p-[4px]"
       >
         {CALDRA_THREE_PILLARS.map((pillar, idx) => {
           const isActive = idx === activeIndex;
@@ -1723,17 +1745,17 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
               data-testid={`home-pillar-tab-${idx}`}
               onClick={(e) => handleSelectPillar(idx, e)}
               className={cn(
-                "relative flex flex-col justify-between overflow-hidden rounded-lg px-2 pt-1.5 pb-2 text-left transition-all cursor-pointer focus:outline-none",
+                "relative flex min-h-[40px] flex-col items-center justify-center overflow-hidden rounded-[16px] px-1.5 pt-1.5 pb-2 text-center transition-all cursor-pointer focus:outline-none",
                 isActive
-                  ? "bg-white dark:bg-[#131C2E] text-slate-950 dark:text-white shadow-sm border border-amber-500/40"
+                  ? "bg-white dark:bg-[#131C2E] text-slate-950 dark:text-white shadow-sm border border-slate-900/12 dark:border-white/15"
                   : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 border border-transparent",
               )}
             >
-              <span className="flex items-center justify-center gap-1 font-mono text-[10px] sm:text-[11px] font-bold tracking-tight whitespace-nowrap">
+              <span className="flex flex-wrap items-center justify-center gap-1 font-mono text-[10.5px] sm:text-[11.5px] font-bold tracking-tight leading-[1.15] break-words">
                 {idx === 0 && (
                   <Compass
                     className={cn(
-                      "size-3 shrink-0",
+                      "hidden min-[360px]:inline-block size-3 shrink-0",
                       isActive ? "text-sky-500" : "text-slate-400 dark:text-slate-500",
                     )}
                   />
@@ -1741,7 +1763,7 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
                 {idx === 1 && (
                   <Flame
                     className={cn(
-                      "size-3 shrink-0",
+                      "hidden min-[360px]:inline-block size-3 shrink-0",
                       isActive ? "text-amber-500" : "text-slate-400 dark:text-slate-500",
                     )}
                   />
@@ -1749,28 +1771,27 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
                 {idx === 2 && (
                   <Zap
                     className={cn(
-                      "size-3 shrink-0",
+                      "hidden min-[360px]:inline-block size-3 shrink-0",
                       isActive ? "text-emerald-500" : "text-slate-400 dark:text-slate-500",
                     )}
                   />
                 )}
-                <span>
-                  {pillar.tabNumber} {pillar.tabLabel}
-                </span>
+                <span className="hidden min-[345px]:inline">{pillar.tabNumber}</span>
+                <span>{pillar.tabLabel}</span>
               </span>
 
               {/* Barra fina de progresso de 5.5s embutida na base da aba */}
-              <span className="absolute inset-x-1.5 bottom-0.5 h-[2px] overflow-hidden rounded-full bg-slate-300/60 dark:bg-slate-800">
+              <span className="absolute inset-x-2 bottom-1 h-[2px] overflow-hidden rounded-full bg-slate-300/60 dark:bg-slate-800">
                 <span
-                  className={cn(
-                    "block h-full rounded-full transition-[width] duration-75",
-                    isActive
-                      ? "bg-[#F59E0B]"
+                  className="block h-full rounded-full transition-[width] duration-75"
+                  style={{
+                    width: `${fillPct}%`,
+                    backgroundColor: isActive
+                      ? triad.accentColor
                       : isCompleted
-                        ? "bg-amber-500/50"
-                        : "bg-transparent",
-                  )}
-                  style={{ width: `${fillPct}%` }}
+                        ? triad.accentBorder
+                        : "transparent",
+                  }}
                 />
               </span>
             </button>
@@ -1791,26 +1812,38 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
             handlePillarCtaActivation(e);
           }
         }}
-        className="mt-2.5 flex flex-col cursor-pointer group/stage focus:outline-none"
+        className="mt-3 flex flex-col cursor-pointer group/stage focus:outline-none"
       >
         {/* Título e Subtítulo completos (sem cortar com ...) */}
-        <div className="px-0.5 pb-2">
-          <h2
-            data-testid="home-cinematic-title"
-            className="font-display text-[15px] sm:text-[16px] font-bold tracking-tight text-slate-900 dark:text-slate-100 leading-tight"
-          >
-            {currentPillar.title}
-          </h2>
+        <div className="px-0.5 pb-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2
+              data-testid="home-cinematic-title"
+              className="font-display text-[15px] sm:text-[16px] font-bold tracking-tight text-slate-900 dark:text-slate-100 leading-tight"
+            >
+              {currentPillar.title}
+            </h2>
+            <span
+              data-testid="home-cinematic-interactive-badge"
+              className="inline-flex items-center gap-1 rounded-full border border-slate-900/12 dark:border-white/15 bg-slate-900/[0.04] dark:bg-white/[0.06] px-2 py-0.5 font-mono text-[10px] font-bold tracking-wide text-slate-600 dark:text-slate-300"
+            >
+              <span
+                className="size-1.5 rounded-full"
+                style={{ backgroundColor: triad.accentColor }}
+              />
+              Exemplo Interativo
+            </span>
+          </div>
           <p
             data-testid="home-cinematic-subtitle"
-            className="mt-0.5 text-[11.5px] sm:text-[12px] font-normal leading-snug text-slate-600 dark:text-slate-300"
+            className="mt-1 text-[12px] sm:text-[12.5px] font-normal leading-snug text-slate-600 dark:text-slate-300"
           >
             {currentPillar.subtitle}
           </p>
         </div>
 
         {/* Palco Gráfico Vetorial Limpo */}
-        <div className="relative h-[148px] xs:h-[156px] sm:h-[168px] w-full overflow-hidden rounded-xl border border-slate-300/75 dark:border-slate-800/90 bg-slate-100/75 dark:bg-[#080D18]">
+        <div className="relative h-[152px] xs:h-[160px] sm:h-[172px] w-full overflow-hidden rounded-[18px] border border-slate-900/12 dark:border-white/10 bg-slate-100/80 dark:bg-[#080D18]">
           {CALDRA_THREE_PILLARS.map((pillar, idx) => {
             const isActive = idx === activeIndex;
             const activeProg = isActive ? sceneProgress : 0;
@@ -1841,24 +1874,28 @@ export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
       </div>
 
       {/* =====================================================================
-          ZONA C — RODAPÉ TÉCNICO BIPARTIDO (FLEXBOX ANTI-COLISÃO — ZERO SOBREPOSIÇÃO)
-          display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-top: 10px
+          ZONA C — RODAPÉ TÉCNICO BIPARTIDO (HARMONIA COM TEMA CLARO E ESCURO)
           ===================================================================== */}
-      <div className="flex items-center justify-between gap-[10px] pt-[10px]">
-        {/* Lado Esquerdo (flex: 1; min-width: 0): Pílula técnica escura/translúcida em 1 linha */}
+      <div className="flex flex-wrap items-center justify-between gap-2.5 pt-3">
+        {/* Esquerda: Badge técnico translúcido do tema (nunca caixa azul-marinho escura fixa no Modo Claro) */}
         <div
           data-testid="home-cinematic-telemetry"
-          className="flex-1 min-w-0 truncate rounded-lg border border-slate-300/80 dark:border-slate-700/80 bg-slate-900/90 dark:bg-[#0B1120]/95 px-2.5 py-1.5 font-mono text-[10px] sm:text-[11px] font-semibold tracking-tight text-sky-300"
+          className="flex-1 min-w-[165px] rounded-xl border border-slate-900/12 dark:border-white/12 bg-slate-900/[0.05] dark:bg-white/[0.06] px-2.5 py-1.5 font-mono text-[10.5px] sm:text-[11px] font-semibold tracking-tight text-slate-800 dark:text-slate-200 leading-snug break-words"
         >
           {currentPillar.telemetryPill}
         </div>
 
-        {/* Lado Direito (flex-shrink: 0): Botão CTA Âmbar de alta conversão (height: 36px, padding: 0 14px, border-radius: 999px) */}
+        {/* Direita: Botão CTA estilizado com a Tríade Cromática ativa */}
         <button
           type="button"
           data-testid="home-cinematic-cta"
           onClick={handlePillarCtaActivation}
-          className="shrink-0 inline-flex h-[36px] items-center justify-center rounded-full border border-amber-300/80 bg-[#F59E0B] px-[14px] font-display text-[12px] font-bold tracking-tight text-[#0F172A] shadow-[0_0_14px_rgba(245,158,11,0.35)] hover:bg-amber-400 active:scale-95 transition-all cursor-pointer"
+          style={{
+            background: triad.accentGradient,
+            borderColor: triad.accentBorder,
+            boxShadow: triad.accentGlow,
+          }}
+          className="shrink-0 inline-flex min-h-[38px] items-center justify-center rounded-full border px-4 font-display text-[12px] font-bold tracking-tight text-white active:scale-95 transition-all cursor-pointer"
         >
           {currentPillar.ctaLabel}
         </button>
