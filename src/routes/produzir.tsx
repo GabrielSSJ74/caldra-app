@@ -65,6 +65,13 @@ import { openPartInChamfer } from "@/lib/projects/chamfer";
 import { newProject as newLabProject, saveProject as saveLabProject } from "@/lib/lab2d/projects";
 import { useMaterials } from "@/lib/materials/MaterialsProvider";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
+import { useSettings, type AccentColor } from "@/lib/settings/SettingsProvider";
+import { hexToRgbChannels } from "@/lib/settings/appearancePreferences";
+import {
+  resolveEffectiveThemeId,
+  type EffectiveThemeId,
+} from "@/lib/settings/themeTransitionEngine";
+import { NavigationAreaContainer } from "@/components/layout/NavigationAreaContainer";
 import { CaldraIntegratedWorkshopModal } from "@/components/lab2d/CaldraIntegratedWorkshopModal";
 import { MaterialManager } from "@/components/chameleon/MaterialManager";
 import { NewProjectDialog } from "@/components/projects/NewProjectDialog";
@@ -199,6 +206,256 @@ export function ProduzirCommandCenter() {
   const projects = useProjects();
   const materialsCtx = useMaterials();
   const { requirePro, projectLimit } = useFeatureAccess();
+  const { theme, accent, cardOpacity, bubbleOpacity } = useSettings();
+
+  // Observador em tempo real de tema, cor de destaque e opacidade (idêntico a Aprenda & Domine)
+  const [domThemeOverride, setDomThemeOverride] = useState<EffectiveThemeId | null>(null);
+  const [domAccentHex, setDomAccentHex] = useState<string | null>(null);
+  const [domCardOpacity, setDomCardOpacity] = useState<number | null>(null);
+  const [domBubbleOpacity, setDomBubbleOpacity] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    const syncFromDom = () => {
+      const attrTheme = root.dataset.theme;
+      if (attrTheme === "light" || attrTheme === "dark" || attrTheme === "amoled") {
+        setDomThemeOverride(attrTheme);
+      } else if (root.classList.contains("amoled")) {
+        setDomThemeOverride("amoled");
+      } else if (root.classList.contains("dark")) {
+        setDomThemeOverride("dark");
+      } else {
+        setDomThemeOverride(null);
+      }
+
+      const inlineAccent = root.style.getPropertyValue("--accent-color")?.trim() || null;
+      const lsAccent =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem("caldra_accent_color")?.trim() || null
+          : null;
+      setDomAccentHex(inlineAccent || lsAccent);
+
+      const inlineCardOp = parseFloat(root.style.getPropertyValue("--card-opacity"));
+      if (Number.isFinite(inlineCardOp) && inlineCardOp > 0) {
+        setDomCardOpacity(
+          inlineCardOp <= 1 ? Math.round(inlineCardOp * 100) : Math.round(inlineCardOp),
+        );
+      } else {
+        setDomCardOpacity(null);
+      }
+
+      const inlineBubbleOp = parseFloat(root.style.getPropertyValue("--bubble-opacity"));
+      if (Number.isFinite(inlineBubbleOp) && inlineBubbleOp > 0) {
+        setDomBubbleOpacity(
+          inlineBubbleOp <= 1 ? Math.round(inlineBubbleOp * 100) : Math.round(inlineBubbleOp),
+        );
+      } else {
+        setDomBubbleOpacity(null);
+      }
+    };
+
+    syncFromDom();
+    const observer = new MutationObserver(syncFromDom);
+    observer.observe(root, { attributes: true, attributeFilter: ["data-theme", "class", "style"] });
+    return () => observer.disconnect();
+  }, [theme, accent, cardOpacity, bubbleOpacity]);
+
+  const effectiveTheme: EffectiveThemeId = domThemeOverride ?? resolveEffectiveThemeId(theme);
+  const isLight = effectiveTheme === "light";
+  const isAmoled = effectiveTheme === "amoled";
+  const effectiveCardOpacityPct = domCardOpacity ?? cardOpacity;
+  const effectiveBubbleOpacityPct = domBubbleOpacity ?? bubbleOpacity;
+
+  // Derivação da paleta de destaque e tokens translúcidos (espelhando Aprenda & Domine)
+  const pcpTokens = useMemo(() => {
+    const rawCandidate = ((domAccentHex || accent || "blue") as AccentColor | string)
+      .trim()
+      .toLowerCase();
+    const clampedBubble = Math.min(100, Math.max(20, effectiveBubbleOpacityPct));
+    const bubbleRatio = (clampedBubble - 20) / 80;
+    const cardAlpha = Math.min(0.72, Math.max(0.45, (effectiveCardOpacityPct / 100) * 0.68)).toFixed(
+      2,
+    );
+
+    let primaryHex = isLight ? "#0066FF" : "#3B82F6";
+    let textHex = isLight ? "#1D4ED8" : "#60A5FA";
+    let solidFg = "#FFFFFF";
+    let rgb = isLight ? "37, 99, 235" : "59, 130, 246";
+
+    if (
+      rawCandidate === "amber" ||
+      rawCandidate === "ambar" ||
+      rawCandidate === "#f59e0b" ||
+      rawCandidate === "#d97706"
+    ) {
+      primaryHex = isLight ? "#D97706" : "#F59E0B";
+      textHex = isLight ? "#B45309" : "#FBBF24";
+      solidFg = isLight ? "#FFFFFF" : "#0F172A";
+      rgb = "245, 158, 11";
+    } else if (
+      rawCandidate === "orange" ||
+      rawCandidate === "laranja" ||
+      rawCandidate === "coral" ||
+      rawCandidate === "#f97316" ||
+      rawCandidate === "#ea580c"
+    ) {
+      primaryHex = isLight ? "#EA580C" : "#F97316";
+      textHex = isLight ? "#C2410C" : "#FB923C";
+      rgb = "249, 115, 22";
+    } else if (
+      rawCandidate === "violet" ||
+      rawCandidate === "violeta" ||
+      rawCandidate === "purple" ||
+      rawCandidate === "#7c3aed" ||
+      rawCandidate === "#8b5cf6"
+    ) {
+      primaryHex = isLight ? "#7C3AED" : "#8B5CF6";
+      textHex = isLight ? "#6D28D9" : "#C4B5FD";
+      rgb = "139, 92, 246";
+    } else if (
+      rawCandidate === "green" ||
+      rawCandidate === "verde" ||
+      rawCandidate === "emerald" ||
+      rawCandidate === "#10b981" ||
+      rawCandidate === "#059669"
+    ) {
+      primaryHex = isLight ? "#059669" : "#10B981";
+      textHex = isLight ? "#047857" : "#34D399";
+      rgb = "16, 185, 129";
+    } else if (
+      rawCandidate === "cyan" ||
+      rawCandidate === "ciano" ||
+      rawCandidate === "#06b6d4" ||
+      rawCandidate === "#0891b2"
+    ) {
+      primaryHex = isLight ? "#0891B2" : "#06B6D4";
+      textHex = isLight ? "#0E7490" : "#22D3EE";
+      rgb = "6, 182, 212";
+    } else if (
+      rawCandidate === "crimson" ||
+      rawCandidate === "magenta" ||
+      rawCandidate === "vermelho" ||
+      rawCandidate === "red" ||
+      rawCandidate === "#b22222" ||
+      rawCandidate === "#ef4444"
+    ) {
+      primaryHex = isLight ? "#B22222" : "#EF4444";
+      textHex = isLight ? "#991B1B" : "#F87171";
+      rgb = isLight ? "178, 34, 34" : "239, 68, 68";
+    } else if (rawCandidate.startsWith("#")) {
+      const parsed = hexToRgbChannels(rawCandidate);
+      if (parsed) {
+        primaryHex = rawCandidate.toUpperCase();
+        textHex = rawCandidate.toUpperCase();
+        rgb = parsed.rgb;
+      }
+    }
+
+    // Squircle Translúcido Suave (idêntico ao botão "Estudo" de Aprenda & Domine!)
+    const activeTabAlpha = (isLight ? 0.16 + bubbleRatio * 0.08 : 0.22 + bubbleRatio * 0.08).toFixed(
+      2,
+    );
+    const activeTabBorderAlpha = (isLight ? 0.32 : 0.36).toFixed(2);
+
+    return {
+      primaryHex,
+      textHex,
+      solidFg,
+      rgb,
+      cardAlpha,
+      // Cápsula externa das 5 abas (Frosted Glass Squircle)
+      frostedTabCapsuleStyle: {
+        backgroundColor: isLight
+          ? `rgba(255, 255, 255, ${cardAlpha})`
+          : isAmoled
+            ? "rgba(8, 12, 22, 0.65)"
+            : "rgba(15, 23, 42, 0.56)",
+        border: isLight
+          ? "1px solid rgba(255, 255, 255, 0.72)"
+          : "1px solid rgba(255, 255, 255, 0.10)",
+        boxShadow: isLight
+          ? "0 8px 24px rgba(15, 23, 42, 0.05)"
+          : "0 8px 24px rgba(2, 6, 23, 0.28)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+      } as React.CSSProperties,
+      // Botão ativo da aba (Squircle Translúcido Suave igual ao "Estudo")
+      activeTabSquircleStyle: {
+        backgroundColor: `rgba(${rgb}, ${activeTabAlpha})`,
+        border: `1px solid rgba(${rgb}, ${activeTabBorderAlpha})`,
+        color: textHex,
+        boxShadow: `0 2px 10px rgba(${rgb}, 0.10)`,
+      } as React.CSSProperties,
+      // Container Principal Translúcido (espelhando o Passaporte de Domínio Industrial)
+      mainGlassContainerStyle: {
+        backgroundColor: isLight
+          ? `rgba(255, 255, 255, ${cardAlpha})`
+          : isAmoled
+            ? "rgba(6, 10, 18, 0.62)"
+            : "rgba(15, 23, 42, 0.54)",
+        border: isLight
+          ? "1px solid rgba(15, 23, 42, 0.08)"
+          : "1px solid rgba(255, 255, 255, 0.10)",
+        boxShadow: isLight
+          ? "0 6px 20px rgba(15, 23, 42, 0.05)"
+          : "0 8px 24px rgba(2, 6, 23, 0.28)",
+        backdropFilter: "blur(16px)",
+        WebkitBackdropFilter: "blur(16px)",
+      } as React.CSSProperties,
+      // Subcartões Internos Translúcidos (Trabalho Ativo, KPIs, Cards Internos)
+      subCardGlassStyle: {
+        backgroundColor: isLight
+          ? "rgba(255, 255, 255, 0.62)"
+          : isAmoled
+            ? "rgba(12, 18, 32, 0.60)"
+            : "rgba(15, 23, 42, 0.52)",
+        border: isLight
+          ? "1px solid rgba(15, 23, 42, 0.08)"
+          : "1px solid rgba(255, 255, 255, 0.09)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+      } as React.CSSProperties,
+      // Subcard Selecionado / Ativo
+      selectedSubCardGlassStyle: {
+        backgroundColor: `rgba(${rgb}, ${isLight ? "0.12" : "0.18"})`,
+        border: `1px solid rgba(${rgb}, 0.36)`,
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+      } as React.CSSProperties,
+      // Card Hero Trabalho Prioritário em Execução
+      priorityHeroGlassStyle: {
+        backgroundColor: isLight
+          ? "rgba(255, 255, 255, 0.68)"
+          : isAmoled
+            ? "rgba(10, 15, 28, 0.68)"
+            : "rgba(15, 23, 42, 0.58)",
+        border: `1px solid rgba(${rgb}, 0.32)`,
+        boxShadow: isLight
+          ? "0 6px 18px rgba(15, 23, 42, 0.04)"
+          : "0 8px 22px rgba(2, 6, 23, 0.25)",
+        backdropFilter: "blur(14px)",
+        WebkitBackdropFilter: "blur(14px)",
+      } as React.CSSProperties,
+      // Botão Circular Translúcido (🔍 / QR)
+      glassCircleBtnStyle: {
+        backgroundColor: isLight
+          ? "rgba(255, 255, 255, 0.64)"
+          : "rgba(15, 23, 42, 0.58)",
+        border: isLight
+          ? "1px solid rgba(15, 23, 42, 0.10)"
+          : "1px solid rgba(255, 255, 255, 0.12)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+      } as React.CSSProperties,
+      // Tag CALDRA PCP (mesma proporção da tag PRO CALDRA em Aprenda & Domine)
+      pcpBadgeStyle: {
+        backgroundColor: isLight ? "rgba(16, 185, 129, 0.14)" : "rgba(16, 185, 129, 0.16)",
+        border: "1px solid rgba(16, 185, 129, 0.34)",
+        color: isLight ? "#059669" : "#34D399",
+      } as React.CSSProperties,
+    };
+  }, [accent, domAccentHex, isLight, isAmoled, effectiveCardOpacityPct, effectiveBubbleOpacityPct]);
 
   // 1. Navegação Principal dos 5 Destinos
   const [activeDest, setActiveDest] = useState<ProduzirDestId>("painel");
@@ -661,612 +918,723 @@ export function ProduzirCommandCenter() {
   };
 
   return (
-    <div className="relative min-h-screen space-y-3.5 pt-14 sm:pt-4 pb-[calc(140px+env(safe-area-inset-bottom))]">
-      {/* =================================================================== */}
-      {/* 1. CABEÇALHO COMPACTO E HIERÁRQUICO ("PRODUZIR")                    */}
-      {/* =================================================================== */}
-      <header className="space-y-1.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="w-full min-h-screen">
+      <NavigationAreaContainer className="space-y-3 pb-[calc(135px+env(safe-area-inset-bottom,16px))]">
+        {/* =================================================================== */}
+        {/* 1. CABEÇALHO COMPACTO E HIERÁRQUICO ("PRODUZIR")                    */}
+        {/*    Espelhamento 1:1 com a anatomia de "Aprenda & Domine"            */}
+        {/* =================================================================== */}
+        <header className="space-y-1 border-b border-slate-900/[0.08] dark:border-white/[0.09] pb-2.5 pt-0.5">
+          {/* Eyebrow Técnico + Ponto Luminoso */}
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] font-bold tracking-[0.14em] uppercase text-emerald-600 dark:text-emerald-400">
-              ● ENGENHARIA DE OPERAÇÕES &amp; CHÃO DE FÁBRICA
+            <span
+              className="size-2 rounded-full shrink-0 animate-pulse"
+              style={{ backgroundColor: pcpTokens.primaryHex }}
+              aria-hidden="true"
+            />
+            <span className="font-mono text-[10.5px] font-bold tracking-[0.12em] leading-[1.45] uppercase text-[#475569] dark:text-[#94A3B8]">
+              ENGENHARIA DE OPERAÇÕES &amp; CHÃO DE FÁBRICA
             </span>
-            <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[9px] font-bold uppercase text-emerald-600 dark:text-emerald-400">
+          </div>
+
+          {/* Tag CALDRA PCP logo abaixo do subtítulo (mesma proporção de PRO CALDRA) */}
+          <div>
+            <span
+              style={pcpTokens.pcpBadgeStyle}
+              className="inline-flex items-center rounded-[6px] px-[9px] py-[2px] font-mono text-[9.5px] font-extrabold tracking-[0.06em] uppercase"
+            >
               CALDRA PCP
             </span>
           </div>
-        </div>
 
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight text-[#0F172A] dark:text-[#F8FAFC]">
-            Produzir
-          </h1>
+          {/* Linha do Título "Produzir" + Controles Compactos (respeitando 20px da margem) */}
+          <div className="flex items-center justify-between gap-2 pt-0.5">
+            <h1 className="font-display text-[28px] sm:text-3xl font-extrabold tracking-[-0.025em] leading-tight text-[#0F172A] dark:text-[#F8FAFC]">
+              Produzir
+            </h1>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => setSearchOpen((v) => !v)}
-              aria-label="Buscar trabalho, OS, cliente ou peça"
-              className={cn(
-                "grid size-9 place-items-center rounded-xl border transition-colors",
-                searchOpen
-                  ? "border-accent bg-accent/15 text-accent"
-                  : "border-line bg-card/80 text-muted-foreground hover:text-foreground",
-              )}
-            >
-              <Search className="size-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setQrScanOpen(true)}
-              aria-label="Ler código QR de Ordem de Serviço"
-              className="grid size-9 place-items-center rounded-xl border border-line bg-card/80 text-muted-foreground hover:border-accent hover:text-accent transition-colors"
-              title="Ler / Localizar Ficha QR"
-            >
-              <QrCode className="size-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={handleStartNewWork}
-              className="flex items-center gap-1.5 rounded-xl bg-accent px-3 py-2 font-mono text-[11px] font-bold uppercase text-background shadow-sm hover:opacity-90 active:scale-[0.98] transition-all whitespace-nowrap"
-            >
-              <Plus className="size-3.5" strokeWidth={2.5} />
-              <span>Novo Trabalho</span>
-            </button>
-          </div>
-        </div>
-
-        {searchOpen && (
-          <div className="relative">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              type="search"
-              autoFocus
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar por nome do trabalho, código OS, cliente ou peça..."
-              className="w-full rounded-xl border border-line bg-card/90 py-2 pr-9 pl-9 text-xs text-foreground outline-none focus:border-accent"
-            />
-            {searchQuery && (
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
-                onClick={() => setSearchQuery("")}
-                aria-label="Limpar busca"
-                className="absolute top-1/2 right-2.5 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                onClick={() => setSearchOpen((v) => !v)}
+                aria-label="Buscar trabalho, OS, cliente ou peça"
+                style={
+                  searchOpen ? pcpTokens.activeTabSquircleStyle : pcpTokens.glassCircleBtnStyle
+                }
+                className="grid size-8 place-items-center rounded-full text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] transition-colors cursor-pointer"
               >
-                <X className="size-4" />
+                <Search className="size-3.5" />
               </button>
-            )}
-          </div>
-        )}
-      </header>
 
-      {/* =================================================================== */}
-      {/* 2. BARRA SEGMENTADA DE 5 DESTINOS (ZERO SCROLL HORIZONTAL EM 320PX) */}
-      {/* =================================================================== */}
-      <nav
-        aria-label="Navegação principal de Operações e Produção"
-        className="sticky top-[68px] z-30 rounded-2xl border border-line bg-card/95 p-1 shadow-md backdrop-blur-xl"
-      >
-        <div className="grid grid-cols-5 gap-1">
-          {(
-            [
-              { id: "painel", label: "Painel", icon: Activity },
-              { id: "trabalhos", label: "Trabalhos", icon: FolderKanban },
-              { id: "engenharia", label: "Engenharia", icon: Compass },
-              { id: "custos", label: "Custos", icon: DollarSign },
-              { id: "oficina", label: "Oficina", icon: Wrench },
-            ] as const
-          ).map((tab) => {
-            const active = activeDest === tab.id;
-            return (
               <button
-                key={tab.id}
                 type="button"
-                onClick={() => setActiveDest(tab.id)}
-                className={cn(
-                  "flex flex-col sm:flex-row items-center justify-center gap-0.5 sm:gap-1.5 rounded-xl px-1 py-1.5 sm:py-2 font-mono text-[9.5px] sm:text-[11px] font-bold tracking-tight uppercase transition-all whitespace-nowrap min-w-0",
-                  active
-                    ? "bg-accent text-background shadow-xs"
-                    : "text-muted-foreground hover:bg-muted/50 hover:text-foreground",
-                )}
+                onClick={() => setQrScanOpen(true)}
+                aria-label="Ler código QR de Ordem de Serviço"
+                style={pcpTokens.glassCircleBtnStyle}
+                className="grid size-8 place-items-center rounded-full text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] transition-colors cursor-pointer"
+                title="Ler / Localizar Ficha QR"
               >
-                <tab.icon className="size-3.5 shrink-0" />
-                <span className="truncate">{tab.label}</span>
+                <QrCode className="size-3.5" />
               </button>
-            );
-          })}
-        </div>
-      </nav>
 
-      {/* =================================================================== */}
-      {/* 3. BARRA PERSISTENTE DE CONTEXTO DO TRABALHO ATIVO                  */}
-      {/* =================================================================== */}
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-card/75 px-3 py-2 text-xs">
-        {activeWork ? (
-          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
-            <span className="font-mono text-[10px] font-bold uppercase text-accent">
-              Trabalho Ativo:
-            </span>
-            <strong className="font-display text-xs font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-              {activeWork.name}
-            </strong>
-            <span className="text-muted-foreground">·</span>
-            <span className="font-medium text-foreground">
-              {activeWork.client || "Cliente Padrão"}
-            </span>
-            <span className="text-muted-foreground">·</span>
-            <span className="font-mono text-[10.5px] tabular-nums text-muted-foreground">
-              {activeWork.code ?? "OS-001"} · Rev. {activeWork.revision}
-            </span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">
-              Modo Peça Avulsa / Simulação Rápida
-            </span>
-            <span className="text-[11px] text-muted-foreground">
-              Cálculos desacoplados de Ordem de Serviço específica.
-            </span>
-          </div>
-        )}
-
-        <div className="flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => setWorkSwitcherOpen((v) => !v)}
-            className="rounded-lg border border-line bg-background/70 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase text-foreground hover:border-accent transition-colors whitespace-nowrap"
-          >
-            ⇄ Trocar Trabalho
-          </button>
-          {activeWork && (
-            <button
-              type="button"
-              onClick={() => {
-                setUserDetachedWork(true);
-                setActiveWorkId(null);
-                toast.info("Modo Peça Avulsa ativado.");
-              }}
-              className="rounded-lg border border-line bg-background/70 px-2.5 py-1 font-mono text-[10px] font-semibold uppercase text-muted-foreground hover:text-foreground transition-colors whitespace-nowrap"
-            >
-              × Peça Avulsa
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Seletor rápido de troca de Trabalho Ativo */}
-      {workSwitcherOpen && (
-        <Panel className="p-3 space-y-2 border-accent/40">
-          <div className="flex items-center justify-between">
-            <span className="font-mono text-[10px] font-bold uppercase text-accent">
-              Selecionar Trabalho Ativo (Ordem de Serviço)
-            </span>
-            <button
-              type="button"
-              onClick={() => setWorkSwitcherOpen(false)}
-              className="text-xs text-muted-foreground hover:text-foreground"
-            >
-              Fechar
-            </button>
-          </div>
-          <div className="grid gap-1.5 sm:grid-cols-2">
-            {projects.map((p) => (
               <button
-                key={p.id}
                 type="button"
-                onClick={() => {
-                  setUserDetachedWork(false);
-                  setActiveWorkId(p.id);
-                  setWorkSwitcherOpen(false);
-                  toast.success(`Trabalho ativo alterado para "${p.name}".`);
+                onClick={handleStartNewWork}
+                style={{
+                  backgroundColor: pcpTokens.primaryHex,
+                  color: pcpTokens.solidFg,
+                  boxShadow: `0 4px 14px rgba(${pcpTokens.rgb}, 0.24)`,
                 }}
-                className={cn(
-                  "flex items-center justify-between rounded-xl border p-2.5 text-left transition-colors",
-                  activeWorkId === p.id
-                    ? "border-accent bg-accent/10 text-foreground"
-                    : "border-line bg-background/50 text-muted-foreground hover:text-foreground",
-                )}
+                className="inline-flex h-8 items-center gap-1 rounded-full px-3 text-[11px] font-bold tracking-tight transition-all hover:opacity-95 active:scale-[0.98] whitespace-nowrap cursor-pointer"
               >
-                <div className="min-w-0">
-                  <p className="font-display text-xs font-bold text-[#0F172A] dark:text-[#F8FAFC] truncate">
-                    {p.name}
-                  </p>
-                  <p className="font-mono text-[10px] text-muted-foreground truncate">
-                    {p.code ?? "OS"} · {p.client || "Sem cliente"} · {p.parts.length} peça(s)
-                  </p>
-                </div>
-                <span className="font-mono text-[10px] font-bold tabular-nums text-accent">
-                  {projectProgress(p)}%
-                </span>
+                <Plus className="size-3.5" strokeWidth={2.5} />
+                <span>Novo Trabalho</span>
               </button>
-            ))}
-          </div>
-        </Panel>
-      )}
-
-      {/* =================================================================== */}
-      {/* DESTINO 1: PAINEL OPERACIONAL (📊)                                  */}
-      {/* =================================================================== */}
-      {activeDest === "painel" && (
-        <div className="space-y-4">
-          {/* 4 KPIs Reais do Ciclo de Produção */}
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-            <button
-              type="button"
-              onClick={() =>
-                setStatusFilter(statusFilter === "desenvolvimento" ? "todos" : "desenvolvimento")
-              }
-              className={cn(
-                "rounded-2xl border p-3 text-left transition-all",
-                statusFilter === "desenvolvimento"
-                  ? "border-accent bg-accent/10"
-                  : "border-line bg-card/85 hover:border-accent/40",
-              )}
-            >
-              <span className="font-mono text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">
-                Em Desenvolvimento
-              </span>
-              <p className="mt-1 font-mono text-2xl font-bold tabular-nums text-[#0F172A] dark:text-[#F8FAFC]">
-                {kpis.emDesenvolvimento}
-              </p>
-              <span className="text-[11px] text-muted-foreground">Engenharia &amp; PCP</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                setStatusFilter(statusFilter === "orcamento" ? "todos" : "orcamento")
-              }
-              className={cn(
-                "rounded-2xl border p-3 text-left transition-all",
-                statusFilter === "orcamento"
-                  ? "border-accent bg-accent/10"
-                  : "border-line bg-card/85 hover:border-accent/40",
-              )}
-            >
-              <span className="font-mono text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">
-                Aguardando Orçamento
-              </span>
-              <p className="mt-1 font-mono text-2xl font-bold tabular-nums text-amber-600 dark:text-amber-400">
-                {kpis.aguardandoOrcamento}
-              </p>
-              <span className="text-[11px] text-muted-foreground">Custos &amp; Aprovação</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                setStatusFilter(statusFilter === "producao" ? "todos" : "producao")
-              }
-              className={cn(
-                "rounded-2xl border p-3 text-left transition-all",
-                statusFilter === "producao"
-                  ? "border-accent bg-accent/10"
-                  : "border-line bg-card/85 hover:border-accent/40",
-              )}
-            >
-              <span className="font-mono text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">
-                Em Produção
-              </span>
-              <p className="mt-1 font-mono text-2xl font-bold tabular-nums text-accent">
-                {kpis.emProducao}
-              </p>
-              <span className="text-[11px] text-muted-foreground">Corte, Dobra &amp; Solda</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                setStatusFilter(statusFilter === "concluidos" ? "todos" : "concluidos")
-              }
-              className={cn(
-                "rounded-2xl border p-3 text-left transition-all",
-                statusFilter === "concluidos"
-                  ? "border-accent bg-accent/10"
-                  : "border-line bg-card/85 hover:border-accent/40",
-              )}
-            >
-              <span className="font-mono text-[9.5px] font-bold uppercase tracking-wider text-muted-foreground">
-                Concluídos
-              </span>
-              <p className="mt-1 font-mono text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                {kpis.concluidos}
-              </p>
-              <span className="text-[11px] text-muted-foreground">Inspecionados &amp; Entregues</span>
-            </button>
+            </div>
           </div>
 
-          {/* CARD HERO: TRABALHO PRIORITÁRIO EM EXECUÇÃO (CONTRASTE CORRIGIDO!) */}
-          {priorityWork && (() => {
-            const stageId = getWorkStage(priorityWork);
-            const stageMeta =
-              INDUSTRIAL_STAGES.find((s) => s.id === stageId) ?? INDUSTRIAL_STAGES[1]!;
-            const pct = projectProgress(priorityWork);
-            return (
-              <div
-                data-testid="priority-work-hero"
-                className="rounded-2xl border border-accent/40 bg-card/95 p-4 shadow-sm space-y-3.5"
+          {searchOpen && (
+            <div className="relative pt-1.5">
+              <Search className="pointer-events-none absolute top-1/2 left-3 size-3.5 -translate-y-1/2 text-[#475569] dark:text-[#94A3B8]" />
+              <input
+                type="search"
+                autoFocus
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Buscar por nome do trabalho, código OS, cliente ou peça..."
+                style={pcpTokens.subCardGlassStyle}
+                className="w-full rounded-[16px] py-2 pr-8 pl-8 text-xs text-[#0F172A] dark:text-[#F8FAFC] outline-none"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery("")}
+                  aria-label="Limpar busca"
+                  className="absolute top-1/2 right-2.5 -translate-y-1/2 text-[#475569] dark:text-[#94A3B8]"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+        </header>
+
+        {/* =================================================================== */}
+        {/* 2. BARRA SEGMENTADA DE 5 DESTINOS (FROSTED GLASS SQUIRCLE)          */}
+        {/*    Idêntica à barra "Estudo | Trilhas | Biblioteca | Fórmulas"      */}
+        {/* =================================================================== */}
+        <nav
+          aria-label="Navegação principal de Operações e Produção"
+          style={pcpTokens.frostedTabCapsuleStyle}
+          className="relative z-20 overflow-hidden rounded-[26px] p-[6px] transition-colors"
+        >
+          <div className="grid grid-cols-5 items-center gap-1">
+            {(
+              [
+                { id: "painel", label: "Painel", icon: Activity },
+                { id: "trabalhos", label: "Trabalhos", icon: FolderKanban },
+                { id: "engenharia", label: "Engenharia", icon: Compass },
+                { id: "custos", label: "Custos", icon: DollarSign },
+                { id: "oficina", label: "Oficina", icon: Wrench },
+              ] as const
+            ).map((tab) => {
+              const active = activeDest === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveDest(tab.id)}
+                  style={active ? pcpTokens.activeTabSquircleStyle : undefined}
+                  className={cn(
+                    "relative z-10 flex flex-col sm:flex-row items-center justify-center gap-[3px] sm:gap-1.5 rounded-[18px] py-2 px-1 sm:px-2.5 text-[11px] font-semibold tracking-tight transition-all whitespace-nowrap min-w-0 cursor-pointer",
+                    !active &&
+                      "text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]",
+                  )}
+                >
+                  <tab.icon className="size-4 shrink-0" />
+                  <span className="truncate">{tab.label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </nav>
+
+        {/* =================================================================== */}
+        {/* 3. CONTAINER PRINCIPAL TRANSLÚCIDO (ESPELHANDO APRENDA & DOMINE)    */}
+        {/* =================================================================== */}
+        <div
+          style={pcpTokens.mainGlassContainerStyle}
+          className="rounded-[28px] p-3 sm:p-[18px] space-y-2.5 transition-all"
+        >
+          {/* 3.1 BARRA DE TRABALHO ATIVO COMPACTA E TRANSLÚCIDA */}
+          <div
+            style={pcpTokens.subCardGlassStyle}
+            className="flex items-center justify-between gap-2 rounded-[18px] px-3 py-2 text-xs"
+          >
+            {activeWork ? (
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <span
+                  style={{ color: pcpTokens.textHex }}
+                  className="font-mono text-[9px] font-bold uppercase tracking-wider shrink-0"
+                >
+                  Ativo:
+                </span>
+                <strong className="font-display text-xs font-bold text-[#0F172A] dark:text-[#F8FAFC] truncate">
+                  {activeWork.name}
+                </strong>
+                <span className="text-[#475569] dark:text-[#94A3B8] shrink-0">·</span>
+                <span className="font-mono text-[9.5px] tabular-nums text-[#475569] dark:text-[#94A3B8] truncate">
+                  {activeWork.code ?? "OS-001"} · Rev. {activeWork.revision}
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                <span className="font-mono text-[9.5px] font-bold uppercase text-amber-600 dark:text-amber-400 shrink-0">
+                  Modo Peça Avulsa
+                </span>
+                <span className="text-[10.5px] text-[#475569] dark:text-[#94A3B8] truncate">
+                  · Simulação rápida sem OS
+                </span>
+              </div>
+            )}
+
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                type="button"
+                onClick={() => setWorkSwitcherOpen((v) => !v)}
+                style={pcpTokens.glassCircleBtnStyle}
+                title="Trocar Trabalho Ativo"
+                className="inline-flex h-[24px] items-center rounded-lg px-2 font-mono text-[9px] font-semibold uppercase text-[#0F172A] dark:text-[#F8FAFC] transition-colors whitespace-nowrap cursor-pointer"
               >
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="space-y-1">
-                    <div className="flex flex-wrap items-center gap-2 font-mono text-[10px]">
-                      <span className="font-bold uppercase tracking-wider text-accent">
-                        Trabalho Prioritário em Execução
-                      </span>
-                      <span className="text-muted-foreground">·</span>
-                      <span className="font-semibold text-foreground">
-                        {priorityWork.code ?? "OS-001"}
-                      </span>
-                      <span className="text-muted-foreground">·</span>
-                      <span className="text-muted-foreground">Rev. {priorityWork.revision}</span>
-                    </div>
+                ⇄ Trocar
+              </button>
+              {activeWork && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUserDetachedWork(true);
+                    setActiveWorkId(null);
+                    toast.info("Modo Peça Avulsa ativado.");
+                  }}
+                  style={pcpTokens.glassCircleBtnStyle}
+                  title="Ativar Modo Peça Avulsa"
+                  className="inline-flex h-[24px] items-center rounded-lg px-2 font-mono text-[9px] font-semibold uppercase text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] transition-colors whitespace-nowrap cursor-pointer"
+                >
+                  × Avulsa
+                </button>
+              )}
+            </div>
+          </div>
 
-                    {/* Título com contraste estrito #0F172A no Claro e #F8FAFC no Escuro */}
-                    <h2 className="font-display text-lg sm:text-xl font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                      {priorityWork.name}
-                    </h2>
-
-                    <p className="text-xs text-muted-foreground">
-                      Cliente:{" "}
-                      <strong className="font-medium text-foreground">
-                        {priorityWork.client || "Cliente Industrial"}
-                      </strong>{" "}
-                      · {priorityWork.parts.length} peça(s) cadastrada(s) · Atualizado em{" "}
-                      {formatDateTime(priorityWork.updatedAt)}
-                    </p>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="font-mono text-xl font-bold tabular-nums text-accent">
-                      {pct}%
-                    </span>
-                    <span className="block font-mono text-[9.5px] uppercase text-muted-foreground">
-                      Progresso Geral
-                    </span>
-                  </div>
-                </div>
-
-                {/* Subcard de Etapa Adaptável ao Tema (fim da caixa cinza chumbo #4B5563 no modo Claro!) */}
-                <div className="rounded-xl border border-slate-200/90 dark:border-slate-800 bg-slate-100/85 dark:bg-slate-900/70 p-3 space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-mono text-[10.5px] font-bold uppercase text-[#0F172A] dark:text-[#F8FAFC]">
-                      Etapa Atual: {stageMeta.label}
-                    </span>
-                    <span className="font-mono text-[10px] text-accent font-semibold">
-                      Próxima ação recomendada
-                    </span>
-                  </div>
-                  <p className="text-xs leading-relaxed text-slate-700 dark:text-slate-300">
-                    {stageMeta.description}
-                  </p>
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
-                    <div
-                      className="h-full rounded-full bg-accent transition-all"
-                      style={{ width: `${Math.max(8, pct)}%` }}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2">
+          {/* Seletor rápido de troca de Trabalho Ativo */}
+          {workSwitcherOpen && (
+            <div
+              style={pcpTokens.subCardGlassStyle}
+              className="rounded-[18px] p-3 space-y-2"
+            >
+              <div className="flex items-center justify-between">
+                <span
+                  style={{ color: pcpTokens.textHex }}
+                  className="font-mono text-[10px] font-bold uppercase"
+                >
+                  Selecionar Trabalho Ativo (Ordem de Serviço)
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setWorkSwitcherOpen(false)}
+                  className="text-xs text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]"
+                >
+                  Fechar
+                </button>
+              </div>
+              <div className="grid gap-1.5 sm:grid-cols-2">
+                {projects.map((p) => (
                   <button
-                    type="button"
-                    onClick={() => handleResumeStage(priorityWork)}
-                    className="flex flex-1 sm:flex-none items-center justify-center gap-1.5 rounded-xl bg-accent px-4 py-2.5 font-mono text-xs font-bold uppercase text-background shadow-sm hover:opacity-90 transition-opacity whitespace-nowrap"
-                  >
-                    <Play className="size-3.5 fill-current" />
-                    Retomar Etapa ({stageMeta.shortLabel})
-                  </button>
-
-                  <button
+                    key={p.id}
                     type="button"
                     onClick={() => {
-                      setActiveWorkId(priorityWork.id);
-                      setActiveDest("trabalhos");
-                      setWorkDetailTab("resumo");
+                      setUserDetachedWork(false);
+                      setActiveWorkId(p.id);
+                      setWorkSwitcherOpen(false);
+                      toast.success(`Trabalho ativo alterado para "${p.name}".`);
                     }}
-                    className="flex items-center justify-center gap-1.5 rounded-xl border border-line bg-background/70 px-3.5 py-2.5 font-mono text-xs font-semibold uppercase text-foreground hover:border-accent transition-colors whitespace-nowrap"
+                    style={
+                      activeWorkId === p.id
+                        ? pcpTokens.selectedSubCardGlassStyle
+                        : pcpTokens.subCardGlassStyle
+                    }
+                    className="flex items-center justify-between rounded-[14px] p-2.5 text-left transition-colors cursor-pointer"
                   >
-                    <FolderKanban className="size-3.5 text-accent" />
-                    Ver Detalhes
-                  </button>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* LISTA DE OUTROS TRABALHOS ATIVOS (SEM DUPLICAR O TRABALHO PRIORITÁRIO!) */}
-          <Panel className="p-4 space-y-3" data-testid="other-active-works-section">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="font-display text-sm font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                  Demais Ordens de Serviço &amp; Trabalhos na Fila
-                </h3>
-                <p className="text-[11px] text-muted-foreground">
-                  Exibindo trabalhos complementares ao prioritário em destaque acima.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-1 rounded-xl border border-line bg-background/50 p-1">
-                {(
-                  [
-                    { id: "todos", label: "Todos" },
-                    { id: "desenvolvimento", label: "Desenvolvimento" },
-                    { id: "orcamento", label: "Orçamento" },
-                    { id: "producao", label: "Produção" },
-                    { id: "inspecao", label: "Inspeção" },
-                    { id: "concluidos", label: "Concluídos" },
-                  ] as const
-                ).map((chip) => (
-                  <button
-                    key={chip.id}
-                    type="button"
-                    onClick={() => setStatusFilter(chip.id)}
-                    className={cn(
-                      "rounded-lg px-2 py-1 font-mono text-[9.5px] font-semibold uppercase transition-colors whitespace-nowrap",
-                      statusFilter === chip.id
-                        ? "bg-accent text-background font-bold"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {chip.label}
+                    <div className="min-w-0">
+                      <p className="font-display text-xs font-bold text-[#0F172A] dark:text-[#F8FAFC] truncate">
+                        {p.name}
+                      </p>
+                      <p className="font-mono text-[10px] text-[#475569] dark:text-[#94A3B8] truncate">
+                        {p.code ?? "OS"} · {p.client || "Sem cliente"} · {p.parts.length} peça(s)
+                      </p>
+                    </div>
+                    <span
+                      style={{ color: pcpTokens.textHex }}
+                      className="font-mono text-[10px] font-bold tabular-nums"
+                    >
+                      {projectProgress(p)}%
+                    </span>
                   </button>
                 ))}
               </div>
             </div>
+          )}
 
-            {otherWorksForPanel.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-line p-5 text-center space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  Nenhum outro trabalho neste filtro além do trabalho prioritário em destaque.
-                </p>
+          {/* =================================================================== */}
+          {/* DESTINO 1: PAINEL OPERACIONAL (📊)                                  */}
+          {/* =================================================================== */}
+          {activeDest === "painel" && (
+            <div className="space-y-2.5">
+              {/* 4 KPIs Reais Compactos e Simétricos (~64px de altura, rótulo em 1 linha) */}
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                 <button
                   type="button"
-                  onClick={handleStartNewWork}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-accent/40 bg-accent/10 px-3 py-1.5 font-mono text-[10px] font-bold uppercase text-accent"
+                  onClick={() =>
+                    setStatusFilter(
+                      statusFilter === "desenvolvimento" ? "todos" : "desenvolvimento",
+                    )
+                  }
+                  style={
+                    statusFilter === "desenvolvimento"
+                      ? pcpTokens.selectedSubCardGlassStyle
+                      : pcpTokens.subCardGlassStyle
+                  }
+                  className="flex flex-col justify-between rounded-[18px] px-3 py-2 text-left transition-all cursor-pointer min-w-0"
                 >
-                  <Plus className="size-3.5" /> Cadastrar Nova Ordem de Serviço
+                  <span className="block font-mono text-[9px] font-bold uppercase tracking-[0.04em] text-[#475569] dark:text-[#94A3B8] leading-tight whitespace-nowrap truncate">
+                    Em Desenvolvimento
+                  </span>
+                  <div className="mt-1 flex items-baseline justify-between gap-1.5">
+                    <span className="font-mono text-[20px] font-extrabold leading-none tabular-nums text-[#0F172A] dark:text-[#F8FAFC]">
+                      {kpis.emDesenvolvimento}
+                    </span>
+                    <span className="text-[10.5px] font-medium text-[#475569] dark:text-[#94A3B8] truncate">
+                      Engenharia &amp; PCP
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setStatusFilter(statusFilter === "orcamento" ? "todos" : "orcamento")
+                  }
+                  style={
+                    statusFilter === "orcamento"
+                      ? pcpTokens.selectedSubCardGlassStyle
+                      : pcpTokens.subCardGlassStyle
+                  }
+                  className="flex flex-col justify-between rounded-[18px] px-3 py-2 text-left transition-all cursor-pointer min-w-0"
+                >
+                  <span className="block font-mono text-[9px] font-bold uppercase tracking-[0.04em] text-[#475569] dark:text-[#94A3B8] leading-tight whitespace-nowrap truncate">
+                    Aguardando Orçamento
+                  </span>
+                  <div className="mt-1 flex items-baseline justify-between gap-1.5">
+                    <span className="font-mono text-[20px] font-extrabold leading-none tabular-nums text-amber-600 dark:text-amber-400">
+                      {kpis.aguardandoOrcamento}
+                    </span>
+                    <span className="text-[10.5px] font-medium text-[#475569] dark:text-[#94A3B8] truncate">
+                      Custos &amp; Aprovação
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setStatusFilter(statusFilter === "producao" ? "todos" : "producao")
+                  }
+                  style={
+                    statusFilter === "producao"
+                      ? pcpTokens.selectedSubCardGlassStyle
+                      : pcpTokens.subCardGlassStyle
+                  }
+                  className="flex flex-col justify-between rounded-[18px] px-3 py-2 text-left transition-all cursor-pointer min-w-0"
+                >
+                  <span className="block font-mono text-[9px] font-bold uppercase tracking-[0.04em] text-[#475569] dark:text-[#94A3B8] leading-tight whitespace-nowrap truncate">
+                    Em Produção
+                  </span>
+                  <div className="mt-1 flex items-baseline justify-between gap-1.5">
+                    <span
+                      style={{ color: pcpTokens.textHex }}
+                      className="font-mono text-[20px] font-extrabold leading-none tabular-nums"
+                    >
+                      {kpis.emProducao}
+                    </span>
+                    <span className="text-[10.5px] font-medium text-[#475569] dark:text-[#94A3B8] truncate">
+                      Corte, Dobra &amp; Solda
+                    </span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setStatusFilter(statusFilter === "concluidos" ? "todos" : "concluidos")
+                  }
+                  style={
+                    statusFilter === "concluidos"
+                      ? pcpTokens.selectedSubCardGlassStyle
+                      : pcpTokens.subCardGlassStyle
+                  }
+                  className="flex flex-col justify-between rounded-[18px] px-3 py-2 text-left transition-all cursor-pointer min-w-0"
+                >
+                  <span className="block font-mono text-[9px] font-bold uppercase tracking-[0.04em] text-[#475569] dark:text-[#94A3B8] leading-tight whitespace-nowrap truncate">
+                    Concluídos
+                  </span>
+                  <div className="mt-1 flex items-baseline justify-between gap-1.5">
+                    <span className="font-mono text-[20px] font-extrabold leading-none tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {kpis.concluidos}
+                    </span>
+                    <span className="text-[10.5px] font-medium text-[#475569] dark:text-[#94A3B8] truncate">
+                      Inspecionados &amp; Entregues
+                    </span>
+                  </div>
                 </button>
               </div>
-            ) : (
-              <div className="grid gap-2.5 sm:grid-cols-2">
-                {otherWorksForPanel.map((work) => {
+
+              {/* CARD HERO: TRABALHO PRIORITÁRIO EM EXECUÇÃO (100% VISÍVEL ACIMA DA DOCK!) */}
+              {priorityWork &&
+                (() => {
+                  const stageId = getWorkStage(priorityWork);
                   const stageMeta =
-                    INDUSTRIAL_STAGES.find((s) => s.id === getWorkStage(work)) ??
-                    INDUSTRIAL_STAGES[0]!;
-                  const pct = projectProgress(work);
+                    INDUSTRIAL_STAGES.find((s) => s.id === stageId) ?? INDUSTRIAL_STAGES[1]!;
+                  const pct = projectProgress(priorityWork);
                   return (
                     <div
-                      key={work.id}
-                      className="flex flex-col justify-between gap-2.5 rounded-xl border border-line bg-background/50 p-3 hover:border-accent/40 transition-colors"
+                      data-testid="priority-work-hero"
+                      style={pcpTokens.priorityHeroGlassStyle}
+                      className="rounded-[20px] p-3 sm:p-4 space-y-2"
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <span className="font-mono text-[9.5px] uppercase text-muted-foreground">
-                            {work.code ?? "OS"} · {stageMeta.shortLabel}
-                          </span>
-                          <h4 className="font-display text-sm font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                            {work.name}
-                          </h4>
-                          <p className="text-xs text-muted-foreground">
-                            {work.client || "Cliente Industrial"} · {work.parts.length} peça(s)
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex items-center gap-1.5 font-mono text-[9px] whitespace-nowrap overflow-hidden">
+                            <span
+                              style={{ color: pcpTokens.textHex }}
+                              className="font-bold uppercase tracking-wider truncate"
+                            >
+                              ● Trabalho Prioritário em Execução
+                            </span>
+                            <span className="text-[#475569] dark:text-[#94A3B8] shrink-0">·</span>
+                            <span className="font-semibold text-[#0F172A] dark:text-[#F8FAFC] shrink-0">
+                              {priorityWork.code ?? "OS-001"}
+                            </span>
+                            <span className="text-[#475569] dark:text-[#94A3B8] shrink-0">·</span>
+                            <span className="text-[#475569] dark:text-[#94A3B8] shrink-0">
+                              Rev. {priorityWork.revision}
+                            </span>
+                          </div>
+
+                          <h2 className="font-display text-base sm:text-lg font-extrabold text-[#0F172A] dark:text-[#F8FAFC] leading-tight truncate">
+                            {priorityWork.name}
+                          </h2>
+
+                          <p className="text-[11px] text-[#475569] dark:text-[#94A3B8] leading-snug truncate">
+                            Cliente:{" "}
+                            <strong className="font-semibold text-[#0F172A] dark:text-[#F8FAFC]">
+                              {priorityWork.client || "Cliente Industrial"}
+                            </strong>{" "}
+                            · {priorityWork.parts.length} peça(s) ·{" "}
+                            {formatDateTime(priorityWork.updatedAt)}
                           </p>
                         </div>
-                        <span className="font-mono text-xs font-bold tabular-nums text-accent">
-                          {pct}%
-                        </span>
+
+                        <div className="text-right shrink-0">
+                          <span
+                            style={{ color: pcpTokens.textHex }}
+                            className="font-mono text-base font-extrabold tabular-nums leading-none"
+                          >
+                            {pct}%
+                          </span>
+                          <span className="block font-mono text-[8.5px] uppercase text-[#475569] dark:text-[#94A3B8]">
+                            Progresso
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="flex items-center justify-between gap-2 pt-1 border-t border-line/60">
+                      {/* Subcard de Etapa Adaptável ao Tema */}
+                      <div
+                        style={pcpTokens.subCardGlassStyle}
+                        className="rounded-[14px] px-2.5 py-2 space-y-1"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono text-[9.5px] font-bold uppercase text-[#0F172A] dark:text-[#F8FAFC] truncate">
+                            Etapa Atual: {stageMeta.label}
+                          </span>
+                          <span
+                            style={{ color: pcpTokens.textHex }}
+                            className="font-mono text-[8.5px] font-semibold shrink-0"
+                          >
+                            Próxima ação
+                          </span>
+                        </div>
+                        <p className="text-[10.5px] leading-snug text-[#475569] dark:text-[#94A3B8] line-clamp-1">
+                          {stageMeta.description}
+                        </p>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-900/10 dark:bg-white/10">
+                          <div
+                            className="h-full rounded-full transition-all"
+                            style={{
+                              width: `${Math.max(8, pct)}%`,
+                              backgroundColor: pcpTokens.primaryHex,
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Ações lado a lado em 1 única linha compacta */}
+                      <div className="grid grid-cols-[1fr_auto] items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleResumeStage(priorityWork)}
+                          style={{
+                            backgroundColor: pcpTokens.primaryHex,
+                            color: pcpTokens.solidFg,
+                            boxShadow: `0 4px 12px rgba(${pcpTokens.rgb}, 0.22)`,
+                          }}
+                          className="flex items-center justify-center gap-1.5 rounded-[12px] px-3 py-1.5 font-mono text-[10px] font-bold uppercase transition-opacity hover:opacity-95 min-w-0 cursor-pointer"
+                        >
+                          <Play className="size-3 fill-current shrink-0" />
+                          <span className="truncate">
+                            Retomar Etapa ({stageMeta.shortLabel})
+                          </span>
+                        </button>
+
                         <button
                           type="button"
                           onClick={() => {
-                            setActiveWorkId(work.id);
+                            setActiveWorkId(priorityWork.id);
                             setActiveDest("trabalhos");
+                            setWorkDetailTab("resumo");
                           }}
-                          className="font-mono text-[10px] font-semibold uppercase text-foreground hover:text-accent"
+                          style={pcpTokens.subCardGlassStyle}
+                          className="flex items-center justify-center gap-1.5 rounded-[12px] px-2.5 py-1.5 font-mono text-[10px] font-semibold uppercase text-[#0F172A] dark:text-[#F8FAFC] transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                         >
-                          Abrir Dossiê →
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleResumeStage(work)}
-                          className="rounded-lg bg-accent/15 px-2.5 py-1 font-mono text-[10px] font-bold uppercase text-accent hover:bg-accent/25"
-                        >
-                          Ativar &amp; Retomar
+                          <FolderKanban
+                            className="size-3.5 shrink-0"
+                            style={{ color: pcpTokens.textHex }}
+                          />
+                          <span>Ver Detalhes</span>
                         </button>
                       </div>
                     </div>
                   );
-                })}
-              </div>
-            )}
-          </Panel>
+                })()}
 
-          {/* GRADE DE AÇÕES RÁPIDAS DE OFICINA */}
-          <Panel className="p-4 space-y-3">
-            <SectionLabel>Ações Rápidas de Engenharia &amp; Oficina</SectionLabel>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
-              {[
-                {
-                  label: "+ Novo Trabalho",
-                  sub: "Abrir OS",
-                  icon: Plus,
-                  onClick: handleStartNewWork,
-                },
-                {
-                  label: "Importar CHAMFER",
-                  sub: "Geometria CAD",
-                  icon: Compass,
-                  onClick: () => {
-                    setActiveDest("engenharia");
-                    setEngSub("central_pcp");
-                  },
-                },
-                {
-                  label: "Nesting de Chapa",
-                  sub: "Corte & Kerf",
-                  icon: Layers,
-                  onClick: () => {
-                    setActiveDest("engenharia");
-                    setEngSub("nesting");
-                  },
-                },
-                {
-                  label: "Materiais & Ligas",
-                  sub: "5 Ligas NBR",
-                  icon: Boxes,
-                  onClick: () => {
-                    setActiveDest("engenharia");
-                    setEngSub("materiais");
-                  },
-                },
-                {
-                  label: "Simular Orçamento",
-                  sub: "Custos & BDI",
-                  icon: DollarSign,
-                  onClick: () => setActiveDest("custos"),
-                },
-                {
-                  label: "Bancada & Lote",
-                  sub: "Peças do Lote",
-                  icon: Wrench,
-                  onClick: () => {
-                    setActiveDest("oficina");
-                    setOficinaSub("bancada");
-                  },
-                },
-                {
-                  label: "Ler / Emitir QR",
-                  sub: "Inspeção & Rastreio",
-                  icon: QrCode,
-                  onClick: () => {
-                    setActiveDest("oficina");
-                    setOficinaSub("ficha_qr");
-                  },
-                },
-              ].map((act) => (
-                <button
-                  key={act.label}
-                  type="button"
-                  onClick={act.onClick}
-                  className="flex flex-col items-start justify-between gap-1.5 rounded-xl border border-line bg-background/50 p-2.5 text-left hover:border-accent transition-colors"
-                >
-                  <act.icon className="size-4 text-accent" />
+              {/* LISTA DE OUTROS TRABALHOS ATIVOS (SEM DUPLICAR O TRABALHO PRIORITÁRIO!) */}
+              <div
+                style={pcpTokens.subCardGlassStyle}
+                className="rounded-[22px] p-3.5 space-y-3"
+                data-testid="other-active-works-section"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <p className="font-display text-xs font-bold text-[#0F172A] dark:text-[#F8FAFC]">
-                      {act.label}
+                    <h3 className="font-display text-sm font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                      Demais Ordens de Serviço &amp; Trabalhos na Fila
+                    </h3>
+                    <p className="text-[11px] text-[#475569] dark:text-[#94A3B8]">
+                      Exibindo trabalhos complementares ao prioritário em destaque acima.
                     </p>
-                    <p className="font-mono text-[9.5px] text-muted-foreground">{act.sub}</p>
                   </div>
-                </button>
-              ))}
+
+                  <div className="flex flex-wrap items-center gap-1 rounded-[14px] bg-slate-900/[0.04] dark:bg-white/[0.05] p-1">
+                    {(
+                      [
+                        { id: "todos", label: "Todos" },
+                        { id: "desenvolvimento", label: "Desenvolvimento" },
+                        { id: "orcamento", label: "Orçamento" },
+                        { id: "producao", label: "Produção" },
+                        { id: "inspecao", label: "Inspeção" },
+                        { id: "concluidos", label: "Concluídos" },
+                      ] as const
+                    ).map((chip) => (
+                      <button
+                        key={chip.id}
+                        type="button"
+                        onClick={() => setStatusFilter(chip.id)}
+                        style={
+                          statusFilter === chip.id ? pcpTokens.activeTabSquircleStyle : undefined
+                        }
+                        className={cn(
+                          "rounded-[10px] px-2 py-1 font-mono text-[9.5px] font-semibold uppercase transition-colors whitespace-nowrap cursor-pointer",
+                          statusFilter === chip.id
+                            ? "font-bold"
+                            : "text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC]",
+                        )}
+                      >
+                        {chip.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {otherWorksForPanel.length === 0 ? (
+                  <div className="rounded-[16px] border border-dashed border-slate-900/15 dark:border-white/15 p-4 text-center space-y-2">
+                    <p className="text-xs text-[#475569] dark:text-[#94A3B8]">
+                      Nenhum outro trabalho neste filtro além do trabalho prioritário em destaque.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleStartNewWork}
+                      style={pcpTokens.activeTabSquircleStyle}
+                      className="inline-flex items-center gap-1.5 rounded-[12px] px-3 py-1.5 font-mono text-[10px] font-bold uppercase cursor-pointer"
+                    >
+                      <Plus className="size-3.5" /> Cadastrar Nova Ordem de Serviço
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    {otherWorksForPanel.map((work) => {
+                      const stageMeta =
+                        INDUSTRIAL_STAGES.find((s) => s.id === getWorkStage(work)) ??
+                        INDUSTRIAL_STAGES[0]!;
+                      const pct = projectProgress(work);
+                      return (
+                        <div
+                          key={work.id}
+                          style={pcpTokens.subCardGlassStyle}
+                          className="flex flex-col justify-between gap-2 rounded-[16px] p-3 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="min-w-0">
+                              <span className="font-mono text-[9.5px] uppercase text-[#475569] dark:text-[#94A3B8]">
+                                {work.code ?? "OS"} · {stageMeta.shortLabel}
+                              </span>
+                              <h4 className="font-display text-sm font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                                {work.name}
+                              </h4>
+                              <p className="text-xs text-[#475569] dark:text-[#94A3B8]">
+                                {work.client || "Cliente Industrial"} · {work.parts.length} peça(s)
+                              </p>
+                            </div>
+                            <span
+                              style={{ color: pcpTokens.textHex }}
+                              className="font-mono text-xs font-bold tabular-nums"
+                            >
+                              {pct}%
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-900/[0.07] dark:border-white/[0.08]">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setActiveWorkId(work.id);
+                                setActiveDest("trabalhos");
+                              }}
+                              className="font-mono text-[10px] font-semibold uppercase text-[#0F172A] dark:text-[#F8FAFC] cursor-pointer"
+                            >
+                              Abrir Dossiê →
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleResumeStage(work)}
+                              style={pcpTokens.activeTabSquircleStyle}
+                              className="rounded-lg px-2.5 py-1 font-mono text-[10px] font-bold uppercase cursor-pointer"
+                            >
+                              Ativar &amp; Retomar
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* GRADE DE AÇÕES RÁPIDAS DE OFICINA */}
+              <div
+                style={pcpTokens.subCardGlassStyle}
+                className="rounded-[22px] p-3.5 space-y-2.5"
+              >
+                <SectionLabel>Ações Rápidas de Engenharia &amp; Oficina</SectionLabel>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+                  {[
+                    {
+                      label: "+ Novo Trabalho",
+                      sub: "Abrir OS",
+                      icon: Plus,
+                      onClick: handleStartNewWork,
+                    },
+                    {
+                      label: "Importar CHAMFER",
+                      sub: "Geometria CAD",
+                      icon: Compass,
+                      onClick: () => {
+                        setActiveDest("engenharia");
+                        setEngSub("central_pcp");
+                      },
+                    },
+                    {
+                      label: "Nesting de Chapa",
+                      sub: "Corte & Kerf",
+                      icon: Layers,
+                      onClick: () => {
+                        setActiveDest("engenharia");
+                        setEngSub("nesting");
+                      },
+                    },
+                    {
+                      label: "Materiais & Ligas",
+                      sub: "5 Ligas NBR",
+                      icon: Boxes,
+                      onClick: () => {
+                        setActiveDest("engenharia");
+                        setEngSub("materiais");
+                      },
+                    },
+                    {
+                      label: "Simular Orçamento",
+                      sub: "Custos & BDI",
+                      icon: DollarSign,
+                      onClick: () => setActiveDest("custos"),
+                    },
+                    {
+                      label: "Bancada & Lote",
+                      sub: "Peças do Lote",
+                      icon: Wrench,
+                      onClick: () => {
+                        setActiveDest("oficina");
+                        setOficinaSub("bancada");
+                      },
+                    },
+                    {
+                      label: "Ler / Emitir QR",
+                      sub: "Inspeção & Rastreio",
+                      icon: QrCode,
+                      onClick: () => {
+                        setActiveDest("oficina");
+                        setOficinaSub("ficha_qr");
+                      },
+                    },
+                  ].map((act) => (
+                    <button
+                      key={act.label}
+                      type="button"
+                      onClick={act.onClick}
+                      style={pcpTokens.subCardGlassStyle}
+                      className="flex flex-col items-start justify-between gap-1.5 rounded-[16px] p-2.5 text-left transition-colors cursor-pointer"
+                    >
+                      <act.icon className="size-4" style={{ color: pcpTokens.textHex }} />
+                      <div>
+                        <p className="font-display text-xs font-bold text-[#0F172A] dark:text-[#F8FAFC]">
+                          {act.label}
+                        </p>
+                        <p className="font-mono text-[9.5px] text-[#475569] dark:text-[#94A3B8]">
+                          {act.sub}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-          </Panel>
-        </div>
-      )}
+          )}
 
       {/* =================================================================== */}
       {/* DESTINO 2: TRABALHOS / ORDENS DE SERVIÇO & DOSSIÊ DE 8 ABAS (📋)    */}
@@ -2215,218 +2583,220 @@ export function ProduzirCommandCenter() {
           })()}
         </div>
       )}
+        </div>
 
-      {/* =================================================================== */}
-      {/* MODAIS DE APOIO: NOVO TRABALHO, NOVA PEÇA, EDITAR PEÇA, QR SCAN     */}
-      {/* =================================================================== */}
-      <NewProjectDialog
-        open={creatingWork}
-        onOpenChange={setCreatingWork}
-        onCreate={(input) => {
-          const created = createProject(input);
-          setCreatingWork(false);
-          setActiveWorkId(created.id);
-          setWorkStageFor(created.id, "cadastro");
-          toast.success(`Ordem de serviço "${created.name}" criada com sucesso!`);
-        }}
-      />
-
-      {addingPartWorkId && (
-        <AddPartDialog
-          open={Boolean(addingPartWorkId)}
-          onOpenChange={(v) => !v && setAddingPartWorkId(null)}
-          onAdd={(input) => {
-            addPart(addingPartWorkId, input);
-            markGeometryChanged(addingPartWorkId);
-            setAddingPartWorkId(null);
-            toast.success("Peça adicionada ao trabalho! Nesting e Custos marcados para revisão.");
+        {/* =================================================================== */}
+        {/* MODAIS DE APOIO: NOVO TRABALHO, NOVA PEÇA, EDITAR PEÇA, QR SCAN     */}
+        {/* =================================================================== */}
+        <NewProjectDialog
+          open={creatingWork}
+          onOpenChange={setCreatingWork}
+          onCreate={(input) => {
+            const created = createProject(input);
+            setCreatingWork(false);
+            setActiveWorkId(created.id);
+            setWorkStageFor(created.id, "cadastro");
+            toast.success(`Ordem de serviço "${created.name}" criada com sucesso!`);
           }}
         />
-      )}
 
-      {/* Modal de Edição de Peça com Propagação Seletiva de Dependências */}
-      {editingPart && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-2xl border border-line bg-card p-4 shadow-2xl space-y-3">
-            <div className="flex items-center justify-between border-b border-line pb-2">
-              <h3 className="font-display text-base font-bold text-foreground">
-                Editar Peça · {editingPart.part.name}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setEditingPart(null)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
+        {addingPartWorkId && (
+          <AddPartDialog
+            open={Boolean(addingPartWorkId)}
+            onOpenChange={(v) => !v && setAddingPartWorkId(null)}
+            onAdd={(input) => {
+              addPart(addingPartWorkId, input);
+              markGeometryChanged(addingPartWorkId);
+              setAddingPartWorkId(null);
+              toast.success("Peça adicionada ao trabalho! Nesting e Custos marcados para revisão.");
+            }}
+          />
+        )}
 
-            <div className="grid grid-cols-2 gap-2.5">
-              <label className="block col-span-2">
-                <span className="font-mono text-[10px] uppercase text-muted-foreground">
-                  Nome da Peça
-                </span>
-                <input
-                  value={editingPart.part.name}
-                  onChange={(e) =>
-                    setEditingPart({
-                      ...editingPart,
-                      part: { ...editingPart.part, name: e.target.value },
-                    })
-                  }
-                  className="mt-1 w-full rounded-lg border border-line bg-background px-2.5 py-1.5 text-xs text-foreground"
-                />
-              </label>
-              <label className="block">
-                <span className="font-mono text-[10px] uppercase text-muted-foreground">
-                  Quantidade (un)
-                </span>
-                <input
-                  type="number"
-                  value={editingPart.part.quantity}
-                  onChange={(e) =>
-                    setEditingPart({
-                      ...editingPart,
-                      part: {
-                        ...editingPart.part,
-                        quantity: Math.max(1, Number(e.target.value)),
-                      },
-                    })
-                  }
-                  className="mt-1 w-full rounded-lg border border-line bg-background px-2.5 py-1.5 font-mono text-xs tabular-nums text-foreground"
-                />
-              </label>
-              <label className="block">
-                <span className="font-mono text-[10px] uppercase text-muted-foreground">
-                  Espessura (mm)
-                </span>
-                <input
-                  type="number"
-                  step={0.5}
-                  value={editingPart.part.thickness}
-                  onChange={(e) =>
-                    setEditingPart({
-                      ...editingPart,
-                      part: {
-                        ...editingPart.part,
-                        thickness: Math.max(0.5, Number(e.target.value)),
-                      },
-                    })
-                  }
-                  className="mt-1 w-full rounded-lg border border-line bg-background px-2.5 py-1.5 font-mono text-xs tabular-nums text-foreground"
-                />
-              </label>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setEditingPart(null)}
-                className="rounded-xl border border-line px-3 py-1.5 text-xs"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  updatePart(editingPart.workId, editingPart.part.instanceId, {
-                    name: editingPart.part.name,
-                    quantity: editingPart.part.quantity,
-                    thickness: editingPart.part.thickness,
-                    revision: (editingPart.part.revision ?? 1) + 1,
-                  });
-                  markGeometryChanged(editingPart.workId);
-                  setEditingPart(null);
-                  toast.success(
-                    "Peça atualizada! Nesting, BOM e Custos sinalizados para revalidação.",
-                  );
-                }}
-                className="rounded-xl bg-accent px-3.5 py-1.5 font-mono text-xs font-bold uppercase text-background"
-              >
-                Salvar &amp; Propagar Revisão
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal de Leitura / Localização QR Scan */}
-      {qrScanOpen && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-2xl border border-line bg-card p-4 shadow-2xl space-y-3">
-            <div className="flex items-center justify-between border-b border-line pb-2">
-              <div className="flex items-center gap-2">
-                <QrCode className="size-4 text-accent" />
+        {/* Modal de Edição de Peça com Propagação Seletiva de Dependências */}
+        {editingPart && (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-xs">
+            <div className="w-full max-w-md rounded-2xl border border-line bg-card p-4 shadow-2xl space-y-3">
+              <div className="flex items-center justify-between border-b border-line pb-2">
                 <h3 className="font-display text-base font-bold text-foreground">
-                  Localizar Ordem de Serviço / Peça via QR Code
+                  Editar Peça · {editingPart.part.name}
                 </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setQrScanOpen(false)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="size-4" />
-              </button>
-            </div>
-
-            <p className="text-xs text-muted-foreground">
-              Escaneie a etiqueta QR da ficha de bancada ou selecione uma Ordem de Serviço ativa abaixo:
-            </p>
-
-            <input
-              value={qrScanInput}
-              onChange={(e) => setQrScanInput(e.target.value)}
-              placeholder="Ex: PRJ-001, Chaminé Industrial, Flange..."
-              className="w-full rounded-xl border border-line bg-background px-3 py-2 font-mono text-xs text-foreground outline-none focus:border-accent"
-            />
-
-            <div className="space-y-1.5">
-              <span className="font-mono text-[9.5px] uppercase text-muted-foreground">
-                Leitura Rápida de Etiquetas QR Ativas na Oficina:
-              </span>
-              {projects.map((p) => (
                 <button
-                  key={p.id}
+                  type="button"
+                  onClick={() => setEditingPart(null)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <label className="block col-span-2">
+                  <span className="font-mono text-[10px] uppercase text-muted-foreground">
+                    Nome da Peça
+                  </span>
+                  <input
+                    value={editingPart.part.name}
+                    onChange={(e) =>
+                      setEditingPart({
+                        ...editingPart,
+                        part: { ...editingPart.part, name: e.target.value },
+                      })
+                    }
+                    className="mt-1 w-full rounded-lg border border-line bg-background px-2.5 py-1.5 text-xs text-foreground"
+                  />
+                </label>
+                <label className="block">
+                  <span className="font-mono text-[10px] uppercase text-muted-foreground">
+                    Quantidade (un)
+                  </span>
+                  <input
+                    type="number"
+                    value={editingPart.part.quantity}
+                    onChange={(e) =>
+                      setEditingPart({
+                        ...editingPart,
+                        part: {
+                          ...editingPart.part,
+                          quantity: Math.max(1, Number(e.target.value)),
+                        },
+                      })
+                    }
+                    className="mt-1 w-full rounded-lg border border-line bg-background px-2.5 py-1.5 font-mono text-xs tabular-nums text-foreground"
+                  />
+                </label>
+                <label className="block">
+                  <span className="font-mono text-[10px] uppercase text-muted-foreground">
+                    Espessura (mm)
+                  </span>
+                  <input
+                    type="number"
+                    step={0.5}
+                    value={editingPart.part.thickness}
+                    onChange={(e) =>
+                      setEditingPart({
+                        ...editingPart,
+                        part: {
+                          ...editingPart.part,
+                          thickness: Math.max(0.5, Number(e.target.value)),
+                        },
+                      })
+                    }
+                    className="mt-1 w-full rounded-lg border border-line bg-background px-2.5 py-1.5 font-mono text-xs tabular-nums text-foreground"
+                  />
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingPart(null)}
+                  className="rounded-xl border border-line px-3 py-1.5 text-xs"
+                >
+                  Cancelar
+                </button>
+                <button
                   type="button"
                   onClick={() => {
-                    setActiveWorkId(p.id);
-                    setQrScanOpen(false);
-                    setActiveDest("oficina");
-                    setOficinaSub("ficha_qr");
-                    toast.success(`Ficha QR aberta: ${p.name} (${p.code ?? p.id})`);
+                    updatePart(editingPart.workId, editingPart.part.instanceId, {
+                      name: editingPart.part.name,
+                      quantity: editingPart.part.quantity,
+                      thickness: editingPart.part.thickness,
+                      revision: (editingPart.part.revision ?? 1) + 1,
+                    });
+                    markGeometryChanged(editingPart.workId);
+                    setEditingPart(null);
+                    toast.success(
+                      "Peça atualizada! Nesting, BOM e Custos sinalizados para revalidação.",
+                    );
                   }}
-                  className="flex w-full items-center justify-between rounded-xl border border-line bg-background/60 px-3 py-2 text-left text-xs hover:border-accent"
+                  className="rounded-xl bg-accent px-3.5 py-1.5 font-mono text-xs font-bold uppercase text-background"
                 >
-                  <span>
-                    <strong className="font-mono text-accent">{p.code ?? "OS"}</strong> · {p.name}
-                  </span>
-                  <span className="font-mono text-[10px] text-muted-foreground">
-                    Rev. {p.revision} →
-                  </span>
+                  Salvar &amp; Propagar Revisão
                 </button>
-              ))}
-            </div>
-
-            <div className="flex justify-end gap-2 pt-1">
-              <button
-                type="button"
-                onClick={() => setQrScanOpen(false)}
-                className="rounded-xl border border-line px-3 py-1.5 text-xs"
-              >
-                Fechar
-              </button>
-              <button
-                type="button"
-                onClick={handleQrScanLookup}
-                className="rounded-xl bg-accent px-3.5 py-1.5 font-mono text-xs font-bold uppercase text-background"
-              >
-                Localizar OS
-              </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+        {/* Modal de Leitura / Localização QR Scan */}
+        {qrScanOpen && (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-black/60 p-4 backdrop-blur-xs">
+            <div className="w-full max-w-md rounded-2xl border border-line bg-card p-4 shadow-2xl space-y-3">
+              <div className="flex items-center justify-between border-b border-line pb-2">
+                <div className="flex items-center gap-2">
+                  <QrCode className="size-4 text-accent" />
+                  <h3 className="font-display text-base font-bold text-foreground">
+                    Localizar Ordem de Serviço / Peça via QR Code
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQrScanOpen(false)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <X className="size-4" />
+                </button>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Escaneie a etiqueta QR da ficha de bancada ou selecione uma Ordem de Serviço ativa abaixo:
+              </p>
+
+              <input
+                value={qrScanInput}
+                onChange={(e) => setQrScanInput(e.target.value)}
+                placeholder="Ex: PRJ-001, Chaminé Industrial, Flange..."
+                className="w-full rounded-xl border border-line bg-background px-3 py-2 font-mono text-xs text-foreground outline-none focus:border-accent"
+              />
+
+              <div className="space-y-1.5">
+                <span className="font-mono text-[9.5px] uppercase text-muted-foreground">
+                  Leitura Rápida de Etiquetas QR Ativas na Oficina:
+                </span>
+                {projects.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveWorkId(p.id);
+                      setQrScanOpen(false);
+                      setActiveDest("oficina");
+                      setOficinaSub("ficha_qr");
+                      toast.success(`Ficha QR aberta: ${p.name} (${p.code ?? p.id})`);
+                    }}
+                    className="flex w-full items-center justify-between rounded-xl border border-line bg-background/60 px-3 py-2 text-left text-xs hover:border-accent"
+                  >
+                    <span>
+                      <strong className="font-mono text-accent">{p.code ?? "OS"}</strong> · {p.name}
+                    </span>
+                    <span className="font-mono text-[10px] text-muted-foreground">
+                      Rev. {p.revision} →
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setQrScanOpen(false)}
+                  className="rounded-xl border border-line px-3 py-1.5 text-xs"
+                >
+                  Fechar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleQrScanLookup}
+                  className="rounded-xl bg-accent px-3.5 py-1.5 font-mono text-xs font-bold uppercase text-background"
+                >
+                  Localizar OS
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </NavigationAreaContainer>
     </div>
   );
 }
