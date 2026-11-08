@@ -1131,18 +1131,17 @@ export function AprendaPage() {
     >
       <NavigationAreaContainer className="space-y-4 pb-[calc(135px+env(safe-area-inset-bottom,16px))]">
         {/* 1. IDENTIDADE INSTITUCIONAL NO TOPO
-            Subtítulo em caixa alta em cinza técnico neutro (--text-secondary),
-            ponto luminoso inicial em --accent-primary, e selo PRO CALDRA em Ouro Imperial (--color-pro-gold) */}
+            Linha única idêntica à seção Projetar: Ponto luminoso + FORMAÇÃO TÉCNICA + CALDRA ACADEMY */}
         <NavigationAreaHeader
-          badgeText="CALDRA ACADEMIA • FORMAÇÃO TÉCNICA EM ESTRUTURAS METÁLICAS, CALDEIRARIA E FABRICAÇÃO"
+          badgeText="FORMAÇÃO TÉCNICA"
           badgeColor="text-[var(--text-secondary)]"
           indicatorColor="bg-[var(--accent-primary)]"
           secondaryBadge={
             <span
               style={proGoldBadgeStyle}
-              className="rounded px-1.5 py-0.5 font-mono text-[8px] font-bold uppercase"
+              className="rounded px-1.5 py-0.2 font-mono text-[8px] font-bold uppercase whitespace-nowrap shrink-0"
             >
-              PRO CALDRA
+              CALDRA ACADEMY
             </span>
           }
           title="Aprenda & Domine"

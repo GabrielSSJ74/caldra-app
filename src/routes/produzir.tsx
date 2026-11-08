@@ -921,75 +921,74 @@ export function ProduzirCommandCenter() {
     <div className="w-full min-h-screen">
       <NavigationAreaContainer className="space-y-3 pb-[calc(135px+env(safe-area-inset-bottom,16px))]">
         {/* =================================================================== */}
-        {/* 1. CABEÇALHO COMPACTO E HIERÁRQUICO ("PRODUZIR")                    */}
-        {/*    Espelhamento 1:1 com a anatomia de "Aprenda & Domine"            */}
+        {/* 1. CABEÇALHO PADRONIZADO ("PRODUZIR") — GABARITO 1:1 COM "PROJETAR" */}
         {/* =================================================================== */}
-        <header className="space-y-1 border-b border-slate-900/[0.08] dark:border-white/[0.09] pb-2.5 pt-0.5">
-          {/* Eyebrow Técnico + Ponto Luminoso */}
-          <div className="flex items-center gap-2">
-            <span
-              className="size-2 rounded-full shrink-0 animate-pulse"
-              style={{ backgroundColor: pcpTokens.primaryHex }}
-              aria-hidden="true"
-            />
-            <span className="font-mono text-[10.5px] font-bold tracking-[0.12em] leading-[1.45] uppercase text-[#475569] dark:text-[#94A3B8]">
-              ENGENHARIA DE OPERAÇÕES &amp; CHÃO DE FÁBRICA
-            </span>
-          </div>
+        <header className="flex flex-col gap-3 pt-1 border-b border-border/40 pb-3">
+          <div className="flex items-start gap-2.5 min-w-0">
+            <div className="min-w-0 flex-1">
+              {/* 1. Identificador superior em linha única: Ponto + OPERAÇÕES & OFICINA + CALDRA OPS */}
+              <div className="flex items-center gap-2 flex-nowrap">
+                <span
+                  className="size-2 rounded-full animate-pulse shrink-0"
+                  style={{ backgroundColor: pcpTokens.primaryHex }}
+                  aria-hidden="true"
+                />
+                <span className="font-mono text-[10px] font-bold tracking-[0.2em] uppercase text-[#475569] dark:text-[#94A3B8] whitespace-nowrap">
+                  OPERAÇÕES &amp; OFICINA
+                </span>
+                <span
+                  style={pcpTokens.pcpBadgeStyle}
+                  className="rounded px-1.5 py-0.2 font-mono text-[8px] font-bold uppercase whitespace-nowrap shrink-0"
+                >
+                  CALDRA OPS
+                </span>
+              </div>
 
-          {/* Tag CALDRA PCP logo abaixo do subtítulo (mesma proporção de PRO CALDRA) */}
-          <div>
-            <span
-              style={pcpTokens.pcpBadgeStyle}
-              className="inline-flex items-center rounded-[6px] px-[9px] py-[2px] font-mono text-[9.5px] font-extrabold tracking-[0.06em] uppercase"
-            >
-              CALDRA PCP
-            </span>
-          </div>
+              {/* 2. Linha do Título "Produzir" + Controles Rápidos alinhados verticalmente pelo centro */}
+              <div className="flex items-center justify-between gap-2 mt-0.5">
+                <h1 className="font-display text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground leading-tight">
+                  Produzir
+                </h1>
 
-          {/* Linha do Título "Produzir" + Controles Compactos (respeitando 20px da margem) */}
-          <div className="flex items-center justify-between gap-2 pt-0.5">
-            <h1 className="font-display text-[28px] sm:text-3xl font-extrabold tracking-[-0.025em] leading-tight text-[#0F172A] dark:text-[#F8FAFC]">
-              Produzir
-            </h1>
+                <div className="flex items-center gap-1.5 shrink-0 -my-1">
+                  <button
+                    type="button"
+                    onClick={() => setSearchOpen((v) => !v)}
+                    aria-label="Buscar trabalho, OS, cliente ou peça"
+                    style={
+                      searchOpen ? pcpTokens.activeTabSquircleStyle : pcpTokens.glassCircleBtnStyle
+                    }
+                    className="grid size-8 place-items-center rounded-full text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] transition-colors cursor-pointer"
+                  >
+                    <Search className="size-3.5" />
+                  </button>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setSearchOpen((v) => !v)}
-                aria-label="Buscar trabalho, OS, cliente ou peça"
-                style={
-                  searchOpen ? pcpTokens.activeTabSquircleStyle : pcpTokens.glassCircleBtnStyle
-                }
-                className="grid size-8 place-items-center rounded-full text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] transition-colors cursor-pointer"
-              >
-                <Search className="size-3.5" />
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setQrScanOpen(true)}
+                    aria-label="Ler código QR de Ordem de Serviço"
+                    style={pcpTokens.glassCircleBtnStyle}
+                    className="grid size-8 place-items-center rounded-full text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] transition-colors cursor-pointer"
+                    title="Ler / Localizar Ficha QR"
+                  >
+                    <QrCode className="size-3.5" />
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => setQrScanOpen(true)}
-                aria-label="Ler código QR de Ordem de Serviço"
-                style={pcpTokens.glassCircleBtnStyle}
-                className="grid size-8 place-items-center rounded-full text-[#475569] dark:text-[#94A3B8] hover:text-[#0F172A] dark:hover:text-[#F8FAFC] transition-colors cursor-pointer"
-                title="Ler / Localizar Ficha QR"
-              >
-                <QrCode className="size-3.5" />
-              </button>
-
-              <button
-                type="button"
-                onClick={handleStartNewWork}
-                style={{
-                  backgroundColor: pcpTokens.primaryHex,
-                  color: pcpTokens.solidFg,
-                  boxShadow: `0 4px 14px rgba(${pcpTokens.rgb}, 0.24)`,
-                }}
-                className="inline-flex h-8 items-center gap-1 rounded-full px-3 text-[11px] font-bold tracking-tight transition-all hover:opacity-95 active:scale-[0.98] whitespace-nowrap cursor-pointer"
-              >
-                <Plus className="size-3.5" strokeWidth={2.5} />
-                <span>Novo Trabalho</span>
-              </button>
+                  <button
+                    type="button"
+                    onClick={handleStartNewWork}
+                    style={{
+                      backgroundColor: pcpTokens.primaryHex,
+                      color: pcpTokens.solidFg,
+                      boxShadow: `0 4px 14px rgba(${pcpTokens.rgb}, 0.24)`,
+                    }}
+                    className="inline-flex h-8 items-center gap-1 rounded-full px-3 text-[11px] font-bold tracking-tight transition-all hover:opacity-95 active:scale-[0.98] whitespace-nowrap cursor-pointer"
+                  >
+                    <Plus className="size-3.5" strokeWidth={2.5} />
+                    <span>Novo Trabalho</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
