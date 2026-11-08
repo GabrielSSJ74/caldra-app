@@ -11,6 +11,7 @@ import { Onboarding } from "./Onboarding";
 import { ProfileDialog } from "./Profile";
 import { PaywallDialog } from "./Paywall";
 import { AuroraBackground } from "./Aurora";
+import { AuroraLiquidShader } from "./AuroraLiquidShader";
 import { ShellActionsProvider } from "./ShellActions";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
@@ -94,6 +95,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       }}
     >
       <div className="relative flex min-h-screen flex-col overflow-x-hidden text-foreground bg-background">
+        <AuroraLiquidShader active={auroraVisible(pathname)} />
         <AuroraBackground active={auroraVisible(pathname)} className="fixed inset-0 z-0" />
 
         {!immersive && !standalone && (

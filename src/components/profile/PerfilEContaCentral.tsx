@@ -67,8 +67,8 @@ const THEMES: { id: ThemeMode; label: string; icon: typeof Sun }[] = [
 const AURORA_STYLES: { id: AuroraStyle; label: string; hint: string }[] = [
   {
     id: "fluido",
-    label: "ORBES VIVOS",
-    hint: "Massas radiais autônomas vivas em transição cromática pelo espaço profundo",
+    label: "AURORA LÍQUIDA",
+    hint: "Campos de luz em fusão líquida contínua (Shader GLSL Domain Warping)",
   },
   {
     id: "suave",
@@ -1036,48 +1036,28 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
               <div className="grid grid-cols-3 gap-2">
                 {AURORA_STYLES.map((a) => {
                   const isSelected = auroraStyle === a.id;
-                  const isProGated = a.id === "fluido" && !isMestre;
                   return (
                     <button
                       key={a.id}
                       type="button"
                       onClick={() => {
                         triggerHaptic("tap");
-                        if (isProGated) {
-                          toast.info("O estilo de fundo Orbes Vivos é exclusivo do CALDRA PRO.", {
-                            description:
-                              "Faça upgrade para o CALDRA PRO para ativar o ecossistema de Orbes Vivos.",
-                            action: {
-                              label: "Ver Planos",
-                              onClick: () => {
-                                window.location.href = "/pro";
-                              },
-                            },
-                          });
-                          return;
-                        }
                         setAuroraStyle(a.id);
                       }}
                       className={cn(
-                        "relative h-11 rounded-xl border text-center font-mono text-xs uppercase transition-colors cursor-pointer flex items-center justify-center gap-1.5",
+                        "relative h-11 rounded-xl border px-1.5 text-center font-mono text-[10.5px] sm:text-xs uppercase transition-colors cursor-pointer flex items-center justify-center gap-1",
                         isSelected
                           ? "border-sky-500/50 bg-sky-500/10 text-sky-500 font-bold shadow-xs ring-1 ring-sky-500/30"
                           : "border-border/70 text-muted-foreground hover:text-foreground",
-                        isProGated && !isSelected && "opacity-80",
                       )}
                     >
                       <span>{a.label}</span>
-                      {isProGated && (
-                        <span className="rounded bg-amber-500/15 border border-amber-500/30 px-1 py-0.2 font-mono text-[8.5px] font-bold text-amber-500">
-                          PRO
-                        </span>
-                      )}
                     </button>
                   );
                 })}
               </div>
 
-              {/* Botão / Toggle "Usar Cor de Destaque" nos Orbes (Não-Destrutivo) */}
+              {/* Botão / Toggle "Usar Cor de Destaque" nos Orbes / Aurora (Não-Destrutivo) */}
               {(() => {
                 const activeTriadObj =
                   ACCENTS.find((item) =>
@@ -1129,8 +1109,8 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                       </div>
                       <p className="mt-0.5 text-[10px] text-muted-foreground truncate">
                         {useAccentInOrbs
-                          ? `Ativado — Orbes seguem a tríade ${activeTriadObj.label}`
-                          : "Desativado — Mantém as 7 cores originais dos Orbes"}
+                          ? `Ativado — Seguindo a tríade ${activeTriadObj.label}`
+                          : "Desativado — Mantém a paleta original do estilo ativo"}
                       </p>
                     </div>
 
@@ -1159,8 +1139,10 @@ export function PerfilEContaCentral({ initialSection }: PerfilEContaCentralProps
                 );
               })()}
 
-              <p className="text-[10px] text-muted-foreground">
-                Massas radiais autônomas vivas em transição cromática pelo espaço profundo
+              <p className="text-[10px] text-muted-foreground" data-testid="aurora-style-description">
+                {auroraStyle === "fluido"
+                  ? "Campos de luz em fusão líquida contínua (Shader GLSL Domain Warping)"
+                  : "Massas radiais autônomas vivas em transição cromática pelo espaço profundo"}
               </p>
             </div>
 

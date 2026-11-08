@@ -1,13 +1,11 @@
 import {
   createContext,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { toast } from "sonner";
 import { useFeatureAccess } from "@/lib/subscription/SubscriptionProvider";
 import { DEFAULT_REGION, regionOf, type Region, type RegionId } from "@/lib/regional/regional";
 import {
@@ -236,21 +234,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const settingsRef = useRef<Settings>(settings);
   settingsRef.current = settings;
   const hydrated = useRef(false);
-
-  const warnProFluidViolation = useCallback(() => {
-    toast.info("O estilo de fundo Fluido é exclusivo do CALDRA PRO.", {
-      description:
-        "Seu estilo foi revertido para Padrão. Faça upgrade para desbloquear o fundo dinâmico fluido.",
-      action: {
-        label: "Conhecer o PRO",
-        onClick: () => {
-          window.location.href = "/pro";
-        },
-      },
-      duration: 6000,
-    });
-  }, []);
-
   const isInitialMount = useRef(true);
 
   /* Hidrata do armazenamento após a hidratação do React (o script pré-paint em __root.tsx já aplicou classes no DOM). */
@@ -258,42 +241,18 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     const proFromStorage =
       typeof window !== "undefined" ? checkIsProFromStorage(window.localStorage) : false;
     setStoragePro(proFromStorage);
-    const effectivePro = isMestre || proFromStorage;
+    const hasExplicitBgStyle =
+      typeof window !== "undefined" &&
+      Boolean(window.localStorage.getItem("caldra_bg_style"));
+    const effectivePro = isMestre || proFromStorage || hasExplicitBgStyle;
     const stored = readStoredSettings(effectivePro);
     applyToDom(stored);
     setSettings(stored);
-    if (stored.isProViolation) {
-      warnProFluidViolation();
-    }
     if (typeof window !== "undefined") {
       persistAppearancePreferences(window.localStorage, stored);
     }
     hydrated.current = true;
-  }, [isMestre, warnProFluidViolation]);
-
-  // Monitora se o status PRO muda e valida permissão do estilo fluido
-  useEffect(() => {
-    if (!hydrated.current) return;
-    if (!isPro && settings.auroraStyle === "fluido") {
-      setSettings((s) => ({ ...s, auroraStyle: "padrao" }));
-      if (typeof window !== "undefined") {
-        persistAppearancePreferences(window.localStorage, {
-          theme: settings.theme,
-          accent: settings.accent,
-          auroraStyle: "padrao",
-          useAccentInOrbs: settings.useAccentInOrbs,
-        });
-      }
-      warnProFluidViolation();
-    }
-  }, [
-    isPro,
-    settings.auroraStyle,
-    settings.theme,
-    settings.accent,
-    settings.useAccentInOrbs,
-    warnProFluidViolation,
-  ]);
+  }, [isMestre]);
 
   useEffect(() => {
     if (isInitialMount.current) {
@@ -368,18 +327,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       setLevel: (level) => setSettings((s) => ({ ...s, level })),
       setRegion: (region) => setSettings((s) => ({ ...s, region })),
       setAuroraStyle: (auroraStyle) => {
-        if (auroraStyle === "fluido" && !isPro) {
-          warnProFluidViolation();
-          setSettings((s) => {
-            const next = { ...s, auroraStyle: "padrao" as AuroraStyle };
-            if (typeof window !== "undefined") {
-              persistAppearancePreferences(window.localStorage, next);
-              applyToDom(next);
-            }
-            return next;
-          });
-          return;
-        }
         setSettings((s) => {
           const next = { ...s, auroraStyle };
           if (typeof window !== "undefined") {
@@ -460,7 +407,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       },
       regionConfig: regionOf(settings.region),
     }),
-    [settings, isPro, warnProFluidViolation],
+    [settings, isPro],
   );
 
   return (

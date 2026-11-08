@@ -816,7 +816,9 @@ export const AuroraBackground = React.memo(function AuroraBackground({
     }
   }, [auroraStyle]);
 
-  const isAuroraVisible = active && auroraStyle !== "padrao";
+  /* O motor das 7 massas radiais autônomas permanece 100% intocado para COSMOS RADIAL ("suave").
+     Quando AURORA LÍQUIDA ("fluido") está ativa, o shader WebGL (<AuroraLiquidShader />) assume a cena. */
+  const isAuroraVisible = active && auroraStyle === "suave";
   const [pausedAfterFade, setPausedAfterFade] = useState(!isAuroraVisible);
 
   useEffect(() => {
