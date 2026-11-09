@@ -6862,7 +6862,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               activeDirect3DTool !== "array_3d"
             ) {
               setActiveDirect3DTool(
-                hitBody.extrudeHeightMm <= sheetThickness + 0.5
+                hitBody.extrudeHeightMm <= thickness + 0.5
                   ? "extrude_3d"
                   : "offset_face_3d",
               );
@@ -12918,6 +12918,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             entities={entities}
             selectedIds={selectionSet}
             view={view}
+            onSetView={setView}
             width={canvasSize.w}
             height={canvasSize.h}
             activeMode={activeMode}

@@ -72,6 +72,7 @@ import {
   HOLE_METRIC_SPECS_3D,
   applyDirectAlignFlush3DToEntities,
   applyDirectExtrudeToEntities,
+  applyDirectFaceExtrude3DToEntities,
   applyDirectFilletOrChamfer3DToEntities,
   applyDirectHole3DToEntities,
   applyDirectMirror3DToEntities,
@@ -86,6 +87,7 @@ import {
   generateTechnicalDrawingViews2DFrom3D,
   project3DSelectionTo2DSketch,
   projectPoint3DToCanvasViewMm,
+  resolveShellOpenCapsFromSelection3D,
   type ActiveParametricNumpadSession,
   type BooleanMode3D,
   type DirectBody3D,
@@ -98,6 +100,7 @@ import {
   type NumpadTargetParameter,
   type ParametricNumpadKind,
   type SelectionScope3D,
+  type ShellOpenCap3D,
   type SubElementSelectionState3D,
   type Vec3Mm,
 } from "@/lib/lab2d/cadDirectModeling3D";
@@ -113,11 +116,17 @@ import {
 } from "@/lib/lab2d/chamfer3DRotationCompass";
 import {
   computeSmartGrilleArray3D,
+  computeSmartMiterFrame3D,
   detectInternalSpan3D,
   generateSmartGrilleArrayEntities3D,
+  generateSmartMiterFrameEntities3D,
   getBodyIntervalAlongAxis,
   type SmartArrayAxis3D,
   type SmartArrayDivisionMode3D,
+  type SmartArrayPanelTab3D,
+  type SmartFrameJointMode3D,
+  type SmartFrameMeasureRef3D,
+  type SmartFramePlane3D,
 } from "@/lib/lab2d/chamfer3DSmartArray";
 import { useExponentialHold } from "@/lib/lab2d/useExponentialHold";
 import { cn } from "@/lib/utils";
@@ -129,6 +138,7 @@ export interface Chamfer3DGizmoAndLoftOverlayProps {
   selection?: string[];
   selectedIds?: Set<string>;
   view: { tx: number; ty: number; k: number };
+  onSetView?: (nextView: { tx: number; ty: number; k: number }) => void;
   width?: number;
   height?: number;
   isIsometric?: boolean;
@@ -226,6 +236,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   selection: selectionProp,
   selectedIds,
   view,
+  onSetView,
   width = 800,
   height = 600,
   isTilted3D: isTilted3DProp,
@@ -407,12 +418,36 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   const [csvCopiedFeedback, setCsvCopiedFeedback] = useState<boolean>(false);
   const [textCopiedFeedback, setTextCopiedFeedback] = useState<boolean>(false);
 
-  // Estado do Array 3D Inteligente / Grade para Portões e Serralheria
+  // Estado do Array 3D Inteligente / Grade para Portões e Serralheria + Quadro 45°
+  const [smartArrayPanelTab, setSmartArrayPanelTab] = useState<SmartArrayPanelTab3D>("grille_span");
   const [smartArrayAxis, setSmartArrayAxis] = useState<SmartArrayAxis3D>("x");
   const [smartArrayMode, setSmartArrayMode] = useState<SmartArrayDivisionMode3D>("by_count");
   const [smartArrayCount, setSmartArrayCount] = useState<number>(5);
   const [smartArrayMaxGapMm, setSmartArrayMaxGapMm] = useState<number>(110);
   const [smartArrayManualSpanMm, setSmartArrayManualSpanMm] = useState<number | null>(null);
+
+  // Estado do Gerador de Quadro em 45° (Esquadria Fechada)
+  const [smartFrameMeasureRef, setSmartFrameMeasureRef] = useState<SmartFrameMeasureRef3D>("outer");
+  const [smartFrameWidthMm, setSmartFrameWidthMm] = useState<number>(1000);
+  const [smartFrameHeightMm, setSmartFrameHeightMm] = useState<number>(1000);
+  const [smartFramePlane, setSmartFramePlane] = useState<SmartFramePlane3D>("xy");
+  const [smartFrameJointMode, setSmartFrameJointMode] = useState<SmartFrameJointMode3D>("miter_45");
+  const [smartFrameInnerDivisions, setSmartFrameInnerDivisions] = useState<number>(0);
+
+  // Popover 2x2 de Operação Booleana ao lado da seta de Extrusão / Face Normal
+  const [extrudeBooleanPopoverOpen, setExtrudeBooleanPopoverOpen] = useState<boolean>(false);
+
+  // Sincroniza modo Fillet / Chamfer quando a ferramenta direta muda
+  useEffect(() => {
+    if (directTool === "fillet_3d") {
+      setFilletOrChamferMode("fillet");
+      setEdgeActionMode("fillet");
+    } else if (directTool === "chamfer_3d") {
+      setFilletOrChamferMode("chamfer");
+      setEdgeActionMode("chamfer");
+    }
+    setExtrudeBooleanPopoverOpen(false);
+  }, [directTool]);
 
   useEffect(() => {
     const handleToggleCutList = () => {
@@ -643,6 +678,29 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     return null;
   }, [subSel.faceIds, scene.facesById]);
 
+  // Lista completa de faces selecionadas pelo usuário (para Shell 3D na face exata e Offset Face múltiplo)
+  const selectedFacesList = useMemo<DirectFace3D[]>(() => {
+    const list: DirectFace3D[] = [];
+    for (const fId of subSel.faceIds) {
+      const f = scene.facesById.get(fId);
+      if (f) list.push(f);
+    }
+    if (list.length === 0 && primaryFace) {
+      list.push(primaryFace);
+    }
+    return list;
+  }, [subSel.faceIds, scene.facesById, primaryFace]);
+
+  const selectedSideFacesCount = useMemo(
+    () => selectedFacesList.filter((f) => f.role === "side").length,
+    [selectedFacesList],
+  );
+
+  const resolvedShellOpenCaps = useMemo<ShellOpenCap3D[]>(
+    () => resolveShellOpenCapsFromSelection3D(selectedFacesList, shellOpenCapsMode),
+    [selectedFacesList, shellOpenCapsMode],
+  );
+
   const primaryEdge: DirectEdge3D | null = useMemo(() => {
     if (subSel.edgeIds.length > 0) {
       return scene.edgesById.get(subSel.edgeIds[0]!) ?? null;
@@ -682,15 +740,22 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     for (const eId of subSel.edgeIds) {
       const e = scene.edgesById.get(eId);
       if (!e) continue;
-      const matchV = e.edgeId.match(/:edge_v_(\d+)$/);
-      const matchTop = e.edgeId.match(/:edge_top_(\d+)$/);
-      const matchBot = e.edgeId.match(/:edge_bot_(\d+)$/);
+      const matchV = e.edgeId.match(/(?:_|:)edge_vert(?:ical)?_(\d+)$|(?:_|:)edge_v_(\d+)$/);
+      const matchTop = e.edgeId.match(/(?:_|:)edge_top_(\d+)$/);
+      const matchBot = e.edgeId.match(/(?:_|:)edge_bot_(\d+)$/);
+      const isTopLoop = e.edgeId.endsWith("_edge_top_loop");
+      const isBotLoop = e.edgeId.endsWith("_edge_bot_loop");
       if (matchV) {
-        vertIndices.push(Number(matchV[1]));
+        const idx = Number(matchV[1] ?? matchV[2]);
+        if (Number.isFinite(idx)) vertIndices.push(idx);
       } else if (matchTop) {
         bevelKeys.push(`edge_top_${matchTop[1]}`);
       } else if (matchBot) {
         bevelKeys.push(`edge_bot_${matchBot[1]}`);
+      } else if (isTopLoop) {
+        bevelKeys.push("edge_top_0", "edge_top_1", "edge_top_2", "edge_top_3");
+      } else if (isBotLoop) {
+        bevelKeys.push("edge_bot_0", "edge_bot_1", "edge_bot_2", "edge_bot_3");
       }
     }
 
@@ -967,21 +1032,33 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       }
     }
     const arrowLenPx = 46;
-    const matchV = primaryEdge.edgeId.match(/:edge_v_(\d+)$/);
-    const matchTop = primaryEdge.edgeId.match(/:edge_top_(\d+)$/);
-    const matchBot = primaryEdge.edgeId.match(/:edge_bot_(\d+)$/);
-    const vIdx = matchV ? Number(matchV[1]) : -1;
-    const bevelKey = matchTop ? `edge_top_${matchTop[1]}` : matchBot ? `edge_bot_${matchBot[1]}` : null;
+    const matchV = primaryEdge.edgeId.match(/(?:_|:)edge_vert(?:ical)?_(\d+)$|(?:_|:)edge_v_(\d+)$/);
+    const matchTop = primaryEdge.edgeId.match(/(?:_|:)edge_top_(\d+)$/);
+    const matchBot = primaryEdge.edgeId.match(/(?:_|:)edge_bot_(\d+)$/);
+    const isTopLoop = primaryEdge.edgeId.endsWith("_edge_top_loop");
+    const isBotLoop = primaryEdge.edgeId.endsWith("_edge_bot_loop");
+    const vIdx = matchV ? Number(matchV[1] ?? matchV[2]) : -1;
+    const bevelKey = matchTop
+      ? `edge_top_${matchTop[1]}`
+      : matchBot
+        ? `edge_bot_${matchBot[1]}`
+        : isTopLoop
+          ? "edge_top_0"
+          : isBotLoop
+            ? "edge_bot_0"
+            : null;
     const currentFilletVal =
       vIdx >= 0 && primaryBody?.cornerFilletsMm?.[vIdx] !== undefined
         ? primaryBody.cornerFilletsMm[vIdx]!
-        : (primaryBody?.edgeFilletRadiusMm || 10);
+        : bevelKey && primaryBody?.vertexBevelsMm?.[bevelKey] !== undefined
+          ? primaryBody.vertexBevelsMm[bevelKey]!
+          : (primaryBody?.edgeFilletRadiusMm || 0);
     const currentChamferVal =
       bevelKey && primaryBody?.vertexBevelsMm?.[bevelKey] !== undefined
         ? primaryBody.vertexBevelsMm[bevelKey]!
         : vIdx >= 0 && primaryBody?.cornerChamfersMm?.[vIdx] !== undefined
           ? primaryBody.cornerChamfersMm[vIdx]!
-          : (primaryBody?.edgeChamferDistMm || 10);
+          : (primaryBody?.edgeChamferDistMm || 0);
 
     return {
       origin: originScreen,
@@ -990,7 +1067,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       oppTip: { x: originScreen.x - ux * (arrowLenPx * 0.7), y: originScreen.y - uy * (arrowLenPx * 0.7) },
       ux,
       uy,
-      pixelsPerMm: Math.max(0.15, 30 / 10),
+      pixelsPerMm: Math.max(0.35, 30 / 10),
       edge: primaryEdge,
       currentFilletVal,
       currentChamferVal,
@@ -1107,7 +1184,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   5,
                   Math.min(
                     150,
-                    Math.min(primaryBody?.widthMm || 200, primaryBody?.heightMm || 200) * 0.45,
+                    Math.min(primaryBody?.deltaX || 200, primaryBody?.deltaY || 200) * 0.45,
                   ),
                 ),
               ),
@@ -1186,15 +1263,43 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     : "moveX");
 
     if (param === "extrudeHeight") {
-      onCommitEntities(
-        (prev) => applyDirectExtrudeToEntities(prev, resolvedIds, parsed, booleanMode),
-        resolvedIds,
-      );
+      if (
+        booleanMode === "new_body" &&
+        selectionKind3D === "face" &&
+        primaryFace &&
+        (primaryFace.role === "top" || primaryFace.role === "miter")
+      ) {
+        let nextActiveIds = resolvedIds;
+        onCommitEntities((prev) => {
+          const res = applyDirectFaceExtrude3DToEntities(
+            prev,
+            resolvedIds,
+            parsed,
+            "new_body",
+          );
+          nextActiveIds = res.activeIds;
+          return res.updatedEntities;
+        }, nextActiveIds);
+        setSubSel((prev) => ({
+          ...prev,
+          bodyIds: nextActiveIds.map((id) => `body_${id}`),
+          faceIds: nextActiveIds.map((id) => `body_${id}_face_top`),
+        }));
+      } else {
+        onCommitEntities(
+          (prev) => applyDirectExtrudeToEntities(prev, resolvedIds, parsed, booleanMode),
+          resolvedIds,
+        );
+      }
     } else if (param === "shellWallThickness") {
-      const caps: ("top" | "bottom")[] =
-        shellOpenCapsMode === "both_ends" ? ["top", "bottom"] : ["top"];
       onCommitEntities(
-        (prev) => applyDirectShell3DToEntities(prev, resolvedIds, parsed, caps),
+        (prev) =>
+          applyDirectShell3DToEntities(
+            prev,
+            resolvedIds,
+            parsed,
+            resolvedShellOpenCaps,
+          ),
         resolvedIds,
       );
     } else if (param === "filletRadius") {
@@ -1238,6 +1343,14 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       ) {
         const refRole = lastCompletedDrag.faceRole ?? "top";
         onCommitEntities(() => {
+          if (refRole === "inner_side") {
+            return applyDirectOffsetFace3DToEntities(
+              lastCompletedDrag.startEntities,
+              lastCompletedDrag.targetIds,
+              "inner_cavity",
+              Math.abs(parsed),
+            );
+          }
           if (refRole === "bottom") {
             return applyDirectOffsetFace3DToEntities(
               lastCompletedDrag.startEntities,
@@ -1247,12 +1360,30 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             );
           }
           if (refRole === "top" || refRole === "miter") {
+            if (booleanMode === "new_body") {
+              const res = applyDirectFaceExtrude3DToEntities(
+                lastCompletedDrag.startEntities,
+                lastCompletedDrag.targetIds,
+                parsed,
+                "new_body",
+                lastCompletedDrag.copyIdMap,
+              );
+              return res.updatedEntities;
+            }
             const nextH = Math.max(1, lastCompletedDrag.initialValue + parsed);
             return applyDirectExtrudeToEntities(
               lastCompletedDrag.startEntities,
               lastCompletedDrag.targetIds,
               nextH,
               booleanMode,
+            );
+          }
+          if (selectedSideFacesCount >= 2 || offsetFaceTarget === "sides") {
+            return applyDirectOffsetFace3DToEntities(
+              lastCompletedDrag.startEntities,
+              lastCompletedDrag.targetIds,
+              "sides",
+              parsed,
             );
           }
           if (lastCompletedDrag.faceNormal) {
@@ -1287,7 +1418,18 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             : null,
         );
       } else if (selectionKind3D === "face" && primaryFace) {
-        if (primaryFace.role === "bottom") {
+        if (primaryFace.role === "inner_side") {
+          onCommitEntities(
+            (prev) =>
+              applyDirectOffsetFace3DToEntities(
+                prev,
+                resolvedIds,
+                "inner_cavity",
+                Math.abs(parsed),
+              ),
+            resolvedIds,
+          );
+        } else if (primaryFace.role === "bottom") {
           onCommitEntities(
             (prev) => applyDirectOffsetFace3DToEntities(prev, resolvedIds, "bottom", parsed),
             resolvedIds,
@@ -1295,6 +1437,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         } else if (primaryFace.role === "top" || primaryFace.role === "miter") {
           onCommitEntities(
             (prev) => applyDirectOffsetFace3DToEntities(prev, resolvedIds, "top", parsed),
+            resolvedIds,
+          );
+        } else if (selectedSideFacesCount >= 2 || offsetFaceTarget === "sides") {
+          onCommitEntities(
+            (prev) => applyDirectOffsetFace3DToEntities(prev, resolvedIds, "sides", parsed),
             resolvedIds,
           );
         } else {
@@ -1319,7 +1466,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           subTarget === "neg_x" ||
           subTarget === "pos_y" ||
           subTarget === "neg_y" ||
-          subTarget === "side_normal"
+          subTarget === "side_normal" ||
+          subTarget === "inner_cavity"
             ? subTarget
             : offsetFaceTarget;
         onCommitEntities(
@@ -1462,6 +1610,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     selectedBevelKeys,
     booleanMode,
     shellOpenCapsMode,
+    resolvedShellOpenCaps,
+    selectedSideFacesCount,
     offsetFaceTarget,
     miterEndTarget,
     miterAxis,
@@ -1550,6 +1700,142 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
   const smartArrayMinusHold = useExponentialHold((mult) => handleSmartArrayStep(-1, mult));
   const smartArrayPlusHold = useExponentialHold((mult) => handleSmartArrayStep(1, mult));
+
+  // Cálculo em tempo real do Gerador de Quadro em 45° (Esquadria Fechada)
+  const smartFrameProfileCrossMm = useMemo(() => {
+    if (!smartArraySourceBody) return 50;
+    const w =
+      smartArraySourceBody.deltaX ||
+      smartArraySourceBody.bbox3D.maxX - smartArraySourceBody.bbox3D.minX ||
+      50;
+    const h =
+      smartArraySourceBody.deltaY ||
+      smartArraySourceBody.bbox3D.maxY - smartArraySourceBody.bbox3D.minY ||
+      50;
+    return Math.max(10, Math.round(Math.min(w, h) * 100) / 100);
+  }, [smartArraySourceBody]);
+
+  const smartMiterFrameCalc = useMemo(
+    () =>
+      computeSmartMiterFrame3D({
+        measureRef: smartFrameMeasureRef,
+        inputWidthMm: smartFrameWidthMm,
+        inputHeightMm: smartFrameHeightMm,
+        profileCrossSectionMm: smartFrameProfileCrossMm,
+        plane: smartFramePlane,
+        jointMode: smartFrameJointMode,
+        innerDivisionsCount: smartFrameInnerDivisions,
+        origin3D: smartArraySourceBody?.pivot3D ?? { x: 0, y: 0, z: 0 },
+      }),
+    [
+      smartFrameMeasureRef,
+      smartFrameWidthMm,
+      smartFrameHeightMm,
+      smartFrameProfileCrossMm,
+      smartFramePlane,
+      smartFrameJointMode,
+      smartFrameInnerDivisions,
+      smartArraySourceBody,
+    ],
+  );
+
+  const smartFrameWMinusHold = useExponentialHold((mult) =>
+    setSmartFrameWidthMm((prev) => Math.max(100, Math.min(12000, Math.round(prev - 10 * mult)))),
+  );
+  const smartFrameWPlusHold = useExponentialHold((mult) =>
+    setSmartFrameWidthMm((prev) => Math.max(100, Math.min(12000, Math.round(prev + 10 * mult)))),
+  );
+  const smartFrameHMinusHold = useExponentialHold((mult) =>
+    setSmartFrameHeightMm((prev) => Math.max(100, Math.min(12000, Math.round(prev - 10 * mult)))),
+  );
+  const smartFrameHPlusHold = useExponentialHold((mult) =>
+    setSmartFrameHeightMm((prev) => Math.max(100, Math.min(12000, Math.round(prev + 10 * mult)))),
+  );
+
+  // Auto-Enquadramento Inteligente à Esquerda da Tela quando o usuário altera medidas do Array 3D / Quadro 45°
+  useEffect(() => {
+    if (directTool !== "array_3d" || !onSetView) return;
+    const pts3D: Vec3Mm[] = [];
+    if (smartArrayPanelTab === "miter_frame") {
+      for (const m of smartMiterFrameCalc.members ?? []) {
+        pts3D.push(
+          { x: m.minX, y: m.minY, z: m.elevationZ },
+          { x: m.maxX, y: m.maxY, z: m.elevationZ + m.extrudeHeightMm },
+          { x: m.minX, y: m.maxY, z: m.elevationZ },
+          { x: m.maxX, y: m.minY, z: m.elevationZ + m.extrudeHeightMm },
+        );
+      }
+    } else if (smartArraySourceBody) {
+      const bb = smartArraySourceBody.bbox3D;
+      const halfTube = (smartArrayCalc.tubeWidthMm || 30) * 0.5;
+      pts3D.push(
+        { x: bb.minX, y: bb.minY, z: bb.minZ },
+        { x: bb.maxX, y: bb.maxY, z: bb.maxZ },
+      );
+      for (const c of smartArrayCalc.centerCoordsMm ?? []) {
+        if (smartArrayAxis === "x") {
+          pts3D.push(
+            { x: c - halfTube, y: bb.minY, z: bb.minZ },
+            { x: c + halfTube, y: bb.maxY, z: bb.maxZ },
+          );
+        } else if (smartArrayAxis === "y") {
+          pts3D.push(
+            { x: bb.minX, y: c - halfTube, z: bb.minZ },
+            { x: bb.maxX, y: c + halfTube, z: bb.maxZ },
+          );
+        } else {
+          pts3D.push(
+            { x: bb.minX, y: bb.minY, z: c - halfTube },
+            { x: bb.maxX, y: bb.maxY, z: c + halfTube },
+          );
+        }
+      }
+    }
+    if (pts3D.length < 2) return;
+
+    let minProjX = Infinity;
+    let maxProjX = -Infinity;
+    let minProjY = Infinity;
+    let maxProjY = -Infinity;
+    for (const p of pts3D) {
+      const pm = projectPoint3DToCanvasViewMm(p, orbitProjection);
+      if (pm.x < minProjX) minProjX = pm.x;
+      if (pm.x > maxProjX) maxProjX = pm.x;
+      if (pm.y < minProjY) minProjY = pm.y;
+      if (pm.y > maxProjY) maxProjY = pm.y;
+    }
+
+    const spanX = Math.max(120, maxProjX - minProjX);
+    const spanY = Math.max(120, maxProjY - minProjY);
+    const usableLeftW = Math.max(220, width - 320);
+    const usableH = Math.max(220, height - 160);
+    const targetK = Math.max(
+      0.12,
+      Math.min(2.2, Math.min((usableLeftW * 0.72) / spanX, (usableH * 0.72) / spanY)),
+    );
+    const centerProjX = (minProjX + maxProjX) * 0.5;
+    const centerProjY = (minProjY + maxProjY) * 0.5;
+    const leftAreaCenterX = Math.max(160, (width - 304) * 0.48);
+    const leftAreaCenterY = height * 0.52;
+
+    onSetView({
+      k: Number(targetK.toFixed(3)),
+      tx: Math.round(leftAreaCenterX - centerProjX * targetK),
+      ty: Math.round(leftAreaCenterY - centerProjY * targetK),
+    });
+  }, [
+    directTool,
+    smartArrayPanelTab,
+    smartFrameWidthMm,
+    smartFrameHeightMm,
+    smartFrameMeasureRef,
+    smartFramePlane,
+    smartFrameInnerDivisions,
+    smartArrayCount,
+    smartArrayMaxGapMm,
+    effectiveSmartSpanMm,
+    smartArrayAxis,
+  ]);
 
   const handleNumpadKey = useCallback((key: string) => {
     triggerHaptic("tap");
@@ -2012,6 +2298,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     selectedVerticalEdgeIndices,
     selectedBevelKeys,
     selectionKind3D,
+    directTool,
+    resolvedShellOpenCaps,
+    selectedSideFacesCount,
+    offsetFaceTarget,
   });
 
   latestDragContextRef.current = {
@@ -2041,6 +2331,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     selectedVerticalEdgeIndices,
     selectedBevelKeys,
     selectionKind3D,
+    directTool,
+    resolvedShellOpenCaps,
+    selectedSideFacesCount,
+    offsetFaceTarget,
   };
 
   const handleAxisPointerDown = (
@@ -2068,14 +2362,16 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
     const initVal =
       axis === "extrude" || axis === "face_normal"
-        ? (primaryBody?.extrudeHeightMm ?? 500)
+        ? directTool === "shell_3d"
+          ? (primaryBody?.shellWallThicknessMm ?? primaryBody?.shellThicknessMm ?? 3)
+          : (primaryBody?.extrudeHeightMm ?? 500)
         : axis === "vertex_bevel"
           ? (vertexBevelGizmo?.currentBevelMm ?? 10)
           : axis === "edge_diagonal"
             ? edgeActionMode === "fillet"
-              ? (edgeDiagonalGizmo?.currentFilletVal ?? primaryBody?.edgeFilletRadiusMm ?? 10)
+              ? (edgeDiagonalGizmo?.currentFilletVal ?? primaryBody?.edgeFilletRadiusMm ?? 0)
               : edgeActionMode === "chamfer"
-                ? (edgeDiagonalGizmo?.currentChamferVal ?? primaryBody?.edgeChamferDistMm ?? 10)
+                ? (edgeDiagonalGizmo?.currentChamferVal ?? primaryBody?.edgeChamferDistMm ?? 0)
                 : 0
             : axis === "miter"
               ? miterEndTarget === "bottom"
@@ -2484,17 +2780,51 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         setDragDeltaMm(currentDeltaMm);
 
         if (session.axis === "extrude") {
-          const nextH = Math.max(1, session.initialValue + currentDeltaMm);
-          const nextEntities = applyDirectExtrudeToEntities(
-            session.startEntities,
-            session.targetIds,
-            nextH,
-            ctx.booleanMode,
-          );
-          applyLivePreview(nextEntities, session.targetIds);
+          if (ctx.booleanMode === "new_body") {
+            const res = applyDirectFaceExtrude3DToEntities(
+              session.startEntities,
+              session.targetIds,
+              Math.max(1, Math.abs(currentDeltaMm)),
+              "new_body",
+              session.copyIdMap,
+            );
+            session.activeResultIds = res.activeIds;
+            applyLivePreview(res.updatedEntities, res.activeIds);
+          } else {
+            const nextH = Math.max(1, session.initialValue + currentDeltaMm);
+            const nextEntities = applyDirectExtrudeToEntities(
+              session.startEntities,
+              session.targetIds,
+              nextH,
+              ctx.booleanMode,
+            );
+            applyLivePreview(nextEntities, session.targetIds);
+          }
         } else if (session.axis === "face_normal") {
           const refFace = session.startFace ?? ctx.primaryFace;
-          if (refFace && refFace.role === "bottom") {
+          if (ctx.directTool === "shell_3d") {
+            const nextWall = Math.max(
+              0.5,
+              Math.min(80, Math.round((session.initialValue + Math.abs(currentDeltaMm) * 0.25) * 100) / 100),
+            );
+            const nextEntities = applyDirectShell3DToEntities(
+              session.startEntities,
+              session.targetIds,
+              nextWall,
+              ctx.resolvedShellOpenCaps,
+            );
+            applyLivePreview(nextEntities, session.targetIds);
+          } else if (refFace && refFace.role === "inner_side") {
+            // Arraste nas faces internas do furo/cavidade do tubo -> fecha o furo até cicatrizar (heal)
+            const inwardMm = Math.max(0, Math.abs(currentDeltaMm));
+            const nextEntities = applyDirectOffsetFace3DToEntities(
+              session.startEntities,
+              session.targetIds,
+              "inner_cavity",
+              inwardMm,
+            );
+            applyLivePreview(nextEntities, session.targetIds);
+          } else if (refFace && refFace.role === "bottom") {
             const nextEntities = applyDirectOffsetFace3DToEntities(
               session.startEntities,
               session.targetIds,
@@ -2503,12 +2833,33 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             );
             applyLivePreview(nextEntities, session.targetIds);
           } else if (refFace && (refFace.role === "top" || refFace.role === "miter")) {
-            const nextH = Math.max(1, session.initialValue + currentDeltaMm);
-            const nextEntities = applyDirectExtrudeToEntities(
+            if (ctx.booleanMode === "new_body" && currentDeltaMm > 0) {
+              const res = applyDirectFaceExtrude3DToEntities(
+                session.startEntities,
+                session.targetIds,
+                currentDeltaMm,
+                "new_body",
+                session.copyIdMap,
+              );
+              session.activeResultIds = res.activeIds;
+              applyLivePreview(res.updatedEntities, res.activeIds);
+            } else {
+              const nextH = Math.max(1, session.initialValue + currentDeltaMm);
+              const nextEntities = applyDirectExtrudeToEntities(
+                session.startEntities,
+                session.targetIds,
+                nextH,
+                ctx.booleanMode,
+              );
+              applyLivePreview(nextEntities, session.targetIds);
+            }
+          } else if (ctx.selectedSideFacesCount >= 2 || ctx.offsetFaceTarget === "sides") {
+            // Quando 2+ faces laterais externas estão selecionadas (ou modo 4 Laterais), expande todas as 4 simultaneamente (Sapata)
+            const nextEntities = applyDirectOffsetFace3DToEntities(
               session.startEntities,
               session.targetIds,
-              nextH,
-              ctx.booleanMode,
+              "sides",
+              currentDeltaMm,
             );
             applyLivePreview(nextEntities, session.targetIds);
           } else if (refFace) {
@@ -2536,8 +2887,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             Math.min(
               150,
               Math.min(
-                refBody?.widthMm || 200,
-                refBody?.heightMm || 200,
+                refBody?.deltaX || 200,
+                refBody?.deltaY || 200,
                 refBody?.extrudeHeightMm || 200,
               ) * 0.45,
             ),
@@ -2567,31 +2918,33 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             );
             applyLivePreview(nextEntities, session.targetIds);
           } else {
-            const autoMode =
-              session.initialValue <= 0.5 && currentDeltaMm < 0
+            const activeFilletChamferMode: "fillet" | "chamfer" =
+              ctx.directTool === "chamfer_3d" || ctx.edgeActionMode === "chamfer"
                 ? "chamfer"
-                : ctx.filletOrChamferMode;
+                : ctx.directTool === "fillet_3d" || ctx.edgeActionMode === "fillet"
+                  ? "fillet"
+                  : ctx.filletOrChamferMode;
             const refBody = session.startBody ?? ctx.primaryBody;
             const maxCornerR = Math.max(
               5,
               Math.min(
                 150,
-                Math.min(refBody?.widthMm || 200, refBody?.heightMm || 200) * 0.45,
+                Math.min(
+                  refBody?.deltaX || 200,
+                  refBody?.deltaY || 200,
+                  refBody?.extrudeHeightMm || 200,
+                ) * 0.45,
               ),
             );
-            const nextR = Math.min(
-              maxCornerR,
-              Math.max(
-                0,
-                session.initialValue <= 0.5 && currentDeltaMm < 0
-                  ? Math.abs(currentDeltaMm)
-                  : session.initialValue + currentDeltaMm,
-              ),
-            );
+            const rawTargetVal =
+              session.initialValue <= 0.5
+                ? Math.abs(currentDeltaMm)
+                : session.initialValue + currentDeltaMm;
+            const nextR = Math.min(maxCornerR, Math.max(0, Math.round(rawTargetVal * 10) / 10));
             const nextEntities = applyDirectFilletOrChamfer3DToEntities(
               session.startEntities,
               session.targetIds,
-              autoMode,
+              activeFilletChamferMode,
               nextR,
               session.targetEdgeIndices,
               session.targetBevelKeys,
@@ -3694,15 +4047,20 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
               <button
                 type="button"
+                data-testid="chamfer-3d-shell-mode-tube"
                 onClick={() => {
                   setShellOpenCapsMode("both_ends");
+                  const nextCaps = resolveShellOpenCapsFromSelection3D(
+                    selectedFacesList,
+                    "both_ends",
+                  );
                   onCommitEntities?.(
                     (prev) =>
                       applyDirectShell3DToEntities(
                         prev,
                         activeTargetEntityIds,
                         primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75,
-                        ["top", "bottom"],
+                        nextCaps,
                       ),
                     activeTargetEntityIds,
                   );
@@ -3713,15 +4071,20 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               </button>
               <button
                 type="button"
+                data-testid="chamfer-3d-shell-mode-box"
                 onClick={() => {
                   setShellOpenCapsMode("top_only");
+                  const nextCaps = resolveShellOpenCapsFromSelection3D(
+                    selectedFacesList,
+                    "top_only",
+                  );
                   onCommitEntities?.(
                     (prev) =>
                       applyDirectShell3DToEntities(
                         prev,
                         activeTargetEntityIds,
                         primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75,
-                        ["top"],
+                        nextCaps,
                       ),
                     activeTargetEntityIds,
                   );
@@ -3734,12 +4097,17 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 <button
                   key={wVal}
                   type="button"
+                  data-testid={`chamfer-3d-shell-thickness-${wVal}`}
                   onClick={() => {
                     triggerHaptic("action");
-                    const caps: ("top" | "bottom")[] =
-                      shellOpenCapsMode === "both_ends" ? ["top", "bottom"] : ["top"];
                     onCommitEntities?.(
-                      (prev) => applyDirectShell3DToEntities(prev, activeTargetEntityIds, wVal, caps),
+                      (prev) =>
+                        applyDirectShell3DToEntities(
+                          prev,
+                          activeTargetEntityIds,
+                          wVal,
+                          resolvedShellOpenCaps,
+                        ),
                       activeTargetEntityIds,
                     );
                   }}
@@ -3805,17 +4173,24 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 <button
                   key={dVal}
                   type="button"
+                  data-testid={`chamfer-3d-offset-preset-${dVal}`}
                   onClick={() => {
                     triggerHaptic("action");
+                    const targetMode =
+                      selectionKind3D === "face" && primaryFace?.role === "inner_side"
+                        ? "inner_cavity"
+                        : selectedSideFacesCount >= 2 || offsetFaceTarget === "sides"
+                          ? "sides"
+                          : selectionKind3D === "face" && primaryFace?.role === "side"
+                            ? "side_normal"
+                            : offsetFaceTarget;
                     onCommitEntities?.(
                       (prev) =>
                         applyDirectOffsetFace3DToEntities(
                           prev,
                           activeTargetEntityIds,
-                          selectionKind3D === "face" && primaryFace?.role === "side"
-                            ? "side_normal"
-                            : offsetFaceTarget,
-                          dVal,
+                          targetMode,
+                          targetMode === "inner_cavity" ? Math.abs(dVal) : dVal,
                           primaryFace?.normal ?? null,
                         ),
                       activeTargetEntityIds,
@@ -5258,6 +5633,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 onClick={(ev) => {
                   ev.stopPropagation();
                   const isSideFace = faceNormalGizmo.face.role === "side";
+                  const isInnerCavityFace = faceNormalGizmo.face.role === "inner_side";
                   if (directTool === "shell_3d") {
                     openFloatingNumpad(
                       "THICKNESS",
@@ -5267,28 +5643,42 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       "shellWallThickness",
                       faceNormalGizmo.face.entityId,
                     );
+                  } else if (isInnerCavityFace) {
+                    openFloatingNumpad(
+                      "OFFSET",
+                      "FECHAR FURO INTERNO",
+                      "mm",
+                      lastCompletedDrag?.axis === "face_normal"
+                        ? Math.abs(lastCompletedDrag.deltaMm)
+                        : 25,
+                      "offsetFaceDistance",
+                      faceNormalGizmo.face.entityId,
+                      "inner_cavity",
+                    );
                   } else if (isSideFace || directTool === "offset_face_3d") {
                     openFloatingNumpad(
                       "OFFSET",
-                      "DESLOCAR FACE",
+                      selectedSideFacesCount >= 2 ? "EXPANDIR 4 LATERAIS (SAPATA)" : "DESLOCAR FACE",
                       "mm",
                       lastCompletedDrag?.axis === "face_normal"
                         ? lastCompletedDrag.deltaMm
                         : 25,
                       "offsetFaceDistance",
                       faceNormalGizmo.face.entityId,
-                      isSideFace
-                        ? "side_normal"
-                        : faceNormalGizmo.face.role === "bottom"
-                          ? "bottom"
-                          : "top",
+                      selectedSideFacesCount >= 2
+                        ? "sides"
+                        : isSideFace
+                          ? "side_normal"
+                          : faceNormalGizmo.face.role === "bottom"
+                            ? "bottom"
+                            : "top",
                     );
                   } else {
                     openFloatingNumpad(
                       "EXTRUSION",
-                      "ALTURA EXTRUDE",
+                      booleanMode === "new_body" ? "EXTRUDE (NEW BODY)" : "ALTURA EXTRUDE",
                       "mm",
-                      primaryBody?.extrudeHeightMm ?? 500,
+                      booleanMode === "new_body" ? 6 : (primaryBody?.extrudeHeightMm ?? 500),
                       "extrudeHeight",
                       faceNormalGizmo.face.entityId,
                     );
@@ -5320,6 +5710,57 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     : lastCompletedDrag?.axis === "face_normal"
                       ? `${lastCompletedDrag.deltaMm >= 0 ? `+${lastCompletedDrag.deltaMm}` : lastCompletedDrag.deltaMm} mm ✎`
                       : "0.00 mm"}
+                </text>
+              </g>
+
+              {/* Ícone Circular de Operação Booleana ao lado da Seta de Extrusão / Face Normal */}
+              <g
+                data-testid="chamfer-3d-extrude-boolean-trigger"
+                transform={`translate(${faceNormalGizmo.posTip.x + faceNormalGizmo.ux * 18 + 58}, ${faceNormalGizmo.posTip.y + faceNormalGizmo.uy * 18})`}
+                className="cursor-pointer pointer-events-auto"
+                onPointerDown={(ev) => {
+                  ev.stopPropagation();
+                  ev.preventDefault();
+                }}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  triggerHaptic("selection");
+                  setExtrudeBooleanPopoverOpen((prev) => !prev);
+                }}
+              >
+                <circle
+                  cx={0}
+                  cy={0}
+                  r={11}
+                  fill={
+                    booleanMode === "new_body"
+                      ? "#0284C7"
+                      : booleanMode === "union"
+                        ? "#059669"
+                        : booleanMode === "subtract"
+                          ? "#E11D48"
+                          : "#7C3AED"
+                  }
+                  stroke="#FFFFFF"
+                  strokeWidth={1.5}
+                />
+                <text
+                  x={0}
+                  y={0.5}
+                  fill="#FFFFFF"
+                  fontSize="8.5"
+                  fontWeight="bold"
+                  fontFamily="monospace"
+                  textAnchor="middle"
+                  dominantBaseline="central"
+                >
+                  {booleanMode === "new_body"
+                    ? "NB"
+                    : booleanMode === "union"
+                      ? "U+"
+                      : booleanMode === "subtract"
+                        ? "S−"
+                        : "I∩"}
                 </text>
               </g>
             </g>
@@ -7639,7 +8080,56 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       )}
 
       {/* =====================================================================
-          6B. PAINEL LATERAL COMPACTO: ARRAY 3D INTELIGENTE / GRADE (PORTÕES & GRADES)
+          6A-POP. POPOVER 2x2 DE OPERAÇÃO BOOLEANA AO LADO DA SETA DE EXTRUSÃO
+          ===================================================================== */}
+      {is3DEnvironment && faceNormalGizmo && extrudeBooleanPopoverOpen && (
+        <div
+          data-testid="chamfer-3d-extrude-boolean-popover"
+          style={{
+            left: `${Math.max(16, Math.min(width - 210, faceNormalGizmo.posTip.x + faceNormalGizmo.ux * 18 + 30))}px`,
+            top: `${Math.max(64, Math.min(height - 130, faceNormalGizmo.posTip.y + faceNormalGizmo.uy * 18 + 16))}px`,
+            backgroundColor: isDark ? "rgba(15, 23, 42, 0.96)" : "rgba(255, 255, 255, 0.98)",
+            borderColor: isDark ? "rgba(56, 189, 248, 0.5)" : "rgba(2, 132, 199, 0.45)",
+          }}
+          onPointerDown={(ev) => ev.stopPropagation()}
+          onClick={(ev) => ev.stopPropagation()}
+          className="pointer-events-auto absolute z-50 grid w-48 grid-cols-2 gap-1 rounded-xl border p-1.5 shadow-2xl backdrop-blur-xl font-mono text-[10px]"
+        >
+          {(
+            [
+              { id: "union" as const, label: "Union", sub: "Fundir" },
+              { id: "new_body" as const, label: "New Body", sub: "Novo Corpo" },
+              { id: "subtract" as const, label: "Subtract", sub: "Recortar" },
+              { id: "intersect" as const, label: "Intersect", sub: "Interseção" },
+            ] as const
+          ).map((bOpt) => (
+            <button
+              key={bOpt.id}
+              type="button"
+              data-testid={`chamfer-3d-boolean-popover-${bOpt.id}`}
+              onClick={() => {
+                triggerHaptic("selection");
+                setBooleanMode(bOpt.id);
+                setExtrudeBooleanPopoverOpen(false);
+              }}
+              className={cn(
+                "flex flex-col items-start rounded-lg border px-2 py-1.5 text-left transition-all cursor-pointer",
+                booleanMode === bOpt.id
+                  ? "border-sky-400 bg-sky-600 text-white shadow-sm"
+                  : isDark
+                    ? "border-slate-700/80 bg-slate-800/85 text-slate-200 hover:border-sky-500/50"
+                    : "border-slate-200 bg-slate-100 text-slate-800 hover:border-sky-500",
+              )}
+            >
+              <span className="font-extrabold leading-tight">{bOpt.label}</span>
+              <span className="text-[8.5px] opacity-80">{bOpt.sub}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* =====================================================================
+          6B. PAINEL LATERAL COMPACTO: ARRAY 3D INTELIGENTE / GRADE & QUADRO 45°
           ===================================================================== */}
       {is3DEnvironment && directTool === "array_3d" && (
         <div
@@ -7647,32 +8137,36 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           style={{
             backgroundColor: isDark ? "rgba(15, 23, 42, 0.96)" : "rgba(255, 255, 255, 0.98)",
             borderColor: isDark ? "rgba(16, 185, 129, 0.55)" : "rgba(5, 150, 105, 0.45)",
-            top: "58px",
+            top: "64px",
+            bottom: "16px",
             right: "14px",
-            width: "min(308px, calc(100% - 28px))",
+            width: "min(290px, calc(100% - 28px))",
+            maxHeight: "calc(100% - 80px)",
           }}
           onPointerDown={(ev) => ev.stopPropagation()}
           onClick={(ev) => ev.stopPropagation()}
-          className="pointer-events-auto absolute z-45 flex flex-col gap-2 rounded-2xl border p-3 shadow-2xl backdrop-blur-xl font-mono text-[10.5px]"
+          className="pointer-events-auto absolute z-45 flex flex-col overflow-hidden rounded-2xl border p-2.5 shadow-2xl backdrop-blur-xl font-mono text-[10.5px]"
         >
-          {/* Cabeçalho */}
-          <div className="flex items-center justify-between border-b border-slate-500/25 pb-1.5">
+          {/* Cabeçalho Fixo */}
+          <div className="shrink-0 flex items-center justify-between border-b border-slate-500/25 pb-1.5 mb-1.5">
             <div className="flex items-center gap-1.5">
               <span className="rounded-md bg-emerald-600 px-2 py-0.5 text-[9.5px] font-extrabold text-white uppercase">
-                ARRAY 3D / GRADE
+                ARRAY 3D / ESQUADRIA
               </span>
-              <span
-                className={cn(
-                  "text-[9.5px] font-bold",
-                  smartSpanDetection.isAutoDetected ? "text-emerald-400" : "text-amber-400",
-                )}
-              >
-                {selectedFacesForSpan.length >= 2
-                  ? "● 2 Faces"
-                  : smartSpanDetection.isAutoDetected
-                    ? "● Auto-Vão"
-                    : "○ Vão Livre"}
-              </span>
+              {smartArrayPanelTab === "grille_span" && (
+                <span
+                  className={cn(
+                    "text-[9px] font-bold",
+                    smartSpanDetection.isAutoDetected ? "text-emerald-400" : "text-amber-400",
+                  )}
+                >
+                  {selectedFacesForSpan.length >= 2
+                    ? "● 2 Faces"
+                    : smartSpanDetection.isAutoDetected
+                      ? "● Auto-Vão"
+                      : "○ Vão Livre"}
+                </span>
+              )}
             </div>
             <button
               type="button"
@@ -7683,249 +8177,615 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             </button>
           </div>
 
-          {/* Seletor de Eixo (X, Y, Z) + Redetectar Vão */}
-          <div className="flex items-center justify-between gap-1">
-            <span className={cn("text-[9.5px] font-bold", isDark ? "text-slate-300" : "text-slate-700")}>
-              Direção do Vão:
-            </span>
-            <div className="flex items-center gap-1">
-              {(["x", "y", "z"] as SmartArrayAxis3D[]).map((ax) => (
-                <button
-                  key={ax}
-                  type="button"
-                  data-testid={`chamfer-3d-smart-array-axis-${ax}`}
-                  onClick={() => {
-                    triggerHaptic("selection");
-                    setSmartArrayAxis(ax);
-                    setSmartArrayManualSpanMm(null);
-                  }}
+          {/* Seletor de Modo Superior: [ ⊞ Grade / Vão ] | [ ⬚ Quadro 45° ] */}
+          <div className="shrink-0 grid grid-cols-2 gap-1 mb-2">
+            <button
+              type="button"
+              data-testid="chamfer-3d-array-tab-grille"
+              onClick={() => {
+                triggerHaptic("selection");
+                setSmartArrayPanelTab("grille_span");
+              }}
+              className={cn(
+                "rounded-xl border px-2 py-1.5 text-center text-[9.5px] font-extrabold transition-colors cursor-pointer",
+                smartArrayPanelTab === "grille_span"
+                  ? "border-emerald-400 bg-emerald-600 text-white"
+                  : isDark
+                    ? "border-slate-700 bg-slate-800/80 text-slate-300"
+                    : "border-slate-300 bg-slate-100 text-slate-700",
+              )}
+            >
+              ⊞ Grade / Vão
+            </button>
+            <button
+              type="button"
+              data-testid="chamfer-3d-array-tab-miter-frame"
+              onClick={() => {
+                triggerHaptic("selection");
+                setSmartArrayPanelTab("miter_frame");
+              }}
+              className={cn(
+                "rounded-xl border px-2 py-1.5 text-center text-[9.5px] font-extrabold transition-colors cursor-pointer",
+                smartArrayPanelTab === "miter_frame"
+                  ? "border-emerald-400 bg-emerald-600 text-white"
+                  : isDark
+                    ? "border-slate-700 bg-slate-800/80 text-slate-300"
+                    : "border-slate-300 bg-slate-100 text-slate-700",
+              )}
+            >
+              ⬚ Quadro 45°
+            </button>
+          </div>
+
+          {/* Corpo Central Rolável */}
+          <div className="flex-1 min-h-0 overflow-y-auto pr-0.5 flex flex-col gap-2">
+            {smartArrayPanelTab === "grille_span" ? (
+              <>
+                {/* Seletor de Eixo (X, Y, Z) */}
+                <div className="flex items-center justify-between gap-1">
+                  <span className={cn("text-[9.5px] font-bold", isDark ? "text-slate-300" : "text-slate-700")}>
+                    Direção do Vão:
+                  </span>
+                  <div className="flex items-center gap-1">
+                    {(["x", "y", "z"] as SmartArrayAxis3D[]).map((ax) => (
+                      <button
+                        key={ax}
+                        type="button"
+                        data-testid={`chamfer-3d-smart-array-axis-${ax}`}
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          setSmartArrayAxis(ax);
+                          setSmartArrayManualSpanMm(null);
+                        }}
+                        className={cn(
+                          "rounded-lg border px-2 py-0.5 text-[9.5px] font-bold uppercase cursor-pointer transition-colors",
+                          smartArrayAxis === ax
+                            ? "border-emerald-400 bg-emerald-600 text-white"
+                            : isDark
+                              ? "border-slate-700 bg-slate-800/90 text-slate-300 hover:border-emerald-500/50"
+                              : "border-slate-300 bg-slate-100 text-slate-700 hover:border-emerald-500",
+                        )}
+                      >
+                        Eixo {ax.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Campo de Vão Livre Detectado */}
+                <div className="flex items-center justify-between gap-1.5 rounded-xl border border-slate-500/25 bg-slate-500/10 px-2.5 py-1.5">
+                  <div className="flex flex-col">
+                    <span className="text-[9px] uppercase text-slate-400">Vão Total Detectado</span>
+                    <span className={cn("text-[11px] font-extrabold", isDark ? "text-white" : "text-slate-900")}>
+                      {smartArrayCalc.spanMm} mm
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      data-testid="chamfer-3d-smart-array-span-input"
+                      aria-label="Vão livre total em milímetros"
+                      value={effectiveSmartSpanMm}
+                      onChange={(ev) => {
+                        const val = Number(ev.target.value);
+                        if (Number.isFinite(val) && val > 0) {
+                          setSmartArrayManualSpanMm(val);
+                        }
+                      }}
+                      className={cn(
+                        "w-20 rounded-lg border px-2 py-1 text-right font-mono text-[10.5px] font-bold outline-none",
+                        isDark
+                          ? "border-slate-700 bg-slate-900 text-emerald-300"
+                          : "border-slate-300 bg-white text-emerald-700",
+                      )}
+                    />
+                    {smartArrayManualSpanMm !== null && (
+                      <button
+                        type="button"
+                        onClick={() => setSmartArrayManualSpanMm(null)}
+                        title="Restaurar detecção automática do vão entre colunas"
+                        className="rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-1 text-[9px] font-bold text-emerald-400 cursor-pointer"
+                      >
+                        Auto
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* 2 Modos de Divisão de Serralheria */}
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    data-testid="chamfer-3d-smart-array-mode-count"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSmartArrayMode("by_count");
+                    }}
+                    className={cn(
+                      "rounded-xl border px-2 py-1.5 text-center text-[9.5px] font-bold transition-colors cursor-pointer",
+                      smartArrayMode === "by_count"
+                        ? "border-emerald-400 bg-emerald-600 text-white"
+                        : isDark
+                          ? "border-slate-700 bg-slate-800/80 text-slate-300"
+                          : "border-slate-300 bg-slate-100 text-slate-700",
+                    )}
+                  >
+                    Modo A: N Tubos
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="chamfer-3d-smart-array-mode-gap"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setSmartArrayMode("by_max_gap");
+                    }}
+                    className={cn(
+                      "rounded-xl border px-2 py-1.5 text-center text-[9.5px] font-bold transition-colors cursor-pointer",
+                      smartArrayMode === "by_max_gap"
+                        ? "border-emerald-400 bg-emerald-600 text-white"
+                        : isDark
+                          ? "border-slate-700 bg-slate-800/80 text-slate-300"
+                          : "border-slate-300 bg-slate-100 text-slate-700",
+                    )}
+                  >
+                    Modo B: Vão Máx (mm)
+                  </button>
+                </div>
+
+                {/* Controle Interativo (- / +) */}
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-500/25 bg-slate-500/10 px-2.5 py-1.5">
+                  <span className={cn("text-[9.5px] font-bold", isDark ? "text-slate-200" : "text-slate-700")}>
+                    {smartArrayMode === "by_count" ? "Qtd. Tubos (N):" : "Vão Máx. Livre:"}
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      data-testid="chamfer-3d-smart-array-minus-btn"
+                      {...smartArrayMinusHold}
+                      className={cn(
+                        "flex size-7 items-center justify-center rounded-lg border font-mono text-sm font-extrabold select-none cursor-pointer",
+                        isDark
+                          ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
+                          : "border-slate-300 bg-white text-slate-900 hover:bg-slate-100",
+                      )}
+                    >
+                      −
+                    </button>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      data-testid="chamfer-3d-smart-array-value-input"
+                      aria-label={
+                        smartArrayMode === "by_count"
+                          ? "Quantidade de tubos internos"
+                          : "Vão máximo livre entre tubos em milímetros"
+                      }
+                      value={smartArrayMode === "by_count" ? smartArrayCount : smartArrayMaxGapMm}
+                      onChange={(ev) => {
+                        const v = Number(ev.target.value);
+                        if (!Number.isFinite(v)) return;
+                        if (smartArrayMode === "by_count") {
+                          setSmartArrayCount(Math.max(1, Math.min(80, Math.round(v))));
+                        } else {
+                          setSmartArrayMaxGapMm(Math.max(10, Math.min(1000, Math.round(v))));
+                        }
+                      }}
+                      className={cn(
+                        "w-16 rounded-lg border px-1.5 py-1 text-center font-mono text-[11px] font-extrabold outline-none",
+                        isDark
+                          ? "border-slate-700 bg-slate-900 text-white"
+                          : "border-slate-300 bg-white text-slate-900",
+                      )}
+                    />
+                    <button
+                      type="button"
+                      data-testid="chamfer-3d-smart-array-plus-btn"
+                      {...smartArrayPlusHold}
+                      className={cn(
+                        "flex size-7 items-center justify-center rounded-lg border font-mono text-sm font-extrabold select-none cursor-pointer",
+                        isDark
+                          ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
+                          : "border-slate-300 bg-white text-slate-900 hover:bg-slate-100",
+                      )}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* Telemetria Exata de Serralheria ao Vivo */}
+                <div
+                  data-testid="chamfer-3d-smart-array-telemetry"
                   className={cn(
-                    "rounded-lg border px-2.5 py-0.5 text-[10px] font-bold uppercase cursor-pointer transition-colors",
-                    smartArrayAxis === ax
-                      ? "border-emerald-400 bg-emerald-600 text-white"
-                      : isDark
-                        ? "border-slate-700 bg-slate-800/90 text-slate-300 hover:border-emerald-500/50"
-                        : "border-slate-300 bg-slate-100 text-slate-700 hover:border-emerald-500",
+                    "flex flex-col gap-1 rounded-xl border p-2 text-[9.5px]",
+                    isDark
+                      ? "border-emerald-500/35 bg-slate-900/90 text-slate-200"
+                      : "border-emerald-500/35 bg-emerald-50/70 text-slate-800",
                   )}
                 >
-                  Eixo {ax.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Vão Total Detectado:</span>
+                    <span className="font-bold">{smartArrayCalc.spanMm} mm</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Largura do Perfil (d):</span>
+                    <span className="font-bold">{smartArrayCalc.tubeWidthMm} mm</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Quantidade:</span>
+                    <span className="font-bold text-emerald-400">{smartArrayCalc.count} tubos</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Vão Livre (Luz entre tubos):</span>
+                    <span
+                      className={cn(
+                        "font-extrabold",
+                        smartArrayCalc.valid ? "text-cyan-400" : "text-rose-400",
+                      )}
+                    >
+                      {smartArrayCalc.clearGapMm} mm
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Passo (Centro a Centro):</span>
+                    <span className="font-bold text-amber-400">
+                      {smartArrayCalc.pitchCenterToCenterMm} mm
+                    </span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                {/* 3 Modos de Referência de Medida do Quadro 45° */}
+                <div className="flex flex-col gap-1">
+                  <span className={cn("text-[9px] font-bold uppercase", isDark ? "text-slate-400" : "text-slate-600")}>
+                    Referência da Medida (L × A):
+                  </span>
+                  <div className="grid grid-cols-3 gap-1">
+                    {(
+                      [
+                        { id: "inner" as const, label: "Interna", sub: "Vão Livre" },
+                        { id: "mid" as const, label: "Média", sub: "Centro" },
+                        { id: "outer" as const, label: "Externa", sub: "Fora a Fora" },
+                      ] as const
+                    ).map((refOpt) => (
+                      <button
+                        key={refOpt.id}
+                        type="button"
+                        data-testid={`chamfer-3d-frame-ref-${refOpt.id}`}
+                        onClick={() => {
+                          triggerHaptic("selection");
+                          setSmartFrameMeasureRef(refOpt.id);
+                        }}
+                        className={cn(
+                          "flex flex-col items-center rounded-lg border px-1.5 py-1 text-center transition-colors cursor-pointer",
+                          smartFrameMeasureRef === refOpt.id
+                            ? "border-emerald-400 bg-emerald-600 text-white"
+                            : isDark
+                              ? "border-slate-700 bg-slate-800/80 text-slate-300"
+                              : "border-slate-300 bg-slate-100 text-slate-700",
+                        )}
+                      >
+                        <span className="text-[9px] font-extrabold">{refOpt.label}</span>
+                        <span className="text-[7.5px] opacity-80">{refOpt.sub}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-          {/* Campo de Vão Livre Detectado (editável ou auto-detectado entre colunas/faces) */}
-          <div className="flex items-center justify-between gap-1.5 rounded-xl border border-slate-500/25 bg-slate-500/10 px-2.5 py-1.5">
-            <div className="flex flex-col">
-              <span className="text-[9px] uppercase text-slate-400">Vão Total Detectado</span>
-              <span className={cn("text-[11px] font-extrabold", isDark ? "text-white" : "text-slate-900")}>
-                {smartArrayCalc.spanMm} mm
-              </span>
-            </div>
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                inputMode="decimal"
-                data-testid="chamfer-3d-smart-array-span-input"
-                aria-label="Vão livre total em milímetros"
-                value={effectiveSmartSpanMm}
-                onChange={(ev) => {
-                  const val = Number(ev.target.value);
-                  if (Number.isFinite(val) && val > 0) {
-                    setSmartArrayManualSpanMm(val);
-                  }
-                }}
-                className={cn(
-                  "w-20 rounded-lg border px-2 py-1 text-right font-mono text-[10.5px] font-bold outline-none",
-                  isDark
-                    ? "border-slate-700 bg-slate-900 text-emerald-300"
-                    : "border-slate-300 bg-white text-emerald-700",
-                )}
-              />
-              {smartArrayManualSpanMm !== null && (
-                <button
-                  type="button"
-                  onClick={() => setSmartArrayManualSpanMm(null)}
-                  title="Restaurar detecção automática do vão entre colunas"
-                  className="rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-1 text-[9px] font-bold text-emerald-400 cursor-pointer"
+                {/* Largura do Quadro (L) */}
+                <div className="flex items-center justify-between gap-1.5 rounded-xl border border-slate-500/25 bg-slate-500/10 px-2 py-1.5">
+                  <span className={cn("text-[9.5px] font-bold", isDark ? "text-slate-200" : "text-slate-700")}>
+                    Largura (L):
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      {...smartFrameWMinusHold}
+                      className={cn(
+                        "flex size-6 items-center justify-center rounded-md border font-mono text-xs font-extrabold cursor-pointer",
+                        isDark ? "border-slate-700 bg-slate-800 text-white" : "border-slate-300 bg-white text-slate-900",
+                      )}
+                    >
+                      −
+                    </button>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      data-testid="chamfer-3d-frame-width-input"
+                      aria-label="Largura do quadro em milímetros"
+                      value={smartFrameWidthMm}
+                      onChange={(ev) => {
+                        const v = Number(ev.target.value);
+                        if (Number.isFinite(v) && v > 0) setSmartFrameWidthMm(v);
+                      }}
+                      className={cn(
+                        "w-16 rounded-md border px-1.5 py-0.5 text-center font-mono text-[10.5px] font-extrabold outline-none",
+                        isDark ? "border-slate-700 bg-slate-900 text-emerald-300" : "border-slate-300 bg-white text-emerald-700",
+                      )}
+                    />
+                    <button
+                      type="button"
+                      {...smartFrameWPlusHold}
+                      className={cn(
+                        "flex size-6 items-center justify-center rounded-md border font-mono text-xs font-extrabold cursor-pointer",
+                        isDark ? "border-slate-700 bg-slate-800 text-white" : "border-slate-300 bg-white text-slate-900",
+                      )}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* Altura / Comprimento do Quadro (A) */}
+                <div className="flex items-center justify-between gap-1.5 rounded-xl border border-slate-500/25 bg-slate-500/10 px-2 py-1.5">
+                  <span className={cn("text-[9.5px] font-bold", isDark ? "text-slate-200" : "text-slate-700")}>
+                    Altura (A):
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      {...smartFrameHMinusHold}
+                      className={cn(
+                        "flex size-6 items-center justify-center rounded-md border font-mono text-xs font-extrabold cursor-pointer",
+                        isDark ? "border-slate-700 bg-slate-800 text-white" : "border-slate-300 bg-white text-slate-900",
+                      )}
+                    >
+                      −
+                    </button>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      data-testid="chamfer-3d-frame-height-input"
+                      aria-label="Altura do quadro em milímetros"
+                      value={smartFrameHeightMm}
+                      onChange={(ev) => {
+                        const v = Number(ev.target.value);
+                        if (Number.isFinite(v) && v > 0) setSmartFrameHeightMm(v);
+                      }}
+                      className={cn(
+                        "w-16 rounded-md border px-1.5 py-0.5 text-center font-mono text-[10.5px] font-extrabold outline-none",
+                        isDark ? "border-slate-700 bg-slate-900 text-emerald-300" : "border-slate-300 bg-white text-emerald-700",
+                      )}
+                    />
+                    <button
+                      type="button"
+                      {...smartFrameHPlusHold}
+                      className={cn(
+                        "flex size-6 items-center justify-center rounded-md border font-mono text-xs font-extrabold cursor-pointer",
+                        isDark ? "border-slate-700 bg-slate-800 text-white" : "border-slate-300 bg-white text-slate-900",
+                      )}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* Plano do Quadro + Tipo de Junta */}
+                <div className="grid grid-cols-3 gap-1">
+                  {(
+                    [
+                      { id: "xy" as const, label: "XY Deitado" },
+                      { id: "xz" as const, label: "XZ Frontal" },
+                      { id: "yz" as const, label: "YZ Lateral" },
+                    ] as const
+                  ).map((pl) => (
+                    <button
+                      key={pl.id}
+                      type="button"
+                      data-testid={`chamfer-3d-frame-plane-${pl.id}`}
+                      onClick={() => setSmartFramePlane(pl.id)}
+                      className={cn(
+                        "rounded-lg border px-1.5 py-1 text-center text-[9px] font-bold cursor-pointer",
+                        smartFramePlane === pl.id
+                          ? "border-emerald-400 bg-emerald-600 text-white"
+                          : isDark
+                            ? "border-slate-700 bg-slate-800 text-slate-300"
+                            : "border-slate-300 bg-slate-100 text-slate-700",
+                      )}
+                    >
+                      {pl.label}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="grid grid-cols-2 gap-1">
+                  <button
+                    type="button"
+                    data-testid="chamfer-3d-frame-joint-miter45"
+                    onClick={() => setSmartFrameJointMode("miter_45")}
+                    className={cn(
+                      "rounded-lg border px-2 py-1 text-center text-[9px] font-bold cursor-pointer",
+                      smartFrameJointMode === "miter_45"
+                        ? "border-emerald-400 bg-emerald-600 text-white"
+                        : isDark
+                          ? "border-slate-700 bg-slate-800 text-slate-300"
+                          : "border-slate-300 bg-slate-100 text-slate-700",
+                    )}
+                  >
+                    ⬚ Corte 45° (Esquadria)
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="chamfer-3d-frame-joint-butt90"
+                    onClick={() => setSmartFrameJointMode("butt_90")}
+                    className={cn(
+                      "rounded-lg border px-2 py-1 text-center text-[9px] font-bold cursor-pointer",
+                      smartFrameJointMode === "butt_90"
+                        ? "border-emerald-400 bg-emerald-600 text-white"
+                        : isDark
+                          ? "border-slate-700 bg-slate-800 text-slate-300"
+                          : "border-slate-300 bg-slate-100 text-slate-700",
+                    )}
+                  >
+                    ⊞ Topo Reto 90°
+                  </button>
+                </div>
+
+                {/* Divisões Internas Opcionais (Tubos de Grade dentro do Quadro) */}
+                <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-500/25 bg-slate-500/10 px-2 py-1.5">
+                  <span className={cn("text-[9px] font-bold", isDark ? "text-slate-200" : "text-slate-700")}>
+                    Divisões Internas (N):
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      data-testid="chamfer-3d-frame-div-minus"
+                      onClick={() => setSmartFrameInnerDivisions((n) => Math.max(0, n - 1))}
+                      className={cn(
+                        "flex size-6 items-center justify-center rounded-md border font-mono text-xs font-extrabold cursor-pointer",
+                        isDark ? "border-slate-700 bg-slate-800 text-white" : "border-slate-300 bg-white text-slate-900",
+                      )}
+                    >
+                      −
+                    </button>
+                    <span
+                      data-testid="chamfer-3d-frame-div-count"
+                      className="w-8 text-center font-mono text-[10.5px] font-extrabold"
+                    >
+                      {smartFrameInnerDivisions}
+                    </span>
+                    <button
+                      type="button"
+                      data-testid="chamfer-3d-frame-div-plus"
+                      onClick={() => setSmartFrameInnerDivisions((n) => Math.min(40, n + 1))}
+                      className={cn(
+                        "flex size-6 items-center justify-center rounded-md border font-mono text-xs font-extrabold cursor-pointer",
+                        isDark ? "border-slate-700 bg-slate-800 text-white" : "border-slate-300 bg-white text-slate-900",
+                      )}
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+
+                {/* Telemetria Exata do Quadro 45° */}
+                <div
+                  data-testid="chamfer-3d-miter-frame-telemetry"
+                  className={cn(
+                    "flex flex-col gap-0.5 rounded-xl border p-2 text-[9px]",
+                    isDark
+                      ? "border-emerald-500/35 bg-slate-900/90 text-slate-200"
+                      : "border-emerald-500/35 bg-emerald-50/70 text-slate-800",
+                  )}
                 >
-                  Auto
-                </button>
-              )}
-            </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Externa (Fora a Fora):</span>
+                    <span className="font-extrabold text-emerald-400">
+                      {smartMiterFrameCalc.outerWidthMm} × {smartMiterFrameCalc.outerHeightMm} mm
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Interna (Vão Livre):</span>
+                    <span className="font-bold text-cyan-400">
+                      {smartMiterFrameCalc.innerWidthMm} × {smartMiterFrameCalc.innerHeightMm} mm
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Média (Centro a Centro):</span>
+                    <span className="font-bold text-amber-400">
+                      {smartMiterFrameCalc.midWidthMm} × {smartMiterFrameCalc.midHeightMm} mm
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400">Perfil (d) / Peças:</span>
+                    <span className="font-bold">
+                      {smartMiterFrameCalc.profileCrossSectionMm} mm • {smartMiterFrameCalc.members.length} pçs
+                    </span>
+                  </div>
+                  {smartFrameInnerDivisions > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-400">Luz entre tubos:</span>
+                      <span className="font-extrabold text-cyan-400">
+                        {smartMiterFrameCalc.innerClearGapMm} mm
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
           </div>
 
-          {/* 2 Modos de Divisão de Serralheria */}
-          <div className="grid grid-cols-2 gap-1">
+          {/* Rodapé Fixo Sem Corte: Botões [ ✕ Cancelar ] e [ ✓ Confirmar ] Sempre Visíveis */}
+          <div className="shrink-0 mt-2 pt-2 border-t border-slate-500/25 grid grid-cols-2 gap-1.5">
             <button
               type="button"
-              data-testid="chamfer-3d-smart-array-mode-count"
+              data-testid="chamfer-3d-smart-array-cancel-btn"
               onClick={() => {
-                triggerHaptic("selection");
-                setSmartArrayMode("by_count");
+                triggerHaptic("tap");
+                setDirectTool("select_3d");
               }}
               className={cn(
-                "rounded-xl border px-2 py-1.5 text-center text-[9.5px] font-bold transition-colors cursor-pointer",
-                smartArrayMode === "by_count"
-                  ? "border-emerald-400 bg-emerald-600 text-white"
-                  : isDark
-                    ? "border-slate-700 bg-slate-800/80 text-slate-300"
-                    : "border-slate-300 bg-slate-100 text-slate-700",
+                "rounded-xl border py-1.5 font-mono text-[10px] font-bold uppercase transition-colors cursor-pointer",
+                isDark
+                  ? "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"
+                  : "border-slate-300 bg-slate-100 text-slate-700 hover:bg-slate-200",
               )}
             >
-              Modo A: N Tubos
+              ✕ Cancelar
             </button>
             <button
               type="button"
-              data-testid="chamfer-3d-smart-array-mode-gap"
+              data-testid="chamfer-3d-smart-array-confirm-btn"
+              disabled={
+                smartArrayPanelTab === "grille_span"
+                  ? !smartArraySourceBody || !smartArrayCalc.valid
+                  : !smartMiterFrameCalc.valid
+              }
               onClick={() => {
-                triggerHaptic("selection");
-                setSmartArrayMode("by_max_gap");
-              }}
-              className={cn(
-                "rounded-xl border px-2 py-1.5 text-center text-[9.5px] font-bold transition-colors cursor-pointer",
-                smartArrayMode === "by_max_gap"
-                  ? "border-emerald-400 bg-emerald-600 text-white"
-                  : isDark
-                    ? "border-slate-700 bg-slate-800/80 text-slate-300"
-                    : "border-slate-300 bg-slate-100 text-slate-700",
-              )}
-            >
-              Modo B: Vão Máx (mm)
-            </button>
-          </div>
-
-          {/* Controle Interativo com Aceleração Exponencial (- / +) */}
-          <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-500/25 bg-slate-500/10 px-2.5 py-1.5">
-            <span className={cn("text-[9.5px] font-bold", isDark ? "text-slate-200" : "text-slate-700")}>
-              {smartArrayMode === "by_count" ? "Qtd. Tubos (N):" : "Vão Máx. Livre:"}
-            </span>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                data-testid="chamfer-3d-smart-array-minus-btn"
-                {...smartArrayMinusHold}
-                className={cn(
-                  "flex size-7 items-center justify-center rounded-lg border font-mono text-sm font-extrabold select-none cursor-pointer",
-                  isDark
-                    ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
-                    : "border-slate-300 bg-white text-slate-900 hover:bg-slate-100",
-                )}
-              >
-                −
-              </button>
-              <input
-                type="number"
-                inputMode="numeric"
-                data-testid="chamfer-3d-smart-array-value-input"
-                aria-label={
-                  smartArrayMode === "by_count"
-                    ? "Quantidade de tubos internos"
-                    : "Vão máximo livre entre tubos em milímetros"
+                triggerHaptic("action");
+                if (smartArrayPanelTab === "miter_frame") {
+                  if (!smartMiterFrameCalc.valid) return;
+                  let createdIds: string[] = [];
+                  onCommitEntities?.(
+                    (prev) => {
+                      const res = generateSmartMiterFrameEntities3D(
+                        prev,
+                        smartArraySourceBody?.entityId ?? null,
+                        smartArraySourceBody,
+                        smartMiterFrameCalc,
+                      );
+                      createdIds = res.createdIds;
+                      return res.updatedEntities;
+                    },
+                    createdIds.length > 0
+                      ? createdIds
+                      : smartArraySourceBody
+                        ? [smartArraySourceBody.entityId]
+                        : [],
+                  );
+                } else {
+                  if (!smartArraySourceBody || !smartArrayCalc.valid) return;
+                  let createdIds: string[] = [];
+                  onCommitEntities?.((prev) => {
+                    const res = generateSmartGrilleArrayEntities3D(
+                      prev,
+                      smartArraySourceBody.entityId,
+                      smartArraySourceBody,
+                      smartArrayCalc,
+                    );
+                    createdIds = res.createdIds;
+                    return res.updatedEntities;
+                  }, createdIds.length > 0 ? createdIds : [smartArraySourceBody.entityId]);
                 }
-                value={smartArrayMode === "by_count" ? smartArrayCount : smartArrayMaxGapMm}
-                onChange={(ev) => {
-                  const v = Number(ev.target.value);
-                  if (!Number.isFinite(v)) return;
-                  if (smartArrayMode === "by_count") {
-                    setSmartArrayCount(Math.max(1, Math.min(80, Math.round(v))));
-                  } else {
-                    setSmartArrayMaxGapMm(Math.max(10, Math.min(1000, Math.round(v))));
-                  }
-                }}
-                className={cn(
-                  "w-16 rounded-lg border px-1.5 py-1 text-center font-mono text-[11px] font-extrabold outline-none",
-                  isDark
-                    ? "border-slate-700 bg-slate-900 text-white"
-                    : "border-slate-300 bg-white text-slate-900",
-                )}
-              />
-              <button
-                type="button"
-                data-testid="chamfer-3d-smart-array-plus-btn"
-                {...smartArrayPlusHold}
-                className={cn(
-                  "flex size-7 items-center justify-center rounded-lg border font-mono text-sm font-extrabold select-none cursor-pointer",
-                  isDark
-                    ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
-                    : "border-slate-300 bg-white text-slate-900 hover:bg-slate-100",
-                )}
-              >
-                +
-              </button>
-            </div>
+              }}
+              className={cn(
+                "rounded-xl py-1.5 font-mono text-[10px] font-extrabold uppercase tracking-wider transition-all shadow-md",
+                (
+                  smartArrayPanelTab === "grille_span"
+                    ? Boolean(smartArraySourceBody && smartArrayCalc.valid)
+                    : smartMiterFrameCalc.valid
+                )
+                  ? "bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
+                  : "bg-slate-600/30 text-slate-400 cursor-not-allowed",
+              )}
+            >
+              {smartArrayPanelTab === "miter_frame"
+                ? `✓ Confirmar (${smartMiterFrameCalc.members.length} pçs)`
+                : `✓ Confirmar (${smartArrayCalc.count})`}
+            </button>
           </div>
-
-          {/* Telemetria Exata de Serralheria ao Vivo */}
-          <div
-            data-testid="chamfer-3d-smart-array-telemetry"
-            className={cn(
-              "flex flex-col gap-1 rounded-xl border p-2 text-[9.5px]",
-              isDark
-                ? "border-emerald-500/35 bg-slate-900/90 text-slate-200"
-                : "border-emerald-500/35 bg-emerald-50/70 text-slate-800",
-            )}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">Vão Total Detectado:</span>
-              <span className="font-bold">{smartArrayCalc.spanMm} mm</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">Largura do Perfil (d):</span>
-              <span className="font-bold">{smartArrayCalc.tubeWidthMm} mm</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">Quantidade:</span>
-              <span className="font-bold text-emerald-400">{smartArrayCalc.count} tubos</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">Vão Livre (Luz entre tubos):</span>
-              <span
-                className={cn(
-                  "font-extrabold",
-                  smartArrayCalc.valid ? "text-cyan-400" : "text-rose-400",
-                )}
-              >
-                {smartArrayCalc.clearGapMm} mm
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-slate-400">Passo (Centro a Centro):</span>
-              <span className="font-bold text-amber-400">
-                {smartArrayCalc.pitchCenterToCenterMm} mm
-              </span>
-            </div>
-          </div>
-
-          {/* Botão Confirmar Array 3D */}
-          <button
-            type="button"
-            data-testid="chamfer-3d-smart-array-confirm-btn"
-            disabled={!smartArraySourceBody || !smartArrayCalc.valid}
-            onClick={() => {
-              if (!smartArraySourceBody || !smartArrayCalc.valid) return;
-              triggerHaptic("action");
-              let createdIds: string[] = [];
-              onCommitEntities?.((prev) => {
-                const res = generateSmartGrilleArrayEntities3D(
-                  prev,
-                  smartArraySourceBody.entityId,
-                  smartArraySourceBody,
-                  smartArrayCalc,
-                );
-                createdIds = res.createdIds;
-                return res.updatedEntities;
-              }, createdIds.length > 0 ? createdIds : [smartArraySourceBody.entityId]);
-            }}
-            className={cn(
-              "w-full rounded-xl py-2 font-mono text-[10.5px] font-extrabold uppercase tracking-wider transition-all shadow-md",
-              smartArraySourceBody && smartArrayCalc.valid
-                ? "bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
-                : "bg-slate-600/30 text-slate-400 cursor-not-allowed",
-            )}
-          >
-            ✓ Confirmar ({smartArrayCalc.count} Tubos)
-          </button>
         </div>
       )}
 

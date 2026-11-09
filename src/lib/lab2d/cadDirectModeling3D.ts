@@ -215,6 +215,8 @@ export interface DirectSnapPivotCandidate3D {
   point3D: Vec3Mm;
 }
 
+export type ShellOpenCap3D = "top" | "bottom" | "front" | "back" | "left" | "right";
+
 export interface DirectBody3D {
   bodyId: string;
   entityId: string;
@@ -231,7 +233,7 @@ export interface DirectBody3D {
   shellWallThicknessMm: number;
   shellThicknessMm: number;
   sheetThicknessMm: number;
-  shellOpenCaps: ("top" | "bottom")[];
+  shellOpenCaps: ShellOpenCap3D[];
   offsetFaceTopMm: number;
   offsetFaceBottomMm: number;
   offsetFaceSidesMm: number;
@@ -492,7 +494,11 @@ export function getEntityDirect3DParams(entity: Entity, defaultThicknessMm = 20)
 
   // 1. EXTRUDE HEIGHT (Altura / Comprimento de Extrusão 3D em mm) — INDEPENDENTE de espessura de casca/chapa
   // Suporta Curvas de Perfil 3D puras no plano Z (`is3DProfileCurve: true`, `extrudeHeightMm: 0`) para fluxos como LOFT 3D
-  const rawExtrude = p.extrudeHeightMm ?? p.extrudeHeight ?? entity.extrudeHeight;
+  const rawExtrude =
+    p.extrudeHeightMm ??
+    p.extrudeHeight ??
+    entity.extrudeHeight ??
+    (entity as { extrudeHeightMm?: number }).extrudeHeightMm;
   const is3DProfileCurve = Boolean(
     p.is3DProfileCurve === true ||
       p.isLoftSection3D === true ||
@@ -518,8 +524,9 @@ export function getEntityDirect3DParams(entity: Entity, defaultThicknessMm = 20)
         : "new_body";
 
   const rawBox = boxOf(entity);
-  const rawSpanW = Math.max(1, rawBox.maxX - rawBox.minX);
-  const rawSpanH = Math.max(1, rawBox.maxY - rawBox.minY);
+  const entAny = entity as { w?: number; h?: number };
+  const rawSpanW = Math.max(1, rawBox.maxX - rawBox.minX || Number(entAny.w) || 0);
+  const rawSpanH = Math.max(1, rawBox.maxY - rawBox.minY || Number(entAny.h) || 0);
   const maxGeometricCornerMm = Math.max(5, Math.min(250, Math.min(rawSpanW, rawSpanH) * 0.46));
 
   const rawFilletVal = Math.max(0, Number(p.edgeFilletRadiusMm) || 0);
@@ -545,8 +552,16 @@ export function getEntityDirect3DParams(entity: Entity, defaultThicknessMm = 20)
       ? rawSheet
       : defaultThicknessMm;
 
-  const shellOpenCaps: ("top" | "bottom")[] = Array.isArray(p.shellOpenCaps)
-    ? (p.shellOpenCaps.filter((x) => x === "top" || x === "bottom") as ("top" | "bottom")[])
+  const VALID_SHELL_CAPS = new Set<ShellOpenCap3D>([
+    "top",
+    "bottom",
+    "front",
+    "back",
+    "left",
+    "right",
+  ]);
+  const shellOpenCaps: ShellOpenCap3D[] = Array.isArray(p.shellOpenCaps)
+    ? (p.shellOpenCaps.filter((x) => VALID_SHELL_CAPS.has(x as ShellOpenCap3D)) as ShellOpenCap3D[])
     : ["top", "bottom"];
 
   const offsetFaceTopMm = Number(p.offsetFaceTopMm) || 0;
@@ -1798,7 +1813,12 @@ export function buildDirectTopology3DScene(
 
     // 4. Determina se o corpo possui Shell (Tubo Estrutural Oco / Metalon ou Caixa Oca)
     //    Com raio interno concêntrico exato: R_int = max(0, R_ext - t)
-    const hasShell = p3d.shellThicknessMm > 0.1;
+    const hasShell = p3d.shellThicknessMm > 0.1 && p3d.shellOpenCaps.length > 0;
+    const hasLateralShellCap =
+      hasShell &&
+      p3d.shellOpenCaps.some(
+        (c) => c === "front" || c === "back" || c === "left" || c === "right",
+      );
     const openTop = hasShell && p3d.shellOpenCaps.includes("top");
     const openBottom = hasShell && p3d.shellOpenCaps.includes("bottom");
 
@@ -1814,7 +1834,7 @@ export function buildDirectTopology3DScene(
       : 0;
 
     const holeLoops2D: Vec2[][] = holes.map((h) => ensureCCW(h.basePoints));
-    if (hasShell) {
+    if (hasShell && !hasLateralShellCap) {
       const rawShellInner2D = offsetPolygon2D(baseWithOffset2D, -effectiveWallT);
       const shellInner2D =
         !outer.isSmoothCircle && (innerFilletRadiusMm > 0.05 || innerChamferDistMm > 0.05)
@@ -2512,8 +2532,8 @@ export function buildDirectTopology3DScene(
           innerArea += triangleArea3D(b0, t0, t1) + triangleArea3D(b0, t1, b1);
         }
 
-        // Se for Furo Cego (Blind Hole), fecha obrigatoriamente o fundo na profundidade z = z1 - d (normal +Z)
-        if (isBlindHole && hBot3D.length >= 3) {
+        // Se for Furo Cego (Blind Hole) OU Caixa Shell com fundo fechado (!openBottom && openTop), fecha o fundo interno (normal +Z)
+        if ((isBlindHole || (isShellCavity && !openBottom && openTop)) && hBot3D.length >= 3) {
           const upNormal = rotateNormal3D({ x: 0, y: 0, z: 1 }, p3d.rotation3D);
           innerArea += appendCapWithHolesToMesh(
             hBot3D,
@@ -2525,11 +2545,38 @@ export function buildDirectTopology3DScene(
             indices,
           );
         }
+        // Se for Caixa Shell com topo fechado e base aberta (!openTop && openBottom), fecha o teto interno (normal -Z)
+        if (isShellCavity && !openTop && openBottom && hTop3D.length >= 3) {
+          const downNormal = rotateNormal3D({ x: 0, y: 0, z: -1 }, p3d.rotation3D);
+          innerArea += appendCapWithHolesToMesh(
+            hTop3D,
+            [],
+            downNormal,
+            false,
+            positions,
+            normals,
+            indices,
+          );
+        }
       }
 
       const countIdx = indices.length - startIdx;
       const meshFaceIndex = globalMeshFaceIdx++;
       faceGroups.push({ faceIndex: meshFaceIndex, start: startIdx, count: countIdx });
+
+      // Para a cavidade do Shell, aponta a normal para o centro do furo no plano XY (+X) para permitir Offset Face interno intuitivo
+      const defaultInnerNormal =
+        hasShell && hIdx === 0
+          ? rotateNormal3D({ x: 1, y: 0, z: 0 }, p3d.rotation3D)
+          : rotateNormal3D({ x: 0, y: 0, z: 1 }, p3d.rotation3D);
+      const innerCentroid =
+        hasShell && hIdx === 0 && hTop3D.length > 0 && hBot3D.length > 0
+          ? {
+              x: (hTop3D[0]!.x + hBot3D[0]!.x) * 0.5,
+              y: (hTop3D[0]!.y + hBot3D[0]!.y) * 0.5,
+              z: (z0 + z1) * 0.5,
+            }
+          : computePolygonCentroid3D(hTop3D);
 
       const innerFace: DirectFace3D = {
         faceId: `${bodyId}_face_inner_${hIdx}`,
@@ -2548,15 +2595,283 @@ export function buildDirectTopology3DScene(
                 : isBlindHole
                   ? `Furo Cego (Blind) #${hIdx + 1}`
                   : `Parede do Furo #${hIdx + 1}`,
-        normal: rotateNormal3D({ x: 0, y: 0, z: 1 }, p3d.rotation3D),
-        centroid: computePolygonCentroid3D(hTop3D),
+        normal: defaultInnerNormal,
+        centroid: innerCentroid,
         areaMm2: innerArea,
-        polygon3D: hTop3D,
+        polygon3D: hTop3D.length >= 2 && hBot3D.length >= 2 ? [hBot3D[0]!, hBot3D[1]!, hTop3D[1]!, hTop3D[0]!] : hTop3D,
       };
       bodyFaces.push(innerFace);
       facesById.set(innerFace.faceId, innerFace);
       facesByMeshIndex.set(meshFaceIndex, innerFace);
+
+      // Se a cavidade do Shell for prismática (ex.: 4 paredes internas de um tubo retangular), registra também as 4 faces internas individuais
+      if (isShellCavity && nh >= 3 && nh <= 12) {
+        for (let sIdx = 0; sIdx < nh; sIdx++) {
+          const next = (sIdx + 1) % nh;
+          const b0 = hBot3D[sIdx]!;
+          const b1 = hBot3D[next]!;
+          const t1 = hTop3D[next]!;
+          const t0 = hTop3D[sIdx]!;
+          const wallNormal = holeFlatNormals[sIdx]!;
+          const wallArea = triangleArea3D(b0, t0, t1) + triangleArea3D(b0, t1, b1);
+          const wallFace: DirectFace3D = {
+            faceId: `${bodyId}_face_inner_wall_${sIdx}`,
+            meshFaceIndex,
+            bodyId,
+            entityId: entId,
+            role: "inner_side",
+            sideIndex: 120 + sIdx,
+            label: `Parede Interna #${sIdx + 1} (Shell)`,
+            normal: wallNormal,
+            centroid: {
+              x: (b0.x + b1.x + t1.x + t0.x) * 0.25,
+              y: (b0.y + b1.y + t1.y + t0.y) * 0.25,
+              z: (b0.z + b1.z + t1.z + t0.z) * 0.25,
+            },
+            areaMm2: wallArea,
+            polygon3D: [b0, b1, t1, t0],
+          };
+          bodyFaces.push(wallFace);
+          facesById.set(wallFace.faceId, wallFace);
+        }
+      }
     });
+
+    // -------------------------------------------------------------------------
+    // CAVIDADE SHELL EM FACES LATERAIS ("front", "back", "left", "right")
+    // Quando o usuário escolhe abrir uma ou mais faces laterais em Caixa (1 Face)
+    // ou Tubo (2 Faces ao longo de X ou Y): constrói as paredes internas e bordas da cavidade!
+    // -------------------------------------------------------------------------
+    if (hasShell && hasLateralShellCap) {
+      const openLeft = p3d.shellOpenCaps.includes("left");
+      const openRight = p3d.shellOpenCaps.includes("right");
+      const openBack = p3d.shellOpenCaps.includes("back");
+      const openFront = p3d.shellOpenCaps.includes("front");
+
+      const ix0 = openLeft ? b2d.minX : b2d.minX + effectiveWallT;
+      const ix1 = openRight ? b2d.maxX : b2d.maxX - effectiveWallT;
+      const iy0 = openBack ? b2d.minY : b2d.minY + effectiveWallT;
+      const iy1 = openFront ? b2d.maxY : b2d.maxY - effectiveWallT;
+      const iz0 = openBottom ? z0 : z0 + effectiveWallT;
+      const iz1 = openTop ? z1 : z1 - effectiveWallT;
+
+      if (ix1 > ix0 + 0.2 && iy1 > iy0 + 0.2 && iz1 > iz0 + 0.2) {
+        const addQuadFaceToMesh = (
+          q0: Vec3Mm,
+          q1: Vec3Mm,
+          q2: Vec3Mm,
+          q3: Vec3Mm,
+          nVec: Vec3Mm,
+          faceIdSuffix: string,
+          label: string,
+          sideIndex: number,
+        ) => {
+          const startIdx = indices.length;
+          const baseV = positions.length / 3;
+          positions.push(
+            q0.x, q0.y, q0.z,
+            q1.x, q1.y, q1.z,
+            q2.x, q2.y, q2.z,
+            q3.x, q3.y, q3.z,
+          );
+          for (let k = 0; k < 4; k++) normals.push(nVec.x, nVec.y, nVec.z);
+          indices.push(baseV, baseV + 1, baseV + 2, baseV, baseV + 2, baseV + 3);
+          const mIdx = globalMeshFaceIdx++;
+          faceGroups.push({ faceIndex: mIdx, start: startIdx, count: 6 });
+          const area = triangleArea3D(q0, q1, q2) + triangleArea3D(q0, q2, q3);
+          const fObj: DirectFace3D = {
+            faceId: `${bodyId}_${faceIdSuffix}`,
+            meshFaceIndex: mIdx,
+            bodyId,
+            entityId: entId,
+            role: "inner_side",
+            sideIndex,
+            label,
+            normal: nVec,
+            centroid: computePolygonCentroid3D([q0, q1, q2, q3]),
+            areaMm2: area,
+            polygon3D: [q0, q1, q2, q3],
+          };
+          bodyFaces.push(fObj);
+          facesById.set(fObj.faceId, fObj);
+          facesByMeshIndex.set(mIdx, fObj);
+
+          edgePolylines.push({
+            edgeIndex: globalMeshEdgeIdx++,
+            vertices: [
+              q0.x, q0.y, q0.z,
+              q1.x, q1.y, q1.z,
+              q2.x, q2.y, q2.z,
+              q3.x, q3.y, q3.z,
+              q0.x, q0.y, q0.z,
+            ],
+            isSeam: false,
+            isTangentEdge: false,
+          });
+        };
+
+        // Piso interno (+Z) se base fechada
+        if (!openBottom) {
+          addQuadFaceToMesh(
+            transformPt(ix0, iy0, iz0),
+            transformPt(ix1, iy0, iz0),
+            transformPt(ix1, iy1, iz0),
+            transformPt(ix0, iy1, iz0),
+            rotateNormal3D({ x: 0, y: 0, z: 1 }, p3d.rotation3D),
+            "face_inner_lat_floor",
+            "Piso Interno da Cavidade (Shell)",
+            140,
+          );
+        }
+        // Teto interno (-Z) se topo fechado
+        if (!openTop) {
+          addQuadFaceToMesh(
+            transformPt(ix0, iy1, iz1),
+            transformPt(ix1, iy1, iz1),
+            transformPt(ix1, iy0, iz1),
+            transformPt(ix0, iy0, iz1),
+            rotateNormal3D({ x: 0, y: 0, z: -1 }, p3d.rotation3D),
+            "face_inner_lat_ceiling",
+            "Teto Interno da Cavidade (Shell)",
+            141,
+          );
+        }
+        // Parede interna Esquerda (normal +X) se esquerda fechada
+        if (!openLeft) {
+          addQuadFaceToMesh(
+            transformPt(ix0, iy0, iz0),
+            transformPt(ix0, iy1, iz0),
+            transformPt(ix0, iy1, iz1),
+            transformPt(ix0, iy0, iz1),
+            rotateNormal3D({ x: 1, y: 0, z: 0 }, p3d.rotation3D),
+            "face_inner_lat_left",
+            "Parede Interna Esquerda (Shell)",
+            142,
+          );
+        }
+        // Parede interna Direita (normal -X) se direita fechada
+        if (!openRight) {
+          addQuadFaceToMesh(
+            transformPt(ix1, iy1, iz0),
+            transformPt(ix1, iy0, iz0),
+            transformPt(ix1, iy0, iz1),
+            transformPt(ix1, iy1, iz1),
+            rotateNormal3D({ x: -1, y: 0, z: 0 }, p3d.rotation3D),
+            "face_inner_lat_right",
+            "Parede Interna Direita (Shell)",
+            143,
+          );
+        }
+        // Parede interna Traseira (normal +Y) se traseira fechada
+        if (!openBack) {
+          addQuadFaceToMesh(
+            transformPt(ix1, iy0, iz0),
+            transformPt(ix0, iy0, iz0),
+            transformPt(ix0, iy0, iz1),
+            transformPt(ix1, iy0, iz1),
+            rotateNormal3D({ x: 0, y: 1, z: 0 }, p3d.rotation3D),
+            "face_inner_lat_back",
+            "Parede Interna Traseira (Shell)",
+            144,
+          );
+        }
+        // Parede interna Frontal (normal -Y) se frontal fechada
+        if (!openFront) {
+          addQuadFaceToMesh(
+            transformPt(ix0, iy1, iz0),
+            transformPt(ix1, iy1, iz0),
+            transformPt(ix1, iy1, iz1),
+            transformPt(ix0, iy1, iz1),
+            rotateNormal3D({ x: 0, y: -1, z: 0 }, p3d.rotation3D),
+            "face_inner_lat_front",
+            "Parede Interna Frontal (Shell)",
+            145,
+          );
+        }
+
+        // Desenha o contorno de abertura em cada face lateral aberta para evidenciar a espessura da casca t
+        const addOpeningRingPolyline = (pts: Vec3Mm[], edgeIdSuffix: string, label: string) => {
+          const verts: number[] = [];
+          for (const p of pts) verts.push(p.x, p.y, p.z);
+          if (pts[0]) verts.push(pts[0].x, pts[0].y, pts[0].z);
+          const mEdgeIdx = globalMeshEdgeIdx++;
+          edgePolylines.push({
+            edgeIndex: mEdgeIdx,
+            vertices: verts,
+            isSeam: false,
+            isTangentEdge: false,
+          });
+          const len = computePolygonPerimeter3D(pts);
+          const eObj: DirectEdge3D = {
+            edgeId: `${bodyId}_${edgeIdSuffix}`,
+            meshEdgeIndex: mEdgeIdx,
+            bodyId,
+            entityId: entId,
+            role: "inner_top",
+            edgeIndex: 0,
+            label,
+            startPt: pts[0]!,
+            endPt: pts[2] ?? pts[0]!,
+            midpoint: pts[0]!,
+            dir: { x: 1, y: 0, z: 0 },
+            lengthMm: len,
+            polyline3D: pts,
+          };
+          bodyEdges.push(eObj);
+          edgesById.set(eObj.edgeId, eObj);
+          edgesByMeshIndex.set(mEdgeIdx, eObj);
+        };
+
+        if (openFront) {
+          addOpeningRingPolyline(
+            [
+              transformPt(ix0, b2d.maxY + 0.08, iz0),
+              transformPt(ix1, b2d.maxY + 0.08, iz0),
+              transformPt(ix1, b2d.maxY + 0.08, iz1),
+              transformPt(ix0, b2d.maxY + 0.08, iz1),
+            ],
+            "edge_inner_open_front",
+            "Borda Interna Frontal (Shell)",
+          );
+        }
+        if (openBack) {
+          addOpeningRingPolyline(
+            [
+              transformPt(ix0, b2d.minY - 0.08, iz0),
+              transformPt(ix1, b2d.minY - 0.08, iz0),
+              transformPt(ix1, b2d.minY - 0.08, iz1),
+              transformPt(ix0, b2d.minY - 0.08, iz1),
+            ],
+            "edge_inner_open_back",
+            "Borda Interna Traseira (Shell)",
+          );
+        }
+        if (openLeft) {
+          addOpeningRingPolyline(
+            [
+              transformPt(b2d.minX - 0.08, iy0, iz0),
+              transformPt(b2d.minX - 0.08, iy1, iz0),
+              transformPt(b2d.minX - 0.08, iy1, iz1),
+              transformPt(b2d.minX - 0.08, iy0, iz1),
+            ],
+            "edge_inner_open_left",
+            "Borda Interna Esquerda (Shell)",
+          );
+        }
+        if (openRight) {
+          addOpeningRingPolyline(
+            [
+              transformPt(b2d.maxX + 0.08, iy0, iz0),
+              transformPt(b2d.maxX + 0.08, iy1, iz0),
+              transformPt(b2d.maxX + 0.08, iy1, iz1),
+              transformPt(b2d.maxX + 0.08, iy0, iz1),
+            ],
+            "edge_inner_open_right",
+            "Borda Interna Direita (Shell)",
+          );
+        }
+      }
+    }
 
     // -------------------------------------------------------------------------
     // ARESTAS TOPOLÓGICAS 3D (QUINAS VIVAS >= 25°, LINHAS DE TANGÊNCIA E PERÍMETROS)
@@ -4241,11 +4556,105 @@ export function applyDirectExtrudeToEntities(
   });
 }
 
+/**
+ * Extrude de Face 3D com suporte ao modo `New Body`:
+ * Quando `booleanMode3D === "new_body"` e o usuário puxa a face de topo/base de um corpo já extrudado,
+ * cria um NOVO corpo 3D independente (`Body3D`) encostado na face selecionada, herdando o perfil e a casca (`Shell`).
+ */
+export function applyDirectFaceExtrude3DToEntities(
+  entities: Entity[],
+  targetIds: string[],
+  deltaHeightMm: number,
+  booleanMode3D: BooleanMode3D = "union",
+  copyIdMap?: Map<string, string>,
+): { updatedEntities: Entity[]; activeIds: string[] } {
+  if (booleanMode3D !== "new_body") {
+    const idSet = new Set(targetIds);
+    const updated = entities.map((e) => {
+      if (!idSet.has(e.id)) return e;
+      const cur = getEntityDirect3DParams(e);
+      const nextH = Math.max(1, Number((cur.extrudeHeightMm + deltaHeightMm).toFixed(2)));
+      return {
+        ...e,
+        extrudeHeight: nextH,
+        params: {
+          ...(e.params ?? {}),
+          extrudeHeight: nextH,
+          extrudeHeightMm: nextH,
+          booleanMode3D,
+        },
+      };
+    });
+    return { updatedEntities: updated, activeIds: targetIds };
+  }
+
+  const extHeight = Math.max(1, Math.abs(Number(deltaHeightMm.toFixed(2))));
+  const createdEntities: Entity[] = [];
+  const activeIds: string[] = [];
+
+  for (const tid of targetIds) {
+    const src = entities.find((e) => e.id === tid);
+    if (!src) continue;
+    const cur = getEntityDirect3DParams(src);
+
+    // Se era apenas uma curva 2D plana (sem altura), apenas extruda o próprio corpo
+    if (cur.is3DProfileCurve || cur.extrudeHeightMm <= 0.5) {
+      activeIds.push(tid);
+      continue;
+    }
+
+    let newId = copyIdMap?.get(tid);
+    if (!newId) {
+      newId = uid();
+      copyIdMap?.set(tid, newId);
+    }
+    const newElevZ =
+      deltaHeightMm >= 0
+        ? Number((cur.elevationZ + cur.extrudeHeightMm).toFixed(2))
+        : Number((cur.elevationZ - extHeight).toFixed(2));
+
+    const cloned: Entity = {
+      ...structuredClone(src),
+      id: newId,
+      elevationZ: newElevZ,
+      extrudeHeight: extHeight,
+      shellWallThickness: cur.shellWallThicknessMm,
+      params: {
+        ...(structuredClone(src.params) ?? {}),
+        isIndependentBody3D: true,
+        booleanMode3D: "new_body",
+        elevationZ: newElevZ,
+        extrudeHeight: extHeight,
+        extrudeHeightMm: extHeight,
+        shellWallThickness: cur.shellWallThicknessMm,
+        shellThicknessMm: cur.shellThicknessMm,
+        shellOpenCaps: [...cur.shellOpenCaps],
+        bodyName: cur.bodyName ? `${cur.bodyName} (Novo Corpo)` : "Novo Corpo Extrudado",
+      },
+    };
+    createdEntities.push(cloned);
+    activeIds.push(newId);
+  }
+
+  if (createdEntities.length === 0) {
+    return {
+      updatedEntities: applyDirectExtrudeToEntities(entities, targetIds, extHeight, booleanMode3D),
+      activeIds: targetIds,
+    };
+  }
+
+  return {
+    updatedEntities: [...entities, ...createdEntities],
+    activeIds,
+  };
+}
+
 export function applyDirectVertexOrEdgeBevel3DToEntities(
   entities: Entity[],
   targetIds: string[],
   bevelKeys: string[],
   bevelDistMm: number,
+  mode: "fillet" | "chamfer" = "chamfer",
 ): Entity[] {
   const clamped = Math.max(0, Number(bevelDistMm.toFixed(2)));
   const idSet = new Set(targetIds);
@@ -4253,11 +4662,17 @@ export function applyDirectVertexOrEdgeBevel3DToEntities(
     if (!idSet.has(e.id)) return e;
     const cur = getEntityDirect3DParams(e);
     const nextBevels: Record<string, number> = { ...cur.vertexBevelsMm };
+    const prevModes =
+      e.params?.vertexBevelModes && typeof e.params.vertexBevelModes === "object"
+        ? { ...(e.params.vertexBevelModes as Record<string, "fillet" | "chamfer">) }
+        : {};
     for (const k of bevelKeys) {
       if (clamped <= 0.01) {
         delete nextBevels[k];
+        delete prevModes[k];
       } else {
         nextBevels[k] = clamped;
+        prevModes[k] = mode;
       }
     }
     return {
@@ -4265,6 +4680,7 @@ export function applyDirectVertexOrEdgeBevel3DToEntities(
       params: {
         ...(e.params ?? {}),
         vertexBevelsMm: nextBevels,
+        vertexBevelModes: prevModes,
       },
     };
   });
@@ -4281,9 +4697,19 @@ export function applyDirectFilletOrChamfer3DToEntities(
   const clamped = Math.max(0, Number(valueMm.toFixed(2)));
   const idSet = new Set(targetIds);
 
-  // Se o usuário selecionou um Vértice 3D ou Aresta Horizontal de Topo/Base em modo Chanfro -> Bisel Localizado 45°
-  if (mode === "chamfer" && targetBevelKeys && targetBevelKeys.length > 0) {
-    return applyDirectVertexOrEdgeBevel3DToEntities(entities, targetIds, targetBevelKeys, clamped);
+  // Se o usuário selecionou Aresta(s) Horizontal(is) de Topo/Base ou Vértice(s) 3D (tanto em Fillet quanto em Chamfer)
+  if (
+    targetBevelKeys &&
+    targetBevelKeys.length > 0 &&
+    (!targetEdgeIndices || targetEdgeIndices.length === 0)
+  ) {
+    return applyDirectVertexOrEdgeBevel3DToEntities(
+      entities,
+      targetIds,
+      targetBevelKeys,
+      clamped,
+      mode,
+    );
   }
 
   return entities.map((e) => {
@@ -4300,7 +4726,6 @@ export function applyDirectFilletOrChamfer3DToEntities(
     ) {
       const nextCornerFillets: Record<number, number> = { ...cur.cornerFilletsMm };
       const nextCornerChamfers: Record<number, number> = { ...cur.cornerChamfersMm };
-      // Se havia fillet/chamfer global anterior, preserva nos outros cantos
       if (
         Object.keys(nextCornerFillets).length === 0 &&
         Object.keys(nextCornerChamfers).length === 0 &&
@@ -4346,11 +4771,67 @@ export function applyDirectFilletOrChamfer3DToEntities(
   });
 }
 
+/**
+ * Identifica a direção da face (`"top" | "bottom" | "front" | "back" | "left" | "right"`)
+ * a partir de um `DirectFace3D` clicado pelo usuário.
+ */
+export function resolveFaceShellCapDirection3D(face: DirectFace3D): ShellOpenCap3D {
+  if (face.role === "top" || face.sideIndex === -1) return "top";
+  if (face.role === "bottom" || face.sideIndex === -2) return "bottom";
+  const nx = face.normal.x;
+  const ny = face.normal.y;
+  const nz = face.normal.z;
+  const ax = Math.abs(nx);
+  const ay = Math.abs(ny);
+  const az = Math.abs(nz);
+  if (az >= ax && az >= ay && az > 0.45) {
+    return nz >= 0 ? "top" : "bottom";
+  }
+  if (ax >= ay) {
+    return nx >= 0 ? "right" : "left";
+  }
+  return ny >= 0 ? "front" : "back";
+}
+
+/**
+ * Resolve as faces abertas do `Shell / Casca 3D` respeitando estritamente a(s) face(s) selecionada(s):
+ * - No modo `Caixa (1 Face)` (`top_only`): abre EXCLUSIVAMENTE a face clicada pelo usuário (`FRONT`, `BACK`, `LEFT`, `RIGHT`, `TOP` ou `BOTTOM`).
+ * - No modo `Tubo (2 Faces)` (`both_ends`): se clicou em `FRONT` ou `BACK`, vaza o tubo no eixo Y (`["front", "back"]`);
+ *   se clicou em `LEFT` ou `RIGHT`, vaza no eixo X (`["left", "right"]`); se clicou em `TOP` ou `BOTTOM`, vaza no eixo Z (`["top", "bottom"]`);
+ *   se selecionou manualmente 2 ou mais faces, abre exatamente as faces selecionadas.
+ */
+export function resolveShellOpenCapsFromSelection3D(
+  selectedFaces: readonly DirectFace3D[],
+  mode: "both_ends" | "top_only",
+): ShellOpenCap3D[] {
+  if (!selectedFaces || selectedFaces.length === 0) {
+    return mode === "both_ends" ? ["top", "bottom"] : ["top"];
+  }
+  if (mode === "top_only") {
+    return [resolveFaceShellCapDirection3D(selectedFaces[0]!)];
+  }
+  if (selectedFaces.length >= 2) {
+    const unique = new Set<ShellOpenCap3D>();
+    for (const f of selectedFaces) {
+      unique.add(resolveFaceShellCapDirection3D(f));
+    }
+    return Array.from(unique);
+  }
+  const primaryDir = resolveFaceShellCapDirection3D(selectedFaces[0]!);
+  if (primaryDir === "front" || primaryDir === "back") {
+    return ["front", "back"];
+  }
+  if (primaryDir === "left" || primaryDir === "right") {
+    return ["left", "right"];
+  }
+  return ["top", "bottom"];
+}
+
 export function applyDirectShell3DToEntities(
   entities: Entity[],
   targetIds: string[],
   wallThicknessMm: number,
-  openCaps: ("top" | "bottom")[] = ["top", "bottom"],
+  openCaps: ShellOpenCap3D[] = ["top", "bottom"],
 ): Entity[] {
   const clamped = Math.max(0, Number(wallThicknessMm.toFixed(2)));
   const idSet = new Set(targetIds);
@@ -4377,12 +4858,13 @@ export function applyDirectOffsetFace3DToEntities(
     | "bottom"
     | "sides"
     | "side_normal"
+    | "inner_cavity"
     | "pos_x"
     | "neg_x"
     | "pos_y"
     | "neg_y",
   deltaMm: number,
-  faceNormal?: Vec3Mm,
+  faceNormal?: Vec3Mm | null,
 ): Entity[] {
   const rounded = Number(deltaMm.toFixed(2));
   const idSet = new Set(targetIds);
@@ -4431,6 +4913,86 @@ export function applyDirectOffsetFace3DToEntities(
         },
       };
     }
+
+    // Offset Face nas Faces Internas da Cavidade de um Tubo -> Encolhe a cavidade e faz Fusão Automática (Heal Cavity) em bloco maciço!
+    if (faceTarget === "inner_cavity") {
+      const b = boxOf(e);
+      const spanW = Math.max(2, b.maxX - b.minX + cur.offsetFaceSidesMm * 2);
+      const spanH = Math.max(2, b.maxY - b.minY + cur.offsetFaceSidesMm * 2);
+      const minExternalSpan = Math.min(spanW, spanH);
+      const curWall = cur.shellWallThicknessMm || cur.shellThicknessMm || 0;
+      if (curWall <= 0.05) return e;
+
+      const innerOpeningW = Math.max(0, spanW - 2 * curWall);
+      const innerOpeningH = Math.max(0, spanH - 2 * curWall);
+      const halfInnerOpening = Math.min(innerOpeningW, innerOpeningH) * 0.5;
+
+      // Se o avanço para dentro (rounded > 0) atingir ou ultrapassar metade do vão interno -> HEAL CAVITY (fecha 100% em bloco maciço!)
+      if (rounded >= halfInnerOpening - 0.1 || curWall + rounded >= minExternalSpan * 0.5 - 0.1) {
+        return {
+          ...e,
+          shellWallThickness: 0,
+          params: {
+            ...(e.params ?? {}),
+            shellWallThickness: 0,
+            shellThicknessMm: 0,
+            shellOpenCaps: [],
+          },
+        };
+      }
+
+      const nextWall = Math.max(0.5, Number((curWall + rounded).toFixed(2)));
+      return {
+        ...e,
+        shellWallThickness: nextWall,
+        params: {
+          ...(e.params ?? {}),
+          shellWallThickness: nextWall,
+          shellThicknessMm: nextWall,
+        },
+      };
+    }
+
+    // Offset Face Simultâneo nas 4 Faces Laterais Externas ("sides"): Expande a Sapata simetricamente nos 4 lados (+2*deltaMm no total) mantendo o centro alinhado!
+    if (faceTarget === "sides") {
+      if (e.type === "rect") {
+        const nextW = Math.max(2, Number((e.w + 2 * rounded).toFixed(2)));
+        const nextH = Math.max(2, Number((e.h + 2 * rounded).toFixed(2)));
+        const nextX = Number((e.x - rounded).toFixed(2));
+        const nextY = Number((e.y - rounded).toFixed(2));
+        return {
+          ...e,
+          x: nextX,
+          y: nextY,
+          w: nextW,
+          h: nextH,
+        };
+      }
+      if (e.type === "circle") {
+        return {
+          ...e,
+          r: Math.max(1, Number((e.r + rounded).toFixed(2))),
+        };
+      }
+      if (e.type === "polyline" && e.pts.length >= 3) {
+        const nextPts = offsetPolygon2D(e.pts, rounded);
+        return {
+          ...e,
+          pts: nextPts.map((pt) => ({
+            x: Number(pt.x.toFixed(2)),
+            y: Number(pt.y.toFixed(2)),
+          })),
+        };
+      }
+      return {
+        ...e,
+        params: {
+          ...(e.params ?? {}),
+          offsetFaceSidesMm: Number((cur.offsetFaceSidesMm + rounded).toFixed(2)),
+        },
+      };
+    }
+
     if (
       (faceTarget === "side_normal" ||
         faceTarget === "pos_x" ||
