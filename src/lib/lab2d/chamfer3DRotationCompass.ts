@@ -223,3 +223,121 @@ export function computeNonOverlappingGizmoBadgePos(
 
   return { left: clampedLeft, top: clampedTop };
 }
+
+export const KEY_MITER_SNAP_ANGLES_DEG: readonly number[] = [
+  -45, -30, -22.5, -15, 0, 15, 22.5, 30, 45,
+];
+
+export interface MiterDragSnapResult {
+  rawAngleDeg: number;
+  angleDeg: number;
+  snapped: boolean;
+  snappedKeyDeg: number | null;
+}
+
+/**
+ * Calcula o ângulo de Corte em Grau / Meia-Esquadria em tempo real durante o arraste
+ * da Seta Curva Bidirecional, com snaps suaves em:
+ * `-45°, -30°, -22.5°, -15°, 0°, +15°, +22.5°, +30°, +45°`
+ * e limite seguro `[-60°, +60°]`.
+ */
+export function computeMiterDragAngleAndSnap(
+  pointerScreen: ScreenPt2D,
+  pivotScreen: ScreenPt2D,
+  angleStartRad: number,
+  initialMiterDeg = 0,
+  snapToleranceDeg = 2.0,
+): MiterDragSnapResult {
+  const dx = pointerScreen.x - pivotScreen.x;
+  const dy = pointerScreen.y - pivotScreen.y;
+  const currentAngleRad = Math.atan2(dy, dx);
+  const deltaDeg = normalizeDeltaAngleDeg(currentAngleRad - angleStartRad);
+  const rawAngleDeg = Math.max(-60, Math.min(60, initialMiterDeg + deltaDeg));
+
+  let bestSnap: number | null = null;
+  let bestDiff = Infinity;
+  for (const candidateDeg of KEY_MITER_SNAP_ANGLES_DEG) {
+    const diff = Math.abs(rawAngleDeg - candidateDeg);
+    if (diff <= snapToleranceDeg && diff < bestDiff) {
+      bestDiff = diff;
+      bestSnap = candidateDeg;
+    }
+  }
+
+  if (bestSnap !== null) {
+    return {
+      rawAngleDeg,
+      angleDeg: bestSnap,
+      snapped: true,
+      snappedKeyDeg: bestSnap,
+    };
+  }
+
+  const rounded = Math.round(rawAngleDeg * 2) / 2;
+  return {
+    rawAngleDeg,
+    angleDeg: Object.is(rounded, -0) ? 0 : rounded,
+    snapped: false,
+    snappedKeyDeg: null,
+  };
+}
+
+/**
+ * Constrói a geometria SVG da Seta Curva Bidirecional Interativa (Arco com pontas duplas,
+ * pega circular central de arraste e plano fantasma translúcido de corte em grau).
+ */
+export function buildDoubleHeadedMiterArcSvg(
+  origin: ScreenPt2D,
+  radiusPx = 42,
+  currentAngleDeg = 0,
+): {
+  arcPath: string;
+  negTip: ScreenPt2D;
+  posTip: ScreenPt2D;
+  handlePos: ScreenPt2D;
+  ghostPlanePoints: string;
+} {
+  // Arco superior de -148° a -32° (centrado em -90° / topo da face/aresta)
+  const startRad = (-148 * Math.PI) / 180;
+  const endRad = (-32 * Math.PI) / 180;
+  const negTip: ScreenPt2D = {
+    x: origin.x + Math.cos(startRad) * radiusPx,
+    y: origin.y + Math.sin(startRad) * radiusPx,
+  };
+  const posTip: ScreenPt2D = {
+    x: origin.x + Math.cos(endRad) * radiusPx,
+    y: origin.y + Math.sin(endRad) * radiusPx,
+  };
+  const arcPath = `M ${negTip.x.toFixed(1)} ${negTip.y.toFixed(1)} A ${radiusPx} ${radiusPx} 0 0 1 ${posTip.x.toFixed(1)} ${posTip.y.toFixed(1)}`;
+
+  // Pega circular central que desliza ao longo do arco conforme o ângulo [-60°, +60°]
+  const clamped = Math.max(-60, Math.min(60, currentAngleDeg));
+  const handleRad = ((-90 + (clamped / 60) * 52) * Math.PI) / 180;
+  const handlePos: ScreenPt2D = {
+    x: origin.x + Math.cos(handleRad) * radiusPx,
+    y: origin.y + Math.sin(handleRad) * radiusPx,
+  };
+
+  // Plano fantasma translúcido inclinado pelo ângulo atual
+  const tiltRad = (clamped * Math.PI) / 180;
+  const halfW = 30;
+  const halfH = 14;
+  const cosT = Math.cos(tiltRad);
+  const sinT = Math.sin(tiltRad);
+  const corners: ScreenPt2D[] = [
+    { x: origin.x - halfW * cosT - halfH * sinT, y: origin.y - halfW * sinT + halfH * cosT },
+    { x: origin.x + halfW * cosT - halfH * sinT, y: origin.y + halfW * sinT + halfH * cosT },
+    { x: origin.x + halfW * cosT + halfH * sinT, y: origin.y + halfW * sinT - halfH * cosT },
+    { x: origin.x - halfW * cosT + halfH * sinT, y: origin.y - halfW * sinT - halfH * cosT },
+  ];
+  const ghostPlanePoints = corners.map((c) => `${c.x.toFixed(1)},${c.y.toFixed(1)}`).join(" ");
+
+  return {
+    arcPath,
+    negTip,
+    posTip,
+    handlePos,
+    ghostPlanePoints,
+  };
+}
+

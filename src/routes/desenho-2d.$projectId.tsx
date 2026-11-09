@@ -2,9 +2,19 @@ import { lazy, Suspense } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { FeatureGate } from "@/components/chameleon/ui";
 
-const Lab2DEditor = lazy(() =>
-  import("@/components/lab2d/Lab2DEditor").then((m) => ({ default: m.Lab2DEditor })),
-);
+const Lab2DEditor = lazy(async () => {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const m = await import("@/components/lab2d/Lab2DEditor");
+      return { default: m.Lab2DEditor };
+    } catch (err) {
+      lastError = err;
+      await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+});
 
 export const Route = createFileRoute("/desenho-2d/$projectId")({
   head: () => ({

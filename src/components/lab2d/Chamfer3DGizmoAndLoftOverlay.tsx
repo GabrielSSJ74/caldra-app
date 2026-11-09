@@ -103,11 +103,14 @@ import {
 } from "@/lib/lab2d/cadDirectModeling3D";
 import {
   buildCompassSectorPath,
+  buildDoubleHeadedMiterArcSvg,
   computeExternalCompassRadiusPx,
+  computeMiterDragAngleAndSnap,
   computeNonOverlappingGizmoBadgePos,
   computeRotationDragAngleAndSnap,
   type RotationSnapResult,
 } from "@/lib/lab2d/chamfer3DRotationCompass";
+import { useExponentialHold } from "@/lib/lab2d/useExponentialHold";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 
@@ -164,6 +167,15 @@ export interface Chamfer3DGizmoAndLoftOverlayProps {
   activeDirect3DTool?: DirectModeling3DTool;
   onChangeDirect3DTool?: (tool: DirectModeling3DTool) => void;
   onSelectEntities?: (ids: string[]) => void;
+  onPreviewEntities?: (
+    updater: Entity[] | ((prev: Entity[]) => Entity[]),
+    selectedIds?: string[],
+  ) => void;
+  onCommitAtomicDrag?: (
+    preDragEntities: Entity[],
+    finalEntities: Entity[],
+    toastMessageOrIds?: string | string[],
+  ) => void;
   onCommitEntities?: (
     updater: Entity[] | ((prev: Entity[]) => Entity[]),
     toastMessageOrIds?: string | string[],
@@ -242,6 +254,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   activeDirect3DTool: externalDirectTool,
   onChangeDirect3DTool,
   onSelectEntities,
+  onPreviewEntities,
+  onCommitAtomicDrag,
   onCommitEntities,
   onSwitchTo2DSketchOnFace,
   isDark = true,
@@ -492,6 +506,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     targetBevelKeys?: string[];
     copyIdMap: Map<string, string>;
     activeResultIds: string[];
+    latestPreviewEntities?: Entity[];
   } | null>(null);
 
   const scene = useMemo(
@@ -659,19 +674,66 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     };
   }, [selectionKind3D, selectionScope, vertexIds, subSel.edgeIds, scene]);
 
+  // Sincroniza automaticamente a extremidade (Topo/Base) e o eixo (X/Y) do Corte em Grau
+  // com a Face ou Aresta selecionada pelo usuário
+  useEffect(() => {
+    const edgeRef =
+      (subSel.activeHingeEdgeId ? scene.edgesById.get(subSel.activeHingeEdgeId) : null) ??
+      primaryEdge;
+    if (edgeRef) {
+      if (edgeRef.role === "bottom" || edgeRef.edgeId.includes("edge_bot")) {
+        setMiterEndTarget("bottom");
+      } else if (edgeRef.role === "top" || edgeRef.edgeId.includes("edge_top")) {
+        setMiterEndTarget("top");
+      }
+      if (Math.abs(edgeRef.dir.x) > Math.abs(edgeRef.dir.y) + 0.15) {
+        setMiterAxis("y");
+      } else if (Math.abs(edgeRef.dir.y) > Math.abs(edgeRef.dir.x) + 0.15) {
+        setMiterAxis("x");
+      }
+      return;
+    }
+    if (primaryFace) {
+      if (primaryFace.role === "bottom") {
+        setMiterEndTarget("bottom");
+      } else if (primaryFace.role === "top" || primaryFace.role === "miter") {
+        setMiterEndTarget("top");
+      } else if (primaryFace.role === "side") {
+        if (Math.abs(primaryFace.normal.y) > Math.abs(primaryFace.normal.x)) {
+          setMiterAxis("y");
+        } else {
+          setMiterAxis("x");
+        }
+      }
+    }
+  }, [subSel.activeHingeEdgeId, scene.edgesById, primaryEdge, primaryFace]);
+
   const activeHingeEdge: DirectEdge3D | null = useMemo(() => {
     if (subSel.activeHingeEdgeId) {
       return scene.edgesById.get(subSel.activeHingeEdgeId) ?? null;
     }
+    if (primaryEdge) {
+      return primaryEdge;
+    }
     if (directTool === "rotate_axis_3d" && primaryBody) {
+      const targetRole =
+        primaryFace?.role === "bottom" || miterEndTarget === "bottom" ? "bottom" : "top";
       return (
-        primaryBody.edges.find((e) => e.role === (miterEndTarget === "bottom" ? "bottom" : "top")) ??
+        primaryBody.edges.find((e) => e.role === targetRole) ??
         primaryBody.edges[0] ??
         null
       );
     }
     return null;
-  }, [subSel.activeHingeEdgeId, scene.edgesById, directTool, primaryBody, miterEndTarget]);
+  }, [
+    subSel.activeHingeEdgeId,
+    scene.edgesById,
+    primaryEdge,
+    primaryFace?.role,
+    directTool,
+    primaryBody,
+    miterEndTarget,
+  ]);
 
   const toScreen = useCallback(
     (pt3D: Vec3Mm): Vec2 => {
@@ -939,27 +1001,47 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     };
   }, [primaryVertex, primaryBody, isTilted3D, activeMode, selectionKind3D, toScreen]);
 
-  // Projeção do Arco de Dobradiça / Corte em Meia-Esquadria (Rotate Around Axis: Face + Aresta)
+  // Projeção da Seta Curva Bidirecional de Corte em Grau / Meia-Esquadria (Rotate Around Axis: Face / Aresta)
   const hingeMiterGizmo = useMemo(() => {
-    if (!activeHingeEdge || (!isTilted3D && activeMode !== "3d")) return null;
-    if (selectionKind3D !== "hinge") return null;
-    const originScreen = toScreen(activeHingeEdge.midpoint);
+    if ((!isTilted3D && activeMode !== "3d") || !primaryBody) return null;
+    if (selectionKind3D !== "hinge" && directTool !== "rotate_axis_3d") return null;
+    const anchor3D =
+      primaryFace?.centroid ??
+      activeHingeEdge?.midpoint ??
+      primaryEdge?.midpoint ??
+      primaryBody.faces.find(
+        (f) => f.role === (miterEndTarget === "bottom" ? "bottom" : "top"),
+      )?.centroid ??
+      primaryBody.pivot3D;
+    const originScreen = toScreen(anchor3D);
+    const savedAngleDeg =
+      miterEndTarget === "bottom"
+        ? (primaryBody.miterCutBottomDeg ?? 0)
+        : (primaryBody.miterCutTopDeg ?? 0);
+    const liveAngleDeg = activeAxis === "miter" ? dragDeltaMm : savedAngleDeg;
+    const arcSvg = buildDoubleHeadedMiterArcSvg(originScreen, 42, liveAngleDeg);
     return {
       origin: originScreen,
-      edge: activeHingeEdge,
-      angleDeg:
-        miterEndTarget === "bottom"
-          ? (primaryBody?.miterCutBottomDeg ?? 0)
-          : (primaryBody?.miterCutTopDeg ?? 0),
+      anchor3D,
+      edge: activeHingeEdge ?? primaryBody.edges[0] ?? null,
+      face: primaryFace,
+      angleDeg: savedAngleDeg,
+      liveAngleDeg,
+      arcSvg,
     };
   }, [
     activeHingeEdge,
+    primaryFace,
+    primaryEdge,
     isTilted3D,
     activeMode,
     selectionKind3D,
+    directTool,
     toScreen,
     miterEndTarget,
     primaryBody,
+    activeAxis,
+    dragDeltaMm,
   ]);
 
   // ============================================================================
@@ -1361,6 +1443,19 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     lastCompletedDrag,
     setSubSel,
   ]);
+
+  const handleNumpadStep = useCallback((delta: number) => {
+    numpadFreshOpenRef.current = false;
+    setNumpadBuffer((prev) => {
+      const curr = parseFloat(prev.replace(",", "."));
+      const base = Number.isFinite(curr) ? curr : 0;
+      const next = Math.round((base + delta) * 100) / 100;
+      return String(next);
+    });
+  }, []);
+
+  const numpadMinusHold = useExponentialHold((mult) => handleNumpadStep(-1 * mult));
+  const numpadPlusHold = useExponentialHold((mult) => handleNumpadStep(1 * mult));
 
   const handleNumpadKey = useCallback((key: string) => {
     triggerHaptic("tap");
@@ -1801,6 +1896,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     onCommitTranslateSelectionXY,
     onLiveElevateSelection,
     onCommitElevateSelection,
+    onPreviewEntities,
+    onCommitAtomicDrag,
     onCommitEntities,
     booleanMode,
     openFloatingNumpad,
@@ -1828,6 +1925,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     onCommitTranslateSelectionXY,
     onLiveElevateSelection,
     onCommitElevateSelection,
+    onPreviewEntities,
+    onCommitAtomicDrag,
     onCommitEntities,
     booleanMode,
     openFloatingNumpad,
@@ -1884,9 +1983,13 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               : edgeActionMode === "chamfer"
                 ? (edgeDiagonalGizmo?.currentChamferVal ?? primaryBody?.edgeChamferDistMm ?? 10)
                 : 0
-            : axis === "z"
-              ? (primaryBody?.elevationZ ?? 0)
-              : 0;
+            : axis === "miter"
+              ? miterEndTarget === "bottom"
+                ? (primaryBody?.miterCutBottomDeg ?? 0)
+                : (primaryBody?.miterCutTopDeg ?? 0)
+              : axis === "z"
+                ? (primaryBody?.elevationZ ?? 0)
+                : 0;
 
     const rect = rootOverlayRef.current?.getBoundingClientRect();
     const localStartX = rect ? ev.clientX - rect.left : ev.clientX;
@@ -1996,6 +2099,15 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         return;
       }
 
+      const applyLivePreview = (nextEntities: Entity[], activeIds?: string[]) => {
+        session.latestPreviewEntities = nextEntities;
+        if (ctx.onPreviewEntities) {
+          ctx.onPreviewEntities(() => nextEntities, activeIds);
+        } else if (ctx.onCommitEntities) {
+          ctx.onCommitEntities(() => nextEntities, activeIds);
+        }
+      };
+
       if (
         session.axis === "rot_x" ||
         session.axis === "rot_y" ||
@@ -2005,6 +2117,36 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         const pivotSc = session.pivotScreen ?? { x: localX, y: localY };
         const startRad = session.angleStartRad ?? 0;
         const compassR = session.compassRadiusPx ?? 140;
+
+        if (session.axis === "miter") {
+          const miterSnap = computeMiterDragAngleAndSnap(
+            { x: localX, y: localY },
+            pivotSc,
+            startRad,
+            session.initialValue,
+            2.0,
+          );
+          const nextMiterDeg = miterSnap.angleDeg;
+          if (nextMiterDeg !== session.lastAppliedDeltaMm) {
+            if (miterSnap.snapped) {
+              triggerHaptic("selection");
+            }
+            session.lastAppliedDeltaMm = nextMiterDeg;
+            session.totalDeltaMm = nextMiterDeg;
+            setDragDeltaMm(nextMiterDeg);
+
+            const nextEntities = applyDirectMiterCut3DToEntities(
+              session.startEntities,
+              session.targetIds,
+              ctx.miterEndTarget,
+              nextMiterDeg,
+              ctx.miterAxis,
+            );
+            applyLivePreview(nextEntities, session.targetIds);
+          }
+          return;
+        }
+
         const snapRes = computeRotationDragAngleAndSnap(
           { x: localX, y: localY },
           pivotSc,
@@ -2014,14 +2156,12 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         );
         const deltaDeg = snapRes.angleDeg;
 
-        if (session.axis !== "miter") {
-          setRotationSnapState({
-            axis: session.axis,
-            angleStartRad: startRad,
-            compassRadiusPx: compassR,
-            snapResult: snapRes,
-          });
-        }
+        setRotationSnapState({
+          axis: session.axis,
+          angleStartRad: startRad,
+          compassRadiusPx: compassR,
+          snapResult: snapRes,
+        });
 
         if (deltaDeg !== session.lastAppliedDeltaMm) {
           if (snapRes.snapped) {
@@ -2031,33 +2171,19 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           session.totalDeltaMm = deltaDeg;
           setDragDeltaMm(deltaDeg);
 
-          if (session.axis === "miter" && ctx.onCommitEntities) {
-            ctx.onCommitEntities(
-              () =>
-                applyDirectMiterCut3DToEntities(
-                  session.startEntities,
-                  session.targetIds,
-                  ctx.miterEndTarget,
-                  deltaDeg,
-                  ctx.miterAxis,
-                ),
-              session.targetIds,
-            );
-          } else if (ctx.onCommitEntities) {
-            const res = applyDirectTransform3DToEntities(
-              session.startEntities,
-              session.targetIds,
-              {
-                rxDeg: session.axis === "rot_x" ? deltaDeg : 0,
-                ryDeg: session.axis === "rot_y" ? deltaDeg : 0,
-                rzDeg: session.axis === "rot_z" ? deltaDeg : 0,
-              },
-              ctx.copyOnTransform,
-              session.copyIdMap,
-            );
-            session.activeResultIds = res.activeIds;
-            ctx.onCommitEntities(() => res.updatedEntities, res.activeIds);
-          }
+          const res = applyDirectTransform3DToEntities(
+            session.startEntities,
+            session.targetIds,
+            {
+              rxDeg: session.axis === "rot_x" ? deltaDeg : 0,
+              ryDeg: session.axis === "rot_y" ? deltaDeg : 0,
+              rzDeg: session.axis === "rot_z" ? deltaDeg : 0,
+            },
+            ctx.copyOnTransform,
+            session.copyIdMap,
+          );
+          session.activeResultIds = res.activeIds;
+          applyLivePreview(res.updatedEntities, res.activeIds);
         }
         return;
       }
@@ -2115,7 +2241,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           session.totalDeltaMm = effDelta.y;
           setDragDeltaMm(Math.round(Math.hypot(effDelta.x, effDelta.y)));
 
-          if (ctx.onCommitEntities) {
+          if (ctx.onPreviewEntities || ctx.onCommitEntities) {
             const res = applyDirectTransform3DToEntities(
               session.startEntities,
               session.targetIds,
@@ -2124,7 +2250,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               session.copyIdMap,
             );
             session.activeResultIds = res.activeIds;
-            ctx.onCommitEntities(() => res.updatedEntities, res.activeIds);
+            applyLivePreview(res.updatedEntities, res.activeIds);
             if (ctx.copyOnTransform) {
               ctx.setSubSel((prev) => ({
                 ...prev,
@@ -2169,6 +2295,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               },
               hasContactSnap: true,
               hasAlignmentSnap: false,
+              snapBadgeLabel: snapRes.contactHighlight?.label,
               contactHighlight: snapRes.contactHighlight,
               alignmentGuides: [],
             });
@@ -2231,8 +2358,30 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           }
         }
       } else if (session.axis === "z") {
-        // Trava Ortogonal Estrita em +Z (Ortho: < +Z): X e Y permanecem 100% fixos, sem interferência lateral
-        setActiveContactSnap(null);
+        // Snap 3D Completo no Eixo Z (Base-Topo, Topo-Base, Topo-Topo, Base-Base, Centro-Z)
+        const refBody = session.startBody ?? ctx.primaryBody;
+        if (refBody) {
+          const otherBodies = ctx.scene.bodies.filter(
+            (b) => b.bodyId !== refBody.bodyId && !session.copyIdMap.has(b.entityId),
+          );
+          const rawVecZ: Vec3Mm = { x: 0, y: 0, z: currentDeltaMm };
+          const snapResZ = resolveContactAndAlignmentSnaps3D(
+            refBody,
+            otherBodies,
+            rawVecZ,
+            session.pixelsPerMm,
+            6.5,
+            session.startCenter3D ?? ctx.subSel.activePivot3D,
+          );
+          if (snapResZ.hasContactSnap || snapResZ.hasAlignmentSnap) {
+            currentDeltaMm = Math.round(snapResZ.snappedDelta.z * 100) / 100;
+            setActiveContactSnap(snapResZ);
+          } else {
+            setActiveContactSnap(null);
+          }
+        } else {
+          setActiveContactSnap(null);
+        }
       }
 
       if (currentDeltaMm !== session.lastAppliedDeltaMm) {
@@ -2240,68 +2389,53 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         session.totalDeltaMm = currentDeltaMm;
         setDragDeltaMm(currentDeltaMm);
 
-        if (session.axis === "extrude" && ctx.onCommitEntities) {
+        if (session.axis === "extrude") {
           const nextH = Math.max(1, session.initialValue + currentDeltaMm);
-          ctx.onCommitEntities(
-            () =>
-              applyDirectExtrudeToEntities(
-                session.startEntities,
-                session.targetIds,
-                nextH,
-                ctx.booleanMode,
-              ),
+          const nextEntities = applyDirectExtrudeToEntities(
+            session.startEntities,
             session.targetIds,
+            nextH,
+            ctx.booleanMode,
           );
-        } else if (session.axis === "face_normal" && ctx.onCommitEntities) {
+          applyLivePreview(nextEntities, session.targetIds);
+        } else if (session.axis === "face_normal") {
           const refFace = session.startFace ?? ctx.primaryFace;
           if (refFace && refFace.role === "bottom") {
-            ctx.onCommitEntities(
-              () =>
-                applyDirectOffsetFace3DToEntities(
-                  session.startEntities,
-                  session.targetIds,
-                  "bottom",
-                  currentDeltaMm,
-                ),
+            const nextEntities = applyDirectOffsetFace3DToEntities(
+              session.startEntities,
               session.targetIds,
+              "bottom",
+              currentDeltaMm,
             );
+            applyLivePreview(nextEntities, session.targetIds);
           } else if (refFace && (refFace.role === "top" || refFace.role === "miter")) {
             const nextH = Math.max(1, session.initialValue + currentDeltaMm);
-            ctx.onCommitEntities(
-              () =>
-                applyDirectExtrudeToEntities(
-                  session.startEntities,
-                  session.targetIds,
-                  nextH,
-                  ctx.booleanMode,
-                ),
+            const nextEntities = applyDirectExtrudeToEntities(
+              session.startEntities,
               session.targetIds,
+              nextH,
+              ctx.booleanMode,
             );
+            applyLivePreview(nextEntities, session.targetIds);
           } else if (refFace) {
-            ctx.onCommitEntities(
-              () =>
-                applyDirectOffsetFace3DToEntities(
-                  session.startEntities,
-                  session.targetIds,
-                  "side_normal",
-                  currentDeltaMm,
-                  refFace.normal,
-                ),
+            const nextEntities = applyDirectOffsetFace3DToEntities(
+              session.startEntities,
               session.targetIds,
+              "side_normal",
+              currentDeltaMm,
+              refFace.normal,
             );
+            applyLivePreview(nextEntities, session.targetIds);
           } else {
-            ctx.onCommitEntities(
-              () =>
-                applyDirectOffsetFace3DToEntities(
-                  session.startEntities,
-                  session.targetIds,
-                  "sides",
-                  currentDeltaMm,
-                ),
+            const nextEntities = applyDirectOffsetFace3DToEntities(
+              session.startEntities,
               session.targetIds,
+              "sides",
+              currentDeltaMm,
             );
+            applyLivePreview(nextEntities, session.targetIds);
           }
-        } else if (session.axis === "vertex_bevel" && ctx.onCommitEntities) {
+        } else if (session.axis === "vertex_bevel") {
           const refBody = session.startBody ?? ctx.primaryBody;
           const maxBevel = Math.max(
             5,
@@ -2315,35 +2449,29 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             ),
           );
           const nextB = Math.min(maxBevel, Math.max(0, session.initialValue + currentDeltaMm));
-          ctx.onCommitEntities(
-            () =>
-              applyDirectFilletOrChamfer3DToEntities(
-                session.startEntities,
-                session.targetIds,
-                "chamfer",
-                nextB,
-                undefined,
-                session.targetBevelKeys,
-              ),
+          const nextEntities = applyDirectFilletOrChamfer3DToEntities(
+            session.startEntities,
             session.targetIds,
+            "chamfer",
+            nextB,
+            undefined,
+            session.targetBevelKeys,
           );
-        } else if (session.axis === "edge_diagonal" && ctx.onCommitEntities) {
+          applyLivePreview(nextEntities, session.targetIds);
+        } else if (session.axis === "edge_diagonal") {
           if (ctx.edgeActionMode === "transform_edge") {
             const refEdge = session.startEdge ?? ctx.primaryEdge;
             const edgePerpNormal: Vec3Mm = refEdge
               ? { x: -refEdge.dir.y, y: refEdge.dir.x, z: 0 }
               : { x: 1, y: 0, z: 0 };
-            ctx.onCommitEntities(
-              () =>
-                applyDirectOffsetFace3DToEntities(
-                  session.startEntities,
-                  session.targetIds,
-                  "side_normal",
-                  currentDeltaMm,
-                  edgePerpNormal,
-                ),
+            const nextEntities = applyDirectOffsetFace3DToEntities(
+              session.startEntities,
               session.targetIds,
+              "side_normal",
+              currentDeltaMm,
+              edgePerpNormal,
             );
+            applyLivePreview(nextEntities, session.targetIds);
           } else {
             const autoMode =
               session.initialValue <= 0.5 && currentDeltaMm < 0
@@ -2366,18 +2494,15 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   : session.initialValue + currentDeltaMm,
               ),
             );
-            ctx.onCommitEntities(
-              () =>
-                applyDirectFilletOrChamfer3DToEntities(
-                  session.startEntities,
-                  session.targetIds,
-                  autoMode,
-                  nextR,
-                  session.targetEdgeIndices,
-                  session.targetBevelKeys,
-                ),
+            const nextEntities = applyDirectFilletOrChamfer3DToEntities(
+              session.startEntities,
               session.targetIds,
+              autoMode,
+              nextR,
+              session.targetEdgeIndices,
+              session.targetBevelKeys,
             );
+            applyLivePreview(nextEntities, session.targetIds);
           }
         } else if (session.axis === "x" || session.axis === "y" || session.axis === "z") {
           const deltaObj =
@@ -2386,7 +2511,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               : session.axis === "y"
                 ? { dy: currentDeltaMm }
                 : { dz: currentDeltaMm };
-          if (ctx.onCommitEntities) {
+          if (ctx.onPreviewEntities || ctx.onCommitEntities) {
             const res = applyDirectTransform3DToEntities(
               session.startEntities,
               session.targetIds,
@@ -2395,7 +2520,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               session.copyIdMap,
             );
             session.activeResultIds = res.activeIds;
-            ctx.onCommitEntities(() => res.updatedEntities, res.activeIds);
+            applyLivePreview(res.updatedEntities, res.activeIds);
             if (ctx.copyOnTransform) {
               ctx.setSubSel((prev) => ({
                 ...prev,
@@ -2442,6 +2567,15 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         ev.clientY - session.startClientY,
       );
       const isQuickTap = !session.hasMoved && distPx < 5;
+
+      // COMMIT ATÔMICO NO HISTÓRICO (UNDO/REDO): grava apenas 1 snapshot ao soltar o dedo
+      if (!isQuickTap && session.hasMoved && session.latestPreviewEntities && ctx.onCommitAtomicDrag) {
+        ctx.onCommitAtomicDrag(
+          session.startEntities,
+          session.latestPreviewEntities,
+          session.activeResultIds,
+        );
+      }
 
       if (
         session.axis === "rot_x" ||
@@ -4332,6 +4466,17 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               <path d="M 0 1 L 10 5 L 0 9 z" fill="#F59E0B" />
             </marker>
             <marker
+              id="gizmo-arrow-amber-start"
+              viewBox="0 0 10 10"
+              refX="3"
+              refY="5"
+              markerWidth="6"
+              markerHeight="6"
+              orient="auto-start-reverse"
+            >
+              <path d="M 10 1 L 0 5 L 10 9 z" fill="#F59E0B" />
+            </marker>
+            <marker
               id="gizmo-arrow-z-blue"
               viewBox="0 0 10 10"
               refX="7"
@@ -4346,46 +4491,71 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
           {/* ================================================================= */}
           {/* A. HIT-TARGETS INTERATIVOS PARA TODAS AS FACES 3D DA CENA        */}
+          {/*    Ordenados por profundidade e sem vazamento X-ray nas faces     */}
+          {/*    traseiras para que sólidos fechados jamais pareçam "ocos".     */}
           {/* ================================================================= */}
-          {scene.bodies.map((body) =>
-            body.faces.map((face) => {
-              if (face.polygon3D.length < 3) return null;
-              const isSelected = subSel.faceIds.includes(face.faceId);
-              const isBodySelected =
-                subSel.faceIds.length === 0 &&
-                subSel.edgeIds.length === 0 &&
-                vertexIds.length === 0 &&
-                subSel.bodyIds.includes(face.bodyId);
-              const ptsStr = face.polygon3D
-                .map((p) => {
-                  const s = toScreen(p);
-                  return `${s.x.toFixed(1)},${s.y.toFixed(1)}`;
-                })
-                .join(" ");
+          {(() => {
+            const azRad = ((orbitProjection.azimuthDeg ?? 45) * Math.PI) / 180;
+            const elRad = ((orbitProjection.elevationDeg ?? 35.26438968) * Math.PI) / 180;
+            const camDir = {
+              x: Math.cos(elRad) * Math.sin(azRad),
+              y: Math.cos(elRad) * Math.cos(azRad),
+              z: Math.sin(elRad),
+            };
 
-              return (
-                <polygon
-                  key={face.faceId}
-                  points={ptsStr}
-                  fill={
-                    isSelected
-                      ? "rgba(0, 180, 216, 0.34)"
-                      : isBodySelected
-                        ? "rgba(0, 180, 216, 0.18)"
+            return scene.bodies.map((body) => {
+              const sortedFaces = [...body.faces].sort((fa, fb) => {
+                const da =
+                  fa.centroid.x * camDir.x +
+                  fa.centroid.y * camDir.y +
+                  fa.centroid.z * camDir.z;
+                const db =
+                  fb.centroid.x * camDir.x +
+                  fb.centroid.y * camDir.y +
+                  fb.centroid.z * camDir.z;
+                return da - db;
+              });
+
+              return sortedFaces.map((face) => {
+                if (face.polygon3D.length < 3) return null;
+                const isSelected = subSel.faceIds.includes(face.faceId);
+                const facingDot =
+                  face.normal.x * camDir.x +
+                  face.normal.y * camDir.y +
+                  face.normal.z * camDir.z;
+                // Evita que faces traseiras ocultas de peças maciças interceptem cliques ou vazem por cima do topo
+                if (
+                  !isSelected &&
+                  body.extrudeHeightMm > 0.05 &&
+                  body.shellThicknessMm <= 0.1 &&
+                  facingDot < -0.15
+                ) {
+                  return null;
+                }
+                const ptsStr = face.polygon3D
+                  .map((p) => {
+                    const s = toScreen(p);
+                    return `${s.x.toFixed(1)},${s.y.toFixed(1)}`;
+                  })
+                  .join(" ");
+
+                return (
+                  <polygon
+                    key={face.faceId}
+                    points={ptsStr}
+                    fill={
+                      isSelected
+                        ? "rgba(0, 180, 216, 0.30)"
                         : "rgba(0, 180, 216, 0.001)"
-                  }
-                  stroke={
-                    isSelected || isBodySelected
-                      ? "#00B4D8"
-                      : "rgba(0, 180, 216, 0.14)"
-                  }
-                  strokeWidth={isSelected ? 2.6 : isBodySelected ? 2.0 : 0.8}
-                  className="pointer-events-auto cursor-pointer transition-colors"
-                  style={{ pointerEvents: "fill", touchAction: "none" }}
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
+                    }
+                    stroke={isSelected ? "#00B4D8" : "none"}
+                    strokeWidth={isSelected ? 2.5 : 0}
+                    className="pointer-events-auto cursor-pointer transition-colors"
+                    style={{ pointerEvents: "fill", touchAction: "none" }}
+                    onPointerDown={(ev) => {
+                      ev.stopPropagation();
+                      ev.preventDefault();
+                    }}
                   onClick={(ev) => {
                     ev.stopPropagation();
                     triggerHaptic("selection");
@@ -4484,8 +4654,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   }}
                 />
               );
-            }),
-          )}
+            });
+          });
+        })()}
 
           {/* ================================================================= */}
           {/* B. HIT-TARGETS INTERATIVOS PARA TODAS AS ARESTAS 3D DA CENA      */}
@@ -5324,7 +5495,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           )}
 
           {/* ================================================================= */}
-          {/* E2. ARCO DE INCLINAÇÃO / DOBRADIÇA (FACE + ARESTA = ROTATE AXIS)  */}
+          {/* E2. SETA CURVA BIDIRECIONAL INTERATIVA DE CORTE EM GRAU (ESQUADRIA)*/}
           {/* ================================================================= */}
           {hingeMiterGizmo && (
             <g
@@ -5334,26 +5505,59 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               onPointerDown={(ev) => handleAxisPointerDown("miter", 0, 0, 1, ev)}
               onClick={(ev) => ev.stopPropagation()}
             >
+              {/* Plano fantasma translúcido inclinado em tempo real pelo ângulo atual */}
+              <polygon
+                data-testid="chamfer-gizmo-miter-ghost-plane"
+                points={hingeMiterGizmo.arcSvg.ghostPlanePoints}
+                fill="rgba(245, 158, 11, 0.16)"
+                stroke="#F59E0B"
+                strokeWidth={1.25}
+                strokeDasharray="4 3"
+              />
+              {/* Anel de referência tracejado suave */}
               <circle
                 cx={hingeMiterGizmo.origin.x}
                 cy={hingeMiterGizmo.origin.y}
-                r={36}
+                r={42}
                 fill="none"
                 stroke="#F59E0B"
-                strokeWidth={1.3}
+                strokeWidth={1.15}
                 strokeDasharray="3 3"
-                opacity={0.75}
+                opacity={0.55}
               />
+              {/* Hit-area generosa sobre o arco curvo para captura fácil no toque/mouse */}
               <path
-                d={`M ${hingeMiterGizmo.origin.x - 28} ${hingeMiterGizmo.origin.y - 22} A 36 36 0 0 1 ${hingeMiterGizmo.origin.x + 28} ${hingeMiterGizmo.origin.y - 22}`}
+                d={hingeMiterGizmo.arcSvg.arcPath}
+                fill="none"
+                stroke="rgba(0,0,0,0.001)"
+                strokeWidth={24}
+                strokeLinecap="round"
+              />
+              {/* Arco Direcional Curvo de Ponta Dupla (markerStart + markerEnd) */}
+              <path
+                data-testid="chamfer-gizmo-miter-curved-arrow"
+                d={hingeMiterGizmo.arcSvg.arcPath}
                 fill="none"
                 stroke="#F59E0B"
                 strokeWidth={3.2}
                 strokeLinecap="round"
+                markerStart="url(#gizmo-arrow-amber-start)"
                 markerEnd="url(#gizmo-arrow-amber)"
               />
+              {/* Pega Circular Tátil Central no Meio do Arco */}
+              <circle
+                data-testid="chamfer-gizmo-miter-arc-handle"
+                cx={hingeMiterGizmo.arcSvg.handlePos.x}
+                cy={hingeMiterGizmo.arcSvg.handlePos.y}
+                r={7}
+                fill="#F59E0B"
+                stroke={isDark ? "#0B1220" : "#FFFFFF"}
+                strokeWidth={2}
+              />
+              {/* Badge Flutuante Clicável ao Vivo: ∠ -45.0° */}
               <g
-                transform={`translate(${hingeMiterGizmo.origin.x}, ${hingeMiterGizmo.origin.y - 44})`}
+                data-testid="chamfer-gizmo-miter-angle-badge"
+                transform={`translate(${hingeMiterGizmo.origin.x}, ${hingeMiterGizmo.origin.y - 58})`}
                 className="cursor-pointer"
                 onPointerDown={(ev) => {
                   ev.stopPropagation();
@@ -5365,34 +5569,34 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     "ANGLE",
                     "CORTE ESQUADRIA",
                     "°",
-                    hingeMiterGizmo.angleDeg || 45,
+                    hingeMiterGizmo.liveAngleDeg || 45,
                     "miterAngle",
-                    hingeMiterGizmo.edge.entityId,
+                    hingeMiterGizmo.edge?.entityId ?? primaryBody?.entityId,
                     miterEndTarget,
                   );
                 }}
               >
                 <rect
-                  x={-36}
-                  y={-9}
-                  width={72}
-                  height={18}
-                  rx={5}
+                  x={-44}
+                  y={-11}
+                  width={88}
+                  height={22}
+                  rx={7}
                   fill={isDark ? "#0B1220" : "#FFFFFF"}
                   stroke="#F59E0B"
-                  strokeWidth={1.3}
+                  strokeWidth={1.5}
                 />
                 <text
                   x={0}
-                  y={1}
+                  y={0.5}
                   fill="#F59E0B"
-                  fontSize="9.5"
+                  fontSize="10"
                   fontWeight="bold"
                   fontFamily="monospace"
                   textAnchor="middle"
                   dominantBaseline="central"
                 >
-                  {`∠ ${(activeAxis === "miter" ? dragDeltaMm : hingeMiterGizmo.angleDeg).toFixed(0)}°`}
+                  {`∠ ${hingeMiterGizmo.liveAngleDeg > 0 ? `+${hingeMiterGizmo.liveAngleDeg.toFixed(1)}` : hingeMiterGizmo.liveAngleDeg.toFixed(1)}° ✎`}
                 </text>
               </g>
             </g>
@@ -6230,15 +6434,17 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       >
                         {activeAxis === "pivot"
                           ? snappedPivotLabel ?? "Pivô Móvel (Snap)"
-                          : activeAxis === "z"
-                            ? `Ortho: ${(primaryBody?.elevationZ ?? dragDeltaMm).toFixed(2)} mm < +Z`
-                            : activeAxis === "extrude" || activeAxis === "face_normal"
-                              ? `H: ${((primaryBody?.extrudeHeightMm ?? sheetThickness) + dragDeltaMm).toFixed(1)} mm`
-                              : activeAxis === "miter"
-                                ? `∠ ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm}°`
-                                : activeAxis === "planar"
-                                  ? `${copyOnTransform ? "COPY " : ""}ΔXY: ${dragDeltaMm} mm`
-                                  : `${copyOnTransform ? "COPY " : ""}Δ${activeAxis.toUpperCase()}: ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm} mm`}
+                          : activeContactSnap?.snapBadgeLabel
+                            ? activeContactSnap.snapBadgeLabel
+                            : activeAxis === "z"
+                              ? `Ortho: ${(primaryBody?.elevationZ ?? dragDeltaMm).toFixed(2)} mm < +Z`
+                              : activeAxis === "extrude" || activeAxis === "face_normal"
+                                ? `H: ${((primaryBody?.extrudeHeightMm ?? sheetThickness) + dragDeltaMm).toFixed(1)} mm`
+                                : activeAxis === "miter"
+                                  ? `∠ ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm}°`
+                                  : activeAxis === "planar"
+                                    ? `${copyOnTransform ? "COPY " : ""}ΔXY: ${dragDeltaMm} mm`
+                                    : `${copyOnTransform ? "COPY " : ""}Δ${activeAxis.toUpperCase()}: ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm} mm`}
                       </text>
                     </g>
                   )}
@@ -6733,24 +6939,56 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             </button>
           </div>
 
-          {/* Visor numérico compacto no topo */}
-          <div
-            className={cn(
-              "mb-1.5 flex h-7 items-center justify-between rounded-lg border px-2.5 font-mono",
-              isDark
-                ? "border-cyan-500/40 bg-slate-900/95 text-white"
-                : "border-cyan-600/40 bg-slate-50 text-slate-900",
-            )}
-          >
-            <span
-              data-testid="chamfer-floating-numpad-display"
-              className="truncate text-[12.5px] font-bold"
+          {/* Visor numérico compacto no topo + botões [-] e [+] com aceleração exponencial */}
+          <div className="mb-1.5 flex items-center gap-1">
+            <button
+              type="button"
+              data-testid="chamfer-floating-numpad-minus"
+              aria-label="Diminuir valor"
+              {...numpadMinusHold}
+              className={cn(
+                "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border font-mono text-[13px] font-bold transition-colors cursor-pointer select-none",
+                isDark
+                  ? "border-slate-700 bg-slate-900 text-slate-200 hover:border-cyan-500/50 hover:text-cyan-300"
+                  : "border-slate-300 bg-slate-100 text-slate-800 hover:border-cyan-600/50 hover:text-cyan-700",
+              )}
+              title="Diminuir (segure para acelerar 1× → 2× → 5× → 15×)"
             >
-              {numpadBuffer}
-            </span>
-            <span className="ml-1 text-[10px] font-bold text-cyan-600 dark:text-cyan-400">
-              {numpadSession.unit}
-            </span>
+              -
+            </button>
+            <div
+              className={cn(
+                "flex h-7 min-w-0 flex-1 items-center justify-between rounded-lg border px-2 font-mono",
+                isDark
+                  ? "border-cyan-500/40 bg-slate-900/95 text-white"
+                  : "border-cyan-600/40 bg-slate-50 text-slate-900",
+              )}
+            >
+              <span
+                data-testid="chamfer-floating-numpad-display"
+                className="truncate text-[12px] font-bold"
+              >
+                {numpadBuffer}
+              </span>
+              <span className="ml-1 text-[9.5px] font-bold text-cyan-600 dark:text-cyan-400">
+                {numpadSession.unit}
+              </span>
+            </div>
+            <button
+              type="button"
+              data-testid="chamfer-floating-numpad-plus"
+              aria-label="Aumentar valor"
+              {...numpadPlusHold}
+              className={cn(
+                "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border font-mono text-[13px] font-bold transition-colors cursor-pointer select-none",
+                isDark
+                  ? "border-slate-700 bg-slate-900 text-slate-200 hover:border-cyan-500/50 hover:text-cyan-300"
+                  : "border-slate-300 bg-slate-100 text-slate-800 hover:border-cyan-600/50 hover:text-cyan-700",
+              )}
+              title="Aumentar (segure para acelerar 1× → 2× → 5× → 15×)"
+            >
+              +
+            </button>
           </div>
 
           {/* Grid compacto 3×4 + linha de ação (botões de 28px de altura com stopPropagation total) */}

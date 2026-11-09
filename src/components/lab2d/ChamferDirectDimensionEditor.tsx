@@ -20,6 +20,7 @@ import { DimensionInteractionEngine } from "@/lib/lab2d/cadDimensionInteractionE
 import { useSettings, type AccentColor, type ThemeMode } from "@/lib/settings/SettingsProvider";
 import { resolveAccentHex, resolveAccentContrastText } from "@/components/lab2d/ChamferVirtualCursor";
 import { ReferenceService } from "@/lib/lab2d/referenceService";
+import { useExponentialHold } from "@/lib/lab2d/useExponentialHold";
 import { cn } from "@/lib/utils";
 
 export interface ChamferDirectDimensionEditorProps {
@@ -219,22 +220,27 @@ export function ChamferDirectDimensionEditor({
   }, [allowNegative, displayStr, notifyPreviewIfValid]);
 
   const handleStep = useCallback(
-    (direction: 1 | -1) => {
+    (direction: 1 | -1, multiplier = 1) => {
       triggerHaptic("selection");
-      const currentParsed = parseNormalized(displayStr) ?? currentValue;
-      const candidate = Number((currentParsed + direction * stepMm).toFixed(4));
-      if (!isValuePermitted(candidate)) {
-        setErrorMsg(allowZero ? "Valor mínimo: 0." : "A medida deve ser > 0.");
-        return;
-      }
-      setErrorMsg(null);
-      setFreshEntry(false);
-      const formatted = String(candidate).replace(".", ",");
-      setDisplayStr(formatted);
-      onPreviewChange?.(candidate);
+      setDisplayStr((prevStr) => {
+        const currentParsed = parseNormalized(prevStr) ?? currentValue;
+        const candidate = Number((currentParsed + direction * stepMm * multiplier).toFixed(4));
+        if (!isValuePermitted(candidate)) {
+          setErrorMsg(allowZero ? "Valor mínimo: 0." : "A medida deve ser > 0.");
+          return prevStr;
+        }
+        setErrorMsg(null);
+        setFreshEntry(false);
+        const formatted = String(candidate).replace(".", ",");
+        onPreviewChange?.(candidate);
+        return formatted;
+      });
     },
-    [displayStr, currentValue, stepMm, allowZero, isValuePermitted, parseNormalized, onPreviewChange],
+    [currentValue, stepMm, allowZero, isValuePermitted, parseNormalized, onPreviewChange],
   );
+
+  const minusHoldProps = useExponentialHold((mult) => handleStep(-1, mult));
+  const plusHoldProps = useExponentialHold((mult) => handleStep(1, mult));
 
   const handleConfirm = useCallback(
     (overrideLock?: boolean) => {
@@ -430,14 +436,15 @@ export function ChamferDirectDimensionEditor({
       >
         <button
           type="button"
-          onClick={() => handleStep(-1)}
+          data-testid="cad-keypad-minus-btn"
+          {...minusHoldProps}
           style={{
             backgroundColor: keyBg,
             borderColor: borderSubtle,
             color: textPrimary,
           }}
-          className="flex size-7 shrink-0 items-center justify-center rounded-lg border active:scale-92 transition-transform cursor-pointer"
-          title={`-${stepMm} ${unit}`}
+          className="flex size-7 shrink-0 items-center justify-center rounded-lg border active:scale-92 transition-transform cursor-pointer select-none"
+          title={`-${stepMm} ${unit} (segure para acelerar)`}
         >
           <Minus className="size-3.5" />
         </button>
@@ -465,14 +472,15 @@ export function ChamferDirectDimensionEditor({
 
         <button
           type="button"
-          onClick={() => handleStep(1)}
+          data-testid="cad-keypad-plus-btn"
+          {...plusHoldProps}
           style={{
             backgroundColor: keyBg,
             borderColor: borderSubtle,
             color: textPrimary,
           }}
-          className="flex size-7 shrink-0 items-center justify-center rounded-lg border active:scale-92 transition-transform cursor-pointer"
-          title={`+${stepMm} ${unit}`}
+          className="flex size-7 shrink-0 items-center justify-center rounded-lg border active:scale-92 transition-transform cursor-pointer select-none"
+          title={`+${stepMm} ${unit} (segure para acelerar)`}
         >
           <Plus className="size-3.5" />
         </button>

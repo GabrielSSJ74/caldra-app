@@ -261,10 +261,10 @@ export function WorkshopDashboard() {
     if (import.meta.env.DEV) return;
     if (typeof window === "undefined") return;
     const prewarm = () => {
-      void import("@/components/lab2d/Lab2DEditor");
-      void import("@/routes/desenho-2d.index");
-      void import("@/lib/lab2d/projects");
-      void import("@/lib/lab2d/spatialIndex");
+      void import("@/components/lab2d/Lab2DEditor").catch(() => {});
+      void import("@/routes/desenho-2d.index").catch(() => {});
+      void import("@/lib/lab2d/projects").catch(() => {});
+      void import("@/lib/lab2d/spatialIndex").catch(() => {});
     };
     const win = window as Window & {
       requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;

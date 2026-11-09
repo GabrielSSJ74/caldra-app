@@ -26,6 +26,39 @@ import type {
   ComputeInstancesResult,
 } from "@/lib/lab2d/cadArrayEngine";
 import { ChamferDirectDimensionEditor } from "./ChamferDirectDimensionEditor";
+import { useExponentialHold } from "@/lib/lab2d/useExponentialHold";
+
+interface ExponentialStepButtonProps {
+  onStep: (multiplier: number) => void;
+  className?: string;
+  title?: string;
+  children: React.ReactNode;
+  "data-testid"?: string;
+}
+
+const ExponentialStepButton: React.FC<ExponentialStepButtonProps> = ({
+  onStep,
+  className,
+  title,
+  children,
+  "data-testid": testId,
+}) => {
+  const holdProps = useExponentialHold((mult) => {
+    triggerHaptic("tap");
+    onStep(mult);
+  });
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      title={title}
+      className={cn(className, "select-none")}
+      {...holdProps}
+    >
+      {children}
+    </button>
+  );
+};
 
 export interface ChamferArrayHUDProps {
   arrayType: ArrayType;
@@ -571,19 +604,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                       Ângulo Total (°)
                     </span>
                     <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("tap");
+                      <ExponentialStepButton
+                        onStep={(mult) =>
                           onChangePolarParams((p) => ({
                             ...p,
-                            totalAngleDeg: Math.max(15, p.totalAngleDeg - 15),
-                          }));
-                        }}
+                            totalAngleDeg: Math.max(15, p.totalAngleDeg - 15 * mult),
+                          }))
+                        }
                         className={stepBtnClass}
                       >
                         -
-                      </button>
+                      </ExponentialStepButton>
                       <button
                         type="button"
                         onClick={(ev) =>
@@ -598,19 +629,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                       >
                         {polarParams.totalAngleDeg}°
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("tap");
+                      <ExponentialStepButton
+                        onStep={(mult) =>
                           onChangePolarParams((p) => ({
                             ...p,
-                            totalAngleDeg: Math.min(360, p.totalAngleDeg + 15),
-                          }));
-                        }}
+                            totalAngleDeg: Math.min(360, p.totalAngleDeg + 15 * mult),
+                          }))
+                        }
                         className={stepBtnClass}
                       >
                         +
-                      </button>
+                      </ExponentialStepButton>
                     </div>
                   </div>
 
@@ -676,19 +705,18 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     Quantidade (N)
                   </span>
                   <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      data-testid="array-polar-count-minus"
+                      onStep={(mult) =>
                         onChangePolarParams((p) => ({
                           ...p,
-                          count: Math.max(2, p.count - 1),
-                        }));
-                      }}
+                          count: Math.max(2, p.count - 1 * mult),
+                        }))
+                      }
                       className={stepBtnClass}
                     >
                       -
-                    </button>
+                    </ExponentialStepButton>
                     <button
                       type="button"
                       onClick={(ev) =>
@@ -703,19 +731,18 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     >
                       {polarParams.count} un
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      data-testid="array-polar-count-plus"
+                      onStep={(mult) =>
                         onChangePolarParams((p) => ({
                           ...p,
-                          count: Math.min(360, p.count + 1),
-                        }));
-                      }}
+                          count: Math.min(360, p.count + 1 * mult),
+                        }))
+                      }
                       className={stepBtnClass}
                     >
                       +
-                    </button>
+                    </ExponentialStepButton>
                   </div>
                 </div>
 
@@ -749,19 +776,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     Diâmetro PCD (mm)
                   </span>
                   <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      onStep={(mult) =>
                         onChangePolarParams((p) => ({
                           ...p,
-                          radius: Math.max(1, Number(((p.radius ?? 50) - 2.5).toFixed(2))),
-                        }));
-                      }}
+                          radius: Math.max(1, Number(((p.radius ?? 50) - 2.5 * mult).toFixed(2))),
+                        }))
+                      }
                       className={stepBtnClass}
                     >
                       -
-                    </button>
+                    </ExponentialStepButton>
                     <button
                       type="button"
                       onClick={(ev) =>
@@ -776,19 +801,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     >
                       Ø {pcdValue}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      onStep={(mult) =>
                         onChangePolarParams((p) => ({
                           ...p,
-                          radius: Number(((p.radius ?? 50) + 2.5).toFixed(2)),
-                        }));
-                      }}
+                          radius: Number(((p.radius ?? 50) + 2.5 * mult).toFixed(2)),
+                        }))
+                      }
                       className={stepBtnClass}
                     >
                       +
-                    </button>
+                    </ExponentialStepButton>
                   </div>
                 </div>
 
@@ -798,19 +821,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     Raio (mm)
                   </span>
                   <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      onStep={(mult) =>
                         onChangePolarParams((p) => ({
                           ...p,
-                          radius: Math.max(0.5, Number(((p.radius ?? 50) - 1).toFixed(2))),
-                        }));
-                      }}
+                          radius: Math.max(0.5, Number(((p.radius ?? 50) - 1 * mult).toFixed(2))),
+                        }))
+                      }
                       className={stepBtnClass}
                     >
                       -
-                    </button>
+                    </ExponentialStepButton>
                     <button
                       type="button"
                       onClick={(ev) =>
@@ -825,19 +846,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     >
                       R {radiusValue}
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      onStep={(mult) =>
                         onChangePolarParams((p) => ({
                           ...p,
-                          radius: Number(((p.radius ?? 50) + 1).toFixed(2)),
-                        }));
-                      }}
+                          radius: Number(((p.radius ?? 50) + 1 * mult).toFixed(2)),
+                        }))
+                      }
                       className={stepBtnClass}
                     >
                       +
-                    </button>
+                    </ExponentialStepButton>
                   </div>
                 </div>
 
@@ -847,19 +866,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     Ângulo Inicial (θ₀)
                   </span>
                   <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      onStep={(mult) =>
                         onChangePolarParams((p) => ({
                           ...p,
-                          startAngleDeg: Number(((p.startAngleDeg ?? 0) - 15).toFixed(1)),
-                        }));
-                      }}
+                          startAngleDeg: Number(((p.startAngleDeg ?? 0) - 15 * mult).toFixed(1)),
+                        }))
+                      }
                       className={stepBtnClass}
                     >
                       -
-                    </button>
+                    </ExponentialStepButton>
                     <button
                       type="button"
                       onClick={(ev) =>
@@ -874,19 +891,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     >
                       {startAngleValue}°
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      onStep={(mult) =>
                         onChangePolarParams((p) => ({
                           ...p,
-                          startAngleDeg: Number(((p.startAngleDeg ?? 0) + 15).toFixed(1)),
-                        }));
-                      }}
+                          startAngleDeg: Number(((p.startAngleDeg ?? 0) + 15 * mult).toFixed(1)),
+                        }))
+                      }
                       className={stepBtnClass}
                     >
                       +
-                    </button>
+                    </ExponentialStepButton>
                   </div>
                 </div>
               </div>
@@ -898,21 +913,20 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     {linearMode === "fill" ? "Colunas (Auto Nx)" : "Colunas (Nx)"}
                   </span>
                   <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      data-testid="array-linear-cols-minus"
+                      onStep={(mult) =>
                         onChangeLinearParams((p) => ({
                           ...p,
                           mode: p.mode === "fill" ? "fixed_step" : p.mode,
                           modeX: p.modeX === "fill" ? "fixed_step" : p.modeX,
-                          cols: Math.max(1, (p.cols ?? 1) - 1),
-                        }));
-                      }}
+                          cols: Math.max(1, (p.cols ?? 1) - 1 * mult),
+                        }))
+                      }
                       className={stepBtnClass}
                     >
                       -
-                    </button>
+                    </ExponentialStepButton>
                     <button
                       type="button"
                       onClick={(ev) =>
@@ -927,21 +941,20 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     >
                       {effectiveCols} un
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      data-testid="array-linear-cols-plus"
+                      onStep={(mult) =>
                         onChangeLinearParams((p) => ({
                           ...p,
                           mode: p.mode === "fill" ? "fixed_step" : p.mode,
                           modeX: p.modeX === "fill" ? "fixed_step" : p.modeX,
-                          cols: Math.min(200, (p.cols ?? 1) + 1),
-                        }));
-                      }}
+                          cols: Math.min(200, (p.cols ?? 1) + 1 * mult),
+                        }))
+                      }
                       className={stepBtnClass}
                     >
                       +
-                    </button>
+                    </ExponentialStepButton>
                   </div>
                 </div>
 
@@ -952,19 +965,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                       Extensão X (mm)
                     </span>
                     <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("tap");
+                      <ExponentialStepButton
+                        onStep={(mult) =>
                           onChangeLinearParams((p) => ({
                             ...p,
-                            spanX: Math.max(5, Number(((p.spanX ?? 160) - 10).toFixed(1))),
-                          }));
-                        }}
+                            spanX: Math.max(5, Number(((p.spanX ?? 160) - 10 * mult).toFixed(1))),
+                          }))
+                        }
                         className={stepBtnClass}
                       >
                         -
-                      </button>
+                      </ExponentialStepButton>
                       <button
                         type="button"
                         onClick={(ev) =>
@@ -979,19 +990,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                       >
                         {spanXValue} mm
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("tap");
+                      <ExponentialStepButton
+                        onStep={(mult) =>
                           onChangeLinearParams((p) => ({
                             ...p,
-                            spanX: Number(((p.spanX ?? 160) + 10).toFixed(1)),
-                          }));
-                        }}
+                            spanX: Number(((p.spanX ?? 160) + 10 * mult).toFixed(1)),
+                          }))
+                        }
                         className={stepBtnClass}
                       >
                         +
-                      </button>
+                      </ExponentialStepButton>
                     </div>
                   </div>
                 ) : (
@@ -1000,19 +1009,18 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                       Passo X (mm)
                     </span>
                     <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("tap");
+                      <ExponentialStepButton
+                        data-testid="array-linear-dx-minus"
+                        onStep={(mult) =>
                           onChangeLinearParams((p) => ({
                             ...p,
-                            dx: Number((p.dx - 5).toFixed(2)),
-                          }));
-                        }}
+                            dx: Number((p.dx - 5 * mult).toFixed(2)),
+                          }))
+                        }
                         className={stepBtnClass}
                       >
                         -
-                      </button>
+                      </ExponentialStepButton>
                       <button
                         type="button"
                         onClick={(ev) =>
@@ -1036,19 +1044,18 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                         )}
                         {effectiveStepX.toFixed(1)}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("tap");
+                      <ExponentialStepButton
+                        data-testid="array-linear-dx-plus"
+                        onStep={(mult) =>
                           onChangeLinearParams((p) => ({
                             ...p,
-                            dx: Number((p.dx + 5).toFixed(2)),
-                          }));
-                        }}
+                            dx: Number((p.dx + 5 * mult).toFixed(2)),
+                          }))
+                        }
                         className={stepBtnClass}
                       >
                         +
-                      </button>
+                      </ExponentialStepButton>
                       <button
                         type="button"
                         onClick={() => {
@@ -1074,19 +1081,18 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     Linhas (Ny)
                   </span>
                   <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      data-testid="array-linear-rows-minus"
+                      onStep={(mult) =>
                         onChangeLinearParams((p) => ({
                           ...p,
-                          rows: Math.max(1, (p.rows ?? 1) - 1),
-                        }));
-                      }}
+                          rows: Math.max(1, (p.rows ?? 1) - 1 * mult),
+                        }))
+                      }
                       className={stepBtnClass}
                     >
                       -
-                    </button>
+                    </ExponentialStepButton>
                     <button
                       type="button"
                       onClick={(ev) =>
@@ -1101,19 +1107,18 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     >
                       {effectiveRows} un
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      data-testid="array-linear-rows-plus"
+                      onStep={(mult) =>
                         onChangeLinearParams((p) => ({
                           ...p,
-                          rows: Math.min(200, (p.rows ?? 1) + 1),
-                        }));
-                      }}
+                          rows: Math.min(200, (p.rows ?? 1) + 1 * mult),
+                        }))
+                      }
                       className={stepBtnClass}
                     >
                       +
-                    </button>
+                    </ExponentialStepButton>
                   </div>
                 </div>
 
@@ -1124,19 +1129,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                       Extensão Y (mm)
                     </span>
                     <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("tap");
+                      <ExponentialStepButton
+                        onStep={(mult) =>
                           onChangeLinearParams((p) => ({
                             ...p,
-                            spanY: Math.max(0, Number(((p.spanY ?? 100) - 10).toFixed(1))),
-                          }));
-                        }}
+                            spanY: Math.max(0, Number(((p.spanY ?? 100) - 10 * mult).toFixed(1))),
+                          }))
+                        }
                         className={stepBtnClass}
                       >
                         -
-                      </button>
+                      </ExponentialStepButton>
                       <button
                         type="button"
                         onClick={(ev) =>
@@ -1151,19 +1154,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                       >
                         {spanYValue} mm
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("tap");
+                      <ExponentialStepButton
+                        onStep={(mult) =>
                           onChangeLinearParams((p) => ({
                             ...p,
-                            spanY: Number(((p.spanY ?? 100) + 10).toFixed(1)),
-                          }));
-                        }}
+                            spanY: Number(((p.spanY ?? 100) + 10 * mult).toFixed(1)),
+                          }))
+                        }
                         className={stepBtnClass}
                       >
                         +
-                      </button>
+                      </ExponentialStepButton>
                     </div>
                   </div>
                 ) : (
@@ -1172,19 +1173,18 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                       Passo Y (mm)
                     </span>
                     <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("tap");
+                      <ExponentialStepButton
+                        data-testid="array-linear-dy-minus"
+                        onStep={(mult) =>
                           onChangeLinearParams((p) => ({
                             ...p,
-                            dy: Number((p.dy - 5).toFixed(2)),
-                          }));
-                        }}
+                            dy: Number((p.dy - 5 * mult).toFixed(2)),
+                          }))
+                        }
                         className={stepBtnClass}
                       >
                         -
-                      </button>
+                      </ExponentialStepButton>
                       <button
                         type="button"
                         onClick={(ev) =>
@@ -1200,19 +1200,18 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                       >
                         {effectiveStepY.toFixed(1)}
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic("tap");
+                      <ExponentialStepButton
+                        data-testid="array-linear-dy-plus"
+                        onStep={(mult) =>
                           onChangeLinearParams((p) => ({
                             ...p,
-                            dy: Number((p.dy + 5).toFixed(2)),
-                          }));
-                        }}
+                            dy: Number((p.dy + 5 * mult).toFixed(2)),
+                          }))
+                        }
                         className={stepBtnClass}
                       >
                         +
-                      </button>
+                      </ExponentialStepButton>
                       <button
                         type="button"
                         onClick={() => {
@@ -1238,19 +1237,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     Inclinação (∠°)
                   </span>
                   <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      onStep={(mult) =>
                         onChangeLinearParams((p) => ({
                           ...p,
-                          angleDeg: Number(((p.angleDeg ?? 0) - 15).toFixed(1)),
-                        }));
-                      }}
+                          angleDeg: Number(((p.angleDeg ?? 0) - 15 * mult).toFixed(1)),
+                        }))
+                      }
                       className={stepBtnClass}
                     >
                       -
-                    </button>
+                    </ExponentialStepButton>
                     <button
                       type="button"
                       onClick={(ev) =>
@@ -1265,19 +1262,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     >
                       {linearAngleValue}°
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      onStep={(mult) =>
                         onChangeLinearParams((p) => ({
                           ...p,
-                          angleDeg: Number(((p.angleDeg ?? 0) + 15).toFixed(1)),
-                        }));
-                      }}
+                          angleDeg: Number(((p.angleDeg ?? 0) + 15 * mult).toFixed(1)),
+                        }))
+                      }
                       className={stepBtnClass}
                     >
                       +
-                    </button>
+                    </ExponentialStepButton>
                   </div>
                 </div>
 
@@ -1311,22 +1306,20 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     Margem (mm)
                   </span>
                   <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      onStep={(mult) =>
                         onChangeLinearParams((p) => {
                           const next = Math.max(
                             0,
-                            Number(((p.marginX ?? 15) - 2.5).toFixed(1)),
+                            Number(((p.marginX ?? 15) - 2.5 * mult).toFixed(1)),
                           );
                           return { ...p, marginX: next, marginY: next };
-                        });
-                      }}
+                        })
+                      }
                       className={stepBtnClass}
                     >
                       -
-                    </button>
+                    </ExponentialStepButton>
                     <button
                       type="button"
                       onClick={(ev) =>
@@ -1341,19 +1334,17 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
                     >
                       {marginValue} mm
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic("tap");
+                    <ExponentialStepButton
+                      onStep={(mult) =>
                         onChangeLinearParams((p) => {
-                          const next = Number(((p.marginX ?? 15) + 2.5).toFixed(1));
+                          const next = Number(((p.marginX ?? 15) + 2.5 * mult).toFixed(1));
                           return { ...p, marginX: next, marginY: next };
-                        });
-                      }}
+                        })
+                      }
                       className={stepBtnClass}
                     >
                       +
-                    </button>
+                    </ExponentialStepButton>
                   </div>
                 </div>
               </div>
@@ -1597,14 +1588,15 @@ export const ChamferArrayHUD: React.FC<ChamferArrayHUDProps> = ({
       {/* TECLADO NUMÉRICO PRÓPRIO DO CHAMFER CAD */}
       {keypadState && (
         <ChamferDirectDimensionEditor
+          open={true}
           label={keypadState.label}
-          initialValue={keypadState.value}
+          currentValue={keypadState.value}
           screenPos={keypadState.screenPos}
           allowInvert={keypadState.allowInvert}
           initialLocked={keypadState.initialLocked}
-          onLiveChange={(val) => applyKeypadValue(val, false)}
+          onPreviewChange={(val) => applyKeypadValue(val, false)}
           onConfirm={(val) => applyKeypadValue(val, true)}
-          onCancel={() => setKeypadState(null)}
+          onClose={() => setKeypadState(null)}
         />
       )}
     </>

@@ -93,13 +93,30 @@ import { useDeclareImmersive } from "@/lib/ui/immersive";
 import type { VisionImageLayer } from "@/components/lab2d/VisionDialog";
 import { TextDialog, type TextSpec } from "@/components/lab2d/TextDialog";
 
-const ExportDialog = lazy(() =>
+function lazyWithRetry<T extends React.ComponentType<any>>(
+  importer: () => Promise<{ default: T }>,
+): React.LazyExoticComponent<T> {
+  return lazy(async () => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        return await importer();
+      } catch (err) {
+        lastError = err;
+        await new Promise((r) => setTimeout(r, 250 * (attempt + 1)));
+      }
+    }
+    throw lastError;
+  });
+}
+
+const ExportDialog = lazyWithRetry(() =>
   import("@/components/lab2d/ExportDialog").then((m) => ({ default: m.ExportDialog })),
 );
-const ImportDialog = lazy(() =>
+const ImportDialog = lazyWithRetry(() =>
   import("@/components/lab2d/ImportDialog").then((m) => ({ default: m.ImportDialog })),
 );
-const VisionDialog = lazy(() =>
+const VisionDialog = lazyWithRetry(() =>
   import("@/components/lab2d/VisionDialog").then((m) => ({ default: m.VisionDialog })),
 );
 import {
@@ -287,13 +304,13 @@ import {
   type MorphTransitionState,
 } from "@/lib/cad/sketch/sketch3dBridge";
 
-const Cad3DStage = lazy(() =>
+const Cad3DStage = lazyWithRetry(() =>
   import("@/components/lab2d/Cad3DStage").then((m) => ({ default: m.Cad3DStage })),
 );
-const ChamferCenterDialog = lazy(() =>
+const ChamferCenterDialog = lazyWithRetry(() =>
   import("./ChamferCenterDialog").then((m) => ({ default: m.ChamferCenterDialog })),
 );
-const ChamferScaleDialog = lazy(() =>
+const ChamferScaleDialog = lazyWithRetry(() =>
   import("./ChamferScaleDialog").then((m) => ({ default: m.ChamferScaleDialog })),
 );
 import {
@@ -382,7 +399,7 @@ import { ChamferOrbit3DPopover } from "./ChamferOrbit3DPopover";
 import { ChamferAxesGizmo3D } from "./ChamferAxesGizmo3D";
 import type { EdgeMode } from "@/lib/viz3d/cameraPresets";
 
-const ChamferUnified3DViewport = lazy(() =>
+const ChamferUnified3DViewport = lazyWithRetry(() =>
   import("./ChamferUnified3DViewport").then((m) => ({ default: m.ChamferUnified3DViewport })),
 );
 import {
@@ -459,33 +476,33 @@ import { ChamferIsoPlaneHUD } from "./ChamferIsoPlaneHUD";
 
 const loadChamferSemanticPalette = () =>
   import("./ChamferSemanticPalette").then((m) => ({ default: m.ChamferSemanticPalette }));
-const ChamferSemanticPalette = lazy(loadChamferSemanticPalette);
-const ChamferClipboardModal = lazy(() =>
+const ChamferSemanticPalette = lazyWithRetry(loadChamferSemanticPalette);
+const ChamferClipboardModal = lazyWithRetry(() =>
   import("./ChamferClipboardModal").then((m) => ({ default: m.ChamferClipboardModal })),
 );
-const ChamferFabricationPassportModal = lazy(() =>
+const ChamferFabricationPassportModal = lazyWithRetry(() =>
   import("./ChamferFabricationPassportModal").then((m) => ({
     default: m.ChamferFabricationPassportModal,
   })),
 );
-const ChamferTopologyHealthModal = lazy(() =>
+const ChamferTopologyHealthModal = lazyWithRetry(() =>
   import("./ChamferTopologyHealthModal").then((m) => ({ default: m.ChamferTopologyHealthModal })),
 );
-const ChamferVariablesModal = lazy(() =>
+const ChamferVariablesModal = lazyWithRetry(() =>
   import("./ChamferVariablesModal").then((m) => ({ default: m.ChamferVariablesModal })),
 );
-const ChamferPresetsModal = lazy(() =>
+const ChamferPresetsModal = lazyWithRetry(() =>
   import("./ChamferPresetsModal").then((m) => ({ default: m.ChamferPresetsModal })),
 );
-const ChamferTechnicalSheetModal = lazy(() =>
+const ChamferTechnicalSheetModal = lazyWithRetry(() =>
   import("./ChamferTechnicalSheetModal").then((m) => ({ default: m.ChamferTechnicalSheetModal })),
 );
-const CaldraIntegratedWorkshopModal = lazy(() =>
+const CaldraIntegratedWorkshopModal = lazyWithRetry(() =>
   import("./CaldraIntegratedWorkshopModal").then((m) => ({
     default: m.CaldraIntegratedWorkshopModal,
   })),
 );
-const ChamferIsoConvertModal = lazy(() =>
+const ChamferIsoConvertModal = lazyWithRetry(() =>
   import("./ChamferIsoConvertModal").then((m) => ({ default: m.ChamferIsoConvertModal })),
 );
 import { DUAL_TOOL_PRESETS } from "@/lib/lab2d/cadDualToolManager";
@@ -528,7 +545,11 @@ import {
   ChamferTouchDynamicHud,
   type LockedDimensionsState,
 } from "./ChamferTouchDynamicHud";
-import { Chamfer3DGizmoAndLoftOverlay } from "./Chamfer3DGizmoAndLoftOverlay";
+const Chamfer3DGizmoAndLoftOverlay = lazyWithRetry(() =>
+  import("./Chamfer3DGizmoAndLoftOverlay").then((m) => ({
+    default: m.Chamfer3DGizmoAndLoftOverlay,
+  })),
+);
 import {
   buildLoft3DMesh,
   createLoft3DEntity,
@@ -1817,7 +1838,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         toast.info("Órbita 3D Livre ativada — arraste na tela para rotacionar a perspectiva.");
         return;
       }
-      if (presetId === "top") {
+      if (presetId === "top" && activeMode !== "3d") {
         transitionTo2D();
         toast.info("Perspectiva: Superior (2D)");
         return;
@@ -1827,7 +1848,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       animateOrbitTo(def.azimuthDeg, def.elevationDeg, presetId);
       toast.info(`Perspectiva: ${def.label}`);
     },
-    [animateOrbitTo, transitionTo2D],
+    [activeMode, animateOrbitTo, transitionTo2D],
   );
 
   const handleDragOrbitDelta = useCallback((dx: number, dy: number) => {
@@ -12837,6 +12858,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           })()}
 
           {/* GIZMO 3D DE TRANSLAÇÃO (X, Y, +Z ORTHO) E MOTOR INTERATIVO LOFT 3D MULTISSEÇÃO */}
+          <Suspense fallback={null}>
           <Chamfer3DGizmoAndLoftOverlay
             entities={entities}
             selectedIds={selectionSet}
@@ -12960,6 +12982,37 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               }
             }}
             onSelectEntities={setSelection}
+            onPreviewEntities={(updater, selectedIds) => {
+              setEntities((prev) => {
+                const updated = typeof updater === "function" ? updater(prev) : updater;
+                const synced = syncAssociativeGeometricMarks(updated);
+                ReferenceService.syncWithEntities(synced);
+                return synced;
+              });
+              if (Array.isArray(selectedIds)) {
+                setSelection(selectedIds);
+              }
+            }}
+            onCommitAtomicDrag={(preDragEntities, finalEntities, toastMessageOrIds) => {
+              past.current = [...past.current.slice(-49), preDragEntities];
+              pastReferenceSnapshotsRef.current = [
+                ...pastReferenceSnapshotsRef.current.slice(-49),
+                ReferenceService.getSnapshot(),
+              ];
+              future.current = [];
+              futureReferenceSnapshotsRef.current = [];
+              setHistoryState({ canUndo: past.current.length > 0, canRedo: false });
+              setEntities(() => {
+                const synced = syncAssociativeGeometricMarks(finalEntities);
+                ReferenceService.syncWithEntities(synced);
+                return synced;
+              });
+              if (Array.isArray(toastMessageOrIds)) {
+                setSelection(toastMessageOrIds);
+              } else if (typeof toastMessageOrIds === "string" && toastMessageOrIds) {
+                toast.success(toastMessageOrIds);
+              }
+            }}
             onCommitEntities={(updater, toastMessageOrIds) => {
               commit(updater);
               if (Array.isArray(toastMessageOrIds)) {
@@ -12992,6 +13045,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               toast.success("Corpo 3D removido.");
             }}
           />
+          </Suspense>
 
           {/* TECLADO NUMÉRICO DIRETO DE ELEVAÇÃO +Z (GIZMO 3D) */}
           {elevationKeypadState.open && (

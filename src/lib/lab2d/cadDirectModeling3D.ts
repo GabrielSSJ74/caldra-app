@@ -1260,8 +1260,15 @@ function appendCapWithHolesToMesh(
   const n = outerPts3D.length;
   if (n < 3) return 0;
 
+  const nLen = Math.hypot(normal.x, normal.y, normal.z) || 1;
+  const unitNormal: Vec3Mm = {
+    x: normal.x / nLen,
+    y: normal.y / nLen,
+    z: normal.z / nLen,
+  };
+
   if (holesPts3D.length === 1 && holesPts3D[0]!.length === outerPts3D.length) {
-    // Malha de anel perfeita (ex.: parede de tubo Metalon / Shell ou flange com 1 furo concêntrico)
+    // Malha de anel perfeita (TOP_RING_FACE / BOTTOM_RING_FACE de Tubo Metalon / Shell ou flange com 1 furo concêntrico)
     const innerPts3D = holesPts3D[0]!;
     for (let i = 0; i < n; i++) {
       const next = (i + 1) % n;
@@ -1273,9 +1280,22 @@ function appendCapWithHolesToMesh(
       const baseIdx = positions.length / 3;
       positions.push(o0.x, o0.y, o0.z, o1.x, o1.y, o1.z, i1.x, i1.y, i1.z, i0.x, i0.y, i0.z);
       for (let k = 0; k < 4; k++) {
-        normals.push(normal.x, normal.y, normal.z);
+        normals.push(unitNormal.x, unitNormal.y, unitNormal.z);
       }
-      if (isTopCap) {
+
+      // Garante orientação consistente da normal da face do anel
+      const e1x = o1.x - o0.x;
+      const e1y = o1.y - o0.y;
+      const e1z = o1.z - o0.z;
+      const e2x = i1.x - o0.x;
+      const e2y = i1.y - o0.y;
+      const e2z = i1.z - o0.z;
+      const cx = e1y * e2z - e1z * e2y;
+      const cy = e1z * e2x - e1x * e2z;
+      const cz = e1x * e2y - e1y * e2x;
+      const alignDot = cx * unitNormal.x + cy * unitNormal.y + cz * unitNormal.z;
+
+      if (alignDot >= 0) {
         indices.push(baseIdx, baseIdx + 1, baseIdx + 2, baseIdx, baseIdx + 2, baseIdx + 3);
       } else {
         indices.push(baseIdx, baseIdx + 2, baseIdx + 1, baseIdx, baseIdx + 3, baseIdx + 2);
@@ -1288,12 +1308,38 @@ function appendCapWithHolesToMesh(
     return areaMm2;
   }
 
-  // Triangulação B-Rep Real com Furos (THREE.ShapeUtils.triangulateShape)
-  // Garante que qualquer furo circular, oblongo ou poligonal (do 2D Sketch ou Hole 3D)
-  // recorte fisicamente a malha da tampa superior e inferior (furo 100% vazado estilo flange).
+  // Constrói base ortonormal 2D tangente ao plano real 3D da tampa (uAxis, vAxis)
+  // para que peças rotacionadas em 90° (X/Y/Z) ou esquadrias nunca colapsem a área projetada!
+  const refVec: Vec3Mm =
+    Math.abs(unitNormal.z) < 0.85 ? { x: 0, y: 0, z: 1 } : { x: 1, y: 0, z: 0 };
+  let ux = refVec.y * unitNormal.z - refVec.z * unitNormal.y;
+  let uy = refVec.z * unitNormal.x - refVec.x * unitNormal.z;
+  let uz = refVec.x * unitNormal.y - refVec.y * unitNormal.x;
+  const uLen = Math.hypot(ux, uy, uz) || 1;
+  ux /= uLen;
+  uy /= uLen;
+  uz /= uLen;
+
+  // vAxis = unitNormal × uAxis => uAxis × vAxis = unitNormal
+  const vx = unitNormal.y * uz - unitNormal.z * uy;
+  const vy = unitNormal.z * ux - unitNormal.x * uz;
+  const vz = unitNormal.x * uy - unitNormal.y * ux;
+
+  const origin3D = outerPts3D[0]!;
+  const projectToTangent2D = (p: Vec3Mm): THREE.Vector2 => {
+    const dx = p.x - origin3D.x;
+    const dy = p.y - origin3D.y;
+    const dz = p.z - origin3D.z;
+    return new THREE.Vector2(
+      dx * ux + dy * uy + dz * uz,
+      dx * vx + dy * vy + dz * vz,
+    );
+  };
+
+  // Triangulação B-Rep Real com Furos (THREE.ShapeUtils.triangulateShape) no plano tangente 3D
   const validHoles3D = holesPts3D.filter((h) => h.length >= 3);
   if (validHoles3D.length > 0 || n >= 3) {
-    const rawOuterVec2 = outerPts3D.map((p) => new THREE.Vector2(p.x, p.y));
+    const rawOuterVec2 = outerPts3D.map(projectToTangent2D);
     const isOuterCW = THREE.ShapeUtils.isClockWise(rawOuterVec2);
     const contour2D = isOuterCW ? [...rawOuterVec2].reverse() : rawOuterVec2;
     const orderedOuter3D = isOuterCW ? [...outerPts3D].reverse() : outerPts3D;
@@ -1301,7 +1347,7 @@ function appendCapWithHolesToMesh(
     const holes2D: THREE.Vector2[][] = [];
     const orderedHoles3D: Vec3Mm[][] = [];
     for (const h3d of validHoles3D) {
-      const hVec2 = h3d.map((p) => new THREE.Vector2(p.x, p.y));
+      const hVec2 = h3d.map(projectToTangent2D);
       const isHoleCW = THREE.ShapeUtils.isClockWise(hVec2);
       if (!isHoleCW) {
         holes2D.push([...hVec2].reverse());
@@ -1315,16 +1361,20 @@ function appendCapWithHolesToMesh(
     const triangles = THREE.ShapeUtils.triangulateShape(contour2D, holes2D);
     if (triangles.length > 0) {
       const allPts3D: Vec3Mm[] = [...orderedOuter3D];
-      for (const h3d of orderedHoles3D) {
-        for (const p of h3d) {
-          allPts3D.push(p);
+      const allPts2D: THREE.Vector2[] = [...contour2D];
+      for (let hIdx = 0; hIdx < orderedHoles3D.length; hIdx++) {
+        const h3d = orderedHoles3D[hIdx]!;
+        const h2d = holes2D[hIdx]!;
+        for (let k = 0; k < h3d.length; k++) {
+          allPts3D.push(h3d[k]!);
+          allPts2D.push(h2d[k]!);
         }
       }
 
       const startVertexIdx = positions.length / 3;
       for (const p of allPts3D) {
         positions.push(p.x, p.y, p.z);
-        normals.push(normal.x, normal.y, normal.z);
+        normals.push(unitNormal.x, unitNormal.y, unitNormal.z);
       }
 
       for (const tri of triangles) {
@@ -1336,20 +1386,19 @@ function appendCapWithHolesToMesh(
         const p2 = allPts3D[i2]!;
         areaMm2 += triangleArea3D(p0, p1, p2);
 
-        const cross2D = (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x);
-        const isTriCCW = cross2D >= 0;
-        if (isTopCap) {
-          if (isTriCCW) {
-            indices.push(startVertexIdx + i0, startVertexIdx + i1, startVertexIdx + i2);
-          } else {
-            indices.push(startVertexIdx + i0, startVertexIdx + i2, startVertexIdx + i1);
-          }
+        // Verifica o produto vetorial 3D real em relação a unitNormal
+        // Nota: como em buildDirectTopology3DScene o eixo Y é invertido (y -> -y) e os índices (1,2) são trocados,
+        // no espaço local (x, y_down, z) o produto vetorial (p1 - p0) x (p2 - p0) com y invertido deve alinhar a unitNormal.
+        const u0 = allPts2D[i0]!;
+        const u1 = allPts2D[i1]!;
+        const u2 = allPts2D[i2]!;
+        const crossUV = (u1.x - u0.x) * (u2.y - u0.y) - (u1.y - u0.y) * (u2.x - u0.x);
+        const isTriCCWInTangent = crossUV >= 0;
+        void isTopCap;
+        if (!isTriCCWInTangent) {
+          indices.push(startVertexIdx + i0, startVertexIdx + i1, startVertexIdx + i2);
         } else {
-          if (isTriCCW) {
-            indices.push(startVertexIdx + i0, startVertexIdx + i2, startVertexIdx + i1);
-          } else {
-            indices.push(startVertexIdx + i0, startVertexIdx + i1, startVertexIdx + i2);
-          }
+          indices.push(startVertexIdx + i0, startVertexIdx + i2, startVertexIdx + i1);
         }
       }
       return areaMm2;
@@ -2189,9 +2238,12 @@ export function buildDirectTopology3DScene(
         let cx = 0;
         let cy = 0;
         let cz = 0;
-        const samplePoly: Vec3Mm[] = [];
+        const botChain: Vec3Mm[] = [];
+        const topChain: Vec3Mm[] = [];
+        const stride = Math.max(1, Math.floor(bkt.indicesRange.length / 8));
 
-        for (const i of bkt.indicesRange) {
+        for (let kIdx = 0; kIdx < bkt.indicesRange.length; kIdx++) {
+          const i = bkt.indicesRange[kIdx]!;
           const next = (i + 1) % nOuter;
           const b0 = outerBottom3D[i]!;
           const b1 = outerBottom3D[next]!;
@@ -2223,8 +2275,16 @@ export function buildDirectTopology3DScene(
           cx += (b0.x + b1.x + t1.x + t0.x) * 0.25;
           cy += (b0.y + b1.y + t1.y + t0.y) * 0.25;
           cz += (b0.z + b1.z + t1.z + t0.z) * 0.25;
-          if (samplePoly.length < 16) samplePoly.push(b0, t0);
+          if (kIdx % stride === 0) {
+            botChain.push(b0);
+            topChain.push(t0);
+          }
+          if (kIdx === bkt.indicesRange.length - 1) {
+            botChain.push(b1);
+            topChain.push(t1);
+          }
         }
+        const samplePoly: Vec3Mm[] = [...botChain, ...topChain.reverse()];
 
         const countIdx = indices.length - startIdx;
         const meshFaceIndex = globalMeshFaceIdx++;
@@ -3393,9 +3453,30 @@ export function buildDirectTopology3DScene(
         y: topSec.center?.y ?? 0,
         z: topSec.elevationZ ?? 0,
       };
+      const topCapStartIdx = indices.length;
+      if (loftMesh.bodyMode !== "surface") {
+        const topHoles: Vec3Mm[][] =
+          loftMesh.wallThicknessMm > 0.1 && topSec.innerPoints3D && topSec.innerPoints3D.length >= 3
+            ? [topSec.innerPoints3D]
+            : [];
+        appendCapWithHolesToMesh(
+          topPoly,
+          topHoles,
+          { x: 0, y: 0, z: 1 },
+          true,
+          positions,
+          normals,
+          indices,
+        );
+      }
+      const topCapCountIdx = indices.length - topCapStartIdx;
+      const topCapFaceIdx = topCapCountIdx > 0 ? globalMeshFaceIdx++ : meshFaceIndex;
+      if (topCapCountIdx > 0) {
+        faceGroups.push({ faceIndex: topCapFaceIdx, start: topCapStartIdx, count: topCapCountIdx });
+      }
       const topFace: DirectFace3D = {
         faceId: `${bodyId}_face_top`,
-        meshFaceIndex,
+        meshFaceIndex: topCapFaceIdx,
         bodyId,
         entityId: entId,
         role: "top",
@@ -3408,7 +3489,7 @@ export function buildDirectTopology3DScene(
       };
       bodyFaces.push(topFace);
       facesById.set(topFace.faceId, topFace);
-      facesByMeshIndex.set(meshFaceIndex, topFace);
+      facesByMeshIndex.set(topCapFaceIdx, topFace);
 
       const closedTop: number[] = [];
       for (const p of topPoly) closedTop.push(p.x, p.y, p.z);
@@ -3447,9 +3528,30 @@ export function buildDirectTopology3DScene(
         y: bottomSec.center?.y ?? 0,
         z: bottomSec.elevationZ ?? 0,
       };
+      const botCapStartIdx = indices.length;
+      if (loftMesh.bodyMode !== "surface") {
+        const botHoles: Vec3Mm[][] =
+          loftMesh.wallThicknessMm > 0.1 && bottomSec.innerPoints3D && bottomSec.innerPoints3D.length >= 3
+            ? [bottomSec.innerPoints3D]
+            : [];
+        appendCapWithHolesToMesh(
+          botPoly,
+          botHoles,
+          { x: 0, y: 0, z: -1 },
+          false,
+          positions,
+          normals,
+          indices,
+        );
+      }
+      const botCapCountIdx = indices.length - botCapStartIdx;
+      const botCapFaceIdx = botCapCountIdx > 0 ? globalMeshFaceIdx++ : meshFaceIndex;
+      if (botCapCountIdx > 0) {
+        faceGroups.push({ faceIndex: botCapFaceIdx, start: botCapStartIdx, count: botCapCountIdx });
+      }
       const botFace: DirectFace3D = {
         faceId: `${bodyId}_face_bottom`,
-        meshFaceIndex,
+        meshFaceIndex: botCapFaceIdx,
         bodyId,
         entityId: entId,
         role: "bottom",
@@ -3462,6 +3564,7 @@ export function buildDirectTopology3DScene(
       };
       bodyFaces.push(botFace);
       facesById.set(botFace.faceId, botFace);
+      facesByMeshIndex.set(botCapFaceIdx, botFace);
 
       const closedBot: number[] = [];
       for (const p of botPoly) closedBot.push(p.x, p.y, p.z);

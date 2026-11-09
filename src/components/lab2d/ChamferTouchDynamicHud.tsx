@@ -21,9 +21,10 @@ import type {
   PolygonCreationMode,
   SlotCreationMode,
 } from "@/lib/lab2d/cadcraftEngine";
-import { Lock, Unlock, Check, X, Delete, CornerDownLeft, ArrowUpDown, Sparkles } from "lucide-react";
+import { Lock, Check, X, Delete, CornerDownLeft, Sparkles } from "lucide-react";
 import { triggerHaptic } from "@/lib/ui/haptics";
 import { AudioManager } from "@/lib/audio/AudioManager";
+import { useExponentialHold } from "@/lib/lab2d/useExponentialHold";
 import { cn } from "@/lib/utils";
 
 export type DimensionalFieldKind =
@@ -146,8 +147,6 @@ export function ChamferTouchDynamicHud({
   overlappingCandidates,
   onPickOverlappingEntity,
   onDismissOverlapping,
-  showPushPullZHandle,
-  thicknessMm,
   onChangeThicknessMm,
 }: ChamferTouchDynamicHudProps) {
   const [keypadField, setKeypadField] = useState<DimensionalFieldKind | null>(null);
@@ -180,15 +179,21 @@ export function ChamferTouchDynamicHud({
     setKeypadField(null);
   }, [activeTool]);
 
-  const handleStepIncrement = (dir: 1 | -1) => {
+  const handleStepIncrement = (dir: 1 | -1, multiplier = 1) => {
     triggerHaptic("tap");
-    const curr = parseFloat(inputVal.replace(",", ".")) || 0;
-    const next = Math.max(
-      keypadField === "sides" ? 3 : 0.1,
-      curr + dir * (keypadField === "sides" ? 1 : stepSize),
-    );
-    setInputVal(String(Number(next.toFixed(2))));
+    setInputVal((prev) => {
+      const curr = parseFloat(prev.replace(",", ".")) || 0;
+      const baseStep = keypadField === "sides" ? 1 : stepSize;
+      const next = Math.max(
+        keypadField === "sides" ? 3 : 0.1,
+        curr + dir * baseStep * multiplier,
+      );
+      return String(Number(next.toFixed(2)));
+    });
   };
+
+  const minusHoldProps = useExponentialHold((mult) => handleStepIncrement(-1, mult));
+  const plusHoldProps = useExponentialHold((mult) => handleStepIncrement(1, mult));
 
   const handleLockCurrentField = () => {
     const parsed = parseFloat(inputVal.replace(",", "."));
@@ -644,49 +649,7 @@ export function ChamferTouchDynamicHud({
         </div>
       )}
 
-      {/* 2. PÍLULAS SECUNDÁRIAS DO MEIO DO CANVAS REMOVIDAS — UNIFICADAS NA BARRA SUPERIOR EM TEMPO REAL (ChamferDraftConfirmationBubble) */}
-
-      {/* 3. ALÇA TÁTIL PUSH/PULL Z (EXTRUSÃO / ESPESSURA EM PERFIS FECHADOS) */}
-      {showPushPullZHandle && (
-        <div
-          className={cn(
-            "pointer-events-auto absolute bottom-12 right-4 z-35 flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 font-mono text-[10px] shadow-xl backdrop-blur-md select-none",
-            isDark
-              ? "border-cyan-500/50 bg-slate-950/92 text-cyan-200"
-              : "border-cyan-400 bg-white/95 text-slate-800",
-          )}
-        >
-          <ArrowUpDown className="size-3.5 text-cyan-400 shrink-0" />
-          <span className="font-bold uppercase">Push/Pull Z:</span>
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("tap");
-              onChangeThicknessMm(Math.max(0.5, Number((thicknessMm - 1).toFixed(1))));
-            }}
-            className="rounded bg-slate-800 hover:bg-slate-700 text-white px-1.5 py-0.5 font-bold cursor-pointer"
-          >
-            -1
-          </button>
-          <button
-            type="button"
-            onClick={() => openKeypadForField("extrude_z", thicknessMm)}
-            className="rounded-lg bg-cyan-950/80 border border-cyan-500/40 px-2 py-0.5 font-bold text-cyan-300 cursor-pointer"
-          >
-            Z = {thicknessMm.toFixed(1)} mm
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic("tap");
-              onChangeThicknessMm(Math.min(200, Number((thicknessMm + 1).toFixed(1))));
-            }}
-            className="rounded bg-slate-800 hover:bg-slate-700 text-white px-1.5 py-0.5 font-bold cursor-pointer"
-          >
-            +1
-          </button>
-        </div>
-      )}
+      {/* 2. PÍLULAS SECUNDÁRIAS E BARRA PUSH/PULL Z REMOVIDAS DEFINITIVAMENTE */}
 
       {/* 4. CHIPS DE DESAMBIGUAÇÃO DE SOBREPOSIÇÃO (QUANDO >= 2 ENTIDADES NO MESMO TOQUE) */}
       {overlappingCandidates.length >= 2 && (
@@ -759,12 +722,12 @@ export function ChamferTouchDynamicHud({
               </button>
             </div>
 
-            {/* Visor numérico + incremento rápido */}
+            {/* Visor numérico + incremento rápido com aceleração exponencial */}
             <div className="flex items-center gap-1.5 mb-2">
               <button
                 type="button"
-                onClick={() => handleStepIncrement(-1)}
-                className="h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold active:scale-95"
+                {...minusHoldProps}
+                className="h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold active:scale-95 select-none"
               >
                 -{keypadField === "sides" ? 1 : stepSize}
               </button>
@@ -782,8 +745,8 @@ export function ChamferTouchDynamicHud({
               />
               <button
                 type="button"
-                onClick={() => handleStepIncrement(1)}
-                className="h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold active:scale-95"
+                {...plusHoldProps}
+                className="h-9 px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold active:scale-95 select-none"
               >
                 +{keypadField === "sides" ? 1 : stepSize}
               </button>

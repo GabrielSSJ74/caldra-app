@@ -198,28 +198,9 @@ export const ChamferUnified3DViewport: React.FC<ChamferUnified3DViewportProps> =
       }
     }
 
-    if (count === 0 && subSelection3D.bodyIds.length > 0) {
-      for (const bId of subSelection3D.bodyIds) {
-        if (count >= 2) break;
-        const b = computedScene.bodiesById.get(bId);
-        const topF = b?.faces.find((f) => f.role === "top" || f.role === "miter") ?? b?.faces[0];
-        const pt = topF?.centroid ?? b?.pivot3D;
-        const nrm = topF?.normal ?? { x: 0, y: 0, z: 1 };
-        if (topF && pt) {
-          renderer.selectEntity(
-            {
-              id: topF.faceId,
-              type: "face",
-              index: topF.meshFaceIndex,
-              point: { x: pt.x, y: -pt.y, z: pt.z },
-              normal: { x: nrm.x, y: -nrm.y, z: nrm.z },
-            },
-            count > 0,
-          );
-          count++;
-        }
-      }
-    }
+    // Nota: quando a PEÇA INTEIRA (bodyIds) está selecionada e nenhuma face individual (faceIds) foi clicada,
+    // mantemos o acabamento metálico uniforme em todas as faces da peça (evitando pintar apenas a tampa superior
+    // de azul escuro, o que gerava ilusão óptica de peça oca/aberta).
 
     renderer.requestRender();
   }, [computedScene, subSelection3D]);
