@@ -517,18 +517,17 @@ export function ProduzirCommandCenter() {
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
 
   // 4. Ciclo de Vida Industrial (9 Etapas) + Chão de Fábrica (8 Etapas) + Dependências
-  const [workStages, setWorkStages] = useState<Record<string, IndustrialStageId>>(() =>
-    loadJsonMap(WORK_STAGE_STORAGE_KEY, {}),
-  );
-  const [shopSteps, setShopSteps] = useState<Record<string, ShopFloorStepId>>(() =>
-    loadJsonMap(SHOP_STEP_STORAGE_KEY, {}),
-  );
-  const [emittedQuotes, setEmittedQuotes] = useState<EmittedQuoteSnapshot[]>(() =>
-    loadJsonMap(QUOTES_STORAGE_KEY, []),
-  );
-  const [depRecords, setDepRecords] = useState<Record<string, WorkOrderDependencyRecord>>(() =>
-    loadJsonMap(DEPS_STORAGE_KEY, {}),
-  );
+  const [workStages, setWorkStages] = useState<Record<string, IndustrialStageId>>({});
+  const [shopSteps, setShopSteps] = useState<Record<string, ShopFloorStepId>>({});
+  const [emittedQuotes, setEmittedQuotes] = useState<EmittedQuoteSnapshot[]>([]);
+  const [depRecords, setDepRecords] = useState<Record<string, WorkOrderDependencyRecord>>({});
+
+  useEffect(() => {
+    setWorkStages(loadJsonMap(WORK_STAGE_STORAGE_KEY, {}));
+    setShopSteps(loadJsonMap(SHOP_STEP_STORAGE_KEY, {}));
+    setEmittedQuotes(loadJsonMap(QUOTES_STORAGE_KEY, []));
+    setDepRecords(loadJsonMap(DEPS_STORAGE_KEY, {}));
+  }, []);
 
   const getWorkStage = (p: Project): IndustrialStageId =>
     workStages[p.id] ?? defaultIndustrialStageForProject(p);

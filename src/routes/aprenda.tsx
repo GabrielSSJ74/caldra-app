@@ -681,7 +681,10 @@ export function AprendaPage() {
   const [librarySubTab, setLibrarySubTab] = useState<LibrarySubTab>("tabelas");
   const [activeTableId, setActiveTableId] = useState<string>("bitolas-chapa");
   const [catalogCategory, setCatalogCategory] = useState<CatalogFilterCategory>("Todos");
-  const [catalogFavs, setCatalogFavs] = useState<string[]>(() => readCatalogFavorites());
+  const [catalogFavs, setCatalogFavs] = useState<string[]>([]);
+  useEffect(() => {
+    setCatalogFavs(readCatalogFavorites());
+  }, []);
   const [selectedTableRowSheet, setSelectedTableRowSheet] = useState<{
     table: NormativeTableSpec;
     row: NormativeTableRow;

@@ -269,9 +269,10 @@ export function Oficina({
   const [margin, setMargin] = useState(10);
   const [rotate, setRotate] = useState(true);
 
-  const [quote, setQuote] = useState<Quote>(() => newQuote(regionConfig));
+  const [quote, setQuote] = useState<Quote>(() => newQuote(regionConfig, 1735689600000));
 
   useEffect(() => {
+    setQuote((prev) => (prev.date === 1735689600000 ? newQuote(regionConfig) : prev));
     setProjects(listProjects());
     if (typeof window !== "undefined") {
       try {

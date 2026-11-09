@@ -1,0 +1,225 @@
+export interface ScreenPt2D {
+  x: number;
+  y: number;
+}
+
+export interface ExternalCompassMetrics {
+  partRadiusPx: number;
+  compassRadiusPx: number;
+}
+
+export interface RotationSnapResult {
+  rawAngleDeg: number;
+  angleDeg: number;
+  snapped: boolean;
+  snappedKeyDeg: number | null;
+  isFineOuterZone: boolean;
+  currentAngleRad: number;
+}
+
+export const KEY_ROTATION_SNAP_ANGLES_DEG: readonly number[] = [
+  -270, -180, -165, -150, -135, -120, -105, -90, -75, -60, -45, -30, -15, 0,
+  15, 30, 45, 60, 75, 90, 105, 120, 135, 150, 165, 180, 270,
+];
+
+/**
+ * Calcula o raio externo dinâmico da Bússola de Rotação 3D (estilo Shapr3D),
+ * garantindo que envolva toda a peça selecionada pelo lado de fora
+ * com `partRadiusPx + 36px` (mínimo de 125px).
+ */
+export function computeExternalCompassRadiusPx(
+  partPointsScreen: readonly ScreenPt2D[],
+  pivotScreen: ScreenPt2D,
+  viewportWidth: number,
+  viewportHeight: number,
+): ExternalCompassMetrics {
+  let maxDistPx = 0;
+  for (const pt of partPointsScreen) {
+    const d = Math.hypot(pt.x - pivotScreen.x, pt.y - pivotScreen.y);
+    if (Number.isFinite(d) && d > maxDistPx) {
+      maxDistPx = d;
+    }
+  }
+
+  const partRadiusPx = Math.round(maxDistPx);
+  const desiredRadiusPx = Math.max(125, partRadiusPx + 36);
+
+  // Limita suavemente à área visível do canvas quando o pivô está próximo das bordas,
+  // mantendo sempre o mínimo de 125px.
+  const marginPx = 28;
+  const maxAvailX = Math.max(
+    125,
+    Math.min(pivotScreen.x - marginPx, viewportWidth - pivotScreen.x - marginPx),
+  );
+  const maxAvailY = Math.max(
+    125,
+    Math.min(pivotScreen.y - marginPx, viewportHeight - pivotScreen.y - marginPx),
+  );
+  const maxViewportRadius = Math.max(125, Math.min(maxAvailX, maxAvailY, 360));
+
+  const compassRadiusPx = Math.max(125, Math.min(desiredRadiusPx, maxViewportRadius));
+
+  return {
+    partRadiusPx,
+    compassRadiusPx: Math.round(compassRadiusPx),
+  };
+}
+
+/**
+ * Normaliza uma diferença angular em radianos para o intervalo [-180°, +180°].
+ */
+export function normalizeDeltaAngleDeg(deltaRad: number): number {
+  let deg = (deltaRad * 180) / Math.PI;
+  while (deg > 180) deg -= 360;
+  while (deg < -180) deg += 360;
+  return deg;
+}
+
+/**
+ * Calcula o ângulo de giro em tempo real com snaps magnéticos suaves (±2.5°)
+ * nos ângulos-chave (0°, ±15°, ±30°, ±45°, ±60°, ±90°, ±135°, ±180°, ±270°)
+ * e rotação livre de 1° em 1° quando o dedo é afastado para fora da bússola.
+ */
+export function computeRotationDragAngleAndSnap(
+  pointerScreen: ScreenPt2D,
+  pivotScreen: ScreenPt2D,
+  angleStartRad: number,
+  compassRadiusPx: number,
+  snapToleranceDeg = 2.5,
+): RotationSnapResult {
+  const dx = pointerScreen.x - pivotScreen.x;
+  const dy = pointerScreen.y - pivotScreen.y;
+  const pointerDistPx = Math.hypot(dx, dy);
+  const currentAngleRad = Math.atan2(dy, dx);
+  const rawAngleDeg = normalizeDeltaAngleDeg(currentAngleRad - angleStartRad);
+
+  // Se o usuário afastar o dedo significativamente além da borda externa da bússola,
+  // permite ajuste fino livre de 1° em 1°.
+  const isFineOuterZone = pointerDistPx > compassRadiusPx + 54;
+
+  if (!isFineOuterZone) {
+    let bestSnap: number | null = null;
+    let bestDiff = Infinity;
+    for (const candidateDeg of KEY_ROTATION_SNAP_ANGLES_DEG) {
+      const diff = Math.abs(rawAngleDeg - candidateDeg);
+      if (diff <= snapToleranceDeg && diff < bestDiff) {
+        bestDiff = diff;
+        bestSnap = candidateDeg;
+      }
+    }
+    if (bestSnap !== null) {
+      return {
+        rawAngleDeg,
+        angleDeg: bestSnap,
+        snapped: true,
+        snappedKeyDeg: bestSnap,
+        isFineOuterZone: false,
+        currentAngleRad: angleStartRad + (bestSnap * Math.PI) / 180,
+      };
+    }
+  }
+
+  const roundedDeg = Math.round(rawAngleDeg);
+  return {
+    rawAngleDeg,
+    angleDeg: Object.is(roundedDeg, -0) ? 0 : roundedDeg,
+    snapped: false,
+    snappedKeyDeg: null,
+    isFineOuterZone,
+    currentAngleRad: angleStartRad + (roundedDeg * Math.PI) / 180,
+  };
+}
+
+/**
+ * Constrói o caminho SVG (path `d`) para o setor angular preenchido e arco ativo da bússola.
+ */
+export function buildCompassSectorPath(
+  pivotX: number,
+  pivotY: number,
+  radiusPx: number,
+  startAngleRad: number,
+  deltaAngleDeg: number,
+): { sectorPath: string; arcPath: string; endPoint: ScreenPt2D; midLabelPoint: ScreenPt2D } {
+  const clampedDeg = Math.max(-359.9, Math.min(359.9, deltaAngleDeg));
+  const deltaRad = (clampedDeg * Math.PI) / 180;
+  const endAngleRad = startAngleRad + deltaRad;
+
+  const startX = pivotX + Math.cos(startAngleRad) * radiusPx;
+  const startY = pivotY + Math.sin(startAngleRad) * radiusPx;
+  const endX = pivotX + Math.cos(endAngleRad) * radiusPx;
+  const endY = pivotY + Math.sin(endAngleRad) * radiusPx;
+
+  const midAngleRad = startAngleRad + deltaRad * 0.5;
+  const midLabelPoint: ScreenPt2D = {
+    x: pivotX + Math.cos(midAngleRad) * (radiusPx + 26),
+    y: pivotY + Math.sin(midAngleRad) * (radiusPx + 26),
+  };
+
+  if (Math.abs(clampedDeg) < 0.25) {
+    return {
+      sectorPath: "",
+      arcPath: "",
+      endPoint: { x: startX, y: startY },
+      midLabelPoint: {
+        x: pivotX + Math.cos(startAngleRad) * (radiusPx + 26),
+        y: pivotY + Math.sin(startAngleRad) * (radiusPx + 26),
+      },
+    };
+  }
+
+  const largeArcFlag = Math.abs(clampedDeg) > 180 ? 1 : 0;
+  const sweepFlag = clampedDeg >= 0 ? 1 : 0;
+
+  const arcPath = `M ${startX.toFixed(1)} ${startY.toFixed(1)} A ${radiusPx} ${radiusPx} 0 ${largeArcFlag} ${sweepFlag} ${endX.toFixed(1)} ${endY.toFixed(1)}`;
+  const sectorPath = `M ${pivotX.toFixed(1)} ${pivotY.toFixed(1)} L ${startX.toFixed(1)} ${startY.toFixed(1)} A ${radiusPx} ${radiusPx} 0 ${largeArcFlag} ${sweepFlag} ${endX.toFixed(1)} ${endY.toFixed(1)} Z`;
+
+  return {
+    sectorPath,
+    arcPath,
+    endPoint: { x: endX, y: endY },
+    midLabelPoint,
+  };
+}
+
+export interface NonOverlappingGizmoBadgeInput {
+  origin: ScreenPt2D;
+  xTip: ScreenPt2D;
+  yTip: ScreenPt2D;
+  zTip: ScreenPt2D;
+  canvasWidth: number;
+  canvasHeight: number;
+}
+
+/**
+ * Posiciona o badge lateral de cota (`0.0 mm` / `Espelhar ⇄`) fora do envelope das
+ * 3 pontas de seta (+X, +Y, +Z), evitando qualquer sobreposição com a seta vermelha +X ou azul +Z.
+ */
+export function computeNonOverlappingGizmoBadgePos(
+  originOrOpts: ScreenPt2D | NonOverlappingGizmoBadgeInput,
+  xTipArg?: ScreenPt2D,
+  yTipArg?: ScreenPt2D,
+  zTipArg?: ScreenPt2D,
+  viewportWidthArg?: number,
+  viewportHeightArg?: number,
+): { left: number; top: number } {
+  const isOpts = "origin" in originOrOpts;
+  const origin = isOpts ? originOrOpts.origin : originOrOpts;
+  const xTip = isOpts ? originOrOpts.xTip : (xTipArg ?? origin);
+  const yTip = isOpts ? originOrOpts.yTip : (yTipArg ?? origin);
+  const zTip = isOpts ? originOrOpts.zTip : (zTipArg ?? origin);
+  const viewportWidth = isOpts ? originOrOpts.canvasWidth : (viewportWidthArg ?? 800);
+  const viewportHeight = isOpts ? originOrOpts.canvasHeight : (viewportHeightArg ?? 600);
+
+  const maxRightX = Math.max(origin.x, xTip.x, yTip.x, zTip.x);
+  const minTopY = Math.min(origin.y, xTip.y, yTip.y, zTip.y);
+
+  // Coloca 26px à direita da ponta mais à direita (+X/+Y) e alinhado acima da origem,
+  // nunca sobrepondo o círculo +Z nem a ponta vermelha +X.
+  const preferredLeft = maxRightX + 26;
+  const preferredTop = Math.min(origin.y - 38, minTopY + 4);
+
+  const clampedLeft = Math.max(16, Math.min(viewportWidth - 188, Math.round(preferredLeft)));
+  const clampedTop = Math.max(54, Math.min(viewportHeight - 96, Math.round(preferredTop)));
+
+  return { left: clampedLeft, top: clampedTop };
+}

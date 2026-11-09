@@ -101,6 +101,13 @@ import {
   type SubElementSelectionState3D,
   type Vec3Mm,
 } from "@/lib/lab2d/cadDirectModeling3D";
+import {
+  buildCompassSectorPath,
+  computeExternalCompassRadiusPx,
+  computeNonOverlappingGizmoBadgePos,
+  computeRotationDragAngleAndSnap,
+  type RotationSnapResult,
+} from "@/lib/lab2d/chamfer3DRotationCompass";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
 
@@ -405,8 +412,16 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   // Arraste interativo dos eixos do Gizmo
   const [activeAxis, setActiveAxis] = useState<GizmoAxis | null>(null);
   const [dragDeltaMm, setDragDeltaMm] = useState<number>(0);
+  const [rotationSnapState, setRotationSnapState] = useState<{
+    axis: GizmoAxis;
+    angleStartRad: number;
+    compassRadiusPx: number;
+    snapResult: RotationSnapResult;
+  } | null>(null);
+  const [compassFadingOut, setCompassFadingOut] = useState<boolean>(false);
+  const compassFadeTimerRef = useRef<number | null>(null);
 
-  // Registro do último deslocamento / extrusão concluído para manter a linha tracejada e pílula de distância clicável
+  // Registro do último deslocamento / extrusão / rotação concluído para manter a pílula clicável
   const [lastCompletedDrag, setLastCompletedDrag] = useState<{
     axis: GizmoAxis;
     deltaMm: number;
@@ -420,6 +435,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     initialValue: number;
     faceRole?: DirectFace3D["role"];
     faceNormal?: Vec3Mm;
+    angleStartRad?: number;
+    compassRadiusPx?: number;
   } | null>(null);
 
   const lastFaceTapRef = useRef<{ faceId: string; bodyId: string; time: number } | null>(null);
@@ -436,8 +453,18 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       vertexIds.length === 0
     ) {
       setLastCompletedDrag(null);
+      setRotationSnapState(null);
+      setCompassFadingOut(false);
     }
   }, [subSel.faceIds.length, subSel.edgeIds.length, subSel.bodyIds.length, vertexIds.length]);
+
+  useEffect(() => {
+    return () => {
+      if (compassFadeTimerRef.current !== null) {
+        window.clearTimeout(compassFadeTimerRef.current);
+      }
+    };
+  }, []);
 
   const dragSessionRef = useRef<{
     axis: GizmoAxis;
@@ -455,6 +482,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     startCenter3D?: Vec3Mm;
     angleStartRad?: number;
     pivotScreen?: Vec2;
+    compassRadiusPx?: number;
     startEntities: Entity[];
     startBody: DirectBody3D | null;
     startFace: DirectFace3D | null;
@@ -743,6 +771,31 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       p3: { x: originScreen.x + yAx.ux * pSize, y: originScreen.y + yAx.uy * pSize },
     };
 
+    // Calcula o Bounding Sphere / Bounding Box projetado da peça na tela para a Bússola Externa
+    const partPointsScreen: Vec2[] = [];
+    const targetBodies =
+      activeTargetEntityIds.length > 0
+        ? scene.bodies.filter((b) => activeTargetEntityIds.includes(b.entityId))
+        : primaryBody
+          ? [primaryBody]
+          : [];
+    for (const tb of targetBodies) {
+      for (const f of tb.faces) {
+        for (const p3d of f.polygon3D) {
+          partPointsScreen.push(toScreen(p3d));
+        }
+      }
+      for (const vtx of tb.vertices ?? []) {
+        partPointsScreen.push(toScreen(vtx.point3D));
+      }
+    }
+    const compassMetrics = computeExternalCompassRadiusPx(
+      partPointsScreen,
+      originScreen,
+      width,
+      height,
+    );
+
     return {
       origin: originScreen,
       center3D: selectionCenter3D,
@@ -750,8 +803,21 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       y: yAx,
       z: zAx,
       planarQuad,
+      partRadiusPx: compassMetrics.partRadiusPx,
+      compassRadiusPx: compassMetrics.compassRadiusPx,
     };
-  }, [selectionCenter3D, isTilted3D, activeMode, toScreen, view.k]);
+  }, [
+    selectionCenter3D,
+    isTilted3D,
+    activeMode,
+    toScreen,
+    view.k,
+    activeTargetEntityIds,
+    scene.bodies,
+    primaryBody,
+    width,
+    height,
+  ]);
 
   // Projeção da Seta Normal Bidirecional da Face Selecionada (EXCLUSIVA QUANDO FACE É CLICADA)
   const faceNormalGizmo = useMemo(() => {
@@ -1162,19 +1228,39 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       }
     } else if (param === "miterAngle") {
       if (subTarget === "rx" || subTarget === "ry" || subTarget === "rz") {
-        onCommitEntities((prev) => {
+        const rotAxisKey =
+          subTarget === "rx" ? "rot_x" : subTarget === "ry" ? "rot_y" : "rot_z";
+        if (lastCompletedDrag && lastCompletedDrag.axis === rotAxisKey) {
           const res = applyDirectTransform3DToEntities(
-            prev,
-            resolvedIds,
+            lastCompletedDrag.startEntities,
+            lastCompletedDrag.targetIds,
             {
               rxDeg: subTarget === "rx" ? parsed : 0,
               ryDeg: subTarget === "ry" ? parsed : 0,
               rzDeg: subTarget === "rz" ? parsed : 0,
             },
-            Boolean(copyMode),
+            lastCompletedDrag.copyMode,
+            lastCompletedDrag.copyIdMap,
           );
-          return res.updatedEntities;
-        }, resolvedIds);
+          onCommitEntities(() => res.updatedEntities, res.activeIds);
+          setLastCompletedDrag((prev) =>
+            prev ? { ...prev, deltaMm: parsed, activeResultIds: res.activeIds } : null,
+          );
+        } else {
+          onCommitEntities((prev) => {
+            const res = applyDirectTransform3DToEntities(
+              prev,
+              resolvedIds,
+              {
+                rxDeg: subTarget === "rx" ? parsed : 0,
+                ryDeg: subTarget === "ry" ? parsed : 0,
+                rzDeg: subTarget === "rz" ? parsed : 0,
+              },
+              Boolean(copyMode),
+            );
+            return res.updatedEntities;
+          }, resolvedIds);
+        }
       } else {
         const endT = subTarget === "bottom" ? "bottom" : miterEndTarget;
         onCommitEntities(
@@ -1810,6 +1896,31 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         ? hingeMiterGizmo.origin
         : (gizmoScreen?.origin ?? { x: localStartX, y: localStartY });
     const angleStartRad = Math.atan2(localStartY - pivotSc.y, localStartX - pivotSc.x);
+    const compassRadiusPx = gizmoScreen?.compassRadiusPx ?? 140;
+
+    if (compassFadeTimerRef.current !== null) {
+      window.clearTimeout(compassFadeTimerRef.current);
+      compassFadeTimerRef.current = null;
+    }
+    setCompassFadingOut(false);
+
+    if (axis === "rot_x" || axis === "rot_y" || axis === "rot_z") {
+      setRotationSnapState({
+        axis,
+        angleStartRad,
+        compassRadiusPx,
+        snapResult: {
+          rawAngleDeg: 0,
+          angleDeg: 0,
+          snapped: true,
+          snappedKeyDeg: 0,
+          isFineOuterZone: false,
+          currentAngleRad: angleStartRad,
+        },
+      });
+    } else {
+      setRotationSnapState(null);
+    }
 
     dragSessionRef.current = {
       axis,
@@ -1827,6 +1938,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       startCenter3D: selectionCenter3D ?? undefined,
       angleStartRad,
       pivotScreen: pivotSc,
+      compassRadiusPx,
       startEntities: entities,
       startBody: primaryBody,
       startFace: primaryFace,
@@ -1891,18 +2003,30 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         session.axis === "miter"
       ) {
         const pivotSc = session.pivotScreen ?? { x: localX, y: localY };
-        const curAngleRad = Math.atan2(localY - pivotSc.y, localX - pivotSc.x);
         const startRad = session.angleStartRad ?? 0;
-        let deltaDeg = Math.round(((curAngleRad - startRad) * 180) / Math.PI);
-        const snapStep = 15;
-        const rem = deltaDeg % snapStep;
-        if (Math.abs(rem) <= 3) {
-          deltaDeg -= rem;
-        } else if (Math.abs(rem) >= 12) {
-          deltaDeg += (deltaDeg >= 0 ? 1 : -1) * (15 - Math.abs(rem));
+        const compassR = session.compassRadiusPx ?? 140;
+        const snapRes = computeRotationDragAngleAndSnap(
+          { x: localX, y: localY },
+          pivotSc,
+          startRad,
+          compassR,
+          2.5,
+        );
+        const deltaDeg = snapRes.angleDeg;
+
+        if (session.axis !== "miter") {
+          setRotationSnapState({
+            axis: session.axis,
+            angleStartRad: startRad,
+            compassRadiusPx: compassR,
+            snapResult: snapRes,
+          });
         }
 
         if (deltaDeg !== session.lastAppliedDeltaMm) {
+          if (snapRes.snapped) {
+            triggerHaptic("selection");
+          }
           session.lastAppliedDeltaMm = deltaDeg;
           session.totalDeltaMm = deltaDeg;
           setDragDeltaMm(deltaDeg);
@@ -2319,6 +2443,22 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       );
       const isQuickTap = !session.hasMoved && distPx < 5;
 
+      if (
+        session.axis === "rot_x" ||
+        session.axis === "rot_y" ||
+        session.axis === "rot_z"
+      ) {
+        setCompassFadingOut(true);
+        if (compassFadeTimerRef.current !== null) {
+          window.clearTimeout(compassFadeTimerRef.current);
+        }
+        compassFadeTimerRef.current = window.setTimeout(() => {
+          setCompassFadingOut(false);
+          setRotationSnapState(null);
+          compassFadeTimerRef.current = null;
+        }, 180);
+      }
+
       if (isQuickTap) {
         triggerHaptic("selection");
         if (session.axis === "x") {
@@ -2413,6 +2553,26 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       } else {
         triggerHaptic("action");
         if (
+          (session.axis === "rot_x" ||
+            session.axis === "rot_y" ||
+            session.axis === "rot_z") &&
+          session.startCenter3D
+        ) {
+          setLastCompletedDrag({
+            axis: session.axis,
+            deltaMm: session.lastAppliedDeltaMm,
+            startPoint3D: session.startCenter3D,
+            endPoint3D: session.startCenter3D,
+            startEntities: session.startEntities,
+            targetIds: session.targetIds,
+            activeResultIds: session.activeResultIds,
+            copyMode: ctx.copyOnTransform,
+            copyIdMap: new Map(session.copyIdMap),
+            initialValue: session.initialValue,
+            angleStartRad: session.angleStartRad ?? 0,
+            compassRadiusPx: session.compassRadiusPx ?? 140,
+          });
+        } else if (
           (session.axis === "x" ||
             session.axis === "y" ||
             session.axis === "z" ||
@@ -2530,7 +2690,13 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         return {
           icon: Move,
           label: "Mover / Girar 3D",
-          valueText: `Copy: ${copyOnTransform ? "ON" : "OFF"}`,
+          valueText:
+            lastCompletedDrag &&
+            (lastCompletedDrag.axis === "rot_x" ||
+              lastCompletedDrag.axis === "rot_y" ||
+              lastCompletedDrag.axis === "rot_z")
+              ? `${lastCompletedDrag.deltaMm >= 0 ? `+${lastCompletedDrag.deltaMm}` : lastCompletedDrag.deltaMm}°`
+              : `${lastCompletedDrag?.deltaMm ?? "0.0"} mm`,
         };
       case "mirror_3d":
         return {
@@ -2610,6 +2776,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     sectionPlaneState.axis,
     sectionPlaneState.offsetMm,
     scene.bodies.length,
+    lastCompletedDrag,
   ]);
 
   // Estilos adaptados 100% ao Tema Ativo (Claro #FFFFFF / Escuro #0B1220 / AMOLED #05080F)
@@ -3099,20 +3266,43 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   miterEndTarget,
                 );
               } else if (directTool === "transform_3d") {
-                openFloatingNumpad(
-                  "DISTANCE",
-                  `TRANSLADAR +${transformAxisTarget.toUpperCase()}`,
-                  "mm",
-                  100,
-                  transformAxisTarget === "x"
-                    ? "moveX"
-                    : transformAxisTarget === "y"
-                      ? "moveY"
-                      : "moveZ",
-                  targetBody.entityId,
-                  undefined,
-                  copyOnTransform,
-                );
+                if (
+                  lastCompletedDrag &&
+                  (lastCompletedDrag.axis === "rot_x" ||
+                    lastCompletedDrag.axis === "rot_y" ||
+                    lastCompletedDrag.axis === "rot_z")
+                ) {
+                  const subRot =
+                    lastCompletedDrag.axis === "rot_x"
+                      ? "rx"
+                      : lastCompletedDrag.axis === "rot_y"
+                        ? "ry"
+                        : "rz";
+                  openFloatingNumpad(
+                    "ANGLE",
+                    `ROTAÇÃO ${subRot.toUpperCase()}`,
+                    "°",
+                    lastCompletedDrag.deltaMm || 45,
+                    "miterAngle",
+                    targetBody.entityId,
+                    subRot,
+                  );
+                } else {
+                  openFloatingNumpad(
+                    "DISTANCE",
+                    `TRANSLADAR +${transformAxisTarget.toUpperCase()}`,
+                    "mm",
+                    lastCompletedDrag?.deltaMm || 100,
+                    transformAxisTarget === "x"
+                      ? "moveX"
+                      : transformAxisTarget === "y"
+                        ? "moveY"
+                        : "moveZ",
+                    targetBody.entityId,
+                    undefined,
+                    copyOnTransform,
+                  );
+                }
               } else if (directTool === "scale_3d" || directTool === "align_3d") {
                 openFloatingNumpad(
                   "SCALE",
@@ -5292,10 +5482,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       <circle
                         cx={startSc.x}
                         cy={startSc.y}
-                        r={5}
+                        r={4.5}
                         fill="#0B1220"
                         stroke={isCopyDrag ? "#10B981" : "#38BDF8"}
-                        strokeWidth={2}
+                        strokeWidth={1.75}
                       />
                       <line
                         x1={startSc.x}
@@ -5303,13 +5493,13 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         x2={endSc.x}
                         y2={endSc.y}
                         stroke={isCopyDrag ? "#10B981" : "#38BDF8"}
-                        strokeWidth={2.4}
-                        strokeDasharray="6 4"
+                        strokeWidth={2}
+                        strokeDasharray="5 4"
                       />
                       <circle
                         cx={endSc.x}
                         cy={endSc.y}
-                        r={4.5}
+                        r={4}
                         fill={isCopyDrag ? "#10B981" : "#38BDF8"}
                         stroke="#0B1220"
                         strokeWidth={1.5}
@@ -5356,19 +5546,23 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                           width={116}
                           height={24}
                           rx={6}
-                          fill="#060A12"
+                          fill={isDark ? "#060A12" : "#FFFFFF"}
                           stroke={isCopyDrag ? "#10B981" : "#00B4D8"}
-                          strokeWidth={1.6}
+                          strokeWidth={1.5}
                         />
                         <text
                           x={0}
                           y={1}
                           fill={
                             linearAxis === "z"
-                              ? "#60A5FA"
+                              ? isDark
+                                ? "#60A5FA"
+                                : "#0284C7"
                               : isCopyDrag
-                                ? "#34D399"
-                                : "#38BDF8"
+                                ? "#10B981"
+                                : isDark
+                                  ? "#38BDF8"
+                                  : "#0284C7"
                           }
                           fontSize="10.5"
                           fontWeight="bold"
@@ -5385,132 +5579,378 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   );
                 })()}
 
-                {/* Linhas pontilhadas de projeção ortogonal */}
-                <line
-                  x1={gizmoScreen.origin.x - gizmoScreen.x.ux * 30}
-                  y1={gizmoScreen.origin.y - gizmoScreen.x.uy * 30}
-                  x2={gizmoScreen.origin.x + gizmoScreen.x.ux * 90}
-                  y2={gizmoScreen.origin.y + gizmoScreen.x.uy * 90}
-                  stroke="#EF4444"
-                  strokeWidth={1}
-                  strokeDasharray="3 3"
-                  opacity={0.35}
-                />
-                <line
-                  x1={gizmoScreen.origin.x - gizmoScreen.y.ux * 30}
-                  y1={gizmoScreen.origin.y - gizmoScreen.y.uy * 30}
-                  x2={gizmoScreen.origin.x + gizmoScreen.y.ux * 90}
-                  y2={gizmoScreen.origin.y + gizmoScreen.y.uy * 90}
-                  stroke="#22C55E"
-                  strokeWidth={1}
-                  strokeDasharray="3 3"
-                  opacity={0.35}
-                />
-                <line
-                  x1={gizmoScreen.origin.x - gizmoScreen.z.ux * 30}
-                  y1={gizmoScreen.origin.y - gizmoScreen.z.uy * 30}
-                  x2={gizmoScreen.origin.x + gizmoScreen.z.ux * 90}
-                  y2={gizmoScreen.origin.y + gizmoScreen.z.uy * 90}
-                  stroke="#00B4D8"
-                  strokeWidth={1}
-                  strokeDasharray="3 3"
-                  opacity={0.35}
-                />
+                {/* ============================================================= */}
+                {/* BÚSSOLA DE ROTAÇÃO EM RAIO EXTERNO (ESTILO SHAPR3D)           */}
+                {/* Aparece SOMENTE ao tocar/arrastar uma alça de rotação         */}
+                {/* ============================================================= */}
+                {(() => {
+                  const isLiveRotation =
+                    activeAxis === "rot_x" ||
+                    activeAxis === "rot_y" ||
+                    activeAxis === "rot_z";
+                  const isCompletedRotation =
+                    !activeAxis &&
+                    lastCompletedDrag !== null &&
+                    (lastCompletedDrag.axis === "rot_x" ||
+                      lastCompletedDrag.axis === "rot_y" ||
+                      lastCompletedDrag.axis === "rot_z");
 
-                {/* Alça Planar (Move simultâneo em XY sem alterar Z) */}
-                <polygon
-                  points={`${gizmoScreen.planarQuad.p0.x},${gizmoScreen.planarQuad.p0.y} ${gizmoScreen.planarQuad.p1.x},${gizmoScreen.planarQuad.p1.y} ${gizmoScreen.planarQuad.p2.x},${gizmoScreen.planarQuad.p2.y} ${gizmoScreen.planarQuad.p3.x},${gizmoScreen.planarQuad.p3.y}`}
-                  fill="rgba(245, 158, 11, 0.28)"
-                  stroke="#F59E0B"
-                  strokeWidth={1.5}
-                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                  style={{ touchAction: "none" }}
-                  onPointerDown={(ev) =>
-                    handleAxisPointerDown("planar", 1, 0, gizmoScreen.x.pixelsPerMm, ev)
-                  }
-                  onClick={(ev) => ev.stopPropagation()}
-                />
+                  const showCompassRing = isLiveRotation || compassFadingOut;
+                  const showAnglePill = isLiveRotation || isCompletedRotation;
 
-                {/* Disco Transferidor Circular com Marcadores a Cada 15° / 45° / 90° / 180° */}
-                <circle
-                  cx={gizmoScreen.origin.x}
-                  cy={gizmoScreen.origin.y}
-                  r={48}
-                  fill="none"
-                  stroke="#00B4D8"
-                  strokeWidth={
-                    activeAxis === "rot_x" || activeAxis === "rot_y" || activeAxis === "rot_z"
-                      ? 2.2
-                      : 1.4
-                  }
-                  strokeDasharray="3 3"
-                  opacity={
-                    activeAxis === "rot_x" || activeAxis === "rot_y" || activeAxis === "rot_z"
-                      ? 0.95
-                      : 0.7
-                  }
-                />
-                {[0, 15, 30, 45, 60, 75, 90, 135, 180, 225, 270, 315].map((deg) => {
-                  const rad = (deg * Math.PI) / 180;
-                  const tx1 = gizmoScreen.origin.x + Math.cos(rad) * (deg % 45 === 0 ? 41 : 44);
-                  const ty1 = gizmoScreen.origin.y + Math.sin(rad) * (deg % 45 === 0 ? 41 : 44);
-                  const tx2 = gizmoScreen.origin.x + Math.cos(rad) * 48;
-                  const ty2 = gizmoScreen.origin.y + Math.sin(rad) * 48;
-                  return (
-                    <line
-                      key={deg}
-                      x1={tx1}
-                      y1={ty1}
-                      x2={tx2}
-                      y2={ty2}
-                      stroke="#00B4D8"
-                      strokeWidth={deg % 45 === 0 ? 2 : 1}
-                      opacity={0.85}
-                    />
+                  if (!showCompassRing && !showAnglePill) return null;
+
+                  const compassR = isLiveRotation
+                    ? (dragSessionRef.current?.compassRadiusPx ?? gizmoScreen.compassRadiusPx)
+                    : (lastCompletedDrag?.compassRadiusPx ?? gizmoScreen.compassRadiusPx);
+                  const startAngleRad = isLiveRotation
+                    ? (dragSessionRef.current?.angleStartRad ?? 0)
+                    : (lastCompletedDrag?.angleStartRad ?? 0);
+                  const currentDeg = isLiveRotation
+                    ? (rotationSnapState?.snapResult.angleDeg ?? dragDeltaMm)
+                    : (lastCompletedDrag?.deltaMm ?? 0);
+                  const isSnapped = isLiveRotation
+                    ? Boolean(rotationSnapState?.snapResult.snapped)
+                    : currentDeg % 15 === 0;
+                  const currentAngleRad = startAngleRad + (currentDeg * Math.PI) / 180;
+
+                  const activeRotAxis = isLiveRotation
+                    ? activeAxis
+                    : (lastCompletedDrag?.axis ?? "rot_z");
+                  const rotPlaneColor =
+                    activeRotAxis === "rot_x"
+                      ? "#EF4444"
+                      : activeRotAxis === "rot_y"
+                        ? "#22C55E"
+                        : "#00B4D8";
+
+                  const { sectorPath } = buildCompassSectorPath(
+                    gizmoScreen.origin.x,
+                    gizmoScreen.origin.y,
+                    compassR,
+                    startAngleRad,
+                    currentDeg,
                   );
-                })}
 
-                {/* 3 Arcos Curvos de Rotação (Rotacionar nos 3 Eixos: Z, X, Y) */}
-                <path
+                  const startRimX =
+                    gizmoScreen.origin.x + Math.cos(startAngleRad) * compassR;
+                  const startRimY =
+                    gizmoScreen.origin.y + Math.sin(startAngleRad) * compassR;
+                  const activeRimX =
+                    gizmoScreen.origin.x + Math.cos(currentAngleRad) * compassR;
+                  const activeRimY =
+                    gizmoScreen.origin.y + Math.sin(currentAngleRad) * compassR;
+
+                  // Posição da pílula flutuante de graus no raio externo da bússola
+                  const rawPillX =
+                    gizmoScreen.origin.x + Math.cos(currentAngleRad) * (compassR + 30);
+                  const rawPillY =
+                    gizmoScreen.origin.y + Math.sin(currentAngleRad) * (compassR + 30);
+                  const pillX = Math.max(54, Math.min(width - 54, rawPillX));
+                  const pillY = Math.max(58, Math.min(height - 58, rawPillY));
+
+                  const degreeTicks = Array.from({ length: 72 }, (_, idx) => idx * 5);
+
+                  return (
+                    <g>
+                      {showCompassRing && (
+                        <g
+                          data-testid="chamfer-3d-external-rotation-compass"
+                          style={{
+                            opacity: compassFadingOut && !isLiveRotation ? 0 : 1,
+                            transition: "opacity 180ms ease-out",
+                            pointerEvents: "none",
+                          }}
+                        >
+                          {/* Setor Angular Preenchido entre 0° e Δ° */}
+                          {sectorPath && (
+                            <path
+                              d={sectorPath}
+                              fill="rgba(0, 180, 216, 0.14)"
+                              stroke="rgba(0, 180, 216, 0.38)"
+                              strokeWidth={1}
+                            />
+                          )}
+
+                          {/* Halo externo sutil de instrumento óptico */}
+                          <circle
+                            cx={gizmoScreen.origin.x}
+                            cy={gizmoScreen.origin.y}
+                            r={compassR + 5}
+                            fill="none"
+                            stroke={rotPlaneColor}
+                            strokeWidth={0.75}
+                            opacity={0.28}
+                          />
+
+                          {/* Anel principal tracejado externo envolvendo toda a peça */}
+                          <circle
+                            cx={gizmoScreen.origin.x}
+                            cy={gizmoScreen.origin.y}
+                            r={compassR}
+                            fill="none"
+                            stroke={isDark ? "#F8FAFC" : "#0F172A"}
+                            strokeWidth={1.35}
+                            strokeDasharray="4 3"
+                            opacity={0.82}
+                          />
+
+                          {/* Graduações radiais a cada 5° / 15° / 45° / 90° */}
+                          {degreeTicks.map((deg) => {
+                            const rad = startAngleRad + (deg * Math.PI) / 180;
+                            const isCardinal = deg % 90 === 0;
+                            const isMajor45 = deg % 45 === 0;
+                            const isMedium15 = deg % 15 === 0;
+                            const tickLen = isCardinal
+                              ? 11
+                              : isMajor45
+                                ? 8
+                                : isMedium15
+                                  ? 5.5
+                                  : 3;
+                            const innerR = compassR - tickLen;
+                            const tx1 = gizmoScreen.origin.x + Math.cos(rad) * innerR;
+                            const ty1 = gizmoScreen.origin.y + Math.sin(rad) * innerR;
+                            const tx2 = gizmoScreen.origin.x + Math.cos(rad) * compassR;
+                            const ty2 = gizmoScreen.origin.y + Math.sin(rad) * compassR;
+
+                            return (
+                              <g key={deg}>
+                                <line
+                                  x1={tx1}
+                                  y1={ty1}
+                                  x2={tx2}
+                                  y2={ty2}
+                                  stroke={
+                                    isCardinal
+                                      ? "#00B4D8"
+                                      : isMajor45
+                                        ? isDark
+                                          ? "#F8FAFC"
+                                          : "#0F172A"
+                                        : isDark
+                                          ? "#94A3B8"
+                                          : "#475569"
+                                  }
+                                  strokeWidth={
+                                    isCardinal ? 1.85 : isMajor45 ? 1.35 : isMedium15 ? 1 : 0.65
+                                  }
+                                  opacity={
+                                    isCardinal ? 0.95 : isMajor45 ? 0.85 : isMedium15 ? 0.65 : 0.35
+                                  }
+                                />
+                                {isMajor45 && (
+                                  <text
+                                    x={
+                                      gizmoScreen.origin.x +
+                                      Math.cos(rad) * (compassR - tickLen - 9)
+                                    }
+                                    y={
+                                      gizmoScreen.origin.y +
+                                      Math.sin(rad) * (compassR - tickLen - 9)
+                                    }
+                                    fill={
+                                      isCardinal
+                                        ? "#00B4D8"
+                                        : isDark
+                                          ? "#94A3B8"
+                                          : "#64748B"
+                                    }
+                                    fontSize="8.5"
+                                    fontWeight="bold"
+                                    fontFamily="monospace"
+                                    textAnchor="middle"
+                                    dominantBaseline="central"
+                                    opacity={isCardinal ? 0.95 : 0.75}
+                                  >
+                                    {deg}°
+                                  </text>
+                                )}
+                              </g>
+                            );
+                          })}
+
+                          {/* Linha de referência pontilhada de 0° (início do giro) */}
+                          <line
+                            x1={gizmoScreen.origin.x}
+                            y1={gizmoScreen.origin.y}
+                            x2={startRimX}
+                            y2={startRimY}
+                            stroke={isDark ? "#94A3B8" : "#64748B"}
+                            strokeWidth={1.15}
+                            strokeDasharray="3 3"
+                            opacity={0.75}
+                          />
+
+                          {/* Linha radial ativa apontando para o ângulo atual Δ° */}
+                          <line
+                            x1={gizmoScreen.origin.x}
+                            y1={gizmoScreen.origin.y}
+                            x2={activeRimX}
+                            y2={activeRimY}
+                            stroke={isSnapped ? "#00B4D8" : rotPlaneColor}
+                            strokeWidth={1.75}
+                            strokeDasharray="4 2"
+                          />
+
+                          {/* Pino magnético no aro externo da bússola */}
+                          <circle
+                            cx={activeRimX}
+                            cy={activeRimY}
+                            r={isSnapped ? 6.5 : 5}
+                            fill={isSnapped ? "#00B4D8" : rotPlaneColor}
+                            stroke={isDark ? "#0F172A" : "#FFFFFF"}
+                            strokeWidth={2}
+                          />
+                        </g>
+                      )}
+
+                      {/* Pílula Flutuante de Graus ao Vivo e Clicável Pós-Giro */}
+                      {showAnglePill && (
+                        <g
+                          data-testid="chamfer-3d-live-rotation-angle-pill"
+                          transform={`translate(${pillX}, ${pillY})`}
+                          className="pointer-events-auto cursor-pointer"
+                          onPointerDown={(ev) => {
+                            ev.stopPropagation();
+                            ev.preventDefault();
+                          }}
+                          onClick={(ev) => {
+                            ev.stopPropagation();
+                            if (!primaryBody) return;
+                            const rotParam =
+                              activeRotAxis === "rot_x"
+                                ? "rx"
+                                : activeRotAxis === "rot_y"
+                                  ? "ry"
+                                  : "rz";
+                            const rotLabel =
+                              activeRotAxis === "rot_x"
+                                ? "GIRAR EIXO X"
+                                : activeRotAxis === "rot_y"
+                                  ? "GIRAR EIXO Y"
+                                  : "GIRAR EIXO Z";
+                            openFloatingNumpad(
+                              "ANGLE",
+                              rotLabel,
+                              "°",
+                              currentDeg || 45,
+                              rotParam,
+                              (lastCompletedDrag?.activeResultIds[0] ?? primaryBody.entityId),
+                              undefined,
+                              copyOnTransform || Boolean(lastCompletedDrag?.copyMode),
+                            );
+                          }}
+                        >
+                          <rect
+                            x={-42}
+                            y={-13}
+                            width={84}
+                            height={26}
+                            rx={13}
+                            fill={isDark ? "#0F172A" : "#FFFFFF"}
+                            stroke={isSnapped ? "#00B4D8" : rotPlaneColor}
+                            strokeWidth={1.75}
+                          />
+                          <text
+                            x={0}
+                            y={0.5}
+                            fill={isDark ? "#F8FAFC" : "#0F172A"}
+                            fontSize="11"
+                            fontWeight="bold"
+                            fontFamily="monospace"
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                          >
+                            {`${currentDeg > 0 ? `+${currentDeg}` : currentDeg}°${!isLiveRotation ? " ✎" : ""}`}
+                          </text>
+                        </g>
+                      )}
+                    </g>
+                  );
+                })()}
+
+                {/* ============================================================= */}
+                {/* 3 ALÇAS DE ARCO DISCRETAS PRÓXIMAS AO PIVÔ (XY, YZ, XZ)       */}
+                {/* ============================================================= */}
+                {/* Arco de Rotação Z (Plano XY - Âmbar/Ciano sutil r=28px) */}
+                <g
                   data-testid="chamfer-gizmo-rot-z"
-                  d={`M ${gizmoScreen.origin.x + gizmoScreen.x.ux * 42} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 42} A 42 42 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.y.ux * 42} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 42}`}
-                  fill="none"
-                  stroke="#F59E0B"
-                  strokeWidth={activeAxis === "rot_z" ? 4.2 : 3}
-                  strokeLinecap="round"
-                  markerEnd="url(#gizmo-arrow-amber)"
                   className="pointer-events-auto cursor-grab active:cursor-grabbing"
                   style={{ touchAction: "none" }}
                   onPointerDown={(ev) => handleAxisPointerDown("rot_z", 0, 0, 1, ev)}
                   onClick={(ev) => ev.stopPropagation()}
-                />
-                <path
+                >
+                  <path
+                    d={`M ${gizmoScreen.origin.x + gizmoScreen.x.ux * 28} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 28} A 28 28 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.y.ux * 28} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 28}`}
+                    fill="none"
+                    stroke="rgba(0,0,0,0.001)"
+                    strokeWidth={20}
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d={`M ${gizmoScreen.origin.x + gizmoScreen.x.ux * 28} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 28} A 28 28 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.y.ux * 28} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 28}`}
+                    fill="none"
+                    stroke={activeAxis === "rot_z" ? "#00B4D8" : "#F59E0B"}
+                    strokeWidth={activeAxis === "rot_z" ? 2.8 : 1.85}
+                    strokeLinecap="round"
+                    opacity={activeAxis === "rot_z" ? 1 : 0.85}
+                  />
+                </g>
+
+                {/* Arco de Rotação X (Plano YZ - Vermelho sutil r=25px) */}
+                <g
                   data-testid="chamfer-gizmo-rot-x"
-                  d={`M ${gizmoScreen.origin.x + gizmoScreen.y.ux * 38} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 38} A 38 38 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.z.ux * 38} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 38}`}
-                  fill="none"
-                  stroke="#EF4444"
-                  strokeWidth={activeAxis === "rot_x" ? 4.2 : 2.6}
-                  strokeLinecap="round"
-                  markerEnd="url(#gizmo-arrow-x)"
                   className="pointer-events-auto cursor-grab active:cursor-grabbing"
                   style={{ touchAction: "none" }}
                   onPointerDown={(ev) => handleAxisPointerDown("rot_x", 0, 0, 1, ev)}
                   onClick={(ev) => ev.stopPropagation()}
-                />
-                <path
+                >
+                  <path
+                    d={`M ${gizmoScreen.origin.x + gizmoScreen.y.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 25} A 25 25 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.z.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 25}`}
+                    fill="none"
+                    stroke="rgba(0,0,0,0.001)"
+                    strokeWidth={20}
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d={`M ${gizmoScreen.origin.x + gizmoScreen.y.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 25} A 25 25 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.z.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 25}`}
+                    fill="none"
+                    stroke="#EF4444"
+                    strokeWidth={activeAxis === "rot_x" ? 2.8 : 1.75}
+                    strokeLinecap="round"
+                    opacity={activeAxis === "rot_x" ? 1 : 0.8}
+                  />
+                </g>
+
+                {/* Arco de Rotação Y (Plano XZ - Verde sutil r=25px) */}
+                <g
                   data-testid="chamfer-gizmo-rot-y"
-                  d={`M ${gizmoScreen.origin.x + gizmoScreen.z.ux * 38} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 38} A 38 38 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.x.ux * 38} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 38}`}
-                  fill="none"
-                  stroke="#22C55E"
-                  strokeWidth={activeAxis === "rot_y" ? 4.2 : 2.6}
-                  strokeLinecap="round"
-                  markerEnd="url(#gizmo-arrow-y)"
                   className="pointer-events-auto cursor-grab active:cursor-grabbing"
                   style={{ touchAction: "none" }}
                   onPointerDown={(ev) => handleAxisPointerDown("rot_y", 0, 0, 1, ev)}
                   onClick={(ev) => ev.stopPropagation()}
-                />
+                >
+                  <path
+                    d={`M ${gizmoScreen.origin.x + gizmoScreen.z.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 25} A 25 25 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.x.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 25}`}
+                    fill="none"
+                    stroke="rgba(0,0,0,0.001)"
+                    strokeWidth={20}
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d={`M ${gizmoScreen.origin.x + gizmoScreen.z.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 25} A 25 25 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.x.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 25}`}
+                    fill="none"
+                    stroke="#22C55E"
+                    strokeWidth={activeAxis === "rot_y" ? 2.8 : 1.75}
+                    strokeLinecap="round"
+                    opacity={activeAxis === "rot_y" ? 1 : 0.8}
+                  />
+                </g>
 
+                {/* ============================================================= */}
+                {/* 3 EIXOS LINEARES FINOS (+X, +Y, +Z) - HASTES 1.75px           */}
+                {/* ============================================================= */}
                 {/* Eixo X (Vermelho) */}
                 <g
                   data-testid="chamfer-gizmo-axis-x"
@@ -5533,7 +5973,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     x2={gizmoScreen.x.endX}
                     y2={gizmoScreen.x.endY}
                     stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={28}
+                    strokeWidth={26}
                     style={{ pointerEvents: "stroke" }}
                   />
                   <line
@@ -5542,25 +5982,25 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     x2={gizmoScreen.x.endX}
                     y2={gizmoScreen.x.endY}
                     stroke="#EF4444"
-                    strokeWidth={activeAxis === "x" ? 3.75 : 2.5}
+                    strokeWidth={activeAxis === "x" ? 2.75 : 1.75}
                     markerEnd="url(#gizmo-arrow-x)"
                     style={{ pointerEvents: "stroke" }}
                   />
                   <circle
-                    cx={gizmoScreen.x.endX + gizmoScreen.x.ux * 10}
-                    cy={gizmoScreen.x.endY + gizmoScreen.x.uy * 10}
-                    r={14}
-                    fill="rgba(239, 68, 68, 0.15)"
-                    stroke="rgba(239, 68, 68, 0.45)"
-                    strokeWidth={1}
+                    cx={gizmoScreen.x.endX + gizmoScreen.x.ux * 14}
+                    cy={gizmoScreen.x.endY + gizmoScreen.x.uy * 14}
+                    r={10.5}
+                    fill={isDark ? "rgba(15, 23, 42, 0.88)" : "rgba(255, 255, 255, 0.92)"}
+                    stroke="rgba(239, 68, 68, 0.65)"
+                    strokeWidth={1.1}
                     style={{ pointerEvents: "all" }}
                     className="cursor-pointer"
                   />
                   <text
-                    x={gizmoScreen.x.endX + gizmoScreen.x.ux * 10}
-                    y={gizmoScreen.x.endY + gizmoScreen.x.uy * 10}
+                    x={gizmoScreen.x.endX + gizmoScreen.x.ux * 14}
+                    y={gizmoScreen.x.endY + gizmoScreen.x.uy * 14}
                     fill="#EF4444"
-                    fontSize="10"
+                    fontSize="9"
                     fontWeight="bold"
                     fontFamily="monospace"
                     textAnchor="middle"
@@ -5593,7 +6033,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     x2={gizmoScreen.y.endX}
                     y2={gizmoScreen.y.endY}
                     stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={28}
+                    strokeWidth={26}
                     style={{ pointerEvents: "stroke" }}
                   />
                   <line
@@ -5602,25 +6042,25 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     x2={gizmoScreen.y.endX}
                     y2={gizmoScreen.y.endY}
                     stroke="#22C55E"
-                    strokeWidth={activeAxis === "y" ? 3.75 : 2.5}
+                    strokeWidth={activeAxis === "y" ? 2.75 : 1.75}
                     markerEnd="url(#gizmo-arrow-y)"
                     style={{ pointerEvents: "stroke" }}
                   />
                   <circle
-                    cx={gizmoScreen.y.endX + gizmoScreen.y.ux * 10}
-                    cy={gizmoScreen.y.endY + gizmoScreen.y.uy * 10}
-                    r={14}
-                    fill="rgba(34, 197, 94, 0.15)"
-                    stroke="rgba(34, 197, 94, 0.45)"
-                    strokeWidth={1}
+                    cx={gizmoScreen.y.endX + gizmoScreen.y.ux * 14}
+                    cy={gizmoScreen.y.endY + gizmoScreen.y.uy * 14}
+                    r={10.5}
+                    fill={isDark ? "rgba(15, 23, 42, 0.88)" : "rgba(255, 255, 255, 0.92)"}
+                    stroke="rgba(34, 197, 94, 0.65)"
+                    strokeWidth={1.1}
                     style={{ pointerEvents: "all" }}
                     className="cursor-pointer"
                   />
                   <text
-                    x={gizmoScreen.y.endX + gizmoScreen.y.ux * 10}
-                    y={gizmoScreen.y.endY + gizmoScreen.y.uy * 10}
+                    x={gizmoScreen.y.endX + gizmoScreen.y.ux * 14}
+                    y={gizmoScreen.y.endY + gizmoScreen.y.uy * 14}
                     fill="#22C55E"
-                    fontSize="10"
+                    fontSize="9"
                     fontWeight="bold"
                     fontFamily="monospace"
                     textAnchor="middle"
@@ -5631,7 +6071,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   </text>
                 </g>
 
-                {/* Eixo Z / Seta Vertical Azul de Elevação (#3B82F6 ficando Dourada #F59E0B ao arrastar) */}
+                {/* Eixo Z (Azul #3B82F6 ficando Âmbar #F59E0B ao arrastar) */}
                 <g
                   data-testid="chamfer-gizmo-axis-z"
                   className="pointer-events-auto cursor-grab active:cursor-grabbing"
@@ -5655,7 +6095,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     x2={gizmoScreen.z.endX}
                     y2={gizmoScreen.z.endY}
                     stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={28}
+                    strokeWidth={26}
                     style={{ pointerEvents: "stroke" }}
                   />
                   <line
@@ -5665,7 +6105,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     y2={gizmoScreen.z.endY}
                     stroke={activeAxis === "z" ? "#F59E0B" : "#3B82F6"}
                     strokeWidth={
-                      activeAxis === "z" || activeAxis === "extrude" ? 4.2 : 3.0
+                      activeAxis === "z" || activeAxis === "extrude" ? 2.85 : 1.75
                     }
                     markerEnd={
                       activeAxis === "z"
@@ -5675,28 +6115,24 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     style={{ pointerEvents: "stroke" }}
                   />
                   <circle
-                    cx={gizmoScreen.z.endX + gizmoScreen.z.ux * 12}
-                    cy={gizmoScreen.z.endY + gizmoScreen.z.uy * 12}
-                    r={14}
-                    fill={
-                      activeAxis === "z"
-                        ? "rgba(245, 158, 11, 0.22)"
-                        : "rgba(59, 130, 246, 0.18)"
-                    }
+                    cx={gizmoScreen.z.endX + gizmoScreen.z.ux * 14}
+                    cy={gizmoScreen.z.endY + gizmoScreen.z.uy * 14}
+                    r={10.5}
+                    fill={isDark ? "rgba(15, 23, 42, 0.88)" : "rgba(255, 255, 255, 0.92)"}
                     stroke={
                       activeAxis === "z"
-                        ? "rgba(245, 158, 11, 0.75)"
+                        ? "rgba(245, 158, 11, 0.8)"
                         : "rgba(59, 130, 246, 0.65)"
                     }
-                    strokeWidth={1.3}
+                    strokeWidth={1.1}
                     style={{ pointerEvents: "all" }}
                     className="cursor-pointer"
                   />
                   <text
-                    x={gizmoScreen.z.endX + gizmoScreen.z.ux * 12}
-                    y={gizmoScreen.z.endY + gizmoScreen.z.uy * 12}
-                    fill={activeAxis === "z" ? "#F59E0B" : "#60A5FA"}
-                    fontSize="10"
+                    x={gizmoScreen.z.endX + gizmoScreen.z.ux * 14}
+                    y={gizmoScreen.z.endY + gizmoScreen.z.uy * 14}
+                    fill={activeAxis === "z" ? "#F59E0B" : "#3B82F6"}
+                    fontSize="9"
                     fontWeight="bold"
                     fontFamily="monospace"
                     textAnchor="middle"
@@ -5709,74 +6145,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   </text>
                 </g>
 
-                {/* Botão Circular Flutuante de Multiplicação ("Copy") Acoplado ao Manipulador (Seção 2.1) */}
-                <g
-                  data-testid="chamfer-gizmo-inline-copy-btn"
-                  transform={`translate(${gizmoScreen.origin.x - 52}, ${gizmoScreen.origin.y + 42})`}
-                  className="pointer-events-auto cursor-pointer"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    triggerHaptic("selection");
-                    setCopyOnTransform((c) => !c);
-                  }}
-                >
-                  <circle
-                    cx={0}
-                    cy={0}
-                    r={15}
-                    fill={copyOnTransform ? "#059669" : "#0B1220"}
-                    stroke={copyOnTransform ? "#34D399" : "#00B4D8"}
-                    strokeWidth={2}
-                  />
-                  <rect
-                    x={-5.5}
-                    y={-5.5}
-                    width={7.5}
-                    height={7.5}
-                    rx={1.5}
-                    fill="none"
-                    stroke={copyOnTransform ? "#FFFFFF" : "#38BDF8"}
-                    strokeWidth={1.5}
-                  />
-                  <rect
-                    x={-1.5}
-                    y={-1.5}
-                    width={7.5}
-                    height={7.5}
-                    rx={1.5}
-                    fill={copyOnTransform ? "#059669" : "#0B1220"}
-                    stroke={copyOnTransform ? "#FFFFFF" : "#38BDF8"}
-                    strokeWidth={1.5}
-                  />
-                  <rect
-                    x={-26}
-                    y={18}
-                    width={52}
-                    height={14}
-                    rx={4}
-                    fill="#060A12"
-                    stroke={copyOnTransform ? "#10B981" : "rgba(0, 180, 216, 0.5)"}
-                    strokeWidth={1}
-                  />
-                  <text
-                    x={0}
-                    y={25.5}
-                    fill={copyOnTransform ? "#34D399" : "#94A3B8"}
-                    fontSize="8"
-                    fontWeight="bold"
-                    fontFamily="monospace"
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                  >
-                    {copyOnTransform ? "COPY: ON" : "COPY"}
-                  </text>
-                </g>
-
-                {/* Pivô Central Móvel com Esfera/Alvo e 4 Setinhas Direcionais (Seção 3.2) */}
+                {/* ============================================================= */}
+                {/* PIVÔ CENTRAL (12px): ANEL DUPLO CIRÚRGICO BRANCO + CIANO      */}
+                {/* ============================================================= */}
                 <g
                   data-testid="chamfer-gizmo-pivot-handle"
                   className="pointer-events-auto cursor-move"
@@ -5790,96 +6161,87 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     setIsPickingPivotSnap((p) => !p);
                   }}
                 >
-                  <line
-                    x1={gizmoScreen.origin.x - 13}
-                    y1={gizmoScreen.origin.y}
-                    x2={gizmoScreen.origin.x + 13}
-                    y2={gizmoScreen.origin.y}
-                    stroke={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
-                    strokeWidth={1.8}
-                  />
-                  <line
-                    x1={gizmoScreen.origin.x}
-                    y1={gizmoScreen.origin.y - 13}
-                    x2={gizmoScreen.origin.x}
-                    y2={gizmoScreen.origin.y + 13}
-                    stroke={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
-                    strokeWidth={1.8}
-                  />
-                  <polygon
-                    points={`${gizmoScreen.origin.x},${gizmoScreen.origin.y - 15} ${gizmoScreen.origin.x - 2.5},${gizmoScreen.origin.y - 11} ${gizmoScreen.origin.x + 2.5},${gizmoScreen.origin.y - 11}`}
-                    fill={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
-                  />
-                  <polygon
-                    points={`${gizmoScreen.origin.x},${gizmoScreen.origin.y + 15} ${gizmoScreen.origin.x - 2.5},${gizmoScreen.origin.y + 11} ${gizmoScreen.origin.x + 2.5},${gizmoScreen.origin.y + 11}`}
-                    fill={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
-                  />
-                  <polygon
-                    points={`${gizmoScreen.origin.x - 15},${gizmoScreen.origin.y} ${gizmoScreen.origin.x - 11},${gizmoScreen.origin.y - 2.5} ${gizmoScreen.origin.x - 11},${gizmoScreen.origin.y + 2.5}`}
-                    fill={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
-                  />
-                  <polygon
-                    points={`${gizmoScreen.origin.x + 15},${gizmoScreen.origin.y} ${gizmoScreen.origin.x + 11},${gizmoScreen.origin.y - 2.5} ${gizmoScreen.origin.x + 11},${gizmoScreen.origin.y + 2.5}`}
-                    fill={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
-                  />
+                  {/* Área de toque invisível generosa para fácil captura */}
                   <circle
                     cx={gizmoScreen.origin.x}
                     cy={gizmoScreen.origin.y}
-                    r={6.5}
-                    fill={isPickingPivotSnap || activeAxis === "pivot" ? "#F59E0B" : "#00B4D8"}
-                    stroke={isDark ? "#0F172A" : "#FFFFFF"}
-                    strokeWidth={2}
+                    r={15}
+                    fill="rgba(0,0,0,0.001)"
+                  />
+                  {/* Anel externo branco cirúrgico (diâmetro 12px => r=6) */}
+                  <circle
+                    cx={gizmoScreen.origin.x}
+                    cy={gizmoScreen.origin.y}
+                    r={6}
+                    fill="#FFFFFF"
+                    stroke={
+                      isPickingPivotSnap || activeAxis === "pivot"
+                        ? "#F59E0B"
+                        : "#00B4D8"
+                    }
+                    strokeWidth={1.75}
+                  />
+                  {/* Centro ciano #00B4D8 (r=2.8) */}
+                  <circle
+                    cx={gizmoScreen.origin.x}
+                    cy={gizmoScreen.origin.y}
+                    r={2.8}
+                    fill={
+                      isPickingPivotSnap || activeAxis === "pivot"
+                        ? "#F59E0B"
+                        : "#00B4D8"
+                    }
                   />
                 </g>
 
-                {/* Feedback de Delta / Snap do Pivô / Ortho: < +Z durante arraste */}
-                {activeAxis && (
-                  <g
-                    transform={`translate(${gizmoScreen.origin.x}, ${gizmoScreen.origin.y - 24})`}
-                  >
-                    <rect
-                      x={-88}
-                      y={-11}
-                      width={176}
-                      height={20}
-                      rx={6}
-                      fill={isDark ? "#0B1220" : "#FFFFFF"}
-                      stroke={
-                        activeAxis === "z"
-                          ? "#F59E0B"
-                          : copyOnTransform
-                            ? "#10B981"
-                            : "#00B4D8"
-                      }
-                      strokeWidth={1.3}
-                    />
-                    <text
-                      x={0}
-                      y={1}
-                      fill={isDark ? "#F8FAFC" : "#0F172A"}
-                      fontSize="10"
-                      fontWeight="bold"
-                      fontFamily="monospace"
-                      textAnchor="middle"
-                      dominantBaseline="central"
+                {/* Feedback de Delta Linear ou Snap de Pivô durante arraste não-rotacional */}
+                {activeAxis &&
+                  activeAxis !== "rot_x" &&
+                  activeAxis !== "rot_y" &&
+                  activeAxis !== "rot_z" && (
+                    <g
+                      transform={`translate(${gizmoScreen.origin.x}, ${gizmoScreen.origin.y - 26})`}
                     >
-                      {activeAxis === "pivot"
-                        ? snappedPivotLabel ?? "Pivô Móvel (Snap)"
-                        : activeAxis === "z"
-                          ? `Ortho: ${(primaryBody?.elevationZ ?? dragDeltaMm).toFixed(2)} mm < +Z`
-                          : activeAxis === "extrude" || activeAxis === "face_normal"
-                            ? `H: ${((primaryBody?.extrudeHeightMm ?? sheetThickness) + dragDeltaMm).toFixed(1)} mm`
-                            : activeAxis === "rot_x" ||
-                                activeAxis === "rot_y" ||
-                                activeAxis === "rot_z" ||
-                                activeAxis === "miter"
-                              ? `∠ ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm}°`
-                              : activeAxis === "planar"
-                                ? `${copyOnTransform ? "COPY " : ""}ΔXY: ${dragDeltaMm} mm`
-                                : `${copyOnTransform ? "COPY " : ""}Δ${activeAxis.toUpperCase()}: ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm} mm`}
-                    </text>
-                  </g>
-                )}
+                      <rect
+                        x={-84}
+                        y={-11}
+                        width={168}
+                        height={20}
+                        rx={6}
+                        fill={isDark ? "#0B1220" : "#FFFFFF"}
+                        stroke={
+                          activeAxis === "z"
+                            ? "#F59E0B"
+                            : copyOnTransform
+                              ? "#10B981"
+                              : "#00B4D8"
+                        }
+                        strokeWidth={1.3}
+                      />
+                      <text
+                        x={0}
+                        y={1}
+                        fill={isDark ? "#F8FAFC" : "#0F172A"}
+                        fontSize="10"
+                        fontWeight="bold"
+                        fontFamily="monospace"
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                      >
+                        {activeAxis === "pivot"
+                          ? snappedPivotLabel ?? "Pivô Móvel (Snap)"
+                          : activeAxis === "z"
+                            ? `Ortho: ${(primaryBody?.elevationZ ?? dragDeltaMm).toFixed(2)} mm < +Z`
+                            : activeAxis === "extrude" || activeAxis === "face_normal"
+                              ? `H: ${((primaryBody?.extrudeHeightMm ?? sheetThickness) + dragDeltaMm).toFixed(1)} mm`
+                              : activeAxis === "miter"
+                                ? `∠ ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm}°`
+                                : activeAxis === "planar"
+                                  ? `${copyOnTransform ? "COPY " : ""}ΔXY: ${dragDeltaMm} mm`
+                                  : `${copyOnTransform ? "COPY " : ""}Δ${activeAxis.toUpperCase()}: ${dragDeltaMm >= 0 ? `+${dragDeltaMm}` : dragDeltaMm} mm`}
+                      </text>
+                    </g>
+                  )}
               </g>
             )}
 
@@ -5946,147 +6308,193 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
       {/* =====================================================================
           3. BADGE IN-CANVAS CLICÁVEL AO LADO DO ELEMENTO (ACIONA O NUMPAD COMPACTO)
-          CORREÇÃO 5: Sem botões duplicados (Novo/União/Subtrair ou Copy: ON duplicado)!
+          SEÇÃO 4: Offset lateral limpo para jamais colidir com a ponta vermelha +X!
           ===================================================================== */}
       {is3DEnvironment &&
         gizmoScreen &&
         primaryBody &&
         !numpadSession &&
-        selectionKind3D === "body" && (
-        <div
-          style={{
-            left: `${Math.max(16, Math.min(width - 165, gizmoScreen.z.endX + 12))}px`,
-            top: `${Math.max(46, Math.min(height - 96, gizmoScreen.z.endY - 12))}px`,
-          }}
-          className="pointer-events-auto absolute z-30 flex items-center gap-1 select-none"
-        >
-          <button
-            type="button"
-            data-testid="chamfer-3d-live-dimension-badge"
-            style={themeSurfaceStyle}
-            onPointerDown={(ev) => {
-              ev.stopPropagation();
-              ev.preventDefault();
-            }}
-            onClick={(ev) => {
-              ev.stopPropagation();
-              if (directTool === "fillet_3d" || directTool === "chamfer_3d") {
-                openFloatingNumpad(
-                  filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
-                  filletOrChamferMode === "fillet" ? "RAIO FILLET" : "CHANFRO 45°",
-                  "mm",
-                  filletOrChamferMode === "fillet"
-                    ? primaryBody.edgeFilletRadiusMm || 10
-                    : primaryBody.edgeChamferDistMm || 10,
-                  filletOrChamferMode === "fillet" ? "filletRadius" : "chamferDistance",
-                  primaryBody.entityId,
-                );
-              } else if (directTool === "shell_3d") {
-                openFloatingNumpad(
-                  "THICKNESS",
-                  "PAREDE CASCA",
-                  "mm",
-                  primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75,
-                  "shellWallThickness",
-                  primaryBody.entityId,
-                );
-              } else if (directTool === "offset_face_3d") {
-                openFloatingNumpad(
-                  "OFFSET",
-                  "OFFSET FACE",
-                  "mm",
-                  lastCompletedDrag?.axis === "face_normal"
-                    ? lastCompletedDrag.deltaMm
-                    : 25,
-                  "offsetFaceDistance",
-                  primaryBody.entityId,
-                  offsetFaceTarget,
-                );
-              } else if (directTool === "rotate_axis_3d") {
-                openFloatingNumpad(
-                  "ANGLE",
-                  "ÂNGULO CORTE",
-                  "°",
-                  primaryBody.miterCutTopDeg || 45,
-                  "miterAngle",
-                  primaryBody.entityId,
-                  miterEndTarget,
-                );
-              } else if (directTool === "hole_3d") {
-                openFloatingNumpad(
-                  "HOLE_DIAMETER",
-                  "DIÂMETRO FURO Ø (mm)",
-                  "mm",
-                  12,
-                  "holeDiameter",
-                  primaryBody.entityId,
-                );
-              } else if (
-                directTool === "transform_3d" ||
-                selectionKind3D === "body"
-              ) {
-                const defaultAxis =
-                  lastCompletedDrag?.axis === "y"
-                    ? "y"
-                    : lastCompletedDrag?.axis === "z"
-                      ? "z"
-                      : transformAxisTarget;
-                openFloatingNumpad(
-                  "DISTANCE",
-                  copyOnTransform || lastCompletedDrag?.copyMode
-                    ? `CÓPIA DIST +${defaultAxis.toUpperCase()}`
-                    : `TRANSLADAR +${defaultAxis.toUpperCase()}`,
-                  "mm",
-                  lastCompletedDrag?.deltaMm || 100,
-                  defaultAxis === "x"
-                    ? "moveX"
-                    : defaultAxis === "y"
-                      ? "moveY"
-                      : "moveZ",
-                  (lastCompletedDrag?.activeResultIds[0] ?? primaryBody.entityId),
-                  undefined,
-                  copyOnTransform || Boolean(lastCompletedDrag?.copyMode),
-                );
-              } else {
-                openFloatingNumpad(
-                  "EXTRUSION",
-                  "EXTRUDE",
-                  "mm",
-                  primaryBody.extrudeHeightMm,
-                  "extrudeHeight",
-                  primaryBody.entityId,
-                );
-              }
-            }}
-            className="flex items-center gap-1 rounded-full border border-cyan-500/60 px-2.5 py-0.5 font-mono text-[10.5px] font-bold shadow-md transition-all hover:scale-105 cursor-pointer"
-            title="Toque para digitar medida exata"
-          >
-            <span className="text-cyan-600 dark:text-cyan-300">
-              {directTool === "fillet_3d" || directTool === "chamfer_3d"
-                ? filletOrChamferMode === "fillet"
-                  ? `R ${(primaryBody.edgeFilletRadiusMm || 10).toFixed(1)} mm`
-                  : `D ${(primaryBody.edgeChamferDistMm || 10).toFixed(1)} mm`
-                : directTool === "shell_3d"
-                  ? `${(primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75).toFixed(1)} mm`
-                  : directTool === "offset_face_3d"
-                    ? lastCompletedDrag?.axis === "face_normal"
-                      ? `${lastCompletedDrag.deltaMm >= 0 ? "+" : ""}${lastCompletedDrag.deltaMm} mm`
-                      : `+25.0 mm`
-                    : directTool === "rotate_axis_3d"
-                      ? `∠ ${(primaryBody.miterCutTopDeg || 45).toFixed(0)}°`
-                      : directTool === "transform_3d" || selectionKind3D === "body"
-                        ? lastCompletedDrag
-                          ? `Δ${lastCompletedDrag.axis.toUpperCase()} ${lastCompletedDrag.deltaMm} mm`
-                          : `Δ${transformAxisTarget.toUpperCase()} mm`
-                        : `${primaryBody.extrudeHeightMm.toFixed(1)} mm`}
-            </span>
-          </button>
+        selectionKind3D === "body" &&
+        activeAxis !== "rot_x" &&
+        activeAxis !== "rot_y" &&
+        activeAxis !== "rot_z" &&
+        (() => {
+          const badgePos = computeNonOverlappingGizmoBadgePos({
+            origin: gizmoScreen.origin,
+            xTip: {
+              x: gizmoScreen.x.endX + gizmoScreen.x.ux * 14,
+              y: gizmoScreen.x.endY + gizmoScreen.x.uy * 14,
+            },
+            yTip: {
+              x: gizmoScreen.y.endX + gizmoScreen.y.ux * 14,
+              y: gizmoScreen.y.endY + gizmoScreen.y.uy * 14,
+            },
+            zTip: {
+              x: gizmoScreen.z.endX + gizmoScreen.z.ux * 14,
+              y: gizmoScreen.z.endY + gizmoScreen.z.uy * 14,
+            },
+            canvasWidth: width,
+            canvasHeight: height,
+          });
+          return (
+            <div
+              style={{
+                left: `${badgePos.left}px`,
+                top: `${badgePos.top}px`,
+              }}
+              className="pointer-events-auto absolute z-30 flex items-center gap-1.5 select-none"
+            >
+              <button
+                type="button"
+                data-testid="chamfer-3d-live-dimension-badge"
+                style={themeSurfaceStyle}
+                onPointerDown={(ev) => {
+                  ev.stopPropagation();
+                  ev.preventDefault();
+                }}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  if (directTool === "fillet_3d" || directTool === "chamfer_3d") {
+                    openFloatingNumpad(
+                      filletOrChamferMode === "fillet" ? "RADIUS" : "CHAMFER",
+                      filletOrChamferMode === "fillet" ? "RAIO FILLET" : "CHANFRO 45°",
+                      "mm",
+                      filletOrChamferMode === "fillet"
+                        ? primaryBody.edgeFilletRadiusMm || 10
+                        : primaryBody.edgeChamferDistMm || 10,
+                      filletOrChamferMode === "fillet" ? "filletRadius" : "chamferDistance",
+                      primaryBody.entityId,
+                    );
+                  } else if (directTool === "shell_3d") {
+                    openFloatingNumpad(
+                      "THICKNESS",
+                      "PAREDE CASCA",
+                      "mm",
+                      primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75,
+                      "shellWallThickness",
+                      primaryBody.entityId,
+                    );
+                  } else if (directTool === "offset_face_3d") {
+                    openFloatingNumpad(
+                      "OFFSET",
+                      "OFFSET FACE",
+                      "mm",
+                      lastCompletedDrag?.axis === "face_normal"
+                        ? lastCompletedDrag.deltaMm
+                        : 25,
+                      "offsetFaceDistance",
+                      primaryBody.entityId,
+                      offsetFaceTarget,
+                    );
+                  } else if (directTool === "rotate_axis_3d") {
+                    openFloatingNumpad(
+                      "ANGLE",
+                      "ÂNGULO CORTE",
+                      "°",
+                      primaryBody.miterCutTopDeg || 45,
+                      "miterAngle",
+                      primaryBody.entityId,
+                      miterEndTarget,
+                    );
+                  } else if (directTool === "hole_3d") {
+                    openFloatingNumpad(
+                      "HOLE_DIAMETER",
+                      "DIÂMETRO FURO Ø (mm)",
+                      "mm",
+                      12,
+                      "holeDiameter",
+                      primaryBody.entityId,
+                    );
+                  } else if (
+                    directTool === "transform_3d" ||
+                    selectionKind3D === "body"
+                  ) {
+                    if (
+                      lastCompletedDrag?.axis === "rot_x" ||
+                      lastCompletedDrag?.axis === "rot_y" ||
+                      lastCompletedDrag?.axis === "rot_z"
+                    ) {
+                      const rotAxis = lastCompletedDrag.axis;
+                      openFloatingNumpad(
+                        "ANGLE",
+                        rotAxis === "rot_x"
+                          ? "GIRAR EIXO X"
+                          : rotAxis === "rot_y"
+                            ? "GIRAR EIXO Y"
+                            : "GIRAR EIXO Z",
+                        "°",
+                        lastCompletedDrag.deltaMm || 45,
+                        rotAxis === "rot_x" ? "rx" : rotAxis === "rot_y" ? "ry" : "rz",
+                        lastCompletedDrag.activeResultIds[0] ?? primaryBody.entityId,
+                        undefined,
+                        copyOnTransform || Boolean(lastCompletedDrag.copyMode),
+                      );
+                      return;
+                    }
+                    const defaultAxis =
+                      lastCompletedDrag?.axis === "y"
+                        ? "y"
+                        : lastCompletedDrag?.axis === "z"
+                          ? "z"
+                          : transformAxisTarget;
+                    openFloatingNumpad(
+                      "DISTANCE",
+                      copyOnTransform || lastCompletedDrag?.copyMode
+                        ? `CÓPIA DIST +${defaultAxis.toUpperCase()}`
+                        : `TRANSLADAR +${defaultAxis.toUpperCase()}`,
+                      "mm",
+                      lastCompletedDrag?.deltaMm || 100,
+                      defaultAxis === "x"
+                        ? "moveX"
+                        : defaultAxis === "y"
+                          ? "moveY"
+                          : "moveZ",
+                      (lastCompletedDrag?.activeResultIds[0] ?? primaryBody.entityId),
+                      undefined,
+                      copyOnTransform || Boolean(lastCompletedDrag?.copyMode),
+                    );
+                  } else {
+                    openFloatingNumpad(
+                      "EXTRUSION",
+                      "EXTRUDE",
+                      "mm",
+                      primaryBody.extrudeHeightMm,
+                      "extrudeHeight",
+                      primaryBody.entityId,
+                    );
+                  }
+                }}
+                className="flex items-center gap-1 rounded-full border border-cyan-500/60 px-2.5 py-0.5 font-mono text-[10.5px] font-bold shadow-md transition-all hover:scale-105 cursor-pointer"
+                title="Toque para digitar medida exata"
+              >
+                <span className="text-cyan-600 dark:text-cyan-300">
+                  {directTool === "fillet_3d" || directTool === "chamfer_3d"
+                    ? filletOrChamferMode === "fillet"
+                      ? `R ${(primaryBody.edgeFilletRadiusMm || 10).toFixed(1)} mm`
+                      : `D ${(primaryBody.edgeChamferDistMm || 10).toFixed(1)} mm`
+                    : directTool === "shell_3d"
+                      ? `${(primaryBody.shellWallThicknessMm || primaryBody.shellThicknessMm || 4.75).toFixed(1)} mm`
+                      : directTool === "offset_face_3d"
+                        ? lastCompletedDrag?.axis === "face_normal"
+                          ? `${lastCompletedDrag.deltaMm >= 0 ? "+" : ""}${lastCompletedDrag.deltaMm} mm`
+                          : `+25.0 mm`
+                        : directTool === "rotate_axis_3d"
+                          ? `∠ ${(primaryBody.miterCutTopDeg || 45).toFixed(0)}°`
+                          : directTool === "transform_3d" || selectionKind3D === "body"
+                            ? lastCompletedDrag
+                              ? lastCompletedDrag.axis.startsWith("rot_")
+                                ? `∠ ${lastCompletedDrag.deltaMm > 0 ? `+${lastCompletedDrag.deltaMm}` : lastCompletedDrag.deltaMm}°`
+                                : `Δ${lastCompletedDrag.axis.toUpperCase()} ${lastCompletedDrag.deltaMm} mm`
+                              : `0.0 mm`
+                            : `${primaryBody.extrudeHeightMm.toFixed(1)} mm`}
+                </span>
+              </button>
 
-          {/* Mirror ⇄ Tool Button & Popup */}
-          <div className="relative">
-            <button
-              type="button"
-              data-testid="chamfer-3d-gizmo-mirror-btn"
+              {/* Mirror ⇄ Tool Button & Popup */}
+              <div className="relative">
+                <button
+                  type="button"
+                  data-testid="chamfer-3d-gizmo-mirror-btn"
               onPointerDown={(ev) => {
                 ev.stopPropagation();
                 ev.preventDefault();
@@ -6140,9 +6548,10 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 ))}
               </div>
             )}
-          </div>
-        </div>
-      )}
+              </div>
+            </div>
+          );
+        })()}
 
       {/* =====================================================================
           3B. BARRA INFERIOR COMPACTA DE TELEMETRIA DA SELEÇÃO 3D (VÉRTICE / FACE / ARESTA / CORPO)

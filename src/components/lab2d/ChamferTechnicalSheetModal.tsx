@@ -50,7 +50,7 @@ export function ChamferTechnicalSheetModal({
     scale: "1:1",
     drafter: "CALDRA METAL LAB",
     revision: "R0",
-    date: new Date().toLocaleDateString("pt-BR"),
+    date: new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }),
   });
 
   const handleGenerate = () => {

@@ -1544,11 +1544,11 @@ interface HomeCinematicHeroProps {
 
 export function HomeCinematicHero({ className }: HomeCinematicHeroProps) {
   const navigate = useNavigate();
-  const { accentColor, theme } = useSettings();
+  const { accent, theme } = useSettings();
   const isDark = theme === "dark" || theme === "amoled";
   const triad = useMemo(
-    () => resolveAccentColorTokens(accentColor, isDark),
-    [accentColor, isDark],
+    () => resolveAccentColorTokens(accent, isDark),
+    [accent, isDark],
   );
 
   const [activeIndex, setActiveIndex] = useState(0);

@@ -237,21 +237,24 @@ export function WorkshopDashboard() {
   const projects = useProjects();
   const { plan, requirePro } = useSubscription();
   const academyState = useAcademy();
-  const { accentColor, theme } = useSettings();
+  const { accent, theme } = useSettings();
   const isDark = theme === "dark";
 
   const triad = useMemo(
-    () => resolveAccentColorTokens(accentColor, isDark),
-    [accentColor, isDark],
+    () => resolveAccentColorTokens(accent, isDark),
+    [accent, isDark],
   );
 
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [materialsOpen, setMaterialsOpen] = useState(false);
-  const [promoDismissed, setPromoDismissed] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return isProPromoDismissed(window.localStorage);
-  });
+  const [promoDismissed, setPromoDismissed] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setPromoDismissed(isProPromoDismissed(window.localStorage));
+    }
+  }, []);
 
   // Pré-aquecimento em segundo plano (Warm-up Silencioso) do CHAMFER CAD
   useEffect(() => {

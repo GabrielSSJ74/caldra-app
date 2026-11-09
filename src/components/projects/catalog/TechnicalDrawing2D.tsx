@@ -245,7 +245,7 @@ export function TechnicalDrawing2D({
   const railH = val("handrailHeight", 0);
 
   const scaleDen = Math.max(1, Math.round(sheet.sheetW / 380));
-  const today = new Date().toLocaleDateString("pt-BR");
+  const today = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
   const material = result.parts[0]?.material ?? "Aço Carbono";
 
   const bx = 0;
