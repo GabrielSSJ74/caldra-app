@@ -1148,6 +1148,8 @@ export interface ChamferDraftConfirmationBubbleProps {
   isDark?: boolean;
   /** Indica se a barra fina de sub-opções (ex.: "RET: 2 Cantos | Centro | 3 Pontos") está visível no topo */
   hasSubmodeBar?: boolean;
+  /** Quando true, usa posicionamento relativo dentro do Flex Column Stack superior (Seção 5.1) */
+  stackedInTopContainer?: boolean;
   onUpdatePendingShape: (next: PendingDraftShapeState) => void;
   onConfirmPendingShape: () => void;
   onCancelPendingShape: () => void;
@@ -1169,6 +1171,7 @@ export const ChamferDraftConfirmationBubble: React.FC<ChamferDraftConfirmationBu
   pendingShape,
   isDark = true,
   hasSubmodeBar,
+  stackedInTopContainer = false,
   onUpdatePendingShape,
   onConfirmPendingShape,
   onCancelPendingShape,
@@ -1302,9 +1305,13 @@ export const ChamferDraftConfirmationBubble: React.FC<ChamferDraftConfirmationBu
         onPointerDown={(e) => e.stopPropagation()}
         onClick={(e) => e.stopPropagation()}
         style={{
-          left: "50%",
-          top: elevatedTopPx,
-          transform: "translateX(-50%)",
+          ...(stackedInTopContainer
+            ? {}
+            : {
+                left: "50%",
+                top: elevatedTopPx,
+                transform: "translateX(-50%)",
+              }),
           padding: "3px 6px",
           borderRadius: 9999,
           gap: 5,
@@ -1318,7 +1325,7 @@ export const ChamferDraftConfirmationBubble: React.FC<ChamferDraftConfirmationBu
             ? "0 6px 20px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.08)"
             : "0 4px 16px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.7)",
         }}
-        className="pointer-events-auto absolute z-45 flex flex-nowrap items-center font-mono select-none whitespace-nowrap max-w-[96vw] overflow-x-auto scrollbar-none"
+        className={`pointer-events-auto ${stackedInTopContainer ? "relative" : "absolute"} z-45 flex flex-nowrap items-center font-mono select-none whitespace-nowrap max-w-[96vw] overflow-x-auto scrollbar-none`}
       >
         {/* RETÂNGULO (2 Cantos, Centro, 3 Pontos): [ L (X): ... mm ✎ ] × [ A (Y): ... mm ✎ ] [ ∠ ...° ✎ ] [ Raio R: ... mm ✎ ] */}
         {(kind === "rect" || kind === "rrect") && (

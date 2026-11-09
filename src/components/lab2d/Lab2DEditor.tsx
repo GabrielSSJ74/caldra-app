@@ -1543,8 +1543,20 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     });
   }, []);
 
+  const previousToolBeforeReferenceRef = useRef<Tool | null>(null);
+
   const handleSetInteractionGuideMode = useCallback(
     (nextMode: InteractionGuideMode) => {
+      if (nextMode === "purple_ref") {
+        if (tool !== "select" && tool !== "node") {
+          previousToolBeforeReferenceRef.current = tool;
+          setTool("select");
+        }
+      } else if (nextMode === "off" && previousToolBeforeReferenceRef.current) {
+        setTool(previousToolBeforeReferenceRef.current);
+        previousToolBeforeReferenceRef.current = null;
+      }
+
       setInteractionGuideModeState(nextMode);
       saveInteractionGuideMode(nextMode);
       setLiveDimEditor(null);
@@ -1587,7 +1599,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         }
       }
     },
-    [view.k, view.tx, view.ty, canvasSize.w, canvasSize.h, temporaryOrigin, pending],
+    [view.k, view.tx, view.ty, canvasSize.w, canvasSize.h, temporaryOrigin, pending, tool],
   );
   const [showGlobalCoordsPeek, setShowGlobalCoordsPeek] = useState<boolean>(false);
 
@@ -5321,7 +5333,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       // Ao aproximar o cursor (com offset 55px ou direto) de qualquer vértice de uma peça selecionada,
       // o Snap magnético trava nele e permite arrastar o nó diretamente no modo Ponteiro!
       let bestNode: { id: string; index: number; dist: number; pt: Vec2 } | null = null;
-      if (selection.length > 0) {
+      if (selection.length > 0 && interactionGuideMode !== "purple_ref") {
         const bd = (pType === "touch" ? 16 : 12) / view.k;
         for (const selEnt of selected) {
           const pts = entityPoints(selEnt);
@@ -6974,51 +6986,46 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         }).best;
       smartPickCandidateRef.current = null;
       setSmartPickCandidate(null);
-
-      const activeSmart =
-        smartSnap && dist(cursorRef.current, smartSnap.p) <= 1e-3 ? smartSnap : null;
-      const validCandidate =
-        previewGeometricMarkCandidateRef.current ??
-        inferValidGeometricMarkCandidate(
-          cursorRef.current,
-          entities,
-          activeLayer,
-          activeSmart,
-          24 / view.k,
-        );
       previewGeometricMarkCandidateRef.current = null;
       setPreviewGeometricMarkCandidate(null);
 
       if (pickedCand) {
-        const currentActiveAnchor = ReferenceService.getActive();
-        // Toque repetido na mesma entidade cicla automaticamente entre seus pontos notáveis (Seção 4.2)
-        if (
-          currentActiveAnchor &&
-          pickedCand.entityId &&
-          currentActiveAnchor.parentEntityId === pickedCand.entityId &&
-          dist(currentActiveAnchor.origin, pickedCand.point) <= 28 / view.k
-        ) {
-          const cycled = ReferenceService.cycleActiveAnchor(entities);
-          if (cycled) {
-            setMarquee(null);
-            triggerHaptic("selection");
-            toast.success(
-              `↻ Âncora ${cycled.id} ciclada para ${cycled.badgeLabel} (${cycled.origin.x.toFixed(1)}, ${cycled.origin.y.toFixed(1)}) mm`,
-            );
-            return;
-          }
-        }
-
-        const anchor = ReferenceService.upsertAnchor(pickedCand);
-        if (validCandidate) {
-          commit((prev) => [...prev, validCandidate]);
-        }
+        const tapRes = ReferenceService.handleCanvasTap(pickedCand, entities, (28 / Math.max(0.05, view.k)));
         setMarquee(null);
-        triggerHaptic("success");
-        toast.success(
-          `✓ Âncora ${anchor.id} (${anchor.badgeLabel}) fixada em (${anchor.origin.x.toFixed(1)}, ${anchor.origin.y.toFixed(1)}) mm${anchor.thetaDeg !== 0 ? ` • X' ∠${anchor.thetaDeg.toFixed(1)}°` : ""}`,
-        );
-        return;
+
+        if (tapRes.kind === "anchor_placed" && tapRes.anchor) {
+          triggerHaptic("success");
+          toast.success(
+            `✓ Âncora Local (X',Y') posicionada em (${tapRes.anchor.origin.x.toFixed(1)}, ${tapRes.anchor.origin.y.toFixed(1)}) mm${tapRes.anchor.thetaDeg !== 0 ? ` • ∠${tapRes.anchor.thetaDeg.toFixed(1)}°` : ""}`,
+          );
+          return;
+        }
+        if (tapRes.kind === "anchor_cycled" && tapRes.anchor) {
+          triggerHaptic("selection");
+          toast.success(
+            `↻ Âncora Local ciclada para ${tapRes.anchor.badgeLabel} (${tapRes.anchor.origin.x.toFixed(1)}, ${tapRes.anchor.origin.y.toFixed(1)}) mm`,
+          );
+          return;
+        }
+        if (tapRes.kind === "landmark_placed" && tapRes.anchor) {
+          triggerHaptic("success");
+          toast.success(
+            `✓ Marco ${tapRes.anchor.id} (${tapRes.anchor.badgeLabel}) fixado em (${tapRes.anchor.origin.x.toFixed(1)}, ${tapRes.anchor.origin.y.toFixed(1)}) mm`,
+          );
+          return;
+        }
+        if (tapRes.kind === "landmark_cycled" && tapRes.anchor) {
+          triggerHaptic("selection");
+          toast.success(
+            `↻ Marco ${tapRes.anchor.id} ciclado para ${tapRes.anchor.badgeLabel} (${tapRes.anchor.origin.x.toFixed(1)}, ${tapRes.anchor.origin.y.toFixed(1)}) mm`,
+          );
+          return;
+        }
+        if (tapRes.kind === "landmarks_paused_at_b") {
+          triggerHaptic("tap");
+          toast.info("Marcos A e B já definidos. Clique em [ + C ] na barra para adicionar mais marcos ou em um chip A/B para reposicioná-lo.");
+          return;
+        }
       }
     }
 
@@ -7551,6 +7558,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         setActiveArrayType(null);
         setIsArrayPickingCenter(false);
         setTool("select");
+      }
+      if (ev.key === "Enter" && interactionGuideMode === "purple_ref") {
+        ev.preventDefault();
+        handleSetInteractionGuideMode("off");
+        triggerHaptic("success");
+        toast.success("✓ Referência concluída • Pontos ativos para Snap magnético.");
+        return;
       }
       if (ev.key === "Enter" && pendingDraftShapeRef.current) {
         ev.preventDefault();
@@ -12190,221 +12204,48 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </g>
           </svg>
 
-          {/* BARRA CONTEXTUAL DE 1 LINHA ROLÁVEL E CHIP UNIVERSAL DO MARCO GEOMÉTRICO / ÂNCORA (A–E) */}
+          {/* MINI-CHIP DISCRETO DE REFERÊNCIA CONCLUÍDA NO CANTO SUPERIOR ESQUERDO (Seção 3.2) */}
           {!solidOpen &&
             activeMode !== "3d" &&
-            (interactionGuideMode === "purple_ref" ||
-              referenceState.anchors.length > 0 ||
-              entities.some((e) => isGeometricMarkEntity(e))) && (
-              <div className="pointer-events-auto absolute top-8 left-1/2 -translate-x-1/2 z-30 flex items-center justify-center">
+            interactionGuideMode !== "purple_ref" &&
+            (Boolean(referenceState.localAnchor) ||
+              referenceState.landmarks.length > 0 ||
+              referenceState.spanDivision !== null ||
+              referenceState.guides.length > 0) && (
+              <div className="pointer-events-auto absolute top-7 left-7 z-35 flex items-center">
                 <ChamferGeometricAnchorBar
-                  visible={
-                    interactionGuideMode === "purple_ref" ||
-                    referenceState.anchors.length > 0 ||
-                    entities.some((e) => isGeometricMarkEntity(e))
-                  }
+                  visible={true}
+                  isCapturingReference={false}
                   referenceState={referenceState}
                   entities={entities}
                   selectedIds={selection}
                   isDark={isDark}
-                  onCycleAnchor={() => {
-                    const cycled = ReferenceService.cycleActiveAnchor(entities);
-                    if (cycled) {
-                      triggerHaptic("selection");
-                      toast.success(
-                        `↻ Âncora ${cycled.id} ciclada para ${cycled.badgeLabel} (${cycled.origin.x.toFixed(1)}, ${cycled.origin.y.toFixed(1)}) mm`,
-                      );
-                    } else {
-                      toast.info("Toque em uma entidade com o Marco Geométrico para ciclar seus candidatos.");
-                    }
-                  }}
-                  onSetAnchorAngle={(thetaDeg) => {
-                    ReferenceService.setActiveAnchorAngle(thetaDeg, true);
-                    triggerHaptic("selection");
-                    toast.success(`✓ Eixo X' da Âncora rotacionado para ${thetaDeg.toFixed(1)}°`);
-                  }}
-                  onAddGuide={(kind, opts) => {
-                    const g = ReferenceService.addConstructionGuide(kind, {
-                      ...opts,
-                      entities,
-                    });
-                    if (g) {
-                      triggerHaptic("action");
-                      toast.success(
-                        `✓ Guia infinita (${g.label}) criada • ${ReferenceService.getState().meetings.length} Encontro(s) ativo(s).`,
-                      );
-                    } else {
-                      toast.info("Fixe uma Âncora primeiro para adicionar Guias de Construção.");
-                    }
-                  }}
-                  onMidpointAB={() => {
-                    const midAnchor = ReferenceService.createMidpointBetweenAnchors();
-                    if (midAnchor) {
-                      triggerHaptic("success");
-                      toast.success(
-                        `✓ Âncora ${midAnchor.id} criada no Ponto Médio (${midAnchor.origin.x.toFixed(1)}, ${midAnchor.origin.y.toFixed(1)}) mm`,
-                      );
-                    }
-                  }}
-                  onAlignAxisAB={() => {
-                    const angle = ReferenceService.alignAxisByAnchors();
-                    if (angle !== null) {
-                      triggerHaptic("success");
-                      toast.success(`✓ Eixo X' alinhado por A→B (θ = ${angle.toFixed(2)}°)`);
-                    }
-                  }}
-                  onDivideSpanAB={(divN) => {
-                    const group = ReferenceService.divideSpanBetweenAnchors(divN);
-                    if (group) {
-                      triggerHaptic("success");
-                      toast.success(
-                        `✓ Vão ${group.fromAnchor}–${group.toAnchor} dividido em ÷${divN} (${group.points.length} pontos de snap equidistantes).`,
-                      );
-                    }
-                  }}
-                  onDimensionAB={() => {
-                    const metrics = ReferenceService.computeAnchorPairMetrics();
-                    if (!metrics) return;
-                    const dim = makeDimension(
-                      "aligned",
-                      [
-                        { kind: "point", p: metrics.fromAnchor.origin },
-                        { kind: "point", p: metrics.toAnchor.origin },
-                      ],
-                      18,
-                    );
-                    setDims((prev) => [...prev, dim]);
-                    triggerHaptic("success");
-                    toast.success(
-                      `✓ Cota ${metrics.fromAnchor.id}–${metrics.toAnchor.id} (${metrics.distance.toFixed(1)} mm) adicionada.`,
-                    );
-                  }}
-                  onToggleRadar={() => {
-                    const nextRadar = !referenceState.radarEnabled;
-                    ReferenceService.setRadarEnabled(nextRadar);
-                    triggerHaptic("selection");
-                    toast.info(nextRadar ? "Radar de Bordas ativado." : "Radar de Bordas ocultado.");
-                  }}
-                  onSetEchoMode={(mode) => {
-                    ReferenceService.setEchoConfig({ mode });
-                    triggerHaptic("selection");
-                    toast.info(
-                      mode === "off"
-                        ? "Eco de Simetria desativado."
-                        : `Eco de Simetria (${mode}) ativo na Âncora ${referenceState.activeAnchorId ?? "A"}.`,
-                    );
-                  }}
-                  onCommitEchoEntities={() => {
-                    const act = ReferenceService.getActive();
-                    if (!act) return;
-                    const sources =
-                      selection.length > 0
-                        ? entities.filter((e) => selection.includes(e.id))
-                        : draft
-                          ? [draft]
-                          : entities.slice(-1);
-                    const echoed = ReferenceService.computeEchoEntities(sources, act);
-                    if (echoed.length === 0) {
-                      toast.info("Selecione ou desenhe uma geometria para gerar o Eco.");
-                      return;
-                    }
-                    commit((prev) => [...prev, ...echoed]);
-                    ReferenceService.setEchoConfig({ mode: "off" });
-                    triggerHaptic("success");
-                    toast.success(`✓ ${echoed.length} entidade(s) gerada(s) pelo Eco de Simetria.`);
-                  }}
-                  onGenerateTable={(exportCsv) => {
-                    const { rows, csv, cadEntities } =
-                      ReferenceService.generateAnchorCoordinateTable(entities, selection, undefined, "cotas");
-                    if (cadEntities.length > 0) {
-                      commit((prev) => [...prev, ...cadEntities]);
-                    }
-                    if (exportCsv && typeof document !== "undefined") {
-                      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement("a");
-                      a.href = url;
-                      a.download = `tabela-ancoras-${referenceState.activeAnchorId ?? "A"}.csv`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                      toast.success(`✓ Tabela CSV exportada (${rows.length} coordenadas em X', Y').`);
-                    } else {
-                      toast.success(
-                        `✓ ${cadEntities.length} cota(s) por ordenada (X', Y') inserida(s) na camada COTAS.`,
-                      );
-                    }
-                    triggerHaptic("success");
-                  }}
+                  onConcludeReference={() => handleSetInteractionGuideMode("off")}
+                  onEditReference={() => handleSetInteractionGuideMode("purple_ref")}
+                  onCycleAnchor={() => {}}
+                  onSetAnchorAngle={(thetaDeg) => ReferenceService.setActiveAnchorAngle(thetaDeg, true)}
+                  onAddGuide={(kind, opts) => ReferenceService.addConstructionGuide(kind, { ...opts, entities })}
+                  onMidpointAB={() => ReferenceService.createMidpointBetweenAnchors()}
+                  onAlignAxisAB={() => ReferenceService.alignAxisByAnchors()}
+                  onDivideSpanAB={(divN) => ReferenceService.divideSpanBetweenAnchors(divN)}
+                  onDimensionAB={() => {}}
+                  onToggleRadar={() => ReferenceService.setRadarEnabled(!referenceState.radarEnabled)}
+                  onSetEchoMode={(mode) => ReferenceService.setEchoConfig({ mode })}
+                  onCommitEchoEntities={() => {}}
+                  onGenerateTable={() => {}}
                   onProgressiveClear={() => {
-                    const stage = ReferenceService.handleProgressiveClear();
-                    if (stage === "cleared_aux") {
-                      triggerHaptic("action");
-                      toast.info("Guias infinitas, Encontros e Eco limpos (toque novamente para limpar Âncoras A–E).");
-                    } else if (stage === "cleared_anchors") {
-                      const res = clearGeometricMarksFromEntities(entities, false);
-                      if (res.removedCount > 0) commit(res.cleaned);
-                      triggerHaptic("action");
-                      toast.success("🧹 Todas as Âncoras A–E e Marcos Geométricos foram limpos.");
-                    } else {
-                      const res = clearGeometricMarksFromEntities(entities, false);
-                      if (res.removedCount > 0) {
-                        commit(res.cleaned);
-                        triggerHaptic("action");
-                        toast.success(`🧹 ${res.removedCount} Marco(s) Geométrico(s) removido(s).`);
-                      } else {
-                        toast.info("Nenhuma Âncora ou Guia ativa para limpar.");
-                      }
-                    }
+                    ReferenceService.clearAll();
+                    const res = clearGeometricMarksFromEntities(entities, false);
+                    if (res.removedCount > 0) commit(res.cleaned);
+                    triggerHaptic("action");
+                    toast.success("🗑️ Referência, marcos, divisões e guias removidos.");
                   }}
-                  onUseActiveAnchorInTool={(anchor) => {
-                    const pt = { x: anchor.origin.x, y: anchor.origin.y };
-                    cursorRef.current = pt;
-                    setCursor(pt);
-                    if (activeArrayType === "polar") {
-                      setArrayPolarParams((prev) => {
-                        const baseCenter = selected.length > 0 ? getGroupCenter(selected) : pt;
-                        return {
-                          ...prev,
-                          center: pt,
-                          radius: dist(pt, baseCenter),
-                          startAngleDeg:
-                            Math.atan2(baseCenter.y - pt.y, baseCenter.x - pt.x) * (180 / Math.PI),
-                        };
-                      });
-                      setIsArrayPickingCenter(false);
-                      triggerHaptic("success");
-                      toast.success(
-                        `✓ Âncora ${anchor.id} aplicada como centro do Array Polar (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}) mm`,
-                      );
-                      return;
-                    }
-                    if (
-                      tool === "line" ||
-                      tool === "construction_line" ||
-                      tool === "polyline" ||
-                      tool === "spline" ||
-                      tool === "rect" ||
-                      tool === "circle" ||
-                      tool === "ellipse" ||
-                      tool === "arc" ||
-                      tool === "measure"
-                    ) {
-                      setPending((prev) => [...prev, pt]);
-                      triggerHaptic("success");
-                      toast.success(
-                        `✓ Âncora ${anchor.id} (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}) aplicada na ferramenta atual.`,
-                      );
-                      return;
-                    }
-                    setTemporaryOrigin({
-                      id: `anchor_${anchor.id}`,
-                      p: pt,
-                      label: `ÂNCORA ${anchor.id}`,
-                    });
-                    triggerHaptic("success");
-                    toast.success(
-                      `✓ Cursor e origem posicionados na Âncora ${anchor.id} (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}) mm.`,
-                    );
+                  onClearAll={() => {
+                    ReferenceService.clearAll();
+                    const res = clearGeometricMarksFromEntities(entities, false);
+                    if (res.removedCount > 0) commit(res.cleaned);
+                    triggerHaptic("action");
+                    toast.success("🗑️ Referência, marcos, divisões e guias removidos.");
                   }}
                 />
               </div>
@@ -12818,97 +12659,303 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   ? createSelectedEntityDraftState(selected[0])
                   : null);
 
+            const topStackOffsetPx = hasSubmodeBar ? 50 : 24;
+
             return (
-              <ChamferDraftConfirmationBubble
-                pendingShape={activeUnifiedDraftShape}
-                view={view}
-                canvasWidth={canvasSize.w}
-                canvasHeight={canvasSize.h}
-                isDark={isDark}
-                hasSubmodeBar={hasSubmodeBar}
-                onUpdatePendingShape={(next) => {
-                  if (next.isSelectedEntity) {
-                    commit((list) =>
-                      revalidateShared(
-                        list.map((e) => (e.id === next.entity.id ? { ...next.entity, id: e.id } : e)),
-                      ),
-                    );
-                    return;
-                  }
-                  lastCreatedVertexRef.current = next.p1;
-                  if (next.tool === "polygon") {
-                    setPolygonSides(next.polygonSides);
-                    setPolygonMode(next.polygonMode);
-                    setPolygonAcrossFlatsMm(next.polygonAcrossFlatsMm);
-                  } else if (next.tool === "slot") {
-                    setSlotWidthMm(next.slotWidthMm);
-                  } else if (next.tool === "rect" || next.tool === "rrect") {
-                    setFilletR(next.cornerRadiusMm);
-                  }
-                  if (pendingDraftShape) {
-                    setPendingDraftShape(next);
-                  } else if (pending.length >= 1) {
-                    cursorRef.current = next.p1;
-                    setCursor(next.p1);
-                    draftRef.current = next.entity;
-                    setDraft(next.entity);
-                    if (
-                      next.tool !== "polyline" &&
-                      next.tool !== "spline" &&
-                      next.tool !== "construction_line"
-                    ) {
-                      setPendingDraftShape({ ...next, isLiveDraft: false });
-                      setPending([]);
-                      setDraft(null);
-                    }
-                  }
+              <div
+                data-testid="chamfer-top-bars-flex-stack"
+                style={{
+                  position: "absolute",
+                  top: topStackOffsetPx,
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  gap: 5,
+                  zIndex: 45,
+                  pointerEvents: "none",
+                  maxWidth: "96vw",
                 }}
-                onConfirmPendingShape={() => {
-                  if (pendingDraftShape) {
-                    commitPendingDraftShape(pendingDraftShape);
-                  } else if (activeUnifiedDraftShape) {
-                    if (tool === "polyline") {
-                      if (pending.length >= 1) {
-                        const lastPt = pending[pending.length - 1]!;
-                        const d = Math.hypot(cursor.x - lastPt.x, cursor.y - lastPt.y);
-                        if (d > 0.05) {
-                          const allPts = [...pending, cursor];
-                          if (allPts.length >= 2) {
-                            commit((list) => [
-                              ...list,
-                              {
-                                id: uid(),
-                                layer: activeLayer,
-                                type: "polyline",
-                                pts: allPts,
-                                closed: false,
-                              },
-                            ]);
-                          }
-                        } else if (pending.length >= 2) {
-                          finishPolyline(false);
-                        }
+              >
+                <ChamferDraftConfirmationBubble
+                  pendingShape={activeUnifiedDraftShape}
+                  view={view}
+                  canvasWidth={canvasSize.w}
+                  canvasHeight={canvasSize.h}
+                  isDark={isDark}
+                  hasSubmodeBar={hasSubmodeBar}
+                  stackedInTopContainer={true}
+                  onUpdatePendingShape={(next) => {
+                    if (next.isSelectedEntity) {
+                      commit((list) =>
+                        revalidateShared(
+                          list.map((e) => (e.id === next.entity.id ? { ...next.entity, id: e.id } : e)),
+                        ),
+                      );
+                      return;
+                    }
+                    lastCreatedVertexRef.current = next.p1;
+                    if (next.tool === "polygon") {
+                      setPolygonSides(next.polygonSides);
+                      setPolygonMode(next.polygonMode);
+                      setPolygonAcrossFlatsMm(next.polygonAcrossFlatsMm);
+                    } else if (next.tool === "slot") {
+                      setSlotWidthMm(next.slotWidthMm);
+                    } else if (next.tool === "rect" || next.tool === "rrect") {
+                      setFilletR(next.cornerRadiusMm);
+                    }
+                    if (pendingDraftShape) {
+                      setPendingDraftShape(next);
+                    } else if (pending.length >= 1) {
+                      cursorRef.current = next.p1;
+                      setCursor(next.p1);
+                      draftRef.current = next.entity;
+                      setDraft(next.entity);
+                      if (
+                        next.tool !== "polyline" &&
+                        next.tool !== "spline" &&
+                        next.tool !== "construction_line"
+                      ) {
+                        setPendingDraftShape({ ...next, isLiveDraft: false });
+                        setPending([]);
+                        setDraft(null);
                       }
-                      setPending([]);
-                      setDraft(null);
-                    } else if (tool === "spline") {
-                      finishSpline(false);
-                    } else {
-                      commitPendingDraftShape({ ...activeUnifiedDraftShape, isLiveDraft: false });
-                      setPending([]);
-                      setDraft(null);
                     }
-                  }
-                }}
-                onCancelPendingShape={() => {
-                  setPendingDraftShape(null);
-                  setPending([]);
-                  setDraft(null);
-                  setDraggingDraftGripIndex(null);
-                  setLockedDims({ lockedLengthMm: null, lockedAngleDeg: null });
-                  toast.info("Forma descartada.");
-                }}
-              />
+                  }}
+                  onConfirmPendingShape={() => {
+                    if (pendingDraftShape) {
+                      commitPendingDraftShape(pendingDraftShape);
+                    } else if (activeUnifiedDraftShape) {
+                      if (tool === "polyline") {
+                        if (pending.length >= 1) {
+                          const lastPt = pending[pending.length - 1]!;
+                          const d = Math.hypot(cursor.x - lastPt.x, cursor.y - lastPt.y);
+                          if (d > 0.05) {
+                            const allPts = [...pending, cursor];
+                            if (allPts.length >= 2) {
+                              commit((list) => [
+                                ...list,
+                                {
+                                  id: uid(),
+                                  layer: activeLayer,
+                                  type: "polyline",
+                                  pts: allPts,
+                                  closed: false,
+                                },
+                              ]);
+                            }
+                          } else if (pending.length >= 2) {
+                            finishPolyline(false);
+                          }
+                        }
+                        setPending([]);
+                        setDraft(null);
+                      } else if (tool === "spline") {
+                        finishSpline(false);
+                      } else {
+                        commitPendingDraftShape({ ...activeUnifiedDraftShape, isLiveDraft: false });
+                        setPending([]);
+                        setDraft(null);
+                      }
+                    }
+                  }}
+                  onCancelPendingShape={() => {
+                    setPendingDraftShape(null);
+                    setPending([]);
+                    setDraft(null);
+                    setDraggingDraftGripIndex(null);
+                    setLockedDims({ lockedLengthMm: null, lockedAngleDeg: null });
+                    toast.info("Forma descartada.");
+                  }}
+                />
+
+                {interactionGuideMode === "purple_ref" && (
+                  <div className="pointer-events-auto flex items-center justify-center">
+                    <ChamferGeometricAnchorBar
+                      visible={true}
+                      isCapturingReference={true}
+                      referenceState={referenceState}
+                      entities={entities}
+                      selectedIds={selection}
+                      isDark={isDark}
+                      onConcludeReference={() => {
+                        handleSetInteractionGuideMode("off");
+                        triggerHaptic("success");
+                        toast.success("✓ Referência concluída • Pontos ativos para Snap magnético.");
+                      }}
+                      onEditReference={() => handleSetInteractionGuideMode("purple_ref")}
+                      onCycleAnchor={() => {
+                        const cycled = ReferenceService.cycleActiveAnchor(entities);
+                        if (cycled) {
+                          triggerHaptic("selection");
+                          toast.success(
+                            `↻ ${cycled.id === "ANCHOR" ? "Âncora Local" : `Marco ${cycled.id}`} ciclado para ${cycled.badgeLabel} (${cycled.origin.x.toFixed(1)}, ${cycled.origin.y.toFixed(1)}) mm`,
+                          );
+                        } else {
+                          toast.info("Toque em uma geometria primeiro para ciclar seus candidatos.");
+                        }
+                      }}
+                      onSetAnchorAngle={(thetaDeg) => {
+                        ReferenceService.setActiveAnchorAngle(thetaDeg, true);
+                        triggerHaptic("selection");
+                      }}
+                      onAddGuide={(kind, opts) => {
+                        ReferenceService.addConstructionGuide(kind, {
+                          ...opts,
+                          entities,
+                        });
+                        triggerHaptic("action");
+                      }}
+                      onMidpointAB={() => {
+                        const midAnchor = ReferenceService.createMidpointBetweenAnchors();
+                        if (midAnchor) {
+                          triggerHaptic("success");
+                          toast.success(
+                            `✓ Ponto Médio A–B calculado em (${midAnchor.origin.x.toFixed(1)}, ${midAnchor.origin.y.toFixed(1)}) mm`,
+                          );
+                        }
+                      }}
+                      onAlignAxisAB={() => {
+                        const angle = ReferenceService.alignAxisByAnchors();
+                        if (angle !== null) {
+                          triggerHaptic("success");
+                          toast.success(`✓ Eixo X' alinhado por A→B (∠${angle.toFixed(2)}°)`);
+                        }
+                      }}
+                      onDivideSpanAB={(divN) => {
+                        ReferenceService.divideSpanBetweenAnchors(divN);
+                      }}
+                      onDimensionAB={() => {
+                        const metrics = ReferenceService.computeAnchorPairMetrics();
+                        if (!metrics) return;
+                        const dim = makeDimension(
+                          "aligned",
+                          [
+                            { kind: "point", p: metrics.fromAnchor.origin },
+                            { kind: "point", p: metrics.toAnchor.origin },
+                          ],
+                          18,
+                        );
+                        setDims((prev) => [...prev, dim]);
+                        triggerHaptic("success");
+                        toast.success(
+                          `✓ Cota ${metrics.fromAnchor.id}–${metrics.toAnchor.id} (${metrics.distance.toFixed(1)} mm) inserida.`,
+                        );
+                      }}
+                      onToggleRadar={() => {
+                        const nextRadar = !referenceState.radarEnabled;
+                        ReferenceService.setRadarEnabled(nextRadar);
+                        triggerHaptic("selection");
+                        toast.info(nextRadar ? "Radar de Bordas ativado." : "Radar de Bordas ocultado.");
+                      }}
+                      onSetEchoMode={(mode) => {
+                        ReferenceService.setEchoConfig({ mode });
+                        triggerHaptic("selection");
+                      }}
+                      onCommitEchoEntities={() => {
+                        const act = ReferenceService.getActive();
+                        if (!act) return;
+                        const sources =
+                          selection.length > 0
+                            ? entities.filter((e) => selection.includes(e.id))
+                            : draft
+                              ? [draft]
+                              : entities.slice(-1);
+                        const echoed = ReferenceService.computeEchoEntities(sources, act);
+                        if (echoed.length === 0) {
+                          toast.info("Selecione ou desenhe uma geometria para aplicar o Eco.");
+                          return;
+                        }
+                        commit((prev) => [...prev, ...echoed]);
+                        ReferenceService.setEchoConfig({ mode: "off" });
+                        triggerHaptic("success");
+                        toast.success(`✓ ${echoed.length} entidade(s) confirmada(s) pelo Eco de Simetria.`);
+                      }}
+                      onGenerateTable={(exportCsv) => {
+                        const { rows, csv, cadEntities } =
+                          ReferenceService.generateAnchorCoordinateTable(entities, selection, undefined, "cotas");
+                        if (cadEntities.length > 0) {
+                          commit((prev) => [...prev, ...cadEntities]);
+                        }
+                        if (exportCsv && typeof document !== "undefined") {
+                          const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement("a");
+                          a.href = url;
+                          a.download = `tabela-marcos-ancora.csv`;
+                          a.click();
+                          URL.revokeObjectURL(url);
+                          toast.success(`✓ Tabela CSV exportada (${rows.length} coordenadas em X', Y').`);
+                        } else {
+                          toast.success(
+                            `✓ ${cadEntities.length} cota(s) por ordenada (X', Y') inserida(s) na camada COTAS.`,
+                          );
+                        }
+                        triggerHaptic("success");
+                      }}
+                      onProgressiveClear={() => {
+                        ReferenceService.clearAll();
+                        const res = clearGeometricMarksFromEntities(entities, false);
+                        if (res.removedCount > 0) commit(res.cleaned);
+                        triggerHaptic("action");
+                        toast.success("🗑️ Todas as Âncoras, Marcos, Divisões e Guias foram limpos.");
+                      }}
+                      onClearAll={() => {
+                        ReferenceService.clearAll();
+                        const res = clearGeometricMarksFromEntities(entities, false);
+                        if (res.removedCount > 0) commit(res.cleaned);
+                        triggerHaptic("action");
+                        toast.success("🗑️ Todas as Âncoras, Marcos, Divisões e Guias foram limpos.");
+                      }}
+                      onUseActiveAnchorInTool={(anchor) => {
+                        const pt = { x: anchor.origin.x, y: anchor.origin.y };
+                        cursorRef.current = pt;
+                        setCursor(pt);
+                        if (activeArrayType === "polar") {
+                          setArrayPolarParams((prev) => {
+                            const baseCenter = selected.length > 0 ? getGroupCenter(selected) : pt;
+                            return {
+                              ...prev,
+                              center: pt,
+                              radius: dist(pt, baseCenter),
+                              startAngleDeg:
+                                Math.atan2(baseCenter.y - pt.y, baseCenter.x - pt.x) * (180 / Math.PI),
+                            };
+                          });
+                          setIsArrayPickingCenter(false);
+                          triggerHaptic("success");
+                          toast.success(
+                            `✓ Origem aplicada como centro do Array Polar (${pt.x.toFixed(1)}, ${pt.y.toFixed(1)}) mm`,
+                          );
+                          return;
+                        }
+                        if (
+                          tool === "line" ||
+                          tool === "construction_line" ||
+                          tool === "polyline" ||
+                          tool === "spline" ||
+                          tool === "rect" ||
+                          tool === "circle" ||
+                          tool === "ellipse" ||
+                          tool === "arc" ||
+                          tool === "measure"
+                        ) {
+                          setPending((prev) => [...prev, pt]);
+                          triggerHaptic("success");
+                          return;
+                        }
+                        setTemporaryOrigin({
+                          id: `anchor_${anchor.id}`,
+                          p: pt,
+                          label: anchor.id === "ANCHOR" ? "ÂNCORA X',Y'" : `MARCO ${anchor.id}`,
+                        });
+                        triggerHaptic("success");
+                      }}
+                    />
+                  </div>
+                )}
+              </div>
             );
           })()}
 

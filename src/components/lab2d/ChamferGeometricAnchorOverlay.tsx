@@ -1,14 +1,14 @@
 /**
- * CALDRA CHAMFER — OVERLAY VETORIAL DO MARCO GEOMÉTRICO / ÂNCORA (A–E)
+ * CALDRA CHAMFER — OVERLAY VETORIAL LIMPO DA ÂNCORA LOCAL (X', Y') E DOS MARCOS GEOMÉTRICOS (A–E)
  *
- * Renderiza no SVG do Canvas 2D:
- *  - 4.1 Cruz Adaptativa Graduada em Ciano/Violeta Técnico + Núcleo Invariante ao Zoom (44px touch ring)
- *        + Rótulos interativos A–E + Eixos rotacionáveis X'/Y' + HUD Compacto (ΔX', ΔY', d, θ)
- *  - 4.2 Candidato destacado do Smart Pick (<= 24px) antes de confirmar
- *  - 4.4 Vetor relacional A -> B (ΔX, ΔY, d, ∠) e pontos de snap equidistantes do Divisor de Vão (÷N)
- *  - 4.5.1 Guias Infinitas de Construção (até 8) + Encontros Automáticos (Guia × Guia e Guia × Entidade)
- *  - 4.5.2 Radar de Bordas (chips interativos até as 4 bordas da Área de Trabalho e entidades em X'/Y')
- *  - 4.5.3 Prévia em Tempo Real do Eco (Espelho X', Y', X'+Y', Radial N=6 e Linear)
+ * Regras de Limpeza Visual (Zero Poluição sobre a Peça):
+ *  - NENHUMA caixa retangular de texto flutuando sobre as linhas ou vértices da peça!
+ *  - Exibe exclusivamente:
+ *      1. Cruz fina e elegante dos eixos X', Y' na `⚓ Âncora Local` (com núcleo invariante ao zoom);
+ *      2. Micro-pílula identificadora discreta (`18px × 18px`) com `⚓` ou `A, B, C, D, E` deslocada `14px` na diagonal (`+10px, -10px`) para nunca tapar o vértice;
+ *      3. Nós luminosos de divisão (`÷N`) em losango/círculo ciano e Ponto Médio (`A–B`);
+ *      4. Linhas finas tracejadas de Guia Infinita e marcadores de Encontro (`✕`);
+ *      5. Prévia em tempo real do modo `Eco` (`Espelho X'`, `Y'`, `X'+Y'`, `Radial N`).
  */
 
 import React, { useMemo } from "react";
@@ -26,7 +26,7 @@ import {
   ANCHOR_VIOLET_ACCENT,
   ReferenceService,
   anchorLocalToWorld,
-  anchorWorldToLocal,
+  isValidFiniteVec2,
 } from "@/lib/lab2d/referenceService";
 
 export interface ChamferGeometricAnchorOverlayProps {
@@ -57,72 +57,60 @@ function renderAnchorSymbol(
         <circle
           cx={pt.x}
           cy={pt.y}
-          r={5.2 / safeK}
+          r={4.8 / safeK}
           fill="none"
           stroke={strokeColor}
-          strokeWidth={1.5 / safeK}
+          strokeWidth={1.4 / safeK}
         />
       );
     case "midpoint":
       return (
         <polygon
-          points={`${pt.x},${pt.y - 5.5 / safeK} ${pt.x - 4.8 / safeK},${pt.y + 4 / safeK} ${pt.x + 4.8 / safeK},${pt.y + 4 / safeK}`}
+          points={`${pt.x},${pt.y - 5 / safeK} ${pt.x - 4.4 / safeK},${pt.y + 3.6 / safeK} ${pt.x + 4.4 / safeK},${pt.y + 3.6 / safeK}`}
           fill="none"
           stroke={strokeColor}
-          strokeWidth={1.4 / safeK}
+          strokeWidth={1.35 / safeK}
         />
       );
     case "intersection":
       return (
         <>
           <line
-            x1={pt.x - 4.8 / safeK}
-            y1={pt.y - 4.8 / safeK}
-            x2={pt.x + 4.8 / safeK}
-            y2={pt.y + 4.8 / safeK}
+            x1={pt.x - 4.4 / safeK}
+            y1={pt.y - 4.4 / safeK}
+            x2={pt.x + 4.4 / safeK}
+            y2={pt.y + 4.4 / safeK}
             stroke={strokeColor}
-            strokeWidth={1.5 / safeK}
+            strokeWidth={1.4 / safeK}
           />
           <line
-            x1={pt.x + 4.8 / safeK}
-            y1={pt.y - 4.8 / safeK}
-            x2={pt.x - 4.8 / safeK}
-            y2={pt.y + 4.8 / safeK}
+            x1={pt.x + 4.4 / safeK}
+            y1={pt.y - 4.4 / safeK}
+            x2={pt.x - 4.4 / safeK}
+            y2={pt.y + 4.4 / safeK}
             stroke={strokeColor}
-            strokeWidth={1.5 / safeK}
+            strokeWidth={1.4 / safeK}
           />
         </>
       );
     case "tangent":
     case "quadrant":
       return (
-        <>
-          <circle
-            cx={pt.x}
-            cy={pt.y + 1.8 / safeK}
-            r={3.8 / safeK}
-            fill="none"
-            stroke={strokeColor}
-            strokeWidth={1.3 / safeK}
-          />
-          <line
-            x1={pt.x - 6 / safeK}
-            y1={pt.y - 2.2 / safeK}
-            x2={pt.x + 6 / safeK}
-            y2={pt.y - 2.2 / safeK}
-            stroke={ANCHOR_CYAN_PRIMARY}
-            strokeWidth={1.4 / safeK}
-          />
-        </>
+        <polygon
+          points={`${pt.x},${pt.y - 4.8 / safeK} ${pt.x + 4.8 / safeK},${pt.y} ${pt.x},${pt.y + 4.8 / safeK} ${pt.x - 4.8 / safeK},${pt.y}`}
+          fill="none"
+          stroke={strokeColor}
+          strokeWidth={1.35 / safeK}
+        />
       );
     case "vertex":
     default:
       return (
         <polygon
-          points={`${pt.x},${pt.y - 5.2 / safeK} ${pt.x + 5.2 / safeK},${pt.y} ${pt.x},${pt.y + 5.2 / safeK} ${pt.x - 5.2 / safeK},${pt.y}`}
+          points={`${pt.x},${pt.y - 4.8 / safeK} ${pt.x + 4.8 / safeK},${pt.y} ${pt.x},${pt.y + 4.8 / safeK} ${pt.x - 4.8 / safeK},${pt.y}`}
           fill="none"
           stroke={strokeColor}
-          strokeWidth={1.4 / safeK}
+          strokeWidth={1.35 / safeK}
         />
       );
   }
@@ -132,42 +120,57 @@ export const ChamferGeometricAnchorOverlay: React.FC<ChamferGeometricAnchorOverl
   referenceState,
   entities,
   draft,
-  cursor,
   viewK,
-  isDark,
   isAnchorToolActive,
   smartPickPreview,
   workspaceBounds,
   onSelectAnchor,
-  onCaptureExtremity,
-  onRadarChipAction,
 }) => {
   const safeK = Number.isFinite(viewK) && viewK > 0 ? viewK : 1;
-  const activeAnchor = useMemo(
+
+  const localAnchor = useMemo(
     () =>
-      referenceState.anchors.find((a) => a.id === referenceState.activeAnchorId) ??
-      referenceState.anchors[referenceState.anchors.length - 1] ??
+      referenceState.localAnchor && isValidFiniteVec2(referenceState.localAnchor.origin)
+        ? referenceState.localAnchor
+        : null,
+    [referenceState.localAnchor],
+  );
+
+  const validLandmarks = useMemo(
+    () =>
+      (referenceState.landmarks ?? []).filter((lm) => lm && isValidFiniteVec2(lm.origin)),
+    [referenceState.landmarks],
+  );
+
+  const activeAnchorForOps = useMemo(
+    () =>
+      localAnchor ??
+      validLandmarks.find((a) => a.id === referenceState.activeLandmarkId) ??
+      validLandmarks[validLandmarks.length - 1] ??
       null,
-    [referenceState.anchors, referenceState.activeAnchorId],
+    [localAnchor, validLandmarks, referenceState.activeLandmarkId],
   );
 
   const pairMetrics = useMemo(() => {
-    if (referenceState.anchors.length < 2) return null;
+    if (validLandmarks.length < 2) return null;
     return ReferenceService.computeAnchorPairMetrics();
-  }, [referenceState.anchors]);
+  }, [validLandmarks]);
 
   const radarData = useMemo(() => {
-    if (!referenceState.radarEnabled || !activeAnchor) return null;
-    return ReferenceService.computeEdgeRadar(entities, workspaceBounds, activeAnchor);
-  }, [referenceState.radarEnabled, activeAnchor, entities, workspaceBounds]);
+    if (!referenceState.radarEnabled || !activeAnchorForOps) return null;
+    return ReferenceService.computeEdgeRadar(entities, workspaceBounds, activeAnchorForOps);
+  }, [referenceState.radarEnabled, activeAnchorForOps, entities, workspaceBounds]);
 
   const echoPreviewEntities = useMemo(() => {
-    if (!activeAnchor || referenceState.echo.mode === "off") return [];
+    if (!activeAnchorForOps || referenceState.echo.mode === "off") return [];
     const sources = draft ? [draft] : entities.slice(-1);
-    return ReferenceService.computeEchoEntities(sources, activeAnchor, referenceState.echo);
-  }, [activeAnchor, referenceState.echo, draft, entities]);
+    return ReferenceService.computeEchoEntities(sources, activeAnchorForOps, referenceState.echo);
+  }, [activeAnchorForOps, referenceState.echo, draft, entities]);
 
-  const bgBadge = isDark ? "rgba(8, 12, 22, 0.94)" : "rgba(255, 255, 255, 0.96)";
+  // Offset de 14px na diagonal (~10px em X e -10px em Y no espaço de tela) para a micro-pílula 18x18px
+  const diagOffsetWorld = 10 / safeK;
+  const pillSizeWorld = 18 / safeK;
+  const halfPillWorld = 9 / safeK;
 
   return (
     <g
@@ -176,9 +179,10 @@ export const ChamferGeometricAnchorOverlay: React.FC<ChamferGeometricAnchorOverl
       aria-label="Overlay Marco Geométrico e Âncora A–E"
     >
       {/* =====================================================================
-          1. GUIAS INFINITAS DE CONSTRUÇÃO (ATÉ 8) + ENCONTROS AUTOMÁTICOS
+          1. GUIAS INFINITAS DE CONSTRUÇÃO + ENCONTROS AUTOMÁTICOS (✕)
           ===================================================================== */}
       {referenceState.guides.map((guide) => {
+        if (!isValidFiniteVec2(guide.origin)) return null;
         const span = 12000 / safeK;
         const x1 = guide.origin.x - guide.direction.x * span;
         const y1 = guide.origin.y - guide.direction.y * span;
@@ -195,48 +199,51 @@ export const ChamferGeometricAnchorOverlay: React.FC<ChamferGeometricAnchorOverl
               stroke={isAxisX ? ANCHOR_CYAN_PRIMARY : ANCHOR_VIOLET_PRIMARY}
               strokeWidth={1.15 / safeK}
               strokeDasharray={`${6 / safeK},${4 / safeK}`}
-              strokeOpacity={0.75}
+              strokeOpacity={0.78}
             />
           </g>
         );
       })}
 
       {/* Encontros Automáticos (Guia × Guia e Guia × Entidade) */}
-      {referenceState.meetings.map((meet) => (
-        <g
-          key={meet.id}
-          data-testid={`anchor-meeting-${meet.id}`}
-          aria-label={`Encontro Magnético: ${meet.label}`}
-        >
-          <circle
-            cx={meet.point.x}
-            cy={meet.point.y}
-            r={6 / safeK}
-            fill="rgba(6, 182, 212, 0.16)"
-            stroke={ANCHOR_CYAN_PRIMARY}
-            strokeWidth={1.3 / safeK}
-          />
-          <line
-            x1={meet.point.x - 4 / safeK}
-            y1={meet.point.y - 4 / safeK}
-            x2={meet.point.x + 4 / safeK}
-            y2={meet.point.y + 4 / safeK}
-            stroke={ANCHOR_VIOLET_ACCENT}
-            strokeWidth={1.4 / safeK}
-          />
-          <line
-            x1={meet.point.x + 4 / safeK}
-            y1={meet.point.y - 4 / safeK}
-            x2={meet.point.x - 4 / safeK}
-            y2={meet.point.y + 4 / safeK}
-            stroke={ANCHOR_VIOLET_ACCENT}
-            strokeWidth={1.4 / safeK}
-          />
-        </g>
-      ))}
+      {referenceState.meetings.map((meet) => {
+        if (!isValidFiniteVec2(meet.point)) return null;
+        return (
+          <g
+            key={meet.id}
+            data-testid={`anchor-meeting-${meet.id}`}
+            aria-label={`Encontro Magnético: ${meet.label}`}
+          >
+            <circle
+              cx={meet.point.x}
+              cy={meet.point.y}
+              r={5.5 / safeK}
+              fill="rgba(6, 182, 212, 0.16)"
+              stroke={ANCHOR_CYAN_PRIMARY}
+              strokeWidth={1.25 / safeK}
+            />
+            <line
+              x1={meet.point.x - 3.6 / safeK}
+              y1={meet.point.y - 3.6 / safeK}
+              x2={meet.point.x + 3.6 / safeK}
+              y2={meet.point.y + 3.6 / safeK}
+              stroke={ANCHOR_VIOLET_ACCENT}
+              strokeWidth={1.35 / safeK}
+            />
+            <line
+              x1={meet.point.x + 3.6 / safeK}
+              y1={meet.point.y - 3.6 / safeK}
+              x2={meet.point.x - 3.6 / safeK}
+              y2={meet.point.y + 3.6 / safeK}
+              stroke={ANCHOR_VIOLET_ACCENT}
+              strokeWidth={1.35 / safeK}
+            />
+          </g>
+        );
+      })}
 
       {/* =====================================================================
-          2. PRÉVIA VIVA DO MODO ECO (ESPELHO X'/Y', RADIAL N=6, LINEAR)
+          2. PRÉVIA EM TEMPO REAL DO MODO ECO (ESPELHO X'/Y', X'+Y', RADIAL N)
           ===================================================================== */}
       {echoPreviewEntities.map((ent) => {
         if (ent.type === "line") {
@@ -248,7 +255,7 @@ export const ChamferGeometricAnchorOverlay: React.FC<ChamferGeometricAnchorOverl
               x2={ent.x2}
               y2={ent.y2}
               stroke={ANCHOR_CYAN_PRIMARY}
-              strokeWidth={1.6 / safeK}
+              strokeWidth={1.5 / safeK}
               strokeDasharray={`${5 / safeK},${3 / safeK}`}
               strokeOpacity={0.85}
             />
@@ -263,7 +270,7 @@ export const ChamferGeometricAnchorOverlay: React.FC<ChamferGeometricAnchorOverl
               r={ent.r}
               fill="rgba(6, 182, 212, 0.08)"
               stroke={ANCHOR_CYAN_PRIMARY}
-              strokeWidth={1.6 / safeK}
+              strokeWidth={1.5 / safeK}
               strokeDasharray={`${5 / safeK},${3 / safeK}`}
               strokeOpacity={0.85}
             />
@@ -277,7 +284,7 @@ export const ChamferGeometricAnchorOverlay: React.FC<ChamferGeometricAnchorOverl
               points={ptsStr}
               fill="rgba(168, 85, 247, 0.06)"
               stroke={ANCHOR_CYAN_PRIMARY}
-              strokeWidth={1.6 / safeK}
+              strokeWidth={1.5 / safeK}
               strokeDasharray={`${5 / safeK},${3 / safeK}`}
               strokeOpacity={0.85}
             />
@@ -287,7 +294,7 @@ export const ChamferGeometricAnchorOverlay: React.FC<ChamferGeometricAnchorOverl
               points={ptsStr}
               fill="none"
               stroke={ANCHOR_CYAN_PRIMARY}
-              strokeWidth={1.6 / safeK}
+              strokeWidth={1.5 / safeK}
               strokeDasharray={`${5 / safeK},${3 / safeK}`}
               strokeOpacity={0.85}
             />
@@ -297,7 +304,8 @@ export const ChamferGeometricAnchorOverlay: React.FC<ChamferGeometricAnchorOverl
       })}
 
       {/* =====================================================================
-          3. RELAÇÃO ENTRE MARCOS (A -> B) E DIVISOR DE VÃO (÷N)
+          3. LINHA DE RELAÇÃO ENTRE MARCOS (A -> B), PONTO MÉDIO E DIVISOR (÷N)
+             (Sem caixas retangulares de texto sobre a peça!)
           ===================================================================== */}
       {pairMetrics && (
         <g data-testid="anchor-pair-relation">
@@ -307,295 +315,262 @@ export const ChamferGeometricAnchorOverlay: React.FC<ChamferGeometricAnchorOverl
             x2={pairMetrics.toAnchor.origin.x}
             y2={pairMetrics.toAnchor.origin.y}
             stroke={ANCHOR_VIOLET_ACCENT}
-            strokeWidth={1.3 / safeK}
+            strokeWidth={1.2 / safeK}
             strokeDasharray={`${5 / safeK},${3.5 / safeK}`}
-            strokeOpacity={0.8}
+            strokeOpacity={0.75}
           />
-          <g
-            transform={`translate(${pairMetrics.midpoint.x}, ${pairMetrics.midpoint.y - 12 / safeK})`}
-          >
-            <rect
-              x={-72 / safeK}
-              y={-8 / safeK}
-              width={144 / safeK}
-              height={16 / safeK}
-              rx={5 / safeK}
-              fill={bgBadge}
-              stroke={ANCHOR_VIOLET_PRIMARY}
-              strokeWidth={1 / safeK}
-            />
-            <text
-              x={0}
-              y={3 / safeK}
-              fill={isDark ? "#E9D5FF" : "#6B21A8"}
-              fontSize={7.4 / safeK}
-              fontWeight="bold"
-              fontFamily="ui-monospace, monospace"
-              textAnchor="middle"
-            >
-              {pairMetrics.fromAnchor.id}→{pairMetrics.toAnchor.id}: d={pairMetrics.distance.toFixed(1)} · ∠{pairMetrics.angleDeg.toFixed(1)}°
-            </text>
-          </g>
         </g>
       )}
 
-      {referenceState.spanDivision &&
-        referenceState.spanDivision.points.map((pt, idx) => (
-          <g
-            key={`span-div-${idx}`}
-            data-testid={`anchor-span-point-${idx + 1}`}
-            aria-label={`Ponto de Divisão ${idx + 1}/${referenceState.spanDivision!.divisionsN}`}
-          >
-            <circle
-              cx={pt.x}
-              cy={pt.y}
-              r={6.5 / safeK}
-              fill="rgba(168, 85, 247, 0.22)"
-              stroke={ANCHOR_CYAN_PRIMARY}
-              strokeWidth={1.4 / safeK}
-            />
-            <circle cx={pt.x} cy={pt.y} r={2 / safeK} fill="#FFFFFF" />
-            <text
-              x={pt.x}
-              y={pt.y - 9 / safeK}
-              fill={ANCHOR_CYAN_PRIMARY}
-              fontSize={7.2 / safeK}
-              fontWeight="bold"
-              fontFamily="ui-monospace, monospace"
-              textAnchor="middle"
-            >
-              {idx + 1}/{referenceState.spanDivision!.divisionsN}
-            </text>
-          </g>
-        ))}
+      {/* Marcador discreto do Ponto Médio A–B */}
+      {referenceState.midpointAB && isValidFiniteVec2(referenceState.midpointAB.point) && (
+        <g
+          data-testid="anchor-midpoint-ab-marker"
+          aria-label={`Ponto Médio ${referenceState.midpointAB.fromAnchor}–${referenceState.midpointAB.toAnchor}`}
+        >
+          <polygon
+            points={`${referenceState.midpointAB.point.x},${referenceState.midpointAB.point.y - 6 / safeK} ${referenceState.midpointAB.point.x + 6 / safeK},${referenceState.midpointAB.point.y} ${referenceState.midpointAB.point.x},${referenceState.midpointAB.point.y + 6 / safeK} ${referenceState.midpointAB.point.x - 6 / safeK},${referenceState.midpointAB.point.y}`}
+            fill="rgba(6, 182, 212, 0.22)"
+            stroke={ANCHOR_CYAN_PRIMARY}
+            strokeWidth={1.4 / safeK}
+          />
+          <circle
+            cx={referenceState.midpointAB.point.x}
+            cy={referenceState.midpointAB.point.y}
+            r={2 / safeK}
+            fill="#FFFFFF"
+          />
+        </g>
+      )}
 
-      {/* =====================================================================
-          4. RADAR DE BORDAS (CHIPS INTERATIVOS ATÉ AS 4 BORDAS E PEÇAS)
-          ===================================================================== */}
-      {radarData &&
-        [...radarData.workspaceChips, ...radarData.entityChips].map((chip) => {
-          const midX = (chip.fromPoint.x + chip.toPoint.x) * 0.5;
-          const midY = (chip.fromPoint.y + chip.toPoint.y) * 0.5;
-          const isEntity = chip.kind === "entity_edge";
-          const color = isEntity ? ANCHOR_CYAN_PRIMARY : ANCHOR_VIOLET_ACCENT;
+      {/* Nós luminosos de divisão em tempo real (÷N) */}
+      {referenceState.spanDivision &&
+        referenceState.spanDivision.points.map((pt, idx) => {
+          if (!isValidFiniteVec2(pt)) return null;
+          const dR = 5.2 / safeK;
           return (
-            <g key={chip.id} data-testid={`radar-chip-${chip.id}`}>
-              <line
-                x1={chip.fromPoint.x}
-                y1={chip.fromPoint.y}
-                x2={chip.toPoint.x}
-                y2={chip.toPoint.y}
-                stroke={color}
-                strokeWidth={1.1 / safeK}
-                strokeDasharray={`${3.5 / safeK},${3 / safeK}`}
-                strokeOpacity={0.75}
+            <g
+              key={`span-div-${idx}`}
+              data-testid={`anchor-span-point-${idx + 1}`}
+              aria-label={`Ponto de Divisão ${idx + 1}/${referenceState.spanDivision!.divisionsN}`}
+            >
+              <polygon
+                points={`${pt.x},${pt.y - dR} ${pt.x + dR},${pt.y} ${pt.x},${pt.y + dR} ${pt.x - dR},${pt.y}`}
+                fill="rgba(6, 182, 212, 0.24)"
+                stroke={ANCHOR_CYAN_PRIMARY}
+                strokeWidth={1.35 / safeK}
               />
-              <circle cx={chip.toPoint.x} cy={chip.toPoint.y} r={3 / safeK} fill={color} />
-              <g
-                transform={`translate(${midX}, ${midY})`}
-                className="pointer-events-auto cursor-pointer"
-                onPointerDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRadarChipAction?.(chip, e.shiftKey || isEntity);
-                }}
-              >
-                <rect
-                  x={-48 / safeK}
-                  y={-7.5 / safeK}
-                  width={96 / safeK}
-                  height={15 / safeK}
-                  rx={4 / safeK}
-                  fill={bgBadge}
-                  stroke={color}
-                  strokeWidth={1.1 / safeK}
-                />
-                <text
-                  x={0}
-                  y={2.8 / safeK}
-                  fill={isDark ? (isEntity ? "#67E8F9" : "#E9D5FF") : isEntity ? "#0E7490" : "#6B21A8"}
-                  fontSize={7.2 / safeK}
-                  fontWeight="bold"
-                  fontFamily="ui-monospace, monospace"
-                  textAnchor="middle"
-                >
-                  {chip.directionLabel}: {chip.distanceMm.toFixed(1)}
-                </text>
-              </g>
+              <circle cx={pt.x} cy={pt.y} r={1.8 / safeK} fill="#FFFFFF" />
             </g>
           );
         })}
 
       {/* =====================================================================
-          5. PILHA DE MARCOS / ÂNCORAS (A–E): CRUZ ADAPTATIVA GRADUADA + NÚCLEO INVARIANTE
+          4. LINHAS TRACEJADAS FINAS DO RADAR (SEM CAIXAS SOBRE O DESENHO)
           ===================================================================== */}
-      {referenceState.anchors.map((anchor) => {
-        const isActive = activeAnchor?.id === anchor.id;
-        const pt = anchor.origin;
-        const armPxWorld = (isActive ? 42 : 26) / safeK;
-        const minusXLen = Math.max(armPxWorld, Math.min(180 / safeK, anchor.adaptiveArms?.minusX ?? armPxWorld));
-        const plusXLen = Math.max(armPxWorld, Math.min(180 / safeK, anchor.adaptiveArms?.plusX ?? armPxWorld));
-        const minusYLen = Math.max(armPxWorld, Math.min(180 / safeK, anchor.adaptiveArms?.minusY ?? armPxWorld));
-        const plusYLen = Math.max(armPxWorld, Math.min(180 / safeK, anchor.adaptiveArms?.plusY ?? armPxWorld));
+      {radarData &&
+        radarData.workspaceChips.map((chip) => (
+          <g key={chip.id} data-testid={`radar-line-${chip.id}`}>
+            <line
+              x1={chip.fromPoint.x}
+              y1={chip.fromPoint.y}
+              x2={chip.toPoint.x}
+              y2={chip.toPoint.y}
+              stroke={ANCHOR_CYAN_PRIMARY}
+              strokeWidth={0.95 / safeK}
+              strokeDasharray={`${3.5 / safeK},${3 / safeK}`}
+              strokeOpacity={0.55}
+            />
+            <circle cx={chip.toPoint.x} cy={chip.toPoint.y} r={2.4 / safeK} fill={ANCHOR_CYAN_PRIMARY} />
+          </g>
+        ))}
 
-        const xMinusPt = anchorLocalToWorld({ x: -minusXLen, y: 0 }, pt, anchor.thetaDeg);
-        const xPlusPt = anchorLocalToWorld({ x: plusXLen, y: 0 }, pt, anchor.thetaDeg);
-        const yMinusPt = anchorLocalToWorld({ x: 0, y: -minusYLen }, pt, anchor.thetaDeg);
-        const yPlusPt = anchorLocalToWorld({ x: 0, y: plusYLen }, pt, anchor.thetaDeg);
+      {/* =====================================================================
+          5. MODO 1: ⚓ ÂNCORA LOCAL (X', Y') — CRUZ FINA E ELEGANTE + MICRO-PÍLULA 18×18px
+          ===================================================================== */}
+      {localAnchor &&
+        (() => {
+          const pt = localAnchor.origin;
+          const armLen = 38 / safeK;
+          const xMinusPt = anchorLocalToWorld({ x: -armLen, y: 0 }, pt, localAnchor.thetaDeg);
+          const xPlusPt = anchorLocalToWorld({ x: armLen, y: 0 }, pt, localAnchor.thetaDeg);
+          const yMinusPt = anchorLocalToWorld({ x: 0, y: -armLen }, pt, localAnchor.thetaDeg);
+          const yPlusPt = anchorLocalToWorld({ x: 0, y: armLen }, pt, localAnchor.thetaDeg);
 
-        // Graduações da régua adaptativa em espaço de tela constante
-        const tickCount = isActive ? 4 : 2;
-        const ticks: { p1: Vec2; p2: Vec2; axis: "x" | "y" }[] = [];
-        for (let t = 1; t <= tickCount; t++) {
-          const stepWorld = (t * 10) / safeK;
-          const halfTick = (t % 2 === 0 ? 4.2 : 2.6) / safeK;
-          ticks.push(
-            {
-              p1: anchorLocalToWorld({ x: stepWorld, y: -halfTick }, pt, anchor.thetaDeg),
-              p2: anchorLocalToWorld({ x: stepWorld, y: halfTick }, pt, anchor.thetaDeg),
-              axis: "x",
-            },
-            {
-              p1: anchorLocalToWorld({ x: -stepWorld, y: -halfTick }, pt, anchor.thetaDeg),
-              p2: anchorLocalToWorld({ x: -stepWorld, y: halfTick }, pt, anchor.thetaDeg),
-              axis: "x",
-            },
-            {
-              p1: anchorLocalToWorld({ x: -halfTick, y: stepWorld }, pt, anchor.thetaDeg),
-              p2: anchorLocalToWorld({ x: halfTick, y: stepWorld }, pt, anchor.thetaDeg),
-              axis: "y",
-            },
-            {
-              p1: anchorLocalToWorld({ x: -halfTick, y: -stepWorld }, pt, anchor.thetaDeg),
-              p2: anchorLocalToWorld({ x: halfTick, y: -stepWorld }, pt, anchor.thetaDeg),
-              axis: "y",
-            },
+          const ticks: { p1: Vec2; p2: Vec2; axis: "x" | "y" }[] = [];
+          for (let t = 1; t <= 3; t++) {
+            const stepWorld = (t * 10) / safeK;
+            const halfTick = (t % 2 === 0 ? 3.5 : 2.2) / safeK;
+            ticks.push(
+              {
+                p1: anchorLocalToWorld({ x: stepWorld, y: -halfTick }, pt, localAnchor.thetaDeg),
+                p2: anchorLocalToWorld({ x: stepWorld, y: halfTick }, pt, localAnchor.thetaDeg),
+                axis: "x",
+              },
+              {
+                p1: anchorLocalToWorld({ x: -stepWorld, y: -halfTick }, pt, localAnchor.thetaDeg),
+                p2: anchorLocalToWorld({ x: -stepWorld, y: halfTick }, pt, localAnchor.thetaDeg),
+                axis: "x",
+              },
+              {
+                p1: anchorLocalToWorld({ x: -halfTick, y: stepWorld }, pt, localAnchor.thetaDeg),
+                p2: anchorLocalToWorld({ x: halfTick, y: stepWorld }, pt, localAnchor.thetaDeg),
+                axis: "y",
+              },
+              {
+                p1: anchorLocalToWorld({ x: -halfTick, y: -stepWorld }, pt, localAnchor.thetaDeg),
+                p2: anchorLocalToWorld({ x: halfTick, y: -stepWorld }, pt, localAnchor.thetaDeg),
+                axis: "y",
+              },
+            );
+          }
+
+          return (
+            <g
+              data-testid="geometric-local-anchor"
+              aria-label={`Âncora Local X', Y' (${localAnchor.badgeLabel})`}
+            >
+              {/* Eixo X' (Ciano Técnico fino) */}
+              <line
+                x1={xMinusPt.x}
+                y1={xMinusPt.y}
+                x2={xPlusPt.x}
+                y2={xPlusPt.y}
+                stroke={ANCHOR_CYAN_PRIMARY}
+                strokeWidth={1.65 / safeK}
+                strokeLinecap="round"
+              />
+              {/* Eixo Y' (Violeta Técnico fino) */}
+              <line
+                x1={yMinusPt.x}
+                y1={yMinusPt.y}
+                x2={yPlusPt.x}
+                y2={yPlusPt.y}
+                stroke={ANCHOR_VIOLET_PRIMARY}
+                strokeWidth={1.65 / safeK}
+                strokeLinecap="round"
+              />
+              {ticks.map((tk, idx) => (
+                <line
+                  key={`local-tick-${idx}`}
+                  x1={tk.p1.x}
+                  y1={tk.p1.y}
+                  x2={tk.p2.x}
+                  y2={tk.p2.y}
+                  stroke={tk.axis === "x" ? ANCHOR_CYAN_PRIMARY : ANCHOR_VIOLET_ACCENT}
+                  strokeWidth={1 / safeK}
+                />
+              ))}
+              <text
+                x={xPlusPt.x + 5 / safeK}
+                y={xPlusPt.y + 3 / safeK}
+                fill={ANCHOR_CYAN_PRIMARY}
+                fontSize={8 / safeK}
+                fontWeight="bold"
+                fontFamily="ui-monospace, monospace"
+              >
+                X&apos;
+              </text>
+              <text
+                x={yPlusPt.x + 5 / safeK}
+                y={yPlusPt.y + 3 / safeK}
+                fill={ANCHOR_VIOLET_ACCENT}
+                fontSize={8 / safeK}
+                fontWeight="bold"
+                fontFamily="ui-monospace, monospace"
+              >
+                Y&apos;
+              </text>
+
+              {renderAnchorSymbol(localAnchor.symbolKind, pt, safeK, ANCHOR_CYAN_PRIMARY)}
+              <circle cx={pt.x} cy={pt.y} r={2.2 / safeK} fill="#22D3EE" />
+
+              {/* Micro-pílula 18px × 18px deslocada 14px na diagonal (+10px, -10px) */}
+              <g
+                transform={`translate(${pt.x + diagOffsetWorld}, ${pt.y - diagOffsetWorld})`}
+                data-testid="local-anchor-badge"
+              >
+                <rect
+                  x={-halfPillWorld}
+                  y={-halfPillWorld}
+                  width={pillSizeWorld}
+                  height={pillSizeWorld}
+                  rx={4.5 / safeK}
+                  fill={ANCHOR_CYAN_PRIMARY}
+                  stroke="#FFFFFF"
+                  strokeWidth={0.9 / safeK}
+                />
+                <text
+                  x={0}
+                  y={3.1 / safeK}
+                  fill="#082F49"
+                  fontSize={8.5 / safeK}
+                  fontWeight="900"
+                  fontFamily="ui-monospace, monospace"
+                  textAnchor="middle"
+                >
+                  ⚓
+                </text>
+              </g>
+            </g>
           );
-        }
+        })()}
+
+      {/* =====================================================================
+          6. MODO 2: 📍 MARCOS GEOMÉTRICOS (A–E) — RETÍCULA FINA + MICRO-PÍLULA 18×18px
+          ===================================================================== */}
+      {validLandmarks.map((anchor) => {
+        const isActive = referenceState.activeLandmarkId === anchor.id;
+        const pt = anchor.origin;
+        const crossArm = 11 / safeK;
+        const isSameAsLocalAnchor =
+          localAnchor &&
+          Math.hypot(localAnchor.origin.x - pt.x, localAnchor.origin.y - pt.y) < 1e-3;
 
         return (
           <g
             key={`anchor-node-${anchor.id}`}
             data-testid={`geometric-anchor-${anchor.id}`}
-            aria-label={`Marco Geométrico Âncora ${anchor.id} (${anchor.badgeLabel})`}
+            aria-label={`Marco Geométrico ${anchor.id} (${anchor.badgeLabel})`}
           >
-            {/* Anel de captura invariante ao zoom (44px de diâmetro -> r = 22 / safeK) */}
-            <circle
-              cx={pt.x}
-              cy={pt.y}
-              r={22 / safeK}
-              fill={isActive ? "rgba(6, 182, 212, 0.09)" : "rgba(168, 85, 247, 0.05)"}
-              stroke={isActive ? ANCHOR_CYAN_PRIMARY : ANCHOR_VIOLET_PRIMARY}
-              strokeWidth={(isActive ? 1.4 : 1) / safeK}
-              strokeDasharray={`${4 / safeK},${3 / safeK}`}
-              className="pointer-events-auto cursor-pointer"
-              onPointerDown={(e) => e.stopPropagation()}
-              onClick={(e) => {
-                e.stopPropagation();
-                onSelectAnchor?.(anchor.id);
-              }}
-            />
-
-            {/* Braço graduado do Eixo Local X' (Ciano Técnico) */}
-            <line
-              x1={xMinusPt.x}
-              y1={xMinusPt.y}
-              x2={xPlusPt.x}
-              y2={xPlusPt.y}
-              stroke={ANCHOR_CYAN_PRIMARY}
-              strokeWidth={(isActive ? 2 : 1.4) / safeK}
-              strokeLinecap="round"
-            />
-
-            {/* Braço graduado do Eixo Local Y' (Violeta Técnico) */}
-            <line
-              x1={yMinusPt.x}
-              y1={yMinusPt.y}
-              x2={yPlusPt.x}
-              y2={yPlusPt.y}
-              stroke={ANCHOR_VIOLET_PRIMARY}
-              strokeWidth={(isActive ? 2 : 1.4) / safeK}
-              strokeLinecap="round"
-            />
-
-            {/* Marcas de graduação da régua nos braços */}
-            {ticks.map((tk, idx) => (
-              <line
-                key={`tick-${anchor.id}-${idx}`}
-                x1={tk.p1.x}
-                y1={tk.p1.y}
-                x2={tk.p2.x}
-                y2={tk.p2.y}
-                stroke={tk.axis === "x" ? ANCHOR_CYAN_PRIMARY : ANCHOR_VIOLET_ACCENT}
-                strokeWidth={1.15 / safeK}
-              />
-            ))}
-
-            {/* Rótulos X' e Y' nas pontas da cruz ativa */}
-            {isActive && (
+            {!isSameAsLocalAnchor && (
               <>
-                <text
-                  x={xPlusPt.x + 7 / safeK}
-                  y={xPlusPt.y + 3 / safeK}
-                  fill={ANCHOR_CYAN_PRIMARY}
-                  fontSize={8.5 / safeK}
-                  fontWeight="bold"
-                  fontFamily="ui-monospace, monospace"
-                >
-                  X&apos;{Math.abs(anchor.thetaDeg) > 0.05 ? ` (${anchor.thetaDeg.toFixed(0)}°)` : ""}
-                </text>
-                <text
-                  x={yPlusPt.x + 6 / safeK}
-                  y={yPlusPt.y + 3 / safeK}
-                  fill={ANCHOR_VIOLET_ACCENT}
-                  fontSize={8.5 / safeK}
-                  fontWeight="bold"
-                  fontFamily="ui-monospace, monospace"
-                >
-                  Y&apos;
-                </text>
+                <line
+                  x1={pt.x - crossArm}
+                  y1={pt.y}
+                  x2={pt.x + crossArm}
+                  y2={pt.y}
+                  stroke={isActive ? ANCHOR_CYAN_PRIMARY : ANCHOR_VIOLET_PRIMARY}
+                  strokeWidth={1.4 / safeK}
+                  strokeLinecap="round"
+                />
+                <line
+                  x1={pt.x}
+                  y1={pt.y - crossArm}
+                  x2={pt.x}
+                  y2={pt.y + crossArm}
+                  stroke={isActive ? ANCHOR_CYAN_PRIMARY : ANCHOR_VIOLET_PRIMARY}
+                  strokeWidth={1.4 / safeK}
+                  strokeLinecap="round"
+                />
+                {renderAnchorSymbol(
+                  anchor.symbolKind,
+                  pt,
+                  safeK,
+                  isActive ? ANCHOR_CYAN_PRIMARY : ANCHOR_VIOLET_ACCENT,
+                )}
+                <circle
+                  cx={pt.x}
+                  cy={pt.y}
+                  r={2 / safeK}
+                  fill={isActive ? "#22D3EE" : "#E879F9"}
+                />
               </>
             )}
 
-            {/* Pontas de captura rápida nos extremos da entidade */}
-            {isActive &&
-              (anchor.adaptiveArms?.extremities ?? []).slice(0, 4).map((extPt, i) => (
-                <circle
-                  key={`ext-${anchor.id}-${i}`}
-                  cx={extPt.x}
-                  cy={extPt.y}
-                  r={4.2 / safeK}
-                  fill={bgBadge}
-                  stroke={ANCHOR_CYAN_PRIMARY}
-                  strokeWidth={1.3 / safeK}
-                  className="pointer-events-auto cursor-pointer"
-                  onPointerDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onCaptureExtremity?.(extPt, anchor);
-                  }}
-                />
-              ))}
-
-            {/* Símbolo central contextual conforme o ponto capturado (Vértice, Centro, Ponto Médio, Interseção, Tangência) */}
-            {renderAnchorSymbol(
-              anchor.symbolKind,
-              pt,
-              safeK,
-              isActive ? ANCHOR_CYAN_PRIMARY : ANCHOR_VIOLET_ACCENT,
-            )}
-
-            {/* Núcleo central invariante ao zoom */}
-            <circle
-              cx={pt.x}
-              cy={pt.y}
-              r={2.5 / safeK}
-              fill={isActive ? "#22D3EE" : "#E879F9"}
-            />
-
-            {/* Pílula Identificadora A, B, C, D, E */}
+            {/* Micro-pílula 18px × 18px deslocada 14px na diagonal para não tapar o vértice */}
             <g
-              transform={`translate(${pt.x + 15 / safeK}, ${pt.y - 15 / safeK})`}
+              transform={`translate(${pt.x + (isSameAsLocalAnchor ? -diagOffsetWorld : diagOffsetWorld)}, ${pt.y - diagOffsetWorld})`}
               className="pointer-events-auto cursor-pointer"
               data-testid={`anchor-badge-${anchor.id}`}
               onPointerDown={(e) => e.stopPropagation()}
@@ -605,20 +580,20 @@ export const ChamferGeometricAnchorOverlay: React.FC<ChamferGeometricAnchorOverl
               }}
             >
               <rect
-                x={-11 / safeK}
-                y={-8.5 / safeK}
-                width={22 / safeK}
-                height={17 / safeK}
-                rx={5 / safeK}
+                x={-halfPillWorld}
+                y={-halfPillWorld}
+                width={pillSizeWorld}
+                height={pillSizeWorld}
+                rx={4.5 / safeK}
                 fill={isActive ? ANCHOR_CYAN_PRIMARY : "#7E22CE"}
                 stroke="#FFFFFF"
-                strokeWidth={1 / safeK}
+                strokeWidth={0.9 / safeK}
               />
               <text
                 x={0}
-                y={3.2 / safeK}
+                y={3.1 / safeK}
                 fill={isActive ? "#082F49" : "#FFFFFF"}
-                fontSize={9 / safeK}
+                fontSize={8.5 / safeK}
                 fontWeight="900"
                 fontFamily="ui-monospace, monospace"
                 textAnchor="middle"
@@ -631,64 +606,9 @@ export const ChamferGeometricAnchorOverlay: React.FC<ChamferGeometricAnchorOverl
       })}
 
       {/* =====================================================================
-          6. HUD COMPACTO DO MARCO ATIVO (ΔX', ΔY', d, θ DO CURSOR ATÉ A ÂNCORA)
+          7. PRÉVIA DO CANDIDATO SMART PICK (APENAS ANEL E SÍMBOLO, SEM CAIXA DE TEXTO)
           ===================================================================== */}
-      {activeAnchor?.origin && cursor && Number.isFinite(cursor.x) && Number.isFinite(cursor.y) && (
-        (() => {
-          const localCur = anchorWorldToLocal(cursor, activeAnchor.origin, activeAnchor.thetaDeg);
-          const d = Math.hypot(localCur.x, localCur.y);
-          const thetaLocal =
-            d > 1e-4 ? (((Math.atan2(localCur.y, localCur.x) * 180) / Math.PI) + 360) % 360 : 0;
-
-          if (d < 0.5 / safeK) return null;
-
-          return (
-            <g data-testid="active-anchor-live-hud">
-              {/* Linha guia pontilhada da Âncora ativa até o cursor */}
-              <line
-                x1={activeAnchor.origin.x}
-                y1={activeAnchor.origin.y}
-                x2={cursor.x}
-                y2={cursor.y}
-                stroke={ANCHOR_CYAN_PRIMARY}
-                strokeWidth={1.15 / safeK}
-                strokeDasharray={`${4 / safeK},${3 / safeK}`}
-                strokeOpacity={0.75}
-              />
-              <g
-                transform={`translate(${activeAnchor.origin.x}, ${activeAnchor.origin.y + 30 / safeK})`}
-              >
-                <rect
-                  x={-105 / safeK}
-                  y={-8.5 / safeK}
-                  width={210 / safeK}
-                  height={17 / safeK}
-                  rx={5 / safeK}
-                  fill={bgBadge}
-                  stroke={ANCHOR_CYAN_PRIMARY}
-                  strokeWidth={1.1 / safeK}
-                />
-                <text
-                  x={0}
-                  y={3 / safeK}
-                  fill={isDark ? "#67E8F9" : "#0E7490"}
-                  fontSize={7.4 / safeK}
-                  fontWeight="bold"
-                  fontFamily="ui-monospace, monospace"
-                  textAnchor="middle"
-                >
-                  [{activeAnchor.id}] ΔX&apos;:{localCur.x.toFixed(1)} ΔY&apos;:{localCur.y.toFixed(1)} d:{d.toFixed(1)} θ:{thetaLocal.toFixed(0)}°
-                </text>
-              </g>
-            </g>
-          );
-        })()
-      )}
-
-      {/* =====================================================================
-          7. PRÉVIA DO CANDIDATO SMART PICK (ANTES DE CONFIRMAR O TOQUE)
-          ===================================================================== */}
-      {isAnchorToolActive && smartPickPreview?.point && (
+      {isAnchorToolActive && smartPickPreview?.point && isValidFiniteVec2(smartPickPreview.point) && (
         <g
           data-testid="smart-pick-candidate-preview"
           aria-label={`Candidato Smart Pick: ${smartPickPreview.label}`}
@@ -696,10 +616,10 @@ export const ChamferGeometricAnchorOverlay: React.FC<ChamferGeometricAnchorOverl
           <circle
             cx={smartPickPreview.point.x}
             cy={smartPickPreview.point.y}
-            r={14 / safeK}
-            fill="rgba(6, 182, 212, 0.16)"
+            r={11 / safeK}
+            fill="rgba(6, 182, 212, 0.14)"
             stroke={ANCHOR_CYAN_PRIMARY}
-            strokeWidth={1.6 / safeK}
+            strokeWidth={1.5 / safeK}
             strokeDasharray={`${4 / safeK},${2.5 / safeK}`}
           />
           {renderAnchorSymbol(
@@ -708,31 +628,6 @@ export const ChamferGeometricAnchorOverlay: React.FC<ChamferGeometricAnchorOverl
             safeK,
             "#22D3EE",
           )}
-          <g
-            transform={`translate(${smartPickPreview.point.x}, ${smartPickPreview.point.y - 20 / safeK})`}
-          >
-            <rect
-              x={-56 / safeK}
-              y={-8 / safeK}
-              width={112 / safeK}
-              height={16 / safeK}
-              rx={4 / safeK}
-              fill={bgBadge}
-              stroke={ANCHOR_CYAN_PRIMARY}
-              strokeWidth={1.1 / safeK}
-            />
-            <text
-              x={0}
-              y={3 / safeK}
-              fill={isDark ? "#A5F3FC" : "#0E7490"}
-              fontSize={7.5 / safeK}
-              fontWeight="bold"
-              fontFamily="ui-monospace, monospace"
-              textAnchor="middle"
-            >
-              ⌖ {smartPickPreview.label}
-            </text>
-          </g>
         </g>
       )}
     </g>
