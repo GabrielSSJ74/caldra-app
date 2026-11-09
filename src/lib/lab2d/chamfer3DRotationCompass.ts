@@ -341,3 +341,96 @@ export function buildDoubleHeadedMiterArcSvg(
   };
 }
 
+export interface ViewAlignedRotationHandlePlacement {
+  handlePos: ScreenPt2D;
+  angleRad: number;
+  arcPath: string;
+  startTip: ScreenPt2D;
+  endTip: ScreenPt2D;
+  radiusPx: number;
+}
+
+/**
+ * Calcula a posição ideal anti-colisão em coordenadas de tela 2D para a alça circular tátil
+ * `Girar ↻` (e seu arco de rotação) em um raio confortável (`52px–64px`), posicionando-a
+ * automaticamente na bissetriz do setor angular mais aberto entre as 3 setas lineares (+X, +Y, +Z).
+ * Assim, mesmo quando um eixo aponta para a câmera ou muda de quadrante, a alça de giro
+ * permanece 100% visível, desobstruída e clicável.
+ */
+export function computeViewAlignedRotationHandlePlacement(
+  origin: ScreenPt2D,
+  xAxisEnd: ScreenPt2D,
+  yAxisEnd: ScreenPt2D,
+  zAxisEnd: ScreenPt2D,
+  handleRadiusPx = 58,
+): ViewAlignedRotationHandlePlacement {
+  const radiusPx = Math.max(52, Math.min(64, handleRadiusPx));
+  const rawEndpoints = [xAxisEnd, yAxisEnd, zAxisEnd];
+  const validAngles: number[] = [];
+
+  for (const pt of rawEndpoints) {
+    const dx = pt.x - origin.x;
+    const dy = pt.y - origin.y;
+    const len = Math.hypot(dx, dy);
+    // Ignora eixo que aponta diretamente para a câmera (projeção 2D curta)
+    if (len >= 12) {
+      validAngles.push(Math.atan2(dy, dx));
+    }
+  }
+
+  let bestBisectorRad = -Math.PI / 4; // Padrão ergonômico superior-direito (-45°)
+
+  if (validAngles.length === 1) {
+    // 1 único eixo visível: posiciona a 90° dele
+    bestBisectorRad = validAngles[0]! - Math.PI / 2;
+  } else if (validAngles.length >= 2) {
+    const sorted = [...validAngles].sort((a, b) => a - b);
+    let bestScore = -Infinity;
+
+    for (let i = 0; i < sorted.length; i++) {
+      const a1 = sorted[i]!;
+      const a2 = i + 1 < sorted.length ? sorted[i + 1]! : sorted[0]! + Math.PI * 2;
+      const gap = a2 - a1;
+      const mid = a1 + gap * 0.5;
+      const normMid = Math.atan2(Math.sin(mid), Math.cos(mid));
+      // Leve preferência ergonômica para o quadrante superior-direito (-45°) em caso de empate
+      const ergonomicBonus = Math.cos(normMid - -Math.PI / 4) * 0.15;
+      const score = gap + ergonomicBonus;
+      if (score > bestScore) {
+        bestScore = score;
+        bestBisectorRad = normMid;
+      }
+    }
+  }
+
+  const handlePos: ScreenPt2D = {
+    x: origin.x + Math.cos(bestBisectorRad) * radiusPx,
+    y: origin.y + Math.sin(bestBisectorRad) * radiusPx,
+  };
+
+  const halfSpanRad = (26 * Math.PI) / 180;
+  const startRad = bestBisectorRad - halfSpanRad;
+  const endRad = bestBisectorRad + halfSpanRad;
+
+  const startTip: ScreenPt2D = {
+    x: origin.x + Math.cos(startRad) * radiusPx,
+    y: origin.y + Math.sin(startRad) * radiusPx,
+  };
+  const endTip: ScreenPt2D = {
+    x: origin.x + Math.cos(endRad) * radiusPx,
+    y: origin.y + Math.sin(endRad) * radiusPx,
+  };
+
+  const arcPath = `M ${startTip.x.toFixed(1)} ${startTip.y.toFixed(1)} A ${radiusPx} ${radiusPx} 0 0 1 ${endTip.x.toFixed(1)} ${endTip.y.toFixed(1)}`;
+
+  return {
+    handlePos,
+    angleRad: bestBisectorRad,
+    arcPath,
+    startTip,
+    endTip,
+    radiusPx,
+  };
+}
+
+

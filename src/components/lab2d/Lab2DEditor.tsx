@@ -1661,11 +1661,27 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     });
   }, []);
 
-  /* PIVÔ INTELIGENTE DA ÓRBITA E PROJEÇÃO 3D DO PLANO DE TRABALHO 2D */
-  const smartOrbitPivot = useMemo(
-    () => computeSmartOrbitPivot(entities, selection, temporaryOrigin?.p ?? null, thickness),
-    [entities, selection, temporaryOrigin, thickness],
-  );
+  /* PIVÔ ESTÁTICO DA CÂMERA 3D — 100% FIXO AO CLICAR, SELECIONAR, MOVER OU COPIAR PEÇAS */
+  const locked3DPivotRef = useRef<ReturnType<typeof computeSmartOrbitPivot> | null>(null);
+  const is3DCameraActive =
+    activeMode === "3d" ||
+    isOrbitToolActive ||
+    !isFlatTop2DView(orbitAzimuthDeg, orbitElevationDeg);
+  const smartOrbitPivot = useMemo(() => {
+    if (temporaryOrigin?.p) {
+      const refPivot = computeSmartOrbitPivot(entities, [], temporaryOrigin.p, thickness);
+      locked3DPivotRef.current = refPivot;
+      return refPivot;
+    }
+    if (locked3DPivotRef.current) {
+      return locked3DPivotRef.current;
+    }
+    const computed = computeSmartOrbitPivot(entities, [], null, thickness);
+    if (entities.length > 0) {
+      locked3DPivotRef.current = computed;
+    }
+    return computed;
+  }, [entities, temporaryOrigin, thickness]);
   const smartOrbitPivotRef = useRef(smartOrbitPivot);
   smartOrbitPivotRef.current = smartOrbitPivot;
 
@@ -6721,7 +6737,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               activeDirect3DTool !== "fillet_3d" &&
               activeDirect3DTool !== "chamfer_3d" &&
               activeDirect3DTool !== "shell_3d" &&
-              activeDirect3DTool !== "hole_3d"
+              activeDirect3DTool !== "hole_3d" &&
+              activeDirect3DTool !== "array_3d"
             ) {
               setActiveDirect3DTool("transform_3d");
             }
@@ -6814,10 +6831,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               const sameBody = prev.faceIds.some((fid) => fid.startsWith(hitBody.bodyId));
               const exists = prev.faceIds.includes(faceId);
               let nextFaces: string[];
-              if (ev.shiftKey || (activeDirect3DTool === "shell_3d" && sameBody)) {
+              if (
+                ev.shiftKey ||
+                activeDirect3DTool === "array_3d" ||
+                (activeDirect3DTool === "shell_3d" && sameBody)
+              ) {
                 nextFaces = exists
                   ? prev.faceIds.filter((id) => id !== faceId)
-                  : [...prev.faceIds, faceId];
+                  : activeDirect3DTool === "array_3d" && prev.faceIds.length >= 2
+                    ? [prev.faceIds[prev.faceIds.length - 1]!, faceId]
+                    : [...prev.faceIds, faceId];
                 if (nextFaces.length === 0) nextFaces = [faceId];
               } else {
                 nextFaces = [faceId];
@@ -6825,7 +6848,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               return {
                 faceIds: nextFaces,
                 edgeIds: [],
-                bodyIds: [],
+                bodyIds: prev.bodyIds,
                 vertexIds: [],
                 selectionScope: prev.selectionScope ?? "auto",
                 activePivot3D: hit.face!.centroid,
@@ -6835,7 +6858,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             setSelection([hitBody.entityId]);
             if (
               activeDirect3DTool !== "shell_3d" &&
-              activeDirect3DTool !== "rotate_axis_3d"
+              activeDirect3DTool !== "rotate_axis_3d" &&
+              activeDirect3DTool !== "array_3d"
             ) {
               setActiveDirect3DTool(
                 hitBody.extrudeHeightMm <= sheetThickness + 0.5
@@ -7932,15 +7956,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     return entities;
   }, [pendingDraftShape, draft, selected, entities]);
 
-  // Auto-Enquadramento Dinâmico e Fluido da Peça à Esquerda (Seção 4)
+  // Auto-Enquadramento Dinâmico e Fluido da Peça à Esquerda (Desativado no 3D para manter câmera 100% fixa)
   useSmartFraming({
-    isOpen: Boolean(
-      mobileEditorOpen ||
-        directDimEditor?.open ||
-        liveDimEditor !== null ||
-        workspaceKeypadEditor !== null ||
-        elevationKeypadState.open,
-    ),
+    isOpen:
+      !is3DCameraActive &&
+      Boolean(
+        mobileEditorOpen ||
+          directDimEditor?.open ||
+          liveDimEditor !== null ||
+          workspaceKeypadEditor !== null ||
+          elevationKeypadState.open,
+      ),
     selectedEntity,
     targetEntities: framingTargetEntities,
     nudgeHudVisible: !solidOpen && nudgeHudVisible,
@@ -8785,6 +8811,35 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   ARAME
                 </button>
               </div>
+            )}
+
+            {/* BOTÃO RÁPIDO "📋 LISTA DE CORTE" NA BARRA SUPERIOR DO CAD 3D */}
+            {(activeMode === "3d" || isOrbitToolActive || orbitProjection2D.isTilted) && (
+              <button
+                type="button"
+                data-testid="chamfer-topbar-cutlist-btn"
+                onClick={() => {
+                  triggerHaptic("action");
+                  window.dispatchEvent(new CustomEvent("chamfer-toggle-cutlist-3d"));
+                }}
+                style={
+                  isDark
+                    ? {
+                        backgroundColor: "rgba(124, 58, 237, 0.2)",
+                        borderColor: "rgba(167, 139, 250, 0.55)",
+                        color: "#EDE9FE",
+                      }
+                    : {
+                        backgroundColor: "#F5F3FF",
+                        borderColor: "#C4B5FD",
+                        color: "#5B21B6",
+                      }
+                }
+                className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold tracking-wider uppercase transition-all shadow-xs hover:brightness-110 cursor-pointer"
+                title="Abrir Lista de Corte Estrutural 3D (Quantidade × Perfil × Comprimento × Esquadria + Massa Total)"
+              >
+                <span>📋 Lista de Corte</span>
+              </button>
             )}
           </div>
 

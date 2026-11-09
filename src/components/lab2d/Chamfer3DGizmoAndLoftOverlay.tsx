@@ -108,8 +108,17 @@ import {
   computeMiterDragAngleAndSnap,
   computeNonOverlappingGizmoBadgePos,
   computeRotationDragAngleAndSnap,
+  computeViewAlignedRotationHandlePlacement,
   type RotationSnapResult,
 } from "@/lib/lab2d/chamfer3DRotationCompass";
+import {
+  computeSmartGrilleArray3D,
+  detectInternalSpan3D,
+  generateSmartGrilleArrayEntities3D,
+  getBodyIntervalAlongAxis,
+  type SmartArrayAxis3D,
+  type SmartArrayDivisionMode3D,
+} from "@/lib/lab2d/chamfer3DSmartArray";
 import { useExponentialHold } from "@/lib/lab2d/useExponentialHold";
 import { cn } from "@/lib/utils";
 import { triggerHaptic } from "@/lib/ui/haptics";
@@ -396,6 +405,22 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
   });
   const [cutListModalOpen, setCutListModalOpen] = useState<boolean>(false);
   const [csvCopiedFeedback, setCsvCopiedFeedback] = useState<boolean>(false);
+  const [textCopiedFeedback, setTextCopiedFeedback] = useState<boolean>(false);
+
+  // Estado do Array 3D Inteligente / Grade para Portões e Serralheria
+  const [smartArrayAxis, setSmartArrayAxis] = useState<SmartArrayAxis3D>("x");
+  const [smartArrayMode, setSmartArrayMode] = useState<SmartArrayDivisionMode3D>("by_count");
+  const [smartArrayCount, setSmartArrayCount] = useState<number>(5);
+  const [smartArrayMaxGapMm, setSmartArrayMaxGapMm] = useState<number>(110);
+  const [smartArrayManualSpanMm, setSmartArrayManualSpanMm] = useState<number | null>(null);
+
+  useEffect(() => {
+    const handleToggleCutList = () => {
+      setCutListModalOpen((prev) => !prev);
+    };
+    window.addEventListener("chamfer-toggle-cutlist-3d", handleToggleCutList);
+    return () => window.removeEventListener("chamfer-toggle-cutlist-3d", handleToggleCutList);
+  }, []);
 
   // Sessão do Teclado Numérico Flutuante In-Canvas (OCULTO POR PADRÃO)
   const [numpadSession, setNumpadSession] = useState<ActiveParametricNumpadSession | null>(null);
@@ -562,6 +587,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       selection.length > 0 ||
       directTool === "transform_3d" ||
       directTool === "mirror_3d" ||
+      directTool === "array_3d" ||
       directTool === "scale_3d" ||
       directTool === "align_3d"
     ) {
@@ -1456,6 +1482,74 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
   const numpadMinusHold = useExponentialHold((mult) => handleNumpadStep(-1 * mult));
   const numpadPlusHold = useExponentialHold((mult) => handleNumpadStep(1 * mult));
+
+  // Cálculo em tempo real do Array 3D Inteligente / Grade para Portões e Serralheria
+  const selectedFacesForSpan = useMemo(() => {
+    if (subSel.faceIds.length < 2) return [];
+    const faces: DirectFace3D[] = [];
+    for (const fid of subSel.faceIds) {
+      for (const b of scene.bodies) {
+        const found = b.faces.find((f) => f.faceId === fid);
+        if (found) faces.push(found);
+      }
+    }
+    return faces;
+  }, [subSel.faceIds, scene.bodies]);
+
+  const smartArraySourceBody = primaryBody ?? scene.bodies[0] ?? null;
+
+  const smartSpanDetection = useMemo(
+    () =>
+      detectInternalSpan3D(
+        smartArraySourceBody,
+        scene.bodies,
+        smartArrayAxis,
+        selectedFacesForSpan,
+      ),
+    [smartArraySourceBody, scene.bodies, smartArrayAxis, selectedFacesForSpan],
+  );
+
+  const effectiveSmartSpanMm = smartArrayManualSpanMm ?? smartSpanDetection.spanMm;
+
+  const smartArrayCalc = useMemo(
+    () =>
+      computeSmartGrilleArray3D({
+        mode: smartArrayMode,
+        spanMm: effectiveSmartSpanMm,
+        tubeWidthMm: smartSpanDetection.tubeWidthMm,
+        count: smartArrayCount,
+        maxClearGapMm: smartArrayMaxGapMm,
+        startInnerCoordMm: smartSpanDetection.startInnerCoordMm,
+        axis: smartArrayAxis,
+      }),
+    [
+      smartArrayMode,
+      effectiveSmartSpanMm,
+      smartSpanDetection.tubeWidthMm,
+      smartArrayCount,
+      smartArrayMaxGapMm,
+      smartSpanDetection.startInnerCoordMm,
+      smartArrayAxis,
+    ],
+  );
+
+  const handleSmartArrayStep = useCallback(
+    (dir: -1 | 1, mult: number) => {
+      triggerHaptic("tap");
+      if (smartArrayMode === "by_count") {
+        const step = mult >= 10 ? 5 : mult >= 5 ? 2 : 1;
+        setSmartArrayCount((prev) => Math.max(1, Math.min(80, prev + dir * step)));
+      } else {
+        setSmartArrayMaxGapMm((prev) =>
+          Math.max(10, Math.min(1000, Math.round(prev + dir * mult))),
+        );
+      }
+    },
+    [smartArrayMode],
+  );
+
+  const smartArrayMinusHold = useExponentialHold((mult) => handleSmartArrayStep(-1, mult));
+  const smartArrayPlusHold = useExponentialHold((mult) => handleSmartArrayStep(1, mult));
 
   const handleNumpadKey = useCallback((key: string) => {
     triggerHaptic("tap");
@@ -2837,6 +2931,12 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
           icon: FlipHorizontal,
           label: "Espelhar 3D",
           valueText: "Eixo X/Y/Z",
+        };
+      case "array_3d":
+        return {
+          icon: Layers,
+          label: "Array 3D / Grade",
+          valueText: `${smartArrayCount} Tubos`,
         };
       case "scale_3d":
       case "align_3d":
@@ -4636,7 +4736,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     if (
                       directTool !== "shell_3d" &&
                       directTool !== "rotate_axis_3d" &&
-                      directTool !== "hole_3d"
+                      directTool !== "hole_3d" &&
+                      directTool !== "array_3d"
                     ) {
                       if (body.extrudeHeightMm <= sheetThickness + 0.5) {
                         setDirectTool("extrude_3d");
@@ -4884,15 +4985,15 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     );
                   })}
 
-                {/* Linha tracejada vertical de referência entre Z=0 e a altura Z do perfil */}
-                {body.elevationZ > 0.25 && (
+                {/* Linha tracejada vertical de referência entre Z=0 e a altura Z — VISÍVEL APENAS NA PEÇA SELECIONADA */}
+                {(isBodySelected || isLoftSection) && body.elevationZ > 0.25 && (
                   <g style={{ pointerEvents: "none" }}>
                     <line
                       x1={baseSc.x}
                       y1={baseSc.y}
                       x2={centerSc.x}
                       y2={centerSc.y}
-                      stroke={isBodySelected || isLoftSection ? "#3B82F6" : "rgba(59, 130, 246, 0.55)"}
+                      stroke="#3B82F6"
                       strokeWidth={1.6}
                       strokeDasharray="4 3"
                     />
@@ -4907,46 +5008,48 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                   </g>
                 )}
 
-                {/* Marcador de Snap de Centro Geométrico (⌖) no centroide de cada perfil */}
-                <g
-                  data-testid={`chamfer-3d-centroid-marker-${body.entityId}`}
-                  transform={`translate(${centerSc.x}, ${centerSc.y})`}
-                  className="pointer-events-auto cursor-pointer"
-                  onPointerDown={(ev) => {
-                    ev.stopPropagation();
-                    ev.preventDefault();
-                  }}
-                  onClick={(ev) => {
-                    ev.stopPropagation();
-                    triggerHaptic("selection");
-                    if (isLoftActive) {
-                      onToggleLoftSection?.(body.entityId);
-                      return;
-                    }
-                    setSubSel({
-                      faceIds: [],
-                      edgeIds: [],
-                      vertexIds: [],
-                      bodyIds: [body.bodyId],
-                      selectionScope: "body",
-                      activePivot3D: body.pivot3D,
-                      activeHingeEdgeId: null,
-                    });
-                    onSelectEntities?.([body.entityId]);
-                    setDirectTool("transform_3d");
-                  }}
-                >
-                  <circle
-                    cx={0}
-                    cy={0}
-                    r={8}
-                    fill={isLoftSection ? "rgba(56, 189, 248, 0.28)" : "rgba(15, 23, 42, 0.65)"}
-                    stroke={isLoftSection ? "#38BDF8" : isBodySelected ? "#00E5FF" : "#64748B"}
-                    strokeWidth={1.5}
-                  />
-                  <line x1={-5} y1={0} x2={5} y2={0} stroke="#38BDF8" strokeWidth={1.2} />
-                  <line x1={0} y1={-5} x2={0} y2={5} stroke="#38BDF8" strokeWidth={1.2} />
-                </g>
+                {/* Marcador de Snap de Centro Geométrico (⌖) — VISÍVEL APENAS NA PEÇA SELECIONADA OU EM LOFT */}
+                {(isBodySelected || isLoftActive) && (
+                  <g
+                    data-testid={`chamfer-3d-centroid-marker-${body.entityId}`}
+                    transform={`translate(${centerSc.x}, ${centerSc.y})`}
+                    className="pointer-events-auto cursor-pointer"
+                    onPointerDown={(ev) => {
+                      ev.stopPropagation();
+                      ev.preventDefault();
+                    }}
+                    onClick={(ev) => {
+                      ev.stopPropagation();
+                      triggerHaptic("selection");
+                      if (isLoftActive) {
+                        onToggleLoftSection?.(body.entityId);
+                        return;
+                      }
+                      setSubSel({
+                        faceIds: [],
+                        edgeIds: [],
+                        vertexIds: [],
+                        bodyIds: [body.bodyId],
+                        selectionScope: "body",
+                        activePivot3D: body.pivot3D,
+                        activeHingeEdgeId: null,
+                      });
+                      onSelectEntities?.([body.entityId]);
+                      setDirectTool("transform_3d");
+                    }}
+                  >
+                    <circle
+                      cx={0}
+                      cy={0}
+                      r={8}
+                      fill={isLoftSection ? "rgba(56, 189, 248, 0.28)" : "rgba(15, 23, 42, 0.65)"}
+                      stroke={isLoftSection ? "#38BDF8" : "#00E5FF"}
+                      strokeWidth={1.5}
+                    />
+                    <line x1={-5} y1={0} x2={5} y2={0} stroke="#38BDF8" strokeWidth={1.2} />
+                    <line x1={0} y1={-5} x2={0} y2={5} stroke="#38BDF8" strokeWidth={1.2} />
+                  </g>
+                )}
 
                 {/* Badge Numérico Sequencial do Loft: [1], [2], [3] */}
                 {isLoftSection && (
@@ -6075,84 +6178,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 })()}
 
                 {/* ============================================================= */}
-                {/* 3 ALÇAS DE ARCO DISCRETAS PRÓXIMAS AO PIVÔ (XY, YZ, XZ)       */}
-                {/* ============================================================= */}
-                {/* Arco de Rotação Z (Plano XY - Âmbar/Ciano sutil r=28px) */}
-                <g
-                  data-testid="chamfer-gizmo-rot-z"
-                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                  style={{ touchAction: "none" }}
-                  onPointerDown={(ev) => handleAxisPointerDown("rot_z", 0, 0, 1, ev)}
-                  onClick={(ev) => ev.stopPropagation()}
-                >
-                  <path
-                    d={`M ${gizmoScreen.origin.x + gizmoScreen.x.ux * 28} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 28} A 28 28 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.y.ux * 28} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 28}`}
-                    fill="none"
-                    stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={20}
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d={`M ${gizmoScreen.origin.x + gizmoScreen.x.ux * 28} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 28} A 28 28 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.y.ux * 28} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 28}`}
-                    fill="none"
-                    stroke={activeAxis === "rot_z" ? "#00B4D8" : "#F59E0B"}
-                    strokeWidth={activeAxis === "rot_z" ? 2.8 : 1.85}
-                    strokeLinecap="round"
-                    opacity={activeAxis === "rot_z" ? 1 : 0.85}
-                  />
-                </g>
-
-                {/* Arco de Rotação X (Plano YZ - Vermelho sutil r=25px) */}
-                <g
-                  data-testid="chamfer-gizmo-rot-x"
-                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                  style={{ touchAction: "none" }}
-                  onPointerDown={(ev) => handleAxisPointerDown("rot_x", 0, 0, 1, ev)}
-                  onClick={(ev) => ev.stopPropagation()}
-                >
-                  <path
-                    d={`M ${gizmoScreen.origin.x + gizmoScreen.y.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 25} A 25 25 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.z.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 25}`}
-                    fill="none"
-                    stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={20}
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d={`M ${gizmoScreen.origin.x + gizmoScreen.y.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 25} A 25 25 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.z.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 25}`}
-                    fill="none"
-                    stroke="#EF4444"
-                    strokeWidth={activeAxis === "rot_x" ? 2.8 : 1.75}
-                    strokeLinecap="round"
-                    opacity={activeAxis === "rot_x" ? 1 : 0.8}
-                  />
-                </g>
-
-                {/* Arco de Rotação Y (Plano XZ - Verde sutil r=25px) */}
-                <g
-                  data-testid="chamfer-gizmo-rot-y"
-                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
-                  style={{ touchAction: "none" }}
-                  onPointerDown={(ev) => handleAxisPointerDown("rot_y", 0, 0, 1, ev)}
-                  onClick={(ev) => ev.stopPropagation()}
-                >
-                  <path
-                    d={`M ${gizmoScreen.origin.x + gizmoScreen.z.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 25} A 25 25 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.x.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 25}`}
-                    fill="none"
-                    stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={20}
-                    strokeLinecap="round"
-                  />
-                  <path
-                    d={`M ${gizmoScreen.origin.x + gizmoScreen.z.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 25} A 25 25 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.x.ux * 25} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 25}`}
-                    fill="none"
-                    stroke="#22C55E"
-                    strokeWidth={activeAxis === "rot_y" ? 2.8 : 1.75}
-                    strokeLinecap="round"
-                    opacity={activeAxis === "rot_y" ? 1 : 0.8}
-                  />
-                </g>
-
-                {/* ============================================================= */}
                 {/* 3 EIXOS LINEARES FINOS (+X, +Y, +Z) - HASTES 1.75px           */}
                 {/* ============================================================= */}
                 {/* Eixo X (Vermelho) */}
@@ -6177,7 +6202,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     x2={gizmoScreen.x.endX}
                     y2={gizmoScreen.x.endY}
                     stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={26}
+                    strokeWidth={22}
                     style={{ pointerEvents: "stroke" }}
                   />
                   <line
@@ -6237,7 +6262,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     x2={gizmoScreen.y.endX}
                     y2={gizmoScreen.y.endY}
                     stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={26}
+                    strokeWidth={22}
                     style={{ pointerEvents: "stroke" }}
                   />
                   <line
@@ -6299,7 +6324,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     x2={gizmoScreen.z.endX}
                     y2={gizmoScreen.z.endY}
                     stroke="rgba(0,0,0,0.001)"
-                    strokeWidth={26}
+                    strokeWidth={22}
                     style={{ pointerEvents: "stroke" }}
                   />
                   <line
@@ -6348,6 +6373,163 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       : "+Z"}
                   </text>
                 </g>
+
+                {/* ============================================================= */}
+                {/* ALÇAS DE GIRO E BOTÃO TÁTIL "GIRAR ↻" RENDERIZADOS NA CAMADA  */}
+                {/* SUPERIOR (Z-ORDER ACIMA DAS SETAS LINEARES)                   */}
+                {/* ============================================================= */}
+                {/* Arco de Rotação Z (Plano XY - Âmbar/Ciano r=32px) */}
+                <g
+                  data-testid="chamfer-gizmo-rot-z"
+                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(ev) => handleAxisPointerDown("rot_z", 0, 0, 1, ev)}
+                  onClick={(ev) => ev.stopPropagation()}
+                >
+                  <path
+                    d={`M ${gizmoScreen.origin.x + gizmoScreen.x.ux * 32} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 32} A 32 32 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.y.ux * 32} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 32}`}
+                    fill="none"
+                    stroke="rgba(0,0,0,0.001)"
+                    strokeWidth={20}
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d={`M ${gizmoScreen.origin.x + gizmoScreen.x.ux * 32} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 32} A 32 32 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.y.ux * 32} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 32}`}
+                    fill="none"
+                    stroke={activeAxis === "rot_z" ? "#00B4D8" : "#F59E0B"}
+                    strokeWidth={activeAxis === "rot_z" ? 3.0 : 2.1}
+                    strokeLinecap="round"
+                    opacity={activeAxis === "rot_z" ? 1 : 0.92}
+                  />
+                </g>
+
+                {/* Arco de Rotação X (Plano YZ - Vermelho r=27px) */}
+                <g
+                  data-testid="chamfer-gizmo-rot-x"
+                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(ev) => handleAxisPointerDown("rot_x", 0, 0, 1, ev)}
+                  onClick={(ev) => ev.stopPropagation()}
+                >
+                  <path
+                    d={`M ${gizmoScreen.origin.x + gizmoScreen.y.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 27} A 27 27 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.z.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 27}`}
+                    fill="none"
+                    stroke="rgba(0,0,0,0.001)"
+                    strokeWidth={18}
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d={`M ${gizmoScreen.origin.x + gizmoScreen.y.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.y.uy * 27} A 27 27 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.z.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 27}`}
+                    fill="none"
+                    stroke="#EF4444"
+                    strokeWidth={activeAxis === "rot_x" ? 2.8 : 1.9}
+                    strokeLinecap="round"
+                    opacity={activeAxis === "rot_x" ? 1 : 0.88}
+                  />
+                </g>
+
+                {/* Arco de Rotação Y (Plano XZ - Verde r=27px) */}
+                <g
+                  data-testid="chamfer-gizmo-rot-y"
+                  className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                  style={{ touchAction: "none" }}
+                  onPointerDown={(ev) => handleAxisPointerDown("rot_y", 0, 0, 1, ev)}
+                  onClick={(ev) => ev.stopPropagation()}
+                >
+                  <path
+                    d={`M ${gizmoScreen.origin.x + gizmoScreen.z.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 27} A 27 27 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.x.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 27}`}
+                    fill="none"
+                    stroke="rgba(0,0,0,0.001)"
+                    strokeWidth={18}
+                    strokeLinecap="round"
+                  />
+                  <path
+                    d={`M ${gizmoScreen.origin.x + gizmoScreen.z.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.z.uy * 27} A 27 27 0 0 1 ${gizmoScreen.origin.x + gizmoScreen.x.ux * 27} ${gizmoScreen.origin.y + gizmoScreen.x.uy * 27}`}
+                    fill="none"
+                    stroke="#22C55E"
+                    strokeWidth={activeAxis === "rot_y" ? 2.8 : 1.9}
+                    strokeLinecap="round"
+                    opacity={activeAxis === "rot_y" ? 1 : 0.88}
+                  />
+                </g>
+
+                {/* ALÇA CIRCULAR TÁTIL "GIRAR ↻" SEMPRE VISÍVEL E DESOBSTRUÍDA (VIEW-ALIGNED r=58px) */}
+                {(() => {
+                  const rotPlacement = computeViewAlignedRotationHandlePlacement(
+                    gizmoScreen.origin,
+                    { x: gizmoScreen.x.endX, y: gizmoScreen.x.endY },
+                    { x: gizmoScreen.y.endX, y: gizmoScreen.y.endY },
+                    { x: gizmoScreen.z.endX, y: gizmoScreen.z.endY },
+                    58,
+                  );
+                  const isRotatingAny =
+                    activeAxis === "rot_z" || activeAxis === "rot_x" || activeAxis === "rot_y";
+                  return (
+                    <g
+                      data-testid="chamfer-gizmo-rotate-handle-btn"
+                      className="pointer-events-auto cursor-grab active:cursor-grabbing"
+                      style={{ touchAction: "none" }}
+                      onPointerDown={(ev) => handleAxisPointerDown("rot_z", 0, 0, 1, ev)}
+                      onClick={(ev) => ev.stopPropagation()}
+                    >
+                      {/* Arco curvo anti-colisão no setor mais aberto (r=58px) */}
+                      <path
+                        d={rotPlacement.arcPath}
+                        fill="none"
+                        stroke="rgba(0,0,0,0.001)"
+                        strokeWidth={26}
+                        strokeLinecap="round"
+                      />
+                      <path
+                        d={rotPlacement.arcPath}
+                        fill="none"
+                        stroke={isRotatingAny ? "#00B4D8" : "#F59E0B"}
+                        strokeWidth={isRotatingAny ? 3.2 : 2.35}
+                        strokeLinecap="round"
+                      />
+                      <circle
+                        cx={rotPlacement.startTip.x}
+                        cy={rotPlacement.startTip.y}
+                        r={2.8}
+                        fill={isRotatingAny ? "#00B4D8" : "#F59E0B"}
+                      />
+                      <circle
+                        cx={rotPlacement.endTip.x}
+                        cy={rotPlacement.endTip.y}
+                        r={2.8}
+                        fill={isRotatingAny ? "#00B4D8" : "#F59E0B"}
+                      />
+                      {/* Pega circular tátil "↻" desobstruída */}
+                      <circle
+                        cx={rotPlacement.handlePos.x}
+                        cy={rotPlacement.handlePos.y}
+                        r={12.5}
+                        fill={
+                          isRotatingAny
+                            ? "#0284C7"
+                            : isDark
+                              ? "rgba(15, 23, 42, 0.94)"
+                              : "rgba(255, 255, 255, 0.96)"
+                        }
+                        stroke={isRotatingAny ? "#38BDF8" : "#F59E0B"}
+                        strokeWidth={2}
+                      />
+                      <text
+                        x={rotPlacement.handlePos.x}
+                        y={rotPlacement.handlePos.y}
+                        fill={isRotatingAny ? "#FFFFFF" : "#F59E0B"}
+                        fontSize="12"
+                        fontWeight="bold"
+                        fontFamily="monospace"
+                        textAnchor="middle"
+                        dominantBaseline="central"
+                        style={{ pointerEvents: "none" }}
+                      >
+                        ↻
+                      </text>
+                    </g>
+                  );
+                })()}
 
                 {/* ============================================================= */}
                 {/* PIVÔ CENTRAL (12px): ANEL DUPLO CIRÚRGICO BRANCO + CIANO      */}
@@ -6491,6 +6673,131 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         strokeWidth={1.1}
                         opacity={0.75}
                       />
+                    );
+                  })}
+                </g>
+              );
+            })()}
+
+          {/* ================================================================= */}
+          {/* I. PREVIEW 3D AO VIVO DO ARRAY INTELIGENTE / GRADE (TUBOS GHOST)  */}
+          {/* ================================================================= */}
+          {directTool === "array_3d" &&
+            smartArraySourceBody &&
+            smartArrayCalc.centerCoordsMm.length > 0 &&
+            (() => {
+              const srcBody = smartArraySourceBody;
+              const srcInterval = getBodyIntervalAlongAxis(srcBody, smartArrayAxis);
+              const startPt3D: Vec3Mm = {
+                x:
+                  smartArrayAxis === "x"
+                    ? smartArrayCalc.startInnerCoordMm
+                    : srcBody.pivot3D.x,
+                y:
+                  smartArrayAxis === "y"
+                    ? smartArrayCalc.startInnerCoordMm
+                    : srcBody.pivot3D.y,
+                z:
+                  smartArrayAxis === "z"
+                    ? smartArrayCalc.startInnerCoordMm
+                    : srcBody.elevationZ + srcBody.extrudeHeightMm * 0.5,
+              };
+              const endPt3D: Vec3Mm = {
+                x:
+                  smartArrayAxis === "x"
+                    ? smartArrayCalc.endInnerCoordMm
+                    : srcBody.pivot3D.x,
+                y:
+                  smartArrayAxis === "y"
+                    ? smartArrayCalc.endInnerCoordMm
+                    : srcBody.pivot3D.y,
+                z:
+                  smartArrayAxis === "z"
+                    ? smartArrayCalc.endInnerCoordMm
+                    : srcBody.elevationZ + srcBody.extrudeHeightMm * 0.5,
+              };
+              const spanStartSc = toScreen(startPt3D);
+              const spanEndSc = toScreen(endPt3D);
+              const spanMidSc = {
+                x: (spanStartSc.x + spanEndSc.x) * 0.5,
+                y: (spanStartSc.y + spanEndSc.y) * 0.5 - 16,
+              };
+
+              return (
+                <g
+                  data-testid="chamfer-3d-smart-array-preview"
+                  style={{ pointerEvents: "none" }}
+                >
+                  {/* Linha de cota do Vão Livre Detectado */}
+                  <line
+                    x1={spanStartSc.x}
+                    y1={spanStartSc.y}
+                    x2={spanEndSc.x}
+                    y2={spanEndSc.y}
+                    stroke="#10B981"
+                    strokeWidth={1.75}
+                    strokeDasharray="5 3"
+                  />
+                  <circle cx={spanStartSc.x} cy={spanStartSc.y} r={3.5} fill="#10B981" />
+                  <circle cx={spanEndSc.x} cy={spanEndSc.y} r={3.5} fill="#10B981" />
+                  <g transform={`translate(${spanMidSc.x}, ${spanMidSc.y})`}>
+                    <rect
+                      x={-110}
+                      y={-11}
+                      width={220}
+                      height={20}
+                      rx={6}
+                      fill={isDark ? "rgba(6, 78, 59, 0.92)" : "rgba(236, 253, 245, 0.96)"}
+                      stroke="#10B981"
+                      strokeWidth={1.2}
+                    />
+                    <text
+                      x={0}
+                      y={1}
+                      fill={isDark ? "#A7F3D0" : "#065F46"}
+                      fontSize="9.5"
+                      fontWeight="bold"
+                      fontFamily="monospace"
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                    >
+                      {`Vão: ${smartArrayCalc.spanMm}mm • Luz: ${smartArrayCalc.clearGapMm}mm`}
+                    </text>
+                  </g>
+
+                  {/* Tubos fantasma (Ghost Preview 3D) em cada posição calculada */}
+                  {smartArrayCalc.centerCoordsMm.map((centerCoord, tIdx) => {
+                    const delta = centerCoord - srcInterval.center;
+                    const dx = smartArrayAxis === "x" ? delta : 0;
+                    const dy = smartArrayAxis === "y" ? delta : 0;
+                    const dz = smartArrayAxis === "z" ? delta : 0;
+
+                    return (
+                      <g key={`ghost_tube_${tIdx}`}>
+                        {srcBody.faces.map((face) => {
+                          if (!face.polygon3D || face.polygon3D.length < 3) return null;
+                          const pts = face.polygon3D
+                            .map((v) => {
+                              const sc = toScreen({
+                                x: v.x + dx,
+                                y: v.y + dy,
+                                z: v.z + dz,
+                              });
+                              return `${sc.x.toFixed(1)},${sc.y.toFixed(1)}`;
+                            })
+                            .join(" ");
+                          return (
+                            <polygon
+                              key={`ghost_f_${tIdx}_${face.faceId}`}
+                              points={pts}
+                              fill="rgba(16, 185, 129, 0.16)"
+                              stroke="#10B981"
+                              strokeWidth={1.35}
+                              strokeDasharray="3 2"
+                            />
+                          );
+                        })}
+                      </g>
                     );
                   })}
                 </g>
@@ -7332,6 +7639,297 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       )}
 
       {/* =====================================================================
+          6B. PAINEL LATERAL COMPACTO: ARRAY 3D INTELIGENTE / GRADE (PORTÕES & GRADES)
+          ===================================================================== */}
+      {is3DEnvironment && directTool === "array_3d" && (
+        <div
+          data-testid="chamfer-3d-smart-array-panel"
+          style={{
+            backgroundColor: isDark ? "rgba(15, 23, 42, 0.96)" : "rgba(255, 255, 255, 0.98)",
+            borderColor: isDark ? "rgba(16, 185, 129, 0.55)" : "rgba(5, 150, 105, 0.45)",
+            top: "58px",
+            right: "14px",
+            width: "min(308px, calc(100% - 28px))",
+          }}
+          onPointerDown={(ev) => ev.stopPropagation()}
+          onClick={(ev) => ev.stopPropagation()}
+          className="pointer-events-auto absolute z-45 flex flex-col gap-2 rounded-2xl border p-3 shadow-2xl backdrop-blur-xl font-mono text-[10.5px]"
+        >
+          {/* Cabeçalho */}
+          <div className="flex items-center justify-between border-b border-slate-500/25 pb-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="rounded-md bg-emerald-600 px-2 py-0.5 text-[9.5px] font-extrabold text-white uppercase">
+                ARRAY 3D / GRADE
+              </span>
+              <span
+                className={cn(
+                  "text-[9.5px] font-bold",
+                  smartSpanDetection.isAutoDetected ? "text-emerald-400" : "text-amber-400",
+                )}
+              >
+                {selectedFacesForSpan.length >= 2
+                  ? "● 2 Faces"
+                  : smartSpanDetection.isAutoDetected
+                    ? "● Auto-Vão"
+                    : "○ Vão Livre"}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDirectTool("select_3d")}
+              className="rounded-md px-1.5 py-0.5 text-slate-400 hover:bg-slate-500/20 hover:text-white cursor-pointer"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Seletor de Eixo (X, Y, Z) + Redetectar Vão */}
+          <div className="flex items-center justify-between gap-1">
+            <span className={cn("text-[9.5px] font-bold", isDark ? "text-slate-300" : "text-slate-700")}>
+              Direção do Vão:
+            </span>
+            <div className="flex items-center gap-1">
+              {(["x", "y", "z"] as SmartArrayAxis3D[]).map((ax) => (
+                <button
+                  key={ax}
+                  type="button"
+                  data-testid={`chamfer-3d-smart-array-axis-${ax}`}
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setSmartArrayAxis(ax);
+                    setSmartArrayManualSpanMm(null);
+                  }}
+                  className={cn(
+                    "rounded-lg border px-2.5 py-0.5 text-[10px] font-bold uppercase cursor-pointer transition-colors",
+                    smartArrayAxis === ax
+                      ? "border-emerald-400 bg-emerald-600 text-white"
+                      : isDark
+                        ? "border-slate-700 bg-slate-800/90 text-slate-300 hover:border-emerald-500/50"
+                        : "border-slate-300 bg-slate-100 text-slate-700 hover:border-emerald-500",
+                  )}
+                >
+                  Eixo {ax.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Campo de Vão Livre Detectado (editável ou auto-detectado entre colunas/faces) */}
+          <div className="flex items-center justify-between gap-1.5 rounded-xl border border-slate-500/25 bg-slate-500/10 px-2.5 py-1.5">
+            <div className="flex flex-col">
+              <span className="text-[9px] uppercase text-slate-400">Vão Total Detectado</span>
+              <span className={cn("text-[11px] font-extrabold", isDark ? "text-white" : "text-slate-900")}>
+                {smartArrayCalc.spanMm} mm
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                inputMode="decimal"
+                data-testid="chamfer-3d-smart-array-span-input"
+                aria-label="Vão livre total em milímetros"
+                value={effectiveSmartSpanMm}
+                onChange={(ev) => {
+                  const val = Number(ev.target.value);
+                  if (Number.isFinite(val) && val > 0) {
+                    setSmartArrayManualSpanMm(val);
+                  }
+                }}
+                className={cn(
+                  "w-20 rounded-lg border px-2 py-1 text-right font-mono text-[10.5px] font-bold outline-none",
+                  isDark
+                    ? "border-slate-700 bg-slate-900 text-emerald-300"
+                    : "border-slate-300 bg-white text-emerald-700",
+                )}
+              />
+              {smartArrayManualSpanMm !== null && (
+                <button
+                  type="button"
+                  onClick={() => setSmartArrayManualSpanMm(null)}
+                  title="Restaurar detecção automática do vão entre colunas"
+                  className="rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-1.5 py-1 text-[9px] font-bold text-emerald-400 cursor-pointer"
+                >
+                  Auto
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* 2 Modos de Divisão de Serralheria */}
+          <div className="grid grid-cols-2 gap-1">
+            <button
+              type="button"
+              data-testid="chamfer-3d-smart-array-mode-count"
+              onClick={() => {
+                triggerHaptic("selection");
+                setSmartArrayMode("by_count");
+              }}
+              className={cn(
+                "rounded-xl border px-2 py-1.5 text-center text-[9.5px] font-bold transition-colors cursor-pointer",
+                smartArrayMode === "by_count"
+                  ? "border-emerald-400 bg-emerald-600 text-white"
+                  : isDark
+                    ? "border-slate-700 bg-slate-800/80 text-slate-300"
+                    : "border-slate-300 bg-slate-100 text-slate-700",
+              )}
+            >
+              Modo A: N Tubos
+            </button>
+            <button
+              type="button"
+              data-testid="chamfer-3d-smart-array-mode-gap"
+              onClick={() => {
+                triggerHaptic("selection");
+                setSmartArrayMode("by_max_gap");
+              }}
+              className={cn(
+                "rounded-xl border px-2 py-1.5 text-center text-[9.5px] font-bold transition-colors cursor-pointer",
+                smartArrayMode === "by_max_gap"
+                  ? "border-emerald-400 bg-emerald-600 text-white"
+                  : isDark
+                    ? "border-slate-700 bg-slate-800/80 text-slate-300"
+                    : "border-slate-300 bg-slate-100 text-slate-700",
+              )}
+            >
+              Modo B: Vão Máx (mm)
+            </button>
+          </div>
+
+          {/* Controle Interativo com Aceleração Exponencial (- / +) */}
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-slate-500/25 bg-slate-500/10 px-2.5 py-1.5">
+            <span className={cn("text-[9.5px] font-bold", isDark ? "text-slate-200" : "text-slate-700")}>
+              {smartArrayMode === "by_count" ? "Qtd. Tubos (N):" : "Vão Máx. Livre:"}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                data-testid="chamfer-3d-smart-array-minus-btn"
+                {...smartArrayMinusHold}
+                className={cn(
+                  "flex size-7 items-center justify-center rounded-lg border font-mono text-sm font-extrabold select-none cursor-pointer",
+                  isDark
+                    ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
+                    : "border-slate-300 bg-white text-slate-900 hover:bg-slate-100",
+                )}
+              >
+                −
+              </button>
+              <input
+                type="number"
+                inputMode="numeric"
+                data-testid="chamfer-3d-smart-array-value-input"
+                aria-label={
+                  smartArrayMode === "by_count"
+                    ? "Quantidade de tubos internos"
+                    : "Vão máximo livre entre tubos em milímetros"
+                }
+                value={smartArrayMode === "by_count" ? smartArrayCount : smartArrayMaxGapMm}
+                onChange={(ev) => {
+                  const v = Number(ev.target.value);
+                  if (!Number.isFinite(v)) return;
+                  if (smartArrayMode === "by_count") {
+                    setSmartArrayCount(Math.max(1, Math.min(80, Math.round(v))));
+                  } else {
+                    setSmartArrayMaxGapMm(Math.max(10, Math.min(1000, Math.round(v))));
+                  }
+                }}
+                className={cn(
+                  "w-16 rounded-lg border px-1.5 py-1 text-center font-mono text-[11px] font-extrabold outline-none",
+                  isDark
+                    ? "border-slate-700 bg-slate-900 text-white"
+                    : "border-slate-300 bg-white text-slate-900",
+                )}
+              />
+              <button
+                type="button"
+                data-testid="chamfer-3d-smart-array-plus-btn"
+                {...smartArrayPlusHold}
+                className={cn(
+                  "flex size-7 items-center justify-center rounded-lg border font-mono text-sm font-extrabold select-none cursor-pointer",
+                  isDark
+                    ? "border-slate-700 bg-slate-800 text-slate-100 hover:bg-slate-700"
+                    : "border-slate-300 bg-white text-slate-900 hover:bg-slate-100",
+                )}
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {/* Telemetria Exata de Serralheria ao Vivo */}
+          <div
+            data-testid="chamfer-3d-smart-array-telemetry"
+            className={cn(
+              "flex flex-col gap-1 rounded-xl border p-2 text-[9.5px]",
+              isDark
+                ? "border-emerald-500/35 bg-slate-900/90 text-slate-200"
+                : "border-emerald-500/35 bg-emerald-50/70 text-slate-800",
+            )}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400">Vão Total Detectado:</span>
+              <span className="font-bold">{smartArrayCalc.spanMm} mm</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400">Largura do Perfil (d):</span>
+              <span className="font-bold">{smartArrayCalc.tubeWidthMm} mm</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400">Quantidade:</span>
+              <span className="font-bold text-emerald-400">{smartArrayCalc.count} tubos</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400">Vão Livre (Luz entre tubos):</span>
+              <span
+                className={cn(
+                  "font-extrabold",
+                  smartArrayCalc.valid ? "text-cyan-400" : "text-rose-400",
+                )}
+              >
+                {smartArrayCalc.clearGapMm} mm
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-slate-400">Passo (Centro a Centro):</span>
+              <span className="font-bold text-amber-400">
+                {smartArrayCalc.pitchCenterToCenterMm} mm
+              </span>
+            </div>
+          </div>
+
+          {/* Botão Confirmar Array 3D */}
+          <button
+            type="button"
+            data-testid="chamfer-3d-smart-array-confirm-btn"
+            disabled={!smartArraySourceBody || !smartArrayCalc.valid}
+            onClick={() => {
+              if (!smartArraySourceBody || !smartArrayCalc.valid) return;
+              triggerHaptic("action");
+              let createdIds: string[] = [];
+              onCommitEntities?.((prev) => {
+                const res = generateSmartGrilleArrayEntities3D(
+                  prev,
+                  smartArraySourceBody.entityId,
+                  smartArraySourceBody,
+                  smartArrayCalc,
+                );
+                createdIds = res.createdIds;
+                return res.updatedEntities;
+              }, createdIds.length > 0 ? createdIds : [smartArraySourceBody.entityId]);
+            }}
+            className={cn(
+              "w-full rounded-xl py-2 font-mono text-[10.5px] font-extrabold uppercase tracking-wider transition-all shadow-md",
+              smartArraySourceBody && smartArrayCalc.valid
+                ? "bg-emerald-600 text-white hover:bg-emerald-500 cursor-pointer"
+                : "bg-slate-600/30 text-slate-400 cursor-not-allowed",
+            )}
+          >
+            ✓ Confirmar ({smartArrayCalc.count} Tubos)
+          </button>
+        </div>
+      )}
+
+      {/* =====================================================================
           7. MODAL DE LISTA DE CORTE ESTRUTURAL, BOM 3D, INTERFERÊNCIA & CALDEIRARIA
           ===================================================================== */}
       {is3DEnvironment && cutListModalOpen && (
@@ -7374,6 +7972,25 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      data-testid="chamfer-3d-copy-text-btn"
+                      onClick={() => {
+                        const summaryText = [
+                          `LISTA DE CORTE 3D — CHAMFER CAD (${cutList.totalPieces} Peças | ${cutList.totalMassKg.toFixed(2)} kg | ${cutList.bars6mNeeded} Barra(s) 6m)`,
+                          ...cutList.rows.map(
+                            (r) =>
+                              `${r.quantity}x ${r.profileDesignation} — C=${r.longPointLengthMm} mm (Corte ${r.miterTopDeg}°/${r.miterBottomDeg}°) — ${r.totalMassKg} kg`,
+                          ),
+                        ].join("\n");
+                        navigator.clipboard?.writeText(summaryText);
+                        setTextCopiedFeedback(true);
+                        setTimeout(() => setTextCopiedFeedback(false), 1800);
+                      }}
+                      className="rounded-lg bg-violet-600 hover:bg-violet-500 px-2.5 py-0.5 text-[9.5px] font-bold text-white cursor-pointer"
+                    >
+                      {textCopiedFeedback ? "✓ Lista Copiada!" : "📋 Copiar Lista"}
+                    </button>
                     <button
                       type="button"
                       data-testid="chamfer-3d-copy-csv-btn"

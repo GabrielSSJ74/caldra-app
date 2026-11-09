@@ -63,6 +63,7 @@ export type DirectModeling3DTool =
   | "scale_3d"
   | "align_3d"
   | "mirror_3d"
+  | "array_3d"
   | "revolve_3d"
   | "sweep_3d"
   | "loft_3d"
@@ -5400,6 +5401,9 @@ export function resolveDirect3DQuickCommand(rawInput: string): DirectModeling3DT
     ROTATE3D: "transform_3d",
     MIR: "mirror_3d",
     MIRROR3D: "mirror_3d",
+    ARR: "array_3d",
+    ARRAY3D: "array_3d",
+    GRADE: "array_3d",
     ALI: "align_3d",
     ALIGN3D: "align_3d",
     SLI: "rotate_axis_3d",
