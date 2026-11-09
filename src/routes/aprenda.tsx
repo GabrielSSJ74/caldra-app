@@ -483,7 +483,9 @@ export function AprendaPage() {
 
   const cardSurfaceStyle: React.CSSProperties = {
     backgroundColor: "var(--surface-card)",
-    border: "1px solid var(--border-subtle)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--border-subtle)",
     boxShadow: isLight
       ? "0 6px 20px rgba(15, 23, 42, 0.05)"
       : isAmoled
@@ -495,19 +497,25 @@ export function AprendaPage() {
 
   const subCardSurfaceStyle: React.CSSProperties = {
     backgroundColor: "var(--surface-elevated)",
-    border: "1px solid var(--border-subtle)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--border-subtle)",
   };
 
   const inputSurfaceStyle: React.CSSProperties = {
     backgroundColor: "var(--surface-elevated)",
-    border: "1px solid var(--border-subtle)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--border-subtle)",
     color: "var(--text-primary)",
   };
 
   // Nível 1: Barra das 4 Abas Principais (`Estudo | Trilhas | Biblioteca | Fórmulas`)
   const level1ActiveTabStyle: React.CSSProperties = {
     backgroundColor: "var(--accent-tab-bg)",
-    border: "1px solid var(--accent-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--accent-border)",
     color: "var(--accent-tab-fg)",
     boxShadow: `0 4px 14px rgba(${accentTokens.accentRgb}, 0.20)`,
   };
@@ -516,107 +524,141 @@ export function AprendaPage() {
   const level2ActiveSubTabStyle: React.CSSProperties = isLight
     ? {
         backgroundColor: "#0F172A",
-        border: "1px solid var(--accent-border)",
+        borderWidth: 1,
+        borderStyle: "solid",
+        borderColor: "var(--accent-border)",
         color: "#FFFFFF",
       }
     : {
         backgroundColor: "rgba(248, 250, 252, 0.14)",
-        border: "1px solid var(--accent-border)",
+        borderWidth: 1,
+        borderStyle: "solid",
+        borderColor: "var(--accent-border)",
         color: "#FFFFFF",
       };
 
   const level2InactiveSubTabStyle: React.CSSProperties = {
     backgroundColor: "var(--surface-elevated)",
-    border: "1px solid var(--border-subtle)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--border-subtle)",
     color: "var(--text-secondary)",
   };
 
   // Nível 3: Chips de Filtro (`Todos (13)`, `Tubos (2)`, `Todas`, `Calandragem`, etc.)
   const level3ActiveChipStyle: React.CSSProperties = {
     backgroundColor: "var(--accent-soft)",
-    border: "1px solid var(--accent-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--accent-border)",
     color: "var(--accent-text)",
   };
 
   const level3InactiveChipStyle: React.CSSProperties = {
     backgroundColor: "var(--surface-elevated)",
-    border: "1px solid var(--border-subtle)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--border-subtle)",
     color: "var(--text-secondary)",
   };
 
   // Botões Principais de Ação (CTAs)
   const primaryAccentButtonStyle: React.CSSProperties = {
     backgroundColor: "var(--accent-primary)",
-    border: "1px solid var(--accent-primary)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--accent-primary)",
     color: "var(--accent-solid-fg)",
     boxShadow: `0 6px 18px rgba(${accentTokens.accentRgb}, 0.24)`,
   };
 
   const neutralBubbleStyle: React.CSSProperties = {
     backgroundColor: "var(--surface-elevated)",
-    border: "1px solid var(--border-subtle)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--border-subtle)",
     color: "var(--text-primary)",
   };
 
   // Camada C: Badges discretos por Domínio Técnico
   const domainCaldeirariaBadgeStyle: React.CSSProperties = {
     backgroundColor: "var(--domain-caldeiraria-bg)",
-    border: "1px solid var(--domain-caldeiraria-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--domain-caldeiraria-border)",
     color: "var(--domain-caldeiraria)",
   };
 
   const domainEstruturasBadgeStyle: React.CSSProperties = {
     backgroundColor: "var(--domain-estruturas-bg)",
-    border: "1px solid var(--domain-estruturas-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--domain-estruturas-border)",
     color: "var(--domain-estruturas)",
   };
 
   const domainTrilhasBadgeStyle: React.CSSProperties = {
     backgroundColor: "var(--domain-trilhas-bg)",
-    border: "1px solid var(--domain-trilhas-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--domain-trilhas-border)",
     color: "var(--domain-trilhas)",
   };
 
   const domainBibliotecaBadgeStyle: React.CSSProperties = {
     backgroundColor: "var(--domain-biblioteca-bg)",
-    border: "1px solid var(--domain-biblioteca-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--domain-biblioteca-border)",
     color: "var(--domain-biblioteca)",
   };
 
   const domainFormulasBadgeStyle: React.CSSProperties = {
     backgroundColor: "var(--domain-formulas-bg)",
-    border: "1px solid var(--domain-formulas-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--domain-formulas-border)",
     color: "var(--domain-formulas)",
   };
 
   // Camada D: Estados Semânticos Invariáveis
   const proGoldBadgeStyle: React.CSSProperties = {
     backgroundColor: "var(--color-pro-gold-bg)",
-    border: "1px solid var(--color-pro-gold-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--color-pro-gold-border)",
     color: "var(--color-pro-gold)",
   };
 
   const successBadgeStyle: React.CSSProperties = {
     backgroundColor: "var(--color-success-bg)",
-    border: "1px solid var(--color-success-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--color-success-border)",
     color: "var(--color-success)",
   };
 
   const warningBoxStyle: React.CSSProperties = {
     backgroundColor: "var(--color-warning-bg)",
-    border: "1px solid var(--color-warning-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--color-warning-border)",
     color: "var(--color-warning)",
   };
 
   const dangerBoxStyle: React.CSSProperties = {
     backgroundColor: "var(--color-danger-bg)",
-    border: "1px solid var(--color-danger-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--color-danger-border)",
     color: "var(--color-danger)",
   };
 
   const infoBoxStyle: React.CSSProperties = {
     backgroundColor: "var(--color-information-bg)",
-    border: "1px solid var(--color-information-border)",
+    borderWidth: 1,
+    borderStyle: "solid",
+    borderColor: "var(--color-information-border)",
     color: "var(--color-information)",
   };
 

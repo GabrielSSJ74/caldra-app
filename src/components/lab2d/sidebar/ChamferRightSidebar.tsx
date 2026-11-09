@@ -128,11 +128,15 @@ export function ChamferRightSidebar({
       <aside
         data-testid="chamfer-right-sidebar-collapsed"
         style={{
-          backgroundColor: "var(--chamfer-bar-bg)",
-          borderColor: "var(--chamfer-border)",
-          color: "var(--chamfer-text-secondary)",
+          backgroundColor: isDark ? "var(--chamfer-bar-bg)" : "#FFFFFF",
+          borderColor: isDark ? "var(--chamfer-border)" : "#E2E8F0",
+          color: isDark ? "var(--chamfer-text-secondary)" : "#475569",
+          boxShadow: isDark ? undefined : "0 2px 10px rgba(15, 23, 42, 0.04)",
         }}
-        className="relative z-30 flex flex-col items-center justify-start border py-2 select-none shadow-md backdrop-blur-md transition-all w-8 sm:w-9 shrink-0 rounded-2xl"
+        className={cn(
+          "relative z-30 flex flex-col items-center justify-start border py-2 select-none backdrop-blur-md transition-all w-8 sm:w-9 shrink-0",
+          isDark ? "rounded-2xl shadow-md" : "rounded-[28px]",
+        )}
       >
         {/* Botão de Expandir Painel (<) */}
         <button
@@ -145,9 +149,9 @@ export function ChamferRightSidebar({
           title="Expandir Janela Lateral Direita (Propriedades / Camadas / Corte / Eng. Reversa)"
           aria-label="Expandir Janela Lateral"
           style={{
-            backgroundColor: "var(--chamfer-surface-elevated)",
-            borderColor: "var(--chamfer-border)",
-            color: "var(--chamfer-text-primary)",
+            backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F1F5F9",
+            borderColor: isDark ? "var(--chamfer-border)" : "#E2E8F0",
+            color: isDark ? "var(--chamfer-text-primary)" : "#334155",
           }}
           className="mb-3 flex size-7 items-center justify-center rounded-full border transition-colors cursor-pointer"
         >
@@ -168,11 +172,17 @@ export function ChamferRightSidebar({
             title="Propriedades CAD"
             style={
               activeTab === "propriedades"
-                ? {
-                    backgroundColor: "var(--chamfer-accent)",
-                    color: "var(--chamfer-accent-contrast)",
-                  }
-                : { color: "var(--chamfer-text-secondary)" }
+                ? isDark
+                  ? {
+                      backgroundColor: "var(--chamfer-accent)",
+                      color: "var(--chamfer-accent-contrast)",
+                    }
+                  : {
+                      backgroundColor: "#E11D48",
+                      color: "#FFFFFF",
+                      boxShadow: "0 2px 8px rgba(225, 29, 72, 0.25)",
+                    }
+                : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
             }
             className="flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer"
           >
@@ -190,11 +200,17 @@ export function ChamferRightSidebar({
             title="Camadas Técnicas"
             style={
               activeTab === "camadas"
-                ? {
-                    backgroundColor: "var(--chamfer-accent)",
-                    color: "var(--chamfer-accent-contrast)",
-                  }
-                : { color: "var(--chamfer-text-secondary)" }
+                ? isDark
+                  ? {
+                      backgroundColor: "var(--chamfer-accent)",
+                      color: "var(--chamfer-accent-contrast)",
+                    }
+                  : {
+                      backgroundColor: "#E11D48",
+                      color: "#FFFFFF",
+                      boxShadow: "0 2px 8px rgba(225, 29, 72, 0.25)",
+                    }
+                : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
             }
             className="flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer"
           >
@@ -212,11 +228,17 @@ export function ChamferRightSidebar({
             title="Plano de Corte e Fabricação"
             style={
               activeTab === "corte"
-                ? {
-                    backgroundColor: "var(--chamfer-accent)",
-                    color: "var(--chamfer-accent-contrast)",
-                  }
-                : { color: "var(--chamfer-text-secondary)" }
+                ? isDark
+                  ? {
+                      backgroundColor: "var(--chamfer-accent)",
+                      color: "var(--chamfer-accent-contrast)",
+                    }
+                  : {
+                      backgroundColor: "#E11D48",
+                      color: "#FFFFFF",
+                      boxShadow: "0 2px 8px rgba(225, 29, 72, 0.25)",
+                    }
+                : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
             }
             className="flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer"
           >
@@ -236,11 +258,17 @@ export function ChamferRightSidebar({
               title="Engenharia Reversa e Bancada Mecânica (ENG. REV.)"
               style={
                 activeTab === "eng_rev"
-                  ? {
-                      backgroundColor: "var(--chamfer-accent)",
-                      color: "var(--chamfer-accent-contrast)",
-                    }
-                  : { color: "var(--chamfer-text-secondary)" }
+                  ? isDark
+                    ? {
+                        backgroundColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent-contrast)",
+                      }
+                    : {
+                        backgroundColor: "#E11D48",
+                        color: "#FFFFFF",
+                        boxShadow: "0 2px 8px rgba(225, 29, 72, 0.25)",
+                      }
+                  : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
               }
               className="flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer"
             >
@@ -260,11 +288,17 @@ export function ChamferRightSidebar({
               title="Cotas"
               style={
                 activeTab === "cotas"
-                  ? {
-                      backgroundColor: "var(--chamfer-accent)",
-                      color: "var(--chamfer-accent-contrast)",
-                    }
-                  : { color: "var(--chamfer-text-secondary)" }
+                  ? isDark
+                    ? {
+                        backgroundColor: "var(--chamfer-accent)",
+                        color: "var(--chamfer-accent-contrast)",
+                      }
+                    : {
+                        backgroundColor: "#E11D48",
+                        color: "#FFFFFF",
+                        boxShadow: "0 2px 8px rgba(225, 29, 72, 0.25)",
+                      }
+                  : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
               }
               className="flex size-7 items-center justify-center rounded-full transition-colors cursor-pointer"
             >

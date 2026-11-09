@@ -266,17 +266,6 @@ export function ChamferTouchDynamicHud({
     activeTool === "construction_line" ||
     activeTool === "spline";
 
-  const showDynamicPills =
-    pendingCount >= 1 &&
-    (activeTool === "line" ||
-      activeTool === "polyline" ||
-      activeTool === "rect" ||
-      activeTool === "circle" ||
-      activeTool === "polygon" ||
-      activeTool === "slot" ||
-      activeTool === "arc" ||
-      activeTool === "ellipse");
-
   return (
     <>
       {/* 1. PÍLULA HORIZONTAL DE LINHA ÚNICA ULTRA-COMPACTA DE SUB-MODOS (SLIM SINGLE-ROW GLASS BAR) */}
@@ -284,14 +273,14 @@ export function ChamferTouchDynamicHud({
         <div
           data-testid="chamfer-slim-submode-bar"
           style={{
-            top: 26, // 4px abaixo da régua horizontal superior (22px)
-            height: 29,
-            padding: "3px 8px",
+            top: 22, // Logo abaixo da régua horizontal superior (22px), sem cobrir os números da régua
+            height: 26,
+            padding: "2px 6px",
             gap: 4,
-            borderRadius: 999,
+            borderRadius: 9999,
             fontSize: 11,
             fontWeight: 600,
-            backgroundColor: isDark ? "rgba(15, 23, 42, 0.72)" : "rgba(255, 255, 255, 0.78)",
+            backgroundColor: isDark ? "rgba(10, 15, 26, 0.86)" : "rgba(255, 255, 255, 0.88)",
             backdropFilter: "blur(10px)",
             WebkitBackdropFilter: "blur(10px)",
             border: isDark
@@ -655,82 +644,7 @@ export function ChamferTouchDynamicHud({
         </div>
       )}
 
-      {/* 2. PÍLULAS DIMENSIONAIS TÁTEIS FLUTUANTES (DYNAMIC INPUT TOUCH) */}
-      {showDynamicPills && (
-        <div
-          className={cn(
-            "pointer-events-auto absolute bottom-12 left-1/2 -translate-x-1/2 z-35 flex items-center gap-1.5 rounded-xl border px-2.5 py-1 font-mono text-[10.5px] shadow-xl backdrop-blur-md select-none",
-            isDark
-              ? "border-sky-500/40 bg-slate-950/92 text-slate-100"
-              : "border-sky-400 bg-white/95 text-slate-800",
-          )}
-        >
-          {(activeTool === "circle" || activeTool === "arc") ? (
-            <>
-              <button
-                type="button"
-                onClick={() => openKeypadForField("radius", effectiveLength)}
-                className="flex items-center gap-1 rounded-lg bg-sky-950/70 hover:bg-sky-900 border border-sky-500/40 px-2 py-0.5 text-sky-300 font-bold cursor-pointer"
-              >
-                <span>R = {effectiveLength.toFixed(1)} mm</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => openKeypadForField("diameter", effectiveLength * 2)}
-                className="flex items-center gap-1 rounded-lg bg-amber-950/70 hover:bg-amber-900 border border-amber-500/40 px-2 py-0.5 text-amber-300 font-bold cursor-pointer"
-              >
-                <span>Ø = {(effectiveLength * 2).toFixed(1)} mm</span>
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                onClick={() => openKeypadForField("length", effectiveLength)}
-                className={cn(
-                  "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-bold cursor-pointer transition-colors",
-                  lockedDims.lockedLengthMm !== null
-                    ? "border-amber-500 bg-amber-950/80 text-amber-300"
-                    : "border-sky-500/40 bg-sky-950/70 text-sky-300 hover:bg-sky-900",
-                )}
-                title="Toque para digitar ou travar o comprimento exato em mm"
-              >
-                {lockedDims.lockedLengthMm !== null && <Lock className="size-3 text-amber-400" />}
-                <span>L = {effectiveLength.toFixed(1)} mm</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => openKeypadForField("angle", effectiveAngle)}
-                className={cn(
-                  "flex items-center gap-1 rounded-lg border px-2 py-0.5 font-bold cursor-pointer transition-colors",
-                  lockedDims.lockedAngleDeg !== null
-                    ? "border-amber-500 bg-amber-950/80 text-amber-300"
-                    : "border-emerald-500/40 bg-emerald-950/70 text-emerald-300 hover:bg-emerald-900",
-                )}
-                title="Toque para digitar ou travar o ângulo polar em graus"
-              >
-                {lockedDims.lockedAngleDeg !== null && <Lock className="size-3 text-amber-400" />}
-                <span>∠ {effectiveAngle.toFixed(1)}°</span>
-              </button>
-
-              {(lockedDims.lockedLengthMm !== null || lockedDims.lockedAngleDeg !== null) && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic("tap");
-                    onChangeLockedDims({ lockedLengthMm: null, lockedAngleDeg: null });
-                  }}
-                  className="rounded-lg bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 px-1.5 py-0.5 text-[9.5px] font-bold cursor-pointer"
-                  title="Destravar medidas"
-                >
-                  <Unlock className="size-3" />
-                </button>
-              )}
-            </>
-          )}
-        </div>
-      )}
+      {/* 2. PÍLULAS SECUNDÁRIAS DO MEIO DO CANVAS REMOVIDAS — UNIFICADAS NA BARRA SUPERIOR EM TEMPO REAL (ChamferDraftConfirmationBubble) */}
 
       {/* 3. ALÇA TÁTIL PUSH/PULL Z (EXTRUSÃO / ESPESSURA EM PERFIS FECHADOS) */}
       {showPushPullZHandle && (

@@ -879,12 +879,14 @@ export function ChamferCadToolbar({
       ref={toolbarRef}
       aria-label="Barra de ferramentas CAD"
       style={{
-        backgroundColor: "var(--chamfer-bar-bg)",
-        borderColor: "var(--chamfer-border)",
-        color: "var(--chamfer-text-secondary)",
+        backgroundColor: isDark ? "var(--chamfer-bar-bg)" : "#FFFFFF",
+        borderColor: isDark ? "var(--chamfer-border)" : "#E2E8F0",
+        color: isDark ? "var(--chamfer-text-secondary)" : "#334155",
+        boxShadow: isDark ? undefined : "0 2px 10px rgba(15, 23, 42, 0.04)",
       }}
       className={cn(
-        "relative flex h-full max-h-full w-11 sm:w-12 shrink-0 flex-col items-center rounded-2xl border p-1 shadow-xl backdrop-blur-md select-none z-40 transition-colors",
+        "relative flex h-full max-h-full w-11 sm:w-12 shrink-0 flex-col items-center border p-1 backdrop-blur-md select-none z-40 transition-colors",
+        isDark ? "rounded-2xl shadow-xl" : "rounded-[28px]",
         className,
       )}
     >
@@ -923,36 +925,53 @@ export function ChamferCadToolbar({
                 aria-label={cat.label}
                 style={
                   isOpen
-                    ? {
-                        backgroundColor: "var(--chamfer-accent)",
-                        color: "var(--chamfer-accent-contrast)",
-                        borderColor: "var(--chamfer-accent)",
-                      }
-                    : active
+                    ? isDark
                       ? {
-                          backgroundColor: "var(--chamfer-accent-soft)",
-                          borderColor: "var(--chamfer-accent-border)",
-                          color: "var(--chamfer-accent)",
+                          backgroundColor: "var(--chamfer-accent)",
+                          color: "var(--chamfer-accent-contrast)",
+                          borderColor: "var(--chamfer-accent)",
                         }
                       : {
+                          backgroundColor: "#FFE4E6",
+                          color: "#E11D48",
+                          borderColor: "#FDA4AF",
+                          borderWidth: "1.5px",
+                        }
+                    : active
+                      ? isDark
+                        ? {
+                            backgroundColor: "var(--chamfer-accent-soft)",
+                            borderColor: "var(--chamfer-accent-border)",
+                            color: "var(--chamfer-accent)",
+                          }
+                        : {
+                            backgroundColor: "#FFE4E6",
+                            borderColor: "#FDA4AF",
+                            color: "#E11D48",
+                            borderWidth: "1.5px",
+                          }
+                      : {
                           borderColor: "transparent",
-                          color: "var(--chamfer-text-secondary)",
+                          color: isDark ? "var(--chamfer-text-secondary)" : "#334155",
                         }
                 }
                 className={cn(
                   "group relative flex min-h-[40px] size-10 w-full flex-col items-center justify-center rounded-xl border transition-all touch-manipulation cursor-pointer",
-                  isOpen && "shadow-md scale-[1.02]",
+                  isOpen && (isDark ? "shadow-md scale-[1.02]" : "shadow-xs scale-[1.02]"),
                 )}
               >
                 <Icon className="size-4 transition-transform group-hover:scale-110" />
-                <span className="text-[7.5px] font-mono font-bold tracking-wider mt-0.5 leading-none uppercase">
+                <span
+                  style={!isDark && !isOpen && !active ? { color: "#475569" } : undefined}
+                  className="text-[7.5px] font-mono font-bold tracking-wider mt-0.5 leading-none uppercase"
+                >
                   {cat.short}
                 </span>
 
                 {/* Indicador de ferramenta ativa no grupo */}
                 {active && !isOpen && (
                   <span
-                    style={{ backgroundColor: "var(--chamfer-accent)" }}
+                    style={{ backgroundColor: isDark ? "var(--chamfer-accent)" : "#E11D48" }}
                     className="absolute top-1 right-1 size-1.5 rounded-full shadow-xs animate-pulse"
                   />
                 )}

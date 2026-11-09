@@ -22,7 +22,9 @@ import {
   Minimize,
   Minus,
   MoreHorizontal,
+  Move,
   MousePointer2,
+  Hash,
   PenLine,
   Redo2,
   RotateCw,
@@ -371,6 +373,7 @@ import { ChamferPrecisionLoupeOverlay } from "./ChamferPrecisionLoupeOverlay";
 import {
   ChamferDraftConfirmationBubble,
   createPendingDraftShapeState,
+  createSelectedEntityDraftState,
   getPendingDraftShapeGrips,
   applyPendingDraftGripDrag,
   type PendingDraftShapeState,
@@ -796,8 +799,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     themeVersion,
   } = useChamferAppearance();
 
-  const canvasBgColor = themeColors.workAreaFill;
-  const canvasOuterBgColor = themeColors.canvasBg;
+  const canvasBgColor = isDark ? themeColors.workAreaFill : "#FFFFFF";
+  const canvasOuterBgColor = isDark ? themeColors.canvasBg : "#E2E8F0";
 
   const toggleTheme = useCallback(
     (origin?: ThemeOriginInput) => {
@@ -7173,7 +7176,63 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       } else if (tool === "measure" && pending.length === 1) {
         setLiveMeasure({ a: pending[0]!, b: nextCursor });
       } else if (pending.length === 1) {
-        setDraft(buildDraft(tool, pending[0]!, nextCursor, activeLayer, filletR, drawingProjection, isoPlane));
+        setDraft(
+          buildDraft(tool, pending[0]!, nextCursor, activeLayer, filletR, drawingProjection, isoPlane, {
+            rectMode,
+            circleMode,
+            polygonMode,
+            polygonSides,
+            polygonAcrossFlatsMm,
+            slotMode,
+            slotWidthMm,
+          }),
+        );
+      } else if (pendingDraftShapeRef.current && pending.length === 0) {
+        const curDraftShape = pendingDraftShapeRef.current;
+        const nextP1 = {
+          x: Number((curDraftShape.p1.x + delta.x).toFixed(4)),
+          y: Number((curDraftShape.p1.y + delta.y).toFixed(4)),
+        };
+        const rebuiltEntity = buildDraft(
+          curDraftShape.tool,
+          curDraftShape.p0,
+          nextP1,
+          activeLayer,
+          curDraftShape.cornerRadiusMm ?? filletR,
+          drawingProjection,
+          isoPlane,
+          {
+            rectMode: curDraftShape.rectMode,
+            circleMode: curDraftShape.circleMode ?? circleMode,
+            polygonMode: curDraftShape.polygonMode,
+            polygonSides: curDraftShape.polygonSides,
+            polygonAcrossFlatsMm: curDraftShape.polygonAcrossFlatsMm,
+            slotMode: curDraftShape.slotMode,
+            slotWidthMm: curDraftShape.slotWidthMm,
+          },
+        );
+        if (rebuiltEntity) {
+          const updatedState = createPendingDraftShapeState(
+            curDraftShape.tool,
+            { ...rebuiltEntity, id: curDraftShape.entity.id },
+            curDraftShape.p0,
+            nextP1,
+            activeLayer,
+            curDraftShape.cornerRadiusMm ?? filletR,
+            {
+              rectMode: curDraftShape.rectMode,
+              circleMode: curDraftShape.circleMode ?? circleMode,
+              polygonMode: curDraftShape.polygonMode,
+              polygonSides: curDraftShape.polygonSides,
+              polygonAcrossFlatsMm: curDraftShape.polygonAcrossFlatsMm,
+              slotMode: curDraftShape.slotMode,
+              slotWidthMm: curDraftShape.slotWidthMm,
+            },
+          );
+          if (updatedState) {
+            setPendingDraftShape(updatedState);
+          }
+        }
       }
     },
     [
@@ -7192,12 +7251,25 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       temporaryOrigin,
       activeLayer,
       filletR,
+      rectMode,
+      circleMode,
+      polygonMode,
+      polygonSides,
+      polygonAcrossFlatsMm,
+      slotMode,
+      slotWidthMm,
       interactionGuideMode,
       lockedConstraints,
+      setPendingDraftShape,
     ],
   );
 
   const handleConfirmNudgePoint = useCallback(() => {
+    if (pendingDraftShapeRef.current && pending.length === 0) {
+      commitPendingDraftShape(pendingDraftShapeRef.current);
+      return;
+    }
+
     const p = (smartSnap ?? snapHit)?.p ?? cursor;
     if (!p || !Number.isFinite(p.x) || !Number.isFinite(p.y)) return;
 
@@ -7261,12 +7333,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       tool === "polygon" ||
       tool === "slot"
     ) {
+      const draftOpts = {
+        rectMode,
+        circleMode,
+        polygonMode,
+        polygonSides,
+        polygonAcrossFlatsMm,
+        slotMode,
+        slotWidthMm,
+      };
       if (pending.length === 0) {
         setPending([p]);
-        setDraft(buildDraft(tool, p, p, activeLayer, filletR, drawingProjection, isoPlane));
+        setDraft(buildDraft(tool, p, p, activeLayer, filletR, drawingProjection, isoPlane, draftOpts));
         toast.info(`Origem fixada em (${p.x.toFixed(1)}, ${p.y.toFixed(1)}) mm. Ajuste o ponto final.`);
       } else {
-        const built = buildDraft(tool, pending[0]!, p, activeLayer, filletR, drawingProjection, isoPlane);
+        const built = buildDraft(tool, pending[0]!, p, activeLayer, filletR, drawingProjection, isoPlane, draftOpts);
         if (built) {
           const box = boxOf(built);
           const empty = box.maxX - box.minX < 0.01 && box.maxY - box.minY < 0.01;
@@ -7284,11 +7365,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     cursor,
     tool,
     commit,
+    commitPendingDraftShape,
     activeLayer,
     pending,
     view.k,
     finishPolyline,
     filletR,
+    rectMode,
+    circleMode,
+    polygonMode,
+    polygonSides,
+    polygonAcrossFlatsMm,
+    slotMode,
+    slotWidthMm,
     drawingProjection,
     isoPlane,
   ]);
@@ -7745,22 +7834,34 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     const extMacOpacity = intMacOpacity * outerFactor;
 
     return {
-      secondaryStroke: `rgba(${minorParsed.rgb[0]}, ${minorParsed.rgb[1]}, ${minorParsed.rgb[2]}, ${intSecOpacity.toFixed(4)})`,
+      secondaryStroke: isDark
+        ? `rgba(${minorParsed.rgb[0]}, ${minorParsed.rgb[1]}, ${minorParsed.rgb[2]}, ${intSecOpacity.toFixed(4)})`
+        : "#F1F5F9",
       secondaryWidth: 0.75,
-      majorStroke: `rgba(${majorParsed.rgb[0]}, ${majorParsed.rgb[1]}, ${majorParsed.rgb[2]}, ${intMajOpacity.toFixed(4)})`,
+      majorStroke: isDark
+        ? `rgba(${majorParsed.rgb[0]}, ${majorParsed.rgb[1]}, ${majorParsed.rgb[2]}, ${intMajOpacity.toFixed(4)})`
+        : "#E2E8F0",
       majorWidth: 1.0,
-      macroStroke: `rgba(${majorParsed.rgb[0]}, ${majorParsed.rgb[1]}, ${majorParsed.rgb[2]}, ${intMacOpacity.toFixed(4)})`,
+      macroStroke: isDark
+        ? `rgba(${majorParsed.rgb[0]}, ${majorParsed.rgb[1]}, ${majorParsed.rgb[2]}, ${intMacOpacity.toFixed(4)})`
+        : "#CBD5E1",
       macroWidth: 1.15,
-      extSecondaryStroke: `rgba(${outerMinorParsed.rgb[0]}, ${outerMinorParsed.rgb[1]}, ${outerMinorParsed.rgb[2]}, ${extSecOpacity.toFixed(4)})`,
-      extMajorStroke: `rgba(${outerMajorParsed.rgb[0]}, ${outerMajorParsed.rgb[1]}, ${outerMajorParsed.rgb[2]}, ${extMajOpacity.toFixed(4)})`,
-      extMacroStroke: `rgba(${outerMajorParsed.rgb[0]}, ${outerMajorParsed.rgb[1]}, ${outerMajorParsed.rgb[2]}, ${extMacOpacity.toFixed(4)})`,
-      axisX: themeColors.axisX,
-      axisY: themeColors.axisY,
-      axisInfinite: isDark ? "rgba(148, 163, 184, 0.11)" : "rgba(15, 23, 42, 0.12)",
+      extSecondaryStroke: isDark
+        ? `rgba(${outerMinorParsed.rgb[0]}, ${outerMinorParsed.rgb[1]}, ${outerMinorParsed.rgb[2]}, ${extSecOpacity.toFixed(4)})`
+        : "#D8E0EA",
+      extMajorStroke: isDark
+        ? `rgba(${outerMajorParsed.rgb[0]}, ${outerMajorParsed.rgb[1]}, ${outerMajorParsed.rgb[2]}, ${extMajOpacity.toFixed(4)})`
+        : "#CBD5E1",
+      extMacroStroke: isDark
+        ? `rgba(${outerMajorParsed.rgb[0]}, ${outerMajorParsed.rgb[1]}, ${outerMajorParsed.rgb[2]}, ${extMacOpacity.toFixed(4)})`
+        : "#B8C4D4",
+      axisX: isDark ? themeColors.axisX : "#E11D48",
+      axisY: isDark ? themeColors.axisY : "#16A34A",
+      axisInfinite: isDark ? "rgba(148, 163, 184, 0.11)" : "rgba(15, 23, 42, 0.10)",
       axisWidth: 1.75,
-      originFill: "#DC143C",
-      originRing: isDark ? "rgba(236, 239, 244, 0.92)" : "rgba(15, 20, 26, 0.88)",
-      originText: "#DC143C",
+      originFill: "#E11D48",
+      originRing: isDark ? "rgba(236, 239, 244, 0.92)" : "rgba(15, 23, 42, 0.88)",
+      originText: "#E11D48",
     };
   }, [isDark, gridConfig, themeColors, themeVersion]);
 
@@ -8181,8 +8282,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       ref={wrapRef}
       style={{
         ...cssVariables,
-        backgroundColor: "var(--chamfer-bg-root)",
-        color: "var(--chamfer-text-primary)",
+        backgroundColor: isDark ? "var(--chamfer-bg-root)" : "#F1F5F9",
+        color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
       }}
       className={cn(
         "chamfer-theme-fade-root chamfer-theme-fade-2s fixed inset-0 z-50 flex h-[100dvh] w-[100vw] max-w-none flex-col overflow-hidden rounded-none select-none",
@@ -8376,9 +8477,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onPointerCancel={handleTopBarPointerUp}
           onWheel={handleTopBarWheel}
           style={{
-            backgroundColor: "var(--chamfer-bar-bg)",
-            borderColor: "var(--chamfer-border)",
-            color: "var(--chamfer-text-primary)",
+            backgroundColor: isDark ? "var(--chamfer-bar-bg)" : "#FFFFFF",
+            borderColor: isDark ? "var(--chamfer-border)" : "#E2E8F0",
+            color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
+            boxShadow: isDark ? undefined : "0 2px 10px rgba(15, 23, 42, 0.04)",
           }}
           className={cn(
             "chamfer-theme-fade-2s flex h-12 shrink-0 w-full items-center justify-between gap-3 border-b px-3 shadow-xs backdrop-blur-md select-none",
@@ -8400,9 +8502,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               aria-label="Sair do editor e voltar aos Projetos"
               title="Sair do editor (salvar e voltar)"
               style={{
-                backgroundColor: "var(--chamfer-surface-elevated)",
-                borderColor: "var(--chamfer-border-strong)",
-                color: "var(--chamfer-text-primary)",
+                backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F8FAFC",
+                borderColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1",
+                color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
               }}
               className="flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors whitespace-nowrap hover:brightness-110"
             >
@@ -8410,14 +8512,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </button>
 
             <span
-              style={{ backgroundColor: "var(--chamfer-border-strong)" }}
+              style={{ backgroundColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1" }}
               className="h-4 w-px shrink-0"
             />
 
             <div className="flex items-center gap-1.5 min-w-0">
               <span
-                style={{ color: "var(--chamfer-accent)" }}
-                className="font-mono text-xs font-bold tracking-wider shrink-0"
+                style={{ color: isDark ? "var(--chamfer-accent)" : "#E11D48" }}
+                className="font-mono text-xs font-extrabold tracking-wider shrink-0"
               >
                 CHAMFER
               </span>
@@ -8429,8 +8531,11 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     setNewProjectName(`Projeto ${Date.now().toString().slice(-4)}`);
                     setNewProjectDialogOpen(true);
                   }}
-                  style={{ textOverflow: "ellipsis", color: "var(--chamfer-text-primary)" }}
-                  className="inline-block font-mono text-[11px] font-semibold transition-colors truncate whitespace-nowrap max-w-[160px] sm:max-w-[200px]"
+                  style={{
+                    textOverflow: "ellipsis",
+                    color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
+                  }}
+                  className="inline-block font-mono text-[11px] font-bold transition-colors truncate whitespace-nowrap max-w-[160px] sm:max-w-[200px]"
                   title={`Documento: ${project.name} (clique para alternar/criar)`}
                 >
                   • {project.name}
@@ -8445,11 +8550,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     })
                   }
                   title={`${dossier.projectName} · ${dossier.partName}`}
-                  style={{
-                    backgroundColor: "var(--chamfer-accent-soft)",
-                    borderColor: "var(--chamfer-accent-border)",
-                    color: "var(--chamfer-accent)",
-                  }}
+                  style={
+                    isDark
+                      ? {
+                          backgroundColor: "var(--chamfer-accent-soft)",
+                          borderColor: "var(--chamfer-accent-border)",
+                          color: "var(--chamfer-accent)",
+                        }
+                      : {
+                          backgroundColor: "#FFF1F2",
+                          borderColor: "#FECDD3",
+                          color: "#E11D48",
+                        }
+                  }
                   className="hidden lg:inline rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase border truncate max-w-[120px]"
                 >
                   {dossier.partCode || dossier.partName}
@@ -8462,8 +8575,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           <div className="flex shrink-0 items-center justify-center gap-1.5">
             <div
               style={{
-                backgroundColor: "var(--chamfer-surface-elevated)",
-                borderColor: "var(--chamfer-border-strong)",
+                backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F1F5F9",
+                borderColor: isDark ? "var(--chamfer-border-strong)" : "#E2E8F0",
               }}
               className="flex items-center rounded-lg border p-0.5 shadow-xs"
             >
@@ -8476,10 +8589,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 style={
                   activeMode === "2d"
                     ? {
-                        backgroundColor: "var(--chamfer-accent)",
-                        color: "var(--chamfer-accent-contrast)",
+                        backgroundColor: isDark ? "var(--chamfer-accent)" : "#E11D48",
+                        color: isDark ? "var(--chamfer-accent-contrast)" : "#FFFFFF",
                       }
-                    : { color: "var(--chamfer-text-secondary)" }
+                    : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
                 }
                 className="rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors"
               >
@@ -8494,10 +8607,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 style={
                   activeMode === "3d"
                     ? {
-                        backgroundColor: "var(--chamfer-accent)",
-                        color: "var(--chamfer-accent-contrast)",
+                        backgroundColor: isDark ? "var(--chamfer-accent)" : "#E11D48",
+                        color: isDark ? "var(--chamfer-accent-contrast)" : "#FFFFFF",
                       }
-                    : { color: "var(--chamfer-text-secondary)" }
+                    : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
                 }
                 className="rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors"
               >
@@ -8509,8 +8622,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             {!solidOpen && (
               <div
                 style={{
-                  backgroundColor: "var(--chamfer-surface-elevated)",
-                  borderColor: "var(--chamfer-border-strong)",
+                  backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F8FAFC",
+                  borderColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1",
                 }}
                 className="flex items-center rounded-lg border p-0.5 shadow-xs shrink-0"
               >
@@ -8525,10 +8638,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   style={
                     !orbitProjection2D.isTilted && activeMode === "2d"
                       ? {
-                          backgroundColor: "var(--chamfer-accent-soft)",
-                          color: "var(--chamfer-text-primary)",
+                          backgroundColor: isDark ? "var(--chamfer-accent-soft)" : "#F8FAFC",
+                          color: isDark ? "var(--chamfer-text-primary)" : "#1E293B",
                         }
-                      : { color: "var(--chamfer-text-secondary)" }
+                      : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
                   }
                   className="rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors"
                   title="Modo Ortogonal 2D (Eixos X/Y convencionais a 0°)"
@@ -8717,11 +8830,17 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 title="Salvar documento agora (Ctrl+S)"
                 style={
                   saveStatus !== "pendente"
-                    ? {
-                        backgroundColor: "var(--chamfer-surface-elevated)",
-                        borderColor: "var(--chamfer-border-strong)",
-                        color: "var(--chamfer-text-primary)",
-                      }
+                    ? isDark
+                      ? {
+                          backgroundColor: "var(--chamfer-surface-elevated)",
+                          borderColor: "var(--chamfer-border-strong)",
+                          color: "var(--chamfer-text-primary)",
+                        }
+                      : {
+                          backgroundColor: "#FFFFFF",
+                          borderColor: "#CBD5E1",
+                          color: "#1E293B",
+                        }
                     : undefined
                 }
                 className={cn(
@@ -8736,7 +8855,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 {saveStatus === "salvando" ? (
                   <Loader2 className="size-3 animate-spin text-[#F59E0B]" />
                 ) : (
-                  <Check className={cn("size-3", isDark ? "text-[#34D399]" : "text-[#059669]")} />
+                  <Check className={cn("size-3", isDark ? "text-[#34D399]" : "text-[#16A34A]")} />
                 )}
                 <span>Salvar</span>
               </button>
@@ -8748,15 +8867,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   saveStatus === "salvo" &&
                     (isDark
                       ? "text-[#34D399] bg-[#34D399]/10 border-[#34D399]/30"
-                      : "text-[#059669] bg-[#059669]/10 border-[#059669]/30"),
+                      : "text-[#15803D] bg-[#DCFCE7] border-[#86EFAC] font-bold"),
                   saveStatus === "salvando" &&
                     (isDark
                       ? "text-[#F59E0B] bg-[#F59E0B]/10 border-[#F59E0B]/30"
-                      : "text-[#D97706] bg-[#D97706]/10 border-[#D97706]/30"),
+                      : "text-[#D97706] bg-[#FEF3C7] border-[#FCD34D]"),
                   saveStatus === "pendente" &&
                     (isDark
                       ? "text-[#FBBF24] bg-[#F59E0B]/15 border-[#F59E0B]/50 animate-pulse"
-                      : "text-[#D97706] bg-[#D97706]/15 border-[#D97706]/40"),
+                      : "text-[#D97706] bg-[#FEF3C7] border-[#FCD34D]"),
                 )}
                 title={
                   chamferSettings.autoSave
@@ -8766,7 +8885,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               >
                 {saveStatus === "salvo" && (
                   <>
-                    <span className={cn("size-1.5 rounded-full", isDark ? "bg-[#34D399]" : "bg-[#059669]")} />
+                    <span className={cn("size-1.5 rounded-full", isDark ? "bg-[#34D399]" : "bg-[#15803D]")} />
                     <span>Salvo</span>
                   </>
                 )}
@@ -8787,7 +8906,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
 
             <span
-              style={{ backgroundColor: "var(--chamfer-border-strong)" }}
+              style={{ backgroundColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1" }}
               className="h-4 w-px"
             />
 
@@ -8801,14 +8920,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               }}
               title="CHAMFER VISION — Reconhecimento e vetorização inteligente de peças"
               aria-label="Abrir CHAMFER VISION"
-              style={{
-                backgroundColor: "var(--chamfer-accent-soft)",
-                borderColor: "var(--chamfer-accent-border)",
-                color: "var(--chamfer-accent)",
-              }}
+              style={
+                isDark
+                  ? {
+                      backgroundColor: "var(--chamfer-accent-soft)",
+                      borderColor: "var(--chamfer-accent-border)",
+                      color: "var(--chamfer-accent)",
+                    }
+                  : {
+                      backgroundColor: "#FFE4E6",
+                      borderColor: "#FDA4AF",
+                      color: "#E11D48",
+                    }
+              }
               className="flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs hover:brightness-110"
             >
-              <ScanEye className="size-3.5" style={{ color: "var(--chamfer-accent)" }} />
+              <ScanEye className="size-3.5" style={{ color: isDark ? "var(--chamfer-accent)" : "#E11D48" }} />
               <span className="hidden xl:inline">CHAMFER VISION</span>
               <span className="xl:hidden">VISION</span>
             </button>
@@ -8820,14 +8947,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               }}
               title="CHAMFER INTENT — Compilador Geométrico Paramétrico por Linguagem Natural (Atalho: Q)"
               aria-label="Abrir CHAMFER INTENT"
-              style={{
-                backgroundColor: "var(--chamfer-surface-elevated)",
-                borderColor: "var(--chamfer-accent-border)",
-                color: "var(--chamfer-accent)",
-              }}
+              style={
+                isDark
+                  ? {
+                      backgroundColor: "var(--chamfer-surface-elevated)",
+                      borderColor: "var(--chamfer-accent-border)",
+                      color: "var(--chamfer-accent)",
+                    }
+                  : {
+                      backgroundColor: "#E0F2FE",
+                      borderColor: "#7DD3FC",
+                      color: "#0284C7",
+                    }
+              }
               className="flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs hover:brightness-110"
             >
-              <Sparkles className="size-3.5" style={{ color: "var(--chamfer-accent)" }} />
+              <Sparkles className="size-3.5" style={{ color: isDark ? "var(--chamfer-accent)" : "#0284C7" }} />
               <span className="hidden xl:inline">CHAMFER INTENT</span>
               <span className="xl:hidden">INTENT</span>
             </button>
@@ -8838,14 +8973,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 setIntegratedWorkshopOpen(true);
               }}
               title="Oficina Digital Integrada: Catálogo Costa Ferro, Dossiê Multi-Vistas, Lista de Corte 6m, BOM e Orçamento"
-              style={{
-                backgroundColor: "var(--chamfer-surface-elevated)",
-                borderColor: "var(--chamfer-border-strong)",
-                color: "var(--chamfer-text-primary)",
-              }}
+              style={
+                isDark
+                  ? {
+                      backgroundColor: "var(--chamfer-surface-elevated)",
+                      borderColor: "var(--chamfer-border-strong)",
+                      color: "var(--chamfer-text-primary)",
+                    }
+                  : {
+                      backgroundColor: "#FFFFFF",
+                      borderColor: "#CBD5E1",
+                      color: "#1E293B",
+                    }
+              }
               className="flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs hover:brightness-110"
             >
-              <Boxes className="size-3.5" style={{ color: "var(--chamfer-accent)" }} />
+              <Boxes className="size-3.5" style={{ color: isDark ? "var(--chamfer-accent)" : "#0F766E" }} />
               <span className="hidden xl:inline">OFICINA & CORTE</span>
               <span className="xl:hidden">CORTE/BOM</span>
             </button>
@@ -9959,8 +10102,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
                   const cornerLen = Math.max(12 / safeK, Math.min(frame.w, frame.h) * 0.035);
                   const marginInset = Math.min(20, Math.min(frame.w, frame.h) * 0.025);
-                  const borderColor = themeColors.workAreaStroke;
+                  const borderColor = isDark ? themeColors.workAreaStroke : "#0284C7";
                   const cornerColor = borderColor;
+                  const dashedMarginColor = isDark ? borderColor : "#38BDF8";
+                  const dimLineColor = isDark ? borderColor : "#38BDF8";
+                  const dimPillBg = isDark ? themeColors.surfaceElevated : "#FFFFFF";
+                  const dimPillBorder = isDark ? themeColors.borderStrong : "#7DD3FC";
+                  const dimPillText = isDark ? themeColors.textSecondary : "#0284C7";
+                  const headerPillBg = isDark ? themeColors.surfaceElevated : "#FFFFFF";
+                  const headerPillBorder = isDark ? themeColors.borderStrong : "#E2E8F0";
+                  const headerPillText = isDark ? themeColors.textPrimary : "#1E293B";
                   const dimOffsetPx = 18 / safeK;
                   const headerBadgeText = `⬚ ÁREA DE TRABALHO • ${Math.round(frame.w)} × ${Math.round(frame.h)} mm${frame.locked ? " 🔒" : ""}`;
                   const rawHeaderPx = headerBadgeText.length * 6.2 + 16;
@@ -9988,8 +10139,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         height={frame.h}
                         fill="none"
                         stroke={borderColor}
-                        strokeOpacity={isDark ? 0.92 : 0.95}
-                        strokeWidth={1.6 / safeK}
+                        strokeOpacity={isDark ? 0.92 : 1}
+                        strokeWidth={(isDark ? 1.6 : 2.0) / safeK}
                         pointerEvents="none"
                       />
 
@@ -10001,8 +10152,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           width={frame.w - marginInset * 2}
                           height={frame.h - marginInset * 2}
                           fill="none"
-                          stroke={borderColor}
-                          strokeOpacity={isDark ? 0.24 : 0.28}
+                          stroke={dashedMarginColor}
+                          strokeOpacity={isDark ? 0.24 : 0.75}
                           strokeWidth={1 / safeK}
                           strokeDasharray={`${6 / safeK} ${4 / safeK}`}
                           pointerEvents="none"
@@ -10047,8 +10198,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           width={headerW}
                           height={headerH}
                           rx={5 / safeK}
-                          fill={themeColors.surfaceElevated}
-                          stroke={themeColors.borderStrong}
+                          fill={headerPillBg}
+                          stroke={headerPillBorder}
                           strokeWidth={1.1 / safeK}
                         />
                         <text
@@ -10057,7 +10208,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           fontSize={headerFontSize}
                           fontFamily='"JetBrains Mono", "Inter", ui-monospace, monospace'
                           fontWeight="700"
-                          fill={themeColors.textPrimary}
+                          fill={headerPillText}
                         >
                           {headerBadgeText}
                         </text>
@@ -10072,8 +10223,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             y1={-dimOffsetPx}
                             x2={frame.w}
                             y2={-dimOffsetPx}
-                            stroke={borderColor}
-                            strokeOpacity={0.55}
+                            stroke={dimLineColor}
+                            strokeOpacity={isDark ? 0.55 : 0.85}
                             strokeWidth={1 / safeK}
                             strokeDasharray={`${4 / safeK} ${3 / safeK}`}
                           />
@@ -10082,8 +10233,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             y1={-4 / safeK}
                             x2={0}
                             y2={-dimOffsetPx - 4 / safeK}
-                            stroke={borderColor}
-                            strokeOpacity={0.7}
+                            stroke={dimLineColor}
+                            strokeOpacity={isDark ? 0.7 : 0.9}
                             strokeWidth={1.1 / safeK}
                           />
                           <line
@@ -10091,8 +10242,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             y1={-4 / safeK}
                             x2={frame.w}
                             y2={-dimOffsetPx - 4 / safeK}
-                            stroke={borderColor}
-                            strokeOpacity={0.7}
+                            stroke={dimLineColor}
+                            strokeOpacity={isDark ? 0.7 : 0.9}
                             strokeWidth={1.1 / safeK}
                           />
                           <rect
@@ -10101,9 +10252,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             width={widthPillW}
                             height={17 / safeK}
                             rx={4 / safeK}
-                            fill={themeColors.surfaceElevated}
-                            stroke={themeColors.borderStrong}
-                            strokeOpacity={0.85}
+                            fill={dimPillBg}
+                            stroke={dimPillBorder}
+                            strokeOpacity={isDark ? 0.85 : 1}
                             strokeWidth={1 / safeK}
                           />
                           <text
@@ -10111,7 +10262,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             y={-dimOffsetPx + 3.5 / safeK}
                             fontSize={10.5 / safeK}
                             fontWeight="700"
-                            fill={themeColors.textSecondary}
+                            fill={dimPillText}
                             textAnchor="middle"
                           >
                             {frame.w.toFixed(2)} mm
@@ -10123,8 +10274,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             y1={0}
                             x2={-dimOffsetPx}
                             y2={frame.h}
-                            stroke={borderColor}
-                            strokeOpacity={0.5}
+                            stroke={dimLineColor}
+                            strokeOpacity={isDark ? 0.5 : 0.85}
                             strokeWidth={1 / safeK}
                             strokeDasharray={`${4 / safeK} ${3 / safeK}`}
                           />
@@ -10133,8 +10284,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             y1={0}
                             x2={-dimOffsetPx - 4 / safeK}
                             y2={0}
-                            stroke={borderColor}
-                            strokeOpacity={0.65}
+                            stroke={dimLineColor}
+                            strokeOpacity={isDark ? 0.65 : 0.9}
                             strokeWidth={1.1 / safeK}
                           />
                           <line
@@ -10142,8 +10293,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                             y1={frame.h}
                             x2={-dimOffsetPx - 4 / safeK}
                             y2={frame.h}
-                            stroke={borderColor}
-                            strokeOpacity={0.65}
+                            stroke={dimLineColor}
+                            strokeOpacity={isDark ? 0.65 : 0.9}
                             strokeWidth={1.1 / safeK}
                           />
                           <g transform={`translate(${-dimOffsetPx} ${frame.h / 2}) rotate(-90)`}>
@@ -10153,9 +10304,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                               width={92 / safeK}
                               height={18 / safeK}
                               rx={4 / safeK}
-                              fill={themeColors.surfaceElevated}
-                              stroke={themeColors.borderStrong}
-                              strokeOpacity={0.85}
+                              fill={dimPillBg}
+                              stroke={dimPillBorder}
+                              strokeOpacity={isDark ? 0.85 : 1}
                               strokeWidth={1 / safeK}
                             />
                             <text
@@ -10163,7 +10314,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                               y={3.5 / safeK}
                               fontSize={10.5 / safeK}
                               fontWeight="700"
-                              fill={themeColors.textSecondary}
+                              fill={dimPillText}
                               textAnchor="middle"
                             >
                               {frame.h.toFixed(2)} mm
@@ -10295,21 +10446,21 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     </>
                   )}
 
-                  {/* Marcador Circular Pequeno e Nítido de Origem (0,0) em Vermelho Carmesim (#DC143C) */}
+                  {/* Marcador Circular Pequeno e Nítido de Origem (0,0) em Vermelho Carmesim (#E11D48) */}
                   <circle
                     cx={0}
                     cy={0}
                     r={4.5 / view.k}
                     fill="none"
-                    stroke="#DC143C"
-                    strokeOpacity={0.85}
+                    stroke="#E11D48"
+                    strokeOpacity={0.88}
                     strokeWidth={1.3 / view.k}
                   />
                   <circle
                     cx={0}
                     cy={0}
                     r={2.1 / view.k}
-                    fill="#DC143C"
+                    fill="#E11D48"
                   />
                   <text
                     x={8 / view.k}
@@ -10317,7 +10468,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     fontSize={9 / view.k}
                     fontFamily='"JetBrains Mono", ui-monospace, monospace'
                     fontWeight="700"
-                    fill="#DC143C"
+                    fill="#E11D48"
                   >
                     {drawingProjection === "isometric" ? "(0,0,0) ISO" : "(0,0)"}
                   </text>
@@ -12548,37 +12699,142 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           />
           )}
 
-          {/* BOLHA FLUTUANTE DE CONFIRMAÇÃO E EDIÇÃO RÁPIDA (DRAFT-THEN-COMMIT) */}
-          {!solidOpen && activeMode === "2d" && (
-            <ChamferDraftConfirmationBubble
-              pendingShape={pendingDraftShape}
-              view={view}
-              canvasWidth={canvasSize.w}
-              canvasHeight={canvasSize.h}
-              isDark={isDark}
-              onUpdatePendingShape={(next) => {
-                setPendingDraftShape(next);
-                lastCreatedVertexRef.current = next.p1;
-                if (next.tool === "polygon") {
-                  setPolygonSides(next.polygonSides);
-                  setPolygonMode(next.polygonMode);
-                  setPolygonAcrossFlatsMm(next.polygonAcrossFlatsMm);
-                } else if (next.tool === "slot") {
-                  setSlotWidthMm(next.slotWidthMm);
-                } else if (next.tool === "rect" || next.tool === "rrect") {
-                  setFilletR(next.cornerRadiusMm);
-                }
-              }}
-              onConfirmPendingShape={() => {
-                commitPendingDraftShape(pendingDraftShape);
-              }}
-              onCancelPendingShape={() => {
-                setPendingDraftShape(null);
-                setDraggingDraftGripIndex(null);
-                toast.info("Forma descartada.");
-              }}
-            />
-          )}
+          {/* BARRA UNIFICADA DE MEDIDAS EM TEMPO REAL E CONFIRMAÇÃO (60 FPS AO VIVO + PÓS-SOLTURA) */}
+          {!solidOpen && activeMode === "2d" && (() => {
+            const hasSubmodeBar =
+              tool === "polyline" ||
+              tool === "rect" ||
+              tool === "circle" ||
+              tool === "polygon" ||
+              tool === "slot" ||
+              tool === "node" ||
+              tool === "smart_trim" ||
+              tool === "trim" ||
+              tool === "offset" ||
+              tool === "construction_line" ||
+              tool === "spline";
+
+            const activeUnifiedDraftShape: PendingDraftShapeState | null =
+              pendingDraftShape ??
+              (pending.length >= 1 && draft
+                ? createPendingDraftShapeState(
+                    tool,
+                    draft,
+                    tool === "polyline" || tool === "spline"
+                      ? pending[pending.length - 1]!
+                      : pending[0]!,
+                    cursor,
+                    activeLayer,
+                    filletR,
+                    {
+                      rectMode,
+                      circleMode,
+                      polygonMode,
+                      polygonSides,
+                      polygonAcrossFlatsMm,
+                      slotMode,
+                      slotWidthMm,
+                      arcMidPoint: pending.length >= 2 ? pending[1] : undefined,
+                      isLiveDraft: true,
+                    },
+                  )
+                : selected.length === 1 && !solidOpen && activeMode !== "3d"
+                  ? createSelectedEntityDraftState(selected[0])
+                  : null);
+
+            return (
+              <ChamferDraftConfirmationBubble
+                pendingShape={activeUnifiedDraftShape}
+                view={view}
+                canvasWidth={canvasSize.w}
+                canvasHeight={canvasSize.h}
+                isDark={isDark}
+                hasSubmodeBar={hasSubmodeBar}
+                onUpdatePendingShape={(next) => {
+                  if (next.isSelectedEntity) {
+                    commit((list) =>
+                      revalidateShared(
+                        list.map((e) => (e.id === next.entity.id ? { ...next.entity, id: e.id } : e)),
+                      ),
+                    );
+                    return;
+                  }
+                  lastCreatedVertexRef.current = next.p1;
+                  if (next.tool === "polygon") {
+                    setPolygonSides(next.polygonSides);
+                    setPolygonMode(next.polygonMode);
+                    setPolygonAcrossFlatsMm(next.polygonAcrossFlatsMm);
+                  } else if (next.tool === "slot") {
+                    setSlotWidthMm(next.slotWidthMm);
+                  } else if (next.tool === "rect" || next.tool === "rrect") {
+                    setFilletR(next.cornerRadiusMm);
+                  }
+                  if (pendingDraftShape) {
+                    setPendingDraftShape(next);
+                  } else if (pending.length >= 1) {
+                    cursorRef.current = next.p1;
+                    setCursor(next.p1);
+                    draftRef.current = next.entity;
+                    setDraft(next.entity);
+                    if (
+                      next.tool !== "polyline" &&
+                      next.tool !== "spline" &&
+                      next.tool !== "construction_line"
+                    ) {
+                      setPendingDraftShape({ ...next, isLiveDraft: false });
+                      setPending([]);
+                      setDraft(null);
+                    }
+                  }
+                }}
+                onConfirmPendingShape={() => {
+                  if (pendingDraftShape) {
+                    commitPendingDraftShape(pendingDraftShape);
+                  } else if (activeUnifiedDraftShape) {
+                    if (tool === "polyline") {
+                      if (pending.length >= 1) {
+                        const lastPt = pending[pending.length - 1]!;
+                        const d = Math.hypot(cursor.x - lastPt.x, cursor.y - lastPt.y);
+                        if (d > 0.05) {
+                          const allPts = [...pending, cursor];
+                          if (allPts.length >= 2) {
+                            commit((list) => [
+                              ...list,
+                              {
+                                id: uid(),
+                                layer: activeLayer,
+                                type: "polyline",
+                                pts: allPts,
+                                closed: false,
+                              },
+                            ]);
+                          }
+                        } else if (pending.length >= 2) {
+                          finishPolyline(false);
+                        }
+                      }
+                      setPending([]);
+                      setDraft(null);
+                    } else if (tool === "spline") {
+                      finishSpline(false);
+                    } else {
+                      commitPendingDraftShape({ ...activeUnifiedDraftShape, isLiveDraft: false });
+                      setPending([]);
+                      setDraft(null);
+                    }
+                  }
+                }}
+                onCancelPendingShape={() => {
+                  setPendingDraftShape(null);
+                  setPending([]);
+                  setDraft(null);
+                  setDraggingDraftGripIndex(null);
+                  setLockedDims({ lockedLengthMm: null, lockedAngleDeg: null });
+                  toast.info("Forma descartada.");
+                }}
+              />
+            );
+          })()}
 
           {/* GIZMO 3D DE TRANSLAÇÃO (X, Y, +Z ORTHO) E MOTOR INTERATIVO LOFT 3D MULTISSEÇÃO */}
           <Chamfer3DGizmoAndLoftOverlay
@@ -13298,9 +13554,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         <footer
           aria-label="Barra de status do CHAMFER"
           style={{
-            backgroundColor: "var(--chamfer-bar-bg)",
-            borderColor: "var(--chamfer-border)",
-            color: "var(--chamfer-text-secondary)",
+            backgroundColor: isDark ? "var(--chamfer-bar-bg)" : "#FFFFFF",
+            borderColor: isDark ? "var(--chamfer-border)" : "#E2E8F0",
+            color: isDark ? "var(--chamfer-text-secondary)" : "#475569",
           }}
           className="relative flex h-8 shrink-0 items-center justify-between gap-2 border-t px-2.5 font-mono text-[10px] backdrop-blur-md select-none transition-colors z-30"
         >
@@ -13350,12 +13606,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   }}
                   style={
                     pl.id === planId
-                      ? {
-                          backgroundColor: "var(--chamfer-accent-soft)",
-                          borderColor: "var(--chamfer-accent-border)",
-                          color: "var(--chamfer-accent)",
-                        }
-                      : { color: "var(--chamfer-text-secondary)" }
+                      ? isDark
+                        ? {
+                            backgroundColor: "var(--chamfer-accent-soft)",
+                            borderColor: "var(--chamfer-accent-border)",
+                            color: "var(--chamfer-accent)",
+                          }
+                        : {
+                            backgroundColor: "#FFF1F2",
+                            borderColor: "#FECDD3",
+                            color: "#E11D48",
+                          }
+                      : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
                   }
                   className={cn(
                     "shrink-0 rounded px-2 py-0.5 font-bold transition-colors",
@@ -13935,7 +14197,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         ? "bg-[#DC143C]/20 border-[#DC143C] text-[#DC143C]"
                         : isDark
                           ? "bg-[#1E293B] hover:bg-[#F59E0B]/15 border-[#F59E0B]/45 text-[#F59E0B]"
-                          : "bg-[#FFFFFF] hover:bg-[#D97706]/10 border-[#D97706]/45 text-[#D97706]",
+                          : "bg-[#FEF3C7] hover:bg-[#FDE68A] border-[#FCD34D] text-[#D97706]",
                     )}
                   >
                     <span>⌖</span>
@@ -14080,10 +14342,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   snapOn
                     ? isDark
                       ? "text-[#38BDF8] bg-[#38BDF8]/15 border-[#38BDF8]/45"
-                      : "text-[#0284C7] bg-[#FFFFFF] border-[#0284C7]/45"
+                      : "text-[#0284C7] bg-[#E0F2FE] border-[#7DD3FC]"
                     : isDark
                       ? "border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
-                      : "border-[#CBD5E1] text-[#64748B] hover:text-[#1E293B]",
+                      : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A]",
                 )}
                 title="Alternar Snap Geométrico"
               >
@@ -14098,10 +14360,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   orthoOn
                     ? isDark
                       ? "text-[#38BDF8] bg-[#38BDF8]/15 border-[#38BDF8]/45"
-                      : "text-[#0284C7] bg-[#FFFFFF] border-[#0284C7]/45"
+                      : "text-[#0284C7] bg-[#E0F2FE] border-[#7DD3FC]"
                     : isDark
                       ? "border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
-                      : "border-[#CBD5E1] text-[#64748B] hover:text-[#1E293B]",
+                      : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A]",
                 )}
                 title="Modo Ortogonal (0°, 90°, 180°, 270°)"
               >
@@ -14116,10 +14378,10 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   showGrid
                     ? isDark
                       ? "bg-[#1E293B] border-[#334155] text-[#E2E8F0] hover:border-[#38BDF8]/50"
-                      : "bg-[#FFFFFF] border-[#CBD5E1] text-[#334155] hover:border-[#0284C7]/50"
+                      : "bg-[#FFFFFF] border-[#CBD5E1] text-[#1E293B] hover:border-[#0284C7]/50"
                     : isDark
                       ? "border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
-                      : "border-[#CBD5E1] text-[#64748B] hover:text-[#1E293B]",
+                      : "border-[#CBD5E1] bg-[#FFFFFF] text-[#64748B] hover:text-[#1E293B]",
                 )}
                 title="Alternar visibilidade da grade"
               >
@@ -14141,14 +14403,14 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   statusWorkspaceMenuOpen || workspaceKeypadEditor !== null
                     ? isDark
                       ? "text-[#38BDF8] bg-[#38BDF8]/20 border-[#38BDF8]/65 shadow-xs"
-                      : "text-[#0284C7] bg-[#0284C7]/15 border-[#0284C7]/65 shadow-xs"
+                      : "text-[#0284C7] bg-[#E0F2FE] border-[#7DD3FC] shadow-xs"
                     : frame.visible
                       ? isDark
                         ? "bg-[#1E293B] border-[#334155] text-[#E2E8F0] hover:border-[#38BDF8]/50"
-                        : "bg-[#FFFFFF] border-[#CBD5E1] text-[#334155] hover:border-[#0284C7]/50"
+                        : "bg-[#FFFFFF] border-[#CBD5E1] text-[#1E293B] hover:border-[#0284C7]/50"
                       : isDark
                         ? "border-[#293444] text-[#94A3B8] hover:text-[#E6EDF5]"
-                        : "border-[#CBD5E1] text-[#64748B] hover:text-[#1E293B]",
+                        : "border-[#CBD5E1] bg-[#FFFFFF] text-[#64748B] hover:text-[#1E293B]",
                 )}
                 title="Personalizar Área de Trabalho (Chapa / Mesa CAD)"
               >
@@ -14172,7 +14434,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   statusPrecisionMenuOpen || nudgeHudVisible || cursorOffsetMode === "offset"
                     ? isDark
                       ? "border-[#38BDF8]/45 bg-[#38BDF8]/15 text-[#38BDF8]"
-                      : "border-[#0284C7]/40 bg-[#0284C7]/10 text-[#0284C7]"
+                      : "border-[#7DD3FC] bg-[#E0F2FE] text-[#0284C7]"
                     : isDark
                       ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:text-white"
                       : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A]",
@@ -14196,7 +14458,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   statusCncMenuOpen || showArrows || showOrder || simOn
                     ? isDark
                       ? "border-[#E11D48]/50 bg-[#E11D48]/18 text-[#FB7185]"
-                      : "border-[#E11D48]/40 bg-[#E11D48]/10 text-[#E11D48]"
+                      : "border-[#FECDD3] bg-[#FFF1F2] text-[#E11D48]"
                     : isDark
                       ? "border-[#293444] bg-[#151C27] text-[#E6EDF5] hover:text-white"
                       : "border-[#CBD5E1] bg-[#FFFFFF] text-[#1E293B] hover:text-[#0F172A]",
@@ -14217,7 +14479,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   "rounded border px-2 py-0.5 font-mono text-[9px] font-bold whitespace-nowrap transition-colors",
                   isDark
                     ? "border-[#293444] bg-[#151C27] text-[#38BDF8] hover:border-[#38BDF8]/50"
-                    : "border-[#CBD5E1] bg-[#FFFFFF] text-[#0284C7] hover:border-[#0284C7]/50",
+                    : "border-[#7DD3FC] bg-[#E0F2FE] text-[#0284C7] hover:border-[#0284C7]",
                 )}
                 title="Clique para enquadrar desenho (100%)"
               >
@@ -14875,68 +15137,225 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
-      {/* BARRA CONTEXTUAL FLUTUANTE DE SELEÇÃO E AGRUPAMENTO 2D (OCULTA NO MODO CAD 3D) */}
+      {/* BARRA CONTEXTUAL MINIMALISTA DE SELEÇÃO 2D (FIXA NO RODAPÉ CENTRAL DO CANVAS, SEM BOTÃO ISO) */}
       {selection.length > 0 && !solidOpen && activeMode !== "3d" && tool === "select" && activeArrayType === null && (
         <div
+          data-testid="chamfer-selection-action-bar"
           style={{
-            backgroundColor: "var(--chamfer-bubble-bg)",
-            borderColor: "var(--chamfer-accent-border)",
-            color: "var(--chamfer-text-primary)",
+            position: "fixed",
+            left: "50%",
+            transform: "translateX(-50%)",
+            bottom: isLandscape ? 38 : 116,
+            zIndex: 40,
+            height: 32,
+            padding: "3px 6px",
+            borderRadius: 9999,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 4,
+            maxWidth: "calc(100vw - 24px)",
+            backgroundColor: isDark ? "rgba(15, 23, 42, 0.92)" : "rgba(255, 255, 255, 0.96)",
+            borderWidth: 1,
+            borderStyle: "solid",
+            borderColor: isDark ? "#334155" : "#CBD5E1",
+            boxShadow: isDark
+              ? "0 8px 24px rgba(2, 6, 23, 0.50)"
+              : "0 6px 20px rgba(15, 23, 42, 0.08)",
+            backdropFilter: "blur(10px)",
+            WebkitBackdropFilter: "blur(10px)",
           }}
-          className={cn(
-            "fixed left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shadow-2xl backdrop-blur-md select-none pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-150",
-            isLandscape ? "bottom-24 sm:bottom-28" : "bottom-[120px]",
-          )}
+          className="select-none pointer-events-auto overflow-x-auto scrollbar-none animate-in fade-in slide-in-from-bottom-2 duration-150"
         >
-          <div
-            style={{ borderColor: "var(--chamfer-border)" }}
-            className="flex items-center gap-1.5 pr-2 border-r font-mono text-[11px]"
-          >
-            {activeGroup ? (
-              <span
-                style={{
-                  backgroundColor: "var(--chamfer-accent-soft)",
-                  borderColor: "var(--chamfer-accent-border)",
-                  color: "var(--chamfer-accent)",
-                }}
-                className="flex items-center gap-1 font-bold px-2 py-0.5 rounded-md border"
-              >
-                <Boxes className="size-3.5" />
-                {activeGroup.name}
-              </span>
-            ) : (
-              <span style={{ color: "var(--chamfer-text-primary)" }} className="font-semibold">
-                {selection.length} {selection.length === 1 ? "peça" : "peças"}
-              </span>
-            )}
-          </div>
+          {/* 1. Selo de Contagem Compacto */}
+          {activeGroup ? (
+            <span
+              style={{
+                height: 24,
+                padding: "0 8px",
+                borderRadius: 9999,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: "10.5px",
+                fontWeight: 700,
+                backgroundColor: isDark ? "rgba(225, 29, 72, 0.16)" : "#FFF1F2",
+                borderWidth: 1,
+                borderStyle: "solid",
+                borderColor: isDark ? "rgba(244, 63, 94, 0.35)" : "#FECDD3",
+                color: isDark ? "#FB7185" : "#E11D48",
+              }}
+              className="font-mono whitespace-nowrap shrink-0"
+            >
+              <Boxes className="size-3" />
+              <span>{activeGroup.name}</span>
+            </span>
+          ) : (
+            <span
+              style={{
+                padding: "0 6px",
+                fontSize: "10.5px",
+                fontWeight: 700,
+                color: isDark ? "#94A3B8" : "#475569",
+              }}
+              className="font-mono whitespace-nowrap shrink-0"
+            >
+              {selection.length} {selection.length === 1 ? "peça" : "peças"}
+            </span>
+          )}
 
-          {/* REEDIÇÃO ASSOCIATIVA DE PADRÃO (ARRAY) OU ATALHO RÁPIDO PARA MULTIPLICAR */}
+          {/* 2. Divisor Vertical Fino (1px x 14px) */}
+          <span
+            aria-hidden="true"
+            style={{
+              width: 1,
+              height: 14,
+              backgroundColor: isDark ? "#334155" : "#E2E8F0",
+              flexShrink: 0,
+            }}
+          />
+
+          {/* 3. [ ✥ Mover ] */}
+          <button
+            type="button"
+            onClick={handleMoveSelection}
+            title="Mover peça selecionada"
+            style={{
+              height: 24,
+              padding: "0 9px",
+              borderRadius: 9999,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: "11px",
+              fontWeight: 600,
+              backgroundColor: isDark ? "#1E293B" : "#F8FAFC",
+              borderWidth: 1,
+              borderStyle: "solid",
+              borderColor: isDark ? "#334155" : "#E2E8F0",
+              color: isDark ? "#F1F5F9" : "#1E293B",
+            }}
+            className="font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
+          >
+            <Move className="size-3" />
+            <span>Mover</span>
+          </button>
+
+          {/* 4. [ ⧉ Copiar ] */}
+          <button
+            type="button"
+            onClick={handleCopySelection}
+            title="Duplicar / copiar peça selecionada (Ctrl+D)"
+            style={{
+              height: 24,
+              padding: "0 9px",
+              borderRadius: 9999,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: "11px",
+              fontWeight: 600,
+              backgroundColor: isDark ? "#1E293B" : "#F8FAFC",
+              borderWidth: 1,
+              borderStyle: "solid",
+              borderColor: isDark ? "#334155" : "#E2E8F0",
+              color: isDark ? "#F1F5F9" : "#1E293B",
+            }}
+            className="font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
+          >
+            <Copy className="size-3" />
+            <span>Copiar</span>
+          </button>
+
+          {/* 5. [ ↻ Girar ] */}
+          <button
+            type="button"
+            onClick={() => applySelection((e) => rotate(e, center, 90))}
+            title="Girar peça em +90°"
+            style={{
+              height: 24,
+              padding: "0 9px",
+              borderRadius: 9999,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: "11px",
+              fontWeight: 600,
+              backgroundColor: isDark ? "#1E293B" : "#F8FAFC",
+              borderWidth: 1,
+              borderStyle: "solid",
+              borderColor: isDark ? "#334155" : "#E2E8F0",
+              color: isDark ? "#F1F5F9" : "#1E293B",
+            }}
+            className="font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
+          >
+            <RotateCw className="size-3" />
+            <span>Girar</span>
+          </button>
+
+          {/* 6. [ ⇄ Espelhar ] */}
+          <button
+            type="button"
+            onClick={handleMirrorSelection}
+            title="Espelhar peça selecionada"
+            style={{
+              height: 24,
+              padding: "0 9px",
+              borderRadius: 9999,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 4,
+              fontSize: "11px",
+              fontWeight: 600,
+              backgroundColor: isDark ? "#1E293B" : "#F8FAFC",
+              borderWidth: 1,
+              borderStyle: "solid",
+              borderColor: isDark ? "#334155" : "#E2E8F0",
+              color: isDark ? "#F1F5F9" : "#1E293B",
+            }}
+            className="font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
+          >
+            <FlipHorizontal2 className="size-3" />
+            <span>Espelhar</span>
+          </button>
+
+          {/* 7. [ # Array ] */}
           {(() => {
             const arrayOwner = selected.find((e) => getEntityArraySpec(e) !== null);
-            if (arrayOwner) {
-              return (
-                <button
-                  type="button"
-                  onClick={() => handleEditExistingArray(arrayOwner)}
-                  className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-xs font-bold transition-all shadow-sm active:scale-95"
-                  title="Editar Padrão (Array) existente em tempo real"
-                >
-                  <span>⌗ Editar Padrão (Array)</span>
-                </button>
-              );
-            }
             return (
               <button
                 type="button"
                 onClick={() => {
-                  const host = detectHostPart(entities, selected, temporaryOrigin?.p ?? { x: 0, y: 0 });
-                  handleStartArray(host.suggestedType);
+                  if (arrayOwner) {
+                    handleEditExistingArray(arrayOwner);
+                  } else {
+                    const host = detectHostPart(entities, selected, temporaryOrigin?.p ?? { x: 0, y: 0 });
+                    handleStartArray(host.suggestedType);
+                  }
                 }}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 border border-cyan-500/30 text-cyan-300 font-mono text-xs font-semibold transition-colors"
-                title="Multiplicar em Padrão Circular ou Linear (Array)"
+                title={
+                  arrayOwner
+                    ? "Editar Padrão (Array) existente em tempo real"
+                    : "Multiplicar em Padrão Circular ou Linear (Array)"
+                }
+                style={{
+                  height: 24,
+                  padding: "0 9px",
+                  borderRadius: 9999,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  fontSize: "11px",
+                  fontWeight: 600,
+                  backgroundColor: isDark ? "rgba(14, 165, 233, 0.14)" : "#E0F2FE",
+                  borderWidth: 1,
+                  borderStyle: "solid",
+                  borderColor: isDark ? "rgba(56, 189, 248, 0.40)" : "#7DD3FC",
+                  color: isDark ? "#38BDF8" : "#0284C7",
+                }}
+                className="font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
               >
-                <span>⌗ Array</span>
+                <Hash className="size-3" />
+                <span>{arrayOwner ? "Editar Array" : "Array"}</span>
               </button>
             );
           })()}
@@ -14945,11 +15364,26 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             <button
               type="button"
               onClick={handleGroupSelection}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-mono text-xs font-bold transition-all shadow-sm active:scale-95"
               title="Agrupar formas em uma única peça (Ctrl+G)"
+              style={{
+                height: 24,
+                padding: "0 9px",
+                borderRadius: 9999,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: "11px",
+                fontWeight: 600,
+                backgroundColor: isDark ? "rgba(14, 165, 233, 0.14)" : "#E0F2FE",
+                borderWidth: 1,
+                borderStyle: "solid",
+                borderColor: isDark ? "rgba(56, 189, 248, 0.40)" : "#7DD3FC",
+                color: isDark ? "#38BDF8" : "#0284C7",
+              }}
+              className="font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
             >
-              <Boxes className="size-3.5" />
-              Agrupar
+              <Boxes className="size-3" />
+              <span>Agrupar</span>
             </button>
           )}
 
@@ -14957,50 +15391,73 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             <button
               type="button"
               onClick={handleUngroupSelection}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-amber-600/90 hover:bg-amber-500 text-white font-mono text-xs font-bold transition-all shadow-sm active:scale-95"
               title="Desagrupar peça em formas independentes (Ctrl+Shift+G)"
+              style={{
+                height: 24,
+                padding: "0 9px",
+                borderRadius: 9999,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: "11px",
+                fontWeight: 600,
+                backgroundColor: isDark ? "rgba(245, 158, 11, 0.16)" : "#FEF3C7",
+                borderWidth: 1,
+                borderStyle: "solid",
+                borderColor: isDark ? "rgba(245, 158, 11, 0.40)" : "#FCD34D",
+                color: isDark ? "#FBBF24" : "#D97706",
+              }}
+              className="font-mono whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
             >
-              <Ungroup className="size-3.5" />
-              Desagrupar
+              <Ungroup className="size-3" />
+              <span>Desagrupar</span>
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={() => applySelection((e) => rotate(e, center, 90))}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-mono text-xs transition-colors"
-            title="Girar 90°"
-          >
-            <RotateCw className="size-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setIsoPieceBuilderOpen(true)}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 font-mono text-xs transition-colors"
-            title="Projetar para Isométrico"
-          >
-            <BoxIcon className="size-3.5" />
-            <span className="hidden sm:inline">Iso</span>
-          </button>
-
+          {/* 8. [ 🗑️ ] (Excluir) */}
           <button
             type="button"
             onClick={() => {
               commit((e) => e.filter((x) => !selection.includes(x.id)));
               setSelection([]);
             }}
-            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-red-950/80 hover:bg-red-900 border border-red-500/40 text-red-300 font-mono text-xs transition-colors"
-            title="Excluir seleção"
+            title="Excluir seleção (Delete)"
+            aria-label="Excluir seleção"
+            style={{
+              height: 24,
+              padding: "0 8px",
+              borderRadius: 9999,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: isDark ? "rgba(225, 29, 72, 0.16)" : "#FFF1F2",
+              borderWidth: 1,
+              borderStyle: "solid",
+              borderColor: isDark ? "rgba(244, 63, 94, 0.35)" : "#FECDD3",
+              color: isDark ? "#FB7185" : "#E11D48",
+            }}
+            className="shrink-0 cursor-pointer transition-colors hover:brightness-105 active:scale-95"
           >
             <Trash2 className="size-3.5" />
           </button>
 
+          {/* 9. [ ✕ ] (Limpar seleção) */}
           <button
             type="button"
             onClick={() => setSelection([])}
-            className="ml-1 p-1 rounded-lg text-slate-400 hover:text-white transition-colors"
-            title="Limpar seleção"
+            title="Limpar seleção (Esc)"
+            aria-label="Limpar seleção"
+            style={{
+              width: 24,
+              height: 24,
+              borderRadius: 9999,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: "transparent",
+              color: isDark ? "#94A3B8" : "#64748B",
+            }}
+            className="shrink-0 cursor-pointer transition-colors hover:brightness-125 active:scale-95"
           >
             <X className="size-3.5" />
           </button>
@@ -15918,6 +16375,7 @@ const IconBtn = React.memo(function IconBtn({
   flat,
   active,
   title,
+  isDark = true,
   buttonRef,
 }: {
   label: string;
@@ -15941,16 +16399,30 @@ const IconBtn = React.memo(function IconBtn({
       aria-label={label}
       style={{
         backgroundColor: active
-          ? "var(--chamfer-accent)"
+          ? isDark
+            ? "var(--chamfer-accent)"
+            : "#DBEAFE"
           : flat
             ? "transparent"
-            : "var(--chamfer-surface-elevated)",
+            : isDark
+              ? "var(--chamfer-surface-elevated)"
+              : "#FFFFFF",
         borderColor: active
-          ? "var(--chamfer-accent)"
+          ? isDark
+            ? "var(--chamfer-accent)"
+            : "#93C5FD"
           : flat
             ? "transparent"
-            : "var(--chamfer-border)",
-        color: active ? "var(--chamfer-accent-contrast)" : "var(--chamfer-text-primary)",
+            : isDark
+              ? "var(--chamfer-border)"
+              : "#CBD5E1",
+        color: active
+          ? isDark
+            ? "var(--chamfer-accent-contrast)"
+            : "#1D4ED8"
+          : isDark
+            ? "var(--chamfer-text-primary)"
+            : "#334155",
       }}
       className="grid size-8 shrink-0 place-items-center rounded-lg border cursor-pointer active:scale-95 hover:brightness-110 transition-all"
     >
@@ -16426,15 +16898,31 @@ const Rulers = React.memo(function Rulers({
     const minorDivisions = labelStep * safeK >= 140 ? 10 : 5;
     const minorStep = labelStep / minorDivisions;
 
-    const bgColor = themeColors?.rulerBg ?? (isDark ? "rgba(17, 20, 26, 0.90)" : "rgba(248, 250, 252, 0.90)");
-    const borderColor = themeColors?.border ?? (isDark ? "#232A35" : "#D5DCE4");
-    const majorTickColor = themeColors?.textSecondary ?? (isDark ? "#9AA4B2" : "#4B5563");
-    const midTickColor = themeColors?.textMuted ?? (isDark ? "#647080" : "#6B7280");
-    const minorTickColor = themeColors?.borderStrong ?? (isDark ? "#2F3847" : "#B8C2CC");
-    const textColor = themeColors?.textPrimary ?? (isDark ? "#ECEFF4" : "#0F141A");
-    const zeroColor = "#DC143C";
-    const workspaceBandFill = themeColors?.accentSoft ?? (isDark ? "rgba(0, 102, 255, 0.14)" : "rgba(0, 102, 255, 0.10)");
-    const workspaceBandEdge = themeColors?.accent ?? "#0066FF";
+    const bgColor = isDark
+      ? (themeColors?.rulerBg ?? "rgba(17, 20, 26, 0.90)")
+      : "#F1F5F9";
+    const borderColor = isDark
+      ? (themeColors?.border ?? "#232A35")
+      : "#CBD5E1";
+    const majorTickColor = isDark
+      ? (themeColors?.textSecondary ?? "#9AA4B2")
+      : "#1E293B";
+    const midTickColor = isDark
+      ? (themeColors?.textMuted ?? "#647080")
+      : "#475569";
+    const minorTickColor = isDark
+      ? (themeColors?.borderStrong ?? "#2F3847")
+      : "#94A3B8";
+    const textColor = isDark
+      ? (themeColors?.textPrimary ?? "#ECEFF4")
+      : "#1E293B";
+    const zeroColor = "#E11D48";
+    const workspaceBandFill = isDark
+      ? (themeColors?.accentSoft ?? "rgba(0, 102, 255, 0.14)")
+      : "rgba(14, 165, 233, 0.14)";
+    const workspaceBandEdge = isDark
+      ? (themeColors?.accent ?? "#0066FF")
+      : "#0284C7";
 
     /* =====================================================================
      * 1. RÉGUA HORIZONTAL SUPERIOR (Altura = 26px, Clipping x: 30..vw, y: 0..26)
@@ -16475,8 +16963,8 @@ const Rulers = React.memo(function Rulers({
     const endIdxX = Math.ceil(maxWorldX / minorStep) + 1;
 
     ctx.font = compactPortrait
-      ? '600 9px "JetBrains Mono", "Inter", ui-monospace, monospace'
-      : '600 10px "JetBrains Mono", "Inter", ui-monospace, monospace';
+      ? '700 9px "JetBrains Mono", "Inter", ui-monospace, monospace'
+      : '700 10px "JetBrains Mono", "Inter", ui-monospace, monospace';
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
 
@@ -16565,8 +17053,8 @@ const Rulers = React.memo(function Rulers({
     const endIdxY = Math.ceil(maxWorldY / minorStep) + 1;
 
     ctx.font = compactPortrait
-      ? '600 9px "JetBrains Mono", "Inter", ui-monospace, monospace'
-      : '600 10px "JetBrains Mono", "Inter", ui-monospace, monospace';
+      ? '700 9px "JetBrains Mono", "Inter", ui-monospace, monospace'
+      : '700 10px "JetBrains Mono", "Inter", ui-monospace, monospace';
 
     for (let i = startIdxY; i <= endIdxY; i++) {
       const worldY = i * minorStep;
@@ -16597,18 +17085,18 @@ const Rulers = React.memo(function Rulers({
       }
     }
 
-    // Hairline Tracker do Cursor na Régua Vertical (#DC143C)
+    // Hairline Tracker do Cursor na Régua Vertical (#E11D48)
     if (cursor && Number.isFinite(cursor.y)) {
       const cy = view.ty + cursor.y * safeK;
       if (cy >= H_RULER_H && cy <= vh) {
-        ctx.strokeStyle = "#DC143C";
+        ctx.strokeStyle = "#E11D48";
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         ctx.moveTo(0, cy);
         ctx.lineTo(V_RULER_W, cy);
         ctx.stroke();
 
-        ctx.fillStyle = "#DC143C";
+        ctx.fillStyle = "#E11D48";
         ctx.beginPath();
         ctx.moveTo(0, cy - 3.5);
         ctx.lineTo(0, cy + 3.5);
@@ -16640,9 +17128,9 @@ const Rulers = React.memo(function Rulers({
         }}
         title="Toque para centralizar e enquadrar a Área de Trabalho na tela"
         style={{
-          backgroundColor: "var(--chamfer-bar-bg)",
-          borderColor: "var(--chamfer-border)",
-          color: "var(--chamfer-text-secondary)",
+          backgroundColor: isDark ? "var(--chamfer-bar-bg)" : "#F1F5F9",
+          borderColor: isDark ? "var(--chamfer-border)" : "#CBD5E1",
+          color: isDark ? "var(--chamfer-text-secondary)" : "#64748B",
         }}
         className={cn(
           "pointer-events-auto absolute left-0 top-0 z-20 flex items-center justify-center border-b border-r font-mono font-bold uppercase transition-colors cursor-pointer active:scale-95 hover:brightness-110",
