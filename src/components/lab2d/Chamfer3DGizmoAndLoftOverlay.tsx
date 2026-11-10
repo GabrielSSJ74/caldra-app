@@ -87,6 +87,7 @@ import {
   generateTechnicalDrawingViews2DFrom3D,
   project3DSelectionTo2DSketch,
   projectPoint3DToCanvasViewMm,
+  resolveFaceShellCapDirection3D,
   resolveShellOpenCapsFromSelection3D,
   type ActiveParametricNumpadSession,
   type BooleanMode3D,
@@ -393,6 +394,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     "fillet",
   );
   const [shellOpenCapsMode, setShellOpenCapsMode] = useState<"both_ends" | "top_only">("both_ends");
+  const [shellTargetFaceCap, setShellTargetFaceCap] = useState<ShellOpenCap3D>("top");
+  const multiTouchPinchCooldownUntilRef = useRef<number>(0);
   const [offsetFaceTarget, setOffsetFaceTarget] = useState<
     "top" | "bottom" | "sides" | "pos_x" | "neg_x" | "pos_y" | "neg_y" | "side_normal"
   >("top");
@@ -698,9 +701,22 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     [selectedFacesList],
   );
 
+  // Sincroniza a face-alvo do Shell sempre que o usuário seleciona uma face 3D
+  useEffect(() => {
+    if (selectedFacesList.length > 0) {
+      const detectedCap = resolveFaceShellCapDirection3D(selectedFacesList[0]!);
+      setShellTargetFaceCap(detectedCap);
+    }
+  }, [selectedFacesList]);
+
   const resolvedShellOpenCaps = useMemo<ShellOpenCap3D[]>(
-    () => resolveShellOpenCapsFromSelection3D(selectedFacesList, shellOpenCapsMode),
-    [selectedFacesList, shellOpenCapsMode],
+    () =>
+      resolveShellOpenCapsFromSelection3D(
+        selectedFacesList,
+        shellOpenCapsMode,
+        shellTargetFaceCap,
+      ),
+    [selectedFacesList, shellOpenCapsMode, shellTargetFaceCap],
   );
 
   const primaryEdge: DirectEdge3D | null = useMemo(() => {
@@ -1674,6 +1690,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         maxClearGapMm: smartArrayMaxGapMm,
         startInnerCoordMm: smartSpanDetection.startInnerCoordMm,
         axis: smartArrayAxis,
+        perpInnerStartMm: smartSpanDetection.perpInnerStartMm,
+        perpInnerEndMm: smartSpanDetection.perpInnerEndMm,
+        perpSpanMm: smartSpanDetection.perpSpanMm,
       }),
     [
       smartArrayMode,
@@ -1683,6 +1702,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
       smartArrayMaxGapMm,
       smartSpanDetection.startInnerCoordMm,
       smartArrayAxis,
+      smartSpanDetection.perpInnerStartMm,
+      smartSpanDetection.perpInnerEndMm,
+      smartSpanDetection.perpSpanMm,
     ],
   );
 
@@ -1732,7 +1754,11 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
         jointMode: smartFrameJointMode,
         innerDivisionsCount: smartFrameInnerDivisions,
         center3D: smartArraySourceBody
-          ? { x: smartArraySourceBody.pivot3D.x, y: smartArraySourceBody.pivot3D.y, z: 0 }
+          ? {
+              x: smartArraySourceBody.pivot3D.x,
+              y: smartArraySourceBody.pivot3D.y,
+              z: smartArraySourceBody.elevationZ || 0,
+            }
           : { x: 0, y: 0, z: 0 },
       }),
     [
@@ -1747,35 +1773,37 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     ],
   );
 
-  // Ao ativar a ferramenta SHELL (`shell_3d`), se a peça selecionada ainda estiver maciça (espessura 0)
-  // ou tinha apenas tampa lateral antiga, aplica imediatamente a cavidade vazada padrão (4.75mm)
-  // para exibir a prévia 3D real da parede e do interior vazado instantaneamente.
+  // Ao ativar a ferramenta SHELL (`shell_3d`), aplica a cavidade vazada na FACE SELECIONADA
+  // (ou na face-alvo ativa) respeitando "Caixa (1 Face)" vs "Tubo (2 Faces)".
+  const prevDirectToolForShellRef = useRef<DirectModelingTool3D>(directTool);
   useEffect(() => {
+    const justEnteredShell =
+      directTool === "shell_3d" && prevDirectToolForShellRef.current !== "shell_3d";
+    prevDirectToolForShellRef.current = directTool;
     if (directTool !== "shell_3d" || !onCommitEntities) return;
     const targetBody = primaryBody ?? scene.bodies[0] ?? null;
     if (!targetBody) return;
     const targetIds =
       activeTargetEntityIds.length > 0 ? activeTargetEntityIds : [targetBody.entityId];
     const currentT = targetBody.shellWallThicknessMm || targetBody.shellThicknessMm || 0;
-    const hasValidTopBottomCap =
-      targetBody.shellOpenCaps.includes("top") || targetBody.shellOpenCaps.includes("bottom");
-    if (currentT <= 0.1 || !hasValidTopBottomCap) {
+    const detectedFaceCap =
+      selectedFacesList.length > 0
+        ? resolveFaceShellCapDirection3D(selectedFacesList[0]!)
+        : shellTargetFaceCap;
+    const nextCaps = resolveShellOpenCapsFromSelection3D(
+      selectedFacesList,
+      shellOpenCapsMode,
+      detectedFaceCap,
+    );
+    const sameCaps =
+      targetBody.shellOpenCaps.length === nextCaps.length &&
+      nextCaps.every((c) => targetBody.shellOpenCaps.includes(c));
+    if (currentT <= 0.1 || (justEnteredShell && !sameCaps)) {
       const nextT = currentT > 0.1 ? currentT : 4.75;
-      const nextCaps = resolveShellOpenCapsFromSelection3D(
-        selectedFacesList,
-        shellOpenCapsMode,
-      );
       onCommitEntities(
         (prev) => applyDirectShell3DToEntities(prev, targetIds, nextT, nextCaps),
         targetIds,
       );
-    }
-    if (subSel.faceIds.length > 0) {
-      setSubSel((prev) => ({
-        ...prev,
-        faceIds: [],
-        bodyIds: prev.bodyIds.length > 0 ? prev.bodyIds : [targetBody.bodyId],
-      }));
     }
   }, [
     directTool,
@@ -1784,8 +1812,30 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
     activeTargetEntityIds,
     selectedFacesList,
     shellOpenCapsMode,
+    shellTargetFaceCap,
     onCommitEntities,
   ]);
+
+  // Cancela imediatamente qualquer arraste 3D em andamento quando o 2º dedo toca a tela (Pinça de Zoom)
+  useEffect(() => {
+    const handleCancelForPinch = () => {
+      multiTouchPinchCooldownUntilRef.current = performance.now() + 220;
+      const session = dragSessionRef.current;
+      if (session) {
+        if (session.hasMoved) {
+          onPreviewEntities?.(session.startEntities);
+        }
+        dragSessionRef.current = null;
+        setActiveAxis(null);
+        setDragDeltaMm(0);
+        setActiveContactSnap(null);
+        setRotationSnapState(null);
+      }
+    };
+    window.addEventListener("chamfer-cancel-3d-drag-for-pinch", handleCancelForPinch);
+    return () =>
+      window.removeEventListener("chamfer-cancel-3d-drag-for-pinch", handleCancelForPinch);
+  }, [onPreviewEntities]);
 
   const smartFrameWMinusHold = useExponentialHold((mult) =>
     setSmartFrameWidthMm((prev) => Math.max(100, Math.min(12000, Math.round(prev - 10 * mult)))),
@@ -4167,6 +4217,14 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               activeTargetEntityIds.length > 0 ? activeTargetEntityIds : [shellBody.entityId];
             const currentShellT =
               shellBody.shellWallThicknessMm || shellBody.shellThicknessMm || 4.75;
+            const SHELL_FACE_CAP_OPTIONS: { id: ShellOpenCap3D; label: string }[] = [
+              { id: "top", label: "Topo (+Z)" },
+              { id: "bottom", label: "Base (-Z)" },
+              { id: "right", label: "Dir (+X)" },
+              { id: "left", label: "Esq (-X)" },
+              { id: "front", label: "Frente (+Y)" },
+              { id: "back", label: "Trás (-Y)" },
+            ];
             return (
               <>
                 <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
@@ -4179,6 +4237,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     const nextCaps = resolveShellOpenCapsFromSelection3D(
                       selectedFacesList,
                       "both_ends",
+                      shellTargetFaceCap,
                     );
                     onCommitEntities?.(
                       (prev) =>
@@ -4204,6 +4263,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     const nextCaps = resolveShellOpenCapsFromSelection3D(
                       selectedFacesList,
                       "top_only",
+                      shellTargetFaceCap,
                     );
                     onCommitEntities?.(
                       (prev) =>
@@ -4220,6 +4280,55 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 >
                   Caixa (1 Face)
                 </button>
+                <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
+                <span className="shrink-0 font-mono text-[9px] font-bold uppercase tracking-wider text-cyan-400">
+                  Face Alvo:
+                </span>
+                {SHELL_FACE_CAP_OPTIONS.map((fOpt) => {
+                  const isCapActive =
+                    shellTargetFaceCap === fOpt.id ||
+                    shellBody.shellOpenCaps.includes(fOpt.id);
+                  return (
+                    <button
+                      key={fOpt.id}
+                      type="button"
+                      data-testid={`chamfer-3d-shell-face-${fOpt.id}`}
+                      onClick={() => {
+                        triggerHaptic("selection");
+                        setShellTargetFaceCap(fOpt.id);
+                        const matchingFace = shellBody.faces.find(
+                          (f) =>
+                            f.role !== "inner_side" &&
+                            f.role !== "inner_bottom" &&
+                            resolveFaceShellCapDirection3D(f) === fOpt.id,
+                        );
+                        setSubSel((prev) => ({
+                          ...prev,
+                          faceIds: matchingFace ? [matchingFace.faceId] : [],
+                        }));
+                        const nextCaps = resolveShellOpenCapsFromSelection3D(
+                          matchingFace ? [matchingFace] : [],
+                          shellOpenCapsMode,
+                          fOpt.id,
+                        );
+                        onCommitEntities?.(
+                          (prev) =>
+                            applyDirectShell3DToEntities(
+                              prev,
+                              shellTargetIds,
+                              currentShellT,
+                              nextCaps,
+                            ),
+                          shellTargetIds,
+                        );
+                      }}
+                      className={pillBtnClass(isCapActive)}
+                    >
+                      {fOpt.label}
+                    </button>
+                  );
+                })}
+                <span className="mx-0.5 h-3.5 w-px shrink-0 bg-slate-400/30" />
                 {[2, 3, 4.75, 6].map((wVal) => (
                   <button
                     key={wVal}
@@ -4994,12 +5103,25 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         smartArraySourceBody.entityId,
                         smartArraySourceBody,
                         smartArrayCalc,
+                        scene.bodies,
                       );
                       createdIds = res.createdIds;
                       return res.updatedEntities;
                     },
                     createdIds.length > 0 ? createdIds : [smartArraySourceBody.entityId],
                   );
+                  if (createdIds.length > 0) {
+                    setSubSel({
+                      faceIds: [],
+                      edgeIds: [],
+                      vertexIds: [],
+                      bodyIds: createdIds.map((id) => `body_${id}`),
+                      selectionScope: "body",
+                      activePivot3D: { x: 0, y: 0, z: 0 },
+                      activeHingeEdgeId: null,
+                    });
+                    onSelectEntities?.(createdIds);
+                  }
                 }
               } else if (directTool === "shell_3d") {
                 const shellBody = primaryBody ?? scene.bodies[0] ?? null;
@@ -5233,6 +5355,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     }}
                   onClick={(ev) => {
                     ev.stopPropagation();
+                    if (performance.now() < multiTouchPinchCooldownUntilRef.current) {
+                      return;
+                    }
                     triggerHaptic("selection");
                     setLastCompletedDrag(null);
                     const now = performance.now();
@@ -5250,6 +5375,40 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     // Modo LOFT 3D ativo: clicar em qualquer seção transversal adiciona/alterna na fila [1] ➔ [2] ➔ [3]
                     if (isLoftActive) {
                       onToggleLoftSection?.(body.entityId);
+                      return;
+                    }
+
+                    // Se a ferramenta SHELL 3D estiver ativa, clicar em qualquer face aplica o Shell diretamente nessa face!
+                    if (directTool === "shell_3d") {
+                      const clickedCap = resolveFaceShellCapDirection3D(face);
+                      setShellTargetFaceCap(clickedCap);
+                      setSubSel({
+                        faceIds: [face.faceId],
+                        edgeIds: [],
+                        vertexIds: [],
+                        bodyIds: [],
+                        selectionScope,
+                        activePivot3D: face.centroid,
+                        activeHingeEdgeId: null,
+                      });
+                      onSelectEntities?.([face.entityId]);
+                      const currentT =
+                        body.shellWallThicknessMm || body.shellThicknessMm || 4.75;
+                      const nextCaps = resolveShellOpenCapsFromSelection3D(
+                        [face],
+                        shellOpenCapsMode,
+                        clickedCap,
+                      );
+                      onCommitEntities?.(
+                        (prev) =>
+                          applyDirectShell3DToEntities(
+                            prev,
+                            [face.entityId],
+                            currentT,
+                            nextCaps,
+                          ),
+                        [face.entityId],
+                      );
                       return;
                     }
 
@@ -5297,6 +5456,9 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         : [...subSel.faceIds, face.faceId]
                       : [face.faceId];
 
+                    const clickedCap = resolveFaceShellCapDirection3D(face);
+                    setShellTargetFaceCap(clickedCap);
+
                     setSubSel({
                       faceIds: nextFaceIds,
                       edgeIds: [],
@@ -5309,7 +5471,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     onSelectEntities?.([face.entityId]);
 
                     if (
-                      directTool !== "shell_3d" &&
                       directTool !== "rotate_axis_3d" &&
                       directTool !== "hole_3d" &&
                       directTool !== "array_3d"
@@ -7332,14 +7493,17 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
               if (!shellBody) return null;
               const wallT =
                 shellBody.shellWallThicknessMm || shellBody.shellThicknessMm || 4.75;
-              const openTop = shellBody.shellOpenCaps.includes("top") || shellOpenCapsMode === "both_ends";
-              const openBottom =
-                shellBody.shellOpenCaps.includes("bottom") || shellOpenCapsMode === "both_ends";
-              const ringFaces = shellBody.faces.filter(
-                (f) =>
-                  (openTop && (f.role === "top" || f.role === "miter")) ||
-                  (openBottom && f.role === "bottom"),
-              );
+              const activeCaps =
+                shellBody.shellOpenCaps.length > 0
+                  ? shellBody.shellOpenCaps
+                  : resolvedShellOpenCaps;
+              const openTop = activeCaps.includes("top");
+              const openBottom = activeCaps.includes("bottom");
+              const ringFaces = shellBody.faces.filter((f) => {
+                if (f.role === "inner_side" || f.role === "inner_bottom") return false;
+                const fCap = resolveFaceShellCapDirection3D(f);
+                return activeCaps.includes(fCap);
+              });
               const innerMouthEdges = shellBody.edges.filter(
                 (e) =>
                   (openTop && e.role === "inner_top") ||
@@ -7355,6 +7519,15 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 y: shellBody.pivot3D.y,
                 z: shellBody.bbox3D.maxZ,
               });
+              const capLabelsMap: Record<ShellOpenCap3D, string> = {
+                top: "+Z Topo",
+                bottom: "-Z Base",
+                right: "+X Dir",
+                left: "-X Esq",
+                front: "+Y Frente",
+                back: "-Y Trás",
+              };
+              const capsSummary = activeCaps.map((c) => capLabelsMap[c] ?? c).join(" / ");
 
               return (
                 <g
@@ -7375,7 +7548,8 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                         key={`shell_ring_face_${rf.faceId}`}
                         points={pts}
                         fill="rgba(0, 229, 255, 0.24)"
-                        stroke="none"
+                        stroke="#00E5FF"
+                        strokeWidth={1.3}
                       />
                     );
                   })}
@@ -7416,12 +7590,12 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                     );
                   })}
 
-                  {/* Etiqueta técnica da espessura da parede na boca superior */}
+                  {/* Etiqueta técnica da espessura da parede e face aberta */}
                   <g transform={`translate(${topCenterSc.x}, ${topCenterSc.y - 24})`}>
                     <rect
-                      x={-98}
+                      x={-124}
                       y={-11}
-                      width={196}
+                      width={248}
                       height={20}
                       rx={6}
                       fill={isDark ? "rgba(8, 47, 73, 0.92)" : "rgba(224, 242, 254, 0.96)"}
@@ -7432,13 +7606,13 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       x={0}
                       y={1}
                       fill={isDark ? "#67E8F9" : "#0369A1"}
-                      fontSize="9.5"
+                      fontSize="9.2"
                       fontWeight="bold"
                       fontFamily="monospace"
                       textAnchor="middle"
                       dominantBaseline="central"
                     >
-                      {`Parede t = ${wallT} mm • ${shellOpenCapsMode === "both_ends" ? "Tubo Vazado" : "Caixa Cega"}`}
+                      {`t=${wallT}mm • ${shellOpenCapsMode === "both_ends" ? "Tubo" : "Caixa"} (${capsSummary})`}
                     </text>
                   </g>
                 </g>
@@ -7447,6 +7621,7 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
 
           {/* ================================================================= */}
           {/* I. PREVIEW 3D AO VIVO DO ARRAY INTELIGENTE / GRADE (TUBOS GHOST)  */}
+          {/*    Sempre com pontas retas de 90° (Topo Reto) por padrão!         */}
           {/* ================================================================= */}
           {directTool === "array_3d" &&
             smartArrayPanelTab === "grille_span" &&
@@ -7454,7 +7629,6 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             smartArrayCalc.centerCoordsMm.length > 0 &&
             (() => {
               const srcBody = smartArraySourceBody;
-              const srcInterval = getBodyIntervalAlongAxis(srcBody, smartArrayAxis);
               const startPt3D: Vec3Mm = {
                 x:
                   smartArrayAxis === "x"
@@ -7489,6 +7663,15 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                 x: (spanStartSc.x + spanEndSc.x) * 0.5,
                 y: (spanStartSc.y + spanEndSc.y) * 0.5 - 16,
               };
+
+              const tubeHalfW = Math.max(2, smartArrayCalc.tubeWidthMm * 0.5);
+              const hasPerpSpan =
+                typeof smartArrayCalc.perpInnerStartMm === "number" &&
+                typeof smartArrayCalc.perpInnerEndMm === "number" &&
+                typeof smartArrayCalc.perpSpanMm === "number" &&
+                smartArrayCalc.perpSpanMm > 10;
+              const z0 = srcBody.elevationZ;
+              const z1 = srcBody.elevationZ + Math.max(2, srcBody.extrudeHeightMm);
 
               return (
                 <g
@@ -7528,34 +7711,93 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       textAnchor="middle"
                       dominantBaseline="central"
                     >
-                      {`Vão: ${smartArrayCalc.spanMm}mm • Luz: ${smartArrayCalc.clearGapMm}mm`}
+                      {`Vão: ${smartArrayCalc.spanMm}mm • Luz: ${smartArrayCalc.clearGapMm}mm (90°)`}
                     </text>
                   </g>
 
-                  {/* Tubos fantasma (Ghost Preview 3D) em cada posição calculada */}
+                  {/* Tubos fantasma (Ghost Preview 3D) com pontas retas de 90° em cada posição */}
                   {smartArrayCalc.centerCoordsMm.map((centerCoord, tIdx) => {
-                    const delta = centerCoord - srcInterval.center;
-                    const dx = smartArrayAxis === "x" ? delta : 0;
-                    const dy = smartArrayAxis === "y" ? delta : 0;
-                    const dz = smartArrayAxis === "z" ? delta : 0;
+                    const bxMin =
+                      smartArrayAxis === "x"
+                        ? centerCoord - tubeHalfW
+                        : hasPerpSpan
+                          ? smartArrayCalc.perpInnerStartMm!
+                          : srcBody.bbox3D.minX;
+                    const bxMax =
+                      smartArrayAxis === "x"
+                        ? centerCoord + tubeHalfW
+                        : hasPerpSpan
+                          ? smartArrayCalc.perpInnerEndMm!
+                          : srcBody.bbox3D.maxX;
+                    const byMin =
+                      smartArrayAxis === "y"
+                        ? centerCoord - tubeHalfW
+                        : hasPerpSpan && smartArrayAxis === "x"
+                          ? smartArrayCalc.perpInnerStartMm!
+                          : srcBody.bbox3D.minY;
+                    const byMax =
+                      smartArrayAxis === "y"
+                        ? centerCoord + tubeHalfW
+                        : hasPerpSpan && smartArrayAxis === "x"
+                          ? smartArrayCalc.perpInnerEndMm!
+                          : srcBody.bbox3D.maxY;
+                    const bzMin = smartArrayAxis === "z" ? centerCoord - tubeHalfW : z0;
+                    const bzMax = smartArrayAxis === "z" ? centerCoord + tubeHalfW : z1;
+
+                    const boxFaces3D: Vec3Mm[][] = [
+                      // Topo (+Z)
+                      [
+                        { x: bxMin, y: byMin, z: bzMax },
+                        { x: bxMax, y: byMin, z: bzMax },
+                        { x: bxMax, y: byMax, z: bzMax },
+                        { x: bxMin, y: byMax, z: bzMax },
+                      ],
+                      // Base (-Z)
+                      [
+                        { x: bxMin, y: byMin, z: bzMin },
+                        { x: bxMax, y: byMin, z: bzMin },
+                        { x: bxMax, y: byMax, z: bzMin },
+                        { x: bxMin, y: byMax, z: bzMin },
+                      ],
+                      // Frente / Trás / Esq / Dir (90° retos)
+                      [
+                        { x: bxMin, y: byMin, z: bzMin },
+                        { x: bxMax, y: byMin, z: bzMin },
+                        { x: bxMax, y: byMin, z: bzMax },
+                        { x: bxMin, y: byMin, z: bzMax },
+                      ],
+                      [
+                        { x: bxMax, y: byMin, z: bzMin },
+                        { x: bxMax, y: byMax, z: bzMin },
+                        { x: bxMax, y: byMax, z: bzMax },
+                        { x: bxMax, y: byMin, z: bzMax },
+                      ],
+                      [
+                        { x: bxMax, y: byMax, z: bzMin },
+                        { x: bxMin, y: byMax, z: bzMin },
+                        { x: bxMin, y: byMax, z: bzMax },
+                        { x: bxMax, y: byMax, z: bzMax },
+                      ],
+                      [
+                        { x: bxMin, y: byMax, z: bzMin },
+                        { x: bxMin, y: byMin, z: bzMin },
+                        { x: bxMin, y: byMin, z: bzMax },
+                        { x: bxMin, y: byMax, z: bzMax },
+                      ],
+                    ];
 
                     return (
                       <g key={`ghost_tube_${tIdx}`}>
-                        {srcBody.faces.map((face) => {
-                          if (!face.polygon3D || face.polygon3D.length < 3) return null;
-                          const pts = face.polygon3D
+                        {boxFaces3D.map((poly3D, fIdx) => {
+                          const pts = poly3D
                             .map((v) => {
-                              const sc = toScreen({
-                                x: v.x + dx,
-                                y: v.y + dy,
-                                z: v.z + dz,
-                              });
+                              const sc = toScreen(v);
                               return `${sc.x.toFixed(1)},${sc.y.toFixed(1)}`;
                             })
                             .join(" ");
                           return (
                             <polygon
-                              key={`ghost_f_${tIdx}_${face.faceId}`}
+                              key={`ghost_f_${tIdx}_${fIdx}`}
                               points={pts}
                               fill="rgba(16, 185, 129, 0.16)"
                               stroke="#10B981"
@@ -9219,10 +9461,23 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
                       smartArraySourceBody.entityId,
                       smartArraySourceBody,
                       smartArrayCalc,
+                      scene.bodies,
                     );
                     createdIds = res.createdIds;
                     return res.updatedEntities;
                   }, createdIds.length > 0 ? createdIds : [smartArraySourceBody.entityId]);
+                  if (createdIds.length > 0) {
+                    setSubSel({
+                      faceIds: [],
+                      edgeIds: [],
+                      vertexIds: [],
+                      bodyIds: createdIds.map((id) => `body_${id}`),
+                      selectionScope: "body",
+                      activePivot3D: { x: 0, y: 0, z: 0 },
+                      activeHingeEdgeId: null,
+                    });
+                    onSelectEntities?.(createdIds);
+                  }
                   setDirectTool("select_3d");
                 }
               }}

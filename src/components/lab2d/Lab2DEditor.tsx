@@ -4993,7 +4993,44 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     gestureCooldownUntilRef.current = Math.max(gestureCooldownUntilRef.current, now + 150);
     dragCooldownUntilRef.current = Math.max(dragCooldownUntilRef.current, now + 200);
     gestureUntilRef.current = Math.max(gestureUntilRef.current, now + 200);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new CustomEvent("chamfer-cancel-3d-drag-for-pinch"));
+    }
   }, []);
+
+  const applyPinchZoomFromScreenPoints = useCallback(
+    (ax: number, ay: number, bx: number, by: number) => {
+      const d = Math.hypot(bx - ax, by - ay) || 1;
+      const mx = (ax + bx) / 2;
+      const my = (ay + by) / 2;
+      if (!pinchRef.current) {
+        pinchRef.current = { dist: d, mx, my };
+        panRef.current = null;
+        orbitDragRef.current = null;
+        return;
+      }
+      const prev = pinchRef.current;
+      if (Math.abs(d - prev.dist) < 0.05 && Math.hypot(mx - prev.mx, my - prev.my) < 0.05) {
+        return;
+      }
+      const factor = Math.min(2, Math.max(0.5, d / (prev.dist || 1)));
+      const rectEl = svgRef.current ?? canvasViewportRef.current;
+      if (!rectEl) return;
+      const r = rectEl.getBoundingClientRect();
+      const v = viewRef.current;
+      const wx = (prev.mx - r.left - v.tx) / v.k;
+      const wy = (prev.my - r.top - v.ty) / v.k;
+      const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, v.k * factor));
+      const nv = { k, tx: mx - r.left - wx * k, ty: my - r.top - wy * k };
+      wasCameraPannedRef.current = true;
+      applyView(nv);
+      flashZoom(k);
+      markGesture();
+      pinchRef.current = { dist: d, mx, my };
+      orbitDragRef.current = null;
+    },
+    [],
+  );
 
   const onPointerDown = (ev: React.PointerEvent) => {
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
@@ -9964,6 +10001,130 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 ? "rounded-xl border shadow-inner"
                 : "rounded-none border-0",
           )}
+          onPointerDownCapture={(ev) => {
+            const targetEl = ev.target as Element | null;
+            const isUiControl = Boolean(
+              targetEl?.closest?.('button, input, select, textarea, a, [role="button"]'),
+            );
+            if (!isUiControl) {
+              ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+            }
+            if (ptrsRef.current.size >= 2) {
+              abortForMultiTouchGesture();
+              const [a, b] = [...ptrsRef.current.values()];
+              if (a && b) {
+                pinchRef.current = {
+                  dist: Math.hypot(b.x - a.x, b.y - a.y) || 1,
+                  mx: (a.x + b.x) / 2,
+                  my: (a.y + b.y) / 2,
+                };
+                panRef.current = null;
+                orbitDragRef.current = null;
+              }
+              ev.stopPropagation();
+            }
+          }}
+          onPointerMoveCapture={(ev) => {
+            if (ptrsRef.current.has(ev.pointerId)) {
+              ptrsRef.current.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+            }
+            if (ptrsRef.current.size >= 2) {
+              abortForMultiTouchGesture();
+              const [a, b] = [...ptrsRef.current.values()];
+              if (a && b) {
+                applyPinchZoomFromScreenPoints(a.x, a.y, b.x, b.y);
+              }
+              ev.stopPropagation();
+            }
+          }}
+          onPointerUpCapture={(ev) => {
+            const wasMulti =
+              isMultiTouchGestureRef.current ||
+              pinchRef.current !== null ||
+              ptrsRef.current.size >= 2;
+            const isInsideSvg = Boolean(
+              svgRef.current && ev.target instanceof Node && svgRef.current.contains(ev.target),
+            );
+            if (wasMulti) {
+              onPointerUp(ev);
+              ev.stopPropagation();
+              return;
+            }
+            if (!isInsideSvg) {
+              ptrsRef.current.delete(ev.pointerId);
+            }
+          }}
+          onPointerCancelCapture={(ev) => {
+            const wasMulti =
+              isMultiTouchGestureRef.current ||
+              pinchRef.current !== null ||
+              ptrsRef.current.size >= 2;
+            if (wasMulti) {
+              onPointerUp(ev);
+              ev.stopPropagation();
+              return;
+            }
+            ptrsRef.current.delete(ev.pointerId);
+          }}
+          onTouchStartCapture={(e) => {
+            if (e.touches.length >= 2) {
+              abortForMultiTouchGesture();
+              const t0 = e.touches[0]!;
+              const t1 = e.touches[1]!;
+              pinchRef.current = {
+                dist: Math.hypot(t1.clientX - t0.clientX, t1.clientY - t0.clientY) || 1,
+                mx: (t0.clientX + t1.clientX) / 2,
+                my: (t0.clientY + t1.clientY) / 2,
+              };
+              panRef.current = null;
+              orbitDragRef.current = null;
+              e.stopPropagation();
+            }
+          }}
+          onTouchMoveCapture={(e) => {
+            if (e.touches.length >= 2) {
+              abortForMultiTouchGesture();
+              const t0 = e.touches[0]!;
+              const t1 = e.touches[1]!;
+              applyPinchZoomFromScreenPoints(
+                t0.clientX,
+                t0.clientY,
+                t1.clientX,
+                t1.clientY,
+              );
+              e.stopPropagation();
+            }
+          }}
+          onTouchEndCapture={(e) => {
+            if (isMultiTouchGestureRef.current) {
+              if (e.touches.length < 2) {
+                pinchRef.current = null;
+              }
+              if (e.touches.length === 0) {
+                ptrsRef.current.clear();
+                const now = performance.now();
+                gestureCooldownUntilRef.current = now + 150;
+                gestureUntilRef.current = now + 200;
+                dragCooldownUntilRef.current = now + 200;
+                if (cooldownTimerRef.current) clearTimeout(cooldownTimerRef.current);
+                cooldownTimerRef.current = setTimeout(() => {
+                  isMultiTouchGestureRef.current = false;
+                  touchInteractionStateRef.current = "IDLE";
+                  setTouchInteractionState("IDLE");
+                }, 160);
+              }
+              e.stopPropagation();
+            }
+          }}
+          onClickCapture={(e) => {
+            if (
+              isMultiTouchGestureRef.current ||
+              performance.now() < gestureCooldownUntilRef.current
+            ) {
+              e.stopPropagation();
+              e.preventDefault();
+            }
+          }}
         >
           {bgStyle === "fluido" && (
             <div
