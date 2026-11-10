@@ -110,6 +110,7 @@ export type CadCategory =
   | "modificar"
   | "precisao"
   | "medir"
+  | "cor"
   | "chapa"
   | "estruturas"
   | "detalhes";
@@ -220,6 +221,9 @@ interface ChamferCadToolbarProps {
   onClearSelection3D?: () => void;
   onReturnToSketch2D?: () => void;
 
+  activeStrokeColor?: string | null;
+  onSelectStrokeColor?: (hex: string | null, layerId?: string) => void;
+  compactMode?: boolean;
   className?: string;
   isDark?: boolean;
 }
@@ -309,6 +313,9 @@ export function ChamferCadToolbar({
   onSelectDirect3DTool,
   onClearSelection3D,
   onReturnToSketch2D,
+  activeStrokeColor = null,
+  onSelectStrokeColor,
+  compactMode = false,
   className,
   isDark = true,
 }: ChamferCadToolbarProps) {
@@ -320,6 +327,7 @@ export function ChamferCadToolbar({
     modificar: "offset",
     precisao: "snap",
     medir: "measure",
+    cor: "corte",
     chapa: "flanges",
     estruturas: "profile",
     detalhes: "hole",
@@ -362,7 +370,7 @@ export function ChamferCadToolbar({
   };
 
   const getFlyoutPosition = (cat: CadCategory): React.CSSProperties => {
-    if (cat === "estruturas" || cat === "detalhes" || cat === "chapa") {
+    if (cat === "estruturas" || cat === "detalhes" || cat === "chapa" || cat === "cor") {
       return { bottom: "4px" };
     }
     if (cat === "selecionar" || cat === "criar") {
@@ -702,9 +710,11 @@ export function ChamferCadToolbar({
           backgroundColor: "var(--chamfer-bar-bg)",
           borderColor: "var(--chamfer-border)",
           color: "var(--chamfer-text-secondary)",
+          width: compactMode ? 40 : undefined,
         }}
         className={cn(
-          "relative flex h-full max-h-full w-12 sm:w-13 shrink-0 flex-col items-center rounded-2xl border p-1 shadow-xl backdrop-blur-md select-none z-40 transition-colors",
+          "relative flex h-full max-h-full shrink-0 flex-col items-center border shadow-xl backdrop-blur-md select-none z-40 transition-colors",
+          compactMode ? "w-[40px] rounded-xl p-0.5" : "w-12 sm:w-13 rounded-2xl p-1",
           className,
         )}
       >
@@ -885,27 +895,34 @@ export function ChamferCadToolbar({
   return (
     <aside
       ref={toolbarRef}
+      data-testid="chamfer-left-rail"
       aria-label="Barra de ferramentas CAD"
       style={{
         backgroundColor: isDark ? "var(--chamfer-bar-bg)" : "#FFFFFF",
         borderColor: isDark ? "var(--chamfer-border)" : "#E2E8F0",
         color: isDark ? "var(--chamfer-text-secondary)" : "#334155",
         boxShadow: isDark ? undefined : "0 2px 10px rgba(15, 23, 42, 0.04)",
+        width: compactMode ? 40 : undefined,
       }}
       className={cn(
-        "relative flex h-full max-h-full w-11 sm:w-12 shrink-0 flex-col items-center border p-1 backdrop-blur-md select-none z-40 transition-colors",
-        isDark ? "rounded-2xl shadow-xl" : "rounded-[28px]",
+        "relative flex h-full max-h-full shrink-0 flex-col items-center border backdrop-blur-md select-none z-40 transition-colors",
+        compactMode
+          ? "w-[40px] p-0.5 rounded-xl shadow-lg"
+          : cn("w-11 sm:w-12 p-1", isDark ? "rounded-2xl shadow-xl" : "rounded-[28px]"),
         className,
       )}
     >
-      {/* 8 BOTÕES PRINCIPAIS DE FUNÇÃO — ROLÁVEL POR SWIPE VERTICAL / TOUCH / POINTER */}
+      {/* BOTÕES PRINCIPAIS DE FUNÇÃO — ROLÁVEL POR SWIPE VERTICAL / TOUCH / POINTER */}
       <div
         ref={scrollContainerRef}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onPointerCancel={handlePointerUp}
-        className="flex-1 w-full overflow-y-auto overscroll-contain touch-pan-y scrollbar-none py-1 flex flex-col items-center gap-1.5"
+        className={cn(
+          "flex-1 w-full overflow-y-auto overscroll-contain touch-pan-y scrollbar-none flex flex-col items-center",
+          compactMode ? "py-0.5 gap-1" : "py-1 gap-1.5",
+        )}
         style={{ WebkitOverflowScrolling: "touch", touchAction: "pan-y" }}
       >
         {categories.map((cat) => {
@@ -917,6 +934,7 @@ export function ChamferCadToolbar({
             <div key={cat.id} className="relative w-full shrink-0 flex items-center justify-center">
               <button
                 type="button"
+                data-testid={`chamfer-rail-cat-${cat.short.toLowerCase()}`}
                 onPointerDown={(e) => {
                   if (e.pointerType === "mouse" && e.button !== 0) return;
                 }}
@@ -964,14 +982,20 @@ export function ChamferCadToolbar({
                         }
                 }
                 className={cn(
-                  "group relative flex min-h-[40px] size-10 w-full flex-col items-center justify-center rounded-xl border transition-all touch-manipulation cursor-pointer",
+                  "group relative flex flex-col items-center justify-center border transition-all touch-manipulation cursor-pointer",
+                  compactMode
+                    ? "min-h-[40px] w-[34px] h-[36px] rounded-full"
+                    : "min-h-[40px] size-10 w-full rounded-xl",
                   isOpen && (isDark ? "shadow-md scale-[1.02]" : "shadow-xs scale-[1.02]"),
                 )}
               >
-                <Icon className="size-4 transition-transform group-hover:scale-110" />
+                <Icon className={cn(compactMode ? "size-3.5" : "size-4", "transition-transform group-hover:scale-110")} />
                 <span
                   style={!isDark && !isOpen && !active ? { color: "#475569" } : undefined}
-                  className="text-[7.5px] font-mono font-bold tracking-wider mt-0.5 leading-none uppercase"
+                  className={cn(
+                    "font-mono font-bold tracking-wider mt-0.5 leading-none uppercase",
+                    compactMode ? "text-[6.5px]" : "text-[7.5px]",
+                  )}
                 >
                   {cat.short}
                 </span>
@@ -989,7 +1013,7 @@ export function ChamferCadToolbar({
         })}
       </div>
 
-      {/* SELETOR RÁPIDO DE CAMADA ATIVA (CORTE, DOBRA, RECORTE, MARCAÇÃO) */}
+      {/* SELETOR RÁPIDO DE CAMADA & COR TÉCNICA ATIVA (COR) */}
       {setActiveLayer && (
         <div
           style={{ borderColor: "var(--chamfer-border)" }}
@@ -997,27 +1021,29 @@ export function ChamferCadToolbar({
         >
           <button
             type="button"
+            data-testid="chamfer-rail-cat-cor"
             onClick={() => {
               triggerHaptic("selection");
-              const order = ["corte", "dobra", "recorte", "marcacao"];
-              const curIdx = order.indexOf(activeLayer ?? "corte");
-              const next = order[(curIdx + 1) % order.length] ?? "corte";
-              setActiveLayer(next);
+              handleToggleCat("cor");
             }}
-            title={`Camada ativa: ${activeLayer}. Toque para alternar (Corte, Dobra, Recorte, Marcação).`}
-            aria-label={`Camada ativa: ${activeLayer}`}
+            title={`Cor & Camada ativa: ${activeLayer}. Toque para abrir paleta de cores e camadas.`}
+            aria-label={`Cor e Camada: ${activeLayer}`}
             style={{
-              backgroundColor: "var(--chamfer-surface-elevated)",
-              borderColor: "var(--chamfer-border)",
+              backgroundColor: openCat === "cor" ? "var(--chamfer-accent-soft)" : "var(--chamfer-surface-elevated)",
+              borderColor: openCat === "cor" ? "var(--chamfer-accent)" : "var(--chamfer-border)",
               color: "var(--chamfer-text-secondary)",
             }}
-            className="group relative flex size-9 w-full flex-col items-center justify-center rounded-xl transition-all border cursor-pointer"
+            className={cn(
+              "group relative flex flex-col items-center justify-center transition-all border cursor-pointer",
+              compactMode ? "min-h-[38px] w-[34px] h-[34px] rounded-full" : "size-9 w-full rounded-xl",
+            )}
           >
             <span
               className="size-3 rounded-full border border-slate-500/50 shadow-2xs transition-transform group-hover:scale-110"
               style={{
                 backgroundColor:
-                  activeLayer === "dobra"
+                  activeStrokeColor ||
+                  (activeLayer === "dobra"
                     ? "#EC4899"
                     : activeLayer === "recorte"
                       ? "#F59E0B"
@@ -1025,17 +1051,11 @@ export function ChamferCadToolbar({
                         ? "#3B82F6"
                         : isDark
                           ? "#F3F4F6"
-                          : "#111827",
+                          : "#111827"),
               }}
             />
             <span className="text-[7px] font-mono font-bold tracking-wider mt-0.5 leading-none uppercase">
-              {activeLayer === "dobra"
-                ? "DOB"
-                : activeLayer === "recorte"
-                  ? "REC"
-                  : activeLayer === "marcacao"
-                    ? "MAR"
-                    : "COR"}
+              COR
             </span>
           </button>
         </div>
@@ -2712,6 +2732,68 @@ export function ChamferCadToolbar({
                     )}
                   </div>
                 )}
+        </div>
+      )}
+
+      {/* POPOVER FLUTUANTE DE COR TÉCNICA & CAMADA (COR) */}
+      {openCat === "cor" && setActiveLayer && (
+        <div
+          className="absolute left-full ml-1.5 sm:ml-2 bottom-2 z-50 w-56 rounded-2xl border p-2.5 shadow-2xl backdrop-blur-lg animate-in fade-in zoom-in-95 duration-150 font-mono text-xs"
+          style={{
+            backgroundColor: "var(--chamfer-popover-bg)",
+            borderColor: "var(--chamfer-border)",
+            color: "var(--chamfer-text-primary)",
+          }}
+        >
+          <div className="mb-2 flex items-center justify-between border-b border-slate-800 pb-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
+              Cor & Camada (COR)
+            </span>
+            <button
+              type="button"
+              onClick={() => setOpenCat("none")}
+              className="rounded p-0.5 text-slate-400 hover:text-white cursor-pointer"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
+          <div className="flex flex-col gap-1">
+            {[
+              { id: "corte", label: "Corte Principal", color: isDark ? "#F8FAFC" : "#0F172A" },
+              { id: "dobra", label: "Linha de Dobra", color: "#EC4899" },
+              { id: "recorte", label: "Recorte Interno", color: "#F59E0B" },
+              { id: "marcacao", label: "Marcação / Gravação", color: "#3B82F6" },
+            ].map((lay) => {
+              const isCurrent = activeLayer === lay.id && !activeStrokeColor;
+              return (
+                <button
+                  key={lay.id}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setActiveLayer(lay.id);
+                    onSelectStrokeColor?.(null, lay.id);
+                    setOpenCat("none");
+                  }}
+                  className={cn(
+                    "flex items-center justify-between rounded-xl border px-2.5 py-1.5 text-[10.5px] font-bold transition-colors cursor-pointer",
+                    isCurrent
+                      ? "border-rose-500/60 bg-rose-500/15 text-rose-300"
+                      : "border-transparent bg-slate-900/70 text-slate-300 hover:bg-slate-800",
+                  )}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="size-3 rounded-full border border-white/25"
+                      style={{ backgroundColor: lay.color }}
+                    />
+                    <span>{lay.label}</span>
+                  </div>
+                  {isCurrent && <Check className="size-3.5 text-rose-400" />}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </aside>

@@ -296,7 +296,7 @@ export function ChamferTouchDynamicHud({
               : "0 4px 14px rgba(15, 23, 42, 0.08)",
           }}
           className={cn(
-            "pointer-events-auto absolute left-1/2 -translate-x-1/2 z-35 flex flex-nowrap items-center justify-center whitespace-nowrap overflow-x-auto scrollbar-none font-mono select-none max-w-[94%]",
+            "pointer-events-auto absolute left-1/2 -translate-x-1/2 z-35 flex flex-nowrap items-center justify-start whitespace-nowrap overflow-x-auto scrollbar-none touch-pan-x overscroll-x-contain font-mono select-none max-w-[94%]",
             isDark ? "text-slate-100" : "text-slate-800",
           )}
         >

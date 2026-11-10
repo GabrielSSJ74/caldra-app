@@ -1299,16 +1299,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const topBarRef = useRef<HTMLElement>(null);
   const topBarSwipeRef = useRef<{
     isDragging: boolean;
+    hasMoved: boolean;
+    pointerId: number | null;
     startX: number;
     scrollLeft: number;
   }>({
     isDragging: false,
+    hasMoved: false,
+    pointerId: null,
     startX: 0,
     scrollLeft: 0,
   });
 
-  const handleTopBarPointerDown = useCallback((e: React.PointerEvent) => {
-    // Permite clique padrão em touch ou botão principal do mouse
+  const handleTopBarPointerDown = useCallback((e: React.PointerEvent<HTMLElement>) => {
     if (e.pointerType === "mouse" && e.button !== 0) return;
     const target = e.target as HTMLElement;
     if (target.closest("input, select")) return;
@@ -1316,21 +1319,76 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
     if (!topBarRef.current) return;
     topBarSwipeRef.current = {
       isDragging: true,
+      hasMoved: false,
+      pointerId: e.pointerId,
       startX: e.clientX,
       scrollLeft: topBarRef.current.scrollLeft,
     };
   }, []);
 
-  const handleTopBarPointerMove = useCallback((e: React.PointerEvent) => {
+  const handleTopBarPointerMove = useCallback((e: React.PointerEvent<HTMLElement>) => {
     if (!topBarSwipeRef.current.isDragging || !topBarRef.current) return;
     const dx = e.clientX - topBarSwipeRef.current.startX;
-    if (Math.abs(dx) > 3) {
+    if (Math.abs(dx) > 4) {
+      if (!topBarSwipeRef.current.hasMoved) {
+        topBarSwipeRef.current.hasMoved = true;
+        try {
+          if (
+            topBarSwipeRef.current.pointerId !== null &&
+            !topBarRef.current.hasPointerCapture(topBarSwipeRef.current.pointerId)
+          ) {
+            topBarRef.current.setPointerCapture(topBarSwipeRef.current.pointerId);
+          }
+        } catch {
+          // ignore pointer capture errors
+        }
+      }
       topBarRef.current.scrollLeft = topBarSwipeRef.current.scrollLeft - dx;
     }
   }, []);
 
   const handleTopBarPointerUp = useCallback(() => {
+    if (topBarRef.current && topBarSwipeRef.current.pointerId !== null) {
+      try {
+        if (topBarRef.current.hasPointerCapture(topBarSwipeRef.current.pointerId)) {
+          topBarRef.current.releasePointerCapture(topBarSwipeRef.current.pointerId);
+        }
+      } catch {
+        // ignore
+      }
+    }
     topBarSwipeRef.current.isDragging = false;
+    topBarSwipeRef.current.pointerId = null;
+  }, []);
+
+  const handleTopBarTouchStart = useCallback((e: React.TouchEvent<HTMLElement>) => {
+    const touch = e.touches[0];
+    if (!touch || !topBarRef.current) return;
+    topBarSwipeRef.current = {
+      isDragging: true,
+      hasMoved: false,
+      pointerId: null,
+      startX: touch.clientX,
+      scrollLeft: topBarRef.current.scrollLeft,
+    };
+  }, []);
+
+  const handleTopBarTouchMove = useCallback((e: React.TouchEvent<HTMLElement>) => {
+    const touch = e.touches[0];
+    if (!touch || !topBarSwipeRef.current.isDragging || !topBarRef.current) return;
+    const dx = touch.clientX - topBarSwipeRef.current.startX;
+    if (Math.abs(dx) > 4) {
+      topBarSwipeRef.current.hasMoved = true;
+      topBarRef.current.scrollLeft = topBarSwipeRef.current.scrollLeft - dx;
+    }
+  }, []);
+
+  const handleTopBarClickCapture = useCallback((e: React.MouseEvent<HTMLElement>) => {
+    if (topBarSwipeRef.current.hasMoved) {
+      e.stopPropagation();
+      e.preventDefault();
+      topBarSwipeRef.current.hasMoved = false;
+    }
   }, []);
 
   const handleTopBarWheel = useCallback((e: React.WheelEvent) => {
@@ -7928,6 +7986,66 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
   const verticalLayout = useVerticalLayout();
   const isLandscape = !verticalLayout.isVerticalCompactActive;
 
+  // Modo de Casca da Interface do CHAMFER CAD: "compact" (Padrão Mobile-First) | "classic" (Layout Clássico)
+  const [uiShellMode, setUiShellMode] = useState<"compact" | "classic">(() => {
+    if (typeof window === "undefined") return "compact";
+    try {
+      const saved = window.localStorage.getItem("chamfer_ui_shell_mode");
+      if (saved === "classic" || saved === "compact") return saved;
+    } catch {
+      // ignore storage errors
+    }
+    return "compact";
+  });
+
+  const handleSetUiShellMode = useCallback(
+    (nextMode: "compact" | "classic") => {
+      setUiShellMode(nextMode);
+      try {
+        window.localStorage.setItem("chamfer_ui_shell_mode", nextMode);
+      } catch {
+        // ignore storage errors
+      }
+      if (verticalLayout.isVerticalViewport) {
+        verticalLayout.setLayoutPreference(nextMode);
+      }
+      toast.info(
+        nextMode === "compact"
+          ? "Interface Compacta ativada — área útil máxima do canvas."
+          : "Interface Clássica ativada.",
+      );
+    },
+    [verticalLayout],
+  );
+
+  // Visibilidade das Réguas Técnicas (18px <-> 0px ao tocar no canto "MM")
+  const [rulersVisible, setRulersVisible] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      return window.localStorage.getItem("chamfer_rulers_visible") !== "false";
+    } catch {
+      return true;
+    }
+  });
+
+  const handleToggleRulersVisible = useCallback(() => {
+    setRulersVisible((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem("chamfer_rulers_visible", String(next));
+      } catch {
+        // ignore
+      }
+      toast.info(next ? "Réguas técnicas visíveis (18px)." : "Réguas técnicas ocultas (0px).");
+      return next;
+    });
+  }, []);
+
+  // Nível Secundário Expansível da Barra Inferior de Status (Popover de Coordenadas/Unidade/Área/Seleção)
+  const [statusSecondaryLevelOpen, setStatusSecondaryLevelOpen] = useState(false);
+  // Popover compacto [ ✨ IA & BOM ▾ ] para telas estreitas (< 640px)
+  const [aiBomPopoverOpen, setAiBomPopoverOpen] = useState(false);
+
   // Janela lateral direita estruturada do CHAMFER (Propriedades / Camadas / Corte / Cotas)
   // Inicia sempre recolhida (open = false) para preservar área máxima de desenho; abre exclusivamente pela seta (<) ou botões da doca (Seção 1.3)
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false);
@@ -8348,15 +8466,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       }}
       className={cn(
         "chamfer-theme-fade-root chamfer-theme-fade-2s fixed inset-0 z-50 flex h-[100dvh] w-[100vw] max-w-none flex-col overflow-hidden rounded-none select-none",
-        isLandscape ? "gap-1 p-1" : "gap-0 p-0",
+        isLandscape ? (uiShellMode === "compact" ? "gap-0.5 p-0.5" : "gap-1 p-1") : "gap-0 p-0",
         isMestre && "glow-ring",
       )}
     >
-      {/* REGIÃO A — HEADER SUPERIOR DEFINITIVO CAD (EM MODO RETRATO: BARRA COMPACTA 48PX ESTILO LIGHTROOM) */}
+      {/* REGIÃO A — HEADER SUPERIOR DEFINITIVO CAD (EM MODO RETRATO: BARRA COMPACTA 38PX ESTILO LIGHTROOM) */}
       {!focus && !isLandscape && (
         <ChamferPortraitTopBar
           isDark={isDark}
-          topBarHeightPx={verticalLayout.chromeHeights.topBarPx}
+          topBarHeightPx={uiShellMode === "compact" ? 38 : verticalLayout.chromeHeights.topBarPx}
           viewportWidth={verticalLayout.viewportWidth}
           projectName={project?.name ?? "Projeto 26"}
           thickness={thickness}
@@ -8513,14 +8631,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           onToggleTheme={toggleTheme}
           focus={focus}
           onToggleFullscreen={toggleFullscreen}
-          layoutPreference={verticalLayout.layoutPreference}
+          layoutPreference={uiShellMode}
           onChangeLayoutPreference={(pref) => {
-            verticalLayout.setLayoutPreference(pref);
-            toast.info(
-              pref === "compact"
-                ? "Layout Vertical Compacto ativado."
-                : "Layout Clássico ativado.",
-            );
+            handleSetUiShellMode(pref);
           }}
           activeLayer={activeLayer}
           activeStrokeColor={activeStrokeColor}
@@ -8532,10 +8645,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       {!focus && isLandscape && (
         <header
           ref={topBarRef}
+          data-testid="chamfer-landscape-topbar"
+          aria-label="Barra superior CHAMFER CAD Paisagem"
           onPointerDown={handleTopBarPointerDown}
           onPointerMove={handleTopBarPointerMove}
           onPointerUp={handleTopBarPointerUp}
           onPointerCancel={handleTopBarPointerUp}
+          onTouchStart={handleTopBarTouchStart}
+          onTouchMove={handleTopBarTouchMove}
+          onTouchEnd={handleTopBarPointerUp}
+          onClickCapture={handleTopBarClickCapture}
           onWheel={handleTopBarWheel}
           style={{
             backgroundColor: isDark ? "var(--chamfer-bar-bg)" : "#FFFFFF",
@@ -8544,12 +8663,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             boxShadow: isDark ? undefined : "0 2px 10px rgba(15, 23, 42, 0.04)",
           }}
           className={cn(
-            "chamfer-theme-fade-2s flex h-12 shrink-0 w-full items-center justify-between gap-3 border-b px-3 shadow-xs backdrop-blur-md select-none",
-            "overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing",
+            "chamfer-theme-fade-2s flex shrink-0 w-full items-center justify-between border-b shadow-xs backdrop-blur-md select-none",
+            "overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing whitespace-nowrap",
+            uiShellMode === "compact" ? "h-9 px-2 gap-2" : "h-12 px-3 gap-3",
           )}
         >
-          {/* LADO ESQUERDO: [ ← SAIR ] + [ CHAMFER • NOME DO PROJETO ] + [ DOSSIÊ ] */}
-          <div className="flex shrink-0 items-center gap-2">
+          {/* ZONA 1 (ESQUERDA — IDENTIDADE E ESTADO DO ARQUIVO): [ ← ] + [ NOME DO PROJETO ] + [ CHIP UNIFICADO ✓ Salvo ] */}
+          <div className="flex min-w-0 shrink-0 items-center gap-1.5">
             <button
               onClick={() => {
                 if (
@@ -8560,6 +8680,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 }
                 leaveEditor();
               }}
+              data-cmd-id="nav.exit_editor"
               aria-label="Sair do editor e voltar aos Projetos"
               title="Sair do editor (salvar e voltar)"
               style={{
@@ -8567,20 +8688,22 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                 borderColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1",
                 color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
               }}
-              className="flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors whitespace-nowrap hover:brightness-110"
+              className={cn(
+                "flex shrink-0 items-center justify-center gap-1 rounded-lg border font-mono text-[10px] font-semibold tracking-wider uppercase transition-colors whitespace-nowrap hover:brightness-110",
+                uiShellMode === "compact" ? "h-7 min-w-[34px] px-2" : "px-2.5 py-1",
+              )}
             >
-              <ArrowLeft className="size-3.5 shrink-0" /> SAIR
+              <ArrowLeft className="size-3.5 shrink-0" />
+              <span className={uiShellMode === "compact" ? "hidden lg:inline" : ""}>SAIR</span>
             </button>
 
-            <span
-              style={{ backgroundColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1" }}
-              className="h-4 w-px shrink-0"
-            />
-
-            <div className="flex items-center gap-1.5 min-w-0">
+            <div className="flex items-center gap-1 min-w-0">
               <span
                 style={{ color: isDark ? "var(--chamfer-accent)" : "#E11D48" }}
-                className="font-mono text-xs font-extrabold tracking-wider shrink-0"
+                className={cn(
+                  "font-mono font-extrabold tracking-wider shrink-0",
+                  uiShellMode === "compact" ? "hidden md:inline text-[11px]" : "text-xs",
+                )}
               >
                 CHAMFER
               </span>
@@ -8596,12 +8719,62 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     textOverflow: "ellipsis",
                     color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
                   }}
-                  className="inline-block font-mono text-[11px] font-bold transition-colors truncate whitespace-nowrap max-w-[160px] sm:max-w-[200px]"
+                  className={cn(
+                    "inline-block font-mono font-bold transition-colors truncate whitespace-nowrap",
+                    uiShellMode === "compact"
+                      ? "text-[11px] max-w-[92px] sm:max-w-[130px] lg:max-w-[170px]"
+                      : "text-[11px] max-w-[160px] sm:max-w-[200px]",
+                  )}
                   title={`Documento: ${project.name} (clique para alternar/criar)`}
                 >
                   • {project.name}
                 </button>
               )}
+
+              {/* CHIP INTERATIVO UNIFICADO [ ✓ Salvo ] NA ZONA 1 (FUSÃO DE "✓ Salvar" + "● SALVO" EM 1 ÚNICO BOTÃO) */}
+              {uiShellMode === "compact" && (
+                <button
+                  type="button"
+                  data-testid="chamfer-landscape-unified-save-chip"
+                  data-cmd-id="doc.save"
+                  onClick={handleManualSave}
+                  title="Salvar documento agora (Ctrl+S)"
+                  className={cn(
+                    "flex h-6 shrink-0 items-center gap-1 rounded-md border px-2 font-mono text-[9.5px] font-bold tracking-tight transition-all active:scale-95 cursor-pointer",
+                    saveStatus === "salvo" &&
+                      (isDark
+                        ? "border-[#10B981]/40 bg-[#10B981]/12 text-[#34D399] hover:bg-[#10B981]/20"
+                        : "border-[#86EFAC] bg-[#DCFCE7] text-[#15803D] hover:bg-[#BBF7D0]"),
+                    saveStatus === "salvando" &&
+                      (isDark
+                        ? "border-[#F59E0B]/45 bg-[#F59E0B]/15 text-[#FBBF24]"
+                        : "border-[#FCD34D] bg-[#FEF3C7] text-[#D97706]"),
+                    saveStatus === "pendente" &&
+                      (isDark
+                        ? "border-[#F59E0B]/60 bg-[#F59E0B]/20 text-[#FBBF24] hover:bg-[#F59E0B]/30"
+                        : "border-[#F59E0B] bg-[#FEF3C7] text-[#D97706] hover:bg-[#FDE68A]"),
+                  )}
+                >
+                  {saveStatus === "salvando" ? (
+                    <>
+                      <Loader2 className="size-2.5 animate-spin text-[#F59E0B]" />
+                      <span>Salvando...</span>
+                    </>
+                  ) : saveStatus === "pendente" ? (
+                    <>
+                      <span className="size-1.5 rounded-full bg-[#F59E0B] animate-pulse" />
+                      <span>Salvar</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="size-1.5 rounded-full bg-[#10B981]" />
+                      <Check className="size-2.5 shrink-0" />
+                      <span>Salvo</span>
+                    </>
+                  )}
+                </button>
+              )}
+
               {dossier && (
                 <button
                   onClick={() =>
@@ -8624,7 +8797,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           color: "#E11D48",
                         }
                   }
-                  className="hidden lg:inline rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase border truncate max-w-[120px]"
+                  className="hidden xl:inline rounded-md px-2 py-0.5 font-mono text-[9px] tracking-wider uppercase border truncate max-w-[110px]"
                 >
                   {dossier.partCode || dossier.partName}
                 </button>
@@ -8632,17 +8805,18 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           </div>
 
-          {/* REGIÃO CENTRAL: CONTROLE PRINCIPAL DE MUDANÇA DE AMBIENTE [ 2D SKETCH | 3D SÓLIDO ] E MODO [ ORTO 2D | ISO 2D ] */}
-          <div className="flex shrink-0 items-center justify-center gap-1.5">
+          {/* ZONA 2 (CENTRO — MODO E VISTA): [ 2D SKETCH | CAD 3D ] (28px) + [ ORTO 2D ] + [ ÓRBITA 3D ] */}
+          <div className="flex shrink-0 items-center justify-center gap-1">
             <div
               style={{
                 backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F1F5F9",
                 borderColor: isDark ? "var(--chamfer-border-strong)" : "#E2E8F0",
               }}
-              className="flex items-center rounded-lg border p-0.5 shadow-xs"
+              className="flex h-7 items-center rounded-lg border p-0.5 shadow-xs"
             >
               <button
                 type="button"
+                data-cmd-id="mode.2d_sketch"
                 onClick={() => {
                   triggerHaptic("selection");
                   transitionTo2D();
@@ -8655,12 +8829,13 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       }
                     : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
                 }
-                className="rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors"
+                className="flex h-6 items-center rounded-md px-2.5 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors"
               >
                 2D SKETCH
               </button>
               <button
                 type="button"
+                data-cmd-id="mode.cad_3d"
                 onClick={() => {
                   triggerHaptic("selection");
                   transitionTo3D("3d");
@@ -8673,23 +8848,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       }
                     : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
                 }
-                className="rounded-md px-3 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors"
+                className="flex h-6 items-center rounded-md px-2.5 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors"
               >
                 CAD 3D
               </button>
             </div>
 
-            {/* PÍLULA INDIVIDUAL DE PROJEÇÃO: [ ORTO 2D ] (SEM BOTÃO ISO 2D) */}
+            {/* PÍLULA INDIVIDUAL DE PROJEÇÃO: [ ORTO 2D ] */}
             {!solidOpen && (
               <div
                 style={{
                   backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F8FAFC",
                   borderColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1",
                 }}
-                className="flex items-center rounded-lg border p-0.5 shadow-xs shrink-0"
+                className="flex h-7 items-center rounded-lg border p-0.5 shadow-xs shrink-0"
               >
                 <button
                   type="button"
+                  data-cmd-id="view.ortho_2d"
                   onClick={() => {
                     triggerHaptic("selection");
                     AudioManager.play("ui_select");
@@ -8704,7 +8880,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         }
                       : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
                   }
-                  className="rounded-md px-2.5 py-1 font-mono text-[10px] font-bold tracking-wider uppercase transition-colors"
+                  className="flex h-6 items-center rounded-md px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors"
                   title="Modo Ortogonal 2D (Eixos X/Y convencionais a 0°)"
                 >
                   ORTO 2D
@@ -8751,7 +8927,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   backgroundColor: "var(--chamfer-surface-elevated)",
                   borderColor: "var(--chamfer-border-strong)",
                 }}
-                className="flex items-center rounded-lg border p-0.5 shadow-xs"
+                className="flex h-7 items-center rounded-lg border p-0.5 shadow-xs"
               >
                 <button
                   type="button"
@@ -8773,7 +8949,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         }
                       : { color: "var(--chamfer-text-secondary)" }
                   }
-                  className="rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer"
+                  className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer"
                   title="Sólido Metálico 3D com Arestas Técnicas Visíveis"
                 >
                   SÓLIDO
@@ -8798,7 +8974,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         }
                       : { color: "var(--chamfer-text-secondary)" }
                   }
-                  className="rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer"
+                  className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer"
                   title="Sólido Metálico 3D Puro (Sem Arestas)"
                 >
                   SOMB
@@ -8819,7 +8995,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         }
                       : { color: "var(--chamfer-text-secondary)" }
                   }
-                  className="rounded-md px-2 py-1 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors cursor-pointer"
+                  className="flex h-6 items-center rounded-md px-1.5 font-mono text-[9px] font-bold tracking-wider uppercase transition-colors cursor-pointer"
                   title="Wireframe Técnico 3D com Hierarquia de Arestas e Profundidade Óptica"
                 >
                   ARAME
@@ -8849,26 +9025,28 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         color: "#5B21B6",
                       }
                 }
-                className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold tracking-wider uppercase transition-all shadow-xs hover:brightness-110 cursor-pointer"
+                className="flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-all shadow-xs hover:brightness-110 cursor-pointer"
                 title="Abrir Lista de Corte Estrutural 3D (Quantidade × Perfil × Comprimento × Esquadria + Massa Total)"
               >
-                <span>📋 Lista de Corte</span>
+                <span>📋 Corte</span>
               </button>
             )}
           </div>
 
-          {/* LADO DIREITO: HISTÓRICO + SALVAMENTO/STATUS + FERRAMENTAS GLOBAIS */}
-          <div className="flex shrink-0 items-center gap-1.5">
-            {/* HISTÓRICO: [ DESFAZER | REFAZER ] */}
+          {/* ZONA 3 (DIREITA — AÇÕES RÁPIDAS, IA, BOM, FOCO, SHELL E MAIS OPÇÕES) */}
+          <div className="flex shrink-0 items-center gap-1">
+            {/* HISTÓRICO SEMPRE VISÍVEL (FORA DE QUALQUER OVERFLOW): [ ↶ ] [ ↷ ] */}
             <div
               style={{
                 backgroundColor: "var(--chamfer-surface-elevated)",
                 borderColor: "var(--chamfer-border-strong)",
               }}
-              className="flex items-center rounded-lg border p-0.5"
+              className="flex h-7 items-center rounded-lg border p-0.5"
             >
               <button
                 type="button"
+                data-testid="chamfer-landscape-undo-btn"
+                data-cmd-id="history.undo"
                 disabled={!historyState.canUndo && pending.length === 0}
                 onClick={undo}
                 title="Desfazer alteração (Ctrl+Z)"
@@ -8880,17 +9058,19 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       : "var(--chamfer-text-muted)",
                 }}
                 className={cn(
-                  "flex h-7 items-center gap-1 rounded-md px-2 font-mono text-[10px] font-semibold transition-colors",
+                  "flex h-6 items-center gap-1 rounded-md px-1.5 font-mono text-[10px] font-semibold transition-colors",
                   historyState.canUndo || pending.length > 0
                     ? "hover:brightness-110 cursor-pointer"
                     : "opacity-35 cursor-not-allowed",
                 )}
               >
                 <Undo2 className="size-3.5" />
-                <span className="hidden sm:inline">Desfazer</span>
+                {uiShellMode === "classic" && <span className="hidden xl:inline">Desfazer</span>}
               </button>
               <button
                 type="button"
+                data-testid="chamfer-landscape-redo-btn"
+                data-cmd-id="history.redo"
                 disabled={!historyState.canRedo}
                 onClick={redo}
                 title="Refazer alteração (Ctrl+Y)"
@@ -8901,187 +9081,223 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     : "var(--chamfer-text-muted)",
                 }}
                 className={cn(
-                  "flex h-7 items-center gap-1 rounded-md px-2 font-mono text-[10px] font-semibold transition-colors",
+                  "flex h-6 items-center gap-1 rounded-md px-1.5 font-mono text-[10px] font-semibold transition-colors",
                   historyState.canRedo
                     ? "hover:brightness-110 cursor-pointer"
                     : "opacity-35 cursor-not-allowed",
                 )}
               >
                 <Redo2 className="size-3.5" />
-                <span className="hidden sm:inline">Refazer</span>
+                {uiShellMode === "classic" && <span className="hidden xl:inline">Refazer</span>}
               </button>
             </div>
 
-            {/* BOTÃO SALVAR E INDICADOR DE ESTADO RESPEITANDO A CONFIGURAÇÃO */}
-            <div className="flex items-center gap-1">
+            {/* MODO CLÁSSICO: BOTÃO SALVAR + BADGE SALVO SEPARADOS NA ZONA 3 */}
+            {uiShellMode === "classic" && (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={handleManualSave}
+                  title="Salvar documento agora (Ctrl+S)"
+                  style={
+                    saveStatus !== "pendente"
+                      ? isDark
+                        ? {
+                            backgroundColor: "var(--chamfer-surface-elevated)",
+                            borderColor: "var(--chamfer-border-strong)",
+                            color: "var(--chamfer-text-primary)",
+                          }
+                        : {
+                            backgroundColor: "#FFFFFF",
+                            borderColor: "#CBD5E1",
+                            color: "#1E293B",
+                          }
+                      : undefined
+                  }
+                  className={cn(
+                    "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold transition-all shadow-xs",
+                    saveStatus === "pendente"
+                      ? isDark
+                        ? "border-[#F59E0B]/60 bg-[#F59E0B]/15 text-[#FBBF24] hover:bg-[#F59E0B]/25"
+                        : "border-[#D97706]/50 bg-[#D97706]/10 text-[#D97706] hover:bg-[#D97706]/20"
+                      : "hover:brightness-110",
+                  )}
+                >
+                  {saveStatus === "salvando" ? (
+                    <Loader2 className="size-3 animate-spin text-[#F59E0B]" />
+                  ) : (
+                    <Check className={cn("size-3", isDark ? "text-[#34D399]" : "text-[#16A34A]")} />
+                  )}
+                  <span>Salvar</span>
+                </button>
+                <span
+                  className={cn(
+                    "hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[9px] font-mono border font-semibold uppercase tracking-wider transition-colors",
+                    saveStatus === "salvo" &&
+                      (isDark
+                        ? "text-[#34D399] bg-[#34D399]/10 border-[#34D399]/30"
+                        : "text-[#15803D] bg-[#DCFCE7] border-[#86EFAC] font-bold"),
+                    saveStatus === "salvando" &&
+                      (isDark
+                        ? "text-[#F59E0B] bg-[#F59E0B]/10 border-[#F59E0B]/30"
+                        : "text-[#D97706] bg-[#FEF3C7] border-[#FCD34D]"),
+                    saveStatus === "pendente" &&
+                      (isDark
+                        ? "text-[#FBBF24] bg-[#F59E0B]/15 border-[#F59E0B]/50 animate-pulse"
+                        : "text-[#D97706] bg-[#FEF3C7] border-[#FCD34D]"),
+                  )}
+                >
+                  {saveStatus === "salvo" ? "Salvo" : saveStatus === "salvando" ? "Salvando..." : "Não salvo"}
+                </span>
+              </div>
+            )}
+
+            {/* BOTÕES DIRETOS DE IA E PRODUÇÃO SEMPRE DISPONÍVEIS NO DESLIZE DA BARRA SUPERIOR: [ VISION ], [ INTENT ] E [ CORTE/BOM ] */}
+            <div className="flex shrink-0 items-center gap-1">
               <button
                 type="button"
-                onClick={handleManualSave}
-                title="Salvar documento agora (Ctrl+S)"
+                data-cmd-id="ai.vision"
+                onClick={() => {
+                  triggerHaptic("action");
+                  setVisionOpen(true);
+                }}
+                title="CHAMFER VISION — Reconhecimento e vetorização inteligente de peças"
+                aria-label="Abrir CHAMFER VISION"
                 style={
-                  saveStatus !== "pendente"
-                    ? isDark
-                      ? {
-                          backgroundColor: "var(--chamfer-surface-elevated)",
-                          borderColor: "var(--chamfer-border-strong)",
-                          color: "var(--chamfer-text-primary)",
-                        }
-                      : {
-                          backgroundColor: "#FFFFFF",
-                          borderColor: "#CBD5E1",
-                          color: "#1E293B",
-                        }
-                    : undefined
+                  isDark
+                    ? {
+                        backgroundColor: "var(--chamfer-accent-soft)",
+                        borderColor: "var(--chamfer-accent-border)",
+                        color: "var(--chamfer-accent)",
+                      }
+                    : {
+                        backgroundColor: "#FFE4E6",
+                        borderColor: "#FDA4AF",
+                        color: "#E11D48",
+                      }
                 }
-                className={cn(
-                  "flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold transition-all shadow-xs",
-                  saveStatus === "pendente"
-                    ? isDark
-                      ? "border-[#F59E0B]/60 bg-[#F59E0B]/15 text-[#FBBF24] hover:bg-[#F59E0B]/25"
-                      : "border-[#D97706]/50 bg-[#D97706]/10 text-[#D97706] hover:bg-[#D97706]/20"
-                    : "hover:brightness-110",
-                )}
+                className="flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold uppercase transition-all shadow-2xs hover:brightness-110 touch-pan-x"
               >
-                {saveStatus === "salvando" ? (
-                  <Loader2 className="size-3 animate-spin text-[#F59E0B]" />
-                ) : (
-                  <Check className={cn("size-3", isDark ? "text-[#34D399]" : "text-[#16A34A]")} />
-                )}
-                <span>Salvar</span>
+                <ScanEye className="size-3.5" style={{ color: isDark ? "var(--chamfer-accent)" : "#E11D48" }} />
+                <span>VISION</span>
               </button>
-
-              {/* INDICADOR DISCRETO DO ESTADO DO DOCUMENTO */}
-              <span
-                className={cn(
-                  "hidden sm:inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[9px] font-mono border font-semibold uppercase tracking-wider transition-colors",
-                  saveStatus === "salvo" &&
-                    (isDark
-                      ? "text-[#34D399] bg-[#34D399]/10 border-[#34D399]/30"
-                      : "text-[#15803D] bg-[#DCFCE7] border-[#86EFAC] font-bold"),
-                  saveStatus === "salvando" &&
-                    (isDark
-                      ? "text-[#F59E0B] bg-[#F59E0B]/10 border-[#F59E0B]/30"
-                      : "text-[#D97706] bg-[#FEF3C7] border-[#FCD34D]"),
-                  saveStatus === "pendente" &&
-                    (isDark
-                      ? "text-[#FBBF24] bg-[#F59E0B]/15 border-[#F59E0B]/50 animate-pulse"
-                      : "text-[#D97706] bg-[#FEF3C7] border-[#FCD34D]"),
-                )}
-                title={
-                  chamferSettings.autoSave
-                    ? `Salvamento automático ativo (a cada ${chamferSettings.autoSaveIntervalSec}s)`
-                    : "Salvamento manual ativado nas configurações do projeto"
+              <button
+                type="button"
+                data-cmd-id="ai.intent"
+                onClick={() => {
+                  triggerHaptic("action");
+                  setQuickCommandOpen(true);
+                }}
+                title="CHAMFER INTENT — Compilador Geométrico Paramétrico por Linguagem Natural (Atalho: Q)"
+                aria-label="Abrir CHAMFER INTENT"
+                style={
+                  isDark
+                    ? {
+                        backgroundColor: "var(--chamfer-surface-elevated)",
+                        borderColor: "var(--chamfer-accent-border)",
+                        color: "var(--chamfer-accent)",
+                      }
+                    : {
+                        backgroundColor: "#E0F2FE",
+                        borderColor: "#7DD3FC",
+                        color: "#0284C7",
+                      }
                 }
+                className="flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold uppercase transition-all shadow-2xs hover:brightness-110 touch-pan-x"
               >
-                {saveStatus === "salvo" && (
-                  <>
-                    <span className={cn("size-1.5 rounded-full", isDark ? "bg-[#34D399]" : "bg-[#15803D]")} />
-                    <span>Salvo</span>
-                  </>
-                )}
-                {saveStatus === "salvando" && (
-                  <>
-                    <Loader2 className="size-2.5 animate-spin text-[#F59E0B]" />
-                    <span>Salvando...</span>
-                  </>
-                )}
-                {saveStatus === "pendente" && (
-                  <>
-                    <span className="size-1.5 rounded-full bg-[#F59E0B] animate-ping" />
-                    <span className="hidden md:inline">Alterações não salvas</span>
-                    <span className="md:hidden">Não salvo</span>
-                  </>
-                )}
-              </span>
+                <Sparkles className="size-3.5" style={{ color: isDark ? "var(--chamfer-accent)" : "#0284C7" }} />
+                <span>INTENT</span>
+              </button>
+              <button
+                type="button"
+                data-cmd-id="prod.workshop_bom"
+                onClick={() => {
+                  triggerHaptic("action");
+                  setIntegratedWorkshopOpen(true);
+                }}
+                title="Oficina Digital Integrada: Catálogo Costa Ferro, Dossiê Multi-Vistas, Lista de Corte 6m, BOM e Orçamento"
+                style={
+                  isDark
+                    ? {
+                        backgroundColor: "var(--chamfer-surface-elevated)",
+                        borderColor: "var(--chamfer-border-strong)",
+                        color: "var(--chamfer-text-primary)",
+                      }
+                    : {
+                        backgroundColor: "#FFFFFF",
+                        borderColor: "#CBD5E1",
+                        color: "#1E293B",
+                      }
+                }
+                className="flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold uppercase transition-all shadow-2xs hover:brightness-110 touch-pan-x"
+              >
+                <Boxes className="size-3.5" style={{ color: isDark ? "var(--chamfer-accent)" : "#0F766E" }} />
+                <span>CORTE/BOM</span>
+              </button>
             </div>
 
-            <span
-              style={{ backgroundColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1" }}
-              className="h-4 w-px"
-            />
+            {/* BOTÃO DE MODO FOCO RÁPIDO [ ⛶ Foco ] */}
+            <button
+              type="button"
+              data-testid="chamfer-landscape-focus-btn"
+              data-cmd-id="ui.fullscreen_toggle"
+              onClick={toggleFullscreen}
+              title="Modo Foco Imersivo — ocultar barras e expandir o canvas a 100%"
+              style={{
+                backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F8FAFC",
+                borderColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1",
+                color: isDark ? "var(--chamfer-text-primary)" : "#0F172A",
+              }}
+              className="flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold tracking-wider uppercase transition-colors hover:brightness-110 cursor-pointer touch-pan-x"
+            >
+              <Maximize className="size-3 text-[#38BDF8]" />
+              <span>Foco</span>
+            </button>
 
-            {/* FERRAMENTAS GLOBAIS */}
-            {/* CHAMFER VISION — FERRAMENTA OFICIAL DO CHAMFER COM ÍCONE OFICIAL */}
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("action");
-                setVisionOpen(true);
+            {/* ALTERNADOR RÁPIDO NÃO-DESTRUTIVO DE CASCA: [ Compacta | Clássica ] */}
+            <div
+              data-testid="chamfer-header-shell-toggle"
+              style={{
+                backgroundColor: isDark ? "var(--chamfer-surface-elevated)" : "#F1F5F9",
+                borderColor: isDark ? "var(--chamfer-border-strong)" : "#CBD5E1",
               }}
-              title="CHAMFER VISION — Reconhecimento e vetorização inteligente de peças"
-              aria-label="Abrir CHAMFER VISION"
-              style={
-                isDark
-                  ? {
-                      backgroundColor: "var(--chamfer-accent-soft)",
-                      borderColor: "var(--chamfer-accent-border)",
-                      color: "var(--chamfer-accent)",
-                    }
-                  : {
-                      backgroundColor: "#FFE4E6",
-                      borderColor: "#FDA4AF",
-                      color: "#E11D48",
-                    }
-              }
-              className="flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs hover:brightness-110"
+              className="flex shrink-0 h-7 items-center rounded-lg border p-0.5 text-[9px] font-mono font-bold touch-pan-x"
+              title="Alternar instantaneamente entre Interface Compacta e Clássica sem perder o desenho"
             >
-              <ScanEye className="size-3.5" style={{ color: isDark ? "var(--chamfer-accent)" : "#E11D48" }} />
-              <span className="hidden xl:inline">CHAMFER VISION</span>
-              <span className="xl:hidden">VISION</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("action");
-                setQuickCommandOpen(true);
-              }}
-              title="CHAMFER INTENT — Compilador Geométrico Paramétrico por Linguagem Natural (Atalho: Q)"
-              aria-label="Abrir CHAMFER INTENT"
-              style={
-                isDark
-                  ? {
-                      backgroundColor: "var(--chamfer-surface-elevated)",
-                      borderColor: "var(--chamfer-accent-border)",
-                      color: "var(--chamfer-accent)",
-                    }
-                  : {
-                      backgroundColor: "#E0F2FE",
-                      borderColor: "#7DD3FC",
-                      color: "#0284C7",
-                    }
-              }
-              className="flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs hover:brightness-110"
-            >
-              <Sparkles className="size-3.5" style={{ color: isDark ? "var(--chamfer-accent)" : "#0284C7" }} />
-              <span className="hidden xl:inline">CHAMFER INTENT</span>
-              <span className="xl:hidden">INTENT</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic("action");
-                setIntegratedWorkshopOpen(true);
-              }}
-              title="Oficina Digital Integrada: Catálogo Costa Ferro, Dossiê Multi-Vistas, Lista de Corte 6m, BOM e Orçamento"
-              style={
-                isDark
-                  ? {
-                      backgroundColor: "var(--chamfer-surface-elevated)",
-                      borderColor: "var(--chamfer-border-strong)",
-                      color: "var(--chamfer-text-primary)",
-                    }
-                  : {
-                      backgroundColor: "#FFFFFF",
-                      borderColor: "#CBD5E1",
-                      color: "#1E293B",
-                    }
-              }
-              className="flex h-7 items-center gap-1.5 rounded-lg border px-2.5 font-mono text-[10px] font-bold uppercase transition-all shadow-2xs hover:brightness-110"
-            >
-              <Boxes className="size-3.5" style={{ color: isDark ? "var(--chamfer-accent)" : "#0F766E" }} />
-              <span className="hidden xl:inline">OFICINA & CORTE</span>
-              <span className="xl:hidden">CORTE/BOM</span>
-            </button>
+              <button
+                type="button"
+                data-testid="chamfer-header-shell-compact-btn"
+                onClick={() => handleSetUiShellMode("compact")}
+                style={
+                  uiShellMode === "compact"
+                    ? {
+                        backgroundColor: isDark ? "var(--chamfer-accent)" : "#0284C7",
+                        color: "#FFFFFF",
+                      }
+                    : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
+                }
+                className="flex h-5.5 items-center rounded px-1.5 transition-colors cursor-pointer touch-pan-x"
+              >
+                Compacta
+              </button>
+              <button
+                type="button"
+                data-testid="chamfer-header-shell-classic-btn"
+                onClick={() => handleSetUiShellMode("classic")}
+                style={
+                  uiShellMode === "classic"
+                    ? {
+                        backgroundColor: isDark ? "var(--chamfer-accent)" : "#0284C7",
+                        color: "#FFFFFF",
+                      }
+                    : { color: isDark ? "var(--chamfer-text-secondary)" : "#475569" }
+                }
+                className="flex h-5.5 items-center rounded px-1.5 transition-colors cursor-pointer touch-pan-x"
+              >
+                Clássica
+              </button>
+            </div>
+
             <IconBtn
               label="Camadas"
               onClick={() => {
@@ -9132,6 +9348,8 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               title="Catálogo de presets paramétricos (Flanges, tubos, sapatas)"
               isDark={isDark}
             />
+
+            {/* MENU COMPACTO [ ⋯ ] (MAIS OPÇÕES + ALTERNADOR INTERFACE DO CHAMFER: COMPACTA | CLÁSSICA) */}
             <div className="relative">
               <IconBtn
                 buttonRef={landscapeMoreTriggerRef}
@@ -9166,6 +9384,50 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     }}
                     className="chamfer-theme-fade-2s max-h-[calc(100dvh-64px)] w-68 max-w-[calc(100vw-16px)] overflow-y-auto rounded-2xl border p-2 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150"
                   >
+                    {/* ALTERNADOR DE CASCA NO TOPO DO MENU ⋯: Interface do CHAMFER: [ Compacta | Clássica ] */}
+                    <div
+                      className={cn(
+                        "mb-1.5 flex items-center justify-between gap-2 rounded-xl border px-2.5 py-1.5 font-mono text-[10px]",
+                        isDark ? "border-[#293444] bg-[#0B0F14]/90" : "border-[#CBD5E1] bg-[#F8FAFC]",
+                      )}
+                    >
+                      <span className="font-bold">Interface do CHAMFER:</span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          data-testid="landscape-menu-shell-compact-btn"
+                          onClick={() => {
+                            handleSetUiShellMode("compact");
+                            setMoreOpen(false);
+                          }}
+                          className={cn(
+                            "rounded-md px-2 py-0.5 font-bold transition-colors cursor-pointer",
+                            uiShellMode === "compact"
+                              ? "bg-[#38BDF8] text-[#0B0F14]"
+                              : "opacity-70 hover:opacity-100",
+                          )}
+                        >
+                          Compacta
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="landscape-menu-shell-classic-btn"
+                          onClick={() => {
+                            handleSetUiShellMode("classic");
+                            setMoreOpen(false);
+                          }}
+                          className={cn(
+                            "rounded-md px-2 py-0.5 font-bold transition-colors cursor-pointer",
+                            uiShellMode === "classic"
+                              ? "bg-[#38BDF8] text-[#0B0F14]"
+                              : "opacity-70 hover:opacity-100",
+                          )}
+                        >
+                          Clássica
+                        </button>
+                      </div>
+                    </div>
+
                     {/* 6 ITENS OBRIGATÓRIOS EM DESTAQUE NO TOPO DO MENU */}
                     <MenuItem
                       label="👁 VISION (Engenharia Reversa 1:1)"
@@ -9204,6 +9466,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       }}
                     />
                     <MenuItem
+                      label="✂ Corte CNC Direto"
+                      icon={Scissors}
+                      isDark={isDark}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setCncOpen(true);
+                      }}
+                    />
+                    <MenuItem
                       label="⌖ Enquadrar Peça na Tela"
                       icon={Crosshair}
                       isDark={isDark}
@@ -9236,18 +9507,34 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                       className="my-1.5 h-px"
                     />
 
-                    {verticalLayout.isVerticalViewport && (
-                      <MenuItem
-                        label="Modo Vertical Compacto"
-                        icon={Maximize}
-                        isDark={isDark}
-                        onClick={() => {
-                          setMoreOpen(false);
-                          verticalLayout.setLayoutPreference("compact");
-                          toast.info("Layout Vertical Compacto ativado.");
-                        }}
-                      />
-                    )}
+                    <MenuItem
+                      label="Camadas Técnicas"
+                      icon={LayersIcon}
+                      isDark={isDark}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setActiveSidebarTab("camadas");
+                        setRightSidebarOpen(true);
+                      }}
+                    />
+                    <MenuItem
+                      label="Auditoria de Topologia (Auto-Heal)"
+                      icon={Activity}
+                      isDark={isDark}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setTopologyHealthOpen(true);
+                      }}
+                    />
+                    <MenuItem
+                      label="Catálogo de Presets Paramétricos"
+                      icon={Boxes}
+                      isDark={isDark}
+                      onClick={() => {
+                        setMoreOpen(false);
+                        setPresetsModalOpen(true);
+                      }}
+                    />
                     <MenuItem
                       label="Folha Técnica e Legenda"
                       icon={FileText}
@@ -9424,7 +9711,16 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
       )}
 
       {/* CORPO DO WORKSPACE CAD: EM MODO CAD 3D A BARRA ESQUERDA FICA VISÍVEL E O CANVAS OCUPA 100% DA DIREITA E BASE */}
-      <div className={cn("flex min-h-0 min-w-0 flex-1", isLandscape || activeMode === "3d" ? "gap-1.5 p-1 pt-0" : "gap-0 p-0")}>
+      <div
+        className={cn(
+          "flex min-h-0 min-w-0 flex-1",
+          isLandscape || activeMode === "3d"
+            ? uiShellMode === "compact"
+              ? "gap-0.5 p-0.5 pt-0"
+              : "gap-1.5 p-1 pt-0"
+            : "gap-0 p-0",
+        )}
+      >
         {/* REGIÃO B — TOOLBAR VERTICAL ESQUERDA (VISÍVEL NO MODO PAISAGEM OU SEMPRE QUE CAD 3D ESTIVER ATIVO) */}
         {!focus && (isLandscape || activeMode === "3d") && (
           <ChamferCadToolbar
@@ -9609,6 +9905,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             }}
             onReturnToSketch2D={transitionTo2D}
             isDark={isDark}
+            compactMode={uiShellMode === "compact"}
+            activeStrokeColor={activeStrokeColor}
+            onSelectStrokeColor={handleSelectColorAndLayer}
           />
         )}
 
@@ -10204,19 +10503,24 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   const headerPillText = isDark ? themeColors.textPrimary : "#1E293B";
                   const dimOffsetPx = 18 / safeK;
                   const headerBadgeText = `⬚ ÁREA DE TRABALHO • ${Math.round(frame.w)} × ${Math.round(frame.h)} mm${frame.locked ? " 🔒" : ""}`;
-                  const rawHeaderPx = headerBadgeText.length * 6.2 + 16;
-                  const maxAllowedHeaderPx = Math.max(140, frame.w * safeK);
+                  const rawHeaderPx = headerBadgeText.length * 5.8 + 14;
+                  const maxAllowedHeaderPx = Math.max(130, frame.w * safeK);
                   const badgeScale = rawHeaderPx > maxAllowedHeaderPx ? maxAllowedHeaderPx / rawHeaderPx : 1;
-                  const headerFontSize = (10.5 * badgeScale) / safeK;
-                  const headerPadX = (8 * badgeScale) / safeK;
+                  const headerFontSize = (9.5 * badgeScale) / safeK;
+                  const headerPadX = (7 * badgeScale) / safeK;
                   const headerPadY = 4 / safeK;
                   const headerW = (rawHeaderPx * badgeScale) / safeK;
                   const headerH = 20 / safeK;
-                  const headerY = (frame.showDims ? -52 : -28) / safeK;
+                  const headerY = (frame.showDims ? -48 : -26) / safeK;
+                  // Offset horizontal para manter a origem (0,0) e as setas +X/+Y 100% desobstruídas
+                  const headerX = Math.max(
+                    118 / safeK,
+                    Math.min(frame.w * 0.18, Math.max(0, frame.w - headerW)),
+                  );
                   const widthPillW = Math.min(92 / safeK, frame.w * 0.85);
                   const widthPillCenterX =
-                    frame.w > headerW + widthPillW + 24 / safeK
-                      ? Math.max(frame.w / 2, headerW + widthPillW / 2 + 14 / safeK)
+                    frame.w > headerX + headerW + widthPillW + 24 / safeK
+                      ? Math.max(frame.w / 2, headerX + headerW + widthPillW / 2 + 14 / safeK)
                       : frame.w / 2;
 
                   return (
@@ -10270,8 +10574,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         </g>
                       ))}
 
-                      {/* Selo Técnico Interativo da Área de Trabalho */}
+                      {/* Selo Técnico Interativo da Área de Trabalho (20px de altura, 9.5px font, deslocado de (0,0)) */}
                       <g
+                        data-testid="chamfer-workspace-area-pill"
                         pointerEvents="auto"
                         style={{ cursor: "pointer" }}
                         onClick={(e) => {
@@ -10283,7 +10588,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                         }}
                       >
                         <rect
-                          x={0}
+                          x={headerX}
                           y={headerY}
                           width={headerW}
                           height={headerH}
@@ -10293,7 +10598,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           strokeWidth={1.1 / safeK}
                         />
                         <text
-                          x={headerPadX}
+                          x={headerX + headerPadX}
                           y={headerY + headerH - headerPadY - 1.5 / safeK}
                           fontSize={headerFontSize}
                           fontFamily='"JetBrains Mono", "Inter", ui-monospace, monospace'
@@ -12263,6 +12568,9 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               cursor={cursor}
               frame={frame}
               compactPortrait={!isLandscape}
+              slimMode={uiShellMode === "compact"}
+              rulersVisible={rulersVisible}
+              onToggleRulersVisible={handleToggleRulersVisible}
               onCenterWorkspace={() => {
                 triggerHaptic("selection");
                 fitFrame();
@@ -13218,24 +13526,111 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             </div>
           )}
 
+          {/* MICRO-PÍLULA FLUTUANTE DO MODO FOCO IMERSIVO: [ ⛶ Sair do Foco | ↶ | ↷ ] */}
           {focus && (
-            <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+            <div
+              data-testid="chamfer-focus-mode-pill"
+              style={{
+                backgroundColor: isDark ? "rgba(11, 15, 20, 0.90)" : "rgba(255, 255, 255, 0.92)",
+                borderColor: isDark ? "#293444" : "#CBD5E1",
+                color: isDark ? "#E6EDF5" : "#0F172A",
+              }}
+              className="pointer-events-auto absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1 rounded-full border px-2.5 py-1 font-mono text-[10px] font-bold shadow-xl backdrop-blur-xl"
+            >
               <button
-                onClick={leaveEditor}
-                aria-label="Sair do CHAMFER"
-                className="metal flex items-center gap-1 rounded-xl px-2.5 py-2 font-mono text-[10px] tracking-[0.18em] text-muted-foreground uppercase hover:text-accent"
+                type="button"
+                data-testid="chamfer-exit-focus-btn"
+                onClick={() => setFocus(false)}
+                className="flex items-center gap-1 rounded-full px-2 py-0.5 text-[#38BDF8] hover:bg-[#38BDF8]/15 transition-colors cursor-pointer"
               >
-                <ArrowLeft className="size-3.5" /> Sair
+                <Minimize className="size-3.5" />
+                <span>⛶ Sair do Foco</span>
+              </button>
+              <span className={cn("h-3.5 w-px", isDark ? "bg-[#293444]" : "bg-[#CBD5E1]")} />
+              <button
+                type="button"
+                disabled={!historyState.canUndo && pending.length === 0}
+                onClick={undo}
+                title="Desfazer (Ctrl+Z)"
+                aria-label="Desfazer no modo foco"
+                className={cn(
+                  "flex size-6 items-center justify-center rounded-full transition-colors",
+                  historyState.canUndo || pending.length > 0
+                    ? "hover:bg-white/10 cursor-pointer"
+                    : "opacity-35 cursor-not-allowed",
+                )}
+              >
+                <Undo2 className="size-3.5" />
               </button>
               <button
-                onClick={() => setFocus(false)}
-                aria-label="Sair do foco"
-                className="metal grid size-9 place-items-center rounded-xl text-muted-foreground hover:text-foreground"
+                type="button"
+                disabled={!historyState.canRedo}
+                onClick={redo}
+                title="Refazer (Ctrl+Y)"
+                aria-label="Refazer no modo foco"
+                className={cn(
+                  "flex size-6 items-center justify-center rounded-full transition-colors",
+                  historyState.canRedo
+                    ? "hover:bg-white/10 cursor-pointer"
+                    : "opacity-35 cursor-not-allowed",
+                )}
               >
-                <X className="size-4" />
+                <Redo2 className="size-3.5" />
               </button>
             </div>
           )}
+
+          {/* BOTÕES FLUTUANTES DISCRETOS NA EXTREMIDADE DIREITA DO CANVAS (MODO PAISAGEM COMPACTO COM INSPETOR FECHADO) */}
+          {isLandscape &&
+            uiShellMode === "compact" &&
+            !rightSidebarOpen &&
+            !focus &&
+            !solidOpen &&
+            activeMode !== "3d" &&
+            activeArrayType === null && (
+              <div
+                data-testid="chamfer-right-edge-floating-controls"
+                className="pointer-events-auto absolute right-2 top-1/2 -translate-y-1/2 z-30 flex flex-col items-center gap-1.5"
+              >
+                <button
+                  type="button"
+                  data-testid="chamfer-floating-zoom-fit-btn"
+                  data-cmd-id="view.center_piece"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    centerPiece(false);
+                  }}
+                  title="⌖ Enquadrar Peça na Tela (Zoom Fit)"
+                  aria-label="Enquadrar peça na tela"
+                  style={{
+                    backgroundColor: isDark ? "rgba(18, 24, 33, 0.84)" : "rgba(255, 255, 255, 0.88)",
+                    borderColor: isDark ? "#293444" : "#CBD5E1",
+                    color: isDark ? "#38BDF8" : "#0284C7",
+                  }}
+                  className="flex size-8 items-center justify-center rounded-full border shadow-lg backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                >
+                  <Crosshair className="size-4" />
+                </button>
+                <button
+                  type="button"
+                  data-testid="chamfer-floating-inspector-btn"
+                  onClick={() => {
+                    triggerHaptic("selection");
+                    setRightSidebarOpen(true);
+                  }}
+                  title="Abrir Inspetor Contextual (Propriedades, Camadas, Corte & BOM, Cotas, Eng. Reversa)"
+                  aria-label="Abrir Inspetor Contextual"
+                  style={{
+                    backgroundColor: isDark ? "rgba(18, 24, 33, 0.84)" : "rgba(255, 255, 255, 0.88)",
+                    borderColor: isDark ? "#293444" : "#CBD5E1",
+                    color: isDark ? "#E6EDF5" : "#0F172A",
+                  }}
+                  className="flex size-8 items-center justify-center rounded-full border font-mono text-xs font-bold shadow-lg backdrop-blur-md transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                >
+                  &lt;
+                </button>
+              </div>
+            )}
 
           {/* NOVO SISTEMA DE EDIÇÃO CONTEXTUAL MOBILE DO CHAMFER (OCULTO NO MODO CAD 3D) */}
           {mobileEditorOpen && activeArrayType === null && activeMode !== "3d" && (
@@ -13290,7 +13685,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
           </div>
         </div>
 
-        {/* REGIÃO D — JANELA LATERAL DIREITA DO CHAMFER 2D (OCULTA COMPLETAMENTE NO MODO CAD 3D) */}
+        {/* REGIÃO D — JANELA LATERAL DIREITA DO CHAMFER 2D (OCULTA COMPLETAMENTE QUANDO RECOLHIDA NO MODO COMPACTO PARA ZERO COLUNA FIXA) */}
         {!solidOpen && !focus && isLandscape && activeMode !== "3d" && (
           activeArrayType !== null ? (
             <ChamferArrayHUD
@@ -13327,7 +13722,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               isDark={isDark}
               enclosedAssemblyCount={arraySourceAssembly.length}
             />
-          ) : (
+          ) : (uiShellMode === "classic" || rightSidebarOpen) ? (
             <ChamferRightSidebar
               open={rightSidebarOpen}
               onToggleOpen={() => setRightSidebarOpen((v) => !v)}
@@ -13404,7 +13799,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               onHighlightCut={setShareHint}
               isDark={isDark}
             />
-          )
+          ) : null
         )}
 
         {/* GAVETA COMPACTA EM MODO RETRATO (OCULTA COMPLETAMENTE NO MODO CAD 3D) */}
@@ -13706,7 +14101,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
         />
       )}
 
-      {/* REGIÃO E — STATUS BAR AGRUPADA (32px) — MODO PAISAGEM (OCULTA COMPLETAMENTE NO MODO CAD 3D) */}
+      {/* REGIÃO E — STATUS BAR EM 2 NÍVEIS (28px EM MODO COMPACTO / 32px EM CLÁSSICO) — MODO PAISAGEM */}
       {!focus && isLandscape && activeMode !== "3d" && (
         <footer
           aria-label="Barra de status do CHAMFER"
@@ -13715,12 +14110,15 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
             borderColor: isDark ? "var(--chamfer-border)" : "#E2E8F0",
             color: isDark ? "var(--chamfer-text-secondary)" : "#475569",
           }}
-          className="relative flex h-8 shrink-0 items-center justify-between gap-2 border-t px-2.5 font-mono text-[10px] backdrop-blur-md select-none transition-colors z-30"
+          className={cn(
+            "relative flex shrink-0 items-center justify-between gap-2 border-t px-2 font-mono text-[10px] backdrop-blur-md select-none transition-colors z-30",
+            uiShellMode === "compact" ? "h-7" : "h-8 px-2.5",
+          )}
         >
-          {/* FAIXA UNIFICADA COM SWIPE HORIZONTAL SUAVE (SEM CORTAR BOTÕES EM MODO RETRATO) */}
-          <div className="flex flex-1 min-w-0 items-center justify-between gap-2 overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x whitespace-nowrap">
-            {/* LADO ESQUERDO: PLANOS DO PROJETO + COORDENADAS REAIS */}
-            <div className="flex shrink-0 items-center gap-2">
+          {/* FAIXA UNIFICADA COM SWIPE HORIZONTAL SUAVE */}
+          <div className="flex flex-1 min-w-0 items-center justify-between gap-1.5 overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x whitespace-nowrap">
+            {/* LADO ESQUERDO: PLANOS DO PROJETO + CHAPA + COORDENADAS REAIS */}
+            <div className="flex shrink-0 items-center gap-1.5">
               {project?.plans.map((pl) => (
                 <button
                   key={pl.id}
@@ -14324,14 +14722,33 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                   );
                 })()
               ) : (
-                <div className="flex shrink-0 items-center gap-1 font-mono text-[9.5px]">
-                  <span className={isDark ? "text-[#94A3B8]" : "text-[#64748B]"}>X:</span>
-                  <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>{cursor.x.toFixed(2)}</strong>
-                  <span className={isDark ? "text-[#94A3B8]" : "text-[#64748B]"}>Y:</span>
-                  <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>{cursor.y.toFixed(2)}</strong>
+                <div className="flex shrink-0 items-center gap-1 font-mono text-[10.5px]">
+                  <button
+                    type="button"
+                    data-testid="status-coords-level2-trigger"
+                    onClick={() => {
+                      triggerHaptic("selection");
+                      setStatusSecondaryLevelOpen((v) => !v);
+                    }}
+                    title="Clique para abrir o Nível Secundário de Status (Unidade MM, Dimensões da Área de Trabalho, Referência Ativa e Seleção)"
+                    className={cn(
+                      "flex items-center gap-1 rounded px-1.5 py-0.5 transition-colors cursor-pointer",
+                      statusSecondaryLevelOpen
+                        ? isDark
+                          ? "bg-[#38BDF8]/15 text-[#38BDF8]"
+                          : "bg-[#E0F2FE] text-[#0284C7]"
+                        : "hover:bg-white/5",
+                    )}
+                  >
+                    <span className={isDark ? "text-[#94A3B8]" : "text-[#64748B]"}>X:</span>
+                    <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>{cursor.x.toFixed(2)}</strong>
+                    <span className={isDark ? "text-[#94A3B8]" : "text-[#64748B]"}>Y:</span>
+                    <strong className={isDark ? "text-[#E6EDF5]" : "text-[#1E293B]"}>{cursor.y.toFixed(2)}</strong>
+                  </button>
 
                   <button
                     type="button"
+                    data-cmd-id="ref.datum_set"
                     onClick={() => {
                       const p = smartSnap ? smartSnap.p : { x: cursor.x, y: cursor.y };
                       const label = smartSnap ? smartSnap.label : "DATUM";
@@ -14349,7 +14766,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                     }}
                     title="Definir ponto sob o cursor / snap como Vetor Datum (ΔXY / ∠)"
                     className={cn(
-                      "ml-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all",
+                      "ml-1 flex items-center gap-1 px-1.5 py-0.5 rounded border font-bold text-[8.5px] cursor-pointer active:scale-95 transition-all",
                       isSettingReferencePoint
                         ? "bg-[#DC143C]/20 border-[#DC143C] text-[#DC143C]"
                         : isDark
@@ -14357,7 +14774,7 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
                           : "bg-[#FEF3C7] hover:bg-[#FDE68A] border-[#FCD34D] text-[#D97706]",
                     )}
                   >
-                    <span>⌖</span>
+                    <span>+</span>
                     <span>DATUM</span>
                   </button>
 
@@ -14644,6 +15061,44 @@ export function Lab2DEditor({ projectId }: { projectId?: string }) {
               </button>
             </div>
           </div>
+
+          {/* NÍVEL SECUNDÁRIO EXPANSÍVEL DA BARRA DE STATUS (POPOVER AO TOCAR NAS COORDENADAS X/Y) */}
+          {statusSecondaryLevelOpen && (
+            <div
+              data-testid="status-secondary-level-popover"
+              style={{
+                backgroundColor: "var(--chamfer-popover-bg)",
+                borderColor: "var(--chamfer-border-strong)",
+                color: "var(--chamfer-text-primary)",
+              }}
+              className="absolute bottom-9 left-1/2 -translate-x-1/2 z-50 flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 font-mono text-[10px] shadow-2xl backdrop-blur-xl"
+            >
+              <span className="rounded border border-[#38BDF8]/40 bg-[#38BDF8]/10 px-1.5 py-0.5 font-bold text-[#38BDF8]">
+                UNIDADE: {unit.toUpperCase()}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setStatusSecondaryLevelOpen(false);
+                  setStatusWorkspaceMenuOpen(true);
+                }}
+                className="rounded border border-white/15 px-2 py-0.5 font-bold hover:border-[#38BDF8]/50 cursor-pointer"
+              >
+                ⬚ ÁREA: {Math.round(frame.w)} × {Math.round(frame.h)} mm
+              </button>
+              <span className="opacity-80">
+                REF: {temporaryOrigin ? `DATUM (${temporaryOrigin.p.x.toFixed(1)}, ${temporaryOrigin.p.y.toFixed(1)})` : "GLOBAL (0, 0)"}
+              </span>
+              <span className="opacity-80">SEL: {selectionText}</span>
+              <button
+                type="button"
+                onClick={() => setStatusSecondaryLevelOpen(false)}
+                className="ml-1 rounded px-1.5 py-0.5 opacity-70 hover:opacity-100 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* POPOVERS FLUTUANTES DA BARRA DE STATUS (RENDERIZADOS FORA DO CONTAINER OVERFLOW-X-AUTO PARA NUNCA CORTAR) */}
           {statusWorkspaceMenuOpen && (
@@ -16581,7 +17036,7 @@ const IconBtn = React.memo(function IconBtn({
             ? "var(--chamfer-text-primary)"
             : "#334155",
       }}
-      className="grid size-8 shrink-0 place-items-center rounded-lg border cursor-pointer active:scale-95 hover:brightness-110 transition-all"
+      className="grid size-8 shrink-0 place-items-center rounded-lg border touch-pan-x cursor-pointer active:scale-95 hover:brightness-110 transition-all"
     >
       <Icon className="size-[15px]" />
     </button>
@@ -16996,6 +17451,9 @@ const Rulers = React.memo(function Rulers({
   cursor,
   frame,
   compactPortrait = false,
+  slimMode = false,
+  rulersVisible = true,
+  onToggleRulersVisible,
   onCenterWorkspace,
 }: {
   view: { tx: number; ty: number; k: number };
@@ -17008,6 +17466,9 @@ const Rulers = React.memo(function Rulers({
   cursor?: Vec2;
   frame?: WorkspaceFrame;
   compactPortrait?: boolean;
+  slimMode?: boolean;
+  rulersVisible?: boolean;
+  onToggleRulersVisible?: () => void;
   onCenterWorkspace?: () => void;
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -17032,8 +17493,14 @@ const Rulers = React.memo(function Rulers({
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, vw, vh);
 
-    const V_RULER_W = compactPortrait ? 20 : 30;
-    const H_RULER_H = compactPortrait ? 20 : 26;
+    if (!rulersVisible) {
+      ctx.restore();
+      return;
+    }
+
+    const isSlim = slimMode || compactPortrait;
+    const V_RULER_W = slimMode ? 18 : compactPortrait ? 20 : 30;
+    const H_RULER_H = slimMode ? 18 : compactPortrait ? 20 : 26;
     const safeK = Number.isFinite(view.k) && view.k > 0 ? view.k : 1;
 
     // Seleção de passo principal técnico (1, 2, 5 × 10^n) garantindo espaçamento >= 76px
@@ -17082,7 +17549,7 @@ const Rulers = React.memo(function Rulers({
       : "#0284C7";
 
     /* =====================================================================
-     * 1. RÉGUA HORIZONTAL SUPERIOR (Altura = 26px, Clipping x: 30..vw, y: 0..26)
+     * 1. RÉGUA HORIZONTAL SUPERIOR (Altura = 18px em modo slim / 26px em clássico)
      * ===================================================================== */
     ctx.save();
     ctx.beginPath();
@@ -17113,14 +17580,14 @@ const Rulers = React.memo(function Rulers({
     ctx.lineTo(vw, H_RULER_H - 0.5);
     ctx.stroke();
 
-    // Ticks de 3 níveis + Números posicionados +5px à direita do traço principal (zero colisão)
+    // Ticks de 3 níveis + Números posicionados à direita do traço principal
     const minWorldX = (V_RULER_W - view.tx) / safeK;
     const maxWorldX = (vw - view.tx) / safeK;
     const startIdxX = Math.floor(minWorldX / minorStep) - 1;
     const endIdxX = Math.ceil(maxWorldX / minorStep) + 1;
 
-    ctx.font = compactPortrait
-      ? '700 9px "JetBrains Mono", "Inter", ui-monospace, monospace'
+    ctx.font = isSlim
+      ? '700 9.5px "JetBrains Mono", "Inter", ui-monospace, monospace'
       : '700 10px "JetBrains Mono", "Inter", ui-monospace, monospace';
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
@@ -17133,7 +17600,7 @@ const Rulers = React.memo(function Rulers({
       const isMajor = Math.abs(worldX / labelStep - Math.round(worldX / labelStep)) < 1e-4;
       const isMid = !isMajor && Math.abs(worldX / midStep - Math.round(worldX / midStep)) < 1e-4;
 
-      const tickLen = isMajor ? (compactPortrait ? 9 : 12) : isMid ? (compactPortrait ? 5.5 : 7) : 3.5;
+      const tickLen = isMajor ? (isSlim ? 8 : 12) : isMid ? (isSlim ? 5 : 7) : 3;
       ctx.strokeStyle = isMajor ? majorTickColor : isMid ? midTickColor : minorTickColor;
       ctx.lineWidth = isMajor ? 1.2 : 1;
       ctx.beginPath();
@@ -17144,7 +17611,7 @@ const Rulers = React.memo(function Rulers({
       if (isMajor) {
         const val = Math.round(worldX);
         ctx.fillStyle = val === 0 ? zeroColor : textColor;
-        ctx.fillText(String(val), screenX + (compactPortrait ? 4 : 5), compactPortrait ? 2.5 : 4);
+        ctx.fillText(String(val), screenX + (isSlim ? 3.5 : 5), isSlim ? 2 : 4);
       }
     }
 
@@ -17172,7 +17639,7 @@ const Rulers = React.memo(function Rulers({
     ctx.restore();
 
     /* =====================================================================
-     * 2. RÉGUA VERTICAL ESQUERDA (Largura = 30px, Clipping x: 0..30, y: 26..vh)
+     * 2. RÉGUA VERTICAL ESQUERDA (Largura = 18px em modo slim / 30px em clássico)
      * ===================================================================== */
     ctx.save();
     ctx.beginPath();
@@ -17209,8 +17676,8 @@ const Rulers = React.memo(function Rulers({
     const startIdxY = Math.floor(minWorldY / minorStep) - 1;
     const endIdxY = Math.ceil(maxWorldY / minorStep) + 1;
 
-    ctx.font = compactPortrait
-      ? '700 9px "JetBrains Mono", "Inter", ui-monospace, monospace'
+    ctx.font = isSlim
+      ? '700 9.5px "JetBrains Mono", "Inter", ui-monospace, monospace'
       : '700 10px "JetBrains Mono", "Inter", ui-monospace, monospace';
 
     for (let i = startIdxY; i <= endIdxY; i++) {
@@ -17221,7 +17688,7 @@ const Rulers = React.memo(function Rulers({
       const isMajor = Math.abs(worldY / labelStep - Math.round(worldY / labelStep)) < 1e-4;
       const isMid = !isMajor && Math.abs(worldY / midStep - Math.round(worldY / midStep)) < 1e-4;
 
-      const tickLen = isMajor ? (compactPortrait ? 9 : 12) : isMid ? (compactPortrait ? 5.5 : 7) : 3.5;
+      const tickLen = isMajor ? (isSlim ? 8 : 12) : isMid ? (isSlim ? 5 : 7) : 3;
       ctx.strokeStyle = isMajor ? majorTickColor : isMid ? midTickColor : minorTickColor;
       ctx.lineWidth = isMajor ? 1.2 : 1;
       ctx.beginPath();
@@ -17232,7 +17699,7 @@ const Rulers = React.memo(function Rulers({
       if (isMajor) {
         const val = Math.round(worldY);
         ctx.save();
-        ctx.translate(compactPortrait ? 7 : 10, screenY - (compactPortrait ? 4 : 5));
+        ctx.translate(isSlim ? 6.5 : 10, screenY - (isSlim ? 3.5 : 5));
         ctx.rotate(-Math.PI / 2);
         ctx.textAlign = "left";
         ctx.textBaseline = "middle";
@@ -17265,33 +17732,76 @@ const Rulers = React.memo(function Rulers({
 
     ctx.restore();
     ctx.restore();
-  }, [view.tx, view.ty, view.k, isDark, themeColors, majorStep, vw, vh, cursor?.x, cursor?.y, frame?.visible, frame?.w, frame?.h, compactPortrait]);
+  }, [
+    view.tx,
+    view.ty,
+    view.k,
+    isDark,
+    themeColors,
+    majorStep,
+    vw,
+    vh,
+    cursor?.x,
+    cursor?.y,
+    frame?.visible,
+    frame?.w,
+    frame?.h,
+    compactPortrait,
+    slimMode,
+    rulersVisible,
+  ]);
 
   return (
-    <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden z-10">
-      {/* Canvas de Alta Precisão para as Réguas Horizontal (20px em retrato / 26px em paisagem) e Vertical (20px em retrato / 30px em paisagem) */}
+    <div
+      aria-hidden
+      data-rulers-visible={rulersVisible ? "true" : "false"}
+      data-ruler-thickness={rulersVisible ? (slimMode ? 18 : compactPortrait ? 20 : 26) : 0}
+      className="pointer-events-none absolute inset-0 overflow-hidden z-10"
+    >
+      {/* Canvas de Alta Precisão para as Réguas Horizontal (18px slim / 26px clássico) e Vertical (18px slim / 30px clássico) */}
       <canvas
         ref={canvasRef}
         style={{ width: `${vw}px`, height: `${vh}px` }}
         className="pointer-events-none absolute inset-0"
       />
 
-      {/* Bloco de Canto Interativo [ MM ]: toca para enquadrar a Área de Trabalho */}
+      {/* Bloco de Canto Interativo [ MM ]: alterna entre Réguas Visíveis (18px) e Réguas Ocultas (0px) */}
       <button
         type="button"
+        data-testid="chamfer-ruler-mm-toggle"
         onClick={(e) => {
+          e.stopPropagation();
+          if (onToggleRulersVisible) {
+            onToggleRulersVisible();
+          } else {
+            onCenterWorkspace?.();
+          }
+        }}
+        onDoubleClick={(e) => {
           e.stopPropagation();
           onCenterWorkspace?.();
         }}
-        title="Toque para centralizar e enquadrar a Área de Trabalho na tela"
+        title={
+          rulersVisible
+            ? "Toque para ocultar as réguas técnicas (0px) • Duplo-clique para enquadrar a Área de Trabalho"
+            : "Toque para exibir as réguas técnicas (18px)"
+        }
         style={{
           backgroundColor: isDark ? "var(--chamfer-bar-bg)" : "#F1F5F9",
           borderColor: isDark ? "var(--chamfer-border)" : "#CBD5E1",
-          color: isDark ? "var(--chamfer-text-secondary)" : "#64748B",
+          color: rulersVisible
+            ? isDark
+              ? "var(--chamfer-text-secondary)"
+              : "#64748B"
+            : "#38BDF8",
         }}
         className={cn(
           "pointer-events-auto absolute left-0 top-0 z-20 flex items-center justify-center border-b border-r font-mono font-bold uppercase transition-colors cursor-pointer active:scale-95 hover:brightness-110",
-          compactPortrait ? "w-[20px] h-[20px] text-[7.5px]" : "w-[30px] h-[26px] text-[8.5px]",
+          slimMode
+            ? "w-[18px] h-[18px] text-[7.5px]"
+            : compactPortrait
+              ? "w-[20px] h-[20px] text-[7.5px]"
+              : "w-[30px] h-[26px] text-[8.5px]",
         )}
       >
         {unit}

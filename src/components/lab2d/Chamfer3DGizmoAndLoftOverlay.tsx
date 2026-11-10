@@ -3400,9 +3400,29 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             top: activeMode === "3d" ? "10px" : "34px",
             maxWidth: "calc(100% - 28px)",
           }}
-          onPointerDown={(ev) => ev.stopPropagation()}
+          onPointerDown={(ev) => {
+            ev.stopPropagation();
+            const el = ev.currentTarget;
+            el.dataset.dragStartX = String(ev.clientX);
+            el.dataset.dragStartScroll = String(el.scrollLeft);
+            el.dataset.isDragging = "1";
+          }}
+          onPointerMove={(ev) => {
+            const el = ev.currentTarget;
+            if (el.dataset.isDragging !== "1") return;
+            const dx = ev.clientX - Number(el.dataset.dragStartX || 0);
+            if (Math.abs(dx) > 4) {
+              el.scrollLeft = Number(el.dataset.dragStartScroll || 0) - dx;
+            }
+          }}
+          onPointerUp={(ev) => {
+            ev.currentTarget.dataset.isDragging = "0";
+          }}
+          onPointerCancel={(ev) => {
+            ev.currentTarget.dataset.isDragging = "0";
+          }}
           onClick={(ev) => ev.stopPropagation()}
-          className="pointer-events-auto absolute left-1/2 z-30 flex h-[34px] -translate-x-1/2 items-center gap-1 overflow-x-auto scrollbar-none rounded-full border px-2.5 py-0.5 shadow-md backdrop-blur-md"
+          className="pointer-events-auto absolute left-1/2 z-30 flex h-[34px] -translate-x-1/2 items-center gap-1 overflow-x-auto scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing rounded-full border px-2.5 py-0.5 shadow-md backdrop-blur-md"
         >
           <span className="shrink-0 font-mono text-[9.5px] font-bold text-cyan-400">
             SEL 3D:
@@ -3600,9 +3620,29 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             top: activeMode === "3d" ? "10px" : "34px",
             maxWidth: "calc(100% - 24px)",
           }}
-          onPointerDown={(ev) => ev.stopPropagation()}
+          onPointerDown={(ev) => {
+            ev.stopPropagation();
+            const el = ev.currentTarget;
+            el.dataset.dragStartX = String(ev.clientX);
+            el.dataset.dragStartScroll = String(el.scrollLeft);
+            el.dataset.isDragging = "1";
+          }}
+          onPointerMove={(ev) => {
+            const el = ev.currentTarget;
+            if (el.dataset.isDragging !== "1") return;
+            const dx = ev.clientX - Number(el.dataset.dragStartX || 0);
+            if (Math.abs(dx) > 4) {
+              el.scrollLeft = Number(el.dataset.dragStartScroll || 0) - dx;
+            }
+          }}
+          onPointerUp={(ev) => {
+            ev.currentTarget.dataset.isDragging = "0";
+          }}
+          onPointerCancel={(ev) => {
+            ev.currentTarget.dataset.isDragging = "0";
+          }}
           onClick={(ev) => ev.stopPropagation()}
-          className="pointer-events-auto absolute left-1/2 z-30 flex h-[38px] -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none rounded-full border border-sky-500/60 px-3 py-1 shadow-lg backdrop-blur-md"
+          className="pointer-events-auto absolute left-1/2 z-30 flex h-[38px] -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing rounded-full border border-sky-500/60 px-3 py-1 shadow-lg backdrop-blur-md"
         >
           <span className="shrink-0 font-mono text-[10px] font-bold text-sky-300 whitespace-nowrap">
             LOFT | Selecione as seções transversais na ordem da transição (Clique 1 ➔ 2 ➔ 3...)
@@ -3780,9 +3820,29 @@ export const Chamfer3DGizmoAndLoftOverlay: React.FC<Chamfer3DGizmoAndLoftOverlay
             top: activeMode === "3d" ? "12px" : "36px",
             maxWidth: "calc(100% - 28px)",
           }}
-          onPointerDown={(ev) => ev.stopPropagation()}
+          onPointerDown={(ev) => {
+            ev.stopPropagation();
+            const el = ev.currentTarget;
+            el.dataset.dragStartX = String(ev.clientX);
+            el.dataset.dragStartScroll = String(el.scrollLeft);
+            el.dataset.isDragging = "1";
+          }}
+          onPointerMove={(ev) => {
+            const el = ev.currentTarget;
+            if (el.dataset.isDragging !== "1") return;
+            const dx = ev.clientX - Number(el.dataset.dragStartX || 0);
+            if (Math.abs(dx) > 4) {
+              el.scrollLeft = Number(el.dataset.dragStartScroll || 0) - dx;
+            }
+          }}
+          onPointerUp={(ev) => {
+            ev.currentTarget.dataset.isDragging = "0";
+          }}
+          onPointerCancel={(ev) => {
+            ev.currentTarget.dataset.isDragging = "0";
+          }}
           onClick={(ev) => ev.stopPropagation()}
-          className="pointer-events-auto absolute left-1/2 z-30 flex h-[40px] -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none rounded-full border px-3 py-1 shadow-lg backdrop-blur-md transition-all"
+          className="pointer-events-auto absolute left-1/2 z-30 flex h-[40px] -translate-x-1/2 items-center gap-1.5 overflow-x-auto scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing rounded-full border px-3 py-1 shadow-lg backdrop-blur-md transition-all"
         >
           <activePillMeta.icon className="size-3.5 shrink-0 text-cyan-500" />
           <span className="shrink-0 font-mono text-[11px] font-bold tracking-tight">

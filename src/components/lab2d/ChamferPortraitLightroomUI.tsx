@@ -303,6 +303,104 @@ export function ChamferPortraitTopBar({
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
 
   // Refs e coordenadas calculadas via getBoundingClientRect() para os Portals (z-index: 9999)
+  const portraitTopBarRef = useRef<HTMLElement | null>(null);
+  const portraitTopBarSwipeRef = useRef<{
+    isDragging: boolean;
+    hasMoved: boolean;
+    pointerId: number | null;
+    startX: number;
+    scrollLeft: number;
+  }>({
+    isDragging: false,
+    hasMoved: false,
+    pointerId: null,
+    startX: 0,
+    scrollLeft: 0,
+  });
+
+  const handlePortraitTopBarPointerDown = (e: React.PointerEvent<HTMLElement>) => {
+    if (!portraitTopBarRef.current) return;
+    portraitTopBarSwipeRef.current = {
+      isDragging: true,
+      hasMoved: false,
+      pointerId: e.pointerId,
+      startX: e.clientX,
+      scrollLeft: portraitTopBarRef.current.scrollLeft,
+    };
+  };
+
+  const handlePortraitTopBarPointerMove = (e: React.PointerEvent<HTMLElement>) => {
+    if (!portraitTopBarSwipeRef.current.isDragging || !portraitTopBarRef.current) return;
+    const dx = e.clientX - portraitTopBarSwipeRef.current.startX;
+    if (Math.abs(dx) > 4) {
+      if (!portraitTopBarSwipeRef.current.hasMoved) {
+        portraitTopBarSwipeRef.current.hasMoved = true;
+        try {
+          if (
+            portraitTopBarSwipeRef.current.pointerId !== null &&
+            !portraitTopBarRef.current.hasPointerCapture(portraitTopBarSwipeRef.current.pointerId)
+          ) {
+            portraitTopBarRef.current.setPointerCapture(portraitTopBarSwipeRef.current.pointerId);
+          }
+        } catch {
+          // Ignora se o navegador não suportar pointer capture no alvo
+        }
+      }
+      portraitTopBarRef.current.scrollLeft = portraitTopBarSwipeRef.current.scrollLeft - dx;
+    }
+  };
+
+  const handlePortraitTopBarPointerUp = () => {
+    if (portraitTopBarRef.current && portraitTopBarSwipeRef.current.pointerId !== null) {
+      try {
+        if (portraitTopBarRef.current.hasPointerCapture(portraitTopBarSwipeRef.current.pointerId)) {
+          portraitTopBarRef.current.releasePointerCapture(portraitTopBarSwipeRef.current.pointerId);
+        }
+      } catch {
+        // Ignora erro de releasePointerCapture
+      }
+    }
+    portraitTopBarSwipeRef.current.isDragging = false;
+    portraitTopBarSwipeRef.current.pointerId = null;
+  };
+
+  const handlePortraitTopBarTouchStart = (e: React.TouchEvent<HTMLElement>) => {
+    const touch = e.touches[0];
+    if (!touch || !portraitTopBarRef.current) return;
+    portraitTopBarSwipeRef.current = {
+      isDragging: true,
+      hasMoved: false,
+      pointerId: null,
+      startX: touch.clientX,
+      scrollLeft: portraitTopBarRef.current.scrollLeft,
+    };
+  };
+
+  const handlePortraitTopBarTouchMove = (e: React.TouchEvent<HTMLElement>) => {
+    const touch = e.touches[0];
+    if (!touch || !portraitTopBarSwipeRef.current.isDragging || !portraitTopBarRef.current) return;
+    const dx = touch.clientX - portraitTopBarSwipeRef.current.startX;
+    if (Math.abs(dx) > 4) {
+      portraitTopBarSwipeRef.current.hasMoved = true;
+      portraitTopBarRef.current.scrollLeft = portraitTopBarSwipeRef.current.scrollLeft - dx;
+    }
+  };
+
+  const handlePortraitTopBarClickCapture = (e: React.MouseEvent<HTMLElement>) => {
+    if (portraitTopBarSwipeRef.current.hasMoved) {
+      e.stopPropagation();
+      e.preventDefault();
+      portraitTopBarSwipeRef.current.hasMoved = false;
+    }
+  };
+
+  const handlePortraitTopBarWheel = (e: React.WheelEvent<HTMLElement>) => {
+    if (!portraitTopBarRef.current) return;
+    if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
+      portraitTopBarRef.current.scrollLeft += e.deltaY;
+    }
+  };
+
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const moreMenuRef = useRef<HTMLDivElement | null>(null);
   const projectTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -389,17 +487,20 @@ export function ChamferPortraitTopBar({
       }
     };
 
-    const handleResize = () => {
+    const handleResizeOrScroll = () => {
       if (moreMenuOpen) updateMoreMenuPosition();
       if (projectMenuOpen) updateProjectMenuPosition();
       if (viewMenuOpen) updateViewMenuPosition();
     };
 
+    const headerEl = portraitTopBarRef.current;
     document.addEventListener("pointerdown", handleOutsidePointerDown);
-    window.addEventListener("resize", handleResize);
+    window.addEventListener("resize", handleResizeOrScroll);
+    headerEl?.addEventListener("scroll", handleResizeOrScroll, { passive: true });
     return () => {
       document.removeEventListener("pointerdown", handleOutsidePointerDown);
-      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("resize", handleResizeOrScroll);
+      headerEl?.removeEventListener("scroll", handleResizeOrScroll);
     };
   }, [moreMenuOpen, projectMenuOpen, viewMenuOpen]);
 
@@ -588,8 +689,19 @@ export function ChamferPortraitTopBar({
   return (
     <>
       <header
+        ref={portraitTopBarRef}
         aria-label="Barra superior CHAMFER CAD Retrato"
         data-testid="chamfer-portrait-topbar"
+        onPointerDown={handlePortraitTopBarPointerDown}
+        onPointerMove={handlePortraitTopBarPointerMove}
+        onPointerUp={handlePortraitTopBarPointerUp}
+        onPointerCancel={handlePortraitTopBarPointerUp}
+        onPointerLeave={handlePortraitTopBarPointerUp}
+        onTouchStart={handlePortraitTopBarTouchStart}
+        onTouchMove={handlePortraitTopBarTouchMove}
+        onTouchEnd={handlePortraitTopBarPointerUp}
+        onClickCapture={handlePortraitTopBarClickCapture}
+        onWheel={handlePortraitTopBarWheel}
         style={{
           height: topBarHeightPx,
           padding: "0 6px",
@@ -597,10 +709,10 @@ export function ChamferPortraitTopBar({
           borderColor: "var(--chamfer-border)",
           color: "var(--chamfer-text-primary)",
         }}
-        className="chamfer-theme-fade-2s relative z-30 flex w-full shrink-0 items-center justify-between gap-1 border-b backdrop-blur-md select-none"
+        className="chamfer-theme-fade-2s relative z-30 flex w-full shrink-0 items-center justify-between gap-1 border-b backdrop-blur-md select-none overflow-x-auto overflow-y-hidden scrollbar-none touch-pan-x overscroll-x-contain cursor-grab active:cursor-grabbing whitespace-nowrap"
       >
         {/* ESQUERDA: P1 [←] SAIR + P4 Chip Compacto "● 3,0mm ▾" */}
-        <div className="flex min-w-0 items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
             data-cmd-id="nav.exit"
@@ -610,7 +722,7 @@ export function ChamferPortraitTopBar({
             }}
             aria-label="Sair do CHAMFER CAD e voltar aos Projetos"
             title="Sair do editor e voltar"
-            className="group flex h-[44px] w-[36px] shrink-0 items-center justify-center touch-manipulation cursor-pointer"
+            className="group flex h-[44px] w-[36px] shrink-0 items-center justify-center touch-pan-x cursor-pointer"
           >
             <span
               style={{
@@ -660,7 +772,7 @@ export function ChamferPortraitTopBar({
               setViewMenuOpen(false);
               setMoreMenuOpen(false);
             }}
-            className="group flex h-[44px] shrink-0 items-center touch-manipulation cursor-pointer"
+            className="group flex h-[44px] shrink-0 items-center touch-pan-x cursor-pointer"
           >
             <span
               style={
@@ -688,6 +800,38 @@ export function ChamferPortraitTopBar({
               )}
               <span className="shrink-0 font-bold">{compactThickness}</span>
               <ChevronDown className="size-3 shrink-0 opacity-70" />
+            </span>
+          </button>
+
+          {/* Chip Unificado de Salvamento [ ✓ Salvo ] (1 clique salva imediatamente) */}
+          <button
+            type="button"
+            data-testid="chamfer-unified-save-chip"
+            data-cmd-id="doc.save"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("action");
+              onManualSave();
+            }}
+            title={`Status: ${saveStatusText} — Clique para salvar agora`}
+            aria-label={`Salvar projeto (${saveStatusText})`}
+            className="group flex h-[44px] shrink-0 items-center touch-pan-x cursor-pointer"
+          >
+            <span
+              className={cn(
+                "flex h-7 items-center gap-1 rounded-lg border px-1.5 font-mono text-[9.5px] font-bold transition-colors group-active:scale-95",
+                saveStatus === "erro"
+                  ? "border-red-500/45 bg-red-500/15 text-red-400"
+                  : saveStatus === "pendente" || saveStatus === "salvando"
+                    ? "border-amber-500/45 bg-amber-500/15 text-amber-300"
+                    : "border-[#10B981]/40 bg-[#10B981]/12 text-[#10B981]",
+              )}
+            >
+              <span className={cn("size-1.5 rounded-full shrink-0", saveDotClass)} />
+              <span className="hidden min-[380px]:inline">
+                {saveStatus === "salvando" ? "Salvando" : "✓ Salvo"}
+              </span>
+              <span className="min-[380px]:hidden">✓</span>
             </span>
           </button>
         </div>
@@ -730,7 +874,7 @@ export function ChamferPortraitTopBar({
                   onSelect2D();
                 }
               }}
-              className="chamfer-theme-fade-2s h-7 rounded-md px-2 font-mono text-[10px] font-bold tracking-wider uppercase cursor-pointer"
+              className="chamfer-theme-fade-2s h-7 rounded-md px-2 font-mono text-[10px] font-bold tracking-wider uppercase touch-pan-x cursor-pointer"
             >
               {mergeViewIntoModeSelector && activeMode === "2d"
                 ? `2D·${compactViewLabel}▾`
@@ -763,7 +907,7 @@ export function ChamferPortraitTopBar({
                   onSelect3D();
                 }
               }}
-              className="chamfer-theme-fade-2s h-7 rounded-md px-2 font-mono text-[10px] font-bold tracking-wider uppercase cursor-pointer"
+              className="chamfer-theme-fade-2s h-7 rounded-md px-2 font-mono text-[10px] font-bold tracking-wider uppercase touch-pan-x cursor-pointer"
             >
               {mergeViewIntoModeSelector && activeMode === "3d"
                 ? `3D·${compactViewLabel}▾`
@@ -788,7 +932,7 @@ export function ChamferPortraitTopBar({
                 setProjectMenuOpen(false);
                 setMoreMenuOpen(false);
               }}
-              className="group flex h-[44px] shrink-0 items-center touch-manipulation cursor-pointer"
+              className="group flex h-[44px] shrink-0 items-center touch-pan-x cursor-pointer"
             >
               <span
                 style={
@@ -813,8 +957,8 @@ export function ChamferPortraitTopBar({
           )}
         </div>
 
-        {/* DIREITA: P1 Histórico Direto (↶ ↷) + Botão de Tema (☀/☾) + Menu Mais Ações (⋮) */}
-        <div className="flex shrink-0 items-center gap-0.5">
+        {/* DIREITA: P1 Histórico Direto (↶ ↷) + Foco + Tema (☀/☾) + Menu Mais Ações (⋮) + Ações Rápidas Roláveis */}
+        <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
             data-cmd-id="history.undo"
@@ -827,7 +971,7 @@ export function ChamferPortraitTopBar({
             title="Desfazer (Ctrl+Z)"
             style={{ opacity: canUndo ? 1 : 0.45 }}
             className={cn(
-              "group flex h-[44px] w-[32px] shrink-0 items-center justify-center touch-manipulation",
+              "group flex h-[44px] w-[32px] shrink-0 items-center justify-center touch-pan-x",
               canUndo ? "cursor-pointer" : "cursor-not-allowed",
             )}
           >
@@ -862,7 +1006,7 @@ export function ChamferPortraitTopBar({
             title="Refazer (Ctrl+Y)"
             style={{ opacity: canRedo ? 1 : 0.45 }}
             className={cn(
-              "group flex h-[44px] w-[32px] shrink-0 items-center justify-center touch-manipulation",
+              "group flex h-[44px] w-[32px] shrink-0 items-center justify-center touch-pan-x",
               canRedo ? "cursor-pointer" : "cursor-not-allowed",
             )}
           >
@@ -885,6 +1029,32 @@ export function ChamferPortraitTopBar({
             </span>
           </button>
 
+          {/* Botão Rápido Modo Foco Imersivo [ ⛶ Foco ] */}
+          <button
+            type="button"
+            data-testid="chamfer-portrait-focus-btn"
+            data-cmd-id="ui.fullscreen_toggle"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("selection");
+              onToggleFullscreen();
+            }}
+            aria-label="Ativar Modo Foco Imersivo (Tela Cheia)"
+            title="Modo Foco Imersivo (oculta barras e expande o canvas em 100%)"
+            className="group flex h-[44px] w-[30px] shrink-0 items-center justify-center touch-pan-x cursor-pointer"
+          >
+            <span
+              style={{
+                backgroundColor: "var(--chamfer-surface-elevated)",
+                borderColor: "var(--chamfer-border)",
+                color: "var(--chamfer-text-primary)",
+              }}
+              className="chamfer-theme-fade-2s flex size-7 items-center justify-center rounded-lg border group-active:scale-95"
+            >
+              <Maximize className="size-3.5" />
+            </span>
+          </button>
+
           {/* Botão de Alternância de Tema (Sol / Lua) com alto contraste em ambos os temas */}
           <button
             type="button"
@@ -896,7 +1066,7 @@ export function ChamferPortraitTopBar({
             }}
             aria-label={isDark ? "Mudar para Tema Claro" : "Mudar para Tema Escuro"}
             title={isDark ? "Alternar para Tema Claro" : "Alternar para Tema Escuro"}
-            className="group flex h-[44px] w-[32px] shrink-0 items-center justify-center touch-manipulation cursor-pointer"
+            className="group flex h-[44px] w-[30px] shrink-0 items-center justify-center touch-pan-x cursor-pointer"
           >
             <span
               style={{
@@ -904,9 +1074,9 @@ export function ChamferPortraitTopBar({
                 borderColor: "var(--chamfer-border)",
                 color: "var(--chamfer-text-primary)",
               }}
-              className="chamfer-theme-fade-2s flex size-8 items-center justify-center rounded-lg border group-active:scale-95"
+              className="chamfer-theme-fade-2s flex size-7 items-center justify-center rounded-lg border group-active:scale-95"
             >
-              {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+              {isDark ? <Sun className="size-3.5" /> : <Moon className="size-3.5" />}
             </span>
           </button>
 
@@ -927,7 +1097,7 @@ export function ChamferPortraitTopBar({
             }}
             aria-label="Mais ações e configurações do CHAMFER CAD"
             title="Mais Ações (VISION, INTENT, CORTE/BOM, Exportar, Enquadrar, Tema)"
-            className="group flex h-[44px] w-[36px] shrink-0 items-center justify-center touch-manipulation cursor-pointer"
+            className="group flex h-[44px] w-[36px] shrink-0 items-center justify-center touch-pan-x cursor-pointer"
           >
             <span
               style={
@@ -947,6 +1117,93 @@ export function ChamferPortraitTopBar({
             >
               <MoreVertical className="size-4" />
             </span>
+          </button>
+
+          {/* Ações Rápidas Roláveis ao Deslizar a Barra Superior Horizontalmente */}
+          <button
+            type="button"
+            data-testid="chamfer-portrait-vision-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("action");
+              onOpenVision();
+            }}
+            className="flex h-7 shrink-0 items-center gap-1 rounded-lg border border-sky-500/40 bg-sky-500/15 px-2 font-mono text-[9.5px] font-bold text-sky-400 touch-pan-x cursor-pointer whitespace-nowrap"
+            title="CALDRA VISION — Digitalização de Rascunho/Foto para CAD"
+          >
+            <ScanEye className="size-3 shrink-0" />
+            <span>VISION</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="chamfer-portrait-intent-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("action");
+              onOpenIntent();
+            }}
+            className="flex h-7 shrink-0 items-center gap-1 rounded-lg border border-amber-500/40 bg-amber-500/15 px-2 font-mono text-[9.5px] font-bold text-amber-400 touch-pan-x cursor-pointer whitespace-nowrap"
+            title="CALDRA INTENT — Gerador Paramétrico de Peças"
+          >
+            <Sparkles className="size-3 shrink-0" />
+            <span>INTENT</span>
+          </button>
+
+          <button
+            type="button"
+            data-testid="chamfer-portrait-bom-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("action");
+              onOpenWorkshop();
+            }}
+            className="flex h-7 shrink-0 items-center gap-1 rounded-lg border border-emerald-500/40 bg-emerald-500/15 px-2 font-mono text-[9.5px] font-bold text-emerald-400 touch-pan-x cursor-pointer whitespace-nowrap"
+            title="CORTE / BOM — Lista de Corte e Orçamento"
+          >
+            <ClipboardList className="size-3 shrink-0" />
+            <span>CORTE/BOM</span>
+          </button>
+
+          {onChangeLayoutPreference && (
+            <button
+              type="button"
+              data-testid="chamfer-portrait-shell-toggle-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic("selection");
+                onChangeLayoutPreference(layoutPreference === "compact" ? "classic" : "compact");
+              }}
+              style={{
+                backgroundColor: "var(--chamfer-surface-elevated)",
+                borderColor: "var(--chamfer-border)",
+                color: "var(--chamfer-text-primary)",
+              }}
+              className="flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold touch-pan-x cursor-pointer whitespace-nowrap"
+              title="Alternar Casca de Interface (Compacta / Clássica)"
+            >
+              <span>{layoutPreference === "compact" ? "Compacta" : "Clássica"}</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            data-testid="chamfer-portrait-export-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic("action");
+              onOpenExport();
+            }}
+            style={{
+              backgroundColor: "var(--chamfer-surface-elevated)",
+              borderColor: "var(--chamfer-border)",
+              color: "var(--chamfer-text-primary)",
+            }}
+            className="flex h-7 shrink-0 items-center gap-1 rounded-lg border px-2 font-mono text-[9.5px] font-bold touch-pan-x cursor-pointer whitespace-nowrap"
+            title="Exportar DXF / SVG / PDF"
+          >
+            <Download className="size-3 shrink-0" />
+            <span>Exportar</span>
           </button>
         </div>
       </header>
@@ -1466,7 +1723,7 @@ export function ChamferPortraitTopBar({
               className="my-1.5 h-px"
             />
 
-            {/* SELETOR DE LAYOUT: COMPACTO (LIGHTROOM) | CLÁSSICO */}
+            {/* SELETOR DE INTERFACE DO CHAMFER: COMPACTA | CLÁSSICA */}
             {onChangeLayoutPreference && (
               <div
                 className={cn(
@@ -1475,11 +1732,12 @@ export function ChamferPortraitTopBar({
                 )}
               >
                 <span className="block font-mono text-[9px] font-bold uppercase tracking-wider text-[#94A3B8] mb-1">
-                  Layout Vertical
+                  Interface do CHAMFER
                 </span>
                 <div className="grid grid-cols-2 gap-1">
                   <button
                     type="button"
+                    data-testid="chamfer-shell-mode-compact-btn"
                     data-cmd-id="ui.layout_mode_toggle"
                     onClick={() => {
                       triggerHaptic("selection");
@@ -1495,10 +1753,11 @@ export function ChamferPortraitTopBar({
                           : "bg-white text-[#475569] hover:text-[#0F172A]",
                     )}
                   >
-                    Compacto
+                    Compacta
                   </button>
                   <button
                     type="button"
+                    data-testid="chamfer-shell-mode-classic-btn"
                     data-cmd-id="ui.layout_mode_toggle"
                     onClick={() => {
                       triggerHaptic("selection");
@@ -1514,7 +1773,7 @@ export function ChamferPortraitTopBar({
                           : "bg-white text-[#475569] hover:text-[#0F172A]",
                     )}
                   >
-                    Clássico
+                    Clássica
                   </button>
                 </div>
               </div>
@@ -2912,11 +3171,18 @@ export function ChamferPortraitBottomBars({
     }
   };
 
+  const [isSubStripCollapsed, setIsSubStripCollapsed] = useState(false);
+
   // Fecha sub-painel inline e telinha se trocar de modo principal no Dock Nível 2
   const handleSelectDockMode = (nextMode: PortraitDockMode) => {
     triggerHaptic("selection");
     AudioManager.play("ui_select");
-    setDockMode(nextMode);
+    if (dockMode === nextMode && !hasInlineParams && keypadSession === null) {
+      setIsSubStripCollapsed((prev) => !prev);
+    } else {
+      setDockMode(nextMode);
+      setIsSubStripCollapsed(false);
+    }
     setInlineSubPanel("none");
     setKeypadSession(null);
   };
@@ -5192,16 +5458,19 @@ export function ChamferPortraitBottomBars({
 
   const dockModes: {
     id: PortraitDockMode;
+    shortCode: string;
     label: string;
     icon: typeof Minus;
     badgeCount?: number;
   }[] = [
-    { id: "desenho", label: "Desenho", icon: Compass },
-    { id: "modificar", label: "Modificar", icon: Scissors, badgeCount: selectedCount },
-    { id: "precisao", label: "Precisão", icon: Crosshair },
-    { id: "chapa_vision", label: "Chapa & 1:1", icon: Layers },
-    { id: "inspetor", label: "Inspetor", icon: Sliders },
+    { id: "desenho", shortCode: "SEL·CRI", label: "Criar", icon: Compass },
+    { id: "modificar", shortCode: "MOD", label: "Modificar", icon: Scissors, badgeCount: selectedCount },
+    { id: "precisao", shortCode: "PRE·MED", label: "Precisão", icon: Crosshair },
+    { id: "chapa_vision", shortCode: "CHP·1:1", label: "Chapa", icon: Layers },
+    { id: "inspetor", shortCode: "COR·INSP", label: "Inspetor", icon: Sliders },
   ];
+
+  const showLevel1Strip = !isSubStripCollapsed || hasInlineParams || keypadSession !== null;
 
   return (
     <section
@@ -5209,20 +5478,23 @@ export function ChamferPortraitBottomBars({
       data-single-slot-state={singleSlotResolution.activeSlot}
       className="relative z-40 flex w-full shrink-0 flex-col select-none"
     >
-      {/* BARRA INFERIOR NÍVEL 1 (Slot Contextual Único — 60px normal / 54px em < 700px) */}
-      <div
-        style={{
-          height: stripHeightPx,
-          backgroundColor: "var(--chamfer-surface-elevated)",
-          borderColor: "var(--chamfer-border)",
-          color: "var(--chamfer-text-primary)",
-        }}
-        className="flex w-full shrink-0 items-center border-t backdrop-blur-md transition-colors motion-reduce:transition-none"
-      >
-        {renderLevel1Content()}
-      </div>
+      {/* BARRA INFERIOR NÍVEL 1 (Slot Contextual Único — recolhível tocando na aba ativa da Doca) */}
+      {showLevel1Strip && (
+        <div
+          data-testid="portrait-contextual-subtools-strip"
+          style={{
+            height: stripHeightPx,
+            backgroundColor: "var(--chamfer-surface-elevated)",
+            borderColor: "var(--chamfer-border)",
+            color: "var(--chamfer-text-primary)",
+          }}
+          className="flex w-full shrink-0 items-center border-t backdrop-blur-md transition-colors motion-reduce:transition-none"
+        >
+          {renderLevel1Content()}
+        </div>
+      )}
 
-      {/* BARRA INFERIOR NÍVEL 2 (Dock Principal de 5 Modos Fixos — 54px normal / 50px em < 700px) */}
+      {/* BARRA INFERIOR NÍVEL 2 (Dock Principal de Categorias — 46px–54px) */}
       <nav
         aria-label="Modos principais CHAMFER CAD"
         style={{

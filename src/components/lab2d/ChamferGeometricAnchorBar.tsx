@@ -333,7 +333,7 @@ export const ChamferGeometricAnchorBar: React.FC<ChamferGeometricAnchorBarProps>
       {/* =====================================================================
           LINHA 1: PÍLULA DUPLA DE MODO + CONTROLES DO MODO ATIVO + LIMPAR + CONCLUIR
           ===================================================================== */}
-      <div className="flex items-center gap-1 overflow-x-auto scrollbar-none whitespace-nowrap">
+      <div className="flex items-center gap-1 overflow-x-auto scrollbar-none touch-pan-x overscroll-x-contain whitespace-nowrap">
         {/* PÍLULA DUPLA DE ALTERNÂNCIA DE MODO: [ ⚓ Âncora X',Y' | 📍 Marcos A–E ] */}
         <div
           className={cn(
